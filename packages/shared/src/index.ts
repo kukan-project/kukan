@@ -1,3 +1,23 @@
-// KUKAN shared library entry point
-// Implementation will be added in Step 2
-export {}
+/**
+ * KUKAN Shared Library
+ * Common types, validators, utilities, and error classes
+ */
+
+// Error classes
+export * from './errors'
+
+// Cache utility
+export * from './cache'
+
+// Environment configuration
+export * from './env'
+
+// Common types
+export * from './types'
+
+// Validators
+export * from './validators/package'
+export * from './validators/organization'
+export * from './validators/group'
+export * from './validators/resource'
+export * from './validators/user'
