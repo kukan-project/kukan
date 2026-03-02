@@ -1,0 +1,29 @@
+/**
+ * KUKAN Database Schema
+ * All Drizzle table definitions
+ */
+
+// Core entities
+export * from './organization'
+export * from './group'
+export * from './user'
+
+// Better Auth
+export * from './auth'
+
+// API authentication
+export * from './api-token'
+
+// Datasets
+export * from './package'
+export * from './resource'
+
+// Tags
+export * from './tag'
+
+// Memberships
+export * from './membership'
+
+// Audit & Activity
+export * from './audit'
+export * from './activity'
