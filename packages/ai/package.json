@@ -1,0 +1,28 @@
+{
+  "name": "@kukan/ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KUKAN AI adapter (Bedrock/OpenAI/Ollama/NoOp)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./*": "./dist/*.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@kukan/shared": "workspace:*",
+    "@aws-sdk/client-bedrock-runtime": "^3.700.0",
+    "openai": "^4.75.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  }
+}

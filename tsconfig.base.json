@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@kukan/shared": ["../packages/shared/src"],
+      "@kukan/db": ["../packages/db/src"],
+      "@kukan/storage": ["../packages/storage/src"],
+      "@kukan/search": ["../packages/search/src"],
+      "@kukan/queue": ["../packages/queue/src"],
+      "@kukan/ai": ["../packages/ai/src"]
+    }
+  },
+  "exclude": ["node_modules", "dist"]
+}

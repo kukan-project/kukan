@@ -1,0 +1,34 @@
+{
+  "name": "@kukan/db",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KUKAN database schema and migrations (Drizzle ORM)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./*": "./dist/*.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "clean": "rm -rf dist",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/migrate.ts",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@kukan/shared": "workspace:*",
+    "drizzle-orm": "^0.45.1",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "drizzle-kit": "^0.31.4",
+    "tsx": "^4.0.0"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "@kukan/search",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KUKAN search adapter (OpenSearch/PostgreSQL)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./*": "./dist/*.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@kukan/shared": "workspace:*",
+    "@kukan/db": "workspace:*",
+    "@opensearch-project/opensearch": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  }
+}

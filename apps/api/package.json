@@ -1,0 +1,32 @@
+{
+  "name": "@kukan/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KUKAN API Server (Hono)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@kukan/shared": "workspace:*",
+    "@kukan/db": "workspace:*",
+    "@kukan/storage": "workspace:*",
+    "@kukan/search": "workspace:*",
+    "@kukan/queue": "workspace:*",
+    "@kukan/ai": "workspace:*",
+    "better-auth": "^1.0.0",
+    "dotenv": "^16.4.0",
+    "hono": "^4.12.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0"
+  }
+}
