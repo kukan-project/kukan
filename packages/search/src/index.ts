@@ -1,3 +1,8 @@
-// KUKAN search adapter
-// Implementation will be added in Step 4
-export {}
+/**
+ * KUKAN Search Package
+ * Pluggable search adapters for OpenSearch and PostgreSQL
+ */
+
+export * from './adapter'
+export * from './postgres'
+export * from './opensearch'
