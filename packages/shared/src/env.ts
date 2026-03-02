@@ -17,6 +17,7 @@ export const envSchema = z.object({
   MINIO_ENDPOINT: z.string().default('http://localhost:9000'),
   MINIO_ACCESS_KEY: z.string().default('minioadmin'),
   MINIO_SECRET_KEY: z.string().default('minioadmin'),
+  MINIO_BUCKET: z.string().default('kukan-dev'),
 
   // Search
   SEARCH_TYPE: z.enum(['opensearch', 'postgres']).default('postgres'),
