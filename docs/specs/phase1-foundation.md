@@ -50,9 +50,9 @@ KUKAN/
     "outDir": "dist",
     "rootDir": "src",
     "paths": {
-      "@kukan/*": ["../packages/*/src"]
-    }
-  }
+      "@kukan/*": ["../packages/*/src"],
+    },
+  },
 }
 ```
 
@@ -81,28 +81,28 @@ export class KukanError extends Error {
     message: string,
     public readonly code: string,
     public readonly status: number = 500,
-    public readonly details?: Record<string, unknown>,
+    public readonly details?: Record<string, unknown>
   ) {
-    super(message);
-    this.name = 'KukanError';
+    super(message)
+    this.name = 'KukanError'
   }
 }
 
 export class NotFoundError extends KukanError {
   constructor(entity: string, id: string) {
-    super(`${entity} not found: ${id}`, 'NOT_FOUND', 404);
+    super(`${entity} not found: ${id}`, 'NOT_FOUND', 404)
   }
 }
 
 export class ValidationError extends KukanError {
   constructor(message: string, details?: Record<string, unknown>) {
-    super(message, 'VALIDATION_ERROR', 400, details);
+    super(message, 'VALIDATION_ERROR', 400, details)
   }
 }
 
 export class ForbiddenError extends KukanError {
   constructor(message = 'Forbidden') {
-    super(message, 'FORBIDDEN', 403);
+    super(message, 'FORBIDDEN', 403)
   }
 }
 ```
@@ -111,13 +111,13 @@ export class ForbiddenError extends KukanError {
 
 ```typescript
 // packages/shared/src/cache.ts
-import { LRUCache } from 'lru-cache';
+import { LRUCache } from 'lru-cache'
 
 export function createCache<V>(options?: { max?: number; ttlMs?: number }) {
   return new LRUCache<string, V>({
     max: options?.max ?? 500,
     ttl: options?.ttlMs ?? 5 * 60 * 1000,
-  });
+  })
 }
 ```
 
@@ -125,7 +125,7 @@ export function createCache<V>(options?: { max?: number; ttlMs?: number }) {
 
 ```typescript
 // packages/shared/src/env.ts
-import { z } from 'zod';
+import { z } from 'zod'
 
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -154,12 +154,12 @@ export const envSchema = z.object({
   // Auth
   BETTER_AUTH_SECRET: z.string().min(32),
   BETTER_AUTH_URL: z.string().url().default('http://localhost:3000'),
-});
+})
 
-export type Env = z.infer<typeof envSchema>;
+export type Env = z.infer<typeof envSchema>
 
 export function loadEnv(): Env {
-  return envSchema.parse(process.env);
+  return envSchema.parse(process.env)
 }
 ```
 
@@ -167,10 +167,14 @@ export function loadEnv(): Env {
 
 ```typescript
 // packages/shared/src/validators/package.ts
-import { z } from 'zod';
+import { z } from 'zod'
 
 export const createPackageSchema = z.object({
-  name: z.string().min(2).max(100).regex(/^[a-z0-9-_]+$/),
+  name: z
+    .string()
+    .min(2)
+    .max(100)
+    .regex(/^[a-z0-9-_]+$/),
   title: z.string().optional(),
   notes: z.string().optional(),
   owner_org: z.string().uuid().optional(),
@@ -178,16 +182,20 @@ export const createPackageSchema = z.object({
   license_id: z.string().optional(),
   extras: z.record(z.unknown()).default({}),
   tags: z.array(z.object({ name: z.string() })).default([]),
-  resources: z.array(z.object({
-    url: z.string().url().optional(),
-    name: z.string().optional(),
-    format: z.string().optional(),
-    description: z.string().optional(),
-  })).default([]),
-});
+  resources: z
+    .array(
+      z.object({
+        url: z.string().url().optional(),
+        name: z.string().optional(),
+        format: z.string().optional(),
+        description: z.string().optional(),
+      })
+    )
+    .default([]),
+})
 
-export const updatePackageSchema = createPackageSchema.partial();
-export const patchPackageSchema = createPackageSchema.partial();
+export const updatePackageSchema = createPackageSchema.partial()
+export const patchPackageSchema = createPackageSchema.partial()
 ```
 
 同様に `organization.ts`, `resource.ts`, `group.ts`, `user.ts` も作成。
@@ -197,23 +205,23 @@ export const patchPackageSchema = createPackageSchema.partial();
 ```typescript
 // packages/shared/src/types.ts
 export interface PaginationParams {
-  offset?: number;
-  limit?: number;
+  offset?: number
+  limit?: number
 }
 
 export interface PaginatedResult<T> {
-  items: T[];
-  total: number;
-  offset: number;
-  limit: number;
+  items: T[]
+  total: number
+  offset: number
+  limit: number
 }
 
 export interface ProblemDetail {
-  type: string;
-  title: string;
-  status: number;
-  detail?: string;
-  instance?: string;
+  type: string
+  title: string
+  status: number
+  detail?: string
+  instance?: string
 }
 ```
 
@@ -226,22 +234,22 @@ export interface ProblemDetail {
 設計書セクション6.2のSQLスキーマをDrizzleのTypeScript定義に変換する。
 Phase 1で作成するテーブル:
 
-| テーブル | 概要 |
-|---------|------|
-| organization | 組織 |
-| group | グループ |
-| user | ユーザー（Better Auth テーブルと統合） |
-| api_token | APIトークン |
-| package | データセット |
-| resource | リソース |
-| vocabulary | ボキャブラリー |
-| tag | タグ |
-| package_tag | パッケージ-タグ紐付け |
-| user_org_membership | ユーザー-組織メンバーシップ |
-| user_group_membership | ユーザー-グループメンバーシップ |
-| package_group | パッケージ-グループ紐付け |
-| audit_log | 監査ログ |
-| activity | アクティビティストリーム |
+| テーブル              | 概要                                   |
+| --------------------- | -------------------------------------- |
+| organization          | 組織                                   |
+| group                 | グループ                               |
+| user                  | ユーザー（Better Auth テーブルと統合） |
+| api_token             | APIトークン                            |
+| package               | データセット                           |
+| resource              | リソース                               |
+| vocabulary            | ボキャブラリー                         |
+| tag                   | タグ                                   |
+| package_tag           | パッケージ-タグ紐付け                  |
+| user_org_membership   | ユーザー-組織メンバーシップ            |
+| user_group_membership | ユーザー-グループメンバーシップ        |
+| package_group         | パッケージ-グループ紐付け              |
+| audit_log             | 監査ログ                               |
+| activity              | アクティビティストリーム               |
 
 **Better Auth テーブル**: `user`, `session`, `account`, `verification` — Better Auth の Drizzle プラグインで自動生成される。`user` テーブルはKUKAN独自カラムを追加拡張。
 
@@ -276,40 +284,44 @@ packages/db/
 
 ```typescript
 // packages/db/src/schema/package.ts
-import { pgTable, uuid, varchar, text, boolean, jsonb, timestamp, index } from 'drizzle-orm/pg-core';
-import { organization } from './organization';
-import { user } from './user';
+import { pgTable, uuid, varchar, text, boolean, jsonb, timestamp, index } from 'drizzle-orm/pg-core'
+import { organization } from './organization'
+import { user } from './user'
 
-export const packageTable = pgTable('package', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  name: varchar('name', { length: 100 }).unique().notNull(),
-  title: text('title'),
-  notes: text('notes'),
-  url: text('url'),
-  version: varchar('version', { length: 100 }),
-  licenseId: varchar('license_id', { length: 100 }),
-  author: text('author'),
-  authorEmail: text('author_email'),
-  maintainer: text('maintainer'),
-  maintainerEmail: text('maintainer_email'),
-  state: varchar('state', { length: 20 }).default('active'),
-  type: varchar('type', { length: 100 }).default('dataset'),
-  ownerOrg: uuid('owner_org').references(() => organization.id),
-  private: boolean('private').default(false),
-  creatorUserId: uuid('creator_user_id').references(() => user.id),
-  extras: jsonb('extras').default({}),
+export const packageTable = pgTable(
+  'package',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: varchar('name', { length: 100 }).unique().notNull(),
+    title: text('title'),
+    notes: text('notes'),
+    url: text('url'),
+    version: varchar('version', { length: 100 }),
+    licenseId: varchar('license_id', { length: 100 }),
+    author: text('author'),
+    authorEmail: text('author_email'),
+    maintainer: text('maintainer'),
+    maintainerEmail: text('maintainer_email'),
+    state: varchar('state', { length: 20 }).default('active'),
+    type: varchar('type', { length: 100 }).default('dataset'),
+    ownerOrg: uuid('owner_org').references(() => organization.id),
+    private: boolean('private').default(false),
+    creatorUserId: uuid('creator_user_id').references(() => user.id),
+    extras: jsonb('extras').default({}),
 
-  // 新機能フィールド（Phase 1ではNULL許容、後続Phaseで活用）
-  qualityScore: text('quality_score'),   // Phase 2で FLOAT に変更予定
-  aiSummary: text('ai_summary'),
-  aiTags: text('ai_tags'),
+    // 新機能フィールド（Phase 1ではNULL許容、後続Phaseで活用）
+    qualityScore: text('quality_score'), // Phase 2で FLOAT に変更予定
+    aiSummary: text('ai_summary'),
+    aiTags: text('ai_tags'),
 
-  metadataCreated: timestamp('metadata_created', { withTimezone: true }).defaultNow(),
-  metadataModified: timestamp('metadata_modified', { withTimezone: true }).defaultNow(),
-}, (table) => [
-  index('idx_package_owner_org').on(table.ownerOrg),
-  index('idx_package_state').on(table.state),
-]);
+    metadataCreated: timestamp('metadata_created', { withTimezone: true }).defaultNow(),
+    metadataModified: timestamp('metadata_modified', { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index('idx_package_owner_org').on(table.ownerOrg),
+    index('idx_package_state').on(table.state),
+  ]
+)
 ```
 
 **Note**: `search_vector` (tsvector) と `spatial_coverage` (geometry) はDrizzleの標準型で表現しにくいため、マイグレーションSQL内で直接定義する（`drizzle-kit` のカスタムSQL機能を使用）。
@@ -318,16 +330,16 @@ export const packageTable = pgTable('package', {
 
 ```typescript
 // packages/db/src/client.ts
-import { drizzle } from 'drizzle-orm/node-postgres';
-import { Pool } from 'pg';
-import * as schema from './schema';
+import { drizzle } from 'drizzle-orm/node-postgres'
+import { Pool } from 'pg'
+import * as schema from './schema'
 
 export function createDb(connectionString: string) {
-  const pool = new Pool({ connectionString });
-  return drizzle(pool, { schema });
+  const pool = new Pool({ connectionString })
+  return drizzle(pool, { schema })
 }
 
-export type Database = ReturnType<typeof createDb>;
+export type Database = ReturnType<typeof createDb>
 ```
 
 ---
@@ -391,21 +403,20 @@ Phase 1で実装: **NoOpAIAdapter**（全メソッドがデフォルト値を返
 
 ```typescript
 // apps/api/src/adapters.ts
-import { loadEnv } from '@kukan/shared';
-import { MinIOStorageAdapter } from '@kukan/storage';
-import { PostgresSearchAdapter } from '@kukan/search';
-import { InProcessQueueAdapter } from '@kukan/queue';
-import { NoOpAIAdapter } from '@kukan/ai';
+import { loadEnv } from '@kukan/shared'
+import { MinIOStorageAdapter } from '@kukan/storage'
+import { PostgresSearchAdapter } from '@kukan/search'
+import { InProcessQueueAdapter } from '@kukan/queue'
+import { NoOpAIAdapter } from '@kukan/ai'
 
 export function createAdapters(env: Env) {
   return {
-    storage: env.STORAGE_TYPE === 'minio'
-      ? new MinIOStorageAdapter(env)
-      : new MinIOStorageAdapter(env),  // Phase 5で S3 分岐追加
+    storage:
+      env.STORAGE_TYPE === 'minio' ? new MinIOStorageAdapter(env) : new MinIOStorageAdapter(env), // Phase 5で S3 分岐追加
     search: new PostgresSearchAdapter(env.DATABASE_URL),
     queue: new InProcessQueueAdapter(),
     ai: new NoOpAIAdapter(),
-  };
+  }
 }
 ```
 
@@ -452,46 +463,46 @@ apps/api/
 
 **ネイティブ REST API（`/api/v1/`）**
 
-| Method | Path | 概要 |
-|--------|------|------|
-| GET | /api/v1/packages | 一覧（ページネーション+検索） |
-| POST | /api/v1/packages | 作成 |
-| GET | /api/v1/packages/:nameOrId | 取得 |
-| PUT | /api/v1/packages/:nameOrId | 全体更新 |
-| PATCH | /api/v1/packages/:nameOrId | 部分更新 |
-| DELETE | /api/v1/packages/:nameOrId | 削除（state=deleted） |
-| GET | /api/v1/packages/:id/resources | パッケージのリソース一覧 |
-| POST | /api/v1/packages/:id/resources | リソース追加 |
-| GET | /api/v1/resources/:id | リソース取得 |
-| PUT | /api/v1/resources/:id | リソース更新 |
-| DELETE | /api/v1/resources/:id | リソース削除 |
-| GET | /api/v1/organizations | 一覧 |
-| POST | /api/v1/organizations | 作成 |
-| GET | /api/v1/organizations/:nameOrId | 取得 |
-| PUT | /api/v1/organizations/:nameOrId | 更新 |
-| GET | /api/v1/groups | 一覧 |
-| POST | /api/v1/groups | 作成 |
-| GET | /api/v1/groups/:nameOrId | 取得 |
-| GET | /api/v1/users/me | 自分の情報 |
-| GET | /api/v1/tags | 一覧 |
-| GET | /api/v1/search | 全文検索（SearchAdapter経由） |
+| Method | Path                            | 概要                          |
+| ------ | ------------------------------- | ----------------------------- |
+| GET    | /api/v1/packages                | 一覧（ページネーション+検索） |
+| POST   | /api/v1/packages                | 作成                          |
+| GET    | /api/v1/packages/:nameOrId      | 取得                          |
+| PUT    | /api/v1/packages/:nameOrId      | 全体更新                      |
+| PATCH  | /api/v1/packages/:nameOrId      | 部分更新                      |
+| DELETE | /api/v1/packages/:nameOrId      | 削除（state=deleted）         |
+| GET    | /api/v1/packages/:id/resources  | パッケージのリソース一覧      |
+| POST   | /api/v1/packages/:id/resources  | リソース追加                  |
+| GET    | /api/v1/resources/:id           | リソース取得                  |
+| PUT    | /api/v1/resources/:id           | リソース更新                  |
+| DELETE | /api/v1/resources/:id           | リソース削除                  |
+| GET    | /api/v1/organizations           | 一覧                          |
+| POST   | /api/v1/organizations           | 作成                          |
+| GET    | /api/v1/organizations/:nameOrId | 取得                          |
+| PUT    | /api/v1/organizations/:nameOrId | 更新                          |
+| GET    | /api/v1/groups                  | 一覧                          |
+| POST   | /api/v1/groups                  | 作成                          |
+| GET    | /api/v1/groups/:nameOrId        | 取得                          |
+| GET    | /api/v1/users/me                | 自分の情報                    |
+| GET    | /api/v1/tags                    | 一覧                          |
+| GET    | /api/v1/search                  | 全文検索（SearchAdapter経由） |
 
 ### 5.3 CKAN互換API（P1エンドポイント）
 
 設計書セクション14.1のP1エンドポイントを実装:
 
-| CKAN Action | 対応するネイティブAPI |
-|-------------|-------------------|
-| package_list | GET /api/v1/packages |
-| package_show | GET /api/v1/packages/:id |
-| package_search | GET /api/v1/search |
-| resource_show | GET /api/v1/resources/:id |
-| organization_list | GET /api/v1/organizations |
+| CKAN Action       | 対応するネイティブAPI         |
+| ----------------- | ----------------------------- |
+| package_list      | GET /api/v1/packages          |
+| package_show      | GET /api/v1/packages/:id      |
+| package_search    | GET /api/v1/search            |
+| resource_show     | GET /api/v1/resources/:id     |
+| organization_list | GET /api/v1/organizations     |
 | organization_show | GET /api/v1/organizations/:id |
-| group_list | GET /api/v1/groups |
-| group_show | GET /api/v1/groups/:id |
-| tag_list | GET /api/v1/tags |
-| tag_show | GET /api/v1/tags/:id |
+| group_list        | GET /api/v1/groups            |
+| group_show        | GET /api/v1/groups/:id        |
+| tag_list          | GET /api/v1/tags              |
+| tag_show          | GET /api/v1/tags/:id          |
 
 **CKAN互換ルーター**は `routes/ckan-compat.ts` でネイティブAPIを呼び出し、CKANフォーマット（`{ success, result, help }`）に変換して返す薄いラッパー。
 
@@ -499,18 +510,19 @@ apps/api/
 
 ```typescript
 // apps/api/src/auth/auth.ts
-import { betterAuth } from 'better-auth';
-import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { db } from '@kukan/db';
+import { betterAuth } from 'better-auth'
+import { drizzleAdapter } from 'better-auth/adapters/drizzle'
+import { db } from '@kukan/db'
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: 'pg' }),
   emailAndPassword: { enabled: true },
   // Phase 5 で OIDC プラグイン追加
-});
+})
 ```
 
 Phase 1 での認証フロー:
+
 1. メール/パスワード認証のみ（開発用、外部IdP不要）
 2. セッションはDB保存（Better Auth デフォルト）
 3. API Key 認証: `api_token` テーブルでカスタム実装
@@ -520,29 +532,35 @@ Phase 1 での認証フロー:
 
 ```typescript
 // apps/api/src/middleware/error-handler.ts
-import { KukanError } from '@kukan/shared';
+import { KukanError } from '@kukan/shared'
 
 export function errorHandler() {
   return async (c, next) => {
     try {
-      await next();
+      await next()
     } catch (err) {
       if (err instanceof KukanError) {
-        return c.json({
-          type: 'about:blank',
-          title: err.code,
-          status: err.status,
-          detail: err.message,
-        }, err.status);
+        return c.json(
+          {
+            type: 'about:blank',
+            title: err.code,
+            status: err.status,
+            detail: err.message,
+          },
+          err.status
+        )
       }
-      console.error(err);
-      return c.json({
-        type: 'about:blank',
-        title: 'Internal Server Error',
-        status: 500,
-      }, 500);
+      console.error(err)
+      return c.json(
+        {
+          type: 'about:blank',
+          title: 'Internal Server Error',
+          status: 500,
+        },
+        500
+      )
     }
-  };
+  }
 }
 ```
 
@@ -625,15 +643,15 @@ BETTER_AUTH_URL=http://localhost:3000
 
 ### 8.1 テスト対象
 
-| 対象 | テスト種別 | ツール |
-|------|-----------|--------|
-| packages/shared | ユニット | Vitest |
-| packages/db | 統合テスト（テスト用DB） | Vitest + テストコンテナ |
-| packages/storage | ユニット（LocalAdapter） | Vitest |
-| packages/search | 統合テスト（テスト用DB） | Vitest + テストコンテナ |
-| apps/api routes | 統合テスト | Vitest + Hono テストクライアント |
-| apps/api services | ユニット（モック注入） | Vitest |
-| CKAN互換API | 統合テスト | Vitest |
+| 対象              | テスト種別               | ツール                           |
+| ----------------- | ------------------------ | -------------------------------- |
+| packages/shared   | ユニット                 | Vitest                           |
+| packages/db       | 統合テスト（テスト用DB） | Vitest + テストコンテナ          |
+| packages/storage  | ユニット（LocalAdapter） | Vitest                           |
+| packages/search   | 統合テスト（テスト用DB） | Vitest + テストコンテナ          |
+| apps/api routes   | 統合テスト               | Vitest + Hono テストクライアント |
+| apps/api services | ユニット（モック注入）   | Vitest                           |
+| CKAN互換API       | 統合テスト               | Vitest                           |
 
 ### 8.2 テストDB
 
@@ -641,17 +659,17 @@ BETTER_AUTH_URL=http://localhost:3000
 
 ```typescript
 // テスト例
-import { testClient } from 'hono/testing';
-import { app } from '../src/app';
+import { testClient } from 'hono/testing'
+import { app } from '../src/app'
 
 describe('GET /api/v1/packages', () => {
   it('should return paginated list', async () => {
-    const res = await testClient(app).api.v1.packages.$get();
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.items).toBeInstanceOf(Array);
-  });
-});
+    const res = await testClient(app).api.v1.packages.$get()
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.items).toBeInstanceOf(Array)
+  })
+})
 ```
 
 ---
@@ -661,12 +679,14 @@ describe('GET /api/v1/packages', () => {
 Claude Code に指示する際、以下の順番で進める:
 
 ### Step 1: プロジェクトスケルトン
+
 1. `pnpm init`, `pnpm-workspace.yaml`, `turbo.json`, `tsconfig.base.json`
 2. 全パッケージの `package.json` + `tsconfig.json` 空スケルトン
 3. ESLint / Prettier 設定
 4. `pnpm install`
 
 ### Step 2: packages/shared
+
 1. エラークラス
 2. 環境変数バリデーション（Zod）
 3. lru-cache ユーティリティ
@@ -675,6 +695,7 @@ Claude Code に指示する際、以下の順番で進める:
 6. テスト
 
 ### Step 3: packages/db
+
 1. Drizzle 設定（`drizzle.config.ts`）
 2. スキーマ定義（全14テーブル）
 3. DBクライアント
@@ -683,6 +704,7 @@ Claude Code に指示する際、以下の順番で進める:
 6. テスト（テストDB接続）
 
 ### Step 4: アダプター（4パッケージ）
+
 1. インターフェース定義
 2. packages/storage — MinIOStorageAdapter + LocalStorageAdapter
 3. packages/search — PostgresSearchAdapter
@@ -691,11 +713,13 @@ Claude Code に指示する際、以下の順番で進める:
 6. 各アダプターのテスト
 
 ### Step 5: Docker Compose
+
 1. `docker/docker-compose.yml`
 2. `.env.example` → `.env` コピー
 3. `docker compose up` で PostgreSQL + MinIO 起動確認
 
 ### Step 6: apps/api
+
 1. Hono app スケルトン + ミドルウェア
 2. Better Auth 初期化
 3. Organization CRUD（最もシンプル、叩き台として）
@@ -709,6 +733,7 @@ Claude Code に指示する際、以下の順番で進める:
 11. テスト（全エンドポイント）
 
 ### Step 7: 統合確認
+
 1. Docker Compose + API サーバー起動
 2. CKAN互換APIでダミーデータ登録
 3. 検索動作確認

@@ -1,3 +1,3 @@
 // KUKAN queue adapter
 // Implementation will be added in Step 4
-export {};
+export {}

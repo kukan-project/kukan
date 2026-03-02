@@ -13,25 +13,25 @@ CKANの後継として設計されたTypeScriptフルスタックのデータカ
 
 ## 技術スタック
 
-| カテゴリ | 技術 |
-|---------|------|
-| 言語 | TypeScript 5.x（全レイヤー統一） |
-| ランタイム | Node.js 22 LTS |
-| モノレポ | Turborepo + pnpm workspaces |
-| API | Hono 4.x（Cloudflare Workers / Node.js / Bun 対応） |
-| フロントエンド | Next.js 15 (App Router) + shadcn/ui + Tailwind CSS 4 |
-| DB | PostgreSQL 16 / Aurora Serverless v2 |
-| ORM | Drizzle ORM（PostgreSQL ドライバ） |
-| 検索 | OpenSearch 2.x / PostgreSQL全文検索（フォールバック） |
-| ストレージ | S3 / MinIO |
-| キュー | SQS（AWS）/ InProcess（開発・オンプレ） |
-| キャッシュ | lru-cache 11.x（インメモリ、全環境共通） |
-| 認証 | Better Auth 1.x + OIDC プラグイン |
-| AI | Bedrock / OpenAI / Ollama / NoOp |
-| テスト | Vitest + Playwright |
-| バリデーション | Zod |
-| デプロイ | AWS App Runner / Docker Compose |
-| IaC | AWS CDK (TypeScript) |
+| カテゴリ       | 技術                                                  |
+| -------------- | ----------------------------------------------------- |
+| 言語           | TypeScript 5.x（全レイヤー統一）                      |
+| ランタイム     | Node.js 22 LTS                                        |
+| モノレポ       | Turborepo + pnpm workspaces                           |
+| API            | Hono 4.x（Cloudflare Workers / Node.js / Bun 対応）   |
+| フロントエンド | Next.js 15 (App Router) + shadcn/ui + Tailwind CSS 4  |
+| DB             | PostgreSQL 16 / Aurora Serverless v2                  |
+| ORM            | Drizzle ORM（PostgreSQL ドライバ）                    |
+| 検索           | OpenSearch 2.x / PostgreSQL全文検索（フォールバック） |
+| ストレージ     | S3 / MinIO                                            |
+| キュー         | SQS（AWS）/ InProcess（開発・オンプレ）               |
+| キャッシュ     | lru-cache 11.x（インメモリ、全環境共通）              |
+| 認証           | Better Auth 1.x + OIDC プラグイン                     |
+| AI             | Bedrock / OpenAI / Ollama / NoOp                      |
+| テスト         | Vitest + Playwright                                   |
+| バリデーション | Zod                                                   |
+| デプロイ       | AWS App Runner / Docker Compose                       |
+| IaC            | AWS CDK (TypeScript)                                  |
 
 ## モノレポ構成
 
@@ -69,6 +69,7 @@ KUKAN/
 ## コーディング規約
 
 ### 命名規則
+
 - ファイル名: `kebab-case`（例: `storage-adapter.ts`）
 - クラス・インターフェース: `PascalCase`（例: `StorageAdapter`）
 - 関数・変数: `camelCase`（例: `processResource`）
@@ -77,14 +78,16 @@ KUKAN/
 - テーブル名: `snake_case` 単数形（例: `package`, `resource`）
 
 ### インポート規則
+
 - パッケージ間は `@kukan/パッケージ名` でインポート
   ```typescript
-  import { StorageAdapter } from '@kukan/storage';
-  import { db } from '@kukan/db';
+  import { StorageAdapter } from '@kukan/storage'
+  import { db } from '@kukan/db'
   ```
 - 相対パスインポートはパッケージ内部のみ
 
 ### エラーハンドリング
+
 - カスタムエラークラスを使う（`KukanError` を基底クラス）
 - エラーは発生箇所に最も近い場所でキャッチ
 - APIレスポンスは RFC 7807 Problem Details 形式
@@ -93,17 +96,20 @@ KUKAN/
   ```
 
 ### データベース
+
 - すべてのテーブルに `id` (UUID), `created` (TIMESTAMPTZ), `updated` (TIMESTAMPTZ)
 - 論理削除は使わない（`state` カラムで `active` / `deleted` を管理）
 - マイグレーションは Drizzle Kit で管理
 
 ### テスト
+
 - ユニットテスト: Vitest（`*.test.ts`）
 - 統合テスト: Vitest + テスト用DB（`*.integration.test.ts`）
 - E2Eテスト: Playwright（`*.e2e.ts`）
 - テストファイルはソースファイルと同じディレクトリに配置
 
 ### 環境変数
+
 - `packages/shared/env.ts` で Zod バリデーション付きの環境変数定義
 - `.env` ファイルはリポジトリに含めない（`.env.example` を用意）
 
@@ -111,12 +117,12 @@ KUKAN/
 
 環境差がある4つだけアダプターを作る。それ以外は抽象化しない:
 
-| アダプター | AWS | 開発/オンプレ |
-|-----------|-----|-------------|
-| StorageAdapter | S3 | MinIO / ローカルFS |
-| SearchAdapter | OpenSearch | PostgreSQL全文検索 |
-| AIAdapter | Bedrock | Ollama / OpenAI / NoOp |
-| QueueAdapter | SQS | InProcess |
+| アダプター     | AWS        | 開発/オンプレ          |
+| -------------- | ---------- | ---------------------- |
+| StorageAdapter | S3         | MinIO / ローカルFS     |
+| SearchAdapter  | OpenSearch | PostgreSQL全文検索     |
+| AIAdapter      | Bedrock    | Ollama / OpenAI / NoOp |
+| QueueAdapter   | SQS        | InProcess              |
 
 キャッシュは lru-cache ユーティリティ（全環境共通、アダプター不要）。
 
