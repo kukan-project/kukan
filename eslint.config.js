@@ -8,9 +8,6 @@ export default tseslint.config(
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
-      parserOptions: {
-        project: true,
-      },
     },
     rules: {
       '@typescript-eslint/no-unused-vars': [
