@@ -15,15 +15,18 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@kukan/shared": "workspace:*",
-    "@kukan/db": "workspace:*",
-    "@kukan/storage": "workspace:*",
-    "@kukan/search": "workspace:*",
-    "@kukan/queue": "workspace:*",
+    "@hono/node-server": "^1.14.0",
     "@kukan/ai": "workspace:*",
+    "@kukan/db": "workspace:*",
+    "@kukan/queue": "workspace:*",
+    "@kukan/search": "workspace:*",
+    "@kukan/shared": "workspace:*",
+    "@kukan/storage": "workspace:*",
     "better-auth": "^1.1.9",
     "dotenv": "^16.4.0",
+    "drizzle-orm": "^0.45.1",
     "hono": "^4.12.3",
+    "pg": "^8.13.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {

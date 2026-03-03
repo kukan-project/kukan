@@ -28,6 +28,7 @@
     "pnpm": ">=9.0.0"
   },
   "dependencies": {
-    "@hono/node-server": "^1.14.0"
+    "@hono/node-server": "^1.14.0",
+    "@hono/zod-validator": "^0.7.6"
   }
 }

@@ -8,11 +8,13 @@ import { cors } from 'hono/cors'
 import { loadEnv } from '@kukan/shared'
 import { createDb } from '@kukan/db'
 import { createAdapters } from './adapters'
+import { createAuth } from './auth/auth'
+import { optionalAuth } from './middleware/auth'
 import { errorHandler } from './middleware/error-handler'
 import { logger } from './middleware/logger'
 import type { AppContext } from './context'
 
-export function createApp() {
+export async function createApp() {
   const app = new Hono<{ Variables: AppContext }>()
 
   // Load environment variables
@@ -20,6 +22,9 @@ export function createApp() {
 
   // Initialize database
   const db = createDb(env.DATABASE_URL)
+
+  // Initialize Better Auth
+  const auth = createAuth(db)
 
   // Initialize adapters
   const adapters = createAdapters(env)
@@ -38,6 +43,7 @@ export function createApp() {
   // Middleware
   app.use('*', logger)
   app.use('*', cors())
+  app.use('*', optionalAuth(auth))
   app.onError(errorHandler)
 
   // Health check
@@ -45,8 +51,19 @@ export function createApp() {
     return c.json({ status: 'ok', timestamp: new Date().toISOString() })
   })
 
-  // API routes will be added here
-  // TODO: Add route imports and registration
+  // Better Auth endpoints
+  app.on(['POST', 'GET'], '/api/auth/**', (c) => {
+    return auth.handler(c.req.raw)
+  })
+
+  // API v1 routes
+  const apiV1 = new Hono<{ Variables: AppContext }>()
+
+  // Import and register routes
+  const { organizationsRouter } = await import('./routes/organizations')
+  apiV1.route('/organizations', organizationsRouter)
+
+  app.route('/api/v1', apiV1)
 
   // 404 handler
   app.notFound((c) => {

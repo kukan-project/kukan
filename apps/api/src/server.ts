@@ -10,10 +10,11 @@ import { createApp } from './app'
 // Load .env file
 config()
 
-const app = createApp()
 const port = parseInt(process.env.PORT || '3000', 10)
 
 console.log(`🚀 KUKAN API Server starting on port ${port}`)
+
+const app = await createApp()
 
 serve({
   fetch: app.fetch,
@@ -22,3 +23,4 @@ serve({
 
 console.log(`✅ Server is running at http://localhost:${port}`)
 console.log(`📊 Health check: http://localhost:${port}/health`)
+console.log(`📁 Organizations API: http://localhost:${port}/api/v1/organizations`)
