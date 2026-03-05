@@ -77,7 +77,7 @@ export class OrganizationService {
     return result
   }
 
-  async create(input: CreateOrganizationInput, creatorUserId?: string) {
+  async create(input: CreateOrganizationInput, _creatorUserId?: string) {
     // Validate name uniqueness
     const existing = await this.db
       .select()
@@ -99,7 +99,6 @@ export class OrganizationService {
         description: input.description,
         imageUrl: input.imageUrl,
         state: input.state || 'active',
-        createdBy: creatorUserId,
       })
       .returning()
 

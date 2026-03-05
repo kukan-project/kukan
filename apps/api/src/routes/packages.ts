@@ -7,7 +7,8 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { PackageService } from '../services/package-service'
-import { createPackageSchema, updatePackageSchema, patchPackageSchema } from '@kukan/shared'
+import { ResourceService } from '../services/resource-service'
+import { createPackageSchema, updatePackageSchema, patchPackageSchema, createResourceSchema } from '@kukan/shared'
 import type { AppContext } from '../context'
 
 export const packagesRouter = new Hono<{ Variables: AppContext }>()
@@ -77,4 +78,33 @@ packagesRouter.delete('/:nameOrId', async (c) => {
   const service = new PackageService(c.get('db'))
   const pkg = await service.delete(nameOrId)
   return c.json(pkg)
+})
+
+// GET /api/v1/packages/:packageId/resources - List resources for package
+packagesRouter.get('/:packageId/resources', async (c) => {
+  const packageId = c.req.param('packageId')
+  const packageService = new PackageService(c.get('db'))
+  // Resolve name or ID to UUID
+  const pkg = await packageService.getByNameOrId(packageId)
+
+  const resourceService = new ResourceService(c.get('db'))
+  const resources = await resourceService.listByPackage(pkg.id)
+  return c.json(resources)
+})
+
+// POST /api/v1/packages/:packageId/resources - Add resource to package
+packagesRouter.post('/:packageId/resources', zValidator('json', createResourceSchema.omit({ package_id: true })), async (c) => {
+  const packageId = c.req.param('packageId')
+  const input = c.req.valid('json')
+
+  const packageService = new PackageService(c.get('db'))
+  // Resolve name or ID to UUID
+  const pkg = await packageService.getByNameOrId(packageId)
+
+  const resourceService = new ResourceService(c.get('db'))
+  const resource = await resourceService.create({
+    ...input,
+    package_id: pkg.id,
+  })
+  return c.json(resource, 201)
 })

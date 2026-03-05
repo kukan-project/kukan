@@ -62,9 +62,11 @@ export async function createApp() {
   // Import and register routes
   const { organizationsRouter } = await import('./routes/organizations')
   const { packagesRouter } = await import('./routes/packages')
+  const { resourcesRouter } = await import('./routes/resources')
 
   apiV1.route('/organizations', organizationsRouter)
   apiV1.route('/packages', packagesRouter)
+  apiV1.route('/resources', resourcesRouter)
 
   app.route('/api/v1', apiV1)
 
