@@ -27,3 +27,5 @@ console.log(`📁 Organizations API: http://localhost:${port}/api/v1/organizatio
 console.log(`📦 Packages API: http://localhost:${port}/api/v1/packages`)
 console.log(`📄 Resources API: http://localhost:${port}/api/v1/resources`)
 console.log(`👥 Groups API: http://localhost:${port}/api/v1/groups`)
+console.log(`🏷️  Tags API: http://localhost:${port}/api/v1/tags`)
+console.log(`👤 Users API: http://localhost:${port}/api/v1/users`)

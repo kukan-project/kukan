@@ -64,11 +64,15 @@ export async function createApp() {
   const { packagesRouter } = await import('./routes/packages')
   const { resourcesRouter } = await import('./routes/resources')
   const { groupsRouter } = await import('./routes/groups')
+  const { tagsRouter } = await import('./routes/tags')
+  const { usersRouter } = await import('./routes/users')
 
   apiV1.route('/organizations', organizationsRouter)
   apiV1.route('/packages', packagesRouter)
   apiV1.route('/resources', resourcesRouter)
   apiV1.route('/groups', groupsRouter)
+  apiV1.route('/tags', tagsRouter)
+  apiV1.route('/users', usersRouter)
 
   app.route('/api/v1', apiV1)
 
