@@ -6,7 +6,7 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { ResourceService } from '../services/resource-service'
-import { createResourceSchema, updateResourceSchema } from '@kukan/shared'
+import { updateResourceSchema } from '@kukan/shared'
 import type { AppContext } from '../context'
 
 export const resourcesRouter = new Hono<{ Variables: AppContext }>()
