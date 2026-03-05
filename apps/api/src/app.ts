@@ -78,6 +78,10 @@ export async function createApp() {
 
   app.route('/api/v1', apiV1)
 
+  // CKAN-compatible API v3 routes
+  const { ckanCompatRouter } = await import('./routes/ckan-compat')
+  app.route('/api/3/action', ckanCompatRouter)
+
   // 404 handler
   app.notFound((c) => {
     return c.json(

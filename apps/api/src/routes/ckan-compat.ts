@@ -1,0 +1,198 @@
+/**
+ * KUKAN CKAN-Compatible API Routes
+ * /api/3/action/* endpoints (CKAN API v3 compatibility)
+ */
+
+import { Hono } from 'hono'
+import { PackageService } from '../services/package-service'
+import { ResourceService } from '../services/resource-service'
+import { OrganizationService } from '../services/organization-service'
+import { GroupService } from '../services/group-service'
+import { TagService } from '../services/tag-service'
+import type { AppContext } from '../context'
+
+export const ckanCompatRouter = new Hono<{ Variables: AppContext }>()
+
+/**
+ * CKAN-compatible response wrapper
+ */
+function ckanResponse<T>(result: T, c: any) {
+  return c.json({
+    success: true,
+    result,
+    help: `${c.req.url}`,
+  })
+}
+
+/**
+ * CKAN-compatible error response
+ */
+function ckanError(message: string, c: any, status = 400) {
+  return c.json(
+    {
+      success: false,
+      error: {
+        __type: 'Validation Error',
+        message,
+      },
+      help: `${c.req.url}`,
+    },
+    status
+  )
+}
+
+// ============================================================
+// Package Actions
+// ============================================================
+
+// package_list - List all packages (names only)
+ckanCompatRouter.get('/package_list', async (c) => {
+  const service = new PackageService(c.get('db'))
+  const result = await service.list({ offset: 0, limit: 1000 })
+  const names = result.items.map((pkg) => pkg.name)
+  return ckanResponse(names, c)
+})
+
+// package_show - Get package by ID or name
+ckanCompatRouter.get('/package_show', async (c) => {
+  const id = c.req.query('id')
+  if (!id) {
+    return ckanError('Missing parameter: id', c)
+  }
+
+  const service = new PackageService(c.get('db'))
+  try {
+    const pkg = await service.getByNameOrId(id)
+    return ckanResponse(pkg, c)
+  } catch (err: any) {
+    return ckanError(err.message || 'Package not found', c, 404)
+  }
+})
+
+// package_search - Search packages
+ckanCompatRouter.get('/package_search', async (c) => {
+  const q = c.req.query('q') || ''
+  const offset = parseInt(c.req.query('start') || '0', 10)
+  const limit = parseInt(c.req.query('rows') || '20', 10)
+
+  const searchAdapter = c.get('search')
+  const result = await searchAdapter.search({ q, offset, limit })
+
+  return ckanResponse(
+    {
+      count: result.total,
+      results: result.items,
+    },
+    c
+  )
+})
+
+// ============================================================
+// Resource Actions
+// ============================================================
+
+// resource_show - Get resource by ID
+ckanCompatRouter.get('/resource_show', async (c) => {
+  const id = c.req.query('id')
+  if (!id) {
+    return ckanError('Missing parameter: id', c)
+  }
+
+  const service = new ResourceService(c.get('db'))
+  try {
+    const resource = await service.getById(id)
+    if (!resource) {
+      return ckanError('Resource not found', c, 404)
+    }
+    return ckanResponse(resource, c)
+  } catch (err: any) {
+    return ckanError(err.message || 'Resource not found', c, 404)
+  }
+})
+
+// ============================================================
+// Organization Actions
+// ============================================================
+
+// organization_list - List all organizations (names only)
+ckanCompatRouter.get('/organization_list', async (c) => {
+  const service = new OrganizationService(c.get('db'))
+  const result = await service.list({ offset: 0, limit: 1000 })
+  const names = result.items.map((org) => org.name)
+  return ckanResponse(names, c)
+})
+
+// organization_show - Get organization by ID or name
+ckanCompatRouter.get('/organization_show', async (c) => {
+  const id = c.req.query('id')
+  if (!id) {
+    return ckanError('Missing parameter: id', c)
+  }
+
+  const service = new OrganizationService(c.get('db'))
+  try {
+    const org = await service.getByNameOrId(id)
+    return ckanResponse(org, c)
+  } catch (err: any) {
+    return ckanError(err.message || 'Organization not found', c, 404)
+  }
+})
+
+// ============================================================
+// Group Actions
+// ============================================================
+
+// group_list - List all groups (names only)
+ckanCompatRouter.get('/group_list', async (c) => {
+  const service = new GroupService(c.get('db'))
+  const result = await service.list({ offset: 0, limit: 1000 })
+  const names = result.items.map((grp) => grp.name)
+  return ckanResponse(names, c)
+})
+
+// group_show - Get group by ID or name
+ckanCompatRouter.get('/group_show', async (c) => {
+  const id = c.req.query('id')
+  if (!id) {
+    return ckanError('Missing parameter: id', c)
+  }
+
+  const service = new GroupService(c.get('db'))
+  try {
+    const grp = await service.getByNameOrId(id)
+    return ckanResponse(grp, c)
+  } catch (err: any) {
+    return ckanError(err.message || 'Group not found', c, 404)
+  }
+})
+
+// ============================================================
+// Tag Actions
+// ============================================================
+
+// tag_list - List all tags (names only)
+ckanCompatRouter.get('/tag_list', async (c) => {
+  const service = new TagService(c.get('db'))
+  const result = await service.list({ offset: 0, limit: 1000 })
+  const names = result.items.map((tag) => tag.name)
+  return ckanResponse(names, c)
+})
+
+// tag_show - Get tag by ID
+ckanCompatRouter.get('/tag_show', async (c) => {
+  const id = c.req.query('id')
+  if (!id) {
+    return ckanError('Missing parameter: id', c)
+  }
+
+  const service = new TagService(c.get('db'))
+  try {
+    const tag = await service.getById(id)
+    if (!tag) {
+      return ckanError('Tag not found', c, 404)
+    }
+    return ckanResponse(tag, c)
+  } catch (err: any) {
+    return ckanError(err.message || 'Tag not found', c, 404)
+  }
+})
