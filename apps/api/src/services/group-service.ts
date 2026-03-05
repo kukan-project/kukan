@@ -32,24 +32,25 @@ export class GroupService {
   async list(params: PaginationParams & { q?: string }) {
     const { offset = 0, limit = 20, q } = params
 
-    let query = this.db.select().from(group)
+    const conditions = [eq(group.state, 'active')]
 
     if (q) {
-      query = query.where(
+      conditions.push(
         or(
           ilike(group.name, `%${q}%`),
           ilike(group.title, `%${q}%`),
           ilike(group.description, `%${q}%`)
-        )
-      ) as any
+        )!
+      )
     }
 
-    query = query
-      .where(eq(group.state, 'active'))
+    const items = await this.db
+      .select()
+      .from(group)
+      .where(and(...conditions))
       .limit(limit)
-      .offset(offset) as any
+      .offset(offset)
 
-    const items = await query
     const total = items.length // TODO: Get actual count
 
     return {
@@ -57,7 +58,7 @@ export class GroupService {
       total,
       offset,
       limit,
-    } as PaginatedResult<typeof items[0]>
+    } as PaginatedResult<(typeof items)[0]>
   }
 
   async getByNameOrId(nameOrId: string) {

@@ -3,7 +3,7 @@
  * /api/3/action/* endpoints (CKAN API v3 compatibility)
  */
 
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { PackageService } from '../services/package-service'
 import { ResourceService } from '../services/resource-service'
 import { OrganizationService } from '../services/organization-service'
@@ -16,7 +16,7 @@ export const ckanCompatRouter = new Hono<{ Variables: AppContext }>()
 /**
  * CKAN-compatible response wrapper
  */
-function ckanResponse<T>(result: T, c: any) {
+function ckanResponse<T>(result: T, c: Context<{ Variables: AppContext }>) {
   return c.json({
     success: true,
     result,
@@ -27,7 +27,7 @@ function ckanResponse<T>(result: T, c: any) {
 /**
  * CKAN-compatible error response
  */
-function ckanError(message: string, c: any, status = 400) {
+function ckanError(message: string, c: Context<{ Variables: AppContext }>, statusCode: 400 | 404 | 500 = 400) {
   return c.json(
     {
       success: false,
@@ -37,7 +37,7 @@ function ckanError(message: string, c: any, status = 400) {
       },
       help: `${c.req.url}`,
     },
-    status
+    statusCode
   )
 }
 
@@ -64,8 +64,9 @@ ckanCompatRouter.get('/package_show', async (c) => {
   try {
     const pkg = await service.getByNameOrId(id)
     return ckanResponse(pkg, c)
-  } catch (err: any) {
-    return ckanError(err.message || 'Package not found', c, 404)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Package not found'
+    return ckanError(message, c, 404)
   }
 })
 
@@ -105,8 +106,9 @@ ckanCompatRouter.get('/resource_show', async (c) => {
       return ckanError('Resource not found', c, 404)
     }
     return ckanResponse(resource, c)
-  } catch (err: any) {
-    return ckanError(err.message || 'Resource not found', c, 404)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Resource not found'
+    return ckanError(message, c, 404)
   }
 })
 
@@ -133,8 +135,9 @@ ckanCompatRouter.get('/organization_show', async (c) => {
   try {
     const org = await service.getByNameOrId(id)
     return ckanResponse(org, c)
-  } catch (err: any) {
-    return ckanError(err.message || 'Organization not found', c, 404)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Organization not found'
+    return ckanError(message, c, 404)
   }
 })
 
@@ -161,8 +164,9 @@ ckanCompatRouter.get('/group_show', async (c) => {
   try {
     const grp = await service.getByNameOrId(id)
     return ckanResponse(grp, c)
-  } catch (err: any) {
-    return ckanError(err.message || 'Group not found', c, 404)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Group not found'
+    return ckanError(message, c, 404)
   }
 })
 
@@ -192,7 +196,8 @@ ckanCompatRouter.get('/tag_show', async (c) => {
       return ckanError('Tag not found', c, 404)
     }
     return ckanResponse(tag, c)
-  } catch (err: any) {
-    return ckanError(err.message || 'Tag not found', c, 404)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Tag not found'
+    return ckanError(message, c, 404)
   }
 })

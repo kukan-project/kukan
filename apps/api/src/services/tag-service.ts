@@ -14,7 +14,7 @@ export class TagService {
   async list(params: PaginationParams & { q?: string }) {
     const { offset = 0, limit = 100, q } = params
 
-    let query = this.db
+    const baseQuery = this.db
       .select({
         id: tag.id,
         name: tag.name,
@@ -24,14 +24,12 @@ export class TagService {
       .from(tag)
       .leftJoin(packageTag, eq(tag.id, packageTag.tagId))
       .groupBy(tag.id, tag.name, tag.vocabularyId)
+      .$dynamic()
 
-    if (q) {
-      query = query.where(ilike(tag.name, `%${q}%`)) as any
-    }
+    const items = q
+      ? await baseQuery.where(ilike(tag.name, `%${q}%`)).limit(limit).offset(offset)
+      : await baseQuery.limit(limit).offset(offset)
 
-    query = query.limit(limit).offset(offset) as any
-
-    const items = await query
     const total = items.length // TODO: Get actual count
 
     return {

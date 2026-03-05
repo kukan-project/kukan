@@ -16,7 +16,7 @@ export const errorHandler: ErrorHandler = (err, c) => {
         detail: err.message,
         ...(err.details && { details: err.details }),
       },
-      err.status as any
+      { status: err.status }
     )
   }
 

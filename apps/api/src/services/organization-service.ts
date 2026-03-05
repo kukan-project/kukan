@@ -30,24 +30,25 @@ export class OrganizationService {
   async list(params: PaginationParams & { q?: string }) {
     const { offset = 0, limit = 20, q } = params
 
-    let query = this.db.select().from(organization)
+    const conditions = [eq(organization.state, 'active')]
 
     if (q) {
-      query = query.where(
+      conditions.push(
         or(
           ilike(organization.name, `%${q}%`),
           ilike(organization.title, `%${q}%`),
           ilike(organization.description, `%${q}%`)
-        )
-      ) as any
+        )!
+      )
     }
 
-    query = query
-      .where(eq(organization.state, 'active'))
+    const items = await this.db
+      .select()
+      .from(organization)
+      .where(and(...conditions))
       .limit(limit)
-      .offset(offset) as any
+      .offset(offset)
 
-    const items = await query
     const total = items.length // TODO: Get actual count
 
     return {
@@ -55,7 +56,7 @@ export class OrganizationService {
       total,
       offset,
       limit,
-    } as PaginatedResult<typeof items[0]>
+    } as PaginatedResult<(typeof items)[0]>
   }
 
   async getByNameOrId(nameOrId: string) {
