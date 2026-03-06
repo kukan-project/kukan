@@ -7,11 +7,12 @@ import { pgTable, uuid, text, timestamp } from 'drizzle-orm/pg-core'
 import { user } from './user'
 
 export const session = pgTable('session', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('userId')
+  id: text('id').primaryKey(),
+  userId: text('userId')
     .notNull()
     .references(() => user.id, { onDelete: 'cascade' }),
   expiresAt: timestamp('expiresAt', { withTimezone: true }).notNull(),
+  token: text('token').notNull().unique(),
   ipAddress: text('ipAddress'),
   userAgent: text('userAgent'),
   createdAt: timestamp('createdAt', { withTimezone: true }).defaultNow().notNull(),
@@ -19,8 +20,8 @@ export const session = pgTable('session', {
 })
 
 export const account = pgTable('account', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('userId')
+  id: text('id').primaryKey(),
+  userId: text('userId')
     .notNull()
     .references(() => user.id, { onDelete: 'cascade' }),
   accountId: text('accountId').notNull(),

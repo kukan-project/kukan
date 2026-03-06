@@ -8,6 +8,20 @@
       "when": 1772500319324,
       "tag": "0000_robust_crusher_hogan",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1772691877651,
+      "tag": "0001_bitter_bedlam",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1772695278703,
+      "tag": "0002_orange_cloak",
+      "breakpoints": true
     }
   ]
 }

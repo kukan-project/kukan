@@ -3,13 +3,13 @@
  * Integrated with Better Auth user table
  */
 
-import { pgTable, uuid, varchar, text, timestamp, boolean, index } from 'drizzle-orm/pg-core'
+import { pgTable, varchar, text, timestamp, boolean, index } from 'drizzle-orm/pg-core'
 
 export const user = pgTable(
   'user',
   {
-    // Better Auth required fields
-    id: uuid('id').primaryKey().defaultRandom(),
+    // Better Auth required fields (using text ID for Better Auth compatibility)
+    id: text('id').primaryKey(),
     email: varchar('email', { length: 200 }).unique().notNull(),
     emailVerified: boolean('emailVerified').default(false).notNull(),
     name: varchar('name', { length: 100 }).unique().notNull(),

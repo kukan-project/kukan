@@ -3,14 +3,14 @@
  * Activity feed for tracking user and system actions
  */
 
-import { pgTable, uuid, varchar, jsonb, timestamp, index } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, text, jsonb, timestamp, index } from 'drizzle-orm/pg-core'
 import { user } from './user'
 
 export const activity = pgTable(
   'activity',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    userId: uuid('user_id').references(() => user.id),
+    userId: text('user_id').references(() => user.id),
     objectId: uuid('object_id').notNull(),
     objectType: varchar('object_type', { length: 50 }).notNull(),
     activityType: varchar('activity_type', { length: 100 }).notNull(),

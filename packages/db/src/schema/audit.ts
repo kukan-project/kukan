@@ -3,7 +3,7 @@
  * Replacement for *_revision tables in CKAN
  */
 
-import { pgTable, bigserial, uuid, varchar, jsonb, timestamp, index } from 'drizzle-orm/pg-core'
+import { pgTable, bigserial, uuid, varchar, text, jsonb, timestamp, index } from 'drizzle-orm/pg-core'
 import { user } from './user'
 
 export const auditLog = pgTable(
@@ -13,7 +13,7 @@ export const auditLog = pgTable(
     entityType: varchar('entity_type', { length: 50 }).notNull(),
     entityId: uuid('entity_id').notNull(),
     action: varchar('action', { length: 20 }).notNull(),
-    userId: uuid('user_id').references(() => user.id),
+    userId: text('user_id').references(() => user.id),
     changes: jsonb('changes').$type<Record<string, unknown>>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },

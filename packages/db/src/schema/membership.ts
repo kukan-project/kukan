@@ -3,7 +3,7 @@
  * user_org_membership, user_group_membership, package_group tables
  */
 
-import { pgTable, uuid, varchar, timestamp, unique } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, text, timestamp, unique } from 'drizzle-orm/pg-core'
 import { user } from './user'
 import { organization } from './organization'
 import { group } from './group'
@@ -13,7 +13,7 @@ export const userOrgMembership = pgTable(
   'user_org_membership',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    userId: uuid('user_id')
+    userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     organizationId: uuid('organization_id')
@@ -29,7 +29,7 @@ export const userGroupMembership = pgTable(
   'user_group_membership',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    userId: uuid('user_id')
+    userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     groupId: uuid('group_id')

@@ -51,9 +51,15 @@ export async function createApp() {
     return c.json({ status: 'ok', timestamp: new Date().toISOString() })
   })
 
-  // Better Auth endpoints
-  app.on(['POST', 'GET'], '/api/auth/**', (c) => {
-    return auth.handler(c.req.raw)
+  // Better Auth endpoints - handle all /api/auth/** routes
+  app.use('*', async (c, next) => {
+    if (c.req.path.startsWith('/api/auth/')) {
+      console.log('[Better Auth] Handling request:', c.req.method, c.req.path)
+      const response = await auth.handler(c.req.raw)
+      console.log('[Better Auth] Response status:', response.status)
+      return response
+    }
+    return next()
   })
 
   // API v1 routes

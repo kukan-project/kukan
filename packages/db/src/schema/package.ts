@@ -25,7 +25,7 @@ export const packageTable = pgTable(
     type: varchar('type', { length: 100 }).default('dataset'),
     ownerOrg: uuid('owner_org').references(() => organization.id),
     private: boolean('private').default(false).notNull(),
-    creatorUserId: uuid('creator_user_id').references(() => user.id),
+    creatorUserId: text('creator_user_id').references(() => user.id),
     extras: jsonb('extras').$type<Record<string, unknown>>().default({}),
 
     // New feature fields (Phase 1: nullable, used in later phases)
