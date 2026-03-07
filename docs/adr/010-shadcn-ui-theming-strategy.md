@@ -112,7 +112,7 @@ CKAN のテンプレート階層（デフォルト → エクステンション 
     /* shadcn/ui デフォルト変数 */
     --background: 0 0% 100%;
     --foreground: 222.2 47.4% 11.2%;
-    --primary: 221.2 83.2% 53.3%;      /* KUKAN Blue */
+    --primary: 221.2 83.2% 53.3%; /* KUKAN Blue */
     --secondary: 210 40% 96.1%;
     --radius: 0.5rem;
 
@@ -147,17 +147,19 @@ export default function RootLayout({ children }) {
 ```css
 /* https://tokyo.example.jp/kukan-theme.css */
 :root {
-  --primary: 0 72% 51%;              /* 東京都の赤 */
+  --primary: 0 72% 51%; /* 東京都の赤 */
   --kukan-header-height: 5rem;
 }
 ```
 
 **メリット:**
+
 - ビルド不要
 - シンプルなデプロイ（CSS ファイルをホスティングするだけ）
 - ほとんどのブランディング要件をカバー（色、スペーシング、タイポグラフィ）
 
 **制約:**
+
 - コンポーネント構造やレイアウトは変更不可
 
 #### Tier 2: Theme Package（Phase 2+）
@@ -200,11 +202,13 @@ export function Header() {
 ```
 
 **メリット:**
+
 - TypeScript の型安全性を維持
 - 部分的オーバーライド（必要な部分だけ変更）
 - コンポーネントレベルのカスタマイズ
 
 **トレードオフ:**
+
 - ビルドステップが必要
 - 自治体側に基本的な Node.js 知識が必要
 
@@ -226,23 +230,27 @@ export default function RootLayout({ children }) {
 ```
 
 **実装を延期する条件:**
+
 - 複数の自治体からカスタム機能要望が出るまで
 - 拡張性ニーズの明確なパターンが見えるまで
 
 ### 変数命名規則
 
 **shadcn/ui 変数**（そのまま使用）:
+
 - `--background`, `--foreground`
 - `--primary`, `--secondary`, `--muted`, `--accent`
 - `--border`, `--input`, `--ring`
 - `--radius`
 
 **KUKAN 固有変数**（必要な時のみ追加）:
+
 - プレフィックス: `--kukan-`
 - 例: `--kukan-header-height`, `--kukan-logo-height`
 - 原則: **YAGNI**（You Ain't Gonna Need It） - 実際に必要になってから追加
 
 **避けるべきこと:**
+
 - ❌ 過剰設計: 100個以上の変数を事前定義
 - ❌ 重複管理: Tailwind config と CSS Variables の二重管理
 - ❌ 未使用変数: 「念のため」で変数を作成
@@ -250,6 +258,7 @@ export default function RootLayout({ children }) {
 ### ドキュメント要件
 
 `docs/customization.md` を作成し、以下を記載:
+
 1. 利用可能な CSS 変数とその効果
 2. サンプルテーマ CSS ファイル
 3. Tier 2 Theme Package ガイド（実装時）
@@ -282,6 +291,7 @@ export default function RootLayout({ children }) {
 ### Phase 1（現在）:
 
 1. `packages/ui` を shadcn/ui でセットアップ
+
    ```bash
    cd packages/ui
    npx shadcn@latest init

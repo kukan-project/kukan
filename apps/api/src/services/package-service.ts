@@ -50,7 +50,7 @@ export class PackageService {
       total,
       offset,
       limit,
-    } as PaginatedResult<typeof items[0]>
+    } as PaginatedResult<(typeof items)[0]>
   }
 
   async getByNameOrId(nameOrId: string) {

@@ -19,11 +19,7 @@ export class S3StorageAdapter implements StorageAdapter {
     // Stub implementation
   }
 
-  async upload(
-    _key: string,
-    _body: Buffer | Readable,
-    _meta?: ObjectMeta
-  ): Promise<void> {
+  async upload(_key: string, _body: Buffer | Readable, _meta?: ObjectMeta): Promise<void> {
     throw new Error('S3StorageAdapter not implemented yet (Phase 5)')
   }
 

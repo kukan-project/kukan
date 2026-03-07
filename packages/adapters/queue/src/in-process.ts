@@ -19,8 +19,7 @@ interface StoredJob<T = unknown> {
 
 export class InProcessQueueAdapter implements QueueAdapter {
   private jobs: Map<string, StoredJob> = new Map()
-  private handlers: Map<string, (job: Job<unknown>) => Promise<void>> =
-    new Map()
+  private handlers: Map<string, (job: Job<unknown>) => Promise<void>> = new Map()
   private running = false
   private processingInterval?: NodeJS.Timeout
 
@@ -59,10 +58,7 @@ export class InProcessQueueAdapter implements QueueAdapter {
     }
   }
 
-  async process<T>(
-    type: string,
-    handler: (job: Job<T>) => Promise<void>
-  ): Promise<void> {
+  async process<T>(type: string, handler: (job: Job<T>) => Promise<void>): Promise<void> {
     this.handlers.set(type, handler as (job: Job<unknown>) => Promise<void>)
 
     if (!this.running) {
@@ -82,9 +78,7 @@ export class InProcessQueueAdapter implements QueueAdapter {
   }
 
   private async processPendingJobs(): Promise<void> {
-    const pendingJobs = Array.from(this.jobs.values()).filter(
-      (job) => job.status === 'pending'
-    )
+    const pendingJobs = Array.from(this.jobs.values()).filter((job) => job.status === 'pending')
 
     for (const job of pendingJobs) {
       void this.processJob(job)
@@ -112,8 +106,7 @@ export class InProcessQueueAdapter implements QueueAdapter {
       storedJob.status = 'completed'
     } catch (error) {
       storedJob.status = 'failed'
-      storedJob.error =
-        error instanceof Error ? error.message : 'Unknown error'
+      storedJob.error = error instanceof Error ? error.message : 'Unknown error'
     } finally {
       storedJob.updatedAt = new Date()
     }

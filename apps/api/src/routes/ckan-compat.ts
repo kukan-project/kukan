@@ -27,7 +27,11 @@ function ckanResponse<T>(result: T, c: Context<{ Variables: AppContext }>) {
 /**
  * CKAN-compatible error response
  */
-function ckanError(message: string, c: Context<{ Variables: AppContext }>, statusCode: 400 | 404 | 500 = 400) {
+function ckanError(
+  message: string,
+  c: Context<{ Variables: AppContext }>,
+  statusCode: 400 | 404 | 500 = 400
+) {
   return c.json(
     {
       success: false,

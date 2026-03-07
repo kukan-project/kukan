@@ -26,10 +26,7 @@ export class SQSQueueAdapter implements QueueAdapter {
     throw new Error('SQSQueueAdapter not implemented yet (Phase 5)')
   }
 
-  async process<T>(
-    _type: string,
-    _handler: (job: Job<T>) => Promise<void>
-  ): Promise<void> {
+  async process<T>(_type: string, _handler: (job: Job<T>) => Promise<void>): Promise<void> {
     throw new Error('SQSQueueAdapter not implemented yet (Phase 5)')
   }
 

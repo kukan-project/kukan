@@ -18,5 +18,8 @@ export const organization = pgTable(
     created: timestamp('created', { withTimezone: true }).defaultNow().notNull(),
     updated: timestamp('updated', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index('idx_organization_name').on(table.name), index('idx_organization_state').on(table.state)]
+  (table) => [
+    index('idx_organization_name').on(table.name),
+    index('idx_organization_state').on(table.state),
+  ]
 )

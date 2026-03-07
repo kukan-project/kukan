@@ -3,7 +3,17 @@
  * CKAN-compatible resource table with extended fields
  */
 
-import { pgTable, uuid, text, varchar, bigint, integer, jsonb, timestamp, index } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  uuid,
+  text,
+  varchar,
+  bigint,
+  integer,
+  jsonb,
+  timestamp,
+  index,
+} from 'drizzle-orm/pg-core'
 import { packageTable } from './package'
 
 export const resource = pgTable(

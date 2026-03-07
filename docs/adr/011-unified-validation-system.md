@@ -45,11 +45,13 @@
 ### A) 現状維持（Zod + Service レイヤー）
 
 **メリット:**
+
 - シンプル
 - Zod の標準的な使い方
 - 学習コストが低い
 
 **デメリット:**
+
 - 多言語対応が困難
 - フロントエンド・バックエンドでの重複
 - バリデーション層の責務が不明確
@@ -57,10 +59,12 @@
 ### B) class-validator（NestJS スタイル）
 
 **メリット:**
+
 - デコレーターベースで直感的
 - NestJS との親和性が高い
 
 **デメリット:**
+
 - Zod の型推論の恩恵を失う
 - React Server Components との相性が悪い
 - すでに Zod を採用済み（移行コスト大）
@@ -68,6 +72,7 @@
 ### C) Laravel FormRequest 風の統一バリデーションシステム（提案）
 
 **メリット:**
+
 - バリデーションルールを一元管理
 - 多言語対応が容易
 - フロントエンド・バックエンドで同じコードを使用
@@ -75,6 +80,7 @@
 - Zod の型安全性を維持
 
 **デメリット:**
+
 - 追加の抽象化レイヤーが必要
 - 学習コストがやや増加
 - Phase 1 での実装は時期尚早
@@ -113,7 +119,12 @@ export const Rules = {
   },
 
   name: {
-    dataset: () => z.string().min(2).max(100).regex(/^[a-z0-9-_]+$/),
+    dataset: () =>
+      z
+        .string()
+        .min(2)
+        .max(100)
+        .regex(/^[a-z0-9-_]+$/),
     tag: () => z.string().min(1).max(200),
   },
 
@@ -202,18 +213,24 @@ function validateRequest<T>(RequestClass: new (locale: Locale) => BaseRequest<T>
 
     // 1. 形式バリデーション
     const result = validator.safeParse(await c.req.json())
-    if (!result.success) { /* エラーレスポンス */ }
+    if (!result.success) {
+      /* エラーレスポンス */
+    }
 
     // 2. 認可チェック
     if (validator.authorize) {
       const authorized = await validator.authorize(result.data, { userId: c.get('user')?.id })
-      if (!authorized) { /* 403 レスポンス */ }
+      if (!authorized) {
+        /* 403 レスポンス */
+      }
     }
 
     // 3. カスタムバリデーション
     if (validator.withValidator) {
       const errors = await validator.withValidator(result.data)
-      if (errors) { /* 422 レスポンス */ }
+      if (errors) {
+        /* 422 レスポンス */
+      }
     }
 
     c.set('validated', result.data)
@@ -250,7 +267,9 @@ export default function CreatePackagePage() {
     }
 
     // サーバーに送信
-    await fetch('/api/v1/packages', { /* ... */ })
+    await fetch('/api/v1/packages', {
+      /* ... */
+    })
   }
 }
 ```
@@ -364,6 +383,7 @@ export default function CreatePackagePage() {
    - パフォーマンスへの影響
 
 **再検討タイミング:**
+
 - Phase 2 で apps/web 実装開始時
 - 多言語対応の需要が明確になった時
 - バリデーションエラーのユーザビリティ改善が必要になった時

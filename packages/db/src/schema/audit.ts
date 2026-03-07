@@ -3,7 +3,16 @@
  * Replacement for *_revision tables in CKAN
  */
 
-import { pgTable, bigserial, uuid, varchar, text, jsonb, timestamp, index } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  bigserial,
+  uuid,
+  varchar,
+  text,
+  jsonb,
+  timestamp,
+  index,
+} from 'drizzle-orm/pg-core'
 import { user } from './user'
 
 export const auditLog = pgTable(

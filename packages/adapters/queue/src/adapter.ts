@@ -19,10 +19,7 @@ export interface QueueAdapter {
   /**
    * Start processing jobs with a handler function
    */
-  process<T>(
-    type: string,
-    handler: (job: Job<T>) => Promise<void>
-  ): Promise<void>
+  process<T>(type: string, handler: (job: Job<T>) => Promise<void>): Promise<void>
 
   /**
    * Stop processing jobs

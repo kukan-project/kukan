@@ -21,11 +21,7 @@ export class LocalStorageAdapter implements StorageAdapter {
     this.basePath = config.basePath
   }
 
-  async upload(
-    key: string,
-    body: Buffer | Readable,
-    _meta?: ObjectMeta
-  ): Promise<void> {
+  async upload(key: string, body: Buffer | Readable, _meta?: ObjectMeta): Promise<void> {
     const filePath = join(this.basePath, key)
     const dir = dirname(filePath)
 

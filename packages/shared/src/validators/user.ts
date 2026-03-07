@@ -10,7 +10,10 @@ export const createUserSchema = z.object({
     .string()
     .min(2)
     .max(100)
-    .regex(/^[a-z0-9-_]+$/, 'Name must contain only lowercase letters, numbers, hyphens, and underscores'),
+    .regex(
+      /^[a-z0-9-_]+$/,
+      'Name must contain only lowercase letters, numbers, hyphens, and underscores'
+    ),
   email: z.string().email().max(200),
   display_name: z.string().optional(),
   password: z.string().min(8).optional(), // Optional for OIDC users

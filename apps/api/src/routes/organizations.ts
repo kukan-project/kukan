@@ -10,7 +10,11 @@ import { OrganizationService } from '../services/organization-service'
 import type { AppContext } from '../context'
 
 const createOrganizationSchema = z.object({
-  name: z.string().min(2).max(100).regex(/^[a-z0-9-_]+$/),
+  name: z
+    .string()
+    .min(2)
+    .max(100)
+    .regex(/^[a-z0-9-_]+$/),
   title: z.string().optional(),
   description: z.string().optional(),
   imageUrl: z.string().url().optional(),
@@ -47,19 +51,15 @@ organizationsRouter.get(
 )
 
 // POST /api/v1/organizations - Create organization
-organizationsRouter.post(
-  '/',
-  zValidator('json', createOrganizationSchema),
-  async (c) => {
-    const db = c.get('db')
-    const user = c.get('user')
-    const service = new OrganizationService(db)
-    const input = c.req.valid('json')
+organizationsRouter.post('/', zValidator('json', createOrganizationSchema), async (c) => {
+  const db = c.get('db')
+  const user = c.get('user')
+  const service = new OrganizationService(db)
+  const input = c.req.valid('json')
 
-    const created = await service.create(input, user?.id)
-    return c.json(created, 201)
-  }
-)
+  const created = await service.create(input, user?.id)
+  return c.json(created, 201)
+})
 
 // GET /api/v1/organizations/:nameOrId - Get organization by name or ID
 organizationsRouter.get('/:nameOrId', async (c) => {
@@ -72,19 +72,15 @@ organizationsRouter.get('/:nameOrId', async (c) => {
 })
 
 // PUT /api/v1/organizations/:nameOrId - Update organization
-organizationsRouter.put(
-  '/:nameOrId',
-  zValidator('json', updateOrganizationSchema),
-  async (c) => {
-    const db = c.get('db')
-    const service = new OrganizationService(db)
-    const nameOrId = c.req.param('nameOrId')
-    const input = c.req.valid('json')
+organizationsRouter.put('/:nameOrId', zValidator('json', updateOrganizationSchema), async (c) => {
+  const db = c.get('db')
+  const service = new OrganizationService(db)
+  const nameOrId = c.req.param('nameOrId')
+  const input = c.req.valid('json')
 
-    const updated = await service.update(nameOrId, input)
-    return c.json(updated)
-  }
-)
+  const updated = await service.update(nameOrId, input)
+  return c.json(updated)
+})
 
 // DELETE /api/v1/organizations/:nameOrId - Delete (soft) organization
 organizationsRouter.delete('/:nameOrId', async (c) => {

@@ -69,10 +69,7 @@ export class GroupService {
       .select()
       .from(group)
       .where(
-        and(
-          isUuid ? eq(group.id, nameOrId) : eq(group.name, nameOrId),
-          eq(group.state, 'active')
-        )
+        and(isUuid ? eq(group.id, nameOrId) : eq(group.name, nameOrId), eq(group.state, 'active'))
       )
       .limit(1)
 
@@ -85,11 +82,7 @@ export class GroupService {
 
   async create(input: CreateGroupInput) {
     // Validate name uniqueness
-    const existing = await this.db
-      .select()
-      .from(group)
-      .where(eq(group.name, input.name))
-      .limit(1)
+    const existing = await this.db.select().from(group).where(eq(group.name, input.name)).limit(1)
 
     if (existing.length > 0) {
       throw new ValidationError('Group name already exists', {

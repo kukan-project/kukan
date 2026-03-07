@@ -27,7 +27,10 @@ export class TagService {
       .$dynamic()
 
     const items = q
-      ? await baseQuery.where(ilike(tag.name, `%${q}%`)).limit(limit).offset(offset)
+      ? await baseQuery
+          .where(ilike(tag.name, `%${q}%`))
+          .limit(limit)
+          .offset(offset)
       : await baseQuery.limit(limit).offset(offset)
 
     const total = items.length // TODO: Get actual count
