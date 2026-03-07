@@ -20,10 +20,10 @@
     "paths": {
       "@kukan/shared": ["../packages/shared/src"],
       "@kukan/db": ["../packages/db/src"],
-      "@kukan/storage": ["../packages/storage/src"],
-      "@kukan/search": ["../packages/search/src"],
-      "@kukan/queue": ["../packages/queue/src"],
-      "@kukan/ai": ["../packages/ai/src"]
+      "@kukan/storage-adapter": ["../packages/adapters/storage/src"],
+      "@kukan/search-adapter": ["../packages/adapters/search/src"],
+      "@kukan/queue-adapter": ["../packages/adapters/queue/src"],
+      "@kukan/ai-adapter": ["../packages/adapters/ai/src"]
     }
   },
   "exclude": ["node_modules", "dist"]

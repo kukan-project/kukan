@@ -46,11 +46,12 @@ KUKAN/
 ├── packages/
 │   ├── db/                 # Drizzle スキーマ + マイグレーション + Better Auth テーブル
 │   ├── shared/             # 型定義、Zod バリデーション、lru-cache ユーティリティ
+│   ├── adapters/           # 環境差吸収アダプター（4つ）
+│   │   ├── search/         # @kukan/search-adapter (OpenSearch / PostgreSQL)
+│   │   ├── storage/        # @kukan/storage-adapter (S3 / MinIO / Local)
+│   │   ├── queue/          # @kukan/queue-adapter (SQS / InProcess)
+│   │   └── ai/             # @kukan/ai-adapter (Bedrock / OpenAI / Ollama / NoOp)
 │   ├── editor-core/        # Data Editor ビジネスロジック（アドオン）
-│   ├── search/             # SearchAdapter (OpenSearch / PostgreSQL)
-│   ├── storage/            # StorageAdapter (S3 / MinIO / Local)
-│   ├── queue/              # QueueAdapter (SQS / InProcess / BullMQ)
-│   ├── ai/                 # AIAdapter (Bedrock / OpenAI / Ollama / NoOp)
 │   ├── quality/            # Quality Monitor（リンク切れ、CSV検証、メタデータ監査、PII）
 │   ├── pipeline/           # Ingest パイプライン（ステップ + processResource）
 │   └── ui/                 # shadcn/ui 共有コンポーネント
@@ -92,7 +93,7 @@ KUKAN/
 
 - パッケージ間は `@kukan/パッケージ名` でインポート
   ```typescript
-  import { StorageAdapter } from '@kukan/storage'
+  import { StorageAdapter } from '@kukan/storage-adapter'
   import { db } from '@kukan/db'
   ```
 - 相対パスインポートはパッケージ内部のみ

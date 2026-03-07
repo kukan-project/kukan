@@ -32,7 +32,7 @@ v3設計では6つ以上のアダプター（Storage, Search, Cache, Queue, AI, 
 ## アダプター一覧
 
 ```typescript
-// packages/storage/src/adapter.ts
+// packages/adapters/storage/src/adapter.ts (@kukan/storage-adapter)
 interface StorageAdapter {
   upload(key: string, body: Buffer | Readable, meta?: ObjectMeta): Promise<void>
   download(key: string): Promise<Readable>
@@ -40,7 +40,7 @@ interface StorageAdapter {
   getSignedUrl(key: string, expiresIn?: number): Promise<string>
 }
 
-// packages/search/src/adapter.ts
+// packages/adapters/search/src/adapter.ts (@kukan/search-adapter)
 interface SearchAdapter {
   indexDataset(dataset: DatasetDoc): Promise<void>
   search(query: SearchQuery): Promise<SearchResult>
@@ -48,7 +48,7 @@ interface SearchAdapter {
   reindexAll(): Promise<void>
 }
 
-// packages/ai/src/adapter.ts
+// packages/adapters/ai/src/adapter.ts (@kukan/ai-adapter)
 interface AIAdapter {
   generateDescription(resource: ResourceMeta): Promise<string>
   suggestTags(content: string): Promise<string[]>
@@ -56,7 +56,7 @@ interface AIAdapter {
   embedText(text: string): Promise<number[]>
 }
 
-// packages/queue/src/adapter.ts
+// packages/adapters/queue/src/adapter.ts (@kukan/queue-adapter)
 interface QueueAdapter {
   enqueue<T>(job: Job<T>): Promise<string>
   process<T>(handler: (job: Job<T>) => Promise<void>): void

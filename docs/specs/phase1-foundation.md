@@ -348,10 +348,10 @@ export type Database = ReturnType<typeof createDb>
 
 Phase 1ではインターフェース定義と最小限の開発用実装のみ。
 
-### 4.1 packages/storage
+### 4.1 packages/adapters/storage (@kukan/storage-adapter)
 
 ```
-packages/storage/src/
+packages/adapters/storage/src/
 ├── adapter.ts          # StorageAdapter インターフェース
 ├── minio.ts            # MinIOStorageAdapter（開発用、Phase 1で実装）
 ├── local.ts            # LocalStorageAdapter（テスト用、Phase 1で実装）
@@ -361,10 +361,10 @@ packages/storage/src/
 
 Phase 1で実装: **MinIOStorageAdapter** + **LocalStorageAdapter**（テスト用）
 
-### 4.2 packages/search
+### 4.2 packages/adapters/search (@kukan/search-adapter)
 
 ```
-packages/search/src/
+packages/adapters/search/src/
 ├── adapter.ts          # SearchAdapter インターフェース
 ├── postgres.ts         # PostgresSearchAdapter（Phase 1で実装）
 ├── opensearch.ts       # OpenSearchAdapter（Phase 2で実装）
@@ -373,10 +373,10 @@ packages/search/src/
 
 Phase 1で実装: **PostgresSearchAdapter**（tsvector ベースのフォールバック検索）
 
-### 4.3 packages/queue
+### 4.3 packages/adapters/queue (@kukan/queue-adapter)
 
 ```
-packages/queue/src/
+packages/adapters/queue/src/
 ├── adapter.ts          # QueueAdapter インターフェース
 ├── in-process.ts       # InProcessQueueAdapter（Phase 1で実装）
 ├── sqs.ts              # SqsQueueAdapter（Phase 2で実装）
@@ -385,10 +385,10 @@ packages/queue/src/
 
 Phase 1で実装: **InProcessQueueAdapter**
 
-### 4.4 packages/ai
+### 4.4 packages/adapters/ai (@kukan/ai-adapter)
 
 ```
-packages/ai/src/
+packages/adapters/ai/src/
 ├── adapter.ts          # AIAdapter インターフェース
 ├── noop.ts             # NoOpAIAdapter（Phase 1で実装、全メソッドがダミー値返却）
 ├── bedrock.ts          # Phase 4
@@ -404,10 +404,10 @@ Phase 1で実装: **NoOpAIAdapter**（全メソッドがデフォルト値を返
 ```typescript
 // apps/api/src/adapters.ts
 import { loadEnv } from '@kukan/shared'
-import { MinIOStorageAdapter } from '@kukan/storage'
-import { PostgresSearchAdapter } from '@kukan/search'
-import { InProcessQueueAdapter } from '@kukan/queue'
-import { NoOpAIAdapter } from '@kukan/ai'
+import { MinIOStorageAdapter } from '@kukan/storage-adapter'
+import { PostgresSearchAdapter } from '@kukan/search-adapter'
+import { InProcessQueueAdapter } from '@kukan/queue-adapter'
+import { NoOpAIAdapter } from '@kukan/ai-adapter'
 
 export function createAdapters(env: Env) {
   return {

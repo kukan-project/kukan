@@ -1,5 +1,5 @@
 {
-  "name": "@kukan/search",
+  "name": "@kukan/search-adapter",
   "version": "0.1.0",
   "private": true,
   "description": "KUKAN search adapter (OpenSearch/PostgreSQL)",

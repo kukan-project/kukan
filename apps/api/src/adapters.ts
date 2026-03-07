@@ -4,10 +4,10 @@
  */
 
 import type { Env } from '@kukan/shared'
-import { MinIOStorageAdapter, LocalStorageAdapter } from '@kukan/storage'
-import { PostgresSearchAdapter } from '@kukan/search'
-import { InProcessQueueAdapter } from '@kukan/queue'
-import { NoOpAIAdapter } from '@kukan/ai'
+import { MinIOStorageAdapter, LocalStorageAdapter } from '@kukan/storage-adapter'
+import { PostgresSearchAdapter } from '@kukan/search-adapter'
+import { InProcessQueueAdapter } from '@kukan/queue-adapter'
+import { NoOpAIAdapter } from '@kukan/ai-adapter'
 
 export function createAdapters(env: Env) {
   // Storage adapter

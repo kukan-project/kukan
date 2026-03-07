@@ -4,10 +4,10 @@
  */
 
 import type { Database } from '@kukan/db'
-import type { StorageAdapter } from '@kukan/storage'
-import type { SearchAdapter } from '@kukan/search'
-import type { QueueAdapter } from '@kukan/queue'
-import type { AIAdapter } from '@kukan/ai'
+import type { StorageAdapter } from '@kukan/storage-adapter'
+import type { SearchAdapter } from '@kukan/search-adapter'
+import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { AIAdapter } from '@kukan/ai-adapter'
 import type { Env } from '@kukan/shared'
 
 export interface AppContext {

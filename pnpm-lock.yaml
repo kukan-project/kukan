@@ -42,24 +42,24 @@ importers:
       '@hono/node-server':
         specifier: ^1.14.0
         version: 1.19.9(hono@4.12.3)
-      '@kukan/ai':
+      '@kukan/ai-adapter':
         specifier: workspace:*
-        version: link:../../packages/ai
+        version: link:../../packages/adapters/ai
       '@kukan/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@kukan/queue':
+      '@kukan/queue-adapter':
         specifier: workspace:*
-        version: link:../../packages/queue
-      '@kukan/search':
+        version: link:../../packages/adapters/queue
+      '@kukan/search-adapter':
         specifier: workspace:*
-        version: link:../../packages/search
+        version: link:../../packages/adapters/search
       '@kukan/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@kukan/storage':
+      '@kukan/storage-adapter':
         specifier: workspace:*
-        version: link:../../packages/storage
+        version: link:../../packages/adapters/storage
       better-auth:
         specifier: ^1.1.9
         version: 1.5.1(@prisma/client@7.4.2(prisma@7.4.2(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3))(typescript@5.9.3))(drizzle-kit@0.31.9)(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.15)(@prisma/client@7.4.2(prisma@7.4.2(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3))(typescript@5.9.3))(@types/pg@8.18.0)(gel@2.2.0)(kysely@0.28.11)(mysql2@3.15.3)(pg@8.19.0)(postgres@3.4.7)(prisma@7.4.2(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)))(mongodb@7.1.0)(mysql2@3.15.3)(pg@8.19.0)(prisma@7.4.2(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vitest@2.1.9(@types/node@22.19.13))
@@ -86,17 +86,65 @@ importers:
         specifier: ^4.0.0
         version: 4.21.0
 
-  packages/ai:
+  packages/adapters/ai:
     dependencies:
       '@aws-sdk/client-bedrock-runtime':
         specifier: ^3.700.0
         version: 3.1000.0
       '@kukan/shared':
         specifier: workspace:*
-        version: link:../shared
+        version: link:../../shared
       openai:
         specifier: ^4.75.0
         version: 4.104.0(zod@3.25.76)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.13
+
+  packages/adapters/queue:
+    dependencies:
+      '@aws-sdk/client-sqs':
+        specifier: ^3.700.0
+        version: 3.1000.0
+      '@kukan/shared':
+        specifier: workspace:*
+        version: link:../../shared
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.13
+
+  packages/adapters/search:
+    dependencies:
+      '@kukan/db':
+        specifier: workspace:*
+        version: link:../../db
+      '@kukan/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      '@opensearch-project/opensearch':
+        specifier: ^3.0.0
+        version: 3.5.1
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.13
+
+  packages/adapters/storage:
+    dependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.700.0
+        version: 3.1000.0
+      '@aws-sdk/s3-request-presigner':
+        specifier: ^3.700.0
+        version: 3.1000.0
+      '@kukan/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      minio:
+        specifier: ^8.0.0
+        version: 8.0.7
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -127,35 +175,6 @@ importers:
         specifier: ^4.0.0
         version: 4.21.0
 
-  packages/queue:
-    dependencies:
-      '@aws-sdk/client-sqs':
-        specifier: ^3.700.0
-        version: 3.1000.0
-      '@kukan/shared':
-        specifier: workspace:*
-        version: link:../shared
-    devDependencies:
-      '@types/node':
-        specifier: ^22.0.0
-        version: 22.19.13
-
-  packages/search:
-    dependencies:
-      '@kukan/db':
-        specifier: workspace:*
-        version: link:../db
-      '@kukan/shared':
-        specifier: workspace:*
-        version: link:../shared
-      '@opensearch-project/opensearch':
-        specifier: ^3.0.0
-        version: 3.5.1
-    devDependencies:
-      '@types/node':
-        specifier: ^22.0.0
-        version: 22.19.13
-
   packages/shared:
     dependencies:
       lru-cache:
@@ -164,25 +183,6 @@ importers:
       zod:
         specifier: ^3.23.0
         version: 3.25.76
-    devDependencies:
-      '@types/node':
-        specifier: ^22.0.0
-        version: 22.19.13
-
-  packages/storage:
-    dependencies:
-      '@aws-sdk/client-s3':
-        specifier: ^3.700.0
-        version: 3.1000.0
-      '@aws-sdk/s3-request-presigner':
-        specifier: ^3.700.0
-        version: 3.1000.0
-      '@kukan/shared':
-        specifier: workspace:*
-        version: link:../shared
-      minio:
-        specifier: ^8.0.0
-        version: 8.0.7
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
