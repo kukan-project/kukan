@@ -27,6 +27,12 @@ export class ValidationError extends KukanError {
   }
 }
 
+export class UnauthorizedError extends KukanError {
+  constructor(message = 'Authentication required') {
+    super(message, 'UNAUTHORIZED', 401)
+  }
+}
+
 export class ForbiddenError extends KukanError {
   constructor(message = 'Forbidden') {
     super(message, 'FORBIDDEN', 403)

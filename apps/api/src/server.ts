@@ -7,8 +7,8 @@ import { serve } from '@hono/node-server'
 import { config } from 'dotenv'
 import { createApp } from './app'
 
-// Load .env file
-config()
+// Load .env file from project root
+config({ path: '../../.env' })
 
 const port = parseInt(process.env.PORT || '3000', 10)
 

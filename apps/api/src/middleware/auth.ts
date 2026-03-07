@@ -1,21 +1,23 @@
 /**
  * KUKAN Authentication Middleware
- * Validates session and API tokens
+ * Validates session cookies and API tokens (Bearer)
  */
 
 import type { Context, Next } from 'hono'
-import { ForbiddenError } from '@kukan/shared'
+import { UnauthorizedError, ForbiddenError } from '@kukan/shared'
 import type { Auth } from '../auth/auth'
+import { ApiTokenService } from '../services/api-token-service'
 
 /**
- * Optional authentication - adds user to context if authenticated
+ * Optional authentication - adds user to context if authenticated.
+ * Checks session cookie first, then Bearer API token.
  */
 export function optionalAuth(auth: Auth) {
   return async (c: Context, next: Next) => {
-    // Check for session cookie
-    const sessionToken = c.req.header('cookie')?.match(/session=([^;]+)/)?.[1]
+    // 1. Check for Better Auth session cookie
+    const hasCookie = c.req.header('cookie')?.includes('better-auth.session_token')
 
-    if (sessionToken) {
+    if (hasCookie) {
       try {
         const session = await auth.api.getSession({
           headers: c.req.raw.headers,
@@ -28,29 +30,48 @@ export function optionalAuth(auth: Auth) {
             name: session.user.name || session.user.email,
             sysadmin: false, // TODO: Get from database
           })
+          return next()
         }
       } catch (err) {
-        // Session invalid, continue without user
         console.warn('Invalid session:', err)
       }
     }
 
-    // TODO: Check for API token in Authorization header
-    // const apiToken = c.req.header('Authorization')?.replace('Bearer ', '')
+    // 2. Check for API token in Authorization header
+    const authHeader = c.req.header('Authorization')
+    if (authHeader?.startsWith('Bearer ')) {
+      const rawToken = authHeader.slice(7)
+      try {
+        const db = c.get('db')
+        const tokenService = new ApiTokenService(db)
+        const tokenUser = await tokenService.validate(rawToken)
+
+        if (tokenUser) {
+          c.set('user', {
+            id: tokenUser.id,
+            email: tokenUser.email,
+            name: tokenUser.name,
+            sysadmin: tokenUser.sysadmin,
+          })
+        }
+      } catch (err) {
+        console.warn('API token validation error:', err)
+      }
+    }
 
     await next()
   }
 }
 
 /**
- * Required authentication - throws error if not authenticated
+ * Required authentication - returns 401 if not authenticated
  */
 export function requireAuth(auth: Auth) {
   return async (c: Context, next: Next) => {
     await optionalAuth(auth)(c, async () => {
       const user = c.get('user')
       if (!user) {
-        throw new ForbiddenError('Authentication required')
+        throw new UnauthorizedError()
       }
       await next()
     })
