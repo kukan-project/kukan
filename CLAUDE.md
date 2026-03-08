@@ -40,20 +40,20 @@ KUKAN/
 ├── CLAUDE.md               # ← このファイル
 ├── apps/
 │   ├── api/                # Hono API サーバー + Better Auth
-│   ├── worker/             # Ingest Worker（SQS consumer、AWS環境のみ）          ※ Phase 2+
+│   ├── worker/             # Ingest Worker（SQS consumer、AWS環境のみ）          ※ Phase 3+
 │   ├── web/                # Next.js フロントエンド（カタログUI）                ※ Phase 2+
-│   └── editor/             # Data Editor UI（アドオン、独立デプロイ可能）        ※ Phase 3+
+│   └── editor/             # Data Editor UI（アドオン、独立デプロイ可能）        ※ Phase 7+
 ├── packages/
 │   ├── db/                 # Drizzle スキーマ + マイグレーション + Better Auth テーブル
 │   ├── shared/             # 型定義、Zod バリデーション、lru-cache ユーティリティ
 │   ├── adapters/           # 環境差吸収アダプター（4つ）
 │   │   ├── search/         # @kukan/search-adapter (OpenSearch / PostgreSQL)
-│   │   ├── storage/        # @kukan/storage-adapter (S3 / MinIO / Local)         ※ Phase 2+
-│   │   ├── queue/          # @kukan/queue-adapter (SQS / InProcess)              ※ Phase 2+
-│   │   └── ai/             # @kukan/ai-adapter (Bedrock / OpenAI / Ollama / NoOp)※ Phase 3+
-│   ├── editor-core/        # Data Editor ビジネスロジック（アドオン）             ※ Phase 3+
-│   ├── quality/            # Quality Monitor（リンク切れ、CSV検証、メタデータ監査、PII）※ Phase 3+
-│   ├── pipeline/           # Ingest パイプライン（ステップ + processResource）   ※ Phase 2+
+│   │   ├── storage/        # @kukan/storage-adapter (S3 / MinIO / Local)         ※ Phase 3+
+│   │   ├── queue/          # @kukan/queue-adapter (SQS / InProcess)              ※ Phase 3+
+│   │   └── ai/             # @kukan/ai-adapter (Bedrock / OpenAI / Ollama / NoOp)※ Phase 5+
+│   ├── editor-core/        # Data Editor ビジネスロジック（アドオン）             ※ Phase 7+
+│   ├── quality/            # Quality Monitor（リンク切れ、CSV検証、メタデータ監査、PII）※ Phase 4+
+│   ├── pipeline/           # Ingest パイプライン（ステップ + processResource）   ※ Phase 3+
 │   └── ui/                 # shadcn/ui 共有コンポーネント                        ※ Phase 2+
 ├── docs/
 │   ├── design-v4.md        # 設計書（全体像、参照用）
@@ -165,7 +165,9 @@ pnpm format        # Prettier フォーマット
 
 ## 現在のフェーズ
 
-**Phase 1: Foundation**（実装仕様書: `docs/specs/phase1-foundation.md`）
+**Phase 2: フロントエンド**（実装仕様書: `docs/specs/phase2-frontend.md`）
+
+- Phase 1: Foundation ✅ 完了
 
 ## よく使うコマンド（セットアップ後）
 

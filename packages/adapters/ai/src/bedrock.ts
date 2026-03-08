@@ -1,6 +1,6 @@
 /**
  * KUKAN Bedrock AI Adapter
- * AWS Bedrock implementation (Phase 4)
+ * AWS Bedrock implementation (Phase 5)
  */
 
 import { AIAdapter, CompleteOptions } from './adapter'
@@ -18,10 +18,10 @@ export class BedrockAIAdapter implements AIAdapter {
   }
 
   async complete(_prompt: string, _options?: CompleteOptions): Promise<string> {
-    throw new Error('BedrockAIAdapter not implemented yet (Phase 4)')
+    throw new Error('BedrockAIAdapter not implemented yet (Phase 5)')
   }
 
   async embed(_text: string): Promise<number[]> {
-    throw new Error('BedrockAIAdapter not implemented yet (Phase 4)')
+    throw new Error('BedrockAIAdapter not implemented yet (Phase 5)')
   }
 }

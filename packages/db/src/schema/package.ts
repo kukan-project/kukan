@@ -29,7 +29,7 @@ export const packageTable = pgTable(
     extras: jsonb('extras').$type<Record<string, unknown>>().default({}),
 
     // New feature fields (Phase 1: nullable, used in later phases)
-    qualityScore: text('quality_score'), // Phase 2: change to FLOAT
+    qualityScore: text('quality_score'), // Phase 4: change to FLOAT
     aiSummary: text('ai_summary'),
     aiTags: text('ai_tags'),
 

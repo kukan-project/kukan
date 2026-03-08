@@ -27,8 +27,8 @@ export function createAdapters(env: Env) {
       bucket: env.S3_BUCKET,
     })
   } else {
-    // S3 - Phase 2
-    throw new Error('S3 storage not implemented yet (Phase 2)')
+    // S3 - Phase 3
+    throw new Error('S3 storage not implemented yet (Phase 3)')
   }
 
   // Search adapter
@@ -38,8 +38,8 @@ export function createAdapters(env: Env) {
       connectionString: env.DATABASE_URL,
     })
   } else {
-    // OpenSearch - Phase 2
-    throw new Error('OpenSearch not implemented yet (Phase 2)')
+    // OpenSearch - Phase 3
+    throw new Error('OpenSearch not implemented yet (Phase 3)')
   }
 
   // Queue adapter
@@ -47,8 +47,8 @@ export function createAdapters(env: Env) {
   if (env.QUEUE_TYPE === 'in-process') {
     queue = new InProcessQueueAdapter()
   } else {
-    // SQS - Phase 2
-    throw new Error('SQS queue not implemented yet (Phase 2)')
+    // SQS - Phase 3
+    throw new Error('SQS queue not implemented yet (Phase 3)')
   }
 
   // AI adapter
@@ -56,8 +56,8 @@ export function createAdapters(env: Env) {
   if (env.AI_TYPE === 'none') {
     ai = new NoOpAIAdapter()
   } else {
-    // Bedrock/OpenAI/Ollama - Phase 4
-    throw new Error(`AI type ${env.AI_TYPE} not implemented yet (Phase 4)`)
+    // Bedrock/OpenAI/Ollama - Phase 5
+    throw new Error(`AI type ${env.AI_TYPE} not implemented yet (Phase 5)`)
   }
 
   return {

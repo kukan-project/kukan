@@ -2401,43 +2401,49 @@ ckanCompat.all('/api/3/action/:action', async (c) => {
 
 ## 17. 実装ロードマップ
 
-### Phase 1: Foundation（3ヶ月）
+### Phase 1: Foundation ✅
 
 - プロジェクトセットアップ（Turborepoモノレポ + pnpm workspaces）
 - DBスキーマ設計・マイグレーション（Drizzle ORM — `packages/db`）
 - インフラ抽象化レイヤー（StorageAdapter, SearchAdapter, AIAdapter, QueueAdapter）
-- コアCRUD API（package, resource, organization, user）
-- CKAN互換APIレイヤー（P1エンドポイント）
-- 認証基盤（Better Auth + OIDC — API Key + JWT + SSO）
+- コアCRUD API（package, resource, organization, group, tag, user）
+- CKAN互換APIレイヤー（P1エンドポイント10個）
+- 認証基盤（Better Auth — メール/パスワード + API Key + sysadminロール）
 - Docker Compose 開発環境
-- PostgreSQL全文検索（フォールバック）
+- PostgreSQL ILIKE 検索（フォールバック）
 - lru-cacheユーティリティ（`packages/shared`）
+- テスト基盤（Vitest — ユニット + 統合、194テスト）
 
-### Phase 2: Ingest & Quality Monitor（2ヶ月）
+### Phase 2: フロントエンド
+
+- Next.js 15 (App Router) + shadcn/ui + Tailwind CSS 4（`apps/web`）
+- データセット一覧・詳細・検索UI
+- 組織・グループ一覧・詳細UI
+- 管理画面（パッケージ/組織/グループ CRUD）
+- 認証UI（ログイン/登録 — Better Auth クライアント連携）
+- i18n 基盤（日本語/英語 — 構造のみ、翻訳は段階的追加）
+
+### Phase 3: Ingest & ファイルストレージ
 
 - Ingest Worker（QueueAdapter — SQS/InProcess + ステップ分割パイプライン）
 - スマートパーサー（日本語CSV対応）
 - プレビューJSON生成・S3保存
-- ファイルストレージ（S3互換 — Presigned URL対応）
+- ファイルアップロードUI + Presigned URL対応
 - PDF/Excel/画像のコンテンツ抽出
 - OpenSearch統合インデックス（リソース横断検索）
+- プレビューUI（テーブル・PDF・地図・画像）
+
+### Phase 4: Quality Monitor
+
 - **Quality Monitor 基盤**（`packages/quality`）
   - リンク切れ検出（HTTP HEAD巡回）
   - CSV形式エラーチェック（スマートパーサー再利用）
   - メタデータ完全性チェック
   - スケジューラー（node-cron / EventBridge）
   - quality_check / quality_score_history テーブル
-
-### Phase 3: フロントエンド（2ヶ月）
-
-- Next.js フロントエンド
-- データセット一覧・詳細・検索UI
-- プレビューUI（テーブル・PDF・地図・画像）
-- 管理画面
 - **品質ダッシュボード**（品質スコア推移、問題一覧、組織別レポート）
-- 多言語対応（i18n）
 
-### Phase 4: AI & 高度機能（3ヶ月）
+### Phase 5: AI & 高度機能
 
 - AIスキーマ推定・メタデータ自動生成
 - PII検出・公開前チェックフロー
@@ -2448,7 +2454,7 @@ ckanCompat.all('/api/3/action/:action', async (c) => {
 - 空間検索（geo_shape）
 - データ移行CLIツール
 
-### Phase 5: デプロイ & エコシステム（2ヶ月）
+### Phase 6: デプロイ & エコシステム
 
 - AWS App Runner デプロイ（CDK — API + Worker + SQS）
 - オンプレ Docker Compose 本番構成（Redis不要）
@@ -2457,7 +2463,7 @@ ckanCompat.all('/api/3/action/:action', async (c) => {
 - DCAT/DCAT-AP エクスポート
 - OpenAPI仕様自動生成
 
-### Phase 6: Data Editor — アドオン（3ヶ月）
+### Phase 7: Data Editor — アドオン
 
 - **`packages/editor-core`** ビジネスロジック
   - スキーマ定義・入力制約エンジン

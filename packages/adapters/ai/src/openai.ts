@@ -1,6 +1,6 @@
 /**
  * KUKAN OpenAI Adapter
- * OpenAI API implementation (Phase 4)
+ * OpenAI API implementation (Phase 5)
  */
 
 import { AIAdapter, CompleteOptions } from './adapter'
@@ -17,10 +17,10 @@ export class OpenAIAdapter implements AIAdapter {
   }
 
   async complete(_prompt: string, _options?: CompleteOptions): Promise<string> {
-    throw new Error('OpenAIAdapter not implemented yet (Phase 4)')
+    throw new Error('OpenAIAdapter not implemented yet (Phase 5)')
   }
 
   async embed(_text: string): Promise<number[]> {
-    throw new Error('OpenAIAdapter not implemented yet (Phase 4)')
+    throw new Error('OpenAIAdapter not implemented yet (Phase 5)')
   }
 }

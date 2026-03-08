@@ -95,7 +95,7 @@ export const auth = betterAuth({
     // セッション有効期間等の設定
     expiresIn: 60 * 60 * 24 * 7, // 7日
   },
-  // Phase 5 で追加:
+  // Phase 6 で追加:
   // plugins: [oidcClient({ ... })]
 })
 ```

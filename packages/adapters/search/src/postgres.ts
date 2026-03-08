@@ -1,7 +1,7 @@
 /**
  * KUKAN PostgreSQL Search Adapter
  * Phase 1: ILIKE-based search on package title/notes/name
- * Phase 2: pg_bigm for Japanese bigram indexing
+ * Phase 3: pg_bigm for Japanese bigram indexing
  */
 
 import { SearchQuery, SearchResult, DatasetDoc } from '@kukan/shared'
