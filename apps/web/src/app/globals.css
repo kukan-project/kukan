@@ -2,32 +2,32 @@
 @source '../../../../packages/ui/src/**/*.{ts,tsx}';
 
 :root {
-  /* shadcn/ui default light theme */
+  /* KUKAN brand colors — aligned with landing page */
   --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
+  --foreground: 214 44% 18%;
   --card: 0 0% 100%;
-  --card-foreground: 222.2 84% 4.9%;
+  --card-foreground: 214 44% 18%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222.2 84% 4.9%;
-  --primary: 222.2 47.4% 11.2%;
-  --primary-foreground: 210 40% 98%;
+  --popover-foreground: 214 44% 18%;
+  --primary: 214 81% 54%;
+  --primary-foreground: 0 0% 100%;
   --secondary: 210 40% 96%;
-  --secondary-foreground: 222.2 47.4% 11.2%;
+  --secondary-foreground: 214 44% 18%;
   --muted: 210 40% 96%;
-  --muted-foreground: 215.4 16.3% 46.9%;
+  --muted-foreground: 213 27% 40%;
   --accent: 210 40% 96%;
-  --accent-foreground: 222.2 47.4% 11.2%;
+  --accent-foreground: 214 44% 18%;
   --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 222.2 84% 4.9%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --ring: 214 81% 54%;
   --radius: 0.5rem;
 
   /* KUKAN-specific */
   --kukan-header-height: 64px;
   --kukan-logo-height: 32px;
-  --kukan-container-max-width: 1280px;
+  --kukan-container-max-width: 1200px;
 }
 
 @theme inline {
