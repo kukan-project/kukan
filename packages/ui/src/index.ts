@@ -12,6 +12,7 @@ export {
   CardFooter,
 } from './components/ui/card'
 export { Separator } from './components/ui/separator'
+export { Badge, badgeVariants } from './components/ui/badge'
 export {
   DropdownMenu,
   DropdownMenuPortal,

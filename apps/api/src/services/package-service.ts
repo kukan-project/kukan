@@ -5,7 +5,7 @@
 
 import { eq, ilike, and, or, sql, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { packageTable, tag, packageTag, organization } from '@kukan/db'
+import { packageTable, tag, packageTag, organization, resource } from '@kukan/db'
 import { NotFoundError, ValidationError, isUuid, escapeLike } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult } from '@kukan/shared'
 import type { CreatePackageInput, UpdatePackageInput, PatchPackageInput } from '@kukan/shared'
@@ -71,6 +71,40 @@ export class PackageService {
     }
 
     return result
+  }
+
+  async getDetailByNameOrId(nameOrId: string) {
+    const pkg = await this.getByNameOrId(nameOrId)
+
+    const resources = await this.db
+      .select()
+      .from(resource)
+      .where(and(eq(resource.packageId, pkg.id), eq(resource.state, 'active')))
+      .orderBy(resource.position)
+
+    const tags = await this.db
+      .select({ id: tag.id, name: tag.name })
+      .from(packageTag)
+      .innerJoin(tag, eq(packageTag.tagId, tag.id))
+      .where(eq(packageTag.packageId, pkg.id))
+
+    let org = null
+    if (pkg.ownerOrg) {
+      const [orgResult] = await this.db
+        .select({
+          id: organization.id,
+          name: organization.name,
+          title: organization.title,
+          description: organization.description,
+          imageUrl: organization.imageUrl,
+        })
+        .from(organization)
+        .where(and(eq(organization.id, pkg.ownerOrg), eq(organization.state, 'active')))
+        .limit(1)
+      org = orgResult ?? null
+    }
+
+    return { ...pkg, resources, tags, organization: org }
   }
 
   async create(input: CreatePackageInput, creatorUserId?: string) {

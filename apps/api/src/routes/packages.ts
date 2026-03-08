@@ -55,7 +55,7 @@ packagesRouter.post('/', zValidator('json', createPackageSchema), async (c) => {
 packagesRouter.get('/:nameOrId', async (c) => {
   const nameOrId = c.req.param('nameOrId')
   const service = new PackageService(c.get('db'))
-  const pkg = await service.getByNameOrId(nameOrId)
+  const pkg = await service.getDetailByNameOrId(nameOrId)
   return c.json(pkg)
 })
 
