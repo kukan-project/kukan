@@ -3,9 +3,17 @@
  * Business logic for package (dataset) management
  */
 
-import { eq, ilike, and, or, sql, getTableColumns } from 'drizzle-orm'
+import { eq, ilike, and, or, sql, getTableColumns, inArray } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { packageTable, tag, packageTag, organization, resource } from '@kukan/db'
+import {
+  packageTable,
+  tag,
+  packageTag,
+  organization,
+  resource,
+  group,
+  packageGroup,
+} from '@kukan/db'
 import { NotFoundError, ValidationError, isUuid, escapeLike } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult } from '@kukan/shared'
 import type { CreatePackageInput, UpdatePackageInput, PatchPackageInput } from '@kukan/shared'
@@ -13,8 +21,15 @@ import type { CreatePackageInput, UpdatePackageInput, PatchPackageInput } from '
 export class PackageService {
   constructor(private db: Database) {}
 
-  async list(params: PaginationParams & { q?: string; owner_org?: string; private?: boolean }) {
-    const { offset = 0, limit = 20, q, owner_org, private: isPrivate } = params
+  async list(
+    params: PaginationParams & {
+      q?: string
+      owner_org?: string
+      group?: string
+      private?: boolean
+    }
+  ) {
+    const { offset = 0, limit = 20, q, owner_org, group: groupFilter, private: isPrivate } = params
 
     const conditions = [eq(packageTable.state, 'active')]
 
@@ -29,7 +44,43 @@ export class PackageService {
     }
 
     if (owner_org) {
-      conditions.push(eq(packageTable.ownerOrg, owner_org))
+      if (isUuid(owner_org)) {
+        conditions.push(eq(packageTable.ownerOrg, owner_org))
+      } else {
+        // Resolve org name to ID
+        const [org] = await this.db
+          .select({ id: organization.id })
+          .from(organization)
+          .where(eq(organization.name, owner_org))
+          .limit(1)
+        if (org) {
+          conditions.push(eq(packageTable.ownerOrg, org.id))
+        } else {
+          // No matching org — return empty
+          return { items: [], total: 0, offset, limit } as PaginatedResult<never>
+        }
+      }
+    }
+
+    if (groupFilter) {
+      // Resolve group name or ID, then filter via package_group
+      const groupCondition = isUuid(groupFilter)
+        ? eq(group.id, groupFilter)
+        : eq(group.name, groupFilter)
+      const [grp] = await this.db
+        .select({ id: group.id })
+        .from(group)
+        .where(groupCondition)
+        .limit(1)
+      if (grp) {
+        const pkgIds = this.db
+          .select({ packageId: packageGroup.packageId })
+          .from(packageGroup)
+          .where(eq(packageGroup.groupId, grp.id))
+        conditions.push(inArray(packageTable.id, pkgIds))
+      } else {
+        return { items: [], total: 0, offset, limit } as PaginatedResult<never>
+      }
     }
 
     if (typeof isPrivate === 'boolean') {
@@ -42,6 +93,10 @@ export class PackageService {
       .select({
         ...getTableColumns(packageTable),
         total: sql<number>`COUNT(*) OVER()::int`.as('total'),
+        formats:
+          sql<string>`(SELECT COALESCE(string_agg(DISTINCT "resource"."format", ',' ORDER BY "resource"."format"), '') FROM "resource" WHERE "resource"."package_id" = "package"."id" AND "resource"."state" = 'active')`.as(
+            'formats'
+          ),
       })
       .from(packageTable)
       .where(where)
@@ -76,33 +131,32 @@ export class PackageService {
   async getDetailByNameOrId(nameOrId: string) {
     const pkg = await this.getByNameOrId(nameOrId)
 
-    const resources = await this.db
-      .select()
-      .from(resource)
-      .where(and(eq(resource.packageId, pkg.id), eq(resource.state, 'active')))
-      .orderBy(resource.position)
-
-    const tags = await this.db
-      .select({ id: tag.id, name: tag.name })
-      .from(packageTag)
-      .innerJoin(tag, eq(packageTag.tagId, tag.id))
-      .where(eq(packageTag.packageId, pkg.id))
-
-    let org = null
-    if (pkg.ownerOrg) {
-      const [orgResult] = await this.db
-        .select({
-          id: organization.id,
-          name: organization.name,
-          title: organization.title,
-          description: organization.description,
-          imageUrl: organization.imageUrl,
-        })
-        .from(organization)
-        .where(and(eq(organization.id, pkg.ownerOrg), eq(organization.state, 'active')))
-        .limit(1)
-      org = orgResult ?? null
-    }
+    const [resources, tags, org] = await Promise.all([
+      this.db
+        .select()
+        .from(resource)
+        .where(and(eq(resource.packageId, pkg.id), eq(resource.state, 'active')))
+        .orderBy(resource.position),
+      this.db
+        .select({ id: tag.id, name: tag.name })
+        .from(packageTag)
+        .innerJoin(tag, eq(packageTag.tagId, tag.id))
+        .where(eq(packageTag.packageId, pkg.id)),
+      pkg.ownerOrg
+        ? this.db
+            .select({
+              id: organization.id,
+              name: organization.name,
+              title: organization.title,
+              description: organization.description,
+              imageUrl: organization.imageUrl,
+            })
+            .from(organization)
+            .where(and(eq(organization.id, pkg.ownerOrg), eq(organization.state, 'active')))
+            .limit(1)
+            .then(([r]) => r ?? null)
+        : Promise.resolve(null),
+    ])
 
     return { ...pkg, resources, tags, organization: org }
   }

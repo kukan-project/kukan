@@ -27,7 +27,8 @@ packagesRouter.get(
       offset: z.coerce.number().min(0).default(0),
       limit: z.coerce.number().min(1).max(100).default(20),
       q: z.string().optional(),
-      owner_org: z.string().uuid().optional(),
+      owner_org: z.string().optional(),
+      group: z.string().optional(),
       private: z
         .string()
         .optional()

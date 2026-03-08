@@ -3,7 +3,7 @@
  * user_org_membership, user_group_membership, package_group tables
  */
 
-import { pgTable, uuid, varchar, text, timestamp, unique } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, text, timestamp, unique, index } from 'drizzle-orm/pg-core'
 import { user } from './user'
 import { organization } from './organization'
 import { group } from './group'
@@ -22,7 +22,10 @@ export const userOrgMembership = pgTable(
     role: varchar('role', { length: 50 }).default('member').notNull(),
     created: timestamp('created', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [unique('uq_user_org').on(table.userId, table.organizationId)]
+  (table) => [
+    unique('uq_user_org').on(table.userId, table.organizationId),
+    index('idx_user_org_membership_org_id').on(table.organizationId),
+  ]
 )
 
 export const userGroupMembership = pgTable(
@@ -38,7 +41,10 @@ export const userGroupMembership = pgTable(
     role: varchar('role', { length: 50 }).default('member').notNull(),
     created: timestamp('created', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [unique('uq_user_group').on(table.userId, table.groupId)]
+  (table) => [
+    unique('uq_user_group').on(table.userId, table.groupId),
+    index('idx_user_group_membership_group_id').on(table.groupId),
+  ]
 )
 
 export const packageGroup = pgTable(
@@ -52,5 +58,8 @@ export const packageGroup = pgTable(
       .notNull()
       .references(() => group.id, { onDelete: 'cascade' }),
   },
-  (table) => [unique('uq_package_group').on(table.packageId, table.groupId)]
+  (table) => [
+    unique('uq_package_group').on(table.packageId, table.groupId),
+    index('idx_package_group_group_id').on(table.groupId),
+  ]
 )

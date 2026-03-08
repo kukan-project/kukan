@@ -3,7 +3,10 @@
  * Run with: pnpm db:migrate
  */
 
+import { config } from 'dotenv'
 import { drizzle } from 'drizzle-orm/node-postgres'
+
+config({ path: '../../.env' })
 import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { Pool } from 'pg'
 
