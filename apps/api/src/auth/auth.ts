@@ -1,6 +1,5 @@
 /**
  * KUKAN Better Auth Configuration
- * Authentication instance with Drizzle adapter
  */
 
 import { betterAuth } from 'better-auth'
@@ -14,13 +13,12 @@ export function createAuth(db: Database) {
     }),
     emailAndPassword: {
       enabled: true,
-      requireEmailVerification: false, // Phase 1: disable email verification for development
+      requireEmailVerification: false,
     },
     session: {
-      expiresIn: 60 * 60 * 24 * 7, // 7 days
-      updateAge: 60 * 60 * 24, // Update session every 24 hours
+      expiresIn: 60 * 60 * 24 * 7,
+      updateAge: 60 * 60 * 24,
     },
-    // Phase 5: Add OIDC plugin for government SSO
   })
 }
 

@@ -250,19 +250,19 @@ export class PackageService {
     // Merge with existing data for partial update
     const merged: UpdatePackageInput = {
       name: input.name ?? existing.name,
-      title: input.title ?? existing.title,
-      notes: input.notes ?? existing.notes,
-      url: input.url ?? existing.url,
-      version: input.version ?? existing.version,
-      license_id: input.license_id ?? existing.licenseId,
-      author: input.author ?? existing.author,
-      author_email: input.author_email ?? existing.authorEmail,
-      maintainer: input.maintainer ?? existing.maintainer,
-      maintainer_email: input.maintainer_email ?? existing.maintainerEmail,
-      owner_org: input.owner_org ?? existing.ownerOrg,
+      title: input.title ?? existing.title ?? undefined,
+      notes: input.notes ?? existing.notes ?? undefined,
+      url: input.url ?? existing.url ?? undefined,
+      version: input.version ?? existing.version ?? undefined,
+      license_id: input.license_id ?? existing.licenseId ?? undefined,
+      author: input.author ?? existing.author ?? undefined,
+      author_email: input.author_email ?? existing.authorEmail ?? undefined,
+      maintainer: input.maintainer ?? existing.maintainer ?? undefined,
+      maintainer_email: input.maintainer_email ?? existing.maintainerEmail ?? undefined,
+      owner_org: input.owner_org ?? existing.ownerOrg ?? undefined,
       private: input.private ?? existing.private,
-      type: input.type ?? existing.type,
-      extras: input.extras ?? existing.extras,
+      type: input.type ?? existing.type ?? undefined,
+      extras: input.extras ?? existing.extras ?? undefined,
       tags: input.tags, // Only update if provided
     }
 
