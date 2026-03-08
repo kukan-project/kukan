@@ -32,6 +32,10 @@ pnpm-debug.log*
 *.swo
 *~
 
+# AI agent skills
+.agents/skills/
+skills-lock.json
+
 # OS
 .DS_Store
 Thumbs.db
