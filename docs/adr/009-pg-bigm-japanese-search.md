@@ -1,107 +1,128 @@
-# ADR-009: 日本語全文検索は pg_bigm を採用する
+# ADR-009: 日本語全文検索は OpenSearch + ILIKE フォールバック
 
 ## ステータス
 
-承認済み（2026-03-01）
+改訂済み（2026-03-08） — 旧: pg_bigm 採用（2026-03-01）
 
 ## コンテキスト
 
 Phase 1 で PostgreSQL 全文検索をフォールバック検索として実装するが、
 PostgreSQL標準の `to_tsvector` は日本語のトークナイズに対応していない。
-`to_tsvector('simple', ...)` では日本語テキストが正しく分割されず、
-検索精度が実用レベルに達しない。
 
 自治体オープンデータは日本語のタイトル・説明文が主体であり、
-日本語検索はPhase 1の時点で動作する必要がある。
+日本語検索は Phase 1 の時点で動作する必要がある。
+
+旧 ADR-009 では pg_bigm を採用していたが、以下の理由で方針を変更した:
+
+- pg_bigm は PostgreSQL のカスタム Docker イメージが必要（Alpine パッケージ未提供）
+- 小規模デプロイでは ILIKE で実用上十分
+- 中〜大規模デプロイでは pg_bigm ではなく OpenSearch を使うべき
+- pg_bigm は「中間層」として保守コストに見合わない
 
 ## 検討した選択肢
 
-### A) pg_bigm（2-gram全文検索）— 採用
+### A) OpenSearch + ILIKE フォールバック — 採用
 
 - 良い点:
-  - 2-gramインデックスで言語非依存（辞書不要）
-  - `LIKE '%keyword%'` を高速化する GIN インデックス
-  - インストールが簡単（`CREATE EXTENSION pg_bigm`）
-  - PostgreSQL公式拡張リストに含まれる
-  - Aurora PostgreSQL でも利用可能
-  - 設定・運用コストが極めて低い
+  - OpenSearch は日本語形態素解析（kuromoji）をネイティブサポート
+  - スコアリング、ファセット、サジェスト等の高度な検索機能
+  - AWS OpenSearch Service / Docker コンテナ両対応でハイブリッドデプロイに適合
+  - ILIKE フォールバックは追加拡張不要で全環境で動作
+  - 検索バックエンドが2つ（OpenSearch / PostgreSQL ILIKE）で済む
 - 問題点:
-  - 1文字検索が効かない（2-gramの制約）
-  - 形態素解析ではないため、複合語の分割精度は劣る
-  - インデックスサイズが大きくなりがち
+  - OpenSearch コンテナは最低 512MB〜1GB RAM が必要
+  - ILIKE は大量データではフルスキャン（小〜中規模なら許容範囲）
 
-### B) PGroonga（Groonga全文検索エンジン）
+### B) pg_bigm（旧決定）
 
-- 良い点: 高精度な日本語形態素解析、高速
+- 良い点: 2-gram インデックスで言語非依存、Aurora PostgreSQL 対応
 - 問題点:
-  - Aurora PostgreSQL で利用不可（カスタム拡張が必要）
-  - オンプレのみ対応 → ハイブリッドデプロイ方針と矛盾
-  - インストール・運用の複雑さ
+  - カスタム Docker イメージが必要（postgres:16-alpine では未提供）
+  - 1文字検索不可
+  - 中〜大規模では結局 OpenSearch が必要 → 中間層の保守コストが無駄
 
-### C) mecab + pg_trgm
+### C) PGroonga
+
+- 良い点: 高精度な日本語形態素解析
+- 問題点: Aurora PostgreSQL 非対応、ハイブリッドデプロイ方針と矛盾
+
+### D) mecab + pg_trgm
 
 - 良い点: 形態素解析の精度が高い
-- 問題点:
-  - mecab辞書のインストール・管理が必要
-  - Docker/Lambdaでの辞書配布が面倒
-  - Aurora PostgreSQLで非対応
-
-### D) simple + ILIKE フォールバック
-
-- 良い点: 追加拡張不要
-- 問題点: 大量データでフルスキャンになり実用不可
+- 問題点: mecab 辞書管理が煩雑、Aurora PostgreSQL 非対応
 
 ## 決定
 
-pg_bigm を採用する。
+**OpenSearch を本番検索エンジン、PostgreSQL ILIKE をフォールバックとする。**
 
-Phase 1（PostgreSQLフォールバック）で pg_bigm を使用し、
-Phase 2 で OpenSearch に移行した後も、OpenSearch未導入環境（small / on-premise）では
-pg_bigm が引き続きフォールバック検索を担う。
+| デプロイ規模      | 検索エンジン     | SEARCH_TYPE  |
+| ----------------- | ---------------- | ------------ |
+| 小規模 / 開発     | PostgreSQL ILIKE | `postgres`   |
+| 中〜大規模 / 本番 | OpenSearch       | `opensearch` |
+
+### PostgreSQL ILIKE フォールバック（Phase 1 実装済み）
+
+- `package.name`, `package.title`, `package.notes` に対する ILIKE 検索
+- インデックス不要、追加拡張不要
+- 数千件規模までは実用的なレスポンスタイム
+- `escapeLikePattern()` で LIKE 特殊文字をエスケープ
+
+### OpenSearch（Phase 2 で実装）
+
+- kuromoji アナライザーによる日本語形態素解析
+- Docker コンテナ（`opensearchproject/opensearch`）と AWS OpenSearch Service の両方に対応
+- Docker Compose では `profiles: [opensearch]` で opt-in 起動
+- OpenSearchAdapter が `SEARCH_TYPE=opensearch` で切り替わる
 
 ## 実装
 
-### PostgresSearchAdapter での使用
+### Phase 1: PostgresSearchAdapter（ILIKE）
 
-```sql
--- 拡張有効化（マイグレーション）
-CREATE EXTENSION IF NOT EXISTS pg_bigm;
-
--- インデックス作成
-CREATE INDEX idx_package_title_bigm ON package USING gin (title gin_bigm_ops);
-CREATE INDEX idx_package_notes_bigm ON package USING gin (notes gin_bigm_ops);
-
--- 検索クエリ
-SELECT * FROM package
-WHERE title LIKE '%オープンデータ%'
-   OR notes LIKE '%オープンデータ%'
-ORDER BY likequery(title, 'オープンデータ') DESC;
+```typescript
+// packages/adapters/search/src/postgres.ts
+const pattern = `%${escapeLikePattern(query.q)}%`
+const results = await db
+  .select()
+  .from(packageTable)
+  .where(
+    or(
+      ilike(packageTable.name, pattern),
+      ilike(packageTable.title, pattern),
+      ilike(packageTable.notes, pattern)
+    )
+  )
 ```
 
-### Docker Compose での pg_bigm
-
-```dockerfile
-# docker/postgres/Dockerfile
-FROM postgres:16-alpine
-RUN apk add --no-cache postgresql16-pg_bigm
-```
+### Phase 2: Docker Compose での OpenSearch
 
 ```yaml
-# docker/docker-compose.yml
+# docker/compose.yml
 services:
-  postgres:
-    build: ./postgres # カスタムイメージ
-    # ... 他設定同じ
+  opensearch:
+    image: opensearchproject/opensearch:2
+    profiles: [opensearch]
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=admin
+    ports:
+      - '9200:9200'
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
 ```
 
-### tsvector との併用
+### Phase 2: OpenSearchAdapter
 
-英語コンテンツには既存の `search_vector` (tsvector) が引き続き有効。
-PostgresSearchAdapter 内で言語判定し、日本語は pg_bigm、英語は tsvector を使い分ける。
+```typescript
+// packages/adapters/search/src/opensearch.ts
+// Docker コンテナ: endpoint = http://localhost:9200
+// AWS OpenSearch Service: endpoint = https://xxx.region.es.amazonaws.com
+// AWS 環境では IAM ロール認証、コンテナではベーシック認証
+```
 
 ## 影響
 
-- Docker Compose の postgres を素の `postgres:16-alpine` からカスタムビルドに変更
-- Phase 1 仕様書の Docker Compose セクションを更新
-- Aurora PostgreSQL は pg_bigm をサポートしているため、AWS環境でも同じ手法が利用可能
-- Phase 2 で OpenSearch 導入後は、pg_bigm は OpenSearch 未導入環境のフォールバックとして残る
+- Phase 1: ILIKE で検索が動作。追加設定不要
+- Phase 2: OpenSearch を Docker Compose に追加（profiles で opt-in）、OpenSearchAdapter を実装
+- カスタム PostgreSQL Docker イメージは不要（素の `postgres:16` をそのまま使用）
+- pg_bigm 関連のマイグレーション・設定は不要になった
