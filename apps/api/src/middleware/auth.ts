@@ -28,7 +28,7 @@ export function optionalAuth(auth: Auth) {
             id: session.user.id,
             email: session.user.email,
             name: session.user.name || session.user.email,
-            sysadmin: false, // TODO: Get from database
+            sysadmin: session.user.role === 'sysadmin',
           })
           return next()
         }

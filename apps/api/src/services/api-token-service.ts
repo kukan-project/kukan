@@ -105,7 +105,7 @@ export class ApiTokenService {
         expiresAt: apiToken.expiresAt,
         email: user.email,
         name: user.name,
-        sysadmin: user.sysadmin,
+        role: user.role,
       })
       .from(apiToken)
       .innerJoin(user, eq(apiToken.userId, user.id))
@@ -131,7 +131,7 @@ export class ApiTokenService {
       id: result.userId,
       email: result.email,
       name: result.name,
-      sysadmin: result.sysadmin,
+      sysadmin: result.role === 'sysadmin',
     }
   }
 }

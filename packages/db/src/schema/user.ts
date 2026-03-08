@@ -1,9 +1,9 @@
 /**
  * KUKAN User Schema
- * Integrated with Better Auth user table
+ * Integrated with Better Auth user table + admin plugin
  */
 
-import { pgTable, varchar, text, timestamp, boolean, index } from 'drizzle-orm/pg-core'
+import { pgTable, varchar, text, timestamp, boolean, integer, index } from 'drizzle-orm/pg-core'
 
 export const user = pgTable(
   'user',
@@ -15,10 +15,15 @@ export const user = pgTable(
     name: varchar('name', { length: 100 }).unique().notNull(),
     image: text('image'),
 
+    // Better Auth admin plugin fields
+    role: varchar('role', { length: 20 }).default('user'),
+    banned: boolean('banned').default(false),
+    banReason: text('ban_reason'),
+    banExpires: integer('ban_expires'),
+
     // KUKAN-specific fields
     displayName: text('display_name'),
     state: varchar('state', { length: 20 }).default('active'),
-    sysadmin: boolean('sysadmin').default(false).notNull(),
 
     // Timestamps
     createdAt: timestamp('createdAt', { withTimezone: true }).defaultNow().notNull(),

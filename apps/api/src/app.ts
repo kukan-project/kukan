@@ -54,10 +54,7 @@ export async function createApp() {
   // Better Auth endpoints - handle all /api/auth/** routes
   app.use('*', async (c, next) => {
     if (c.req.path.startsWith('/api/auth/')) {
-      console.log('[Better Auth] Handling request:', c.req.method, c.req.path)
-      const response = await auth.handler(c.req.raw)
-      console.log('[Better Auth] Response status:', response.status)
-      return response
+      return auth.handler(c.req.raw)
     }
     return next()
   })

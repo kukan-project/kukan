@@ -1,6 +1,6 @@
 /**
  * Better Auth Required Tables
- * session, account, verification tables for Better Auth
+ * session, account, verification tables for Better Auth + admin plugin
  */
 
 import { pgTable, uuid, text, timestamp } from 'drizzle-orm/pg-core'
@@ -15,6 +15,8 @@ export const session = pgTable('session', {
   token: text('token').notNull().unique(),
   ipAddress: text('ipAddress'),
   userAgent: text('userAgent'),
+  // Better Auth admin plugin field
+  impersonatedBy: text('impersonatedBy'),
   createdAt: timestamp('createdAt', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updatedAt', { withTimezone: true }).defaultNow().notNull(),
 })
