@@ -3,7 +3,7 @@
  * Business logic for organization management
  */
 
-import { eq, ilike, and, or } from 'drizzle-orm'
+import { eq, ilike, and, or, count } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { organization } from '@kukan/db'
 import { NotFoundError, ValidationError } from '@kukan/shared'
@@ -42,14 +42,11 @@ export class OrganizationService {
       )
     }
 
-    const items = await this.db
-      .select()
-      .from(organization)
-      .where(and(...conditions))
-      .limit(limit)
-      .offset(offset)
+    const where = and(...conditions)
 
-    const total = items.length // TODO: Get actual count
+    const [{ total }] = await this.db.select({ total: count() }).from(organization).where(where)
+
+    const items = await this.db.select().from(organization).where(where).limit(limit).offset(offset)
 
     return {
       items,

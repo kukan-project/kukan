@@ -3,7 +3,7 @@
  * Business logic for tag management
  */
 
-import { eq, ilike, sql } from 'drizzle-orm'
+import { eq, ilike, sql, count } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { tag, packageTag } from '@kukan/db'
 import type { PaginationParams, PaginatedResult } from '@kukan/shared'
@@ -14,7 +14,11 @@ export class TagService {
   async list(params: PaginationParams & { q?: string }) {
     const { offset = 0, limit = 100, q } = params
 
-    const baseQuery = this.db
+    const where = q ? ilike(tag.name, `%${q}%`) : undefined
+
+    const [{ total }] = await this.db.select({ total: count() }).from(tag).where(where)
+
+    const items = await this.db
       .select({
         id: tag.id,
         name: tag.name,
@@ -23,17 +27,10 @@ export class TagService {
       })
       .from(tag)
       .leftJoin(packageTag, eq(tag.id, packageTag.tagId))
+      .where(where)
       .groupBy(tag.id, tag.name, tag.vocabularyId)
-      .$dynamic()
-
-    const items = q
-      ? await baseQuery
-          .where(ilike(tag.name, `%${q}%`))
-          .limit(limit)
-          .offset(offset)
-      : await baseQuery.limit(limit).offset(offset)
-
-    const total = items.length // TODO: Get actual count
+      .limit(limit)
+      .offset(offset)
 
     return {
       items,

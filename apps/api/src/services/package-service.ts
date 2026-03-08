@@ -3,7 +3,7 @@
  * Business logic for package (dataset) management
  */
 
-import { eq, ilike, and, or, sql } from 'drizzle-orm'
+import { eq, ilike, and, or, sql, count } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { packageTable, tag, packageTag, organization } from '@kukan/db'
 import { NotFoundError, ValidationError } from '@kukan/shared'
@@ -36,14 +36,11 @@ export class PackageService {
       conditions.push(eq(packageTable.private, isPrivate))
     }
 
-    const items = await this.db
-      .select()
-      .from(packageTable)
-      .where(and(...conditions))
-      .limit(limit)
-      .offset(offset)
+    const where = and(...conditions)
 
-    const total = items.length // TODO: Implement proper count query
+    const [{ total }] = await this.db.select({ total: count() }).from(packageTable).where(where)
+
+    const items = await this.db.select().from(packageTable).where(where).limit(limit).offset(offset)
 
     return {
       items,
