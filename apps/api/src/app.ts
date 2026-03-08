@@ -43,7 +43,6 @@ export async function createApp() {
   // Middleware
   app.use('*', logger)
   app.use('*', cors())
-  app.use('*', optionalAuth(auth))
   app.onError(errorHandler)
 
   // Health check
@@ -52,12 +51,13 @@ export async function createApp() {
   })
 
   // Better Auth endpoints - handle all /api/auth/** routes
-  app.use('*', async (c, next) => {
-    if (c.req.path.startsWith('/api/auth/')) {
-      return auth.handler(c.req.raw)
-    }
-    return next()
+  // Must be registered BEFORE optionalAuth to avoid body stream consumption
+  app.on(['GET', 'POST'], '/api/auth/*', (c) => {
+    return auth.handler(c.req.raw)
   })
+
+  // Auth middleware for non-auth routes
+  app.use('*', optionalAuth(auth))
 
   // API v1 routes
   const apiV1 = new Hono<{ Variables: AppContext }>()
