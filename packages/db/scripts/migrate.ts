@@ -5,10 +5,10 @@
 
 import { config } from 'dotenv'
 import { drizzle } from 'drizzle-orm/node-postgres'
-
-config({ path: '../../.env' })
 import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { Pool } from 'pg'
+
+config({ path: '../../.env' })
 
 async function main() {
   const connectionString = process.env.DATABASE_URL

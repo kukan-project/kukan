@@ -17,7 +17,7 @@
     "lint": "eslint src",
     "clean": "rm -rf dist",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx src/migrate.ts",
+    "db:migrate": "tsx scripts/migrate.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
