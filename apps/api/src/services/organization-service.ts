@@ -48,6 +48,10 @@ export class OrganizationService {
       .select({
         ...getTableColumns(organization),
         total: sql<number>`COUNT(*) OVER()::int`.as('total'),
+        datasetCount:
+          sql<number>`(SELECT COUNT(*)::int FROM "package" WHERE "package"."owner_org" = "organization"."id" AND "package"."state" = 'active')`.as(
+            'dataset_count'
+          ),
       })
       .from(organization)
       .where(where)

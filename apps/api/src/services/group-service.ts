@@ -50,6 +50,10 @@ export class GroupService {
       .select({
         ...getTableColumns(group),
         total: sql<number>`COUNT(*) OVER()::int`.as('total'),
+        datasetCount:
+          sql<number>`(SELECT COUNT(*)::int FROM "package_group" WHERE "package_group"."group_id" = "group"."id")`.as(
+            'dataset_count'
+          ),
       })
       .from(group)
       .where(where)
