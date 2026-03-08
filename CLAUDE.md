@@ -16,7 +16,7 @@ CKANの後継として設計されたTypeScriptフルスタックのデータカ
 | カテゴリ       | 技術                                                  |
 | -------------- | ----------------------------------------------------- |
 | 言語           | TypeScript 5.x（全レイヤー統一）                      |
-| ランタイム     | Node.js 22 LTS                                        |
+| ランタイム     | Node.js 24 LTS                                        |
 | モノレポ       | Turborepo + pnpm workspaces                           |
 | API            | Hono 4.x（Cloudflare Workers / Node.js / Bun 対応）   |
 | フロントエンド | Next.js 15 (App Router) + shadcn/ui + Tailwind CSS 4  |
@@ -40,21 +40,21 @@ KUKAN/
 ├── CLAUDE.md               # ← このファイル
 ├── apps/
 │   ├── api/                # Hono API サーバー + Better Auth
-│   ├── worker/             # Ingest Worker（SQS consumer、AWS環境のみ）
-│   ├── web/                # Next.js フロントエンド（カタログUI）
-│   └── editor/             # Data Editor UI（アドオン、独立デプロイ可能）
+│   ├── worker/             # Ingest Worker（SQS consumer、AWS環境のみ）          ※ Phase 2+
+│   ├── web/                # Next.js フロントエンド（カタログUI）                ※ Phase 2+
+│   └── editor/             # Data Editor UI（アドオン、独立デプロイ可能）        ※ Phase 3+
 ├── packages/
 │   ├── db/                 # Drizzle スキーマ + マイグレーション + Better Auth テーブル
 │   ├── shared/             # 型定義、Zod バリデーション、lru-cache ユーティリティ
 │   ├── adapters/           # 環境差吸収アダプター（4つ）
 │   │   ├── search/         # @kukan/search-adapter (OpenSearch / PostgreSQL)
-│   │   ├── storage/        # @kukan/storage-adapter (S3 / MinIO / Local)
-│   │   ├── queue/          # @kukan/queue-adapter (SQS / InProcess)
-│   │   └── ai/             # @kukan/ai-adapter (Bedrock / OpenAI / Ollama / NoOp)
-│   ├── editor-core/        # Data Editor ビジネスロジック（アドオン）
-│   ├── quality/            # Quality Monitor（リンク切れ、CSV検証、メタデータ監査、PII）
-│   ├── pipeline/           # Ingest パイプライン（ステップ + processResource）
-│   └── ui/                 # shadcn/ui 共有コンポーネント
+│   │   ├── storage/        # @kukan/storage-adapter (S3 / MinIO / Local)         ※ Phase 2+
+│   │   ├── queue/          # @kukan/queue-adapter (SQS / InProcess)              ※ Phase 2+
+│   │   └── ai/             # @kukan/ai-adapter (Bedrock / OpenAI / Ollama / NoOp)※ Phase 3+
+│   ├── editor-core/        # Data Editor ビジネスロジック（アドオン）             ※ Phase 3+
+│   ├── quality/            # Quality Monitor（リンク切れ、CSV検証、メタデータ監査、PII）※ Phase 3+
+│   ├── pipeline/           # Ingest パイプライン（ステップ + processResource）   ※ Phase 2+
+│   └── ui/                 # shadcn/ui 共有コンポーネント                        ※ Phase 2+
 ├── docs/
 │   ├── design-v4.md        # 設計書（全体像、参照用）
 │   ├── adr/                # Architecture Decision Records
@@ -124,7 +124,7 @@ pnpm format        # Prettier フォーマット
 - ユニットテスト: Vitest（`*.test.ts`）
 - 統合テスト: Vitest + テスト用DB（`*.integration.test.ts`）
 - E2Eテスト: Playwright（`*.e2e.ts`）
-- テストファイルはソースファイルと同じディレクトリに配置
+- テストファイルは `__tests__/` サブディレクトリに配置（例: `src/__tests__/errors.test.ts`）
 
 ### 環境変数
 

@@ -171,8 +171,8 @@ export abstract class BaseRequest<T extends z.ZodType> {
   protected schema: T
   protected locale: Locale
 
-  validate(data: unknown): z.infer<T> {
-    return this.schema.parse(data, {
+  safeParse(data: unknown): z.SafeParseReturnType<z.input<T>, z.infer<T>> {
+    return this.schema.safeParse(data, {
       errorMap: createZodErrorMap(this.locale),
     })
   }
