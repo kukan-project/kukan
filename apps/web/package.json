@@ -11,19 +11,23 @@
     "clean": "rm -rf .next"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.2.2",
+    "@kukan/shared": "workspace:*",
+    "@kukan/ui": "workspace:*",
+    "better-auth": "^1.1.9",
     "next": "^15.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@kukan/shared": "workspace:*",
-    "@kukan/ui": "workspace:*"
+    "react-hook-form": "^7.71.2",
+    "zod": "^3.25.67"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "typescript": "^5.9.0",
-    "@tailwindcss/postcss": "^4.0.0",
     "postcss": "^8.0.0",
-    "tailwindcss": "^4.0.0"
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.9.0"
   }
 }
