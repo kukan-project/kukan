@@ -83,6 +83,18 @@ KUKAN/
 - **All commit messages must be in English** (subject and body)
 - Follow Conventional Commits format: `feat:`, `fix:`, `chore:`, `docs:`, etc.
 
+### コミット前チェック
+
+コミット前に以下を必ず実行し、すべてパスしてからコミットする:
+
+```bash
+pnpm lint          # ESLint
+pnpm typecheck     # TypeScript 型チェック
+pnpm format        # Prettier フォーマット
+```
+
+フォーマットで変更が発生した場合は、本体のコミットに含める。
+
 ### インポート規則
 
 - パッケージ間は `@kukan/パッケージ名` でインポート
