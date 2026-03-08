@@ -156,7 +156,7 @@ pnpm format        # Prettier フォーマット
 - 品質監視 → `docs/adr/006-quality-monitor-core.md`
 - Data Editor → `docs/adr/007-data-editor-addon.md`
 - モノレポ → `docs/adr/008-turborepo-monorepo.md`
-- 日本語全文検索 → `docs/adr/009-pg-bigm-japanese-search.md`
+- 日本語全文検索 → `docs/adr/009-opensearch-ilike-fallback.md`
 
 新しい設計判断が必要になったら、同じフォーマットでADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、

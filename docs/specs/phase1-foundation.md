@@ -605,7 +605,7 @@ FROM postgres:16-alpine
 RUN apk add --no-cache postgresql16-pg_bigm
 ```
 
-**Note**: PostgreSQL はカスタムビルド（pg_bigm 拡張入り）。詳細は `docs/adr/009-pg-bigm-japanese-search.md` を参照。OpenSearch は Phase 2 で追加。
+**Note**: Phase 1 の検索は PostgreSQL ILIKE フォールバック。Phase 2 で OpenSearch を追加。詳細は `docs/adr/009-opensearch-ilike-fallback.md` を参照。
 
 ---
 

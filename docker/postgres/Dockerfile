@@ -1,11 +1,9 @@
 FROM postgres:16-alpine
 
 # Install PostgreSQL extensions
-# Note: pg_bigm is not available in Alpine repositories
-# For Phase 1, we use standard pg_trgm for full-text search
-# Phase 2 will use Debian-based image with pg_bigm compiled from source
-# PostGIS is not included in Phase 1 (spatial features are Phase 3+)
-# See docs/adr/009-pg-bigm-japanese-search.md for details
+# Phase 1: ILIKE search (no additional extensions needed)
+# Phase 2: OpenSearch for full-text search
+# See docs/adr/009-opensearch-ilike-fallback.md for details
 
 RUN apk add --no-cache \
     postgresql16-contrib
