@@ -82,13 +82,6 @@ KUKAN/
 
 - **All commit messages must be in English** (subject and body)
 - Follow Conventional Commits format: `feat:`, `fix:`, `chore:`, `docs:`, etc.
-- End with Claude Code attribution:
-
-  ```
-  🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-  Co-Authored-By: Claude <noreply@anthropic.com>
-  ```
 
 ### インポート規則
 
