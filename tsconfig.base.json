@@ -23,7 +23,8 @@
       "@kukan/storage-adapter": ["../packages/adapters/storage/src"],
       "@kukan/search-adapter": ["../packages/adapters/search/src"],
       "@kukan/queue-adapter": ["../packages/adapters/queue/src"],
-      "@kukan/ai-adapter": ["../packages/adapters/ai/src"]
+      "@kukan/ai-adapter": ["../packages/adapters/ai/src"],
+      "@kukan/ui": ["../packages/ui/src"]
     }
   },
   "exclude": ["node_modules", "dist"]

@@ -10,17 +10,17 @@
 
 ## 2. 技術スタック
 
-| カテゴリ | 技術 | 備考 |
-|---|---|---|
-| フレームワーク | Next.js 15 (App Router) | Server Components 優先 |
-| UIライブラリ | shadcn/ui | Radix UI ベース、`packages/ui` にコピー |
-| スタイリング | Tailwind CSS 4 | CSS-first config |
-| 状態管理 | React Server Components + `nuqs` | URL state 管理 |
-| データフェッチ | Server Components + Route Handlers | クライアントは `fetch` |
-| フォーム | React Hook Form + Zod | `@kukan/shared` バリデーター再利用 |
-| 認証クライアント | `better-auth/react` | セッション Cookie 自動管理 |
-| i18n | `next-intl` | 日本語/英語、構造のみ Phase 2 |
-| テスト | Vitest + Testing Library | コンポーネント + E2E は Phase 3+ |
+| カテゴリ         | 技術                               | 備考                                    |
+| ---------------- | ---------------------------------- | --------------------------------------- |
+| フレームワーク   | Next.js 15 (App Router)            | Server Components 優先                  |
+| UIライブラリ     | shadcn/ui                          | Radix UI ベース、`packages/ui` にコピー |
+| スタイリング     | Tailwind CSS 4                     | CSS-first config                        |
+| 状態管理         | React Server Components + `nuqs`   | URL state 管理                          |
+| データフェッチ   | Server Components + Route Handlers | クライアントは `fetch`                  |
+| フォーム         | React Hook Form + Zod              | `@kukan/shared` バリデーター再利用      |
+| 認証クライアント | `better-auth/react`                | セッション Cookie 自動管理              |
+| i18n             | `next-intl`                        | 日本語/英語、構造のみ Phase 2           |
+| テスト           | Vitest + Testing Library           | コンポーネント + E2E は Phase 3+        |
 
 ## 3. ディレクトリ構成
 
@@ -162,33 +162,33 @@ packages/ui/
 
 ### 4.1 公開ページ（認証不要）
 
-| ページ | パス | データソース | 機能 |
-|---|---|---|---|
-| トップ | `/` | `GET /api/v1/packages?limit=5` + 統計 | 最新データセット、検索バー |
-| データセット一覧 | `/dataset` | `GET /api/v1/packages` | ページネーション、検索、フィルター |
-| データセット詳細 | `/dataset/[nameOrId]` | `GET /api/v1/packages/:nameOrId` | メタデータ、リソース一覧、タグ |
-| 組織一覧 | `/organization` | `GET /api/v1/organizations` | カード一覧 |
-| 組織詳細 | `/organization/[nameOrId]` | `GET /api/v1/organizations/:nameOrId` | 組織情報 + 所属データセット |
-| グループ一覧 | `/group` | `GET /api/v1/groups` | カード一覧 |
-| グループ詳細 | `/group/[nameOrId]` | `GET /api/v1/groups/:nameOrId` | グループ情報 |
-| 検索結果 | `/search?q=...` | `GET /api/v1/search` | 全文検索、組織/タグフィルター |
-| ログイン | `/auth/sign-in` | `POST /api/auth/sign-in` | メール/パスワード |
-| 登録 | `/auth/sign-up` | `POST /api/auth/sign-up` | メール/パスワード |
+| ページ           | パス                       | データソース                          | 機能                               |
+| ---------------- | -------------------------- | ------------------------------------- | ---------------------------------- |
+| トップ           | `/`                        | `GET /api/v1/packages?limit=5` + 統計 | 最新データセット、検索バー         |
+| データセット一覧 | `/dataset`                 | `GET /api/v1/packages`                | ページネーション、検索、フィルター |
+| データセット詳細 | `/dataset/[nameOrId]`      | `GET /api/v1/packages/:nameOrId`      | メタデータ、リソース一覧、タグ     |
+| 組織一覧         | `/organization`            | `GET /api/v1/organizations`           | カード一覧                         |
+| 組織詳細         | `/organization/[nameOrId]` | `GET /api/v1/organizations/:nameOrId` | 組織情報 + 所属データセット        |
+| グループ一覧     | `/group`                   | `GET /api/v1/groups`                  | カード一覧                         |
+| グループ詳細     | `/group/[nameOrId]`        | `GET /api/v1/groups/:nameOrId`        | グループ情報                       |
+| 検索結果         | `/search?q=...`            | `GET /api/v1/search`                  | 全文検索、組織/タグフィルター      |
+| ログイン         | `/auth/sign-in`            | `POST /api/auth/sign-in`              | メール/パスワード                  |
+| 登録             | `/auth/sign-up`            | `POST /api/auth/sign-up`              | メール/パスワード                  |
 
 ### 4.2 管理ページ（認証必須）
 
-| ページ | パス | 機能 |
-|---|---|---|
-| ダッシュボード | `/dashboard` | 自分のデータセット数、最近の変更 |
-| データセット管理 | `/dashboard/datasets` | 自分のデータセット一覧 |
-| データセット作成 | `/dashboard/datasets/new` | フォーム（Zod バリデーション） |
-| データセット編集 | `/dashboard/datasets/[nameOrId]/edit` | フォーム + リソース管理 |
-| 組織管理 | `/dashboard/organizations` | 組織一覧（sysadmin のみ作成可） |
-| 組織作成 | `/dashboard/organizations/new` | フォーム |
-| グループ管理 | `/dashboard/groups` | グループ一覧 |
-| グループ作成 | `/dashboard/groups/new` | フォーム |
-| APIトークン | `/dashboard/api-tokens` | トークン生成/一覧/削除 |
-| プロフィール | `/dashboard/profile` | ユーザー情報表示 |
+| ページ           | パス                                  | 機能                             |
+| ---------------- | ------------------------------------- | -------------------------------- |
+| ダッシュボード   | `/dashboard`                          | 自分のデータセット数、最近の変更 |
+| データセット管理 | `/dashboard/datasets`                 | 自分のデータセット一覧           |
+| データセット作成 | `/dashboard/datasets/new`             | フォーム（Zod バリデーション）   |
+| データセット編集 | `/dashboard/datasets/[nameOrId]/edit` | フォーム + リソース管理          |
+| 組織管理         | `/dashboard/organizations`            | 組織一覧（sysadmin のみ作成可）  |
+| 組織作成         | `/dashboard/organizations/new`        | フォーム                         |
+| グループ管理     | `/dashboard/groups`                   | グループ一覧                     |
+| グループ作成     | `/dashboard/groups/new`               | フォーム                         |
+| APIトークン      | `/dashboard/api-tokens`               | トークン生成/一覧/削除           |
+| プロフィール     | `/dashboard/profile`                  | ユーザー情報表示                 |
 
 ## 5. API クライアント
 
@@ -328,7 +328,9 @@ const onSubmit = async (values: CreatePackageInput) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(values),
   })
-  if (!res.ok) { /* エラーハンドリング */ }
+  if (!res.ok) {
+    /* エラーハンドリング */
+  }
   router.push(`/dataset/${values.name}`)
 }
 ```
@@ -380,7 +382,7 @@ API 側の CORS を `apps/web` の origin に対応させる。開発中は `htt
 // apps/api/src/app.ts の CORS 設定に追加
 cors({
   origin: ['http://localhost:3001'],
-  credentials: true,  // Cookie 送信に必要
+  credentials: true, // Cookie 送信に必要
 })
 ```
 
