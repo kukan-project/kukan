@@ -6,7 +6,7 @@
 import { eq, ilike, and, or, count } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { group } from '@kukan/db'
-import { NotFoundError, ValidationError } from '@kukan/shared'
+import { NotFoundError, ValidationError, isUuid } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult } from '@kukan/shared'
 
 export interface CreateGroupInput {
@@ -59,14 +59,11 @@ export class GroupService {
   }
 
   async getByNameOrId(nameOrId: string) {
-    // Check if it's a UUID pattern
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(nameOrId)
-
     const [result] = await this.db
       .select()
       .from(group)
       .where(
-        and(isUuid ? eq(group.id, nameOrId) : eq(group.name, nameOrId), eq(group.state, 'active'))
+        and(isUuid(nameOrId) ? eq(group.id, nameOrId) : eq(group.name, nameOrId), eq(group.state, 'active'))
       )
       .limit(1)
 

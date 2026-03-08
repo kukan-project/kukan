@@ -6,7 +6,7 @@
 import { eq, ilike, and, or, sql, count } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { packageTable, tag, packageTag, organization } from '@kukan/db'
-import { NotFoundError, ValidationError } from '@kukan/shared'
+import { NotFoundError, ValidationError, isUuid } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult } from '@kukan/shared'
 import type { CreatePackageInput, UpdatePackageInput, PatchPackageInput } from '@kukan/shared'
 
@@ -51,15 +51,12 @@ export class PackageService {
   }
 
   async getByNameOrId(nameOrId: string) {
-    // Check if it's a UUID pattern
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(nameOrId)
-
     const [result] = await this.db
       .select()
       .from(packageTable)
       .where(
         and(
-          isUuid ? eq(packageTable.id, nameOrId) : eq(packageTable.name, nameOrId),
+          isUuid(nameOrId) ? eq(packageTable.id, nameOrId) : eq(packageTable.name, nameOrId),
           eq(packageTable.state, 'active')
         )
       )

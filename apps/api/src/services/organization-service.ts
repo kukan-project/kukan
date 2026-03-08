@@ -6,7 +6,7 @@
 import { eq, ilike, and, or, count } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { organization } from '@kukan/db'
-import { NotFoundError, ValidationError } from '@kukan/shared'
+import { NotFoundError, ValidationError, isUuid } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult } from '@kukan/shared'
 
 export interface CreateOrganizationInput {
@@ -62,7 +62,9 @@ export class OrganizationService {
       .from(organization)
       .where(
         and(
-          or(eq(organization.name, nameOrId), eq(organization.id, nameOrId)),
+          isUuid(nameOrId)
+            ? eq(organization.id, nameOrId)
+            : eq(organization.name, nameOrId),
           eq(organization.state, 'active')
         )
       )

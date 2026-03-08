@@ -23,7 +23,7 @@ export class TagService {
         id: tag.id,
         name: tag.name,
         vocabularyId: tag.vocabularyId,
-        packageCount: sql<number>`COUNT(DISTINCT ${packageTag.packageId})`.as('package_count'),
+        packageCount: sql<number>`COUNT(DISTINCT ${packageTag.packageId})::int`.as('package_count'),
       })
       .from(tag)
       .leftJoin(packageTag, eq(tag.id, packageTag.tagId))
@@ -46,7 +46,7 @@ export class TagService {
         id: tag.id,
         name: tag.name,
         vocabularyId: tag.vocabularyId,
-        packageCount: sql<number>`COUNT(DISTINCT ${packageTag.packageId})`.as('package_count'),
+        packageCount: sql<number>`COUNT(DISTINCT ${packageTag.packageId})::int`.as('package_count'),
       })
       .from(tag)
       .leftJoin(packageTag, eq(tag.id, packageTag.tagId))
