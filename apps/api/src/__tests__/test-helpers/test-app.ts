@@ -8,6 +8,7 @@ import { Hono } from 'hono'
 import type { Database } from '@kukan/db'
 import { InProcessQueueAdapter } from '@kukan/queue-adapter'
 import { NoOpAIAdapter } from '@kukan/ai-adapter'
+import type { SearchAdapter } from '@kukan/search-adapter'
 import { errorHandler } from '../../middleware/error-handler'
 import type { Env } from '@kukan/shared'
 
@@ -20,7 +21,7 @@ import { searchRouter } from '../../routes/search'
 import { ckanCompatRouter } from '../../routes/ckan-compat'
 
 // Minimal mock adapters (search/storage are no-ops for route tests)
-const mockSearch = {
+const mockSearch: SearchAdapter = {
   search: async () => ({ items: [], total: 0, offset: 0, limit: 20 }),
   index: async () => {},
   delete: async () => {},
@@ -51,13 +52,17 @@ const testEnv = {
   BETTER_AUTH_URL: 'http://localhost:3000',
 } as unknown as Env
 
-export function createTestApp(db: Database) {
+interface TestAppOverrides {
+  search?: SearchAdapter
+}
+
+export function createTestApp(db: Database, overrides?: TestAppOverrides) {
   const app = new Hono()
 
   // Inject context
   app.use('*', async (c, next) => {
     c.set('db', db)
-    c.set('search', mockSearch)
+    c.set('search', overrides?.search ?? mockSearch)
     c.set('storage', mockStorage)
     c.set('queue', mockQueue)
     c.set('ai', mockAi)
