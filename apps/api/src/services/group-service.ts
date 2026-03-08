@@ -3,10 +3,10 @@
  * Business logic for group management
  */
 
-import { eq, ilike, and, or, count } from 'drizzle-orm'
+import { eq, ilike, and, or, sql, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { group } from '@kukan/db'
-import { NotFoundError, ValidationError, isUuid } from '@kukan/shared'
+import { NotFoundError, ValidationError, isUuid, escapeLike } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult } from '@kukan/shared'
 
 export interface CreateGroupInput {
@@ -37,25 +37,29 @@ export class GroupService {
     if (q) {
       conditions.push(
         or(
-          ilike(group.name, `%${q}%`),
-          ilike(group.title, `%${q}%`),
-          ilike(group.description, `%${q}%`)
+          ilike(group.name, `%${escapeLike(q)}%`),
+          ilike(group.title, `%${escapeLike(q)}%`),
+          ilike(group.description, `%${escapeLike(q)}%`)
         )!
       )
     }
 
     const where = and(...conditions)
 
-    const [{ total }] = await this.db.select({ total: count() }).from(group).where(where)
+    const rows = await this.db
+      .select({
+        ...getTableColumns(group),
+        total: sql<number>`COUNT(*) OVER()::int`.as('total'),
+      })
+      .from(group)
+      .where(where)
+      .limit(limit)
+      .offset(offset)
 
-    const items = await this.db.select().from(group).where(where).limit(limit).offset(offset)
+    const total = rows[0]?.total ?? 0
+    const items = rows.map(({ total: _, ...rest }) => rest)
 
-    return {
-      items,
-      total,
-      offset,
-      limit,
-    } as PaginatedResult<(typeof items)[0]>
+    return { items, total, offset, limit } as PaginatedResult<(typeof items)[0]>
   }
 
   async getByNameOrId(nameOrId: string) {
@@ -63,7 +67,10 @@ export class GroupService {
       .select()
       .from(group)
       .where(
-        and(isUuid(nameOrId) ? eq(group.id, nameOrId) : eq(group.name, nameOrId), eq(group.state, 'active'))
+        and(
+          isUuid(nameOrId) ? eq(group.id, nameOrId) : eq(group.name, nameOrId),
+          eq(group.state, 'active')
+        )
       )
       .limit(1)
 

@@ -14,9 +14,8 @@ describe('TagService', () => {
 
   describe('list', () => {
     it('should return paginated tags', async () => {
-      const tag = { ...createTagFixture(), packageCount: 3 }
-      mock.addResult([{ total: 1 }]) // count query
-      mock.addResult([tag]) // items query
+      const tag = { ...createTagFixture(), packageCount: 3, total: 1 }
+      mock.addResult([tag])
 
       const result = await service.list({ offset: 0, limit: 100 })
       expect(result.total).toBe(1)
@@ -24,7 +23,6 @@ describe('TagService', () => {
     })
 
     it('should return empty list', async () => {
-      mock.addResult([{ total: 0 }])
       mock.addResult([])
 
       const result = await service.list({})

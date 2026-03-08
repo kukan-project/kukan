@@ -10,3 +10,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export function isUuid(value: string): boolean {
   return UUID_RE.test(value)
 }
+
+/**
+ * Escape SQL LIKE/ILIKE wildcard characters (% and _) in user input.
+ */
+export function escapeLike(value: string): string {
+  return value.replace(/[%_\\]/g, '\\$&')
+}

@@ -3,10 +3,10 @@
  * Business logic for organization management
  */
 
-import { eq, ilike, and, or, count } from 'drizzle-orm'
+import { eq, ilike, and, or, sql, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { organization } from '@kukan/db'
-import { NotFoundError, ValidationError, isUuid } from '@kukan/shared'
+import { NotFoundError, ValidationError, isUuid, escapeLike } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult } from '@kukan/shared'
 
 export interface CreateOrganizationInput {
@@ -35,25 +35,29 @@ export class OrganizationService {
     if (q) {
       conditions.push(
         or(
-          ilike(organization.name, `%${q}%`),
-          ilike(organization.title, `%${q}%`),
-          ilike(organization.description, `%${q}%`)
+          ilike(organization.name, `%${escapeLike(q)}%`),
+          ilike(organization.title, `%${escapeLike(q)}%`),
+          ilike(organization.description, `%${escapeLike(q)}%`)
         )!
       )
     }
 
     const where = and(...conditions)
 
-    const [{ total }] = await this.db.select({ total: count() }).from(organization).where(where)
+    const rows = await this.db
+      .select({
+        ...getTableColumns(organization),
+        total: sql<number>`COUNT(*) OVER()::int`.as('total'),
+      })
+      .from(organization)
+      .where(where)
+      .limit(limit)
+      .offset(offset)
 
-    const items = await this.db.select().from(organization).where(where).limit(limit).offset(offset)
+    const total = rows[0]?.total ?? 0
+    const items = rows.map(({ total: _, ...rest }) => rest)
 
-    return {
-      items,
-      total,
-      offset,
-      limit,
-    } as PaginatedResult<(typeof items)[0]>
+    return { items, total, offset, limit } as PaginatedResult<(typeof items)[0]>
   }
 
   async getByNameOrId(nameOrId: string) {
@@ -62,9 +66,7 @@ export class OrganizationService {
       .from(organization)
       .where(
         and(
-          isUuid(nameOrId)
-            ? eq(organization.id, nameOrId)
-            : eq(organization.name, nameOrId),
+          isUuid(nameOrId) ? eq(organization.id, nameOrId) : eq(organization.name, nameOrId),
           eq(organization.state, 'active')
         )
       )

@@ -14,9 +14,8 @@ describe('PackageService', () => {
 
   describe('list', () => {
     it('should return paginated result', async () => {
-      const pkg = createPackageFixture()
-      mock.addResult([{ total: 1 }]) // count query
-      mock.addResult([pkg]) // items query
+      const pkg = { ...createPackageFixture(), total: 1 }
+      mock.addResult([pkg])
 
       const result = await service.list({ offset: 0, limit: 20 })
       expect(result.total).toBe(1)
@@ -26,7 +25,6 @@ describe('PackageService', () => {
     })
 
     it('should use default offset and limit', async () => {
-      mock.addResult([{ total: 0 }])
       mock.addResult([])
 
       const result = await service.list({})

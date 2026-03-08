@@ -3,9 +3,10 @@
  * Business logic for tag management
  */
 
-import { eq, ilike, sql, count } from 'drizzle-orm'
+import { eq, ilike, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { tag, packageTag } from '@kukan/db'
+import { escapeLike } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult } from '@kukan/shared'
 
 export class TagService {
@@ -14,16 +15,15 @@ export class TagService {
   async list(params: PaginationParams & { q?: string }) {
     const { offset = 0, limit = 100, q } = params
 
-    const where = q ? ilike(tag.name, `%${q}%`) : undefined
+    const where = q ? ilike(tag.name, `%${escapeLike(q)}%`) : undefined
 
-    const [{ total }] = await this.db.select({ total: count() }).from(tag).where(where)
-
-    const items = await this.db
+    const rows = await this.db
       .select({
         id: tag.id,
         name: tag.name,
         vocabularyId: tag.vocabularyId,
         packageCount: sql<number>`COUNT(DISTINCT ${packageTag.packageId})::int`.as('package_count'),
+        total: sql<number>`COUNT(*) OVER()::int`.as('total'),
       })
       .from(tag)
       .leftJoin(packageTag, eq(tag.id, packageTag.tagId))
@@ -32,12 +32,10 @@ export class TagService {
       .limit(limit)
       .offset(offset)
 
-    return {
-      items,
-      total,
-      offset,
-      limit,
-    } as PaginatedResult<(typeof items)[0]>
+    const total = rows[0]?.total ?? 0
+    const items = rows.map(({ total: _, ...rest }) => rest)
+
+    return { items, total, offset, limit } as PaginatedResult<(typeof items)[0]>
   }
 
   async getById(id: string) {

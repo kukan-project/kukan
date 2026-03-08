@@ -14,8 +14,7 @@ describe('OrganizationService', () => {
 
   describe('list', () => {
     it('should return paginated result', async () => {
-      const org = createOrganizationFixture()
-      mock.addResult([{ total: 1 }])
+      const org = { ...createOrganizationFixture(), total: 1 }
       mock.addResult([org])
 
       const result = await service.list({ offset: 0, limit: 20 })

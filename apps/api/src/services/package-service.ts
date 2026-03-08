@@ -3,10 +3,10 @@
  * Business logic for package (dataset) management
  */
 
-import { eq, ilike, and, or, sql, count } from 'drizzle-orm'
+import { eq, ilike, and, or, sql, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { packageTable, tag, packageTag, organization } from '@kukan/db'
-import { NotFoundError, ValidationError, isUuid } from '@kukan/shared'
+import { NotFoundError, ValidationError, isUuid, escapeLike } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult } from '@kukan/shared'
 import type { CreatePackageInput, UpdatePackageInput, PatchPackageInput } from '@kukan/shared'
 
@@ -21,9 +21,9 @@ export class PackageService {
     if (q) {
       conditions.push(
         or(
-          ilike(packageTable.name, `%${q}%`),
-          ilike(packageTable.title, `%${q}%`),
-          ilike(packageTable.notes, `%${q}%`)
+          ilike(packageTable.name, `%${escapeLike(q)}%`),
+          ilike(packageTable.title, `%${escapeLike(q)}%`),
+          ilike(packageTable.notes, `%${escapeLike(q)}%`)
         )!
       )
     }
@@ -38,16 +38,20 @@ export class PackageService {
 
     const where = and(...conditions)
 
-    const [{ total }] = await this.db.select({ total: count() }).from(packageTable).where(where)
+    const rows = await this.db
+      .select({
+        ...getTableColumns(packageTable),
+        total: sql<number>`COUNT(*) OVER()::int`.as('total'),
+      })
+      .from(packageTable)
+      .where(where)
+      .limit(limit)
+      .offset(offset)
 
-    const items = await this.db.select().from(packageTable).where(where).limit(limit).offset(offset)
+    const total = rows[0]?.total ?? 0
+    const items = rows.map(({ total: _, ...rest }) => rest)
 
-    return {
-      items,
-      total,
-      offset,
-      limit,
-    } as PaginatedResult<(typeof items)[0]>
+    return { items, total, offset, limit } as PaginatedResult<(typeof items)[0]>
   }
 
   async getByNameOrId(nameOrId: string) {

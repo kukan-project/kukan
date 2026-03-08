@@ -14,7 +14,6 @@ describe('GroupService', () => {
 
   describe('list', () => {
     it('should return paginated result', async () => {
-      mock.addResult([{ total: 0 }])
       mock.addResult([])
 
       const result = await service.list({ offset: 0, limit: 20 })
