@@ -10,14 +10,13 @@ export const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   PORT: z.coerce.number().default(3000),
 
-  // Storage
+  // Storage (S3-compatible: works with both AWS S3 and MinIO)
   STORAGE_TYPE: z.enum(['s3', 'minio', 'local']).default('minio'),
-  S3_BUCKET: z.string().optional(),
+  S3_BUCKET: z.string().default('kukan-dev'),
   S3_REGION: z.string().default('ap-northeast-1'),
-  MINIO_ENDPOINT: z.string().default('http://localhost:9000'),
-  MINIO_ACCESS_KEY: z.string().default('minioadmin'),
-  MINIO_SECRET_KEY: z.string().default('minioadmin'),
-  MINIO_BUCKET: z.string().default('kukan-dev'),
+  S3_ENDPOINT: z.string().optional(), // MinIO: http://localhost:9000, S3: omit (use default)
+  S3_ACCESS_KEY: z.string().optional(), // MinIO: required, S3: use IAM role
+  S3_SECRET_KEY: z.string().optional(), // MinIO: required, S3: use IAM role
 
   // Search
   SEARCH_TYPE: z.enum(['opensearch', 'postgres']).default('postgres'),

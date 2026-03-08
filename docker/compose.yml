@@ -1,3 +1,12 @@
+x-postgres-credentials: &postgres-credentials
+  POSTGRES_DB: kukan
+  POSTGRES_USER: kukan
+  POSTGRES_PASSWORD: kukan
+
+x-minio-credentials: &minio-credentials
+  MINIO_ROOT_USER: minioadmin
+  MINIO_ROOT_PASSWORD: minioadmin
+
 services:
   postgres:
     build: ./postgres
@@ -5,13 +14,11 @@ services:
     ports:
       - '5432:5432'
     environment:
-      POSTGRES_DB: kukan
-      POSTGRES_USER: kukan
-      POSTGRES_PASSWORD: kukan
+      <<: *postgres-credentials
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U kukan']
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER}']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -23,8 +30,7 @@ services:
       - '9000:9000'
       - '9001:9001'
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      <<: *minio-credentials
     command: server /data --console-address ":9001"
     volumes:
       - miniodata:/data
@@ -33,6 +39,20 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  minio-init:
+    image: minio/mc
+    container_name: kukan-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      <<: *minio-credentials
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
+      mc mb --ignore-existing local/kukan-dev;
+      "
 
 volumes:
   pgdata:

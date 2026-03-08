@@ -17,11 +17,14 @@ export function createAdapters(env: Env) {
       basePath: './data/storage',
     })
   } else if (env.STORAGE_TYPE === 'minio') {
+    if (!env.S3_ENDPOINT || !env.S3_ACCESS_KEY || !env.S3_SECRET_KEY) {
+      throw new Error('MinIO requires S3_ENDPOINT, S3_ACCESS_KEY, and S3_SECRET_KEY')
+    }
     storage = new MinIOStorageAdapter({
-      endpoint: env.MINIO_ENDPOINT,
-      accessKey: env.MINIO_ACCESS_KEY,
-      secretKey: env.MINIO_SECRET_KEY,
-      bucket: env.MINIO_BUCKET,
+      endpoint: env.S3_ENDPOINT,
+      accessKey: env.S3_ACCESS_KEY,
+      secretKey: env.S3_SECRET_KEY,
+      bucket: env.S3_BUCKET,
     })
   } else {
     // S3 - Phase 5
