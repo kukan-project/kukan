@@ -42,25 +42,24 @@ interface StorageAdapter {
 
 // packages/adapters/search/src/adapter.ts (@kukan/search-adapter)
 interface SearchAdapter {
-  indexDataset(dataset: DatasetDoc): Promise<void>
+  index(doc: DatasetDoc): Promise<void>
   search(query: SearchQuery): Promise<SearchResult>
-  deleteDataset(id: string): Promise<void>
-  reindexAll(): Promise<void>
+  delete(id: string): Promise<void>
+  bulkIndex(docs: DatasetDoc[]): Promise<void>
 }
 
 // packages/adapters/ai/src/adapter.ts (@kukan/ai-adapter)
 interface AIAdapter {
-  generateDescription(resource: ResourceMeta): Promise<string>
-  suggestTags(content: string): Promise<string[]>
-  detectLanguage(text: string): Promise<string>
-  embedText(text: string): Promise<number[]>
+  complete(prompt: string, options?: CompleteOptions): Promise<string>
+  embed(text: string): Promise<number[]>
 }
 
 // packages/adapters/queue/src/adapter.ts (@kukan/queue-adapter)
 interface QueueAdapter {
-  enqueue<T>(job: Job<T>): Promise<string>
-  process<T>(handler: (job: Job<T>) => Promise<void>): void
-  getStatus(jobId: string): Promise<JobStatus>
+  enqueue<T>(type: string, data: T): Promise<string>
+  getStatus(jobId: string): Promise<JobStatus | null>
+  process<T>(type: string, handler: (job: Job<T>) => Promise<void>): Promise<void>
+  stop(): Promise<void>
 }
 ```
 

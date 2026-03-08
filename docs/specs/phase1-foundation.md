@@ -355,7 +355,7 @@ packages/adapters/storage/src/
 ├── adapter.ts          # StorageAdapter インターフェース
 ├── minio.ts            # MinIOStorageAdapter（開発用、Phase 1で実装）
 ├── local.ts            # LocalStorageAdapter（テスト用、Phase 1で実装）
-├── s3.ts               # S3StorageAdapter（Phase 5で実装、スタブのみ）
+├── s3.ts               # S3StorageAdapter（Phase 2で実装、スタブのみ）
 └── index.ts
 ```
 
@@ -412,7 +412,7 @@ import { NoOpAIAdapter } from '@kukan/ai-adapter'
 export function createAdapters(env: Env) {
   return {
     storage:
-      env.STORAGE_TYPE === 'minio' ? new MinIOStorageAdapter(env) : new MinIOStorageAdapter(env), // Phase 5で S3 分岐追加
+      env.STORAGE_TYPE === 'minio' ? new MinIOStorageAdapter(env) : new MinIOStorageAdapter(env), // Phase 2で S3 分岐追加
     search: new PostgresSearchAdapter(env.DATABASE_URL),
     queue: new InProcessQueueAdapter(),
     ai: new NoOpAIAdapter(),

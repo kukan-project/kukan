@@ -1,6 +1,6 @@
 /**
  * KUKAN OpenSearch Adapter
- * AWS OpenSearch implementation (Phase 5)
+ * AWS OpenSearch implementation (Phase 2)
  */
 
 import { SearchQuery, SearchResult, DatasetDoc } from '@kukan/shared'
@@ -19,18 +19,18 @@ export class OpenSearchAdapter implements SearchAdapter {
   }
 
   async index(_doc: DatasetDoc): Promise<void> {
-    throw new Error('OpenSearchAdapter not implemented yet (Phase 5)')
+    throw new Error('OpenSearchAdapter not implemented yet (Phase 2)')
   }
 
   async search(_query: SearchQuery): Promise<SearchResult> {
-    throw new Error('OpenSearchAdapter not implemented yet (Phase 5)')
+    throw new Error('OpenSearchAdapter not implemented yet (Phase 2)')
   }
 
   async delete(_id: string): Promise<void> {
-    throw new Error('OpenSearchAdapter not implemented yet (Phase 5)')
+    throw new Error('OpenSearchAdapter not implemented yet (Phase 2)')
   }
 
   async bulkIndex(_docs: DatasetDoc[]): Promise<void> {
-    throw new Error('OpenSearchAdapter not implemented yet (Phase 5)')
+    throw new Error('OpenSearchAdapter not implemented yet (Phase 2)')
   }
 }

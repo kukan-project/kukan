@@ -27,8 +27,8 @@ export function createAdapters(env: Env) {
       bucket: env.S3_BUCKET,
     })
   } else {
-    // S3 - Phase 5
-    throw new Error('S3 storage not implemented yet (Phase 5)')
+    // S3 - Phase 2
+    throw new Error('S3 storage not implemented yet (Phase 2)')
   }
 
   // Search adapter

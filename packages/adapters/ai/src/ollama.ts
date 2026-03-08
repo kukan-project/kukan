@@ -1,6 +1,6 @@
 /**
  * KUKAN Ollama Adapter
- * Ollama local LLM implementation (Phase 5)
+ * Ollama local LLM implementation (Phase 4)
  */
 
 import { AIAdapter, CompleteOptions } from './adapter'
@@ -16,10 +16,10 @@ export class OllamaAdapter implements AIAdapter {
   }
 
   async complete(_prompt: string, _options?: CompleteOptions): Promise<string> {
-    throw new Error('OllamaAdapter not implemented yet (Phase 5)')
+    throw new Error('OllamaAdapter not implemented yet (Phase 4)')
   }
 
   async embed(_text: string): Promise<number[]> {
-    throw new Error('OllamaAdapter not implemented yet (Phase 5)')
+    throw new Error('OllamaAdapter not implemented yet (Phase 4)')
   }
 }
