@@ -1,3 +1,5 @@
+name: kukan
+
 x-postgres-credentials: &postgres-credentials
   POSTGRES_DB: kukan
   POSTGRES_USER: kukan
