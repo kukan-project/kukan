@@ -13,10 +13,16 @@ import {
   resource,
   group,
   packageGroup,
+  userOrgMembership,
 } from '@kukan/db'
 import { NotFoundError, ValidationError, isUuid, escapeLike } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult } from '@kukan/shared'
 import type { CreatePackageInput, UpdatePackageInput, PatchPackageInput } from '@kukan/shared'
+
+interface ViewerContext {
+  userId?: string
+  sysadmin?: boolean
+}
 
 export class PackageService {
   constructor(private db: Database) {}
@@ -26,10 +32,23 @@ export class PackageService {
       q?: string
       owner_org?: string
       group?: string
+      creator_user_id?: string
+      member_user_id?: string
       private?: boolean
+      viewer?: ViewerContext
     }
   ) {
-    const { offset = 0, limit = 20, q, owner_org, group: groupFilter, private: isPrivate } = params
+    const {
+      offset = 0,
+      limit = 20,
+      q,
+      owner_org,
+      group: groupFilter,
+      creator_user_id,
+      member_user_id,
+      private: isPrivate,
+      viewer,
+    } = params
 
     const conditions = [eq(packageTable.state, 'active')]
 
@@ -83,8 +102,38 @@ export class PackageService {
       }
     }
 
+    if (creator_user_id) {
+      conditions.push(eq(packageTable.creatorUserId, creator_user_id))
+    }
+
+    if (member_user_id) {
+      // Filter packages whose owner_org is an organization the user belongs to
+      const orgIds = this.db
+        .select({ organizationId: userOrgMembership.organizationId })
+        .from(userOrgMembership)
+        .where(eq(userOrgMembership.userId, member_user_id))
+      conditions.push(inArray(packageTable.ownerOrg, orgIds))
+    }
+
     if (typeof isPrivate === 'boolean') {
       conditions.push(eq(packageTable.private, isPrivate))
+    }
+
+    // Private package visibility: only show private packages to org members or sysadmin
+    if (!viewer?.sysadmin) {
+      if (viewer?.userId) {
+        // Authenticated: show public + private packages from user's orgs
+        const userOrgIds = this.db
+          .select({ organizationId: userOrgMembership.organizationId })
+          .from(userOrgMembership)
+          .where(eq(userOrgMembership.userId, viewer.userId))
+        conditions.push(
+          or(eq(packageTable.private, false), inArray(packageTable.ownerOrg, userOrgIds))!
+        )
+      } else {
+        // Unauthenticated: only public packages
+        conditions.push(eq(packageTable.private, false))
+      }
     }
 
     const where = and(...conditions)
@@ -128,8 +177,37 @@ export class PackageService {
     return result
   }
 
-  async getDetailByNameOrId(nameOrId: string) {
+  /**
+   * Get package by name or ID with private visibility check.
+   * Throws NotFoundError if the package is private and the viewer lacks access.
+   */
+  async getByNameOrIdWithAccessCheck(nameOrId: string, viewer?: ViewerContext) {
     const pkg = await this.getByNameOrId(nameOrId)
+
+    if (pkg.private && !viewer?.sysadmin) {
+      if (!viewer?.userId || !pkg.ownerOrg) {
+        throw new NotFoundError('Package', nameOrId)
+      }
+      const [membership] = await this.db
+        .select({ id: userOrgMembership.id })
+        .from(userOrgMembership)
+        .where(
+          and(
+            eq(userOrgMembership.userId, viewer.userId),
+            eq(userOrgMembership.organizationId, pkg.ownerOrg)
+          )
+        )
+        .limit(1)
+      if (!membership) {
+        throw new NotFoundError('Package', nameOrId)
+      }
+    }
+
+    return pkg
+  }
+
+  async getDetailByNameOrId(nameOrId: string, viewer?: ViewerContext) {
+    const pkg = await this.getByNameOrIdWithAccessCheck(nameOrId, viewer)
 
     const [resources, tags, org] = await Promise.all([
       this.db

@@ -20,7 +20,9 @@ export const createGroupSchema = z.object({
   extras: z.record(z.unknown()).default({}),
 })
 
-export const updateGroupSchema = createGroupSchema.partial()
+export const updateGroupSchema = createGroupSchema.partial().extend({
+  state: z.enum(['active', 'deleted']).optional(),
+})
 
 export type CreateGroupInput = z.infer<typeof createGroupSchema>
 export type UpdateGroupInput = z.infer<typeof updateGroupSchema>

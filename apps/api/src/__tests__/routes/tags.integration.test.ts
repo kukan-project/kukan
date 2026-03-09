@@ -1,25 +1,42 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { createTestApp } from '../test-helpers/test-app'
-import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
+import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 
 const db = getTestDb()
 const app = createTestApp(db)
 
+let testOrgId: string
+
 beforeEach(async () => {
   await cleanDatabase()
+  await ensureTestUser()
+  testOrgId = undefined as unknown as string
 })
 
 afterAll(async () => {
   await closeTestDb()
 })
 
+async function ensureTestOrg() {
+  if (testOrgId) return testOrgId
+  const res = await app.request('/api/v1/organizations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'test-org-tags' }),
+  })
+  const org = await res.json()
+  testOrgId = org.id
+  return testOrgId
+}
+
 describe('Tags API Routes', () => {
   // Helper: create a package with tags to populate the tag table
   async function createPackageWithTags(name: string, tags: string[]) {
+    const orgId = await ensureTestOrg()
     return app.request('/api/v1/packages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, tags: tags.map((t) => ({ name: t })) }),
+      body: JSON.stringify({ name, owner_org: orgId, tags: tags.map((t) => ({ name: t })) }),
     })
   }
 

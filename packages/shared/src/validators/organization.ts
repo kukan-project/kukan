@@ -20,7 +20,9 @@ export const createOrganizationSchema = z.object({
   extras: z.record(z.unknown()).default({}),
 })
 
-export const updateOrganizationSchema = createOrganizationSchema.partial()
+export const updateOrganizationSchema = createOrganizationSchema.partial().extend({
+  state: z.enum(['active', 'deleted']).optional(),
+})
 
 export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>
 export type UpdateOrganizationInput = z.infer<typeof updateOrganizationSchema>

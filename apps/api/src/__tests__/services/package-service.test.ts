@@ -66,6 +66,7 @@ describe('PackageService', () => {
       await expect(
         service.create({
           name: 'duplicate',
+          owner_org: '550e8400-e29b-41d4-a716-446655440000',
           private: false,
           type: 'dataset',
           extras: {},
@@ -95,10 +96,12 @@ describe('PackageService', () => {
     it('should create package successfully', async () => {
       const created = createPackageFixture({ name: 'new-pkg' })
       mock.addResult([]) // name check: no duplicate
+      mock.addResult([{ id: '550e8400-e29b-41d4-a716-446655440000' }]) // org check: found
       mock.addResult([created]) // insert returning
 
       const result = await service.create({
         name: 'new-pkg',
+        owner_org: '550e8400-e29b-41d4-a716-446655440000',
         private: false,
         type: 'dataset',
         extras: {},

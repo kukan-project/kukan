@@ -1,23 +1,40 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { createTestApp } from '../test-helpers/test-app'
-import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
+import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 
 const db = getTestDb()
 const app = createTestApp(db)
 
+let testOrgId: string
+
 beforeEach(async () => {
   await cleanDatabase()
+  await ensureTestUser()
+  testOrgId = undefined as unknown as string
 })
 
 afterAll(async () => {
   await closeTestDb()
 })
 
+async function ensureTestOrg() {
+  if (testOrgId) return testOrgId
+  const res = await app.request('/api/v1/organizations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'test-org-res' }),
+  })
+  const org = await res.json()
+  testOrgId = org.id
+  return testOrgId
+}
+
 async function createPackage(name: string) {
+  const orgId = await ensureTestOrg()
   const res = await app.request('/api/v1/packages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, owner_org: orgId }),
   })
   return res.json()
 }

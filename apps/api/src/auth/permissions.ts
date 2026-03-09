@@ -5,56 +5,93 @@
 
 import { eq, and } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { userOrgMembership } from '@kukan/db'
+import { userOrgMembership, userGroupMembership } from '@kukan/db'
 import { ForbiddenError } from '@kukan/shared'
 
-export type OrgRole = 'admin' | 'editor' | 'member'
+export type MembershipRole = 'admin' | 'editor' | 'member'
 
 interface AuthUser {
   id: string
   sysadmin: boolean
 }
 
+const ROLE_HIERARCHY: Record<string, number> = {
+  admin: 3,
+  editor: 2,
+  member: 1,
+}
+
+/**
+ * Generic membership role check.
+ * Verifies a user has the required role (or higher) in a membership table.
+ */
+async function checkMembershipRole(
+  db: Database,
+  user: AuthUser,
+  entityId: string,
+  requiredRole: MembershipRole,
+  config: {
+    table: typeof userOrgMembership | typeof userGroupMembership
+    userIdCol: typeof userOrgMembership.userId | typeof userGroupMembership.userId
+    entityIdCol: typeof userOrgMembership.organizationId | typeof userGroupMembership.groupId
+    roleCol: typeof userOrgMembership.role | typeof userGroupMembership.role
+    entityLabel: string
+  }
+): Promise<void> {
+  if (user.sysadmin) return
+
+  const [membership] = await db
+    .select({ role: config.roleCol })
+    .from(config.table)
+    .where(and(eq(config.userIdCol, user.id), eq(config.entityIdCol, entityId)))
+    .limit(1)
+
+  if (!membership) {
+    throw new ForbiddenError(`Not a member of this ${config.entityLabel}`)
+  }
+
+  const userLevel = ROLE_HIERARCHY[membership.role] ?? 0
+  const requiredLevel = ROLE_HIERARCHY[requiredRole] ?? 0
+
+  if (userLevel < requiredLevel) {
+    throw new ForbiddenError(`Requires ${requiredRole} role or higher`)
+  }
+}
+
 /**
  * Check if a user has a specific role (or higher) in an organization.
- * Role hierarchy: admin > editor > member
  */
 export async function checkOrgRole(
   db: Database,
   user: AuthUser,
   organizationId: string,
-  requiredRole: OrgRole
+  requiredRole: MembershipRole
 ): Promise<void> {
-  // Sysadmins bypass all permission checks
-  if (user.sysadmin) return
+  return checkMembershipRole(db, user, organizationId, requiredRole, {
+    table: userOrgMembership,
+    userIdCol: userOrgMembership.userId,
+    entityIdCol: userOrgMembership.organizationId,
+    roleCol: userOrgMembership.role,
+    entityLabel: 'organization',
+  })
+}
 
-  const [membership] = await db
-    .select({ role: userOrgMembership.role })
-    .from(userOrgMembership)
-    .where(
-      and(
-        eq(userOrgMembership.userId, user.id),
-        eq(userOrgMembership.organizationId, organizationId)
-      )
-    )
-    .limit(1)
-
-  if (!membership) {
-    throw new ForbiddenError('Not a member of this organization')
-  }
-
-  const roleHierarchy: Record<string, number> = {
-    admin: 3,
-    editor: 2,
-    member: 1,
-  }
-
-  const userLevel = roleHierarchy[membership.role] ?? 0
-  const requiredLevel = roleHierarchy[requiredRole] ?? 0
-
-  if (userLevel < requiredLevel) {
-    throw new ForbiddenError(`Requires ${requiredRole} role or higher`)
-  }
+/**
+ * Check if a user has a specific role (or higher) in a group.
+ */
+export async function checkGroupRole(
+  db: Database,
+  user: AuthUser,
+  groupId: string,
+  requiredRole: MembershipRole
+): Promise<void> {
+  return checkMembershipRole(db, user, groupId, requiredRole, {
+    table: userGroupMembership,
+    userIdCol: userGroupMembership.userId,
+    entityIdCol: userGroupMembership.groupId,
+    roleCol: userGroupMembership.role,
+    entityLabel: 'group',
+  })
 }
 
 /**

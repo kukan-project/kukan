@@ -6,7 +6,9 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { ResourceService } from '../services/resource-service'
-import { updateResourceSchema } from '@kukan/shared'
+import { PackageService } from '../services/package-service'
+import { updateResourceSchema, ForbiddenError } from '@kukan/shared'
+import { checkOrgRole } from '../auth/permissions'
 import type { AppContext } from '../context'
 
 export const resourcesRouter = new Hono<{ Variables: AppContext }>()
@@ -19,19 +21,35 @@ resourcesRouter.get('/:id', async (c) => {
   return c.json(res)
 })
 
-// PUT /api/v1/resources/:id - Update resource
+// PUT /api/v1/resources/:id - Update resource (org editor+)
 resourcesRouter.put('/:id', zValidator('json', updateResourceSchema), async (c) => {
+  const user = c.get('user')
+  if (!user) throw new ForbiddenError('Authentication required')
+
+  const db = c.get('db')
   const id = c.req.param('id')
+  const resourceService = new ResourceService(db)
+  const existing = await resourceService.getById(id)
+  const pkg = await new PackageService(db).getByNameOrId(existing.packageId)
+  if (pkg.ownerOrg) await checkOrgRole(db, user, pkg.ownerOrg, 'editor')
+
   const input = c.req.valid('json')
-  const service = new ResourceService(c.get('db'))
-  const res = await service.update(id, input)
+  const res = await resourceService.update(id, input)
   return c.json(res)
 })
 
-// DELETE /api/v1/resources/:id - Delete resource (soft delete)
+// DELETE /api/v1/resources/:id - Delete resource (org editor+)
 resourcesRouter.delete('/:id', async (c) => {
+  const user = c.get('user')
+  if (!user) throw new ForbiddenError('Authentication required')
+
+  const db = c.get('db')
   const id = c.req.param('id')
-  const service = new ResourceService(c.get('db'))
-  const res = await service.delete(id)
+  const resourceService = new ResourceService(db)
+  const existing = await resourceService.getById(id)
+  const pkg = await new PackageService(db).getByNameOrId(existing.packageId)
+  if (pkg.ownerOrg) await checkOrgRole(db, user, pkg.ownerOrg, 'editor')
+
+  const res = await resourceService.delete(id)
   return c.json(res)
 })

@@ -52,12 +52,24 @@ const testEnv = {
   BETTER_AUTH_URL: 'http://localhost:3000',
 } as unknown as Env
 
+/** Default sysadmin user for tests. Set `user: null` to test unauthenticated access. */
+const defaultTestUser = {
+  id: '00000000-0000-0000-0000-000000000001',
+  email: 'test-admin@example.com',
+  name: 'test-admin',
+  sysadmin: true,
+}
+
 interface TestAppOverrides {
   search?: SearchAdapter
+  /** Override the authenticated user. Pass `null` for unauthenticated. */
+  user?: { id: string; email: string; name: string; sysadmin: boolean } | null
 }
 
 export function createTestApp(db: Database, overrides?: TestAppOverrides) {
   const app = new Hono()
+
+  const testUser = overrides?.user === null ? undefined : (overrides?.user ?? defaultTestUser)
 
   // Inject context
   app.use('*', async (c, next) => {
@@ -67,6 +79,7 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
     c.set('queue', mockQueue)
     c.set('ai', mockAi)
     c.set('env', testEnv)
+    if (testUser) c.set('user', testUser)
     await next()
   })
 

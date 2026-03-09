@@ -5,52 +5,57 @@ import {
   patchPackageSchema,
 } from '../../validators/package'
 
+const TEST_ORG_ID = '550e8400-e29b-41d4-a716-446655440000'
+
 describe('createPackageSchema', () => {
   describe('name', () => {
     it('should accept valid lowercase name with hyphens', () => {
-      const result = createPackageSchema.safeParse({ name: 'my-dataset' })
+      const result = createPackageSchema.safeParse({ name: 'my-dataset', owner_org: TEST_ORG_ID })
       expect(result.success).toBe(true)
     })
 
     it('should accept name with underscores', () => {
-      const result = createPackageSchema.safeParse({ name: 'my_dataset' })
+      const result = createPackageSchema.safeParse({ name: 'my_dataset', owner_org: TEST_ORG_ID })
       expect(result.success).toBe(true)
     })
 
     it('should accept name with numbers', () => {
-      const result = createPackageSchema.safeParse({ name: 'dataset-2024' })
+      const result = createPackageSchema.safeParse({ name: 'dataset-2024', owner_org: TEST_ORG_ID })
       expect(result.success).toBe(true)
     })
 
     it('should reject name shorter than 2 chars', () => {
-      const result = createPackageSchema.safeParse({ name: 'a' })
+      const result = createPackageSchema.safeParse({ name: 'a', owner_org: TEST_ORG_ID })
       expect(result.success).toBe(false)
     })
 
     it('should reject name longer than 100 chars', () => {
-      const result = createPackageSchema.safeParse({ name: 'a'.repeat(101) })
+      const result = createPackageSchema.safeParse({
+        name: 'a'.repeat(101),
+        owner_org: TEST_ORG_ID,
+      })
       expect(result.success).toBe(false)
     })
 
     it('should reject name with uppercase letters', () => {
-      const result = createPackageSchema.safeParse({ name: 'MyDataset' })
+      const result = createPackageSchema.safeParse({ name: 'MyDataset', owner_org: TEST_ORG_ID })
       expect(result.success).toBe(false)
     })
 
     it('should reject name with spaces', () => {
-      const result = createPackageSchema.safeParse({ name: 'my dataset' })
+      const result = createPackageSchema.safeParse({ name: 'my dataset', owner_org: TEST_ORG_ID })
       expect(result.success).toBe(false)
     })
 
     it('should reject name with special chars', () => {
-      const result = createPackageSchema.safeParse({ name: 'my@dataset' })
+      const result = createPackageSchema.safeParse({ name: 'my@dataset', owner_org: TEST_ORG_ID })
       expect(result.success).toBe(false)
     })
   })
 
   describe('minimal input', () => {
-    it('should accept name-only input with defaults', () => {
-      const result = createPackageSchema.safeParse({ name: 'test-pkg' })
+    it('should accept name + owner_org input with defaults', () => {
+      const result = createPackageSchema.safeParse({ name: 'test-pkg', owner_org: TEST_ORG_ID })
       expect(result.success).toBe(true)
       if (result.success) {
         expect(result.data.private).toBe(false)
@@ -59,6 +64,11 @@ describe('createPackageSchema', () => {
         expect(result.data.tags).toEqual([])
         expect(result.data.resources).toEqual([])
       }
+    })
+
+    it('should reject input without owner_org', () => {
+      const result = createPackageSchema.safeParse({ name: 'test-pkg' })
+      expect(result.success).toBe(false)
     })
   })
 
@@ -87,6 +97,7 @@ describe('createPackageSchema', () => {
     it('should reject invalid email', () => {
       const result = createPackageSchema.safeParse({
         name: 'test',
+        owner_org: TEST_ORG_ID,
         author_email: 'not-an-email',
       })
       expect(result.success).toBe(false)
@@ -95,6 +106,7 @@ describe('createPackageSchema', () => {
     it('should reject invalid url', () => {
       const result = createPackageSchema.safeParse({
         name: 'test',
+        owner_org: TEST_ORG_ID,
         url: 'not-a-url',
       })
       expect(result.success).toBe(false)

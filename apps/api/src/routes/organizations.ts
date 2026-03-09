@@ -6,26 +6,10 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
+import { createOrganizationSchema, updateOrganizationSchema, ForbiddenError } from '@kukan/shared'
 import { OrganizationService } from '../services/organization-service'
+import { checkOrgRole } from '../auth/permissions'
 import type { AppContext } from '../context'
-
-const createOrganizationSchema = z.object({
-  name: z
-    .string()
-    .min(2)
-    .max(100)
-    .regex(/^[a-z0-9-_]+$/),
-  title: z.string().optional(),
-  description: z.string().optional(),
-  imageUrl: z.string().url().optional(),
-})
-
-const updateOrganizationSchema = z.object({
-  title: z.string().optional(),
-  description: z.string().optional(),
-  imageUrl: z.string().url().optional(),
-  state: z.enum(['active', 'deleted']).optional(),
-})
 
 export const organizationsRouter = new Hono<{ Variables: AppContext }>()
 
@@ -50,14 +34,16 @@ organizationsRouter.get(
   }
 )
 
-// POST /api/v1/organizations - Create organization
+// POST /api/v1/organizations - Create organization (sysadmin only)
 organizationsRouter.post('/', zValidator('json', createOrganizationSchema), async (c) => {
   const db = c.get('db')
   const user = c.get('user')
-  const service = new OrganizationService(db)
-  const input = c.req.valid('json')
+  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can create organizations')
 
-  const created = await service.create(input, user?.id)
+  const service = new OrganizationService(db)
+  const { image_url, ...rest } = c.req.valid('json')
+
+  const created = await service.create({ ...rest, imageUrl: image_url })
   return c.json(created, 201)
 })
 
@@ -71,23 +57,88 @@ organizationsRouter.get('/:nameOrId', async (c) => {
   return c.json(organization)
 })
 
-// PUT /api/v1/organizations/:nameOrId - Update organization
+// PUT /api/v1/organizations/:nameOrId - Update organization (sysadmin or org admin)
 organizationsRouter.put('/:nameOrId', zValidator('json', updateOrganizationSchema), async (c) => {
   const db = c.get('db')
+  const user = c.get('user')
+  if (!user) throw new ForbiddenError('Authentication required')
+
   const service = new OrganizationService(db)
   const nameOrId = c.req.param('nameOrId')
-  const input = c.req.valid('json')
+  const org = await service.getByNameOrId(nameOrId)
+  await checkOrgRole(db, user, org.id, 'admin')
 
-  const updated = await service.update(nameOrId, input)
+  const { image_url, ...rest } = c.req.valid('json')
+  const updated = await service.update(nameOrId, { ...rest, imageUrl: image_url })
   return c.json(updated)
 })
 
-// DELETE /api/v1/organizations/:nameOrId - Delete (soft) organization
+// DELETE /api/v1/organizations/:nameOrId - Delete (soft) organization (sysadmin or org admin)
 organizationsRouter.delete('/:nameOrId', async (c) => {
   const db = c.get('db')
+  const user = c.get('user')
+  if (!user) throw new ForbiddenError('Authentication required')
+
   const service = new OrganizationService(db)
   const nameOrId = c.req.param('nameOrId')
+  const org = await service.getByNameOrId(nameOrId)
+  await checkOrgRole(db, user, org.id, 'admin')
 
   const result = await service.delete(nameOrId)
+  return c.json(result)
+})
+
+// ── Member management ──
+
+// GET /api/v1/organizations/:nameOrId/members - List members
+organizationsRouter.get('/:nameOrId/members', async (c) => {
+  const db = c.get('db')
+  const user = c.get('user')
+  if (!user) throw new ForbiddenError('Authentication required')
+
+  const service = new OrganizationService(db)
+  const org = await service.getByNameOrId(c.req.param('nameOrId'))
+  await checkOrgRole(db, user, org.id, 'member')
+
+  const members = await service.listMembers(org.id)
+  return c.json({ items: members })
+})
+
+// POST /api/v1/organizations/:nameOrId/members - Add or update member
+organizationsRouter.post(
+  '/:nameOrId/members',
+  zValidator(
+    'json',
+    z.object({
+      user_id: z.string().min(1),
+      role: z.enum(['admin', 'editor', 'member']).default('member'),
+    })
+  ),
+  async (c) => {
+    const db = c.get('db')
+    const user = c.get('user')
+    if (!user) throw new ForbiddenError('Authentication required')
+
+    const service = new OrganizationService(db)
+    const org = await service.getByNameOrId(c.req.param('nameOrId'))
+    await checkOrgRole(db, user, org.id, 'admin')
+
+    const { user_id, role } = c.req.valid('json')
+    const result = await service.addMember(org.id, user_id, role)
+    return c.json(result, 201)
+  }
+)
+
+// DELETE /api/v1/organizations/:nameOrId/members/:userId - Remove member
+organizationsRouter.delete('/:nameOrId/members/:userId', async (c) => {
+  const db = c.get('db')
+  const user = c.get('user')
+  if (!user) throw new ForbiddenError('Authentication required')
+
+  const service = new OrganizationService(db)
+  const org = await service.getByNameOrId(c.req.param('nameOrId'))
+  await checkOrgRole(db, user, org.id, 'admin')
+
+  const result = await service.removeMember(org.id, c.req.param('userId'))
   return c.json(result)
 })

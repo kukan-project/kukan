@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { createTestApp } from '../test-helpers/test-app'
-import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
+import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 
 const db = getTestDb()
 const app = createTestApp(db)
 
 beforeEach(async () => {
   await cleanDatabase()
+  await ensureTestUser()
 })
 
 afterAll(async () => {
@@ -110,6 +111,109 @@ describe('Groups API Routes', () => {
       const listRes = await app.request('/api/v1/groups')
       const body = await listRes.json()
       expect(body.total).toBe(0)
+    })
+  })
+
+  describe('Authorization', () => {
+    it('should reject unauthenticated create', async () => {
+      const noAuthApp = createTestApp(db, { user: null })
+      const res = await noAuthApp.request('/api/v1/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'no-auth-group' }),
+      })
+      expect(res.status).toBe(403)
+    })
+
+    it('should reject non-sysadmin create', async () => {
+      const regularApp = createTestApp(db, {
+        user: {
+          id: '00000000-0000-0000-0000-000000000099',
+          email: 'regular@example.com',
+          name: 'regular',
+          sysadmin: false,
+        },
+      })
+      const res = await regularApp.request('/api/v1/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'regular-group' }),
+      })
+      expect(res.status).toBe(403)
+    })
+
+    it('should reject unauthenticated update', async () => {
+      await app.request('/api/v1/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'auth-update-group' }),
+      })
+
+      const noAuthApp = createTestApp(db, { user: null })
+      const res = await noAuthApp.request('/api/v1/groups/auth-update-group', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Hacked' }),
+      })
+      expect(res.status).toBe(403)
+    })
+
+    it('should reject unauthenticated delete', async () => {
+      await app.request('/api/v1/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'auth-delete-group' }),
+      })
+
+      const noAuthApp = createTestApp(db, { user: null })
+      const res = await noAuthApp.request('/api/v1/groups/auth-delete-group', {
+        method: 'DELETE',
+      })
+      expect(res.status).toBe(403)
+    })
+
+    it('should reject non-member update', async () => {
+      await app.request('/api/v1/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'no-member-update-group' }),
+      })
+
+      const regularApp = createTestApp(db, {
+        user: {
+          id: '00000000-0000-0000-0000-000000000099',
+          email: 'regular@example.com',
+          name: 'regular',
+          sysadmin: false,
+        },
+      })
+      const res = await regularApp.request('/api/v1/groups/no-member-update-group', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Hacked' }),
+      })
+      expect(res.status).toBe(403)
+    })
+
+    it('should reject non-member delete', async () => {
+      await app.request('/api/v1/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'no-member-delete-group' }),
+      })
+
+      const regularApp = createTestApp(db, {
+        user: {
+          id: '00000000-0000-0000-0000-000000000099',
+          email: 'regular@example.com',
+          name: 'regular',
+          sysadmin: false,
+        },
+      })
+      const res = await regularApp.request('/api/v1/groups/no-member-delete-group', {
+        method: 'DELETE',
+      })
+      expect(res.status).toBe(403)
     })
   })
 })

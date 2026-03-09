@@ -51,8 +51,10 @@ function ckanError(
 
 // package_list - List all packages (names only)
 ckanCompatRouter.get('/package_list', async (c) => {
+  const user = c.get('user')
+  const viewer = user ? { userId: user.id, sysadmin: user.sysadmin } : undefined
   const service = new PackageService(c.get('db'))
-  const result = await service.list({ offset: 0, limit: 1000 })
+  const result = await service.list({ offset: 0, limit: 1000, viewer })
   const names = result.items.map((pkg) => pkg.name)
   return ckanResponse(names, c)
 })
@@ -64,9 +66,11 @@ ckanCompatRouter.get('/package_show', async (c) => {
     return ckanError('Missing parameter: id', c)
   }
 
+  const user = c.get('user')
+  const viewer = user ? { userId: user.id, sysadmin: user.sysadmin } : undefined
   const service = new PackageService(c.get('db'))
   try {
-    const pkg = await service.getByNameOrId(id)
+    const pkg = await service.getDetailByNameOrId(id, viewer)
     return ckanResponse(pkg, c)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Package not found'

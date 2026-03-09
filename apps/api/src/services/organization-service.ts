@@ -5,7 +5,7 @@
 
 import { eq, ilike, and, or, sql, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { organization } from '@kukan/db'
+import { organization, userOrgMembership, user } from '@kukan/db'
 import { NotFoundError, ValidationError, isUuid, escapeLike } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult } from '@kukan/shared'
 
@@ -83,7 +83,7 @@ export class OrganizationService {
     return result
   }
 
-  async create(input: CreateOrganizationInput, _creatorUserId?: string) {
+  async create(input: CreateOrganizationInput) {
     // Validate name uniqueness
     const existing = await this.db
       .select()
@@ -136,6 +136,80 @@ export class OrganizationService {
         updated: new Date(),
       })
       .where(eq(organization.id, existing.id))
+
+    return { success: true }
+  }
+
+  // ── Member management ──
+
+  async listMembers(orgId: string) {
+    const rows = await this.db
+      .select({
+        id: userOrgMembership.id,
+        userId: userOrgMembership.userId,
+        role: userOrgMembership.role,
+        created: userOrgMembership.created,
+        userName: user.name,
+        email: user.email,
+        displayName: user.displayName,
+      })
+      .from(userOrgMembership)
+      .innerJoin(user, eq(userOrgMembership.userId, user.id))
+      .where(eq(userOrgMembership.organizationId, orgId))
+
+    return rows
+  }
+
+  async addMember(orgId: string, userId: string, role: string = 'member') {
+    // Verify user exists
+    const [existingUser] = await this.db
+      .select({ id: user.id })
+      .from(user)
+      .where(eq(user.id, userId))
+      .limit(1)
+
+    if (!existingUser) {
+      throw new NotFoundError('User', userId)
+    }
+
+    // Check if already a member
+    const [existing] = await this.db
+      .select({ id: userOrgMembership.id })
+      .from(userOrgMembership)
+      .where(and(eq(userOrgMembership.userId, userId), eq(userOrgMembership.organizationId, orgId)))
+      .limit(1)
+
+    if (existing) {
+      // Update role if already a member
+      const [updated] = await this.db
+        .update(userOrgMembership)
+        .set({ role })
+        .where(eq(userOrgMembership.id, existing.id))
+        .returning()
+      return updated
+    }
+
+    const [created] = await this.db
+      .insert(userOrgMembership)
+      .values({
+        userId,
+        organizationId: orgId,
+        role,
+      })
+      .returning()
+
+    return created
+  }
+
+  async removeMember(orgId: string, userId: string) {
+    const [deleted] = await this.db
+      .delete(userOrgMembership)
+      .where(and(eq(userOrgMembership.userId, userId), eq(userOrgMembership.organizationId, orgId)))
+      .returning()
+
+    if (!deleted) {
+      throw new NotFoundError('Membership', `user=${userId} org=${orgId}`)
+    }
 
     return { success: true }
   }

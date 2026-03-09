@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { createTestApp } from '../test-helpers/test-app'
-import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
+import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import { PostgresSearchAdapter } from '@kukan/search-adapter'
 
 const TEST_DATABASE_URL =
@@ -10,29 +10,43 @@ const db = getTestDb()
 const searchAdapter = new PostgresSearchAdapter({ connectionString: TEST_DATABASE_URL })
 const app = createTestApp(db, { search: searchAdapter })
 
+let testOrgId: string
+
 beforeEach(async () => {
   await cleanDatabase()
+  await ensureTestUser()
+  testOrgId = undefined as unknown as string
 })
 
 afterAll(async () => {
   await closeTestDb()
 })
 
-// Helper: create a package via API
-async function createPackage(data: Record<string, unknown>) {
-  return app.request('/api/v1/packages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-}
-
 // Helper: create an organization via API
 async function createOrg(name: string) {
-  return app.request('/api/v1/organizations', {
+  const res = await app.request('/api/v1/organizations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
+  })
+  return res
+}
+
+async function ensureTestOrg() {
+  if (testOrgId) return testOrgId
+  const res = await createOrg('test-org-search')
+  const org = await res.json()
+  testOrgId = org.id
+  return testOrgId
+}
+
+// Helper: create a package via API (auto-injects owner_org)
+async function createPackage(data: Record<string, unknown>) {
+  const orgId = data.owner_org || (await ensureTestOrg())
+  return app.request('/api/v1/packages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ owner_org: orgId, ...data }),
   })
 }
 

@@ -33,10 +33,27 @@ export async function cleanDatabase() {
   const db = getTestDb()
   await db.execute(sql`
     TRUNCATE TABLE
+      user_org_membership, user_group_membership,
       package_tag, resource, package, tag, vocabulary,
       api_token, audit_log, activity,
       "group", organization
     CASCADE
+  `)
+}
+
+/** Default test user ID (matches test-app.ts defaultTestUser) */
+export const TEST_USER_ID = '00000000-0000-0000-0000-000000000001'
+
+/**
+ * Ensure the default test user exists in the database.
+ * Call in beforeEach() for tests that create organizations (auto-admin membership requires FK).
+ */
+export async function ensureTestUser() {
+  const db = getTestDb()
+  await db.execute(sql`
+    INSERT INTO "user" (id, email, name, "emailVerified", role, state)
+    VALUES (${TEST_USER_ID}, 'test-admin@example.com', 'test-admin', true, 'sysadmin', 'active')
+    ON CONFLICT (id) DO NOTHING
   `)
 }
 

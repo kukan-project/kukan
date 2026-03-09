@@ -16,14 +16,14 @@ export const createPackageSchema = z.object({
     ),
   title: z.string().optional(),
   notes: z.string().optional(),
-  url: z.string().url().optional(),
+  url: z.union([z.string().url(), z.literal('')]).optional(),
   version: z.string().max(100).optional(),
   license_id: z.string().max(100).optional(),
   author: z.string().optional(),
-  author_email: z.string().email().optional(),
+  author_email: z.union([z.string().email(), z.literal('')]).optional(),
   maintainer: z.string().optional(),
-  maintainer_email: z.string().email().optional(),
-  owner_org: z.string().uuid().optional(),
+  maintainer_email: z.union([z.string().email(), z.literal('')]).optional(),
+  owner_org: z.string().uuid(),
   private: z.boolean().default(false),
   type: z.string().max(100).default('dataset'),
   extras: z.record(z.unknown()).default({}),
@@ -41,8 +41,10 @@ export const createPackageSchema = z.object({
     .default([]),
 })
 
-export const updatePackageSchema = createPackageSchema.partial()
-export const patchPackageSchema = createPackageSchema.partial()
+export const updatePackageSchema = createPackageSchema.partial().extend({
+  state: z.enum(['active', 'deleted']).optional(),
+})
+export const patchPackageSchema = updatePackageSchema
 
 export type CreatePackageInput = z.infer<typeof createPackageSchema>
 export type UpdatePackageInput = z.infer<typeof updatePackageSchema>
