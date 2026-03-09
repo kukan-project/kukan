@@ -49,6 +49,9 @@ Thumbs.db
 *.sqlite
 *.sqlite3
 
+# Sample seed data (local only)
+seed-sample-*
+
 # Temporary files
 tmp/
 temp/
