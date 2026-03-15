@@ -27,6 +27,7 @@ interface ViewerContext {
 
 export interface PackageFilterParams {
   q?: string
+  name?: string
   owner_org?: string
   group?: string
   tags?: string[]
@@ -60,6 +61,10 @@ export class PackageService {
           ilike(packageTable.notes, `%${escapeLike(params.q)}%`)
         )!
       )
+    }
+
+    if (params.name) {
+      conditions.push(ilike(packageTable.name, `${escapeLike(params.name)}%`))
     }
 
     if (exclude !== 'owner_org' && params.owner_org) {
