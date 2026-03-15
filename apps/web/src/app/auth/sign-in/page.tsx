@@ -51,6 +51,7 @@ export default function SignInPage() {
       return
     }
     router.push('/dashboard')
+    router.refresh()
   }
 
   return (
