@@ -1,6 +1,6 @@
 /**
- * Client Components 用 fetch ラッパー
- * 同一オリジンなので相対パスで fetch
+ * Fetch wrapper for Client Components.
+ * Uses relative paths (same origin).
  */
 export async function clientFetch(path: string, init?: RequestInit) {
   return fetch(path, {

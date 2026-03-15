@@ -3,8 +3,8 @@ import 'server-only'
 import { cache } from 'react'
 
 /**
- * Server Components 用 fetch ラッパー
- * Hono app.request() を直接呼び出す（HTTP ホップなし）
+ * Fetch wrapper for Server Components.
+ * Calls Hono app.request() directly (no HTTP hop).
  */
 export async function serverFetch(path: string, init?: RequestInit) {
   const { cookies } = await import('next/headers')
@@ -30,8 +30,8 @@ export async function serverFetch(path: string, init?: RequestInit) {
 }
 
 /**
- * 現在のユーザーを取得（リクエスト単位で dedup）
- * Server Components の同一リクエスト内で何度呼んでも1回だけ実行される
+ * Get the current user (deduped per request).
+ * Only executes once within the same Server Component request.
  */
 export const getCurrentUser = cache(async () => {
   const res = await serverFetch('/api/v1/users/me')
