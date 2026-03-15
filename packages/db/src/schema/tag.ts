@@ -3,7 +3,7 @@
  * vocabulary, tag, and package_tag tables
  */
 
-import { pgTable, uuid, varchar, unique } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, unique, index } from 'drizzle-orm/pg-core'
 import { packageTable } from './package'
 
 export const vocabulary = pgTable('vocabulary', {
@@ -18,7 +18,10 @@ export const tag = pgTable(
     name: varchar('name', { length: 200 }).notNull(),
     vocabularyId: uuid('vocabulary_id').references(() => vocabulary.id),
   },
-  (table) => [unique('uq_tag_name_vocabulary').on(table.name, table.vocabularyId)]
+  (table) => [
+    unique('uq_tag_name_vocabulary').on(table.name, table.vocabularyId),
+    index('idx_tag_name').on(table.name),
+  ]
 )
 
 export const packageTag = pgTable(
@@ -32,5 +35,8 @@ export const packageTag = pgTable(
       .notNull()
       .references(() => tag.id, { onDelete: 'cascade' }),
   },
-  (table) => [unique('uq_package_tag').on(table.packageId, table.tagId)]
+  (table) => [
+    unique('uq_package_tag').on(table.packageId, table.tagId),
+    index('idx_package_tag_package_id').on(table.packageId),
+  ]
 )

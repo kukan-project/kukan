@@ -36,6 +36,13 @@
       "when": 1772973256586,
       "tag": "0004_square_ultimo",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1773558990390,
+      "tag": "0005_brief_gamora",
+      "breakpoints": true
     }
   ]
 }

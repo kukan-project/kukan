@@ -22,8 +22,8 @@ export function createPackageFixture(overrides?: Record<string, unknown>) {
     qualityScore: null,
     aiSummary: null,
     aiTags: null,
-    metadataCreated: new Date(),
-    metadataModified: new Date(),
+    created: new Date(),
+    updated: new Date(),
     ...overrides,
   }
 }

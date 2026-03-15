@@ -80,7 +80,7 @@ export class PostgresSearchAdapter implements SearchAdapter {
       .from(packageTable)
       .leftJoin(organization, eq(packageTable.ownerOrg, organization.id))
       .where(where!)
-      .orderBy(desc(packageTable.metadataModified))
+      .orderBy(desc(packageTable.updated))
       .limit(limit)
       .offset(offset)
 

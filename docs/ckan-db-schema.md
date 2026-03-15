@@ -279,4 +279,5 @@ package_relationship_table = Table('package_relationship', meta.metadata,
 | タイムスタンプ | DateTime (naive)                                      | TIMESTAMPTZ (timezone-aware)                                                                   |
 | 拡張フィールド | `extras` JSONB + `plugin_data` / `plugin_extras`      | `extras` JSONB のみ                                                                            |
 | カラム命名     | snake_case                                            | snake_case（Drizzle では camelCase にマッピング）                                              |
+| package 日時   | `metadata_created` / `metadata_modified`              | `created` / `updated`（KUKAN 共通規約に統一）                                                  |
 | 検索戦略       | Solr に全面委譲（一覧・フィルター・キーワードすべて） | DB 直接（一覧・フィルター） + SearchAdapter（キーワード全文検索のみ）。ADR-013 参照            |

@@ -25,6 +25,7 @@ export const userOrgMembership = pgTable(
   (table) => [
     unique('uq_user_org').on(table.userId, table.organizationId),
     index('idx_user_org_membership_org_id').on(table.organizationId),
+    index('idx_user_org_membership_user_id').on(table.userId),
   ]
 )
 
@@ -44,6 +45,7 @@ export const userGroupMembership = pgTable(
   (table) => [
     unique('uq_user_group').on(table.userId, table.groupId),
     index('idx_user_group_membership_group_id').on(table.groupId),
+    index('idx_user_group_membership_user_id').on(table.userId),
   ]
 )
 
@@ -61,5 +63,6 @@ export const packageGroup = pgTable(
   (table) => [
     unique('uq_package_group').on(table.packageId, table.groupId),
     index('idx_package_group_group_id').on(table.groupId),
+    index('idx_package_group_package_id').on(table.packageId),
   ]
 )

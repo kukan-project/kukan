@@ -939,8 +939,8 @@ CREATE TABLE package (
   ai_summary         TEXT,
   ai_tags            TEXT[],
 
-  metadata_created   TIMESTAMPTZ DEFAULT NOW(),
-  metadata_modified  TIMESTAMPTZ DEFAULT NOW(),
+  created            TIMESTAMPTZ DEFAULT NOW(),
+  updated            TIMESTAMPTZ DEFAULT NOW(),
 
   -- PostgreSQL全文検索（フォールバック用）
   search_vector      TSVECTOR GENERATED ALWAYS AS (
@@ -1454,8 +1454,8 @@ interface PackageDocument {
   type: string
   private: boolean
   extras: Record<string, any>
-  metadata_created: string
-  metadata_modified: string
+  created: string
+  updated: string
   res_formats: string[]
   resource_count: number
   spatial_coverage?: GeoJSON

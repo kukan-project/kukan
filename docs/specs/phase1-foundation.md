@@ -314,12 +314,14 @@ export const packageTable = pgTable(
     aiSummary: text('ai_summary'),
     aiTags: text('ai_tags'),
 
-    metadataCreated: timestamp('metadata_created', { withTimezone: true }).defaultNow(),
-    metadataModified: timestamp('metadata_modified', { withTimezone: true }).defaultNow(),
+    created: timestamp('created', { withTimezone: true }).defaultNow(),
+    updated: timestamp('updated', { withTimezone: true }).defaultNow(),
   },
   (table) => [
+    index('idx_package_name').on(table.name),
     index('idx_package_owner_org').on(table.ownerOrg),
     index('idx_package_state').on(table.state),
+    index('idx_package_creator_user_id').on(table.creatorUserId),
   ]
 )
 ```

@@ -580,7 +580,7 @@ export class PackageService {
           private: input.private,
           type: input.type,
           extras: input.extras,
-          metadataModified: sql`NOW()`,
+          updated: sql`NOW()`,
         })
         .where(eq(packageTable.id, existing.id))
         .returning()
@@ -652,7 +652,7 @@ export class PackageService {
       .update(packageTable)
       .set({
         state: 'deleted',
-        metadataModified: sql`NOW()`,
+        updated: sql`NOW()`,
       })
       .where(eq(packageTable.id, existing.id))
       .returning()
