@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -28,7 +27,6 @@ const signInSchema = z.object({
 type SignInValues = z.infer<typeof signInSchema>
 
 export default function SignInPage() {
-  const router = useRouter()
   const t = useTranslations('auth')
   const [error, setError] = useState<string | null>(null)
 
@@ -50,8 +48,7 @@ export default function SignInPage() {
       setError(t('invalidCredentials'))
       return
     }
-    router.push('/dashboard')
-    router.refresh()
+    window.location.href = '/dashboard'
   }
 
   return (

@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -29,7 +28,6 @@ const signUpSchema = z.object({
 type SignUpValues = z.infer<typeof signUpSchema>
 
 export default function SignUpPage() {
-  const router = useRouter()
   const t = useTranslations('auth')
   const [error, setError] = useState<string | null>(null)
 
@@ -52,8 +50,7 @@ export default function SignUpPage() {
       setError(t('signUpFailed'))
       return
     }
-    router.push('/dashboard')
-    router.refresh()
+    window.location.href = '/dashboard'
   }
 
   return (
