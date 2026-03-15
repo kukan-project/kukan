@@ -4,12 +4,12 @@ import { PageHeader } from '@/components/dashboard/page-header'
 import { GroupForm } from '@/components/dashboard/group/group-form'
 
 export default async function NewGroupPage() {
-  const t = await getTranslations('group')
+  const t = await getTranslations('category')
   const tc = await getTranslations('common')
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={t('createGroup')} />
+      <PageHeader title={t('createCategory')} />
       <Card>
         <CardHeader>
           <CardTitle>{tc('basicInfo')}</CardTitle>

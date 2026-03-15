@@ -7,7 +7,7 @@
     "dashboard": "ダッシュボード",
     "datasets": "データセット",
     "organizations": "組織",
-    "groups": "グループ",
+    "categories": "カテゴリー",
     "showAll": "すべて表示",
     "back": "戻る",
     "create": "作成",
@@ -63,7 +63,7 @@
     "noResults": "「{query}」に一致するデータセットはありません",
     "resultCount": "「{query}」の検索結果: {count} 件",
     "filterByOrganization": "組織で絞り込み",
-    "filterByGroup": "グループで絞り込み",
+    "filterByCategory": "カテゴリーで絞り込み",
     "filterByTag": "タグで絞り込み",
     "filterByFormat": "フォーマットで絞り込み",
     "filterByLicense": "ライセンスで絞り込み",
@@ -117,17 +117,17 @@
     "descriptionPlaceholder": "組織の説明",
     "orgMembers": "組織メンバー: {name}"
   },
-  "group": {
-    "title": "グループ",
-    "searchPlaceholder": "グループを検索...",
-    "noGroups": "グループがありません",
-    "noMatchingGroups": "「{query}」に一致するグループはありません",
+  "category": {
+    "title": "カテゴリー",
+    "searchPlaceholder": "カテゴリーを検索...",
+    "noCategories": "カテゴリーがありません",
+    "noMatchingCategories": "「{query}」に一致するカテゴリーはありません",
     "datasetCount": "{count} データセット",
-    "searchDatasetsPlaceholder": "このグループのデータセットを検索...",
-    "createGroup": "グループを作成",
-    "titlePlaceholder": "グループの表示名",
-    "descriptionPlaceholder": "グループの説明",
-    "groupMembers": "グループメンバー: {name}"
+    "searchDatasetsPlaceholder": "このカテゴリーのデータセットを検索...",
+    "createCategory": "カテゴリーを作成",
+    "titlePlaceholder": "カテゴリーの表示名",
+    "descriptionPlaceholder": "カテゴリーの説明",
+    "categoryMembers": "カテゴリーメンバー: {name}"
   },
   "auth": {
     "signIn": "ログイン",
@@ -161,7 +161,7 @@
       "dashboard": "ダッシュボード",
       "datasets": "データセット",
       "organizations": "組織",
-      "groups": "グループ",
+      "categories": "カテゴリー",
       "apiTokens": "APIトークン",
       "profile": "プロフィール"
     }
@@ -228,7 +228,7 @@
     "noMembers": "メンバーがいません",
     "failedToAdd": "メンバーの追加に失敗しました",
     "confirmRemoveFromOrg": "{name} をこの組織から削除しますか？",
-    "confirmRemoveFromGroup": "{name} をこのグループから削除しますか？"
+    "confirmRemoveFromCategory": "{name} をこのカテゴリーから削除しますか？"
   },
   "error": {
     "notFound": "ページが見つかりません",

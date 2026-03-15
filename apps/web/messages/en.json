@@ -7,7 +7,7 @@
     "dashboard": "Dashboard",
     "datasets": "Datasets",
     "organizations": "Organizations",
-    "groups": "Groups",
+    "categories": "Categories",
     "showAll": "Show all",
     "back": "Back",
     "create": "Create",
@@ -63,7 +63,7 @@
     "noResults": "No datasets matching \"{query}\"",
     "resultCount": "Search results for \"{query}\": {count} items",
     "filterByOrganization": "Filter by organization",
-    "filterByGroup": "Filter by group",
+    "filterByCategory": "Filter by category",
     "filterByTag": "Filter by tag",
     "filterByFormat": "Filter by format",
     "filterByLicense": "Filter by license",
@@ -117,17 +117,17 @@
     "descriptionPlaceholder": "Organization description",
     "orgMembers": "Organization Members: {name}"
   },
-  "group": {
-    "title": "Groups",
-    "searchPlaceholder": "Search groups...",
-    "noGroups": "No groups",
-    "noMatchingGroups": "No groups matching \"{query}\"",
+  "category": {
+    "title": "Categories",
+    "searchPlaceholder": "Search categories...",
+    "noCategories": "No categories",
+    "noMatchingCategories": "No categories matching \"{query}\"",
     "datasetCount": "{count} datasets",
-    "searchDatasetsPlaceholder": "Search datasets in this group...",
-    "createGroup": "Create Group",
-    "titlePlaceholder": "Group display name",
-    "descriptionPlaceholder": "Group description",
-    "groupMembers": "Group Members: {name}"
+    "searchDatasetsPlaceholder": "Search datasets in this category...",
+    "createCategory": "Create Category",
+    "titlePlaceholder": "Category display name",
+    "descriptionPlaceholder": "Category description",
+    "categoryMembers": "Category Members: {name}"
   },
   "auth": {
     "signIn": "Sign In",
@@ -161,7 +161,7 @@
       "dashboard": "Dashboard",
       "datasets": "Datasets",
       "organizations": "Organizations",
-      "groups": "Groups",
+      "categories": "Categories",
       "apiTokens": "API Tokens",
       "profile": "Profile"
     }
@@ -228,7 +228,7 @@
     "noMembers": "No members",
     "failedToAdd": "Failed to add member",
     "confirmRemoveFromOrg": "Remove {name} from this organization?",
-    "confirmRemoveFromGroup": "Remove {name} from this group?"
+    "confirmRemoveFromCategory": "Remove {name} from this category?"
   },
   "error": {
     "notFound": "Page not found",

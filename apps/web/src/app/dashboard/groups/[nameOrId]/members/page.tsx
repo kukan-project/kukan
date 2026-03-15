@@ -44,7 +44,7 @@ export default function GroupMembersPage() {
   const params = useParams<{ nameOrId: string }>()
   const nameOrId = params.nameOrId
   const t = useTranslations('members')
-  const tg = useTranslations('group')
+  const tg = useTranslations('category')
   const tc = useTranslations('common')
 
   const [members, setMembers] = useState<Member[]>([])
@@ -142,7 +142,7 @@ export default function GroupMembersPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={tg('groupMembers', { name: nameOrId })}>
+      <PageHeader title={tg('categoryMembers', { name: nameOrId })}>
         <Button variant="outline" asChild>
           <Link href="/dashboard/groups">{tc('back')}</Link>
         </Button>
@@ -227,7 +227,7 @@ export default function GroupMembersPage() {
                     className="text-destructive hover:text-destructive"
                     onClick={() => {
                       if (
-                        confirm(t('confirmRemoveFromGroup', { name: m.displayName || m.userName }))
+                        confirm(t('confirmRemoveFromCategory', { name: m.displayName || m.userName }))
                       ) {
                         handleRemoveMember(m.userId)
                       }

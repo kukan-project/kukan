@@ -12,7 +12,7 @@ export async function Header() {
   const navItems = [
     { href: '/dataset', label: t('datasets') },
     { href: '/organization', label: t('organizations') },
-    { href: '/group', label: t('groups') },
+    { href: '/group', label: t('categories') },
   ]
 
   return (

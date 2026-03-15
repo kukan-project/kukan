@@ -69,7 +69,7 @@ export default async function HomePage() {
           <Card className="transition-colors hover:bg-accent/50">
             <CardContent className="flex flex-col items-center py-6">
               <p className="text-3xl font-bold">{groupTotal}</p>
-              <p className="text-sm text-muted-foreground">{t('common.groups')}</p>
+              <p className="text-sm text-muted-foreground">{t('common.categories')}</p>
             </CardContent>
           </Card>
         </Link>

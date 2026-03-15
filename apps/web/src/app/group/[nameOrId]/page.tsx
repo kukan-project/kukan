@@ -16,7 +16,7 @@ export default async function GroupDatasetsPage({ params, searchParams }: Props)
   const [{ nameOrId }, sp, t, tc] = await Promise.all([
     params,
     searchParams,
-    getTranslations('group'),
+    getTranslations('category'),
     getTranslations('common'),
   ])
   const q = sp.q || ''

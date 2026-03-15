@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
+import { Building2, FolderOpen, Tag, FileText, Scale, ChevronDown } from 'lucide-react'
 import { Badge } from '@kukan/ui'
 import type { FacetCounts, FacetItem } from '@kukan/shared'
 import { buildQuery } from '@/lib/query'
@@ -28,12 +29,14 @@ function toggleTag(currentTags: string[], tag: string): string {
 }
 
 function FilterSection({
+  icon: Icon,
   title,
   defaultOpen,
   clearHref,
   clearLabel,
   children,
 }: {
+  icon: React.ComponentType<{ className?: string }>
   title: string
   defaultOpen?: boolean
   clearHref?: string
@@ -44,6 +47,7 @@ function FilterSection({
     <details className="group" open={defaultOpen || undefined}>
       <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold [&::-webkit-details-marker]:hidden">
         <span className="flex items-center gap-1.5">
+          <Icon className="h-4 w-4 text-muted-foreground" />
           {title}
           {clearHref && (
             <>
@@ -57,18 +61,7 @@ function FilterSection({
             </>
           )}
         </span>
-        <svg
-          className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="m6 9 6 6 6-6" />
-        </svg>
+        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
       </summary>
       <div className="mt-2">{children}</div>
     </details>
@@ -152,6 +145,7 @@ export function DatasetFilters({
     <div className="flex flex-col gap-4">
       {/* Organization filter */}
       <FilterSection
+        icon={Building2}
         title={t('filterByOrganization')}
         defaultOpen={!!currentOrg}
         clearHref={
@@ -169,7 +163,8 @@ export function DatasetFilters({
       {/* Group filter */}
       {facets.groups.length > 0 && (
         <FilterSection
-          title={t('filterByGroup')}
+          icon={FolderOpen}
+          title={t('filterByCategory')}
           defaultOpen={!!currentGroup}
           clearHref={
             currentGroup ? buildDatasetUrl({ ...baseParams, group: undefined }) : undefined
@@ -187,6 +182,7 @@ export function DatasetFilters({
       {/* Tag filter */}
       {facets.tags.length > 0 && (
         <FilterSection
+          icon={Tag}
           title={t('filterByTag')}
           defaultOpen={currentTags.length > 0}
           clearHref={
@@ -227,6 +223,7 @@ export function DatasetFilters({
       {/* Format filter */}
       {facets.formats.length > 0 && (
         <FilterSection
+          icon={FileText}
           title={t('filterByFormat')}
           defaultOpen={!!currentFormat}
           clearHref={
@@ -246,6 +243,7 @@ export function DatasetFilters({
       {/* License filter */}
       {facets.licenses.length > 0 && (
         <FilterSection
+          icon={Scale}
           title={t('filterByLicense')}
           defaultOpen={!!currentLicense}
           clearHref={

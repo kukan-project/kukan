@@ -11,7 +11,7 @@ import { clientFetch } from '@/lib/client-api'
 
 export function GroupForm() {
   const router = useRouter()
-  const t = useTranslations('group')
+  const t = useTranslations('category')
   const tc = useTranslations('common')
   const [error, setError] = useState<string | null>(null)
 

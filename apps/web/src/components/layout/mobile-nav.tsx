@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
+import { Globe, Menu } from 'lucide-react'
 import { Button, cn, Separator, Sheet, SheetContent, SheetHeader, SheetTitle } from '@kukan/ui'
 
 interface MobileNavProps {
@@ -19,7 +20,7 @@ export function MobileNav({ user }: MobileNavProps) {
   const navItems = [
     { href: '/dataset', label: t('datasets') },
     { href: '/organization', label: t('organizations') },
-    { href: '/group', label: t('groups') },
+    { href: '/group', label: t('categories') },
   ]
 
   const toggleLocale = () => {
@@ -32,14 +33,7 @@ export function MobileNav({ user }: MobileNavProps) {
   return (
     <div className="md:hidden">
       <Button variant="ghost" size="icon" onClick={() => setOpen(true)} aria-label={t('openMenu')}>
-        <svg className="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M4 6h16M4 12h16M4 18h16"
-          />
-        </svg>
+        <Menu className="size-5" />
       </Button>
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="left">
@@ -83,19 +77,7 @@ export function MobileNav({ user }: MobileNavProps) {
               onClick={toggleLocale}
               className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
             >
-              <svg
-                className="size-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
-                <path d="M2 12h20" />
-              </svg>
+              <Globe className="size-4" />
               {locale === 'ja' ? 'English' : '日本語'}
             </button>
           </nav>

@@ -15,7 +15,7 @@ interface GroupItem {
 }
 
 export default function GroupsManagePage() {
-  const t = useTranslations('group')
+  const t = useTranslations('category')
   const tc = useTranslations('common')
   const [items, setItems] = useState<GroupItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -32,7 +32,7 @@ export default function GroupsManagePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={tc('groups')}>
+      <PageHeader title={tc('categories')}>
         <Button asChild>
           <Link href="/dashboard/groups/new">{tc('new')}</Link>
         </Button>
@@ -41,7 +41,7 @@ export default function GroupsManagePage() {
       {loading ? (
         <p className="py-12 text-center text-muted-foreground">{tc('loading')}</p>
       ) : items.length === 0 ? (
-        <p className="py-12 text-center text-muted-foreground">{t('noGroups')}</p>
+        <p className="py-12 text-center text-muted-foreground">{t('noCategories')}</p>
       ) : (
         <Table>
           <TableHeader>

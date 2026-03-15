@@ -21,7 +21,7 @@ interface Props {
 }
 
 export default async function GroupsPage({ searchParams }: Props) {
-  const [params, t] = await Promise.all([searchParams, getTranslations('group')])
+  const [params, t] = await Promise.all([searchParams, getTranslations('category')])
   const tc = await getTranslations('common')
   const q = params.q || ''
   const offset = Number(params.offset) || 0
@@ -56,7 +56,7 @@ export default async function GroupsPage({ searchParams }: Props) {
 
         {data.items.length === 0 ? (
           <p className="py-12 text-center text-muted-foreground">
-            {q ? t('noMatchingGroups', { query: q }) : t('noGroups')}
+            {q ? t('noMatchingCategories', { query: q }) : t('noCategories')}
           </p>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

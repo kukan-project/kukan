@@ -13,7 +13,7 @@ export function Sidebar() {
     { href: '/dashboard', label: t('dashboard'), exact: true },
     { href: '/dashboard/datasets', label: t('datasets') },
     { href: '/dashboard/organizations', label: t('organizations') },
-    { href: '/dashboard/groups', label: t('groups') },
+    { href: '/dashboard/groups', label: t('categories') },
     { href: '/dashboard/api-tokens', label: t('apiTokens') },
     { href: '/dashboard/profile', label: t('profile') },
   ]
