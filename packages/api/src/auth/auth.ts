@@ -21,7 +21,11 @@ export function createAuth(db: Database) {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,
     },
-    trustedOrigins: process.env.TRUSTED_ORIGINS ? process.env.TRUSTED_ORIGINS.split(',') : [],
+    trustedOrigins: [
+      ...(process.env.TRUSTED_ORIGINS ? process.env.TRUSTED_ORIGINS.split(',') : []),
+      // Auto-trust Vercel preview URLs (*.vercel.app)
+      ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
+    ],
     plugins: [
       admin({
         defaultRole: 'user',
