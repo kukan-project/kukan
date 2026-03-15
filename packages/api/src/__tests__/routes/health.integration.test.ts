@@ -10,8 +10,8 @@ afterAll(async () => {
 })
 
 describe('Health check', () => {
-  it('GET /health should return status ok', async () => {
-    const res = await app.request('/health')
+  it('GET /api/health should return status ok', async () => {
+    const res = await app.request('/api/health')
     expect(res.status).toBe(200)
 
     const body = await res.json()

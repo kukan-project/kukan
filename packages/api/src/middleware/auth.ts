@@ -4,7 +4,7 @@
  */
 
 import type { Context, Next } from 'hono'
-import { UnauthorizedError, ForbiddenError } from '@kukan/shared'
+import { UnauthorizedError, ForbiddenError, SESSION_COOKIE_NAME } from '@kukan/shared'
 import type { Auth } from '../auth/auth'
 import { ApiTokenService } from '../services/api-token-service'
 
@@ -15,7 +15,7 @@ import { ApiTokenService } from '../services/api-token-service'
 export function optionalAuth(auth: Auth) {
   return async (c: Context, next: Next) => {
     // 1. Check for Better Auth session cookie
-    const hasCookie = c.req.header('cookie')?.includes('better-auth.session_token')
+    const hasCookie = c.req.header('cookie')?.includes(SESSION_COOKIE_NAME)
 
     if (hasCookie) {
       try {

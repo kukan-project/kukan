@@ -7,7 +7,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev:standalone": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
@@ -28,7 +28,7 @@
     "drizzle-orm": "^0.45.1",
     "hono": "^4.12.3",
     "pg": "^8.13.0",
-    "zod": "^3.25.67"
+    "zod": "3.25.67"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

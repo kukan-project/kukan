@@ -3,11 +3,8 @@ import { createTestApp } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import { PostgresSearchAdapter } from '@kukan/search-adapter'
 
-const TEST_DATABASE_URL =
-  process.env.TEST_DATABASE_URL || 'postgresql://kukan:kukan@localhost:5432/kukan_test'
-
 const db = getTestDb()
-const searchAdapter = new PostgresSearchAdapter({ connectionString: TEST_DATABASE_URL })
+const searchAdapter = new PostgresSearchAdapter(db)
 const app = createTestApp(db, { search: searchAdapter })
 
 let testOrgId: string

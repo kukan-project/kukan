@@ -9,7 +9,7 @@
 ```
 KUKAN/
 ├── apps/
-│   └── api/              # Hono API サーバー
+│   └── web/              # Next.js フロントエンド + Hono API（単一オリジン）
 ├── packages/
 │   ├── db/               # Drizzle スキーマ + マイグレーション
 │   ├── shared/           # 型定義、Zod、lru-cache、エラークラス
@@ -422,12 +422,12 @@ export function createAdapters(env: Env) {
 
 ---
 
-## 5. apps/api — Hono API サーバー
+## 5. packages/api — Hono API サーバー（ライブラリ）
 
 ### 5.1 ファイル構成
 
 ```
-apps/api/
+packages/api/
 ├── src/
 │   ├── app.ts               # Hono app 生成、ミドルウェア登録
 │   ├── server.ts             # Node.js サーバー起動
@@ -509,7 +509,7 @@ apps/api/
 ### 5.4 認証（Better Auth）
 
 ```typescript
-// apps/api/src/auth/auth.ts
+// packages/api/src/auth/auth.ts
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { db } from '@kukan/db'
@@ -531,7 +531,7 @@ Phase 1 での認証フロー:
 ### 5.5 エラーハンドリング
 
 ```typescript
-// apps/api/src/middleware/error-handler.ts
+// packages/api/src/middleware/error-handler.ts
 import { KukanError } from '@kukan/shared'
 
 export function errorHandler() {
@@ -649,8 +649,8 @@ BETTER_AUTH_URL=http://localhost:3000
 | packages/db       | 統合テスト（テスト用DB） | Vitest + テストコンテナ          |
 | packages/storage  | ユニット（LocalAdapter） | Vitest                           |
 | packages/search   | 統合テスト（テスト用DB） | Vitest + テストコンテナ          |
-| apps/api routes   | 統合テスト               | Vitest + Hono テストクライアント |
-| apps/api services | ユニット（モック注入）   | Vitest                           |
+| packages/api routes   | 統合テスト               | Vitest + Hono テストクライアント |
+| packages/api services | ユニット（モック注入）   | Vitest                           |
 | CKAN互換API       | 統合テスト               | Vitest                           |
 
 ### 8.2 テストDB
@@ -718,7 +718,7 @@ Claude Code に指示する際、以下の順番で進める:
 2. `.env.example` → `.env` コピー
 3. `docker compose up` で PostgreSQL + MinIO 起動確認
 
-### Step 6: apps/api
+### Step 6: packages/api
 
 1. Hono app スケルトン + ミドルウェア
 2. Better Auth 初期化

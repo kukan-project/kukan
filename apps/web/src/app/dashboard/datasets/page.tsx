@@ -10,14 +10,15 @@ import {
   TableHeader,
   TableRow,
 } from '@kukan/ui'
-import { serverFetch } from '@/lib/api'
+import { getCurrentUser, serverFetch } from '@/lib/api'
 import { PageHeader } from '@/components/dashboard/page-header'
 
 export default async function DatasetsManagePage() {
-  const userRes = await serverFetch('/api/v1/users/me')
-  if (!userRes.ok) redirect('/auth/sign-in')
-
-  const res = await serverFetch('/api/v1/packages?my_org=true&limit=100')
+  const [user, res] = await Promise.all([
+    getCurrentUser(),
+    serverFetch('/api/v1/packages?my_org=true&limit=100'),
+  ])
+  if (!user) redirect('/auth/sign-in')
   const data = res.ok ? await res.json() : { items: [] }
 
   return (

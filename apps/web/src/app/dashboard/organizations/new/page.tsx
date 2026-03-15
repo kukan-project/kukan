@@ -1,13 +1,12 @@
 import { redirect } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
-import { serverFetch } from '@/lib/api'
+import { getCurrentUser } from '@/lib/api'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { OrganizationForm } from '@/components/organization/organization-form'
 
 export default async function NewOrganizationPage() {
-  const res = await serverFetch('/api/v1/users/me')
-  if (!res.ok) redirect('/auth/sign-in')
-  const user = await res.json()
+  const user = await getCurrentUser()
+  if (!user) redirect('/auth/sign-in')
   if (!user.sysadmin) redirect('/dashboard/organizations')
 
   return (

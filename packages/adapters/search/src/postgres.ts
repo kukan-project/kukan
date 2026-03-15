@@ -5,13 +5,9 @@
  */
 
 import { SearchQuery, SearchResult, DatasetDoc } from '@kukan/shared'
-import { createDb, type Database, packageTable, organization, packageTag, tag } from '@kukan/db'
+import { type Database, packageTable, organization, packageTag, tag } from '@kukan/db'
 import { ilike, eq, and, or, sql, inArray, desc } from 'drizzle-orm'
 import { SearchAdapter } from './adapter'
-
-export interface PostgresSearchConfig {
-  connectionString: string
-}
 
 function escapeLikePattern(str: string): string {
   return str.replace(/[%_\\]/g, '\\$&')
@@ -20,8 +16,8 @@ function escapeLikePattern(str: string): string {
 export class PostgresSearchAdapter implements SearchAdapter {
   private db: Database
 
-  constructor(config: PostgresSearchConfig) {
-    this.db = createDb(config.connectionString)
+  constructor(db: Database) {
+    this.db = db
   }
 
   async index(_doc: DatasetDoc): Promise<void> {

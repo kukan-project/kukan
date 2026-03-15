@@ -2,6 +2,8 @@
  * KUKAN Shared Utilities
  */
 
+export const SESSION_COOKIE_NAME = 'better-auth.session_token'
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**

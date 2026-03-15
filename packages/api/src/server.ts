@@ -22,7 +22,7 @@ serve({
 })
 
 console.log(`✅ Server is running at http://localhost:${port}`)
-console.log(`📊 Health check: http://localhost:${port}/health`)
+console.log(`📊 Health check: http://localhost:${port}/api/health`)
 console.log(`📁 Organizations API: http://localhost:${port}/api/v1/organizations`)
 console.log(`📦 Packages API: http://localhost:${port}/api/v1/packages`)
 console.log(`📄 Resources API: http://localhost:${port}/api/v1/resources`)

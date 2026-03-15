@@ -1,14 +1,14 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge } from '@kukan/ui'
-import { serverFetch } from '@/lib/api'
+import { getCurrentUser, serverFetch } from '@/lib/api'
 
 export default async function DashboardPage() {
-  const userRes = await serverFetch('/api/v1/users/me')
-  if (!userRes.ok) redirect('/auth/sign-in')
-  const user = await userRes.json()
-
-  const pkgRes = await serverFetch('/api/v1/packages?my_org=true&limit=5')
+  const [user, pkgRes] = await Promise.all([
+    getCurrentUser(),
+    serverFetch('/api/v1/packages?my_org=true&limit=5'),
+  ])
+  if (!user) redirect('/auth/sign-in')
   const pkgData = pkgRes.ok ? await pkgRes.json() : { items: [], total: 0 }
 
   return (

@@ -21,7 +21,7 @@ export function createAuth(db: Database) {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,
     },
-    trustedOrigins: ['http://localhost:3000', 'http://localhost:3001'],
+    trustedOrigins: process.env.TRUSTED_ORIGINS ? process.env.TRUSTED_ORIGINS.split(',') : [],
     plugins: [
       admin({
         defaultRole: 'user',

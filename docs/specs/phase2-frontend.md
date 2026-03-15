@@ -194,30 +194,33 @@ packages/ui/
 
 ### 5.1 `apps/web/src/lib/api.ts`
 
-```typescript
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
+Hono API を Next.js に埋め込み（同一オリジン）。`serverFetch` は `app.request()` を直接呼び出す（HTTP ホップなし）。
 
-// Server Components 用（cookie 転送付き）
+```typescript
+// Server Components 用（Hono インプロセス呼び出し）
 export async function serverFetch(path: string, init?: RequestInit) {
   const { cookies } = await import('next/headers')
-  const cookieStore = await cookies()
-  const sessionToken = cookieStore.get('better-auth.session_token')
+  const { getApp } = await import('./hono-app')
+  const { SESSION_COOKIE_NAME } = await import('@kukan/shared')
 
-  return fetch(`${API_URL}${path}`, {
+  const cookieStore = await cookies()
+  const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)
+
+  const app = await getApp()
+  const url = `http://localhost${path}`
+
+  return app.request(url, {
     ...init,
     headers: {
       ...init?.headers,
-      ...(sessionToken && { Cookie: `better-auth.session_token=${sessionToken.value}` }),
+      ...(sessionToken && { Cookie: `${SESSION_COOKIE_NAME}=${sessionToken.value}` }),
     },
   })
 }
 
-// Client Components 用（credentials: 'include' で cookie 送信）
+// Client Components 用（同一オリジンなので相対パスで fetch）
 export async function clientFetch(path: string, init?: RequestInit) {
-  return fetch(`${API_URL}${path}`, {
-    ...init,
-    credentials: 'include',
-  })
+  return fetch(path, { ...init, credentials: 'include' })
 }
 ```
 
@@ -226,9 +229,8 @@ export async function clientFetch(path: string, init?: RequestInit) {
 ```typescript
 import { createAuthClient } from 'better-auth/react'
 
-export const authClient = createAuthClient({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000',
-})
+// 同一オリジンなので baseURL 不要
+export const authClient = createAuthClient()
 
 export const { signIn, signUp, signOut, useSession } = authClient
 ```
@@ -357,34 +359,16 @@ apps/web/
 # Note: 開発時は pnpm dev で直接起動するため、Docker は本番/CI用
 ```
 
-開発中は `pnpm dev` で API (port 3000) + Web (port 3001) が同時起動。
+Hono API は Next.js に埋め込まれているため、`pnpm dev` で Next.js (port 3000) のみ起動すればよい。
 
 ## 11. 環境変数
 
-### 11.1 `apps/web/.env.local`
-
-```bash
-NEXT_PUBLIC_API_URL=http://localhost:3000
-```
-
-### 11.2 `.env.example` 追記
-
-```bash
-# Frontend
-NEXT_PUBLIC_API_URL=http://localhost:3000
-```
+API は `packages/api` に移動済み。`next.config.ts` で `dotenv` を使ってモノレポルートの `.env` を読み込む。
+`NEXT_PUBLIC_API_URL` は不要（同一オリジン）。
 
 ## 12. CORS 設定
 
-API 側の CORS を `apps/web` の origin に対応させる。開発中は `http://localhost:3001`。
-
-```typescript
-// apps/api/src/app.ts の CORS 設定に追加
-cors({
-  origin: ['http://localhost:3001'],
-  credentials: true, // Cookie 送信に必要
-})
-```
+同一オリジン構成のため CORS 設定は不要。スタンドアロン API モードでは `TRUSTED_ORIGINS` 環境変数で制御。
 
 ## 13. 実装順序
 
@@ -393,7 +377,7 @@ cors({
 1. `packages/ui` — shadcn/ui セットアップ、基本コンポーネント追加
 2. `apps/web` — Next.js 15 初期化、Tailwind CSS 4、globals.css
 3. turbo.json / pnpm-workspace は既に対応済み
-4. 環境変数、CORS 設定
+4. 環境変数設定
 
 ### Step 2: レイアウトと認証
 

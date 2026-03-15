@@ -52,7 +52,7 @@ Better Auth + OIDC プラグインを採用する。
 ## 影響
 
 - `packages/db` に Better Auth テーブル定義を含める
-- 認証フローは `apps/api` 内の Better Auth インスタンスが一元管理
+- 認証フローは `packages/api` 内の Better Auth インスタンスが一元管理
 - Next.js側は Better Auth クライアントでセッション参照
 - 環境別IdP: Cognito（AWS）/ Keycloak（オンプレLGWAN）/ ローカルメール認証（開発）
 
@@ -83,7 +83,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 ### Better Auth インスタンスの初期化
 
 ```typescript
-// apps/api/src/auth/auth.ts
+// packages/api/src/auth/auth.ts
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { db } from '@kukan/db'

@@ -4,12 +4,13 @@
  */
 
 import type { Env } from '@kukan/shared'
+import type { Database } from '@kukan/db'
 import { MinIOStorageAdapter, LocalStorageAdapter } from '@kukan/storage-adapter'
 import { PostgresSearchAdapter } from '@kukan/search-adapter'
 import { InProcessQueueAdapter } from '@kukan/queue-adapter'
 import { NoOpAIAdapter } from '@kukan/ai-adapter'
 
-export function createAdapters(env: Env) {
+export function createAdapters(env: Env, db: Database) {
   // Storage adapter
   let storage
   if (env.STORAGE_TYPE === 'local') {
@@ -34,9 +35,7 @@ export function createAdapters(env: Env) {
   // Search adapter
   let search
   if (env.SEARCH_TYPE === 'postgres') {
-    search = new PostgresSearchAdapter({
-      connectionString: env.DATABASE_URL,
-    })
+    search = new PostgresSearchAdapter(db)
   } else {
     // OpenSearch - Phase 3
     throw new Error('OpenSearch not implemented yet (Phase 3)')

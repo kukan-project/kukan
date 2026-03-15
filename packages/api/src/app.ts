@@ -4,7 +4,6 @@
  */
 
 import { Hono } from 'hono'
-import { cors } from 'hono/cors'
 import { loadEnv } from '@kukan/shared'
 import { createDb } from '@kukan/db'
 import { createAdapters } from './adapters'
@@ -27,7 +26,7 @@ export async function createApp() {
   const auth = createAuth(db)
 
   // Initialize adapters
-  const adapters = createAdapters(env)
+  const adapters = createAdapters(env, db)
 
   // Set context variables
   app.use('*', async (c, next) => {
@@ -42,17 +41,10 @@ export async function createApp() {
 
   // Middleware
   app.use('*', logger)
-  app.use(
-    '*',
-    cors({
-      origin: ['http://localhost:3001'],
-      credentials: true,
-    })
-  )
   app.onError(errorHandler)
 
   // Health check
-  app.get('/health', (c) => {
+  app.get('/api/health', (c) => {
     return c.json({ status: 'ok', timestamp: new Date().toISOString() })
   })
 

@@ -36,7 +36,7 @@ export default defineWorkspace([
   {
     test: {
       name: 'api-unit',
-      root: './apps/api',
+      root: './packages/api',
       include: ['src/__tests__/**/*.test.ts'],
       exclude: ['src/__tests__/**/*.integration.test.ts'],
       environment: 'node',
@@ -45,7 +45,7 @@ export default defineWorkspace([
   {
     test: {
       name: 'api-integration',
-      root: './apps/api',
+      root: './packages/api',
       include: ['src/__tests__/**/*.integration.test.ts'],
       environment: 'node',
       globalSetup: ['src/__tests__/test-helpers/global-setup.ts'],

@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Button, Separator } from '@kukan/ui'
-import { serverFetch } from '@/lib/api'
+import { getCurrentUser } from '@/lib/api'
 import { UserMenu } from '@/components/auth/user-menu'
 import { MobileNav } from './mobile-nav'
 
@@ -11,15 +11,7 @@ const navItems = [
 ]
 
 export async function Header() {
-  let user: { name: string; email: string } | null = null
-  try {
-    const res = await serverFetch('/api/v1/users/me')
-    if (res.ok) {
-      user = await res.json()
-    }
-  } catch {
-    // Not authenticated
-  }
+  const user = await getCurrentUser()
 
   return (
     <header className="sticky top-0 z-40 bg-background">

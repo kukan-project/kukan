@@ -39,11 +39,11 @@ CKANの後継として設計されたTypeScriptフルスタックのデータカ
 KUKAN/
 ├── CLAUDE.md               # ← このファイル
 ├── apps/
-│   ├── api/                # Hono API サーバー + Better Auth
 │   ├── worker/             # Ingest Worker（SQS consumer、AWS環境のみ）          ※ Phase 3+
-│   ├── web/                # Next.js フロントエンド（カタログUI）                ※ Phase 2+
+│   ├── web/                # Next.js フロントエンド + Hono API（単一オリジン）    ※ Phase 2+
 │   └── editor/             # Data Editor UI（アドオン、独立デプロイ可能）        ※ Phase 7+
 ├── packages/
+│   ├── api/                # Hono API サーバー + Better Auth（ライブラリ）
 │   ├── db/                 # Drizzle スキーマ + マイグレーション + Better Auth テーブル
 │   ├── shared/             # 型定義、Zod バリデーション、lru-cache ユーティリティ
 │   ├── adapters/           # 環境差吸収アダプター（4つ）
@@ -157,6 +157,7 @@ pnpm format        # Prettier フォーマット
 - Data Editor → `docs/adr/007-data-editor-addon.md`
 - モノレポ → `docs/adr/008-turborepo-monorepo.md`
 - 日本語全文検索 → `docs/adr/009-opensearch-ilike-fallback.md`
+- API ライブラリ化・単一オリジン → `docs/adr/012-api-as-library-single-origin.md`
 
 新しい設計判断が必要になったら、同じフォーマットでADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、

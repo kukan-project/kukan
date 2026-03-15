@@ -6,7 +6,7 @@
 
 ## コンテキスト
 
-KUKANは複数のアプリ（api, web, worker, editor）と共有パッケージ（db, shared, quality等）で構成される。これらを効率的に管理するモノレポツールが必要。
+KUKANは複数のアプリ（web, worker, editor）と共有パッケージ（api, db, shared, quality等）で構成される。これらを効率的に管理するモノレポツールが必要。
 
 ## 検討した選択肢
 
@@ -68,7 +68,7 @@ packages:
 
 ## 根拠
 
-- KUKANの規模（4 apps + 10 packages）にちょうど良い複雑さ
+- KUKANの規模（3 apps + 11 packages）にちょうど良い複雑さ
 - pnpm の厳格なnode_modules構造でパッケージ間の依存が明確
 - ビルドキャッシュでCI時間を大幅短縮
 - Next.js + Vercel エコシステムとの統合が自然

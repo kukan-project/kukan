@@ -1,17 +1,15 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@kukan/ui'
-import { serverFetch } from '@/lib/api'
+import { getCurrentUser, serverFetch } from '@/lib/api'
 import { PageHeader } from '@/components/dashboard/page-header'
 
 export default async function OrganizationsManagePage() {
-  const [orgRes, userRes] = await Promise.all([
+  const [user, orgRes] = await Promise.all([
+    getCurrentUser(),
     serverFetch('/api/v1/organizations?limit=100'),
-    serverFetch('/api/v1/users/me'),
   ])
-  if (!userRes.ok) redirect('/auth/sign-in')
-
-  const user = await userRes.json()
+  if (!user) redirect('/auth/sign-in')
   const data = orgRes.ok ? await orgRes.json() : { items: [] }
 
   return (

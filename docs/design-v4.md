@@ -305,11 +305,11 @@ Turborepo（Vercel開発、Rustコア）は2026年現在のJavaScript/TypeScript
 ```
 ckan-modern/
 ├── apps/
-│   ├── api/          # Hono APIサーバー + Better Auth
 │   ├── worker/       # Ingest Worker (SQS consumer) ※AWS環境のみ
-│   ├── web/          # Next.js フロントエンド（カタログUI）
+│   ├── web/          # Next.js フロントエンド + Hono API（単一オリジン）
 │   └── editor/       # Data Editor UI（Next.js、独立デプロイ可能）※アドオン
 ├── packages/
+│   ├── api/          # Hono API サーバー + Better Auth（ライブラリ）
 │   ├── db/           # Drizzle スキーマ + マイグレーション + Better Auth テーブル
 │   ├── shared/       # 型定義、バリデーション (Zod)、lru-cache ユーティリティ
 │   ├── editor-core/  # Data Editor ビジネスロジック（スキーマ定義、正規化、参照、バージョン管理）
@@ -352,10 +352,10 @@ ckan-modern/
 // packages/db/client.ts
 export const db = drizzle({ connection: process.env.DATABASE_URL, schema })
 
-// apps/api/auth.ts
+// packages/api/auth.ts
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import { db } from '@ckan-modern/db/client' // ← 同じインスタンス
+import { db } from '@kukan/db' // ← 同じインスタンス
 
 export const auth = betterAuth({
   database: drizzleAdapter(db), // アプリと同じ接続をそのまま渡す
@@ -1261,7 +1261,7 @@ async function processResource(resourceId: string, ctx: ServiceContext) {
 **API側（ジョブ投入）:**
 
 ```typescript
-// apps/api/routes/resources.ts
+// packages/api/routes/resources.ts
 app.post('/datasets/:id/resources', async (c) => {
   const file = await c.req.file('file')
   const s3Key = await storage.upload(file)
@@ -1322,7 +1322,7 @@ queue.consume(async (job) => {
 **InProcess版（開発・オンプレ環境）:**
 
 ```typescript
-// apps/api/main.ts（開発環境はAPIとWorkerが同一プロセス）
+// packages/api/main.ts（開発環境はAPIとWorkerが同一プロセス）
 const queue = new InProcessQueueAdapter()
 
 queue.consume(async (job) => {
@@ -1856,9 +1856,8 @@ Data Editor（予防）              Quality Monitor（検出）
 ```
 ckan-modern/
 ├── apps/
-│   ├── api/            # Hono APIサーバー
 │   ├── worker/         # Ingest Worker
-│   ├── web/            # カタログUI
+│   ├── web/            # カタログUI + Hono API（単一オリジン）
 │   └── editor/         # ← Data Editor UI（独立デプロイ可能）
 ├── packages/
 │   ├── editor-core/    # ← Data Editor ビジネスロジック
