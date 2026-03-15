@@ -227,7 +227,9 @@ export default function GroupMembersPage() {
                     className="text-destructive hover:text-destructive"
                     onClick={() => {
                       if (
-                        confirm(t('confirmRemoveFromCategory', { name: m.displayName || m.userName }))
+                        confirm(
+                          t('confirmRemoveFromCategory', { name: m.displayName || m.userName })
+                        )
                       ) {
                         handleRemoveMember(m.userId)
                       }

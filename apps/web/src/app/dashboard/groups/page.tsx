@@ -17,9 +17,7 @@ interface GroupItem {
 export default function GroupsManagePage() {
   const t = useTranslations('category')
   const tc = useTranslations('common')
-  const { items, loading, ...pagination } = usePaginatedFetch<GroupItem>(
-    '/api/v1/groups'
-  )
+  const { items, loading, error, ...pagination } = usePaginatedFetch<GroupItem>('/api/v1/groups')
 
   return (
     <div className="flex flex-col gap-6">
@@ -31,6 +29,17 @@ export default function GroupsManagePage() {
 
       {loading ? (
         <p className="py-12 text-center text-muted-foreground">{tc('loading')}</p>
+      ) : error ? (
+        <div className="flex flex-col items-center gap-2 py-12">
+          <p className="text-muted-foreground">{tc('fetchError')}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => pagination.fetchPage(pagination.offset)}
+          >
+            {tc('retry')}
+          </Button>
+        </div>
       ) : items.length === 0 ? (
         <p className="py-12 text-center text-muted-foreground">{t('noCategories')}</p>
       ) : (

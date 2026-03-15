@@ -19,9 +19,8 @@ export default function OrganizationsManagePage() {
   const user = useUser()
   const t = useTranslations('organization')
   const tc = useTranslations('common')
-  const { items, loading, ...pagination } = usePaginatedFetch<OrgItem>(
-    '/api/v1/organizations'
-  )
+  const { items, loading, error, ...pagination } =
+    usePaginatedFetch<OrgItem>('/api/v1/organizations')
 
   return (
     <div className="flex flex-col gap-6">
@@ -35,6 +34,17 @@ export default function OrganizationsManagePage() {
 
       {loading ? (
         <p className="py-12 text-center text-muted-foreground">{tc('loading')}</p>
+      ) : error ? (
+        <div className="flex flex-col items-center gap-2 py-12">
+          <p className="text-muted-foreground">{tc('fetchError')}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => pagination.fetchPage(pagination.offset)}
+          >
+            {tc('retry')}
+          </Button>
+        </div>
       ) : items.length === 0 ? (
         <p className="py-12 text-center text-muted-foreground">{t('noOrganizations')}</p>
       ) : (

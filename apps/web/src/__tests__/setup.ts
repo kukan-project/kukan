@@ -16,11 +16,13 @@ vi.mock('next/link', () => ({
   }) => createElement('a', { href, ...props }, children),
 }))
 
-// Mock next/navigation
+// Mock next/navigation — notFound() throws to mimic Next.js render interruption
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
   usePathname: () => '/',
-  notFound: vi.fn(),
+  notFound: vi.fn(() => {
+    throw new Error('NEXT_NOT_FOUND')
+  }),
 }))
 
 // Mock next-intl
@@ -32,10 +34,38 @@ function resolve(obj: Messages, key: string): string | undefined {
   return undefined
 }
 
-vi.mock('next-intl', () => {
-  function useTranslations(namespace: string) {
-    const ns = ((messages as Messages)[namespace] as Messages) || {}
-    return (key: string) => resolve(ns, key) ?? `${namespace}.${key}`
+function makeTranslator(namespace?: string) {
+  const ns = namespace ? ((messages as Messages)[namespace] as Messages) || {} : null
+  return (key: string, params?: Record<string, unknown>) => {
+    let msg: string | undefined
+    if (ns) {
+      // Namespaced: resolve key within namespace
+      msg = resolve(ns, key)
+    } else {
+      // Root: resolve dot-notation like "dataset.title"
+      const [first, ...rest] = key.split('.')
+      const sub = (messages as Messages)[first] as Messages | undefined
+      if (sub && rest.length > 0) msg = resolve(sub, rest.join('.'))
+    }
+    msg = msg ?? (namespace ? `${namespace}.${key}` : key)
+    if (params) {
+      for (const [k, v] of Object.entries(params)) {
+        msg = msg.replace(`{${k}}`, String(v))
+      }
+    }
+    return msg
   }
-  return { useTranslations }
-})
+}
+
+vi.mock('next-intl', () => ({
+  useTranslations: (ns: string) => makeTranslator(ns),
+  useLocale: () => 'en',
+}))
+
+// Mock next-intl/server (for async server components)
+vi.mock('next-intl/server', () => ({
+  getTranslations: async (ns: string) => makeTranslator(ns),
+}))
+
+// Mock server-only (no-op in test environment)
+vi.mock('server-only', () => ({}))

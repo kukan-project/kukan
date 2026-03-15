@@ -113,7 +113,7 @@ export default function DatasetsManagePage() {
     return `/api/v1/packages?${params}`
   }, [debouncedName, debouncedKeyword, orgFilter, groupFilter, visibilityFilter])
 
-  const { items, loading, ...pagination } = usePaginatedFetch<PkgItem>(filterUrl)
+  const { items, loading, error, ...pagination } = usePaginatedFetch<PkgItem>(filterUrl)
 
   function handleSelect(setter: (v: string) => void) {
     return (value: string) => setter(value === ALL ? '' : value)
@@ -196,6 +196,17 @@ export default function DatasetsManagePage() {
 
       {loading ? (
         <p className="py-12 text-center text-muted-foreground">{tc('loading')}</p>
+      ) : error ? (
+        <div className="flex flex-col items-center gap-2 py-12">
+          <p className="text-muted-foreground">{tc('fetchError')}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => pagination.fetchPage(pagination.offset)}
+          >
+            {tc('retry')}
+          </Button>
+        </div>
       ) : items.length === 0 ? (
         <p className="py-12 text-center text-muted-foreground">{t('noDatasets')}</p>
       ) : (
