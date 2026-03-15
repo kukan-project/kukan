@@ -14,6 +14,38 @@ import type { AppContext } from '../context'
 export const ckanCompatRouter = new Hono<{ Variables: AppContext }>()
 
 /**
+ * Convert KUKAN field names to CKAN-compatible snake_case names.
+ * - package: created → metadata_created, updated → metadata_modified
+ * - resource: updated → metadata_modified, lastModified → last_modified,
+ *             packageId → package_id, resourceType → resource_type
+ */
+function toCkanPackage(pkg: Record<string, unknown>) {
+  const { created, updated, creatorUserId, ownerOrg, licenseId, ...rest } = pkg
+  return {
+    ...rest,
+    metadata_created: created,
+    metadata_modified: updated,
+    creator_user_id: creatorUserId,
+    owner_org: ownerOrg,
+    license_id: licenseId,
+    ...(rest.resources
+      ? { resources: (rest.resources as Record<string, unknown>[]).map(toCkanResource) }
+      : {}),
+  }
+}
+
+function toCkanResource(res: Record<string, unknown>) {
+  const { updated, lastModified, packageId, resourceType, ...rest } = res
+  return {
+    ...rest,
+    metadata_modified: updated,
+    last_modified: lastModified,
+    package_id: packageId,
+    resource_type: resourceType,
+  }
+}
+
+/**
  * CKAN-compatible response wrapper
  */
 function ckanResponse<T>(result: T, c: Context<{ Variables: AppContext }>) {
@@ -71,7 +103,7 @@ ckanCompatRouter.get('/package_show', async (c) => {
   const service = new PackageService(c.get('db'))
   try {
     const pkg = await service.getDetailByNameOrId(id, viewer)
-    return ckanResponse(pkg, c)
+    return ckanResponse(toCkanPackage(pkg as unknown as Record<string, unknown>), c)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Package not found'
     return ckanError(message, c, 404)
@@ -90,7 +122,9 @@ ckanCompatRouter.get('/package_search', async (c) => {
   return ckanResponse(
     {
       count: result.total,
-      results: result.items,
+      results: result.items.map((item) =>
+        toCkanPackage(item as unknown as Record<string, unknown>)
+      ),
     },
     c
   )
@@ -113,7 +147,7 @@ ckanCompatRouter.get('/resource_show', async (c) => {
     if (!resource) {
       return ckanError('Resource not found', c, 404)
     }
-    return ckanResponse(resource, c)
+    return ckanResponse(toCkanResource(resource as unknown as Record<string, unknown>), c)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Resource not found'
     return ckanError(message, c, 404)
