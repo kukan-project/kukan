@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getTranslations } from 'next-intl/server'
+import { Building2, FolderOpen, Tag } from 'lucide-react'
 import { Badge, Button, Card, CardContent, Separator } from '@kukan/ui'
 import { serverFetch } from '@/lib/server-api'
 import { getFormatColorClass } from '@/lib/format-colors'
@@ -42,6 +43,7 @@ interface Package {
   extras?: Record<string, unknown> | null
   resources: Resource[]
   tags: { id: string; name: string }[]
+  groups: { id: string; name: string; title?: string | null }[]
   organization: Organization | null
 }
 
@@ -82,20 +84,35 @@ export default async function DatasetDetailPage({ params }: Props) {
         {/* Title */}
         <h1 className="text-3xl font-bold tracking-tight">{pkg.title || pkg.name}</h1>
 
-        {/* Organization */}
-        {pkg.organization && (
-          <p className="text-sm text-muted-foreground">
-            {pkg.organization.title || pkg.organization.name}
-          </p>
-        )}
-
-        {/* Tags */}
-        {pkg.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {pkg.tags.map((tag) => (
-              <Badge key={tag.id} variant="secondary">
-                {tag.name}
-              </Badge>
+        {/* Organization / Groups / Tags */}
+        {(pkg.organization || pkg.groups.length > 0 || pkg.tags.length > 0) && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+            {pkg.organization && (
+              <Link
+                href={`/organization/${pkg.organization.name}`}
+                className="flex items-center gap-1 hover:text-foreground"
+              >
+                <Building2 className="h-3.5 w-3.5" />
+                {pkg.organization.title || pkg.organization.name}
+              </Link>
+            )}
+            {pkg.groups.map((g) => (
+              <Link
+                key={g.id}
+                href={`/group/${g.name}`}
+                className="flex items-center gap-1 hover:text-foreground"
+              >
+                <FolderOpen className="h-3.5 w-3.5" />
+                {g.title || g.name}
+              </Link>
+            ))}
+            {pkg.tags.map((pkgTag) => (
+              <Link key={pkgTag.id} href={`/dataset?tags=${encodeURIComponent(pkgTag.name)}`}>
+                <Badge variant="secondary" className="text-xs hover:bg-accent">
+                  <Tag className="mr-0.5 h-3 w-3" />
+                  {pkgTag.name}
+                </Badge>
+              </Link>
             ))}
           </div>
         )}

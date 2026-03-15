@@ -184,6 +184,13 @@ export class PackageService {
           sql<number>`(SELECT COUNT(*)::int FROM "resource" WHERE "resource"."package_id" = "package"."id" AND "resource"."state" = 'active')`.as(
             'resource_count'
           ),
+        tags: sql<string>`(SELECT COALESCE(string_agg("tag"."name", ',' ORDER BY "tag"."name"), '') FROM "package_tag" JOIN "tag" ON "tag"."id" = "package_tag"."tag_id" WHERE "package_tag"."package_id" = "package"."id")`.as(
+          'tags_agg'
+        ),
+        groups:
+          sql<string>`(SELECT COALESCE(string_agg("group"."name" || ':' || COALESCE("group"."title", "group"."name"), ',' ORDER BY "group"."title"), '') FROM "package_group" JOIN "group" ON "group"."id" = "package_group"."group_id" WHERE "package_group"."package_id" = "package"."id")`.as(
+            'groups_agg'
+          ),
         orgName: organization.name,
         orgTitle: organization.title,
       })
@@ -492,7 +499,7 @@ export class PackageService {
   async getDetailByNameOrId(nameOrId: string, viewer?: ViewerContext) {
     const pkg = await this.getByNameOrIdWithAccessCheck(nameOrId, viewer)
 
-    const [resources, tags, org] = await Promise.all([
+    const [resources, tags, groups, org] = await Promise.all([
       this.db
         .select()
         .from(resource)
@@ -503,6 +510,11 @@ export class PackageService {
         .from(packageTag)
         .innerJoin(tag, eq(packageTag.tagId, tag.id))
         .where(eq(packageTag.packageId, pkg.id)),
+      this.db
+        .select({ id: group.id, name: group.name, title: group.title })
+        .from(packageGroup)
+        .innerJoin(group, eq(packageGroup.groupId, group.id))
+        .where(eq(packageGroup.packageId, pkg.id)),
       pkg.ownerOrg
         ? this.db
             .select({
@@ -519,7 +531,7 @@ export class PackageService {
         : Promise.resolve(null),
     ])
 
-    return { ...pkg, resources, tags, organization: org }
+    return { ...pkg, resources, tags, groups, organization: org }
   }
 
   async create(input: CreatePackageInput, creatorUserId?: string) {
