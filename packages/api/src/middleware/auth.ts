@@ -15,7 +15,11 @@ import { ApiTokenService } from '../services/api-token-service'
 export function optionalAuth(auth: Auth) {
   return async (c: Context, next: Next) => {
     // 1. Check for Better Auth session cookie
-    const hasCookie = c.req.header('cookie')?.includes(SESSION_COOKIE_NAME)
+    const cookieHeader = c.req.header('cookie') ?? ''
+    // Better Auth uses __Secure- prefix on HTTPS (production)
+    const hasCookie =
+      cookieHeader.includes(`__Secure-${SESSION_COOKIE_NAME}`) ||
+      cookieHeader.includes(SESSION_COOKIE_NAME)
 
     if (hasCookie) {
       try {

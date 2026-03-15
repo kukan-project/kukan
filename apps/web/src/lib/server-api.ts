@@ -12,7 +12,10 @@ export async function serverFetch(path: string, init?: RequestInit) {
   const { SESSION_COOKIE_NAME } = await import('@kukan/shared')
 
   const cookieStore = await cookies()
-  const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)
+  // Better Auth uses __Secure- prefix on HTTPS (production)
+  const sessionToken =
+    cookieStore.get(`__Secure-${SESSION_COOKIE_NAME}`) ??
+    cookieStore.get(SESSION_COOKIE_NAME)
 
   const app = await getApp()
   // Dummy base URL for in-process Hono call (no actual HTTP request)
