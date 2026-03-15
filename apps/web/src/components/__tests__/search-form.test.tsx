@@ -5,7 +5,7 @@ import { SearchForm } from '../search-form'
 describe('SearchForm', () => {
   it('should render input with default placeholder', () => {
     render(<SearchForm action="/dataset" />)
-    expect(screen.getByPlaceholderText('データセットを検索...')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Search datasets...')).toBeInTheDocument()
   })
 
   it('should set default value', () => {
@@ -14,8 +14,8 @@ describe('SearchForm', () => {
   })
 
   it('should use custom placeholder', () => {
-    render(<SearchForm action="/dataset" placeholder="組織を検索..." />)
-    expect(screen.getByPlaceholderText('組織を検索...')).toBeInTheDocument()
+    render(<SearchForm action="/dataset" placeholder="Search organizations..." />)
+    expect(screen.getByPlaceholderText('Search organizations...')).toBeInTheDocument()
   })
 
   it('should render form with correct action', () => {
@@ -27,7 +27,7 @@ describe('SearchForm', () => {
 
   it('should render search button', () => {
     render(<SearchForm action="/dataset" />)
-    expect(screen.getByRole('button', { name: '検索' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument()
   })
 
   it('should render hidden params as hidden inputs', () => {

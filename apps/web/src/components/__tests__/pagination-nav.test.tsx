@@ -17,25 +17,25 @@ describe('PaginationNav', () => {
 
   it('should not show previous button on first page', () => {
     render(<PaginationNav basePath="/dataset" offset={0} limit={20} total={100} />)
-    expect(screen.queryByText('前へ')).not.toBeInTheDocument()
-    expect(screen.getByText('次へ')).toBeInTheDocument()
+    expect(screen.queryByText('Previous')).not.toBeInTheDocument()
+    expect(screen.getByText('Next')).toBeInTheDocument()
   })
 
   it('should show previous button when offset > 0', () => {
     render(<PaginationNav basePath="/dataset" offset={20} limit={20} total={100} />)
-    expect(screen.getByText('前へ')).toBeInTheDocument()
+    expect(screen.getByText('Previous')).toBeInTheDocument()
   })
 
   it('should not show next button on last page', () => {
     render(<PaginationNav basePath="/dataset" offset={80} limit={20} total={100} />)
-    expect(screen.getByText('前へ')).toBeInTheDocument()
-    expect(screen.queryByText('次へ')).not.toBeInTheDocument()
+    expect(screen.getByText('Previous')).toBeInTheDocument()
+    expect(screen.queryByText('Next')).not.toBeInTheDocument()
   })
 
   it('should show both buttons on middle page', () => {
     render(<PaginationNav basePath="/dataset" offset={40} limit={20} total={100} />)
-    expect(screen.getByText('前へ')).toBeInTheDocument()
-    expect(screen.getByText('次へ')).toBeInTheDocument()
+    expect(screen.getByText('Previous')).toBeInTheDocument()
+    expect(screen.getByText('Next')).toBeInTheDocument()
     expect(screen.getByText('3 / 5')).toBeInTheDocument()
   })
 
@@ -43,7 +43,7 @@ describe('PaginationNav', () => {
     render(
       <PaginationNav basePath="/search" params={{ q: 'test' }} offset={20} limit={20} total={100} />
     )
-    const prevLink = screen.getByText('前へ').closest('a')
+    const prevLink = screen.getByText('Previous').closest('a')
     expect(prevLink).toHaveAttribute('href', expect.stringContaining('q=test'))
   })
 })
