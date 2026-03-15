@@ -66,10 +66,8 @@
     "filterByGroup": "Filter by group",
     "filterByTag": "Filter by tag",
     "filterByFormat": "Filter by format",
-    "allOrganizations": "All organizations",
-    "allGroups": "All groups",
-    "allFormats": "All formats",
-    "clearTags": "Clear tags"
+    "filterByLicense": "Filter by license",
+    "clear": "Clear"
   },
   "dataset": {
     "title": "Datasets",
@@ -104,7 +102,8 @@
     "tagsHelp": "Separate multiple tags with commas",
     "authorEmail": "Author Email",
     "maintainerLabel": "Maintainer",
-    "maintainerEmail": "Maintainer Email"
+    "maintainerEmail": "Maintainer Email",
+    "resourceCount": "{count} resources"
   },
   "organization": {
     "title": "Organizations",

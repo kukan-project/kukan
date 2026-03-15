@@ -16,6 +16,7 @@ interface Props {
     group?: string
     tags?: string
     formats?: string
+    license_id?: string
   }>
 }
 
@@ -24,6 +25,7 @@ const emptyFacets: FacetCounts = {
   groups: [],
   tags: [],
   formats: [],
+  licenses: [],
 }
 
 export default async function DatasetsPage({ searchParams }: Props) {
@@ -34,7 +36,9 @@ export default async function DatasetsPage({ searchParams }: Props) {
   const ownerOrg = params.owner_org || ''
   const group = params.group || ''
   const currentTags = params.tags ? params.tags.split(',').filter(Boolean) : []
+  const tagsParam = currentTags.length > 0 ? currentTags.join(',') : undefined
   const formats = params.formats || ''
+  const licenseId = params.license_id || ''
 
   const query = new URLSearchParams()
   if (q) query.set('q', q)
@@ -42,8 +46,9 @@ export default async function DatasetsPage({ searchParams }: Props) {
   query.set('limit', String(limit))
   if (ownerOrg) query.set('owner_org', ownerOrg)
   if (group) query.set('group', group)
-  if (currentTags.length > 0) query.set('tags', currentTags.join(','))
+  if (tagsParam) query.set('tags', tagsParam)
   if (formats) query.set('formats', formats)
+  if (licenseId) query.set('license_id', licenseId)
   query.set('include_facets', 'true')
 
   let data: PaginatedResult<DatasetCardItem> & { facets?: FacetCounts } = {
@@ -80,8 +85,9 @@ export default async function DatasetsPage({ searchParams }: Props) {
           hiddenParams={{
             owner_org: ownerOrg || undefined,
             group: group || undefined,
-            tags: currentTags.join(',') || undefined,
+            tags: tagsParam,
             formats: formats || undefined,
+            license_id: licenseId || undefined,
           }}
         />
 
@@ -89,13 +95,14 @@ export default async function DatasetsPage({ searchParams }: Props) {
 
         <div className="flex flex-col gap-6 md:flex-row">
           {/* Filter sidebar */}
-          <aside className="w-full shrink-0 md:w-56">
+          <aside className="w-full shrink-0 md:w-64">
             <DatasetFilters
               query={q}
               currentOrg={ownerOrg || undefined}
               currentGroup={group || undefined}
               currentTags={currentTags}
               currentFormat={formats || undefined}
+              currentLicense={licenseId || undefined}
               facets={facets}
             />
           </aside>
@@ -121,8 +128,9 @@ export default async function DatasetsPage({ searchParams }: Props) {
                   q: q || undefined,
                   owner_org: ownerOrg || undefined,
                   group: group || undefined,
-                  tags: currentTags.join(',') || undefined,
+                  tags: tagsParam,
                   formats: formats || undefined,
+                  license_id: licenseId || undefined,
                 }}
                 offset={offset}
                 limit={limit}

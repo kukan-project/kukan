@@ -37,6 +37,7 @@ export interface FacetCounts {
   groups: FacetItem[]
   tags: FacetItem[]
   formats: FacetItem[]
+  licenses: FacetItem[]
 }
 
 /**

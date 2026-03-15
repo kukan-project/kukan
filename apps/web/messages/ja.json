@@ -66,10 +66,8 @@
     "filterByGroup": "グループで絞り込み",
     "filterByTag": "タグで絞り込み",
     "filterByFormat": "フォーマットで絞り込み",
-    "allOrganizations": "すべての組織",
-    "allGroups": "すべてのグループ",
-    "allFormats": "すべてのフォーマット",
-    "clearTags": "タグをクリア"
+    "filterByLicense": "ライセンスで絞り込み",
+    "clear": "クリア"
   },
   "dataset": {
     "title": "データセット",
@@ -104,7 +102,8 @@
     "tagsHelp": "カンマ区切りで複数入力",
     "authorEmail": "作成者メール",
     "maintainerLabel": "管理者",
-    "maintainerEmail": "管理者メール"
+    "maintainerEmail": "管理者メール",
+    "resourceCount": "{count} 件のリソース"
   },
   "organization": {
     "title": "組織",

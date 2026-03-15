@@ -31,6 +31,7 @@ export interface PackageFilterParams {
   group?: string
   tags?: string[]
   formats?: string[]
+  license_id?: string
   creator_user_id?: string
   member_user_id?: string
   private?: boolean
@@ -47,7 +48,7 @@ export class PackageService {
    */
   private async buildConditions(
     params: PackageFilterParams,
-    exclude?: 'owner_org' | 'group' | 'tags' | 'formats'
+    exclude?: 'owner_org' | 'group' | 'tags' | 'formats' | 'license_id'
   ): Promise<SQL[] | null> {
     const conditions: SQL[] = [eq(packageTable.state, 'active')]
 
@@ -123,6 +124,10 @@ export class PackageService {
       conditions.push(inArray(packageTable.id, pkgIdsWithFormat))
     }
 
+    if (exclude !== 'license_id' && params.license_id) {
+      conditions.push(eq(packageTable.licenseId, params.license_id))
+    }
+
     if (params.creator_user_id) {
       conditions.push(eq(packageTable.creatorUserId, params.creator_user_id))
     }
@@ -175,8 +180,15 @@ export class PackageService {
           sql<string>`(SELECT COALESCE(string_agg(DISTINCT "resource"."format", ',' ORDER BY "resource"."format"), '') FROM "resource" WHERE "resource"."package_id" = "package"."id" AND "resource"."state" = 'active')`.as(
             'formats'
           ),
+        resourceCount:
+          sql<number>`(SELECT COUNT(*)::int FROM "resource" WHERE "resource"."package_id" = "package"."id" AND "resource"."state" = 'active')`.as(
+            'resource_count'
+          ),
+        orgName: organization.name,
+        orgTitle: organization.title,
       })
       .from(packageTable)
+      .leftJoin(organization, eq(packageTable.ownerOrg, organization.id))
       .where(where)
       .limit(limit)
       .offset(offset)
@@ -192,13 +204,14 @@ export class PackageService {
    * Each dimension excludes its own filter to allow switching.
    */
   async getFacets(params: PackageFilterParams): Promise<FacetCounts> {
-    const [organizations, groups, tags, formats] = await Promise.all([
+    const [organizations, groups, tags, formats, licenses] = await Promise.all([
       this.getOrgFacet(params),
       this.getGroupFacet(params),
       this.getTagFacet(params),
       this.getFormatFacet(params),
+      this.getLicenseFacet(params),
     ])
-    return { organizations, groups, tags, formats }
+    return { organizations, groups, tags, formats, licenses }
   }
 
   private async getOrgFacet(params: PackageFilterParams): Promise<FacetItem[]> {
@@ -368,6 +381,64 @@ export class PackageService {
       .orderBy(allFormats.format)
 
     return rows.map((r) => ({ name: r.name, count: r.count }))
+  }
+
+  private async getLicenseFacet(params: PackageFilterParams): Promise<FacetItem[]> {
+    const conditions = await this.buildConditions(params, 'license_id')
+
+    if (conditions === null) {
+      const allLicenses = await this.db
+        .selectDistinct({ licenseId: packageTable.licenseId })
+        .from(packageTable)
+        .where(
+          and(
+            eq(packageTable.state, 'active'),
+            sql`${packageTable.licenseId} IS NOT NULL AND ${packageTable.licenseId} != ''`
+          )
+        )
+        .orderBy(packageTable.licenseId)
+      return allLicenses
+        .map((r) => r.licenseId!)
+        .filter(Boolean)
+        .map((l) => ({ name: l, count: 0 }))
+    }
+
+    const filteredCounts = this.db
+      .select({
+        licenseId: packageTable.licenseId,
+        count: sql<number>`COUNT(*)::int`.as('count'),
+      })
+      .from(packageTable)
+      .where(
+        and(
+          ...conditions,
+          sql`${packageTable.licenseId} IS NOT NULL AND ${packageTable.licenseId} != ''`
+        )
+      )
+      .groupBy(packageTable.licenseId)
+      .as('fc')
+
+    const allLicenses = this.db
+      .selectDistinct({ licenseId: packageTable.licenseId })
+      .from(packageTable)
+      .where(
+        and(
+          eq(packageTable.state, 'active'),
+          sql`${packageTable.licenseId} IS NOT NULL AND ${packageTable.licenseId} != ''`
+        )
+      )
+      .as('al')
+
+    const rows = await this.db
+      .select({
+        name: allLicenses.licenseId,
+        count: sql<number>`COALESCE(${filteredCounts.count}, 0)`.as('count'),
+      })
+      .from(allLicenses)
+      .leftJoin(filteredCounts, eq(allLicenses.licenseId, filteredCounts.licenseId))
+      .orderBy(allLicenses.licenseId)
+
+    return rows.map((r) => ({ name: r.name!, count: r.count }))
   }
 
   async getByNameOrId(nameOrId: string) {

@@ -33,6 +33,7 @@ packagesRouter.get(
       group: z.string().optional(),
       tags: z.string().optional(),
       formats: z.string().optional(),
+      license_id: z.string().optional(),
       creator_user_id: z.string().optional(),
       my_org: z
         .string()
