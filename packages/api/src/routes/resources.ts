@@ -6,6 +6,7 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { ResourceService } from '../services/resource-service'
+import { PreviewService } from '../services/preview-service'
 import { PackageService } from '../services/package-service'
 import { updateResourceSchema, ForbiddenError } from '@kukan/shared'
 import { checkOrgRole } from '../auth/permissions'
@@ -26,6 +27,22 @@ resourcesRouter.get('/:id', async (c) => {
   const service = new ResourceService(c.get('db'))
   const res = await service.getById(id)
   return c.json(res)
+})
+
+// GET /api/v1/resources/:id/preview - Get CSV preview data
+resourcesRouter.get('/:id/preview', async (c) => {
+  const id = c.req.param('id')
+  const service = new ResourceService(c.get('db'))
+  const resource = await service.getById(id)
+
+  const previewService = new PreviewService(c.get('storage'))
+  const preview = await previewService.getPreview({
+    format: resource.format,
+    mimetype: resource.mimetype,
+    storageKey: resource.storageKey,
+    url: resource.url,
+  })
+  return c.json(preview)
 })
 
 // PUT /api/v1/resources/:id - Update resource (org editor+)

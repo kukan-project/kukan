@@ -1,12 +1,13 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getTranslations } from 'next-intl/server'
-import { Card, CardContent, Separator } from '@kukan/ui'
+import { Separator } from '@kukan/ui'
 import { serverFetch } from '@/lib/server-api'
 import { getFormatColorClass } from '@/lib/format-colors'
 import { renderSimpleMarkdown } from '@/lib/render-markdown'
 import { DateTime } from '@/components/date-time'
 import { KeyValueTable, extrasToRows } from '@/components/key-value-table'
+import { CsvPreviewTable } from '@/components/csv-preview-table'
 
 interface Resource {
   id: string
@@ -101,11 +102,7 @@ export default async function ResourceDetailPage({ params }: Props) {
         <Separator />
         <section>
           <h2 className="mb-4 text-xl font-semibold">{t('preview')}</h2>
-          <Card>
-            <CardContent className="py-8 text-center text-sm text-muted-foreground">
-              {t('previewPlaceholder')}
-            </CardContent>
-          </Card>
+          <CsvPreviewTable resourceId={resource.id} format={resource.format} />
         </section>
 
         <Separator />

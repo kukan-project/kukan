@@ -11,7 +11,7 @@ export const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
 
   // Storage (S3-compatible: works with both AWS S3 and MinIO)
-  STORAGE_TYPE: z.enum(['s3', 'minio', 'local']).default('minio'),
+  STORAGE_TYPE: z.enum(['s3', 'minio', 'local']).default('local'),
   S3_BUCKET: z.string().default('kukan-dev'),
   S3_REGION: z.string().default('ap-northeast-1'),
   S3_ENDPOINT: z.string().optional(), // MinIO: http://localhost:9000, S3: omit (use default)
