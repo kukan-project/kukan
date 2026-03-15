@@ -156,12 +156,12 @@ member_table = Table('member', meta.metadata,
 - `group_id` は `group` テーブルへの FK だが、CKAN では組織もグループも同一テーブルなので、組織所属もグループ所属もこの1テーブルで管理される
 - KUKAN では組織とグループを別テーブルに分離したため、メンバーシップも4テーブルに分離:
 
-| CKAN `member` の用途 | KUKAN テーブル | FK |
-|---|---|---|
-| ユーザー → 組織 | `user_org_membership` | `user.id` + `organization.id` |
-| ユーザー → グループ | `user_group_membership` | `user.id` + `group.id` |
-| パッケージ → グループ | `package_group` | `package.id` + `group.id` |
-| パッケージ → 組織 | *(FK直接)* `package.owner_org` | `organization.id` |
+| CKAN `member` の用途  | KUKAN テーブル                 | FK                            |
+| --------------------- | ------------------------------ | ----------------------------- |
+| ユーザー → 組織       | `user_org_membership`          | `user.id` + `organization.id` |
+| ユーザー → グループ   | `user_group_membership`        | `user.id` + `group.id`        |
+| パッケージ → グループ | `package_group`                | `package.id` + `group.id`     |
+| パッケージ → 組織     | _(FK直接)_ `package.owner_org` | `organization.id`             |
 
 - CKAN の `capacity` カラム → KUKAN の `role` カラム（`admin` / `editor` / `member`）
 
@@ -268,14 +268,14 @@ package_relationship_table = Table('package_relationship', meta.metadata,
 
 ## KUKAN との主な差分
 
-| 観点           | CKAN                                                | KUKAN                                             |
-| -------------- | --------------------------------------------------- | ------------------------------------------------- |
-| 組織/グループ  | 同一テーブル（`is_organization` で区別）            | 別テーブルに分離                                  |
+| 観点           | CKAN                                                | KUKAN                                                                                          |
+| -------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 組織/グループ  | 同一テーブル（`is_organization` で区別）            | 別テーブルに分離                                                                               |
 | メンバーシップ | 多態的 `member` テーブル（`table_name` で切り替え） | `user_org_membership` + `user_group_membership` + `package_group` + `package.owner_org` に分離 |
-| ユーザー管理   | 自前の `user` テーブル + パスワードハッシュ         | Better Auth                                       |
-| APIトークン    | 有効期限なし                                        | `expires_at` カラムあり                           |
-| resource.url   | NOT NULL                                            | nullable（ファイルアップロード対応）              |
-| PK 型          | UnicodeText (UUID文字列)                            | UUID 型                                           |
-| タイムスタンプ | DateTime (naive)                                    | TIMESTAMPTZ (timezone-aware)                      |
-| 拡張フィールド | `extras` JSONB + `plugin_data` / `plugin_extras`    | `extras` JSONB のみ                               |
-| カラム命名     | snake_case                                          | snake_case（Drizzle では camelCase にマッピング） |
+| ユーザー管理   | 自前の `user` テーブル + パスワードハッシュ         | Better Auth                                                                                    |
+| APIトークン    | 有効期限なし                                        | `expires_at` カラムあり                                                                        |
+| resource.url   | NOT NULL                                            | nullable（ファイルアップロード対応）                                                           |
+| PK 型          | UnicodeText (UUID文字列)                            | UUID 型                                                                                        |
+| タイムスタンプ | DateTime (naive)                                    | TIMESTAMPTZ (timezone-aware)                                                                   |
+| 拡張フィールド | `extras` JSONB + `plugin_data` / `plugin_extras`    | `extras` JSONB のみ                                                                            |
+| カラム命名     | snake_case                                          | snake_case（Drizzle では camelCase にマッピング）                                              |
