@@ -8,6 +8,12 @@ vi.mock('@/lib/server-api', () => ({
   serverFetch: vi.fn(),
 }))
 
+vi.mock('@/components/csv-preview-table', () => ({
+  CsvPreviewTable: ({ resourceId, format }: { resourceId: string; format?: string | null }) => (
+    <div data-testid="csv-preview-table" data-resource-id={resourceId} data-format={format ?? ''} />
+  ),
+}))
+
 function mockResponse(data: unknown, ok = true) {
   return { ok, json: async () => data } as Response
 }
@@ -111,13 +117,15 @@ describe('ResourceDetailPage', () => {
     expect(screen.getByText('Annual population statistics by ward.')).toBeInTheDocument()
   })
 
-  it('should show preview placeholder', async () => {
+  it('should render CsvPreviewTable with resource props', async () => {
     setupMocks()
     const jsx = await ResourceDetailPage(makeParams('population-data', 'r1'))
     render(jsx)
 
     expect(screen.getByText('Preview')).toBeInTheDocument()
-    expect(screen.getByText('Data preview is planned for a future phase')).toBeInTheDocument()
+    const preview = screen.getByTestId('csv-preview-table')
+    expect(preview).toHaveAttribute('data-resource-id', 'r1')
+    expect(preview).toHaveAttribute('data-format', 'CSV')
   })
 
   it('should display additional info table', async () => {
