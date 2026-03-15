@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
+import { useTranslations } from 'next-intl'
 import { useUser } from '@/components/dashboard/user-provider'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { OrganizationForm } from '@/components/dashboard/organization/organization-form'
@@ -10,6 +11,8 @@ import { OrganizationForm } from '@/components/dashboard/organization/organizati
 export default function NewOrganizationPage() {
   const user = useUser()
   const router = useRouter()
+  const t = useTranslations('organization')
+  const tc = useTranslations('common')
 
   useEffect(() => {
     if (!user.sysadmin) router.replace('/dashboard/organizations')
@@ -19,10 +22,10 @@ export default function NewOrganizationPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="組織を作成" />
+      <PageHeader title={t('createOrg')} />
       <Card>
         <CardHeader>
-          <CardTitle>基本情報</CardTitle>
+          <CardTitle>{tc('basicInfo')}</CardTitle>
         </CardHeader>
         <CardContent>
           <OrganizationForm />

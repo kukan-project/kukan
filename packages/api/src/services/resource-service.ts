@@ -55,6 +55,24 @@ export class ResourceService {
   }
 
   /**
+   * Get distinct non-empty formats across all active resources
+   */
+  async getDistinctFormats(): Promise<string[]> {
+    const rows = await this.db
+      .selectDistinct({ format: resource.format })
+      .from(resource)
+      .where(
+        and(
+          eq(resource.state, 'active'),
+          sql`${resource.format} IS NOT NULL AND ${resource.format} != ''`
+        )
+      )
+      .orderBy(resource.format)
+
+    return rows.map((r) => r.format!).filter(Boolean)
+  }
+
+  /**
    * Create a new resource
    * Automatically assigns position as max(position) + 1 within the package
    */

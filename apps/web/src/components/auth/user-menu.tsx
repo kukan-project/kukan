@@ -14,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@kukan/ui'
+import { useTranslations } from 'next-intl'
 import { signOut } from '@/lib/auth-client'
 
 interface UserMenuProps {
@@ -25,6 +26,7 @@ interface UserMenuProps {
 
 export function UserMenu({ user }: UserMenuProps) {
   const router = useRouter()
+  const t = useTranslations('common')
 
   const initials = user.name
     .split(' ')
@@ -58,15 +60,15 @@ export function UserMenu({ user }: UserMenuProps) {
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuItem asChild>
-            <Link href="/dashboard">ダッシュボード</Link>
+            <Link href="/dashboard">{t('dashboard')}</Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
-            <Link href="/dashboard/profile">プロフィール</Link>
+            <Link href="/dashboard/profile">{t('profile')}</Link>
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem onClick={handleSignOut}>ログアウト</DropdownMenuItem>
+          <DropdownMenuItem onClick={handleSignOut}>{t('logout')}</DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -21,6 +21,25 @@ export interface PaginatedResult<T> {
 }
 
 /**
+ * Facet count item for filter sidebar
+ */
+export interface FacetItem {
+  name: string
+  title?: string | null
+  count: number
+}
+
+/**
+ * Facet counts for dataset list filtering
+ */
+export interface FacetCounts {
+  organizations: FacetItem[]
+  groups: FacetItem[]
+  tags: FacetItem[]
+  formats: FacetItem[]
+}
+
+/**
  * RFC 7807 Problem Details for HTTP APIs
  * @see https://datatracker.ietf.org/doc/html/rfc7807
  */

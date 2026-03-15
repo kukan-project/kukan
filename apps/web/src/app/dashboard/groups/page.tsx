@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@kukan/ui'
+import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 import { PageHeader } from '@/components/dashboard/page-header'
 
@@ -14,6 +15,8 @@ interface GroupItem {
 }
 
 export default function GroupsManagePage() {
+  const t = useTranslations('group')
+  const tc = useTranslations('common')
   const [items, setItems] = useState<GroupItem[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -29,24 +32,24 @@ export default function GroupsManagePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="グループ">
+      <PageHeader title={tc('groups')}>
         <Button asChild>
-          <Link href="/dashboard/groups/new">新規作成</Link>
+          <Link href="/dashboard/groups/new">{tc('new')}</Link>
         </Button>
       </PageHeader>
 
       {loading ? (
-        <p className="py-12 text-center text-muted-foreground">読み込み中...</p>
+        <p className="py-12 text-center text-muted-foreground">{tc('loading')}</p>
       ) : items.length === 0 ? (
-        <p className="py-12 text-center text-muted-foreground">グループがありません</p>
+        <p className="py-12 text-center text-muted-foreground">{t('noGroups')}</p>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>名前</TableHead>
-              <TableHead>タイトル</TableHead>
-              <TableHead className="text-right">データセット数</TableHead>
-              <TableHead className="w-[80px]">操作</TableHead>
+              <TableHead>{tc('name')}</TableHead>
+              <TableHead>{tc('title')}</TableHead>
+              <TableHead className="text-right">{tc('datasets')}</TableHead>
+              <TableHead className="w-[80px]">{tc('actions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -58,10 +61,10 @@ export default function GroupsManagePage() {
                 <TableCell>
                   <div className="flex gap-1">
                     <Button variant="ghost" size="sm" asChild>
-                      <Link href={`/dashboard/groups/${grp.name}/members`}>メンバー</Link>
+                      <Link href={`/dashboard/groups/${grp.name}/members`}>{tc('members')}</Link>
                     </Button>
                     <Button variant="ghost" size="sm" asChild>
-                      <Link href={`/group/${grp.name}`}>表示</Link>
+                      <Link href={`/group/${grp.name}`}>{tc('view')}</Link>
                     </Button>
                   </div>
                 </TableCell>

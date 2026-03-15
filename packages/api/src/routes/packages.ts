@@ -31,6 +31,8 @@ packagesRouter.get(
       q: z.string().optional(),
       owner_org: z.string().optional(),
       group: z.string().optional(),
+      tags: z.string().optional(),
+      formats: z.string().optional(),
       creator_user_id: z.string().optional(),
       my_org: z
         .string()
@@ -40,10 +42,14 @@ packagesRouter.get(
         .string()
         .optional()
         .transform((val) => (val === 'true' ? true : val === 'false' ? false : undefined)),
+      include_facets: z
+        .string()
+        .optional()
+        .transform((val) => val === 'true'),
     })
   ),
   async (c) => {
-    const { my_org, ...rest } = c.req.valid('query')
+    const { my_org, tags, formats, include_facets, ...rest } = c.req.valid('query')
     const service = new PackageService(c.get('db'))
     const user = c.get('user')
 
@@ -51,7 +57,30 @@ packagesRouter.get(
     const member_user_id = my_org && user && !user.sysadmin ? user.id : undefined
     const viewer = user ? { userId: user.id, sysadmin: user.sysadmin } : undefined
 
-    const result = await service.list({ ...rest, member_user_id, viewer })
+    const filterParams = {
+      tags: tags
+        ? tags
+            .split(',')
+            .map((t) => t.trim())
+            .filter(Boolean)
+        : undefined,
+      formats: formats
+        ? formats
+            .split(',')
+            .map((f) => f.trim())
+            .filter(Boolean)
+        : undefined,
+    }
+
+    if (include_facets) {
+      const [result, facets] = await Promise.all([
+        service.list({ ...rest, ...filterParams, member_user_id, viewer }),
+        service.getFacets({ ...rest, ...filterParams, member_user_id, viewer }),
+      ])
+      return c.json({ ...result, facets })
+    }
+
+    const result = await service.list({ ...rest, ...filterParams, member_user_id, viewer })
     return c.json(result)
   }
 )

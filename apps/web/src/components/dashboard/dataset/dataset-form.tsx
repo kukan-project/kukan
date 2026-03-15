@@ -17,6 +17,7 @@ import {
   SelectValue,
   Switch,
 } from '@kukan/ui'
+import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 
 interface Organization {
@@ -34,6 +35,8 @@ interface DatasetFormProps {
 
 export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: DatasetFormProps) {
   const router = useRouter()
+  const t = useTranslations('dataset')
+  const tc = useTranslations('common')
   const [error, setError] = useState<string | null>(null)
   const [tagsInput, setTagsInput] = useState(
     defaultValues?.tags?.map((t) => t.name).join(', ') ?? ''
@@ -80,7 +83,7 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      setError(data.detail || `${mode === 'create' ? '作成' : '更新'}に失敗しました`)
+      setError(data.detail || tc('failedToCreate'))
       return
     }
 
@@ -94,7 +97,7 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
       )}
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="name">名前（必須）</Label>
+        <Label htmlFor="name">{tc('nameRequired')}</Label>
         <Input
           id="name"
           placeholder="my-dataset"
@@ -102,31 +105,34 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
           aria-invalid={!!errors.name}
           disabled={mode === 'edit'}
         />
-        <p className="text-xs text-muted-foreground">
-          半角英数字、ハイフン、アンダースコアのみ（2〜100文字）
-        </p>
+        <p className="text-xs text-muted-foreground">{tc('nameHelp')}</p>
         {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="title">タイトル</Label>
-        <Input id="title" placeholder="データセットの表示名" {...register('title')} />
+        <Label htmlFor="title">{tc('title')}</Label>
+        <Input id="title" placeholder={t('titlePlaceholder')} {...register('title')} />
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="notes">説明</Label>
-        <Textarea id="notes" placeholder="データセットの説明" rows={4} {...register('notes')} />
+        <Label htmlFor="notes">{tc('description')}</Label>
+        <Textarea
+          id="notes"
+          placeholder={t('descriptionPlaceholder')}
+          rows={4}
+          {...register('notes')}
+        />
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="owner_org">組織（必須）</Label>
+        <Label htmlFor="owner_org">{t('orgRequired')}</Label>
         <Controller
           name="owner_org"
           control={control}
           render={({ field }) => (
             <Select value={field.value ?? ''} onValueChange={field.onChange}>
               <SelectTrigger aria-invalid={!!errors.owner_org}>
-                <SelectValue placeholder="組織を選択" />
+                <SelectValue placeholder={t('orgSelect')} />
               </SelectTrigger>
               <SelectContent>
                 {organizations.map((org) => (
@@ -149,32 +155,32 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
             <Switch id="private" checked={field.value} onCheckedChange={field.onChange} />
           )}
         />
-        <Label htmlFor="private">非公開</Label>
+        <Label htmlFor="private">{tc('private')}</Label>
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="tags">タグ</Label>
+        <Label htmlFor="tags">{t('tags')}</Label>
         <Input
           id="tags"
-          placeholder="タグをカンマ区切りで入力（例: 統計, 人口, 東京都）"
+          placeholder={t('tagsPlaceholder')}
           value={tagsInput}
           onChange={(e) => setTagsInput(e.target.value)}
         />
-        <p className="text-xs text-muted-foreground">カンマ区切りで複数入力</p>
+        <p className="text-xs text-muted-foreground">{t('tagsHelp')}</p>
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="license_id">ライセンス</Label>
+        <Label htmlFor="license_id">{t('license')}</Label>
         <Input id="license_id" placeholder="CC-BY-4.0" {...register('license_id')} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
-          <Label htmlFor="author">作成者</Label>
+          <Label htmlFor="author">{t('author')}</Label>
           <Input id="author" {...register('author')} />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="author_email">作成者メール</Label>
+          <Label htmlFor="author_email">{t('authorEmail')}</Label>
           <Input
             id="author_email"
             type="email"
@@ -189,11 +195,11 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
-          <Label htmlFor="maintainer">管理者</Label>
+          <Label htmlFor="maintainer">{t('maintainerLabel')}</Label>
           <Input id="maintainer" {...register('maintainer')} />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="maintainer_email">管理者メール</Label>
+          <Label htmlFor="maintainer_email">{t('maintainerEmail')}</Label>
           <Input
             id="maintainer_email"
             type="email"
@@ -219,7 +225,7 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
           {errors.url && <p className="text-sm text-destructive">{errors.url.message}</p>}
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="version">バージョン</Label>
+          <Label htmlFor="version">{t('version')}</Label>
           <Input id="version" placeholder="1.0" {...register('version')} />
         </div>
       </div>
@@ -227,11 +233,11 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting
           ? mode === 'create'
-            ? '作成中...'
-            : '更新中...'
+            ? tc('creating')
+            : tc('updating')
           : mode === 'create'
-            ? '作成'
-            : '更新'}
+            ? tc('create')
+            : tc('update')}
       </Button>
     </form>
   )

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { getTranslations } from 'next-intl/server'
 import { Card, CardContent, Separator } from '@kukan/ui'
 import type { PaginatedResult } from '@kukan/shared'
 import { serverFetch } from '@/lib/server-api'
@@ -20,7 +21,8 @@ interface Props {
 }
 
 export default async function OrganizationsPage({ searchParams }: Props) {
-  const params = await searchParams
+  const [params, t] = await Promise.all([searchParams, getTranslations('organization')])
+  const tc = await getTranslations('common')
   const q = params.q || ''
   const offset = Number(params.offset) || 0
   const limit = Number(params.limit) || 20
@@ -44,17 +46,17 @@ export default async function OrganizationsPage({ searchParams }: Props) {
     <div className="mx-auto max-w-[var(--kukan-container-max-width)] px-4 py-8">
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold tracking-tight">組織</h1>
-          <p className="text-sm text-muted-foreground">{data.total} 件</p>
+          <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
+          <p className="text-sm text-muted-foreground">{tc('count', { count: data.total })}</p>
         </div>
 
-        <SearchForm action="/organization" defaultValue={q} placeholder="組織を検索..." />
+        <SearchForm action="/organization" defaultValue={q} placeholder={t('searchPlaceholder')} />
 
         <Separator />
 
         {data.items.length === 0 ? (
           <p className="py-12 text-center text-muted-foreground">
-            {q ? `「${q}」に一致する組織はありません` : '組織がありません'}
+            {q ? t('noMatchingOrganizations', { query: q }) : t('noOrganizations')}
           </p>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -71,7 +73,9 @@ export default async function OrganizationsPage({ searchParams }: Props) {
                         </p>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground">{org.datasetCount} データセット</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('datasetCount', { count: org.datasetCount })}
+                    </p>
                   </CardContent>
                 </Card>
               </Link>

@@ -1,17 +1,19 @@
 import Link from 'next/link'
+import { getTranslations } from 'next-intl/server'
 import { Button, Separator } from '@kukan/ui'
 import { getCurrentUser } from '@/lib/server-api'
 import { UserMenu } from '@/components/auth/user-menu'
+import { LanguageSwitcher } from './language-switcher'
 import { MobileNav } from './mobile-nav'
 
-const navItems = [
-  { href: '/dataset', label: 'データセット' },
-  { href: '/organization', label: '組織' },
-  { href: '/group', label: 'グループ' },
-]
-
 export async function Header() {
-  const user = await getCurrentUser()
+  const [user, t] = await Promise.all([getCurrentUser(), getTranslations('common')])
+
+  const navItems = [
+    { href: '/dataset', label: t('datasets') },
+    { href: '/organization', label: t('organizations') },
+    { href: '/group', label: t('groups') },
+  ]
 
   return (
     <header className="sticky top-0 z-40 bg-background">
@@ -38,11 +40,12 @@ export async function Header() {
           </nav>
         </div>
         <div className="flex items-center gap-2">
+          <LanguageSwitcher />
           {user ? (
             <UserMenu user={user} />
           ) : (
             <Button asChild variant="outline" size="sm">
-              <Link href="/auth/sign-in">ログイン</Link>
+              <Link href="/auth/sign-in">{t('login')}</Link>
             </Button>
           )}
           <MobileNav user={user} />

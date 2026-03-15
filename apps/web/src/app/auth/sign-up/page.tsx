@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { useTranslations } from 'next-intl'
 import {
   Button,
   Input,
@@ -20,15 +21,16 @@ import {
 import { signUp } from '@/lib/auth-client'
 
 const signUpSchema = z.object({
-  name: z.string().min(2, '名前は2文字以上です'),
-  email: z.string().email('有効なメールアドレスを入力してください'),
-  password: z.string().min(8, 'パスワードは8文字以上です'),
+  name: z.string().min(2),
+  email: z.string().email(),
+  password: z.string().min(8),
 })
 
 type SignUpValues = z.infer<typeof signUpSchema>
 
 export default function SignUpPage() {
   const router = useRouter()
+  const t = useTranslations('auth')
   const [error, setError] = useState<string | null>(null)
 
   const {
@@ -47,7 +49,7 @@ export default function SignUpPage() {
       password: values.password,
     })
     if (result.error) {
-      setError('登録に失敗しました。別のメールアドレスをお試しください。')
+      setError(t('signUpFailed'))
       return
     }
     router.push('/dashboard')
@@ -57,8 +59,8 @@ export default function SignUpPage() {
     <div className="flex min-h-[calc(100vh-var(--kukan-header-height)-64px)] items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>アカウント作成</CardTitle>
-          <CardDescription>メールアドレスで新規登録</CardDescription>
+          <CardTitle>{t('signUp')}</CardTitle>
+          <CardDescription>{t('signUpDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
@@ -68,19 +70,19 @@ export default function SignUpPage() {
               </div>
             )}
             <div className="flex flex-col gap-2">
-              <Label htmlFor="name">名前</Label>
+              <Label htmlFor="name">{t('name')}</Label>
               <Input
                 id="name"
                 type="text"
-                placeholder="山田 太郎"
+                placeholder={t('namePlaceholder')}
                 autoComplete="name"
                 {...register('name')}
                 aria-invalid={!!errors.name}
               />
-              {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
+              {errors.name && <p className="text-sm text-destructive">{t('nameMinLength')}</p>}
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="email">メールアドレス</Label>
+              <Label htmlFor="email">{t('email')}</Label>
               <Input
                 id="email"
                 type="email"
@@ -89,10 +91,10 @@ export default function SignUpPage() {
                 {...register('email')}
                 aria-invalid={!!errors.email}
               />
-              {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
+              {errors.email && <p className="text-sm text-destructive">{t('invalidEmail')}</p>}
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="password">パスワード</Label>
+              <Label htmlFor="password">{t('password')}</Label>
               <Input
                 id="password"
                 type="password"
@@ -101,19 +103,19 @@ export default function SignUpPage() {
                 aria-invalid={!!errors.password}
               />
               {errors.password && (
-                <p className="text-sm text-destructive">{errors.password.message}</p>
+                <p className="text-sm text-destructive">{t('passwordMinLength')}</p>
               )}
             </div>
             <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? '登録中...' : 'アカウント作成'}
+              {isSubmitting ? t('signingUp') : t('signUpButton')}
             </Button>
           </form>
         </CardContent>
         <CardFooter className="justify-center">
           <p className="text-sm text-muted-foreground">
-            すでにアカウントをお持ちの方は{' '}
+            {t('hasAccount')}{' '}
             <Link href="/auth/sign-in" className="text-primary underline-offset-4 hover:underline">
-              ログイン
+              {t('signIn')}
             </Link>
           </p>
         </CardFooter>

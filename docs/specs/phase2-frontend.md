@@ -229,6 +229,7 @@ export async function clientFetch(path: string, init?: RequestInit) {
 ```
 
 **使い分け:**
+
 - 公開ページ（SEO 必要）→ `serverFetch`（SSR）
 - Dashboard ページ（認証必須、インタラクティブ）→ `clientFetch`（CSR）
 - Dashboard layout の認証ガード → `getCurrentUser`（SSR、`server-api.ts`）

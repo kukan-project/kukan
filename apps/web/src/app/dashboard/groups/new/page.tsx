@@ -1,14 +1,18 @@
+import { getTranslations } from 'next-intl/server'
 import { Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { GroupForm } from '@/components/dashboard/group/group-form'
 
-export default function NewGroupPage() {
+export default async function NewGroupPage() {
+  const t = await getTranslations('group')
+  const tc = await getTranslations('common')
+
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="グループを作成" />
+      <PageHeader title={t('createGroup')} />
       <Card>
         <CardHeader>
-          <CardTitle>基本情報</CardTitle>
+          <CardTitle>{tc('basicInfo')}</CardTitle>
         </CardHeader>
         <CardContent>
           <GroupForm />

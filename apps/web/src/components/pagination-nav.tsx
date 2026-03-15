@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { useTranslations } from 'next-intl'
 import { Button } from '@kukan/ui'
 import { buildQuery } from '@/lib/query'
 
@@ -15,6 +16,7 @@ export function PaginationNav({
   limit: number
   total: number
 }) {
+  const t = useTranslations('common')
   const totalPages = Math.ceil(total / limit)
   if (totalPages <= 1) return null
 
@@ -28,7 +30,7 @@ export function PaginationNav({
     <div className="flex items-center justify-center gap-2">
       {offset > 0 && (
         <Button asChild variant="outline" size="sm">
-          <Link href={href(Math.max(0, offset - limit))}>前へ</Link>
+          <Link href={href(Math.max(0, offset - limit))}>{t('previous')}</Link>
         </Button>
       )}
       <span className="text-sm text-muted-foreground">
@@ -36,7 +38,7 @@ export function PaginationNav({
       </span>
       {offset + limit < total && (
         <Button asChild variant="outline" size="sm">
-          <Link href={href(offset + limit)}>次へ</Link>
+          <Link href={href(offset + limit)}>{t('next')}</Link>
         </Button>
       )}
     </div>

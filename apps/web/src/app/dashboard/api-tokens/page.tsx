@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@kukan/ui'
+import { useTranslations, useLocale } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
@@ -38,12 +39,16 @@ interface ApiToken {
   created: string
 }
 
-function formatDate(dateStr: string | null) {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleDateString('ja-JP')
-}
-
 export default function ApiTokensPage() {
+  const t = useTranslations('apiToken')
+  const tc = useTranslations('common')
+  const locale = useLocale()
+
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return '-'
+    return new Date(dateStr).toLocaleDateString(locale)
+  }
+
   const [tokens, setTokens] = useState<ApiToken[]>([])
   const [newToken, setNewToken] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
@@ -113,25 +118,23 @@ export default function ApiTokensPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="APIトークン">
-        <Button onClick={() => setShowCreate(true)}>新規作成</Button>
+      <PageHeader title={t('title')}>
+        <Button onClick={() => setShowCreate(true)}>{tc('new')}</Button>
       </PageHeader>
 
       {newToken && (
         <Card className="border-primary/30 bg-primary/5">
           <CardHeader>
-            <CardTitle className="text-sm">トークンが作成されました</CardTitle>
+            <CardTitle className="text-sm">{t('tokenCreated')}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
-            <p className="text-sm text-muted-foreground">
-              以下のトークンをコピーしてください。再度表示されません。
-            </p>
+            <p className="text-sm text-muted-foreground">{t('tokenCopyNote')}</p>
             <div className="flex items-center gap-2">
               <code className="flex-1 rounded bg-muted px-3 py-2 text-sm break-all">
                 {newToken}
               </code>
               <Button variant="outline" size="sm" onClick={copyToken}>
-                {copied ? 'コピー済み' : 'コピー'}
+                {copied ? t('copied') : t('copy')}
               </Button>
             </div>
           </CardContent>
@@ -139,16 +142,16 @@ export default function ApiTokensPage() {
       )}
 
       {tokens.length === 0 ? (
-        <p className="py-12 text-center text-muted-foreground">APIトークンがありません</p>
+        <p className="py-12 text-center text-muted-foreground">{t('noTokens')}</p>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>名前</TableHead>
-              <TableHead>作成日</TableHead>
-              <TableHead>最終使用</TableHead>
-              <TableHead>有効期限</TableHead>
-              <TableHead className="w-[80px]">操作</TableHead>
+              <TableHead>{tc('name')}</TableHead>
+              <TableHead>{t('createdAt')}</TableHead>
+              <TableHead>{t('lastUsed')}</TableHead>
+              <TableHead>{t('expiresAt')}</TableHead>
+              <TableHead className="w-[80px]">{tc('actions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -160,7 +163,7 @@ export default function ApiTokensPage() {
                 <TableCell>{formatDate(token.expiresAt)}</TableCell>
                 <TableCell>
                   <Button variant="ghost" size="sm" onClick={() => setDeleteId(token.id)}>
-                    削除
+                    {tc('delete')}
                   </Button>
                 </TableCell>
               </TableRow>
@@ -172,40 +175,40 @@ export default function ApiTokensPage() {
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>APIトークン作成</DialogTitle>
+            <DialogTitle>{t('createToken')}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label htmlFor="token-name">名前（任意）</Label>
+              <Label htmlFor="token-name">{t('nameOptional')}</Label>
               <Input
                 id="token-name"
                 value={tokenName}
                 onChange={(e) => setTokenName(e.target.value)}
-                placeholder="例: CI/CD用トークン"
+                placeholder={t('namePlaceholder')}
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="expires">有効期限</Label>
+              <Label htmlFor="expires">{t('expiresIn')}</Label>
               <Select value={expiresDays} onValueChange={setExpiresDays}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="30">30日</SelectItem>
-                  <SelectItem value="90">90日</SelectItem>
-                  <SelectItem value="180">180日</SelectItem>
-                  <SelectItem value="365">1年</SelectItem>
-                  <SelectItem value="none">無期限</SelectItem>
+                  <SelectItem value="30">{t('days30')}</SelectItem>
+                  <SelectItem value="90">{t('days90')}</SelectItem>
+                  <SelectItem value="180">{t('days180')}</SelectItem>
+                  <SelectItem value="365">{t('year1')}</SelectItem>
+                  <SelectItem value="none">{t('noExpiry')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreate(false)}>
-              キャンセル
+              {tc('cancel')}
             </Button>
             <Button onClick={handleCreate} disabled={creating}>
-              {creating ? '作成中...' : '作成'}
+              {creating ? tc('creating') : tc('create')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -214,8 +217,8 @@ export default function ApiTokensPage() {
       <DeleteConfirmDialog
         open={!!deleteId}
         onOpenChange={(open) => !open && setDeleteId(null)}
-        title="トークンを削除"
-        description="このトークンを削除すると、このトークンを使用しているアプリケーションは認証できなくなります。"
+        title={t('deleteToken')}
+        description={t('deleteTokenConfirm')}
         onConfirm={handleDelete}
         isDeleting={deleting}
       />

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
+import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { DatasetForm } from '@/components/dashboard/dataset/dataset-form'
@@ -13,6 +14,8 @@ interface Organization {
 }
 
 export default function NewDatasetPage() {
+  const t = useTranslations('dataset')
+  const tc = useTranslations('common')
   const [organizations, setOrganizations] = useState<Organization[]>([])
 
   useEffect(() => {
@@ -26,10 +29,10 @@ export default function NewDatasetPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="データセットを作成" />
+      <PageHeader title={t('createDataset')} />
       <Card>
         <CardHeader>
-          <CardTitle>基本情報</CardTitle>
+          <CardTitle>{tc('basicInfo')}</CardTitle>
         </CardHeader>
         <CardContent>
           <DatasetForm mode="create" organizations={organizations} />

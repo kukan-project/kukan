@@ -6,10 +6,13 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { createGroupSchema, type CreateGroupInput } from '@kukan/shared'
 import { Button, Input, Label, Textarea } from '@kukan/ui'
+import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 
 export function GroupForm() {
   const router = useRouter()
+  const t = useTranslations('group')
+  const tc = useTranslations('common')
   const [error, setError] = useState<string | null>(null)
 
   const {
@@ -30,7 +33,7 @@ export function GroupForm() {
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      setError(data.detail || '作成に失敗しました')
+      setError(data.detail || tc('failedToCreate'))
       return
     }
     router.push('/dashboard/groups')
@@ -42,33 +45,31 @@ export function GroupForm() {
         <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
       )}
       <div className="flex flex-col gap-2">
-        <Label htmlFor="name">名前（必須）</Label>
+        <Label htmlFor="name">{tc('nameRequired')}</Label>
         <Input
           id="name"
           placeholder="my-group"
           {...register('name')}
           aria-invalid={!!errors.name}
         />
-        <p className="text-xs text-muted-foreground">
-          半角英数字、ハイフン、アンダースコアのみ（2〜100文字）
-        </p>
+        <p className="text-xs text-muted-foreground">{tc('nameHelp')}</p>
         {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
       </div>
       <div className="flex flex-col gap-2">
-        <Label htmlFor="title">タイトル</Label>
-        <Input id="title" placeholder="グループの表示名" {...register('title')} />
+        <Label htmlFor="title">{tc('title')}</Label>
+        <Input id="title" placeholder={t('titlePlaceholder')} {...register('title')} />
       </div>
       <div className="flex flex-col gap-2">
-        <Label htmlFor="description">説明</Label>
+        <Label htmlFor="description">{tc('description')}</Label>
         <Textarea
           id="description"
-          placeholder="グループの説明"
+          placeholder={t('descriptionPlaceholder')}
           rows={4}
           {...register('description')}
         />
       </div>
       <div className="flex flex-col gap-2">
-        <Label htmlFor="image_url">画像URL</Label>
+        <Label htmlFor="image_url">{tc('imageUrl')}</Label>
         <Input
           id="image_url"
           type="url"
@@ -79,7 +80,7 @@ export function GroupForm() {
         {errors.image_url && <p className="text-sm text-destructive">{errors.image_url.message}</p>}
       </div>
       <Button type="submit" disabled={isSubmitting}>
-        {isSubmitting ? '作成中...' : '作成'}
+        {isSubmitting ? tc('creating') : tc('create')}
       </Button>
     </form>
   )

@@ -13,6 +13,13 @@ import type { AppContext } from '../context'
 
 export const resourcesRouter = new Hono<{ Variables: AppContext }>()
 
+// GET /api/v1/resources/formats - Get distinct resource formats
+resourcesRouter.get('/formats', async (c) => {
+  const service = new ResourceService(c.get('db'))
+  const formats = await service.getDistinctFormats()
+  return c.json(formats)
+})
+
 // GET /api/v1/resources/:id - Get resource by ID
 resourcesRouter.get('/:id', async (c) => {
   const id = c.req.param('id')

@@ -11,6 +11,7 @@ import {
   TableRow,
   Badge,
 } from '@kukan/ui'
+import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
 
@@ -28,6 +29,8 @@ interface ResourceListProps {
 }
 
 export function ResourceList({ resources, onDeleted }: ResourceListProps) {
+  const t = useTranslations('resource')
+  const tc = useTranslations('common')
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
 
@@ -46,7 +49,7 @@ export function ResourceList({ resources, onDeleted }: ResourceListProps) {
   }
 
   if (resources.length === 0) {
-    return <p className="py-4 text-center text-sm text-muted-foreground">リソースがありません</p>
+    return <p className="py-4 text-center text-sm text-muted-foreground">{t('noResources')}</p>
   }
 
   return (
@@ -54,10 +57,10 @@ export function ResourceList({ resources, onDeleted }: ResourceListProps) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>名前</TableHead>
-            <TableHead>フォーマット</TableHead>
+            <TableHead>{tc('name')}</TableHead>
+            <TableHead>{tc('format')}</TableHead>
             <TableHead>URL</TableHead>
-            <TableHead className="w-[80px]">操作</TableHead>
+            <TableHead className="w-[80px]">{tc('actions')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -83,7 +86,7 @@ export function ResourceList({ resources, onDeleted }: ResourceListProps) {
               </TableCell>
               <TableCell>
                 <Button variant="ghost" size="sm" onClick={() => setDeleteId(r.id)}>
-                  削除
+                  {tc('delete')}
                 </Button>
               </TableCell>
             </TableRow>
@@ -94,8 +97,8 @@ export function ResourceList({ resources, onDeleted }: ResourceListProps) {
       <DeleteConfirmDialog
         open={!!deleteId}
         onOpenChange={(open) => !open && setDeleteId(null)}
-        title="リソースを削除"
-        description="このリソースを削除してもよろしいですか？"
+        title={t('deleteResource')}
+        description={t('deleteResourceConfirm')}
         onConfirm={handleDelete}
         isDeleting={deleting}
       />

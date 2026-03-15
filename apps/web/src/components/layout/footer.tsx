@@ -1,7 +1,9 @@
 import Link from 'next/link'
+import { useTranslations } from 'next-intl'
 import { Separator } from '@kukan/ui'
 
 export function Footer() {
+  const t = useTranslations('common')
   return (
     <footer className="mt-auto">
       <Separator />
@@ -19,13 +21,13 @@ export function Footer() {
             href="/dataset"
             className="text-xs text-muted-foreground transition-colors hover:text-primary"
           >
-            データセット
+            {t('datasets')}
           </Link>
           <Link
             href="/organization"
             className="text-xs text-muted-foreground transition-colors hover:text-primary"
           >
-            組織
+            {t('organizations')}
           </Link>
         </nav>
       </div>

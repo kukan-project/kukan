@@ -1,9 +1,11 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { getTranslations } from 'next-intl/server'
 import { Card, CardContent, Separator } from '@kukan/ui'
 import { serverFetch } from '@/lib/server-api'
 import { getFormatColorClass } from '@/lib/format-colors'
 import { renderSimpleMarkdown } from '@/lib/render-markdown'
+import { DateTime } from '@/components/date-time'
 
 interface Resource {
   id: string
@@ -35,10 +37,12 @@ interface Props {
 export default async function ResourceDetailPage({ params }: Props) {
   const { nameOrId, resourceId } = await params
 
-  // Fetch resource and package in parallel
-  const [resRes, pkgRes] = await Promise.all([
+  // Fetch resource, package, and translations in parallel
+  const [resRes, pkgRes, t, td] = await Promise.all([
     serverFetch(`/api/v1/resources/${encodeURIComponent(resourceId)}`).catch(() => null),
     serverFetch(`/api/v1/packages/${encodeURIComponent(nameOrId)}`).catch(() => null),
+    getTranslations('resource'),
+    getTranslations('dataset'),
   ])
 
   if (!resRes?.ok) notFound()
@@ -49,32 +53,27 @@ export default async function ResourceDetailPage({ params }: Props) {
   return (
     <div className="mx-auto max-w-[var(--kukan-container-max-width)] px-4 py-8">
       <div className="flex flex-col gap-6">
-        {/* パンくず */}
         <nav className="flex items-center gap-1 text-sm text-muted-foreground">
           <Link href="/dataset" className="hover:text-foreground">
-            データセット一覧
+            {td('breadcrumb')}
           </Link>
           <span>/</span>
           <Link href={`/dataset/${nameOrId}`} className="hover:text-foreground">
             {pkg?.title || pkg?.name || nameOrId}
           </Link>
           <span>/</span>
-          <span className="text-foreground">{resource.name || 'リソース'}</span>
+          <span className="text-foreground">{resource.name || t('unnamed')}</span>
         </nav>
 
-        {/* タイトル + フォーマットバッジ */}
         <div className="flex items-start gap-3">
           <span
             className={`mt-1 inline-flex min-w-[56px] items-center justify-center rounded px-2 py-1 text-xs font-bold uppercase ${getFormatColorClass(resource.format)}`}
           >
             {resource.format || '?'}
           </span>
-          <h1 className="text-3xl font-bold tracking-tight">
-            {resource.name || 'Unnamed Resource'}
-          </h1>
+          <h1 className="text-3xl font-bold tracking-tight">{resource.name || t('unnamed')}</h1>
         </div>
 
-        {/* URL */}
         {resource.url && (
           <div>
             <a
@@ -88,7 +87,6 @@ export default async function ResourceDetailPage({ params }: Props) {
           </div>
         )}
 
-        {/* 説明 */}
         {resource.description && (
           <>
             <Separator />
@@ -98,22 +96,34 @@ export default async function ResourceDetailPage({ params }: Props) {
           </>
         )}
 
-        {/* プレビュー（後のフェーズ） */}
         <Separator />
         <section>
-          <h2 className="mb-4 text-xl font-semibold">プレビュー</h2>
+          <h2 className="mb-4 text-xl font-semibold">{t('preview')}</h2>
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
-              データプレビューは今後のフェーズで対応予定です
+              {t('previewPlaceholder')}
             </CardContent>
           </Card>
         </section>
 
-        {/* 追加情報 */}
         <Separator />
         <section>
-          <h2 className="mb-4 text-xl font-semibold">追加情報</h2>
-          <ResourceMetadataTable resource={resource} licenseId={pkg?.licenseId} />
+          <h2 className="mb-4 text-xl font-semibold">{t('additionalInfo')}</h2>
+          <ResourceMetadataTable
+            resource={resource}
+            licenseId={pkg?.licenseId}
+            labels={{
+              lastModified: t('lastModified'),
+              metadataModified: t('metadataModified'),
+              created: t('created'),
+              dataFormat: t('dataFormat'),
+              mimeType: t('mimeType'),
+              size: t('size'),
+              resourceType: t('resourceType'),
+              hash: t('hash'),
+              license: t('license'),
+            }}
+          />
         </section>
       </div>
     </div>
@@ -123,20 +133,34 @@ export default async function ResourceDetailPage({ params }: Props) {
 function ResourceMetadataTable({
   resource,
   licenseId,
+  labels,
 }: {
   resource: Resource
   licenseId?: string | null
+  labels: Record<string, string>
 }) {
   const rows = [
-    { label: '最終更新日', value: formatDate(resource.lastModified || resource.updated) },
-    { label: 'メタデータ最終更新日時', value: formatDate(resource.updated) },
-    { label: '作成日', value: formatDate(resource.created) },
-    { label: 'データ形式', value: resource.format?.toUpperCase() },
-    { label: 'MIMEタイプ', value: resource.mimetype },
-    { label: 'サイズ', value: formatBytes(resource.size) },
-    { label: 'リソースタイプ', value: resource.resourceType },
-    { label: 'ハッシュ', value: resource.hash },
-    { label: 'ライセンス', value: licenseId },
+    {
+      label: labels.lastModified,
+      value:
+        resource.lastModified || resource.updated ? (
+          <DateTime value={resource.lastModified || resource.updated} />
+        ) : null,
+    },
+    {
+      label: labels.metadataModified,
+      value: <DateTime value={resource.updated} />,
+    },
+    {
+      label: labels.created,
+      value: <DateTime value={resource.created} />,
+    },
+    { label: labels.dataFormat, value: resource.format?.toUpperCase() },
+    { label: labels.mimeType, value: resource.mimetype },
+    { label: labels.size, value: formatBytes(resource.size) },
+    { label: labels.resourceType, value: resource.resourceType },
+    { label: labels.hash, value: resource.hash },
+    { label: labels.license, value: licenseId },
   ].filter((row) => row.value)
 
   if (rows.length === 0) return null
@@ -155,17 +179,6 @@ function ResourceMetadataTable({
       </table>
     </div>
   )
-}
-
-function formatDate(dateString: string | null | undefined): string | null {
-  if (!dateString) return null
-  const date = new Date(dateString)
-  if (isNaN(date.getTime())) return null
-  return date.toLocaleDateString('ja-JP', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
 }
 
 function formatBytes(bytes: number | null | undefined): string | null {

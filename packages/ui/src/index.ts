@@ -82,3 +82,4 @@ export {
   DialogDescription,
 } from './components/ui/dialog'
 export { Switch } from './components/ui/switch'
+export { Skeleton } from './components/ui/skeleton'

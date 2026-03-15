@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useTranslations } from 'next-intl'
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge } from '@kukan/ui'
 import { clientFetch } from '@/lib/client-api'
 import { useUser } from '@/components/dashboard/user-provider'
@@ -16,6 +17,8 @@ interface PkgItem {
 
 export default function DashboardPage() {
   const user = useUser()
+  const t = useTranslations('dashboard')
+  const tc = useTranslations('common')
   const [items, setItems] = useState<PkgItem[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -34,15 +37,15 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">ダッシュボード</h1>
-        <p className="text-muted-foreground">ようこそ、{user.name} さん</p>
+        <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
+        <p className="text-muted-foreground">{t('welcome', { name: user.name })}</p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              データセット数
+              {t('datasetCount')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -53,19 +56,19 @@ export default function DashboardPage() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>最近のデータセット</CardTitle>
+          <CardTitle>{t('recentDatasets')}</CardTitle>
           <Button variant="outline" size="sm" asChild>
-            <Link href="/dashboard/datasets">すべて表示</Link>
+            <Link href="/dashboard/datasets">{tc('showAll')}</Link>
           </Button>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <p className="py-8 text-center text-muted-foreground">読み込み中...</p>
+            <p className="py-8 text-center text-muted-foreground">{tc('loading')}</p>
           ) : items.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-8">
-              <p className="text-muted-foreground">データセットがありません</p>
+              <p className="text-muted-foreground">{t('noDatasets')}</p>
               <Button asChild>
-                <Link href="/dashboard/datasets/new">データセットを作成</Link>
+                <Link href="/dashboard/datasets/new">{t('createDataset')}</Link>
               </Button>
             </div>
           ) : (
@@ -79,7 +82,7 @@ export default function DashboardPage() {
                     >
                       {pkg.title || pkg.name}
                     </Link>
-                    {pkg.private && <Badge variant="secondary">非公開</Badge>}
+                    {pkg.private && <Badge variant="secondary">{tc('private')}</Badge>}
                   </div>
                   <div className="flex gap-1">
                     {pkg.formats

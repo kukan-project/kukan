@@ -43,16 +43,16 @@ KUKAN では OpenSearch を検索エンジンとして採用している（ADR-0
 
 ### 責務の分担
 
-| 操作 | データソース | エンドポイント |
-|------|-------------|---------------|
-| データセット一覧（ページネーション） | DB 直接 | `GET /api/v1/packages` |
-| 組織・グループでの絞り込み | DB 直接（JOIN） | `GET /api/v1/packages?owner_org=...` |
-| タグ・フォーマットでの絞り込み | DB 直接（JOIN） | `GET /api/v1/packages?tags=...` |
-| 日付・名前でのソート | DB 直接（ORDER BY） | `GET /api/v1/packages` |
-| 組織一覧・グループ一覧 | DB 直接 | `GET /api/v1/organizations`, `groups` |
-| 組織詳細（所属データセット） | DB 直接 | `GET /api/v1/organizations/:id` |
-| キーワード全文検索 | SearchAdapter | `GET /api/v1/search?q=...` |
-| キーワード＋フィルター複合検索 | SearchAdapter（filter context） | `GET /api/v1/search?q=...&organization=...` |
+| 操作                                 | データソース                    | エンドポイント                              |
+| ------------------------------------ | ------------------------------- | ------------------------------------------- |
+| データセット一覧（ページネーション） | DB 直接                         | `GET /api/v1/packages`                      |
+| 組織・グループでの絞り込み           | DB 直接（JOIN）                 | `GET /api/v1/packages?owner_org=...`        |
+| タグ・フォーマットでの絞り込み       | DB 直接（JOIN）                 | `GET /api/v1/packages?tags=...`             |
+| 日付・名前でのソート                 | DB 直接（ORDER BY）             | `GET /api/v1/packages`                      |
+| 組織一覧・グループ一覧               | DB 直接                         | `GET /api/v1/organizations`, `groups`       |
+| 組織詳細（所属データセット）         | DB 直接                         | `GET /api/v1/organizations/:id`             |
+| キーワード全文検索                   | SearchAdapter                   | `GET /api/v1/search?q=...`                  |
+| キーワード＋フィルター複合検索       | SearchAdapter（filter context） | `GET /api/v1/search?q=...&organization=...` |
 
 ### キーワード＋フィルター複合検索の方針
 

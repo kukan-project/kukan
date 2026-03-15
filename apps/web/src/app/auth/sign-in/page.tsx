@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { useTranslations } from 'next-intl'
 import {
   Button,
   Input,
@@ -20,14 +21,15 @@ import {
 import { signIn } from '@/lib/auth-client'
 
 const signInSchema = z.object({
-  email: z.string().email('有効なメールアドレスを入力してください'),
-  password: z.string().min(8, 'パスワードは8文字以上です'),
+  email: z.string().email(),
+  password: z.string().min(8),
 })
 
 type SignInValues = z.infer<typeof signInSchema>
 
 export default function SignInPage() {
   const router = useRouter()
+  const t = useTranslations('auth')
   const [error, setError] = useState<string | null>(null)
 
   const {
@@ -45,7 +47,7 @@ export default function SignInPage() {
       password: values.password,
     })
     if (result.error) {
-      setError('メールアドレスまたはパスワードが正しくありません')
+      setError(t('invalidCredentials'))
       return
     }
     router.push('/dashboard')
@@ -55,8 +57,8 @@ export default function SignInPage() {
     <div className="flex min-h-[calc(100vh-var(--kukan-header-height)-64px)] items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>ログイン</CardTitle>
-          <CardDescription>メールアドレスとパスワードでログイン</CardDescription>
+          <CardTitle>{t('signIn')}</CardTitle>
+          <CardDescription>{t('signInDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
@@ -66,7 +68,7 @@ export default function SignInPage() {
               </div>
             )}
             <div className="flex flex-col gap-2">
-              <Label htmlFor="email">メールアドレス</Label>
+              <Label htmlFor="email">{t('email')}</Label>
               <Input
                 id="email"
                 type="email"
@@ -75,10 +77,10 @@ export default function SignInPage() {
                 {...register('email')}
                 aria-invalid={!!errors.email}
               />
-              {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
+              {errors.email && <p className="text-sm text-destructive">{t('invalidEmail')}</p>}
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="password">パスワード</Label>
+              <Label htmlFor="password">{t('password')}</Label>
               <Input
                 id="password"
                 type="password"
@@ -87,19 +89,19 @@ export default function SignInPage() {
                 aria-invalid={!!errors.password}
               />
               {errors.password && (
-                <p className="text-sm text-destructive">{errors.password.message}</p>
+                <p className="text-sm text-destructive">{t('passwordMinLength')}</p>
               )}
             </div>
             <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? 'ログイン中...' : 'ログイン'}
+              {isSubmitting ? t('signingIn') : t('signIn')}
             </Button>
           </form>
         </CardContent>
         <CardFooter className="justify-center">
           <p className="text-sm text-muted-foreground">
-            アカウントをお持ちでない方は{' '}
+            {t('noAccount')}{' '}
             <Link href="/auth/sign-up" className="text-primary underline-offset-4 hover:underline">
-              新規登録
+              {t('signUp')}
             </Link>
           </p>
         </CardFooter>

@@ -53,4 +53,11 @@ export default defineWorkspace([
       poolOptions: { forks: { singleFork: true } },
     },
   },
+  {
+    extends: './apps/web/vitest.config.ts',
+    test: {
+      name: 'web',
+      root: './apps/web',
+    },
+  },
 ])

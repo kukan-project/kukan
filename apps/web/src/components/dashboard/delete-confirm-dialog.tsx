@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from '@kukan/ui'
 import { Button } from '@kukan/ui'
+import { useTranslations } from 'next-intl'
 
 interface DeleteConfirmDialogProps {
   open: boolean
@@ -27,6 +28,8 @@ export function DeleteConfirmDialog({
   onConfirm,
   isDeleting,
 }: DeleteConfirmDialogProps) {
+  const tc = useTranslations('common')
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -36,10 +39,10 @@ export function DeleteConfirmDialog({
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isDeleting}>
-            キャンセル
+            {tc('cancel')}
           </Button>
           <Button variant="destructive" onClick={onConfirm} disabled={isDeleting}>
-            {isDeleting ? '削除中...' : '削除'}
+            {isDeleting ? tc('deleting') : tc('delete')}
           </Button>
         </DialogFooter>
       </DialogContent>

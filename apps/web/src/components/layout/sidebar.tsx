@@ -2,19 +2,21 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { cn } from '@kukan/ui'
-
-const sidebarItems = [
-  { href: '/dashboard', label: 'ダッシュボード', exact: true },
-  { href: '/dashboard/datasets', label: 'データセット' },
-  { href: '/dashboard/organizations', label: '組織' },
-  { href: '/dashboard/groups', label: 'グループ' },
-  { href: '/dashboard/api-tokens', label: 'APIトークン' },
-  { href: '/dashboard/profile', label: 'プロフィール' },
-]
 
 export function Sidebar() {
   const pathname = usePathname()
+  const t = useTranslations('dashboard.sidebar')
+
+  const sidebarItems = [
+    { href: '/dashboard', label: t('dashboard'), exact: true },
+    { href: '/dashboard/datasets', label: t('datasets') },
+    { href: '/dashboard/organizations', label: t('organizations') },
+    { href: '/dashboard/groups', label: t('groups') },
+    { href: '/dashboard/api-tokens', label: t('apiTokens') },
+    { href: '/dashboard/profile', label: t('profile') },
+  ]
 
   const isActive = (href: string, exact?: boolean) => {
     if (exact) return pathname === href

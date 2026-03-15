@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Button, Input, Label, Textarea } from '@kukan/ui'
+import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 
 interface ResourceFormProps {
@@ -10,6 +11,8 @@ interface ResourceFormProps {
 }
 
 export function ResourceForm({ packageId, onCreated }: ResourceFormProps) {
+  const t = useTranslations('resource')
+  const tc = useTranslations('common')
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
   const [format, setFormat] = useState('')
@@ -35,7 +38,7 @@ export function ResourceForm({ packageId, onCreated }: ResourceFormProps) {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setError(data.detail || 'リソースの追加に失敗しました')
+        setError(data.detail || t('failedToAdd'))
         return
       }
       setName('')
@@ -55,7 +58,7 @@ export function ResourceForm({ packageId, onCreated }: ResourceFormProps) {
       )}
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
-          <Label htmlFor="res-name">名前</Label>
+          <Label htmlFor="res-name">{tc('name')}</Label>
           <Input
             id="res-name"
             value={name}
@@ -64,7 +67,7 @@ export function ResourceForm({ packageId, onCreated }: ResourceFormProps) {
           />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="res-format">フォーマット</Label>
+          <Label htmlFor="res-format">{tc('format')}</Label>
           <Input
             id="res-format"
             value={format}
@@ -84,17 +87,17 @@ export function ResourceForm({ packageId, onCreated }: ResourceFormProps) {
         />
       </div>
       <div className="flex flex-col gap-2">
-        <Label htmlFor="res-description">説明</Label>
+        <Label htmlFor="res-description">{tc('description')}</Label>
         <Textarea
           id="res-description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={2}
-          placeholder="リソースの説明"
+          placeholder={t('descriptionPlaceholder')}
         />
       </div>
       <Button type="submit" disabled={submitting} variant="outline">
-        {submitting ? '追加中...' : 'リソースを追加'}
+        {submitting ? t('addingResource') : t('addResource')}
       </Button>
     </form>
   )

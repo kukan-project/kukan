@@ -5,6 +5,10 @@ type App = Awaited<ReturnType<typeof createApp>>
 const globalForApp = globalThis as unknown as { __kukanApp?: Promise<App> }
 
 export function getApp(): Promise<App> {
+  // In development, recreate the app to pick up code changes (HMR-safe)
+  if (process.env.NODE_ENV !== 'production') {
+    return import('@kukan/api').then((m) => m.createApp())
+  }
   if (!globalForApp.__kukanApp) {
     globalForApp.__kukanApp = import('@kukan/api')
       .then((m) => m.createApp())

@@ -1,9 +1,11 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { getTranslations } from 'next-intl/server'
 import { Badge, Button, Card, CardContent, Separator } from '@kukan/ui'
 import { serverFetch } from '@/lib/server-api'
 import { getFormatColorClass } from '@/lib/format-colors'
 import { renderSimpleMarkdown } from '@/lib/render-markdown'
+import { DateTime } from '@/components/date-time'
 
 interface Resource {
   id: string
@@ -60,14 +62,17 @@ export default async function DatasetDetailPage({ params }: Props) {
     notFound()
   }
 
-  const pkg: Package = await res.json()
+  const [pkg, t]: [Package, Awaited<ReturnType<typeof getTranslations>>] = await Promise.all([
+    res.json(),
+    getTranslations('dataset'),
+  ])
 
   return (
     <div className="mx-auto max-w-[var(--kukan-container-max-width)] px-4 py-8">
       <div className="flex flex-col gap-6">
         <nav className="flex items-center gap-1 text-sm text-muted-foreground">
           <Link href="/dataset" className="hover:text-foreground">
-            データセット一覧
+            {t('breadcrumb')}
           </Link>
           <span>/</span>
           <span className="text-foreground">{pkg.title || pkg.name}</span>
@@ -86,9 +91,9 @@ export default async function DatasetDetailPage({ params }: Props) {
         {/* タグ */}
         {pkg.tags.length > 0 && (
           <div className="flex flex-wrap gap-1">
-            {pkg.tags.map((t) => (
-              <Badge key={t.id} variant="secondary">
-                {t.name}
+            {pkg.tags.map((tag) => (
+              <Badge key={tag.id} variant="secondary">
+                {tag.name}
               </Badge>
             ))}
           </div>
@@ -108,14 +113,20 @@ export default async function DatasetDetailPage({ params }: Props) {
         <Separator />
         <section>
           <h2 className="mb-4 text-xl font-semibold">
-            データとリソース{pkg.resources.length > 0 && ` (${pkg.resources.length})`}
+            {t('resources')}
+            {pkg.resources.length > 0 && ` (${pkg.resources.length})`}
           </h2>
           {pkg.resources.length === 0 ? (
-            <p className="text-sm text-muted-foreground">リソースはありません</p>
+            <p className="text-sm text-muted-foreground">{t('noResources')}</p>
           ) : (
             <div className="flex flex-col gap-3">
               {pkg.resources.map((r) => (
-                <ResourceCard key={r.id} resource={r} packageName={pkg.name} />
+                <ResourceCard
+                  key={r.id}
+                  resource={r}
+                  packageName={pkg.name}
+                  exploreLabel={t('explore')}
+                />
               ))}
             </div>
           )}
@@ -124,15 +135,35 @@ export default async function DatasetDetailPage({ params }: Props) {
         {/* 追加情報 */}
         <Separator />
         <section>
-          <h2 className="mb-4 text-xl font-semibold">追加情報</h2>
-          <MetadataTable pkg={pkg} />
+          <h2 className="mb-4 text-xl font-semibold">{t('additionalInfo')}</h2>
+          <MetadataTable
+            pkg={pkg}
+            labels={{
+              maintainer: t('maintainer'),
+              author: t('author'),
+              license: t('license'),
+              version: t('version'),
+              metadataCreated: t('metadataCreated'),
+              metadataModified: t('metadataModified'),
+              updateFrequency: t('updateFrequency'),
+              sourceUrl: t('sourceUrl'),
+            }}
+          />
         </section>
       </div>
     </div>
   )
 }
 
-function ResourceCard({ resource, packageName }: { resource: Resource; packageName: string }) {
+function ResourceCard({
+  resource,
+  packageName,
+  exploreLabel,
+}: {
+  resource: Resource
+  packageName: string
+  exploreLabel: string
+}) {
   return (
     <Card className="py-0">
       <CardContent className="flex items-center gap-4 px-4 py-3">
@@ -158,7 +189,7 @@ function ResourceCard({ resource, packageName }: { resource: Resource; packageNa
           <div className="flex shrink-0 gap-2">
             <Button asChild variant="outline" size="sm">
               <a href={resource.url} target="_blank" rel="noopener noreferrer">
-                探索
+                {exploreLabel}
               </a>
             </Button>
           </div>
@@ -168,17 +199,23 @@ function ResourceCard({ resource, packageName }: { resource: Resource; packageNa
   )
 }
 
-function MetadataTable({ pkg }: { pkg: Package }) {
+function MetadataTable({ pkg, labels }: { pkg: Package; labels: Record<string, string> }) {
   const rows = [
-    { label: 'メンテナー', value: pkg.maintainer },
-    { label: '作成者', value: pkg.author },
-    { label: 'ライセンス', value: pkg.licenseId },
-    { label: 'バージョン', value: pkg.version },
-    { label: '作成日', value: formatDate(pkg.metadataCreated) },
-    { label: '最終更新', value: formatDate(pkg.metadataModified) },
-    { label: '更新頻度', value: getExtra(pkg.extras, '更新頻度') },
+    { label: labels.maintainer, value: pkg.maintainer },
+    { label: labels.author, value: pkg.author },
+    { label: labels.license, value: pkg.licenseId },
+    { label: labels.version, value: pkg.version },
     {
-      label: 'ソースURL',
+      label: labels.metadataCreated,
+      value: <DateTime value={pkg.metadataCreated} />,
+    },
+    {
+      label: labels.metadataModified,
+      value: <DateTime value={pkg.metadataModified} />,
+    },
+    { label: labels.updateFrequency, value: getExtra(pkg.extras, '更新頻度') },
+    {
+      label: labels.sourceUrl,
       value: pkg.url ? (
         <a
           href={pkg.url}
@@ -208,16 +245,6 @@ function MetadataTable({ pkg }: { pkg: Package }) {
       </table>
     </div>
   )
-}
-
-function formatDate(dateString: string): string | null {
-  const date = new Date(dateString)
-  if (isNaN(date.getTime())) return null
-  return date.toLocaleDateString('ja-JP', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
 }
 
 function getExtra(extras: Record<string, unknown> | null | undefined, key: string): string | null {

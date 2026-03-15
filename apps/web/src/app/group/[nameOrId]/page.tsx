@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { getTranslations } from 'next-intl/server'
 import { Separator } from '@kukan/ui'
 import type { PaginatedResult } from '@kukan/shared'
 import { serverFetch } from '@/lib/server-api'
@@ -12,8 +13,12 @@ interface Props {
 }
 
 export default async function GroupDatasetsPage({ params, searchParams }: Props) {
-  const { nameOrId } = await params
-  const sp = await searchParams
+  const [{ nameOrId }, sp, t, tc] = await Promise.all([
+    params,
+    searchParams,
+    getTranslations('group'),
+    getTranslations('common'),
+  ])
   const q = sp.q || ''
   const offset = Number(sp.offset) || 0
   const limit = Number(sp.limit) || 20
@@ -42,7 +47,7 @@ export default async function GroupDatasetsPage({ params, searchParams }: Props)
       <div className="flex flex-col gap-6">
         <nav className="text-sm text-muted-foreground">
           <Link href="/group" className="hover:text-foreground">
-            グループ
+            {t('title')}
           </Link>
           <span className="mx-2">/</span>
           <span className="text-foreground">{groupTitle}</span>
@@ -50,7 +55,9 @@ export default async function GroupDatasetsPage({ params, searchParams }: Props)
 
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold tracking-tight">{groupTitle}</h1>
-          <p className="text-sm text-muted-foreground">{data.total} データセット</p>
+          <p className="text-sm text-muted-foreground">
+            {tc('datasetCount', { count: data.total })}
+          </p>
         </div>
 
         {grp?.description && <p className="text-sm text-muted-foreground">{grp.description}</p>}
@@ -58,15 +65,13 @@ export default async function GroupDatasetsPage({ params, searchParams }: Props)
         <SearchForm
           action={`/group/${nameOrId}`}
           defaultValue={q}
-          placeholder="このグループのデータセットを検索..."
+          placeholder={t('searchDatasetsPlaceholder')}
         />
 
         <Separator />
 
         {data.items.length === 0 ? (
-          <p className="py-12 text-center text-muted-foreground">
-            {q ? `「${q}」に一致するデータセットはありません` : 'データセットがありません'}
-          </p>
+          <p className="py-12 text-center text-muted-foreground">{tc('noResults')}</p>
         ) : (
           <div className="flex flex-col gap-4">
             {data.items.map((pkg) => (

@@ -19,6 +19,7 @@ import {
   SelectValue,
   Badge,
 } from '@kukan/ui'
+import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 import { PageHeader } from '@/components/dashboard/page-header'
 
@@ -42,6 +43,9 @@ interface SearchUser {
 export default function OrgMembersPage() {
   const params = useParams<{ nameOrId: string }>()
   const nameOrId = params.nameOrId
+  const t = useTranslations('members')
+  const to = useTranslations('organization')
+  const tc = useTranslations('common')
 
   const [members, setMembers] = useState<Member[]>([])
   const membersRef = useRef(members)
@@ -100,7 +104,7 @@ export default function OrgMembersPage() {
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      setError(data.detail || 'メンバーの追加に失敗しました')
+      setError(data.detail || t('failedToAdd'))
     } else {
       setSelectedUserId(null)
       setSearchQuery('')
@@ -124,23 +128,23 @@ export default function OrgMembersPage() {
   const roleBadge = (role: string) => {
     switch (role) {
       case 'admin':
-        return <Badge>管理者</Badge>
+        return <Badge>{t('roleAdmin')}</Badge>
       case 'editor':
-        return <Badge variant="secondary">編集者</Badge>
+        return <Badge variant="secondary">{t('roleEditor')}</Badge>
       default:
-        return <Badge variant="outline">メンバー</Badge>
+        return <Badge variant="outline">{t('roleMember')}</Badge>
     }
   }
 
   if (loading) {
-    return <p className="py-12 text-center text-muted-foreground">読み込み中...</p>
+    return <p className="py-12 text-center text-muted-foreground">{tc('loading')}</p>
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={`組織メンバー: ${nameOrId}`}>
+      <PageHeader title={to('orgMembers', { name: nameOrId })}>
         <Button variant="outline" asChild>
-          <Link href="/dashboard/organizations">戻る</Link>
+          <Link href="/dashboard/organizations">{tc('back')}</Link>
         </Button>
       </PageHeader>
 
@@ -150,11 +154,11 @@ export default function OrgMembersPage() {
 
       {/* Add member section */}
       <div className="rounded-lg border p-4">
-        <h3 className="mb-3 text-sm font-medium">メンバーを追加</h3>
+        <h3 className="mb-3 text-sm font-medium">{t('addMember')}</h3>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex-1">
             <Input
-              placeholder="ユーザー名またはメールで検索..."
+              placeholder={t('searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value)
@@ -186,28 +190,28 @@ export default function OrgMembersPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="member">メンバー</SelectItem>
-              <SelectItem value="editor">編集者</SelectItem>
-              <SelectItem value="admin">管理者</SelectItem>
+              <SelectItem value="member">{t('roleMember')}</SelectItem>
+              <SelectItem value="editor">{t('roleEditor')}</SelectItem>
+              <SelectItem value="admin">{t('roleAdmin')}</SelectItem>
             </SelectContent>
           </Select>
           <Button onClick={handleAddMember} disabled={!selectedUserId || adding}>
-            {adding ? '追加中...' : '追加'}
+            {adding ? tc('adding') : tc('add')}
           </Button>
         </div>
       </div>
 
       {/* Members table */}
       {members.length === 0 ? (
-        <p className="py-12 text-center text-muted-foreground">メンバーがいません</p>
+        <p className="py-12 text-center text-muted-foreground">{t('noMembers')}</p>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>ユーザー</TableHead>
-              <TableHead>メール</TableHead>
-              <TableHead>ロール</TableHead>
-              <TableHead className="w-[80px]">操作</TableHead>
+              <TableHead>{tc('user')}</TableHead>
+              <TableHead>{tc('email')}</TableHead>
+              <TableHead>{tc('role')}</TableHead>
+              <TableHead className="w-[80px]">{tc('actions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -222,12 +226,14 @@ export default function OrgMembersPage() {
                     size="sm"
                     className="text-destructive hover:text-destructive"
                     onClick={() => {
-                      if (confirm(`${m.displayName || m.userName} をこの組織から削除しますか？`)) {
+                      if (
+                        confirm(t('confirmRemoveFromOrg', { name: m.displayName || m.userName }))
+                      ) {
                         handleRemoveMember(m.userId)
                       }
                     }}
                   >
-                    削除
+                    {tc('delete')}
                   </Button>
                 </TableCell>
               </TableRow>

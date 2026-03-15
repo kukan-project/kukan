@@ -1,7 +1,10 @@
 import { config } from 'dotenv'
 import type { NextConfig } from 'next'
+import createNextIntlPlugin from 'next-intl/plugin'
 
 config({ path: '../../.env' })
+
+const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
 
 const nextConfig: NextConfig = {
   transpilePackages: [
@@ -17,4 +20,4 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ['pg', 'pg-connection-string'],
 }
 
-export default nextConfig
+export default withNextIntl(nextConfig)

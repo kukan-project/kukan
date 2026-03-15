@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
+import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { DatasetForm } from '@/components/dashboard/dataset/dataset-form'
@@ -71,6 +72,8 @@ function toFormDefaults(pkg: PackageDetail): Partial<CreatePackageInput> {
 export default function EditDatasetPage() {
   const params = useParams()
   const router = useRouter()
+  const t = useTranslations('dataset')
+  const tc = useTranslations('common')
   const nameOrId = params.nameOrId as string
 
   const [pkg, setPkg] = useState<PackageDetail | null>(null)
@@ -111,8 +114,8 @@ export default function EditDatasetPage() {
   if (loading) {
     return (
       <div className="flex flex-col gap-6">
-        <PageHeader title="データセット編集" />
-        <p className="py-12 text-center text-muted-foreground">読み込み中...</p>
+        <PageHeader title={t('editDataset')} />
+        <p className="py-12 text-center text-muted-foreground">{tc('loading')}</p>
       </div>
     )
   }
@@ -120,19 +123,19 @@ export default function EditDatasetPage() {
   if (!pkg) {
     return (
       <div className="flex flex-col gap-6">
-        <PageHeader title="データセット編集" />
-        <p className="py-12 text-center text-muted-foreground">データセットが見つかりません</p>
+        <PageHeader title={t('editDataset')} />
+        <p className="py-12 text-center text-muted-foreground">{t('notFound')}</p>
       </div>
     )
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="データセット編集" />
+      <PageHeader title={t('editDataset')} />
 
       <Card>
         <CardHeader>
-          <CardTitle>基本情報</CardTitle>
+          <CardTitle>{tc('basicInfo')}</CardTitle>
         </CardHeader>
         <CardContent>
           <DatasetForm
@@ -146,7 +149,7 @@ export default function EditDatasetPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>リソース</CardTitle>
+          <CardTitle>{t('resources')}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <ResourceList resources={pkg.resources ?? []} onDeleted={fetchData} />
@@ -156,11 +159,11 @@ export default function EditDatasetPage() {
 
       <Card className="border-destructive/30">
         <CardHeader>
-          <CardTitle className="text-destructive">危険な操作</CardTitle>
+          <CardTitle className="text-destructive">{t('dangerZone')}</CardTitle>
         </CardHeader>
         <CardContent>
           <Button variant="destructive" onClick={() => setShowDelete(true)}>
-            データセットを削除
+            {t('deleteDataset')}
           </Button>
         </CardContent>
       </Card>
@@ -168,8 +171,8 @@ export default function EditDatasetPage() {
       <DeleteConfirmDialog
         open={showDelete}
         onOpenChange={setShowDelete}
-        title="データセットを削除"
-        description="このデータセットとそのすべてのリソースが削除されます。この操作は取り消せません。"
+        title={t('deleteDataset')}
+        description={t('deleteDatasetConfirm')}
         onConfirm={handleDelete}
         isDeleting={deleting}
       />

@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '@kukan/ui'
+import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 import { PageHeader } from '@/components/dashboard/page-header'
 
@@ -24,6 +25,8 @@ interface PkgItem {
 }
 
 export default function DatasetsManagePage() {
+  const t = useTranslations('dataset')
+  const tc = useTranslations('common')
   const [items, setItems] = useState<PkgItem[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -39,24 +42,24 @@ export default function DatasetsManagePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="データセット">
+      <PageHeader title={tc('datasets')}>
         <Button asChild>
-          <Link href="/dashboard/datasets/new">新規作成</Link>
+          <Link href="/dashboard/datasets/new">{tc('new')}</Link>
         </Button>
       </PageHeader>
 
       {loading ? (
-        <p className="py-12 text-center text-muted-foreground">読み込み中...</p>
+        <p className="py-12 text-center text-muted-foreground">{tc('loading')}</p>
       ) : items.length === 0 ? (
-        <p className="py-12 text-center text-muted-foreground">データセットがありません</p>
+        <p className="py-12 text-center text-muted-foreground">{t('noDatasets')}</p>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>タイトル</TableHead>
-              <TableHead>公開状態</TableHead>
-              <TableHead>フォーマット</TableHead>
-              <TableHead className="w-[80px]">操作</TableHead>
+              <TableHead>{tc('title')}</TableHead>
+              <TableHead>{t('visibility')}</TableHead>
+              <TableHead>{tc('format')}</TableHead>
+              <TableHead className="w-[80px]">{tc('actions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -64,7 +67,11 @@ export default function DatasetsManagePage() {
               <TableRow key={pkg.id}>
                 <TableCell className="font-medium">{pkg.title || pkg.name}</TableCell>
                 <TableCell>
-                  {pkg.private ? <Badge variant="secondary">非公開</Badge> : <Badge>公開</Badge>}
+                  {pkg.private ? (
+                    <Badge variant="secondary">{tc('private')}</Badge>
+                  ) : (
+                    <Badge>{tc('public')}</Badge>
+                  )}
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
@@ -82,7 +89,7 @@ export default function DatasetsManagePage() {
                 </TableCell>
                 <TableCell>
                   <Button variant="ghost" size="sm" asChild>
-                    <Link href={`/dashboard/datasets/${pkg.name}/edit`}>編集</Link>
+                    <Link href={`/dashboard/datasets/${pkg.name}/edit`}>{tc('edit')}</Link>
                   </Button>
                 </TableCell>
               </TableRow>
