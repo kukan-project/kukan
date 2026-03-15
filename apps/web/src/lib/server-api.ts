@@ -13,9 +13,9 @@ export async function serverFetch(path: string, init?: RequestInit) {
 
   const cookieStore = await cookies()
   // Better Auth uses __Secure- prefix on HTTPS (production)
-  const sessionToken =
-    cookieStore.get(`__Secure-${SESSION_COOKIE_NAME}`) ??
-    cookieStore.get(SESSION_COOKIE_NAME)
+  const secureName = `__Secure-${SESSION_COOKIE_NAME}`
+  const sessionToken = cookieStore.get(secureName) ?? cookieStore.get(SESSION_COOKIE_NAME)
+  const cookieName = cookieStore.get(secureName) ? secureName : SESSION_COOKIE_NAME
 
   const app = await getApp()
   // Dummy base URL for in-process Hono call (no actual HTTP request)
@@ -26,7 +26,7 @@ export async function serverFetch(path: string, init?: RequestInit) {
     headers: {
       ...init?.headers,
       ...(sessionToken && {
-        Cookie: `${SESSION_COOKIE_NAME}=${sessionToken.value}`,
+        Cookie: `${cookieName}=${sessionToken.value}`,
       }),
     },
   })
