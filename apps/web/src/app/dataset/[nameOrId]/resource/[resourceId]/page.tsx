@@ -6,6 +6,7 @@ import { serverFetch } from '@/lib/server-api'
 import { getFormatColorClass } from '@/lib/format-colors'
 import { renderSimpleMarkdown } from '@/lib/render-markdown'
 import { DateTime } from '@/components/date-time'
+import { KeyValueTable, extrasToRows } from '@/components/key-value-table'
 
 interface Resource {
   id: string
@@ -21,6 +22,7 @@ interface Resource {
   created: string
   updated: string
   lastModified?: string | null
+  extras?: Record<string, unknown> | null
 }
 
 interface Package {
@@ -109,74 +111,25 @@ export default async function ResourceDetailPage({ params }: Props) {
         <Separator />
         <section>
           <h2 className="mb-4 text-xl font-semibold">{t('additionalInfo')}</h2>
-          <ResourceMetadataTable
-            resource={resource}
-            licenseId={pkg?.licenseId}
-            labels={{
-              lastModified: t('lastModified'),
-              metadataModified: t('metadataModified'),
-              created: t('created'),
-              dataFormat: t('dataFormat'),
-              mimeType: t('mimeType'),
-              size: t('size'),
-              resourceType: t('resourceType'),
-              hash: t('hash'),
-              license: t('license'),
-            }}
+          <KeyValueTable
+            rows={[
+              {
+                label: t('lastModified'),
+                value: resource.lastModified ? <DateTime value={resource.lastModified} /> : null,
+              },
+              { label: t('updated'), value: <DateTime value={resource.updated} /> },
+              { label: t('created'), value: <DateTime value={resource.created} /> },
+              { label: t('dataFormat'), value: resource.format?.toUpperCase() },
+              { label: t('mimeType'), value: resource.mimetype },
+              { label: t('size'), value: formatBytes(resource.size) },
+              { label: t('resourceType'), value: resource.resourceType },
+              { label: t('hash'), value: resource.hash },
+              { label: t('license'), value: pkg?.licenseId },
+              ...extrasToRows(resource.extras),
+            ]}
           />
         </section>
       </div>
-    </div>
-  )
-}
-
-function ResourceMetadataTable({
-  resource,
-  licenseId,
-  labels,
-}: {
-  resource: Resource
-  licenseId?: string | null
-  labels: Record<string, string>
-}) {
-  const rows = [
-    {
-      label: labels.lastModified,
-      value:
-        resource.lastModified || resource.updated ? (
-          <DateTime value={resource.lastModified || resource.updated} />
-        ) : null,
-    },
-    {
-      label: labels.metadataModified,
-      value: <DateTime value={resource.updated} />,
-    },
-    {
-      label: labels.created,
-      value: <DateTime value={resource.created} />,
-    },
-    { label: labels.dataFormat, value: resource.format?.toUpperCase() },
-    { label: labels.mimeType, value: resource.mimetype },
-    { label: labels.size, value: formatBytes(resource.size) },
-    { label: labels.resourceType, value: resource.resourceType },
-    { label: labels.hash, value: resource.hash },
-    { label: labels.license, value: licenseId },
-  ].filter((row) => row.value)
-
-  if (rows.length === 0) return null
-
-  return (
-    <div className="overflow-hidden rounded-lg border">
-      <table className="w-full">
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={row.label} className={i % 2 === 0 ? 'bg-muted/50' : ''}>
-              <th className="w-1/3 px-4 py-3 text-left text-sm font-medium">{row.label}</th>
-              <td className="px-4 py-3 text-sm">{row.value}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   )
 }
