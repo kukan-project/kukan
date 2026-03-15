@@ -3,7 +3,7 @@
  * Business logic for package (dataset) management
  */
 
-import { eq, ilike, and, or, sql, getTableColumns, inArray } from 'drizzle-orm'
+import { eq, ilike, and, or, sql, getTableColumns, inArray, desc } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import {
@@ -197,6 +197,7 @@ export class PackageService {
       .from(packageTable)
       .leftJoin(organization, eq(packageTable.ownerOrg, organization.id))
       .where(where)
+      .orderBy(desc(packageTable.updated))
       .limit(limit)
       .offset(offset)
 

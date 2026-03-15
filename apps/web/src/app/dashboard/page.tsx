@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl'
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge } from '@kukan/ui'
 import { clientFetch } from '@/lib/client-api'
 import { useUser } from '@/components/dashboard/user-provider'
+import { FormatBadges } from '@/components/format-badges'
 
 interface PkgItem {
   id: string
@@ -84,16 +85,7 @@ export default function DashboardPage() {
                     </Link>
                     {pkg.private && <Badge variant="secondary">{tc('private')}</Badge>}
                   </div>
-                  <div className="flex gap-1">
-                    {pkg.formats
-                      ?.split(',')
-                      .filter(Boolean)
-                      .map((f: string) => (
-                        <Badge key={f} variant="outline">
-                          {f}
-                        </Badge>
-                      ))}
-                  </div>
+                  <FormatBadges formats={pkg.formats} />
                 </div>
               ))}
             </div>
