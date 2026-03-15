@@ -1,13 +1,21 @@
-import { redirect } from 'next/navigation'
-import { Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
-import { getCurrentUser } from '@/lib/api'
-import { PageHeader } from '@/components/dashboard/page-header'
-import { OrganizationForm } from '@/components/organization/organization-form'
+'use client'
 
-export default async function NewOrganizationPage() {
-  const user = await getCurrentUser()
-  if (!user) redirect('/auth/sign-in')
-  if (!user.sysadmin) redirect('/dashboard/organizations')
+import { useRouter } from 'next/navigation'
+import { useEffect } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
+import { useUser } from '@/components/dashboard/user-provider'
+import { PageHeader } from '@/components/dashboard/page-header'
+import { OrganizationForm } from '@/components/dashboard/organization/organization-form'
+
+export default function NewOrganizationPage() {
+  const user = useUser()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (!user.sysadmin) router.replace('/dashboard/organizations')
+  }, [user.sysadmin, router])
+
+  if (!user.sysadmin) return null
 
   return (
     <div className="flex flex-col gap-6">

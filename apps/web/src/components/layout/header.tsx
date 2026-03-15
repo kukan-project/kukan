@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Button, Separator } from '@kukan/ui'
-import { getCurrentUser } from '@/lib/api'
+import { getCurrentUser } from '@/lib/server-api'
 import { UserMenu } from '@/components/auth/user-menu'
 import { MobileNav } from './mobile-nav'
 

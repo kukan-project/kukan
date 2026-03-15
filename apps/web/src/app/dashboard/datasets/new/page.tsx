@@ -1,11 +1,28 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
-import { serverFetch } from '@/lib/api'
-import { PageHeader } from '@/components/dashboard/page-header'
-import { DatasetForm } from '@/components/dataset/dataset-form'
+'use client'
 
-export default async function NewDatasetPage() {
-  const res = await serverFetch('/api/v1/users/me/organizations')
-  const data = res.ok ? await res.json() : { items: [] }
+import { useEffect, useState } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
+import { clientFetch } from '@/lib/client-api'
+import { PageHeader } from '@/components/dashboard/page-header'
+import { DatasetForm } from '@/components/dashboard/dataset/dataset-form'
+
+interface Organization {
+  id: string
+  name: string
+  title?: string
+}
+
+export default function NewDatasetPage() {
+  const [organizations, setOrganizations] = useState<Organization[]>([])
+
+  useEffect(() => {
+    clientFetch('/api/v1/users/me/organizations').then(async (res) => {
+      if (res.ok) {
+        const data = await res.json()
+        setOrganizations(data.items)
+      }
+    })
+  }, [])
 
   return (
     <div className="flex flex-col gap-6">
@@ -15,7 +32,7 @@ export default async function NewDatasetPage() {
           <CardTitle>基本情報</CardTitle>
         </CardHeader>
         <CardContent>
-          <DatasetForm mode="create" organizations={data.items} />
+          <DatasetForm mode="create" organizations={organizations} />
         </CardContent>
       </Card>
     </div>

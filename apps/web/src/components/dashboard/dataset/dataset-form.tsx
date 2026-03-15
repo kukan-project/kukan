@@ -17,7 +17,7 @@ import {
   SelectValue,
   Switch,
 } from '@kukan/ui'
-import { clientFetch } from '@/lib/api'
+import { clientFetch } from '@/lib/client-api'
 
 interface Organization {
   id: string

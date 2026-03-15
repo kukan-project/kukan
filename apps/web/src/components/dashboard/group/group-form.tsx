@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { createGroupSchema, type CreateGroupInput } from '@kukan/shared'
 import { Button, Input, Label, Textarea } from '@kukan/ui'
-import { clientFetch } from '@/lib/api'
+import { clientFetch } from '@/lib/client-api'
 
 export function GroupForm() {
   const router = useRouter()

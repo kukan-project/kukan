@@ -1,6 +1,6 @@
 import type { PaginatedResult } from '@kukan/shared'
 import { Separator } from '@kukan/ui'
-import { serverFetch } from '@/lib/api'
+import { serverFetch } from '@/lib/server-api'
 import { SearchForm } from '@/components/search-form'
 import { DatasetCard, type DatasetCardItem } from '@/components/dataset-card'
 import { PaginationNav } from '@/components/pagination-nav'

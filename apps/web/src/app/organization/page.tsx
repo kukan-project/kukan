@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { Card, CardContent, Separator } from '@kukan/ui'
 import type { PaginatedResult } from '@kukan/shared'
-import { serverFetch } from '@/lib/api'
+import { serverFetch } from '@/lib/server-api'
 import { SearchForm } from '@/components/search-form'
 import { PaginationNav } from '@/components/pagination-nav'
 import { EntityImage } from '@/components/entity-image'

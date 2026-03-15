@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
 import { PageHeader } from '@/components/dashboard/page-header'
-import { GroupForm } from '@/components/group/group-form'
+import { GroupForm } from '@/components/dashboard/group/group-form'
 
 export default function NewGroupPage() {
   return (

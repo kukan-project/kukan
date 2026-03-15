@@ -1,3 +1,7 @@
+import 'server-only'
+
+import { cache } from 'react'
+
 /**
  * Server Components 用 fetch ラッパー
  * Hono app.request() を直接呼び出す（HTTP ホップなし）
@@ -25,8 +29,6 @@ export async function serverFetch(path: string, init?: RequestInit) {
   })
 }
 
-import { cache } from 'react'
-
 /**
  * 現在のユーザーを取得（リクエスト単位で dedup）
  * Server Components の同一リクエスト内で何度呼んでも1回だけ実行される
@@ -42,14 +44,3 @@ export const getCurrentUser = cache(async () => {
     sysadmin: boolean
   }>
 })
-
-/**
- * Client Components 用 fetch ラッパー
- * 同一オリジンなので相対パスで fetch
- */
-export async function clientFetch(path: string, init?: RequestInit) {
-  return fetch(path, {
-    ...init,
-    credentials: 'include',
-  })
-}

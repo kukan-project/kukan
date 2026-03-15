@@ -26,9 +26,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@kukan/ui'
-import { clientFetch } from '@/lib/api'
+import { clientFetch } from '@/lib/client-api'
 import { PageHeader } from '@/components/dashboard/page-header'
-import { DeleteConfirmDialog } from '@/components/delete-confirm-dialog'
+import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
 
 interface ApiToken {
   id: string

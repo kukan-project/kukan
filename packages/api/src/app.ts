@@ -4,6 +4,7 @@
  */
 
 import { Hono } from 'hono'
+import { cors } from 'hono/cors'
 import { loadEnv } from '@kukan/shared'
 import { createDb } from '@kukan/db'
 import { createAdapters } from './adapters'
@@ -27,6 +28,18 @@ export async function createApp() {
 
   // Initialize adapters
   const adapters = createAdapters(env, db)
+
+  // CORS — enabled when TRUSTED_ORIGINS is set (standalone / cross-origin access)
+  const trustedOrigins = process.env.TRUSTED_ORIGINS?.split(',').filter(Boolean)
+  if (trustedOrigins?.length) {
+    app.use(
+      '/api/*',
+      cors({
+        origin: trustedOrigins,
+        credentials: true,
+      })
+    )
+  }
 
   // Set context variables
   app.use('*', async (c, next) => {

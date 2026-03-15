@@ -19,7 +19,7 @@ import {
   SelectValue,
   Badge,
 } from '@kukan/ui'
-import { clientFetch } from '@/lib/api'
+import { clientFetch } from '@/lib/client-api'
 import { PageHeader } from '@/components/dashboard/page-header'
 
 interface Member {

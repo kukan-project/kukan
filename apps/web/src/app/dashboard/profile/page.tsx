@@ -1,11 +1,11 @@
-import { redirect } from 'next/navigation'
+'use client'
+
 import { Card, CardContent, CardHeader, CardTitle, Label } from '@kukan/ui'
-import { getCurrentUser } from '@/lib/api'
+import { useUser } from '@/components/dashboard/user-provider'
 import { PageHeader } from '@/components/dashboard/page-header'
 
-export default async function ProfilePage() {
-  const user = await getCurrentUser()
-  if (!user) redirect('/auth/sign-in')
+export default function ProfilePage() {
+  const user = useUser()
 
   return (
     <div className="flex flex-col gap-6">

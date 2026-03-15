@@ -86,18 +86,18 @@ apps/web/
 │   │   │   ├── header.tsx              # サイトヘッダー（ナビ + 検索 + ユーザーメニュー）
 │   │   │   ├── footer.tsx              # サイトフッター
 │   │   │   └── sidebar.tsx             # 管理画面サイドバー
-│   │   ├── dataset/
-│   │   │   ├── dataset-card.tsx        # データセットカード（一覧用）
-│   │   │   ├── dataset-detail.tsx      # データセット詳細表示
-│   │   │   ├── dataset-form.tsx        # 作成/編集フォーム
-│   │   │   ├── resource-list.tsx       # リソース一覧テーブル
-│   │   │   └── resource-form.tsx       # リソース追加/編集フォーム
-│   │   ├── organization/
-│   │   │   ├── organization-card.tsx
-│   │   │   └── organization-form.tsx
-│   │   ├── group/
-│   │   │   ├── group-card.tsx
-│   │   │   └── group-form.tsx
+│   │   ├── dashboard/
+│   │   │   ├── dataset/
+│   │   │   │   ├── dataset-form.tsx    # 作成/編集フォーム
+│   │   │   │   ├── resource-list.tsx   # リソース一覧テーブル
+│   │   │   │   └── resource-form.tsx   # リソース追加/編集フォーム
+│   │   │   ├── organization/
+│   │   │   │   └── organization-form.tsx
+│   │   │   ├── group/
+│   │   │   │   └── group-form.tsx
+│   │   │   ├── delete-confirm-dialog.tsx
+│   │   │   ├── page-header.tsx
+│   │   │   └── user-provider.tsx       # UserProvider コンテキスト
 │   │   ├── search/
 │   │   │   ├── search-bar.tsx          # グローバル検索バー
 │   │   │   ├── search-results.tsx      # 検索結果リスト
@@ -110,7 +110,9 @@ apps/web/
 │   │       └── user-menu.tsx           # ヘッダーのユーザーメニュー
 │   │
 │   ├── lib/
-│   │   ├── api.ts                      # API クライアント（fetch ラッパー）
+│   │   ├── server-api.ts              # Server Components 用（serverFetch, getCurrentUser）
+│   │   ├── client-api.ts              # Client Components 用（clientFetch）
+│   │   ├── hono-app.ts                # Hono app シングルトン
 │   │   ├── auth-client.ts              # Better Auth React クライアント
 │   │   └── utils.ts                    # ユーティリティ（cn() 等）
 │   │
@@ -192,12 +194,14 @@ packages/ui/
 
 ## 5. API クライアント
 
-### 5.1 `apps/web/src/lib/api.ts`
+### 5.1 API クライアント（server-api.ts / client-api.ts）
 
-Hono API を Next.js に埋め込み（同一オリジン）。`serverFetch` は `app.request()` を直接呼び出す（HTTP ホップなし）。
+Server Components と Client Components で別ファイルに分離。`server-api.ts` は `import 'server-only'` でクライアントバンドルへの混入を防止。
 
 ```typescript
-// Server Components 用（Hono インプロセス呼び出し）
+// apps/web/src/lib/server-api.ts — Server Components 用（Hono インプロセス呼び出し）
+import 'server-only'
+
 export async function serverFetch(path: string, init?: RequestInit) {
   const { cookies } = await import('next/headers')
   const { getApp } = await import('./hono-app')
@@ -218,11 +222,16 @@ export async function serverFetch(path: string, init?: RequestInit) {
   })
 }
 
-// Client Components 用（同一オリジンなので相対パスで fetch）
+// apps/web/src/lib/client-api.ts — Client Components 用（同一オリジンなので相対パスで fetch）
 export async function clientFetch(path: string, init?: RequestInit) {
   return fetch(path, { ...init, credentials: 'include' })
 }
 ```
+
+**使い分け:**
+- 公開ページ（SEO 必要）→ `serverFetch`（SSR）
+- Dashboard ページ（認証必須、インタラクティブ）→ `clientFetch`（CSR）
+- Dashboard layout の認証ガード → `getCurrentUser`（SSR、`server-api.ts`）
 
 ### 5.2 `apps/web/src/lib/auth-client.ts`
 
@@ -285,31 +294,35 @@ ADR-010 に準拠。Phase 2 では **Tier 1: CSS Variables** のみ実装。
 
 ### 7.2 認証状態の取得
 
-- **Server Component**: `serverFetch('/api/v1/users/me')` で取得。401 なら未認証。
-- **Client Component**: `useSession()` hook（Better Auth React）
+- **Server Component**: `getCurrentUser()`（`server-api.ts`）で取得。React.cache でリクエスト単位 dedup。
+- **Client Component**: `useUser()` hook（`UserProvider` コンテキスト経由）または `useSession()`（Better Auth React）
 
 ### 7.3 認証ガード
 
-`/dashboard/*` ルートは `layout.tsx` でセッションチェック。未認証なら `/auth/sign-in` にリダイレクト。
+`/dashboard/*` ルートは `layout.tsx`（SSR）でセッションチェック。未認証なら `/auth/sign-in` にリダイレクト。認証済みユーザー情報は `UserProvider` で子の Client Components に伝播。
 
 ```typescript
 // apps/web/src/app/dashboard/layout.tsx
+import { getCurrentUser } from '@/lib/server-api'
+import { UserProvider } from '@/components/dashboard/user-provider'
+
 export default async function DashboardLayout({ children }) {
-  const res = await serverFetch('/api/v1/users/me')
-  if (!res.ok) redirect('/auth/sign-in')
-  const user = await res.json()
-  return <DashboardShell user={user}>{children}</DashboardShell>
+  const user = await getCurrentUser()
+  if (!user) redirect('/auth/sign-in')
+  return <UserProvider user={user}>...</UserProvider>
 }
 ```
 
 ## 8. データフェッチパターン
 
-### 8.1 Server Components（推奨）
+### 8.1 公開ページ — Server Components（SSR）
 
-一覧・詳細ページは Server Components でフェッチ。SEO + 初回表示速度に有利。
+一覧・詳細ページは Server Components で `serverFetch` を使用。SEO + 初回表示速度に有利。
 
 ```typescript
 // apps/web/src/app/dataset/page.tsx
+import { serverFetch } from '@/lib/server-api'
+
 export default async function DatasetsPage({ searchParams }) {
   const params = new URLSearchParams(searchParams)
   const res = await serverFetch(`/api/v1/packages?${params}`)
@@ -318,9 +331,9 @@ export default async function DatasetsPage({ searchParams }) {
 }
 ```
 
-### 8.2 Client Components（操作系）
+### 8.2 Dashboard ページ — Client Components（CSR）
 
-作成・編集フォーム、削除確認は Client Components。
+Dashboard のデータ一覧・作成・編集・削除は Client Components で `clientFetch` を使用。ユーザー情報は `useUser()` hook で取得。
 
 ```typescript
 // submit handler

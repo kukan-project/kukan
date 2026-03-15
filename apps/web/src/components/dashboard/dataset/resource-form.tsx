@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Button, Input, Label, Textarea } from '@kukan/ui'
-import { clientFetch } from '@/lib/api'
+import { clientFetch } from '@/lib/client-api'
 
 interface ResourceFormProps {
   packageId: string

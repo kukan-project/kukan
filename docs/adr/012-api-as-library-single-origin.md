@@ -67,7 +67,7 @@ export const POST = handler
 Server Components からは `serverFetch()` 経由で `app.request()` を直接呼び出し、HTTP ホップを完全に排除：
 
 ```typescript
-// apps/web/src/lib/api.ts
+// apps/web/src/lib/server-api.ts
 export async function serverFetch(path: string, init?: RequestInit) {
   const app = await getApp()
   return app.request(`http://localhost${path}`, { ...init, headers: { ... } })
@@ -87,6 +87,7 @@ cd packages/api && pnpm start
 ```
 
 **ユースケース:**
+
 - **Headless KUKAN**: 自前フロントエンドや SPA から API だけを利用
 - **外部システム連携**: ETL ツール、BI ツール、他システムからの CKAN 互換 API 利用
 - **マイクロサービス分離**: 大規模環境で API と Web を別インスタンスにスケール
@@ -107,5 +108,6 @@ cd packages/api && pnpm start
 - `NEXT_PUBLIC_API_URL` 環境変数は廃止
 - CORS ミドルウェアは `app.ts` から削除（スタンドアロン時は `TRUSTED_ORIGINS` で制御）
 - `vitest.workspace.ts` の API テストパスを `./packages/api` に更新
-- Server Components は `serverFetch()` → `app.request()` で HTTP ホップなし
-- Client Components は `clientFetch()` で同一オリジンの相対パス fetch
+- Server Components は `serverFetch()`（`server-api.ts`）→ `app.request()` で HTTP ホップなし
+- Client Components は `clientFetch()`（`client-api.ts`）で同一オリジンの相対パス fetch
+- Dashboard ページは CSR（`clientFetch` + `UserProvider` コンテキスト）、公開ページは SSR（`serverFetch`）

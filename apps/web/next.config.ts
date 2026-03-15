@@ -14,7 +14,7 @@ const nextConfig: NextConfig = {
     '@kukan/queue-adapter',
     '@kukan/ai-adapter',
   ],
-  serverExternalPackages: ['pg'],
+  serverExternalPackages: ['pg', 'pg-connection-string'],
 }
 
 export default nextConfig

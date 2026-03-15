@@ -11,8 +11,8 @@ import {
   TableRow,
   Badge,
 } from '@kukan/ui'
-import { clientFetch } from '@/lib/api'
-import { DeleteConfirmDialog } from '@/components/delete-confirm-dialog'
+import { clientFetch } from '@/lib/client-api'
+import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
 
 interface Resource {
   id: string

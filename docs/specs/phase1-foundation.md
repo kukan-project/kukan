@@ -643,15 +643,15 @@ BETTER_AUTH_URL=http://localhost:3000
 
 ### 8.1 テスト対象
 
-| 対象              | テスト種別               | ツール                           |
-| ----------------- | ------------------------ | -------------------------------- |
-| packages/shared   | ユニット                 | Vitest                           |
-| packages/db       | 統合テスト（テスト用DB） | Vitest + テストコンテナ          |
-| packages/storage  | ユニット（LocalAdapter） | Vitest                           |
-| packages/search   | 統合テスト（テスト用DB） | Vitest + テストコンテナ          |
+| 対象                  | テスト種別               | ツール                           |
+| --------------------- | ------------------------ | -------------------------------- |
+| packages/shared       | ユニット                 | Vitest                           |
+| packages/db           | 統合テスト（テスト用DB） | Vitest + テストコンテナ          |
+| packages/storage      | ユニット（LocalAdapter） | Vitest                           |
+| packages/search       | 統合テスト（テスト用DB） | Vitest + テストコンテナ          |
 | packages/api routes   | 統合テスト               | Vitest + Hono テストクライアント |
 | packages/api services | ユニット（モック注入）   | Vitest                           |
-| CKAN互換API       | 統合テスト               | Vitest                           |
+| CKAN互換API           | 統合テスト               | Vitest                           |
 
 ### 8.2 テストDB
 
