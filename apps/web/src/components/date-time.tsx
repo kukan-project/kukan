@@ -15,9 +15,10 @@ export function DateTime({ value }: { value: string }) {
 
   const h = date.getHours().toString().padStart(2, '0')
   const m = date.getMinutes().toString().padStart(2, '0')
-  const timeStr = locale.startsWith('ja')
-    ? `${h}時${m}分`
-    : date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+  const timeStr =
+    locale === 'ja'
+      ? `${h}時${m}分`
+      : date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
 
   const tz = new Intl.DateTimeFormat(locale, { hour: 'numeric', timeZoneName: 'long' })
     .formatToParts(date)
