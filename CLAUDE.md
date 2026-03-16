@@ -169,6 +169,8 @@ pnpm format        # Prettier フォーマット
 - Data Editor → `docs/adr/007-data-editor-addon.md`
 - モノレポ → `docs/adr/008-turborepo-monorepo.md`
 - 日本語全文検索 → `docs/adr/009-opensearch-ilike-fallback.md`
+- テーマ戦略 → `docs/adr/010-shadcn-ui-theming-strategy.md`
+- バリデーション統一 → `docs/adr/011-unified-validation-system.md`
 - API ライブラリ化・単一オリジン → `docs/adr/012-api-as-library-single-origin.md`
 - 検索と DB フィルタリングの分離 → `docs/adr/013-search-vs-db-filtering.md`
 
@@ -179,9 +181,10 @@ pnpm format        # Prettier フォーマット
 
 ## 現在のフェーズ
 
-**Phase 2: フロントエンド**（実装仕様書: `docs/specs/phase2-frontend.md`）
+**Phase 3: Ingest & ファイルストレージ**（実装仕様書: `docs/specs/phase3-ingestion.md` — 未作成）
 
 - Phase 1: Foundation ✅ 完了
+- Phase 2: フロントエンド ✅ 完了（実装仕様書: `docs/specs/phase2-frontend.md`）
 
 ## よく使うコマンド（セットアップ後）
 
