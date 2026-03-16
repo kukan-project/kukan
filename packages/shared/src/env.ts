@@ -34,7 +34,9 @@ export const envSchema = z.object({
   BETTER_AUTH_URL: z
     .string()
     .url()
-    .default(process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'),
+    .default(
+      process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'
+    ),
 })
 
 export type Env = z.infer<typeof envSchema>

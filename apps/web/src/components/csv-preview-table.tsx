@@ -37,9 +37,7 @@ export function CsvPreviewTable({ resourceId, format }: CsvPreviewTableProps) {
 
     async function load() {
       try {
-        const res = await clientFetch(
-          `/api/v1/resources/${encodeURIComponent(resourceId)}/preview`
-        )
+        const res = await clientFetch(`/api/v1/resources/${encodeURIComponent(resourceId)}/preview`)
         if (!res.ok) {
           const body = await res.json().catch(() => null)
           throw new Error(body?.detail || 'Failed to load preview')
