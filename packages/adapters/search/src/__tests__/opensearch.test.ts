@@ -84,6 +84,20 @@ describe('OpenSearchAdapter', () => {
       expect(mockClient.indices.exists).toHaveBeenCalledTimes(1)
     })
 
+    it('should include resources nested mapping', async () => {
+      await adapter.ensureIndex()
+
+      const createCall = mockClient.indices.create.mock.calls[0][0]
+      const resourcesMapping = createCall.body.mappings.properties.resources
+
+      expect(resourcesMapping.type).toBe('nested')
+      expect(resourcesMapping.properties.id.type).toBe('keyword')
+      expect(resourcesMapping.properties.name.type).toBe('text')
+      expect(resourcesMapping.properties.name.analyzer).toBe('kuromoji_analyzer')
+      expect(resourcesMapping.properties.description.type).toBe('text')
+      expect(resourcesMapping.properties.format.type).toBe('keyword')
+    })
+
     it('should use custom index prefix', async () => {
       const customAdapter = new OpenSearchAdapter({
         endpoint: 'http://localhost:9200',
@@ -126,7 +140,7 @@ describe('OpenSearchAdapter', () => {
   })
 
   describe('search', () => {
-    it('should search with multi_match for non-empty query', async () => {
+    it('should search with bool.should (dataset + nested resource) for non-empty query', async () => {
       mockClient.search.mockResolvedValue({
         body: {
           hits: {
@@ -143,22 +157,32 @@ describe('OpenSearchAdapter', () => {
 
       const result = await adapter.search({ q: 'test query', offset: 0, limit: 10 })
 
-      expect(mockClient.search).toHaveBeenCalledWith(
+      const callArgs = mockClient.search.mock.calls[0][0]
+      const mustClause = callArgs.body.query.bool.must[0]
+
+      // Should be a bool.should with dataset multi_match + nested resource query
+      expect(mustClause.bool.should).toHaveLength(2)
+      expect(mustClause.bool.minimum_should_match).toBe(1)
+
+      // Dataset-level multi_match
+      expect(mustClause.bool.should[0].multi_match).toEqual(
         expect.objectContaining({
-          body: expect.objectContaining({
-            query: expect.objectContaining({
-              bool: expect.objectContaining({
-                must: expect.arrayContaining([
-                  expect.objectContaining({
-                    multi_match: expect.objectContaining({
-                      query: 'test query',
-                      fields: ['title^3', 'name^2', 'notes', 'tags'],
-                    }),
-                  }),
-                ]),
-              }),
-            }),
-          }),
+          query: 'test query',
+          fields: ['title^3', 'name^2', 'notes', 'tags'],
+        })
+      )
+
+      // Nested resource query with inner_hits
+      expect(mustClause.bool.should[1].nested).toEqual(
+        expect.objectContaining({
+          path: 'resources',
+          inner_hits: { size: 1000 },
+        })
+      )
+      expect(mustClause.bool.should[1].nested.query.multi_match).toEqual(
+        expect.objectContaining({
+          query: 'test query',
+          fields: ['resources.name^2', 'resources.description'],
         })
       )
 
@@ -235,6 +259,94 @@ describe('OpenSearchAdapter', () => {
           }),
         })
       )
+    })
+
+    it('should extract matchedResources from inner_hits', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: { id: 'pkg-1', name: 'test', title: 'Test' },
+                inner_hits: {
+                  resources: {
+                    hits: {
+                      hits: [
+                        {
+                          _source: {
+                            id: 'res-1',
+                            name: 'data.csv',
+                            description: 'Test data file',
+                            format: 'CSV',
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      })
+
+      const result = await adapter.search({ q: 'data', offset: 0, limit: 10 })
+
+      expect(result.items).toHaveLength(1)
+      expect(result.items[0].matchedResources).toEqual([
+        {
+          id: 'res-1',
+          name: 'data.csv',
+          description: 'Test data file',
+          format: 'CSV',
+        },
+      ])
+    })
+
+    it('should not include matchedResources when no inner_hits', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: { id: 'pkg-1', name: 'test', title: 'Test' },
+              },
+            ],
+          },
+        },
+      })
+
+      const result = await adapter.search({ q: 'test', offset: 0, limit: 10 })
+
+      expect(result.items[0].matchedResources).toBeUndefined()
+    })
+
+    it('should strip resources array from search results', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: {
+                  id: 'pkg-1',
+                  name: 'test',
+                  resources: [{ id: 'res-1', name: 'file.csv' }],
+                },
+              },
+            ],
+          },
+        },
+      })
+
+      const result = await adapter.search({ q: 'test', offset: 0, limit: 10 })
+
+      expect(result.items[0].resources).toBeUndefined()
     })
 
     it('should handle numeric total (OpenSearch compat)', async () => {

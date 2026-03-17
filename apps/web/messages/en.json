@@ -104,7 +104,8 @@
     "authorEmail": "Author Email",
     "maintainerLabel": "Maintainer",
     "maintainerEmail": "Maintainer Email",
-    "resourceCount": "{count} resources"
+    "resourceCount": "All {count} resources",
+    "matchedResources": "Matched resources"
   },
   "organization": {
     "title": "Organizations",

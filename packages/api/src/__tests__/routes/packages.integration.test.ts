@@ -38,6 +38,14 @@ async function createPackage(data: Record<string, unknown>) {
   })
 }
 
+async function createResource(packageId: string, data: Record<string, unknown>) {
+  return app.request(`/api/v1/packages/${packageId}/resources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
 describe('Packages API Routes', () => {
   describe('GET /api/v1/packages', () => {
     it('should return 200 with empty list', async () => {
@@ -67,6 +75,40 @@ describe('Packages API Routes', () => {
       const body = await res.json()
       expect(body.total).toBe(1)
       expect(body.items[0].name).toBe('population-data')
+    })
+
+    it('should find packages by resource name and include matchedResources', async () => {
+      const pkgRes = await createPackage({ name: 'res-search-pkg', title: 'Some Dataset' })
+      const pkg = await pkgRes.json()
+      await createResource(pkg.id, {
+        name: 'quarterly-report.csv',
+        description: 'Q1 revenue data',
+        format: 'CSV',
+      })
+
+      // Another package without matching resource
+      await createPackage({ name: 'unrelated-pkg', title: 'Unrelated' })
+
+      const res = await app.request('/api/v1/packages?q=quarterly-report')
+      const body = await res.json()
+
+      expect(body.total).toBe(1)
+      expect(body.items[0].name).toBe('res-search-pkg')
+      expect(body.items[0].matchedResources).toBeDefined()
+      expect(body.items[0].matchedResources).toHaveLength(1)
+      expect(body.items[0].matchedResources[0].name).toBe('quarterly-report.csv')
+      expect(body.items[0].matchedResources[0].format).toBe('CSV')
+    })
+
+    it('should not include matchedResources when q is absent', async () => {
+      const pkgRes = await createPackage({ name: 'no-q-pkg' })
+      const pkg = await pkgRes.json()
+      await createResource(pkg.id, { name: 'some-file.csv', format: 'CSV' })
+
+      const res = await app.request('/api/v1/packages')
+      const body = await res.json()
+
+      expect(body.items[0].matchedResources).toBeUndefined()
     })
   })
 

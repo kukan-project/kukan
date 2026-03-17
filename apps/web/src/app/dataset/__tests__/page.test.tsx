@@ -106,8 +106,8 @@ describe('DatasetsPage', () => {
     const jsx = await DatasetsPage(makeSearchParams())
     render(jsx)
 
-    expect(screen.getByText('3 resources')).toBeInTheDocument()
-    expect(screen.getByText('1 resources')).toBeInTheDocument()
+    expect(screen.getByText('All 3 resources')).toBeInTheDocument()
+    expect(screen.getByText('All 1 resources')).toBeInTheDocument()
   })
 
   it('should show empty state when no datasets', async () => {

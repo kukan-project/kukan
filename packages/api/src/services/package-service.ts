@@ -16,8 +16,13 @@ import {
   packageGroup,
   userOrgMembership,
 } from '@kukan/db'
-import { NotFoundError, ValidationError, isUuid, escapeLike } from '@kukan/shared'
-import type { PaginationParams, PaginatedResult, FacetCounts, FacetItem } from '@kukan/shared'
+import { NotFoundError, ValidationError, isUuid, escapeLike, groupMatchedResources } from '@kukan/shared'
+import type {
+  PaginationParams,
+  PaginatedResult,
+  FacetCounts,
+  FacetItem,
+} from '@kukan/shared'
 import type { CreatePackageInput, UpdatePackageInput, PatchPackageInput } from '@kukan/shared'
 
 interface ViewerContext {
@@ -54,11 +59,18 @@ export class PackageService {
     const conditions: SQL[] = [eq(packageTable.state, 'active')]
 
     if (params.q) {
+      const pattern = `%${escapeLike(params.q)}%`
       conditions.push(
         or(
-          ilike(packageTable.name, `%${escapeLike(params.q)}%`),
-          ilike(packageTable.title, `%${escapeLike(params.q)}%`),
-          ilike(packageTable.notes, `%${escapeLike(params.q)}%`)
+          ilike(packageTable.name, pattern),
+          ilike(packageTable.title, pattern),
+          ilike(packageTable.notes, pattern),
+          sql`EXISTS (
+            SELECT 1 FROM ${resource}
+            WHERE ${resource.packageId} = ${packageTable.id}
+            AND ${resource.state} = 'active'
+            AND (${resource.name} ILIKE ${pattern} OR ${resource.description} ILIKE ${pattern})
+          )`
         )!
       )
     }
@@ -207,7 +219,38 @@ export class PackageService {
       .offset(offset)
 
     const total = rows[0]?.total ?? 0
-    const items = rows.map(({ total: _, ...rest }) => rest)
+
+    // Batch fetch matched resources when text query is present
+    let matchedByPackage: ReturnType<typeof groupMatchedResources> = {}
+    if (params.q) {
+      const packageIds = rows.map((r) => r.id)
+      if (packageIds.length > 0) {
+        const pattern = `%${escapeLike(params.q)}%`
+        const matchedRows = await this.db
+          .select({
+            id: resource.id,
+            packageId: resource.packageId,
+            name: resource.name,
+            description: resource.description,
+            format: resource.format,
+          })
+          .from(resource)
+          .where(
+            and(
+              inArray(resource.packageId, packageIds),
+              eq(resource.state, 'active'),
+              or(ilike(resource.name, pattern), ilike(resource.description, pattern))
+            )
+          )
+
+        matchedByPackage = groupMatchedResources(matchedRows)
+      }
+    }
+
+    const items = rows.map(({ total: _, ...rest }) => ({
+      ...rest,
+      ...(matchedByPackage[rest.id] && { matchedResources: matchedByPackage[rest.id] }),
+    }))
 
     return { items, total, offset, limit } as PaginatedResult<(typeof items)[0]>
   }

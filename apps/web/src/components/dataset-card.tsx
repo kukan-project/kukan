@@ -1,8 +1,11 @@
+'use client'
+
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
-import { Building2, FolderOpen, Tag } from 'lucide-react'
+import { Building2, FileText, FolderOpen, Tag } from 'lucide-react'
 import { Badge, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
 import { FormatBadges } from './format-badges'
+import type { MatchedResource } from '@kukan/shared'
 
 export interface DatasetCardItem {
   id: string
@@ -15,6 +18,7 @@ export interface DatasetCardItem {
   orgTitle?: string | null
   tags?: string
   groups?: string
+  matchedResources?: MatchedResource[]
 }
 
 function parseGroups(groups?: string): { name: string; title: string }[] {
@@ -67,9 +71,46 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
             </div>
           )}
         </CardHeader>
-        {pkg.notes && (
-          <CardContent>
-            <p className="line-clamp-2 text-sm text-muted-foreground">{pkg.notes}</p>
+        {(pkg.notes || (pkg.matchedResources && pkg.matchedResources.length > 0)) && (
+          <CardContent className="space-y-3">
+            {pkg.notes && (
+              <p className="line-clamp-2 text-sm text-muted-foreground">{pkg.notes}</p>
+            )}
+            {pkg.matchedResources && pkg.matchedResources.length > 0 && (
+              <div className="border-l-2 border-muted-foreground/20 pl-3">
+                <p className="mb-1.5 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                  <FileText className="h-3 w-3" />
+                  {t('matchedResources')}
+                </p>
+                <ul className="space-y-1.5">
+                  {pkg.matchedResources.map((r) => (
+                    <li key={r.id}>
+                      <Link
+                        href={`/dataset/${pkg.name}/resource/${r.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="group/resource block rounded-sm hover:bg-accent/50"
+                      >
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="truncate font-medium group-hover/resource:underline">
+                            {r.name || r.id}
+                          </span>
+                          {r.format && (
+                            <Badge variant="outline" className="shrink-0 text-xs">
+                              {r.format.toUpperCase()}
+                            </Badge>
+                          )}
+                        </div>
+                        {r.description && (
+                          <p className="line-clamp-1 text-xs text-muted-foreground">
+                            {r.description}
+                          </p>
+                        )}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </CardContent>
         )}
       </Card>

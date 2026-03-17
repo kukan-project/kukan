@@ -1,17 +1,20 @@
 /**
  * KUKAN PostgreSQL Search Adapter
- * ILIKE-based search on package title/notes/name
+ * ILIKE-based search on package title/notes/name + resource name/description
  * pg_trgm GIN indexes accelerate queries with 3+ characters
  */
 
-import { SearchQuery, SearchResult, DatasetDoc } from '@kukan/shared'
-import { type Database, packageTable, organization, packageTag, tag } from '@kukan/db'
+import { SearchQuery, SearchResult, DatasetDoc, escapeLike, groupMatchedResources } from '@kukan/shared'
+import {
+  type Database,
+  packageTable,
+  organization,
+  packageTag,
+  tag,
+  resource,
+} from '@kukan/db'
 import { ilike, eq, and, or, sql, inArray, desc } from 'drizzle-orm'
 import { SearchAdapter } from './adapter'
-
-function escapeLikePattern(str: string): string {
-  return str.replace(/[%_\\]/g, '\\$&')
-}
 
 export class PostgresSearchAdapter implements SearchAdapter {
   private db: Database
@@ -27,17 +30,27 @@ export class PostgresSearchAdapter implements SearchAdapter {
   async search(query: SearchQuery): Promise<SearchResult> {
     const offset = query.offset ?? 0
     const limit = query.limit ?? 20
-    const pattern = `%${escapeLikePattern(query.q)}%`
+    const pattern = `%${escapeLike(query.q)}%`
+    const hasQuery = query.q.trim().length > 0
 
     // Build WHERE conditions
-    const conditions = [
-      eq(packageTable.state, 'active'),
-      or(
-        ilike(packageTable.name, pattern),
-        ilike(packageTable.title, pattern),
-        ilike(packageTable.notes, pattern)
-      ),
-    ]
+    const conditions = [eq(packageTable.state, 'active')]
+
+    if (hasQuery) {
+      conditions.push(
+        or(
+          ilike(packageTable.name, pattern),
+          ilike(packageTable.title, pattern),
+          ilike(packageTable.notes, pattern),
+          sql`EXISTS (
+            SELECT 1 FROM ${resource}
+            WHERE ${resource.packageId} = ${packageTable.id}
+            AND ${resource.state} = 'active'
+            AND (${resource.name} ILIKE ${pattern} OR ${resource.description} ILIKE ${pattern})
+          )`
+        )!
+      )
+    }
 
     // Organization filter (by org name)
     if (query.filters?.organization) {
@@ -84,19 +97,43 @@ export class PostgresSearchAdapter implements SearchAdapter {
       .limit(limit)
       .offset(offset)
 
-    // Fetch tags for matched packages
+    // Fetch tags and matched resources in parallel
     const packageIds = rows.map((r) => r.id)
     const tagsByPackage: Record<string, string[]> = {}
+    let matchedByPackage: ReturnType<typeof groupMatchedResources> = {}
 
     if (packageIds.length > 0) {
-      const tagRows = await this.db
-        .select({
-          packageId: packageTag.packageId,
-          tagName: tag.name,
-        })
-        .from(packageTag)
-        .innerJoin(tag, eq(packageTag.tagId, tag.id))
-        .where(inArray(packageTag.packageId, packageIds))
+      const [tagRows, matchedRows] = await Promise.all([
+        this.db
+          .select({
+            packageId: packageTag.packageId,
+            tagName: tag.name,
+          })
+          .from(packageTag)
+          .innerJoin(tag, eq(packageTag.tagId, tag.id))
+          .where(inArray(packageTag.packageId, packageIds)),
+        hasQuery
+          ? this.db
+              .select({
+                id: resource.id,
+                packageId: resource.packageId,
+                name: resource.name,
+                description: resource.description,
+                format: resource.format,
+              })
+              .from(resource)
+              .where(
+                and(
+                  inArray(resource.packageId, packageIds),
+                  eq(resource.state, 'active'),
+                  or(
+                    ilike(resource.name, pattern),
+                    ilike(resource.description, pattern)
+                  )
+                )
+              )
+          : Promise.resolve([]),
+      ])
 
       for (const row of tagRows) {
         if (!tagsByPackage[row.packageId]) {
@@ -104,6 +141,8 @@ export class PostgresSearchAdapter implements SearchAdapter {
         }
         tagsByPackage[row.packageId].push(row.tagName)
       }
+
+      matchedByPackage = groupMatchedResources(matchedRows)
     }
 
     const items: DatasetDoc[] = rows.map((row) => ({
@@ -113,6 +152,9 @@ export class PostgresSearchAdapter implements SearchAdapter {
       notes: row.notes ?? undefined,
       organization: row.organization ?? undefined,
       tags: tagsByPackage[row.id] ?? [],
+      ...(matchedByPackage[row.id] && {
+        matchedResources: matchedByPackage[row.id],
+      }),
     }))
 
     return { items, total: count, offset, limit }

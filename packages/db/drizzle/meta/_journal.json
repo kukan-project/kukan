@@ -50,6 +50,13 @@
       "when": 1773708014465,
       "tag": "0006_goofy_luminals",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1773719795281,
+      "tag": "0007_unusual_puff_adder",
+      "breakpoints": true
     }
   ]
 }

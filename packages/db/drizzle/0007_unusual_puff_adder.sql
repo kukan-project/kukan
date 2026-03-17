@@ -1,0 +1,2 @@
+CREATE INDEX "idx_resource_name_trgm" ON "resource" USING gin ("name" gin_trgm_ops);--> statement-breakpoint
+CREATE INDEX "idx_resource_description_trgm" ON "resource" USING gin ("description" gin_trgm_ops);

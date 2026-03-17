@@ -47,6 +47,15 @@ async function createPackage(data: Record<string, unknown>) {
   })
 }
 
+// Helper: create a resource on a package via API
+async function createResource(packageId: string, data: Record<string, unknown>) {
+  return app.request(`/api/v1/packages/${packageId}/resources`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
 describe('Search API Routes', () => {
   describe('GET /api/v1/search - validation', () => {
     it('should return 400 when q is missing', async () => {
@@ -159,6 +168,112 @@ describe('Search API Routes', () => {
       expect(body.items).toHaveLength(2)
       expect(body.offset).toBe(2)
       expect(body.limit).toBe(2)
+    })
+  })
+
+  describe('GET /api/v1/search - resource metadata search', () => {
+    it('should find packages by resource name', async () => {
+      const pkgRes = await createPackage({ name: 'parent-dataset', title: 'Parent' })
+      const pkg = await pkgRes.json()
+
+      await createResource(pkg.id, { name: 'unique-resource-file.csv', format: 'CSV' })
+
+      const res = await app.request('/api/v1/search?q=unique-resource-file')
+      const body = await res.json()
+
+      expect(body.total).toBe(1)
+      expect(body.items[0].name).toBe('parent-dataset')
+    })
+
+    it('should find packages by resource description', async () => {
+      const pkgRes = await createPackage({ name: 'desc-dataset', title: 'Desc' })
+      const pkg = await pkgRes.json()
+
+      await createResource(pkg.id, {
+        name: 'data.csv',
+        description: 'Contains quarterly revenue breakdown',
+      })
+
+      const res = await app.request('/api/v1/search?q=quarterly+revenue')
+      const body = await res.json()
+
+      expect(body.total).toBe(1)
+      expect(body.items[0].name).toBe('desc-dataset')
+    })
+
+    it('should include matchedResources in results', async () => {
+      const pkgRes = await createPackage({ name: 'matched-res-pkg', title: 'Matched' })
+      const pkg = await pkgRes.json()
+
+      await createResource(pkg.id, {
+        name: 'special-report.csv',
+        description: 'Annual special report',
+        format: 'CSV',
+      })
+
+      const res = await app.request('/api/v1/search?q=special-report')
+      const body = await res.json()
+
+      expect(body.total).toBe(1)
+      expect(body.items[0].matchedResources).toBeDefined()
+      expect(body.items[0].matchedResources).toHaveLength(1)
+      expect(body.items[0].matchedResources[0].name).toBe('special-report.csv')
+      expect(body.items[0].matchedResources[0].format).toBe('CSV')
+    })
+
+    it('should not duplicate when both dataset and resource match', async () => {
+      const pkgRes = await createPackage({
+        name: 'population-stats',
+        title: 'Population Statistics',
+      })
+      const pkg = await pkgRes.json()
+
+      await createResource(pkg.id, { name: 'population-data.csv' })
+
+      const res = await app.request('/api/v1/search?q=population')
+      const body = await res.json()
+
+      expect(body.total).toBe(1)
+      expect(body.items).toHaveLength(1)
+    })
+
+    it('should not match deleted resources', async () => {
+      const pkgRes = await createPackage({ name: 'del-res-pkg', title: 'Del Res' })
+      const pkg = await pkgRes.json()
+
+      const resRes = await createResource(pkg.id, { name: 'hidden-secret-data.csv' })
+      const resource = await resRes.json()
+
+      // Delete the resource (soft delete via /api/v1/resources/:id)
+      await app.request(`/api/v1/resources/${resource.id}`, {
+        method: 'DELETE',
+      })
+
+      const res = await app.request('/api/v1/search?q=hidden-secret-data')
+      const body = await res.json()
+
+      expect(body.total).toBe(0)
+    })
+
+    it('should combine resource search with organization filter', async () => {
+      const orgRes = await createOrg('filter-org')
+      const org = await orgRes.json()
+
+      const pkg1Res = await createPackage({ name: 'org-pkg', owner_org: org.id })
+      const pkg1 = await pkg1Res.json()
+      await createResource(pkg1.id, { name: 'filterable-resource.csv' })
+
+      const pkg2Res = await createPackage({ name: 'other-pkg' })
+      const pkg2 = await pkg2Res.json()
+      await createResource(pkg2.id, { name: 'filterable-resource.csv' })
+
+      const res = await app.request(
+        '/api/v1/search?q=filterable-resource&organization=filter-org'
+      )
+      const body = await res.json()
+
+      expect(body.total).toBe(1)
+      expect(body.items[0].name).toBe('org-pkg')
     })
   })
 

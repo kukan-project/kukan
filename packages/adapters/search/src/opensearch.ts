@@ -4,7 +4,7 @@
  */
 
 import { Client } from '@opensearch-project/opensearch'
-import { SearchQuery, SearchResult, DatasetDoc } from '@kukan/shared'
+import { SearchQuery, SearchResult, DatasetDoc, MAX_MATCHED_RESOURCES_PER_PACKAGE } from '@kukan/shared'
 import { SearchAdapter } from './adapter'
 
 export interface OpenSearchConfig {
@@ -63,6 +63,19 @@ export class OpenSearchAdapter implements SearchAdapter {
               notes: { type: 'text', analyzer: 'kuromoji_analyzer' },
               tags: { type: 'keyword' },
               organization: { type: 'keyword' },
+              resources: {
+                type: 'nested',
+                properties: {
+                  id: { type: 'keyword' },
+                  name: {
+                    type: 'text',
+                    analyzer: 'kuromoji_analyzer',
+                    fields: { keyword: { type: 'keyword' } },
+                  },
+                  description: { type: 'text', analyzer: 'kuromoji_analyzer' },
+                  format: { type: 'keyword' },
+                },
+              },
               created: { type: 'date' },
               updated: { type: 'date' },
             },
@@ -94,13 +107,33 @@ export class OpenSearchAdapter implements SearchAdapter {
     const must: Record<string, unknown>[] = []
     const filter: Record<string, unknown>[] = []
 
-    // Full-text search
+    // Full-text search (dataset-level + nested resource-level)
     if (query.q && query.q.trim()) {
       must.push({
-        multi_match: {
-          query: query.q,
-          fields: ['title^3', 'name^2', 'notes', 'tags'],
-          type: 'best_fields',
+        bool: {
+          should: [
+            {
+              multi_match: {
+                query: query.q,
+                fields: ['title^3', 'name^2', 'notes', 'tags'],
+                type: 'best_fields',
+              },
+            },
+            {
+              nested: {
+                path: 'resources',
+                query: {
+                  multi_match: {
+                    query: query.q,
+                    fields: ['resources.name^2', 'resources.description'],
+                    type: 'best_fields',
+                  },
+                },
+                inner_hits: { size: MAX_MATCHED_RESOURCES_PER_PACKAGE },
+              },
+            },
+          ],
+          minimum_should_match: 1,
         },
       })
     } else {
@@ -141,10 +174,29 @@ export class OpenSearchAdapter implements SearchAdapter {
 
     const hits = response.body.hits
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const items: DatasetDoc[] = (hits?.hits ?? []).map((hit: any) => ({
-      ...hit._source,
-      id: hit._id,
-    }))
+    const items: DatasetDoc[] = (hits?.hits ?? []).map((hit: any) => {
+      const doc: DatasetDoc = {
+        ...hit._source,
+        id: hit._id,
+      }
+
+      // Extract matched resources from nested inner_hits
+      const innerHits = hit.inner_hits?.resources?.hits?.hits
+      if (innerHits && innerHits.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        doc.matchedResources = innerHits.map((ih: any) => ({
+          id: ih._source.id,
+          name: ih._source.name,
+          description: ih._source.description,
+          format: ih._source.format,
+        }))
+      }
+
+      // Remove resources array from search results (it's for indexing, not display)
+      delete doc.resources
+
+      return doc
+    })
 
     const total = hits?.total
     const totalCount = typeof total === 'number' ? total : (total?.value ?? 0)

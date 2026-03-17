@@ -104,7 +104,8 @@
     "authorEmail": "作成者メール",
     "maintainerLabel": "管理者",
     "maintainerEmail": "管理者メール",
-    "resourceCount": "{count} 件のリソース"
+    "resourceCount": "全{count}リソース",
+    "matchedResources": "一致したリソース"
   },
   "organization": {
     "title": "組織",
