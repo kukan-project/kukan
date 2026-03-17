@@ -56,6 +56,38 @@ services:
       mc mb --ignore-existing local/kukan-dev;
       "
 
+  opensearch:
+    image: opensearchproject/opensearch:3
+    container_name: kukan-opensearch
+    profiles: ['search']
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - '9200:9200'
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -s http://localhost:9200 || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:3
+    container_name: kukan-opensearch-dashboards
+    profiles: ['search']
+    ports:
+      - '5601:5601'
+    environment:
+      - OPENSEARCH_HOSTS=["http://opensearch:9200"]
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+    depends_on:
+      opensearch:
+        condition: service_healthy
+
 volumes:
   pgdata:
   miniodata:
+  opensearch-data:

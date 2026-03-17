@@ -6,11 +6,11 @@
 import type { Env } from '@kukan/shared'
 import type { Database } from '@kukan/db'
 import { MinIOStorageAdapter, LocalStorageAdapter } from '@kukan/storage-adapter'
-import { PostgresSearchAdapter } from '@kukan/search-adapter'
+import { PostgresSearchAdapter, OpenSearchAdapter } from '@kukan/search-adapter'
 import { InProcessQueueAdapter } from '@kukan/queue-adapter'
 import { NoOpAIAdapter } from '@kukan/ai-adapter'
 
-export function createAdapters(env: Env, db: Database) {
+export async function createAdapters(env: Env, db: Database) {
   // Storage adapter
   let storage
   if (env.STORAGE_TYPE === 'local') {
@@ -28,17 +28,23 @@ export function createAdapters(env: Env, db: Database) {
       bucket: env.S3_BUCKET,
     })
   } else {
-    // S3 - Phase 3
-    throw new Error('S3 storage not implemented yet (Phase 3)')
+    // S3 - Phase 3b
+    throw new Error('S3 storage not implemented yet (Phase 3b)')
   }
 
   // Search adapter
   let search
   if (env.SEARCH_TYPE === 'postgres') {
     search = new PostgresSearchAdapter(db)
+  } else if (env.SEARCH_TYPE === 'opensearch') {
+    if (!env.OPENSEARCH_URL) {
+      throw new Error('OpenSearch requires OPENSEARCH_URL')
+    }
+    const osAdapter = new OpenSearchAdapter({ endpoint: env.OPENSEARCH_URL })
+    await osAdapter.ensureIndex()
+    search = osAdapter
   } else {
-    // OpenSearch - Phase 3
-    throw new Error('OpenSearch not implemented yet (Phase 3)')
+    throw new Error(`Unknown search type: ${env.SEARCH_TYPE}`)
   }
 
   // Queue adapter
@@ -46,8 +52,8 @@ export function createAdapters(env: Env, db: Database) {
   if (env.QUEUE_TYPE === 'in-process') {
     queue = new InProcessQueueAdapter()
   } else {
-    // SQS - Phase 3
-    throw new Error('SQS queue not implemented yet (Phase 3)')
+    // SQS - Phase 3b
+    throw new Error('SQS queue not implemented yet (Phase 3b)')
   }
 
   // AI adapter

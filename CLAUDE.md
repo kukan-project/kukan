@@ -22,7 +22,7 @@ CKANの後継として設計されたTypeScriptフルスタックのデータカ
 | フロントエンド | Next.js 15 (App Router) + shadcn/ui + Tailwind CSS 4  |
 | DB             | PostgreSQL 16 / Aurora Serverless v2                  |
 | ORM            | Drizzle ORM（PostgreSQL ドライバ）                    |
-| 検索           | OpenSearch 2.x / PostgreSQL全文検索（フォールバック） |
+| 検索           | OpenSearch 3.x / PostgreSQL全文検索（フォールバック） |
 | ストレージ     | S3 / MinIO                                            |
 | キュー         | SQS（AWS）/ InProcess（開発・オンプレ）               |
 | キャッシュ     | lru-cache 11.x（インメモリ、全環境共通）              |

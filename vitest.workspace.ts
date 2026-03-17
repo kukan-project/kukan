@@ -11,6 +11,14 @@ export default defineWorkspace([
   },
   {
     test: {
+      name: 'adapter-search',
+      root: './packages/adapters/search',
+      include: ['src/__tests__/**/*.test.ts'],
+      environment: 'node',
+    },
+  },
+  {
+    test: {
       name: 'adapter-queue',
       root: './packages/adapters/queue',
       include: ['src/__tests__/**/*.test.ts'],

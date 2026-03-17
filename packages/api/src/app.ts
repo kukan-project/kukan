@@ -27,7 +27,7 @@ export async function createApp() {
   const auth = createAuth(db)
 
   // Initialize adapters
-  const adapters = createAdapters(env, db)
+  const adapters = await createAdapters(env, db)
 
   // CORS — enabled when TRUSTED_ORIGINS is set (standalone / cross-origin access)
   const trustedOrigins = process.env.TRUSTED_ORIGINS?.split(',').filter(Boolean)
