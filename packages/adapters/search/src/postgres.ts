@@ -1,7 +1,7 @@
 /**
  * KUKAN PostgreSQL Search Adapter
- * Phase 1: ILIKE-based search on package title/notes/name
- * Phase 3: pg_bigm for Japanese bigram indexing
+ * ILIKE-based search on package title/notes/name
+ * pg_trgm GIN indexes accelerate queries with 3+ characters
  */
 
 import { SearchQuery, SearchResult, DatasetDoc } from '@kukan/shared'

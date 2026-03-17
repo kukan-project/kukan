@@ -41,5 +41,9 @@ export const packageTable = pgTable(
     index('idx_package_owner_org').on(table.ownerOrg),
     index('idx_package_state').on(table.state),
     index('idx_package_creator_user_id').on(table.creatorUserId),
+    // pg_trgm GIN indexes for ILIKE search acceleration (requires CREATE EXTENSION pg_trgm)
+    index('idx_package_title_trgm').using('gin', table.title.op('gin_trgm_ops')),
+    index('idx_package_notes_trgm').using('gin', table.notes.op('gin_trgm_ops')),
+    index('idx_package_name_trgm').using('gin', table.name.op('gin_trgm_ops')),
   ]
 )

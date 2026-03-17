@@ -19,6 +19,9 @@ async function main() {
   const pool = new Pool({ connectionString })
   const db = drizzle(pool)
 
+  // Ensure required extensions exist (not managed by Drizzle)
+  await pool.query('CREATE EXTENSION IF NOT EXISTS pg_trgm')
+
   console.log('Running migrations...')
   await migrate(db, { migrationsFolder: './drizzle' })
   console.log('Migrations complete!')

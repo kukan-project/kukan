@@ -43,6 +43,13 @@
       "when": 1773558990390,
       "tag": "0005_brief_gamora",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1773708014465,
+      "tag": "0006_goofy_luminals",
+      "breakpoints": true
     }
   ]
 }

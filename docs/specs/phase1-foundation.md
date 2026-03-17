@@ -18,9 +18,7 @@ KUKAN/
 │   ├── queue/            # QueueAdapter
 │   └── ai/              # AIAdapter
 ├── docker/
-│   ├── docker-compose.yml
-│   └── postgres/
-│       └── Dockerfile       # pg_bigm 入りカスタムイメージ
+│   └── compose.yml
 ├── docs/                 # ← 今のドキュメント群
 ├── turbo.json
 ├── pnpm-workspace.yaml
@@ -601,13 +599,7 @@ volumes:
   miniodata:
 ```
 
-```dockerfile
-# docker/postgres/Dockerfile
-FROM postgres:16-alpine
-RUN apk add --no-cache postgresql16-pg_bigm
-```
-
-**Note**: Phase 1 の検索は PostgreSQL ILIKE フォールバック。Phase 3 で OpenSearch を追加。詳細は `docs/adr/009-opensearch-ilike-fallback.md` を参照。
+**Note**: Phase 1 の検索は PostgreSQL ILIKE フォールバック（pg_trgm GIN インデックスで高速化）。Phase 3 で OpenSearch を追加。詳細は `docs/adr/009-opensearch-ilike-fallback.md` を参照。
 
 ---
 

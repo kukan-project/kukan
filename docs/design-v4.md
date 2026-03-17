@@ -799,7 +799,7 @@ class PostgresSearchAdapter implements SearchAdapter {
 | PDF本文検索           |      ❌       |        ✅         |
 | セマンティック検索    | △ (pgvector)  |     ✅ (kNN)      |
 | 地理空間検索          | ✅ (PostGIS)  |  ✅ (geo_shape)   |
-| 日本語形態素解析      |  △ (pg_bigm)  |   ✅ (kuromoji)   |
+| 日本語形態素解析      |  △ (pg_trgm)  |   ✅ (kuromoji)   |
 
 小規模自治体はPostgreSQLのみで開始し、必要に応じてOpenSearchを追加する
 **段階的スケールアップ**が可能。
