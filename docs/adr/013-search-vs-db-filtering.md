@@ -72,9 +72,17 @@ SearchAdapter にフィルター条件も渡す。
 これは検索エンジンを経由しない簡易検索であり、形態素解析や関連度スコアリングは行わない。
 ユーザーが高精度なキーワード検索を必要とする場合は `/search` ページ（SearchAdapter 経由）を使用する。
 
+**リソースメタデータ検索の拡張（Phase 3a Step 2b）**:
+`q` パラメータ指定時は、パッケージ自体（name/title/notes）に加えて、
+紐づくリソースの name/description も EXISTS サブクエリで検索対象に含める。
+マッチしたリソースがある場合は `matchedResources` 配列としてレスポンスに付与する。
+これにより一覧ページでもリソースレベルの検索が可能になるが、
+あくまで DB 直接の ILIKE 検索であり、SearchAdapter は経由しない原則は維持される。
+
 ## 影響
 
-- 現行実装は既にこの方針に沿っている（`packages.list()` は DB 直接、`/search` は SearchAdapter）
+- 現行実装はこの方針に沿っている（`packages.list()` は DB 直接、`/search` は SearchAdapter）
+- `packages.list()` は `q` 指定時にリソースメタデータも ILIKE 検索するが、これは DB 直接クエリの拡張であり SearchAdapter 経由ではない
 - OpenSearch 実装時（Phase 3）にインデックス設計をキーワード検索に最適化できる
 - LGWAN 等の閉域網環境では PostgreSQL のみで一覧・フィルタリングが完全に動作する
 

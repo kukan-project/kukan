@@ -127,11 +127,24 @@ export class OpenSearchAdapter implements SearchAdapter {
 - `title`: kuromoji_analyzer + keyword サブフィールド
 - `notes`: kuromoji_analyzer
 - `name`, `tags`, `organization`: keyword
+- `resources`: nested 型（リソースメタデータ検索用）
+  - `resources.name`: kuromoji_analyzer + keyword サブフィールド
+  - `resources.description`: kuromoji_analyzer
+  - `resources.id`: keyword
+  - `resources.format`: keyword
 - `created`, `updated`: date
 
 **検索クエリ**:
-- `multi_match` with `fields: ["title^3", "name^2", "notes", "tags"]`
+- `bool.should` で dataset-level `multi_match`（`title^3`, `name^2`, `notes`, `tags`）+ nested resource `multi_match`（`resources.name^2`, `resources.description`）
+- nested クエリに `inner_hits: { size: MAX_MATCHED_RESOURCES_PER_PACKAGE }` でマッチしたリソースを返却
 - `bool.filter` for organization, tags（スコアリング影響なし、ADR-013 準拠）
+
+**リソースメタデータ検索（Step 2b で実装済み）**:
+- PostgresSearchAdapter: EXISTS サブクエリで resource.name/description を ILIKE 検索
+- PackageService.list(): `q` パラメータ指定時に同じ EXISTS サブクエリ + `matchedResources` をバッチ取得
+- pg_trgm GIN インデックスを `resource.name` と `resource.description` にも追加
+- パッケージごとのマッチリソース上限: `MAX_MATCHED_RESOURCES_PER_PACKAGE`（1000件、`@kukan/shared`で定義）
+- フロントエンドの DatasetCard にマッチしたリソースをインデント付きサブアイテムとして表示
 
 ### 4.3 アダプターファクトリ更新
 
