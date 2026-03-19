@@ -4,15 +4,14 @@
  * pg_trgm GIN indexes accelerate queries with 3+ characters
  */
 
-import { SearchQuery, SearchResult, DatasetDoc, escapeLike, groupMatchedResources } from '@kukan/shared'
 import {
-  type Database,
-  packageTable,
-  organization,
-  packageTag,
-  tag,
-  resource,
-} from '@kukan/db'
+  SearchQuery,
+  SearchResult,
+  DatasetDoc,
+  escapeLike,
+  groupMatchedResources,
+} from '@kukan/shared'
+import { type Database, packageTable, organization, packageTag, tag, resource } from '@kukan/db'
 import { ilike, eq, and, or, sql, inArray, desc } from 'drizzle-orm'
 import { SearchAdapter } from './adapter'
 
@@ -126,10 +125,7 @@ export class PostgresSearchAdapter implements SearchAdapter {
                 and(
                   inArray(resource.packageId, packageIds),
                   eq(resource.state, 'active'),
-                  or(
-                    ilike(resource.name, pattern),
-                    ilike(resource.description, pattern)
-                  )
+                  or(ilike(resource.name, pattern), ilike(resource.description, pattern))
                 )
               )
           : Promise.resolve([]),

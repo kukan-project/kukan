@@ -267,9 +267,7 @@ describe('Search API Routes', () => {
       const pkg2 = await pkg2Res.json()
       await createResource(pkg2.id, { name: 'filterable-resource.csv' })
 
-      const res = await app.request(
-        '/api/v1/search?q=filterable-resource&organization=filter-org'
-      )
+      const res = await app.request('/api/v1/search?q=filterable-resource&organization=filter-org')
       const body = await res.json()
 
       expect(body.total).toBe(1)

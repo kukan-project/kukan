@@ -1,6 +1,6 @@
 {
-  "id": "9442520c-01a3-482b-8867-718017aee8fd",
-  "prevId": "b97ca7f4-ff9e-4d68-acbd-7f6074c35225",
+  "id": "db599996-52da-472f-8fb0-00ddd2ca40a5",
+  "prevId": "88904d77-3a7a-45e6-bd43-3c9106c1104a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1011,6 +1011,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "url_type": {
+          "name": "url_type",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "name": {
           "name": "name",
           "type": "text",
@@ -1073,12 +1079,6 @@
           "primaryKey": false,
           "notNull": false,
           "default": "'{}'::jsonb"
-        },
-        "storage_key": {
-          "name": "storage_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "preview_key": {
           "name": "preview_key",

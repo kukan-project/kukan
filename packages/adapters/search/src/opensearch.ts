@@ -4,7 +4,12 @@
  */
 
 import { Client } from '@opensearch-project/opensearch'
-import { SearchQuery, SearchResult, DatasetDoc, MAX_MATCHED_RESOURCES_PER_PACKAGE } from '@kukan/shared'
+import {
+  SearchQuery,
+  SearchResult,
+  DatasetDoc,
+  MAX_MATCHED_RESOURCES_PER_PACKAGE,
+} from '@kukan/shared'
 import { SearchAdapter } from './adapter'
 
 export interface OpenSearchConfig {
@@ -223,10 +228,7 @@ export class OpenSearchAdapter implements SearchAdapter {
     if (docs.length === 0) return
     await this.ensureIndex()
 
-    const body = docs.flatMap((doc) => [
-      { index: { _index: this.indexName, _id: doc.id } },
-      doc,
-    ])
+    const body = docs.flatMap((doc) => [{ index: { _index: this.indexName, _id: doc.id } }, doc])
 
     const response = await this.client.bulk({ body, refresh: 'wait_for' })
     if (response.body.errors) {

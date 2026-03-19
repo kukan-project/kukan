@@ -7,7 +7,7 @@ import { eq, and, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, packageTable } from '@kukan/db'
 import { NotFoundError } from '@kukan/shared'
-import type { CreateResourceInput, UpdateResourceInput } from '@kukan/shared'
+import type { CreateResourceInput, UpdateResourceInput, IngestStatus } from '@kukan/shared'
 
 export class ResourceService {
   constructor(private db: Database) {}
@@ -103,6 +103,7 @@ export class ResourceService {
         .values({
           packageId: input.package_id,
           url: input.url,
+          urlType: input.url_type,
           name: input.name,
           description: input.description,
           format: input.format,
@@ -130,6 +131,7 @@ export class ResourceService {
       .update(resource)
       .set({
         url: input.url,
+        urlType: input.url_type,
         name: input.name,
         description: input.description,
         format: input.format,
@@ -163,4 +165,102 @@ export class ResourceService {
 
     return deleted
   }
+
+  /**
+   * Prepare a resource for file upload (new or replacement).
+   * Resets ingestStatus to 'pending' and clears previous upload metadata.
+   */
+  async prepareForUpload(
+    id: string,
+    input: { filename: string; contentType: string; format?: string },
+    existing?: Awaited<ReturnType<ResourceService['getById']>>
+  ) {
+    existing ??= await this.getById(id)
+    const format = input.format || deriveFormat(input.filename) || existing.format
+
+    const [updated] = await this.db
+      .update(resource)
+      .set({
+        url: input.filename,
+        urlType: 'upload',
+        name: existing.name || input.filename,
+        format,
+        mimetype: input.contentType,
+        ingestStatus: 'pending',
+        ingestError: null,
+        size: null,
+        hash: null,
+        updated: sql`NOW()`,
+      })
+      .where(eq(resource.id, id))
+      .returning()
+
+    return updated!
+  }
+
+  /**
+   * Update the ingest status of a resource.
+   */
+  async updateIngestStatus(id: string, status: IngestStatus, error?: string) {
+    const [updated] = await this.db
+      .update(resource)
+      .set({
+        ingestStatus: status,
+        ingestError: error ?? null,
+        updated: sql`NOW()`,
+      })
+      .where(and(eq(resource.id, id), eq(resource.state, 'active')))
+      .returning()
+
+    if (!updated) {
+      throw new NotFoundError('Resource', id)
+    }
+
+    return updated
+  }
+
+  /**
+   * Update resource metadata after a successful upload.
+   */
+  async updateAfterUpload(id: string, input: { size?: number; hash?: string }) {
+    const [updated] = await this.db
+      .update(resource)
+      .set({
+        ...(input.size !== undefined && { size: input.size }),
+        ...(input.hash !== undefined && { hash: input.hash }),
+        updated: sql`NOW()`,
+      })
+      .where(and(eq(resource.id, id), eq(resource.state, 'active')))
+      .returning()
+
+    if (!updated) {
+      throw new NotFoundError('Resource', id)
+    }
+
+    return updated
+  }
+}
+
+/** Compute storage key from packageId and resourceId */
+export function getStorageKey(packageId: string, resourceId: string): string {
+  return `resources/${packageId}/${resourceId}`
+}
+
+/** Derive format string from filename extension */
+function deriveFormat(filename: string): string | undefined {
+  const dotIndex = filename.lastIndexOf('.')
+  if (dotIndex <= 0) return undefined
+  const ext = filename.slice(dotIndex + 1).toLowerCase()
+  const formatMap: Record<string, string> = {
+    csv: 'CSV',
+    tsv: 'TSV',
+    json: 'JSON',
+    xml: 'XML',
+    xlsx: 'XLSX',
+    xls: 'XLS',
+    pdf: 'PDF',
+    zip: 'ZIP',
+    geojson: 'GeoJSON',
+  }
+  return formatMap[ext] || ext.toUpperCase()
 }

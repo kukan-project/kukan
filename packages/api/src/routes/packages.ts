@@ -12,7 +12,7 @@ import {
   createPackageSchema,
   updatePackageSchema,
   patchPackageSchema,
-  createResourceSchema,
+  createResourceBodySchema,
   ForbiddenError,
 } from '@kukan/shared'
 import { checkOrgRole } from '../auth/permissions'
@@ -175,7 +175,7 @@ packagesRouter.get('/:packageId/resources', async (c) => {
 // POST /api/v1/packages/:packageId/resources - Add resource to package (org editor+)
 packagesRouter.post(
   '/:packageId/resources',
-  zValidator('json', createResourceSchema.omit({ package_id: true })),
+  zValidator('json', createResourceBodySchema),
   async (c) => {
     const user = c.get('user')
     if (!user) throw new ForbiddenError('Authentication required')

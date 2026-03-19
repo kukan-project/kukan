@@ -35,6 +35,7 @@ const mockStorage = {
   },
   delete: async () => {},
   getSignedUrl: async () => 'file:///test',
+  getSignedUploadUrl: async () => 'https://minio.test/upload?signed=true',
 }
 
 const mockQueue = new InProcessQueueAdapter()

@@ -226,9 +226,7 @@ describe('OpenSearchAdapter', () => {
           body: expect.objectContaining({
             query: expect.objectContaining({
               bool: expect.objectContaining({
-                filter: expect.arrayContaining([
-                  { term: { organization: 'test-org' } },
-                ]),
+                filter: expect.arrayContaining([{ term: { organization: 'test-org' } }]),
               }),
             }),
           }),
@@ -251,9 +249,7 @@ describe('OpenSearchAdapter', () => {
           body: expect.objectContaining({
             query: expect.objectContaining({
               bool: expect.objectContaining({
-                filter: expect.arrayContaining([
-                  { terms: { tags: ['env', 'health'] } },
-                ]),
+                filter: expect.arrayContaining([{ terms: { tags: ['env', 'health'] } }]),
               }),
             }),
           }),
@@ -416,15 +412,13 @@ describe('OpenSearchAdapter', () => {
       mockClient.bulk.mockResolvedValue({
         body: {
           errors: true,
-          items: [
-            { index: { error: { reason: 'mapping error' } } },
-          ],
+          items: [{ index: { error: { reason: 'mapping error' } } }],
         },
       })
 
-      await expect(
-        adapter.bulkIndex([{ id: 'pkg-1', name: 'bad' }])
-      ).rejects.toThrow('Bulk indexing failed for 1 documents')
+      await expect(adapter.bulkIndex([{ id: 'pkg-1', name: 'bad' }])).rejects.toThrow(
+        'Bulk indexing failed for 1 documents'
+      )
     })
   })
 })

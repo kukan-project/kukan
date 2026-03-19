@@ -5,9 +5,10 @@
 
 import { z } from 'zod'
 
-export const createResourceSchema = z.object({
+const resourceFieldsSchema = z.object({
   package_id: z.string().uuid(),
-  url: z.string().url().optional(), // Optional for file uploads
+  url: z.string().optional(),
+  url_type: z.enum(['upload']).optional(),
   name: z.string().optional(),
   description: z.string().optional(),
   format: z.string().max(100).optional(),
@@ -18,7 +19,49 @@ export const createResourceSchema = z.object({
   extras: z.record(z.unknown()).default({}),
 })
 
-export const updateResourceSchema = createResourceSchema.omit({ package_id: true }).partial()
+/** Validate that url is a valid URL when url_type is not 'upload' */
+function refineUrl(data: { url?: string; url_type?: string }, ctx: z.RefinementCtx) {
+  if (data.url && data.url_type !== 'upload') {
+    const result = z.string().url().safeParse(data.url)
+    if (!result.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.invalid_string,
+        validation: 'url',
+        message: 'Invalid URL',
+        path: ['url'],
+      })
+    }
+  }
+}
+
+export const createResourceSchema = resourceFieldsSchema.superRefine(refineUrl)
+
+/** createResourceSchema without package_id — used for nested resource creation under a package route */
+export const createResourceBodySchema = resourceFieldsSchema
+  .omit({ package_id: true })
+  .superRefine(refineUrl)
+
+export const updateResourceSchema = resourceFieldsSchema
+  .omit({ package_id: true })
+  .partial()
+  .superRefine(refineUrl)
 
 export type CreateResourceInput = z.infer<typeof createResourceSchema>
 export type UpdateResourceInput = z.infer<typeof updateResourceSchema>
+
+// Upload flow schemas
+
+export const uploadUrlSchema = z.object({
+  filename: z.string().min(1).max(500),
+  content_type: z.string().min(1).max(200),
+  format: z.string().max(100).optional(),
+})
+
+export type UploadUrlInput = z.infer<typeof uploadUrlSchema>
+
+export const uploadCompleteSchema = z.object({
+  size: z.number().int().positive().optional(),
+  hash: z.string().optional(),
+})
+
+export type UploadCompleteInput = z.infer<typeof uploadCompleteSchema>

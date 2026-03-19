@@ -5,7 +5,7 @@
 
 import type { Env } from '@kukan/shared'
 import type { Database } from '@kukan/db'
-import { MinIOStorageAdapter, LocalStorageAdapter } from '@kukan/storage-adapter'
+import { S3CompatibleStorageAdapter, LocalStorageAdapter } from '@kukan/storage-adapter'
 import { PostgresSearchAdapter, OpenSearchAdapter } from '@kukan/search-adapter'
 import { InProcessQueueAdapter } from '@kukan/queue-adapter'
 import { NoOpAIAdapter } from '@kukan/ai-adapter'
@@ -17,19 +17,15 @@ export async function createAdapters(env: Env, db: Database) {
     storage = new LocalStorageAdapter({
       basePath: './data/storage',
     })
-  } else if (env.STORAGE_TYPE === 'minio') {
-    if (!env.S3_ENDPOINT || !env.S3_ACCESS_KEY || !env.S3_SECRET_KEY) {
-      throw new Error('MinIO requires S3_ENDPOINT, S3_ACCESS_KEY, and S3_SECRET_KEY')
-    }
-    storage = new MinIOStorageAdapter({
-      endpoint: env.S3_ENDPOINT,
-      accessKey: env.S3_ACCESS_KEY,
-      secretKey: env.S3_SECRET_KEY,
-      bucket: env.S3_BUCKET,
-    })
   } else {
-    // S3 - Phase 3b
-    throw new Error('S3 storage not implemented yet (Phase 3b)')
+    // S3-compatible (AWS S3 or MinIO — determined by S3_ENDPOINT presence)
+    storage = new S3CompatibleStorageAdapter({
+      bucket: env.S3_BUCKET,
+      region: env.S3_REGION,
+      endpoint: env.S3_ENDPOINT,
+      accessKeyId: env.S3_ACCESS_KEY,
+      secretAccessKey: env.S3_SECRET_KEY,
+    })
   }
 
   // Search adapter

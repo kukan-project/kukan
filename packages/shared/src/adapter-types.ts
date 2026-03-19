@@ -10,8 +10,11 @@
 export interface ObjectMeta {
   contentType?: string
   contentLength?: number
+  originalFilename?: string
   [key: string]: unknown
 }
+
+export type IngestStatus = 'pending' | 'queued' | 'processing' | 'complete' | 'error'
 
 // ============================================================
 // Search Adapter Types
@@ -32,7 +35,13 @@ export interface MatchedResource {
  * Shared by PostgresSearchAdapter and PackageService to avoid duplication.
  */
 export function groupMatchedResources(
-  rows: { id: string; packageId: string; name: string | null; description: string | null; format: string | null }[]
+  rows: {
+    id: string
+    packageId: string
+    name: string | null
+    description: string | null
+    format: string | null
+  }[]
 ): Record<string, MatchedResource[]> {
   const byPackage: Record<string, MatchedResource[]> = {}
   for (const row of rows) {

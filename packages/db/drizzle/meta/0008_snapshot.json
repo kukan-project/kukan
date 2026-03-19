@@ -1,6 +1,6 @@
 {
-  "id": "9442520c-01a3-482b-8867-718017aee8fd",
-  "prevId": "b97ca7f4-ff9e-4d68-acbd-7f6074c35225",
+  "id": "88904d77-3a7a-45e6-bd43-3c9106c1104a",
+  "prevId": "9442520c-01a3-482b-8867-718017aee8fd",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1008,6 +1008,12 @@
         "url": {
           "name": "url",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "url_type": {
+          "name": "url_type",
+          "type": "varchar(20)",
           "primaryKey": false,
           "notNull": false
         },

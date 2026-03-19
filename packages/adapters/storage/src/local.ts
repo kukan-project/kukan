@@ -54,4 +54,15 @@ export class LocalStorageAdapter implements StorageAdapter {
     const filePath = join(this.basePath, key)
     return `file://${filePath}`
   }
+
+  async getSignedUploadUrl(
+    key: string,
+    _contentType: string,
+    _expiresIn: number = 3600,
+    _meta?: ObjectMeta
+  ): Promise<string> {
+    // Local filesystem doesn't support presigned upload URLs
+    // Return a sentinel URL — the server-side upload endpoint handles the actual file write
+    return `local://${key}`
+  }
 }

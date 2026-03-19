@@ -23,7 +23,17 @@ export interface StorageAdapter {
   delete(key: string): Promise<void>
 
   /**
-   * Get a presigned URL for temporary access
+   * Get a presigned URL for temporary read access
    */
   getSignedUrl(key: string, expiresIn?: number): Promise<string>
+
+  /**
+   * Get a presigned URL for uploading an object
+   */
+  getSignedUploadUrl(
+    key: string,
+    contentType: string,
+    expiresIn?: number,
+    meta?: ObjectMeta
+  ): Promise<string>
 }

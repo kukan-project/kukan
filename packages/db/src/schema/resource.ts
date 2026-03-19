@@ -24,6 +24,7 @@ export const resource = pgTable(
       .notNull()
       .references(() => packageTable.id, { onDelete: 'cascade' }),
     url: text('url'),
+    urlType: varchar('url_type', { length: 20 }),
     name: text('name'),
     description: text('description'),
     format: varchar('format', { length: 100 }),
@@ -36,7 +37,6 @@ export const resource = pgTable(
     extras: jsonb('extras').$type<Record<string, unknown>>().default({}),
 
     // Storage information
-    storageKey: text('storage_key'),
     previewKey: text('preview_key'),
 
     // Ingest results
@@ -63,9 +63,6 @@ export const resource = pgTable(
     index('idx_resource_format').on(table.format),
     index('idx_resource_ingest_status').on(table.ingestStatus),
     index('idx_resource_name_trgm').using('gin', table.name.op('gin_trgm_ops')),
-    index('idx_resource_description_trgm').using(
-      'gin',
-      table.description.op('gin_trgm_ops')
-    ),
+    index('idx_resource_description_trgm').using('gin', table.description.op('gin_trgm_ops')),
   ]
 )
