@@ -6,21 +6,21 @@
 
 - Phase 1 API 完成済み（CRUD + CKAN 互換 + 検索 + 認証）
 - Phase 2 Frontend 完成済み（Next.js 15 カタログ UI + 管理画面）
-- `resource` テーブルに Phase 3 カラム定義済み（storageKey, ingestStatus 等）
+- `resource` テーブルに Phase 3 カラム定義済み（urlType, ingestStatus, ingestError, previewKey 等）
 - StorageAdapter / QueueAdapter / SearchAdapter インターフェース定義済み
-- MinIOStorageAdapter, InProcessQueueAdapter, PostgresSearchAdapter 実装済み
+- S3CompatibleStorageAdapter（MinIO / AWS S3 統合）, InProcessQueueAdapter, PostgresSearchAdapter 実装済み
 - Docker Compose: PostgreSQL 16 + MinIO 動作済み
 
 ### Phase 3a vs Phase 3b
 
-| 項目         | Phase 3a（本仕様書）   | Phase 3b（別途）          |
-| ------------ | ---------------------- | ------------------------- |
-| スコープ     | 開発環境で E2E 動作    | AWS 本番基盤              |
-| ストレージ   | MinIO（既存）          | S3StorageAdapter          |
-| キュー       | InProcessQueue（既存） | SQSQueueAdapter + Worker  |
-| 検索         | OpenSearch（Docker）   | AWS OpenSearch Service    |
-| フォーマット | CSV/TSV                | PDF, Excel 等は段階的追加 |
-| AI           | NoOp プレースホルダー  | Phase 5 で実装            |
+| 項目         | Phase 3a（本仕様書）                    | Phase 3b（別途）          |
+| ------------ | --------------------------------------- | ------------------------- |
+| スコープ     | 開発環境で E2E 動作                     | AWS 本番基盤              |
+| ストレージ   | S3CompatibleStorageAdapter（MinIO 接続）| 同アダプター（AWS S3 接続）|
+| キュー       | InProcessQueue（既存）                  | SQSQueueAdapter + Worker  |
+| 検索         | OpenSearch（Docker）                    | AWS OpenSearch Service    |
+| フォーマット | CSV/TSV                                 | PDF, Excel 等は段階的追加 |
+| AI           | NoOp プレースホルダー                   | Phase 5 で実装            |
 
 ## 2. 技術スタック（Phase 3a 追加分）
 
@@ -40,25 +40,34 @@
 [ブラウザ]
   │
   ├─ POST /api/v1/packages/:packageId/resources
-  │    → リソースレコード作成（storageKey 生成、ingestStatus='pending'）
-  │    ← { id, storageKey, ... }
+  │    → リソースレコード作成（ingestStatus='pending'）
+  │    ← { id, ... }
+  │
+  │  === Presigned URL フロー ===
   │
   ├─ POST /api/v1/resources/:id/upload-url
-  │    → prepareForUpload（メタデータ更新）+ Presigned PUT URL 発行
+  │    → prepareForUpload（urlType='upload' に更新）+ Presigned PUT URL 発行
   │    ← { upload_url }
+  │    ※ storageKey は `getStorageKey(packageId, resourceId)` で都度算出
   │
-  ├─ PUT upload_url  ──→  [MinIO]
+  ├─ PUT upload_url  ──→  [S3 / MinIO]
   │    → ファイル直接アップロード
   │
   ├─ POST /api/v1/resources/:id/upload-complete
-  │    → InProcessQueue にジョブ投入
-  │    ← { ingest_status: 'queued' }
+  │    → size/hash 更新 → InProcessQueue にジョブ投入
+  │    ← { ingest_status: 'queued', job_id }
+  │
+  │  === または サーバーサイドアップロード ===
+  │
+  ├─ POST /api/v1/resources/:id/upload  (multipart)
+  │    → prepareForUpload + Storage 書き込み + size/hash 更新 + キュー投入
+  │    ← { ingest_status: 'queued', job_id }
   │
   │  ┌─────── InProcessQueue ───────┐
   │  │ processResource(resourceId)  │
   │  │  1. Analyze  (format 判定)   │
   │  │  2. Extract  (CSV パース)    │
-  │  │  3. Preview  (JSON → MinIO)  │
+  │  │  3. Preview  (JSON → Storage)│
   │  │  4. AI       (NoOp)          │
   │  │  5. Index    (OpenSearch)    │
   │  └─────────────────────────────┘
@@ -161,20 +170,24 @@ export class OpenSearchAdapter implements SearchAdapter {
 
 ### 5.1 StorageAdapter 拡張
 
-`adapter.ts` に追加:
+`adapter.ts` に `getSignedUploadUrl` を追加（実装済み）:
 
 ```typescript
 export interface StorageAdapter {
-  // ... 既存メソッド ...
-  getSignedUploadUrl(key: string, contentType: string, expiresIn?: number): Promise<string>
+  upload(key: string, body: Buffer | Readable, meta?: ObjectMeta): Promise<void>
+  download(key: string): Promise<Readable>
+  delete(key: string): Promise<void>
+  getSignedUrl(key: string, expiresIn?: number): Promise<string>
+  getSignedUploadUrl(key: string, contentType: string, expiresIn?: number, meta?: ObjectMeta): Promise<string>
 }
 ```
 
-| 実装                | 方式                           |
-| ------------------- | ------------------------------ |
-| MinIOStorageAdapter | `presignedPutObject()`         |
-| LocalStorageAdapter | `local://{key}` センチネル URL |
-| S3StorageAdapter    | スタブ維持（Phase 3b）         |
+| 実装                        | 方式                                                       |
+| --------------------------- | ---------------------------------------------------------- |
+| S3CompatibleStorageAdapter  | `@aws-sdk/s3-request-presigner` の `getSignedUrl(PutObjectCommand)` |
+| LocalStorageAdapter         | `local://{key}` センチネル URL                             |
+
+※ 旧 `MinIOStorageAdapter`（minio パッケージ）と `S3StorageAdapter` は `S3CompatibleStorageAdapter`（`@aws-sdk/client-s3` ベース）に統合済み。`STORAGE_TYPE` は `'s3' | 'local'` の 2 値。`S3_ENDPOINT` の有無で MinIO / AWS S3 を自動判別。
 
 ### 5.2 API エンドポイント
 
@@ -192,14 +205,29 @@ resources/{package_id}/{resource_id}
 previews/{resource_id}.json
 ```
 
-### 5.4 ResourceService 拡張
+### 5.4 ResourceService 拡張（実装済み）
 
 ```typescript
 class ResourceService {
   // ... 既存メソッド ...
-  async prepareForUpload(id, input): Promise<Resource> // storageKey 割当 + ingestStatus リセット
-  async updateIngestStatus(id, status, error?): Promise<void>
-  async updateAfterUpload(id, { size, hash }): Promise<void>
+
+  /** urlType='upload' に設定し、ingestStatus をリセット。format はファイル名拡張子から推定 */
+  async prepareForUpload(
+    id: string,
+    input: { filename: string; contentType: string; format?: string },
+    existing?: Resource
+  ): Promise<Resource>
+
+  /** ingestStatus を更新（error 時は ingestError も設定） */
+  async updateIngestStatus(id: string, status: IngestStatus, error?: string): Promise<Resource>
+
+  /** アップロード完了後の size / hash メタデータ更新 */
+  async updateAfterUpload(id: string, input: { size?: number; hash?: string }): Promise<Resource>
+}
+
+/** storageKey は DB カラムではなく都度算出 */
+function getStorageKey(packageId: string, resourceId: string): string {
+  return `resources/${packageId}/${resourceId}`
 }
 ```
 
@@ -248,7 +276,7 @@ interface PipelineContext {
 | Step | 名前    | 入力               | 出力                         | 重量     |
 | ---- | ------- | ------------------ | ---------------------------- | -------- |
 | 1    | Analyze | resourceId         | format, processingPlan       | 軽量     |
-| 2    | Extract | storageKey, format | headers, rows, encoding      | 中〜重量 |
+| 2    | Extract | packageId, resourceId, format | headers, rows, encoding      | 中〜重量 |
 | 3    | Preview | headers, rows      | previewKey（Storage に保存） | 中量     |
 | 4    | AI      | PreviewOutput      | aiSchema, piiCheck（null）   | NoOp     |
 | 5    | Index   | 全データ           | SearchAdapter + DB 更新      | 軽量     |
@@ -355,28 +383,30 @@ await adapters.queue.process<{ resourceId: string }>('ingest', async (job) => {
 
 ## 10. 実装順序
 
-### Step 1: 実装仕様書
+### Step 1: 実装仕様書 ✅
 
 本ドキュメント
 
-### Step 2: Docker Compose + OpenSearchAdapter
+### Step 2: Docker Compose + OpenSearchAdapter ✅
 
-1. `docker/compose.yml` に OpenSearch 3.x 追加
-2. `packages/adapters/search/src/opensearch.ts` 実装
-3. `packages/api/src/adapters.ts` — `createAdapters` を async 化
-4. `packages/api/src/app.ts` — await 対応
-5. `.env.example` 更新
-6. テスト
-7. CLAUDE.md の OpenSearch バージョン更新（2.x → 3.x）
+1. ~~`docker/compose.yml` に OpenSearch 3.x + Dashboards 追加（profiles: search）~~
+2. ~~`packages/adapters/search/src/opensearch.ts` 実装（kuromoji + nested resources）~~
+3. ~~`packages/api/src/adapters.ts` — `createAdapters` を async 化~~
+4. ~~`packages/api/src/app.ts` — await 対応~~
+5. ~~`.env.example` 更新~~
+6. ~~テスト~~
+7. ~~CLAUDE.md の OpenSearch バージョン更新（2.x → 3.x）~~
 
-### Step 3: ファイルアップロード API
+### Step 3: ファイルアップロード API ✅
 
-1. `packages/adapters/storage/src/adapter.ts` — `getSignedUploadUrl` 追加
-2. 各 StorageAdapter 実装更新
-3. `packages/shared/src/adapter-types.ts` — `IngestStatus` 型追加
-4. `packages/api/src/services/resource-service.ts` — メソッド追加
-5. `packages/api/src/routes/resources.ts` — エンドポイント追加
-6. テスト
+1. ~~StorageAdapter 統合: `minio.ts` + `s3.ts` → `S3CompatibleStorageAdapter`（`@aws-sdk/client-s3` ベース）~~
+2. ~~`adapter.ts` に `getSignedUploadUrl` 追加、`LocalStorageAdapter` にセンチネル URL 実装~~
+3. ~~`STORAGE_TYPE` 簡素化: `'s3' | 'minio' | 'local'` → `'s3' | 'local'`~~
+4. ~~`packages/shared/src/adapter-types.ts` — `IngestStatus` 型追加~~
+5. ~~`packages/shared/src/validators/resource.ts` — `uploadUrlSchema`, `uploadCompleteSchema` 追加~~
+6. ~~`resource-service.ts` — `prepareForUpload`, `updateIngestStatus`, `updateAfterUpload`, `getStorageKey` 追加~~
+7. ~~`resources.ts` — 4 エンドポイント追加（upload-url, upload, upload-complete, ingest-status, formats）~~
+8. ~~テスト: ユニット 12 件、バリデーション 15 件、統合 17 件~~
 
 ### Step 4: Ingest パイプライン
 
@@ -403,11 +433,14 @@ await adapters.queue.process<{ resourceId: string }>('ingest', async (job) => {
 
 ## 11. 完了基準
 
-- [ ] `docker compose --profile search up` で OpenSearch 3.x 起動
-- [ ] `SEARCH_TYPE=opensearch pnpm dev` でアプリ起動
-- [ ] CSV ファイルアップロード → Ingest 完了 → プレビュー表示（E2E）
-- [ ] OpenSearch 経由で検索結果が返る
-- [ ] PostgreSQL フォールバック検索も引き続き動作
+- [x] `docker compose --profile search up` で OpenSearch 3.x 起動（Step 2）
+- [x] `SEARCH_TYPE=opensearch pnpm dev` でアプリ起動（Step 2）
+- [x] OpenSearch 経由で検索結果が返る（Step 2）
+- [x] PostgreSQL フォールバック検索も引き続き動作（Step 2）
+- [x] ファイルアップロード API 4 エンドポイント動作（Step 3）
+- [x] S3CompatibleStorageAdapter でMinIO / AWS S3 統合（Step 3）
+- [ ] CSV ファイルアップロード → Ingest 完了 → プレビュー表示（Step 4-5）
+- [ ] フロントエンドにアップロード UI + Ingest ステータス表示（Step 6）
 - [ ] `pnpm build` 成功
 - [ ] `pnpm typecheck` 成功
 - [ ] `pnpm test` 全テスト合格
