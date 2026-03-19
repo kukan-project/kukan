@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Building2, FileText, FolderOpen, Tag } from 'lucide-react'
 import { Badge, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
@@ -32,9 +31,8 @@ function parseGroups(groups?: string): { name: string; title: string }[] {
 
 export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
   const t = useTranslations('dataset')
-  const router = useRouter()
   return (
-    <div onClick={() => router.push(`/dataset/${pkg.name}`)} className="cursor-pointer">
+    <Link href={`/dataset/${pkg.name}`} className="block">
       <Card className="transition-colors hover:bg-accent/50">
         <CardHeader>
           <div className="flex items-start justify-between gap-2">
@@ -75,9 +73,7 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
         </CardHeader>
         {(pkg.notes || (pkg.matchedResources && pkg.matchedResources.length > 0)) && (
           <CardContent className="space-y-3">
-            {pkg.notes && (
-              <p className="line-clamp-2 text-sm text-muted-foreground">{pkg.notes}</p>
-            )}
+            {pkg.notes && <p className="line-clamp-2 text-sm text-muted-foreground">{pkg.notes}</p>}
             {pkg.matchedResources && pkg.matchedResources.length > 0 && (
               <div className="border-l-2 border-muted-foreground/20 pl-3">
                 <p className="mb-1.5 flex items-center gap-1 text-xs font-medium text-muted-foreground">
@@ -116,6 +112,6 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
           </CardContent>
         )}
       </Card>
-    </div>
+    </Link>
   )
 }
