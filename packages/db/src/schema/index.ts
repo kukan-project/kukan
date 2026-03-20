@@ -17,6 +17,7 @@ export * from './api-token'
 // Datasets
 export * from './package'
 export * from './resource'
+export * from './resource-pipeline'
 
 // Tags
 export * from './tag'

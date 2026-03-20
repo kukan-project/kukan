@@ -38,7 +38,12 @@ interface StorageAdapter {
   download(key: string): Promise<Readable>
   delete(key: string): Promise<void>
   getSignedUrl(key: string, expiresIn?: number): Promise<string>
-  getSignedUploadUrl(key: string, contentType: string, expiresIn?: number, meta?: ObjectMeta): Promise<string>
+  getSignedUploadUrl(
+    key: string,
+    contentType: string,
+    expiresIn?: number,
+    meta?: ObjectMeta
+  ): Promise<string>
 }
 
 // packages/adapters/search/src/adapter.ts (@kukan/search-adapter)

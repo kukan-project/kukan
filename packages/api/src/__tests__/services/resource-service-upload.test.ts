@@ -29,14 +29,12 @@ describe('ResourceService upload methods', () => {
   })
 
   describe('prepareForUpload', () => {
-    it('should reset ingest state and set urlType to upload', async () => {
+    it('should clear upload metadata and set urlType to upload', async () => {
       const existing = createResourceFixture({
         url: 'https://example.com/old.csv',
         urlType: null,
         size: 1024,
         hash: 'abc',
-        ingestStatus: 'complete',
-        ingestError: null,
       })
       const updated = {
         ...existing,
@@ -44,8 +42,6 @@ describe('ResourceService upload methods', () => {
         urlType: 'upload',
         format: 'CSV',
         mimetype: 'text/csv',
-        ingestStatus: 'pending',
-        ingestError: null,
         size: null,
         hash: null,
       }
@@ -59,7 +55,6 @@ describe('ResourceService upload methods', () => {
         existing as Awaited<ReturnType<ResourceService['getById']>>
       )
       expect(result.urlType).toBe('upload')
-      expect(result.ingestStatus).toBe('pending')
       expect(result.size).toBeNull()
       expect(result.hash).toBeNull()
     })
@@ -94,7 +89,7 @@ describe('ResourceService upload methods', () => {
 
     it('should call getById when existing is not provided', async () => {
       const existing = createResourceFixture()
-      const updated = { ...existing, urlType: 'upload', ingestStatus: 'pending' }
+      const updated = { ...existing, urlType: 'upload' }
 
       mock.addResult([existing]) // getById
       mock.addResult([updated]) // update returning
@@ -104,34 +99,6 @@ describe('ResourceService upload methods', () => {
         contentType: 'text/csv',
       })
       expect(result.urlType).toBe('upload')
-    })
-  })
-
-  describe('updateIngestStatus', () => {
-    it('should update status to queued', async () => {
-      const res = createResourceFixture({ ingestStatus: 'pending' })
-      const updated = { ...res, ingestStatus: 'queued' }
-      mock.addResult([updated])
-
-      const result = await service.updateIngestStatus(res.id as string, 'queued')
-      expect(result.ingestStatus).toBe('queued')
-    })
-
-    it('should set error message on error status', async () => {
-      const res = createResourceFixture({ ingestStatus: 'processing' })
-      const updated = { ...res, ingestStatus: 'error', ingestError: 'Parse failed' }
-      mock.addResult([updated])
-
-      const result = await service.updateIngestStatus(res.id as string, 'error', 'Parse failed')
-      expect(result.ingestStatus).toBe('error')
-      expect(result.ingestError).toBe('Parse failed')
-    })
-
-    it('should throw NotFoundError for non-existent resource', async () => {
-      mock.addResult([]) // empty result
-      await expect(service.updateIngestStatus('nonexistent', 'queued')).rejects.toThrow(
-        'Resource not found'
-      )
     })
   })
 

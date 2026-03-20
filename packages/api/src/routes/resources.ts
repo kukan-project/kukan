@@ -6,6 +6,7 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { ResourceService, getStorageKey } from '../services/resource-service'
+import { ResourcePipelineService } from '../services/resource-pipeline-service'
 import { PreviewService } from '../services/preview-service'
 import { PackageService } from '../services/package-service'
 import {
@@ -21,16 +22,11 @@ import type { Context } from 'hono'
 
 export const resourcesRouter = new Hono<{ Variables: AppContext }>()
 
-/** Mark resource as queued and enqueue an ingest job */
-async function enqueueIngest(
-  c: Context<{ Variables: AppContext }>,
-  resourceService: ResourceService,
-  resourceId: string
-) {
-  await resourceService.updateIngestStatus(resourceId, 'queued')
-  const queue = c.get('queue')
-  const jobId = await queue.enqueue('ingest', { resourceId })
-  return { ingest_status: 'queued' as const, job_id: jobId }
+/** Create pipeline record and enqueue processing job */
+async function enqueuePipeline(c: Context<{ Variables: AppContext }>, resourceId: string) {
+  const pipelineService = new ResourcePipelineService(c.get('db'), c.get('queue'))
+  const jobId = await pipelineService.enqueue(resourceId)
+  return { pipeline_status: 'queued' as const, job_id: jobId }
 }
 
 /** Verify resource ownership and check org editor role */
@@ -101,16 +97,27 @@ resourcesRouter.get('/:id/download-url', async (c) => {
   throw new ValidationError('Resource has no downloadable file')
 })
 
-// GET /api/v1/resources/:id/ingest-status - Check ingest progress (public)
-resourcesRouter.get('/:id/ingest-status', async (c) => {
+// GET /api/v1/resources/:id/pipeline-status - Check pipeline progress (public)
+resourcesRouter.get('/:id/pipeline-status', async (c) => {
   const id = c.req.param('id')
-  const service = new ResourceService(c.get('db'))
-  const res = await service.getById(id)
+  const pipelineService = new ResourcePipelineService(c.get('db'))
+  const status = await pipelineService.getStatus(id)
+
+  if (!status) {
+    return c.json({ id, pipeline_status: null, steps: [] })
+  }
 
   return c.json({
-    id: res.id,
-    ingest_status: res.ingestStatus,
-    ingest_error: res.ingestError,
+    id,
+    pipeline_status: status.status,
+    error: status.error,
+    steps: status.steps.map((s) => ({
+      step_name: s.stepName,
+      status: s.status,
+      error: s.error,
+      started_at: s.startedAt,
+      completed_at: s.completedAt,
+    })),
   })
 })
 
@@ -178,10 +185,10 @@ resourcesRouter.post('/:id/upload', async (c) => {
 
   await resourceService.updateAfterUpload(id, { size: buffer.length })
 
-  return c.json(await enqueueIngest(c, resourceService, id), 200)
+  return c.json(await enqueuePipeline(c, id), 200)
 })
 
-// POST /api/v1/resources/:id/upload-complete - Notify upload done, enqueue ingest
+// POST /api/v1/resources/:id/upload-complete - Notify upload done, enqueue pipeline
 resourcesRouter.post(
   '/:id/upload-complete',
   zValidator('json', uploadCompleteSchema),
@@ -204,7 +211,7 @@ resourcesRouter.post(
       await resourceService.updateAfterUpload(id, input)
     }
 
-    return c.json(await enqueueIngest(c, resourceService, id), 200)
+    return c.json(await enqueuePipeline(c, id), 200)
   }
 )
 

@@ -14,8 +14,6 @@ export interface ObjectMeta {
   [key: string]: unknown
 }
 
-export type IngestStatus = 'pending' | 'queued' | 'processing' | 'complete' | 'error'
-
 // ============================================================
 // Search Adapter Types
 // ============================================================
@@ -105,6 +103,14 @@ export interface JobStatus {
   status: JobState
   error?: string
 }
+
+// ============================================================
+// Pipeline Types
+// ============================================================
+
+export type PipelineStatus = 'pending' | 'queued' | 'processing' | 'complete' | 'error'
+
+export type PipelineStepStatus = 'pending' | 'running' | 'complete' | 'error' | 'skipped'
 
 // ============================================================
 // AI Adapter Types

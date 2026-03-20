@@ -7,7 +7,7 @@ import { eq, and, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, packageTable } from '@kukan/db'
 import { NotFoundError } from '@kukan/shared'
-import type { CreateResourceInput, UpdateResourceInput, IngestStatus } from '@kukan/shared'
+import type { CreateResourceInput, UpdateResourceInput } from '@kukan/shared'
 
 export class ResourceService {
   constructor(private db: Database) {}
@@ -168,7 +168,7 @@ export class ResourceService {
 
   /**
    * Prepare a resource for file upload (new or replacement).
-   * Resets ingestStatus to 'pending' and clears previous upload metadata.
+   * Clears previous upload metadata (size, hash).
    */
   async prepareForUpload(
     id: string,
@@ -186,8 +186,6 @@ export class ResourceService {
         name: existing.name || input.filename,
         format,
         mimetype: input.contentType,
-        ingestStatus: 'pending',
-        ingestError: null,
         size: null,
         hash: null,
         updated: sql`NOW()`,
@@ -196,27 +194,6 @@ export class ResourceService {
       .returning()
 
     return updated!
-  }
-
-  /**
-   * Update the ingest status of a resource.
-   */
-  async updateIngestStatus(id: string, status: IngestStatus, error?: string) {
-    const [updated] = await this.db
-      .update(resource)
-      .set({
-        ingestStatus: status,
-        ingestError: error ?? null,
-        updated: sql`NOW()`,
-      })
-      .where(and(eq(resource.id, id), eq(resource.state, 'active')))
-      .returning()
-
-    if (!updated) {
-      throw new NotFoundError('Resource', id)
-    }
-
-    return updated
   }
 
   /**

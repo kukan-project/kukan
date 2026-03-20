@@ -146,7 +146,6 @@ describe('Resources API Routes', () => {
       const body = await getRes.json()
       expect(body.urlType).toBe('upload')
       expect(body.url).toBe('data.csv')
-      expect(body.ingestStatus).toBe('pending')
     })
 
     it('should derive format from filename', async () => {
@@ -208,7 +207,7 @@ describe('Resources API Routes', () => {
       expect(res.status).toBe(200)
 
       const body = await res.json()
-      expect(body.ingest_status).toBe('queued')
+      expect(body.pipeline_status).toBe('queued')
       expect(body.job_id).toBeDefined()
     })
 
@@ -263,7 +262,7 @@ describe('Resources API Routes', () => {
   })
 
   describe('POST /api/v1/resources/:id/upload-complete', () => {
-    it('should enqueue ingest and return queued status', async () => {
+    it('should enqueue pipeline and return queued status', async () => {
       const pkg = await createPackage('complete-pkg')
       const resource = await createResource(pkg.id)
 
@@ -282,7 +281,7 @@ describe('Resources API Routes', () => {
       expect(res.status).toBe(200)
 
       const body = await res.json()
-      expect(body.ingest_status).toBe('queued')
+      expect(body.pipeline_status).toBe('queued')
       expect(body.job_id).toBeDefined()
     })
 
@@ -335,25 +334,41 @@ describe('Resources API Routes', () => {
     })
   })
 
-  describe('GET /api/v1/resources/:id/ingest-status', () => {
-    it('should return ingest status', async () => {
-      const pkg = await createPackage('ingest-status-pkg')
+  describe('GET /api/v1/resources/:id/pipeline-status', () => {
+    it('should return null status when no pipeline exists', async () => {
+      const pkg = await createPackage('pipeline-status-pkg')
       const resource = await createResource(pkg.id)
 
-      const res = await app.request(`/api/v1/resources/${resource.id}/ingest-status`)
+      const res = await app.request(`/api/v1/resources/${resource.id}/pipeline-status`)
       expect(res.status).toBe(200)
 
       const body = await res.json()
       expect(body.id).toBe(resource.id)
-      expect(body.ingest_status).toBe('pending')
-      expect(body.ingest_error).toBeNull()
+      expect(body.pipeline_status).toBeNull()
+      expect(body.steps).toEqual([])
     })
 
-    it('should return 404 for non-existent', async () => {
-      const res = await app.request(
-        '/api/v1/resources/550e8400-e29b-41d4-a716-446655440000/ingest-status'
-      )
-      expect(res.status).toBe(404)
+    it('should return pipeline status after upload', async () => {
+      const pkg = await createPackage('pipeline-status-upload-pkg')
+      const resource = await createResource(pkg.id)
+
+      // Trigger pipeline via upload flow
+      await app.request(`/api/v1/resources/${resource.id}/upload-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: 'data.csv', content_type: 'text/csv' }),
+      })
+      await app.request(`/api/v1/resources/${resource.id}/upload-complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+
+      const res = await app.request(`/api/v1/resources/${resource.id}/pipeline-status`)
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.pipeline_status).toBe('queued')
     })
   })
 

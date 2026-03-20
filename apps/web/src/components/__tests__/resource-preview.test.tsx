@@ -25,23 +25,17 @@ describe('ResourcePreview', () => {
   describe('format routing', () => {
     it('should show not-available for unsupported format', () => {
       render(<ResourcePreview resourceId="r1" format="XLSX" />)
-      expect(
-        screen.getByText('Preview is not available for this format')
-      ).toBeInTheDocument()
+      expect(screen.getByText('Preview is not available for this format')).toBeInTheDocument()
     })
 
     it('should show not-available when format is null', () => {
       render(<ResourcePreview resourceId="r1" format={null} />)
-      expect(
-        screen.getByText('Preview is not available for this format')
-      ).toBeInTheDocument()
+      expect(screen.getByText('Preview is not available for this format')).toBeInTheDocument()
     })
 
     it('should show not-available when format is undefined', () => {
       render(<ResourcePreview resourceId="r1" />)
-      expect(
-        screen.getByText('Preview is not available for this format')
-      ).toBeInTheDocument()
+      expect(screen.getByText('Preview is not available for this format')).toBeInTheDocument()
     })
   })
 
@@ -127,7 +121,14 @@ describe('ResourcePreview', () => {
 
     it('should show empty state when no data', async () => {
       mockClientFetch.mockResolvedValue(
-        jsonResponse({ headers: [], rows: [], totalRows: 0, truncated: false, format: 'CSV', encoding: 'UTF8' })
+        jsonResponse({
+          headers: [],
+          rows: [],
+          totalRows: 0,
+          truncated: false,
+          format: 'CSV',
+          encoding: 'UTF8',
+        })
       )
       render(<ResourcePreview resourceId="r1" format="CSV" />)
 
@@ -178,9 +179,7 @@ describe('ResourcePreview', () => {
       render(<ResourcePreview resourceId="abc-123" format="PDF" />)
 
       await waitFor(() => {
-        expect(mockClientFetch).toHaveBeenCalledWith(
-          '/api/v1/resources/abc-123/download-url'
-        )
+        expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/resources/abc-123/download-url')
       })
     })
 
