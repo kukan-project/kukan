@@ -115,11 +115,11 @@ describe('buildPipelineContext', () => {
     expect(res).toBeNull()
   })
 
-  it('updateResourceHash should update hash and lastModified', async () => {
+  it('updateResourceHashAndSize should update hash, size, and lastModified', async () => {
     const { db } = createMockDb()
 
     const ctx = buildPipelineContext(db, mockStorage, mockSearch)
-    await ctx.updateResourceHash('res-1', 'sha256:new')
+    await ctx.updateResourceHashAndSize('res-1', { hash: 'sha256:new', size: 1024 })
 
     expect(db.update).toHaveBeenCalled()
     expect(db.set).toHaveBeenCalled()

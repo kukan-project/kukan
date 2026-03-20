@@ -63,10 +63,13 @@ export function buildPipelineContext(
       return res ?? null
     },
 
-    async updateResourceHash(id: string, hash: string): Promise<void> {
+    async updateResourceHashAndSize(
+      id: string,
+      meta: { hash: string; size: number }
+    ): Promise<void> {
       await db
         .update(resource)
-        .set({ hash, lastModified: sql`NOW()` })
+        .set({ hash: meta.hash, size: meta.size, lastModified: sql`NOW()` })
         .where(eq(resource.id, id))
     },
 

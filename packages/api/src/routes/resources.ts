@@ -5,9 +5,8 @@
 
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
-import { ResourceService, getStorageKey } from '../services/resource-service'
+import { ResourceService } from '../services/resource-service'
 import { ResourcePipelineService } from '@kukan/pipeline'
-import { PreviewService } from '../services/preview-service'
 import { PackageService } from '../services/package-service'
 import {
   updateResourceSchema,
@@ -15,8 +14,12 @@ import {
   uploadCompleteSchema,
   ForbiddenError,
   ValidationError,
+  getStorageKey,
+  getMimeType,
 } from '@kukan/shared'
+import { bufferToUtf8, streamToBuffer } from '@kukan/shared/node-utils'
 import { checkOrgRole } from '../auth/permissions'
+import { Readable } from 'stream'
 import type { AppContext } from '../context'
 import type { Context } from 'hono'
 
@@ -59,22 +62,26 @@ resourcesRouter.get('/:id', async (c) => {
   return c.json(res)
 })
 
-// GET /api/v1/resources/:id/preview - Get CSV preview data
-resourcesRouter.get('/:id/preview', async (c) => {
+// GET /api/v1/resources/:id/raw - Get raw text content of a resource
+resourcesRouter.get('/:id/raw', async (c) => {
   const id = c.req.param('id')
   const service = new ResourceService(c.get('db'))
   const resource = await service.getById(id)
 
-  const previewService = new PreviewService(c.get('storage'))
-  const storageKey =
-    resource.urlType === 'upload' ? getStorageKey(resource.packageId, resource.id) : undefined
-  const preview = await previewService.getPreview({
-    format: resource.format,
-    mimetype: resource.mimetype,
-    storageKey,
-    url: resource.url,
-  })
-  return c.json(preview)
+  const pipelineService = new ResourcePipelineService(c.get('db'))
+  const pipelineStatus = await pipelineService.getStatus(id)
+  const encoding =
+    ((pipelineStatus?.metadata as Record<string, unknown> | null)?.encoding as
+      | string
+      | undefined) ?? 'UNKNOWN'
+
+  const storage = c.get('storage')
+  const storageKey = getStorageKey(resource.packageId, resource.id)
+  const stream = await storage.download(storageKey)
+  const buf = await streamToBuffer(stream, 5 * 1024 * 1024)
+  const text = bufferToUtf8(buf, encoding)
+
+  return c.json({ text, encoding })
 })
 
 // GET /api/v1/resources/:id/download-url - Get a temporary download URL for the resource file
@@ -83,18 +90,44 @@ resourcesRouter.get('/:id/download-url', async (c) => {
   const service = new ResourceService(c.get('db'))
   const resource = await service.getById(id)
 
-  if (resource.urlType === 'upload') {
-    const storage = c.get('storage')
+  const inline = c.req.query('inline') === 'true'
+  const storage = c.get('storage')
+  const storageKey = getStorageKey(resource.packageId, resource.id)
+  const contentType = resource.format ? getMimeType(resource.format) : undefined
+  const url = await storage.getSignedUrl(
+    storageKey,
+    inline ? { inline: true, contentType } : undefined
+  )
+  return c.json({ url })
+})
+
+// GET /api/v1/resources/:id/preview-url - Get presigned URL for preview (public)
+// CSV/TSV → Parquet preview file, PDF → original file (inline), others → null
+resourcesRouter.get('/:id/preview-url', async (c) => {
+  const id = c.req.param('id')
+  const service = new ResourceService(c.get('db'))
+  const resource = await service.getById(id)
+  const f = resource.format?.toLowerCase()
+  const storage = c.get('storage')
+
+  // PDF: return original file URL with inline disposition
+  if (f === 'pdf') {
     const storageKey = getStorageKey(resource.packageId, resource.id)
-    const url = await storage.getSignedUrl(storageKey)
+    const contentType = getMimeType('pdf')
+    const url = await storage.getSignedUrl(storageKey, { inline: true, contentType })
     return c.json({ url })
   }
 
-  if (resource.url) {
-    return c.json({ url: resource.url })
+  // CSV/TSV: return Parquet preview URL
+  const pipelineService = new ResourcePipelineService(c.get('db'))
+  const status = await pipelineService.getStatus(id)
+
+  if (!status?.previewKey) {
+    return c.json({ url: null })
   }
 
-  throw new ValidationError('Resource has no downloadable file')
+  const url = await storage.getSignedUrl(status.previewKey)
+  return c.json({ url })
 })
 
 // GET /api/v1/resources/:id/pipeline-status - Check pipeline progress (public)
@@ -177,13 +210,13 @@ resourcesRouter.post('/:id/upload', async (c) => {
 
   const storage = c.get('storage')
   const storageKey = getStorageKey(res.packageId, res.id)
-  const buffer = Buffer.from(await file.arrayBuffer())
-  await storage.upload(storageKey, buffer, {
+  const stream = Readable.fromWeb(file.stream() as Parameters<typeof Readable.fromWeb>[0])
+  await storage.upload(storageKey, stream, {
     contentType,
     originalFilename: file.name,
   })
 
-  await resourceService.updateAfterUpload(id, { size: buffer.length })
+  await resourceService.updateAfterUpload(id, { size: file.size })
 
   return c.json(await enqueuePipeline(c, id), 200)
 })
@@ -238,10 +271,16 @@ resourcesRouter.put('/:id', zValidator('json', updateResourceSchema), async (c) 
   const db = c.get('db')
   const id = c.req.param('id')
   const resourceService = new ResourceService(db)
-  await checkResourcePermission(db, user, resourceService, id)
+  const existing = await checkResourcePermission(db, user, resourceService, id)
 
   const input = c.req.valid('json')
   const res = await resourceService.update(id, input)
+
+  // Re-enqueue pipeline when external URL changes
+  if (input.url && input.url !== existing.url && existing.urlType !== 'upload') {
+    await enqueuePipeline(c, id)
+  }
+
   return c.json(res)
 })
 

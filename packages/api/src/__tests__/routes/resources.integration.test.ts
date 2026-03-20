@@ -373,7 +373,7 @@ describe('Resources API Routes', () => {
   })
 
   describe('GET /api/v1/resources/:id/download-url', () => {
-    it('should return external URL for non-upload resource', async () => {
+    it('should return Storage signed URL for non-upload resource', async () => {
       const pkg = await createPackage('dl-url-ext-pkg')
       const resource = await createResource(pkg.id, {
         url: 'https://example.com/data.csv',
@@ -383,7 +383,9 @@ describe('Resources API Routes', () => {
       expect(res.status).toBe(200)
 
       const body = await res.json()
-      expect(body.url).toBe('https://example.com/data.csv')
+      // All resources now use Storage signed URLs (no URL passthrough)
+      expect(body.url).toBeDefined()
+      expect(typeof body.url).toBe('string')
     })
 
     it('should return presigned URL for upload resource', async () => {

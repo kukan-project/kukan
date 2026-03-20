@@ -8,6 +8,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { PackageService } from '../services/package-service'
 import { ResourceService } from '../services/resource-service'
+import { ResourcePipelineService } from '@kukan/pipeline'
 import {
   createPackageSchema,
   updatePackageSchema,
@@ -193,6 +194,13 @@ packagesRouter.post(
       ...input,
       package_id: pkg.id,
     })
+
+    // Enqueue pipeline for external URL resources
+    if (input.url && input.url_type !== 'upload') {
+      const pipelineService = new ResourcePipelineService(db, c.get('queue'))
+      await pipelineService.enqueue(resource.id)
+    }
+
     return c.json(resource, 201)
   }
 )

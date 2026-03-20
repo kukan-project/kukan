@@ -12,6 +12,7 @@ import {
   packageTag,
   organization,
   resource,
+  resourcePipeline,
   group,
   packageGroup,
   userOrgMembership,
@@ -195,7 +196,7 @@ export class PackageService {
         ...getTableColumns(packageTable),
         total: sql<number>`COUNT(*) OVER()::int`.as('total'),
         formats:
-          sql<string>`(SELECT COALESCE(string_agg(DISTINCT "resource"."format", ',' ORDER BY "resource"."format"), '') FROM "resource" WHERE "resource"."package_id" = "package"."id" AND "resource"."state" = 'active')`.as(
+          sql<string>`(SELECT COALESCE(string_agg(DISTINCT UPPER("resource"."format"), ',' ORDER BY UPPER("resource"."format")), '') FROM "resource" WHERE "resource"."package_id" = "package"."id" AND "resource"."state" = 'active')`.as(
             'formats'
           ),
         resourceCount:
@@ -551,8 +552,12 @@ export class PackageService {
 
     const [resources, tags, groups, org] = await Promise.all([
       this.db
-        .select()
+        .select({
+          ...getTableColumns(resource),
+          pipelineStatus: resourcePipeline.status,
+        })
         .from(resource)
+        .leftJoin(resourcePipeline, eq(resourcePipeline.resourceId, resource.id))
         .where(and(eq(resource.packageId, pkg.id), eq(resource.state, 'active')))
         .orderBy(resource.position),
       this.db

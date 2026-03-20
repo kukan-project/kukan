@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { ResourceService, getStorageKey } from '../../services/resource-service'
+import { ResourceService } from '../../services/resource-service'
+import { getStorageKey } from '@kukan/shared'
 import { createMockDb } from '../test-helpers/mock-db'
 import { createResourceFixture } from '../test-helpers/fixtures'
 

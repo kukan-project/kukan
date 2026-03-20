@@ -6,7 +6,7 @@
 import { eq, and, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, packageTable } from '@kukan/db'
-import { NotFoundError } from '@kukan/shared'
+import { NotFoundError, normalizeFormat, detectFormat } from '@kukan/shared'
 import type { CreateResourceInput, UpdateResourceInput } from '@kukan/shared'
 
 export class ResourceService {
@@ -106,7 +106,7 @@ export class ResourceService {
           urlType: input.url_type,
           name: input.name,
           description: input.description,
-          format: input.format,
+          format: input.format ? normalizeFormat(input.format) : undefined,
           mimetype: input.mimetype,
           size: input.size,
           hash: input.hash,
@@ -134,7 +134,7 @@ export class ResourceService {
         urlType: input.url_type,
         name: input.name,
         description: input.description,
-        format: input.format,
+        format: input.format ? normalizeFormat(input.format) : undefined,
         mimetype: input.mimetype,
         size: input.size,
         hash: input.hash,
@@ -176,7 +176,10 @@ export class ResourceService {
     existing?: Awaited<ReturnType<ResourceService['getById']>>
   ) {
     existing ??= await this.getById(id)
-    const format = input.format || deriveFormat(input.filename) || existing.format
+    const format =
+      (input.format ? normalizeFormat(input.format) : undefined) ||
+      detectFormat(input.filename) ||
+      existing.format
 
     const [updated] = await this.db
       .update(resource)
@@ -216,28 +219,4 @@ export class ResourceService {
 
     return updated
   }
-}
-
-/** Compute storage key from packageId and resourceId */
-export function getStorageKey(packageId: string, resourceId: string): string {
-  return `resources/${packageId}/${resourceId}`
-}
-
-/** Derive format string from filename extension */
-function deriveFormat(filename: string): string | undefined {
-  const dotIndex = filename.lastIndexOf('.')
-  if (dotIndex <= 0) return undefined
-  const ext = filename.slice(dotIndex + 1).toLowerCase()
-  const formatMap: Record<string, string> = {
-    csv: 'CSV',
-    tsv: 'TSV',
-    json: 'JSON',
-    xml: 'XML',
-    xlsx: 'XLSX',
-    xls: 'XLS',
-    pdf: 'PDF',
-    zip: 'ZIP',
-    geojson: 'GeoJSON',
-  }
-  return formatMap[ext] || ext.toUpperCase()
 }
