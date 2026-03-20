@@ -19,7 +19,7 @@
 | ストレージ   | S3CompatibleStorageAdapter（MinIO 接続）| 同アダプター（AWS S3 接続）|
 | キュー       | InProcessQueue（既存）                  | SQSQueueAdapter + Worker  |
 | 検索         | OpenSearch（Docker）                    | AWS OpenSearch Service    |
-| フォーマット | CSV/TSV                                 | PDF, Excel 等は段階的追加 |
+| フォーマット | CSV/TSV（プレビュー）、PDF（iframe 表示）| Excel 等は段階的追加      |
 | AI           | NoOp プレースホルダー                   | Phase 5 で実装            |
 
 ## 2. 技術スタック（Phase 3a 追加分）
@@ -197,6 +197,7 @@ export interface StorageAdapter {
 | POST     | `/api/v1/resources/:id/upload-complete` | org editor+ | アップロード完了通知 → キューイング          |
 | POST     | `/api/v1/resources/:id/upload`          | org editor+ | サーバーサイドアップロード（新規・差替共通） |
 | GET      | `/api/v1/resources/:id/ingest-status`   | public      | Ingest 状態取得                              |
+| GET      | `/api/v1/resources/:id/download-url`    | public      | ダウンロード URL 取得（presigned / 外部 URL） |
 
 ### 5.3 ストレージキー規則
 
@@ -405,8 +406,10 @@ await adapters.queue.process<{ resourceId: string }>('ingest', async (job) => {
 4. ~~`packages/shared/src/adapter-types.ts` — `IngestStatus` 型追加~~
 5. ~~`packages/shared/src/validators/resource.ts` — `uploadUrlSchema`, `uploadCompleteSchema` 追加~~
 6. ~~`resource-service.ts` — `prepareForUpload`, `updateIngestStatus`, `updateAfterUpload`, `getStorageKey` 追加~~
-7. ~~`resources.ts` — 4 エンドポイント追加（upload-url, upload, upload-complete, ingest-status, formats）~~
+7. ~~`resources.ts` — 5 エンドポイント追加（upload-url, upload, upload-complete, ingest-status, download-url, formats）~~
 8. ~~テスト: ユニット 12 件、バリデーション 15 件、統合 17 件~~
+9. ~~PDF プレビュー: `ResourcePreview` コンポーネント（CSV/TSV + PDF 対応）、`download-url` エンドポイント、`useFetch` フック~~
+10. ~~TSV フォーマット対応: `preview-service.ts` の `isCsvFormat()` に TSV 追加~~
 
 ### Step 4: Ingest パイプライン
 

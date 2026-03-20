@@ -17,7 +17,7 @@ v3設計では6つ以上のアダプター（Storage, Search, Cache, Queue, AI, 
 
 | 機能       | AWS        | 開発/オンプレ   | 環境差あり？             |
 | ---------- | ---------- | --------------- | ------------------------ |
-| ストレージ | S3         | MinIO / Local   | ✅ Yes                   |
+| ストレージ | S3互換     | S3互換 / Local  | ✅ Yes                   |
 | 全文検索   | OpenSearch | PG全文検索      | ✅ Yes                   |
 | AI推論     | Bedrock    | Ollama / OpenAI | ✅ Yes                   |
 | キュー     | SQS        | InProcess       | ✅ Yes                   |
@@ -38,6 +38,7 @@ interface StorageAdapter {
   download(key: string): Promise<Readable>
   delete(key: string): Promise<void>
   getSignedUrl(key: string, expiresIn?: number): Promise<string>
+  getSignedUploadUrl(key: string, contentType: string, expiresIn?: number, meta?: ObjectMeta): Promise<string>
 }
 
 // packages/adapters/search/src/adapter.ts (@kukan/search-adapter)
@@ -68,3 +69,14 @@ interface QueueAdapter {
 - 実装するアダプタークラスは最大8つ（4インターフェース × AWS/ローカル各1）
 - BullMQQueueAdapter は将来オプション（3つ目のQueue実装）
 - 新しいアダプターを追加する場合はADRで議論してから
+
+## 補足: StorageAdapter 統合（2026-03-19）
+
+旧 `MinIOStorageAdapter`（`minio` パッケージ）と `S3StorageAdapter` を
+`S3CompatibleStorageAdapter`（`@aws-sdk/client-s3` ベース）に統合。
+MinIO は S3 互換プロトコルのため、`S3_ENDPOINT` の有無で自動判別する:
+
+- `S3_ENDPOINT` あり → MinIO モード（`forcePathStyle: true`）
+- `S3_ENDPOINT` なし → AWS S3 モード（IAM ロール認証）
+
+`STORAGE_TYPE` は `'s3' | 'local'` の 2 値に簡素化。

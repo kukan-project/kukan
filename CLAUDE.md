@@ -23,7 +23,7 @@ CKANの後継として設計されたTypeScriptフルスタックのデータカ
 | DB             | PostgreSQL 16 / Aurora Serverless v2                  |
 | ORM            | Drizzle ORM（PostgreSQL ドライバ）                    |
 | 検索           | OpenSearch 3.x / PostgreSQL全文検索（フォールバック） |
-| ストレージ     | S3 / MinIO                                            |
+| ストレージ     | S3互換（AWS S3 / MinIO 統合アダプター）               |
 | キュー         | SQS（AWS）/ InProcess（開発・オンプレ）               |
 | キャッシュ     | lru-cache 11.x（インメモリ、全環境共通）              |
 | 認証           | Better Auth 1.x + OIDC プラグイン                     |
@@ -149,7 +149,7 @@ pnpm format        # Prettier フォーマット
 
 | アダプター     | AWS        | 開発/オンプレ          |
 | -------------- | ---------- | ---------------------- |
-| StorageAdapter | S3         | MinIO / ローカルFS     |
+| StorageAdapter | S3互換     | S3互換 / ローカルFS    |
 | SearchAdapter  | OpenSearch | PostgreSQL全文検索     |
 | AIAdapter      | Bedrock    | Ollama / OpenAI / NoOp |
 | QueueAdapter   | SQS        | InProcess              |
@@ -181,7 +181,7 @@ pnpm format        # Prettier フォーマット
 
 ## 現在のフェーズ
 
-**Phase 3: Ingest & ファイルストレージ**（実装仕様書: `docs/specs/phase3-ingestion.md` — 未作成）
+**Phase 3: Ingest & ファイルストレージ**（実装仕様書: `docs/specs/phase3-ingestion.md`）
 
 - Phase 1: Foundation ✅ 完了
 - Phase 2: フロントエンド ✅ 完了（実装仕様書: `docs/specs/phase2-frontend.md`）
