@@ -7,7 +7,7 @@ function createMockCtx() {
     storage: { download: vi.fn(), upload: vi.fn() },
     search: { index: vi.fn() },
     getResource: vi.fn(),
-    updateResourceHash: vi.fn(),
+    updateResourceHashAndSize: vi.fn(),
     getPackageForIndex: vi.fn(),
   } satisfies PipelineContext
 }

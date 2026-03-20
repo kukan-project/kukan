@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { parseBuffer, isCsvFormat } from '../parsers/csv-parser'
+import { parseBuffer } from '../parsers/csv-parser'
+import { isCsvFormat } from '@kukan/shared'
 import Encoding from 'encoding-japanese'
 
 describe('isCsvFormat', () => {

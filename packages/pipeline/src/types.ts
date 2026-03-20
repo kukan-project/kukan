@@ -40,8 +40,8 @@ export interface PipelineContext {
   }
   /** Get an active resource by ID */
   getResource(id: string): Promise<ResourceForPipeline | null>
-  /** Update resource hash and lastModified (without touching updated) */
-  updateResourceHash(id: string, hash: string): Promise<void>
+  /** Update resource hash, size, and lastModified (without touching updated) */
+  updateResourceHashAndSize(id: string, meta: { hash: string; size: number }): Promise<void>
   /** Get package with all its active resources for search indexing */
   getPackageForIndex(packageId: string): Promise<PackageForIndex | null>
 }

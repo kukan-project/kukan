@@ -1,55 +1,59 @@
 /**
  * KUKAN Pipeline — Extract Step
- * Parses CSV/TSV, generates Parquet preview, and stores it in Storage.
+ * Parses CSV/TSV from Storage via worker thread, generates Parquet, and stores it.
  * Non-supported formats return null (skip).
  */
 
-import { readFile } from 'fs/promises'
-import { parquetWriteBuffer } from 'hyparquet-writer'
-import { isCsvFormat, parseBuffer } from '../parsers/csv-parser'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { streamToBuffer } from '@kukan/shared/node-utils'
+import { getPreviewKey, isCsvFormat } from '@kukan/shared'
+import { runWorker } from '../run-worker.js'
 import type { PipelineContext } from '../types'
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const WORKER_PATH = path.join(__dirname, '..', 'workers', 'extract-worker.js')
 const ROW_GROUP_SIZE = 5_000
 
+export interface ExtractResult {
+  previewKey: string
+  encoding: string
+}
+
 /**
- * Extract structured data from a file, convert to Parquet, and store it.
- * Returns the storage key for the Parquet file, or null for unsupported formats.
+ * Extract structured data from Storage, convert to Parquet via worker thread, and store it.
+ * Returns the preview key and detected encoding, or null for unsupported/empty formats.
  */
 export async function extractStep(
   resourceId: string,
   packageId: string,
-  tmpFile: string,
+  storageKey: string,
   format: string | null,
   ctx: PipelineContext
-): Promise<string | null> {
+): Promise<ExtractResult | null> {
   if (!isCsvFormat(format)) {
     return null
   }
 
-  const buf = await readFile(tmpFile)
-  const extracted = parseBuffer(buf)
+  // I/O: download from Storage (main thread)
+  const stream = await ctx.storage.download(storageKey)
+  const csvBuffer = await streamToBuffer(stream)
 
-  if (extracted.headers.length === 0) {
+  // CPU: parse CSV + encode Parquet (worker thread — avoids blocking event loop)
+  const { parquetBuffer, encoding } = await runWorker<
+    { csvBuffer: Buffer; rowGroupSize: number },
+    { parquetBuffer: Buffer | null; encoding: string }
+  >(WORKER_PATH, { csvBuffer, rowGroupSize: ROW_GROUP_SIZE })
+
+  if (!parquetBuffer) {
     return null
   }
 
-  // Transpose rows to columnar data for Parquet
-  const columnData = extracted.headers.map((header, colIndex) => ({
-    name: header || `column_${colIndex}`,
-    data: extracted.rows.map((row) => row[colIndex] ?? ''),
-    type: 'STRING' as const,
-  }))
-
-  const parquetBuf = parquetWriteBuffer({
-    columnData,
-    rowGroupSize: ROW_GROUP_SIZE,
-    codec: 'UNCOMPRESSED',
-  })
-
-  const previewKey = `previews/${packageId}/${resourceId}.parquet`
-  await ctx.storage.upload(previewKey, Buffer.from(parquetBuf), {
+  // I/O: upload to Storage (main thread)
+  const previewKey = getPreviewKey(packageId, resourceId)
+  await ctx.storage.upload(previewKey, Buffer.from(parquetBuffer), {
     contentType: 'application/vnd.apache.parquet',
   })
 
-  return previewKey
+  return { previewKey, encoding }
 }

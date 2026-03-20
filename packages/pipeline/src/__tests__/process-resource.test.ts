@@ -39,7 +39,7 @@ function createMockCtx(): PipelineContext {
     storage: { download: vi.fn(), upload: vi.fn() },
     search: { index: vi.fn() },
     getResource: vi.fn(),
-    updateResourceHash: vi.fn(),
+    updateResourceHashAndSize: vi.fn(),
     getPackageForIndex: vi.fn(),
   }
 }
@@ -65,30 +65,34 @@ describe('processResource', () => {
   })
 
   it('should run all steps for CSV resource', async () => {
-    const mockFetchResult = { tmpFile: '/tmp/test', format: 'CSV', packageId: 'pkg-1' }
+    const mockFetchResult = {
+      storageKey: 'resources/pkg-1/res-1',
+      format: 'CSV',
+      packageId: 'pkg-1',
+    }
     vi.mocked(fetchStep).mockResolvedValue(mockFetchResult)
-    vi.mocked(extractStep).mockResolvedValue('previews/pkg-1/res-1.parquet')
+    vi.mocked(extractStep).mockResolvedValue({
+      previewKey: 'previews/pkg-1/res-1.parquet',
+      encoding: 'UTF8',
+    })
     vi.mocked(indexSearchStep).mockResolvedValue(undefined)
 
     await processResource('res-1', ctx, db)
 
-    expect(fetchStep).toHaveBeenCalledWith(
-      'res-1',
-      ctx,
-      expect.stringContaining('kukan-pipeline-res-1')
-    )
-    expect(extractStep).toHaveBeenCalledWith('res-1', 'pkg-1', '/tmp/test', 'CSV', ctx)
+    expect(fetchStep).toHaveBeenCalledWith('res-1', ctx)
+    expect(extractStep).toHaveBeenCalledWith('res-1', 'pkg-1', 'resources/pkg-1/res-1', 'CSV', ctx)
     expect(indexSearchStep).toHaveBeenCalledWith('res-1', ctx)
     expect(mockPipelineService.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
     expect(mockPipelineService.updatePreviewKey).toHaveBeenCalledWith(
       'pipeline-1',
-      'previews/pkg-1/res-1.parquet'
+      'previews/pkg-1/res-1.parquet',
+      { encoding: 'UTF8' }
     )
   })
 
   it('should skip extract when format is unsupported', async () => {
     vi.mocked(fetchStep).mockResolvedValue({
-      tmpFile: '/tmp/test',
+      storageKey: 'resources/pkg-1/res-1',
       format: 'PDF',
       packageId: 'pkg-1',
     })
@@ -105,7 +109,7 @@ describe('processResource', () => {
 
   it('should continue to index even if extract fails', async () => {
     vi.mocked(fetchStep).mockResolvedValue({
-      tmpFile: '/tmp/test',
+      storageKey: 'resources/pkg-1/res-1',
       format: 'CSV',
       packageId: 'pkg-1',
     })
@@ -134,7 +138,7 @@ describe('processResource', () => {
 
   it('should set error status if index fails', async () => {
     vi.mocked(fetchStep).mockResolvedValue({
-      tmpFile: '/tmp/test',
+      storageKey: 'resources/pkg-1/res-1',
       format: 'PDF',
       packageId: 'pkg-1',
     })

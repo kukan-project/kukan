@@ -3,7 +3,7 @@
  * Manages pipeline state in resource_pipeline / resource_pipeline_step tables
  */
 
-import { eq, sql } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import { ValidationError, PIPELINE_JOB_TYPE } from '@kukan/shared'
@@ -90,7 +90,9 @@ export class ResourcePipelineService {
         status: 'processing' satisfies PipelineStatus,
         updated: sql`NOW()`,
       })
-      .where(eq(resourcePipeline.resourceId, resourceId))
+      .where(
+        and(eq(resourcePipeline.resourceId, resourceId), eq(resourcePipeline.status, 'queued'))
+      )
       .returning()
 
     return pipeline
@@ -111,13 +113,18 @@ export class ResourcePipelineService {
   }
 
   /**
-   * Update preview key after preview data is stored.
+   * Update preview key and metadata after extract step.
    */
-  async updatePreviewKey(pipelineId: string, previewKey: string) {
+  async updatePreviewKey(
+    pipelineId: string,
+    previewKey: string,
+    metadata?: Record<string, unknown>
+  ) {
     await this.db
       .update(resourcePipeline)
       .set({
         previewKey,
+        ...(metadata && { metadata }),
         updated: sql`NOW()`,
       })
       .where(eq(resourcePipeline.id, pipelineId))

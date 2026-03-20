@@ -3,9 +3,6 @@
  * Runs Fetch → Extract → Index steps with error isolation
  */
 
-import { unlink } from 'fs/promises'
-import { tmpdir } from 'os'
-import { join } from 'path'
 import type { Database } from '@kukan/db'
 import { ResourcePipelineService } from './pipeline-service'
 import { fetchStep } from './steps/fetch'
@@ -30,20 +27,19 @@ export async function processResource(
   const pipeline = await pipelineService.startPipeline(resourceId)
 
   if (!pipeline) {
-    throw new Error(`No pipeline record found for resource ${resourceId}`)
+    // Pipeline is not in 'queued' state — already picked up by another job
+    return
   }
 
-  const tmpFile = join(tmpdir(), `kukan-pipeline-${resourceId}`)
-
   try {
-    // Step 1: Fetch — download file to tmp
+    // Step 1: Fetch — download external URL to Storage (uploads already there)
     const fetchResult = await runStep(pipelineService, pipeline.id, 'fetch', () =>
-      fetchStep(resourceId, ctx, tmpFile)
+      fetchStep(resourceId, ctx)
     )
 
     if (fetchResult) {
-      // Step 2: Extract — parse, generate preview, store to Storage (non-critical)
-      const previewKey = await runStep(
+      // Step 2: Extract — parse from Storage, generate Parquet preview (non-critical)
+      const extractResult = await runStep(
         pipelineService,
         pipeline.id,
         'extract',
@@ -51,15 +47,17 @@ export async function processResource(
           extractStep(
             resourceId,
             fetchResult.packageId,
-            fetchResult.tmpFile,
+            fetchResult.storageKey,
             fetchResult.format,
             ctx
           ),
         true // non-critical: catch errors, continue
       )
 
-      if (previewKey) {
-        await pipelineService.updatePreviewKey(pipeline.id, previewKey)
+      if (extractResult) {
+        await pipelineService.updatePreviewKey(pipeline.id, extractResult.previewKey, {
+          encoding: extractResult.encoding,
+        })
       }
     }
 
@@ -69,8 +67,6 @@ export async function processResource(
     await pipelineService.updateStatus(pipeline.id, 'complete')
   } catch (err) {
     await pipelineService.updateStatus(pipeline.id, 'error', (err as Error).message)
-  } finally {
-    await unlink(tmpFile).catch(() => {})
   }
 }
 

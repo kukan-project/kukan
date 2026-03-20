@@ -1,9 +1,32 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { writeFile, unlink, mkdtemp } from 'fs/promises'
-import { join } from 'path'
-import { tmpdir } from 'os'
-import { extractStep } from '../steps/extract'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { Readable } from 'stream'
+import { parseBuffer } from '../parsers/csv-parser'
+import { parquetWriteBuffer } from 'hyparquet-writer'
 import type { PipelineContext } from '../types'
+
+// Mock runWorker to run the conversion synchronously in-process (no actual worker thread)
+vi.mock('../run-worker.js', () => ({
+  runWorker: vi.fn(async (_path: string, input: { csvBuffer: Buffer; rowGroupSize: number }) => {
+    const buf = Buffer.from(input.csvBuffer)
+    const extracted = parseBuffer(buf)
+
+    if (extracted.headers.length === 0) {
+      return { parquetBuffer: null, encoding: extracted.encoding }
+    }
+
+    const columnData = extracted.headers.map((header, colIndex) => ({
+      name: header || `column_${colIndex}`,
+      data: extracted.rows.map((row) => row[colIndex] ?? ''),
+      type: 'STRING' as const,
+    }))
+
+    const parquetBuf = parquetWriteBuffer({ columnData, rowGroupSize: input.rowGroupSize })
+    return { parquetBuffer: Buffer.from(parquetBuf), encoding: extracted.encoding }
+  }),
+}))
+
+// Import after mock setup
+const { extractStep } = await import('../steps/extract')
 
 function createMockCtx() {
   return {
@@ -15,32 +38,32 @@ function createMockCtx() {
       index: vi.fn(),
     },
     getResource: vi.fn(),
-    updateResourceHash: vi.fn(),
+    updateResourceHashAndSize: vi.fn(),
     getPackageForIndex: vi.fn(),
   } satisfies PipelineContext
 }
 
 describe('extractStep', () => {
-  let tmpDir: string
   let ctx: ReturnType<typeof createMockCtx>
 
-  beforeEach(async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), 'kukan-test-'))
+  beforeEach(() => {
     ctx = createMockCtx()
   })
 
-  afterEach(async () => {
-    // cleanup handled by individual tests
-  })
+  function mockStorageDownload(content: string) {
+    ctx.storage.download.mockResolvedValue(Readable.from(Buffer.from(content)))
+  }
 
-  it('should extract CSV and upload Parquet to storage', async () => {
-    const tmpFile = join(tmpDir, 'test.csv')
-    await writeFile(tmpFile, 'name,age\nAlice,30\nBob,25\n')
+  it('should extract CSV from Storage and upload Parquet', async () => {
+    mockStorageDownload('name,age\nAlice,30\nBob,25\n')
 
-    const result = await extractStep('res-1', 'pkg-1', tmpFile, 'CSV', ctx)
-    await unlink(tmpFile)
+    const result = await extractStep('res-1', 'pkg-1', 'resources/pkg-1/res-1', 'CSV', ctx)
 
-    expect(result).toBe('previews/pkg-1/res-1.parquet')
+    expect(ctx.storage.download).toHaveBeenCalledWith('resources/pkg-1/res-1')
+    expect(result).toEqual({
+      previewKey: 'previews/pkg-1/res-1.parquet',
+      encoding: 'ASCII',
+    })
     expect(ctx.storage.upload).toHaveBeenCalledOnce()
 
     const [key, buf, meta] = ctx.storage.upload.mock.calls[0]
@@ -51,25 +74,20 @@ describe('extractStep', () => {
   })
 
   it('should handle title row skipping in Parquet output', async () => {
-    const csv = 'Title Row,,,\n\nname,age,city\nAlice,30,Tokyo\n'
-    const tmpFile = join(tmpDir, 'test.csv')
-    await writeFile(tmpFile, csv)
+    mockStorageDownload('Title Row,,,\n\nname,age,city\nAlice,30,Tokyo\n')
 
-    const result = await extractStep('res-2', 'pkg-1', tmpFile, 'CSV', ctx)
-    await unlink(tmpFile)
+    const result = await extractStep('res-2', 'pkg-1', 'resources/pkg-1/res-2', 'CSV', ctx)
 
-    expect(result).toBe('previews/pkg-1/res-2.parquet')
+    expect(result?.previewKey).toBe('previews/pkg-1/res-2.parquet')
     expect(ctx.storage.upload).toHaveBeenCalledOnce()
   })
 
   it('should extract TSV data', async () => {
-    const tmpFile = join(tmpDir, 'test.tsv')
-    await writeFile(tmpFile, 'name\tage\nAlice\t30\n')
+    mockStorageDownload('name\tage\nAlice\t30\n')
 
-    const result = await extractStep('res-3', 'pkg-1', tmpFile, 'TSV', ctx)
-    await unlink(tmpFile)
+    const result = await extractStep('res-3', 'pkg-1', 'resources/pkg-1/res-3', 'TSV', ctx)
 
-    expect(result).toBe('previews/pkg-1/res-3.parquet')
+    expect(result?.previewKey).toBe('previews/pkg-1/res-3.parquet')
     expect(ctx.storage.upload).toHaveBeenCalledOnce()
   })
 
@@ -78,35 +96,33 @@ describe('extractStep', () => {
     for (let i = 0; i < 300; i++) {
       lines.push(`row-${i},${i}`)
     }
-    const tmpFile = join(tmpDir, 'big.csv')
-    await writeFile(tmpFile, lines.join('\n') + '\n')
+    mockStorageDownload(lines.join('\n') + '\n')
 
-    const result = await extractStep('res-4', 'pkg-1', tmpFile, 'CSV', ctx)
-    await unlink(tmpFile)
+    const result = await extractStep('res-4', 'pkg-1', 'resources/pkg-1/res-4', 'CSV', ctx)
 
     // Parquet stores all rows (no 200-row limit)
-    expect(result).toBe('previews/pkg-1/res-4.parquet')
+    expect(result?.previewKey).toBe('previews/pkg-1/res-4.parquet')
     expect(ctx.storage.upload).toHaveBeenCalledOnce()
   })
 
   it('should return null for unsupported formats', async () => {
-    const result = await extractStep('res-5', 'pkg-1', '/dev/null', 'PDF', ctx)
+    const result = await extractStep('res-5', 'pkg-1', 'resources/pkg-1/res-5', 'PDF', ctx)
     expect(result).toBeNull()
     expect(ctx.storage.upload).not.toHaveBeenCalled()
+    expect(ctx.storage.download).not.toHaveBeenCalled()
   })
 
   it('should return null for null format', async () => {
-    const result = await extractStep('res-6', 'pkg-1', '/dev/null', null, ctx)
+    const result = await extractStep('res-6', 'pkg-1', 'resources/pkg-1/res-6', null, ctx)
     expect(result).toBeNull()
     expect(ctx.storage.upload).not.toHaveBeenCalled()
+    expect(ctx.storage.download).not.toHaveBeenCalled()
   })
 
   it('should return null for empty CSV (no headers after parsing)', async () => {
-    const tmpFile = join(tmpDir, 'empty.csv')
-    await writeFile(tmpFile, '')
+    mockStorageDownload('')
 
-    const result = await extractStep('res-7', 'pkg-1', tmpFile, 'CSV', ctx)
-    await unlink(tmpFile)
+    const result = await extractStep('res-7', 'pkg-1', 'resources/pkg-1/res-7', 'CSV', ctx)
 
     expect(result).toBeNull()
     expect(ctx.storage.upload).not.toHaveBeenCalled()

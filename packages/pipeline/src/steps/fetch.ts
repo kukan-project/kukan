@@ -1,62 +1,62 @@
 /**
  * KUKAN Pipeline — Fetch Step
- * Downloads resource file to a temporary file (from Storage or external URL)
+ * Downloads resource data and streams it directly to Storage (from external URL)
+ * or verifies it exists (for uploads already in Storage).
  */
 
-import { createWriteStream } from 'fs'
-import { unlink } from 'fs/promises'
 import { createHash } from 'crypto'
-import { pipeline, finished } from 'stream/promises'
-import { Readable } from 'stream'
-import { KukanError, NotFoundError, ValidationError } from '@kukan/shared'
+import { Transform, Readable } from 'stream'
+import { KukanError, NotFoundError, ValidationError, getStorageKey } from '@kukan/shared'
 import type { PipelineContext } from '../types'
 
 const MAX_EXTERNAL_DOWNLOAD_SIZE = 10 * 1024 * 1024 // 10MB
 const FETCH_TIMEOUT_MS = 30_000
 
 export interface FetchResult {
-  tmpFile: string
+  storageKey: string
   format: string | null
   packageId: string
 }
 
 /**
- * Fetch resource file to a temporary file.
- * For external URLs, also computes SHA-256 hash and updates resource.hash + lastModified if changed.
+ * Fetch resource data into Storage.
+ * - Upload resources: already in Storage, nothing to do.
+ * - External URL resources: stream to Storage, compute hash/size on the fly.
  */
-export async function fetchStep(
-  resourceId: string,
-  ctx: PipelineContext,
-  tmpFile: string
-): Promise<FetchResult> {
+export async function fetchStep(resourceId: string, ctx: PipelineContext): Promise<FetchResult> {
   const res = await ctx.getResource(resourceId)
 
   if (!res) {
     throw new NotFoundError('Resource', resourceId)
   }
 
-  if (res.urlType === 'upload') {
-    const storageKey = `resources/${res.packageId}/${res.id}`
-    const stream = await ctx.storage.download(storageKey)
-    await pipeline(stream, createWriteStream(tmpFile))
-  } else if (res.url) {
-    const hash = await downloadWithLimit(res.url, tmpFile, MAX_EXTERNAL_DOWNLOAD_SIZE)
+  const storageKey = getStorageKey(res.packageId, res.id)
 
-    // Update hash + lastModified if changed
+  if (res.urlType === 'upload') {
+    // Already in Storage — nothing to do
+  } else if (res.url) {
+    const { hash, size } = await downloadToStorage(res.url, storageKey, ctx)
+
     if (hash !== res.hash) {
-      await ctx.updateResourceHash(resourceId, hash)
+      await ctx.updateResourceHashAndSize(resourceId, { hash, size })
     }
   } else {
     throw new ValidationError('Resource has no file or URL')
   }
 
-  return { tmpFile, format: res.format, packageId: res.packageId }
+  return { storageKey, format: res.format, packageId: res.packageId }
 }
 
 /**
- * Download a URL to a file with size limit. Returns SHA-256 hash.
+ * Download a URL and stream directly to Storage.
+ * Computes SHA-256 hash and enforces size limit on the fly.
+ * Returns hash and total size after upload completes.
  */
-async function downloadWithLimit(url: string, destPath: string, maxBytes: number): Promise<string> {
+async function downloadToStorage(
+  url: string,
+  storageKey: string,
+  ctx: PipelineContext
+): Promise<{ hash: string; size: number }> {
   const response = await fetch(url, {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   })
@@ -66,41 +66,43 @@ async function downloadWithLimit(url: string, destPath: string, maxBytes: number
   }
 
   const contentLength = response.headers.get('content-length')
-  if (contentLength && parseInt(contentLength, 10) > maxBytes) {
+  if (contentLength && parseInt(contentLength, 10) > MAX_EXTERNAL_DOWNLOAD_SIZE) {
     throw new KukanError(
-      `Resource exceeds ${maxBytes / 1024 / 1024}MB limit`,
+      `Resource exceeds ${MAX_EXTERNAL_DOWNLOAD_SIZE / 1024 / 1024}MB limit`,
       'PAYLOAD_TOO_LARGE',
       413
     )
   }
 
   const readable = Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0])
-  const hash = createHash('sha256')
-  const writeStream = createWriteStream(destPath)
-
+  const hashDigest = createHash('sha256')
   let totalSize = 0
 
-  try {
-    for await (const chunk of readable) {
+  // Transform that computes hash and checks size limit while passing data through
+  const meter = new Transform({
+    transform(chunk, _encoding, callback) {
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
       totalSize += buf.length
-      if (totalSize > maxBytes) {
-        throw new KukanError(
-          `Resource exceeds ${maxBytes / 1024 / 1024}MB limit`,
-          'PAYLOAD_TOO_LARGE',
-          413
+      if (totalSize > MAX_EXTERNAL_DOWNLOAD_SIZE) {
+        callback(
+          new KukanError(
+            `Resource exceeds ${MAX_EXTERNAL_DOWNLOAD_SIZE / 1024 / 1024}MB limit`,
+            'PAYLOAD_TOO_LARGE',
+            413
+          )
         )
+        return
       }
-      hash.update(buf)
-      writeStream.write(buf)
-    }
-    writeStream.end()
-    await finished(writeStream)
-  } catch (err) {
-    writeStream.destroy()
-    await unlink(destPath).catch(() => {})
-    throw err
-  }
+      hashDigest.update(buf)
+      callback(null, buf)
+    },
+  })
 
-  return `sha256:${hash.digest('hex')}`
+  const stream = readable.pipe(meter)
+  await ctx.storage.upload(storageKey, stream)
+
+  return {
+    hash: `sha256:${hashDigest.digest('hex')}`,
+    size: totalSize,
+  }
 }

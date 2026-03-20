@@ -3,25 +3,21 @@
  * Parses CSV/TSV with title-row skipping, footer removal, and encoding detection
  */
 
+import type { Readable } from 'stream'
 import Papa from 'papaparse'
 import Encoding from 'encoding-japanese'
+import { bufferToUtf8, streamToBuffer } from '@kukan/shared/node-utils'
 import type { ExtractedData } from '../types'
 
 const FOOTER_PREFIXES = ['合計', '注', '※', '出典', '備考', '計', 'total', 'note', 'source']
 
 /**
- * Check if a format/mimetype indicates CSV or TSV
+ * Parse a CSV/TSV stream with smart title-row skipping and footer removal.
+ * Buffers the stream internally for encoding detection.
  */
-export function isCsvFormat(format?: string | null, mimetype?: string | null): boolean {
-  const f = format?.toLowerCase()
-  const m = mimetype?.toLowerCase()
-  return (
-    f === 'csv' ||
-    f === 'tsv' ||
-    m === 'text/csv' ||
-    m === 'application/csv' ||
-    m === 'text/tab-separated-values'
-  )
+export async function parseStream(stream: Readable): Promise<ExtractedData> {
+  const buf = await streamToBuffer(stream)
+  return parseBuffer(buf)
 }
 
 /**
@@ -88,13 +84,4 @@ function removeFooterRows(rows: string[][]): string[][] {
     }
   }
   return rows.slice(0, end)
-}
-
-/** Convert buffer to UTF-8 string using detected encoding */
-function bufferToUtf8(buf: Buffer, encoding: string): string {
-  if (encoding !== 'UTF8' && encoding !== 'ASCII') {
-    const converted = Encoding.convert(buf, { to: 'UNICODE', from: encoding as Encoding.Encoding })
-    return Encoding.codeToString(converted)
-  }
-  return buf.toString('utf-8')
 }
