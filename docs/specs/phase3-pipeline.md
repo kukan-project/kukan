@@ -215,7 +215,7 @@ export interface StorageAdapter {
 | GET      | `/api/v1/resources/:id/pipeline-status` | public      | 処理状態取得                                                                          |
 | GET      | `/api/v1/resources/:id/download-url`    | public      | ダウンロード URL（外部 URL はそのまま、upload は presigned + attachment disposition） |
 | GET      | `/api/v1/resources/:id/preview-url`     | public      | プレビュー URL 取得（ADR-015 参照）                                                   |
-| GET      | `/api/v1/resources/:id/text`            | public      | テキストプレビュー（先頭 5MB、charset ヘッダ付きストリーム）                          |
+| GET      | `/api/v1/resources/:id/text`            | public      | テキストプレビュー（charset ヘッダ付きストリーム）                                    |
 | POST     | `/api/v1/resources/:id/run-pipeline`    | org editor+ | 手動パイプライン再実行                                                                |
 | GET      | `/api/v1/resources/formats`             | public      | 登録済みフォーマット一覧                                                              |
 
