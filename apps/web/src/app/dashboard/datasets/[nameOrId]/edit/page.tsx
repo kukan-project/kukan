@@ -8,7 +8,6 @@ import { clientFetch } from '@/lib/client-api'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { DatasetForm } from '@/components/dashboard/dataset/dataset-form'
 import { ResourceList } from '@/components/dashboard/dataset/resource-list'
-import { ResourceForm } from '@/components/dashboard/dataset/resource-form'
 import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
 import { Button } from '@kukan/ui'
 import type { CreatePackageInput } from '@kukan/shared'
@@ -23,6 +22,7 @@ interface Resource {
   id: string
   name?: string | null
   url?: string | null
+  urlType?: string | null
   format?: string | null
   description?: string | null
 }
@@ -152,8 +152,7 @@ export default function EditDatasetPage() {
           <CardTitle>{t('resources')}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <ResourceList resources={pkg.resources ?? []} onDeleted={fetchData} />
-          <ResourceForm packageId={pkg.id} onCreated={fetchData} />
+          <ResourceList packageId={pkg.id} resources={pkg.resources ?? []} onUpdated={fetchData} />
         </CardContent>
       </Card>
 
