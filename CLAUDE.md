@@ -181,7 +181,7 @@ pnpm format        # Prettier フォーマット
 
 ## 現在のフェーズ
 
-**Phase 3: Ingest & ファイルストレージ**（実装仕様書: `docs/specs/phase3-ingestion.md`）
+**Phase 3: リソース処理 & ファイルストレージ**（実装仕様書: `docs/specs/phase3-resource-processing.md`）
 
 - Phase 1: Foundation ✅ 完了
 - Phase 2: フロントエンド ✅ 完了（実装仕様書: `docs/specs/phase2-frontend.md`）
