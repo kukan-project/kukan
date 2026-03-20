@@ -6,7 +6,7 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { ResourceService, getStorageKey } from '../services/resource-service'
-import { ResourcePipelineService } from '../services/resource-pipeline-service'
+import { ResourcePipelineService } from '@kukan/pipeline'
 import { PreviewService } from '../services/preview-service'
 import { PackageService } from '../services/package-service'
 import {
@@ -214,6 +214,19 @@ resourcesRouter.post(
     return c.json(await enqueuePipeline(c, id), 200)
   }
 )
+
+// POST /api/v1/resources/:id/run-pipeline - Manually trigger pipeline processing (reprocess)
+resourcesRouter.post('/:id/run-pipeline', async (c) => {
+  const user = c.get('user')
+  if (!user) throw new ForbiddenError('Authentication required')
+
+  const db = c.get('db')
+  const id = c.req.param('id')
+  const resourceService = new ResourceService(db)
+  await checkResourcePermission(db, user, resourceService, id)
+
+  return c.json(await enqueuePipeline(c, id), 200)
+})
 
 // --- CRUD endpoints ---
 

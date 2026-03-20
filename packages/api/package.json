@@ -19,6 +19,7 @@
     "@hono/zod-validator": "0.7.6",
     "@kukan/ai-adapter": "workspace:*",
     "@kukan/db": "workspace:*",
+    "@kukan/pipeline": "workspace:*",
     "@kukan/queue-adapter": "workspace:*",
     "@kukan/search-adapter": "workspace:*",
     "@kukan/shared": "workspace:*",

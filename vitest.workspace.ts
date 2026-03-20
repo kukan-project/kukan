@@ -43,6 +43,14 @@ export default defineWorkspace([
   },
   {
     test: {
+      name: 'pipeline',
+      root: './packages/pipeline',
+      include: ['src/__tests__/**/*.test.ts'],
+      environment: 'node',
+    },
+  },
+  {
+    test: {
       name: 'api-unit',
       root: './packages/api',
       include: ['src/__tests__/**/*.test.ts'],

@@ -1,0 +1,33 @@
+{
+  "name": "@kukan/pipeline",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KUKAN resource pipeline (fetch, extract, index)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./*": "./dist/*.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@kukan/db": "workspace:*",
+    "@kukan/shared": "workspace:*",
+    "drizzle-orm": "^0.45.1",
+    "encoding-japanese": "^2.2.0",
+    "hyparquet-writer": "^0.13.0",
+    "papaparse": "^5.5.3"
+  },
+  "devDependencies": {
+    "@types/encoding-japanese": "^2.2.1",
+    "@types/node": "^22.0.0",
+    "@types/papaparse": "^5.5.2"
+  }
+}

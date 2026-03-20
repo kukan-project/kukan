@@ -109,6 +109,8 @@ export class InProcessQueueAdapter implements QueueAdapter {
       storedJob.error = error instanceof Error ? error.message : 'Unknown error'
     } finally {
       storedJob.updatedAt = new Date()
+      // Remove completed/failed jobs after a short delay to allow getStatus() calls
+      setTimeout(() => this.jobs.delete(storedJob.id), 60_000)
     }
   }
 }

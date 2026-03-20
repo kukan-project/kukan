@@ -24,7 +24,6 @@ export const resourcePipeline = pgTable(
       .references(() => resource.id, { onDelete: 'cascade' }),
     status: varchar('status', { length: 20 }).notNull().default('pending'),
     error: text('error'),
-    contentHash: text('content_hash'),
     previewKey: text('preview_key'),
     metadata: jsonb('metadata').$type<Record<string, unknown>>(),
     created: timestamp('created', { withTimezone: true }).defaultNow().notNull(),

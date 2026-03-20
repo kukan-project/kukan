@@ -1,0 +1,1 @@
+ALTER TABLE "resource_pipeline" DROP COLUMN "content_hash";

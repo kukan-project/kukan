@@ -6,8 +6,8 @@
 import { eq, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resourcePipeline, resourcePipelineStep } from '@kukan/db'
-import { ValidationError } from '@kukan/shared'
-import type { PipelineStatus, PipelineStepStatus } from '@kukan/shared'
+import { ValidationError, PIPELINE_JOB_TYPE } from '@kukan/shared'
+import type { PipelineStatus, PipelineStepStatus, PipelineStepName } from '@kukan/shared'
 
 export class ResourcePipelineService {
   constructor(
@@ -34,7 +34,6 @@ export class ResourcePipelineService {
           resourceId,
           status: 'queued',
           error: null,
-          contentHash: null,
           previewKey: null,
           metadata: null,
         })
@@ -54,7 +53,7 @@ export class ResourcePipelineService {
     })
 
     // Enqueue processing job
-    const jobId = await this.queue.enqueue('resource-pipeline', { resourceId })
+    const jobId = await this.queue.enqueue(PIPELINE_JOB_TYPE, { resourceId })
     return jobId
   }
 
@@ -112,19 +111,6 @@ export class ResourcePipelineService {
   }
 
   /**
-   * Update content hash for external URL diff detection.
-   */
-  async updateContentHash(pipelineId: string, hash: string) {
-    await this.db
-      .update(resourcePipeline)
-      .set({
-        contentHash: hash,
-        updated: sql`NOW()`,
-      })
-      .where(eq(resourcePipeline.id, pipelineId))
-  }
-
-  /**
    * Update preview key after preview data is stored.
    */
   async updatePreviewKey(pipelineId: string, previewKey: string) {
@@ -140,7 +126,7 @@ export class ResourcePipelineService {
   /**
    * Create a step record and mark it as running.
    */
-  async startStep(pipelineId: string, stepName: string) {
+  async startStep(pipelineId: string, stepName: PipelineStepName) {
     const [step] = await this.db
       .insert(resourcePipelineStep)
       .values({
@@ -184,11 +170,13 @@ export class ResourcePipelineService {
   /**
    * Mark a step as skipped.
    */
-  async skipStep(pipelineId: string, stepName: string) {
-    await this.db.insert(resourcePipelineStep).values({
-      pipelineId,
-      stepName,
-      status: 'skipped' satisfies PipelineStepStatus,
-    })
+  async skipStep(stepId: string) {
+    await this.db
+      .update(resourcePipelineStep)
+      .set({
+        status: 'skipped' satisfies PipelineStepStatus,
+        completedAt: sql`NOW()`,
+      })
+      .where(eq(resourcePipelineStep.id, stepId))
   }
 }

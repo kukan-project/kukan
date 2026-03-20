@@ -70,18 +70,17 @@
   │    ※ パイプライン内で外部 URL からダウンロード（10MB 上限）
   │
   │  ┌─────── InProcessQueue ────────────┐
-  │  │ processResource(resourceId)       │
-  │  │  1. Fetch    (ファイル取得)       │
-  │  │  2. Extract  (CSV/TSV パース)     │
-  │  │  3. Preview  (JSON → Storage)     │
-  │  │  4. Index    (OpenSearch 更新)     │
-  │  └──────────────────────────────────┘
+  │  │ processResource(resourceId)              │
+  │  │  1. Fetch    (ファイル取得)              │
+  │  │  2. Extract  (CSV/TSV パース → Parquet)  │
+  │  │  3. Index    (OpenSearch 更新)            │
+  │  └────────────────────────────────────────┘
   │
   ├─ GET /api/v1/resources/:id/pipeline-status
   │    ← { status: 'complete', steps: [...] }
   │
   └─ GET /api/v1/resources/:id/preview
-       ← PreviewData JSON
+       ← Parquet (Range Read 対応)
 ```
 
 ## 4. Step 2: Docker Compose + OpenSearchAdapter ✅
@@ -213,7 +212,7 @@ export interface StorageAdapter {
 
 ```
 resources/{package_id}/{resource_id}
-previews/{resource_id}.json
+previews/{package_id}/{resource_id}.parquet
 ```
 
 ### 5.4 ResourceService 拡張（実装済み）
@@ -276,7 +275,6 @@ CREATE TABLE resource_pipeline (
   resource_id   UUID NOT NULL UNIQUE REFERENCES resource(id) ON DELETE CASCADE,
   status        VARCHAR(20) NOT NULL DEFAULT 'pending',
   error         TEXT,
-  content_hash  TEXT,
   preview_key   TEXT,
   metadata      JSONB,
   created       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -331,83 +329,115 @@ packages/pipeline/
 ├── src/
 │   ├── index.ts
 │   ├── process-resource.ts # パイプラインオーケストレータ
-│   ├── types.ts            # PipelineContext, ProcessingStep 等
+│   ├── pipeline-service.ts # ResourcePipelineService（状態管理）
+│   ├── types.ts            # PipelineContext, ResourceForPipeline 等
 │   ├── steps/
 │   │   ├── fetch.ts        # ファイル取得（Storage or 外部 URL）
-│   │   ├── extract.ts      # CSV/TSV パース
-│   │   ├── preview.ts      # PreviewData JSON → Storage 保存
+│   │   ├── extract.ts      # CSV/TSV パース → Parquet 生成 → Storage 保存
 │   │   └── index-search.ts # SearchAdapter.index() + DB 更新
 │   └── parsers/
-│       └── csv-parser.ts   # スマート CSV パーサー
+│       └── csv-parser.ts   # スマート CSV パーサー（PapaParse + encoding-japanese）
 ```
 
 ### 6.4 PipelineContext
 
+`PipelineContext` はアダプターと DB アクセサメソッドを提供する。DB を直接公開せず、パイプラインが必要とするクエリをアクセサ関数として定義する。
+
 ```typescript
 interface PipelineContext {
-  db: Database
   storage: StorageAdapter
   search: SearchAdapter
+  getResource(id: string): Promise<ResourceForPipeline | null>
+  updateResourceHash(id: string, hash: string): Promise<void>
+  getPackageForIndex(packageId: string): Promise<PackageForIndex | null>
 }
 ```
 
+`PipelineContext` の組み立ては `packages/api/src/queue/pipeline-handler.ts` の `buildPipelineContext()` で行う。アクセサは Drizzle ORM クエリで直接実装。
+
 ### 6.5 パイプラインステップ
 
-| Step | 名前        | 入力                          | 出力                             | 備考                                             |
-| ---- | ----------- | ----------------------------- | -------------------------------- | ------------------------------------------------ |
-| 1    | **Fetch**   | resourceId                    | filePath（一時ファイル）, format | upload: Storage、外部 URL: HTTP GET（10MB 上限） |
-| 2    | **Extract** | filePath, format              | headers, rows, encoding          | CSV/TSV のみ。非対応フォーマットは skip          |
-| 3    | **Preview** | headers, rows, encoding       | previewKey（Storage に保存）     | Extract が skip なら skip                        |
-| 4    | **Index**   | resource + package メタデータ | OpenSearch ドキュメント更新      | 常に実行                                         |
+| Step | 名前        | 入力                          | 出力                                 | 備考                                                        |
+| ---- | ----------- | ----------------------------- | ------------------------------------ | ----------------------------------------------------------- |
+| 1    | **Fetch**   | resourceId                    | tmpFile, format, packageId           | upload: Storage、外部 URL: HTTP GET（10MB 上限）、hash 計算 |
+| 2    | **Extract** | tmpFile, format, packageId    | previewKey（Parquet → Storage 保存） | CSV/TSV のみ。非対応フォーマットは skip。非クリティカル     |
+| 3    | **Index**   | resource + package メタデータ | OpenSearch ドキュメント更新          | 常に実行                                                    |
 
-**ステップの独立性**: Extract/Preview が失敗しても Index は実行する。各ステップの成功/失敗は `resource_pipeline_step` に記録。
+**ステップの独立性**: Extract が失敗しても Index は実行する（`nonCritical` フラグ）。各ステップの成功/失敗は `resource_pipeline_step` に記録。
 
 ### 6.6 processResource()
 
 ```typescript
-async function processResource(resourceId: string, ctx: PipelineContext): Promise<void> {
+async function processResource(
+  resourceId: string,
+  ctx: PipelineContext,
+  db: Database // パイプライン状態管理用
+): Promise<void> {
+  const pipelineService = new ResourcePipelineService(db)
   const pipeline = await pipelineService.startPipeline(resourceId)
+  if (!pipeline) throw new Error(`No pipeline record found for resource ${resourceId}`)
 
-  let tmpFile: string | undefined
+  const tmpFile = join(tmpdir(), `kukan-pipeline-${resourceId}`)
   try {
     // Step 1: Fetch — ファイルを一時ファイルに取得
-    tmpFile = await runStep(pipeline.id, 'fetch', () => fetchStep.execute(resourceId, ctx))
-
-    // Step 2: Extract — CSV/TSV パース（対応フォーマットのみ）
-    const extracted = await runStep(pipeline.id, 'extract', () =>
-      extractStep.execute(tmpFile, resource.format, ctx)
+    const fetchResult = await runStep(pipelineService, pipeline.id, 'fetch', () =>
+      fetchStep(resourceId, ctx, tmpFile)
     )
 
-    // Step 3: Preview — PreviewData JSON を Storage に保存
-    if (extracted) {
-      await runStep(pipeline.id, 'preview', () => previewStep.execute(resourceId, extracted, ctx))
+    if (fetchResult) {
+      // Step 2: Extract — CSV/TSV パース → Parquet 生成 → Storage 保存（非クリティカル）
+      const previewKey = await runStep(
+        pipelineService,
+        pipeline.id,
+        'extract',
+        () =>
+          extractStep(
+            resourceId,
+            fetchResult.packageId,
+            fetchResult.tmpFile,
+            fetchResult.format,
+            ctx
+          ),
+        true // nonCritical: エラーでも Index に進む
+      )
+
+      if (previewKey) {
+        await pipelineService.updatePreviewKey(pipeline.id, previewKey)
+      }
     }
 
-    // Step 4: Index — OpenSearch 更新（常に実行）
-    await runStep(pipeline.id, 'index', () => indexStep.execute(resourceId, ctx))
+    // Step 3: Index — OpenSearch 更新（常に実行）
+    await runStep(pipelineService, pipeline.id, 'index', () => indexSearchStep(resourceId, ctx))
 
     await pipelineService.updateStatus(pipeline.id, 'complete')
   } catch (err) {
-    await pipelineService.updateStatus(pipeline.id, 'error', err.message)
+    await pipelineService.updateStatus(pipeline.id, 'error', (err as Error).message)
   } finally {
-    if (tmpFile) await fs.unlink(tmpFile).catch(() => {})
+    await unlink(tmpFile).catch(() => {})
   }
 }
 
 /** 各ステップを実行し、結果を resource_pipeline_step に記録 */
 async function runStep<T>(
+  pipelineService: ResourcePipelineService,
   pipelineId: string,
-  stepName: string,
-  fn: () => Promise<T>
+  stepName: PipelineStepName,
+  fn: () => Promise<T>,
+  nonCritical = false
 ): Promise<T | null> {
   const stepId = await pipelineService.startStep(pipelineId, stepName)
   try {
     const result = await fn()
+    if (result === null) {
+      await pipelineService.skipStep(stepId)
+      return null
+    }
     await pipelineService.completeStep(stepId)
     return result
   } catch (err) {
-    await pipelineService.failStep(stepId, err.message)
-    throw err // or return null for non-critical steps
+    await pipelineService.failStep(stepId, (err as Error).message)
+    if (nonCritical) return null
+    throw err
   }
 }
 ```
@@ -415,26 +445,35 @@ async function runStep<T>(
 ### 6.7 Fetch ステップ
 
 ```typescript
-async function execute(resourceId: string, ctx: PipelineContext): Promise<string> {
-  const resource = await resourceService.getById(resourceId)
-  const tmpPath = path.join(os.tmpdir(), `kukan-${resourceId}`)
+interface FetchResult {
+  tmpFile: string
+  format: string
+  packageId: string
+}
 
-  if (resource.urlType === 'upload') {
+async function fetchStep(
+  resourceId: string,
+  ctx: PipelineContext,
+  tmpFile: string // 呼び出し元（processResource）が一時ファイルパスを管理
+): Promise<FetchResult> {
+  const res = await ctx.getResource(resourceId)
+  if (!res) throw new NotFoundError(`Resource ${resourceId} not found or deleted`)
+  if (!res.url) throw new ValidationError('Resource has no URL')
+
+  if (res.urlType === 'upload') {
     // Storage からダウンロード
-    const storageKey = getStorageKey(resource.packageId, resource.id)
+    const storageKey = `resources/${res.packageId}/${res.id}`
     const stream = await ctx.storage.download(storageKey)
-    await pipeline(stream, fs.createWriteStream(tmpPath))
-  } else if (resource.url) {
-    // 外部 URL からダウンロード（10MB 上限）
-    await downloadWithLimit(resource.url, tmpPath, MAX_EXTERNAL_DOWNLOAD_SIZE)
-    // content_hash を計算して差分検知に備える
-    const hash = await computeFileHash(tmpPath)
-    await pipelineService.updateContentHash(pipeline.id, hash)
+    await pipeline(stream, createWriteStream(tmpFile))
   } else {
-    throw new Error('Resource has no file or URL')
+    // 外部 URL からダウンロード（10MB 上限）+ hash 計算
+    const hash = await downloadWithLimit(res.url, tmpFile, MAX_EXTERNAL_DOWNLOAD_SIZE)
+    if (hash !== res.hash) {
+      await ctx.updateResourceHash(resourceId, hash)
+    }
   }
 
-  return tmpPath
+  return { tmpFile, format: res.format, packageId: res.packageId }
 }
 
 const MAX_EXTERNAL_DOWNLOAD_SIZE = 10 * 1024 * 1024 // 10MB
@@ -450,39 +489,42 @@ Phase 3a スコープ（CSV/TSV のみ）:
 - **エンコーディング検出**: encoding-japanese で自動検出、UTF-8 に変換
 - 非対応フォーマットは Extract/Preview をスキップ（Index のみ実行）
 
-### 6.9 PreviewData JSON
+### 6.9 プレビューデータ（Parquet 形式）
 
-```typescript
-interface StoredPreviewData {
-  resource_id: string
-  format: string
-  generated_at: string
-  encoding: string
-  table: {
-    headers: string[]
-    rows: string[][] // 先頭 200 行
-    total_rows: number
-  }
-}
-```
+Extract ステップで CSV/TSV をパースし、全行を Parquet 形式で Storage に保存する（ADR-014 参照）。
 
-Storage キー: `previews/{resource_id}.json`
+- **ライブラリ**: `hyparquet-writer`（サーバー側書き込み）、`hyparquet`（ブラウザ側読み取り）
+- **圧縮**: UNCOMPRESSED（Range Read でブラウザ側デコード不要）
+- **Row Group サイズ**: 5,000 行
+- **列型**: 全列 STRING
+
+Storage キー: `previews/{packageId}/{resourceId}.parquet`
+
+フロントエンドは `hyparquet` の `asyncBufferFromUrl()` + `parquetReadObjects({ rowStart, rowEnd })` で Range ベースページネーションを行う。
 
 ## 7. Step 5: InProcessQueue 統合
 
 ### 7.1 キューハンドラ登録
 
-`packages/api/src/app.ts` のアプリ起動時:
+`packages/api/src/app.ts` の `createApp()` 内でハンドラ登録:
 
 ```typescript
-const pipelineCtx: PipelineContext = {
-  db,
-  storage: adapters.storage,
-  search: adapters.search,
-}
-await adapters.queue.process<{ resourceId: string }>('resource-pipeline', async (job) => {
-  await processResource(job.data.resourceId, pipelineCtx)
-})
+import { registerPipelineHandler } from './queue/pipeline-handler'
+
+// createAdapters() の直後
+await registerPipelineHandler(db, adapters.queue, adapters.storage, adapters.search)
+```
+
+`pipeline-handler.ts` は `buildPipelineContext()` で PipelineContext を組み立て、`processResource()` を呼ぶ:
+
+```typescript
+await queue.process<{ resourceId: string }>(
+  PIPELINE_JOB_TYPE,
+  async (job: Job<{ resourceId: string }>) => {
+    const ctx = buildPipelineContext(db, storage, search)
+    await processResource(job.data.resourceId, ctx, db)
+  }
+)
 ```
 
 ### 7.2 PreviewService 更新
@@ -565,28 +607,29 @@ if (input.url && input.url !== existing.url) {
 9. ~~PDF プレビュー: `ResourcePreview` コンポーネント（CSV/TSV + PDF 対応）、`download-url` エンドポイント、`useFetch` フック~~
 10. ~~TSV フォーマット対応: `preview-service.ts` の `isCsvFormat()` に TSV 追加~~
 
-### Step 4: DB スキーマ変更 + リソース処理パイプライン
+### Step 4: DB スキーマ変更 + リソース処理パイプライン ✅
 
-1. DB マイグレーション: `resource_pipeline` + `resource_pipeline_step` テーブル作成、resource テーブルから処理フィールド削除
-2. `ResourcePipelineService` 作成（CRUD + ステップ管理）
-3. `ResourceService` から `updateIngestStatus` 削除、`prepareForUpload` から `updated` 更新除去
-4. 既存 API ルート更新（`ingest-status` → `pipeline-status`、レスポンス形式変更）
-5. `packages/pipeline/` パッケージセットアップ
-6. 型定義（types.ts）
-7. Fetch ステップ（Storage + 外部 URL、10MB 上限）
-8. CSV スマートパーサー（csv-parser.ts）
-9. Extract + Preview ステップ
-10. Index ステップ
-11. processResource オーケストレータ
-12. `IngestStatus` → `PipelineStatus` リネーム（shared, API, テスト）
-13. テスト
+1. ~~DB マイグレーション: `resource_pipeline` + `resource_pipeline_step` テーブル作成、resource テーブルから処理フィールド削除~~
+2. ~~`ResourcePipelineService` 作成（CRUD + ステップ管理）~~
+3. ~~`ResourceService` から `updateIngestStatus` 削除、`prepareForUpload` から `updated` 更新除去~~
+4. ~~既存 API ルート更新（`ingest-status` → `pipeline-status`、レスポンス形式変更）~~
+5. ~~`packages/pipeline/` パッケージセットアップ~~
+6. ~~型定義（types.ts — PipelineContext にアクセサメソッド方式採用）~~
+7. ~~Fetch ステップ（Storage + 外部 URL、10MB 上限、hash 計算）~~
+8. ~~CSV スマートパーサー（csv-parser.ts — PapaParse + encoding-japanese）~~
+9. ~~Extract ステップ（CSV パース → Parquet 生成 → Storage 保存、ADR-014）~~
+10. ~~Index ステップ（SearchAdapter.index() 呼び出し）~~
+11. ~~processResource オーケストレータ（3 ステップ、nonCritical フラグ）~~
+12. ~~`IngestStatus` → `PipelineStatus` リネーム（shared, API, テスト）~~
+13. ~~テスト（fetch, csv-parser, process-resource, pipeline-service, pipeline-handler）~~
 
-### Step 5: InProcessQueue 統合
+### Step 5: InProcessQueue 統合 ✅
 
-1. `packages/api/src/app.ts` — キューハンドラ登録（`resource-pipeline`）
-2. `packages/api/src/services/preview-service.ts` — 保存済み PreviewData 対応
-3. リソース CRUD に処理トリガー追加（url 指定時の作成 / url 変更時の更新）
-4. E2E 動作確認
+1. ~~`packages/api/src/queue/pipeline-handler.ts` — キューハンドラ登録 + PipelineContext 組み立て~~
+2. ~~`packages/api/src/app.ts` — `registerPipelineHandler()` 呼び出し追加~~
+3. ~~リソース CRUD に処理トリガー追加（upload-complete, url 指定時の作成 / url 変更時の更新）~~
+4. ~~`POST /api/v1/resources/:id/run-pipeline` — 手動パイプライン実行エンドポイント追加~~
+5. ~~E2E 動作確認（外部 CSV URL → fetch/extract/index → Parquet in MinIO）~~
 
 ### Step 6: フロントエンド拡張
 
@@ -604,10 +647,10 @@ if (input.url && input.url !== existing.url) {
 - [x] PostgreSQL フォールバック検索も引き続き動作（Step 2）
 - [x] ファイルアップロード API エンドポイント動作（Step 3）
 - [x] S3CompatibleStorageAdapter で MinIO / AWS S3 統合（Step 3）
-- [ ] `resource_pipeline` / `resource_pipeline_step` テーブル動作（Step 4）
-- [ ] CSV ファイルアップロード → 処理完了 → プレビュー表示（Step 4-5）
-- [ ] 外部 URL リソース → 処理完了 → プレビュー表示（Step 4-5）
-- [ ] 各ステップの成功/失敗が `resource_pipeline_step` に記録される（Step 4）
+- [x] `resource_pipeline` / `resource_pipeline_step` テーブル動作（Step 4）
+- [x] CSV ファイルアップロード → 処理完了 → Parquet プレビュー生成（Step 4-5）
+- [x] 外部 URL リソース → 処理完了 → Parquet プレビュー生成（Step 4-5）
+- [x] 各ステップの成功/失敗が `resource_pipeline_step` に記録される（Step 4）
 - [ ] フロントエンドにアップロード UI + 処理ステータス表示（Step 6）
 - [ ] `pnpm build` 成功
 - [ ] `pnpm typecheck` 成功

@@ -29,6 +29,10 @@ export async function createApp() {
   // Initialize adapters
   const adapters = await createAdapters(env, db)
 
+  // Register queue handlers
+  const { registerPipelineHandler } = await import('./queue/pipeline-handler')
+  await registerPipelineHandler(db, adapters.queue, adapters.storage, adapters.search)
+
   // CORS — enabled when TRUSTED_ORIGINS is set (standalone / cross-origin access)
   const trustedOrigins = process.env.TRUSTED_ORIGINS?.split(',').filter(Boolean)
   if (trustedOrigins?.length) {

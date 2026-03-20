@@ -112,6 +112,10 @@ export type PipelineStatus = 'pending' | 'queued' | 'processing' | 'complete' | 
 
 export type PipelineStepStatus = 'pending' | 'running' | 'complete' | 'error' | 'skipped'
 
+export type PipelineStepName = 'fetch' | 'extract' | 'index'
+
+export const PIPELINE_JOB_TYPE = 'resource-pipeline' as const
+
 // ============================================================
 // AI Adapter Types
 // ============================================================

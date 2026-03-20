@@ -438,4 +438,40 @@ describe('Resources API Routes', () => {
       expect(body).toEqual([])
     })
   })
+
+  describe('POST /api/v1/resources/:id/run-pipeline', () => {
+    it('should enqueue pipeline for authenticated user', async () => {
+      const pkg = await createPackage('run-pipeline-pkg')
+      const resource = await createResource(pkg.id, {
+        url: 'https://example.com/data.csv',
+      })
+
+      const res = await app.request(`/api/v1/resources/${resource.id}/run-pipeline`, {
+        method: 'POST',
+      })
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.pipeline_status).toBe('queued')
+      expect(body.job_id).toBeDefined()
+    })
+
+    it('should return 403 for unauthenticated users', async () => {
+      const pkg = await createPackage('run-pipeline-unauth-pkg')
+      const resource = await createResource(pkg.id)
+
+      const res = await unauthApp.request(`/api/v1/resources/${resource.id}/run-pipeline`, {
+        method: 'POST',
+      })
+      expect(res.status).toBe(403)
+    })
+
+    it('should return 404 for nonexistent resource', async () => {
+      const res = await app.request(
+        '/api/v1/resources/00000000-0000-0000-0000-000000000099/run-pipeline',
+        { method: 'POST' }
+      )
+      expect(res.status).toBe(404)
+    })
+  })
 })

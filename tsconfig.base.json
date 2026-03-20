@@ -24,7 +24,8 @@
       "@kukan/search-adapter": ["../packages/adapters/search/src"],
       "@kukan/queue-adapter": ["../packages/adapters/queue/src"],
       "@kukan/ai-adapter": ["../packages/adapters/ai/src"],
-      "@kukan/ui": ["../packages/ui/src"]
+      "@kukan/ui": ["../packages/ui/src"],
+      "@kukan/pipeline": ["../packages/pipeline/src"]
     }
   },
   "exclude": ["node_modules", "dist"]
