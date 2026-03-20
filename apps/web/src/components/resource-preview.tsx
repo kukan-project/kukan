@@ -1,94 +1,110 @@
 'use client'
 
-import { Card, CardContent, Skeleton } from '@kukan/ui'
+import { useState } from 'react'
+import { Card, CardContent, Skeleton, Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
+import { isCsvFormat } from '@kukan/shared'
 import { useFetch } from '@/hooks/use-fetch'
-
-interface PreviewData {
-  headers: string[]
-  rows: string[][]
-  totalRows: number
-  truncated: boolean
-  format: string
-  encoding: string
-}
+import { ParquetPreview } from './parquet-preview'
 
 interface ResourcePreviewProps {
   resourceId: string
   format?: string | null
 }
 
-const CSV_FORMATS = new Set(['csv', 'tsv'])
-const PDF_FORMATS = new Set(['pdf'])
+type PreviewSource = 'parquet' | 'raw'
 
-function getPreviewType(format?: string | null): 'csv' | 'pdf' | null {
-  const f = format?.toLowerCase()
-  if (f && CSV_FORMATS.has(f)) return 'csv'
-  if (f && PDF_FORMATS.has(f)) return 'pdf'
-  return null
-}
-
+/**
+ * Checks for Parquet preview (pipeline output) first.
+ * PDF is displayed via Storage signed URL (iframe).
+ * TXT is displayed as raw text.
+ * If no preview data exists in Storage, shows "not available".
+ */
 export function ResourcePreview({ resourceId, format }: ResourcePreviewProps) {
-  const previewType = getPreviewType(format)
+  const f = format?.toLowerCase()
 
-  if (previewType === 'csv') {
-    return <CsvPreview resourceId={resourceId} />
-  }
+  // PDF: render via Storage signed URL
+  if (f === 'pdf') return <PdfPreview resourceId={resourceId} />
 
-  if (previewType === 'pdf') {
-    return <PdfPreview resourceId={resourceId} />
-  }
+  // TXT: text-only preview (no preview-url fetch needed)
+  if (f === 'txt') return <TextOnlyPreview resourceId={resourceId} />
 
-  return <PreviewNotAvailable />
+  // CSV/TSV and other formats: check for Parquet preview
+  return <TablePreview resourceId={resourceId} format={format} />
 }
 
-// --- CSV Preview ---
-
-function CsvPreview({ resourceId }: { resourceId: string }) {
+function TextOnlyPreview({ resourceId }: { resourceId: string }) {
   const t = useTranslations('resource')
-  const { data, loading, error } = useFetch<PreviewData>(
-    `/api/v1/resources/${encodeURIComponent(resourceId)}/preview`
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex gap-2">
+        <Badge variant="default">{t('previewSourceText')}</Badge>
+      </div>
+      <RawTextPreview resourceId={resourceId} />
+    </div>
+  )
+}
+
+function TablePreview({ resourceId, format }: ResourcePreviewProps) {
+  const t = useTranslations('resource')
+  const [source, setSource] = useState<PreviewSource>('parquet')
+  const { data, loading } = useFetch<{ url: string | null }>(
+    `/api/v1/resources/${encodeURIComponent(resourceId)}/preview-url`
+  )
+
+  if (loading) return <PreviewSkeleton />
+
+  const hasParquet = !!data?.url
+
+  if (!hasParquet) {
+    return isCsvFormat(format) ? <PreviewNoData /> : <PreviewNotAvailable />
+  }
+
+  const sources: { key: PreviewSource; label: string }[] = [
+    { key: 'parquet', label: t('previewSourceTable') },
+    { key: 'raw', label: t('previewSourceText') },
+  ]
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex gap-2">
+        {sources.map((s) => (
+          <Badge
+            key={s.key}
+            variant={source === s.key ? 'default' : 'outline'}
+            className="cursor-pointer"
+            onClick={() => setSource(s.key)}
+          >
+            {s.label}
+          </Badge>
+        ))}
+      </div>
+      {source === 'parquet' && <ParquetPreview resourceId={resourceId} />}
+      {source === 'raw' && <RawTextPreview resourceId={resourceId} />}
+    </div>
+  )
+}
+
+// --- Raw Text Preview ---
+
+function RawTextPreview({ resourceId }: { resourceId: string }) {
+  const t = useTranslations('resource')
+  const { data, loading, error } = useFetch<{ text: string; encoding: string }>(
+    `/api/v1/resources/${encodeURIComponent(resourceId)}/raw`
   )
 
   if (loading) return <PreviewSkeleton />
   if (error) return <PreviewError />
-  if (!data || data.headers.length === 0) return <PreviewEmpty />
+  if (!data?.text) return <PreviewEmpty />
 
   return (
     <div className="overflow-hidden rounded-lg border">
-      <div className="max-h-[600px] overflow-auto">
-        <table className="w-max border-collapse text-sm">
-          <thead className="sticky top-0 z-10 border-b bg-muted/50">
-            <tr>
-              {data.headers.map((header, i) => (
-                <th
-                  key={i}
-                  className="whitespace-nowrap px-4 py-2 text-left font-medium text-muted-foreground"
-                >
-                  {header}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {data.rows.map((row, ri) => (
-              <tr key={ri} className="border-b last:border-b-0">
-                {row.map((cell, ci) => (
-                  <td key={ci} className="whitespace-nowrap px-4 py-2">
-                    {cell}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="max-h-[600px] overflow-auto bg-muted/20 p-4">
+        <pre className="whitespace-pre text-xs">{data.text}</pre>
       </div>
-      <div className="flex items-center justify-between border-t px-4 py-2 text-xs text-muted-foreground">
-        <span>
-          {t('previewRowCount', { shown: data.rows.length, total: data.totalRows })}
-          {data.truncated && ` (${t('previewTruncatedNote')})`}
-        </span>
-        <span>{t('previewEncoding', { encoding: data.encoding })}</span>
+      <div className="border-t px-4 py-2 text-xs text-muted-foreground">
+        {t('previewEncoding', { encoding: data.encoding })}
       </div>
     </div>
   )
@@ -98,12 +114,12 @@ function CsvPreview({ resourceId }: { resourceId: string }) {
 
 function PdfPreview({ resourceId }: { resourceId: string }) {
   const t = useTranslations('resource')
-  const { data, loading, error } = useFetch<{ url: string }>(
-    `/api/v1/resources/${encodeURIComponent(resourceId)}/download-url`
+  const { data, loading, error } = useFetch<{ url: string | null }>(
+    `/api/v1/resources/${encodeURIComponent(resourceId)}/preview-url`
   )
 
   if (loading) return <PreviewSkeleton />
-  if (error || !data?.url) return <PreviewError />
+  if (error || !data?.url) return <PreviewNotAvailable />
 
   return (
     <div className="overflow-hidden rounded-lg border">
@@ -125,6 +141,17 @@ function PreviewNotAvailable() {
     <Card>
       <CardContent className="py-8 text-center text-sm text-muted-foreground">
         {t('previewNotAvailable')}
+      </CardContent>
+    </Card>
+  )
+}
+
+function PreviewNoData() {
+  const t = useTranslations('resource')
+  return (
+    <Card>
+      <CardContent className="py-8 text-center text-sm text-muted-foreground">
+        {t('previewNoData')}
       </CardContent>
     </Card>
   )

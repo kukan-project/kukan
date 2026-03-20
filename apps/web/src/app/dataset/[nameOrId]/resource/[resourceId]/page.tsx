@@ -2,12 +2,12 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getTranslations } from 'next-intl/server'
 import { Separator } from '@kukan/ui'
-import { serverFetch } from '@/lib/server-api'
+import { serverFetch, getCurrentUser } from '@/lib/server-api'
 import { getFormatColorClass } from '@/lib/format-colors'
 import { renderSimpleMarkdown } from '@/lib/render-markdown'
 import { DateTime } from '@/components/date-time'
 import { KeyValueTable, extrasToRows } from '@/components/key-value-table'
-import { ResourcePreview } from '@/components/resource-preview'
+import { ResourcePipelinePreview } from '@/components/resource-pipeline-preview'
 
 interface Resource {
   id: string
@@ -31,6 +31,7 @@ interface Package {
   name: string
   title?: string | null
   licenseId?: string | null
+  ownerOrg?: string | null
 }
 
 interface Props {
@@ -40,10 +41,12 @@ interface Props {
 export default async function ResourceDetailPage({ params }: Props) {
   const { nameOrId, resourceId } = await params
 
-  // Fetch resource, package, and translations in parallel
-  const [resRes, pkgRes, t, td] = await Promise.all([
+  // Fetch resource, package, user, orgs, and translations in parallel
+  const [resRes, pkgRes, user, orgsRes, t, td] = await Promise.all([
     serverFetch(`/api/v1/resources/${encodeURIComponent(resourceId)}`).catch(() => null),
     serverFetch(`/api/v1/packages/${encodeURIComponent(nameOrId)}`).catch(() => null),
+    getCurrentUser(),
+    serverFetch('/api/v1/users/me/organizations').catch(() => null),
     getTranslations('resource'),
     getTranslations('dataset'),
   ])
@@ -52,6 +55,17 @@ export default async function ResourceDetailPage({ params }: Props) {
 
   const resource: Resource = await resRes.json()
   const pkg: Package | null = pkgRes?.ok ? await pkgRes.json() : null
+
+  // Check if user can manage this resource (sysadmin or org member)
+  let canManage = false
+  if (user) {
+    if (user.sysadmin) {
+      canManage = true
+    } else if (pkg?.ownerOrg && orgsRes?.ok) {
+      const data = await orgsRes.json()
+      canManage = data.items?.some((org: { id: string }) => org.id === pkg.ownerOrg)
+    }
+  }
 
   return (
     <div className="mx-auto max-w-[var(--kukan-container-max-width)] px-4 py-8">
@@ -100,10 +114,11 @@ export default async function ResourceDetailPage({ params }: Props) {
         )}
 
         <Separator />
-        <section>
-          <h2 className="mb-4 text-xl font-semibold">{t('preview')}</h2>
-          <ResourcePreview resourceId={resource.id} format={resource.format} />
-        </section>
+        <ResourcePipelinePreview
+          resourceId={resource.id}
+          format={resource.format}
+          canManage={canManage}
+        />
 
         <Separator />
         <section>

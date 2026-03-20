@@ -6,6 +6,7 @@ import ResourceDetailPage from '../page'
 
 vi.mock('@/lib/server-api', () => ({
   serverFetch: vi.fn(),
+  getCurrentUser: vi.fn().mockResolvedValue(null),
 }))
 
 vi.mock('@/components/resource-preview', () => ({
