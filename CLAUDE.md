@@ -174,6 +174,7 @@ pnpm format        # Prettier フォーマット
 - API ライブラリ化・単一オリジン → `docs/adr/012-api-as-library-single-origin.md`
 - 検索と DB フィルタリングの分離 → `docs/adr/013-search-vs-db-filtering.md`
 - プレビュー Parquet 形式 → `docs/adr/014-parquet-preview-format.md`
+- 統一 preview-url エンドポイント → `docs/adr/015-unified-preview-url.md`
 
 新しい設計判断が必要になったら、同じフォーマットでADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、

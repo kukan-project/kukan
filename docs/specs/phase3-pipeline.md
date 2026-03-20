@@ -177,11 +177,17 @@ export class OpenSearchAdapter implements SearchAdapter {
 `adapter.ts` に `getSignedUploadUrl` を追加（実装済み）:
 
 ```typescript
+export interface SignedUrlOptions {
+  expiresIn?: number
+  inline?: boolean      // Content-Disposition: inline（PDF プレビュー等）
+  contentType?: string  // Response Content-Type 指定
+}
+
 export interface StorageAdapter {
   upload(key: string, body: Buffer | Readable, meta?: ObjectMeta): Promise<void>
   download(key: string): Promise<Readable>
   delete(key: string): Promise<void>
-  getSignedUrl(key: string, expiresIn?: number): Promise<string>
+  getSignedUrl(key: string, options?: SignedUrlOptions): Promise<string>
   getSignedUploadUrl(
     key: string,
     contentType: string,
@@ -206,7 +212,11 @@ export interface StorageAdapter {
 | POST     | `/api/v1/resources/:id/upload-complete` | org editor+ | アップロード完了通知 → キューイング           |
 | POST     | `/api/v1/resources/:id/upload`          | org editor+ | サーバーサイドアップロード（新規・差替共通）  |
 | GET      | `/api/v1/resources/:id/pipeline-status` | public      | 処理状態取得                                  |
-| GET      | `/api/v1/resources/:id/download-url`    | public      | ダウンロード URL 取得（presigned / 外部 URL） |
+| GET      | `/api/v1/resources/:id/download-url`    | public      | ダウンロード URL 取得（presigned）            |
+| GET      | `/api/v1/resources/:id/preview-url`     | public      | プレビュー URL 取得（ADR-015 参照）           |
+| GET      | `/api/v1/resources/:id/raw`             | public      | 生テキストプレビュー取得（先頭 5MB）          |
+| POST     | `/api/v1/resources/:id/run-pipeline`    | org editor+ | 手動パイプライン再実行                        |
+| GET      | `/api/v1/resources/formats`             | public      | 登録済みフォーマット一覧                      |
 
 ### 5.3 ストレージキー規則
 
@@ -357,11 +367,11 @@ interface PipelineContext {
 
 ### 6.5 パイプラインステップ
 
-| Step | 名前        | 入力                          | 出力                                 | 備考                                                        |
-| ---- | ----------- | ----------------------------- | ------------------------------------ | ----------------------------------------------------------- |
-| 1    | **Fetch**   | resourceId                    | tmpFile, format, packageId           | upload: Storage、外部 URL: HTTP GET（10MB 上限）、hash 計算 |
-| 2    | **Extract** | tmpFile, format, packageId    | previewKey（Parquet → Storage 保存） | CSV/TSV のみ。非対応フォーマットは skip。非クリティカル     |
-| 3    | **Index**   | resource + package メタデータ | OpenSearch ドキュメント更新          | 常に実行                                                    |
+| Step | 名前        | 入力                            | 出力                                 | 備考                                                                  |
+| ---- | ----------- | ------------------------------- | ------------------------------------ | --------------------------------------------------------------------- |
+| 1    | **Fetch**   | resourceId                      | storageKey, format, packageId        | upload: skip、外部 URL: Storage に直接ストリーム（10MB 上限）、hash 計算 |
+| 2    | **Extract** | resourceId, packageId, storageKey, format | previewKey, encoding               | CSV/TSV → Worker Thread で Parquet 変換。非対応は skip。非クリティカル |
+| 3    | **Index**   | resourceId                      | OpenSearch ドキュメント更新          | 常に実行                                                              |
 
 **ステップの独立性**: Extract が失敗しても Index は実行する（`nonCritical` フラグ）。各ステップの成功/失敗は `resource_pipeline_step` に記録。
 
@@ -377,16 +387,15 @@ async function processResource(
   const pipeline = await pipelineService.startPipeline(resourceId)
   if (!pipeline) throw new Error(`No pipeline record found for resource ${resourceId}`)
 
-  const tmpFile = join(tmpdir(), `kukan-pipeline-${resourceId}`)
   try {
-    // Step 1: Fetch — ファイルを一時ファイルに取得
+    // Step 1: Fetch — 外部 URL は Storage に直接ストリーム、upload 済みは skip
     const fetchResult = await runStep(pipelineService, pipeline.id, 'fetch', () =>
-      fetchStep(resourceId, ctx, tmpFile)
+      fetchStep(resourceId, ctx)
     )
 
     if (fetchResult) {
-      // Step 2: Extract — CSV/TSV パース → Parquet 生成 → Storage 保存（非クリティカル）
-      const previewKey = await runStep(
+      // Step 2: Extract — CSV/TSV パース → Worker Thread で Parquet 変換 → Storage 保存（非クリティカル）
+      const extractResult = await runStep(
         pipelineService,
         pipeline.id,
         'extract',
@@ -394,15 +403,16 @@ async function processResource(
           extractStep(
             resourceId,
             fetchResult.packageId,
-            fetchResult.tmpFile,
+            fetchResult.storageKey,
             fetchResult.format,
             ctx
           ),
         true // nonCritical: エラーでも Index に進む
       )
 
-      if (previewKey) {
-        await pipelineService.updatePreviewKey(pipeline.id, previewKey)
+      if (extractResult) {
+        await pipelineService.updatePreviewKey(pipeline.id, extractResult.previewKey)
+        await pipelineService.updateMetadata(pipeline.id, { encoding: extractResult.encoding })
       }
     }
 
@@ -412,8 +422,6 @@ async function processResource(
     await pipelineService.updateStatus(pipeline.id, 'complete')
   } catch (err) {
     await pipelineService.updateStatus(pipeline.id, 'error', (err as Error).message)
-  } finally {
-    await unlink(tmpFile).catch(() => {})
   }
 }
 
@@ -444,36 +452,40 @@ async function runStep<T>(
 
 ### 6.7 Fetch ステップ
 
+外部 URL リソースを Storage に直接ストリーミングする。upload 済みリソースは Storage にファイルがあるため skip。
+一時ファイルは使わず、Storage に直接書き込む。
+
 ```typescript
 interface FetchResult {
-  tmpFile: string
-  format: string
+  storageKey: string
+  format: string | null
   packageId: string
 }
 
 async function fetchStep(
   resourceId: string,
-  ctx: PipelineContext,
-  tmpFile: string // 呼び出し元（processResource）が一時ファイルパスを管理
-): Promise<FetchResult> {
+  ctx: PipelineContext
+): Promise<FetchResult | null> {
   const res = await ctx.getResource(resourceId)
   if (!res) throw new NotFoundError(`Resource ${resourceId} not found or deleted`)
-  if (!res.url) throw new ValidationError('Resource has no URL')
+
+  const storageKey = getStorageKey(res.packageId, res.id)
 
   if (res.urlType === 'upload') {
-    // Storage からダウンロード
-    const storageKey = `resources/${res.packageId}/${res.id}`
-    const stream = await ctx.storage.download(storageKey)
-    await pipeline(stream, createWriteStream(tmpFile))
-  } else {
-    // 外部 URL からダウンロード（10MB 上限）+ hash 計算
-    const hash = await downloadWithLimit(res.url, tmpFile, MAX_EXTERNAL_DOWNLOAD_SIZE)
-    if (hash !== res.hash) {
-      await ctx.updateResourceHash(resourceId, hash)
-    }
+    // Already in Storage — skip download
+    return { storageKey, format: res.format, packageId: res.packageId }
   }
 
-  return { tmpFile, format: res.format, packageId: res.packageId }
+  if (!res.url) throw new ValidationError('Resource has no URL')
+
+  // Stream external URL directly to Storage (10MB limit) + compute hash
+  const { hash, size } = await downloadToStorage(res.url, storageKey, ctx.storage)
+
+  if (hash !== res.hash) {
+    await ctx.updateResourceMeta(resourceId, { hash, size })
+  }
+
+  return { storageKey, format: res.format, packageId: res.packageId }
 }
 
 const MAX_EXTERNAL_DOWNLOAD_SIZE = 10 * 1024 * 1024 // 10MB
@@ -494,7 +506,7 @@ Phase 3a スコープ（CSV/TSV のみ）:
 Extract ステップで CSV/TSV をパースし、全行を Parquet 形式で Storage に保存する（ADR-014 参照）。
 
 - **ライブラリ**: `hyparquet-writer`（サーバー側書き込み）、`hyparquet`（ブラウザ側読み取り）
-- **圧縮**: UNCOMPRESSED（Range Read でブラウザ側デコード不要）
+- **圧縮**: SNAPPY（hyparquet-writer デフォルト。hyparquet がブラウザ側で Snappy 解凍対応）
 - **Row Group サイズ**: 5,000 行
 - **列型**: 全列 STRING
 
@@ -527,10 +539,12 @@ await queue.process<{ resourceId: string }>(
 )
 ```
 
-### 7.2 PreviewService 更新
+### 7.2 プレビュー URL
 
-`resource_pipeline.preview_key` がある場合、Storage から保存済み PreviewData を読み込み。
-フォールバック: 既存のオンザフライ CSV パース（preview_key がない場合）。
+統一 `preview-url` エンドポイント（ADR-015）がフォーマットに応じて適切な URL を返す:
+- CSV/TSV: `resource_pipeline.preview_key` から Parquet ファイルの presigned URL
+- PDF: 元ファイルの presigned URL（inline disposition 付き）
+- その他: `null`
 
 ### 7.3 リソース CRUD と処理トリガーの統合
 
@@ -631,13 +645,18 @@ if (input.url && input.url !== existing.url) {
 4. ~~`POST /api/v1/resources/:id/run-pipeline` — 手動パイプライン実行エンドポイント追加~~
 5. ~~E2E 動作確認（外部 CSV URL → fetch/extract/index → Parquet in MinIO）~~
 
-### Step 6: フロントエンド拡張
+### Step 6: フロントエンド拡張 ✅
 
-1. `file-upload.tsx` コンポーネント
-2. `pipeline-status-badge.tsx` コンポーネント
-3. 既存ページ更新
-4. i18n
-5. テスト
+1. ~~`FileUploadZone` コンポーネント（ドラッグ＆ドロップ + presigned URL アップロード + 進捗表示）~~
+2. ~~`PipelineStatusBadge` コンポーネント（ポーリングによる自動更新）~~
+3. ~~`useFileUpload`, `usePipelineStatus`, `useParquetPreview` カスタムフック~~
+4. ~~リソースフォーム統合: create/edit を `ResourceList` 内のインラインフォームに統一~~
+5. ~~`ResourceFormFields` 共有コンポーネント（Name, Source tabs, Description, Format）~~
+6. ~~`ResourcePreview` 改善: 統一 `preview-url` エンドポイント使用（ADR-015）~~
+7. ~~テーブル表示 / テキスト表示の切替タブ（Badge ベース）~~
+8. ~~PDF プレビュー（iframe, inline disposition）~~
+9. ~~i18n（ja.json / en.json）~~
+10. ~~テスト~~
 
 ## 11. 完了基準
 
@@ -651,8 +670,7 @@ if (input.url && input.url !== existing.url) {
 - [x] CSV ファイルアップロード → 処理完了 → Parquet プレビュー生成（Step 4-5）
 - [x] 外部 URL リソース → 処理完了 → Parquet プレビュー生成（Step 4-5）
 - [x] 各ステップの成功/失敗が `resource_pipeline_step` に記録される（Step 4）
-- [ ] フロントエンドにアップロード UI + 処理ステータス表示（Step 6）
-- [ ] `pnpm build` 成功
-- [ ] `pnpm typecheck` 成功
-- [ ] `pnpm test` 全テスト合格
-- [ ] `pnpm lint && pnpm format` 通過
+- [x] フロントエンドにアップロード UI + 処理ステータス表示（Step 6）
+- [x] `pnpm typecheck` 成功
+- [x] `pnpm test` 全テスト合格（52 files, 521 tests）
+- [x] `pnpm lint && pnpm format` 通過

@@ -826,12 +826,12 @@ class NoOpAIAdapter implements AIAdapter {
 
 ```
 bucket/
-  ├── originals/                    # 原本ファイル
-  │   └── {resource_id}/{filename}
-  ├── previews/                     # プレビューJSON
-  │   └── {resource_id}/preview.json
-  ├── thumbnails/                   # サムネイル・ページ画像
-  │   └── {resource_id}/
+  ├── resources/                    # 原本ファイル（アップロード or 外部 URL から取得）
+  │   └── {packageId}/{resourceId}
+  ├── previews/                     # プレビュー Parquet（ADR-014）
+  │   └── {packageId}/{resourceId}.parquet
+  ├── thumbnails/                   # サムネイル・ページ画像（Phase 5+）
+  │   └── {resourceId}/
   │       ├── thumb.webp
   │       ├── page-001.webp
   │       └── page-002.webp
@@ -972,19 +972,8 @@ CREATE TABLE resource (
   resource_type   VARCHAR(50),
   extras          JSONB DEFAULT '{}',
 
-  -- ストレージ情報
-  storage_key     TEXT,
-  preview_key     TEXT,
-
-  -- Ingest結果
-  ingest_status   VARCHAR(20) DEFAULT 'pending',
-  ingest_error    TEXT,
-  ingest_metadata JSONB,
-
-  -- AI分析結果
-  ai_schema       JSONB,
-  pii_check       JSONB,
-  content_hash    TEXT,
+  -- 処理状態は resource_pipeline テーブルに分離（Phase 3 で移行済み）
+  -- AI 分析結果は Phase 5 で resource_pipeline.metadata に格納予定
 
   -- Quality Monitor（品質監視）
   health_status      VARCHAR(20) DEFAULT 'unknown',  -- 'ok' | 'warning' | 'error' | 'unknown'
