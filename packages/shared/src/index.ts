@@ -21,6 +21,9 @@ export * from './adapter-types'
 // Utilities
 export * from './utils'
 
+// Format normalization
+export * from './formats'
+
 // Validators
 export * from './validators/package'
 export * from './validators/organization'
