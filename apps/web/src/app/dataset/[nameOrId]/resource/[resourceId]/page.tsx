@@ -7,7 +7,7 @@ import { getFormatColorClass } from '@/lib/format-colors'
 import { renderSimpleMarkdown } from '@/lib/render-markdown'
 import { DateTime } from '@/components/date-time'
 import { KeyValueTable, extrasToRows } from '@/components/key-value-table'
-import { CsvPreviewTable } from '@/components/csv-preview-table'
+import { ResourcePreview } from '@/components/resource-preview'
 
 interface Resource {
   id: string
@@ -102,7 +102,7 @@ export default async function ResourceDetailPage({ params }: Props) {
         <Separator />
         <section>
           <h2 className="mb-4 text-xl font-semibold">{t('preview')}</h2>
-          <CsvPreviewTable resourceId={resource.id} format={resource.format} />
+          <ResourcePreview resourceId={resource.id} format={resource.format} />
         </section>
 
         <Separator />

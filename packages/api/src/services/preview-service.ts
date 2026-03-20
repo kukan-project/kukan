@@ -68,7 +68,13 @@ export class PreviewService {
 function isCsvFormat(format?: string | null, mimetype?: string | null): boolean {
   const f = format?.toLowerCase()
   const m = mimetype?.toLowerCase()
-  return f === 'csv' || m === 'text/csv' || m === 'application/csv'
+  return (
+    f === 'csv' ||
+    f === 'tsv' ||
+    m === 'text/csv' ||
+    m === 'application/csv' ||
+    m === 'text/tab-separated-values'
+  )
 }
 
 function parseCsv(text: string, encoding: string): PreviewResult {

@@ -81,6 +81,26 @@ resourcesRouter.get('/:id/preview', async (c) => {
   return c.json(preview)
 })
 
+// GET /api/v1/resources/:id/download-url - Get a temporary download URL for the resource file
+resourcesRouter.get('/:id/download-url', async (c) => {
+  const id = c.req.param('id')
+  const service = new ResourceService(c.get('db'))
+  const resource = await service.getById(id)
+
+  if (resource.urlType === 'upload') {
+    const storage = c.get('storage')
+    const storageKey = getStorageKey(resource.packageId, resource.id)
+    const url = await storage.getSignedUrl(storageKey)
+    return c.json({ url })
+  }
+
+  if (resource.url) {
+    return c.json({ url: resource.url })
+  }
+
+  throw new ValidationError('Resource has no downloadable file')
+})
+
 // GET /api/v1/resources/:id/ingest-status - Check ingest progress (public)
 resourcesRouter.get('/:id/ingest-status', async (c) => {
   const id = c.req.param('id')
