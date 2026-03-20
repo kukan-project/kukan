@@ -212,9 +212,9 @@ export interface StorageAdapter {
 | POST     | `/api/v1/resources/:id/upload-complete` | org editor+ | アップロード完了通知 → キューイング           |
 | POST     | `/api/v1/resources/:id/upload`          | org editor+ | サーバーサイドアップロード（新規・差替共通）  |
 | GET      | `/api/v1/resources/:id/pipeline-status` | public      | 処理状態取得                                  |
-| GET      | `/api/v1/resources/:id/download-url`    | public      | ダウンロード URL 取得（presigned）            |
+| GET      | `/api/v1/resources/:id/download-url`    | public      | ダウンロード URL（外部 URL はそのまま、upload は presigned） |
 | GET      | `/api/v1/resources/:id/preview-url`     | public      | プレビュー URL 取得（ADR-015 参照）           |
-| GET      | `/api/v1/resources/:id/raw`             | public      | 生テキストプレビュー取得（先頭 5MB）          |
+| GET      | `/api/v1/resources/:id/utf8-text`       | public      | UTF-8 テキストプレビュー取得（先頭 5MB）      |
 | POST     | `/api/v1/resources/:id/run-pipeline`    | org editor+ | 手動パイプライン再実行                        |
 | GET      | `/api/v1/resources/formats`             | public      | 登録済みフォーマット一覧                      |
 

@@ -86,12 +86,12 @@ function TablePreview({ resourceId, format }: ResourcePreviewProps) {
   )
 }
 
-// --- Raw Text Preview ---
+// --- Text Preview ---
 
 function RawTextPreview({ resourceId }: { resourceId: string }) {
   const t = useTranslations('resource')
   const { data, loading, error } = useFetch<{ text: string; encoding: string }>(
-    `/api/v1/resources/${encodeURIComponent(resourceId)}/raw`
+    `/api/v1/resources/${encodeURIComponent(resourceId)}/utf8-text`
   )
 
   if (loading) return <PreviewSkeleton />

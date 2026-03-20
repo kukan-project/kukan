@@ -62,8 +62,8 @@ resourcesRouter.get('/:id', async (c) => {
   return c.json(res)
 })
 
-// GET /api/v1/resources/:id/raw - Get raw text content of a resource
-resourcesRouter.get('/:id/raw', async (c) => {
+// GET /api/v1/resources/:id/utf8-text - Get UTF-8 text preview of a resource (first 5MB)
+resourcesRouter.get('/:id/utf8-text', async (c) => {
   const id = c.req.param('id')
   const service = new ResourceService(c.get('db'))
   const resource = await service.getById(id)
@@ -84,20 +84,22 @@ resourcesRouter.get('/:id/raw', async (c) => {
   return c.json({ text, encoding })
 })
 
-// GET /api/v1/resources/:id/download-url - Get a temporary download URL for the resource file
+// GET /api/v1/resources/:id/download-url - Get download URL for the resource file
+// External URL resources return the original URL; uploaded resources return a presigned Storage URL
 resourcesRouter.get('/:id/download-url', async (c) => {
   const id = c.req.param('id')
   const service = new ResourceService(c.get('db'))
   const resource = await service.getById(id)
 
-  const inline = c.req.query('inline') === 'true'
+  // External URL: return original URL directly
+  if (resource.urlType !== 'upload' && resource.url) {
+    return c.json({ url: resource.url })
+  }
+
+  // Uploaded file: return presigned Storage URL
   const storage = c.get('storage')
   const storageKey = getStorageKey(resource.packageId, resource.id)
-  const contentType = resource.format ? getMimeType(resource.format) : undefined
-  const url = await storage.getSignedUrl(
-    storageKey,
-    inline ? { inline: true, contentType } : undefined
-  )
+  const url = await storage.getSignedUrl(storageKey)
   return c.json({ url })
 })
 
