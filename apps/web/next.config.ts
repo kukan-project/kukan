@@ -7,9 +7,8 @@ config({ path: '../../.env' })
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
 
 const nextConfig: NextConfig = {
-  transpilePackages: [
-    '@kukan/shared',
-    '@kukan/ui',
+  transpilePackages: ['@kukan/shared', '@kukan/ui'],
+  serverExternalPackages: [
     '@kukan/api',
     '@kukan/db',
     '@kukan/storage-adapter',
@@ -18,7 +17,6 @@ const nextConfig: NextConfig = {
     '@kukan/ai-adapter',
     '@kukan/pipeline',
   ],
-  serverExternalPackages: ['pg', 'pg-connection-string'],
 }
 
 export default withNextIntl(nextConfig)

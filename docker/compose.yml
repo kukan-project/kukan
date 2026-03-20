@@ -54,6 +54,21 @@ services:
       /bin/sh -c "
       mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
       mc mb --ignore-existing local/kukan-dev;
+      mc anonymous set download local/kukan-dev;
+      cat > /tmp/cors.json << 'CORS'
+      {
+        \"Rules\": [
+          {
+            \"AllowedOrigins\": [\"http://localhost:3000\"],
+            \"AllowedMethods\": [\"GET\", \"PUT\", \"HEAD\"],
+            \"AllowedHeaders\": [\"*\"],
+            \"ExposeHeaders\": [\"ETag\", \"Content-Length\"],
+            \"MaxAgeSeconds\": 3600
+          }
+        ]
+      }
+      CORS
+      mc cors set local/kukan-dev /tmp/cors.json;
       "
 
   opensearch:
