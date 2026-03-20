@@ -18,12 +18,10 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "encoding-japanese": "^2.2.0",
     "lru-cache": "^11.0.0",
     "zod": "3.25.67"
   },
   "devDependencies": {
-    "@types/encoding-japanese": "^2.2.1",
     "@types/node": "^22.0.0"
   }
 }

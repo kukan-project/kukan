@@ -6,6 +6,7 @@ import { serverFetch, getCurrentUser } from '@/lib/server-api'
 import { getFormatColorClass } from '@/lib/format-colors'
 import { renderSimpleMarkdown } from '@/lib/render-markdown'
 import { DateTime } from '@/components/date-time'
+import { DownloadButton } from '@/components/download-button'
 import { KeyValueTable, extrasToRows } from '@/components/key-value-table'
 import { ResourcePipelinePreview } from '@/components/resource-pipeline-preview'
 
@@ -14,6 +15,7 @@ interface Resource {
   packageId: string
   name?: string | null
   url?: string | null
+  urlType?: string | null
   description?: string | null
   format?: string | null
   size?: number | null
@@ -82,16 +84,19 @@ export default async function ResourceDetailPage({ params }: Props) {
           <span className="text-foreground">{resource.name || t('unnamed')}</span>
         </nav>
 
-        <div className="flex items-start gap-3">
-          <span
-            className={`mt-1 inline-flex min-w-[56px] items-center justify-center rounded px-2 py-1 text-xs font-bold uppercase ${getFormatColorClass(resource.format)}`}
-          >
-            {resource.format || '?'}
-          </span>
-          <h1 className="text-3xl font-bold tracking-tight">{resource.name || t('unnamed')}</h1>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <span
+              className={`mt-1 inline-flex min-w-[56px] items-center justify-center rounded px-2 py-1 text-xs font-bold uppercase ${getFormatColorClass(resource.format)}`}
+            >
+              {resource.format || '?'}
+            </span>
+            <h1 className="text-3xl font-bold tracking-tight">{resource.name || t('unnamed')}</h1>
+          </div>
+          <DownloadButton resourceId={resource.id} label={t('download')} />
         </div>
 
-        {resource.url && (
+        {resource.url && resource.urlType !== 'upload' && (
           <div>
             <a
               href={resource.url}

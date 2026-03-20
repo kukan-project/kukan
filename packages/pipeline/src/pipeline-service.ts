@@ -113,17 +113,17 @@ export class ResourcePipelineService {
   }
 
   /**
-   * Update preview key and metadata after extract step.
+   * Update preview key and/or metadata after extract step.
    */
-  async updatePreviewKey(
+  async updateExtractResult(
     pipelineId: string,
-    previewKey: string,
+    previewKey: string | null,
     metadata?: Record<string, unknown>
   ) {
     await this.db
       .update(resourcePipeline)
       .set({
-        previewKey,
+        ...(previewKey && { previewKey }),
         ...(metadata && { metadata }),
         updated: sql`NOW()`,
       })

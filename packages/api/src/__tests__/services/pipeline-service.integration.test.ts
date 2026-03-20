@@ -177,7 +177,7 @@ describe('ResourcePipelineService', () => {
 
       await service.enqueue(testResId)
       const pipeline = await service.startPipeline(testResId)
-      await service.updatePreviewKey(pipeline!.id, 'previews/pkg-1/res-1.parquet')
+      await service.updateExtractResult(pipeline!.id, 'previews/pkg-1/res-1.parquet')
 
       const status = await service.getStatus(testResId)
       expect(status!.previewKey).toBe('previews/pkg-1/res-1.parquet')

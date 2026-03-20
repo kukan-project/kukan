@@ -79,7 +79,6 @@
     "resources": "データとリソース",
     "additionalInfo": "追加情報",
     "noResources": "リソースはありません",
-    "explore": "探索",
     "maintainer": "メンテナー",
     "author": "作成者",
     "license": "ライセンス",
@@ -240,7 +239,8 @@
     "previewSourceTable": "テーブル表示",
     "previewSourceText": "テキスト表示",
     "source": "ソース",
-    "replaceFile": "ファイルを差し替え"
+    "replaceFile": "ファイルを差し替え",
+    "download": "ダウンロード"
   },
   "apiToken": {
     "title": "APIトークン",

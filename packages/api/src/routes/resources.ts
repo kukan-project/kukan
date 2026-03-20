@@ -16,8 +16,8 @@ import {
   ValidationError,
   getStorageKey,
   getMimeType,
+  toCharset,
 } from '@kukan/shared'
-import { bufferToUtf8, streamToBuffer } from '@kukan/shared/node-utils'
 import { checkOrgRole } from '../auth/permissions'
 import { Readable } from 'stream'
 import type { AppContext } from '../context'
@@ -62,8 +62,9 @@ resourcesRouter.get('/:id', async (c) => {
   return c.json(res)
 })
 
-// GET /api/v1/resources/:id/utf8-text - Get UTF-8 text preview of a resource (first 5MB)
-resourcesRouter.get('/:id/utf8-text', async (c) => {
+// GET /api/v1/resources/:id/text - Stream raw bytes with charset header
+// Browser decodes via Content-Type charset; no server-side encoding conversion needed.
+resourcesRouter.get('/:id/text', async (c) => {
   const id = c.req.param('id')
   const service = new ResourceService(c.get('db'))
   const resource = await service.getById(id)
@@ -75,13 +76,17 @@ resourcesRouter.get('/:id/utf8-text', async (c) => {
       | string
       | undefined) ?? 'UNKNOWN'
 
+  const charset = toCharset(encoding)
   const storage = c.get('storage')
   const storageKey = getStorageKey(resource.packageId, resource.id)
-  const stream = await storage.download(storageKey)
-  const buf = await streamToBuffer(stream, 5 * 1024 * 1024)
-  const text = bufferToUtf8(buf, encoding)
+  const nodeStream = await storage.download(storageKey)
 
-  return c.json({ text, encoding })
+  return new Response(Readable.toWeb(nodeStream) as ReadableStream, {
+    headers: {
+      'Content-Type': `text/plain; charset=${charset}`,
+      'X-Detected-Encoding': encoding,
+    },
+  })
 })
 
 // GET /api/v1/resources/:id/download-url - Get download URL for the resource file
@@ -96,10 +101,12 @@ resourcesRouter.get('/:id/download-url', async (c) => {
     return c.json({ url: resource.url })
   }
 
-  // Uploaded file: return presigned Storage URL
+  // Uploaded file: return presigned Storage URL with attachment disposition
+  // url contains the original filename for uploaded resources (set by prepareForUpload)
   const storage = c.get('storage')
   const storageKey = getStorageKey(resource.packageId, resource.id)
-  const url = await storage.getSignedUrl(storageKey)
+  const filename = resource.url || resource.id
+  const url = await storage.getSignedUrl(storageKey, { filename })
   return c.json({ url })
 })
 
@@ -147,6 +154,7 @@ resourcesRouter.get('/:id/pipeline-status', async (c) => {
     pipeline_status: status.status,
     error: status.error,
     steps: status.steps.map((s) => ({
+      id: s.id,
       step_name: s.stepName,
       status: s.status,
       error: s.error,

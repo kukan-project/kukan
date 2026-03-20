@@ -304,9 +304,6 @@ importers:
 
   packages/shared:
     dependencies:
-      encoding-japanese:
-        specifier: ^2.2.0
-        version: 2.2.0
       lru-cache:
         specifier: ^11.0.0
         version: 11.2.6
@@ -314,9 +311,6 @@ importers:
         specifier: 3.25.67
         version: 3.25.67
     devDependencies:
-      '@types/encoding-japanese':
-        specifier: ^2.2.1
-        version: 2.2.1
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.13

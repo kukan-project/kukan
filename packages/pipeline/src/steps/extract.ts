@@ -1,13 +1,14 @@
 /**
  * KUKAN Pipeline — Extract Step
- * Parses CSV/TSV from Storage via worker thread, generates Parquet, and stores it.
- * Non-supported formats return null (skip).
+ * Detects encoding for all text-based formats, then generates Parquet for CSV/TSV.
+ * Non-text formats return null (skip).
  */
 
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { streamToBuffer } from '@kukan/shared/node-utils'
-import { getPreviewKey, isCsvFormat } from '@kukan/shared'
+import Encoding from 'encoding-japanese'
+import { streamToBuffer } from '../node-utils.js'
+import { getPreviewKey, isCsvFormat, isTextFormat } from '@kukan/shared'
 import { runWorker } from '../run-worker.js'
 import type { PipelineContext } from '../types'
 
@@ -16,13 +17,14 @@ const WORKER_PATH = path.join(__dirname, '..', 'workers', 'extract-worker.js')
 const ROW_GROUP_SIZE = 5_000
 
 export interface ExtractResult {
-  previewKey: string
+  previewKey: string | null
   encoding: string
 }
 
 /**
- * Extract structured data from Storage, convert to Parquet via worker thread, and store it.
- * Returns the preview key and detected encoding, or null for unsupported/empty formats.
+ * Detect encoding for text-based formats.
+ * For CSV/TSV, also generates Parquet preview via worker thread.
+ * Returns encoding (always) and previewKey (CSV/TSV only), or null for non-text formats.
  */
 export async function extractStep(
   resourceId: string,
@@ -31,22 +33,31 @@ export async function extractStep(
   format: string | null,
   ctx: PipelineContext
 ): Promise<ExtractResult | null> {
-  if (!isCsvFormat(format)) {
+  if (!isTextFormat(format)) {
     return null
   }
 
   // I/O: download from Storage (main thread)
   const stream = await ctx.storage.download(storageKey)
-  const csvBuffer = await streamToBuffer(stream)
+  const fileBuffer = await streamToBuffer(stream)
 
-  // CPU: parse CSV + encode Parquet (worker thread — avoids blocking event loop)
-  const { parquetBuffer, encoding } = await runWorker<
+  // Detect encoding (all text formats)
+  const detected = Encoding.detect(fileBuffer)
+  const encoding = typeof detected === 'string' ? detected : 'UTF8'
+
+  // Non-CSV: return encoding only (no Parquet preview)
+  if (!isCsvFormat(format)) {
+    return { previewKey: null, encoding }
+  }
+
+  // CSV/TSV: parse + generate Parquet (worker thread)
+  const { parquetBuffer } = await runWorker<
     { csvBuffer: Buffer; rowGroupSize: number },
     { parquetBuffer: Buffer | null; encoding: string }
-  >(WORKER_PATH, { csvBuffer, rowGroupSize: ROW_GROUP_SIZE })
+  >(WORKER_PATH, { csvBuffer: fileBuffer, rowGroupSize: ROW_GROUP_SIZE })
 
   if (!parquetBuffer) {
-    return null
+    return { previewKey: null, encoding }
   }
 
   // I/O: upload to Storage (main thread)

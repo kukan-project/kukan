@@ -6,7 +6,7 @@
 import type { Readable } from 'stream'
 import Papa from 'papaparse'
 import Encoding from 'encoding-japanese'
-import { bufferToUtf8, streamToBuffer } from '@kukan/shared/node-utils'
+import { bufferToUtf8, streamToBuffer } from '../node-utils.js'
 import type { ExtractedData } from '../types'
 
 const FOOTER_PREFIXES = ['合計', '注', '※', '出典', '備考', '計', 'total', 'note', 'source']

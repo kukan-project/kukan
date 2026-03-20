@@ -8,6 +8,11 @@ vi.mock('@/lib/server-api', () => ({
   serverFetch: vi.fn(),
 }))
 
+// Mock DownloadButton client component
+vi.mock('@/components/download-button', () => ({
+  DownloadButton: ({ label }: { label: string }) => <button>{label}</button>,
+}))
+
 function mockResponse(data: unknown, ok = true) {
   return { ok, json: async () => data } as Response
 }
@@ -134,9 +139,9 @@ describe('DatasetDetailPage', () => {
     expect(screen.getByText('CSV')).toBeInTheDocument()
     expect(screen.getByText('PDF')).toBeInTheDocument()
 
-    // Explore buttons (resources have URLs)
-    const exploreButtons = screen.getAllByText('Explore')
-    expect(exploreButtons).toHaveLength(2)
+    // Download buttons for each resource
+    const downloadButtons = screen.getAllByText('Download')
+    expect(downloadButtons).toHaveLength(2)
   })
 
   it('should show no resources message when empty', async () => {

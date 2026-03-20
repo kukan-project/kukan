@@ -4,6 +4,7 @@ import { clientFetch } from '@/lib/client-api'
 export type PipelineStatus = 'queued' | 'processing' | 'complete' | 'error'
 
 export interface PipelineStep {
+  id: string
   step_name: string
   status: string
   error: string | null

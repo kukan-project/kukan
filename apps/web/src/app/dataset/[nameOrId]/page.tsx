@@ -2,11 +2,12 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getTranslations } from 'next-intl/server'
 import { Building2, FolderOpen, Tag } from 'lucide-react'
-import { Badge, Button, Card, CardContent, Separator } from '@kukan/ui'
+import { Badge, Card, CardContent, Separator } from '@kukan/ui'
 import { serverFetch } from '@/lib/server-api'
 import { getFormatColorClass } from '@/lib/format-colors'
 import { renderSimpleMarkdown } from '@/lib/render-markdown'
 import { DateTime } from '@/components/date-time'
+import { DownloadButton } from '@/components/download-button'
 import { KeyValueTable, extrasToRows } from '@/components/key-value-table'
 
 interface Resource {
@@ -65,9 +66,10 @@ export default async function DatasetDetailPage({ params }: Props) {
     notFound()
   }
 
-  const [pkg, t]: [Package, Awaited<ReturnType<typeof getTranslations>>] = await Promise.all([
-    res.json(),
+  const [pkg, t, tr] = await Promise.all([
+    res.json() as Promise<Package>,
     getTranslations('dataset'),
+    getTranslations('resource'),
   ])
 
   return (
@@ -143,7 +145,7 @@ export default async function DatasetDetailPage({ params }: Props) {
                   key={r.id}
                   resource={r}
                   packageName={pkg.name}
-                  exploreLabel={t('explore')}
+                  downloadLabel={tr('download')}
                 />
               ))}
             </div>
@@ -187,11 +189,11 @@ export default async function DatasetDetailPage({ params }: Props) {
 function ResourceCard({
   resource,
   packageName,
-  exploreLabel,
+  downloadLabel,
 }: {
   resource: Resource
   packageName: string
-  exploreLabel: string
+  downloadLabel: string
 }) {
   return (
     <Card className="py-0">
@@ -214,15 +216,7 @@ function ResourceCard({
           )}
         </div>
 
-        {resource.url && (
-          <div className="flex shrink-0 gap-2">
-            <Button asChild variant="outline" size="sm">
-              <a href={resource.url} target="_blank" rel="noopener noreferrer">
-                {exploreLabel}
-              </a>
-            </Button>
-          </div>
-        )}
+        <DownloadButton resourceId={resource.id} label={downloadLabel} />
       </CardContent>
     </Card>
   )

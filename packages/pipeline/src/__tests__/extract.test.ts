@@ -105,26 +105,36 @@ describe('extractStep', () => {
     expect(ctx.storage.upload).toHaveBeenCalledOnce()
   })
 
-  it('should return null for unsupported formats', async () => {
-    const result = await extractStep('res-5', 'pkg-1', 'resources/pkg-1/res-5', 'PDF', ctx)
+  it('should detect encoding for TXT without Parquet generation', async () => {
+    mockStorageDownload('Hello, world!')
+
+    const result = await extractStep('res-5', 'pkg-1', 'resources/pkg-1/res-5', 'TXT', ctx)
+
+    expect(result).toEqual({ previewKey: null, encoding: 'ASCII' })
+    expect(ctx.storage.download).toHaveBeenCalled()
+    expect(ctx.storage.upload).not.toHaveBeenCalled()
+  })
+
+  it('should return null for non-text formats', async () => {
+    const result = await extractStep('res-6', 'pkg-1', 'resources/pkg-1/res-6', 'PDF', ctx)
     expect(result).toBeNull()
     expect(ctx.storage.upload).not.toHaveBeenCalled()
     expect(ctx.storage.download).not.toHaveBeenCalled()
   })
 
   it('should return null for null format', async () => {
-    const result = await extractStep('res-6', 'pkg-1', 'resources/pkg-1/res-6', null, ctx)
+    const result = await extractStep('res-7', 'pkg-1', 'resources/pkg-1/res-7', null, ctx)
     expect(result).toBeNull()
     expect(ctx.storage.upload).not.toHaveBeenCalled()
     expect(ctx.storage.download).not.toHaveBeenCalled()
   })
 
-  it('should return null for empty CSV (no headers after parsing)', async () => {
+  it('should return encoding with null previewKey for empty CSV', async () => {
     mockStorageDownload('')
 
-    const result = await extractStep('res-7', 'pkg-1', 'resources/pkg-1/res-7', 'CSV', ctx)
+    const result = await extractStep('res-8', 'pkg-1', 'resources/pkg-1/res-8', 'CSV', ctx)
 
-    expect(result).toBeNull()
+    expect(result).toEqual({ previewKey: null, encoding: 'UTF8' })
     expect(ctx.storage.upload).not.toHaveBeenCalled()
   })
 })

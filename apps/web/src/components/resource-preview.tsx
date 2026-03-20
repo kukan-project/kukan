@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, CardContent, Skeleton, Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { isCsvFormat } from '@kukan/shared'
+import { clientFetch } from '@/lib/client-api'
 import { useFetch } from '@/hooks/use-fetch'
 import { ParquetPreview } from './parquet-preview'
 
@@ -90,22 +91,54 @@ function TablePreview({ resourceId, format }: ResourcePreviewProps) {
 
 function RawTextPreview({ resourceId }: { resourceId: string }) {
   const t = useTranslations('resource')
-  const { data, loading, error } = useFetch<{ text: string; encoding: string }>(
-    `/api/v1/resources/${encodeURIComponent(resourceId)}/utf8-text`
-  )
+  const [text, setText] = useState<string | null>(null)
+  const [encoding, setEncoding] = useState<string>('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const res = await clientFetch(`/api/v1/resources/${encodeURIComponent(resourceId)}/text`)
+        if (!res.ok) throw new Error()
+        if (!cancelled) {
+          const detectedEncoding = res.headers.get('X-Detected-Encoding') || ''
+          setEncoding(detectedEncoding)
+          // Extract charset from Content-Type and decode with TextDecoder
+          // (fetch's res.text() always decodes as UTF-8, ignoring charset)
+          const ct = res.headers.get('Content-Type') || ''
+          const charsetMatch = ct.match(/charset=([^\s;]+)/)
+          const charset = charsetMatch?.[1] || 'utf-8'
+          const buf = await res.arrayBuffer()
+          setText(new TextDecoder(charset).decode(buf))
+        }
+      } catch {
+        if (!cancelled) setError(true)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [resourceId])
 
   if (loading) return <PreviewSkeleton />
   if (error) return <PreviewError />
-  if (!data?.text) return <PreviewEmpty />
+  if (!text) return <PreviewEmpty />
 
   return (
     <div className="overflow-hidden rounded-lg border">
       <div className="max-h-[600px] overflow-auto bg-muted/20 p-4">
-        <pre className="whitespace-pre text-xs">{data.text}</pre>
+        <pre className="whitespace-pre text-xs">{text}</pre>
       </div>
-      <div className="border-t px-4 py-2 text-xs text-muted-foreground">
-        {t('previewEncoding', { encoding: data.encoding })}
-      </div>
+      {encoding && (
+        <div className="border-t px-4 py-2 text-xs text-muted-foreground">
+          {t('previewEncoding', { encoding })}
+        </div>
+      )}
     </div>
   )
 }

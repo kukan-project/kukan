@@ -179,8 +179,9 @@ export class OpenSearchAdapter implements SearchAdapter {
 ```typescript
 export interface SignedUrlOptions {
   expiresIn?: number
-  inline?: boolean      // Content-Disposition: inline（PDF プレビュー等）
-  contentType?: string  // Response Content-Type 指定
+  inline?: boolean // Content-Disposition: inline（PDF プレビュー等）
+  contentType?: string // Response Content-Type 指定
+  filename?: string // Content-Disposition: attachment; filename="..."（ダウンロード用）
 }
 
 export interface StorageAdapter {
@@ -206,17 +207,17 @@ export interface StorageAdapter {
 
 ### 5.2 API エンドポイント
 
-| メソッド | パス                                    | 認証        | 概要                                          |
-| -------- | --------------------------------------- | ----------- | --------------------------------------------- |
-| POST     | `/api/v1/resources/:id/upload-url`      | org editor+ | Presigned URL 発行（新規・差替共通）          |
-| POST     | `/api/v1/resources/:id/upload-complete` | org editor+ | アップロード完了通知 → キューイング           |
-| POST     | `/api/v1/resources/:id/upload`          | org editor+ | サーバーサイドアップロード（新規・差替共通）  |
-| GET      | `/api/v1/resources/:id/pipeline-status` | public      | 処理状態取得                                  |
-| GET      | `/api/v1/resources/:id/download-url`    | public      | ダウンロード URL（外部 URL はそのまま、upload は presigned） |
-| GET      | `/api/v1/resources/:id/preview-url`     | public      | プレビュー URL 取得（ADR-015 参照）           |
-| GET      | `/api/v1/resources/:id/utf8-text`       | public      | UTF-8 テキストプレビュー取得（先頭 5MB）      |
-| POST     | `/api/v1/resources/:id/run-pipeline`    | org editor+ | 手動パイプライン再実行                        |
-| GET      | `/api/v1/resources/formats`             | public      | 登録済みフォーマット一覧                      |
+| メソッド | パス                                    | 認証        | 概要                                                                                  |
+| -------- | --------------------------------------- | ----------- | ------------------------------------------------------------------------------------- |
+| POST     | `/api/v1/resources/:id/upload-url`      | org editor+ | Presigned URL 発行（新規・差替共通）                                                  |
+| POST     | `/api/v1/resources/:id/upload-complete` | org editor+ | アップロード完了通知 → キューイング                                                   |
+| POST     | `/api/v1/resources/:id/upload`          | org editor+ | サーバーサイドアップロード（新規・差替共通）                                          |
+| GET      | `/api/v1/resources/:id/pipeline-status` | public      | 処理状態取得                                                                          |
+| GET      | `/api/v1/resources/:id/download-url`    | public      | ダウンロード URL（外部 URL はそのまま、upload は presigned + attachment disposition） |
+| GET      | `/api/v1/resources/:id/preview-url`     | public      | プレビュー URL 取得（ADR-015 参照）                                                   |
+| GET      | `/api/v1/resources/:id/text`            | public      | テキストプレビュー（先頭 5MB、charset ヘッダ付きストリーム）                          |
+| POST     | `/api/v1/resources/:id/run-pipeline`    | org editor+ | 手動パイプライン再実行                                                                |
+| GET      | `/api/v1/resources/formats`             | public      | 登録済みフォーマット一覧                                                              |
 
 ### 5.3 ストレージキー規則
 
@@ -367,11 +368,11 @@ interface PipelineContext {
 
 ### 6.5 パイプラインステップ
 
-| Step | 名前        | 入力                            | 出力                                 | 備考                                                                  |
-| ---- | ----------- | ------------------------------- | ------------------------------------ | --------------------------------------------------------------------- |
-| 1    | **Fetch**   | resourceId                      | storageKey, format, packageId        | upload: skip、外部 URL: Storage に直接ストリーム（10MB 上限）、hash 計算 |
-| 2    | **Extract** | resourceId, packageId, storageKey, format | previewKey, encoding               | CSV/TSV → Worker Thread で Parquet 変換。非対応は skip。非クリティカル |
-| 3    | **Index**   | resourceId                      | OpenSearch ドキュメント更新          | 常に実行                                                              |
+| Step | 名前        | 入力                                      | 出力                          | 備考                                                                     |
+| ---- | ----------- | ----------------------------------------- | ----------------------------- | ------------------------------------------------------------------------ |
+| 1    | **Fetch**   | resourceId                                | storageKey, format, packageId | upload: skip、外部 URL: Storage に直接ストリーム（10MB 上限）、hash 計算 |
+| 2    | **Extract** | resourceId, packageId, storageKey, format | previewKey, encoding          | CSV/TSV → Worker Thread で Parquet 変換。非対応は skip。非クリティカル   |
+| 3    | **Index**   | resourceId                                | OpenSearch ドキュメント更新   | 常に実行                                                                 |
 
 **ステップの独立性**: Extract が失敗しても Index は実行する（`nonCritical` フラグ）。各ステップの成功/失敗は `resource_pipeline_step` に記録。
 
@@ -462,10 +463,7 @@ interface FetchResult {
   packageId: string
 }
 
-async function fetchStep(
-  resourceId: string,
-  ctx: PipelineContext
-): Promise<FetchResult | null> {
+async function fetchStep(resourceId: string, ctx: PipelineContext): Promise<FetchResult | null> {
   const res = await ctx.getResource(resourceId)
   if (!res) throw new NotFoundError(`Resource ${resourceId} not found or deleted`)
 
@@ -542,6 +540,7 @@ await queue.process<{ resourceId: string }>(
 ### 7.2 プレビュー URL
 
 統一 `preview-url` エンドポイント（ADR-015）がフォーマットに応じて適切な URL を返す:
+
 - CSV/TSV: `resource_pipeline.preview_key` から Parquet ファイルの presigned URL
 - PDF: 元ファイルの presigned URL（inline disposition 付き）
 - その他: `null`

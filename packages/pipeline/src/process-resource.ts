@@ -55,7 +55,7 @@ export async function processResource(
       )
 
       if (extractResult) {
-        await pipelineService.updatePreviewKey(pipeline.id, extractResult.previewKey, {
+        await pipelineService.updateExtractResult(pipeline.id, extractResult.previewKey, {
           encoding: extractResult.encoding,
         })
       }

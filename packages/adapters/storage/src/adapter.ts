@@ -12,6 +12,8 @@ export interface SignedUrlOptions {
   inline?: boolean
   /** Override the Content-Type header in the response */
   contentType?: string
+  /** When set, forces Content-Disposition: attachment with the given filename */
+  filename?: string
 }
 
 export interface StorageAdapter {

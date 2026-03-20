@@ -100,12 +100,21 @@ export class S3CompatibleStorageAdapter implements StorageAdapter {
 
   async getSignedUrl(key: string, options?: SignedUrlOptions): Promise<string> {
     const expiresIn = options?.expiresIn ?? 3600
+
+    let disposition: string | undefined
+    if (options?.filename) {
+      const encoded = encodeURIComponent(options.filename)
+      disposition = `attachment; filename="${encoded}"; filename*=UTF-8''${encoded}`
+    } else if (options?.inline) {
+      disposition = 'inline'
+    }
+
     return await getSignedUrl(
       this.client,
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
-        ...(options?.inline && { ResponseContentDisposition: 'inline' }),
+        ...(disposition && { ResponseContentDisposition: disposition }),
         ...(options?.contentType && { ResponseContentType: options.contentType }),
       }),
       { expiresIn }

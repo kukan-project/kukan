@@ -130,7 +130,7 @@ export function PipelineStatusDetail({
             const duration = getDuration(step.started_at, step.completed_at)
             return (
               <div
-                key={step.step_name}
+                key={step.id}
                 className="flex items-center justify-between rounded-md border px-3 py-2"
               >
                 <div className="flex items-center gap-2">

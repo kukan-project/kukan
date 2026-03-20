@@ -79,7 +79,6 @@
     "resources": "Data and Resources",
     "additionalInfo": "Additional Information",
     "noResources": "No resources",
-    "explore": "Explore",
     "maintainer": "Maintainer",
     "author": "Author",
     "license": "License",
@@ -240,7 +239,8 @@
     "previewSourceTable": "Table",
     "previewSourceText": "Text",
     "source": "Source",
-    "replaceFile": "Replace file"
+    "replaceFile": "Replace file",
+    "download": "Download"
   },
   "apiToken": {
     "title": "API Tokens",

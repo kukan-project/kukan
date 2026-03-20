@@ -22,7 +22,7 @@ const mockPipelineService = {
   failStep: vi.fn(),
   skipStep: vi.fn(),
   updateStatus: vi.fn(),
-  updatePreviewKey: vi.fn(),
+  updateExtractResult: vi.fn(),
 }
 
 vi.mock('../pipeline-service', () => ({
@@ -61,7 +61,7 @@ describe('processResource', () => {
     mockPipelineService.failStep.mockResolvedValue(undefined)
     mockPipelineService.skipStep.mockResolvedValue(undefined)
     mockPipelineService.updateStatus.mockResolvedValue(undefined)
-    mockPipelineService.updatePreviewKey.mockResolvedValue(undefined)
+    mockPipelineService.updateExtractResult.mockResolvedValue(undefined)
   })
 
   it('should run all steps for CSV resource', async () => {
@@ -83,7 +83,7 @@ describe('processResource', () => {
     expect(extractStep).toHaveBeenCalledWith('res-1', 'pkg-1', 'resources/pkg-1/res-1', 'CSV', ctx)
     expect(indexSearchStep).toHaveBeenCalledWith('res-1', ctx)
     expect(mockPipelineService.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
-    expect(mockPipelineService.updatePreviewKey).toHaveBeenCalledWith(
+    expect(mockPipelineService.updateExtractResult).toHaveBeenCalledWith(
       'pipeline-1',
       'previews/pkg-1/res-1.parquet',
       { encoding: 'UTF8' }
@@ -102,7 +102,7 @@ describe('processResource', () => {
     await processResource('res-1', ctx, db)
 
     expect(mockPipelineService.skipStep).toHaveBeenCalledWith('step-1')
-    expect(mockPipelineService.updatePreviewKey).not.toHaveBeenCalled()
+    expect(mockPipelineService.updateExtractResult).not.toHaveBeenCalled()
     expect(indexSearchStep).toHaveBeenCalled()
     expect(mockPipelineService.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
   })

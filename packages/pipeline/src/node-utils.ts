@@ -1,7 +1,5 @@
 /**
  * Node.js-specific utilities (Buffer, Readable).
- * NOT re-exported from index.ts to avoid polluting the frontend bundle.
- * Import as '@kukan/shared/node-utils' from server-side code only.
  */
 
 import { Readable } from 'stream'

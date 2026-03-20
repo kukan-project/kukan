@@ -79,6 +79,33 @@ export function isCsvFormat(format?: string | null, mimetype?: string | null): b
   return f === 'csv' || f === 'tsv' || (!!m && CSV_MIMES.has(m))
 }
 
+const TEXT_FORMATS = new Set(['txt', 'text', 'json', 'xml', 'html', 'htm', 'md'])
+
+/** Check if a format is text-based (CSV/TSV or plain text variants) */
+export function isTextFormat(format: string | null): boolean {
+  if (!format) return false
+  const f = format.toLowerCase()
+  return isCsvFormat(format) || TEXT_FORMATS.has(f)
+}
+
+/**
+ * Map encoding-japanese encoding names to WHATWG charset labels.
+ * @see https://encoding.spec.whatwg.org/#names-and-labels
+ */
+const ENCODING_TO_CHARSET: Record<string, string> = {
+  UTF8: 'utf-8',
+  ASCII: 'utf-8',
+  SJIS: 'shift_jis',
+  EUCJP: 'euc-jp',
+  JIS: 'iso-2022-jp',
+  UNICODE: 'utf-8',
+}
+
+/** Convert encoding-japanese name to WHATWG charset label (defaults to utf-8) */
+export function toCharset(encoding: string): string {
+  return ENCODING_TO_CHARSET[encoding] ?? 'utf-8'
+}
+
 /** Compute storage key for a resource's raw file */
 export function getStorageKey(packageId: string, resourceId: string): string {
   return `resources/${packageId}/${resourceId}`
