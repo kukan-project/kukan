@@ -57,7 +57,7 @@ export function ParquetPreview({ resourceId }: ParquetPreviewProps) {
           </div>
         )}
         <table className="w-max border-collapse text-sm">
-          <thead className="sticky top-0 z-10 border-b bg-muted/50">
+          <thead className="sticky top-0 z-10 border-b bg-muted">
             <tr>
               {metadata.columns.map((col, i) => (
                 <th

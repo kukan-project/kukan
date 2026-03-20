@@ -51,11 +51,6 @@ export async function fetchStep(resourceId: string, ctx: PipelineContext): Promi
   return { storageKey, format: res.format, packageId: res.packageId }
 }
 
-/**
- * Download a URL and stream directly to Storage.
- * Computes SHA-256 hash and enforces size limit on the fly.
- * Returns hash and total size after upload completes.
- */
 /** Compute SHA-256 hash and size from an existing Storage object */
 async function computeHash(
   storageKey: string,

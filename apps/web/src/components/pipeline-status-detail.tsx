@@ -9,9 +9,8 @@ import { clientFetch } from '@/lib/client-api'
 
 interface PipelineStatusDetailProps {
   resourceId: string
-  canManage?: boolean
   /** Called when pipeline reaches a terminal state after reprocessing */
-  onPipelineComplete?: () => void
+  onSettled?: (status: PipelineStatus) => void
 }
 
 const STEP_LABEL_KEYS: Record<string, string> = {
@@ -57,68 +56,71 @@ const STATUS_BADGE_VARIANTS: Record<
   error: 'destructive',
 }
 
-export function PipelineStatusDetail({
-  resourceId,
-  canManage = false,
-  onPipelineComplete,
-}: PipelineStatusDetailProps) {
+/**
+ * Pipeline status display with reprocess button.
+ * Polls automatically; fires onSettled when pipeline reaches terminal state.
+ */
+export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDetailProps) {
   const t = useTranslations('resource')
-  const { data, status, steps, error, refetch } = usePipelineStatus({
+  const { status, steps, error, refetch } = usePipelineStatus({
     resourceId,
-    onSettled: onPipelineComplete,
+    initialActive: true,
+    onSettled,
   })
   const [reprocessing, setReprocessing] = useState(false)
-
-  // Not visible to users without manage permission
-  if (!canManage) return null
+  const isRunning = status === 'queued' || status === 'processing'
 
   async function handleReprocess() {
     setReprocessing(true)
     try {
-      await clientFetch(`/api/v1/resources/${resourceId}/run-pipeline`, { method: 'POST' })
+      await clientFetch(`/api/v1/resources/${encodeURIComponent(resourceId)}/run-pipeline`, {
+        method: 'POST',
+      })
       refetch()
     } finally {
       setReprocessing(false)
     }
   }
 
-  // No pipeline record yet — show process button
-  if (!data || !status) {
-    return (
-      <div className="flex items-center justify-between">
-        <h3 className="font-medium">{t('pipelineStatus')}</h3>
-        <Button variant="outline" size="sm" onClick={handleReprocess} disabled={reprocessing}>
-          <RefreshCw className={`mr-1 size-3 ${reprocessing ? 'animate-spin' : ''}`} />
-          {reprocessing ? t('reprocessing') : t('reprocessResource')}
-        </Button>
-      </div>
-    )
-  }
-
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h3 className="font-medium">{t('pipelineStatus')}</h3>
-          <Badge variant={STATUS_BADGE_VARIANTS[status]}>
-            {t(
-              status === 'queued'
-                ? 'pipelineQueued'
-                : status === 'processing'
-                  ? 'pipelineProcessing'
-                  : status === 'complete'
-                    ? 'pipelineComplete'
-                    : 'pipelineError'
-            )}
-          </Badge>
+      {status && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Badge variant={STATUS_BADGE_VARIANTS[status]}>
+              {t(
+                status === 'queued'
+                  ? 'pipelineQueued'
+                  : status === 'processing'
+                    ? 'pipelineProcessing'
+                    : status === 'complete'
+                      ? 'pipelineComplete'
+                      : 'pipelineError'
+              )}
+            </Badge>
+          </div>
+          {!isRunning && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleReprocess}
+              disabled={reprocessing}
+            >
+              <RefreshCw className={`mr-1 size-3 ${reprocessing ? 'animate-spin' : ''}`} />
+              {reprocessing ? t('reprocessing') : t('reprocessResource')}
+            </Button>
+          )}
         </div>
-        {(status === 'complete' || status === 'error') && (
-          <Button variant="outline" size="sm" onClick={handleReprocess} disabled={reprocessing}>
-            <RefreshCw className={`mr-1 size-3 ${reprocessing ? 'animate-spin' : ''}`} />
+      )}
+
+      {!status && (
+        <div className="flex items-center justify-center py-4">
+          <Button variant="outline" onClick={handleReprocess} disabled={reprocessing}>
+            <RefreshCw className={`mr-1 size-4 ${reprocessing ? 'animate-spin' : ''}`} />
             {reprocessing ? t('reprocessing') : t('reprocessResource')}
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>

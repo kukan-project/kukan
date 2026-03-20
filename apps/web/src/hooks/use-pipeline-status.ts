@@ -30,6 +30,9 @@ interface UsePipelineStatusOptions {
   /** Called once when pipeline transitions to a terminal state (complete or error).
    *  Does NOT fire on initial load if already terminal — only on actual transitions. */
   onSettled?: (status: PipelineStatus) => void
+  /** When true, treat the first poll as an active transition (fire onSettled even if
+   *  the first result is already terminal). Use after triggering a reprocess. */
+  initialActive?: boolean
 }
 
 /**
@@ -44,6 +47,7 @@ export function usePipelineStatus({
   initialStatus = null,
   interval = 500,
   onSettled,
+  initialActive = false,
 }: UsePipelineStatusOptions) {
   const [data, setData] = useState<PipelineStatusData | null>(
     initialStatus ? { id: resourceId, pipeline_status: initialStatus, steps: [] } : null
@@ -56,7 +60,7 @@ export function usePipelineStatus({
 
   // Tracks whether we've seen a non-terminal state (or triggered via refetch),
   // so onSettled only fires on actual transitions, not on initial load.
-  const hasSeenActiveRef = useRef(false)
+  const hasSeenActiveRef = useRef(initialActive)
 
   const stopPolling = useCallback(() => {
     activeRef.current = false
