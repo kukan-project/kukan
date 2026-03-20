@@ -33,7 +33,11 @@ export async function fetchStep(resourceId: string, ctx: PipelineContext): Promi
   const storageKey = getStorageKey(res.packageId, res.id)
 
   if (res.urlType === 'upload') {
-    // Already in Storage — nothing to do
+    // Already in Storage — compute hash if missing
+    if (!res.hash) {
+      const { hash, size } = await computeHash(storageKey, ctx)
+      await ctx.updateResourceHashAndSize(resourceId, { hash, size })
+    }
   } else if (res.url) {
     const { hash, size } = await downloadToStorage(res.url, storageKey, ctx)
 
@@ -52,6 +56,22 @@ export async function fetchStep(resourceId: string, ctx: PipelineContext): Promi
  * Computes SHA-256 hash and enforces size limit on the fly.
  * Returns hash and total size after upload completes.
  */
+/** Compute SHA-256 hash and size from an existing Storage object */
+async function computeHash(
+  storageKey: string,
+  ctx: PipelineContext
+): Promise<{ hash: string; size: number }> {
+  const stream = await ctx.storage.download(storageKey)
+  const hashDigest = createHash('sha256')
+  let totalSize = 0
+  for await (const chunk of stream) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    hashDigest.update(buf)
+    totalSize += buf.length
+  }
+  return { hash: `sha256:${hashDigest.digest('hex')}`, size: totalSize }
+}
+
 async function downloadToStorage(
   url: string,
   storageKey: string,

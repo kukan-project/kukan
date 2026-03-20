@@ -55,8 +55,11 @@ describe('fetchStep', () => {
     await expect(fetchStep('res-1', ctx)).rejects.toThrow('no file or URL')
   })
 
-  it('should skip storage operations for upload resources', async () => {
+  it('should compute hash for upload resources when missing', async () => {
+    const content = 'name,age\nAlice,30\n'
+    const expectedHash = `sha256:${createHash('sha256').update(content).digest('hex')}`
     const ctx = createMockCtx()
+    vi.mocked(ctx.storage.download).mockResolvedValue(Readable.from(Buffer.from(content)))
     vi.mocked(ctx.getResource).mockResolvedValue({
       id: 'res-1',
       packageId: 'pkg-1',
@@ -75,6 +78,28 @@ describe('fetchStep', () => {
     })
     // Should not upload (data already in Storage)
     expect(ctx.storage.upload).not.toHaveBeenCalled()
+    // Should compute and save hash
+    expect(ctx.updateResourceHashAndSize).toHaveBeenCalledWith('res-1', {
+      hash: expectedHash,
+      size: content.length,
+    })
+  })
+
+  it('should skip hash computation for upload resources when already set', async () => {
+    const ctx = createMockCtx()
+    vi.mocked(ctx.getResource).mockResolvedValue({
+      id: 'res-1',
+      packageId: 'pkg-1',
+      url: null,
+      urlType: 'upload',
+      format: 'CSV',
+      hash: 'sha256:abc',
+    })
+
+    await fetchStep('res-1', ctx)
+
+    expect(ctx.storage.download).not.toHaveBeenCalled()
+    expect(ctx.updateResourceHashAndSize).not.toHaveBeenCalled()
   })
 
   it('should stream from external URL to Storage and compute hash', async () => {
@@ -209,6 +234,7 @@ describe('fetchStep', () => {
 
   it('should return correct format and packageId', async () => {
     const ctx = createMockCtx()
+    vi.mocked(ctx.storage.download).mockResolvedValue(Readable.from(Buffer.from('test')))
     vi.mocked(ctx.getResource).mockResolvedValue({
       id: 'res-1',
       packageId: 'pkg-99',

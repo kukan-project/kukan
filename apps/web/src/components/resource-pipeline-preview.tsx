@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { Separator } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { PipelineStatusDetail } from './pipeline-status-detail'
@@ -22,11 +23,13 @@ export function ResourcePipelinePreview({
   canManage,
 }: ResourcePipelinePreviewProps) {
   const t = useTranslations('resource')
+  const router = useRouter()
   const [previewKey, setPreviewKey] = useState(0)
 
   const handlePipelineComplete = useCallback(() => {
     setPreviewKey((k) => k + 1)
-  }, [])
+    router.refresh() // Re-fetch server component data (hash, size, etc.)
+  }, [router])
 
   return (
     <>
