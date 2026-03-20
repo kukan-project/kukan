@@ -83,3 +83,5 @@ export {
 } from './components/ui/dialog'
 export { Switch } from './components/ui/switch'
 export { Skeleton } from './components/ui/skeleton'
+export { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs'
+export { Progress } from './components/ui/progress'
