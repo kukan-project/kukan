@@ -4,11 +4,12 @@
  */
 
 import { mkdir, writeFile, unlink } from 'fs/promises'
-import { createReadStream } from 'fs'
+import { createReadStream, createWriteStream } from 'fs'
 import { join, dirname } from 'path'
+import { pipeline } from 'stream/promises'
 import { Readable } from 'stream'
 import { ObjectMeta } from '@kukan/shared'
-import { StorageAdapter } from './adapter'
+import { StorageAdapter, type SignedUrlOptions } from './adapter'
 
 export interface LocalStorageConfig {
   basePath: string
@@ -30,11 +31,7 @@ export class LocalStorageAdapter implements StorageAdapter {
     if (Buffer.isBuffer(body)) {
       await writeFile(filePath, body)
     } else {
-      const chunks: Buffer[] = []
-      for await (const chunk of body) {
-        chunks.push(Buffer.from(chunk))
-      }
-      await writeFile(filePath, Buffer.concat(chunks))
+      await pipeline(body, createWriteStream(filePath))
     }
   }
 
@@ -48,7 +45,7 @@ export class LocalStorageAdapter implements StorageAdapter {
     await unlink(filePath)
   }
 
-  async getSignedUrl(key: string, _expiresIn: number = 3600): Promise<string> {
+  async getSignedUrl(key: string, _options?: SignedUrlOptions): Promise<string> {
     // Local filesystem doesn't support signed URLs
     // Return a file:// URL for local access
     const filePath = join(this.basePath, key)

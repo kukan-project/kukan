@@ -9,10 +9,11 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3'
+import { Upload } from '@aws-sdk/lib-storage'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { Readable } from 'stream'
 import { ObjectMeta } from '@kukan/shared'
-import { StorageAdapter } from './adapter'
+import { StorageAdapter, type SignedUrlOptions } from './adapter'
 
 export interface S3CompatibleConfig {
   bucket: string
@@ -52,16 +53,30 @@ export class S3CompatibleStorageAdapter implements StorageAdapter {
   async upload(key: string, body: Buffer | Readable, meta?: ObjectMeta): Promise<void> {
     const metadata = this.buildMetadata(meta)
 
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: body,
-        ContentType: meta?.contentType,
-        ...(Buffer.isBuffer(body) && { ContentLength: body.length }),
-        ...(Object.keys(metadata).length > 0 && { Metadata: metadata }),
+    if (Buffer.isBuffer(body)) {
+      await this.client.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Body: body,
+          ContentType: meta?.contentType,
+          ContentLength: body.length,
+          ...(Object.keys(metadata).length > 0 && { Metadata: metadata }),
+        })
+      )
+    } else {
+      const upload = new Upload({
+        client: this.client,
+        params: {
+          Bucket: this.bucket,
+          Key: key,
+          Body: body,
+          ContentType: meta?.contentType,
+          ...(Object.keys(metadata).length > 0 && { Metadata: metadata }),
+        },
       })
-    )
+      await upload.done()
+    }
   }
 
   async download(key: string): Promise<Readable> {
@@ -83,12 +98,15 @@ export class S3CompatibleStorageAdapter implements StorageAdapter {
     )
   }
 
-  async getSignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
+  async getSignedUrl(key: string, options?: SignedUrlOptions): Promise<string> {
+    const expiresIn = options?.expiresIn ?? 3600
     return await getSignedUrl(
       this.client,
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
+        ...(options?.inline && { ResponseContentDisposition: 'inline' }),
+        ...(options?.contentType && { ResponseContentType: options.contentType }),
       }),
       { expiresIn }
     )

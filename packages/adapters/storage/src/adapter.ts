@@ -6,6 +6,14 @@
 import { Readable } from 'stream'
 import { ObjectMeta } from '@kukan/shared'
 
+export interface SignedUrlOptions {
+  expiresIn?: number
+  /** When true, sets Content-Disposition: inline so the browser displays the file instead of downloading */
+  inline?: boolean
+  /** Override the Content-Type header in the response */
+  contentType?: string
+}
+
 export interface StorageAdapter {
   /**
    * Upload an object to storage
@@ -25,7 +33,7 @@ export interface StorageAdapter {
   /**
    * Get a presigned URL for temporary read access
    */
-  getSignedUrl(key: string, expiresIn?: number): Promise<string>
+  getSignedUrl(key: string, options?: SignedUrlOptions): Promise<string>
 
   /**
    * Get a presigned URL for uploading an object
