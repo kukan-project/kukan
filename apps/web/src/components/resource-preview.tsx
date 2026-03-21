@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, Skeleton, Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import { isCsvFormat } from '@kukan/shared'
+import { isCsvFormat, isTextFormat } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
 import { useFetch } from '@/hooks/use-fetch'
 import { ParquetPreview } from './parquet-preview'
@@ -27,11 +27,14 @@ export function ResourcePreview({ resourceId, format }: ResourcePreviewProps) {
   // PDF: render via Storage signed URL
   if (f === 'pdf') return <PdfPreview resourceId={resourceId} />
 
-  // TXT: text-only preview (no preview-url fetch needed)
-  if (f === 'txt') return <TextOnlyPreview resourceId={resourceId} />
+  // CSV/TSV: Parquet table with raw text toggle
+  if (isCsvFormat(format)) return <TablePreview resourceId={resourceId} format={format} />
 
-  // CSV/TSV and other formats: check for Parquet preview
-  return <TablePreview resourceId={resourceId} format={format} />
+  // Text formats (JSON, XML, HTML, GeoJSON, TXT, MD, etc.): raw text preview
+  if (isTextFormat(format ?? null)) return <TextOnlyPreview resourceId={resourceId} />
+
+  // Non-text formats (XLSX, DOC, ZIP, etc.): not available
+  return <PreviewNotAvailable />
 }
 
 function TextOnlyPreview({ resourceId }: { resourceId: string }) {

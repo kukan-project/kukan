@@ -50,14 +50,64 @@ describe('ResourcePreview', () => {
       })
     })
 
-    it('should show not-available when preview-url returns null for unsupported format', async () => {
-      mockClientFetch.mockResolvedValue(jsonResponse({ url: null }))
+    // XLSX not-available test moved to "Text format preview" section (synchronous render)
+  })
 
-      render(<ResourcePreview resourceId="r1" format="XLSX" />)
+  describe('Text format preview', () => {
+    it('should show raw text preview for JSON format', async () => {
+      mockClientFetch.mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({
+          'Content-Type': 'text/plain; charset=utf-8',
+          'X-Detected-Encoding': 'UTF8',
+        }),
+        arrayBuffer: async () => new TextEncoder().encode('{"key":"value"}').buffer,
+      } as Response)
+
+      render(<ResourcePreview resourceId="r1" format="JSON" />)
 
       await waitFor(() => {
-        expect(screen.getByText('Preview is not available for this format')).toBeInTheDocument()
+        expect(screen.getByText('{"key":"value"}')).toBeInTheDocument()
       })
+    })
+
+    it('should show raw text preview for XML format', async () => {
+      mockClientFetch.mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({
+          'Content-Type': 'text/plain; charset=utf-8',
+          'X-Detected-Encoding': 'UTF8',
+        }),
+        arrayBuffer: async () => new TextEncoder().encode('<root/>').buffer,
+      } as Response)
+
+      render(<ResourcePreview resourceId="r1" format="XML" />)
+
+      await waitFor(() => {
+        expect(screen.getByText('<root/>')).toBeInTheDocument()
+      })
+    })
+
+    it('should show raw text preview for GeoJSON format', async () => {
+      mockClientFetch.mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({
+          'Content-Type': 'text/plain; charset=utf-8',
+          'X-Detected-Encoding': 'UTF8',
+        }),
+        arrayBuffer: async () => new TextEncoder().encode('{"type":"FeatureCollection"}').buffer,
+      } as Response)
+
+      render(<ResourcePreview resourceId="r1" format="GeoJSON" />)
+
+      await waitFor(() => {
+        expect(screen.getByText('{"type":"FeatureCollection"}')).toBeInTheDocument()
+      })
+    })
+
+    it('should show not-available for non-text formats like XLSX', () => {
+      render(<ResourcePreview resourceId="r1" format="XLSX" />)
+      expect(screen.getByText('Preview is not available for this format')).toBeInTheDocument()
     })
   })
 

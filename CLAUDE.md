@@ -195,23 +195,24 @@ pnpm format        # Prettier フォーマット
 パイプラインは Fetch → Extract → Index の3ステップ。
 Fetch と Index はフォーマット非依存。Extract のみフォーマット別処理を行う。
 
-| フォーマット | isTextFormat | エンコーディング検出 | Parquet 生成 | RAW テキスト表示 |
-|-------------|:-----------:|---------------------|:----------:|:--------------:|
-| CSV         | Yes | `Encoding.detect()` | Yes | Yes（切替） |
-| TSV         | Yes | `Encoding.detect()` | Yes | Yes（切替） |
-| TXT         | Yes | `Encoding.detect()` | -   | Yes |
-| HTML/HTM    | Yes | `Encoding.detect()` | -   | No |
-| XML         | Yes | `<?xml encoding>` 宣言パース、fallback UTF-8 | - | No |
-| JSON        | Yes | UTF-8 固定（RFC 8259） | - | No |
-| GeoJSON     | Yes | UTF-8 固定（RFC 7946） | - | No |
-| MD          | Yes | UTF-8 固定 | - | No |
-| RDF         | No  | スキップ | - | No |
-| PDF         | No  | スキップ | - | No（iframe） |
-| XLSX/XLS    | No  | スキップ | - | No |
-| DOC/DOCX    | No  | スキップ | - | No |
-| ZIP         | No  | スキップ | - | No |
+| フォーマット | isTextFormat | エンコーディング検出                         | Parquet 生成 | RAW テキスト表示 |
+| ------------ | :----------: | -------------------------------------------- | :----------: | :--------------: |
+| CSV          |     Yes      | `Encoding.detect()`                          |     Yes      |   Yes（切替）    |
+| TSV          |     Yes      | `Encoding.detect()`                          |     Yes      |   Yes（切替）    |
+| TXT          |     Yes      | `Encoding.detect()`                          |      -       |       Yes        |
+| HTML/HTM     |     Yes      | `Encoding.detect()`                          |      -       |       Yes        |
+| XML          |     Yes      | `<?xml encoding>` 宣言パース、fallback UTF-8 |      -       |       Yes        |
+| JSON         |     Yes      | UTF-8 固定（RFC 8259）                       |      -       |       Yes        |
+| GeoJSON      |     Yes      | UTF-8 固定（RFC 7946）                       |      -       |       Yes        |
+| MD           |     Yes      | UTF-8 固定                                   |      -       |       Yes        |
+| RDF          |      No      | スキップ                                     |      -       |        No        |
+| PDF          |      No      | スキップ                                     |      -       |   No（iframe）   |
+| XLSX/XLS     |      No      | スキップ                                     |      -       |        No        |
+| DOC/DOCX     |      No      | スキップ                                     |      -       |        No        |
+| ZIP          |      No      | スキップ                                     |      -       |        No        |
 
 **関連ファイル:**
+
 - フォーマット判定: `packages/shared/src/formats.ts`（`isTextFormat`, `isCsvFormat`）
 - エンコーディング検出: `packages/pipeline/src/node-utils.ts`（`detectEncoding`）
 - Extract ステップ: `packages/pipeline/src/steps/extract.ts`
