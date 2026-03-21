@@ -13,6 +13,13 @@ vi.mock('../parquet-preview', () => ({
   ),
 }))
 
+// Mock GeoJsonPreview to avoid Leaflet dependency in tests
+vi.mock('../geojson-preview', () => ({
+  GeoJsonPreview: ({ resourceId }: { resourceId: string }) => (
+    <div data-testid="geojson-preview">GeoJSON preview for {resourceId}</div>
+  ),
+}))
+
 import { clientFetch } from '@/lib/client-api'
 
 const mockClientFetch = vi.mocked(clientFetch)
@@ -88,21 +95,9 @@ describe('ResourcePreview', () => {
       })
     })
 
-    it('should show raw text preview for GeoJSON format', async () => {
-      mockClientFetch.mockResolvedValueOnce({
-        ok: true,
-        headers: new Headers({
-          'Content-Type': 'text/plain; charset=utf-8',
-          'X-Detected-Encoding': 'UTF8',
-        }),
-        arrayBuffer: async () => new TextEncoder().encode('{"type":"FeatureCollection"}').buffer,
-      } as Response)
-
+    it('should route GeoJSON to GeoJsonPreview component', () => {
       render(<ResourcePreview resourceId="r1" format="GeoJSON" />)
-
-      await waitFor(() => {
-        expect(screen.getByText('{"type":"FeatureCollection"}')).toBeInTheDocument()
-      })
+      expect(screen.getByTestId('geojson-preview')).toBeInTheDocument()
     })
 
     it('should show not-available for non-text formats like XLSX', () => {

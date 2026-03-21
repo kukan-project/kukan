@@ -238,6 +238,7 @@
     "failedToUpdate": "Failed to update resource",
     "previewSourceTable": "Table",
     "previewSourceText": "Text",
+    "previewSourceMap": "Map",
     "source": "Source",
     "replaceFile": "Replace file",
     "download": "Download"

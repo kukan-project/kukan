@@ -238,6 +238,7 @@
     "failedToUpdate": "リソースの更新に失敗しました",
     "previewSourceTable": "テーブル表示",
     "previewSourceText": "テキスト表示",
+    "previewSourceMap": "地図",
     "source": "ソース",
     "replaceFile": "ファイルを差し替え",
     "download": "ダウンロード"

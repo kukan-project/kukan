@@ -7,6 +7,7 @@ import { isCsvFormat, isTextFormat } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
 import { useFetch } from '@/hooks/use-fetch'
 import { ParquetPreview } from './parquet-preview'
+import { GeoJsonPreview } from './geojson-preview'
 
 interface ResourcePreviewProps {
   resourceId: string
@@ -30,7 +31,10 @@ export function ResourcePreview({ resourceId, format }: ResourcePreviewProps) {
   // CSV/TSV: Parquet table with raw text toggle
   if (isCsvFormat(format)) return <TablePreview resourceId={resourceId} format={format} />
 
-  // Text formats (JSON, XML, HTML, GeoJSON, TXT, MD, etc.): raw text preview
+  // GeoJSON: map with raw text toggle
+  if (f === 'geojson') return <GeoJsonPreview resourceId={resourceId} />
+
+  // Text formats (JSON, XML, HTML, TXT, MD, etc.): raw text preview
   if (isTextFormat(format ?? null)) return <TextOnlyPreview resourceId={resourceId} />
 
   // Non-text formats (XLSX, DOC, ZIP, etc.): not available
