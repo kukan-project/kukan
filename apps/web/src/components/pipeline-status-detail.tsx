@@ -100,12 +100,7 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
             </Badge>
           </div>
           {!isRunning && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleReprocess}
-              disabled={reprocessing}
-            >
+            <Button variant="outline" size="sm" onClick={handleReprocess} disabled={reprocessing}>
               <RefreshCw className={`mr-1 size-3 ${reprocessing ? 'animate-spin' : ''}`} />
               {reprocessing ? t('reprocessing') : t('reprocessResource')}
             </Button>

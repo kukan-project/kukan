@@ -98,6 +98,31 @@ export class S3CompatibleStorageAdapter implements StorageAdapter {
     )
   }
 
+  async downloadRange(
+    key: string,
+    start: number,
+    end: number
+  ): Promise<{ stream: Readable; totalSize: number; start: number; end: number }> {
+    const response = await this.client.send(
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Range: `bytes=${start}-${end}`,
+      })
+    )
+
+    const totalSize = response.ContentRange
+      ? parseInt(response.ContentRange.split('/')[1], 10)
+      : (response.ContentLength ?? 0)
+
+    return {
+      stream: response.Body as Readable,
+      totalSize,
+      start,
+      end: Math.min(end, totalSize - 1),
+    }
+  }
+
   async getSignedUrl(key: string, options?: SignedUrlOptions): Promise<string> {
     const expiresIn = options?.expiresIn ?? 3600
 

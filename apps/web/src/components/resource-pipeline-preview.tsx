@@ -3,14 +3,7 @@
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Settings2 } from 'lucide-react'
-import {
-  Button,
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@kukan/ui'
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { PipelineStatusDetail } from './pipeline-status-detail'
 import { ResourcePreview } from './resource-preview'

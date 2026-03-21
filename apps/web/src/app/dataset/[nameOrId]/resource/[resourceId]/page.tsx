@@ -93,10 +93,24 @@ export default async function ResourceDetailPage({ params }: Props) {
             </span>
             <h1 className="text-3xl font-bold tracking-tight">{resource.name || t('unnamed')}</h1>
           </div>
-          <DownloadButton resourceId={resource.id} label={t('download')} />
+          <DownloadButton
+            datasetNameOrId={nameOrId}
+            resourceId={resource.id}
+            filename={resource.url || resource.id}
+            label={t('download')}
+          />
         </div>
 
-        {resource.url && resource.urlType !== 'upload' && (
+        {resource.urlType === 'upload' && resource.url ? (
+          <div>
+            <a
+              href={`/dataset/${encodeURIComponent(nameOrId)}/resource/${encodeURIComponent(resource.id)}/download/${encodeURIComponent(resource.url)}`}
+              className="break-all text-sm text-primary underline-offset-4 hover:underline"
+            >
+              /dataset/{nameOrId}/resource/{resource.id}/download/{resource.url}
+            </a>
+          </div>
+        ) : resource.url && resource.urlType !== 'upload' ? (
           <div>
             <a
               href={resource.url}
@@ -107,7 +121,7 @@ export default async function ResourceDetailPage({ params }: Props) {
               {resource.url}
             </a>
           </div>
-        )}
+        ) : null}
 
         {resource.description && (
           <>

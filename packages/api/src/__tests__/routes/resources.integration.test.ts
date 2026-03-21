@@ -372,44 +372,23 @@ describe('Resources API Routes', () => {
     })
   })
 
-  describe('GET /api/v1/resources/:id/download-url', () => {
-    it('should return Storage signed URL for non-upload resource', async () => {
-      const pkg = await createPackage('dl-url-ext-pkg')
+  describe('GET /api/v1/resources/:id/download', () => {
+    it('should redirect to external URL for non-upload resource', async () => {
+      const pkg = await createPackage('dl-ext-pkg')
       const resource = await createResource(pkg.id, {
         url: 'https://example.com/data.csv',
       })
 
-      const res = await app.request(`/api/v1/resources/${resource.id}/download-url`)
-      expect(res.status).toBe(200)
-
-      const body = await res.json()
-      // All resources now use Storage signed URLs (no URL passthrough)
-      expect(body.url).toBeDefined()
-      expect(typeof body.url).toBe('string')
-    })
-
-    it('should return presigned URL for upload resource', async () => {
-      const pkg = await createPackage('dl-url-upload-pkg')
-      const resource = await createResource(pkg.id)
-
-      // Prepare as upload
-      await app.request(`/api/v1/resources/${resource.id}/upload-url`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: 'report.pdf', content_type: 'application/pdf' }),
+      const res = await app.request(`/api/v1/resources/${resource.id}/download`, {
+        redirect: 'manual',
       })
-
-      const res = await app.request(`/api/v1/resources/${resource.id}/download-url`)
-      expect(res.status).toBe(200)
-
-      const body = await res.json()
-      expect(body.url).toBeDefined()
-      expect(typeof body.url).toBe('string')
+      expect(res.status).toBe(302)
+      expect(res.headers.get('Location')).toBe('https://example.com/data.csv')
     })
 
     it('should return 404 for non-existent resource', async () => {
       const res = await app.request(
-        '/api/v1/resources/550e8400-e29b-41d4-a716-446655440000/download-url'
+        '/api/v1/resources/550e8400-e29b-41d4-a716-446655440000/download'
       )
       expect(res.status).toBe(404)
     })

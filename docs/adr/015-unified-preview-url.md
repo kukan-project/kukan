@@ -53,15 +53,14 @@ ResourcePreview
   └── *    → TablePreview → preview-url → hyparquet table
 ```
 
-### `download-url` との役割分担
+### `download` との役割分担
 
-| エンドポイント | 用途                                 | URL の種類                                                                                    |
-| -------------- | ------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `preview-url`  | ブラウザ内プレビュー表示用           | Storage presigned URL（inline disposition）                                                   |
-| `download-url` | ユーザーによるファイルダウンロード用 | 外部 URL はそのまま、upload は Storage presigned（attachment disposition + 元ファイル名付き） |
+| エンドポイント | 用途                                 | 方式                                                                               |
+| -------------- | ------------------------------------ | ---------------------------------------------------------------------------------- |
+| `preview-url`  | ブラウザ内プレビュー表示用           | S3: presigned URL（inline disposition）、Local: サーバープロキシ URL               |
+| `download`     | ユーザーによるファイルダウンロード用 | サーバー経由ストリーミング（attachment disposition）、外部 URL は 302 リダイレクト |
 
-`download-url` は外部 URL リソースの場合、オリジナルの URL をそのまま返す。
-`preview-url` は常に Storage 上のファイル（Parquet プレビューまたは元ファイル）の presigned URL を返す。
+※ `download-url` は ADR-017 により `download`（サーバー経由ストリーミング）に置換された。
 
 ## 影響
 
@@ -72,3 +71,4 @@ ResourcePreview
 ## 関連 ADR
 
 - ADR-014: プレビューデータのストレージ形式に Parquet を採用
+- ADR-017: サーバー経由のダウンロード URL（`download-url` → `download` 置換）

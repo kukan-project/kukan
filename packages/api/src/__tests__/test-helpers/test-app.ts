@@ -33,6 +33,9 @@ const mockStorage = {
   download: async () => {
     throw new Error('not implemented in test')
   },
+  downloadRange: async () => {
+    throw new Error('not implemented in test')
+  },
   delete: async () => {},
   getSignedUrl: async () => 'file:///test',
   getSignedUploadUrl: async () => 'https://minio.test/upload?signed=true',

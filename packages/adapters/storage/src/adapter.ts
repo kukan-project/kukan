@@ -38,6 +38,16 @@ export interface StorageAdapter {
   getSignedUrl(key: string, options?: SignedUrlOptions): Promise<string>
 
   /**
+   * Download a byte range of an object from storage.
+   * Used for Range request proxying (e.g., Parquet pagination via hyparquet).
+   */
+  downloadRange(
+    key: string,
+    start: number,
+    end: number
+  ): Promise<{ stream: Readable; totalSize: number; start: number; end: number }>
+
+  /**
    * Get a presigned URL for uploading an object
    */
   getSignedUploadUrl(

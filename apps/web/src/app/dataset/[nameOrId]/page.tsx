@@ -216,7 +216,12 @@ function ResourceCard({
           )}
         </div>
 
-        <DownloadButton resourceId={resource.id} label={downloadLabel} />
+        <DownloadButton
+          datasetNameOrId={packageName}
+          resourceId={resource.id}
+          filename={resource.url || resource.id}
+          label={downloadLabel}
+        />
       </CardContent>
     </Card>
   )

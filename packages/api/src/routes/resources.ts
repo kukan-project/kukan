@@ -16,6 +16,7 @@ import {
   ValidationError,
   getStorageKey,
   getMimeType,
+  detectContentType,
   toCharset,
 } from '@kukan/shared'
 import { checkOrgRole } from '../auth/permissions'
@@ -30,6 +31,23 @@ async function enqueuePipeline(c: Context<{ Variables: AppContext }>, resourceId
   const pipelineService = new ResourcePipelineService(c.get('db'), c.get('queue'))
   const jobId = await pipelineService.enqueue(resourceId)
   return { pipeline_status: 'queued' as const, job_id: jobId }
+}
+
+/** Resolve preview storage key and content type for a resource */
+async function resolvePreviewTarget(
+  db: ConstructorParameters<typeof ResourcePipelineService>[0],
+  resource: { id: string; packageId: string; format: string | null }
+): Promise<{ storageKey: string; contentType: string } | null> {
+  if (resource.format?.toLowerCase() === 'pdf') {
+    return {
+      storageKey: getStorageKey(resource.packageId, resource.id),
+      contentType: getMimeType('pdf')!,
+    }
+  }
+  const pipelineService = new ResourcePipelineService(db)
+  const status = await pipelineService.getStatus(resource.id)
+  if (!status?.previewKey) return null
+  return { storageKey: status.previewKey, contentType: 'application/octet-stream' }
 }
 
 /** Verify resource ownership and check org editor role */
@@ -89,53 +107,118 @@ resourcesRouter.get('/:id/text', async (c) => {
   })
 })
 
-// GET /api/v1/resources/:id/download-url - Get download URL for the resource file
-// External URL resources return the original URL; uploaded resources return a presigned Storage URL
-resourcesRouter.get('/:id/download-url', async (c) => {
+// GET /api/v1/resources/:id/download - Stream file download (public)
+// Upload resources: stream from Storage. External URL: 302 redirect.
+resourcesRouter.get('/:id/download', async (c) => {
   const id = c.req.param('id')
   const service = new ResourceService(c.get('db'))
   const resource = await service.getById(id)
 
-  // External URL: return original URL directly
+  // External URL: redirect to original URL
   if (resource.urlType !== 'upload' && resource.url) {
-    return c.json({ url: resource.url })
+    return c.redirect(resource.url, 302)
   }
 
-  // Uploaded file: return presigned Storage URL with attachment disposition
-  // url contains the original filename for uploaded resources (set by prepareForUpload)
+  // Uploaded file: stream from Storage
   const storage = c.get('storage')
   const storageKey = getStorageKey(resource.packageId, resource.id)
+  const nodeStream = await storage.download(storageKey)
+
   const filename = resource.url || resource.id
-  const url = await storage.getSignedUrl(storageKey, { filename })
-  return c.json({ url })
+  const encodedFilename = encodeURIComponent(filename)
+  const contentType = resource.mimetype || detectContentType(filename)
+
+  const headers: Record<string, string> = {
+    'Content-Type': contentType,
+    'Content-Disposition': `attachment; filename="${encodedFilename}"; filename*=UTF-8''${encodedFilename}`,
+    'Cache-Control': 'private, max-age=0',
+  }
+
+  if (resource.size) {
+    headers['Content-Length'] = String(resource.size)
+  }
+
+  return new Response(Readable.toWeb(nodeStream) as ReadableStream, { headers })
 })
 
-// GET /api/v1/resources/:id/preview-url - Get presigned URL for preview (public)
-// CSV/TSV → Parquet preview file, PDF → original file (inline), others → null
+// GET /api/v1/resources/:id/preview - Server-proxied preview with Range support
+// Used by Local storage (file:// URLs don't work in browsers).
+// S3 storage uses presigned URLs via preview-url instead.
+resourcesRouter.get('/:id/preview', async (c) => {
+  const id = c.req.param('id')
+  const service = new ResourceService(c.get('db'))
+  const resource = await service.getById(id)
+  const storage = c.get('storage')
+
+  const target = await resolvePreviewTarget(c.get('db'), resource)
+  if (!target) {
+    return c.json({ error: 'Preview not available' }, 404)
+  }
+  const { storageKey, contentType } = target
+
+  // Handle Range request for Parquet pagination
+  const rangeHeader = c.req.header('range')
+
+  if (rangeHeader) {
+    const match = rangeHeader.match(/bytes=(\d+)-(\d*)/)
+    if (!match) {
+      return new Response('Invalid Range', { status: 416 })
+    }
+
+    const start = parseInt(match[1], 10)
+    const end = match[2] ? parseInt(match[2], 10) : start + 1024 * 1024 - 1
+
+    const result = await storage.downloadRange(storageKey, start, end)
+
+    return new Response(Readable.toWeb(result.stream) as ReadableStream, {
+      status: 206,
+      headers: {
+        'Content-Type': contentType,
+        'Content-Range': `bytes ${result.start}-${result.end}/${result.totalSize}`,
+        'Content-Length': String(result.end - result.start + 1),
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'private, max-age=300',
+      },
+    })
+  }
+
+  // Full response (no Range header)
+  const nodeStream = await storage.download(storageKey)
+
+  return new Response(Readable.toWeb(nodeStream) as ReadableStream, {
+    headers: {
+      'Content-Type': contentType,
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'private, max-age=300',
+    },
+  })
+})
+
+// GET /api/v1/resources/:id/preview-url - Get preview URL (public)
+// Local storage: returns server-proxied URL. S3: returns presigned URL.
 resourcesRouter.get('/:id/preview-url', async (c) => {
   const id = c.req.param('id')
   const service = new ResourceService(c.get('db'))
   const resource = await service.getById(id)
-  const f = resource.format?.toLowerCase()
-  const storage = c.get('storage')
+  const env = c.get('env')
 
-  // PDF: return original file URL with inline disposition
-  if (f === 'pdf') {
-    const storageKey = getStorageKey(resource.packageId, resource.id)
-    const contentType = getMimeType('pdf')
-    const url = await storage.getSignedUrl(storageKey, { inline: true, contentType })
-    return c.json({ url })
-  }
-
-  // CSV/TSV: return Parquet preview URL
-  const pipelineService = new ResourcePipelineService(c.get('db'))
-  const status = await pipelineService.getStatus(id)
-
-  if (!status?.previewKey) {
+  const target = await resolvePreviewTarget(c.get('db'), resource)
+  if (!target) {
     return c.json({ url: null })
   }
 
-  const url = await storage.getSignedUrl(status.previewKey)
+  // Local storage: return server-proxied URL (file:// URLs don't work in browsers)
+  if (env.STORAGE_TYPE === 'local') {
+    return c.json({ url: `/api/v1/resources/${id}/preview` })
+  }
+
+  // S3 storage: return presigned URL
+  const storage = c.get('storage')
+  const isPdf = resource.format?.toLowerCase() === 'pdf'
+  const url = await storage.getSignedUrl(
+    target.storageKey,
+    isPdf ? { inline: true, contentType: target.contentType } : undefined
+  )
   return c.json({ url })
 })
 

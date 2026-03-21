@@ -3,7 +3,7 @@
  * Filesystem-based storage for development/testing
  */
 
-import { mkdir, writeFile, unlink } from 'fs/promises'
+import { mkdir, writeFile, unlink, stat as fsStat } from 'fs/promises'
 import { createReadStream, createWriteStream } from 'fs'
 import { join, dirname } from 'path'
 import { pipeline } from 'stream/promises'
@@ -43,6 +43,19 @@ export class LocalStorageAdapter implements StorageAdapter {
   async delete(key: string): Promise<void> {
     const filePath = join(this.basePath, key)
     await unlink(filePath)
+  }
+
+  async downloadRange(
+    key: string,
+    start: number,
+    end: number
+  ): Promise<{ stream: Readable; totalSize: number; start: number; end: number }> {
+    const filePath = join(this.basePath, key)
+    const stats = await fsStat(filePath)
+    const totalSize = stats.size
+    const actualEnd = Math.min(end, totalSize - 1)
+    const stream = createReadStream(filePath, { start, end: actualEnd })
+    return { stream, totalSize, start, end: actualEnd }
   }
 
   async getSignedUrl(key: string, _options?: SignedUrlOptions): Promise<string> {
