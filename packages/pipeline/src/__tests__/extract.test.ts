@@ -137,4 +137,40 @@ describe('extractStep', () => {
     expect(result).toEqual({ previewKey: null, encoding: 'UTF8' })
     expect(ctx.storage.upload).not.toHaveBeenCalled()
   })
+
+  it('should return UTF8 for GeoJSON without Parquet generation', async () => {
+    mockStorageDownload('{"type":"FeatureCollection","features":[]}')
+
+    const result = await extractStep('res-9', 'pkg-1', 'resources/pkg-1/res-9', 'GeoJSON', ctx)
+
+    expect(result).toEqual({ previewKey: null, encoding: 'UTF8' })
+    expect(ctx.storage.download).toHaveBeenCalled()
+    expect(ctx.storage.upload).not.toHaveBeenCalled()
+  })
+
+  it('should return UTF8 for JSON without Parquet generation', async () => {
+    mockStorageDownload('{"key":"value"}')
+
+    const result = await extractStep('res-10', 'pkg-1', 'resources/pkg-1/res-10', 'JSON', ctx)
+
+    expect(result).toEqual({ previewKey: null, encoding: 'UTF8' })
+    expect(ctx.storage.download).toHaveBeenCalled()
+    expect(ctx.storage.upload).not.toHaveBeenCalled()
+  })
+
+  it('should parse XML encoding declaration', async () => {
+    mockStorageDownload('<?xml version="1.0" encoding="Shift_JIS"?><root/>')
+
+    const result = await extractStep('res-11', 'pkg-1', 'resources/pkg-1/res-11', 'XML', ctx)
+
+    expect(result).toEqual({ previewKey: null, encoding: 'SJIS' })
+  })
+
+  it('should default to UTF8 for XML without encoding declaration', async () => {
+    mockStorageDownload('<?xml version="1.0"?><root/>')
+
+    const result = await extractStep('res-12', 'pkg-1', 'resources/pkg-1/res-12', 'XML', ctx)
+
+    expect(result).toEqual({ previewKey: null, encoding: 'UTF8' })
+  })
 })

@@ -6,8 +6,7 @@
 
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import Encoding from 'encoding-japanese'
-import { streamToBuffer } from '../node-utils.js'
+import { streamToBuffer, detectEncoding } from '../node-utils.js'
 import { getPreviewKey, isCsvFormat, isTextFormat } from '@kukan/shared'
 import { runWorker } from '../run-worker.js'
 import type { PipelineContext } from '../types'
@@ -41,9 +40,8 @@ export async function extractStep(
   const stream = await ctx.storage.download(storageKey)
   const fileBuffer = await streamToBuffer(stream)
 
-  // Detect encoding (all text formats)
-  const detected = Encoding.detect(fileBuffer)
-  const encoding = typeof detected === 'string' ? detected : 'UTF8'
+  // Detect encoding (format-specific strategy)
+  const encoding = detectEncoding(format!.toLowerCase(), fileBuffer)
 
   // Non-CSV: return encoding only (no Parquet preview)
   if (!isCsvFormat(format)) {

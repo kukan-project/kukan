@@ -1,9 +1,58 @@
 /**
- * Node.js-specific utilities (Buffer, Readable).
+ * Node.js-specific utilities (Buffer, Readable, encoding detection).
  */
 
 import { Readable } from 'stream'
 import Encoding from 'encoding-japanese'
+
+// ---------------------------------------------------------------------------
+// Encoding detection
+// ---------------------------------------------------------------------------
+
+/** Formats that need encoding-japanese auto-detection */
+const AUTO_DETECT_FORMATS = new Set(['csv', 'tsv', 'txt', 'text', 'html', 'htm'])
+
+/**
+ * Detect encoding based on format-specific rules.
+ * - CSV/TSV/TXT/HTML/HTM: encoding-japanese auto-detection
+ * - XML: parse <?xml encoding="..."> declaration, default UTF-8
+ * - JSON/GeoJSON/MD: UTF-8 fixed (by spec)
+ *
+ * @param format - lowercase format string
+ */
+export function detectEncoding(format: string, buffer: Buffer): string {
+  if (AUTO_DETECT_FORMATS.has(format)) {
+    const detected = Encoding.detect(buffer)
+    return typeof detected === 'string' ? detected : 'UTF8'
+  }
+  if (format === 'xml') {
+    return parseXmlDeclaredEncoding(buffer)
+  }
+  return 'UTF8'
+}
+
+/**
+ * Parse encoding from XML declaration (<?xml ... encoding="..." ?>).
+ * Returns encoding-japanese compatible name, or 'UTF8' if no declaration.
+ */
+function parseXmlDeclaredEncoding(buffer: Buffer): string {
+  const head = buffer.subarray(0, 200).toString('ascii')
+  const match = head.match(/<\?xml[^?]*encoding=["']([^"']+)["']/)
+  if (!match) return 'UTF8'
+  return xmlEncodingToDetectName(match[1])
+}
+
+/** Map XML encoding declaration values to encoding-japanese names */
+const XML_ENCODING_MAP: Record<string, string> = {
+  'utf-8': 'UTF8',
+  shift_jis: 'SJIS',
+  'euc-jp': 'EUCJP',
+  'iso-2022-jp': 'JIS',
+}
+
+function xmlEncodingToDetectName(declared: string): string {
+  return XML_ENCODING_MAP[declared.toLowerCase()] ?? 'UTF8'
+}
 
 /** Convert buffer to UTF-8 string using detected encoding */
 export function bufferToUtf8(buf: Buffer, encoding: string): string {

@@ -79,7 +79,7 @@ export function isCsvFormat(format?: string | null, mimetype?: string | null): b
   return f === 'csv' || f === 'tsv' || (!!m && CSV_MIMES.has(m))
 }
 
-const TEXT_FORMATS = new Set(['txt', 'text', 'json', 'xml', 'html', 'htm', 'md'])
+const TEXT_FORMATS = new Set(['txt', 'text', 'json', 'geojson', 'xml', 'html', 'htm', 'md'])
 
 /** Check if a format is text-based (CSV/TSV or plain text variants) */
 export function isTextFormat(format: string | null): boolean {
