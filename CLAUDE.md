@@ -176,6 +176,7 @@ pnpm format        # Prettier フォーマット
 - プレビュー Parquet 形式 → `docs/adr/014-parquet-preview-format.md`
 - DuckDB-WASM データエクスプローラー → `docs/adr/016-duckdb-wasm-data-explorer.md`
 - 統一 preview-url エンドポイント → `docs/adr/015-unified-preview-url.md`
+- サーバー経由ダウンロード URL → `docs/adr/017-server-proxied-download.md`
 
 新しい設計判断が必要になったら、同じフォーマットでADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
