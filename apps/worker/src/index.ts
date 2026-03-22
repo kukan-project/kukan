@@ -1,19 +1,16 @@
 /**
  * KUKAN Worker — SQS Queue Consumer
  * Processes resource pipeline jobs from the SQS queue.
- * Health check endpoint on WORKER_PORT (default: 3001).
  */
 
-import { serve } from '@hono/node-server'
-import { Hono } from 'hono'
 import { config } from 'dotenv'
-import { loadEnv } from '@kukan/shared'
-import { PIPELINE_JOB_TYPE } from '@kukan/pipeline'
+import { loadEnv, PIPELINE_JOB_TYPE } from '@kukan/shared'
 import type { Job } from '@kukan/queue-adapter'
 import { createDb } from '@kukan/db'
 import { SQSQueueAdapter } from '@kukan/queue-adapter'
 import { S3StorageAdapter } from '@kukan/storage-adapter'
-import { processResource, buildPipelineContext } from '@kukan/pipeline'
+import { processResource } from './pipeline/process-resource'
+import { buildPipelineContext } from './pipeline/build-context'
 
 // Load .env file from project root
 config({ path: '../../.env' })
@@ -52,17 +49,8 @@ await queue.process<{ resourceId: string }>(
   }
 )
 
-// Health check server (for App Runner / load balancer)
-const workerPort = parseInt(process.env.WORKER_PORT || '3001', 10)
-const app = new Hono()
-app.get('/health', (c) =>
-  c.json({ status: 'ok', service: 'worker', timestamp: new Date().toISOString() })
-)
-serve({ fetch: app.fetch, port: workerPort })
-
 console.log(`KUKAN Worker started`)
 console.log(`  Queue: ${env.SQS_QUEUE_URL}`)
-console.log(`  Health: http://localhost:${workerPort}/health`)
 
 // Graceful shutdown
 const shutdown = async () => {

@@ -15,7 +15,6 @@ const nextConfig: NextConfig = {
     '@kukan/search-adapter',
     '@kukan/queue-adapter',
     '@kukan/ai-adapter',
-    '@kukan/pipeline',
   ],
 }
 

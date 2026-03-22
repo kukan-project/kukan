@@ -8,7 +8,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { PackageService } from '../services/package-service'
 import { ResourceService } from '../services/resource-service'
-import { ResourcePipelineService } from '@kukan/pipeline'
+import { PipelineService } from '../services/pipeline-service'
 import { eq } from 'drizzle-orm'
 import { userOrgMembership } from '@kukan/db'
 import {
@@ -255,13 +255,21 @@ packagesRouter.post(
       package_id: pkg.id,
     })
 
-    // Enqueue pipeline for external URL resources
-    if (input.url && input.url_type !== 'upload') {
-      const pipelineService = new ResourcePipelineService(db, c.get('queue'))
-      await pipelineService.enqueue(resource.id)
-    }
+    // Enqueue pipeline + index search in parallel (best-effort enqueue)
+    // Skip upload resources — pipeline is triggered by upload-complete after file is in storage
+    const enqueuePromise =
+      input.url && input.url_type !== 'upload'
+        ? new PipelineService(db, c.get('queue'))
+            .enqueue(resource.id)
+            .catch((err) => {
+              console.error(
+                `[Packages] Best-effort pipeline enqueue failed for resource ${resource.id}:`,
+                err
+              )
+            })
+        : Promise.resolve()
 
-    await indexPackage(db, c.get('search'), pkg.id)
+    await Promise.all([enqueuePromise, indexPackage(db, c.get('search'), pkg.id)])
     return c.json(resource, 201)
   }
 )

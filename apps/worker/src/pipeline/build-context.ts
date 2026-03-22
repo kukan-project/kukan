@@ -1,6 +1,5 @@
 /**
  * Build PipelineContext from adapters and database.
- * Used by both the API (in-process mode) and the Worker (SQS mode).
  */
 
 import { eq, and, sql } from 'drizzle-orm'

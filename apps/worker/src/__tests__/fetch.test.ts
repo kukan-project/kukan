@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createHash } from 'crypto'
 import { Readable } from 'stream'
-import { fetchStep } from '../steps/fetch'
-import type { PipelineContext } from '../types'
+import { executeFetch } from '../pipeline/steps/fetch'
+import type { PipelineContext } from '../pipeline/types'
 
 /** Collect all data from a stream into a Buffer */
 async function streamToBuffer(stream: Readable): Promise<Buffer> {
@@ -31,12 +31,12 @@ function createMockCtx(overrides?: Partial<PipelineContext>): PipelineContext {
   }
 }
 
-describe('fetchStep', () => {
+describe('executeFetch', () => {
   it('should throw NotFoundError when resource not found', async () => {
     const ctx = createMockCtx()
     vi.mocked(ctx.getResource).mockResolvedValue(null)
 
-    await expect(fetchStep('nonexistent', ctx)).rejects.toThrow('Resource')
+    await expect(executeFetch('nonexistent', ctx)).rejects.toThrow('Resource')
   })
 
   it('should throw ValidationError when resource has no file or URL', async () => {
@@ -50,7 +50,7 @@ describe('fetchStep', () => {
       hash: null,
     })
 
-    await expect(fetchStep('res-1', ctx)).rejects.toThrow('no file or URL')
+    await expect(executeFetch('res-1', ctx)).rejects.toThrow('no file or URL')
   })
 
   it('should compute hash for upload resources when missing', async () => {
@@ -67,7 +67,7 @@ describe('fetchStep', () => {
       hash: null,
     })
 
-    const result = await fetchStep('res-1', ctx)
+    const result = await executeFetch('res-1', ctx)
 
     expect(result).toEqual({
       storageKey: 'resources/pkg-1/res-1',
@@ -94,7 +94,7 @@ describe('fetchStep', () => {
       hash: 'sha256:abc',
     })
 
-    await fetchStep('res-1', ctx)
+    await executeFetch('res-1', ctx)
 
     expect(ctx.storage.download).not.toHaveBeenCalled()
     expect(ctx.updateResourceHashAndSize).not.toHaveBeenCalled()
@@ -120,7 +120,7 @@ describe('fetchStep', () => {
       hash: null,
     })
 
-    const result = await fetchStep('res-1', ctx)
+    const result = await executeFetch('res-1', ctx)
 
     expect(result).toEqual({
       storageKey: 'resources/pkg-1/res-1',
@@ -154,7 +154,7 @@ describe('fetchStep', () => {
       hash: existingHash,
     })
 
-    await fetchStep('res-1', ctx)
+    await executeFetch('res-1', ctx)
 
     expect(ctx.updateResourceHashAndSize).not.toHaveBeenCalled()
 
@@ -175,7 +175,7 @@ describe('fetchStep', () => {
       hash: null,
     })
 
-    await expect(fetchStep('res-1', ctx)).rejects.toThrow('Failed to fetch')
+    await expect(executeFetch('res-1', ctx)).rejects.toThrow('Failed to fetch')
 
     fetchSpy.mockRestore()
   })
@@ -197,7 +197,7 @@ describe('fetchStep', () => {
       hash: null,
     })
 
-    await expect(fetchStep('res-1', ctx)).rejects.toThrow('10MB limit')
+    await expect(executeFetch('res-1', ctx)).rejects.toThrow('10MB limit')
 
     fetchSpy.mockRestore()
   })
@@ -225,7 +225,7 @@ describe('fetchStep', () => {
       hash: null,
     })
 
-    await expect(fetchStep('res-1', ctx)).rejects.toThrow('10MB limit')
+    await expect(executeFetch('res-1', ctx)).rejects.toThrow('10MB limit')
 
     fetchSpy.mockRestore()
   })
@@ -242,7 +242,7 @@ describe('fetchStep', () => {
       hash: null,
     })
 
-    const result = await fetchStep('res-1', ctx)
+    const result = await executeFetch('res-1', ctx)
 
     expect(result.format).toBe('JSON')
     expect(result.packageId).toBe('pkg-99')

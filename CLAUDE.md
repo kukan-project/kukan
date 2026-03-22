@@ -30,7 +30,7 @@ CKANの後継として設計されたTypeScriptフルスタックのデータカ
 | AI             | Bedrock / OpenAI / Ollama / NoOp                      |
 | テスト         | Vitest + Playwright                                   |
 | バリデーション | Zod                                                   |
-| デプロイ       | AWS App Runner / Docker Compose                       |
+| デプロイ       | AWS App Runner + ECS Fargate / Docker Compose         |
 | IaC            | AWS CDK (TypeScript)                                  |
 
 ## モノレポ構成
@@ -39,7 +39,7 @@ CKANの後継として設計されたTypeScriptフルスタックのデータカ
 KUKAN/
 ├── CLAUDE.md               # ← このファイル
 ├── apps/
-│   ├── worker/             # Ingest Worker（SQS consumer、ElasticMQ / AWS SQS）  ※ Phase 3+
+│   ├── worker/             # Pipeline Worker（SQS consumer、ECS Fargate）          ※ Phase 3+
 │   ├── web/                # Next.js フロントエンド + Hono API（単一オリジン）    ※ Phase 2+
 │   └── editor/             # Data Editor UI（アドオン、独立デプロイ可能）        ※ Phase 7+
 ├── packages/
@@ -53,7 +53,6 @@ KUKAN/
 │   │   └── ai/             # @kukan/ai-adapter (Bedrock / OpenAI / Ollama / NoOp)※ Phase 5+
 │   ├── editor-core/        # Data Editor ビジネスロジック（アドオン）             ※ Phase 7+
 │   ├── quality/            # Quality Monitor（リンク切れ、CSV検証、メタデータ監査、PII）※ Phase 4+
-│   ├── pipeline/           # Ingest パイプライン（ステップ + processResource）   ※ Phase 3+
 │   └── ui/                 # shadcn/ui 共有コンポーネント                        ※ Phase 2+
 ├── docs/
 │   ├── design-v4.md        # 設計書（全体像、参照用）
@@ -215,8 +214,8 @@ Extract のみフォーマット別処理を行う。
 **関連ファイル:**
 
 - フォーマット判定: `packages/shared/src/formats.ts`（`isTextFormat`, `isCsvFormat`）
-- エンコーディング検出: `packages/pipeline/src/node-utils.ts`（`detectEncoding`）
-- Extract ステップ: `packages/pipeline/src/steps/extract.ts`
+- エンコーディング検出: `apps/worker/src/pipeline/node-utils.ts`（`detectEncoding`）
+- Extract ステップ: `apps/worker/src/pipeline/steps/extract.ts`
 - フロントエンド プレビュー: `apps/web/src/components/resource-preview.tsx`
 - GeoJSON 地図プレビュー: `apps/web/src/components/geojson-preview.tsx`, `geojson-map.tsx`（Leaflet + OSM/国土地理院切替）
 

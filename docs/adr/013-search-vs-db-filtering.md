@@ -43,31 +43,32 @@ KUKAN では OpenSearch を検索エンジンとして採用している（ADR-0
 
 ### 責務の分担
 
-| 操作                                   | データソース                  | エンドポイント                              |
-| -------------------------------------- | ----------------------------- | ------------------------------------------- |
-| 公開キーワード全文検索                 | `search`（SearchAdapter）     | `GET /api/v1/search?q=...`                  |
-| 公開一覧（検索・フィルター・ファセット）| `search`（SearchAdapter）    | `GET /api/v1/packages`                      |
-| CKAN 互換検索                          | `search`（SearchAdapter）     | `GET /api/3/action/package_search`          |
-| **ダッシュボード一覧・管理**           | **`dbSearch`（PostgreSQL 固定）** | `GET /api/v1/packages?my_org=true`      |
-| 組織一覧・グループ一覧                 | DB 直接                       | `GET /api/v1/organizations`, `groups`       |
-| 組織詳細（所属データセット）           | DB 直接                       | `GET /api/v1/organizations/:id`             |
-| パッケージ詳細・リソース一覧           | DB 直接                       | `GET /api/v1/packages/:id`                  |
+| 操作                                     | データソース                      | エンドポイント                        |
+| ---------------------------------------- | --------------------------------- | ------------------------------------- |
+| 公開キーワード全文検索                   | `search`（SearchAdapter）         | `GET /api/v1/search?q=...`            |
+| 公開一覧（検索・フィルター・ファセット） | `search`（SearchAdapter）         | `GET /api/v1/packages`                |
+| CKAN 互換検索                            | `search`（SearchAdapter）         | `GET /api/3/action/package_search`    |
+| **ダッシュボード一覧・管理**             | **`dbSearch`（PostgreSQL 固定）** | `GET /api/v1/packages?my_org=true`    |
+| 組織一覧・グループ一覧                   | DB 直接                           | `GET /api/v1/organizations`, `groups` |
+| 組織詳細（所属データセット）             | DB 直接                           | `GET /api/v1/organizations/:id`       |
+| パッケージ詳細・リソース一覧             | DB 直接                           | `GET /api/v1/packages/:id`            |
 
 ### デュアルアダプター構成
 
 AppContext に2つの SearchAdapter を注入する：
 
-| コンテキスト変数 | アダプター              | 用途                                 |
-| ---------------- | ----------------------- | ------------------------------------ |
+| コンテキスト変数 | アダプター                            | 用途                           |
+| ---------------- | ------------------------------------- | ------------------------------ |
 | `search`         | 設定に従う（OpenSearch / PostgreSQL） | 公開検索・インデックス書き込み |
 | `dbSearch`       | 常に PostgresSearchAdapter            | ダッシュボード読み取り         |
 
 ```typescript
 // packages/api/src/adapters.ts
-const dbSearch = new PostgresSearchAdapter(db)     // 常に PostgreSQL
-let search = env.SEARCH_TYPE === 'opensearch'
-  ? new OpenSearchAdapter({ endpoint: env.OPENSEARCH_URL })
-  : dbSearch                                       // postgres の場合は共用
+const dbSearch = new PostgresSearchAdapter(db) // 常に PostgreSQL
+let search =
+  env.SEARCH_TYPE === 'opensearch'
+    ? new OpenSearchAdapter({ endpoint: env.OPENSEARCH_URL })
+    : dbSearch // postgres の場合は共用
 ```
 
 `my_org=true`（ダッシュボード）の場合に `dbSearch` を使用：

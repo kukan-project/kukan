@@ -39,6 +39,6 @@ Quality Monitor を `packages/quality` としてコアに組み込む。
 ## 影響
 
 - `packages/quality` に品質チェッカーインターフェースと実装を配置
-- Ingestパイプラインの最終ステップとして品質チェックを実行
+- パイプラインの最終ステップとして品質チェックを実行
 - DBに `quality_score` テーブルを追加（データセット・リソース単位）
 - ダッシュボードUIは `apps/web` 内に品質タブとして実装

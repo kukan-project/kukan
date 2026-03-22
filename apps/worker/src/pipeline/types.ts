@@ -1,20 +1,9 @@
 /**
- * KUKAN Pipeline Type Definitions
+ * Worker-only pipeline type definitions.
+ * Shared types (PipelineStatus, PipelineStepName, etc.) come from @kukan/shared.
  */
 
-import type { Readable } from 'stream'
-
-// ============================================================
-// Pipeline Status Types
-// ============================================================
-
-export type PipelineStatus = 'pending' | 'queued' | 'processing' | 'complete' | 'error'
-
-export type PipelineStepStatus = 'pending' | 'running' | 'complete' | 'error' | 'skipped'
-
-export type PipelineStepName = 'fetch' | 'extract' | 'index'
-
-export const PIPELINE_JOB_TYPE = 'resource-pipeline' as const
+import type { Readable } from 'node:stream'
 
 /** Minimal resource data needed by pipeline steps */
 export interface ResourceForPipeline {
@@ -35,10 +24,4 @@ export interface PipelineContext {
   getResource(id: string): Promise<ResourceForPipeline | null>
   /** Update resource hash, size, and lastModified (without touching updated) */
   updateResourceHashAndSize(id: string, meta: { hash: string; size: number }): Promise<void>
-}
-
-export interface ExtractedData {
-  headers: string[]
-  rows: string[][]
-  encoding: string
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { buildPipelineContext } from '../build-context'
+import { buildPipelineContext } from '../pipeline/build-context'
 
 // Mock @kukan/db schema
 vi.mock('@kukan/db', () => ({

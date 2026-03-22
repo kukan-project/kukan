@@ -21,6 +21,9 @@ export * from './utils'
 // Format normalization
 export * from './formats'
 
+// Pipeline types (shared between API and Worker)
+export * from './pipeline-types'
+
 // Validators
 export * from './validators/package'
 export * from './validators/organization'

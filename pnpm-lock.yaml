@@ -132,15 +132,9 @@ importers:
 
   apps/worker:
     dependencies:
-      '@hono/node-server':
-        specifier: ^1.14.0
-        version: 1.19.9(hono@4.12.3)
       '@kukan/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@kukan/pipeline':
-        specifier: workspace:*
-        version: link:../../packages/pipeline
       '@kukan/queue-adapter':
         specifier: workspace:*
         version: link:../../packages/adapters/queue
@@ -159,16 +153,28 @@ importers:
       drizzle-orm:
         specifier: ^0.45.1
         version: 0.45.1(@electric-sql/pglite@0.3.15)(@prisma/client@7.4.2(prisma@7.4.2(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3))(typescript@5.9.3))(@types/pg@8.18.0)(gel@2.2.0)(kysely@0.28.11)(mysql2@3.15.3)(pg@8.19.0)(postgres@3.4.7)(prisma@7.4.2(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3))
-      hono:
-        specifier: ^4.12.3
-        version: 4.12.3
+      encoding-japanese:
+        specifier: ^2.2.0
+        version: 2.2.0
+      hyparquet-writer:
+        specifier: ^0.13.0
+        version: 0.13.0
+      papaparse:
+        specifier: ^5.5.3
+        version: 5.5.3
       pg:
         specifier: ^8.13.0
         version: 8.19.0
     devDependencies:
+      '@types/encoding-japanese':
+        specifier: ^2.2.1
+        version: 2.2.1
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.13
+      '@types/papaparse':
+        specifier: ^5.5.2
+        version: 5.5.2
       '@types/pg':
         specifier: ^8.11.0
         version: 8.18.0
@@ -257,9 +263,6 @@ importers:
       '@kukan/db':
         specifier: workspace:*
         version: link:../db
-      '@kukan/pipeline':
-        specifier: workspace:*
-        version: link:../pipeline
       '@kukan/queue-adapter':
         specifier: workspace:*
         version: link:../adapters/queue
@@ -328,43 +331,6 @@ importers:
       tsx:
         specifier: ^4.0.0
         version: 4.21.0
-
-  packages/pipeline:
-    dependencies:
-      '@kukan/db':
-        specifier: workspace:*
-        version: link:../db
-      '@kukan/search-adapter':
-        specifier: workspace:*
-        version: link:../adapters/search
-      '@kukan/shared':
-        specifier: workspace:*
-        version: link:../shared
-      '@kukan/storage-adapter':
-        specifier: workspace:*
-        version: link:../adapters/storage
-      drizzle-orm:
-        specifier: ^0.45.1
-        version: 0.45.1(@electric-sql/pglite@0.3.15)(@prisma/client@7.4.2(prisma@7.4.2(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3))(typescript@5.9.3))(@types/pg@8.18.0)(gel@2.2.0)(kysely@0.28.11)(mysql2@3.15.3)(pg@8.19.0)(postgres@3.4.7)(prisma@7.4.2(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3))
-      encoding-japanese:
-        specifier: ^2.2.0
-        version: 2.2.0
-      hyparquet-writer:
-        specifier: ^0.13.0
-        version: 0.13.0
-      papaparse:
-        specifier: ^5.5.3
-        version: 5.5.3
-    devDependencies:
-      '@types/encoding-japanese':
-        specifier: ^2.2.1
-        version: 2.2.1
-      '@types/node':
-        specifier: ^22.0.0
-        version: 22.19.13
-      '@types/papaparse':
-        specifier: ^5.5.2
-        version: 5.5.2
 
   packages/shared:
     dependencies:

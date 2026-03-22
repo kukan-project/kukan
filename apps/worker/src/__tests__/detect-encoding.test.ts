@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import Encoding from 'encoding-japanese'
-import { detectEncoding } from '../node-utils'
+import { detectEncoding } from '../pipeline/node-utils'
 
 describe('detectEncoding', () => {
   it('should auto-detect ASCII for CSV', () => {

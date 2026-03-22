@@ -6,7 +6,7 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { ResourceService } from '../services/resource-service'
-import { ResourcePipelineService } from '@kukan/pipeline'
+import { PipelineService } from '../services/pipeline-service'
 import { PackageService } from '../services/package-service'
 import {
   updateResourceSchema,
@@ -22,6 +22,7 @@ import {
 import { checkOrgRole } from '../auth/permissions'
 import { indexPackage } from '../services/search-index'
 import { Readable } from 'stream'
+import type { Database } from '@kukan/db'
 import type { AppContext } from '../context'
 import type { Context } from 'hono'
 
@@ -29,14 +30,14 @@ export const resourcesRouter = new Hono<{ Variables: AppContext }>()
 
 /** Create pipeline record and enqueue processing job */
 async function enqueuePipeline(c: Context<{ Variables: AppContext }>, resourceId: string) {
-  const pipelineService = new ResourcePipelineService(c.get('db'), c.get('queue'))
+  const pipelineService = new PipelineService(c.get('db'), c.get('queue'))
   const jobId = await pipelineService.enqueue(resourceId)
   return { pipeline_status: 'queued' as const, job_id: jobId }
 }
 
 /** Resolve preview storage key and content type for a resource */
 async function resolvePreviewTarget(
-  db: ConstructorParameters<typeof ResourcePipelineService>[0],
+  db: Database,
   resource: { id: string; packageId: string; format: string | null }
 ): Promise<{ storageKey: string; contentType: string } | null> {
   if (resource.format?.toLowerCase() === 'pdf') {
@@ -45,7 +46,7 @@ async function resolvePreviewTarget(
       contentType: getMimeType('pdf')!,
     }
   }
-  const pipelineService = new ResourcePipelineService(db)
+  const pipelineService = new PipelineService(db)
   const status = await pipelineService.getStatus(resource.id)
   if (!status?.previewKey) return null
   return { storageKey: status.previewKey, contentType: 'application/octet-stream' }
@@ -88,7 +89,7 @@ resourcesRouter.get('/:id/text', async (c) => {
   const service = new ResourceService(c.get('db'))
   const resource = await service.getById(id)
 
-  const pipelineService = new ResourcePipelineService(c.get('db'))
+  const pipelineService = new PipelineService(c.get('db'))
   const pipelineStatus = await pipelineService.getStatus(id)
   const encoding =
     ((pipelineStatus?.metadata as Record<string, unknown> | null)?.encoding as
@@ -218,7 +219,7 @@ resourcesRouter.get('/:id/preview-url', async (c) => {
 // GET /api/v1/resources/:id/pipeline-status - Check pipeline progress (public)
 resourcesRouter.get('/:id/pipeline-status', async (c) => {
   const id = c.req.param('id')
-  const pipelineService = new ResourcePipelineService(c.get('db'))
+  const pipelineService = new PipelineService(c.get('db'))
   const status = await pipelineService.getStatus(id)
 
   if (!status) {
@@ -358,17 +359,20 @@ resourcesRouter.put('/:id', zValidator('json', updateResourceSchema), async (c) 
   const db = c.get('db')
   const id = c.req.param('id')
   const resourceService = new ResourceService(db)
-  const existing = await checkResourcePermission(db, user, resourceService, id)
+  await checkResourcePermission(db, user, resourceService, id)
 
   const input = c.req.valid('json')
   const res = await resourceService.update(id, input)
 
-  // Re-enqueue pipeline when external URL changes
-  if (input.url && input.url !== existing.url && existing.urlType !== 'upload') {
-    await enqueuePipeline(c, id)
-  }
-
-  await indexPackage(db, c.get('search'), res.packageId)
+  // Re-enqueue pipeline + index search in parallel (best-effort enqueue)
+  // Skip upload resources — pipeline is triggered by upload-complete after file is in storage
+  const enqueuePromise =
+    res.url && res.urlType !== 'upload'
+      ? enqueuePipeline(c, id).catch((err) => {
+          console.error(`[Resources] Best-effort pipeline enqueue failed for resource ${id}:`, err)
+        })
+      : Promise.resolve()
+  await Promise.all([enqueuePromise, indexPackage(db, c.get('search'), res.packageId)])
   return c.json(res)
 })
 

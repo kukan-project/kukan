@@ -84,6 +84,63 @@ describe('Resources API Routes', () => {
       expect(body.name).toBe('updated-resource')
       expect(body.format).toBe('JSON')
     })
+
+    it('should enqueue pipeline when resource has an external URL', async () => {
+      const pkg = await createPackage('update-enqueue-pkg')
+      const resource = await createResource(pkg.id, {
+        url: 'https://example.com/data.csv',
+      })
+
+      // Metadata-only update on resource with URL
+      const res = await app.request(`/api/v1/resources/${resource.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: 'updated description' }),
+      })
+      expect(res.status).toBe(200)
+
+      // Pipeline should be queued
+      const statusRes = await app.request(
+        `/api/v1/resources/${resource.id}/pipeline-status`
+      )
+      const statusBody = await statusRes.json()
+      expect(statusBody.pipeline_status).toBe('queued')
+    })
+
+    it('should not enqueue pipeline when resource has no URL', async () => {
+      const pkg = await createPackage('update-no-url-pkg')
+      const resource = await createResource(pkg.id)
+
+      const res = await app.request(`/api/v1/resources/${resource.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: 'no url resource' }),
+      })
+      expect(res.status).toBe(200)
+
+      // Pipeline should NOT be queued
+      const statusRes = await app.request(
+        `/api/v1/resources/${resource.id}/pipeline-status`
+      )
+      const statusBody = await statusRes.json()
+      expect(statusBody.pipeline_status).toBeNull()
+    })
+
+    it('should succeed even if pipeline enqueue fails', async () => {
+      const pkg = await createPackage('update-enqueue-fail-pkg')
+      const resource = await createResource(pkg.id)
+
+      // Update should succeed regardless of pipeline result
+      const res = await app.request(`/api/v1/resources/${resource.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'still-updated' }),
+      })
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.name).toBe('still-updated')
+    })
   })
 
   describe('DELETE /api/v1/resources/:id', () => {

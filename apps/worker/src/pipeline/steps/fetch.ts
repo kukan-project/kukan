@@ -11,6 +11,7 @@ import type { PipelineContext } from '../types'
 
 const MAX_EXTERNAL_DOWNLOAD_SIZE = 10 * 1024 * 1024 // 10MB
 const FETCH_TIMEOUT_MS = 30_000
+const HASH_PREFIX = 'sha256:'
 
 export interface FetchResult {
   storageKey: string
@@ -23,7 +24,7 @@ export interface FetchResult {
  * - Upload resources: already in Storage, nothing to do.
  * - External URL resources: stream to Storage, compute hash/size on the fly.
  */
-export async function fetchStep(resourceId: string, ctx: PipelineContext): Promise<FetchResult> {
+export async function executeFetch(resourceId: string, ctx: PipelineContext): Promise<FetchResult> {
   const res = await ctx.getResource(resourceId)
 
   if (!res) {
@@ -64,7 +65,7 @@ async function computeHash(
     hashDigest.update(buf)
     totalSize += buf.length
   }
-  return { hash: `sha256:${hashDigest.digest('hex')}`, size: totalSize }
+  return { hash: `${HASH_PREFIX}${hashDigest.digest('hex')}`, size: totalSize }
 }
 
 async function downloadToStorage(
@@ -117,7 +118,7 @@ async function downloadToStorage(
   await ctx.storage.upload(storageKey, stream)
 
   return {
-    hash: `sha256:${hashDigest.digest('hex')}`,
+    hash: `${HASH_PREFIX}${hashDigest.digest('hex')}`,
     size: totalSize,
   }
 }
