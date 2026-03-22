@@ -40,10 +40,10 @@ export interface DatasetDoc {
 export interface SearchFilters {
   // Content filters
   name?: string
-  organization?: string
+  organizations?: string[]
   tags?: string[]
   formats?: string[]
-  license_id?: string
+  licenses?: string[]
   groups?: string[]
   // Visibility + access filters
   excludePrivate?: boolean

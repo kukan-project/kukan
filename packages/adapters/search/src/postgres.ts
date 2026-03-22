@@ -67,56 +67,63 @@ export class PostgresSearchAdapter implements SearchAdapter {
     }
 
     // Organization filter (EXISTS subquery so it works in facet queries without JOIN)
-    if (query.filters?.organization) {
+    if (query.filters?.organizations?.length) {
+      const orgNames = query.filters.organizations
       conditions.push(
         sql`EXISTS (
           SELECT 1 FROM ${organization}
           WHERE ${organization.id} = ${packageTable.ownerOrg}
-          AND ${organization.name} = ${query.filters.organization}
+          AND ${organization.name} IN ${orgNames}
         )`
       )
     }
 
-    // Tags filter
-    if (query.filters?.tags && query.filters.tags.length > 0) {
+    // Tags filter (AND — each selected tag must be present)
+    if (query.filters?.tags?.length) {
       const tagNames = query.filters.tags
+      const count = tagNames.length
       conditions.push(
         sql`EXISTS (
           SELECT 1 FROM ${packageTag}
           JOIN ${tag} ON ${packageTag.tagId} = ${tag.id}
           WHERE ${packageTag.packageId} = ${packageTable.id}
           AND ${tag.name} IN ${tagNames}
+          HAVING COUNT(DISTINCT ${tag.name}) = ${count}
         )`
       )
     }
 
-    // Formats filter
-    if (query.filters?.formats && query.filters.formats.length > 0) {
+    // Formats filter (AND — each selected format must be present)
+    if (query.filters?.formats?.length) {
       const fmts = query.filters.formats.map((f) => f.toUpperCase())
+      const count = fmts.length
       conditions.push(
         sql`EXISTS (
           SELECT 1 FROM ${resource}
           WHERE ${resource.packageId} = ${packageTable.id}
           AND ${resource.state} = 'active'
           AND UPPER(${resource.format}) IN ${fmts}
+          HAVING COUNT(DISTINCT UPPER(${resource.format})) = ${count}
         )`
       )
     }
 
-    // License filter
-    if (query.filters?.license_id) {
-      conditions.push(eq(packageTable.licenseId, query.filters.license_id))
+    // License filter (OR — a package has one license, AND would always be empty for 2+)
+    if (query.filters?.licenses?.length) {
+      conditions.push(inArray(packageTable.licenseId, query.filters.licenses))
     }
 
-    // Groups filter
-    if (query.filters?.groups && query.filters.groups.length > 0) {
+    // Groups filter (AND — each selected group must be present)
+    if (query.filters?.groups?.length) {
       const groupNames = query.filters.groups
+      const count = groupNames.length
       conditions.push(
         sql`EXISTS (
           SELECT 1 FROM ${packageGroup}
           JOIN ${group} ON ${packageGroup.groupId} = ${group.id}
           WHERE ${packageGroup.packageId} = ${packageTable.id}
           AND ${group.name} IN ${groupNames}
+          HAVING COUNT(DISTINCT ${group.name}) = ${count}
         )`
       )
     }

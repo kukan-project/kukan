@@ -233,7 +233,7 @@ describe('OpenSearchAdapter', () => {
 
       await adapter.search({
         q: 'data',
-        filters: { organization: 'test-org' },
+        filters: { organizations: ['test-org'] },
       })
 
       expect(mockClient.search).toHaveBeenCalledWith(
@@ -241,7 +241,7 @@ describe('OpenSearchAdapter', () => {
           body: expect.objectContaining({
             query: expect.objectContaining({
               bool: expect.objectContaining({
-                filter: expect.arrayContaining([{ term: { organization: 'test-org' } }]),
+                filter: expect.arrayContaining([{ terms: { organization: ['test-org'] } }]),
               }),
             }),
           }),
@@ -264,7 +264,10 @@ describe('OpenSearchAdapter', () => {
           body: expect.objectContaining({
             query: expect.objectContaining({
               bool: expect.objectContaining({
-                filter: expect.arrayContaining([{ terms: { tags: ['env', 'health'] } }]),
+                filter: expect.arrayContaining([
+                  { term: { tags: 'env' } },
+                  { term: { tags: 'health' } },
+                ]),
               }),
             }),
           }),
@@ -378,7 +381,7 @@ describe('OpenSearchAdapter', () => {
         q: 'data',
         filters: {
           formats: ['csv', 'json'],
-          license_id: 'cc-by',
+          licenses: ['cc-by'],
           groups: ['environment'],
         },
       })
@@ -388,9 +391,10 @@ describe('OpenSearchAdapter', () => {
 
       expect(filterClauses).toEqual(
         expect.arrayContaining([
-          { terms: { formats: ['CSV', 'JSON'] } },
-          { term: { license_id: 'cc-by' } },
-          { terms: { groups: ['environment'] } },
+          { term: { formats: 'CSV' } },
+          { term: { formats: 'JSON' } },
+          { terms: { license_id: ['cc-by'] } },
+          { term: { groups: 'environment' } },
         ])
       )
     })

@@ -161,28 +161,34 @@ export class OpenSearchAdapter implements SearchAdapter {
     }
 
     // Organization filter (no scoring impact, per ADR-013)
-    if (query.filters?.organization) {
-      filter.push({ term: { organization: query.filters.organization } })
+    if (query.filters?.organizations?.length) {
+      filter.push({ terms: { organization: query.filters.organizations } })
     }
 
-    // Tags filter
-    if (query.filters?.tags && query.filters.tags.length > 0) {
-      filter.push({ terms: { tags: query.filters.tags } })
+    // Tags filter (AND — each selected tag must be present)
+    if (query.filters?.tags?.length) {
+      for (const tag of query.filters.tags) {
+        filter.push({ term: { tags: tag } })
+      }
     }
 
-    // Formats filter
-    if (query.filters?.formats && query.filters.formats.length > 0) {
-      filter.push({ terms: { formats: query.filters.formats.map((f) => f.toUpperCase()) } })
+    // Formats filter (AND — each selected format must be present)
+    if (query.filters?.formats?.length) {
+      for (const fmt of query.filters.formats) {
+        filter.push({ term: { formats: fmt.toUpperCase() } })
+      }
     }
 
-    // License filter
-    if (query.filters?.license_id) {
-      filter.push({ term: { license_id: query.filters.license_id } })
+    // License filter (OR — a package has one license, AND would always be empty for 2+)
+    if (query.filters?.licenses?.length) {
+      filter.push({ terms: { license_id: query.filters.licenses } })
     }
 
-    // Groups filter
-    if (query.filters?.groups && query.filters.groups.length > 0) {
-      filter.push({ terms: { groups: query.filters.groups } })
+    // Groups filter (AND — each selected group must be present)
+    if (query.filters?.groups?.length) {
+      for (const group of query.filters.groups) {
+        filter.push({ term: { groups: group } })
+      }
     }
 
     // Visibility: exclude private unless in allowed orgs
