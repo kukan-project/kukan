@@ -5,37 +5,26 @@
 
 import type { Env } from '@kukan/shared'
 import type { Database } from '@kukan/db'
-import { S3CompatibleStorageAdapter, LocalStorageAdapter } from '@kukan/storage-adapter'
+import { S3StorageAdapter } from '@kukan/storage-adapter'
 import { PostgresSearchAdapter, OpenSearchAdapter } from '@kukan/search-adapter'
-import { InProcessQueueAdapter } from '@kukan/queue-adapter'
+import { SQSQueueAdapter } from '@kukan/queue-adapter'
 import { NoOpAIAdapter } from '@kukan/ai-adapter'
 
 export async function createAdapters(env: Env, db: Database) {
-  // Storage adapter
-  let storage
-  if (env.STORAGE_TYPE === 'local') {
-    storage = new LocalStorageAdapter({
-      basePath: './data/storage',
-    })
-  } else {
-    // S3-compatible (AWS S3 or MinIO — determined by S3_ENDPOINT presence)
-    storage = new S3CompatibleStorageAdapter({
-      bucket: env.S3_BUCKET,
-      region: env.S3_REGION,
-      endpoint: env.S3_ENDPOINT,
-      accessKeyId: env.S3_ACCESS_KEY,
-      secretAccessKey: env.S3_SECRET_KEY,
-    })
-  }
+  // Storage adapter (S3: AWS S3 or MinIO, determined by S3_ENDPOINT)
+  const storage = new S3StorageAdapter({
+    bucket: env.S3_BUCKET,
+    region: env.S3_REGION,
+    endpoint: env.S3_ENDPOINT,
+    accessKeyId: env.S3_ACCESS_KEY,
+    secretAccessKey: env.S3_SECRET_KEY,
+  })
 
   // Search adapter
   let search
   if (env.SEARCH_TYPE === 'postgres') {
     search = new PostgresSearchAdapter(db)
   } else if (env.SEARCH_TYPE === 'opensearch') {
-    if (!env.OPENSEARCH_URL) {
-      throw new Error('OpenSearch requires OPENSEARCH_URL')
-    }
     const osAdapter = new OpenSearchAdapter({ endpoint: env.OPENSEARCH_URL })
     await osAdapter.ensureIndex()
     search = osAdapter
@@ -43,14 +32,14 @@ export async function createAdapters(env: Env, db: Database) {
     throw new Error(`Unknown search type: ${env.SEARCH_TYPE}`)
   }
 
-  // Queue adapter
-  let queue
-  if (env.QUEUE_TYPE === 'in-process') {
-    queue = new InProcessQueueAdapter()
-  } else {
-    // SQS - Phase 3b
-    throw new Error('SQS queue not implemented yet (Phase 3b)')
-  }
+  // Queue adapter (SQS-compatible: AWS SQS or ElasticMQ, determined by SQS_ENDPOINT)
+  const queue = new SQSQueueAdapter({
+    region: env.SQS_REGION,
+    queueUrl: env.SQS_QUEUE_URL,
+    endpoint: env.SQS_ENDPOINT,
+    accessKeyId: env.SQS_ACCESS_KEY,
+    secretAccessKey: env.SQS_SECRET_KEY,
+  })
 
   // AI adapter
   let ai
@@ -61,10 +50,5 @@ export async function createAdapters(env: Env, db: Database) {
     throw new Error(`AI type ${env.AI_TYPE} not implemented yet (Phase 5)`)
   }
 
-  return {
-    storage,
-    search,
-    queue,
-    ai,
-  }
+  return { storage, search, queue, ai }
 }

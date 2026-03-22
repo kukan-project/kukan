@@ -4,16 +4,29 @@
  * pg_trgm GIN indexes accelerate queries with 3+ characters
  */
 
-import {
+import type {
+  SearchAdapter,
   SearchQuery,
   SearchResult,
+  SearchFacets,
+  SearchFacetBucket,
   DatasetDoc,
-  escapeLike,
-  groupMatchedResources,
-} from '@kukan/shared'
-import { type Database, packageTable, organization, packageTag, tag, resource } from '@kukan/db'
+  MatchedResource,
+} from './adapter'
+import { MAX_MATCHED_RESOURCES_PER_PACKAGE } from './adapter'
+import { escapeLike } from '@kukan/shared'
+import {
+  type Database,
+  packageTable,
+  organization,
+  packageTag,
+  tag,
+  resource,
+  group,
+  packageGroup,
+} from '@kukan/db'
 import { ilike, eq, and, or, sql, inArray, desc } from 'drizzle-orm'
-import { SearchAdapter } from './adapter'
+import type { SQL } from 'drizzle-orm'
 
 export class PostgresSearchAdapter implements SearchAdapter {
   private db: Database
@@ -26,16 +39,13 @@ export class PostgresSearchAdapter implements SearchAdapter {
     // No-op: data lives directly in the package table
   }
 
-  async search(query: SearchQuery): Promise<SearchResult> {
-    const offset = query.offset ?? 0
-    const limit = query.limit ?? 20
-    const pattern = `%${escapeLike(query.q)}%`
+  /** Build WHERE conditions from search query and filters */
+  private buildConditions(query: SearchQuery): SQL[] {
+    const conditions: SQL[] = [eq(packageTable.state, 'active')]
     const hasQuery = query.q.trim().length > 0
 
-    // Build WHERE conditions
-    const conditions = [eq(packageTable.state, 'active')]
-
     if (hasQuery) {
+      const pattern = `%${escapeLike(query.q)}%`
       conditions.push(
         or(
           ilike(packageTable.name, pattern),
@@ -51,26 +61,105 @@ export class PostgresSearchAdapter implements SearchAdapter {
       )
     }
 
-    // Organization filter (by org name)
-    if (query.filters?.organization) {
-      conditions.push(eq(organization.name, query.filters.organization as string))
+    // Name prefix filter
+    if (query.filters?.name) {
+      conditions.push(ilike(packageTable.name, `${escapeLike(query.filters.name)}%`))
     }
 
-    // Tags filter (match packages that have at least one of the specified tags)
-    if (query.filters?.tags) {
-      const tagNames = query.filters.tags as string[]
-      if (tagNames.length > 0) {
+    // Organization filter (EXISTS subquery so it works in facet queries without JOIN)
+    if (query.filters?.organization) {
+      conditions.push(
+        sql`EXISTS (
+          SELECT 1 FROM ${organization}
+          WHERE ${organization.id} = ${packageTable.ownerOrg}
+          AND ${organization.name} = ${query.filters.organization}
+        )`
+      )
+    }
+
+    // Tags filter
+    if (query.filters?.tags && query.filters.tags.length > 0) {
+      const tagNames = query.filters.tags
+      conditions.push(
+        sql`EXISTS (
+          SELECT 1 FROM ${packageTag}
+          JOIN ${tag} ON ${packageTag.tagId} = ${tag.id}
+          WHERE ${packageTag.packageId} = ${packageTable.id}
+          AND ${tag.name} IN ${tagNames}
+        )`
+      )
+    }
+
+    // Formats filter
+    if (query.filters?.formats && query.filters.formats.length > 0) {
+      const fmts = query.filters.formats.map((f) => f.toUpperCase())
+      conditions.push(
+        sql`EXISTS (
+          SELECT 1 FROM ${resource}
+          WHERE ${resource.packageId} = ${packageTable.id}
+          AND ${resource.state} = 'active'
+          AND UPPER(${resource.format}) IN ${fmts}
+        )`
+      )
+    }
+
+    // License filter
+    if (query.filters?.license_id) {
+      conditions.push(eq(packageTable.licenseId, query.filters.license_id))
+    }
+
+    // Groups filter
+    if (query.filters?.groups && query.filters.groups.length > 0) {
+      const groupNames = query.filters.groups
+      conditions.push(
+        sql`EXISTS (
+          SELECT 1 FROM ${packageGroup}
+          JOIN ${group} ON ${packageGroup.groupId} = ${group.id}
+          WHERE ${packageGroup.packageId} = ${packageTable.id}
+          AND ${group.name} IN ${groupNames}
+        )`
+      )
+    }
+
+    // Visibility: exclude private unless in allowed orgs
+    if (query.filters?.excludePrivate) {
+      if (query.filters.allowPrivateOrgIds?.length) {
         conditions.push(
-          sql`EXISTS (
-            SELECT 1 FROM ${packageTag}
-            JOIN ${tag} ON ${packageTag.tagId} = ${tag.id}
-            WHERE ${packageTag.packageId} = ${packageTable.id}
-            AND ${tag.name} IN ${tagNames}
-          )`
+          or(
+            eq(packageTable.private, false),
+            inArray(packageTable.ownerOrg, query.filters.allowPrivateOrgIds)
+          )!
         )
+      } else {
+        conditions.push(eq(packageTable.private, false))
       }
     }
 
+    // my_org filter
+    if (query.filters?.ownerOrgIds?.length) {
+      conditions.push(inArray(packageTable.ownerOrg, query.filters.ownerOrgIds))
+    }
+
+    // Explicit private filter
+    if (query.filters?.isPrivate !== undefined) {
+      conditions.push(eq(packageTable.private, query.filters.isPrivate))
+    }
+
+    // Creator filter
+    if (query.filters?.creatorUserId) {
+      conditions.push(eq(packageTable.creatorUserId, query.filters.creatorUserId))
+    }
+
+    return conditions
+  }
+
+  async search(query: SearchQuery): Promise<SearchResult> {
+    const offset = query.offset ?? 0
+    const limit = query.limit ?? 20
+    const hasQuery = query.q.trim().length > 0
+    const pattern = hasQuery ? `%${escapeLike(query.q)}%` : ''
+
+    const conditions = this.buildConditions(query)
     const where = and(...conditions)
 
     // Count total matching rows
@@ -99,7 +188,7 @@ export class PostgresSearchAdapter implements SearchAdapter {
     // Fetch tags and matched resources in parallel
     const packageIds = rows.map((r) => r.id)
     const tagsByPackage: Record<string, string[]> = {}
-    let matchedByPackage: ReturnType<typeof groupMatchedResources> = {}
+    const matchedByPackage: Record<string, MatchedResource[]> = {}
 
     if (packageIds.length > 0) {
       const [tagRows, matchedRows] = await Promise.all([
@@ -138,7 +227,20 @@ export class PostgresSearchAdapter implements SearchAdapter {
         tagsByPackage[row.packageId].push(row.tagName)
       }
 
-      matchedByPackage = groupMatchedResources(matchedRows)
+      // Group matched resources by package and cap per MAX_MATCHED_RESOURCES_PER_PACKAGE
+      for (const row of matchedRows) {
+        if (!matchedByPackage[row.packageId]) {
+          matchedByPackage[row.packageId] = []
+        }
+        if (matchedByPackage[row.packageId].length < MAX_MATCHED_RESOURCES_PER_PACKAGE) {
+          matchedByPackage[row.packageId].push({
+            id: row.id,
+            name: row.name ?? undefined,
+            description: row.description ?? undefined,
+            format: row.format ?? undefined,
+          })
+        }
+      }
     }
 
     const items: DatasetDoc[] = rows.map((row) => ({
@@ -153,11 +255,98 @@ export class PostgresSearchAdapter implements SearchAdapter {
       }),
     }))
 
-    return { items, total: count, offset, limit }
+    // Compute facets if requested
+    let facets: SearchFacets | undefined
+    if (query.facets) {
+      facets = await this.computeFacets(where!)
+    }
+
+    return { items, total: count, offset, limit, ...(facets && { facets }) }
+  }
+
+  /** Compute facet counts via SQL aggregations */
+  private async computeFacets(where: SQL): Promise<SearchFacets> {
+    const [orgRows, tagRows, formatRows, licenseRows, groupRows] = await Promise.all([
+      // Organization facet
+      this.db
+        .select({
+          name: organization.name,
+          count: sql<number>`COUNT(*)::int`.as('count'),
+        })
+        .from(packageTable)
+        .innerJoin(organization, eq(packageTable.ownerOrg, organization.id))
+        .where(where)
+        .groupBy(organization.name),
+
+      // Tags facet
+      this.db
+        .select({
+          name: tag.name,
+          count: sql<number>`COUNT(DISTINCT ${packageTable.id})::int`.as('count'),
+        })
+        .from(packageTable)
+        .innerJoin(packageTag, eq(packageTag.packageId, packageTable.id))
+        .innerJoin(tag, eq(packageTag.tagId, tag.id))
+        .where(where)
+        .groupBy(tag.name),
+
+      // Formats facet
+      this.db
+        .select({
+          name: sql<string>`UPPER(${resource.format})`.as('name'),
+          count: sql<number>`COUNT(DISTINCT ${packageTable.id})::int`.as('count'),
+        })
+        .from(packageTable)
+        .innerJoin(
+          resource,
+          and(eq(resource.packageId, packageTable.id), eq(resource.state, 'active'))
+        )
+        .where(and(where, sql`${resource.format} IS NOT NULL AND ${resource.format} != ''`))
+        .groupBy(sql`UPPER(${resource.format})`),
+
+      // Licenses facet
+      this.db
+        .select({
+          name: packageTable.licenseId,
+          count: sql<number>`COUNT(*)::int`.as('count'),
+        })
+        .from(packageTable)
+        .where(
+          and(where, sql`${packageTable.licenseId} IS NOT NULL AND ${packageTable.licenseId} != ''`)
+        )
+        .groupBy(packageTable.licenseId),
+
+      // Groups facet
+      this.db
+        .select({
+          name: group.name,
+          count: sql<number>`COUNT(DISTINCT ${packageTable.id})::int`.as('count'),
+        })
+        .from(packageTable)
+        .innerJoin(packageGroup, eq(packageGroup.packageId, packageTable.id))
+        .innerJoin(group, eq(packageGroup.groupId, group.id))
+        .where(where)
+        .groupBy(group.name),
+    ])
+
+    const toBuckets = (rows: { name: string | null; count: number }[]): SearchFacetBucket[] =>
+      rows.filter((r) => r.name != null).map((r) => ({ name: r.name!, count: r.count }))
+
+    return {
+      organizations: toBuckets(orgRows),
+      tags: toBuckets(tagRows),
+      formats: toBuckets(formatRows),
+      licenses: toBuckets(licenseRows),
+      groups: toBuckets(groupRows),
+    }
   }
 
   async delete(_id: string): Promise<void> {
     // No-op: deletion handled by database cascade
+  }
+
+  async deleteAll(): Promise<void> {
+    // No-op: data lives directly in the package table
   }
 
   async bulkIndex(_docs: DatasetDoc[]): Promise<void> {

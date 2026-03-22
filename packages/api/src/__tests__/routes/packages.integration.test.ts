@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { createTestApp } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
+import { PostgresSearchAdapter } from '@kukan/search-adapter'
 
 const db = getTestDb()
-const app = createTestApp(db)
+const search = new PostgresSearchAdapter(db)
+const app = createTestApp(db, { search })
 
 let testOrgId: string
 
@@ -274,11 +276,12 @@ describe('Packages API Routes', () => {
       await createPackage({ name: 'public-pkg', private: false })
       await createPackage({ name: 'private-pkg', private: true })
 
-      const noAuthApp = createTestApp(db, { user: null })
+      const noAuthApp = createTestApp(db, { user: null, search })
       const res = await noAuthApp.request('/api/v1/packages')
       const body = await res.json()
 
       expect(body.total).toBe(1)
+      expect(body.items).toHaveLength(1)
       expect(body.items[0].name).toBe('public-pkg')
     })
 
@@ -295,7 +298,7 @@ describe('Packages API Routes', () => {
     it('should return 404 for private package detail to unauthenticated user', async () => {
       await createPackage({ name: 'secret-pkg', private: true })
 
-      const noAuthApp = createTestApp(db, { user: null })
+      const noAuthApp = createTestApp(db, { user: null, search })
       const res = await noAuthApp.request('/api/v1/packages/secret-pkg')
       expect(res.status).toBe(404)
     })

@@ -25,10 +25,8 @@ function createMockCtx(overrides?: Partial<PipelineContext>): PipelineContext {
         }
       }),
     },
-    search: { index: vi.fn() },
     getResource: vi.fn(),
     updateResourceHashAndSize: vi.fn(),
-    getPackageForIndex: vi.fn(),
     ...overrides,
   }
 }

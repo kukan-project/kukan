@@ -4,6 +4,8 @@
  */
 
 import { Hono, type Context } from 'hono'
+import { eq } from 'drizzle-orm'
+import { userOrgMembership } from '@kukan/db'
 import { PackageService } from '../services/package-service'
 import { ResourceService } from '../services/resource-service'
 import { OrganizationService } from '../services/organization-service'
@@ -84,9 +86,22 @@ function ckanError(
 // package_list - List all packages (names only)
 ckanCompatRouter.get('/package_list', async (c) => {
   const user = c.get('user')
-  const viewer = user ? { userId: user.id, sysadmin: user.sysadmin } : undefined
+  const search = c.get('search')
+
+  const searchResult = await search.search({
+    q: '',
+    offset: 0,
+    limit: 1000,
+    filters: {
+      ...(!user?.sysadmin && { excludePrivate: true }),
+    },
+  })
+
   const service = new PackageService(c.get('db'))
-  const result = await service.list({ offset: 0, limit: 1000, viewer })
+  const result = await service.list({
+    searchMatchIds: searchResult.items.map((i) => i.id),
+    searchTotal: searchResult.total,
+  })
   const names = result.items.map((pkg) => pkg.name)
   return ckanResponse(names, c)
 })
@@ -116,8 +131,31 @@ ckanCompatRouter.get('/package_search', async (c) => {
   const offset = parseInt(c.req.query('start') || '0', 10)
   const limit = parseInt(c.req.query('rows') || '20', 10)
 
+  const db = c.get('db')
+  const user = c.get('user')
+
+  // Resolve user's org memberships for visibility
+  let userOrgIds: string[] | undefined
+  if (user && !user.sysadmin) {
+    const memberships = await db
+      .select({ organizationId: userOrgMembership.organizationId })
+      .from(userOrgMembership)
+      .where(eq(userOrgMembership.userId, user.id))
+    userOrgIds = memberships.map((m) => m.organizationId)
+  }
+
   const searchAdapter = c.get('search')
-  const result = await searchAdapter.search({ q, offset, limit })
+  const result = await searchAdapter.search({
+    q,
+    offset,
+    limit,
+    filters: {
+      ...(!user?.sysadmin && {
+        excludePrivate: true,
+        ...(userOrgIds?.length && { allowPrivateOrgIds: userOrgIds }),
+      }),
+    },
+  })
 
   return ckanResponse(
     {

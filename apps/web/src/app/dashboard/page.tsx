@@ -23,6 +23,8 @@ export default function DashboardPage() {
   const [items, setItems] = useState<PkgItem[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [reindexing, setReindexing] = useState(false)
+  const [reindexResult, setReindexResult] = useState<number | null>(null)
 
   useEffect(() => {
     clientFetch('/api/v1/packages?my_org=true&limit=5').then(async (res) => {
@@ -34,6 +36,20 @@ export default function DashboardPage() {
       setLoading(false)
     })
   }, [])
+
+  async function handleReindex() {
+    setReindexing(true)
+    setReindexResult(null)
+    try {
+      const res = await clientFetch('/api/v1/admin/reindex', { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        setReindexResult(data.indexed)
+      }
+    } finally {
+      setReindexing(false)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -92,6 +108,24 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      {user.sysadmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('admin.title')}</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center gap-4">
+            <Button onClick={handleReindex} disabled={reindexing}>
+              {reindexing ? t('admin.reindexing') : t('admin.reindex')}
+            </Button>
+            {reindexResult !== null && (
+              <p className="text-sm text-muted-foreground">
+                {t('admin.reindexResult', { count: reindexResult })}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

@@ -158,6 +158,12 @@
     "noDatasets": "データセットがありません",
     "createDataset": "データセットを作成",
     "apiTokens": "APIトークン",
+    "admin": {
+      "title": "管理",
+      "reindex": "検索インデックス再構築",
+      "reindexing": "再構築中...",
+      "reindexResult": "{count} 件のパッケージをインデックスしました"
+    },
     "sidebar": {
       "dashboard": "ダッシュボード",
       "datasets": "データセット",

@@ -158,6 +158,12 @@
     "noDatasets": "No datasets",
     "createDataset": "Create Dataset",
     "apiTokens": "API Tokens",
+    "admin": {
+      "title": "Administration",
+      "reindex": "Rebuild Search Index",
+      "reindexing": "Rebuilding...",
+      "reindexResult": "{count} packages indexed"
+    },
     "sidebar": {
       "dashboard": "Dashboard",
       "datasets": "Datasets",

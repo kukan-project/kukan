@@ -1,4 +1,4 @@
-# ADR-002: SQS + InProcess を採用し、Redis/BullMQ を排除する
+# ADR-002: SQS を採用し、Redis/BullMQ を排除する
 
 ## ステータス
 
@@ -21,15 +21,14 @@ v3設計ではRedis + BullMQを全環境で使う方針だったが、
   - AWS環境ではElastiCache（~$13/月〜）が必要
   - 自治体ポータルの処理量に対してインフラコストが見合わない
 
-### B) SQS（AWS）+ InProcess（開発・オンプレ）— 採用
+### B) SQS（AWS）+ ElasticMQ（開発・オンプレ）— 採用
 
 - 良い点:
   - AWS: SQS月100万リクエスト無料、DLQ標準、14日メッセージ保持
-  - 開発/オンプレ: Redis不要、プロセス内で直接処理
+  - 開発/オンプレ: ElasticMQ（SQS互換インメモリキュー）で同一コード動作
   - QueueAdapterで抽象化し環境差を吸収
   - API/Worker分離が自然（SQSイベント駆動）
 - 問題点:
-  - InProcessはプロセス再起動でジョブ消失（小規模なら許容可）
   - SQSはFIFO保証にやや制約（標準キューで十分）
 
 ### C) BullMQ — 将来オプション
@@ -53,4 +52,13 @@ v3設計ではRedis + BullMQを全環境で使う方針だったが、
 - ElastiCache完全削除 → 中規模AWS構成で月額 ~$122（旧$160、24%削減）
 - Docker Compose構成からRedisコンテナ削除
 - デプロイプロファイルからcacheプロパティ削除、lru-cacheユーティリティに統一
-- QueueAdapter: SqsQueueAdapter / InProcessQueueAdapter / (将来)BullMQQueueAdapter
+- QueueAdapter: SqsQueueAdapter / (将来)BullMQQueueAdapter
+
+## 開発環境: ElasticMQ
+
+ローカル開発では [ElasticMQ](https://github.com/softwaremill/elasticmq)（SQS互換インメモリキュー）を使用する。
+MinIO が S3 互換を提供するのと同じパターンで、`SQS_ENDPOINT` の有無で ElasticMQ / AWS SQS を切り替える。
+
+- Docker Compose: `docker compose up -d`（`softwaremill/elasticmq-native`）
+- キュー設定: `docker/elasticmq.conf`（DLQ 付き）
+- `SQS_ENDPOINT=http://localhost:9324` で接続

@@ -15,9 +15,6 @@ export * from './env'
 // Common types
 export * from './types'
 
-// Adapter types
-export * from './adapter-types'
-
 // Utilities
 export * from './utils'
 

@@ -20,6 +20,7 @@ import {
   toCharset,
 } from '@kukan/shared'
 import { checkOrgRole } from '../auth/permissions'
+import { indexPackage } from '../services/search-index'
 import { Readable } from 'stream'
 import type { AppContext } from '../context'
 import type { Context } from 'hono'
@@ -194,25 +195,17 @@ resourcesRouter.get('/:id/preview', async (c) => {
   })
 })
 
-// GET /api/v1/resources/:id/preview-url - Get preview URL (public)
-// Local storage: returns server-proxied URL. S3: returns presigned URL.
+// GET /api/v1/resources/:id/preview-url - Get presigned preview URL (public)
 resourcesRouter.get('/:id/preview-url', async (c) => {
   const id = c.req.param('id')
   const service = new ResourceService(c.get('db'))
   const resource = await service.getById(id)
-  const env = c.get('env')
 
   const target = await resolvePreviewTarget(c.get('db'), resource)
   if (!target) {
     return c.json({ url: null })
   }
 
-  // Local storage: return server-proxied URL (file:// URLs don't work in browsers)
-  if (env.STORAGE_TYPE === 'local') {
-    return c.json({ url: `/api/v1/resources/${id}/preview` })
-  }
-
-  // S3 storage: return presigned URL
   const storage = c.get('storage')
   const isPdf = resource.format?.toLowerCase() === 'pdf'
   const url = await storage.getSignedUrl(
@@ -375,6 +368,7 @@ resourcesRouter.put('/:id', zValidator('json', updateResourceSchema), async (c) 
     await enqueuePipeline(c, id)
   }
 
+  await indexPackage(db, c.get('search'), res.packageId)
   return c.json(res)
 })
 
@@ -389,5 +383,6 @@ resourcesRouter.delete('/:id', async (c) => {
   await checkResourcePermission(db, user, resourceService, id)
 
   const res = await resourceService.delete(id)
+  await indexPackage(db, c.get('search'), res.packageId)
   return c.json(res)
 })

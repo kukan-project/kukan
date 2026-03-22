@@ -4,13 +4,15 @@
  */
 
 import { Client } from '@opensearch-project/opensearch'
-import {
+import type {
+  SearchAdapter,
   SearchQuery,
   SearchResult,
+  SearchFacets,
+  SearchFacetBucket,
   DatasetDoc,
-  MAX_MATCHED_RESOURCES_PER_PACKAGE,
-} from '@kukan/shared'
-import { SearchAdapter } from './adapter'
+} from './adapter'
+import { MAX_MATCHED_RESOURCES_PER_PACKAGE } from './adapter'
 
 export interface OpenSearchConfig {
   endpoint: string
@@ -68,6 +70,9 @@ export class OpenSearchAdapter implements SearchAdapter {
               notes: { type: 'text', analyzer: 'kuromoji_analyzer' },
               tags: { type: 'keyword' },
               organization: { type: 'keyword' },
+              license_id: { type: 'keyword' },
+              groups: { type: 'keyword' },
+              formats: { type: 'keyword' },
               resources: {
                 type: 'nested',
                 properties: {
@@ -81,6 +86,9 @@ export class OpenSearchAdapter implements SearchAdapter {
                   format: { type: 'keyword' },
                 },
               },
+              private: { type: 'boolean' },
+              owner_org_id: { type: 'keyword' },
+              creator_user_id: { type: 'keyword' },
               created: { type: 'date' },
               updated: { type: 'date' },
             },
@@ -121,7 +129,8 @@ export class OpenSearchAdapter implements SearchAdapter {
               multi_match: {
                 query: query.q,
                 fields: ['title^3', 'name^2', 'notes', 'tags'],
-                type: 'best_fields',
+                type: 'cross_fields',
+                operator: 'and',
               },
             },
             {
@@ -131,7 +140,8 @@ export class OpenSearchAdapter implements SearchAdapter {
                   multi_match: {
                     query: query.q,
                     fields: ['resources.name^2', 'resources.description'],
-                    type: 'best_fields',
+                    type: 'cross_fields',
+                    operator: 'and',
                   },
                 },
                 inner_hits: { size: MAX_MATCHED_RESOURCES_PER_PACKAGE },
@@ -145,18 +155,78 @@ export class OpenSearchAdapter implements SearchAdapter {
       must.push({ match_all: {} })
     }
 
+    // Name prefix filter (keyword field)
+    if (query.filters?.name) {
+      filter.push({ prefix: { name: query.filters.name } })
+    }
+
     // Organization filter (no scoring impact, per ADR-013)
     if (query.filters?.organization) {
       filter.push({ term: { organization: query.filters.organization } })
     }
 
     // Tags filter
-    if (query.filters?.tags) {
-      const tagNames = query.filters.tags as string[]
-      if (tagNames.length > 0) {
-        filter.push({ terms: { tags: tagNames } })
+    if (query.filters?.tags && query.filters.tags.length > 0) {
+      filter.push({ terms: { tags: query.filters.tags } })
+    }
+
+    // Formats filter
+    if (query.filters?.formats && query.filters.formats.length > 0) {
+      filter.push({ terms: { formats: query.filters.formats.map((f) => f.toUpperCase()) } })
+    }
+
+    // License filter
+    if (query.filters?.license_id) {
+      filter.push({ term: { license_id: query.filters.license_id } })
+    }
+
+    // Groups filter
+    if (query.filters?.groups && query.filters.groups.length > 0) {
+      filter.push({ terms: { groups: query.filters.groups } })
+    }
+
+    // Visibility: exclude private unless in allowed orgs
+    if (query.filters?.excludePrivate) {
+      if (query.filters.allowPrivateOrgIds?.length) {
+        filter.push({
+          bool: {
+            should: [
+              { term: { private: false } },
+              { terms: { owner_org_id: query.filters.allowPrivateOrgIds } },
+            ],
+            minimum_should_match: 1,
+          },
+        })
+      } else {
+        filter.push({ term: { private: false } })
       }
     }
+
+    // my_org filter
+    if (query.filters?.ownerOrgIds?.length) {
+      filter.push({ terms: { owner_org_id: query.filters.ownerOrgIds } })
+    }
+
+    // Explicit private filter
+    if (query.filters?.isPrivate !== undefined) {
+      filter.push({ term: { private: query.filters.isPrivate } })
+    }
+
+    // Creator filter
+    if (query.filters?.creatorUserId) {
+      filter.push({ term: { creator_user_id: query.filters.creatorUserId } })
+    }
+
+    // Build aggregations when facets are requested
+    const aggs = query.facets
+      ? {
+          organizations: { terms: { field: 'organization', size: 200 } },
+          tags: { terms: { field: 'tags', size: 200 } },
+          formats: { terms: { field: 'formats', size: 200 } },
+          licenses: { terms: { field: 'license_id', size: 200 } },
+          groups: { terms: { field: 'groups', size: 200 } },
+        }
+      : undefined
 
     const searchParams = {
       index: this.indexName,
@@ -172,6 +242,7 @@ export class OpenSearchAdapter implements SearchAdapter {
         sort: query.q?.trim()
           ? ['_score', { updated: { order: 'desc' as const } }]
           : [{ updated: { order: 'desc' as const } }],
+        ...(aggs && { aggs }),
       },
     }
 
@@ -206,7 +277,28 @@ export class OpenSearchAdapter implements SearchAdapter {
     const total = hits?.total
     const totalCount = typeof total === 'number' ? total : (total?.value ?? 0)
 
-    return { items, total: totalCount, offset, limit }
+    // Parse aggregation results into SearchFacets
+    let facets: SearchFacets | undefined
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const aggregations = response.body.aggregations as Record<string, any> | undefined
+    if (query.facets && aggregations) {
+      const parseBuckets = (aggName: string): SearchFacetBucket[] =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (aggregations[aggName]?.buckets ?? []).map((b: any) => ({
+          name: b.key as string,
+          count: b.doc_count as number,
+        }))
+
+      facets = {
+        organizations: parseBuckets('organizations'),
+        tags: parseBuckets('tags'),
+        formats: parseBuckets('formats'),
+        licenses: parseBuckets('licenses'),
+        groups: parseBuckets('groups'),
+      }
+    }
+
+    return { items, total: totalCount, offset, limit, ...(facets && { facets }) }
   }
 
   async delete(id: string): Promise<void> {
@@ -222,6 +314,15 @@ export class OpenSearchAdapter implements SearchAdapter {
       if (err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 404) return
       throw err
     }
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.ensureIndex()
+    await this.client.deleteByQuery({
+      index: this.indexName,
+      body: { query: { match_all: {} } },
+      refresh: true,
+    })
   }
 
   async bulkIndex(docs: DatasetDoc[]): Promise<void> {

@@ -71,10 +71,26 @@ services:
       mc cors set local/kukan-dev /tmp/cors.json;
       "
 
+  elasticmq:
+    image: softwaremill/elasticmq-native:latest
+    container_name: kukan-elasticmq
+    ports:
+      - '9324:9324'
+      - '9325:9325'
+    volumes:
+      - ./elasticmq.conf:/opt/elasticmq.conf
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:9324 || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   opensearch:
-    image: opensearchproject/opensearch:3
+    build:
+      context: .
+      dockerfile: opensearch.Dockerfile
+    image: kukan-opensearch:3
     container_name: kukan-opensearch
-    profiles: ['search']
     environment:
       - discovery.type=single-node
       - DISABLE_SECURITY_PLUGIN=true
@@ -92,7 +108,6 @@ services:
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:3
     container_name: kukan-opensearch-dashboards
-    profiles: ['search']
     ports:
       - '5601:5601'
     environment:

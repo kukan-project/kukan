@@ -197,7 +197,7 @@ describe('DatasetsPage', () => {
     const jsx = await DatasetsPage(makeSearchParams())
     render(jsx)
 
-    const link = screen.getByText('Population Data').closest('a')
-    expect(link).toHaveAttribute('href', '/dataset/population-data')
+    const card = screen.getByText('Population Data').closest('article')
+    expect(card).toBeInTheDocument()
   })
 })

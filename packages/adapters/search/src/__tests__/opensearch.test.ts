@@ -84,6 +84,17 @@ describe('OpenSearchAdapter', () => {
       expect(mockClient.indices.exists).toHaveBeenCalledTimes(1)
     })
 
+    it('should include license_id, groups, formats keyword mappings', async () => {
+      await adapter.ensureIndex()
+
+      const createCall = mockClient.indices.create.mock.calls[0][0]
+      const props = createCall.body.mappings.properties
+
+      expect(props.license_id).toEqual({ type: 'keyword' })
+      expect(props.groups).toEqual({ type: 'keyword' })
+      expect(props.formats).toEqual({ type: 'keyword' })
+    })
+
     it('should include resources nested mapping', async () => {
       await adapter.ensureIndex()
 
@@ -164,11 +175,13 @@ describe('OpenSearchAdapter', () => {
       expect(mustClause.bool.should).toHaveLength(2)
       expect(mustClause.bool.minimum_should_match).toBe(1)
 
-      // Dataset-level multi_match
+      // Dataset-level multi_match (cross_fields + operator: and)
       expect(mustClause.bool.should[0].multi_match).toEqual(
         expect.objectContaining({
           query: 'test query',
           fields: ['title^3', 'name^2', 'notes', 'tags'],
+          type: 'cross_fields',
+          operator: 'and',
         })
       )
 
@@ -176,13 +189,15 @@ describe('OpenSearchAdapter', () => {
       expect(mustClause.bool.should[1].nested).toEqual(
         expect.objectContaining({
           path: 'resources',
-          inner_hits: { size: 1000 },
+          inner_hits: { size: 100 },
         })
       )
       expect(mustClause.bool.should[1].nested.query.multi_match).toEqual(
         expect.objectContaining({
           query: 'test query',
           fields: ['resources.name^2', 'resources.description'],
+          type: 'cross_fields',
+          operator: 'and',
         })
       )
 
@@ -352,6 +367,78 @@ describe('OpenSearchAdapter', () => {
 
       const result = await adapter.search({ q: 'test' })
       expect(result.total).toBe(5)
+    })
+
+    it('should apply formats, license_id, and groups filters', async () => {
+      mockClient.search.mockResolvedValue({
+        body: { hits: { total: { value: 0 }, hits: [] } },
+      })
+
+      await adapter.search({
+        q: 'data',
+        filters: {
+          formats: ['csv', 'json'],
+          license_id: 'cc-by',
+          groups: ['environment'],
+        },
+      })
+
+      const callArgs = mockClient.search.mock.calls[0][0]
+      const filterClauses = callArgs.body.query.bool.filter
+
+      expect(filterClauses).toEqual(
+        expect.arrayContaining([
+          { terms: { formats: ['CSV', 'JSON'] } },
+          { term: { license_id: 'cc-by' } },
+          { terms: { groups: ['environment'] } },
+        ])
+      )
+    })
+
+    it('should include aggregations when facets=true', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: { total: { value: 0 }, hits: [] },
+          aggregations: {
+            organizations: { buckets: [{ key: 'org-a', doc_count: 5 }] },
+            tags: { buckets: [{ key: 'env', doc_count: 3 }] },
+            formats: { buckets: [{ key: 'CSV', doc_count: 2 }] },
+            licenses: { buckets: [{ key: 'cc-by', doc_count: 1 }] },
+            groups: { buckets: [] },
+          },
+        },
+      })
+
+      const result = await adapter.search({ q: 'data', facets: true })
+
+      // Verify aggregations were requested
+      const callArgs = mockClient.search.mock.calls[0][0]
+      expect(callArgs.body.aggs).toBeDefined()
+      expect(callArgs.body.aggs.organizations).toEqual({
+        terms: { field: 'organization', size: 200 },
+      })
+      expect(callArgs.body.aggs.tags).toEqual({ terms: { field: 'tags', size: 200 } })
+
+      // Verify parsed facets
+      expect(result.facets).toEqual({
+        organizations: [{ name: 'org-a', count: 5 }],
+        tags: [{ name: 'env', count: 3 }],
+        formats: [{ name: 'CSV', count: 2 }],
+        licenses: [{ name: 'cc-by', count: 1 }],
+        groups: [],
+      })
+    })
+
+    it('should not include aggregations when facets is not set', async () => {
+      mockClient.search.mockResolvedValue({
+        body: { hits: { total: { value: 0 }, hits: [] } },
+      })
+
+      const result = await adapter.search({ q: 'data' })
+
+      const callArgs = mockClient.search.mock.calls[0][0]
+      expect(callArgs.body.aggs).toBeUndefined()
+      expect(result.facets).toBeUndefined()
     })
   })
 

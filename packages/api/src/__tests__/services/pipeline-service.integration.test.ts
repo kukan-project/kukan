@@ -1,8 +1,17 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { ResourcePipelineService } from '@kukan/pipeline'
-import { InProcessQueueAdapter } from '@kukan/queue-adapter'
+import type { QueueAdapter } from '@kukan/queue-adapter'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
+
+function createMockQueue(): QueueAdapter {
+  return {
+    enqueue: vi.fn().mockResolvedValue('mock-job-id'),
+    getStatus: vi.fn().mockResolvedValue(null),
+    process: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn().mockResolvedValue(undefined),
+  }
+}
 
 const db = getTestDb()
 
@@ -42,7 +51,7 @@ afterAll(async () => {
 describe('ResourcePipelineService', () => {
   describe('enqueue', () => {
     it('should create pipeline record and enqueue job', async () => {
-      const queue = new InProcessQueueAdapter()
+      const queue = createMockQueue()
       const service = new ResourcePipelineService(db, queue)
 
       const jobId = await service.enqueue(testResId)
@@ -52,12 +61,10 @@ describe('ResourcePipelineService', () => {
       const status = await service.getStatus(testResId)
       expect(status).not.toBeNull()
       expect(status!.status).toBe('queued')
-
-      await queue.stop()
     })
 
     it('should reset pipeline on re-enqueue', async () => {
-      const queue = new InProcessQueueAdapter()
+      const queue = createMockQueue()
       const service = new ResourcePipelineService(db, queue)
 
       await service.enqueue(testResId)
@@ -70,8 +77,6 @@ describe('ResourcePipelineService', () => {
       const status = await service.getStatus(testResId)
       expect(status!.status).toBe('queued')
       expect(status!.steps).toHaveLength(0)
-
-      await queue.stop()
     })
 
     it('should throw when queue is not provided', async () => {
@@ -83,7 +88,7 @@ describe('ResourcePipelineService', () => {
 
   describe('step management', () => {
     it('should track step lifecycle: start → complete', async () => {
-      const queue = new InProcessQueueAdapter()
+      const queue = createMockQueue()
       const service = new ResourcePipelineService(db, queue)
 
       await service.enqueue(testResId)
@@ -97,12 +102,10 @@ describe('ResourcePipelineService', () => {
       expect(status!.steps[0].stepName).toBe('fetch')
       expect(status!.steps[0].status).toBe('complete')
       expect(status!.steps[0].completedAt).not.toBeNull()
-
-      await queue.stop()
     })
 
     it('should track failed steps with error message', async () => {
-      const queue = new InProcessQueueAdapter()
+      const queue = createMockQueue()
       const service = new ResourcePipelineService(db, queue)
 
       await service.enqueue(testResId)
@@ -114,12 +117,10 @@ describe('ResourcePipelineService', () => {
       const status = await service.getStatus(testResId)
       expect(status!.steps[0].status).toBe('error')
       expect(status!.steps[0].error).toBe('Download timeout')
-
-      await queue.stop()
     })
 
     it('should track skipped steps', async () => {
-      const queue = new InProcessQueueAdapter()
+      const queue = createMockQueue()
       const service = new ResourcePipelineService(db, queue)
 
       await service.enqueue(testResId)
@@ -130,8 +131,6 @@ describe('ResourcePipelineService', () => {
 
       const status = await service.getStatus(testResId)
       expect(status!.steps[0].status).toBe('skipped')
-
-      await queue.stop()
     })
   })
 
@@ -143,7 +142,7 @@ describe('ResourcePipelineService', () => {
     })
 
     it('should update pipeline status to complete', async () => {
-      const queue = new InProcessQueueAdapter()
+      const queue = createMockQueue()
       const service = new ResourcePipelineService(db, queue)
 
       await service.enqueue(testResId)
@@ -152,12 +151,10 @@ describe('ResourcePipelineService', () => {
 
       const status = await service.getStatus(testResId)
       expect(status!.status).toBe('complete')
-
-      await queue.stop()
     })
 
     it('should update pipeline status to error with message', async () => {
-      const queue = new InProcessQueueAdapter()
+      const queue = createMockQueue()
       const service = new ResourcePipelineService(db, queue)
 
       await service.enqueue(testResId)
@@ -167,12 +164,10 @@ describe('ResourcePipelineService', () => {
       const status = await service.getStatus(testResId)
       expect(status!.status).toBe('error')
       expect(status!.error).toBe('Something failed')
-
-      await queue.stop()
     })
 
     it('should update preview key', async () => {
-      const queue = new InProcessQueueAdapter()
+      const queue = createMockQueue()
       const service = new ResourcePipelineService(db, queue)
 
       await service.enqueue(testResId)
@@ -181,8 +176,6 @@ describe('ResourcePipelineService', () => {
 
       const status = await service.getStatus(testResId)
       expect(status!.previewKey).toBe('previews/pkg-1/res-1.parquet')
-
-      await queue.stop()
     })
   })
 })

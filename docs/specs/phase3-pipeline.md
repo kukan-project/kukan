@@ -1,6 +1,6 @@
 # Phase 3a: リソース処理 & ファイルストレージ — 実装仕様書
 
-> **目標**: ファイルアップロード（Presigned URL）、リソース処理パイプライン（CSV/TSV + 外部 URL 対応）、OpenSearch 検索を実装し、開発環境（Docker Compose + InProcessQueue + MinIO）で E2E 動作する状態にする
+> **目標**: ファイルアップロード（Presigned URL）、リソース処理パイプライン（CSV/TSV + 外部 URL 対応）、OpenSearch 検索を実装し、開発環境（Docker Compose + ElasticMQ + MinIO）で E2E 動作する状態にする
 
 ## 1. 前提
 
@@ -8,7 +8,7 @@
 - Phase 2 Frontend 完成済み（Next.js 15 カタログ UI + 管理画面）
 - `resource` テーブルに `urlType` カラム定義済み
 - StorageAdapter / QueueAdapter / SearchAdapter インターフェース定義済み
-- S3CompatibleStorageAdapter（MinIO / AWS S3 統合）, InProcessQueueAdapter, PostgresSearchAdapter 実装済み
+- S3StorageAdapter（MinIO / AWS S3 統合）, InProcessQueueAdapter, PostgresSearchAdapter 実装済み
 - Docker Compose: PostgreSQL 16 + MinIO 動作済み
 
 ### Phase 3a vs Phase 3b
@@ -16,7 +16,7 @@
 | 項目         | Phase 3a（本仕様書）                      | Phase 3b（別途）            |
 | ------------ | ----------------------------------------- | --------------------------- |
 | スコープ     | 開発環境で E2E 動作                       | AWS 本番基盤                |
-| ストレージ   | S3CompatibleStorageAdapter（MinIO 接続）  | 同アダプター（AWS S3 接続） |
+| ストレージ   | S3StorageAdapter（MinIO 接続）            | 同アダプター（AWS S3 接続） |
 | キュー       | InProcessQueue（既存）                    | SQSQueueAdapter + Worker    |
 | 検索         | OpenSearch（Docker）                      | AWS OpenSearch Service      |
 | フォーマット | CSV/TSV（プレビュー）、PDF（iframe 表示） | Excel 等は段階的追加        |
@@ -198,12 +198,12 @@ export interface StorageAdapter {
 }
 ```
 
-| 実装                       | 方式                                                                |
-| -------------------------- | ------------------------------------------------------------------- |
-| S3CompatibleStorageAdapter | `@aws-sdk/s3-request-presigner` の `getSignedUrl(PutObjectCommand)` |
-| LocalStorageAdapter        | `local://{key}` センチネル URL                                      |
+| 実装                | 方式                                                                |
+| ------------------- | ------------------------------------------------------------------- |
+| S3StorageAdapter    | `@aws-sdk/s3-request-presigner` の `getSignedUrl(PutObjectCommand)` |
+| LocalStorageAdapter | `local://{key}` センチネル URL                                      |
 
-※ 旧 `MinIOStorageAdapter`（minio パッケージ）と `S3StorageAdapter` は `S3CompatibleStorageAdapter`（`@aws-sdk/client-s3` ベース）に統合済み。`STORAGE_TYPE` は `'s3' | 'local'` の 2 値。`S3_ENDPOINT` の有無で MinIO / AWS S3 を自動判別。
+※ 旧 `MinIOStorageAdapter`（minio パッケージ）と `S3StorageAdapter` は `S3StorageAdapter`（`@aws-sdk/client-s3` ベース）に統合済み。`STORAGE_TYPE` は `'s3' | 'local'` の 2 値。`S3_ENDPOINT` の有無で MinIO / AWS S3 を自動判別。
 
 ### 5.2 API エンドポイント
 
@@ -609,7 +609,7 @@ if (input.url && input.url !== existing.url) {
 
 ### Step 3: ファイルアップロード API ✅
 
-1. ~~StorageAdapter 統合: `minio.ts` + `s3.ts` → `S3CompatibleStorageAdapter`（`@aws-sdk/client-s3` ベース）~~
+1. ~~StorageAdapter 統合: `minio.ts` + `s3.ts` → `S3StorageAdapter`（`@aws-sdk/client-s3` ベース）~~
 2. ~~`adapter.ts` に `getSignedUploadUrl` 追加、`LocalStorageAdapter` にセンチネル URL 実装~~
 3. ~~`STORAGE_TYPE` 簡素化: `'s3' | 'minio' | 'local'` → `'s3' | 'local'`~~
 4. ~~`packages/shared/src/adapter-types.ts` — `PipelineStatus` 型追加~~
@@ -664,7 +664,7 @@ if (input.url && input.url !== existing.url) {
 - [x] OpenSearch 経由で検索結果が返る（Step 2）
 - [x] PostgreSQL フォールバック検索も引き続き動作（Step 2）
 - [x] ファイルアップロード API エンドポイント動作（Step 3）
-- [x] S3CompatibleStorageAdapter で MinIO / AWS S3 統合（Step 3）
+- [x] S3StorageAdapter で MinIO / AWS S3 統合（Step 3）
 - [x] `resource_pipeline` / `resource_pipeline_step` テーブル動作（Step 4）
 - [x] CSV ファイルアップロード → 処理完了 → Parquet プレビュー生成（Step 4-5）
 - [x] 外部 URL リソース → 処理完了 → Parquet プレビュー生成（Step 4-5）

@@ -4,7 +4,13 @@
  */
 
 import { Readable } from 'stream'
-import { ObjectMeta } from '@kukan/shared'
+
+export interface ObjectMeta {
+  contentType?: string
+  contentLength?: number
+  originalFilename?: string
+  [key: string]: unknown
+}
 
 export interface SignedUrlOptions {
   expiresIn?: number

@@ -1,9 +1,21 @@
 /**
  * KUKAN Queue Adapter Interface
- * Pluggable job queue backend (SQS or in-process)
+ * SQS-compatible job queue backend (AWS SQS / ElasticMQ)
  */
 
-import { Job, JobStatus } from '@kukan/shared'
+export interface Job<T = unknown> {
+  id: string
+  type: string
+  data: T
+}
+
+export type JobState = 'pending' | 'processing' | 'completed' | 'failed'
+
+export interface JobStatus {
+  id: string
+  status: JobState
+  error?: string
+}
 
 export interface QueueAdapter {
   /**

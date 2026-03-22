@@ -15,6 +15,7 @@
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
     "@kukan/api": "workspace:*",
+    "@kukan/search-adapter": "workspace:*",
     "@kukan/shared": "workspace:*",
     "@kukan/ui": "workspace:*",
     "better-auth": "^1.1.9",

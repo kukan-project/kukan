@@ -24,7 +24,7 @@ CKANの後継として設計されたTypeScriptフルスタックのデータカ
 | ORM            | Drizzle ORM（PostgreSQL ドライバ）                    |
 | 検索           | OpenSearch 3.x / PostgreSQL全文検索（フォールバック） |
 | ストレージ     | S3互換（AWS S3 / MinIO 統合アダプター）               |
-| キュー         | SQS（AWS）/ InProcess（開発・オンプレ）               |
+| キュー         | SQS互換（AWS SQS / ElasticMQ）                        |
 | キャッシュ     | lru-cache 11.x（インメモリ、全環境共通）              |
 | 認証           | Better Auth 1.x + OIDC プラグイン                     |
 | AI             | Bedrock / OpenAI / Ollama / NoOp                      |
@@ -39,7 +39,7 @@ CKANの後継として設計されたTypeScriptフルスタックのデータカ
 KUKAN/
 ├── CLAUDE.md               # ← このファイル
 ├── apps/
-│   ├── worker/             # Ingest Worker（SQS consumer、AWS環境のみ）          ※ Phase 3+
+│   ├── worker/             # Ingest Worker（SQS consumer、ElasticMQ / AWS SQS）  ※ Phase 3+
 │   ├── web/                # Next.js フロントエンド + Hono API（単一オリジン）    ※ Phase 2+
 │   └── editor/             # Data Editor UI（アドオン、独立デプロイ可能）        ※ Phase 7+
 ├── packages/
@@ -48,8 +48,8 @@ KUKAN/
 │   ├── shared/             # 型定義、Zod バリデーション、lru-cache ユーティリティ
 │   ├── adapters/           # 環境差吸収アダプター（4つ）
 │   │   ├── search/         # @kukan/search-adapter (OpenSearch / PostgreSQL)
-│   │   ├── storage/        # @kukan/storage-adapter (S3 / MinIO / Local)         ※ Phase 3+
-│   │   ├── queue/          # @kukan/queue-adapter (SQS / InProcess)              ※ Phase 3+
+│   │   ├── storage/        # @kukan/storage-adapter (S3互換: AWS S3 / MinIO)     ※ Phase 3+
+│   │   ├── queue/          # @kukan/queue-adapter (SQS互換: AWS SQS / ElasticMQ) ※ Phase 3+
 │   │   └── ai/             # @kukan/ai-adapter (Bedrock / OpenAI / Ollama / NoOp)※ Phase 5+
 │   ├── editor-core/        # Data Editor ビジネスロジック（アドオン）             ※ Phase 7+
 │   ├── quality/            # Quality Monitor（リンク切れ、CSV検証、メタデータ監査、PII）※ Phase 4+
@@ -149,10 +149,10 @@ pnpm format        # Prettier フォーマット
 
 | アダプター     | AWS        | 開発/オンプレ          |
 | -------------- | ---------- | ---------------------- |
-| StorageAdapter | S3互換     | S3互換 / ローカルFS    |
+| StorageAdapter | S3         | MinIO (S3互換)         |
 | SearchAdapter  | OpenSearch | PostgreSQL全文検索     |
 | AIAdapter      | Bedrock    | Ollama / OpenAI / NoOp |
-| QueueAdapter   | SQS        | InProcess              |
+| QueueAdapter   | SQS        | ElasticMQ (SQS互換)    |
 
 キャッシュは lru-cache ユーティリティ（全環境共通、アダプター不要）。
 
@@ -192,8 +192,9 @@ pnpm format        # Prettier フォーマット
 
 ## パイプライン フォーマット別処理マトリクス
 
-パイプラインは Fetch → Extract → Index の3ステップ。
-Fetch と Index はフォーマット非依存。Extract のみフォーマット別処理を行う。
+パイプラインは Fetch → Extract → Index の3ステップ（Index は no-op）。
+検索インデックス更新は API ルートハンドラーで CUD 操作時に実行。
+Extract のみフォーマット別処理を行う。
 
 | フォーマット | isTextFormat | エンコーディング検出                         | Parquet 生成 |     RAW テキスト表示     |
 | ------------ | :----------: | -------------------------------------------- | :----------: | :----------------------: |

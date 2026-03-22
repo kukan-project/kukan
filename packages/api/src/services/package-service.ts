@@ -3,7 +3,7 @@
  * Business logic for package (dataset) management
  */
 
-import { eq, ilike, and, or, sql, getTableColumns, inArray, desc } from 'drizzle-orm'
+import { eq, and, sql, getTableColumns, inArray, desc } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import {
@@ -17,14 +17,9 @@ import {
   packageGroup,
   userOrgMembership,
 } from '@kukan/db'
-import {
-  NotFoundError,
-  ValidationError,
-  isUuid,
-  escapeLike,
-  groupMatchedResources,
-} from '@kukan/shared'
-import type { PaginationParams, PaginatedResult, FacetCounts, FacetItem } from '@kukan/shared'
+import { NotFoundError, ValidationError, isUuid } from '@kukan/shared'
+import type { PaginationParams, PaginatedResult, FacetCounts } from '@kukan/shared'
+import type { SearchFacets, MatchedResource } from '@kukan/search-adapter'
 import type { CreatePackageInput, UpdatePackageInput, PatchPackageInput } from '@kukan/shared'
 
 interface ViewerContext {
@@ -33,149 +28,24 @@ interface ViewerContext {
 }
 
 export interface PackageFilterParams {
-  q?: string
-  name?: string
-  owner_org?: string
-  group?: string
-  tags?: string[]
-  formats?: string[]
-  license_id?: string
-  creator_user_id?: string
-  member_user_id?: string
-  private?: boolean
-  viewer?: ViewerContext
+  /** Package IDs from SearchAdapter */
+  searchMatchIds?: string[]
+  /** Total count from SearchAdapter (used instead of DB COUNT) */
+  searchTotal?: number
+  /** Matched resources from SearchAdapter, keyed by package ID */
+  searchMatchedResources?: Record<string, MatchedResource[]>
 }
 
 export class PackageService {
   constructor(private db: Database) {}
 
-  /**
-   * Build WHERE conditions from filter params.
-   * Returns null when org/group name resolution fails (indicates empty result).
-   * @param exclude — dimension to skip (for facet counting)
-   */
-  private async buildConditions(
-    params: PackageFilterParams,
-    exclude?: 'owner_org' | 'group' | 'tags' | 'formats' | 'license_id'
-  ): Promise<SQL[] | null> {
+  /** Build WHERE conditions for package list query */
+  private buildConditions(params: PackageFilterParams): SQL[] {
     const conditions: SQL[] = [eq(packageTable.state, 'active')]
 
-    if (params.q) {
-      const pattern = `%${escapeLike(params.q)}%`
-      conditions.push(
-        or(
-          ilike(packageTable.name, pattern),
-          ilike(packageTable.title, pattern),
-          ilike(packageTable.notes, pattern),
-          sql`EXISTS (
-            SELECT 1 FROM ${resource}
-            WHERE ${resource.packageId} = ${packageTable.id}
-            AND ${resource.state} = 'active'
-            AND (${resource.name} ILIKE ${pattern} OR ${resource.description} ILIKE ${pattern})
-          )`
-        )!
-      )
-    }
-
-    if (params.name) {
-      conditions.push(ilike(packageTable.name, `${escapeLike(params.name)}%`))
-    }
-
-    if (exclude !== 'owner_org' && params.owner_org) {
-      if (isUuid(params.owner_org)) {
-        conditions.push(eq(packageTable.ownerOrg, params.owner_org))
-      } else {
-        const [org] = await this.db
-          .select({ id: organization.id })
-          .from(organization)
-          .where(eq(organization.name, params.owner_org))
-          .limit(1)
-        if (org) {
-          conditions.push(eq(packageTable.ownerOrg, org.id))
-        } else {
-          return null
-        }
-      }
-    }
-
-    if (exclude !== 'group' && params.group) {
-      const groupCondition = isUuid(params.group)
-        ? eq(group.id, params.group)
-        : eq(group.name, params.group)
-      const [grp] = await this.db
-        .select({ id: group.id })
-        .from(group)
-        .where(groupCondition)
-        .limit(1)
-      if (grp) {
-        const pkgIds = this.db
-          .select({ packageId: packageGroup.packageId })
-          .from(packageGroup)
-          .where(eq(packageGroup.groupId, grp.id))
-        conditions.push(inArray(packageTable.id, pkgIds))
-      } else {
-        return null
-      }
-    }
-
-    if (exclude !== 'tags' && params.tags && params.tags.length > 0) {
-      const tagIds = this.db.select({ id: tag.id }).from(tag).where(inArray(tag.name, params.tags))
-      const pkgIdsWithTags = this.db
-        .select({ packageId: packageTag.packageId })
-        .from(packageTag)
-        .where(inArray(packageTag.tagId, tagIds))
-      conditions.push(inArray(packageTable.id, pkgIdsWithTags))
-    }
-
-    if (exclude !== 'formats' && params.formats && params.formats.length > 0) {
-      const pkgIdsWithFormat = this.db
-        .select({ packageId: resource.packageId })
-        .from(resource)
-        .where(
-          and(
-            eq(resource.state, 'active'),
-            inArray(
-              sql`UPPER(${resource.format})`,
-              params.formats.map((f) => f.toUpperCase())
-            )
-          )
-        )
-      conditions.push(inArray(packageTable.id, pkgIdsWithFormat))
-    }
-
-    if (exclude !== 'license_id' && params.license_id) {
-      conditions.push(eq(packageTable.licenseId, params.license_id))
-    }
-
-    if (params.creator_user_id) {
-      conditions.push(eq(packageTable.creatorUserId, params.creator_user_id))
-    }
-
-    if (params.member_user_id) {
-      const orgIds = this.db
-        .select({ organizationId: userOrgMembership.organizationId })
-        .from(userOrgMembership)
-        .where(eq(userOrgMembership.userId, params.member_user_id))
-      conditions.push(inArray(packageTable.ownerOrg, orgIds))
-    }
-
-    if (typeof params.private === 'boolean') {
-      conditions.push(eq(packageTable.private, params.private))
-    }
-
-    // Private package visibility
-    if (!params.viewer?.sysadmin) {
-      if (params.viewer?.userId) {
-        const userOrgIds = this.db
-          .select({ organizationId: userOrgMembership.organizationId })
-          .from(userOrgMembership)
-          .where(eq(userOrgMembership.userId, params.viewer.userId))
-        conditions.push(
-          or(eq(packageTable.private, false), inArray(packageTable.ownerOrg, userOrgIds))!
-        )
-      } else {
-        conditions.push(eq(packageTable.private, false))
-      }
+    // When search results are provided, filter by matched IDs
+    if (params.searchMatchIds && params.searchMatchIds.length > 0) {
+      conditions.push(inArray(packageTable.id, params.searchMatchIds))
     }
 
     return conditions
@@ -184,210 +54,112 @@ export class PackageService {
   async list(params: PaginationParams & PackageFilterParams) {
     const { offset = 0, limit = 20 } = params
 
-    const conditions = await this.buildConditions(params)
-    if (conditions === null) {
-      return { items: [], total: 0, offset, limit } as PaginatedResult<never>
+    // When search was used but returned no matches, return empty result immediately
+    if (params.searchMatchIds !== undefined && params.searchMatchIds.length === 0) {
+      return {
+        items: [],
+        total: params.searchTotal ?? 0,
+        offset,
+        limit,
+      } as PaginatedResult<never>
     }
 
+    const hasSearchResults = params.searchMatchIds && params.searchMatchIds.length > 0
+
+    const conditions = this.buildConditions(params)
     const where = and(...conditions)
 
-    const rows = await this.db
-      .select({
-        ...getTableColumns(packageTable),
-        total: sql<number>`COUNT(*) OVER()::int`.as('total'),
-        formats:
-          sql<string>`(SELECT COALESCE(string_agg(DISTINCT UPPER("resource"."format"), ',' ORDER BY UPPER("resource"."format")), '') FROM "resource" WHERE "resource"."package_id" = "package"."id" AND "resource"."state" = 'active')`.as(
-            'formats'
-          ),
-        resourceCount:
-          sql<number>`(SELECT COUNT(*)::int FROM "resource" WHERE "resource"."package_id" = "package"."id" AND "resource"."state" = 'active')`.as(
-            'resource_count'
-          ),
-        tags: sql<string>`(SELECT COALESCE(string_agg("tag"."name", ',' ORDER BY "tag"."name"), '') FROM "package_tag" JOIN "tag" ON "tag"."id" = "package_tag"."tag_id" WHERE "package_tag"."package_id" = "package"."id")`.as(
-          'tags_agg'
+    const selectFields = {
+      ...getTableColumns(packageTable),
+      total: sql<number>`COUNT(*) OVER()::int`.as('total'),
+      formats:
+        sql<string>`(SELECT COALESCE(string_agg(DISTINCT UPPER("resource"."format"), ',' ORDER BY UPPER("resource"."format")), '') FROM "resource" WHERE "resource"."package_id" = "package"."id" AND "resource"."state" = 'active')`.as(
+          'formats'
         ),
-        groups:
-          sql<string>`(SELECT COALESCE(string_agg("group"."name" || ':' || COALESCE("group"."title", "group"."name"), ',' ORDER BY "group"."title"), '') FROM "package_group" JOIN "group" ON "group"."id" = "package_group"."group_id" WHERE "package_group"."package_id" = "package"."id")`.as(
-            'groups_agg'
-          ),
-        orgName: organization.name,
-        orgTitle: organization.title,
-      })
+      resourceCount:
+        sql<number>`(SELECT COUNT(*)::int FROM "resource" WHERE "resource"."package_id" = "package"."id" AND "resource"."state" = 'active')`.as(
+          'resource_count'
+        ),
+      tags: sql<string>`(SELECT COALESCE(string_agg("tag"."name", ',' ORDER BY "tag"."name"), '') FROM "package_tag" JOIN "tag" ON "tag"."id" = "package_tag"."tag_id" WHERE "package_tag"."package_id" = "package"."id")`.as(
+        'tags_agg'
+      ),
+      groups:
+        sql<string>`(SELECT COALESCE(string_agg("group"."name" || ':' || COALESCE("group"."title", "group"."name"), ',' ORDER BY "group"."title"), '') FROM "package_group" JOIN "group" ON "group"."id" = "package_group"."group_id" WHERE "package_group"."package_id" = "package"."id")`.as(
+          'groups_agg'
+        ),
+      orgName: organization.name,
+      orgTitle: organization.title,
+    }
+
+    const baseQuery = this.db
+      .select(selectFields)
       .from(packageTable)
       .leftJoin(organization, eq(packageTable.ownerOrg, organization.id))
       .where(where)
-      .orderBy(desc(packageTable.updated))
-      .limit(limit)
-      .offset(offset)
 
-    const total = rows[0]?.total ?? 0
+    // SearchAdapter results: IDs are already paginated and scored
+    // DB-only results: apply pagination and default ordering
+    const rows = hasSearchResults
+      ? await baseQuery
+      : await baseQuery.orderBy(desc(packageTable.updated)).limit(limit).offset(offset)
 
-    // Batch fetch matched resources when text query is present
-    let matchedByPackage: ReturnType<typeof groupMatchedResources> = {}
-    if (params.q) {
-      const packageIds = rows.map((r) => r.id)
-      if (packageIds.length > 0) {
-        const pattern = `%${escapeLike(params.q)}%`
-        const matchedRows = await this.db
-          .select({
-            id: resource.id,
-            packageId: resource.packageId,
-            name: resource.name,
-            description: resource.description,
-            format: resource.format,
-          })
-          .from(resource)
-          .where(
-            and(
-              inArray(resource.packageId, packageIds),
-              eq(resource.state, 'active'),
-              or(ilike(resource.name, pattern), ilike(resource.description, pattern))
-            )
-          )
+    if (hasSearchResults) {
+      // Preserve SearchAdapter score order
+      const rowById = new Map(rows.map((r) => [r.id, r]))
+      const items = params
+        .searchMatchIds!.map((id) => rowById.get(id))
+        .filter((r): r is NonNullable<typeof r> => r != null)
+        .map(({ total: _, ...row }) => ({
+          ...row,
+          ...(params.searchMatchedResources?.[row.id] && {
+            matchedResources: params.searchMatchedResources[row.id],
+          }),
+        }))
 
-        matchedByPackage = groupMatchedResources(matchedRows)
-      }
+      return {
+        items,
+        total: params.searchTotal ?? items.length,
+        offset,
+        limit,
+      } as PaginatedResult<(typeof items)[0]>
     }
 
-    const items = rows.map(({ total: _, ...rest }) => ({
-      ...rest,
-      ...(matchedByPackage[rest.id] && { matchedResources: matchedByPackage[rest.id] }),
-    }))
+    const total = rows[0]?.total ?? 0
+    const items = rows.map(({ total: _, ...rest }) => rest)
 
     return { items, total, offset, limit } as PaginatedResult<(typeof items)[0]>
   }
 
   /**
-   * Get facet counts for each filter dimension.
-   * Each dimension excludes its own filter to allow switching.
+   * Enrich SearchAdapter facets with all possible values from DB.
+   * SearchAdapter only returns non-zero buckets; this supplements with
+   * all active orgs/groups/tags/formats/licenses (count=0 for missing).
    */
-  async getFacets(params: PackageFilterParams): Promise<FacetCounts> {
-    const [organizations, groups, tags, formats, licenses] = await Promise.all([
-      this.getOrgFacet(params),
-      this.getGroupFacet(params),
-      this.getTagFacet(params),
-      this.getFormatFacet(params),
-      this.getLicenseFacet(params),
-    ])
-    return { organizations, groups, tags, formats, licenses }
-  }
+  async enrichFacets(facets: SearchFacets): Promise<FacetCounts> {
+    const orgCountMap = new Map(facets.organizations.map((o) => [o.name, o.count]))
+    const groupCountMap = new Map(facets.groups.map((g) => [g.name, g.count]))
+    const tagCountMap = new Map(facets.tags.map((t) => [t.name, t.count]))
+    const formatCountMap = new Map(facets.formats.map((f) => [f.name, f.count]))
+    const licenseCountMap = new Map(facets.licenses.map((l) => [l.name, l.count]))
 
-  private async getOrgFacet(params: PackageFilterParams): Promise<FacetItem[]> {
-    const conditions = await this.buildConditions(params, 'owner_org')
-
-    // If other filters are unresolvable, return all orgs with count=0
-    if (conditions === null) {
-      const allOrgs = await this.db
+    const [allOrgs, allGroups, allTags, allFormats, allLicenses] = await Promise.all([
+      this.db
         .select({ name: organization.name, title: organization.title })
         .from(organization)
         .where(eq(organization.state, 'active'))
-        .orderBy(organization.title)
-      return allOrgs.map((o) => ({ name: o.name, title: o.title, count: 0 }))
-    }
-
-    const filteredCounts = this.db
-      .select({
-        ownerOrg: packageTable.ownerOrg,
-        count: sql<number>`COUNT(*)::int`.as('count'),
-      })
-      .from(packageTable)
-      .where(and(...conditions))
-      .groupBy(packageTable.ownerOrg)
-      .as('fc')
-
-    const rows = await this.db
-      .select({
-        name: organization.name,
-        title: organization.title,
-        count: sql<number>`COALESCE(${filteredCounts.count}, 0)`.as('count'),
-      })
-      .from(organization)
-      .leftJoin(filteredCounts, eq(organization.id, filteredCounts.ownerOrg))
-      .where(eq(organization.state, 'active'))
-      .orderBy(organization.title)
-
-    return rows.map((r) => ({ name: r.name, title: r.title, count: r.count }))
-  }
-
-  private async getGroupFacet(params: PackageFilterParams): Promise<FacetItem[]> {
-    const conditions = await this.buildConditions(params, 'group')
-
-    if (conditions === null) {
-      const allGroups = await this.db
+        .orderBy(organization.title),
+      this.db
         .select({ name: group.name, title: group.title })
         .from(group)
         .where(eq(group.state, 'active'))
-        .orderBy(group.title)
-      return allGroups.map((g) => ({ name: g.name, title: g.title, count: 0 }))
-    }
-
-    const filteredCounts = this.db
-      .select({
-        groupId: packageGroup.groupId,
-        count: sql<number>`COUNT(DISTINCT ${packageTable.id})::int`.as('count'),
-      })
-      .from(packageTable)
-      .innerJoin(packageGroup, eq(packageGroup.packageId, packageTable.id))
-      .where(and(...conditions))
-      .groupBy(packageGroup.groupId)
-      .as('fc')
-
-    const rows = await this.db
-      .select({
-        name: group.name,
-        title: group.title,
-        count: sql<number>`COALESCE(${filteredCounts.count}, 0)`.as('count'),
-      })
-      .from(group)
-      .leftJoin(filteredCounts, eq(group.id, filteredCounts.groupId))
-      .where(eq(group.state, 'active'))
-      .orderBy(group.title)
-
-    return rows.map((r) => ({ name: r.name, title: r.title, count: r.count }))
-  }
-
-  private async getTagFacet(params: PackageFilterParams): Promise<FacetItem[]> {
-    const conditions = await this.buildConditions(params, 'tags')
-
-    if (conditions === null) {
-      const allTags = await this.db
+        .orderBy(group.title),
+      this.db
         .select({ name: tag.name })
         .from(tag)
         .where(sql`${tag.vocabularyId} IS NULL`)
-        .orderBy(tag.name)
-      return allTags.map((t) => ({ name: t.name, count: 0 }))
-    }
-
-    const filteredCounts = this.db
-      .select({
-        tagId: packageTag.tagId,
-        count: sql<number>`COUNT(DISTINCT ${packageTable.id})::int`.as('count'),
-      })
-      .from(packageTable)
-      .innerJoin(packageTag, eq(packageTag.packageId, packageTable.id))
-      .where(and(...conditions))
-      .groupBy(packageTag.tagId)
-      .as('fc')
-
-    const rows = await this.db
-      .select({
-        name: tag.name,
-        count: sql<number>`COALESCE(${filteredCounts.count}, 0)`.as('count'),
-      })
-      .from(tag)
-      .leftJoin(filteredCounts, eq(tag.id, filteredCounts.tagId))
-      .where(sql`${tag.vocabularyId} IS NULL`)
-      .orderBy(tag.name)
-
-    return rows.map((r) => ({ name: r.name, count: r.count }))
-  }
-
-  private async getFormatFacet(params: PackageFilterParams): Promise<FacetItem[]> {
-    const conditions = await this.buildConditions(params, 'formats')
-
-    if (conditions === null) {
-      const allFormats = await this.db
-        .selectDistinct({ format: resource.format })
+        .orderBy(tag.name),
+      this.db
+        .selectDistinct({ format: sql<string>`UPPER(${resource.format})`.as('format') })
         .from(resource)
         .where(
           and(
@@ -395,57 +167,8 @@ export class PackageService {
             sql`${resource.format} IS NOT NULL AND ${resource.format} != ''`
           )
         )
-        .orderBy(resource.format)
-      return allFormats
-        .map((r) => r.format!)
-        .filter(Boolean)
-        .map((f) => ({ name: f.toUpperCase(), count: 0 }))
-    }
-
-    const filteredCounts = this.db
-      .select({
-        fmt: sql<string>`UPPER(${resource.format})`.as('fmt'),
-        count: sql<number>`COUNT(DISTINCT ${packageTable.id})::int`.as('count'),
-      })
-      .from(packageTable)
-      .innerJoin(
-        resource,
-        and(eq(resource.packageId, packageTable.id), eq(resource.state, 'active'))
-      )
-      .where(and(...conditions, sql`${resource.format} IS NOT NULL AND ${resource.format} != ''`))
-      .groupBy(sql`UPPER(${resource.format})`)
-      .as('fc')
-
-    const allFormats = this.db
-      .selectDistinct({
-        format: sql<string>`UPPER(${resource.format})`.as('format'),
-      })
-      .from(resource)
-      .where(
-        and(
-          eq(resource.state, 'active'),
-          sql`${resource.format} IS NOT NULL AND ${resource.format} != ''`
-        )
-      )
-      .as('af')
-
-    const rows = await this.db
-      .select({
-        name: allFormats.format,
-        count: sql<number>`COALESCE(${filteredCounts.count}, 0)`.as('count'),
-      })
-      .from(allFormats)
-      .leftJoin(filteredCounts, eq(allFormats.format, filteredCounts.fmt))
-      .orderBy(allFormats.format)
-
-    return rows.map((r) => ({ name: r.name, count: r.count }))
-  }
-
-  private async getLicenseFacet(params: PackageFilterParams): Promise<FacetItem[]> {
-    const conditions = await this.buildConditions(params, 'license_id')
-
-    if (conditions === null) {
-      const allLicenses = await this.db
+        .orderBy(sql`UPPER(${resource.format})`),
+      this.db
         .selectDistinct({ licenseId: packageTable.licenseId })
         .from(packageTable)
         .where(
@@ -454,49 +177,39 @@ export class PackageService {
             sql`${packageTable.licenseId} IS NOT NULL AND ${packageTable.licenseId} != ''`
           )
         )
-        .orderBy(packageTable.licenseId)
-      return allLicenses
-        .map((r) => r.licenseId!)
+        .orderBy(packageTable.licenseId),
+    ])
+
+    return {
+      organizations: allOrgs.map((o) => ({
+        name: o.name,
+        title: o.title,
+        count: orgCountMap.get(o.name) ?? 0,
+      })),
+      groups: allGroups.map((g) => ({
+        name: g.name,
+        title: g.title,
+        count: groupCountMap.get(g.name) ?? 0,
+      })),
+      tags: allTags.map((t) => ({
+        name: t.name,
+        count: tagCountMap.get(t.name) ?? 0,
+      })),
+      formats: allFormats
+        .map((r) => r.format)
         .filter(Boolean)
-        .map((l) => ({ name: l, count: 0 }))
+        .map((f) => ({
+          name: f,
+          count: formatCountMap.get(f) ?? 0,
+        })),
+      licenses: allLicenses
+        .map((l) => l.licenseId!)
+        .filter(Boolean)
+        .map((l) => ({
+          name: l,
+          count: licenseCountMap.get(l) ?? 0,
+        })),
     }
-
-    const filteredCounts = this.db
-      .select({
-        licenseId: packageTable.licenseId,
-        count: sql<number>`COUNT(*)::int`.as('count'),
-      })
-      .from(packageTable)
-      .where(
-        and(
-          ...conditions,
-          sql`${packageTable.licenseId} IS NOT NULL AND ${packageTable.licenseId} != ''`
-        )
-      )
-      .groupBy(packageTable.licenseId)
-      .as('fc')
-
-    const allLicenses = this.db
-      .selectDistinct({ licenseId: packageTable.licenseId })
-      .from(packageTable)
-      .where(
-        and(
-          eq(packageTable.state, 'active'),
-          sql`${packageTable.licenseId} IS NOT NULL AND ${packageTable.licenseId} != ''`
-        )
-      )
-      .as('al')
-
-    const rows = await this.db
-      .select({
-        name: allLicenses.licenseId,
-        count: sql<number>`COALESCE(${filteredCounts.count}, 0)`.as('count'),
-      })
-      .from(allLicenses)
-      .leftJoin(filteredCounts, eq(allLicenses.licenseId, filteredCounts.licenseId))
-      .orderBy(allLicenses.licenseId)
-
-    return rows.map((r) => ({ name: r.name!, count: r.count }))
   }
 
   async getByNameOrId(nameOrId: string) {

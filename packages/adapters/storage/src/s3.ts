@@ -1,5 +1,5 @@
 /**
- * KUKAN S3-Compatible Storage Adapter
+ * KUKAN S3 Storage Adapter
  * Works with both AWS S3 and MinIO via @aws-sdk/client-s3
  */
 
@@ -12,10 +12,9 @@ import {
 import { Upload } from '@aws-sdk/lib-storage'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { Readable } from 'stream'
-import { ObjectMeta } from '@kukan/shared'
-import { StorageAdapter, type SignedUrlOptions } from './adapter'
+import { type ObjectMeta, type SignedUrlOptions, type StorageAdapter } from './adapter'
 
-export interface S3CompatibleConfig {
+export interface S3Config {
   bucket: string
   region?: string
   endpoint?: string // MinIO: 'http://localhost:9000', AWS S3: omit
@@ -24,11 +23,11 @@ export interface S3CompatibleConfig {
   forcePathStyle?: boolean // auto-detected from endpoint presence if not set
 }
 
-export class S3CompatibleStorageAdapter implements StorageAdapter {
+export class S3StorageAdapter implements StorageAdapter {
   private client: S3Client
   private bucket: string
 
-  constructor(config: S3CompatibleConfig) {
+  constructor(config: S3Config) {
     this.bucket = config.bucket
     this.client = new S3Client({
       region: config.region ?? 'ap-northeast-1',

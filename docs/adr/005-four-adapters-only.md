@@ -17,10 +17,10 @@ v3設計では6つ以上のアダプター（Storage, Search, Cache, Queue, AI, 
 
 | 機能       | AWS        | 開発/オンプレ   | 環境差あり？             |
 | ---------- | ---------- | --------------- | ------------------------ |
-| ストレージ | S3互換     | S3互換 / Local  | ✅ Yes                   |
+| ストレージ | S3互換     | S3互換 (MinIO)  | ✅ Yes                   |
 | 全文検索   | OpenSearch | PG全文検索      | ✅ Yes                   |
 | AI推論     | Bedrock    | Ollama / OpenAI | ✅ Yes                   |
-| キュー     | SQS        | InProcess       | ✅ Yes                   |
+| キュー     | SQS        | ElasticMQ       | ✅ Yes                   |
 | キャッシュ | lru-cache  | lru-cache       | ❌ No → ユーティリティ   |
 | DB         | PostgreSQL | PostgreSQL      | ❌ No → 直接使用         |
 | メトリクス | CloudWatch | console.log     | ❌ No → ロガー設定で十分 |
@@ -78,10 +78,10 @@ interface QueueAdapter {
 ## 補足: StorageAdapter 統合（2026-03-19）
 
 旧 `MinIOStorageAdapter`（`minio` パッケージ）と `S3StorageAdapter` を
-`S3CompatibleStorageAdapter`（`@aws-sdk/client-s3` ベース）に統合。
+`S3StorageAdapter`（`@aws-sdk/client-s3` ベース）に統合。
 MinIO は S3 互換プロトコルのため、`S3_ENDPOINT` の有無で自動判別する:
 
 - `S3_ENDPOINT` あり → MinIO モード（`forcePathStyle: true`）
 - `S3_ENDPOINT` なし → AWS S3 モード（IAM ロール認証）
 
-`STORAGE_TYPE` は `'s3' | 'local'` の 2 値に簡素化。
+`STORAGE_TYPE` は不要（S3 互換のみ）。`S3_ENDPOINT` の有無で MinIO / AWS S3 を自動判別する。

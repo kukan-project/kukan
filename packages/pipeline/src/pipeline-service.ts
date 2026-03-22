@@ -6,8 +6,9 @@
 import { eq, and, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resourcePipeline, resourcePipelineStep } from '@kukan/db'
-import { ValidationError, PIPELINE_JOB_TYPE } from '@kukan/shared'
-import type { PipelineStatus, PipelineStepStatus, PipelineStepName } from '@kukan/shared'
+import { ValidationError } from '@kukan/shared'
+import { PIPELINE_JOB_TYPE } from './types'
+import type { PipelineStatus, PipelineStepStatus, PipelineStepName } from './types'
 
 export class ResourcePipelineService {
   constructor(

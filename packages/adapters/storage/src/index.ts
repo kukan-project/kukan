@@ -1,8 +1,7 @@
 /**
  * KUKAN Storage Package
- * Pluggable storage adapters for S3-compatible (AWS S3 / MinIO) and local filesystem
+ * S3-compatible storage adapter (AWS S3 / MinIO)
  */
 
 export * from './adapter'
-export * from './s3-compatible'
-export * from './local'
+export * from './s3'

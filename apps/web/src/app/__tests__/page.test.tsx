@@ -118,8 +118,8 @@ describe('HomePage', () => {
     const jsx = await HomePage()
     render(jsx)
 
-    const link = screen.getByText('Population Data').closest('a')
-    expect(link).toHaveAttribute('href', '/dataset/population-data')
+    const card = screen.getByText('Population Data').closest('article')
+    expect(card).toBeInTheDocument()
   })
 
   it('should hide latest datasets section when no datasets', async () => {

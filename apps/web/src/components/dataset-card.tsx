@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl'
 import { Building2, FileText, FolderOpen, Tag } from 'lucide-react'
 import { Badge, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
 import { FormatBadges } from './format-badges'
-import type { MatchedResource } from '@kukan/shared'
+import type { MatchedResource } from '@kukan/search-adapter'
 
 export interface DatasetCardItem {
   id: string
@@ -31,12 +31,17 @@ function parseGroups(groups?: string): { name: string; title: string }[] {
 
 export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
   const t = useTranslations('dataset')
+  const datasetHref = `/dataset/${pkg.name}`
   return (
-    <Link href={`/dataset/${pkg.name}`} className="block">
+    <article className="relative">
       <Card className="transition-colors hover:bg-accent/50">
         <CardHeader>
           <div className="flex items-start justify-between gap-2">
-            <CardTitle className="text-lg">{pkg.title || pkg.name}</CardTitle>
+            <CardTitle className="text-lg">
+              <Link href={datasetHref} className="after:absolute after:inset-0 after:content-['']">
+                {pkg.title || pkg.name}
+              </Link>
+            </CardTitle>
             <div className="flex shrink-0 items-center gap-2">
               {typeof pkg.resourceCount === 'number' && (
                 <span className="text-xs text-muted-foreground">
@@ -75,7 +80,7 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
           <CardContent className="space-y-3">
             {pkg.notes && <p className="line-clamp-2 text-sm text-muted-foreground">{pkg.notes}</p>}
             {pkg.matchedResources && pkg.matchedResources.length > 0 && (
-              <div className="border-l-2 border-muted-foreground/20 pl-3">
+              <div className="relative z-10 border-l-2 border-muted-foreground/20 pl-3">
                 <p className="mb-1.5 flex items-center gap-1 text-xs font-medium text-muted-foreground">
                   <FileText className="h-3 w-3" />
                   {t('matchedResources')}
@@ -112,6 +117,6 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
           </CardContent>
         )}
       </Card>
-    </Link>
+    </article>
   )
 }

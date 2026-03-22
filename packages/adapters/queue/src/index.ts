@@ -1,8 +1,7 @@
 /**
  * KUKAN Queue Package
- * Pluggable job queue adapters for SQS and in-process
+ * SQS-compatible job queue adapter (AWS SQS / ElasticMQ)
  */
 
 export * from './adapter'
-export * from './in-process'
 export * from './sqs'

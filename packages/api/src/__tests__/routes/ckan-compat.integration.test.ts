@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { createTestApp } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
+import { PostgresSearchAdapter } from '@kukan/search-adapter'
 
 const db = getTestDb()
-const app = createTestApp(db)
+const search = new PostgresSearchAdapter(db)
+const app = createTestApp(db, { search })
 
 beforeEach(async () => {
   await cleanDatabase()

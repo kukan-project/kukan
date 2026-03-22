@@ -7,9 +7,7 @@ import type { Database } from '@kukan/db'
 import { ResourcePipelineService } from './pipeline-service'
 import { fetchStep } from './steps/fetch'
 import { extractStep } from './steps/extract'
-import { indexSearchStep } from './steps/index-search'
-import type { PipelineContext } from './types'
-import type { PipelineStepName } from '@kukan/shared'
+import type { PipelineContext, PipelineStepName } from './types'
 
 /**
  * Process a resource through the full pipeline.
@@ -61,8 +59,8 @@ export async function processResource(
       }
     }
 
-    // Step 3: Index — always runs
-    await runStep(pipelineService, pipeline.id, 'index', () => indexSearchStep(resourceId, ctx))
+    // Step 3: Index — no-op (indexing handled by API route handlers on CUD)
+    await runStep(pipelineService, pipeline.id, 'index', async () => null)
 
     await pipelineService.updateStatus(pipeline.id, 'complete')
   } catch (err) {

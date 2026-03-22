@@ -9,6 +9,8 @@ import { z } from 'zod'
 import { PackageService } from '../services/package-service'
 import { ResourceService } from '../services/resource-service'
 import { ResourcePipelineService } from '@kukan/pipeline'
+import { eq } from 'drizzle-orm'
+import { userOrgMembership } from '@kukan/db'
 import {
   createPackageSchema,
   updatePackageSchema,
@@ -16,7 +18,9 @@ import {
   createResourceBodySchema,
   ForbiddenError,
 } from '@kukan/shared'
+import type { MatchedResource, SearchFilters } from '@kukan/search-adapter'
 import { checkOrgRole } from '../auth/permissions'
+import { indexPackage } from '../services/search-index'
 import type { AppContext } from '../context'
 
 export const packagesRouter = new Hono<{ Variables: AppContext }>()
@@ -53,12 +57,19 @@ packagesRouter.get(
   ),
   async (c) => {
     const { my_org, tags, formats, include_facets, ...rest } = c.req.valid('query')
-    const service = new PackageService(c.get('db'))
+    const db = c.get('db')
+    const service = new PackageService(db)
     const user = c.get('user')
 
-    // my_org=true: filter by authenticated user's organization memberships
-    const member_user_id = my_org && user && !user.sysadmin ? user.id : undefined
-    const viewer = user ? { userId: user.id, sysadmin: user.sysadmin } : undefined
+    // Resolve user's org memberships (for visibility and my_org filters)
+    let userOrgIds: string[] | undefined
+    if (user && !user.sysadmin) {
+      const memberships = await db
+        .select({ organizationId: userOrgMembership.organizationId })
+        .from(userOrgMembership)
+        .where(eq(userOrgMembership.userId, user.id))
+      userOrgIds = memberships.map((m) => m.organizationId)
+    }
 
     const filterParams = {
       tags: tags
@@ -75,15 +86,59 @@ packagesRouter.get(
         : undefined,
     }
 
-    if (include_facets) {
-      const [result, facets] = await Promise.all([
-        service.list({ ...rest, ...filterParams, member_user_id, viewer }),
-        service.getFacets({ ...rest, ...filterParams, member_user_id, viewer }),
-      ])
-      return c.json({ ...result, facets })
+    // my_org=true with no memberships → guaranteed empty result
+    if (my_org && userOrgIds !== undefined && userOrgIds.length === 0) {
+      return c.json({ items: [], total: 0, offset: rest.offset, limit: rest.limit })
     }
 
-    const result = await service.list({ ...rest, ...filterParams, member_user_id, viewer })
+    // Build visibility + access filters for SearchAdapter
+    const filters: SearchFilters = {
+      name: rest.name,
+      organization: rest.owner_org,
+      tags: filterParams.tags,
+      formats: filterParams.formats,
+      license_id: rest.license_id,
+      groups: rest.group ? [rest.group] : undefined,
+      // Visibility
+      ...(!user?.sysadmin && {
+        excludePrivate: true,
+        ...(userOrgIds?.length && { allowPrivateOrgIds: userOrgIds }),
+      }),
+      // my_org filter
+      ...(my_org && userOrgIds?.length && { ownerOrgIds: userOrgIds }),
+      // Explicit filters
+      ...(rest.private !== undefined && { isPrivate: rest.private }),
+      ...(rest.creator_user_id && { creatorUserId: rest.creator_user_id }),
+    }
+
+    const search = c.get('search')
+    const searchResult = await search.search({
+      q: rest.q ?? '',
+      offset: rest.offset,
+      limit: rest.limit,
+      filters,
+      facets: include_facets,
+    })
+
+    // Build matchedResources lookup from search results
+    const searchMatchedResources: Record<string, MatchedResource[]> = {}
+    for (const item of searchResult.items) {
+      if (item.matchedResources && item.matchedResources.length > 0) {
+        searchMatchedResources[item.id] = item.matchedResources
+      }
+    }
+
+    // SearchAdapter handles visibility + name filter; service.list only does DB enrichment
+    const result = await service.list({
+      searchMatchIds: searchResult.items.map((i) => i.id),
+      searchTotal: searchResult.total,
+      searchMatchedResources,
+    })
+
+    if (include_facets && searchResult.facets) {
+      const facets = await service.enrichFacets(searchResult.facets)
+      return c.json({ ...result, facets })
+    }
     return c.json(result)
   }
 )
@@ -99,6 +154,7 @@ packagesRouter.post('/', zValidator('json', createPackageSchema), async (c) => {
 
   const service = new PackageService(db)
   const pkg = await service.create(input, user.id)
+  await indexPackage(db, c.get('search'), pkg.id)
   return c.json(pkg, 201)
 })
 
@@ -125,6 +181,7 @@ packagesRouter.put('/:nameOrId', zValidator('json', updatePackageSchema), async 
 
   const input = c.req.valid('json')
   const pkg = await service.update(nameOrId, input)
+  await indexPackage(db, c.get('search'), pkg.id)
   return c.json(pkg)
 })
 
@@ -141,6 +198,7 @@ packagesRouter.patch('/:nameOrId', zValidator('json', patchPackageSchema), async
 
   const input = c.req.valid('json')
   const pkg = await service.patch(nameOrId, input)
+  await indexPackage(db, c.get('search'), pkg.id)
   return c.json(pkg)
 })
 
@@ -156,6 +214,7 @@ packagesRouter.delete('/:nameOrId', async (c) => {
   if (existing.ownerOrg) await checkOrgRole(db, user, existing.ownerOrg, 'editor')
 
   const pkg = await service.delete(nameOrId)
+  await c.get('search').delete(pkg.id)
   return c.json(pkg)
 })
 
@@ -201,6 +260,7 @@ packagesRouter.post(
       await pipelineService.enqueue(resource.id)
     }
 
+    await indexPackage(db, c.get('search'), pkg.id)
     return c.json(resource, 201)
   }
 )

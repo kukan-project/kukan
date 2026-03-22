@@ -4,9 +4,9 @@
  * Creates a Hono app with real DB but bypasses Better Auth and adapter initialization.
  * Routes are mounted manually so each test file can pick which routes to test.
  */
+import { vi } from 'vitest'
 import { Hono } from 'hono'
 import type { Database } from '@kukan/db'
-import { InProcessQueueAdapter } from '@kukan/queue-adapter'
 import { NoOpAIAdapter } from '@kukan/ai-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import { errorHandler } from '../../middleware/error-handler'
@@ -18,6 +18,7 @@ import { groupsRouter } from '../../routes/groups'
 import { tagsRouter } from '../../routes/tags'
 import { resourcesRouter } from '../../routes/resources'
 import { searchRouter } from '../../routes/search'
+import { adminRouter } from '../../routes/admin'
 import { ckanCompatRouter } from '../../routes/ckan-compat'
 
 // Minimal mock adapters (search/storage are no-ops for route tests)
@@ -26,6 +27,7 @@ const mockSearch: SearchAdapter = {
   index: async () => {},
   delete: async () => {},
   bulkIndex: async () => {},
+  deleteAll: async () => {},
 }
 
 const mockStorage = {
@@ -41,16 +43,21 @@ const mockStorage = {
   getSignedUploadUrl: async () => 'https://minio.test/upload?signed=true',
 }
 
-const mockQueue = new InProcessQueueAdapter()
+const mockQueue = {
+  enqueue: vi.fn().mockResolvedValue('mock-job-id'),
+  getStatus: vi.fn().mockResolvedValue(null),
+  process: vi.fn().mockResolvedValue(undefined),
+  stop: vi.fn().mockResolvedValue(undefined),
+}
 const mockAi = new NoOpAIAdapter()
 
 const testEnv = {
   NODE_ENV: 'test',
   PORT: 3000,
   DATABASE_URL: 'postgresql://kukan:kukan@localhost:5432/kukan_test',
-  STORAGE_TYPE: 'local',
   SEARCH_TYPE: 'postgres',
-  QUEUE_TYPE: 'in-process',
+  OPENSEARCH_URL: 'http://localhost:9200',
+  SQS_QUEUE_URL: 'http://localhost:9324/000000000000/kukan-pipeline',
   AI_TYPE: 'none',
   BETTER_AUTH_SECRET: 'test-secret-that-is-at-least-32-characters-long!',
   BETTER_AUTH_URL: 'http://localhost:3000',
@@ -102,6 +109,7 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
   apiV1.route('/groups', groupsRouter)
   apiV1.route('/tags', tagsRouter)
   apiV1.route('/search', searchRouter)
+  apiV1.route('/admin', adminRouter)
   app.route('/api/v1', apiV1)
 
   // CKAN compat

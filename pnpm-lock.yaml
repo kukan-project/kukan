@@ -38,6 +38,9 @@ importers:
       '@kukan/api':
         specifier: workspace:*
         version: link:../../packages/api
+      '@kukan/search-adapter':
+        specifier: workspace:*
+        version: link:../../packages/adapters/search
       '@kukan/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -126,6 +129,52 @@ importers:
       vitest:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@22.19.13)(jsdom@28.1.0(@noble/hashes@2.0.1))(lightningcss@1.31.1)
+
+  apps/worker:
+    dependencies:
+      '@hono/node-server':
+        specifier: ^1.14.0
+        version: 1.19.9(hono@4.12.3)
+      '@kukan/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@kukan/pipeline':
+        specifier: workspace:*
+        version: link:../../packages/pipeline
+      '@kukan/queue-adapter':
+        specifier: workspace:*
+        version: link:../../packages/adapters/queue
+      '@kukan/search-adapter':
+        specifier: workspace:*
+        version: link:../../packages/adapters/search
+      '@kukan/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@kukan/storage-adapter':
+        specifier: workspace:*
+        version: link:../../packages/adapters/storage
+      dotenv:
+        specifier: ^16.4.0
+        version: 16.6.1
+      drizzle-orm:
+        specifier: ^0.45.1
+        version: 0.45.1(@electric-sql/pglite@0.3.15)(@prisma/client@7.4.2(prisma@7.4.2(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3))(typescript@5.9.3))(@types/pg@8.18.0)(gel@2.2.0)(kysely@0.28.11)(mysql2@3.15.3)(pg@8.19.0)(postgres@3.4.7)(prisma@7.4.2(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3))
+      hono:
+        specifier: ^4.12.3
+        version: 4.12.3
+      pg:
+        specifier: ^8.13.0
+        version: 8.19.0
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.13
+      '@types/pg':
+        specifier: ^8.11.0
+        version: 8.18.0
+      tsx:
+        specifier: ^4.0.0
+        version: 4.21.0
 
   packages/adapters/ai:
     dependencies:
@@ -285,9 +334,15 @@ importers:
       '@kukan/db':
         specifier: workspace:*
         version: link:../db
+      '@kukan/search-adapter':
+        specifier: workspace:*
+        version: link:../adapters/search
       '@kukan/shared':
         specifier: workspace:*
         version: link:../shared
+      '@kukan/storage-adapter':
+        specifier: workspace:*
+        version: link:../adapters/storage
       drizzle-orm:
         specifier: ^0.45.1
         version: 0.45.1(@electric-sql/pglite@0.3.15)(@prisma/client@7.4.2(prisma@7.4.2(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3))(typescript@5.9.3))(@types/pg@8.18.0)(gel@2.2.0)(kysely@0.28.11)(mysql2@3.15.3)(pg@8.19.0)(postgres@3.4.7)(prisma@7.4.2(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3))

@@ -29,10 +29,6 @@ export async function createApp() {
   // Initialize adapters
   const adapters = await createAdapters(env, db)
 
-  // Register queue handlers
-  const { registerPipelineHandler } = await import('./queue/pipeline-handler')
-  await registerPipelineHandler(db, adapters.queue, adapters.storage, adapters.search)
-
   // CORS — enabled when TRUSTED_ORIGINS is set (standalone / cross-origin access)
   const trustedOrigins = process.env.TRUSTED_ORIGINS?.split(',').filter(Boolean)
   if (trustedOrigins?.length) {
@@ -86,6 +82,7 @@ export async function createApp() {
   const { usersRouter } = await import('./routes/users')
   const { searchRouter } = await import('./routes/search')
   const { apiTokensRouter } = await import('./routes/api-tokens')
+  const { adminRouter } = await import('./routes/admin')
 
   apiV1.route('/organizations', organizationsRouter)
   apiV1.route('/packages', packagesRouter)
@@ -95,6 +92,7 @@ export async function createApp() {
   apiV1.route('/users', usersRouter)
   apiV1.route('/search', searchRouter)
   apiV1.route('/api-tokens', apiTokensRouter)
+  apiV1.route('/admin', adminRouter)
 
   app.route('/api/v1', apiV1)
 
