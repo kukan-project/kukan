@@ -17,24 +17,27 @@ export function useFetch<T>(path: string): UseFetchResult<T> {
   const [error, setError] = useState(false)
 
   useEffect(() => {
-    let cancelled = false
+    const controller = new AbortController()
 
     async function load() {
       try {
-        const res = await clientFetch(path)
+        const res = await clientFetch(path, { signal: controller.signal })
         if (!res.ok) throw new Error()
         const json = await res.json()
-        if (!cancelled) setData(json)
-      } catch {
-        if (!cancelled) setError(true)
+        if (!controller.signal.aborted) setData(json)
+      } catch (e) {
+        if (!controller.signal.aborted) {
+          if (e instanceof DOMException && e.name === 'AbortError') return
+          setError(true)
+        }
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!controller.signal.aborted) setLoading(false)
       }
     }
 
     load()
     return () => {
-      cancelled = true
+      controller.abort()
     }
   }, [path])
 

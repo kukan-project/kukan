@@ -2,32 +2,29 @@
 
 import { useLocale } from 'next-intl'
 
-export function DateTime({ value }: { value: string }) {
-  const locale = useLocale()
-  const date = new Date(value)
-  if (isNaN(date.getTime())) return null
+export function formatDateTime(isoString: string, locale: string): string {
+  const d = new Date(isoString)
+  if (isNaN(d.getTime())) return ''
 
-  const dateStr = date.toLocaleDateString(locale, {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
-
-  const h = date.getHours().toString().padStart(2, '0')
-  const m = date.getMinutes().toString().padStart(2, '0')
+  const dateStr = d.toLocaleDateString(locale, { year: 'numeric', month: 'long', day: 'numeric' })
+  const h = d.getHours().toString().padStart(2, '0')
+  const m = d.getMinutes().toString().padStart(2, '0')
   const timeStr =
     locale === 'ja'
       ? `${h}時${m}分`
-      : date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+      : d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
 
   const tz = new Intl.DateTimeFormat(locale, { hour: 'numeric', timeZoneName: 'long' })
-    .formatToParts(date)
+    .formatToParts(d)
     .find((p) => p.type === 'timeZoneName')?.value
 
-  return (
-    <time dateTime={date.toISOString()}>
-      {dateStr} {timeStr}
-      {tz && ` (${tz})`}
-    </time>
-  )
+  return `${dateStr} ${timeStr}${tz ? ` (${tz})` : ''}`
+}
+
+export function DateTime({ value }: { value: string }) {
+  const locale = useLocale()
+  const formatted = formatDateTime(value, locale)
+  if (!formatted) return null
+
+  return <time dateTime={value}>{formatted}</time>
 }

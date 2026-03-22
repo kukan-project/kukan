@@ -239,6 +239,7 @@
     "previewSourceTable": "Table",
     "previewSourceText": "Text",
     "previewSourceMap": "Map",
+    "previewGeneratedAt": "Generated: {date}",
     "source": "Source",
     "replaceFile": "Replace file",
     "download": "Download"

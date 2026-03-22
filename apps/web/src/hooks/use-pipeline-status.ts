@@ -16,6 +16,7 @@ export interface PipelineStatusData {
   id: string
   pipeline_status: PipelineStatus | null
   error?: string | null
+  updated?: string | null
   steps: PipelineStep[]
 }
 

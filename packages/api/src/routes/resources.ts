@@ -236,6 +236,7 @@ resourcesRouter.get('/:id/pipeline-status', async (c) => {
     id,
     pipeline_status: status.status,
     error: status.error,
+    updated: status.updated,
     steps: status.steps.map((s) => ({
       id: s.id,
       step_name: s.stepName,

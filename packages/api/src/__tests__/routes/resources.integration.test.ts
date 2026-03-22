@@ -369,6 +369,7 @@ describe('Resources API Routes', () => {
 
       const body = await res.json()
       expect(body.pipeline_status).toBe('queued')
+      expect(body.updated).toBeDefined()
     })
   })
 

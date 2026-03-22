@@ -4,9 +4,12 @@ import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Settings2 } from 'lucide-react'
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@kukan/ui'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { PipelineStatusDetail } from './pipeline-status-detail'
 import { ResourcePreview } from './resource-preview'
+import { formatDateTime } from './date-time'
+import { useFetch } from '@/hooks/use-fetch'
+import type { PipelineStatusData } from '@/hooks/use-pipeline-status'
 
 interface ResourcePipelinePreviewProps {
   resourceId: string
@@ -25,19 +28,37 @@ export function ResourcePipelinePreview({
   canManage,
 }: ResourcePipelinePreviewProps) {
   const t = useTranslations('resource')
+  const locale = useLocale()
   const router = useRouter()
   const [previewKey, setPreviewKey] = useState(0)
   const [open, setOpen] = useState(false)
+
+  // previewKey in path triggers re-fetch after reprocess
+  const { data: pipelineData } = useFetch<PipelineStatusData>(
+    `/api/v1/resources/${encodeURIComponent(resourceId)}/pipeline-status?_k=${previewKey}`
+  )
 
   const handleSettled = useCallback(() => {
     setPreviewKey((k) => k + 1)
     router.refresh()
   }, [router])
 
+  const generatedAt =
+    pipelineData?.pipeline_status === 'complete' && pipelineData.updated
+      ? formatDateTime(pipelineData.updated, locale)
+      : null
+
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-semibold">{t('preview')}</h2>
+        <div className="flex items-baseline gap-3">
+          <h2 className="text-xl font-semibold">{t('preview')}</h2>
+          {generatedAt && (
+            <span className="text-xs text-muted-foreground">
+              {t('previewGeneratedAt', { date: generatedAt })}
+            </span>
+          )}
+        </div>
         {canManage && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
