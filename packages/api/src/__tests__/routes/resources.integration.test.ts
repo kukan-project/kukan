@@ -100,9 +100,7 @@ describe('Resources API Routes', () => {
       expect(res.status).toBe(200)
 
       // Pipeline should be queued
-      const statusRes = await app.request(
-        `/api/v1/resources/${resource.id}/pipeline-status`
-      )
+      const statusRes = await app.request(`/api/v1/resources/${resource.id}/pipeline-status`)
       const statusBody = await statusRes.json()
       expect(statusBody.pipeline_status).toBe('queued')
     })
@@ -119,9 +117,7 @@ describe('Resources API Routes', () => {
       expect(res.status).toBe(200)
 
       // Pipeline should NOT be queued
-      const statusRes = await app.request(
-        `/api/v1/resources/${resource.id}/pipeline-status`
-      )
+      const statusRes = await app.request(`/api/v1/resources/${resource.id}/pipeline-status`)
       const statusBody = await statusRes.json()
       expect(statusBody.pipeline_status).toBeNull()
     })

@@ -143,7 +143,7 @@ export const envSchema = z.object({
   OPENSEARCH_URL: z.string().optional(),
 
   // Queue
-  QUEUE_TYPE: z.enum(['sqs']).default('sqs'),  // SQS互換（AWS SQS / ElasticMQ）
+  QUEUE_TYPE: z.enum(['sqs']).default('sqs'), // SQS互換（AWS SQS / ElasticMQ）
   SQS_QUEUE_URL: z.string().optional(),
 
   // AI

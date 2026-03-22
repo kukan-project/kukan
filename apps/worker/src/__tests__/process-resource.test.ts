@@ -73,7 +73,13 @@ describe('processResource', () => {
     await processResource('res-1', ctx, db)
 
     expect(executeFetch).toHaveBeenCalledWith('res-1', ctx)
-    expect(executeExtract).toHaveBeenCalledWith('res-1', 'pkg-1', 'resources/pkg-1/res-1', 'CSV', ctx)
+    expect(executeExtract).toHaveBeenCalledWith(
+      'res-1',
+      'pkg-1',
+      'resources/pkg-1/res-1',
+      'CSV',
+      ctx
+    )
     // Fetch + Extract = 2 steps (index step removed)
     expect(mockTracker.startStep).toHaveBeenCalledTimes(2)
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')

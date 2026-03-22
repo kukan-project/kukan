@@ -399,8 +399,17 @@ async function processResource(
     if (fetchResult) {
       // Step 2: Extract (nonCritical)
       const extractResult = await runStep(
-        tracker, pipeline.id, 'extract',
-        () => extractStep(resourceId, fetchResult.packageId, fetchResult.storageKey, fetchResult.format, ctx),
+        tracker,
+        pipeline.id,
+        'extract',
+        () =>
+          extractStep(
+            resourceId,
+            fetchResult.packageId,
+            fetchResult.storageKey,
+            fetchResult.format,
+            ctx
+          ),
         true
       )
 

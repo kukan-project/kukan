@@ -191,23 +191,23 @@ datastore_info
 
 ### 3.1 技術スタック
 
-| レイヤー               | 技術                                   | 選定理由                                             |
-| ---------------------- | -------------------------------------- | ---------------------------------------------------- |
-| ランタイム             | Node.js v24 LTS "Krypton"              | 非同期I/O、高い並行処理性能                          |
-| 言語                   | TypeScript 5.9                         | 型安全、開発体験（6.0-beta→7.0 Go native移行準備中） |
-| APIフレームワーク      | Hono 4.12                              | 軽量・高速・マルチランタイム                         |
-| DB                     | PostgreSQL 18                          | メタデータ専用（スキーマ簡素化）                     |
-| ORM                    | Drizzle ORM 0.45 / 1.0-beta            | 型安全・軽量・SQL近接・Aurora Data API公式対応       |
-| 検索エンジン           | OpenSearch 3.x (OSS)                   | 統合検索インデックス（Lucene 10、9.5x性能向上）      |
-| キュー                 | SQS (AWS / ElasticMQ)                  | イベント駆動パイプライン。Redis不要                  |
-| キャッシュ             | lru-cache (インメモリ)                 | 全環境共通。Redis不要                                |
-| オブジェクトストレージ | S3互換 (AWS S3 / MinIO)                | 原本保管 + プレビューキャッシュ                      |
-| フロントエンド         | React 19 + Next.js 16                  | SSR/SSG・モダンUI                                    |
-| UI                     | shadcn/ui + Tailwind CSS               | 柔軟・カスタマイズ性                                 |
-| 認証                   | Better Auth + OIDC                     | フレームワーク非依存・Drizzle ORM統合・SSO対応       |
-| コンテナ               | Docker                                 | 全環境共通のデプロイ単位                             |
-| API仕様                | OpenAPI 3.1                            | 自動生成・互換性                                     |
-| テスト                 | Vitest + Playwright                    | モダンテスティング                                   |
+| レイヤー               | 技術                        | 選定理由                                             |
+| ---------------------- | --------------------------- | ---------------------------------------------------- |
+| ランタイム             | Node.js v24 LTS "Krypton"   | 非同期I/O、高い並行処理性能                          |
+| 言語                   | TypeScript 5.9              | 型安全、開発体験（6.0-beta→7.0 Go native移行準備中） |
+| APIフレームワーク      | Hono 4.12                   | 軽量・高速・マルチランタイム                         |
+| DB                     | PostgreSQL 18               | メタデータ専用（スキーマ簡素化）                     |
+| ORM                    | Drizzle ORM 0.45 / 1.0-beta | 型安全・軽量・SQL近接・Aurora Data API公式対応       |
+| 検索エンジン           | OpenSearch 3.x (OSS)        | 統合検索インデックス（Lucene 10、9.5x性能向上）      |
+| キュー                 | SQS (AWS / ElasticMQ)       | イベント駆動パイプライン。Redis不要                  |
+| キャッシュ             | lru-cache (インメモリ)      | 全環境共通。Redis不要                                |
+| オブジェクトストレージ | S3互換 (AWS S3 / MinIO)     | 原本保管 + プレビューキャッシュ                      |
+| フロントエンド         | React 19 + Next.js 16       | SSR/SSG・モダンUI                                    |
+| UI                     | shadcn/ui + Tailwind CSS    | 柔軟・カスタマイズ性                                 |
+| 認証                   | Better Auth + OIDC          | フレームワーク非依存・Drizzle ORM統合・SSO対応       |
+| コンテナ               | Docker                      | 全環境共通のデプロイ単位                             |
+| API仕様                | OpenAPI 3.1                 | 自動生成・互換性                                     |
+| テスト                 | Vitest + Playwright         | モダンテスティング                                   |
 
 #### バージョン詳細（2026年3月時点）
 
@@ -680,13 +680,13 @@ interface QueueAdapter {
 
 **キュー実装一覧**
 
-| 環境         | QueueAdapter        | Worker分離                       |
-| ------------ | ------------------- | -------------------------------- |
-| development  | SqsQueueAdapter     | Worker プロセス（ElasticMQ）     |
-| small        | SqsQueueAdapter     | Worker プロセス（SQS）           |
-| aws-standard | SqsQueueAdapter     | **ECS Fargate Worker**           |
-| aws-large    | SqsQueueAdapter     | **ECS/EKS Worker**               |
-| on-premise   | SqsQueueAdapter     | Worker プロセス（ElasticMQ）     |
+| 環境         | QueueAdapter    | Worker分離                   |
+| ------------ | --------------- | ---------------------------- |
+| development  | SqsQueueAdapter | Worker プロセス（ElasticMQ） |
+| small        | SqsQueueAdapter | Worker プロセス（SQS）       |
+| aws-standard | SqsQueueAdapter | **ECS Fargate Worker**       |
+| aws-large    | SqsQueueAdapter | **ECS/EKS Worker**           |
+| on-premise   | SqsQueueAdapter | Worker プロセス（ElasticMQ） |
 
 ```typescript
 // --- SQS実装 (AWS) ---
@@ -1322,7 +1322,7 @@ queue.consume(async (job) => {
 elasticmq:
   image: softwaremill/elasticmq-native
   ports:
-    - "9324:9324"
+    - '9324:9324'
 ```
 
 Redis不要、Worker分離不要。APIプロセス内で直接処理。
@@ -2374,19 +2374,19 @@ ckanCompat.all('/api/3/action/:action', async (c) => {
 
 ### 廃止・再設計するもの
 
-| 要素                      | 代替                                         |
-| ------------------------- | -------------------------------------------- |
-| DataStore (RDBテーブル化) | OpenSearch + プレビューJSON                  |
-| DataStore API             | リソース検索/行取得API                       |
+| 要素                      | 代替                                           |
+| ------------------------- | ---------------------------------------------- |
+| DataStore (RDBテーブル化) | OpenSearch + プレビューJSON                    |
+| DataStore API             | リソース検索/行取得API                         |
 | XLoader / DataPusher+     | Pipeline Worker（QueueAdapter + ステップ分割） |
-| \*\_revision テーブル群   | audit_log                                    |
-| Solr                      | OpenSearch (OSS)                             |
-| package_extra (EAV)       | JSONB extras                                 |
-| member (多態テーブル)     | 用途別テーブル                               |
-| Pythonプラグイン          | TypeScriptプラグイン                         |
-| Jinja2テンプレート        | React + Next.js                              |
-| Redis / BullMQ（v3）      | SQS / ElasticMQ + lru-cache                  |
-| Auth.js（v3）             | Better Auth + OIDC                           |
+| \*\_revision テーブル群   | audit_log                                      |
+| Solr                      | OpenSearch (OSS)                               |
+| package_extra (EAV)       | JSONB extras                                   |
+| member (多態テーブル)     | 用途別テーブル                                 |
+| Pythonプラグイン          | TypeScriptプラグイン                           |
+| Jinja2テンプレート        | React + Next.js                                |
+| Redis / BullMQ（v3）      | SQS / ElasticMQ + lru-cache                    |
+| Auth.js（v3）             | Better Auth + OIDC                             |
 
 ---
 
