@@ -637,15 +637,19 @@ interface UploadInstruction {
 }
 
 // ============================================================
-// 検索エンジン
+// 検索エンジン（ADR-009, ADR-013 参照）
 // ============================================================
 interface SearchAdapter {
-  index(indexName: string, id: string, doc: Record<string, any>): Promise<void>
-  search(indexName: string, query: SearchQuery): Promise<SearchResult>
-  bulkIndex(indexName: string, docs: { id: string; doc: any }[]): Promise<void>
-  delete(indexName: string, id: string): Promise<void>
-  createIndex(indexName: string, mapping: any): Promise<void>
+  search(query: SearchQuery): Promise<SearchResult>
+  index(doc: DatasetDoc): Promise<void>
+  delete(id: string): Promise<void>
+  bulkIndex(docs: DatasetDoc[]): Promise<void>
+  deleteAll(): Promise<void>
 }
+
+// AppContext には search（設定に従う）と dbSearch（常に PostgreSQL）の
+// 2つの SearchAdapter を注入。ダッシュボード（my_org=true）は dbSearch を使用し
+// DB との一貫性を保証する。詳細は ADR-013 参照。
 
 // ============================================================
 // AI / Embedding
