@@ -21,9 +21,11 @@ export async function createAdapters(env: Env, db: Database) {
   })
 
   // Search adapter
+  // dbSearch: always PostgreSQL for dashboard (consistent with DB)
+  const dbSearch = new PostgresSearchAdapter(db)
   let search
   if (env.SEARCH_TYPE === 'postgres') {
-    search = new PostgresSearchAdapter(db)
+    search = dbSearch
   } else if (env.SEARCH_TYPE === 'opensearch') {
     const osAdapter = new OpenSearchAdapter({ endpoint: env.OPENSEARCH_URL })
     await osAdapter.ensureIndex()
@@ -50,5 +52,5 @@ export async function createAdapters(env: Env, db: Database) {
     throw new Error(`AI type ${env.AI_TYPE} not implemented yet (Phase 5)`)
   }
 
-  return { storage, search, queue, ai }
+  return { storage, search, dbSearch, queue, ai }
 }

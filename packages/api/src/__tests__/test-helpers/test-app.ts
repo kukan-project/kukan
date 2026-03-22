@@ -8,7 +8,7 @@ import { vi } from 'vitest'
 import { Hono } from 'hono'
 import type { Database } from '@kukan/db'
 import { NoOpAIAdapter } from '@kukan/ai-adapter'
-import type { SearchAdapter } from '@kukan/search-adapter'
+import { PostgresSearchAdapter, type SearchAdapter } from '@kukan/search-adapter'
 import { errorHandler } from '../../middleware/error-handler'
 import type { Env } from '@kukan/shared'
 
@@ -86,6 +86,7 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
   app.use('*', async (c, next) => {
     c.set('db', db)
     c.set('search', overrides?.search ?? mockSearch)
+    c.set('dbSearch', new PostgresSearchAdapter(db))
     c.set('storage', mockStorage)
     c.set('queue', mockQueue)
     c.set('ai', mockAi)

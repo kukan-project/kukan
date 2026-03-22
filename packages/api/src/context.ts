@@ -14,6 +14,8 @@ export interface AppContext {
   db: Database
   storage: StorageAdapter
   search: SearchAdapter
+  /** PostgreSQL-based search adapter for dashboard (always consistent with DB) */
+  dbSearch: SearchAdapter
   queue: QueueAdapter
   ai: AIAdapter
   env: Env
@@ -31,6 +33,8 @@ declare module 'hono' {
     db: Database
     storage: StorageAdapter
     search: SearchAdapter
+    /** PostgreSQL-based search adapter for dashboard (always consistent with DB) */
+    dbSearch: SearchAdapter
     queue: QueueAdapter
     ai: AIAdapter
     env: Env

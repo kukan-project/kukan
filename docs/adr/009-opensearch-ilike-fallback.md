@@ -145,9 +145,18 @@ services:
 // AWS 環境では IAM ロール認証、コンテナではベーシック認証
 ```
 
+## デュアルアダプター構成
+
+`SEARCH_TYPE=opensearch` 環境でも、PostgresSearchAdapter は `dbSearch` として常にインスタンス化される（ADR-013 参照）。
+ダッシュボード（`my_org=true`）は `dbSearch` で DB を直接クエリし、インデックス同期遅延の影響を受けない。
+公開検索は `search`（OpenSearch）で kuromoji 形態素解析を活用する。
+
+`SEARCH_TYPE=postgres` 環境では `search` と `dbSearch` が同一インスタンスを共用するため、追加コストは発生しない。
+
 ## 影響
 
 - pg_trgm GIN インデックスにより、ILIKE 検索が数千〜数万件規模でも実用的なレスポンスタイム（パッケージ + リソース両方）
 - Phase 3a: OpenSearch 3.x を Docker Compose に追加（`profiles: [search]` で opt-in）、OpenSearchAdapter 実装済み
 - カスタム PostgreSQL Docker イメージは不要（素の `postgres:16` をそのまま使用）
 - pg_bigm / PGroonga 等の非標準拡張は不要
+- PostgresSearchAdapter はダッシュボード用 `dbSearch` としても活用され、全環境で DB 一貫性を保証

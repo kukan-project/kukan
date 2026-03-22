@@ -46,6 +46,7 @@ export async function createApp() {
     c.set('db', db)
     c.set('storage', adapters.storage)
     c.set('search', adapters.search)
+    c.set('dbSearch', adapters.dbSearch)
     c.set('queue', adapters.queue)
     c.set('ai', adapters.ai)
     c.set('env', env)

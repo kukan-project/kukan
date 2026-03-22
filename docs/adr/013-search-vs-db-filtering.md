@@ -39,52 +39,77 @@ KUKAN では OpenSearch を検索エンジンとして採用している（ADR-0
 
 ## 決定
 
-**一覧・フィルタリングは DB 直接、キーワード全文検索は SearchAdapter 経由とする。**
+**公開検索は SearchAdapter（OpenSearch）経由、ダッシュボードの一覧・管理は常に DB 直接（PostgreSQL）とする。**
 
 ### 責務の分担
 
-| 操作                                 | データソース                    | エンドポイント                              |
-| ------------------------------------ | ------------------------------- | ------------------------------------------- |
-| データセット一覧（ページネーション） | DB 直接                         | `GET /api/v1/packages`                      |
-| 組織・グループでの絞り込み           | DB 直接（JOIN）                 | `GET /api/v1/packages?owner_org=...`        |
-| タグ・フォーマットでの絞り込み       | DB 直接（JOIN）                 | `GET /api/v1/packages?tags=...`             |
-| 日付・名前でのソート                 | DB 直接（ORDER BY）             | `GET /api/v1/packages`                      |
-| 組織一覧・グループ一覧               | DB 直接                         | `GET /api/v1/organizations`, `groups`       |
-| 組織詳細（所属データセット）         | DB 直接                         | `GET /api/v1/organizations/:id`             |
-| キーワード全文検索                   | SearchAdapter                   | `GET /api/v1/search?q=...`                  |
-| キーワード＋フィルター複合検索       | SearchAdapter（filter context） | `GET /api/v1/search?q=...&organization=...` |
+| 操作                                   | データソース                  | エンドポイント                              |
+| -------------------------------------- | ----------------------------- | ------------------------------------------- |
+| 公開キーワード全文検索                 | `search`（SearchAdapter）     | `GET /api/v1/search?q=...`                  |
+| 公開一覧（検索・フィルター・ファセット）| `search`（SearchAdapter）    | `GET /api/v1/packages`                      |
+| CKAN 互換検索                          | `search`（SearchAdapter）     | `GET /api/3/action/package_search`          |
+| **ダッシュボード一覧・管理**           | **`dbSearch`（PostgreSQL 固定）** | `GET /api/v1/packages?my_org=true`      |
+| 組織一覧・グループ一覧                 | DB 直接                       | `GET /api/v1/organizations`, `groups`       |
+| 組織詳細（所属データセット）           | DB 直接                       | `GET /api/v1/organizations/:id`             |
+| パッケージ詳細・リソース一覧           | DB 直接                       | `GET /api/v1/packages/:id`                  |
+
+### デュアルアダプター構成
+
+AppContext に2つの SearchAdapter を注入する：
+
+| コンテキスト変数 | アダプター              | 用途                                 |
+| ---------------- | ----------------------- | ------------------------------------ |
+| `search`         | 設定に従う（OpenSearch / PostgreSQL） | 公開検索・インデックス書き込み |
+| `dbSearch`       | 常に PostgresSearchAdapter            | ダッシュボード読み取り         |
+
+```typescript
+// packages/api/src/adapters.ts
+const dbSearch = new PostgresSearchAdapter(db)     // 常に PostgreSQL
+let search = env.SEARCH_TYPE === 'opensearch'
+  ? new OpenSearchAdapter({ endpoint: env.OPENSEARCH_URL })
+  : dbSearch                                       // postgres の場合は共用
+```
+
+`my_org=true`（ダッシュボード）の場合に `dbSearch` を使用：
+
+```typescript
+// packages/api/src/routes/packages.ts
+const search = my_org ? c.get('dbSearch') : c.get('search')
+```
+
+これにより：
+
+- **ダッシュボード**: CUD 直後でも即座に最新データが表示される（DB が Single Source of Truth）
+- **公開検索**: OpenSearch の kuromoji 形態素解析・関連度スコアリングが利用可能
+- **インデックス書き込み**: CUD 時に `search`（OpenSearch）へ即座にインデックス更新
+- **SEARCH_TYPE=postgres**: `search` と `dbSearch` が同一インスタンスになり、追加コストなし
 
 ### キーワード＋フィルター複合検索の方針
 
-`/api/v1/search` でキーワードとフィルターが同時に指定された場合は、
-SearchAdapter にフィルター条件も渡す。
+SearchAdapter でキーワードとフィルターが同時に指定された場合：
 
 - **OpenSearch**: filter context（スコアに影響しない bool filter）でフィルタリング
-- **PostgreSQL フォールバック**: ILIKE + WHERE 句でフィルタリング
+- **PostgreSQL**: ILIKE + WHERE 句でフィルタリング
 
-検索エンジン側にフィルター用フィールド（`owner_org`, `tags`, `state`）を持たせるが、
-これは `/api/v1/search` エンドポイントでのみ使用する。
-一覧ページのフィルタリングには使用しない。
+検索エンジン側にフィルター用フィールド（`organization`, `tags`, `formats` 等）を持たせ、
+SearchAdapter が一貫してフィルタリング・ファセット集計・ページネーションを担当する。
 
-### 一覧ページの簡易キーワード検索
+### リソースメタデータ検索
 
-`GET /api/v1/packages?q=...` の `q` パラメータは DB の ILIKE で処理する。
-これは検索エンジンを経由しない簡易検索であり、形態素解析や関連度スコアリングは行わない。
-ユーザーが高精度なキーワード検索を必要とする場合は `/search` ページ（SearchAdapter 経由）を使用する。
-
-**リソースメタデータ検索の拡張（Phase 3a Step 2b）**:
 `q` パラメータ指定時は、パッケージ自体（name/title/notes）に加えて、
-紐づくリソースの name/description も EXISTS サブクエリで検索対象に含める。
+紐づくリソースの name/description も検索対象に含める。
 マッチしたリソースがある場合は `matchedResources` 配列としてレスポンスに付与する。
-これにより一覧ページでもリソースレベルの検索が可能になるが、
-あくまで DB 直接の ILIKE 検索であり、SearchAdapter は経由しない原則は維持される。
+
+- **OpenSearch**: nested query + inner_hits で検索
+- **PostgreSQL**: EXISTS サブクエリで ILIKE 検索
 
 ## 影響
 
-- 現行実装はこの方針に沿っている（`packages.list()` は DB 直接、`/search` は SearchAdapter）
-- `packages.list()` は `q` 指定時にリソースメタデータも ILIKE 検索するが、これは DB 直接クエリの拡張であり SearchAdapter 経由ではない
-- OpenSearch 実装時（Phase 3）にインデックス設計をキーワード検索に最適化できる
-- LGWAN 等の閉域網環境では PostgreSQL のみで一覧・フィルタリングが完全に動作する
+- ダッシュボードは `dbSearch`（PostgreSQL 固定）を使用するため、インデックス同期遅延の影響を受けない
+- 公開検索は `search`（OpenSearch）で高精度な日本語全文検索が利用可能
+- CUD 操作時に `indexPackage()` で `search` アダプターへ即座にインデックス更新
+- LGWAN 等の閉域網環境では `SEARCH_TYPE=postgres` で全機能が完全に動作
+- `SEARCH_TYPE=postgres` の場合、`search` と `dbSearch` は同一インスタンスであり追加コストなし
 
 ## 関連 ADR
 

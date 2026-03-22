@@ -111,7 +111,8 @@ packagesRouter.get(
       ...(rest.creator_user_id && { creatorUserId: rest.creator_user_id }),
     }
 
-    const search = c.get('search')
+    // Dashboard (my_org=true) uses PostgreSQL adapter for DB consistency
+    const search = my_org ? c.get('dbSearch') : c.get('search')
     const searchResult = await search.search({
       q: rest.q ?? '',
       offset: rest.offset,
