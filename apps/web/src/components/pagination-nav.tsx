@@ -11,7 +11,7 @@ export function PaginationNav({
   total,
 }: {
   basePath: string
-  params?: Record<string, string | undefined>
+  params?: Record<string, string | string[] | undefined>
   offset: number
   limit: number
   total: number

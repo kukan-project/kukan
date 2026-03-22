@@ -107,8 +107,8 @@ export default function DatasetsManagePage() {
     const params = new URLSearchParams({ my_org: 'true' })
     if (debouncedName) params.set('name', debouncedName)
     if (debouncedKeyword) params.set('q', debouncedKeyword)
-    if (orgFilter) params.set('owner_org', orgFilter)
-    if (groupFilter) params.set('group', groupFilter)
+    if (orgFilter) params.set('organization', orgFilter)
+    if (groupFilter) params.set('groups', groupFilter)
     if (visibilityFilter) params.set('private', visibilityFilter)
     return `/api/v1/packages?${params}`
   }, [debouncedName, debouncedKeyword, orgFilter, groupFilter, visibilityFilter])

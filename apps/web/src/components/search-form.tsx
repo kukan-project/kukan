@@ -10,7 +10,7 @@ export function SearchForm({
   action: string
   defaultValue?: string
   placeholder?: string
-  hiddenParams?: Record<string, string | undefined>
+  hiddenParams?: Record<string, string | string[] | undefined>
 }) {
   const t = useTranslations('dataset')
   const tc = useTranslations('common')
@@ -24,9 +24,13 @@ export function SearchForm({
         placeholder={placeholder ?? t('searchPlaceholder')}
       />
       {hiddenParams &&
-        Object.entries(hiddenParams).map(
-          ([key, value]) => value && <input key={key} type="hidden" name={key} value={value} />
-        )}
+        Object.entries(hiddenParams).flatMap(([key, value]) => {
+          if (!value) return []
+          const values = Array.isArray(value) ? value : [value]
+          return values.map((v, i) => (
+            <input key={`${key}-${i}`} type="hidden" name={key} value={v} />
+          ))
+        })}
       <Button type="submit" size="sm">
         {tc('search')}
       </Button>

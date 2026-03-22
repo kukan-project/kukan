@@ -17,8 +17,8 @@ searchRouter.get('/', async (c) => {
   const q = c.req.query('q')
   const offset = parseInt(c.req.query('offset') || '0', 10)
   const limit = parseInt(c.req.query('limit') || '20', 10)
-  const organization = c.req.query('organization')
-  const tags = c.req.query('tags')
+  const organization = c.req.queries('organization')
+  const tags = c.req.queries('tags')
 
   // Validate q parameter
   if (!q || q.trim().length === 0) {
@@ -74,8 +74,8 @@ searchRouter.get('/', async (c) => {
 
   // Build filters with visibility controls
   const filters: SearchFilters = {
-    ...(organization && { organization }),
-    ...(tags && { tags: tags.split(',').map((t) => t.trim()) }),
+    ...(organization?.length && { organizations: organization }),
+    ...(tags?.length && { tags }),
     ...(!user?.sysadmin && {
       excludePrivate: true,
       ...(userOrgIds?.length && { allowPrivateOrgIds: userOrgIds }),

@@ -116,7 +116,7 @@ describe('GroupDatasetsPage', () => {
     expect(groupUrl).toContain('/api/v1/groups/demographics')
     // Second call: packages filtered by group
     const pkgUrl = vi.mocked(serverFetch).mock.calls[1][0] as string
-    expect(pkgUrl).toContain('group=demographics')
+    expect(pkgUrl).toContain('groups=demographics')
     expect(pkgUrl).toContain('q=test')
     expect(pkgUrl).toContain('offset=20')
   })

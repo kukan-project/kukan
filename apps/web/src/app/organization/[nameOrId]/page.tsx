@@ -25,7 +25,7 @@ export default async function OrganizationDatasetsPage({ params, searchParams }:
 
   const query = new URLSearchParams()
   if (q) query.set('q', q)
-  query.set('owner_org', nameOrId)
+  query.set('organization', nameOrId)
   query.set('offset', String(offset))
   query.set('limit', String(limit))
 

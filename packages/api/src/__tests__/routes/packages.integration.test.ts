@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { createTestApp } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import { PostgresSearchAdapter } from '@kukan/search-adapter'
+import { packageGroup } from '@kukan/db'
 
 const db = getTestDb()
 const search = new PostgresSearchAdapter(db)
@@ -268,6 +269,163 @@ describe('Packages API Routes', () => {
       const body = await res.json()
       expect(body.name).toBe('test-resource')
       expect(body.position).toBe(0)
+    })
+  })
+
+  describe('Multi-value AND/OR filters', () => {
+    async function createOrg(name: string) {
+      const res = await app.request('/api/v1/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      return res.json()
+    }
+
+    async function createGroup(name: string) {
+      const res = await app.request('/api/v1/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, title: name }),
+      })
+      return res.json()
+    }
+
+    it('should AND filter tags — only packages with ALL selected tags', async () => {
+      await createPackage({ name: 'pkg-ab', tags: [{ name: 'env' }, { name: 'health' }] })
+      await createPackage({ name: 'pkg-ac', tags: [{ name: 'env' }, { name: 'transport' }] })
+      await createPackage({ name: 'pkg-bc', tags: [{ name: 'health' }, { name: 'education' }] })
+
+      const res = await app.request('/api/v1/packages?tags=env&tags=health')
+      const body = await res.json()
+      expect(body.total).toBe(1)
+      expect(body.items[0].name).toBe('pkg-ab')
+    })
+
+    it('should return all matching packages for single tag filter', async () => {
+      await createPackage({ name: 'pkg-x', tags: [{ name: 'env' }] })
+      await createPackage({ name: 'pkg-y', tags: [{ name: 'env' }, { name: 'health' }] })
+      await createPackage({ name: 'pkg-z', tags: [{ name: 'health' }] })
+
+      const res = await app.request('/api/v1/packages?tags=env')
+      const body = await res.json()
+      expect(body.total).toBe(2)
+    })
+
+    it('should AND filter formats — only packages with ALL selected formats', async () => {
+      const resA = await createPackage({ name: 'pkg-csv-json' })
+      const pkgA = await resA.json()
+      await createResource(pkgA.id, { name: 'a.csv', format: 'CSV' })
+      await createResource(pkgA.id, { name: 'a.json', format: 'JSON' })
+
+      const resB = await createPackage({ name: 'pkg-csv-only' })
+      const pkgB = await resB.json()
+      await createResource(pkgB.id, { name: 'b.csv', format: 'CSV' })
+
+      const resC = await createPackage({ name: 'pkg-json-only' })
+      const pkgC = await resC.json()
+      await createResource(pkgC.id, { name: 'c.json', format: 'JSON' })
+
+      const res = await app.request('/api/v1/packages?res_format=CSV&res_format=JSON')
+      const body = await res.json()
+      expect(body.total).toBe(1)
+      expect(body.items[0].name).toBe('pkg-csv-json')
+    })
+
+    it('should OR filter licenses — packages with ANY selected license', async () => {
+      await createPackage({ name: 'pkg-cc', license_id: 'cc-by' })
+      await createPackage({ name: 'pkg-mit', license_id: 'mit' })
+      await createPackage({ name: 'pkg-apache', license_id: 'apache-2.0' })
+
+      const res = await app.request('/api/v1/packages?license_id=cc-by&license_id=mit')
+      const body = await res.json()
+      expect(body.total).toBe(2)
+      const names = body.items.map((i: { name: string }) => i.name).sort()
+      expect(names).toEqual(['pkg-cc', 'pkg-mit'])
+    })
+
+    it('should OR filter organizations — packages from ANY selected org', async () => {
+      const org1 = await createOrg('filter-org-alpha')
+      const org2 = await createOrg('filter-org-beta')
+      const org3 = await createOrg('filter-org-gamma')
+
+      await app.request('/api/v1/packages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'pkg-alpha', owner_org: org1.id }),
+      })
+      await app.request('/api/v1/packages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'pkg-beta', owner_org: org2.id }),
+      })
+      await app.request('/api/v1/packages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'pkg-gamma', owner_org: org3.id }),
+      })
+
+      const res = await app.request(
+        '/api/v1/packages?organization=filter-org-alpha&organization=filter-org-beta'
+      )
+      const body = await res.json()
+      expect(body.total).toBe(2)
+      const names = body.items.map((i: { name: string }) => i.name).sort()
+      expect(names).toEqual(['pkg-alpha', 'pkg-beta'])
+    })
+
+    it('should AND filter groups — only packages in ALL selected groups', async () => {
+      const grp1 = await createGroup('environment')
+      const grp2 = await createGroup('transport')
+      const grp3 = await createGroup('health')
+
+      const resA = await createPackage({ name: 'pkg-env-trans' })
+      const pkgA = await resA.json()
+      const resB = await createPackage({ name: 'pkg-env-only' })
+      const pkgB = await resB.json()
+      const resC = await createPackage({ name: 'pkg-trans-health' })
+      const pkgC = await resC.json()
+
+      await db.insert(packageGroup).values([
+        { packageId: pkgA.id, groupId: grp1.id },
+        { packageId: pkgA.id, groupId: grp2.id },
+        { packageId: pkgB.id, groupId: grp1.id },
+        { packageId: pkgC.id, groupId: grp2.id },
+        { packageId: pkgC.id, groupId: grp3.id },
+      ])
+
+      const res = await app.request('/api/v1/packages?groups=environment&groups=transport')
+      const body = await res.json()
+      expect(body.total).toBe(1)
+      expect(body.items[0].name).toBe('pkg-env-trans')
+    })
+
+    it('should AND across categories — tags AND formats', async () => {
+      const resA = await createPackage({ name: 'pkg-env-csv', tags: [{ name: 'env' }] })
+      const pkgA = await resA.json()
+      await createResource(pkgA.id, { name: 'a.csv', format: 'CSV' })
+
+      const resB = await createPackage({ name: 'pkg-env-json', tags: [{ name: 'env' }] })
+      const pkgB = await resB.json()
+      await createResource(pkgB.id, { name: 'b.json', format: 'JSON' })
+
+      const resC = await createPackage({ name: 'pkg-health-csv', tags: [{ name: 'health' }] })
+      const pkgC = await resC.json()
+      await createResource(pkgC.id, { name: 'c.csv', format: 'CSV' })
+
+      const res = await app.request('/api/v1/packages?tags=env&res_format=CSV')
+      const body = await res.json()
+      expect(body.total).toBe(1)
+      expect(body.items[0].name).toBe('pkg-env-csv')
+    })
+
+    it('should return empty when AND conditions cannot be satisfied', async () => {
+      await createPackage({ name: 'pkg-a', tags: [{ name: 'env' }] })
+      await createPackage({ name: 'pkg-b', tags: [{ name: 'health' }] })
+
+      const res = await app.request('/api/v1/packages?tags=env&tags=health')
+      const body = await res.json()
+      expect(body.total).toBe(0)
     })
   })
 

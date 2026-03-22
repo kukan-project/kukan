@@ -25,6 +25,12 @@ import type { AppContext } from '../context'
 
 export const packagesRouter = new Hono<{ Variables: AppContext }>()
 
+// Repeated query param: normalizes string | string[] → string[] | undefined
+const repeatedParam = z
+  .union([z.string(), z.array(z.string())])
+  .optional()
+  .transform((v) => (v === undefined ? undefined : (Array.isArray(v) ? v : [v]).filter(Boolean)))
+
 // GET /api/v1/packages - List packages with pagination and search
 packagesRouter.get(
   '/',
@@ -35,11 +41,11 @@ packagesRouter.get(
       limit: z.coerce.number().min(1).max(100).default(20),
       q: z.string().optional(),
       name: z.string().optional(),
-      owner_org: z.string().optional(),
-      group: z.string().optional(),
-      tags: z.string().optional(),
-      formats: z.string().optional(),
-      license_id: z.string().optional(),
+      organization: repeatedParam,
+      groups: repeatedParam,
+      tags: repeatedParam,
+      res_format: repeatedParam,
+      license_id: repeatedParam,
       creator_user_id: z.string().optional(),
       my_org: z
         .string()
@@ -56,7 +62,7 @@ packagesRouter.get(
     })
   ),
   async (c) => {
-    const { my_org, tags, formats, include_facets, ...rest } = c.req.valid('query')
+    const { my_org, tags, res_format, include_facets, ...rest } = c.req.valid('query')
     const db = c.get('db')
     const service = new PackageService(db)
     const user = c.get('user')
@@ -71,21 +77,6 @@ packagesRouter.get(
       userOrgIds = memberships.map((m) => m.organizationId)
     }
 
-    const filterParams = {
-      tags: tags
-        ? tags
-            .split(',')
-            .map((t) => t.trim())
-            .filter(Boolean)
-        : undefined,
-      formats: formats
-        ? formats
-            .split(',')
-            .map((f) => f.trim())
-            .filter(Boolean)
-        : undefined,
-    }
-
     // my_org=true with no memberships → guaranteed empty result
     if (my_org && userOrgIds !== undefined && userOrgIds.length === 0) {
       return c.json({ items: [], total: 0, offset: rest.offset, limit: rest.limit })
@@ -94,11 +85,11 @@ packagesRouter.get(
     // Build visibility + access filters for SearchAdapter
     const filters: SearchFilters = {
       name: rest.name,
-      organization: rest.owner_org,
-      tags: filterParams.tags,
-      formats: filterParams.formats,
-      license_id: rest.license_id,
-      groups: rest.group ? [rest.group] : undefined,
+      organizations: rest.organization,
+      tags,
+      formats: res_format,
+      licenses: rest.license_id,
+      groups: rest.groups,
       // Visibility
       ...(!user?.sysadmin && {
         excludePrivate: true,
@@ -259,14 +250,12 @@ packagesRouter.post(
     // Skip upload resources — pipeline is triggered by upload-complete after file is in storage
     const enqueuePromise =
       input.url && input.url_type !== 'upload'
-        ? new PipelineService(db, c.get('queue'))
-            .enqueue(resource.id)
-            .catch((err) => {
-              console.error(
-                `[Packages] Best-effort pipeline enqueue failed for resource ${resource.id}:`,
-                err
-              )
-            })
+        ? new PipelineService(db, c.get('queue')).enqueue(resource.id).catch((err) => {
+            console.error(
+              `[Packages] Best-effort pipeline enqueue failed for resource ${resource.id}:`,
+              err
+            )
+          })
         : Promise.resolve()
 
     await Promise.all([enqueuePromise, indexPackage(db, c.get('search'), pkg.id)])

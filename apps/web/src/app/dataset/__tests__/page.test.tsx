@@ -170,12 +170,12 @@ describe('DatasetsPage', () => {
     vi.mocked(serverFetch).mockResolvedValue(
       mockResponse({ items: [], total: 0, offset: 0, limit: 20, facets: sampleFacets })
     )
-    await DatasetsPage(makeSearchParams({ q: 'test', owner_org: 'tokyo', offset: '20' }))
+    await DatasetsPage(makeSearchParams({ q: 'test', organization: 'tokyo', offset: '20' }))
 
     expect(serverFetch).toHaveBeenCalledTimes(1)
     const url = vi.mocked(serverFetch).mock.calls[0][0] as string
     expect(url).toContain('q=test')
-    expect(url).toContain('owner_org=tokyo')
+    expect(url).toContain('organization=tokyo')
     expect(url).toContain('offset=20')
     expect(url).toContain('include_facets=true')
   })

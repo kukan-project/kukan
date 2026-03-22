@@ -25,7 +25,7 @@ export default async function GroupDatasetsPage({ params, searchParams }: Props)
 
   const query = new URLSearchParams()
   if (q) query.set('q', q)
-  query.set('group', nameOrId)
+  query.set('groups', nameOrId)
   query.set('offset', String(offset))
   query.set('limit', String(limit))
 

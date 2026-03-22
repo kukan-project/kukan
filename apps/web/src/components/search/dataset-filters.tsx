@@ -7,40 +7,39 @@ import { buildQuery } from '@/lib/query'
 
 interface DatasetFiltersProps {
   query: string
-  currentOrg?: string
-  currentGroup?: string
+  currentOrgs: string[]
+  currentGroups: string[]
   currentTags: string[]
-  currentFormat?: string
-  currentLicense?: string
+  currentFormats: string[]
+  currentLicenses: string[]
   facets: FacetCounts
 }
 
-type FilterParams = Record<string, string | undefined>
+type FilterParams = Record<string, string | string[] | undefined>
 
 function buildDatasetUrl(params: FilterParams) {
   return `/dataset?${buildQuery(params)}`
 }
 
-function toggleTag(currentTags: string[], tag: string): string {
-  const set = new Set(currentTags)
-  if (set.has(tag)) set.delete(tag)
-  else set.add(tag)
-  return [...set].join(',')
+function toggleArray(current: string[], value: string): string[] | undefined {
+  const set = new Set(current)
+  if (set.has(value)) set.delete(value)
+  else set.add(value)
+  const result = [...set]
+  return result.length ? result : undefined
 }
 
 function FilterSection({
   icon: Icon,
   title,
   defaultOpen,
-  clearHref,
-  clearLabel,
+  active,
   children,
 }: {
   icon: React.ComponentType<{ className?: string }>
   title: string
   defaultOpen?: boolean
-  clearHref?: string
-  clearLabel?: string
+  active?: boolean
   children: React.ReactNode
 }) {
   return (
@@ -49,17 +48,7 @@ function FilterSection({
         <span className="flex items-center gap-1.5">
           <Icon className="h-4 w-4 text-muted-foreground" />
           {title}
-          {clearHref && (
-            <>
-              <span className="h-2 w-2 rounded-full bg-primary" />
-              <Link
-                href={clearHref}
-                className="rounded border border-input bg-background px-1.5 py-0.5 text-xs font-normal text-muted-foreground shadow-sm hover:bg-accent hover:text-foreground"
-              >
-                {clearLabel}
-              </Link>
-            </>
-          )}
+          {active && <span className="h-2 w-2 rounded-full bg-primary" />}
         </span>
         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
       </summary>
@@ -70,13 +59,13 @@ function FilterSection({
 
 function FilterList({
   items,
-  activeValue,
+  activeValues,
   buildHref,
   displayName,
   className,
 }: {
   items: FacetItem[]
-  activeValue?: string
+  activeValues: string[]
   buildHref: (name: string) => string
   displayName?: (item: FacetItem) => string
   className?: string
@@ -85,7 +74,7 @@ function FilterList({
   return (
     <ul className="flex flex-col gap-1">
       {items.map((item) => {
-        const isActive = activeValue === item.name
+        const isActive = activeValues.includes(item.name)
         const label = displayName ? displayName(item) : item.title || item.name
         const content = (
           <>
@@ -123,22 +112,22 @@ function FilterList({
 
 export function DatasetFilters({
   query,
-  currentOrg,
-  currentGroup,
+  currentOrgs,
+  currentGroups,
   currentTags,
-  currentFormat,
-  currentLicense,
+  currentFormats,
+  currentLicenses,
   facets,
 }: DatasetFiltersProps) {
   const t = useTranslations('search')
 
   const baseParams: FilterParams = {
     q: query || undefined,
-    owner_org: currentOrg,
-    group: currentGroup,
-    tags: currentTags.join(',') || undefined,
-    formats: currentFormat,
-    license_id: currentLicense,
+    organization: currentOrgs.length ? currentOrgs : undefined,
+    groups: currentGroups.length ? currentGroups : undefined,
+    tags: currentTags.length ? currentTags : undefined,
+    res_format: currentFormats.length ? currentFormats : undefined,
+    license_id: currentLicenses.length ? currentLicenses : undefined,
   }
 
   return (
@@ -147,16 +136,18 @@ export function DatasetFilters({
       <FilterSection
         icon={Building2}
         title={t('filterByOrganization')}
-        defaultOpen={!!currentOrg}
-        clearHref={
-          currentOrg ? buildDatasetUrl({ ...baseParams, owner_org: undefined }) : undefined
-        }
-        clearLabel={t('clear')}
+        defaultOpen={currentOrgs.length > 0}
+        active={currentOrgs.length > 0}
       >
         <FilterList
           items={facets.organizations}
-          activeValue={currentOrg}
-          buildHref={(name) => buildDatasetUrl({ ...baseParams, owner_org: name })}
+          activeValues={currentOrgs}
+          buildHref={(name) =>
+            buildDatasetUrl({
+              ...baseParams,
+              organization: toggleArray(currentOrgs, name),
+            })
+          }
         />
       </FilterSection>
 
@@ -165,16 +156,18 @@ export function DatasetFilters({
         <FilterSection
           icon={FolderOpen}
           title={t('filterByCategory')}
-          defaultOpen={!!currentGroup}
-          clearHref={
-            currentGroup ? buildDatasetUrl({ ...baseParams, group: undefined }) : undefined
-          }
-          clearLabel={t('clear')}
+          defaultOpen={currentGroups.length > 0}
+          active={currentGroups.length > 0}
         >
           <FilterList
             items={facets.groups}
-            activeValue={currentGroup}
-            buildHref={(name) => buildDatasetUrl({ ...baseParams, group: name })}
+            activeValues={currentGroups}
+            buildHref={(name) =>
+              buildDatasetUrl({
+                ...baseParams,
+                groups: toggleArray(currentGroups, name),
+              })
+            }
           />
         </FilterSection>
       )}
@@ -185,10 +178,7 @@ export function DatasetFilters({
           icon={Tag}
           title={t('filterByTag')}
           defaultOpen={currentTags.length > 0}
-          clearHref={
-            currentTags.length > 0 ? buildDatasetUrl({ ...baseParams, tags: undefined }) : undefined
-          }
-          clearLabel={t('clear')}
+          active={currentTags.length > 0}
         >
           <div className="flex flex-wrap gap-1">
             {facets.tags.map((tag) => {
@@ -203,12 +193,9 @@ export function DatasetFilters({
                   </span>
                 )
               }
-              const newTags = toggleTag(currentTags, tag.name)
+              const newTags = toggleArray(currentTags, tag.name)
               return (
-                <Link
-                  key={tag.name}
-                  href={buildDatasetUrl({ ...baseParams, tags: newTags || undefined })}
-                >
+                <Link key={tag.name} href={buildDatasetUrl({ ...baseParams, tags: newTags })}>
                   <Badge variant={isSelected ? 'default' : 'secondary'} className="cursor-pointer">
                     {tag.name}
                     <span className="ml-1 text-xs opacity-70">{tag.count}</span>
@@ -225,16 +212,18 @@ export function DatasetFilters({
         <FilterSection
           icon={FileText}
           title={t('filterByFormat')}
-          defaultOpen={!!currentFormat}
-          clearHref={
-            currentFormat ? buildDatasetUrl({ ...baseParams, formats: undefined }) : undefined
-          }
-          clearLabel={t('clear')}
+          defaultOpen={currentFormats.length > 0}
+          active={currentFormats.length > 0}
         >
           <FilterList
             items={facets.formats}
-            activeValue={currentFormat}
-            buildHref={(name) => buildDatasetUrl({ ...baseParams, formats: name })}
+            activeValues={currentFormats}
+            buildHref={(name) =>
+              buildDatasetUrl({
+                ...baseParams,
+                res_format: toggleArray(currentFormats, name),
+              })
+            }
             className="font-mono uppercase"
           />
         </FilterSection>
@@ -245,16 +234,18 @@ export function DatasetFilters({
         <FilterSection
           icon={Scale}
           title={t('filterByLicense')}
-          defaultOpen={!!currentLicense}
-          clearHref={
-            currentLicense ? buildDatasetUrl({ ...baseParams, license_id: undefined }) : undefined
-          }
-          clearLabel={t('clear')}
+          defaultOpen={currentLicenses.length > 0}
+          active={currentLicenses.length > 0}
         >
           <FilterList
             items={facets.licenses}
-            activeValue={currentLicense}
-            buildHref={(name) => buildDatasetUrl({ ...baseParams, license_id: name })}
+            activeValues={currentLicenses}
+            buildHref={(name) =>
+              buildDatasetUrl({
+                ...baseParams,
+                license_id: toggleArray(currentLicenses, name),
+              })
+            }
           />
         </FilterSection>
       )}

@@ -137,9 +137,9 @@ describe('OrganizationDatasetsPage', () => {
     expect(serverFetch).toHaveBeenCalledTimes(2)
     // First call: org detail
     expect(vi.mocked(serverFetch).mock.calls[0][0]).toContain('/api/v1/organizations/tokyo')
-    // Second call: packages with owner_org filter
+    // Second call: packages with organization filter
     const packagesUrl = vi.mocked(serverFetch).mock.calls[1][0] as string
-    expect(packagesUrl).toContain('owner_org=tokyo')
+    expect(packagesUrl).toContain('organization=tokyo')
     expect(packagesUrl).toContain('q=test')
     expect(packagesUrl).toContain('offset=20')
   })

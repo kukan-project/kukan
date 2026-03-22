@@ -52,11 +52,13 @@ describe('usePaginatedFetch', () => {
   it('should append params correctly when URL has existing query string', async () => {
     vi.mocked(clientFetch).mockResolvedValue(mockResponse(page1))
 
-    const { result } = renderHook(() => usePaginatedFetch('/api/v1/packages?owner_org=tokyo'))
+    const { result } = renderHook(() => usePaginatedFetch('/api/v1/packages?organization=tokyo'))
 
     await waitFor(() => expect(result.current.loading).toBe(false))
 
-    expect(clientFetch).toHaveBeenCalledWith('/api/v1/packages?owner_org=tokyo&limit=20&offset=0')
+    expect(clientFetch).toHaveBeenCalledWith(
+      '/api/v1/packages?organization=tokyo&limit=20&offset=0'
+    )
   })
 
   it('should navigate to a different page via fetchPage', async () => {

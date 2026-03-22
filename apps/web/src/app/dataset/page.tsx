@@ -2,6 +2,7 @@ import type { PaginatedResult, FacetCounts } from '@kukan/shared'
 import { getTranslations } from 'next-intl/server'
 import { Separator } from '@kukan/ui'
 import { serverFetch } from '@/lib/server-api'
+import { toArray } from '@/lib/query'
 import { SearchForm } from '@/components/search-form'
 import { DatasetCard, type DatasetCardItem } from '@/components/dataset-card'
 import { DatasetFilters } from '@/components/search/dataset-filters'
@@ -12,11 +13,11 @@ interface Props {
     q?: string
     offset?: string
     limit?: string
-    owner_org?: string
-    group?: string
-    tags?: string
-    formats?: string
-    license_id?: string
+    organization?: string | string[]
+    groups?: string | string[]
+    tags?: string | string[]
+    res_format?: string | string[]
+    license_id?: string | string[]
   }>
 }
 
@@ -33,22 +34,28 @@ export default async function DatasetsPage({ searchParams }: Props) {
   const q = params.q || ''
   const offset = Number(params.offset) || 0
   const limit = Number(params.limit) || 20
-  const ownerOrg = params.owner_org || ''
-  const group = params.group || ''
-  const currentTags = params.tags ? params.tags.split(',').filter(Boolean) : []
-  const tagsParam = currentTags.length > 0 ? currentTags.join(',') : undefined
-  const formats = params.formats || ''
-  const licenseId = params.license_id || ''
+  const currentOrgs = toArray(params.organization)
+  const currentGroups = toArray(params.groups)
+  const currentTags = toArray(params.tags)
+  const currentFormats = toArray(params.res_format)
+  const currentLicenses = toArray(params.license_id)
+
+  // Filter params as arrays (repeated params for URL, hidden fields, and API query)
+  const filterParams: Record<string, string[] | undefined> = {
+    organization: currentOrgs.length ? currentOrgs : undefined,
+    groups: currentGroups.length ? currentGroups : undefined,
+    tags: currentTags.length ? currentTags : undefined,
+    res_format: currentFormats.length ? currentFormats : undefined,
+    license_id: currentLicenses.length ? currentLicenses : undefined,
+  }
 
   const query = new URLSearchParams()
   if (q) query.set('q', q)
   query.set('offset', String(offset))
   query.set('limit', String(limit))
-  if (ownerOrg) query.set('owner_org', ownerOrg)
-  if (group) query.set('group', group)
-  if (tagsParam) query.set('tags', tagsParam)
-  if (formats) query.set('formats', formats)
-  if (licenseId) query.set('license_id', licenseId)
+  for (const [key, values] of Object.entries(filterParams)) {
+    if (values) for (const v of values) query.append(key, v)
+  }
   query.set('include_facets', 'true')
 
   let data: PaginatedResult<DatasetCardItem> & { facets?: FacetCounts } = {
@@ -79,17 +86,7 @@ export default async function DatasetsPage({ searchParams }: Props) {
           </p>
         </div>
 
-        <SearchForm
-          action="/dataset"
-          defaultValue={q}
-          hiddenParams={{
-            owner_org: ownerOrg || undefined,
-            group: group || undefined,
-            tags: tagsParam,
-            formats: formats || undefined,
-            license_id: licenseId || undefined,
-          }}
-        />
+        <SearchForm action="/dataset" defaultValue={q} hiddenParams={filterParams} />
 
         <Separator />
 
@@ -98,11 +95,11 @@ export default async function DatasetsPage({ searchParams }: Props) {
           <aside className="w-full shrink-0 md:w-64">
             <DatasetFilters
               query={q}
-              currentOrg={ownerOrg || undefined}
-              currentGroup={group || undefined}
+              currentOrgs={currentOrgs}
+              currentGroups={currentGroups}
               currentTags={currentTags}
-              currentFormat={formats || undefined}
-              currentLicense={licenseId || undefined}
+              currentFormats={currentFormats}
+              currentLicenses={currentLicenses}
               facets={facets}
             />
           </aside>
@@ -124,14 +121,7 @@ export default async function DatasetsPage({ searchParams }: Props) {
             <div className="mt-6">
               <PaginationNav
                 basePath="/dataset"
-                params={{
-                  q: q || undefined,
-                  owner_org: ownerOrg || undefined,
-                  group: group || undefined,
-                  tags: tagsParam,
-                  formats: formats || undefined,
-                  license_id: licenseId || undefined,
-                }}
+                params={{ q: q || undefined, ...filterParams }}
                 offset={offset}
                 limit={limit}
                 total={data.total}
