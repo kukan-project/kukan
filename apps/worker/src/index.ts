@@ -17,8 +17,13 @@ config({ path: '../../.env' })
 
 const env = loadEnv()
 
-// Initialize database
-const db = createDb(env.DATABASE_URL)
+// Initialize database (worker processes jobs sequentially, so fewer connections needed)
+const db = createDb(env.DATABASE_URL, {
+  max: env.WORKER_DB_POOL_MAX ?? env.DB_POOL_MAX ?? 3,
+  idleTimeoutMillis: env.WORKER_DB_POOL_IDLE_TIMEOUT_MS ?? env.DB_POOL_IDLE_TIMEOUT_MS ?? 10_000,
+  connectionTimeoutMillis:
+    env.WORKER_DB_POOL_CONNECTION_TIMEOUT_MS ?? env.DB_POOL_CONNECTION_TIMEOUT_MS ?? 30_000,
+})
 
 // Initialize storage adapter (S3: AWS S3 or MinIO)
 const storage = new S3StorageAdapter({

@@ -8,6 +8,14 @@ import { z } from 'zod'
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().url(),
+  // DB Connection Pool — Web (API)
+  DB_POOL_MAX: z.coerce.number().optional(),
+  DB_POOL_IDLE_TIMEOUT_MS: z.coerce.number().optional(),
+  DB_POOL_CONNECTION_TIMEOUT_MS: z.coerce.number().optional(),
+  // DB Connection Pool — Worker (overrides DB_POOL_* when set)
+  WORKER_DB_POOL_MAX: z.coerce.number().optional(),
+  WORKER_DB_POOL_IDLE_TIMEOUT_MS: z.coerce.number().optional(),
+  WORKER_DB_POOL_CONNECTION_TIMEOUT_MS: z.coerce.number().optional(),
   PORT: z.coerce.number().default(3000),
 
   // Storage (S3-compatible: AWS S3 or MinIO, determined by S3_ENDPOINT)
