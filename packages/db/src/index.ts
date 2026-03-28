@@ -8,3 +8,6 @@ export * from './client'
 
 // All schema tables
 export * from './schema'
+
+// Migration utility
+export { runMigrations } from './migrate'

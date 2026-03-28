@@ -4,7 +4,7 @@
  * Non-text formats return null (skip).
  */
 
-import { streamToBuffer, detectEncoding, bufferToUtf8 } from '../node-utils.js'
+import { streamToBuffer, detectEncoding, bufferToUtf8 } from '../node-utils'
 import { getPreviewKey, isCsvFormat, isTextFormat } from '@kukan/shared'
 import { parquetWriteBuffer } from 'hyparquet-writer'
 import Papa from 'papaparse'

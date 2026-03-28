@@ -6,13 +6,14 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsup",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@hono/node-server": "^1.14.0",
     "@kukan/db": "workspace:*",
     "@kukan/queue-adapter": "workspace:*",
     "@kukan/search-adapter": "workspace:*",
@@ -21,6 +22,7 @@
     "dotenv": "^16.4.0",
     "drizzle-orm": "^0.45.1",
     "encoding-japanese": "^2.2.0",
+    "hono": "^4.12.3",
     "hyparquet-writer": "^0.13.0",
     "papaparse": "^5.5.3",
     "pg": "^8.13.0"
@@ -30,6 +32,7 @@
     "@types/node": "^22.0.0",
     "@types/papaparse": "^5.5.2",
     "@types/pg": "^8.11.0",
+    "tsup": "^8.5.1",
     "tsx": "^4.0.0"
   }
 }

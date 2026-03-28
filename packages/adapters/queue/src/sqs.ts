@@ -27,6 +27,12 @@ export class SQSQueueAdapter implements QueueAdapter {
   private pollPromise?: Promise<void>
   private abortController?: AbortController
 
+  /** Timestamp of the last successful SQS poll (for health monitoring) */
+  lastPollAt: Date | null = null
+
+  /** Timestamp when the current job started processing (null if idle) */
+  processingJobSince: Date | null = null
+
   constructor(config: SQSConfig) {
     this.queueUrl = config.queueUrl
     this.client = new SQSClient({
@@ -91,6 +97,8 @@ export class SQSQueueAdapter implements QueueAdapter {
           { abortSignal: this.abortController?.signal }
         )
 
+        this.lastPollAt = new Date()
+
         if (!response.Messages?.length) continue
 
         for (const message of response.Messages) {
@@ -113,9 +121,12 @@ export class SQSQueueAdapter implements QueueAdapter {
           const job: Job<T> = { id: jobId, type: body.type, data: body.data }
 
           try {
+            this.processingJobSince = new Date()
             await handler(job)
+            this.processingJobSince = null
             await this.deleteMessage(message.ReceiptHandle!)
           } catch (err) {
+            this.processingJobSince = null
             // Message returns to queue after visibility timeout
             console.error(`[SQSQueue] Handler error for job ${jobId}:`, err)
           }

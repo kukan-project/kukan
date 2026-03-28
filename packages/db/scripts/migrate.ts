@@ -4,32 +4,19 @@
  */
 
 import { config } from 'dotenv'
-import { drizzle } from 'drizzle-orm/node-postgres'
-import { migrate } from 'drizzle-orm/node-postgres/migrator'
-import { Pool } from 'pg'
+import { runMigrations } from '../src/migrate'
 
-config({ path: '../../.env' })
-
-async function main() {
-  const connectionString = process.env.DATABASE_URL
-  if (!connectionString) {
-    throw new Error('DATABASE_URL environment variable is required')
-  }
-
-  const pool = new Pool({ connectionString })
-  const db = drizzle(pool)
-
-  // Ensure required extensions exist (not managed by Drizzle)
-  await pool.query('CREATE EXTENSION IF NOT EXISTS pg_trgm')
-
-  console.log('Running migrations...')
-  await migrate(db, { migrationsFolder: './drizzle' })
-  console.log('Migrations complete!')
-
-  await pool.end()
+// Skip dotenv in production (env vars injected by container/ECS)
+if (process.env.NODE_ENV !== 'production') {
+  config({ path: '../../.env' })
 }
 
-main().catch((err) => {
+const connectionString = process.env.DATABASE_URL
+if (!connectionString) {
+  throw new Error('DATABASE_URL environment variable is required')
+}
+
+runMigrations(connectionString).catch((err) => {
   console.error('Migration failed:', err)
   process.exit(1)
 })

@@ -7,8 +7,10 @@ import { serve } from '@hono/node-server'
 import { config } from 'dotenv'
 import { createApp } from './app'
 
-// Load .env file from project root
-config({ path: '../../.env' })
+// Skip dotenv in production (env vars injected by container/ECS)
+if (process.env.NODE_ENV !== 'production') {
+  config({ path: '../../.env' })
+}
 
 const port = parseInt(process.env.PORT || '3000', 10)
 

@@ -7,6 +7,7 @@ config({ path: '../../.env' })
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
   transpilePackages: ['@kukan/shared', '@kukan/ui'],
   serverExternalPackages: [
     '@kukan/api',
