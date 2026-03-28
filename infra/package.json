@@ -1,0 +1,27 @@
+{
+  "name": "@kukan/infra",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "cdk": "cdk",
+    "synth": "cdk synth",
+    "deploy": "cdk deploy",
+    "diff": "cdk diff",
+    "destroy": "cdk destroy",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'no linter configured'",
+    "clean": "rm -rf dist cdk.out"
+  },
+  "dependencies": {
+    "@aws-cdk/aws-apprunner-alpha": "^2.244.0-alpha.0",
+    "aws-cdk-lib": "^2.244.0",
+    "constructs": "^10.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "aws-cdk": "^2.244.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.8.0"
+  }
+}
