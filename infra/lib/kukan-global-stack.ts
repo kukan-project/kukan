@@ -18,6 +18,27 @@ export interface KukanGlobalStackProps extends cdk.StackProps {
   hostedZoneName?: string
 }
 
+/** Create an AWS managed WAF rule group definition */
+function managedRuleGroup(
+  name: string,
+  priority: number,
+  metricSuffix: string
+): wafv2.CfnWebACL.RuleProperty {
+  return {
+    name,
+    priority,
+    overrideAction: { none: {} },
+    statement: {
+      managedRuleGroupStatement: { vendorName: 'AWS', name },
+    },
+    visibilityConfig: {
+      sampledRequestsEnabled: true,
+      cloudWatchMetricsEnabled: true,
+      metricName: `kukan-waf-${metricSuffix}`,
+    },
+  }
+}
+
 export class KukanGlobalStack extends cdk.Stack {
   /** ACM certificate ARN (us-east-1). Defined when domainName + hostedZone are provided. */
   readonly certificateArn?: string
@@ -54,54 +75,9 @@ export class KukanGlobalStack extends cdk.Stack {
           metricName: 'kukan-waf',
         },
         rules: [
-          {
-            name: 'AWSManagedRulesCommonRuleSet',
-            priority: 0,
-            overrideAction: { none: {} },
-            statement: {
-              managedRuleGroupStatement: {
-                vendorName: 'AWS',
-                name: 'AWSManagedRulesCommonRuleSet',
-              },
-            },
-            visibilityConfig: {
-              sampledRequestsEnabled: true,
-              cloudWatchMetricsEnabled: true,
-              metricName: 'kukan-waf-common',
-            },
-          },
-          {
-            name: 'AWSManagedRulesKnownBadInputsRuleSet',
-            priority: 1,
-            overrideAction: { none: {} },
-            statement: {
-              managedRuleGroupStatement: {
-                vendorName: 'AWS',
-                name: 'AWSManagedRulesKnownBadInputsRuleSet',
-              },
-            },
-            visibilityConfig: {
-              sampledRequestsEnabled: true,
-              cloudWatchMetricsEnabled: true,
-              metricName: 'kukan-waf-bad-inputs',
-            },
-          },
-          {
-            name: 'AWSManagedRulesAmazonIpReputationList',
-            priority: 2,
-            overrideAction: { none: {} },
-            statement: {
-              managedRuleGroupStatement: {
-                vendorName: 'AWS',
-                name: 'AWSManagedRulesAmazonIpReputationList',
-              },
-            },
-            visibilityConfig: {
-              sampledRequestsEnabled: true,
-              cloudWatchMetricsEnabled: true,
-              metricName: 'kukan-waf-ip-reputation',
-            },
-          },
+          managedRuleGroup('AWSManagedRulesCommonRuleSet', 0, 'common'),
+          managedRuleGroup('AWSManagedRulesKnownBadInputsRuleSet', 1, 'bad-inputs'),
+          managedRuleGroup('AWSManagedRulesAmazonIpReputationList', 2, 'ip-reputation'),
         ],
       })
       this.webAclArn = webAcl.attrArn

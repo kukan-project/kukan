@@ -13,28 +13,23 @@
 import * as cdk from 'aws-cdk-lib'
 import { KukanStack } from '../lib/kukan-stack.js'
 import { KukanGlobalStack } from '../lib/kukan-global-stack.js'
+import { loadConfig } from '../lib/config.js'
 
 const app = new cdk.App()
 
+const config = loadConfig(app)
 const region = app.node.tryGetContext('region') ?? 'ap-northeast-1'
-const allowedIpRanges = app.node.tryGetContext('allowedIpRanges') as string[] | undefined
-// Secure by default: WAF auto-enabled when no IP restriction is set
-const enableWafExplicit = app.node.tryGetContext('enableWaf') as boolean | undefined
-const enableWaf = enableWafExplicit ?? (allowedIpRanges ? false : true)
-const domainName = app.node.tryGetContext('domainName') as string | undefined
-const hostedZoneId = app.node.tryGetContext('hostedZoneId') as string | undefined
-const hostedZoneName = app.node.tryGetContext('hostedZoneName') as string | undefined
 
 // us-east-1 stack: ACM cert (for CloudFront) + optional WAF
 let globalStack: KukanGlobalStack | undefined
-if (domainName || enableWaf) {
+if (config.domainName || config.enableWaf) {
   globalStack = new KukanGlobalStack(app, 'KukanGlobalStack', {
     env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: 'us-east-1' },
     crossRegionReferences: true,
-    enableWaf,
-    domainName,
-    hostedZoneId,
-    hostedZoneName,
+    enableWaf: config.enableWaf,
+    domainName: config.domainName,
+    hostedZoneId: config.hostedZoneId,
+    hostedZoneName: config.hostedZoneName,
   })
 }
 

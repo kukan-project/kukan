@@ -137,7 +137,7 @@ export function loadConfig(scope: Construct): KukanConfig {
   // When allowedIpRanges is set, CloudFront Function provides IP filtering
   // and WAF defaults to off (can still be explicitly enabled).
   const enableWafExplicit = scope.node.tryGetContext('enableWaf') as boolean | undefined
-  const enableWaf = enableWafExplicit ?? (allowedIpRanges ? false : true)
+  const enableWaf = enableWafExplicit ?? !allowedIpRanges
   const domainName = scope.node.tryGetContext('domainName') as string | undefined
   const hostedZoneId = scope.node.tryGetContext('hostedZoneId') as string | undefined
   const hostedZoneName = scope.node.tryGetContext('hostedZoneName') as string | undefined
