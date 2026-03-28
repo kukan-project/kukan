@@ -177,31 +177,31 @@ export function DatasetFilters({
         defaultOpen={currentTags.length > 0}
         active={currentTags.length > 0}
       >
-          <div className="flex flex-wrap gap-1">
-            {facets.tags.map((tag) => {
-              const isSelected = currentTags.includes(tag.name)
-              if (tag.count === 0 && !isSelected) {
-                return (
-                  <span key={tag.name} className="opacity-40">
-                    <Badge variant="secondary" className="cursor-default">
-                      {tag.name}
-                      <span className="ml-1 text-xs opacity-70">{tag.count}</span>
-                    </Badge>
-                  </span>
-                )
-              }
-              const newTags = toggleArray(currentTags, tag.name)
+        <div className="flex flex-wrap gap-1">
+          {facets.tags.map((tag) => {
+            const isSelected = currentTags.includes(tag.name)
+            if (tag.count === 0 && !isSelected) {
               return (
-                <Link key={tag.name} href={buildDatasetUrl({ ...baseParams, tags: newTags })}>
-                  <Badge variant={isSelected ? 'default' : 'secondary'} className="cursor-pointer">
+                <span key={tag.name} className="opacity-40">
+                  <Badge variant="secondary" className="cursor-default">
                     {tag.name}
                     <span className="ml-1 text-xs opacity-70">{tag.count}</span>
                   </Badge>
-                </Link>
+                </span>
               )
-            })}
-          </div>
-        </FilterSection>
+            }
+            const newTags = toggleArray(currentTags, tag.name)
+            return (
+              <Link key={tag.name} href={buildDatasetUrl({ ...baseParams, tags: newTags })}>
+                <Badge variant={isSelected ? 'default' : 'secondary'} className="cursor-pointer">
+                  {tag.name}
+                  <span className="ml-1 text-xs opacity-70">{tag.count}</span>
+                </Badge>
+              </Link>
+            )
+          })}
+        </div>
+      </FilterSection>
 
       {/* Format filter */}
       {facets.formats.length > 0 && (
