@@ -152,34 +152,31 @@ export function DatasetFilters({
       </FilterSection>
 
       {/* Group filter */}
-      {facets.groups.length > 0 && (
-        <FilterSection
-          icon={FolderOpen}
-          title={t('filterByCategory')}
-          defaultOpen={currentGroups.length > 0}
-          active={currentGroups.length > 0}
-        >
-          <FilterList
-            items={facets.groups}
-            activeValues={currentGroups}
-            buildHref={(name) =>
-              buildDatasetUrl({
-                ...baseParams,
-                groups: toggleArray(currentGroups, name),
-              })
-            }
-          />
-        </FilterSection>
-      )}
+      <FilterSection
+        icon={FolderOpen}
+        title={t('filterByCategory')}
+        defaultOpen={currentGroups.length > 0}
+        active={currentGroups.length > 0}
+      >
+        <FilterList
+          items={facets.groups}
+          activeValues={currentGroups}
+          buildHref={(name) =>
+            buildDatasetUrl({
+              ...baseParams,
+              groups: toggleArray(currentGroups, name),
+            })
+          }
+        />
+      </FilterSection>
 
       {/* Tag filter */}
-      {facets.tags.length > 0 && (
-        <FilterSection
-          icon={Tag}
-          title={t('filterByTag')}
-          defaultOpen={currentTags.length > 0}
-          active={currentTags.length > 0}
-        >
+      <FilterSection
+        icon={Tag}
+        title={t('filterByTag')}
+        defaultOpen={currentTags.length > 0}
+        active={currentTags.length > 0}
+      >
           <div className="flex flex-wrap gap-1">
             {facets.tags.map((tag) => {
               const isSelected = currentTags.includes(tag.name)
@@ -205,7 +202,6 @@ export function DatasetFilters({
             })}
           </div>
         </FilterSection>
-      )}
 
       {/* Format filter */}
       {facets.formats.length > 0 && (
