@@ -1,7 +1,7 @@
 # KUKAN（空間）— 設計方針書 v4
 
 > **Knowledge Unified Katalog And Network**
-> 誰もが使えるデータカタログ基盤 — CKANモダンクローン
+> みんなが使えるデータカタログ — A modern alternative to CKAN
 >
 > ⚠️ 本文書は設計議論の経緯を保存するため、本文中に「CKANモダンクローン」「新システム」等の表現が残っています。すべて正式名称 **KUKAN** に読み替えてください。
 

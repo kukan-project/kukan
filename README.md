@@ -3,9 +3,10 @@
 **Knowledge Unified Katalog And Network**
 
 みんなが使えるデータカタログ — CKANモダンクローン。
-A data catalog for everyone — modern CKAN alternative.
+A modern, full-stack TypeScript alternative to CKAN.
 
-TypeScript full-stack monorepo.
+Cloud-native, yet deployable on-premises and in air-gapped networks (e.g. LGWAN).
+クラウドからオンプレミス・閉域網（LGWAN等）まで対応するハイブリッドデプロイ設計。
 
 ## Prerequisites / 必要環境
 
