@@ -1,13 +1,12 @@
 # KUKAN — プロジェクトルール
 
 > **Knowledge Unified Katalog And Network**
-> CKANモダンクローン — 自治体・官公庁向けオープンデータカタログ基盤
+> みんなが使えるデータカタログ基盤 — CKANモダンクローン
 
 ## プロジェクト概要
 
 CKANの後継として設計されたTypeScriptフルスタックのデータカタログシステム。
-自治体のオープンデータ管理に特化し、日本のIT環境（閉域網 LGWAN 対応含む）で
-動作するハイブリッドデプロイ設計。
+自治体の閉域網（LGWAN）を含む日本のIT環境でも動作するハイブリッドデプロイ設計。
 
 設計書全文: `docs/design-v4.md`
 
@@ -176,6 +175,7 @@ pnpm format        # Prettier フォーマット
 - DuckDB-WASM データエクスプローラー → `docs/adr/016-duckdb-wasm-data-explorer.md`
 - 統一 preview-url エンドポイント → `docs/adr/015-unified-preview-url.md`
 - サーバー経由ダウンロード URL → `docs/adr/017-server-proxied-download.md`
+- Web=App Runner, Worker=Fargate → `docs/adr/018-app-runner-plus-fargate.md`
 
 新しい設計判断が必要になったら、同じフォーマットでADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
@@ -184,10 +184,11 @@ pnpm format        # Prettier フォーマット
 
 ## 現在のフェーズ
 
-**Phase 3: リソース処理 & ファイルストレージ**（実装仕様書: `docs/specs/phase3-pipeline.md`）
+**Phase 4: AWS デプロイ & CDK 基盤**（実装仕様書: `docs/specs/phase4-deploy.md`）
 
 - Phase 1: Foundation ✅ 完了
 - Phase 2: フロントエンド ✅ 完了（実装仕様書: `docs/specs/phase2-frontend.md`）
+- Phase 3: リソース処理 & ファイルストレージ ✅ 完了（実装仕様書: `docs/specs/phase3-pipeline.md`）
 
 ## パイプライン フォーマット別処理マトリクス
 

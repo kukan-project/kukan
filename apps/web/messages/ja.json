@@ -54,7 +54,7 @@
   },
   "home": {
     "title": "KUKAN",
-    "description": "オープンデータカタログ — 自治体・官公庁のデータを検索・活用するためのプラットフォーム",
+    "description": "みんなが使えるデータカタログ — データを検索・活用するためのプラットフォーム",
     "searchPlaceholder": "データセットを検索...",
     "latestDatasets": "最新データセット"
   },

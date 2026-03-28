@@ -54,7 +54,7 @@
   },
   "home": {
     "title": "KUKAN",
-    "description": "Open Data Catalog — A platform for searching and utilizing data from local governments and public agencies",
+    "description": "Data catalog for everyone — A platform for searching and utilizing data",
     "searchPlaceholder": "Search datasets...",
     "latestDatasets": "Latest Datasets"
   },

@@ -44,6 +44,10 @@ Thumbs.db
 # Turbo
 .turbo/
 
+# CDK
+cdk.out/
+cdk.context.json
+
 # Database
 *.db
 *.sqlite
