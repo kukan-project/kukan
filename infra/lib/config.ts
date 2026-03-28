@@ -132,8 +132,12 @@ export function loadConfig(scope: Construct): KukanConfig {
     (scope.node.tryGetContext('dbEngine') as DbEngine) ?? SCALE_DEFAULTS[scale].db.engine
   const enableOpenSearch = scope.node.tryGetContext('enableOpenSearch') ?? true
   const enableCloudFront = scope.node.tryGetContext('enableCloudFront') ?? true
-  const enableWaf = scope.node.tryGetContext('enableWaf') ?? false
   const allowedIpRanges = scope.node.tryGetContext('allowedIpRanges') as string[] | undefined
+  // Secure by default: WAF auto-enabled when no IP restriction is set.
+  // When allowedIpRanges is set, CloudFront Function provides IP filtering
+  // and WAF defaults to off (can still be explicitly enabled).
+  const enableWafExplicit = scope.node.tryGetContext('enableWaf') as boolean | undefined
+  const enableWaf = enableWafExplicit ?? (allowedIpRanges ? false : true)
   const domainName = scope.node.tryGetContext('domainName') as string | undefined
   const hostedZoneId = scope.node.tryGetContext('hostedZoneId') as string | undefined
   const hostedZoneName = scope.node.tryGetContext('hostedZoneName') as string | undefined

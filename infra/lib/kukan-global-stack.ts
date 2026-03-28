@@ -86,6 +86,22 @@ export class KukanGlobalStack extends cdk.Stack {
               metricName: 'kukan-waf-bad-inputs',
             },
           },
+          {
+            name: 'AWSManagedRulesAmazonIpReputationList',
+            priority: 2,
+            overrideAction: { none: {} },
+            statement: {
+              managedRuleGroupStatement: {
+                vendorName: 'AWS',
+                name: 'AWSManagedRulesAmazonIpReputationList',
+              },
+            },
+            visibilityConfig: {
+              sampledRequestsEnabled: true,
+              cloudWatchMetricsEnabled: true,
+              metricName: 'kukan-waf-ip-reputation',
+            },
+          },
         ],
       })
       this.webAclArn = webAcl.attrArn
