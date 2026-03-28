@@ -35,7 +35,7 @@ SQS ← API enqueue → Worker consume (ロングポーリング)
 | 検索           | OpenSearch (VPC)                                  | kuromoji プラグイン、PostgreSQL フォールバック可 |
 | ストレージ     | S3                                                | presigned URL でブラウザ直接アップロード         |
 | キュー         | SQS + DLQ                                         | 無料枠内、ElasticMQ と同一 API                   |
-| CDN            | CloudFront + ACM + WAF                            | カスタムドメイン、HTTPS 終端                     |
+| CDN            | CloudFront + ACM + CF Function                    | カスタムドメイン、HTTPS 終端、IP 制限            |
 | NAT            | t4g.nano Instance (small) / NAT Gateway (medium+) | コスト最適化                                     |
 
 ## VPC 設計
@@ -72,19 +72,22 @@ CDK の `dbEngine` パラメータ（`rds` | `aurora`）で切替。
 
 ## コスト試算
 
-### Small（デモ / PoC）: ~$68/月
+### Small（デモ / PoC）: ~$72/月
 
-| サービス              | スペック            | 月額 USD |
-| --------------------- | ------------------- | -------- |
-| App Runner Web        | 0.25 vCPU / 0.5 GB  | ~$5      |
-| ECS Fargate Worker    | 0.25 vCPU / 0.5 GB  | ~$9      |
-| RDS PostgreSQL        | db.t4g.micro        | ~$15     |
-| OpenSearch            | t3.small.search × 1 | ~$27     |
-| S3 + SQS + CloudFront | 最小                | ~$3      |
-| NAT Instance          | t4g.nano            | ~$3      |
-| WAF                   | 基本ルール          | ~$6      |
+| サービス              | スペック                             | 月額 USD |
+| --------------------- | ------------------------------------ | -------- |
+| App Runner Web        | 0.25 vCPU / 0.5 GB                   | ~$5      |
+| ECS Fargate Worker    | 0.25 vCPU / 0.5 GB                   | ~$9      |
+| RDS PostgreSQL        | db.t4g.micro                         | ~$15     |
+| OpenSearch            | t3.small.search × 1                  | ~$27     |
+| S3 + SQS + CloudFront | 最小                                 | ~$3      |
+| NAT Instance          | t4g.nano                             | ~$3      |
+| Secrets Manager       | 2 secrets                            | ~$1      |
+| WAF                   | 3 マネージドルール（デフォルト有効） | ~$9      |
 
-OpenSearch なし（SEARCH_TYPE=postgres）: ~$41/月
+OpenSearch なし（SEARCH_TYPE=postgres）: ~$45/月
+IP 制限あり（WAF 自動無効）: ~$63/月
+WAF 明示無効（enableWaf=false）: ~$63/月
 
 ### Medium（単一自治体）: ~$250/月
 
@@ -92,11 +95,19 @@ OpenSearch なし（SEARCH_TYPE=postgres）: ~$41/月
 
 ## CDK スタック構成
 
+2 つのスタック構成。`KukanGlobalStack` は `domainName` または WAF 有効時に作成される（セキュアバイデフォルトにより、デフォルトで作成）。
+
+| スタック         | リージョン     | 用途                                    |
+| ---------------- | -------------- | --------------------------------------- |
+| KukanGlobalStack | us-east-1      | ACM 証明書、WAF WebACL（CloudFront 用） |
+| KukanStack       | ap-northeast-1 | その他全リソース                        |
+
 ```
 infra/
 ├── bin/app.ts                        # エントリポイント
 ├── lib/
-│   ├── kukan-stack.ts                # メインスタック
+│   ├── kukan-stack.ts                # メインスタック (ap-northeast-1)
+│   ├── kukan-global-stack.ts         # グローバルスタック (us-east-1)
 │   ├── config.ts                     # スケール別設定
 │   └── constructs/
 │       ├── network.ts                # VPC, NAT, SG, S3 Endpoint
@@ -106,7 +117,7 @@ infra/
 │       ├── search.ts                 # OpenSearch (VPC)
 │       ├── web-service.ts            # App Runner (L2 alpha) + ECR + VPC Connector
 │       ├── worker-service.ts         # ECS Fargate + ECR + Auto Scaling
-│       └── cdn.ts                    # CloudFront + Route53 + ACM + WAF
+│       └── cdn.ts                    # CloudFront + Route53 + CF Function
 ├── cdk.json
 ├── package.json
 └── tsconfig.json
@@ -118,17 +129,19 @@ infra/
 環境固有の値（ドメイン名等）を永続化したい場合は `infra/cdk.context.json` に記述する。
 `cdk.context.json` は `.gitignore` 対象のため、環境ごとに安全に管理できる。
 
-| パラメータ         | 型                             | デフォルト                                         | 説明                                                         |
-| ------------------ | ------------------------------ | -------------------------------------------------- | ------------------------------------------------------------ |
-| `scale`            | `small` \| `medium` \| `large` | `small`                                            | デプロイ規模（リソースサイズを一括制御）                     |
-| `dbEngine`         | `rds` \| `aurora`              | スケール依存（small=`rds`, medium/large=`aurora`） | DB エンジン                                                  |
-| `enableOpenSearch` | boolean                        | `true`                                             | `false` → PostgreSQL 全文検索フォールバック                  |
-| `enableCloudFront` | boolean                        | `true`                                             | `false` → App Runner に直接アクセス                          |
-| `enableWaf`        | boolean                        | `false`                                            | WAF on CloudFront（~$6/月追加）                              |
-| `domainName`       | string                         | なし                                               | カスタムドメイン（未設定時は CloudFront デフォルトドメイン） |
-| `hostedZoneId`     | string                         | なし                                               | Route53 Hosted Zone ID（`domainName` 設定時に必要）          |
-| `hostedZoneName`   | string                         | なし                                               | Route53 Hosted Zone 名（`domainName` 設定時に必要）          |
-| `region`           | string                         | `ap-northeast-1`                                   | デプロイ先リージョン                                         |
+| パラメータ         | 型                             | デフォルト                                         | 説明                                                                |
+| ------------------ | ------------------------------ | -------------------------------------------------- | ------------------------------------------------------------------- |
+| `scale`            | `small` \| `medium` \| `large` | `small`                                            | デプロイ規模（リソースサイズを一括制御）                            |
+| `dbEngine`         | `rds` \| `aurora`              | スケール依存（small=`rds`, medium/large=`aurora`） | DB エンジン                                                         |
+| `enableOpenSearch` | boolean                        | `true`                                             | `false` → PostgreSQL 全文検索フォールバック                         |
+| `enableCloudFront` | boolean                        | `true`                                             | `false` → App Runner に直接アクセス                                 |
+| `enableWaf`        | boolean                        | セキュアバイデフォルト（下記参照）                 | WAF on CloudFront（マネージドルール、~$9/月追加）                   |
+| `domainName`       | string                         | なし                                               | カスタムドメイン（未設定時は CloudFront デフォルトドメイン）        |
+| `hostedZoneId`     | string                         | なし                                               | Route53 Hosted Zone ID（`domainName` 設定時に必要）                 |
+| `hostedZoneName`   | string                         | なし                                               | Route53 Hosted Zone 名（`domainName` 設定時に必要）                 |
+| `allowedIpRanges`  | string[]                       | なし                                               | IP 制限（CloudFront Function、IPv4 CIDR + IPv6 プレフィックス対応） |
+| `bucketName`       | string                         | `kukan-resources`                                  | S3 バケット名                                                       |
+| `region`           | string                         | `ap-northeast-1`                                   | デプロイ先リージョン                                                |
 
 パラメータの指定方法（優先度順）:
 
@@ -142,6 +155,7 @@ infra/
   "domainName": "demo.example.com",
   "hostedZoneId": "Z0123456789",
   "hostedZoneName": "example.com",
+  "allowedIpRanges": ["203.0.113.0/24", "2001:db8::/32"],
 }
 ```
 
@@ -161,12 +175,65 @@ infra/
 #### 使用例
 
 ```bash
-# 最小構成（デフォルト値のみ、カスタムドメインなし）
-npx cdk deploy
+# 最小構成（WAF 自動有効、カスタムドメインなし）
+npx cdk deploy --all
 
-# CLI で一時的にオーバーライド
-npx cdk deploy -c scale=medium -c enableWaf=true
+# IP 制限あり（WAF 自動無効）
+npx cdk deploy --all -c allowedIpRanges='["203.0.113.0/24"]'
+
+# IP 制限 + WAF 二重防御
+npx cdk deploy --all -c allowedIpRanges='["203.0.113.0/24"]' -c enableWaf=true
+
+# WAF 明示的に無効化
+npx cdk deploy --all -c enableWaf=false
 ```
+
+## CloudFront セキュリティ
+
+### IP 制限（CloudFront Function）
+
+`allowedIpRanges` 設定時、CloudFront Function（viewer request）で IP アドレスをチェック。
+IPv4 CIDR と IPv6 プレフィックスの両方に対応。WAF 不要で追加コストなし。
+
+### オリジン検証（X-Origin-Verify）
+
+App Runner への直接アクセスをブロックし、CloudFront 経由のみ許可する。
+
+```
+CloudFront → X-Origin-Verify: <secret> → App Runner → ✅ 許可
+直接アクセス → ヘッダーなし → App Runner → ❌ 403 Forbidden
+```
+
+- Secret は Secrets Manager で自動生成（`kukan-origin-verify`）
+- CloudFront: オリジンカスタムヘッダーとして付与
+- App Runner: 環境変数 `ORIGIN_VERIFY_SECRET` として注入
+- Next.js middleware（`apps/web/src/middleware.ts`）でヘッダー検証
+- `/api/health` は App Runner ヘルスチェック用に除外
+
+### WAF（セキュアバイデフォルト）
+
+WAF はセキュアバイデフォルトの方針で自動制御される。
+
+| `allowedIpRanges` | `enableWaf` 指定 | WAF 動作                               |
+| ----------------- | ---------------- | -------------------------------------- |
+| なし              | なし             | **自動有効**（セキュアバイデフォルト） |
+| なし              | `true`           | 有効                                   |
+| なし              | `false`          | 無効（明示的にオプトアウト）           |
+| あり              | なし             | **自動無効**（IP 制限で保護済み）      |
+| あり              | `true`           | 有効（IP 制限 + WAF 二重防御）         |
+| あり              | `false`          | 無効                                   |
+
+マネージドルールグループ（3 つ）:
+
+| ルールグループ                        | 内容                                               | 費用  |
+| ------------------------------------- | -------------------------------------------------- | ----- |
+| AWSManagedRulesCommonRuleSet          | SQLi, XSS, SSRF, パストラバーサル等                | $1/月 |
+| AWSManagedRulesKnownBadInputsRuleSet  | Log4Shell, Spring4Shell 等の既知の脆弱性攻撃       | $1/月 |
+| AWSManagedRulesAmazonIpReputationList | AWS 脅威インテリジェンスによる悪意ある IP ブロック | $1/月 |
+
+WAF 費用合計: WebACL $5/月 + ルール $3/月 + リクエスト $0.60/百万 = **~$9/月**
+
+IP 制限は CloudFront Function で行うため、WAF は追加防御層として機能する。
 
 ## Dockerfile
 
@@ -198,13 +265,7 @@ aws sso login
 cd infra && npx cdk bootstrap
 
 # 3. CDK デプロイ（Docker ビルド + ECR プッシュ + 全リソース作成）
-npx cdk deploy
-
-# カスタムドメイン付きの場合:
-npx cdk deploy \
-  -c domainName=demo.example.com \
-  -c hostedZoneId=Z0123456789 \
-  -c hostedZoneName=example.com
+npx cdk deploy --all
 
 # 4. 確認
 # - CloudFront ドメイン（またはカスタムドメイン）でアクセス
@@ -217,5 +278,7 @@ npx cdk deploy \
 - CDK: `infra/` ディレクトリ全体
 - Dockerfile: `Dockerfile`, `.dockerignore`
 - Worker ヘルスチェック: `apps/worker/src/index.ts`
+- Web ヘルスチェック: `apps/web/src/app/api/health/route.ts`
+- オリジン検証 middleware: `apps/web/src/middleware.ts`
 - SQS アダプター: `packages/adapters/queue/src/sqs.ts`
 - ADR: `docs/adr/018-app-runner-plus-fargate.md`

@@ -57,8 +57,10 @@ KUKAN/
 │   ├── design-v4.md        # 設計書（全体像、参照用）
 │   ├── adr/                # Architecture Decision Records
 │   └── specs/              # Phase別 実装仕様書
+├── Dockerfile              # マルチターゲット Docker ビルド（web / worker）
+├── .dockerignore
 ├── docker/                 # Docker Compose 設定（開発 / オンプレ）
-├── infra/                  # AWS CDK スタック
+├── infra/                  # AWS CDK スタック（KukanStack + KukanGlobalStack）
 ├── turbo.json
 ├── pnpm-workspace.yaml
 ├── package.json
@@ -231,4 +233,13 @@ pnpm db:generate                # Drizzle マイグレーション生成
 pnpm db:migrate                 # マイグレーション実行
 pnpm lint                       # ESLint
 pnpm typecheck                  # TypeScript 型チェック
+```
+
+### AWS デプロイ
+
+```bash
+cd infra
+npx cdk deploy --all            # 全スタックデプロイ（KukanGlobalStack + KukanStack）
+npx cdk deploy KukanStack       # メインスタックのみ
+npx cdk diff                    # デプロイ前の差分確認
 ```
