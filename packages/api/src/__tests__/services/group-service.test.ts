@@ -65,6 +65,17 @@ describe('GroupService', () => {
     })
   })
 
+  describe('update', () => {
+    it('should update and return the group', async () => {
+      const grp = createGroupFixture()
+      mock.addResult([grp]) // getByNameOrId
+      mock.addResult([{ ...grp, title: 'Updated Title' }]) // update returning
+
+      const result = await service.update('test-group', { title: 'Updated Title' })
+      expect(result.title).toBe('Updated Title')
+    })
+  })
+
   describe('delete', () => {
     it('should soft delete the group', async () => {
       const group = createGroupFixture()
@@ -73,6 +84,78 @@ describe('GroupService', () => {
 
       const result = await service.delete('test-group')
       expect(result).toEqual({ success: true })
+    })
+  })
+
+  describe('listMembers', () => {
+    it('should return members with user info', async () => {
+      mock.addResult([
+        {
+          id: 'mem-1',
+          userId: 'user-1',
+          role: 'editor',
+          created: new Date(),
+          userName: 'bob',
+          email: 'bob@example.com',
+          displayName: 'Bob',
+        },
+      ])
+
+      const result = await service.listMembers('grp-1')
+      expect(result).toHaveLength(1)
+      expect(result[0].role).toBe('editor')
+      expect(result[0].email).toBe('bob@example.com')
+    })
+
+    it('should return empty array when no members', async () => {
+      mock.addResult([])
+      const result = await service.listMembers('grp-1')
+      expect(result).toEqual([])
+    })
+  })
+
+  describe('addMember', () => {
+    it('should create new membership', async () => {
+      mock.addResult([{ id: 'user-1' }]) // user exists
+      mock.addResult([]) // no existing membership
+      mock.addResult([{ id: 'mem-1', userId: 'user-1', groupId: 'grp-1', role: 'member' }])
+
+      const result = await service.addMember('grp-1', 'user-1')
+      expect(result.role).toBe('member')
+    })
+
+    it('should update role if already a member', async () => {
+      mock.addResult([{ id: 'user-1' }]) // user exists
+      mock.addResult([{ id: 'mem-1' }]) // existing membership
+      mock.addResult([{ id: 'mem-1', role: 'admin' }]) // update returning
+
+      const result = await service.addMember('grp-1', 'user-1', 'admin')
+      expect(result.role).toBe('admin')
+    })
+
+    it('should throw NotFoundError if user does not exist', async () => {
+      mock.addResult([]) // user not found
+
+      await expect(service.addMember('grp-1', 'no-user')).rejects.toThrow(
+        'User not found: no-user'
+      )
+    })
+  })
+
+  describe('removeMember', () => {
+    it('should remove membership and return success', async () => {
+      mock.addResult([{ id: 'mem-1' }]) // delete returning
+
+      const result = await service.removeMember('grp-1', 'user-1')
+      expect(result).toEqual({ success: true })
+    })
+
+    it('should throw NotFoundError when membership does not exist', async () => {
+      mock.addResult([]) // delete returns nothing
+
+      await expect(service.removeMember('grp-1', 'no-user')).rejects.toThrow(
+        'Membership not found'
+      )
     })
   })
 })
