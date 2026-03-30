@@ -69,7 +69,12 @@ describe('indexPackage', () => {
     expect(doc.groups).toEqual(['science', 'open-data'])
     expect(doc.tags).toEqual(['environment', 'tokyo'])
     expect(doc.formats).toEqual(expect.arrayContaining(['CSV', 'PDF']))
-    const resources = doc['resources'] as { id: string; name?: string; description?: string; format?: string }[]
+    const resources = doc['resources'] as {
+      id: string
+      name?: string
+      description?: string
+      format?: string
+    }[]
     expect(resources).toHaveLength(2)
     expect(resources[0]).toEqual({
       id: 'res-1',

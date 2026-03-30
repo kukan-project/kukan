@@ -136,9 +136,7 @@ describe('GroupService', () => {
     it('should throw NotFoundError if user does not exist', async () => {
       mock.addResult([]) // user not found
 
-      await expect(service.addMember('grp-1', 'no-user')).rejects.toThrow(
-        'User not found: no-user'
-      )
+      await expect(service.addMember('grp-1', 'no-user')).rejects.toThrow('User not found: no-user')
     })
   })
 
@@ -153,9 +151,7 @@ describe('GroupService', () => {
     it('should throw NotFoundError when membership does not exist', async () => {
       mock.addResult([]) // delete returns nothing
 
-      await expect(service.removeMember('grp-1', 'no-user')).rejects.toThrow(
-        'Membership not found'
-      )
+      await expect(service.removeMember('grp-1', 'no-user')).rejects.toThrow('Membership not found')
     })
   })
 })

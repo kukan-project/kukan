@@ -53,7 +53,13 @@ describe('ApiTokenService', () => {
       const { db, addResult } = createMockDb()
       addResult([
         { id: 'tok-1', name: 'Token A', lastUsed: null, expiresAt: null, created: new Date() },
-        { id: 'tok-2', name: 'Token B', lastUsed: new Date(), expiresAt: null, created: new Date() },
+        {
+          id: 'tok-2',
+          name: 'Token B',
+          lastUsed: new Date(),
+          expiresAt: null,
+          created: new Date(),
+        },
       ])
 
       const service = new ApiTokenService(db)

@@ -59,9 +59,7 @@ describe('HomePage', () => {
 
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('KUKAN')
     expect(
-      screen.getByText(
-        'Data catalog for everyone — A platform for searching and utilizing data'
-      )
+      screen.getByText('Data catalog for everyone — A platform for searching and utilizing data')
     ).toBeInTheDocument()
   })
 

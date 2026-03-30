@@ -55,27 +55,27 @@ BETTER_AUTH_SECRET=$(openssl rand -base64 32)
 
 #### Environment variable reference / 環境変数一覧
 
-| Variable                          | Default               | Description                                                |
-| --------------------------------- | --------------------- | ---------------------------------------------------------- |
-| `POSTGRES_HOST`                   | `localhost`           | PostgreSQL hostname                                        |
-| `POSTGRES_PORT`                   | `5432`                | PostgreSQL port                                            |
-| `POSTGRES_DB`                     | `kukan`               | PostgreSQL database name                                   |
-| `POSTGRES_USER`                   | `kukan`               | PostgreSQL user                                            |
-| `POSTGRES_PASSWORD`               | `kukan`               | PostgreSQL password                                        |
-| `POSTGRES_SSLMODE`               | `disable`             | `require` for RDS/Aurora, `disable` for local              |
-| `BETTER_AUTH_SECRET`              | _(must set)_          | Auth session secret (min 32 chars)                         |
-| `BETTER_AUTH_URL`                 | `http://localhost:3000` | Auth callback base URL                                   |
-| `S3_ENDPOINT`                     | _(omit for AWS)_      | S3-compatible endpoint (MinIO: `http://localhost:9000`)    |
-| `S3_BUCKET`                       | `kukan-dev`           | S3 bucket name                                             |
-| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | _(omit for IAM role)_ | S3 credentials (MinIO: `minioadmin`)                      |
-| `SEARCH_TYPE`                     | `opensearch`          | `opensearch` or `postgres` (fallback)                      |
-| `OPENSEARCH_URL`                  | `http://localhost:9200` | OpenSearch endpoint                                      |
-| `SQS_ENDPOINT`                    | _(omit for AWS)_      | SQS-compatible endpoint (ElasticMQ: `http://localhost:9324`) |
-| `SQS_QUEUE_URL`                   | _(required)_          | SQS queue URL                                              |
-| `SQS_REGION`                      | _(omit for local)_    | AWS region for SQS                                         |
-| `AI_TYPE`                         | `none`                | `none` / `bedrock` / `openai` / `ollama`                   |
-| `WEB_DB_POOL_MAX`                 | `5`                   | DB connection pool size (web)                              |
-| `WORKER_DB_POOL_MAX`              | `3`                   | DB connection pool size (worker)                           |
+| Variable                          | Default                 | Description                                                  |
+| --------------------------------- | ----------------------- | ------------------------------------------------------------ |
+| `POSTGRES_HOST`                   | `localhost`             | PostgreSQL hostname                                          |
+| `POSTGRES_PORT`                   | `5432`                  | PostgreSQL port                                              |
+| `POSTGRES_DB`                     | `kukan`                 | PostgreSQL database name                                     |
+| `POSTGRES_USER`                   | `kukan`                 | PostgreSQL user                                              |
+| `POSTGRES_PASSWORD`               | `kukan`                 | PostgreSQL password                                          |
+| `POSTGRES_SSLMODE`                | `disable`               | `require` for RDS/Aurora, `disable` for local                |
+| `BETTER_AUTH_SECRET`              | _(must set)_            | Auth session secret (min 32 chars)                           |
+| `BETTER_AUTH_URL`                 | `http://localhost:3000` | Auth callback base URL                                       |
+| `S3_ENDPOINT`                     | _(omit for AWS)_        | S3-compatible endpoint (MinIO: `http://localhost:9000`)      |
+| `S3_BUCKET`                       | `kukan-dev`             | S3 bucket name                                               |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | _(omit for IAM role)_   | S3 credentials (MinIO: `minioadmin`)                         |
+| `SEARCH_TYPE`                     | `opensearch`            | `opensearch` or `postgres` (fallback)                        |
+| `OPENSEARCH_URL`                  | `http://localhost:9200` | OpenSearch endpoint                                          |
+| `SQS_ENDPOINT`                    | _(omit for AWS)_        | SQS-compatible endpoint (ElasticMQ: `http://localhost:9324`) |
+| `SQS_QUEUE_URL`                   | _(required)_            | SQS queue URL                                                |
+| `SQS_REGION`                      | _(omit for local)_      | AWS region for SQS                                           |
+| `AI_TYPE`                         | `none`                  | `none` / `bedrock` / `openai` / `ollama`                     |
+| `WEB_DB_POOL_MAX`                 | `5`                     | DB connection pool size (web)                                |
+| `WORKER_DB_POOL_MAX`              | `3`                     | DB connection pool size (worker)                             |
 
 See [.env.example](.env.example) for all options including pool tuning.
 プールチューニング等の全オプションは上記ファイルを参照。
@@ -137,19 +137,19 @@ Deploys a `small` configuration by default:
 
 ### CDK parameters / CDK パラメータ一覧
 
-| Parameter          | Type                           | Default            | Description                                                          |
-| ------------------ | ------------------------------ | ------------------ | -------------------------------------------------------------------- |
-| `scale`            | `small` \| `medium` \| `large` | `small`            | Resource sizing preset                                               |
-| `dbEngine`         | `rds` \| `aurora`              | Scale-dependent    | DB engine (`small`=RDS, `medium`+=Aurora)                            |
-| `enableOpenSearch` | boolean                        | `true`             | `false` → PostgreSQL full-text fallback                              |
-| `enableCloudFront` | boolean                        | `true`             | `false` → direct App Runner access                                   |
-| `enableWaf`        | boolean                        | Secure by default  | WAF on CloudFront (~$9/mo). Auto-enabled when no `allowedIpRanges`   |
-| `domainName`       | string                         | —                  | Custom domain (CloudFront default domain when unset)                 |
-| `hostedZoneId`     | string                         | —                  | Route53 Hosted Zone ID (required with `domainName`)                  |
-| `hostedZoneName`   | string                         | —                  | Route53 Hosted Zone name (required with `domainName`)                |
-| `allowedIpRanges`  | string[]                       | —                  | IP allowlist via CloudFront Function (CIDR, IPv4+IPv6)               |
-| `bucketName`       | string                         | `kukan-resources`  | S3 bucket name                                                       |
-| `region`           | string                         | `ap-northeast-1`   | Deploy region                                                        |
+| Parameter          | Type                           | Default           | Description                                                        |
+| ------------------ | ------------------------------ | ----------------- | ------------------------------------------------------------------ |
+| `scale`            | `small` \| `medium` \| `large` | `small`           | Resource sizing preset                                             |
+| `dbEngine`         | `rds` \| `aurora`              | Scale-dependent   | DB engine (`small`=RDS, `medium`+=Aurora)                          |
+| `enableOpenSearch` | boolean                        | `true`            | `false` → PostgreSQL full-text fallback                            |
+| `enableCloudFront` | boolean                        | `true`            | `false` → direct App Runner access                                 |
+| `enableWaf`        | boolean                        | Secure by default | WAF on CloudFront (~$9/mo). Auto-enabled when no `allowedIpRanges` |
+| `domainName`       | string                         | —                 | Custom domain (CloudFront default domain when unset)               |
+| `hostedZoneId`     | string                         | —                 | Route53 Hosted Zone ID (required with `domainName`)                |
+| `hostedZoneName`   | string                         | —                 | Route53 Hosted Zone name (required with `domainName`)              |
+| `allowedIpRanges`  | string[]                       | —                 | IP allowlist via CloudFront Function (CIDR, IPv4+IPv6)             |
+| `bucketName`       | string                         | `kukan-resources` | S3 bucket name                                                     |
+| `region`           | string                         | `ap-northeast-1`  | Deploy region                                                      |
 
 ### Environment-specific settings / 環境固有の設定
 
@@ -201,15 +201,15 @@ curl http://localhost/api/health
 
 ### Services / サービス構成
 
-| Service    | Description                           | External Port |
-| ---------- | ------------------------------------- | ------------- |
-| Caddy      | Reverse proxy (HTTP/HTTPS)            | 80, 443       |
-| Web        | Next.js application                   | —             |
-| Worker     | Pipeline worker (SQS polling)         | —             |
-| PostgreSQL | Database                              | 5432          |
-| MinIO      | S3-compatible storage                 | 9000          |
-| ElasticMQ  | SQS-compatible queue                  | 9324          |
-| OpenSearch | Full-text search (kuromoji)            | 9200          |
+| Service    | Description                   | External Port |
+| ---------- | ----------------------------- | ------------- |
+| Caddy      | Reverse proxy (HTTP/HTTPS)    | 80, 443       |
+| Web        | Next.js application           | —             |
+| Worker     | Pipeline worker (SQS polling) | —             |
+| PostgreSQL | Database                      | 5432          |
+| MinIO      | S3-compatible storage         | 9000          |
+| ElasticMQ  | SQS-compatible queue          | 9324          |
+| OpenSearch | Full-text search (kuromoji)   | 9200          |
 
 ### Environment / 環境変数
 
@@ -219,10 +219,10 @@ curl http://localhost/api/health
 `.env.prod` contains Docker internal endpoints (e.g. `http://minio:9000`) that override
 the `localhost` values in `.env`. See [.env.prod.example](.env.prod.example) for all options.
 
-| Variable             | Required | Description                                  |
-| -------------------- | -------- | -------------------------------------------- |
+| Variable             | Required | Description                                     |
+| -------------------- | -------- | ----------------------------------------------- |
 | `BETTER_AUTH_URL`    | Yes      | Public URL (e.g. `https://catalog.example.com`) |
-| `BETTER_AUTH_SECRET` | Yes      | Auth session secret (min 32 chars)           |
+| `BETTER_AUTH_SECRET` | Yes      | Auth session secret (min 32 chars)              |
 
 ### TLS / HTTPS
 
