@@ -1,5 +1,6 @@
 import { config } from 'dotenv'
 import { defineConfig } from 'drizzle-kit'
+import { loadEnv } from '@kukan/shared'
 
 config({ path: '../../.env' })
 
@@ -8,6 +9,6 @@ export default defineConfig({
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
-    url: process.env.DATABASE_URL || 'postgresql://kukan:kukan@localhost:5432/kukan',
+    url: loadEnv().DATABASE_URL,
   },
 })

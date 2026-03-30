@@ -14,10 +14,9 @@ export interface DbPoolOptions {
 }
 
 export function createDb(connectionString: string, poolOptions?: DbPoolOptions) {
-  // In production (AWS RDS) the server uses a private CA that Node.js doesn't trust.
-  // We enable SSL without CA-chain verification; the connection remains encrypted.
-  const ssl = process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined
-  const pool = new Pool({ connectionString, ...(ssl ? { ssl } : {}), ...poolOptions })
+  // POSTGRES_SSLMODE=require → SSL without CA verification (for RDS/Aurora)
+  const ssl = process.env.POSTGRES_SSLMODE === 'require' ? { rejectUnauthorized: false } : undefined
+  const pool = new Pool({ connectionString, ...poolOptions, ...(ssl && { ssl }) })
   return drizzle(pool, { schema })
 }
 

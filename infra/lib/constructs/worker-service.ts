@@ -19,7 +19,7 @@ export interface WorkerServiceProps {
   config: KukanConfig
   vpc: ec2.IVpc
   workerSecurityGroup: ec2.ISecurityGroup
-  databaseUrl: string
+  postgresEnv: Record<string, string>
   authSecret: secretsmanager.ISecret
   bucket: s3.IBucket
   queue: sqs.IQueue
@@ -36,7 +36,7 @@ export class WorkerServiceConstruct extends Construct {
       config,
       vpc,
       workerSecurityGroup,
-      databaseUrl,
+      postgresEnv,
       authSecret,
       bucket,
       queue,
@@ -71,7 +71,7 @@ export class WorkerServiceConstruct extends Construct {
     // Environment variables
     const environment: Record<string, string> = {
       NODE_ENV: 'production',
-      DATABASE_URL: databaseUrl,
+      ...postgresEnv,
       BETTER_AUTH_SECRET: authSecret.secretValue.unsafeUnwrap(),
       AI_TYPE: 'none',
       S3_BUCKET: bucket.bucketName,
@@ -79,7 +79,7 @@ export class WorkerServiceConstruct extends Construct {
       SQS_REGION: cdk.Stack.of(this).region,
       SQS_QUEUE_URL: queue.queueUrl,
       SEARCH_TYPE: searchDomainEndpoint ? 'opensearch' : 'postgres',
-      DB_POOL_MAX: String(config.dbPool.workerMax),
+      WORKER_DB_POOL_MAX: String(config.dbPool.workerMax),
       HEALTH_PORT: String(config.worker.healthPort),
     }
     if (searchDomainEndpoint) {

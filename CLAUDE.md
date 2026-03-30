@@ -59,7 +59,8 @@ KUKAN/
 │   └── specs/              # Phase別 実装仕様書
 ├── Dockerfile              # マルチターゲット Docker ビルド（web / worker）
 ├── .dockerignore
-├── docker/                 # Docker Compose 設定（開発 / オンプレ）
+├── compose.yml             # Docker Compose（開発 / オンプレ本番）
+├── docker/                 # Caddyfile, ElasticMQ, OpenSearch 設定
 ├── infra/                  # AWS CDK スタック（KukanStack + KukanGlobalStack）
 ├── turbo.json
 ├── pnpm-workspace.yaml

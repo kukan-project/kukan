@@ -17,10 +17,8 @@ const __dirname = dirname(__filename)
  * Safe to call from multiple processes concurrently (uses advisory locks).
  */
 export async function runMigrations(connectionString: string): Promise<void> {
-  // In production (AWS RDS) the server uses a private CA that Node.js doesn't trust.
-  // We enable SSL without CA-chain verification; the connection remains encrypted.
-  const ssl = process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined
-  const pool = new Pool({ connectionString, ...(ssl ? { ssl } : {}) })
+  const ssl = process.env.POSTGRES_SSLMODE === 'require' ? { rejectUnauthorized: false } : undefined
+  const pool = new Pool({ connectionString, ...(ssl && { ssl }) })
   const db = drizzle(pool)
 
   // Ensure required extensions exist (not managed by Drizzle)

@@ -70,19 +70,15 @@ export class DatabaseConstruct extends Construct {
     cdk.Tags.of(this).add('kukan:component', 'database')
   }
 
-  /** Build DATABASE_URL from Secrets Manager secret */
-  buildDatabaseUrl(): string {
-    // Resolved at deploy time via CloudFormation intrinsics
-    return cdk.Fn.join('', [
-      'postgresql://',
-      this.secret.secretValueFromJson('username').unsafeUnwrap(),
-      ':',
-      this.secret.secretValueFromJson('password').unsafeUnwrap(),
-      '@',
-      this.endpoint,
-      ':',
-      String(this.port),
-      '/kukan',
-    ])
+  /** Build POSTGRES_* env vars from Secrets Manager secret */
+  buildPostgresEnv(): Record<string, string> {
+    return {
+      POSTGRES_HOST: this.endpoint,
+      POSTGRES_PORT: String(this.port),
+      POSTGRES_DB: 'kukan',
+      POSTGRES_USER: this.secret.secretValueFromJson('username').unsafeUnwrap(),
+      POSTGRES_PASSWORD: this.secret.secretValueFromJson('password').unsafeUnwrap(),
+      POSTGRES_SSLMODE: 'require',
+    }
   }
 }

@@ -4,6 +4,7 @@
  */
 
 import { config } from 'dotenv'
+import { loadEnv } from '@kukan/shared'
 import { runMigrations } from '../src/migrate'
 
 // Skip dotenv in production (env vars injected by container/ECS)
@@ -11,12 +12,9 @@ if (process.env.NODE_ENV !== 'production') {
   config({ path: '../../.env' })
 }
 
-const connectionString = process.env.DATABASE_URL
-if (!connectionString) {
-  throw new Error('DATABASE_URL environment variable is required')
-}
+const { DATABASE_URL } = loadEnv()
 
-runMigrations(connectionString).catch((err) => {
+runMigrations(DATABASE_URL).catch((err) => {
   console.error('Migration failed:', err)
   process.exit(1)
 })

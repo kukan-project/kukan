@@ -25,7 +25,7 @@ export interface WebServiceProps {
   config: KukanConfig
   vpc: ec2.IVpc
   vpcConnectorSecurityGroup: ec2.ISecurityGroup
-  databaseUrl: string
+  postgresEnv: Record<string, string>
   authSecret: secretsmanager.ISecret
   originVerifySecret: secretsmanager.ISecret
   bucket: s3.IBucket
@@ -77,7 +77,7 @@ export class WebServiceConstruct extends Construct {
       config,
       vpc,
       vpcConnectorSecurityGroup,
-      databaseUrl,
+      postgresEnv,
       authSecret,
       originVerifySecret,
       bucket,
@@ -112,7 +112,7 @@ export class WebServiceConstruct extends Construct {
     // Environment variables
     const environmentVariables: Record<string, string> = {
       NODE_ENV: 'production',
-      DATABASE_URL: databaseUrl,
+      ...postgresEnv,
       BETTER_AUTH_SECRET: authSecret.secretValue.unsafeUnwrap(),
       ORIGIN_VERIFY_SECRET: originVerifySecret.secretValue.unsafeUnwrap(),
       AI_TYPE: 'none',
@@ -121,7 +121,7 @@ export class WebServiceConstruct extends Construct {
       SQS_REGION: cdk.Stack.of(this).region,
       SQS_QUEUE_URL: queue.queueUrl,
       SEARCH_TYPE: searchDomainEndpoint ? 'opensearch' : 'postgres',
-      DB_POOL_MAX: String(config.dbPool.webMax),
+      WEB_DB_POOL_MAX: String(config.dbPool.webMax),
     }
     if (searchDomainEndpoint) {
       environmentVariables.OPENSEARCH_URL = `https://${searchDomainEndpoint}`

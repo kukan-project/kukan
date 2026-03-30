@@ -1,0 +1,43 @@
+# KUKAN — Caddy Reverse Proxy
+#
+# Default: HTTP proxy on port 80.
+# Edit this file to customize for your environment.
+#
+# --- TLS with Let's Encrypt (automatic) ---
+#
+#   catalog.example.com {
+#       reverse_proxy web:3000
+#   }
+#
+# --- TLS with custom certificate ---
+#
+#   catalog.example.lg.jp {
+#       tls /certs/cert.pem /certs/key.pem
+#       reverse_proxy web:3000
+#   }
+#
+#   Mount certs volume in compose.yml:
+#     volumes:
+#       - /path/to/certs:/certs:ro
+#
+# --- IP restriction ---
+#
+#   :80 {
+#       @denied not remote_ip 192.168.0.0/16 10.0.0.0/8
+#       respond @denied 403
+#       reverse_proxy web:3000
+#   }
+#
+# --- Virtual hosts ---
+#
+#   catalog.example.com {
+#       reverse_proxy web:3000
+#   }
+#
+#   other.example.com {
+#       reverse_proxy other-service:8080
+#   }
+
+:80 {
+	reverse_proxy web:3000
+}

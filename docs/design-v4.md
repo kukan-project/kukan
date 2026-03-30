@@ -322,7 +322,7 @@ ckan-modern/
 │   └── ui/           # shadcn/ui コンポーネント
 ├── turbo.json
 ├── pnpm-workspace.yaml
-├── docker-compose.yml
+├── compose.yml
 ├── Dockerfile
 └── CLAUDE.md         # 開発エージェント設定
 ```
@@ -1318,7 +1318,7 @@ queue.consume(async (job) => {
 `SqsQueueAdapter` がそのまま動作し、Worker プロセスが独立してロングポーリングする。
 
 ```yaml
-# docker/compose.yml
+# compose.yml
 elasticmq:
   image: softwaremill/elasticmq-native
   ports:

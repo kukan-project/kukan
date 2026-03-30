@@ -69,15 +69,15 @@ export class KukanStack extends cdk.Stack {
       })
     }
 
-    // Shared: DATABASE_URL built from Secrets Manager fields
-    const databaseUrl = database.buildDatabaseUrl()
+    // Shared: POSTGRES_* env vars from Secrets Manager
+    const postgresEnv = database.buildPostgresEnv()
 
     // --- Web Service (App Runner) ---
     const webService = new WebServiceConstruct(this, 'WebService', {
       config,
       vpc: network.vpc,
       vpcConnectorSecurityGroup: network.appRunnerSecurityGroup,
-      databaseUrl,
+      postgresEnv,
       authSecret,
       originVerifySecret,
       bucket: storage.bucket,
@@ -90,7 +90,7 @@ export class KukanStack extends cdk.Stack {
       config,
       vpc: network.vpc,
       workerSecurityGroup: network.workerSecurityGroup,
-      databaseUrl,
+      postgresEnv,
       authSecret,
       bucket: storage.bucket,
       queue: queue.queue,

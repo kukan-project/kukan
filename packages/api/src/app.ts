@@ -22,9 +22,9 @@ export async function createApp() {
 
   // Initialize database
   const db = createDb(env.DATABASE_URL, {
-    max: env.DB_POOL_MAX ?? 5,
-    idleTimeoutMillis: env.DB_POOL_IDLE_TIMEOUT_MS ?? 30_000,
-    connectionTimeoutMillis: env.DB_POOL_CONNECTION_TIMEOUT_MS ?? 3_000,
+    max: env.WEB_DB_POOL_MAX,
+    idleTimeoutMillis: env.WEB_DB_POOL_IDLE_TIMEOUT_MS,
+    connectionTimeoutMillis: env.WEB_DB_POOL_CONNECTION_TIMEOUT_MS,
   })
 
   // Initialize Better Auth

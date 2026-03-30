@@ -25,7 +25,7 @@ pnpm install
 ### 2. Start infrastructure / インフラ起動
 
 ```bash
-docker compose -f docker/compose.yml up -d
+docker compose up -d
 ```
 
 | Service               | Port                  | Description             |
@@ -57,7 +57,12 @@ BETTER_AUTH_SECRET=$(openssl rand -base64 32)
 
 | Variable                          | Default               | Description                                                |
 | --------------------------------- | --------------------- | ---------------------------------------------------------- |
-| `DATABASE_URL`                    | `postgresql://kukan:kukan@localhost:5432/kukan` | PostgreSQL connection string                |
+| `POSTGRES_HOST`                   | `localhost`           | PostgreSQL hostname                                        |
+| `POSTGRES_PORT`                   | `5432`                | PostgreSQL port                                            |
+| `POSTGRES_DB`                     | `kukan`               | PostgreSQL database name                                   |
+| `POSTGRES_USER`                   | `kukan`               | PostgreSQL user                                            |
+| `POSTGRES_PASSWORD`               | `kukan`               | PostgreSQL password                                        |
+| `POSTGRES_SSLMODE`               | `disable`             | `require` for RDS/Aurora, `disable` for local              |
 | `BETTER_AUTH_SECRET`              | _(must set)_          | Auth session secret (min 32 chars)                         |
 | `BETTER_AUTH_URL`                 | `http://localhost:3000` | Auth callback base URL                                   |
 | `S3_ENDPOINT`                     | _(omit for AWS)_      | S3-compatible endpoint (MinIO: `http://localhost:9000`)    |
@@ -69,7 +74,7 @@ BETTER_AUTH_SECRET=$(openssl rand -base64 32)
 | `SQS_QUEUE_URL`                   | _(required)_          | SQS queue URL                                              |
 | `SQS_REGION`                      | _(omit for local)_    | AWS region for SQS                                         |
 | `AI_TYPE`                         | `none`                | `none` / `bedrock` / `openai` / `ollama`                   |
-| `DB_POOL_MAX`                     | `5`                   | DB connection pool size (web)                              |
+| `WEB_DB_POOL_MAX`                 | `5`                   | DB connection pool size (web)                              |
 | `WORKER_DB_POOL_MAX`              | `3`                   | DB connection pool size (worker)                           |
 
 See [.env.example](.env.example) for all options including pool tuning.
@@ -169,6 +174,78 @@ npx cdk deploy --all -c scale=medium -c enableWaf=true
 
 See [docs/specs/phase4-deploy.md](docs/specs/phase4-deploy.md) for full details.
 詳細は上記リンクを参照。
+
+## On-Premise Deployment / オンプレミスデプロイ
+
+Deploy KUKAN with Docker Compose for on-premise or air-gapped environments (e.g. LGWAN).
+Docker Compose でオンプレミス・閉域網環境にデプロイ。
+
+### Prerequisites / 前提条件
+
+- Docker Engine 24+ with Compose V2
+- 4 GB+ RAM (8 GB recommended / 推奨)
+
+### Deploy / デプロイ手順
+
+```bash
+# 1. Configure environment / 環境変数を設定
+cp .env.example .env        # Set BETTER_AUTH_SECRET / BETTER_AUTH_SECRET を設定
+cp .env.prod.example .env.prod  # Set BETTER_AUTH_URL etc. / BETTER_AUTH_URL 等を設定
+
+# 2. Build and start all services / ビルド＆全サービス起動
+docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
+
+# 3. Verify / 動作確認
+curl http://localhost/api/health
+```
+
+### Services / サービス構成
+
+| Service    | Description                           | External Port |
+| ---------- | ------------------------------------- | ------------- |
+| Caddy      | Reverse proxy (HTTP/HTTPS)            | 80, 443       |
+| Web        | Next.js application                   | —             |
+| Worker     | Pipeline worker (SQS polling)         | —             |
+| PostgreSQL | Database                              | 5432          |
+| MinIO      | S3-compatible storage                 | 9000          |
+| ElasticMQ  | SQS-compatible queue                  | 9324          |
+| OpenSearch | Full-text search (kuromoji)            | 9200          |
+
+### Environment / 環境変数
+
+`.env` (dev defaults) + `.env.prod` (prod overrides) are loaded via `--env-file` stacking.
+`.env`（開発デフォルト）+ `.env.prod`（本番オーバーライド）を `--env-file` で重ね合わせ。
+
+`.env.prod` contains Docker internal endpoints (e.g. `http://minio:9000`) that override
+the `localhost` values in `.env`. See [.env.prod.example](.env.prod.example) for all options.
+
+| Variable             | Required | Description                                  |
+| -------------------- | -------- | -------------------------------------------- |
+| `BETTER_AUTH_URL`    | Yes      | Public URL (e.g. `https://catalog.example.com`) |
+| `BETTER_AUTH_SECRET` | Yes      | Auth session secret (min 32 chars)           |
+
+### TLS / HTTPS
+
+Edit `docker/Caddyfile`. See the file for examples including:
+`docker/Caddyfile` を編集。以下の設定例がファイル内にあります:
+
+- Automatic HTTPS with Let's Encrypt / Let's Encrypt 自動証明書
+- Custom certificates / カスタム証明書（庁内 CA 等）
+- IP restriction / IP 制限
+- Virtual hosts / 仮想ホスト
+
+### Update / アップデート
+
+```bash
+git pull
+docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
+```
+
+### Logs / ログ確認
+
+```bash
+docker compose logs -f web worker
+```
 
 ## Documentation / ドキュメント
 

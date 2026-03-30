@@ -282,3 +282,81 @@ npx cdk deploy --all
 - オリジン検証 middleware: `apps/web/src/middleware.ts`
 - SQS アダプター: `packages/adapters/queue/src/sqs.ts`
 - ADR: `docs/adr/018-app-runner-plus-fargate.md`
+
+## オンプレミス Docker Compose デプロイ
+
+AWS を使わないオンプレミス・閉域網（LGWAN 等）向けの本番デプロイ。
+同一の Dockerfile を共有し、Docker Compose profiles で開発用と本番用を切り替える。
+
+### アーキテクチャ
+
+```
+Client ─→ Caddy (:80/:443) ─→ web (:3000)
+                                    │
+                         ┌──────────┤
+                         ▼          ▼
+                     postgres   opensearch
+                         ▲          ▲
+                         │          │
+                      worker ──→ minio / elasticmq
+```
+
+### プロファイル設計
+
+| コマンド                                             | 起動サービス                            |
+| ---------------------------------------------------- | --------------------------------------- |
+| `docker compose up -d`                               | インフラのみ（開発用、現状通り）        |
+| `docker compose --profile prod up -d`                | フルスタック本番（web + worker + caddy） |
+
+### 設定ファイル
+
+| ファイル                  | 用途                                         |
+| ------------------------- | -------------------------------------------- |
+| `compose.yml`             | 統一 Compose ファイル（profiles で切替）      |
+| `docker/Caddyfile`        | リバースプロキシ設定（TLS, IP 制限等をカスタマイズ） |
+| `.env.prod`               | 本番環境変数オーバーライド（gitignore 対象）  |
+| `.env.prod.example`       | 本番環境変数テンプレート                     |
+
+### 環境変数
+
+本番 Compose では `.env`（開発デフォルト）+ `.env.prod`（本番オーバーライド）を `--env-file` で重ね合わせ。
+`.env.prod` には Docker 内部エンドポイント（`http://minio:9000` 等）が含まれ、`.env` の `localhost` 値を上書きする。
+
+ユーザーが設定すべき値:
+
+| 変数                  | 必須 | 説明                                        |
+| --------------------- | ---- | ------------------------------------------- |
+| `BETTER_AUTH_URL`     | Yes  | 公開 URL（例: `https://catalog.example.com`）|
+| `BETTER_AUTH_SECRET`  | Yes  | 認証セッション秘密鍵（32 文字以上）         |
+
+その他すべてのオプションは `.env.prod.example` を参照。
+
+### セキュリティ考慮事項
+
+- **TLS 終端**: Caddyfile で設定。Let's Encrypt 自動証明書またはカスタム証明書に対応。
+- **IP 制限**: Caddyfile の `remote_ip` マッチャーで設定可能。
+- **ポート公開**: インフラサービス（postgres:5432, minio:9000 等）はホストに公開される。本番環境ではファイアウォールでアクセスを制限するか、compose.yml の `ports:` を `expose:` に変更する。
+- **パスワード管理**: `.env.prod` は `.gitignore` 対象。デフォルトパスワードから必ず変更すること。
+- **DB SSL**: `POSTGRES_SSLMODE=require` で SSL 接続を有効化。AWS（RDS/Aurora PG16+）は SSL 必須のため CDK で自動設定。オンプレは postgres:16-alpine が SSL 非対応のためデフォルト `disable`。
+- **ORIGIN_VERIFY_SECRET**: オンプレミスでは不要（CloudFront を経由しないため）。未設定時は middleware がスキップする。
+
+### デプロイ手順
+
+```bash
+# 1. 環境変数を設定
+cp .env.prod.example .env.prod
+# .env.prod を編集
+
+# 2. ビルド＆起動
+docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
+
+# 3. 動作確認
+curl http://localhost/api/health
+```
+
+### 関連ファイル
+
+- Dockerfile: `Dockerfile`（マルチターゲット、変更不要）
+- Compose: `compose.yml`
+- Caddy: `docker/Caddyfile`
+- 環境変数テンプレート: `.env.prod.example`
