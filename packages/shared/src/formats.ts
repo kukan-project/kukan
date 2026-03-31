@@ -111,7 +111,17 @@ export function getStorageKey(packageId: string, resourceId: string): string {
   return `resources/${packageId}/${resourceId}`
 }
 
-/** Compute storage key for a resource's Parquet preview */
-export function getPreviewKey(packageId: string, resourceId: string): string {
-  return `previews/${packageId}/${resourceId}.parquet`
+/** Compute storage key for a resource's preview file */
+export function getPreviewKey(
+  packageId: string,
+  resourceId: string,
+  ext: 'parquet' | 'json' = 'parquet'
+): string {
+  return `previews/${packageId}/${resourceId}.${ext}`
+}
+
+/** Check if a format is a ZIP archive */
+export function isZipFormat(format: string | null): boolean {
+  if (!format) return false
+  return format.toLowerCase() === 'zip'
 }

@@ -49,7 +49,7 @@ async function resolvePreviewTarget(
   const pipelineService = new PipelineService(db)
   const status = await pipelineService.getStatus(resource.id)
   if (!status?.previewKey) return null
-  return { storageKey: status.previewKey, contentType: 'application/octet-stream' }
+  return { storageKey: status.previewKey, contentType: detectContentType(status.previewKey) }
 }
 
 /** Verify resource ownership and check org editor role */

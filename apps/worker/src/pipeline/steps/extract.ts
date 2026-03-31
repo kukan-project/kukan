@@ -4,10 +4,11 @@
  * Non-text formats return null (skip).
  */
 
-import { streamToBuffer, detectEncoding, bufferToUtf8 } from '../node-utils'
-import { getPreviewKey, isCsvFormat, isTextFormat } from '@kukan/shared'
+import { streamToBuffer, streamToTempFile, cleanupTempFile, detectEncoding, bufferToUtf8 } from '../node-utils'
+import { getPreviewKey, isCsvFormat, isTextFormat, isZipFormat } from '@kukan/shared'
 import { parquetWriteBuffer } from 'hyparquet-writer'
 import Papa from 'papaparse'
+import { extractZipManifest } from './extract-zip'
 import type { PipelineContext } from '../types'
 
 const ROW_GROUP_SIZE = 5_000
@@ -31,6 +32,23 @@ export async function executeExtract(
   format: string | null,
   ctx: PipelineContext
 ): Promise<ExtractResult | null> {
+  // ZIP: stream to temp file, extract manifest, upload JSON
+  if (isZipFormat(format)) {
+    const zipStream = await ctx.storage.download(storageKey)
+    const tmpPath = await streamToTempFile(zipStream)
+    try {
+      const manifest = await extractZipManifest(tmpPath)
+      if (!manifest) return null
+      const previewKey = getPreviewKey(packageId, resourceId, 'json')
+      await ctx.storage.upload(previewKey, Buffer.from(JSON.stringify(manifest)), {
+        contentType: 'application/json',
+      })
+      return { previewKey, encoding: 'UTF8' }
+    } finally {
+      await cleanupTempFile(tmpPath)
+    }
+  }
+
   if (!isTextFormat(format)) {
     return null
   }

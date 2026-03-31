@@ -3,11 +3,12 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, Skeleton, Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import { isCsvFormat, isTextFormat } from '@kukan/shared'
+import { isCsvFormat, isTextFormat, isZipFormat } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
 import { useFetch } from '@/hooks/use-fetch'
 import { ParquetPreview } from './parquet-preview'
 import { GeoJsonPreview } from './geojson-preview'
+import { ZipPreview } from './zip-preview'
 
 interface ResourcePreviewProps {
   resourceId: string
@@ -34,10 +35,13 @@ export function ResourcePreview({ resourceId, format }: ResourcePreviewProps) {
   // GeoJSON: map with raw text toggle
   if (f === 'geojson') return <GeoJsonPreview resourceId={resourceId} />
 
+  // ZIP: file listing preview
+  if (isZipFormat(format ?? null)) return <ZipPreview resourceId={resourceId} />
+
   // Text formats (JSON, XML, HTML, TXT, MD, etc.): raw text preview
   if (isTextFormat(format ?? null)) return <TextOnlyPreview resourceId={resourceId} />
 
-  // Non-text formats (XLSX, DOC, ZIP, etc.): not available
+  // Non-text formats (XLSX, DOC, etc.): not available
   return <PreviewNotAvailable />
 }
 

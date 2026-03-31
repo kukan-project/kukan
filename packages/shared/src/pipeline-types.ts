@@ -9,3 +9,21 @@ export type PipelineStepStatus = 'pending' | 'running' | 'complete' | 'error' | 
 export type PipelineStepName = 'fetch' | 'extract'
 
 export const PIPELINE_JOB_TYPE = 'resource-pipeline' as const
+
+/** A single file/directory entry in a ZIP manifest */
+export interface ZipEntry {
+  path: string
+  size: number
+  compressedSize: number
+  lastModified: string
+  isDirectory: boolean
+}
+
+/** Manifest describing the contents of a ZIP archive */
+export interface ZipManifest {
+  totalFiles: number
+  totalSize: number
+  totalCompressed: number
+  truncated: boolean
+  entries: ZipEntry[]
+}

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Readable } from 'stream'
+import JSZip from 'jszip'
 import type { PipelineContext } from '../pipeline/types'
 import { executeExtract } from '../pipeline/steps/extract'
 
@@ -191,5 +192,46 @@ describe('executeExtract', () => {
 
     expect(result?.previewKey).toBe('previews/pkg-1/res-15.parquet')
     expect(ctx.storage.upload).toHaveBeenCalledOnce()
+  })
+
+  it('should generate ZIP manifest and upload as JSON', async () => {
+    const zip = new JSZip()
+    zip.file('data.csv', 'a,b\n1,2')
+    zip.file('readme.txt', 'hello')
+    const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' })
+    ctx.storage.download.mockResolvedValue(Readable.from(zipBuffer))
+
+    const result = await executeExtract('res-zip', 'pkg-1', 'resources/pkg-1/res-zip', 'ZIP', ctx)
+
+    expect(result).toEqual({
+      previewKey: 'previews/pkg-1/res-zip.json',
+      encoding: 'UTF8',
+    })
+    expect(ctx.storage.download).toHaveBeenCalledWith('resources/pkg-1/res-zip')
+    expect(ctx.storage.upload).toHaveBeenCalledOnce()
+
+    const [key, buf, meta] = ctx.storage.upload.mock.calls[0]
+    expect(key).toBe('previews/pkg-1/res-zip.json')
+    expect(meta).toEqual({ contentType: 'application/json' })
+
+    const manifest = JSON.parse(buf.toString())
+    expect(manifest.totalFiles).toBe(2)
+    expect(manifest.entries).toHaveLength(2)
+    expect(manifest.truncated).toBe(false)
+  })
+
+  it('should return null for corrupt ZIP', async () => {
+    ctx.storage.download.mockResolvedValue(Readable.from(Buffer.from('not a zip')))
+
+    const result = await executeExtract(
+      'res-badzip',
+      'pkg-1',
+      'resources/pkg-1/res-badzip',
+      'ZIP',
+      ctx
+    )
+
+    expect(result).toBeNull()
+    expect(ctx.storage.upload).not.toHaveBeenCalled()
   })
 })

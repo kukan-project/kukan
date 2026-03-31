@@ -2,8 +2,15 @@
  * Node.js-specific utilities (Buffer, Readable, encoding detection).
  */
 
-import { Readable } from 'stream'
+import { createWriteStream } from 'node:fs'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, dirname } from 'node:path'
+import { Readable, pipeline } from 'node:stream'
+import { promisify } from 'node:util'
 import Encoding from 'encoding-japanese'
+
+const pipelineAsync = promisify(pipeline)
 
 // ---------------------------------------------------------------------------
 // Encoding detection
@@ -77,4 +84,17 @@ export async function streamToBuffer(stream: Readable, maxBytes?: number): Promi
     chunks.push(buf)
   }
   return Buffer.concat(chunks)
+}
+
+/** Write a Readable stream to a temp file and return its path */
+export async function streamToTempFile(stream: Readable): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'kukan-'))
+  const filePath = join(dir, 'data')
+  await pipelineAsync(stream, createWriteStream(filePath))
+  return filePath
+}
+
+/** Remove the temp file and its parent directory */
+export async function cleanupTempFile(filePath: string): Promise<void> {
+  await rm(dirname(filePath), { recursive: true, force: true })
 }

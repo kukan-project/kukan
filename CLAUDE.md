@@ -213,7 +213,7 @@ Extract のみフォーマット別処理を行う。
 | PDF          |      No      | スキップ                                     |      -       |       No（iframe）       |
 | XLSX/XLS     |      No      | スキップ                                     |      -       |            No            |
 | DOC/DOCX     |      No      | スキップ                                     |      -       |            No            |
-| ZIP          |      No      | スキップ                                     |      -       |            No            |
+| ZIP          |      No      | JSONマニフェスト生成（yauzl）                |      -       |   Yes（ファイル一覧）    |
 
 **関連ファイル:**
 

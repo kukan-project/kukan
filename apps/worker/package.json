@@ -25,13 +25,16 @@
     "hono": "^4.12.3",
     "hyparquet-writer": "^0.13.0",
     "papaparse": "^5.5.3",
-    "pg": "^8.13.0"
+    "pg": "^8.13.0",
+    "yauzl": "^3.2.1"
   },
   "devDependencies": {
     "@types/encoding-japanese": "^2.2.1",
     "@types/node": "^22.0.0",
     "@types/papaparse": "^5.5.2",
     "@types/pg": "^8.11.0",
+    "@types/yauzl": "^2.10.3",
+    "jszip": "^3.10.1",
     "tsup": "^8.5.1",
     "tsx": "^4.0.0"
   }

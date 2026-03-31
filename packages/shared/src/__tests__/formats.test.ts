@@ -6,6 +6,7 @@ import {
   detectContentType,
   isCsvFormat,
   isTextFormat,
+  isZipFormat,
   toCharset,
   getStorageKey,
   getPreviewKey,
@@ -202,7 +203,29 @@ describe('getStorageKey', () => {
 })
 
 describe('getPreviewKey', () => {
-  it('should compute preview key with .parquet extension', () => {
+  it('should compute preview key with .parquet extension by default', () => {
     expect(getPreviewKey('pkg-123', 'res-456')).toBe('previews/pkg-123/res-456.parquet')
+  })
+
+  it('should compute preview key with specified extension', () => {
+    expect(getPreviewKey('pkg-123', 'res-456', 'json')).toBe('previews/pkg-123/res-456.json')
+  })
+})
+
+describe('isZipFormat', () => {
+  it('should return true for zip format', () => {
+    expect(isZipFormat('zip')).toBe(true)
+    expect(isZipFormat('ZIP')).toBe(true)
+    expect(isZipFormat('Zip')).toBe(true)
+  })
+
+  it('should return false for non-zip formats', () => {
+    expect(isZipFormat('pdf')).toBe(false)
+    expect(isZipFormat('csv')).toBe(false)
+    expect(isZipFormat('tar')).toBe(false)
+  })
+
+  it('should return false for null', () => {
+    expect(isZipFormat(null)).toBe(false)
   })
 })
