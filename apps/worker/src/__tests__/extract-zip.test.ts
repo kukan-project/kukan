@@ -209,6 +209,16 @@ describe('extractZipManifest', () => {
     expect(manifest!.entries[0].path).toBe('日本語ファイル.txt')
   })
 
+  it('should decode UTF-8 file names even without UTF-8 flag', async () => {
+    const utf8Buf = Buffer.from('données.txt', 'utf-8')
+    const buffer = createRawZip(utf8Buf, 0) // no UTF-8 flag
+
+    const manifest = await extractZipManifest(buffer)
+
+    expect(manifest).not.toBeNull()
+    expect(manifest!.entries[0].path).toBe('données.txt')
+  })
+
   it('should handle zero-size files', async () => {
     const buffer = await createTestZip([{ name: 'empty.txt', content: '' }])
 

@@ -17,6 +17,7 @@ const UTF8_FLAG = 0x800
 
 const sjisDecoder = new TextDecoder('shift_jis')
 const utf8Decoder = new TextDecoder('utf-8')
+const utf8StrictDecoder = new TextDecoder('utf-8', { fatal: true })
 
 /**
  * Format a Date as a timezone-free local time string.
@@ -37,15 +38,23 @@ function formatLocalDate(date: Date): string {
 
 /**
  * Decode file name buffer from a ZIP entry.
- * ZIP files from Japanese Windows typically use Shift_JIS encoding.
- * If the UTF-8 flag (bit 11) is set, decode as UTF-8; otherwise try Shift_JIS.
+ *
+ * Strategy:
+ * 1. UTF-8 flag set → decode as UTF-8
+ * 2. Flag not set → try UTF-8 first (some tools omit the flag),
+ *    fall back to Shift_JIS if the bytes are not valid UTF-8
  */
 function decodeFileName(buf: Buffer, flags: number): string {
   if (flags & UTF8_FLAG) {
     return utf8Decoder.decode(buf)
   }
-  // Try Shift_JIS for non-UTF-8 entries (common in Japanese ZIP files)
-  return sjisDecoder.decode(buf)
+  // Many modern tools emit UTF-8 without setting the flag.
+  // Try strict UTF-8 first; fall back to Shift_JIS on failure.
+  try {
+    return utf8StrictDecoder.decode(buf)
+  } catch {
+    return sjisDecoder.decode(buf)
+  }
 }
 
 const YAUZL_OPTIONS = { lazyEntries: true, decodeStrings: false } as const
