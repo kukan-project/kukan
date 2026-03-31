@@ -179,6 +179,7 @@ pnpm format        # Prettier フォーマット
 - 統一 preview-url エンドポイント → `docs/adr/015-unified-preview-url.md`
 - サーバー経由ダウンロード URL → `docs/adr/017-server-proxied-download.md`
 - Web=App Runner, Worker=Fargate → `docs/adr/018-app-runner-plus-fargate.md`
+- ロギング戦略 → `docs/adr/019-logging-strategy.md`
 
 新しい設計判断が必要になったら、同じフォーマットでADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
