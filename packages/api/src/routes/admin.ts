@@ -4,10 +4,11 @@
  */
 
 import { Hono } from 'hono'
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and, inArray, sql } from 'drizzle-orm'
 import {
   packageTable,
   resource,
+  resourcePipeline,
   organization,
   group,
   packageGroup,
@@ -162,4 +163,49 @@ adminRouter.post('/reindex', async (c) => {
   }
 
   return c.json({ indexed })
+})
+
+const RECENT_ERROR_LIMIT = 10
+
+// GET /api/v1/admin/queue/stats — Queue and pipeline statistics
+adminRouter.get('/queue/stats', async (c) => {
+  const user = c.get('user')
+  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view queue stats')
+
+  const db = c.get('db')
+  const queue = c.get('queue')
+
+  const [queueStats, statusCounts, recentErrors] = await Promise.all([
+    queue.getStats(),
+    db
+      .select({
+        status: resourcePipeline.status,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(resourcePipeline)
+      .groupBy(resourcePipeline.status),
+    db
+      .select({
+        resourceId: resourcePipeline.resourceId,
+        resourceName: resource.name,
+        error: resourcePipeline.error,
+        updated: resourcePipeline.updated,
+      })
+      .from(resourcePipeline)
+      .innerJoin(resource, eq(resourcePipeline.resourceId, resource.id))
+      .where(eq(resourcePipeline.status, 'error'))
+      .orderBy(sql`${resourcePipeline.updated} desc`)
+      .limit(RECENT_ERROR_LIMIT),
+  ])
+
+  const statusMap: Record<string, number> = {}
+  for (const row of statusCounts) {
+    statusMap[row.status] = row.count
+  }
+
+  return c.json({
+    queue: queueStats,
+    jobs: statusMap,
+    recentErrors,
+  })
 })

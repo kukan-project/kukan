@@ -41,6 +41,7 @@ const storage = new S3StorageAdapter({
 const queue = new SQSQueueAdapter({
   region: env.SQS_REGION,
   queueUrl: env.SQS_QUEUE_URL,
+  dlqUrl: env.SQS_DLQ_URL,
   endpoint: env.SQS_ENDPOINT,
   accessKeyId: env.SQS_ACCESS_KEY,
   secretAccessKey: env.SQS_SECRET_KEY,

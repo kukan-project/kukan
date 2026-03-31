@@ -17,6 +17,17 @@ export interface JobStatus {
   error?: string
 }
 
+export interface QueueStats {
+  /** Approximate number of messages waiting in the queue */
+  pending: number
+  /** Approximate number of messages currently being processed */
+  inFlight: number
+  /** Approximate number of delayed messages */
+  delayed: number
+  /** Approximate number of messages in the dead letter queue */
+  dlqPending: number
+}
+
 export interface QueueAdapter {
   /**
    * Enqueue a new job
@@ -27,6 +38,11 @@ export interface QueueAdapter {
    * Get job status
    */
   getStatus(jobId: string): Promise<JobStatus | null>
+
+  /**
+   * Get queue statistics (message counts)
+   */
+  getStats(): Promise<QueueStats>
 
   /**
    * Start processing jobs with a handler function

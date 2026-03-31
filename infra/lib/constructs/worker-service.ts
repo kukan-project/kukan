@@ -23,6 +23,7 @@ export interface WorkerServiceProps {
   authSecret: secretsmanager.ISecret
   bucket: s3.IBucket
   queue: sqs.IQueue
+  dlq: sqs.IQueue
   searchDomainEndpoint?: string
 }
 
@@ -66,6 +67,7 @@ export class WorkerServiceConstruct extends Construct {
     // Grant permissions to task role
     bucket.grantReadWrite(taskDef.taskRole)
     queue.grantConsumeMessages(taskDef.taskRole)
+    props.dlq.grant(taskDef.taskRole, 'sqs:GetQueueAttributes')
     authSecret.grantRead(taskDef.taskRole)
 
     // Environment variables
@@ -78,6 +80,7 @@ export class WorkerServiceConstruct extends Construct {
       S3_REGION: cdk.Stack.of(this).region,
       SQS_REGION: cdk.Stack.of(this).region,
       SQS_QUEUE_URL: queue.queueUrl,
+      SQS_DLQ_URL: props.dlq.queueUrl,
       SEARCH_TYPE: searchDomainEndpoint ? 'opensearch' : 'postgres',
       WORKER_DB_POOL_MAX: String(config.dbPool.workerMax),
       HEALTH_PORT: String(config.worker.healthPort),
