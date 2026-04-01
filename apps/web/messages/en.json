@@ -89,7 +89,9 @@
     "editDataset": "Edit Dataset",
     "notFound": "Dataset not found",
     "deleteDataset": "Delete Dataset",
-    "deleteDatasetConfirm": "This dataset and all its resources will be deleted. This action cannot be undone.",
+    "deleteDatasetConfirm": "This dataset and all its resources will be deleted. You can restore it from the Deleted tab.",
+    "purgeDataset": "Purge Dataset",
+    "purgeDatasetConfirm": "This dataset and all its resources will be permanently removed from the database. This action cannot be undone.",
     "dangerZone": "Danger Zone",
     "createDataset": "Create Dataset",
     "visibility": "Visibility",
@@ -104,7 +106,10 @@
     "maintainerLabel": "Maintainer",
     "maintainerEmail": "Maintainer Email",
     "resourceCount": "All {count} resources",
-    "matchedResources": "Matched resources"
+    "matchedResources": "Matched resources",
+    "tabPublic": "Public",
+    "tabPrivate": "Private",
+    "tabDeleted": "Deleted"
   },
   "organization": {
     "title": "Organizations",

@@ -51,6 +51,8 @@ export interface SearchFilters {
   ownerOrgIds?: string[]
   creatorUserId?: string
   isPrivate?: boolean
+  // State filter (default: 'active')
+  state?: 'active' | 'deleted'
 }
 
 export interface SearchQuery {

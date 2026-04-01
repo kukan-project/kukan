@@ -89,7 +89,9 @@
     "editDataset": "データセット編集",
     "notFound": "データセットが見つかりません",
     "deleteDataset": "データセットを削除",
-    "deleteDatasetConfirm": "このデータセットとそのすべてのリソースが削除されます。この操作は取り消せません。",
+    "deleteDatasetConfirm": "このデータセットとそのすべてのリソースが削除されます。削除済タブから復元できます。",
+    "purgeDataset": "完全に消去",
+    "purgeDatasetConfirm": "このデータセットとそのすべてのリソースがデータベースから完全に消去されます。この操作は取り消せません。",
     "dangerZone": "危険な操作",
     "createDataset": "データセットを作成",
     "visibility": "公開状態",
@@ -104,7 +106,10 @@
     "maintainerLabel": "管理者",
     "maintainerEmail": "管理者メール",
     "resourceCount": "全{count}リソース",
-    "matchedResources": "一致したリソース"
+    "matchedResources": "一致したリソース",
+    "tabPublic": "公開",
+    "tabPrivate": "非公開",
+    "tabDeleted": "削除済"
   },
   "organization": {
     "title": "組織",

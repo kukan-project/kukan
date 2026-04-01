@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
@@ -71,10 +71,12 @@ function toFormDefaults(pkg: PackageDetail): Partial<CreatePackageInput> {
 
 export default function EditDatasetPage() {
   const params = useParams()
+  const searchParams = useSearchParams()
   const router = useRouter()
   const t = useTranslations('dataset')
   const tc = useTranslations('common')
   const nameOrId = params.nameOrId as string
+  const isDeleted = searchParams.get('state') === 'deleted'
 
   const [pkg, setPkg] = useState<PackageDetail | null>(null)
   const [organizations, setOrganizations] = useState<Organization[]>([])
@@ -83,8 +85,11 @@ export default function EditDatasetPage() {
   const [deleting, setDeleting] = useState(false)
 
   const fetchData = useCallback(async () => {
+    const pkgUrl = isDeleted
+      ? `/api/v1/packages/${nameOrId}?state=deleted`
+      : `/api/v1/packages/${nameOrId}`
     const [pkgRes, orgRes] = await Promise.all([
-      clientFetch(`/api/v1/packages/${nameOrId}`),
+      clientFetch(pkgUrl),
       clientFetch('/api/v1/users/me/organizations'),
     ])
     if (pkgRes.ok) setPkg(await pkgRes.json())
@@ -93,7 +98,7 @@ export default function EditDatasetPage() {
       setOrganizations(data.items)
     }
     setLoading(false)
-  }, [nameOrId])
+  }, [nameOrId, isDeleted])
 
   useEffect(() => {
     fetchData()
@@ -102,7 +107,11 @@ export default function EditDatasetPage() {
   async function handleDelete() {
     setDeleting(true)
     try {
-      const res = await clientFetch(`/api/v1/packages/${nameOrId}`, { method: 'DELETE' })
+      const url = isDeleted
+        ? `/api/v1/packages/${nameOrId}/purge`
+        : `/api/v1/packages/${nameOrId}`
+      const method = isDeleted ? 'POST' : 'DELETE'
+      const res = await clientFetch(url, { method })
       if (res.ok) {
         router.push('/dashboard/datasets')
       }
@@ -156,13 +165,18 @@ export default function EditDatasetPage() {
         </CardContent>
       </Card>
 
-      <Card className="border-destructive/30">
+      <Card className={isDeleted ? 'border-destructive/30' : 'border-amber-300/50 dark:border-amber-500/30'}>
         <CardHeader>
-          <CardTitle className="text-destructive">{t('dangerZone')}</CardTitle>
+          <CardTitle className={isDeleted ? 'text-destructive' : 'text-amber-700 dark:text-amber-400'}>
+            {isDeleted ? t('dangerZone') : t('deleteDataset')}
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <Button variant="destructive" onClick={() => setShowDelete(true)}>
-            {t('deleteDataset')}
+          {!isDeleted && (
+            <p className="mb-3 text-sm text-muted-foreground">{t('deleteDatasetConfirm')}</p>
+          )}
+          <Button variant={isDeleted ? 'destructive' : 'outline'} onClick={() => setShowDelete(true)}>
+            {isDeleted ? t('purgeDataset') : t('deleteDataset')}
           </Button>
         </CardContent>
       </Card>
@@ -170,8 +184,8 @@ export default function EditDatasetPage() {
       <DeleteConfirmDialog
         open={showDelete}
         onOpenChange={setShowDelete}
-        title={t('deleteDataset')}
-        description={t('deleteDatasetConfirm')}
+        title={isDeleted ? t('purgeDataset') : t('deleteDataset')}
+        description={isDeleted ? t('purgeDatasetConfirm') : t('deleteDatasetConfirm')}
         onConfirm={handleDelete}
         isDeleting={deleting}
       />

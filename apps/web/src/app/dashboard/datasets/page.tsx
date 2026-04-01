@@ -18,6 +18,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  Tabs,
+  TabsList,
+  TabsTrigger,
 } from '@kukan/ui'
 import { Building2, FolderOpen, Tag } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -69,7 +72,7 @@ export default function DatasetsManagePage() {
   const [debouncedKeyword, setDebouncedKeyword] = useState('')
   const [orgFilter, setOrgFilter] = useState('')
   const [groupFilter, setGroupFilter] = useState('')
-  const [visibilityFilter, setVisibilityFilter] = useState('')
+  const [activeTab, setActiveTab] = useState<'public' | 'private' | 'deleted'>('public')
 
   // Filter options
   const [organizations, setOrganizations] = useState<OptionItem[]>([])
@@ -109,9 +112,11 @@ export default function DatasetsManagePage() {
     if (debouncedKeyword) params.set('q', debouncedKeyword)
     if (orgFilter) params.set('organization', orgFilter)
     if (groupFilter) params.set('groups', groupFilter)
-    if (visibilityFilter) params.set('private', visibilityFilter)
+    if (activeTab === 'public') params.set('private', 'false')
+    else if (activeTab === 'private') params.set('private', 'true')
+    else if (activeTab === 'deleted') params.set('state', 'deleted')
     return `/api/v1/packages?${params}`
-  }, [debouncedName, debouncedKeyword, orgFilter, groupFilter, visibilityFilter])
+  }, [debouncedName, debouncedKeyword, orgFilter, groupFilter, activeTab])
 
   const { items, loading, error, ...pagination } = usePaginatedFetch<PkgItem>(filterUrl)
 
@@ -179,20 +184,16 @@ export default function DatasetsManagePage() {
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-col gap-1">
-          <Label className="text-xs text-muted-foreground">{t('visibility')}</Label>
-          <Select value={visibilityFilter || ALL} onValueChange={handleSelect(setVisibilityFilter)}>
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>{tc('showAll')}</SelectItem>
-              <SelectItem value="false">{tc('public')}</SelectItem>
-              <SelectItem value="true">{tc('private')}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
       </div>
+
+      {/* Visibility / State tabs */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
+        <TabsList>
+          <TabsTrigger value="public">{t('tabPublic')}</TabsTrigger>
+          <TabsTrigger value="private">{t('tabPrivate')}</TabsTrigger>
+          <TabsTrigger value="deleted">{t('tabDeleted')}</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {loading ? (
         <p className="py-12 text-center text-muted-foreground">{tc('loading')}</p>
@@ -252,7 +253,9 @@ export default function DatasetsManagePage() {
                       </div>
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
-                      {pkg.private ? (
+                      {activeTab === 'deleted' ? (
+                        <Badge variant="destructive">{t('tabDeleted')}</Badge>
+                      ) : pkg.private ? (
                         <Badge variant="secondary">{tc('private')}</Badge>
                       ) : (
                         <Badge>{tc('public')}</Badge>
@@ -263,7 +266,15 @@ export default function DatasetsManagePage() {
                     </TableCell>
                     <TableCell>
                       <Button variant="ghost" size="sm" asChild>
-                        <Link href={`/dashboard/datasets/${pkg.name}/edit`}>{tc('edit')}</Link>
+                        <Link
+                          href={
+                            activeTab === 'deleted'
+                              ? `/dashboard/datasets/${pkg.name}/edit?state=deleted`
+                              : `/dashboard/datasets/${pkg.name}/edit`
+                          }
+                        >
+                          {tc('edit')}
+                        </Link>
                       </Button>
                     </TableCell>
                   </TableRow>

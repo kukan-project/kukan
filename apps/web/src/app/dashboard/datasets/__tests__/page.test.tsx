@@ -67,9 +67,12 @@ describe('DatasetsManagePage', () => {
     render(<DatasetsManagePage />)
 
     await waitFor(() => {
-      expect(screen.getByText('Public')).toBeInTheDocument()
+      expect(screen.getByText('population-data')).toBeInTheDocument()
     })
-    expect(screen.getByText('Private')).toBeInTheDocument()
+    // Default tab is "public", so all badges show "Public"
+    // "Public" text appears in both the tab trigger and the badge(s)
+    const publicElements = screen.getAllByText('Public')
+    expect(publicElements.length).toBeGreaterThanOrEqual(2) // tab + badge(s)
   })
 
   it('should show organization and tags in metadata row', async () => {
@@ -123,9 +126,9 @@ describe('DatasetsManagePage', () => {
     // Filter inputs
     expect(screen.getByPlaceholderText('name...')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Search datasets...')).toBeInTheDocument()
-    // Select triggers (rendered as combobox)
+    // Select triggers (rendered as combobox): org, category
     const comboboxes = screen.getAllByRole('combobox')
-    expect(comboboxes.length).toBe(3) // org, category, visibility
+    expect(comboboxes.length).toBe(2)
   })
 
   it('should link to edit page', async () => {

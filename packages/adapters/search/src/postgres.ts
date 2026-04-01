@@ -41,7 +41,8 @@ export class PostgresSearchAdapter implements SearchAdapter {
 
   /** Build WHERE conditions from search query and filters */
   private buildConditions(query: SearchQuery): SQL[] {
-    const conditions: SQL[] = [eq(packageTable.state, 'active')]
+    const state = query.filters?.state ?? 'active'
+    const conditions: SQL[] = [eq(packageTable.state, state)]
     const hasQuery = query.q.trim().length > 0
 
     if (hasQuery) {

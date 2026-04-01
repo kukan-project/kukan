@@ -34,6 +34,8 @@ export interface PackageFilterParams {
   searchTotal?: number
   /** Matched resources from SearchAdapter, keyed by package ID */
   searchMatchedResources?: Record<string, MatchedResource[]>
+  /** Package state filter (default: 'active') */
+  state?: 'active' | 'deleted'
 }
 
 export class PackageService {
@@ -41,7 +43,7 @@ export class PackageService {
 
   /** Build WHERE conditions for package list query */
   private buildConditions(params: PackageFilterParams): SQL[] {
-    const conditions: SQL[] = [eq(packageTable.state, 'active')]
+    const conditions: SQL[] = [eq(packageTable.state, params.state ?? 'active')]
 
     // When search results are provided, filter by matched IDs
     if (params.searchMatchIds && params.searchMatchIds.length > 0) {
@@ -212,14 +214,14 @@ export class PackageService {
     }
   }
 
-  async getByNameOrId(nameOrId: string) {
+  async getByNameOrId(nameOrId: string, state: 'active' | 'deleted' = 'active') {
     const [result] = await this.db
       .select()
       .from(packageTable)
       .where(
         and(
           isUuid(nameOrId) ? eq(packageTable.id, nameOrId) : eq(packageTable.name, nameOrId),
-          eq(packageTable.state, 'active')
+          eq(packageTable.state, state)
         )
       )
       .limit(1)
@@ -235,8 +237,12 @@ export class PackageService {
    * Get package by name or ID with private visibility check.
    * Throws NotFoundError if the package is private and the viewer lacks access.
    */
-  async getByNameOrIdWithAccessCheck(nameOrId: string, viewer?: ViewerContext) {
-    const pkg = await this.getByNameOrId(nameOrId)
+  async getByNameOrIdWithAccessCheck(
+    nameOrId: string,
+    viewer?: ViewerContext,
+    state: 'active' | 'deleted' = 'active'
+  ) {
+    const pkg = await this.getByNameOrId(nameOrId, state)
 
     if (pkg.private && !viewer?.sysadmin) {
       if (!viewer?.userId || !pkg.ownerOrg) {
@@ -260,8 +266,12 @@ export class PackageService {
     return pkg
   }
 
-  async getDetailByNameOrId(nameOrId: string, viewer?: ViewerContext) {
-    const pkg = await this.getByNameOrIdWithAccessCheck(nameOrId, viewer)
+  async getDetailByNameOrId(
+    nameOrId: string,
+    viewer?: ViewerContext,
+    state: 'active' | 'deleted' = 'active'
+  ) {
+    const pkg = await this.getByNameOrIdWithAccessCheck(nameOrId, viewer, state)
 
     const [resources, tags, groups, org] = await Promise.all([
       this.db
@@ -509,5 +519,16 @@ export class PackageService {
       .returning()
 
     return deleted
+  }
+
+  /** Hard-delete a soft-deleted package and all related data (CASCADE). */
+  async purge(id: string) {
+    const [purged] = await this.db
+      .delete(packageTable)
+      .where(eq(packageTable.id, id))
+      .returning()
+
+    if (!purged) throw new NotFoundError('Package', id)
+    return purged
   }
 }

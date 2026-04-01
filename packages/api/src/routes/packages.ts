@@ -25,6 +25,8 @@ import type { AppContext } from '../context'
 
 export const packagesRouter = new Hono<{ Variables: AppContext }>()
 
+const stateParam = z.enum(['active', 'deleted']).optional()
+
 // Repeated query param: normalizes string | string[] → string[] | undefined
 const repeatedParam = z
   .union([z.string(), z.array(z.string())])
@@ -47,6 +49,7 @@ packagesRouter.get(
       res_format: repeatedParam,
       license_id: repeatedParam,
       creator_user_id: z.string().optional(),
+      state: stateParam,
       my_org: z
         .string()
         .optional()
@@ -62,10 +65,13 @@ packagesRouter.get(
     })
   ),
   async (c) => {
-    const { my_org, tags, res_format, include_facets, ...rest } = c.req.valid('query')
+    const { my_org, tags, res_format, include_facets, state, ...rest } = c.req.valid('query')
     const db = c.get('db')
     const service = new PackageService(db)
     const user = c.get('user')
+
+    // state=deleted is only allowed when my_org=true AND user is authenticated
+    const effectiveState = state === 'deleted' && my_org && user ? 'deleted' : 'active'
 
     // Resolve user's org memberships (for visibility and my_org filters)
     let userOrgIds: string[] | undefined
@@ -100,6 +106,7 @@ packagesRouter.get(
       // Explicit filters
       ...(rest.private !== undefined && { isPrivate: rest.private }),
       ...(rest.creator_user_id && { creatorUserId: rest.creator_user_id }),
+      state: effectiveState,
     }
 
     // Dashboard (my_org=true) uses PostgreSQL adapter for DB consistency
@@ -125,6 +132,7 @@ packagesRouter.get(
       searchMatchIds: searchResult.items.map((i) => i.id),
       searchTotal: searchResult.total,
       searchMatchedResources,
+      state: effectiveState,
     })
 
     if (include_facets && searchResult.facets) {
@@ -151,14 +159,24 @@ packagesRouter.post('/', zValidator('json', createPackageSchema), async (c) => {
 })
 
 // GET /api/v1/packages/:nameOrId - Get package by name or ID
-packagesRouter.get('/:nameOrId', async (c) => {
-  const nameOrId = c.req.param('nameOrId')
-  const user = c.get('user')
-  const viewer = user ? { userId: user.id, sysadmin: user.sysadmin } : undefined
-  const service = new PackageService(c.get('db'))
-  const pkg = await service.getDetailByNameOrId(nameOrId, viewer)
-  return c.json(pkg)
-})
+packagesRouter.get(
+  '/:nameOrId',
+  zValidator(
+    'query',
+    z.object({ state: stateParam })
+  ),
+  async (c) => {
+    const nameOrId = c.req.param('nameOrId')
+    const user = c.get('user')
+    const viewer = user ? { userId: user.id, sysadmin: user.sysadmin } : undefined
+    // state=deleted requires authenticated user
+    const reqState = c.req.valid('query').state
+    const effectiveState = reqState === 'deleted' && user ? 'deleted' : 'active'
+    const service = new PackageService(c.get('db'))
+    const pkg = await service.getDetailByNameOrId(nameOrId, viewer, effectiveState)
+    return c.json(pkg)
+  }
+)
 
 // PUT /api/v1/packages/:nameOrId - Update package (org editor+)
 packagesRouter.put('/:nameOrId', zValidator('json', updatePackageSchema), async (c) => {
@@ -206,6 +224,22 @@ packagesRouter.delete('/:nameOrId', async (c) => {
   if (existing.ownerOrg) await checkOrgRole(db, user, existing.ownerOrg, 'editor')
 
   const pkg = await service.delete(nameOrId)
+  await c.get('search').delete(pkg.id)
+  return c.json(pkg)
+})
+
+// POST /api/v1/packages/:nameOrId/purge - Permanently delete a soft-deleted package (org admin+)
+packagesRouter.post('/:nameOrId/purge', async (c) => {
+  const user = c.get('user')
+  if (!user) throw new ForbiddenError('Authentication required')
+
+  const db = c.get('db')
+  const nameOrId = c.req.param('nameOrId')
+  const service = new PackageService(db)
+  const existing = await service.getByNameOrId(nameOrId, 'deleted')
+  if (existing.ownerOrg) await checkOrgRole(db, user, existing.ownerOrg, 'admin')
+
+  const pkg = await service.purge(existing.id)
   await c.get('search').delete(pkg.id)
   return c.json(pkg)
 })
