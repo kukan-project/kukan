@@ -123,10 +123,9 @@ describe('DatasetsManagePage', () => {
       expect(screen.getByText('population-data')).toBeInTheDocument()
     })
 
-    // Filter inputs
-    expect(screen.getByPlaceholderText('name...')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('Search datasets...')).toBeInTheDocument()
-    // Select triggers (rendered as combobox): org, category
+    // Filter text inputs + select triggers
+    const textboxes = screen.getAllByRole('textbox')
+    expect(textboxes.length).toBe(2)
     const comboboxes = screen.getAllByRole('combobox')
     expect(comboboxes.length).toBe(2)
   })
@@ -181,7 +180,7 @@ describe('DatasetsManagePage', () => {
       vi.mocked(clientFetch).mockClear()
       setupDefaultMocks()
 
-      const nameInput = screen.getByPlaceholderText('name...')
+      const nameInput = screen.getAllByRole('textbox')[0]
       fireEvent.change(nameInput, { target: { value: 'pop' } })
 
       // Before debounce — no new packages call
@@ -215,7 +214,7 @@ describe('DatasetsManagePage', () => {
       vi.mocked(clientFetch).mockClear()
       setupDefaultMocks()
 
-      const keywordInput = screen.getByPlaceholderText('Search datasets...')
+      const keywordInput = screen.getAllByRole('textbox')[1]
       fireEvent.change(keywordInput, { target: { value: 'budget' } })
 
       await act(async () => {

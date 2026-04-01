@@ -132,26 +132,17 @@ export default function DatasetsManagePage() {
         </Button>
       </PageHeader>
 
+      {/* Visibility / State tabs */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
+        <TabsList>
+          <TabsTrigger value="public">{t('tabPublic')}</TabsTrigger>
+          <TabsTrigger value="private">{t('tabPrivate')}</TabsTrigger>
+          <TabsTrigger value="deleted">{t('tabDeleted')}</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       {/* Filter bar */}
       <div className="flex flex-wrap items-end gap-2">
-        <div className="flex flex-col gap-1">
-          <Label className="text-xs text-muted-foreground">{tc('name')}</Label>
-          <Input
-            placeholder="name..."
-            value={nameFilter}
-            onChange={(e) => setNameFilter(e.target.value)}
-            className="w-36 font-mono text-sm"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label className="text-xs text-muted-foreground">{tc('title')}</Label>
-          <Input
-            placeholder={t('searchPlaceholder')}
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            className="w-40"
-          />
-        </div>
         <div className="flex flex-col gap-1">
           <Label className="text-xs text-muted-foreground">{tc('organizations')}</Label>
           <Select value={orgFilter || ALL} onValueChange={handleSelect(setOrgFilter)}>
@@ -184,16 +175,22 @@ export default function DatasetsManagePage() {
             </SelectContent>
           </Select>
         </div>
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <Label className="text-xs text-muted-foreground">{tc('name')}</Label>
+          <Input
+            value={nameFilter}
+            onChange={(e) => setNameFilter(e.target.value)}
+            className="font-mono text-sm"
+          />
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <Label className="text-xs text-muted-foreground">{tc('title')}</Label>
+          <Input
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+          />
+        </div>
       </div>
-
-      {/* Visibility / State tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
-        <TabsList>
-          <TabsTrigger value="public">{t('tabPublic')}</TabsTrigger>
-          <TabsTrigger value="private">{t('tabPrivate')}</TabsTrigger>
-          <TabsTrigger value="deleted">{t('tabDeleted')}</TabsTrigger>
-        </TabsList>
-      </Tabs>
 
       {loading ? (
         <p className="py-12 text-center text-muted-foreground">{tc('loading')}</p>
