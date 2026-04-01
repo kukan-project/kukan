@@ -5,7 +5,8 @@ type App = Awaited<ReturnType<typeof createApp>>
 const globalForApp = globalThis as unknown as { __kukanApp?: Promise<App> }
 
 export function getApp(): Promise<App> {
-  // In development, recreate the app to pick up code changes (HMR-safe)
+  // In development, recreate the app to pick up code changes (HMR-safe).
+  // The DB pool is cached in globalThis by createDb(), so no connection leak.
   if (process.env.NODE_ENV !== 'production') {
     return import('@kukan/api').then((m) => m.createApp())
   }
@@ -19,3 +20,11 @@ export function getApp(): Promise<App> {
   }
   return globalForApp.__kukanApp
 }
+
+// Graceful shutdown — close the DB pool when the process exits
+const shutdown = async () => {
+  const { closePool } = await import('@kukan/api')
+  await closePool()
+}
+process.on('SIGTERM', shutdown)
+process.on('SIGINT', shutdown)
