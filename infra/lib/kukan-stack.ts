@@ -82,7 +82,6 @@ export class KukanStack extends cdk.Stack {
       originVerifySecret,
       bucket: storage.bucket,
       queue: queue.queue,
-      dlq: queue.dlq,
       searchDomainEndpoint: search?.domainEndpoint,
     })
 
@@ -95,7 +94,6 @@ export class KukanStack extends cdk.Stack {
       authSecret,
       bucket: storage.bucket,
       queue: queue.queue,
-      dlq: queue.dlq,
       searchDomainEndpoint: search?.domainEndpoint,
     })
 

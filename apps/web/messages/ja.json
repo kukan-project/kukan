@@ -193,7 +193,6 @@
       "colUpdated": "更新日時",
       "colError": "エラー詳細",
       "noJobs": "パイプラインジョブがありません",
-      "autoRefresh": "自動更新",
       "pending": "待機中",
       "queued": "キュー済み",
       "processing": "処理中",

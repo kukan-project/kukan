@@ -9,7 +9,7 @@ import { Construct } from 'constructs'
 
 export class QueueConstruct extends Construct {
   readonly queue: sqs.Queue
-  readonly dlq: sqs.Queue
+  private readonly dlq: sqs.Queue
 
   constructor(scope: Construct, id: string) {
     super(scope, id)

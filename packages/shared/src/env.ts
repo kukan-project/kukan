@@ -36,7 +36,6 @@ export const envSchema = z.object({
 
   // Queue (SQS-compatible: AWS SQS or ElasticMQ, determined by SQS_ENDPOINT)
   SQS_QUEUE_URL: z.string(),
-  SQS_DLQ_URL: z.string().optional(), // Dead letter queue URL (for admin stats)
   SQS_ENDPOINT: z.string().optional(), // ElasticMQ: http://localhost:9324, SQS: omit
   SQS_REGION: z.string().default('ap-northeast-1'),
   SQS_ACCESS_KEY: z.string().optional(), // ElasticMQ: required, AWS SQS: use IAM role

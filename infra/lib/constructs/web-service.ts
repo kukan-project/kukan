@@ -30,7 +30,6 @@ export interface WebServiceProps {
   originVerifySecret: secretsmanager.ISecret
   bucket: s3.IBucket
   queue: sqs.IQueue
-  dlq: sqs.IQueue
   searchDomainEndpoint?: string
 }
 
@@ -121,7 +120,6 @@ export class WebServiceConstruct extends Construct {
       S3_REGION: cdk.Stack.of(this).region,
       SQS_REGION: cdk.Stack.of(this).region,
       SQS_QUEUE_URL: queue.queueUrl,
-      SQS_DLQ_URL: props.dlq.queueUrl,
       SEARCH_TYPE: searchDomainEndpoint ? 'opensearch' : 'postgres',
       WEB_DB_POOL_MAX: String(config.dbPool.webMax),
     }
@@ -161,7 +159,6 @@ export class WebServiceConstruct extends Construct {
     queue.grantSendMessages(service)
     // GetQueueAttributes for admin queue stats
     queue.grant(service, 'sqs:GetQueueAttributes')
-    props.dlq.grant(service, 'sqs:GetQueueAttributes')
 
     this.serviceUrl = `https://${service.serviceUrl}`
 

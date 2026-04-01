@@ -193,7 +193,6 @@
       "colUpdated": "Updated",
       "colError": "Error",
       "noJobs": "No pipeline jobs",
-      "autoRefresh": "Auto-refresh",
       "pending": "Pending",
       "queued": "Queued",
       "processing": "Processing",

@@ -7,7 +7,7 @@ import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-h
 function createMockQueue(): QueueAdapter {
   return {
     enqueue: vi.fn().mockResolvedValue('mock-job-id'),
-    getStatus: vi.fn().mockResolvedValue(null),
+    getStats: vi.fn().mockResolvedValue({ pending: 0, inFlight: 0, delayed: 0 }),
     process: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn().mockResolvedValue(undefined),
   }

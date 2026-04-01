@@ -55,13 +55,6 @@ describe('SQSQueueAdapter', () => {
     })
   })
 
-  describe('getStatus', () => {
-    it('should always return null', async () => {
-      const status = await queue.getStatus('any-id')
-      expect(status).toBeNull()
-    })
-  })
-
   describe('process + stop', () => {
     it('should poll messages and call handler', async () => {
       const processed: unknown[] = []
@@ -189,59 +182,21 @@ describe('SQSQueueAdapter', () => {
   })
 
   describe('getStats', () => {
-    it('should return queue statistics from main queue and DLQ', async () => {
-      const queueWithDlq = new SQSQueueAdapter({
-        region: 'ap-northeast-1',
-        queueUrl: 'http://localhost:9324/000000000000/test-queue',
-        dlqUrl: 'http://localhost:9324/000000000000/test-dlq',
-        endpoint: 'http://localhost:9324',
-        accessKeyId: 'x',
-        secretAccessKey: 'x',
-      })
-
-      mockSend
-        // Main queue attributes
-        .mockResolvedValueOnce({
-          Attributes: {
-            ApproximateNumberOfMessages: '5',
-            ApproximateNumberOfMessagesNotVisible: '2',
-            ApproximateNumberOfMessagesDelayed: '1',
-          },
-        })
-        // DLQ attributes
-        .mockResolvedValueOnce({
-          Attributes: {
-            ApproximateNumberOfMessages: '3',
-          },
-        })
-
-      const stats = await queueWithDlq.getStats()
-
-      expect(stats).toEqual({
-        pending: 5,
-        inFlight: 2,
-        delayed: 1,
-        dlqPending: 3,
-      })
-      expect(mockSend).toHaveBeenCalledTimes(2)
-    })
-
-    it('should return dlqPending=0 when DLQ URL is not configured', async () => {
+    it('should return queue statistics', async () => {
       mockSend.mockResolvedValueOnce({
         Attributes: {
-          ApproximateNumberOfMessages: '10',
-          ApproximateNumberOfMessagesNotVisible: '0',
-          ApproximateNumberOfMessagesDelayed: '0',
+          ApproximateNumberOfMessages: '5',
+          ApproximateNumberOfMessagesNotVisible: '2',
+          ApproximateNumberOfMessagesDelayed: '1',
         },
       })
 
       const stats = await queue.getStats()
 
       expect(stats).toEqual({
-        pending: 10,
-        inFlight: 0,
-        delayed: 0,
-        dlqPending: 0,
+        pending: 5,
+        inFlight: 2,
+        delayed: 1,
       })
       expect(mockSend).toHaveBeenCalledTimes(1)
     })
@@ -255,7 +210,6 @@ describe('SQSQueueAdapter', () => {
         pending: 0,
         inFlight: 0,
         delayed: 0,
-        dlqPending: 0,
       })
     })
 

@@ -20,7 +20,6 @@ x-app-environment: &app-environment
   OPENSEARCH_URL: ${OPENSEARCH_URL:-http://opensearch:9200}
   SQS_ENDPOINT: ${SQS_ENDPOINT:-http://elasticmq:9324}
   SQS_QUEUE_URL: ${SQS_QUEUE_URL:-http://elasticmq:9324/000000000000/kukan-pipeline}
-  SQS_DLQ_URL: ${SQS_DLQ_URL:-http://elasticmq:9324/000000000000/kukan-pipeline-dlq}
   SQS_ACCESS_KEY: ${SQS_ACCESS_KEY:-x}
   SQS_SECRET_KEY: ${SQS_SECRET_KEY:-x}
   AI_TYPE: ${AI_TYPE:-none}

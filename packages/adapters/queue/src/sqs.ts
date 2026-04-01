@@ -11,7 +11,7 @@ import {
   DeleteMessageCommand,
   GetQueueAttributesCommand,
 } from '@aws-sdk/client-sqs'
-import type { Job, JobStatus, QueueAdapter, QueueStats } from './adapter'
+import type { Job, QueueAdapter, QueueStats } from './adapter'
 
 export interface SQSConfig {
   region: string
@@ -19,13 +19,11 @@ export interface SQSConfig {
   endpoint?: string // ElasticMQ: 'http://localhost:9324', AWS SQS: omit
   accessKeyId?: string
   secretAccessKey?: string
-  dlqUrl?: string // Dead letter queue URL (for stats)
 }
 
 export class SQSQueueAdapter implements QueueAdapter {
   private client: SQSClient
   private queueUrl: string
-  private dlqUrl?: string
   private running = false
   private pollPromise?: Promise<void>
   private abortController?: AbortController
@@ -38,7 +36,6 @@ export class SQSQueueAdapter implements QueueAdapter {
 
   constructor(config: SQSConfig) {
     this.queueUrl = config.queueUrl
-    this.dlqUrl = config.dlqUrl
     this.client = new SQSClient({
       region: config.region,
       ...(config.endpoint && { endpoint: config.endpoint }),
@@ -66,14 +63,8 @@ export class SQSQueueAdapter implements QueueAdapter {
     return jobId
   }
 
-  async getStatus(_jobId: string): Promise<JobStatus | null> {
-    // SQS does not track individual job status.
-    // Pipeline status is managed via the resource_pipeline DB table.
-    return null
-  }
-
   async getStats(): Promise<QueueStats> {
-    const mainPromise = this.client.send(
+    const attrs = await this.client.send(
       new GetQueueAttributesCommand({
         QueueUrl: this.queueUrl,
         AttributeNames: [
@@ -84,22 +75,10 @@ export class SQSQueueAdapter implements QueueAdapter {
       })
     )
 
-    const dlqPromise = this.dlqUrl
-      ? this.client.send(
-          new GetQueueAttributesCommand({
-            QueueUrl: this.dlqUrl,
-            AttributeNames: ['ApproximateNumberOfMessages'],
-          })
-        )
-      : null
-
-    const [attrs, dlqAttrs] = await Promise.all([mainPromise, dlqPromise])
-
     return {
       pending: Number(attrs.Attributes?.ApproximateNumberOfMessages ?? 0),
       inFlight: Number(attrs.Attributes?.ApproximateNumberOfMessagesNotVisible ?? 0),
       delayed: Number(attrs.Attributes?.ApproximateNumberOfMessagesDelayed ?? 0),
-      dlqPending: dlqAttrs ? Number(dlqAttrs.Attributes?.ApproximateNumberOfMessages ?? 0) : 0,
     }
   }
 

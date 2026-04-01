@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
@@ -9,8 +9,6 @@ import {
   Badge,
   Button,
   Card,
-  Label,
-  Switch,
   CardContent,
   CardHeader,
   CardTitle,
@@ -32,9 +30,8 @@ import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
 import { formatDateTimeCompact } from '@/components/date-time'
 
 interface QueueStatsResponse {
-  queue: { pending: number; inFlight: number; delayed: number; dlqPending: number }
+  queue: { pending: number; inFlight: number; delayed: number }
   jobs: Record<string, number>
-  recentErrors: unknown[]
 }
 
 interface JobItem {
@@ -49,8 +46,6 @@ interface JobItem {
   packageName: string
   packageTitle: string | null
 }
-
-const POLL_INTERVAL = 5000
 
 type StatusFilter = 'all' | 'queued' | 'processing' | 'complete' | 'error'
 
@@ -94,21 +89,16 @@ export default function AdminJobsPage() {
   // Status filter
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
 
-  const jobsUrl = useMemo(() => {
-    if (statusFilter === 'queued') return '/api/v1/admin/jobs?status=queued'
-    if (statusFilter === 'processing') return '/api/v1/admin/jobs?status=processing'
-    if (statusFilter === 'complete') return '/api/v1/admin/jobs?status=complete'
-    if (statusFilter === 'error') return '/api/v1/admin/jobs?status=error'
-    return '/api/v1/admin/jobs'
-  }, [statusFilter])
+  const jobsUrl = useMemo(
+    () =>
+      statusFilter === 'all' ? '/api/v1/admin/jobs' : `/api/v1/admin/jobs?status=${statusFilter}`,
+    [statusFilter]
+  )
 
   const { items, loading, error, fetchPage, offset, total, pageSize, totalPages, currentPage } =
     usePaginatedFetch<JobItem>(jobsUrl)
 
-  // Auto-refresh (off by default)
-  const [autoRefresh, setAutoRefresh] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const refresh = useCallback(async () => {
     setRefreshing(true)
@@ -116,36 +106,20 @@ export default function AdminJobsPage() {
     setRefreshing(false)
   }, [fetchPage, offset, fetchStats])
 
-  useEffect(() => {
-    if (!autoRefresh) return
-    timeoutRef.current = setTimeout(refresh, POLL_INTERVAL)
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current)
-    }
-  }, [autoRefresh, items, offset, refresh])
-
   if (!user.sysadmin) return null
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title={t('title')}>
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8"
-            onClick={refresh}
-            disabled={refreshing}
-          >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-          </Button>
-          <div className="flex items-center gap-2">
-            <Switch id="auto-refresh" checked={autoRefresh} onCheckedChange={setAutoRefresh} />
-            <Label htmlFor="auto-refresh" className="text-sm text-muted-foreground">
-              {t('autoRefresh')}
-            </Label>
-          </div>
-        </div>
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8"
+          onClick={refresh}
+          disabled={refreshing}
+        >
+          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+        </Button>
       </PageHeader>
 
       {/* Stats Cards (DB-based) */}

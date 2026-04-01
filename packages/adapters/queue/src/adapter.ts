@@ -9,14 +9,6 @@ export interface Job<T = unknown> {
   data: T
 }
 
-export type JobState = 'pending' | 'processing' | 'completed' | 'failed'
-
-export interface JobStatus {
-  id: string
-  status: JobState
-  error?: string
-}
-
 export interface QueueStats {
   /** Approximate number of messages waiting in the queue */
   pending: number
@@ -24,8 +16,6 @@ export interface QueueStats {
   inFlight: number
   /** Approximate number of delayed messages */
   delayed: number
-  /** Approximate number of messages in the dead letter queue */
-  dlqPending: number
 }
 
 export interface QueueAdapter {
@@ -33,11 +23,6 @@ export interface QueueAdapter {
    * Enqueue a new job
    */
   enqueue<T>(type: string, data: T): Promise<string>
-
-  /**
-   * Get job status
-   */
-  getStatus(jobId: string): Promise<JobStatus | null>
 
   /**
    * Get queue statistics (message counts)
