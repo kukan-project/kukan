@@ -15,7 +15,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@hono/node-server": "^1.14.0",
+    "@hono/node-server": "^1.19.12",
     "@hono/zod-validator": "0.7.6",
     "@kukan/ai-adapter": "workspace:*",
     "@kukan/db": "workspace:*",
@@ -23,16 +23,16 @@
     "@kukan/search-adapter": "workspace:*",
     "@kukan/shared": "workspace:*",
     "@kukan/storage-adapter": "workspace:*",
-    "better-auth": "^1.1.9",
-    "dotenv": "^16.4.0",
-    "drizzle-orm": "^0.45.1",
-    "hono": "^4.12.3",
-    "pg": "^8.13.0",
+    "better-auth": "^1.5.6",
+    "dotenv": "^16.6.1",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.12.9",
+    "pg": "^8.20.0",
     "zod": "3.25.67"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "@types/pg": "^8.11.0",
-    "tsx": "^4.0.0"
+    "@types/node": "^22.19.15",
+    "@types/pg": "^8.20.0",
+    "tsx": "^4.21.0"
   }
 }

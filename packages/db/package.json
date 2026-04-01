@@ -22,14 +22,14 @@
   },
   "dependencies": {
     "@kukan/shared": "workspace:*",
-    "drizzle-orm": "^0.45.1",
-    "pg": "^8.13.0"
+    "drizzle-orm": "^0.45.2",
+    "pg": "^8.20.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "@types/pg": "^8.11.0",
-    "dotenv": "^16.4.0",
-    "drizzle-kit": "^0.31.4",
-    "tsx": "^4.0.0"
+    "@types/node": "^22.19.15",
+    "@types/pg": "^8.20.0",
+    "dotenv": "^16.6.1",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.21.0"
   }
 }

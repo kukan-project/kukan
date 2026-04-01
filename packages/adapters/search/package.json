@@ -18,12 +18,12 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@kukan/shared": "workspace:*",
     "@kukan/db": "workspace:*",
-    "@opensearch-project/opensearch": "^3.0.0",
-    "drizzle-orm": "^0.45.1"
+    "@kukan/shared": "workspace:*",
+    "@opensearch-project/opensearch": "^3.5.1",
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.19.15"
   }
 }
