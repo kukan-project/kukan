@@ -8,7 +8,9 @@ vi.mock('@aws-sdk/client-sqs', () => ({
   SendMessageCommand: vi.fn().mockImplementation((input) => ({ input, _type: 'Send' })),
   ReceiveMessageCommand: vi.fn().mockImplementation((input) => ({ input, _type: 'Receive' })),
   DeleteMessageCommand: vi.fn().mockImplementation((input) => ({ input, _type: 'Delete' })),
-  GetQueueAttributesCommand: vi.fn().mockImplementation((input) => ({ input, _type: 'GetQueueAttributes' })),
+  GetQueueAttributesCommand: vi
+    .fn()
+    .mockImplementation((input) => ({ input, _type: 'GetQueueAttributes' })),
 }))
 
 describe('SQSQueueAdapter', () => {

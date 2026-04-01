@@ -170,7 +170,35 @@
       "organizations": "Organizations",
       "categories": "Categories",
       "apiTokens": "API Tokens",
-      "profile": "Profile"
+      "profile": "Profile",
+      "adminSection": "Admin",
+      "adminJobs": "Job Monitor"
+    },
+    "adminJobs": {
+      "title": "Job Monitor",
+      "statsAll": "All",
+      "statsQueued": "Queued",
+      "statsProcessing": "Processing",
+      "statsComplete": "Complete",
+      "statsError": "Errors",
+      "sqsInfo": "SQS: pending {pending} / in-flight {inFlight}",
+      "tabAll": "All",
+      "tabQueued": "Queued",
+      "tabProcessing": "Processing",
+      "tabComplete": "Complete",
+      "tabErrors": "Errors",
+      "colStatus": "Status",
+      "colResource": "Resource",
+      "colDataset": "Dataset",
+      "colUpdated": "Updated",
+      "colError": "Error",
+      "noJobs": "No pipeline jobs",
+      "autoRefresh": "Auto-refresh",
+      "pending": "Pending",
+      "queued": "Queued",
+      "processing": "Processing",
+      "complete": "Complete",
+      "error": "Error"
     }
   },
   "profile": {

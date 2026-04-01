@@ -4,7 +4,13 @@
  * Non-text formats return null (skip).
  */
 
-import { streamToBuffer, streamToTempFile, cleanupTempFile, detectEncoding, bufferToUtf8 } from '../node-utils'
+import {
+  streamToBuffer,
+  streamToTempFile,
+  cleanupTempFile,
+  detectEncoding,
+  bufferToUtf8,
+} from '../node-utils'
 import { getPreviewKey, isCsvFormat, isTextFormat, isZipFormat } from '@kukan/shared'
 import { parquetWriteBuffer } from 'hyparquet-writer'
 import Papa from 'papaparse'

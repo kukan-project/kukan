@@ -21,6 +21,19 @@ export function formatDateTime(isoString: string, locale: string): string {
   return `${dateStr} ${timeStr}${tz ? ` (${tz})` : ''}`
 }
 
+export function formatDateTimeCompact(isoString: string, locale: string): string {
+  const d = new Date(isoString)
+  if (isNaN(d.getTime())) return ''
+
+  return d.toLocaleString(locale, {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
+
 export function DateTime({ value }: { value: string }) {
   const locale = useLocale()
   const formatted = formatDateTime(value, locale)

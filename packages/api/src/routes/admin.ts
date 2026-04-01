@@ -4,7 +4,7 @@
  */
 
 import { Hono } from 'hono'
-import { eq, and, inArray, sql } from 'drizzle-orm'
+import { eq, and, inArray, sql, desc } from 'drizzle-orm'
 import {
   packageTable,
   resource,
@@ -167,10 +167,10 @@ adminRouter.post('/reindex', async (c) => {
 
 const RECENT_ERROR_LIMIT = 10
 
-// GET /api/v1/admin/queue/stats — Queue and pipeline statistics
-adminRouter.get('/queue/stats', async (c) => {
+// GET /api/v1/admin/jobs/stats — Pipeline job statistics
+adminRouter.get('/jobs/stats', async (c) => {
   const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view queue stats')
+  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view job stats')
 
   const db = c.get('db')
   const queue = c.get('queue')
@@ -207,5 +207,63 @@ adminRouter.get('/queue/stats', async (c) => {
     queue: queueStats,
     jobs: statusMap,
     recentErrors,
+  })
+})
+
+const DEFAULT_JOBS_LIMIT = 20
+const MAX_JOBS_LIMIT = 100
+
+// GET /api/v1/admin/jobs — Paginated pipeline job list
+adminRouter.get('/jobs', async (c) => {
+  const user = c.get('user')
+  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view jobs')
+
+  const db = c.get('db')
+
+  const offset = Math.max(0, Number(c.req.query('offset') ?? 0) || 0)
+  const limit = Math.min(
+    MAX_JOBS_LIMIT,
+    Math.max(1, Number(c.req.query('limit') ?? DEFAULT_JOBS_LIMIT) || DEFAULT_JOBS_LIMIT)
+  )
+  const statusParam = c.req.query('status')
+  const statusList = statusParam ? statusParam.split(',').filter(Boolean) : undefined
+
+  const statusOrder = sql`CASE ${resourcePipeline.status}
+    WHEN 'processing' THEN 0
+    WHEN 'queued' THEN 1
+    WHEN 'pending' THEN 2
+    WHEN 'complete' THEN 3
+    ELSE 4
+  END`
+
+  const whereClause = statusList?.length ? inArray(resourcePipeline.status, statusList) : undefined
+
+  const rows = await db
+    .select({
+      id: resourcePipeline.id,
+      resourceId: resourcePipeline.resourceId,
+      status: resourcePipeline.status,
+      error: resourcePipeline.error,
+      created: resourcePipeline.created,
+      updated: resourcePipeline.updated,
+      resourceName: resource.name,
+      packageId: resource.packageId,
+      packageName: packageTable.name,
+      packageTitle: packageTable.title,
+      total: sql<number>`COUNT(*) OVER()::int`.as('total'),
+    })
+    .from(resourcePipeline)
+    .innerJoin(resource, eq(resourcePipeline.resourceId, resource.id))
+    .innerJoin(packageTable, eq(resource.packageId, packageTable.id))
+    .where(whereClause)
+    .orderBy(statusOrder, desc(resourcePipeline.updated))
+    .limit(limit)
+    .offset(offset)
+
+  return c.json({
+    items: rows.map(({ total: _, ...rest }) => rest),
+    total: rows[0]?.total ?? 0,
+    offset,
+    limit,
   })
 })

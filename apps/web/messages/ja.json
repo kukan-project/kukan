@@ -170,7 +170,35 @@
       "organizations": "組織",
       "categories": "カテゴリー",
       "apiTokens": "APIトークン",
-      "profile": "プロフィール"
+      "profile": "プロフィール",
+      "adminSection": "管理者",
+      "adminJobs": "ジョブ管理"
+    },
+    "adminJobs": {
+      "title": "ジョブ管理",
+      "statsAll": "すべて",
+      "statsQueued": "キュー待ち",
+      "statsProcessing": "処理中",
+      "statsComplete": "完了",
+      "statsError": "エラー",
+      "sqsInfo": "SQS: 待機 {pending} / 処理中 {inFlight}",
+      "tabAll": "すべて",
+      "tabQueued": "キュー待ち",
+      "tabProcessing": "処理中",
+      "tabComplete": "完了",
+      "tabErrors": "エラー",
+      "colStatus": "ステータス",
+      "colResource": "リソース",
+      "colDataset": "データセット",
+      "colUpdated": "更新日時",
+      "colError": "エラー詳細",
+      "noJobs": "パイプラインジョブがありません",
+      "autoRefresh": "自動更新",
+      "pending": "待機中",
+      "queued": "キュー済み",
+      "processing": "処理中",
+      "complete": "完了",
+      "error": "エラー"
     }
   },
   "profile": {
