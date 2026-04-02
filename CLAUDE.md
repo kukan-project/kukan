@@ -178,7 +178,8 @@ pnpm format        # Prettier フォーマット
 - DuckDB-WASM データエクスプローラー → `docs/adr/016-duckdb-wasm-data-explorer.md`
 - 統一 preview-url エンドポイント → `docs/adr/015-unified-preview-url.md`
 - サーバー経由ダウンロード URL → `docs/adr/017-server-proxied-download.md`
-- Web=App Runner, Worker=Fargate → `docs/adr/018-app-runner-plus-fargate.md`
+- Web=App Runner, Worker=Fargate → `docs/adr/018-app-runner-plus-fargate.md`（置換済み → ADR-020）
+- Web=ECS Express Mode, Worker=Fargate → `docs/adr/020-ecs-express-mode-migration.md`
 - ロギング戦略 → `docs/adr/019-logging-strategy.md`
 
 新しい設計判断が必要になったら、同じフォーマットでADRを追加する。
