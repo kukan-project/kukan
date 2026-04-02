@@ -176,7 +176,7 @@
       "categories": "カテゴリー",
       "apiTokens": "APIトークン",
       "profile": "プロフィール",
-      "adminSection": "管理者",
+      "adminSection": "システム管理者",
       "adminJobs": "ジョブ管理"
     },
     "adminJobs": {

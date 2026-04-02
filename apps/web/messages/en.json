@@ -176,7 +176,7 @@
       "categories": "Categories",
       "apiTokens": "API Tokens",
       "profile": "Profile",
-      "adminSection": "Admin",
+      "adminSection": "System Admin",
       "adminJobs": "Job Monitor"
     },
     "adminJobs": {
