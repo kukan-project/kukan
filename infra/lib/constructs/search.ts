@@ -46,7 +46,7 @@ export class SearchConstruct extends Construct {
       vpc,
       vpcSubnets: [
         {
-          subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+          subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
           onePerAz: true,
           availabilityZones: config.opensearch.multiAz
             ? undefined

@@ -29,7 +29,7 @@ CKANの後継として設計されたTypeScriptフルスタックのデータカ
 | AI             | Bedrock / OpenAI / Ollama / NoOp                      |
 | テスト         | Vitest + Playwright                                   |
 | バリデーション | Zod                                                   |
-| デプロイ       | AWS App Runner + ECS Fargate / Docker Compose         |
+| デプロイ       | ECS Fargate + ALB / Docker Compose                    |
 | IaC            | AWS CDK (TypeScript)                                  |
 
 ## モノレポ構成
@@ -61,7 +61,7 @@ KUKAN/
 ├── .dockerignore
 ├── compose.yml             # Docker Compose（開発 / オンプレ本番）
 ├── docker/                 # Caddyfile, ElasticMQ, OpenSearch 設定
-├── infra/                  # AWS CDK スタック（KukanStack + KukanGlobalStack）
+├── infra/                  # AWS CDK スタック（KukanStack）
 ├── turbo.json
 ├── pnpm-workspace.yaml
 ├── package.json
@@ -179,7 +179,7 @@ pnpm format        # Prettier フォーマット
 - 統一 preview-url エンドポイント → `docs/adr/015-unified-preview-url.md`
 - サーバー経由ダウンロード URL → `docs/adr/017-server-proxied-download.md`
 - Web=App Runner, Worker=Fargate → `docs/adr/018-app-runner-plus-fargate.md`（置換済み → ADR-020）
-- Web=ECS Express Mode, Worker=Fargate → `docs/adr/020-ecs-express-mode-migration.md`
+- Web=ECS Fargate+ALB, Worker=Fargate → `docs/adr/020-ecs-fargate-alb-migration.md`
 - ロギング戦略 → `docs/adr/019-logging-strategy.md`
 
 新しい設計判断が必要になったら、同じフォーマットでADRを追加する。
@@ -242,7 +242,6 @@ pnpm typecheck                  # TypeScript 型チェック
 
 ```bash
 cd infra
-npx cdk deploy --all            # 全スタックデプロイ（KukanGlobalStack + KukanStack）
-npx cdk deploy KukanStack       # メインスタックのみ
+npx cdk deploy                  # KukanStack デプロイ
 npx cdk diff                    # デプロイ前の差分確認
 ```

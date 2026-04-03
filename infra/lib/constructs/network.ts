@@ -1,6 +1,6 @@
 /**
  * KUKAN Network Construct
- * VPC, Subnets, NAT (Instance or Gateway), Security Groups, S3 VPC Endpoint.
+ * VPC, Subnets, Security Groups, S3 VPC Endpoint.
  */
 
 import * as cdk from 'aws-cdk-lib'
@@ -16,7 +16,8 @@ export class NetworkConstruct extends Construct {
   readonly vpc: ec2.IVpc
   readonly dbSecurityGroup: ec2.ISecurityGroup
   readonly searchSecurityGroup: ec2.ISecurityGroup
-  readonly appRunnerSecurityGroup: ec2.ISecurityGroup
+  readonly albSecurityGroup: ec2.ISecurityGroup
+  readonly webSecurityGroup: ec2.ISecurityGroup
   readonly workerSecurityGroup: ec2.ISecurityGroup
 
   constructor(scope: Construct, id: string, props: NetworkProps) {
@@ -24,20 +25,14 @@ export class NetworkConstruct extends Construct {
 
     const { config } = props
 
-    // NAT provider: t4g.nano instance (small) or NAT Gateway (medium+)
-    const natProvider = config.nat.useNatInstance
-      ? ec2.NatProvider.instanceV2({
-          instanceType: ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.NANO),
-        })
-      : ec2.NatProvider.gateway()
-
+    // ECS tasks run in public subnets (assignPublicIp: true) — no NAT needed.
+    // Private isolated subnets are for RDS / OpenSearch only (no internet access).
     this.vpc = new ec2.Vpc(this, 'Vpc', {
       maxAzs: 2,
-      natGateways: 1,
-      natGatewayProvider: natProvider,
+      natGateways: 0,
       subnetConfiguration: [
         { name: 'Public', subnetType: ec2.SubnetType.PUBLIC, cidrMask: 24 },
-        { name: 'Private', subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS, cidrMask: 24 },
+        { name: 'Private', subnetType: ec2.SubnetType.PRIVATE_ISOLATED, cidrMask: 24 },
       ],
     })
 
@@ -48,10 +43,34 @@ export class NetworkConstruct extends Construct {
 
     // --- Security Groups ---
 
-    // App Runner VPC Connector
-    this.appRunnerSecurityGroup = new ec2.SecurityGroup(this, 'AppRunnerSg', {
+    // ALB (internet-facing)
+    // All SG rules managed here; listener uses open=false to prevent CDK auto-rules.
+    // With custom domain (HTTPS): allow 443 + 80 (HTTP→HTTPS redirect).
+    // Without custom domain: allow 80 only (dev/test).
+    const albPorts = config.domainName ? [443, 80] : [80]
+    this.albSecurityGroup = new ec2.SecurityGroup(this, 'AlbSg', {
       vpc: this.vpc,
-      description: 'App Runner VPC Connector',
+      description: 'ALB for web service',
+      allowAllOutbound: true,
+    })
+    if (config.allowedIpRanges && config.allowedIpRanges.length > 0) {
+      for (const cidr of config.allowedIpRanges) {
+        const peer = cidr.includes(':') ? ec2.Peer.ipv6(cidr) : ec2.Peer.ipv4(cidr)
+        for (const port of albPorts) {
+          this.albSecurityGroup.addIngressRule(peer, ec2.Port.tcp(port), 'Allowed IP')
+        }
+      }
+    } else {
+      for (const port of albPorts) {
+        this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(port), 'Public')
+        this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv6(), ec2.Port.tcp(port), 'Public IPv6')
+      }
+    }
+
+    // Web (ECS Fargate tasks — ALB traffic only)
+    this.webSecurityGroup = new ec2.SecurityGroup(this, 'WebSg', {
+      vpc: this.vpc,
+      description: 'Web ECS Fargate tasks',
       allowAllOutbound: true,
     })
 
@@ -68,16 +87,6 @@ export class NetworkConstruct extends Construct {
       description: 'Database (RDS/Aurora)',
       allowAllOutbound: false,
     })
-    this.dbSecurityGroup.addIngressRule(
-      this.appRunnerSecurityGroup,
-      ec2.Port.tcp(5432),
-      'Allow App Runner'
-    )
-    this.dbSecurityGroup.addIngressRule(
-      this.workerSecurityGroup,
-      ec2.Port.tcp(5432),
-      'Allow Worker'
-    )
 
     // OpenSearch
     this.searchSecurityGroup = new ec2.SecurityGroup(this, 'SearchSg', {
@@ -85,16 +94,13 @@ export class NetworkConstruct extends Construct {
       description: 'OpenSearch domain',
       allowAllOutbound: false,
     })
-    this.searchSecurityGroup.addIngressRule(
-      this.appRunnerSecurityGroup,
-      ec2.Port.tcp(443),
-      'Allow App Runner'
-    )
-    this.searchSecurityGroup.addIngressRule(
-      this.workerSecurityGroup,
-      ec2.Port.tcp(443),
-      'Allow Worker'
-    )
+
+    // --- Inter-SG traffic (allowFrom) ---
+    this.webSecurityGroup.connections.allowFrom(this.albSecurityGroup, ec2.Port.tcp(3000), 'ALB')
+    this.dbSecurityGroup.connections.allowFrom(this.webSecurityGroup, ec2.Port.tcp(5432), 'Web')
+    this.dbSecurityGroup.connections.allowFrom(this.workerSecurityGroup, ec2.Port.tcp(5432), 'Worker')
+    this.searchSecurityGroup.connections.allowFrom(this.webSecurityGroup, ec2.Port.tcp(443), 'Web')
+    this.searchSecurityGroup.connections.allowFrom(this.workerSecurityGroup, ec2.Port.tcp(443), 'Worker')
 
     cdk.Tags.of(this).add('kukan:component', 'network')
   }

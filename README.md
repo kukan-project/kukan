@@ -119,7 +119,7 @@ pnpm db:migrate   # Run migrations / マイグレーション実行
 cd infra && npx cdk bootstrap
 
 # 3. Deploy (Docker build + ECR push + all resources / 全リソース作成)
-npx cdk deploy --all
+npx cdk deploy
 ```
 
 Deploys a `small` configuration by default:
@@ -127,29 +127,25 @@ Deploys a `small` configuration by default:
 
 | Component | Service                          |
 | --------- | -------------------------------- |
-| Web       | App Runner (0.25 vCPU / 512 MB)  |
+| Web       | ECS Fargate + ALB (0.25 vCPU / 512 MB) |
 | Worker    | ECS Fargate (0.25 vCPU / 512 MB) |
 | DB        | RDS PostgreSQL db.t4g.micro      |
 | Search    | OpenSearch t3.small.search       |
-| CDN       | CloudFront (default domain)      |
-| WAF       | 3 managed rule groups            |
-| NAT       | t4g.nano Instance                |
+| WAF       | 3 managed rule groups (optional) |
 
 ### CDK parameters / CDK パラメータ一覧
 
-| Parameter          | Type                           | Default           | Description                                                        |
-| ------------------ | ------------------------------ | ----------------- | ------------------------------------------------------------------ |
-| `scale`            | `small` \| `medium` \| `large` | `small`           | Resource sizing preset                                             |
-| `dbEngine`         | `rds` \| `aurora`              | Scale-dependent   | DB engine (`small`=RDS, `medium`+=Aurora)                          |
-| `enableOpenSearch` | boolean                        | `true`            | `false` → PostgreSQL full-text fallback                            |
-| `enableCloudFront` | boolean                        | `true`            | `false` → direct App Runner access                                 |
-| `enableWaf`        | boolean                        | Secure by default | WAF on CloudFront (~$9/mo). Auto-enabled when no `allowedIpRanges` |
-| `domainName`       | string                         | —                 | Custom domain (CloudFront default domain when unset)               |
-| `hostedZoneId`     | string                         | —                 | Route53 Hosted Zone ID (required with `domainName`)                |
-| `hostedZoneName`   | string                         | —                 | Route53 Hosted Zone name (required with `domainName`)              |
-| `allowedIpRanges`  | string[]                       | —                 | IP allowlist via CloudFront Function (CIDR, IPv4+IPv6)             |
-| `bucketName`       | string                         | `kukan-resources` | S3 bucket name                                                     |
-| `region`           | string                         | `ap-northeast-1`  | Deploy region                                                      |
+| Parameter          | Type                           | Default             | Description                                                     |
+| ------------------ | ------------------------------ | ------------------- | --------------------------------------------------------------- |
+| `scale`            | `small` \| `medium` \| `large` | `small`             | Resource sizing preset                                          |
+| `dbEngine`         | `rds` \| `aurora`              | Scale-dependent     | DB engine (`small`=RDS, `medium`+=Aurora)                       |
+| `enableOpenSearch` | boolean                        | `true`              | `false` → PostgreSQL full-text fallback                         |
+| `enableWaf`        | boolean                        | `!allowedIpRanges`  | WAF on ALB (~$9/mo). Auto-enabled when no `allowedIpRanges`    |
+| `domainName`       | string                         | —                   | Custom domain (ALB default domain when unset)                   |
+| `hostedZoneId`     | string                         | —                   | Route53 Hosted Zone ID (required with `domainName`)             |
+| `hostedZoneName`   | string                         | —                   | Route53 Hosted Zone name (required with `domainName`)           |
+| `allowedIpRanges`  | string[]                       | —                   | IP allowlist via ALB Security Group (CIDR, IPv4+IPv6)           |
+| `bucketName`       | string                         | `kukan-resources`   | S3 bucket name                                                  |
 
 ### Environment-specific settings / 環境固有の設定
 
@@ -169,7 +165,7 @@ Store environment-specific values in `infra/cdk.context.json` (gitignored):
 Or override temporarily via CLI / CLI で一時オーバーライド:
 
 ```bash
-npx cdk deploy --all -c scale=medium -c enableWaf=true
+npx cdk deploy -c scale=medium -c enableWaf=true
 ```
 
 See [docs/specs/phase4-deploy.md](docs/specs/phase4-deploy.md) for full details.

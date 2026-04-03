@@ -14,10 +14,11 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
 import * as sqs from 'aws-cdk-lib/aws-sqs'
 import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
+import { DOCKER_ASSET_EXCLUDES } from '../docker-excludes.js'
 
 export interface WorkerServiceProps {
   config: KukanConfig
-  vpc: ec2.IVpc
+  cluster: ecs.ICluster
   workerSecurityGroup: ec2.ISecurityGroup
   postgresEnv: Record<string, string>
   authSecret: secretsmanager.ISecret
@@ -34,7 +35,7 @@ export class WorkerServiceConstruct extends Construct {
 
     const {
       config,
-      vpc,
+      cluster,
       workerSecurityGroup,
       postgresEnv,
       authSecret,
@@ -44,17 +45,13 @@ export class WorkerServiceConstruct extends Construct {
     } = props
 
     // Docker image (built and pushed automatically by CDK)
+    // exclude mirrors .dockerignore so CDK asset hash ignores non-app files
     const imageAsset = new assets.DockerImageAsset(this, 'WorkerImage', {
       directory: '../',
       file: 'Dockerfile',
       target: 'worker',
       platform: assets.Platform.LINUX_AMD64,
-    })
-
-    // ECS Cluster
-    const cluster = new ecs.Cluster(this, 'Cluster', {
-      vpc,
-      clusterName: 'kukan-worker',
+      exclude: DOCKER_ASSET_EXCLUDES,
     })
 
     // Task Definition
@@ -66,8 +63,6 @@ export class WorkerServiceConstruct extends Construct {
     // Grant permissions to task role
     bucket.grantReadWrite(taskDef.taskRole)
     queue.grantConsumeMessages(taskDef.taskRole)
-    authSecret.grantRead(taskDef.taskRole)
-
     // Environment variables
     const environment: Record<string, string> = {
       NODE_ENV: 'production',
@@ -75,8 +70,8 @@ export class WorkerServiceConstruct extends Construct {
       BETTER_AUTH_SECRET: authSecret.secretValue.unsafeUnwrap(),
       AI_TYPE: 'none',
       S3_BUCKET: bucket.bucketName,
-      S3_REGION: cdk.Stack.of(this).region,
-      SQS_REGION: cdk.Stack.of(this).region,
+      S3_REGION: cdk.Aws.REGION,
+      SQS_REGION: cdk.Aws.REGION,
       SQS_QUEUE_URL: queue.queueUrl,
       SEARCH_TYPE: searchDomainEndpoint ? 'opensearch' : 'postgres',
       WORKER_DB_POOL_MAX: String(config.dbPool.workerMax),
@@ -92,7 +87,6 @@ export class WorkerServiceConstruct extends Construct {
       environment,
       logging: ecs.LogDrivers.awsLogs({
         logGroup: new logs.LogGroup(this, 'WorkerLogs', {
-          logGroupName: '/kukan/worker',
           retention: logs.RetentionDays.ONE_MONTH,
         }),
         streamPrefix: 'worker',
@@ -113,11 +107,12 @@ export class WorkerServiceConstruct extends Construct {
     // Fargate Service
     this.service = new ecs.FargateService(this, 'Service', {
       cluster,
+      serviceName: 'kukan-worker',
       taskDefinition: taskDef,
       desiredCount: config.worker.minTasks,
       securityGroups: [workerSecurityGroup],
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
-      assignPublicIp: false,
+      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+      assignPublicIp: true,
       minHealthyPercent: 100,
       circuitBreaker: { enable: true, rollback: true },
     })

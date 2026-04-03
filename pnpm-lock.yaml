@@ -202,9 +202,6 @@ importers:
 
   infra:
     dependencies:
-      '@aws-cdk/aws-apprunner-alpha':
-        specifier: 2.246.0-alpha.0
-        version: 2.246.0-alpha.0(aws-cdk-lib@2.246.0(constructs@10.6.0))(constructs@10.6.0)
       aws-cdk-lib:
         specifier: ^2.246.0
         version: 2.246.0(constructs@10.6.0)
@@ -449,13 +446,6 @@ packages:
 
   '@aws-cdk/asset-node-proxy-agent-v6@2.1.1':
     resolution: {integrity: sha512-We4bmHaowOPHr+IQR4/FyTGjRfjgBj4ICMjtqmJeBDWad3Q/6St12NT07leNtyuukv2qMhtSZJQorD8KpKTwRA==}
-
-  '@aws-cdk/aws-apprunner-alpha@2.246.0-alpha.0':
-    resolution: {integrity: sha512-x5TlYNyJ19OyzWpT9ruZXEQ2GTsm8bddgULKTG+XUkfsWnA7NJoVMfagZICloFlRlr1rVzo9INlnScFbHXA9Jw==}
-    engines: {node: '>= 20.0.0'}
-    peerDependencies:
-      aws-cdk-lib: ^2.246.0
-      constructs: ^10.5.0
 
   '@aws-cdk/cloud-assembly-schema@53.11.0':
     resolution: {integrity: sha512-sAkcWQz2hvblIDHe5pFXxyIPZuhDaYowGIpASK+LSDvknBpP7+y3fib/FMpSPQdyI6ZOmJPEQOnz553H7mPnBA==}
@@ -5462,11 +5452,6 @@ snapshots:
   '@aws-cdk/asset-awscli-v1@2.2.263': {}
 
   '@aws-cdk/asset-node-proxy-agent-v6@2.1.1': {}
-
-  '@aws-cdk/aws-apprunner-alpha@2.246.0-alpha.0(aws-cdk-lib@2.246.0(constructs@10.6.0))(constructs@10.6.0)':
-    dependencies:
-      aws-cdk-lib: 2.246.0(constructs@10.6.0)
-      constructs: 10.6.0
 
   '@aws-cdk/cloud-assembly-schema@53.11.0': {}
 

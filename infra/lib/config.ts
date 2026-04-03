@@ -15,13 +15,11 @@ export interface KukanConfig {
   dbEngine: DbEngine
   /** Enable OpenSearch (false = PostgreSQL full-text fallback) */
   enableOpenSearch: boolean
-  /** Enable CloudFront + custom domain */
-  enableCloudFront: boolean
-  /** Enable WAF on CloudFront (managed rule groups) */
+  /** Enable WAF on ALB (managed rule groups + optional IP allowlist) */
   enableWaf: boolean
-  /** IP allowlist for CloudFront (CIDR notation). If set, all other IPs are blocked. */
+  /** IP allowlist (CIDR notation). When set, WAF blocks all other IPs. */
   allowedIpRanges?: string[]
-  /** Custom domain name (required if enableCloudFront) */
+  /** Custom domain name */
   domainName?: string
   /** Route53 Hosted Zone ID */
   hostedZoneId?: string
@@ -60,9 +58,6 @@ export interface KukanConfig {
     volumeSize: number // GB
     multiAz: boolean
   }
-  nat: {
-    useNatInstance: boolean
-  }
   dbPool: {
     webMax: number
     workerMax: number
@@ -76,7 +71,6 @@ const SCALE_DEFAULTS: Record<
     | 'scale'
     | 'dbEngine'
     | 'enableOpenSearch'
-    | 'enableCloudFront'
     | 'enableWaf'
     | 'allowedIpRanges'
     | 'domainName'
@@ -95,7 +89,6 @@ const SCALE_DEFAULTS: Record<
       volumeSize: 10,
       multiAz: false,
     },
-    nat: { useNatInstance: true },
     dbPool: { webMax: 5, workerMax: 3 },
   },
   medium: {
@@ -108,7 +101,6 @@ const SCALE_DEFAULTS: Record<
       volumeSize: 50,
       multiAz: false,
     },
-    nat: { useNatInstance: false },
     dbPool: { webMax: 10, workerMax: 5 },
   },
   large: {
@@ -121,7 +113,6 @@ const SCALE_DEFAULTS: Record<
       volumeSize: 100,
       multiAz: true,
     },
-    nat: { useNatInstance: false },
     dbPool: { webMax: 20, workerMax: 10 },
   },
 }
@@ -131,11 +122,9 @@ export function loadConfig(scope: Construct): KukanConfig {
   const dbEngine =
     (scope.node.tryGetContext('dbEngine') as DbEngine) ?? SCALE_DEFAULTS[scale].db.engine
   const enableOpenSearch = scope.node.tryGetContext('enableOpenSearch') ?? true
-  const enableCloudFront = scope.node.tryGetContext('enableCloudFront') ?? true
   const allowedIpRanges = scope.node.tryGetContext('allowedIpRanges') as string[] | undefined
-  // Secure by default: WAF auto-enabled when no IP restriction is set.
-  // When allowedIpRanges is set, CloudFront Function provides IP filtering
-  // and WAF defaults to off (can still be explicitly enabled).
+  // IP restriction is handled by ALB Security Group, so WAF is only needed
+  // for managed rules. Default OFF when allowedIpRanges is set (saves ~$9/month).
   const enableWafExplicit = scope.node.tryGetContext('enableWaf') as boolean | undefined
   const enableWaf = enableWafExplicit ?? !allowedIpRanges
   const domainName = scope.node.tryGetContext('domainName') as string | undefined
@@ -156,7 +145,6 @@ export function loadConfig(scope: Construct): KukanConfig {
     scale,
     dbEngine,
     enableOpenSearch,
-    enableCloudFront,
     enableWaf,
     allowedIpRanges,
     domainName,
