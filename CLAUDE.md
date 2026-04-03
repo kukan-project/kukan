@@ -176,8 +176,8 @@ pnpm format        # Prettier フォーマット
 - 検索と DB フィルタリングの分離 → `docs/adr/013-search-vs-db-filtering.md`
 - プレビュー Parquet 形式 → `docs/adr/014-parquet-preview-format.md`
 - DuckDB-WASM データエクスプローラー → `docs/adr/016-duckdb-wasm-data-explorer.md`
-- 統一 preview-url エンドポイント → `docs/adr/015-unified-preview-url.md`
-- サーバー経由ダウンロード URL → `docs/adr/017-server-proxied-download.md`
+- 統一 preview-url エンドポイント → `docs/adr/015-unified-preview-url.md`（置換済み → ADR-017）
+- サーバー経由ダウンロード・プレビュー URL → `docs/adr/017-server-proxied-download.md`
 - Web=App Runner, Worker=Fargate → `docs/adr/018-app-runner-plus-fargate.md`（置換済み → ADR-020）
 - Web=ECS Fargate+ALB, Worker=Fargate → `docs/adr/020-ecs-fargate-alb-migration.md`
 - ロギング戦略 → `docs/adr/019-logging-strategy.md`

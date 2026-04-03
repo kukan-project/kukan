@@ -22,7 +22,7 @@ const STATUS_CONFIG: Record<
   error: { variant: 'destructive' },
 }
 
-const STATUS_KEYS: Record<PipelineStatus, string> = {
+export const STATUS_KEYS: Record<PipelineStatus, string> = {
   queued: 'pipelineQueued',
   processing: 'pipelineProcessing',
   complete: 'pipelineComplete',

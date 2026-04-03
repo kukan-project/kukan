@@ -24,40 +24,21 @@ import { clientFetch } from '@/lib/client-api'
 
 const mockClientFetch = vi.mocked(clientFetch)
 
-function jsonResponse(data: unknown, ok = true) {
-  return {
-    ok,
-    json: async () => data,
-  } as Response
-}
-
 beforeEach(() => {
   mockClientFetch.mockReset()
 })
 
 describe('ResourcePreview', () => {
-  describe('Parquet preview', () => {
-    it('should show ParquetPreview when preview-url returns a URL', async () => {
-      mockClientFetch.mockResolvedValue(jsonResponse({ url: 'https://minio/preview.parquet' }))
-
+  describe('CSV preview', () => {
+    it('should show ParquetPreview for CSV format', () => {
       render(<ResourcePreview resourceId="r1" format="CSV" />)
-
-      await waitFor(() => {
-        expect(screen.getByTestId('parquet-preview')).toBeInTheDocument()
-      })
+      expect(screen.getByTestId('parquet-preview')).toBeInTheDocument()
     })
 
-    it('should show no-data when preview-url returns null for CSV', async () => {
-      mockClientFetch.mockResolvedValue(jsonResponse({ url: null }))
-
-      render(<ResourcePreview resourceId="r1" format="CSV" />)
-
-      await waitFor(() => {
-        expect(screen.getByText('Preview data is not available')).toBeInTheDocument()
-      })
+    it('should show ParquetPreview for TSV format', () => {
+      render(<ResourcePreview resourceId="r1" format="TSV" />)
+      expect(screen.getByTestId('parquet-preview')).toBeInTheDocument()
     })
-
-    // XLSX not-available test moved to "Text format preview" section (synchronous render)
   })
 
   describe('Text format preview', () => {
@@ -107,29 +88,12 @@ describe('ResourcePreview', () => {
   })
 
   describe('PDF preview', () => {
-    it('should render iframe for PDF format via preview-url', async () => {
-      // PDF uses preview-url which returns the original file URL with inline disposition
-      mockClientFetch.mockResolvedValueOnce(
-        jsonResponse({ url: 'https://storage.example.com/test.pdf' })
-      )
-
+    it('should render iframe with /preview endpoint for PDF format', () => {
       render(<ResourcePreview resourceId="r1" format="PDF" />)
 
-      await waitFor(() => {
-        const iframe = document.querySelector('iframe')
-        expect(iframe).not.toBeNull()
-        expect(iframe!.src).toBe('https://storage.example.com/test.pdf')
-      })
-    })
-
-    it('should show not-available when preview-url fails for PDF', async () => {
-      mockClientFetch.mockResolvedValueOnce(jsonResponse({}, false))
-
-      render(<ResourcePreview resourceId="r1" format="PDF" />)
-
-      await waitFor(() => {
-        expect(screen.getByText('Preview is not available for this format')).toBeInTheDocument()
-      })
+      const iframe = document.querySelector('iframe')
+      expect(iframe).not.toBeNull()
+      expect(iframe!.getAttribute('src')).toBe('/api/v1/resources/r1/preview')
     })
   })
 })

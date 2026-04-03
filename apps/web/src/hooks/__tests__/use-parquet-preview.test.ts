@@ -1,11 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, waitFor, act } from '@testing-library/react'
-import { clientFetch } from '@/lib/client-api'
 import { useParquetPreview } from '../use-parquet-preview'
-
-vi.mock('@/lib/client-api', () => ({
-  clientFetch: vi.fn(),
-}))
 
 // Mock hyparquet
 const mockAsyncBufferFromUrl = vi.fn()
@@ -18,12 +13,6 @@ vi.mock('hyparquet', () => ({
   parquetReadObjects: (...args: unknown[]) => mockParquetReadObjects(...args),
 }))
 
-const mockClientFetch = vi.mocked(clientFetch)
-
-function jsonResponse(data: unknown, ok = true) {
-  return { ok, json: async () => data } as Response
-}
-
 describe('useParquetPreview', () => {
   const fakeFile = { byteLength: 1000, slice: vi.fn() }
   const fakeMetadata = {
@@ -32,14 +21,12 @@ describe('useParquetPreview', () => {
   }
 
   beforeEach(() => {
-    mockClientFetch.mockReset()
     mockAsyncBufferFromUrl.mockReset()
     mockParquetMetadataAsync.mockReset()
     mockParquetReadObjects.mockReset()
   })
 
   it('should load metadata and first page', async () => {
-    mockClientFetch.mockResolvedValue(jsonResponse({ url: 'https://minio/preview.parquet' }))
     mockAsyncBufferFromUrl.mockResolvedValue(fakeFile)
     mockParquetMetadataAsync.mockResolvedValue(fakeMetadata)
     mockParquetReadObjects.mockResolvedValue([{ col_a: 'val1', col_b: 'val2' }])
@@ -57,10 +44,14 @@ describe('useParquetPreview', () => {
     expect(result.current.rows).toEqual([{ col_a: 'val1', col_b: 'val2' }])
     expect(result.current.page).toBe(0)
     expect(result.current.totalPages).toBe(3) // 250 / 100 = 3
+
+    expect(mockAsyncBufferFromUrl).toHaveBeenCalledWith({
+      url: '/api/v1/resources/r1/preview',
+    })
   })
 
-  it('should handle no preview URL', async () => {
-    mockClientFetch.mockResolvedValue(jsonResponse({ url: null }))
+  it('should handle preview not available (404)', async () => {
+    mockAsyncBufferFromUrl.mockRejectedValue(new Error('404'))
 
     const { result } = renderHook(() => useParquetPreview({ resourceId: 'r1' }))
 
@@ -70,22 +61,10 @@ describe('useParquetPreview', () => {
 
     expect(result.current.metadata).toBeNull()
     expect(result.current.rows).toEqual([])
-  })
-
-  it('should handle preview-url fetch error', async () => {
-    mockClientFetch.mockResolvedValue(jsonResponse({}, false))
-
-    const { result } = renderHook(() => useParquetPreview({ resourceId: 'r1' }))
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
-
-    expect(result.current.error).toBe('Failed to get preview URL')
+    expect(result.current.error).toBeNull()
   })
 
   it('should navigate to a different page via goToPage', async () => {
-    mockClientFetch.mockResolvedValue(jsonResponse({ url: 'https://minio/preview.parquet' }))
     mockAsyncBufferFromUrl.mockResolvedValue(fakeFile)
     mockParquetMetadataAsync.mockResolvedValue(fakeMetadata)
 
@@ -118,7 +97,6 @@ describe('useParquetPreview', () => {
   })
 
   it('should clamp page numbers', async () => {
-    mockClientFetch.mockResolvedValue(jsonResponse({ url: 'https://minio/preview.parquet' }))
     mockAsyncBufferFromUrl.mockResolvedValue(fakeFile)
     mockParquetMetadataAsync.mockResolvedValue({
       ...fakeMetadata,

@@ -257,6 +257,7 @@
     "pipelineProcessing": "処理中",
     "pipelineComplete": "完了",
     "pipelineError": "エラー",
+    "pipelineStuck": "処理停止",
     "pipelineStepFetch": "取得",
     "pipelineStepExtract": "抽出",
     "pipelineStepIndex": "インデックス",

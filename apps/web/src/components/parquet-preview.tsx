@@ -38,7 +38,17 @@ export function ParquetPreview({ resourceId }: ParquetPreviewProps) {
     )
   }
 
-  if (!metadata || metadata.numRows === 0) {
+  if (!metadata) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          {t('previewNoData')}
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (metadata.numRows === 0) {
     return (
       <Card>
         <CardContent className="py-8 text-center text-sm text-muted-foreground">

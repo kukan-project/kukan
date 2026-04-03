@@ -18,6 +18,7 @@ import { extractZipManifest } from './extract-zip'
 import type { PipelineContext } from '../types'
 
 const ROW_GROUP_SIZE = 5_000
+const MAX_COLUMNS = 500
 const FOOTER_PREFIXES = ['合計', '注', '※', '出典', '備考', '計', 'total', 'note', 'source']
 const FIXED_UTF8_FORMATS = new Set(['json', 'geojson', 'md'])
 
@@ -95,6 +96,12 @@ export async function executeExtract(
   }
 
   const headers = titleSkipped[0]
+
+  // Reject extremely wide CSVs (e.g. pivot tables) — too many columns to preview
+  if (headers.length > MAX_COLUMNS) {
+    throw new Error(`Too many columns (${headers.length}), max ${MAX_COLUMNS}`)
+  }
+
   const dataRows = removeFooterRows(titleSkipped.slice(1))
 
   const columnData = headers.map((header, colIndex) => ({

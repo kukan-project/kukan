@@ -257,6 +257,7 @@
     "pipelineProcessing": "Processing",
     "pipelineComplete": "Complete",
     "pipelineError": "Error",
+    "pipelineStuck": "Stalled",
     "pipelineStepFetch": "Fetch",
     "pipelineStepExtract": "Extract",
     "pipelineStepIndex": "Index",

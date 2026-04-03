@@ -144,8 +144,7 @@ resourcesRouter.get('/:id/download', async (c) => {
 })
 
 // GET /api/v1/resources/:id/preview - Server-proxied preview with Range support
-// Used by Local storage (file:// URLs don't work in browsers).
-// S3 storage uses presigned URLs via preview-url instead.
+// Used by hyparquet (Parquet preview) and local storage (file:// URLs).
 resourcesRouter.get('/:id/preview', async (c) => {
   const id = c.req.param('id')
   const service = new ResourceService(c.get('db'))
@@ -194,26 +193,6 @@ resourcesRouter.get('/:id/preview', async (c) => {
       'Cache-Control': 'private, max-age=300',
     },
   })
-})
-
-// GET /api/v1/resources/:id/preview-url - Get presigned preview URL (public)
-resourcesRouter.get('/:id/preview-url', async (c) => {
-  const id = c.req.param('id')
-  const service = new ResourceService(c.get('db'))
-  const resource = await service.getById(id)
-
-  const target = await resolvePreviewTarget(c.get('db'), resource)
-  if (!target) {
-    return c.json({ url: null })
-  }
-
-  const storage = c.get('storage')
-  const isPdf = resource.format?.toLowerCase() === 'pdf'
-  const url = await storage.getSignedUrl(
-    target.storageKey,
-    isPdf ? { inline: true, contentType: target.contentType } : undefined
-  )
-  return c.json({ url })
 })
 
 // GET /api/v1/resources/:id/pipeline-status - Check pipeline progress (public)

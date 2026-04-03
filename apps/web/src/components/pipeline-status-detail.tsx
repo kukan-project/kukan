@@ -5,6 +5,7 @@ import { RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { usePipelineStatus, type PipelineStatus } from '@/hooks/use-pipeline-status'
+import { STATUS_KEYS } from '@/components/dashboard/dataset/pipeline-status-badge'
 import { clientFetch } from '@/lib/client-api'
 
 interface PipelineStatusDetailProps {
@@ -46,6 +47,8 @@ function getDuration(startedAt: string | null, completedAt: string | null): stri
   return (ms / 1000).toFixed(1)
 }
 
+const STUCK_THRESHOLD_MS = 5 * 60 * 1000
+
 const STATUS_BADGE_VARIANTS: Record<
   PipelineStatus,
   'outline' | 'default' | 'secondary' | 'destructive'
@@ -68,7 +71,17 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
     onSettled,
   })
   const [reprocessing, setReprocessing] = useState(false)
-  const isRunning = status === 'queued' || status === 'processing'
+
+  // Detect stuck pipelines: processing with a step running for 5+ minutes
+  const stuck =
+    status === 'processing' &&
+    steps.some(
+      (s) =>
+        s.status === 'running' &&
+        s.started_at &&
+        Date.now() - new Date(s.started_at).getTime() > STUCK_THRESHOLD_MS
+    )
+  const isRunning = (status === 'queued' || status === 'processing') && !stuck
 
   async function handleReprocess() {
     setReprocessing(true)
@@ -87,16 +100,8 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
       {status && (
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Badge variant={STATUS_BADGE_VARIANTS[status]}>
-              {t(
-                status === 'queued'
-                  ? 'pipelineQueued'
-                  : status === 'processing'
-                    ? 'pipelineProcessing'
-                    : status === 'complete'
-                      ? 'pipelineComplete'
-                      : 'pipelineError'
-              )}
+            <Badge variant={stuck ? 'destructive' : STATUS_BADGE_VARIANTS[status]}>
+              {t(stuck ? 'pipelineStuck' : STATUS_KEYS[status])}
             </Badge>
           </div>
           {!isRunning && (

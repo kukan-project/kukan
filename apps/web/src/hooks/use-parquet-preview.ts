@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { clientFetch } from '@/lib/client-api'
 import type { AsyncBuffer } from 'hyparquet'
 
 interface ParquetMetadata {
@@ -24,7 +23,9 @@ interface UseParquetPreviewResult {
 }
 
 /**
- * Reads Parquet preview data from a presigned URL using hyparquet.
+ * Reads Parquet preview data via server-proxied endpoint using hyparquet.
+ * Uses /preview (same-origin proxy) instead of presigned URLs to avoid S3 CORS issues
+ * with HEAD requests on GET-signed presigned URLs.
  * Supports pagination via Range Read (row groups).
  */
 export function useParquetPreview({
@@ -42,7 +43,7 @@ export function useParquetPreview({
 
   const totalPages = metadata ? Math.max(1, Math.ceil(metadata.numRows / pageSize)) : 0
 
-  // Fetch presigned URL and initial metadata
+  // Load Parquet metadata and first page via server proxy
   useEffect(() => {
     let cancelled = false
 
@@ -51,20 +52,21 @@ export function useParquetPreview({
         setLoading(true)
         setError(null)
 
-        // Get presigned URL
-        const res = await clientFetch(`/api/v1/resources/${resourceId}/preview-url`)
-        if (!res.ok) throw new Error('Failed to get preview URL')
-        const { url } = await res.json()
-        if (!url) {
-          setLoading(false)
-          return
-        }
+        // Server-proxied preview endpoint (same-origin, no CORS issues)
+        const proxyUrl = `/api/v1/resources/${encodeURIComponent(resourceId)}/preview`
 
         // Dynamically import hyparquet
         const { asyncBufferFromUrl, parquetMetadataAsync, parquetReadObjects } =
           await import('hyparquet')
 
-        const file = await asyncBufferFromUrl({ url })
+        let file: AsyncBuffer
+        try {
+          file = await asyncBufferFromUrl({ url: proxyUrl })
+        } catch {
+          // 404 or network error — preview not available
+          setLoading(false)
+          return
+        }
         fileRef.current = file
 
         const meta = await parquetMetadataAsync(file)

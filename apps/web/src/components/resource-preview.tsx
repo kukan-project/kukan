@@ -5,7 +5,6 @@ import { Card, CardContent, Skeleton, Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { isCsvFormat, isTextFormat, isZipFormat } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
-import { useFetch } from '@/hooks/use-fetch'
 import { ParquetPreview } from './parquet-preview'
 import { GeoJsonPreview } from './geojson-preview'
 import { ZipPreview } from './zip-preview'
@@ -30,7 +29,7 @@ export function ResourcePreview({ resourceId, format }: ResourcePreviewProps) {
   if (f === 'pdf') return <PdfPreview resourceId={resourceId} />
 
   // CSV/TSV: Parquet table with raw text toggle
-  if (isCsvFormat(format)) return <TablePreview resourceId={resourceId} format={format} />
+  if (isCsvFormat(format)) return <TablePreview resourceId={resourceId} />
 
   // GeoJSON: map with raw text toggle
   if (f === 'geojson') return <GeoJsonPreview resourceId={resourceId} />
@@ -58,20 +57,9 @@ function TextOnlyPreview({ resourceId }: { resourceId: string }) {
   )
 }
 
-function TablePreview({ resourceId, format }: ResourcePreviewProps) {
+function TablePreview({ resourceId }: { resourceId: string }) {
   const t = useTranslations('resource')
   const [source, setSource] = useState<PreviewSource>('parquet')
-  const { data, loading } = useFetch<{ url: string | null }>(
-    `/api/v1/resources/${encodeURIComponent(resourceId)}/preview-url`
-  )
-
-  if (loading) return <PreviewSkeleton />
-
-  const hasParquet = !!data?.url
-
-  if (!hasParquet) {
-    return isCsvFormat(format) ? <PreviewNoData /> : <PreviewNotAvailable />
-  }
 
   const sources: { key: PreviewSource; label: string }[] = [
     { key: 'parquet', label: t('previewSourceTable') },
@@ -158,17 +146,11 @@ function RawTextPreview({ resourceId }: { resourceId: string }) {
 
 function PdfPreview({ resourceId }: { resourceId: string }) {
   const t = useTranslations('resource')
-  const { data, loading, error } = useFetch<{ url: string | null }>(
-    `/api/v1/resources/${encodeURIComponent(resourceId)}/preview-url`
-  )
-
-  if (loading) return <PreviewSkeleton />
-  if (error || !data?.url) return <PreviewNotAvailable />
 
   return (
     <div className="overflow-hidden rounded-lg border">
       <iframe
-        src={data.url}
+        src={`/api/v1/resources/${encodeURIComponent(resourceId)}/preview`}
         title={t('preview')}
         className="block h-[700px] w-full"
         style={{ border: 'none' }}
@@ -185,17 +167,6 @@ function PreviewNotAvailable() {
     <Card>
       <CardContent className="py-8 text-center text-sm text-muted-foreground">
         {t('previewNotAvailable')}
-      </CardContent>
-    </Card>
-  )
-}
-
-function PreviewNoData() {
-  const t = useTranslations('resource')
-  return (
-    <Card>
-      <CardContent className="py-8 text-center text-sm text-muted-foreground">
-        {t('previewNoData')}
       </CardContent>
     </Card>
   )

@@ -94,18 +94,11 @@ export function ZipPreview({ resourceId }: ZipPreviewProps) {
     let cancelled = false
     async function load() {
       try {
-        // Step 1: Get preview URL
-        const urlRes = await clientFetch(
-          `/api/v1/resources/${encodeURIComponent(resourceId)}/preview-url`
+        const res = await clientFetch(
+          `/api/v1/resources/${encodeURIComponent(resourceId)}/preview`
         )
-        if (!urlRes.ok) throw new Error()
-        const { url } = (await urlRes.json()) as { url: string | null }
-        if (!url) throw new Error('No preview URL')
-
-        // Step 2: Fetch manifest JSON from presigned URL
-        const manifestRes = await fetch(url)
-        if (!manifestRes.ok) throw new Error()
-        const data = (await manifestRes.json()) as ZipManifest
+        if (!res.ok) throw new Error()
+        const data = (await res.json()) as ZipManifest
         if (!cancelled) setManifest(data)
       } catch {
         if (!cancelled) setError(true)

@@ -26,7 +26,7 @@ export async function processResource(
   const pipeline = await tracker.startPipeline(resourceId)
 
   if (!pipeline) {
-    // Pipeline is not in 'queued' state — already picked up by another job
+    // No pipeline record exists for this resource — nothing to process
     return
   }
 

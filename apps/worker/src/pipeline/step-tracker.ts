@@ -4,7 +4,7 @@
  * during pipeline execution.
  */
 
-import { eq, and, sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import type { PipelineStatus, PipelineStepStatus, PipelineStepName } from '@kukan/shared'
@@ -14,6 +14,9 @@ export class StepTracker {
 
   /**
    * Start pipeline processing: transition to 'processing' and delete old steps.
+   * Accepts any current status — SQS visibility timeout guarantees single-consumer
+   * delivery, so we don't need a status='queued' guard. This allows recovery from
+   * stuck 'processing' pipelines (e.g. worker crash during deployment).
    * previewKey/metadata are preserved here — they are overwritten by
    * updateExtractResult on success, and kept as-is on failure so the
    * previous preview remains available.
@@ -24,11 +27,10 @@ export class StepTracker {
         .update(resourcePipeline)
         .set({
           status: 'processing' satisfies PipelineStatus,
+          error: null,
           updated: sql`NOW()`,
         })
-        .where(
-          and(eq(resourcePipeline.resourceId, resourceId), eq(resourcePipeline.status, 'queued'))
-        )
+        .where(eq(resourcePipeline.resourceId, resourceId))
         .returning()
 
       if (pipeline) {
