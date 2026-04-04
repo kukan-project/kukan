@@ -67,7 +67,7 @@
   ├─ POST /api/v1/packages/:packageId/resources  { url: "https://..." }
   │  or PUT /api/v1/resources/:id                 { url: "https://..." }（URL 変更時）
   │    → リソース作成/更新 → resource_pipeline 作成 → キュー投入
-  │    ※ パイプライン内で外部 URL からダウンロード（10MB 上限）
+  │    ※ パイプライン内で外部 URL からダウンロード（100MB 上限）
   │
   │  ┌─────── SQS / ElasticMQ ──────────┐
   │  │ processResource(resourceId)              │
@@ -371,7 +371,7 @@ interface PipelineContext {
 
 | Step | 名前        | 入力                                      | 出力                          | 備考                                                                     |
 | ---- | ----------- | ----------------------------------------- | ----------------------------- | ------------------------------------------------------------------------ |
-| 1    | **Fetch**   | resourceId                                | storageKey, format, packageId | upload: skip、外部 URL: Storage に直接ストリーム（10MB 上限）、hash 計算 |
+| 1    | **Fetch**   | resourceId                                | storageKey, format, packageId | upload: skip、外部 URL: Storage に直接ストリーム（100MB 上限）、hash 計算 |
 | 2    | **Extract** | resourceId, packageId, storageKey, format | previewKey, encoding          | CSV/TSV → インラインで Parquet 変換。非対応は skip。非クリティカル       |
 
 **Note**: Index ステップは廃止。検索インデックスの更新は API ルートハンドラ（CUD 操作時）で直接実行する。
@@ -467,7 +467,8 @@ async function fetchStep(resourceId: string, ctx: PipelineContext): Promise<Fetc
   return { storageKey, format: res.format, packageId: res.packageId }
 }
 
-const MAX_EXTERNAL_DOWNLOAD_SIZE = 10 * 1024 * 1024 // 10MB
+// apps/worker/src/config.ts で定義
+const MAX_FETCH_SIZE = 100 * 1024 * 1024 // 100MB
 ```
 
 ### 6.8 CSV スマートパーサー

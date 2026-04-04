@@ -217,6 +217,14 @@ Extract のみフォーマット別処理を行う。
 | DOC/DOCX     |      No      | スキップ                                     |      -       |            No            |
 | ZIP          |      No      | JSONマニフェスト生成（yauzl）                |      -       |   Yes（ファイル一覧）    |
 
+**サイズ制限:**
+
+| 項目                     | 制限値 | 設定ファイル               |
+| ------------------------ | ------ | -------------------------- |
+| ブラウザアップロード     | 100 MB | `apps/web/src/config.ts`   |
+| 外部 URL 取得（Fetch）   | 100 MB | `apps/worker/src/config.ts` |
+| CSV/TSV Parquet 生成対象 | 50 MB  | `apps/worker/src/config.ts` |
+
 **関連ファイル:**
 
 - フォーマット判定: `packages/shared/src/formats.ts`（`isTextFormat`, `isCsvFormat`）

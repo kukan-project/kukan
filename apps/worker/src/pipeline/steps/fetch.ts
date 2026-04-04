@@ -8,10 +8,10 @@ import { createHash } from 'crypto'
 import { Transform, Readable } from 'stream'
 import { KukanError, NotFoundError, ValidationError, getStorageKey } from '@kukan/shared'
 import type { PipelineContext } from '../types'
+import { MAX_FETCH_SIZE, FETCH_TIMEOUT_MS } from '@/config'
 
-const MAX_EXTERNAL_DOWNLOAD_SIZE = 10 * 1024 * 1024 // 10MB
-const FETCH_TIMEOUT_MS = 30_000
 const HASH_PREFIX = 'sha256:'
+const SIZE_LIMIT_MSG = `Resource exceeds ${MAX_FETCH_SIZE / 1024 / 1024}MB limit`
 
 export interface FetchResult {
   storageKey: string
@@ -82,9 +82,9 @@ async function downloadToStorage(
   }
 
   const contentLength = response.headers.get('content-length')
-  if (contentLength && parseInt(contentLength, 10) > MAX_EXTERNAL_DOWNLOAD_SIZE) {
+  if (contentLength && parseInt(contentLength, 10) > MAX_FETCH_SIZE) {
     throw new KukanError(
-      `Resource exceeds ${MAX_EXTERNAL_DOWNLOAD_SIZE / 1024 / 1024}MB limit`,
+      SIZE_LIMIT_MSG,
       'PAYLOAD_TOO_LARGE',
       413
     )
@@ -99,10 +99,10 @@ async function downloadToStorage(
     transform(chunk, _encoding, callback) {
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
       totalSize += buf.length
-      if (totalSize > MAX_EXTERNAL_DOWNLOAD_SIZE) {
+      if (totalSize > MAX_FETCH_SIZE) {
         callback(
           new KukanError(
-            `Resource exceeds ${MAX_EXTERNAL_DOWNLOAD_SIZE / 1024 / 1024}MB limit`,
+            SIZE_LIMIT_MSG,
             'PAYLOAD_TOO_LARGE',
             413
           )

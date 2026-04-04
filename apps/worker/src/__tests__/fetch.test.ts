@@ -183,7 +183,7 @@ describe('executeFetch', () => {
   it('should throw when Content-Length exceeds limit', async () => {
     const mockResponse = new Response('x', {
       status: 200,
-      headers: { 'content-length': String(20 * 1024 * 1024) },
+      headers: { 'content-length': String(200 * 1024 * 1024) },
     })
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse)
 
@@ -197,18 +197,18 @@ describe('executeFetch', () => {
       hash: null,
     })
 
-    await expect(executeFetch('res-1', ctx)).rejects.toThrow('10MB limit')
+    await expect(executeFetch('res-1', ctx)).rejects.toThrow('100MB limit')
 
     fetchSpy.mockRestore()
   })
 
   it('should throw when streaming size exceeds limit', async () => {
-    // Create a response that streams more than 10MB without Content-Length
-    const bigChunk = Buffer.alloc(6 * 1024 * 1024, 'x')
+    // Create a response that streams more than 100MB without Content-Length
+    const bigChunk = Buffer.alloc(60 * 1024 * 1024, 'x')
     const stream = new ReadableStream({
       start(controller) {
         controller.enqueue(bigChunk)
-        controller.enqueue(bigChunk) // total = 12MB > 10MB
+        controller.enqueue(bigChunk) // total = 120MB > 100MB
         controller.close()
       },
     })
@@ -225,7 +225,7 @@ describe('executeFetch', () => {
       hash: null,
     })
 
-    await expect(executeFetch('res-1', ctx)).rejects.toThrow('10MB limit')
+    await expect(executeFetch('res-1', ctx)).rejects.toThrow('100MB limit')
 
     fetchSpy.mockRestore()
   })

@@ -16,9 +16,12 @@ import { parquetWriteBuffer } from 'hyparquet-writer'
 import Papa from 'papaparse'
 import { extractZipManifest } from './extract-zip'
 import type { PipelineContext } from '../types'
-
-const ROW_GROUP_SIZE = 5_000
-const MAX_COLUMNS = 500
+import {
+  MAX_PARQUET_SOURCE_SIZE,
+  PARQUET_ROW_GROUP_SIZE,
+  MAX_CSV_COLUMNS,
+  ENCODING_SAMPLE_SIZE,
+} from '@/config'
 const FOOTER_PREFIXES = ['合計', '注', '※', '出典', '備考', '計', 'total', 'note', 'source']
 const FIXED_UTF8_FORMATS = new Set(['json', 'geojson', 'md'])
 
@@ -75,13 +78,21 @@ export async function executeExtract(
     return { previewKey: null, encoding }
   }
 
-  // Remaining text formats (CSV/TSV/TXT/HTML): need full buffer for encoding detection
+  // Non-CSV text (TXT/HTML): only need a sample for encoding detection
+  if (!isCsvFormat(format)) {
+    const sampleStream = await ctx.storage.download(storageKey)
+    const sample = await streamToBuffer(sampleStream, ENCODING_SAMPLE_SIZE)
+    const encoding = detectEncoding(fmt, sample)
+    return { previewKey: null, encoding }
+  }
+
+  // CSV/TSV: need full buffer for Parquet generation (if within size limit)
   const stream = await ctx.storage.download(storageKey)
   const fileBuffer = await streamToBuffer(stream)
   const encoding = detectEncoding(fmt, fileBuffer)
 
-  // Non-CSV text: return encoding only (no Parquet preview)
-  if (!isCsvFormat(format)) {
+  // Skip Parquet generation for large CSV/TSV (memory-intensive)
+  if (fileBuffer.length > MAX_PARQUET_SOURCE_SIZE) {
     return { previewKey: null, encoding }
   }
 
@@ -98,8 +109,8 @@ export async function executeExtract(
   const headers = titleSkipped[0]
 
   // Reject extremely wide CSVs (e.g. pivot tables) — too many columns to preview
-  if (headers.length > MAX_COLUMNS) {
-    throw new Error(`Too many columns (${headers.length}), max ${MAX_COLUMNS}`)
+  if (headers.length > MAX_CSV_COLUMNS) {
+    throw new Error(`Too many columns (${headers.length}), max ${MAX_CSV_COLUMNS}`)
   }
 
   const dataRows = removeFooterRows(titleSkipped.slice(1))
@@ -110,7 +121,7 @@ export async function executeExtract(
     type: 'STRING' as const,
   }))
 
-  const parquetBuf = parquetWriteBuffer({ columnData, rowGroupSize: ROW_GROUP_SIZE })
+  const parquetBuf = parquetWriteBuffer({ columnData, rowGroupSize: PARQUET_ROW_GROUP_SIZE })
 
   if (!parquetBuf) {
     return { previewKey: null, encoding }

@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { clientFetch } from '@/lib/client-api'
 import { detectFormat, detectContentType } from '@kukan/shared'
+import { MAX_UPLOAD_SIZE } from '@/config'
 
 export type UploadStatus = 'idle' | 'requesting' | 'uploading' | 'completing' | 'done' | 'error'
 
@@ -55,6 +56,10 @@ export function useFileUpload({
         setStatus('requesting')
         setProgress(0)
         setError(null)
+
+        if (file.size > MAX_UPLOAD_SIZE) {
+          throw new Error(`File exceeds ${MAX_UPLOAD_SIZE / 1024 / 1024}MB limit`)
+        }
 
         const format = detectFormat(file.name)
         const contentType = detectContentType(file.name)

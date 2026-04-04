@@ -106,9 +106,15 @@ export function toCharset(encoding: string): string {
   return ENCODING_TO_CHARSET[encoding] ?? 'utf-8'
 }
 
+/** Storage key prefix for resource raw files */
+export const RESOURCE_PREFIX = 'resources/'
+
+/** Storage key prefix for preview files */
+export const PREVIEW_PREFIX = 'previews/'
+
 /** Compute storage key for a resource's raw file */
 export function getStorageKey(packageId: string, resourceId: string): string {
-  return `resources/${packageId}/${resourceId}`
+  return `${RESOURCE_PREFIX}${packageId}/${resourceId}`
 }
 
 /** Compute storage key for a resource's preview file */
@@ -117,7 +123,7 @@ export function getPreviewKey(
   resourceId: string,
   ext: 'parquet' | 'json' = 'parquet'
 ): string {
-  return `previews/${packageId}/${resourceId}.${ext}`
+  return `${PREVIEW_PREFIX}${packageId}/${resourceId}.${ext}`
 }
 
 /** Check if a format is a ZIP archive */
