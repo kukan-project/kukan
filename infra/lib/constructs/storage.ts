@@ -1,6 +1,7 @@
 /**
  * KUKAN Storage Construct
- * S3 bucket for resource file storage with CORS for presigned uploads.
+ * S3 bucket for resource file storage.
+ * CORS allows only PUT (presigned upload). Reads are server-proxied (no presigned GET).
  */
 
 import * as cdk from 'aws-cdk-lib'
@@ -28,7 +29,7 @@ export class StorageConstruct extends Construct {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       cors: [
         {
-          allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT],
+          allowedMethods: [s3.HttpMethods.PUT],
           allowedOrigins: config.domainName ? [`https://${config.domainName}`] : ['*'],
           allowedHeaders: ['*'],
           maxAge: 3600,
