@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
-import { RefreshCw } from 'lucide-react'
+import { Play, RefreshCw } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -18,9 +18,6 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  Tabs,
-  TabsList,
-  TabsTrigger,
 } from '@kukan/ui'
 import { useUser } from '@/components/dashboard/user-provider'
 import { PageHeader } from '@/components/dashboard/page-header'
@@ -99,12 +96,54 @@ export default function AdminJobsPage() {
     usePaginatedFetch<JobItem>(jobsUrl)
 
   const [refreshing, setRefreshing] = useState(false)
+  const [reprocessing, setReprocessing] = useState<string | null>(null)
+
+  // Track current offset for use in callbacks without stale closures
+  const offsetRef = useRef(offset)
+  useEffect(() => {
+    offsetRef.current = offset
+  }, [offset])
+
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current)
+      pollingRef.current = null
+    }
+    setReprocessing(null)
+  }, [])
+
+  // Stop polling when job reaches terminal state
+  useEffect(() => {
+    if (!reprocessing || !pollingRef.current) return
+    const job = items.find((j) => j.resourceId === reprocessing)
+    if (job && (job.status === 'complete' || job.status === 'error')) {
+      stopPolling()
+    }
+  }, [items, reprocessing, stopPolling])
+
+  // Cleanup on unmount
+  useEffect(() => stopPolling, [stopPolling])
+
+  const reprocess = useCallback(
+    async (resourceId: string) => {
+      stopPolling()
+      setReprocessing(resourceId)
+      await clientFetch(`/api/v1/resources/${resourceId}/run-pipeline`, { method: 'POST' })
+      await Promise.all([fetchPage(offsetRef.current), fetchStats()])
+      pollingRef.current = setInterval(async () => {
+        await Promise.all([fetchPage(offsetRef.current), fetchStats()])
+      }, 3000)
+    },
+    [fetchPage, fetchStats, stopPolling]
+  )
 
   const refresh = useCallback(async () => {
     setRefreshing(true)
-    await Promise.all([fetchPage(offset), fetchStats()])
+    await Promise.all([fetchPage(offsetRef.current), fetchStats()])
     setRefreshing(false)
-  }, [fetchPage, offset, fetchStats])
+  }, [fetchPage, fetchStats])
 
   if (!user.sysadmin) return null
 
@@ -127,11 +166,34 @@ export default function AdminJobsPage() {
         <StatCard
           label={t('statsAll')}
           value={stats ? Object.values(stats.jobs).reduce((sum, n) => sum + n, 0) : undefined}
+          active={statusFilter === 'all'}
+          onClick={() => setStatusFilter('all')}
         />
-        <StatCard label={t('statsQueued')} value={stats?.jobs.queued} />
-        <StatCard label={t('statsProcessing')} value={stats?.jobs.processing} />
-        <StatCard label={t('statsComplete')} value={stats?.jobs.complete} />
-        <StatCard label={t('statsError')} value={stats?.jobs.error} variant="destructive" />
+        <StatCard
+          label={t('statsQueued')}
+          value={stats?.jobs.queued}
+          active={statusFilter === 'queued'}
+          onClick={() => setStatusFilter('queued')}
+        />
+        <StatCard
+          label={t('statsProcessing')}
+          value={stats?.jobs.processing}
+          active={statusFilter === 'processing'}
+          onClick={() => setStatusFilter('processing')}
+        />
+        <StatCard
+          label={t('statsComplete')}
+          value={stats?.jobs.complete}
+          active={statusFilter === 'complete'}
+          onClick={() => setStatusFilter('complete')}
+        />
+        <StatCard
+          label={t('statsError')}
+          value={stats?.jobs.error}
+          variant="destructive"
+          active={statusFilter === 'error'}
+          onClick={() => setStatusFilter('error')}
+        />
       </div>
 
       {/* SQS Queue Info (reference) */}
@@ -143,17 +205,6 @@ export default function AdminJobsPage() {
           })}
         </p>
       )}
-
-      {/* Filter Tabs */}
-      <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
-        <TabsList>
-          <TabsTrigger value="all">{t('tabAll')}</TabsTrigger>
-          <TabsTrigger value="queued">{t('tabQueued')}</TabsTrigger>
-          <TabsTrigger value="processing">{t('tabProcessing')}</TabsTrigger>
-          <TabsTrigger value="complete">{t('tabComplete')}</TabsTrigger>
-          <TabsTrigger value="error">{t('tabErrors')}</TabsTrigger>
-        </TabsList>
-      </Tabs>
 
       {/* Jobs Table */}
       {loading && !items.length ? (
@@ -169,14 +220,21 @@ export default function AdminJobsPage() {
         <p className="py-12 text-center text-muted-foreground">{t('noJobs')}</p>
       ) : (
         <>
-          <Table>
+          <Table className="table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[100px]">{t('colStatus')}</TableHead>
-                <TableHead>{t('colDataset')}</TableHead>
-                <TableHead>{t('colResource')}</TableHead>
-                <TableHead className="w-[140px]">{t('colUpdated')}</TableHead>
-                <TableHead>{t('colError')}</TableHead>
+                <TableHead className="w-[90px]">{t('colStatus')}</TableHead>
+                <TableHead className="w-[40%]">
+                  <div className="flex flex-col leading-tight">
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {t('colDataset')}
+                    </span>
+                    <span>{t('colResource')}</span>
+                  </div>
+                </TableHead>
+                <TableHead className="w-[120px]">{t('colUpdated')}</TableHead>
+                <TableHead className="w-[15%]">{t('colError')}</TableHead>
+                <TableHead className="w-[72px]">{t('reprocess')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -186,27 +244,42 @@ export default function AdminJobsPage() {
                     <Badge variant={statusBadgeVariant(job.status)}>{t(job.status)}</Badge>
                   </TableCell>
                   <TableCell>
-                    <Link href={`/dataset/${job.packageName}`} className="hover:underline">
-                      {job.packageTitle || job.packageName}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Link
-                      href={`/dataset/${job.packageName}/resource/${job.resourceId}`}
-                      className="hover:underline"
-                    >
-                      {job.resourceName || job.resourceId.slice(0, 8)}
-                    </Link>
+                    <div className="flex flex-col gap-0.5">
+                      <Link
+                        href={`/dataset/${job.packageName}`}
+                        className="truncate text-xs text-muted-foreground hover:underline"
+                      >
+                        {job.packageTitle || job.packageName}
+                      </Link>
+                      <Link
+                        href={`/dataset/${job.packageName}/resource/${job.resourceId}`}
+                        className="truncate hover:underline"
+                      >
+                        {job.resourceName || job.resourceId.slice(0, 8)}
+                      </Link>
+                    </div>
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                     {formatDateTimeCompact(job.updated, locale)}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="truncate" title={job.error ?? undefined}>
                     {job.error && (
-                      <span className="line-clamp-1 text-sm text-destructive" title={job.error}>
-                        {job.error}
-                      </span>
+                      <span className="text-sm text-destructive">{job.error}</span>
                     )}
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      disabled={reprocessing === job.resourceId}
+                      onClick={() => reprocess(job.resourceId)}
+                      title={t('reprocess')}
+                    >
+                      <Play
+                        className={`h-3.5 w-3.5 ${reprocessing === job.resourceId ? 'animate-pulse' : ''}`}
+                      />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -230,13 +303,20 @@ function StatCard({
   label,
   value,
   variant,
+  active,
+  onClick,
 }: {
   label: string
   value?: number
   variant?: 'destructive'
+  active?: boolean
+  onClick?: () => void
 }) {
   return (
-    <Card>
+    <Card
+      className={`cursor-pointer transition-colors hover:border-primary/50 ${active ? 'border-primary bg-primary/5 ring-2 ring-primary/25' : ''}`}
+      onClick={onClick}
+    >
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
       </CardHeader>

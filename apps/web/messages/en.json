@@ -202,11 +202,6 @@
       "statsComplete": "Complete",
       "statsError": "Errors",
       "sqsInfo": "SQS: pending {pending} / in-flight {inFlight}",
-      "tabAll": "All",
-      "tabQueued": "Queued",
-      "tabProcessing": "Processing",
-      "tabComplete": "Complete",
-      "tabErrors": "Errors",
       "colStatus": "Status",
       "colResource": "Resource",
       "colDataset": "Dataset",
@@ -217,7 +212,8 @@
       "queued": "Queued",
       "processing": "Processing",
       "complete": "Complete",
-      "error": "Error"
+      "error": "Error",
+      "reprocess": "Reprocess"
     }
   },
   "profile": {

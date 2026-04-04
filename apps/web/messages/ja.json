@@ -202,11 +202,6 @@
       "statsComplete": "完了",
       "statsError": "エラー",
       "sqsInfo": "SQS: 待機 {pending} / 処理中 {inFlight}",
-      "tabAll": "すべて",
-      "tabQueued": "キュー待ち",
-      "tabProcessing": "処理中",
-      "tabComplete": "完了",
-      "tabErrors": "エラー",
       "colStatus": "ステータス",
       "colResource": "リソース",
       "colDataset": "データセット",
@@ -217,7 +212,8 @@
       "queued": "キュー済み",
       "processing": "処理中",
       "complete": "完了",
-      "error": "エラー"
+      "error": "エラー",
+      "reprocess": "再処理"
     }
   },
   "profile": {
