@@ -177,7 +177,22 @@
       "apiTokens": "API Tokens",
       "profile": "Profile",
       "adminSection": "System Admin",
-      "adminJobs": "Job Monitor"
+      "adminJobs": "Job Monitor",
+      "adminReset": "Data Reset"
+    },
+    "adminReset": {
+      "title": "Data Reset",
+      "warning": "This will permanently delete all datasets, resources, organizations, groups, tags, pipeline jobs, and associated files. User accounts will be preserved.",
+      "confirmLabel": "Type RESET to confirm",
+      "confirmPlaceholder": "RESET",
+      "execute": "Delete All Data",
+      "executing": "Deleting...",
+      "resultTitle": "Reset Complete",
+      "resultPackages": "{count} datasets",
+      "resultOrganizations": "{count} organizations",
+      "resultGroups": "{count} groups",
+      "resultTags": "{count} tags",
+      "resultStorage": "{count} files"
     },
     "adminJobs": {
       "title": "Job Monitor",

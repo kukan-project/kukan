@@ -8,6 +8,8 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  ListObjectsV2Command,
+  DeleteObjectsCommand,
 } from '@aws-sdk/client-s3'
 import { Upload } from '@aws-sdk/lib-storage'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
@@ -163,5 +165,39 @@ export class S3StorageAdapter implements StorageAdapter {
       }),
       { expiresIn }
     )
+  }
+
+  async deleteByPrefix(prefix: string): Promise<number> {
+    let deleted = 0
+    let continuationToken: string | undefined
+
+    for (;;) {
+      const list = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          ContinuationToken: continuationToken,
+        })
+      )
+
+      const keys = (list.Contents ?? []).map((o) => ({ Key: o.Key! }))
+      if (keys.length > 0) {
+        const result = await this.client.send(
+          new DeleteObjectsCommand({
+            Bucket: this.bucket,
+            Delete: { Objects: keys },
+          })
+        )
+        if (result.Errors && result.Errors.length > 0) {
+          throw new Error(`Failed to delete ${result.Errors.length} objects`)
+        }
+        deleted += keys.length
+      }
+
+      if (!list.IsTruncated) break
+      continuationToken = list.NextContinuationToken
+    }
+
+    return deleted
   }
 }

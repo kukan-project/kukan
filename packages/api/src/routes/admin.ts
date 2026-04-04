@@ -14,8 +14,9 @@ import {
   packageGroup,
   packageTag,
   tag,
+  vocabulary,
 } from '@kukan/db'
-import { ForbiddenError } from '@kukan/shared'
+import { ForbiddenError, RESOURCE_PREFIX, PREVIEW_PREFIX } from '@kukan/shared'
 import type { DatasetDoc } from '@kukan/search-adapter'
 import type { AppContext } from '../context'
 
@@ -266,4 +267,46 @@ adminRouter.get('/jobs', async (c) => {
     offset,
     limit,
   })
+})
+
+// DELETE /api/v1/admin/data — Delete all data (preserves users)
+adminRouter.delete('/data', async (c) => {
+  const user = c.get('user')
+  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can reset data')
+
+  const db = c.get('db')
+  const search = c.get('search')
+  const storage = c.get('storage')
+
+  // 1. Delete all data in a transaction (rollback on failure)
+  const counts = await db.transaction(async (tx) => {
+    const pkgs = await tx.delete(packageTable).returning({ id: packageTable.id })
+    const orgs = await tx.delete(organization).returning({ id: organization.id })
+    const grps = await tx.delete(group).returning({ id: group.id })
+    const tgs = await tx.delete(tag).returning({ id: tag.id })
+    await tx.delete(vocabulary)
+    return {
+      packages: pkgs.length,
+      organizations: orgs.length,
+      groups: grps.length,
+      tags: tgs.length,
+    }
+  })
+
+  // 2. Clear search index (best-effort)
+  await search.deleteAll().catch(() => {})
+
+  // 3. Clear storage files (best-effort)
+  let storageObjects = 0
+  try {
+    const [r, p] = await Promise.all([
+      storage.deleteByPrefix(RESOURCE_PREFIX),
+      storage.deleteByPrefix(PREVIEW_PREFIX),
+    ])
+    storageObjects = r + p
+  } catch {
+    // Storage cleanup is best-effort
+  }
+
+  return c.json({ deleted: { ...counts, storageObjects } })
 })

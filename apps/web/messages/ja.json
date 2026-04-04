@@ -177,7 +177,22 @@
       "apiTokens": "APIトークン",
       "profile": "プロフィール",
       "adminSection": "システム管理者",
-      "adminJobs": "ジョブ管理"
+      "adminJobs": "ジョブ管理",
+      "adminReset": "データリセット"
+    },
+    "adminReset": {
+      "title": "データリセット",
+      "warning": "すべてのデータセット、リソース、組織、グループ、タグ、パイプラインジョブ、関連ファイルが完全に削除されます。ユーザーアカウントは保持されます。",
+      "confirmLabel": "確認のため RESET と入力してください",
+      "confirmPlaceholder": "RESET",
+      "execute": "全データを削除",
+      "executing": "削除中...",
+      "resultTitle": "リセット完了",
+      "resultPackages": "{count} データセット",
+      "resultOrganizations": "{count} 組織",
+      "resultGroups": "{count} グループ",
+      "resultTags": "{count} タグ",
+      "resultStorage": "{count} ファイル"
     },
     "adminJobs": {
       "title": "ジョブ管理",

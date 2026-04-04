@@ -62,4 +62,10 @@ export interface StorageAdapter {
     expiresIn?: number,
     meta?: ObjectMeta
   ): Promise<string>
+
+  /**
+   * Delete all objects matching a key prefix.
+   * Returns the number of deleted objects.
+   */
+  deleteByPrefix(prefix: string): Promise<number>
 }

@@ -20,7 +20,10 @@ export function Sidebar() {
     { href: '/dashboard/profile', label: t('profile') },
   ]
 
-  const adminItems = [{ href: '/dashboard/admin/jobs', label: t('adminJobs') }]
+  const adminItems = [
+    { href: '/dashboard/admin/jobs', label: t('adminJobs') },
+    { href: '/dashboard/admin/reset', label: t('adminReset') },
+  ]
 
   const isActive = (href: string, exact?: boolean) => {
     if (exact) return pathname === href
