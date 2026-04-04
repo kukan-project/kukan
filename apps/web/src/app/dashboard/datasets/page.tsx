@@ -185,10 +185,7 @@ export default function DatasetsManagePage() {
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <Label className="text-xs text-muted-foreground">{tc('title')}</Label>
-          <Input
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-          />
+          <Input value={keyword} onChange={(e) => setKeyword(e.target.value)} />
         </div>
       </div>
 

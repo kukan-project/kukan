@@ -73,31 +73,31 @@ Node.js のストリーミングはイベントループをブロックしない
 
 ### 3. 廃止エンドポイント
 
-| エンドポイント                           | 状態                           |
-| ---------------------------------------- | ------------------------------ |
-| `GET /api/v1/resources/:id/download-url` | **廃止** → `download` に置換  |
-| `GET /api/v1/resources/:id/preview-url`  | **廃止** → `preview` に置換   |
+| エンドポイント                           | 状態                         |
+| ---------------------------------------- | ---------------------------- |
+| `GET /api/v1/resources/:id/download-url` | **廃止** → `download` に置換 |
+| `GET /api/v1/resources/:id/preview-url`  | **廃止** → `preview` に置換  |
 
 ### 4. 現在のエンドポイント体系
 
 Presigned URL を返すエンドポイントは `upload-url`（アップロード用 PUT）のみ。
 読み取り系はすべてサーバー経由ストリーミング:
 
-| エンドポイント | 用途 | 方式 |
-|---------------|------|------|
-| `GET /download` | ファイルダウンロード | サーバー経由 / 外部 URL は 302 |
-| `GET /preview` | プレビュー配信（Range 対応） | サーバー経由ストリーミング |
-| `GET /text` | テキストプレビュー | サーバー経由（charset 変換付き） |
-| `POST /upload-url` | アップロード用 presigned URL 発行 | Signed URL（PUT 用） |
+| エンドポイント     | 用途                              | 方式                             |
+| ------------------ | --------------------------------- | -------------------------------- |
+| `GET /download`    | ファイルダウンロード              | サーバー経由 / 外部 URL は 302   |
+| `GET /preview`     | プレビュー配信（Range 対応）      | サーバー経由ストリーミング       |
+| `GET /text`        | テキストプレビュー                | サーバー経由（charset 変換付き） |
+| `POST /upload-url` | アップロード用 presigned URL 発行 | Signed URL（PUT 用）             |
 
 ## フロントエンドへの影響
 
-| コンポーネント          | 変更前                                    | 変更後                                        |
-| ----------------------- | ----------------------------------------- | --------------------------------------------- |
-| `DownloadButton`        | `download-url` → `window.open(signedUrl)` | `<a href="/api/v1/resources/:id/download">`   |
-| `useParquetPreview`     | `preview-url` → Signed URL → hyparquet   | `/preview` → hyparquet（サーバープロキシ）     |
-| `PdfPreview`            | `preview-url` → Signed URL → iframe      | `/preview` を iframe src に直接指定            |
-| `ZipPreview`            | `preview-url` → Signed URL → fetch JSON  | `/preview` から JSON 取得                      |
+| コンポーネント      | 変更前                                    | 変更後                                      |
+| ------------------- | ----------------------------------------- | ------------------------------------------- |
+| `DownloadButton`    | `download-url` → `window.open(signedUrl)` | `<a href="/api/v1/resources/:id/download">` |
+| `useParquetPreview` | `preview-url` → Signed URL → hyparquet    | `/preview` → hyparquet（サーバープロキシ）  |
+| `PdfPreview`        | `preview-url` → Signed URL → iframe       | `/preview` を iframe src に直接指定         |
+| `ZipPreview`        | `preview-url` → Signed URL → fetch JSON   | `/preview` から JSON 取得                   |
 
 ## 関連 ADR
 

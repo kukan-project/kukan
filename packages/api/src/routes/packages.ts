@@ -161,10 +161,7 @@ packagesRouter.post('/', zValidator('json', createPackageSchema), async (c) => {
 // GET /api/v1/packages/:nameOrId - Get package by name or ID
 packagesRouter.get(
   '/:nameOrId',
-  zValidator(
-    'query',
-    z.object({ state: stateParam })
-  ),
+  zValidator('query', z.object({ state: stateParam })),
   async (c) => {
     const nameOrId = c.req.param('nameOrId')
     const user = c.get('user')

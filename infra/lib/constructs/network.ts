@@ -98,9 +98,17 @@ export class NetworkConstruct extends Construct {
     // --- Inter-SG traffic (allowFrom) ---
     this.webSecurityGroup.connections.allowFrom(this.albSecurityGroup, ec2.Port.tcp(3000), 'ALB')
     this.dbSecurityGroup.connections.allowFrom(this.webSecurityGroup, ec2.Port.tcp(5432), 'Web')
-    this.dbSecurityGroup.connections.allowFrom(this.workerSecurityGroup, ec2.Port.tcp(5432), 'Worker')
+    this.dbSecurityGroup.connections.allowFrom(
+      this.workerSecurityGroup,
+      ec2.Port.tcp(5432),
+      'Worker'
+    )
     this.searchSecurityGroup.connections.allowFrom(this.webSecurityGroup, ec2.Port.tcp(443), 'Web')
-    this.searchSecurityGroup.connections.allowFrom(this.workerSecurityGroup, ec2.Port.tcp(443), 'Worker')
+    this.searchSecurityGroup.connections.allowFrom(
+      this.workerSecurityGroup,
+      ec2.Port.tcp(443),
+      'Worker'
+    )
 
     cdk.Tags.of(this).add('kukan:component', 'network')
   }

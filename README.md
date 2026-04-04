@@ -125,27 +125,27 @@ npx cdk deploy
 Deploys a `small` configuration by default:
 パラメータなしで `small` 規模のデフォルト構成がデプロイされる:
 
-| Component | Service                          |
-| --------- | -------------------------------- |
+| Component | Service                                |
+| --------- | -------------------------------------- |
 | Web       | ECS Fargate + ALB (0.25 vCPU / 512 MB) |
-| Worker    | ECS Fargate (0.25 vCPU / 512 MB) |
-| DB        | RDS PostgreSQL db.t4g.micro      |
-| Search    | OpenSearch t3.small.search       |
-| WAF       | 3 managed rule groups (optional) |
+| Worker    | ECS Fargate (0.25 vCPU / 512 MB)       |
+| DB        | RDS PostgreSQL db.t4g.micro            |
+| Search    | OpenSearch t3.small.search             |
+| WAF       | 3 managed rule groups (optional)       |
 
 ### CDK parameters / CDK パラメータ一覧
 
-| Parameter          | Type                           | Default             | Description                                                     |
-| ------------------ | ------------------------------ | ------------------- | --------------------------------------------------------------- |
-| `scale`            | `small` \| `medium` \| `large` | `small`             | Resource sizing preset                                          |
-| `dbEngine`         | `rds` \| `aurora`              | Scale-dependent     | DB engine (`small`=RDS, `medium`+=Aurora)                       |
-| `enableOpenSearch` | boolean                        | `true`              | `false` → PostgreSQL full-text fallback                         |
-| `enableWaf`        | boolean                        | `!allowedIpRanges`  | WAF on ALB (~$9/mo). Auto-enabled when no `allowedIpRanges`    |
-| `domainName`       | string                         | —                   | Custom domain (ALB default domain when unset)                   |
-| `hostedZoneId`     | string                         | —                   | Route53 Hosted Zone ID (required with `domainName`)             |
-| `hostedZoneName`   | string                         | —                   | Route53 Hosted Zone name (required with `domainName`)           |
-| `allowedIpRanges`  | string[]                       | —                   | IP allowlist via ALB Security Group (CIDR, IPv4+IPv6)           |
-| `bucketName`       | string                         | `kukan-resources`   | S3 bucket name                                                  |
+| Parameter          | Type                           | Default            | Description                                                 |
+| ------------------ | ------------------------------ | ------------------ | ----------------------------------------------------------- |
+| `scale`            | `small` \| `medium` \| `large` | `small`            | Resource sizing preset                                      |
+| `dbEngine`         | `rds` \| `aurora`              | Scale-dependent    | DB engine (`small`=RDS, `medium`+=Aurora)                   |
+| `enableOpenSearch` | boolean                        | `true`             | `false` → PostgreSQL full-text fallback                     |
+| `enableWaf`        | boolean                        | `!allowedIpRanges` | WAF on ALB (~$9/mo). Auto-enabled when no `allowedIpRanges` |
+| `domainName`       | string                         | —                  | Custom domain (ALB default domain when unset)               |
+| `hostedZoneId`     | string                         | —                  | Route53 Hosted Zone ID (required with `domainName`)         |
+| `hostedZoneName`   | string                         | —                  | Route53 Hosted Zone name (required with `domainName`)       |
+| `allowedIpRanges`  | string[]                       | —                  | IP allowlist via ALB Security Group (CIDR, IPv4+IPv6)       |
+| `bucketName`       | string                         | `kukan-resources`  | S3 bucket name                                              |
 
 ### Environment-specific settings / 環境固有の設定
 

@@ -26,15 +26,15 @@ SQS ← API enqueue → Worker consume (ロングポーリング)
 
 ### コンポーネント
 
-| コンポーネント | サービス                              | 理由                                             |
-| -------------- | ------------------------------------- | ------------------------------------------------ |
+| コンポーネント | サービス                              | 理由                                                   |
+| -------------- | ------------------------------------- | ------------------------------------------------------ |
 | Web            | ECS Fargate + ALB                     | L2 コンストラクト、SG で IP 制限、カスタムドメイン対応 |
-| Worker         | ECS Fargate Service                   | SQS ロングポーリング、タイムアウトなし           |
-| DB             | RDS PostgreSQL / Aurora Serverless v2 | CDK パラメータで切替                             |
-| 検索           | OpenSearch (VPC)                      | kuromoji プラグイン、PostgreSQL フォールバック可 |
-| ストレージ     | S3                                    | presigned URL でブラウザ直接アップロード         |
-| キュー         | SQS + DLQ                             | 無料枠内、ElasticMQ と同一 API                   |
-| WAF            | ALB WAF (オプション)                  | マネージドルール、IP 制限は SG で対応            |
+| Worker         | ECS Fargate Service                   | SQS ロングポーリング、タイムアウトなし                 |
+| DB             | RDS PostgreSQL / Aurora Serverless v2 | CDK パラメータで切替                                   |
+| 検索           | OpenSearch (VPC)                      | kuromoji プラグイン、PostgreSQL フォールバック可       |
+| ストレージ     | S3                                    | presigned URL でブラウザ直接アップロード               |
+| キュー         | SQS + DLQ                             | 無料枠内、ElasticMQ と同一 API                         |
+| WAF            | ALB WAF (オプション)                  | マネージドルール、IP 制限は SG で対応                  |
 
 ## VPC 設計
 
@@ -74,15 +74,15 @@ CDK の `dbEngine` パラメータ（`rds` | `aurora`）で切替。
 
 ### Small（デモ / PoC）: ~$60/月
 
-| サービス           | スペック              | 月額 USD |
-| ------------------ | --------------------- | -------- |
-| ECS Fargate Web    | 0.25 vCPU / 0.5 GB   | ~$9      |
-| ALB                | 常時稼働              | ~$18     |
-| ECS Fargate Worker | 0.25 vCPU / 0.5 GB   | ~$9      |
-| RDS PostgreSQL     | db.t4g.micro          | ~$15     |
-| OpenSearch         | t3.small.search × 1  | ~$27     |
-| S3 + SQS           | 最小                  | ~$2      |
-| Secrets Manager    | 2 secrets             | ~$1      |
+| サービス           | スペック            | 月額 USD |
+| ------------------ | ------------------- | -------- |
+| ECS Fargate Web    | 0.25 vCPU / 0.5 GB  | ~$9      |
+| ALB                | 常時稼働            | ~$18     |
+| ECS Fargate Worker | 0.25 vCPU / 0.5 GB  | ~$9      |
+| RDS PostgreSQL     | db.t4g.micro        | ~$15     |
+| OpenSearch         | t3.small.search × 1 | ~$27     |
+| S3 + SQS           | 最小                | ~$2      |
+| Secrets Manager    | 2 secrets           | ~$1      |
 
 OpenSearch なし（SEARCH_TYPE=postgres）: ~$33/月
 WAF 追加（enableWaf=true）: +~$9/月
@@ -96,9 +96,9 @@ IP 制限は ALB SG で対応（追加コストなし）
 
 単一スタック構成。全リソースを ap-northeast-1 にデプロイ。
 
-| スタック   | リージョン     | 用途         |
-| ---------- | -------------- | ------------ |
-| KukanStack | ap-northeast-1 | 全リソース   |
+| スタック   | リージョン     | 用途       |
+| ---------- | -------------- | ---------- |
+| KukanStack | ap-northeast-1 | 全リソース |
 
 ```
 infra/
@@ -126,17 +126,17 @@ infra/
 環境固有の値（ドメイン名等）を永続化したい場合は `infra/cdk.context.json` に記述する。
 `cdk.context.json` は `.gitignore` 対象のため、環境ごとに安全に管理できる。
 
-| パラメータ         | 型                             | デフォルト                                         | 説明                                                       |
-| ------------------ | ------------------------------ | -------------------------------------------------- | ---------------------------------------------------------- |
-| `scale`            | `small` \| `medium` \| `large` | `small`                                            | デプロイ規模（リソースサイズを一括制御）                   |
-| `dbEngine`         | `rds` \| `aurora`              | スケール依存（small=`rds`, medium/large=`aurora`） | DB エンジン                                                |
-| `enableOpenSearch` | boolean                        | `true`                                             | `false` → PostgreSQL 全文検索フォールバック                |
-| `enableWaf`        | boolean                        | `!allowedIpRanges`                                 | WAF on ALB（マネージドルール、~$9/月追加）                 |
-| `domainName`       | string                         | なし                                               | カスタムドメイン（未設定時は ALB デフォルトドメイン）      |
-| `hostedZoneId`     | string                         | なし                                               | Route53 Hosted Zone ID（`domainName` 設定時に必要）        |
-| `hostedZoneName`   | string                         | なし                                               | Route53 Hosted Zone 名（`domainName` 設定時に必要）        |
-| `allowedIpRanges`  | string[]                       | なし                                               | IP 制限（ALB SG、IPv4 CIDR + IPv6 プレフィックス対応）    |
-| `bucketName`       | string                         | `kukan-resources`                                  | S3 バケット名                                              |
+| パラメータ         | 型                             | デフォルト                                         | 説明                                                   |
+| ------------------ | ------------------------------ | -------------------------------------------------- | ------------------------------------------------------ |
+| `scale`            | `small` \| `medium` \| `large` | `small`                                            | デプロイ規模（リソースサイズを一括制御）               |
+| `dbEngine`         | `rds` \| `aurora`              | スケール依存（small=`rds`, medium/large=`aurora`） | DB エンジン                                            |
+| `enableOpenSearch` | boolean                        | `true`                                             | `false` → PostgreSQL 全文検索フォールバック            |
+| `enableWaf`        | boolean                        | `!allowedIpRanges`                                 | WAF on ALB（マネージドルール、~$9/月追加）             |
+| `domainName`       | string                         | なし                                               | カスタムドメイン（未設定時は ALB デフォルトドメイン）  |
+| `hostedZoneId`     | string                         | なし                                               | Route53 Hosted Zone ID（`domainName` 設定時に必要）    |
+| `hostedZoneName`   | string                         | なし                                               | Route53 Hosted Zone 名（`domainName` 設定時に必要）    |
+| `allowedIpRanges`  | string[]                       | なし                                               | IP 制限（ALB SG、IPv4 CIDR + IPv6 プレフィックス対応） |
+| `bucketName`       | string                         | `kukan-resources`                                  | S3 バケット名                                          |
 
 パラメータの指定方法（優先度順）:
 

@@ -107,9 +107,7 @@ export default function EditDatasetPage() {
   async function handleDelete() {
     setDeleting(true)
     try {
-      const url = isDeleted
-        ? `/api/v1/packages/${nameOrId}/purge`
-        : `/api/v1/packages/${nameOrId}`
+      const url = isDeleted ? `/api/v1/packages/${nameOrId}/purge` : `/api/v1/packages/${nameOrId}`
       const method = isDeleted ? 'POST' : 'DELETE'
       const res = await clientFetch(url, { method })
       if (res.ok) {
@@ -165,9 +163,15 @@ export default function EditDatasetPage() {
         </CardContent>
       </Card>
 
-      <Card className={isDeleted ? 'border-destructive/30' : 'border-amber-300/50 dark:border-amber-500/30'}>
+      <Card
+        className={
+          isDeleted ? 'border-destructive/30' : 'border-amber-300/50 dark:border-amber-500/30'
+        }
+      >
         <CardHeader>
-          <CardTitle className={isDeleted ? 'text-destructive' : 'text-amber-700 dark:text-amber-400'}>
+          <CardTitle
+            className={isDeleted ? 'text-destructive' : 'text-amber-700 dark:text-amber-400'}
+          >
             {isDeleted ? t('dangerZone') : t('deleteDataset')}
           </CardTitle>
         </CardHeader>
@@ -175,7 +179,10 @@ export default function EditDatasetPage() {
           {!isDeleted && (
             <p className="mb-3 text-sm text-muted-foreground">{t('deleteDatasetConfirm')}</p>
           )}
-          <Button variant={isDeleted ? 'destructive' : 'outline'} onClick={() => setShowDelete(true)}>
+          <Button
+            variant={isDeleted ? 'destructive' : 'outline'}
+            onClick={() => setShowDelete(true)}
+          >
             {isDeleted ? t('purgeDataset') : t('deleteDataset')}
           </Button>
         </CardContent>

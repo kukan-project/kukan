@@ -523,10 +523,7 @@ export class PackageService {
 
   /** Hard-delete a soft-deleted package and all related data (CASCADE). */
   async purge(id: string) {
-    const [purged] = await this.db
-      .delete(packageTable)
-      .where(eq(packageTable.id, id))
-      .returning()
+    const [purged] = await this.db.delete(packageTable).where(eq(packageTable.id, id)).returning()
 
     if (!purged) throw new NotFoundError('Package', id)
     return purged

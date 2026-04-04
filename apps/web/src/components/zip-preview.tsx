@@ -94,9 +94,7 @@ export function ZipPreview({ resourceId }: ZipPreviewProps) {
     let cancelled = false
     async function load() {
       try {
-        const res = await clientFetch(
-          `/api/v1/resources/${encodeURIComponent(resourceId)}/preview`
-        )
+        const res = await clientFetch(`/api/v1/resources/${encodeURIComponent(resourceId)}/preview`)
         if (!res.ok) throw new Error()
         const data = (await res.json()) as ZipManifest
         if (!cancelled) setManifest(data)
