@@ -83,11 +83,7 @@ async function downloadToStorage(
 
   const contentLength = response.headers.get('content-length')
   if (contentLength && parseInt(contentLength, 10) > MAX_FETCH_SIZE) {
-    throw new KukanError(
-      SIZE_LIMIT_MSG,
-      'PAYLOAD_TOO_LARGE',
-      413
-    )
+    throw new KukanError(SIZE_LIMIT_MSG, 'PAYLOAD_TOO_LARGE', 413)
   }
 
   const readable = Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0])
@@ -100,13 +96,7 @@ async function downloadToStorage(
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
       totalSize += buf.length
       if (totalSize > MAX_FETCH_SIZE) {
-        callback(
-          new KukanError(
-            SIZE_LIMIT_MSG,
-            'PAYLOAD_TOO_LARGE',
-            413
-          )
-        )
+        callback(new KukanError(SIZE_LIMIT_MSG, 'PAYLOAD_TOO_LARGE', 413))
         return
       }
       hashDigest.update(buf)

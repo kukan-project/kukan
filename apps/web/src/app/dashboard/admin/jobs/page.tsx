@@ -263,9 +263,7 @@ export default function AdminJobsPage() {
                     {formatDateTimeCompact(job.updated, locale)}
                   </TableCell>
                   <TableCell className="truncate" title={job.error ?? undefined}>
-                    {job.error && (
-                      <span className="text-sm text-destructive">{job.error}</span>
-                    )}
+                    {job.error && <span className="text-sm text-destructive">{job.error}</span>}
                   </TableCell>
                   <TableCell>
                     <Button
