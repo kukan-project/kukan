@@ -85,6 +85,8 @@ export class WorkerServiceConstruct extends Construct {
     taskDef.addContainer('Worker', {
       image: ecs.ContainerImage.fromDockerImageAsset(imageAsset),
       environment,
+      // Allow up to 120s for in-flight pipeline job to finish on SIGTERM (Fargate max)
+      stopTimeout: cdk.Duration.seconds(120),
       logging: ecs.LogDrivers.awsLogs({
         logGroup: new logs.LogGroup(this, 'WorkerLogs', {
           retention: logs.RetentionDays.ONE_MONTH,
