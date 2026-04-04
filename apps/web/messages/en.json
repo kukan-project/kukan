@@ -245,6 +245,7 @@
     "previewRowCount": "{shown} of {total} rows",
     "previewTruncatedNote": "truncated",
     "previewEncoding": "Encoding: {encoding}",
+    "previewTruncated": "Large file — showing first 1 MB only",
     "additionalInfo": "Additional Information",
     "lastModified": "Data Last Modified",
     "updated": "Resource Modified",

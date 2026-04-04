@@ -19,6 +19,7 @@ import {
   detectContentType,
   toCharset,
 } from '@kukan/shared'
+import { TEXT_PREVIEW_LIMIT, DEFAULT_RANGE_CHUNK } from '../config'
 import { checkOrgRole } from '../auth/permissions'
 import { indexPackage } from '../services/search-index'
 import { Readable } from 'stream'
@@ -84,13 +85,14 @@ resourcesRouter.get('/:id', async (c) => {
 
 // GET /api/v1/resources/:id/text - Stream raw bytes with charset header
 // Browser decodes via Content-Type charset; no server-side encoding conversion needed.
+// Hard-limited to TEXT_PREVIEW_LIMIT for preview; use /download for full file.
 resourcesRouter.get('/:id/text', async (c) => {
   const id = c.req.param('id')
-  const service = new ResourceService(c.get('db'))
-  const resource = await service.getById(id)
-
-  const pipelineService = new PipelineService(c.get('db'))
-  const pipelineStatus = await pipelineService.getStatus(id)
+  const db = c.get('db')
+  const [resource, pipelineStatus] = await Promise.all([
+    new ResourceService(db).getById(id),
+    new PipelineService(db).getStatus(id),
+  ])
   const encoding =
     ((pipelineStatus?.metadata as Record<string, unknown> | null)?.encoding as
       | string
@@ -99,12 +101,15 @@ resourcesRouter.get('/:id/text', async (c) => {
   const charset = toCharset(encoding)
   const storage = c.get('storage')
   const storageKey = getStorageKey(resource.packageId, resource.id)
-  const nodeStream = await storage.download(storageKey)
+  const result = await storage.downloadRange(storageKey, 0, TEXT_PREVIEW_LIMIT - 1)
+  const isTruncated = result.totalSize > TEXT_PREVIEW_LIMIT
 
-  return new Response(Readable.toWeb(nodeStream) as ReadableStream, {
+  return new Response(Readable.toWeb(result.stream) as ReadableStream, {
     headers: {
       'Content-Type': `text/plain; charset=${charset}`,
       'X-Detected-Encoding': encoding,
+      'X-Truncated': String(isTruncated),
+      'Cache-Control': 'private, max-age=300',
     },
   })
 })
@@ -167,7 +172,7 @@ resourcesRouter.get('/:id/preview', async (c) => {
     }
 
     const start = parseInt(match[1], 10)
-    const end = match[2] ? parseInt(match[2], 10) : start + 1024 * 1024 - 1
+    const end = match[2] ? parseInt(match[2], 10) : start + DEFAULT_RANGE_CHUNK - 1
 
     const result = await storage.downloadRange(storageKey, start, end)
 

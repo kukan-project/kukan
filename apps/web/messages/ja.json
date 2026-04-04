@@ -245,6 +245,7 @@
     "previewRowCount": "{total} 行中 {shown} 行を表示",
     "previewTruncatedNote": "省略あり",
     "previewEncoding": "文字コード: {encoding}",
+    "previewTruncated": "ファイルが大きいため先頭 1 MB のみ表示",
     "additionalInfo": "追加情報",
     "lastModified": "データ更新日時",
     "updated": "リソース更新日時",

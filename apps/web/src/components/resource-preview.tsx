@@ -92,6 +92,7 @@ function RawTextPreview({ resourceId }: { resourceId: string }) {
   const t = useTranslations('resource')
   const [text, setText] = useState<string | null>(null)
   const [encoding, setEncoding] = useState<string>('')
+  const [truncated, setTruncated] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
 
@@ -101,17 +102,18 @@ function RawTextPreview({ resourceId }: { resourceId: string }) {
       try {
         const res = await clientFetch(`/api/v1/resources/${encodeURIComponent(resourceId)}/text`)
         if (!res.ok) throw new Error()
-        if (!cancelled) {
-          const detectedEncoding = res.headers.get('X-Detected-Encoding') || ''
-          setEncoding(detectedEncoding)
-          // Extract charset from Content-Type and decode with TextDecoder
-          // (fetch's res.text() always decodes as UTF-8, ignoring charset)
-          const ct = res.headers.get('Content-Type') || ''
-          const charsetMatch = ct.match(/charset=([^\s;]+)/)
-          const charset = charsetMatch?.[1] || 'utf-8'
-          const buf = await res.arrayBuffer()
-          setText(new TextDecoder(charset).decode(buf))
-        }
+        if (cancelled) return
+
+        setEncoding(res.headers.get('X-Detected-Encoding') || '')
+        setTruncated(res.headers.get('X-Truncated') === 'true')
+
+        const ct = res.headers.get('Content-Type') || ''
+        const charsetMatch = ct.match(/charset=([^\s;]+)/)
+        const charset = charsetMatch?.[1] || 'utf-8'
+        const buf = await res.arrayBuffer()
+        const decoded = new TextDecoder(charset).decode(buf)
+        // Remove trailing replacement chars from truncated multi-byte sequences
+        setText(decoded.replace(/\uFFFD+$/, ''))
       } catch {
         if (!cancelled) setError(true)
       } finally {
@@ -133,9 +135,10 @@ function RawTextPreview({ resourceId }: { resourceId: string }) {
       <div className="max-h-[600px] overflow-auto bg-muted/20 p-4">
         <pre className="whitespace-pre text-xs">{text}</pre>
       </div>
-      {encoding && (
-        <div className="border-t px-4 py-2 text-xs text-muted-foreground">
-          {t('previewEncoding', { encoding })}
+      {(encoding || truncated) && (
+        <div className="flex items-center gap-2 border-t px-4 py-2 text-xs text-muted-foreground">
+          {encoding && <span>{t('previewEncoding', { encoding })}</span>}
+          {truncated && <span>{t('previewTruncated')}</span>}
         </div>
       )}
     </div>
