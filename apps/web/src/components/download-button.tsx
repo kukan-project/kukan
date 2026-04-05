@@ -1,5 +1,6 @@
 import { Download } from 'lucide-react'
 import { Button } from '@kukan/ui'
+import { formatBytes } from '@/lib/format-utils'
 
 /** Extract filename from a URL path, or return as-is if already a filename */
 function extractFilename(urlOrFilename: string): string {
@@ -17,6 +18,7 @@ interface DownloadButtonProps {
   resourceId: string
   filename: string
   label: string
+  size?: number | null
 }
 
 export function DownloadButton({
@@ -24,6 +26,7 @@ export function DownloadButton({
   resourceId,
   filename,
   label,
+  size,
 }: DownloadButtonProps) {
   const displayFilename = extractFilename(filename)
   const href = `/dataset/${encodeURIComponent(datasetNameOrId)}/resource/${encodeURIComponent(resourceId)}/download/${encodeURIComponent(displayFilename)}`
@@ -32,6 +35,9 @@ export function DownloadButton({
       <a href={href}>
         <Download className="h-4 w-4" />
         {label}
+        {size != null && size > 0 && (
+          <span className="text-xs opacity-75">({formatBytes(size)})</span>
+        )}
       </a>
     </Button>
   )

@@ -16,6 +16,7 @@ import {
 } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
+import { formatBytes } from '@/lib/format-utils'
 import { ChevronDownIcon, ChevronRightIcon, FileIcon, FolderIcon } from 'lucide-react'
 import type { ZipEntry, ZipManifest } from '@kukan/shared'
 
@@ -177,7 +178,7 @@ export function ZipPreview({ resourceId }: ZipPreviewProps) {
                 <TableCell colSpan={4} className="text-xs">
                   {t('zipTotalFiles', { count: manifest.totalFiles })}
                   {' · '}
-                  {t('zipTotalSize', { size: formatBytes(manifest.totalSize) })}
+                  {t('zipTotalSize', { size: formatBytes(manifest.totalSize) ?? '0 B' })}
                   {manifest.truncated && (
                     <span className="ml-2 text-muted-foreground">{t('zipTruncated')}</span>
                   )}
@@ -264,10 +265,10 @@ function TreeNodeRow({
           </span>
         </TableCell>
         <TableCell className="text-right text-xs tabular-nums">
-          {isDir ? '—' : entry ? formatBytes(entry.size) : '—'}
+          {isDir ? '—' : entry ? (formatBytes(entry.size) ?? '—') : '—'}
         </TableCell>
         <TableCell className="text-right text-xs tabular-nums">
-          {isDir ? '—' : entry ? formatBytes(entry.compressedSize) : '—'}
+          {isDir ? '—' : entry ? (formatBytes(entry.compressedSize) ?? '—') : '—'}
         </TableCell>
         <TableCell className="text-right text-xs tabular-nums">
           {entry ? formatDate(entry.lastModified) : '—'}
@@ -278,16 +279,6 @@ function TreeNodeRow({
       )}
     </>
   )
-}
-
-const LOG_1024 = Math.log(1024)
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / LOG_1024)
-  const value = bytes / Math.pow(1024, i)
-  return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
 
 /** Format a timezone-free ISO string (e.g. "2024-03-21T18:22:00") for display */

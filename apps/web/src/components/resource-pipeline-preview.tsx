@@ -52,7 +52,7 @@ export function ResourcePipelinePreview({
     <section>
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-baseline gap-3">
-          <h2 className="text-xl font-semibold">{t('preview')}</h2>
+          <h4 className="text-xl font-semibold">{t('preview')}</h4>
           {generatedAt && (
             <span className="text-xs text-muted-foreground">
               {t('previewGeneratedAt', { date: generatedAt })}
@@ -75,7 +75,11 @@ export function ResourcePipelinePreview({
           </Dialog>
         )}
       </div>
-      <ResourcePreview key={previewKey} resourceId={resourceId} format={format} />
+      <ResourcePreview
+        key={`${resourceId}-${previewKey}`}
+        resourceId={resourceId}
+        format={format}
+      />
     </section>
   )
 }
