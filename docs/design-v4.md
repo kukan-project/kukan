@@ -2,8 +2,7 @@
 
 > **Knowledge Unified Katalog And Network**
 > みんなが使えるデータカタログ — A modern alternative to CKAN
->
-> ⚠️ 本文書は設計議論の経緯を保存するため、本文中に「CKANモダンクローン」「新システム」等の表現が残っています。すべて正式名称 **KUKAN** に読み替えてください。
+> License: AGPL-3.0 — Copyright (C) 2026 KUKAN Contributors
 
 ## 1. プロジェクト概要
 
@@ -2350,7 +2349,7 @@ ckanCompat.all('/api/3/action/:action', async (c) => {
 ## 15. データ移行
 
 ```
-既存CKAN                                新システム
+既存CKAN                                KUKAN
 ┌──────────┐                           ┌─────────┐
 │PostgreSQL │─── ckanapi dump ─────────►│Migration │
 │(メタデータ)│     (JSONL)              │CLI Tool  │
