@@ -149,11 +149,35 @@ function RawTextPreview({ resourceId }: { resourceId: string }) {
 
 function PdfPreview({ resourceId }: { resourceId: string }) {
   const t = useTranslations('resource')
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const previewUrl = `/api/v1/resources/${encodeURIComponent(resourceId)}/preview`
+
+  useEffect(() => {
+    let cancelled = false
+    async function check() {
+      try {
+        const res = await clientFetch(
+          `/api/v1/resources/${encodeURIComponent(resourceId)}/preview`,
+          { method: 'HEAD' }
+        )
+        if (!cancelled) setState(res.ok ? 'ready' : 'error')
+      } catch {
+        if (!cancelled) setState('error')
+      }
+    }
+    check()
+    return () => {
+      cancelled = true
+    }
+  }, [resourceId])
+
+  if (state === 'loading') return <PreviewSkeleton />
+  if (state === 'error') return <PreviewError />
 
   return (
     <div className="overflow-hidden rounded-lg border">
       <iframe
-        src={`/api/v1/resources/${encodeURIComponent(resourceId)}/preview`}
+        src={previewUrl}
         title={t('preview')}
         className="block h-[700px] w-full"
         style={{ border: 'none' }}

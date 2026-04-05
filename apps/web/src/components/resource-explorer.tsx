@@ -103,7 +103,7 @@ export function ResourceExplorer({
                   {r.format || '?'}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{r.name || t('unnamed')}</p>
+                  <p className="truncate text-sm font-medium" title={r.name || undefined}>{r.name || t('unnamed')}</p>
                 </div>
               </CardContent>
             </Card>
@@ -116,7 +116,7 @@ export function ResourceExplorer({
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           {/* Resource header */}
           <div className="flex items-center justify-between gap-3">
-            <h3 className="truncate text-xl leading-tight font-semibold">
+            <h3 className="text-xl leading-tight font-semibold break-all">
               {selected.name || t('unnamed')}
             </h3>
             <div className="shrink-0">
