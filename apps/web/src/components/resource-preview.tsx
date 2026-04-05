@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, Skeleton, Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import { isCsvFormat, isTextFormat, isZipFormat } from '@kukan/shared'
+import { isCsvFormat, isTextFormat, isZipFormat, isOfficeFormat } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
 import { ParquetPreview } from './parquet-preview'
 import { GeoJsonPreview } from './geojson-preview'
@@ -12,6 +12,10 @@ import { ZipPreview } from './zip-preview'
 interface ResourcePreviewProps {
   resourceId: string
   format?: string | null
+  /** Original URL for external URL resources (used by Office Online Viewer) */
+  url?: string | null
+  /** File size in bytes (used for Office Online Viewer 10 MB limit check) */
+  size?: number | null
 }
 
 type PreviewSource = 'parquet' | 'raw'
@@ -22,7 +26,7 @@ type PreviewSource = 'parquet' | 'raw'
  * TXT is displayed as raw text.
  * If no preview data exists in Storage, shows "not available".
  */
-export function ResourcePreview({ resourceId, format }: ResourcePreviewProps) {
+export function ResourcePreview({ resourceId, format, url, size }: ResourcePreviewProps) {
   const f = format?.toLowerCase()
 
   // PDF: render via Storage signed URL
@@ -37,10 +41,14 @@ export function ResourcePreview({ resourceId, format }: ResourcePreviewProps) {
   // ZIP: file listing preview
   if (isZipFormat(format ?? null)) return <ZipPreview resourceId={resourceId} />
 
+  // Office formats (XLSX, XLS, DOC, DOCX): Office Online Viewer
+  if (isOfficeFormat(format ?? null))
+    return <OfficeOnlinePreview resourceId={resourceId} url={url} size={size} />
+
   // Text formats (JSON, XML, HTML, TXT, MD, etc.): raw text preview
   if (isTextFormat(format ?? null)) return <TextOnlyPreview resourceId={resourceId} />
 
-  // Non-text formats (XLSX, DOC, etc.): not available
+  // Non-text formats (RDF, etc.): not available
   return <PreviewNotAvailable />
 }
 
@@ -179,6 +187,74 @@ function PdfPreview({ resourceId }: { resourceId: string }) {
         className="block h-[700px] w-full"
         style={{ border: 'none' }}
       />
+    </div>
+  )
+}
+
+// --- Office Online Preview (Excel / Word) ---
+
+const OFFICE_VIEWER_BASE = 'https://view.officeapps.live.com/op/embed.aspx'
+
+/** Office Online Viewer file size limit (10 MB) */
+const OFFICE_VIEWER_MAX_SIZE = 10 * 1024 * 1024
+
+function OfficeOnlinePreview({
+  resourceId,
+  url,
+  size,
+}: {
+  resourceId: string
+  url?: string | null
+  size?: number | null
+}) {
+  const t = useTranslations('resource')
+
+  const isLocal =
+    typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+
+  // External URL resources: use original URL directly (works even on localhost)
+  // Uploaded resources: use KUKAN API endpoint (requires public deployment)
+  let fileUrl: string | null = null
+  if (url) {
+    fileUrl = url
+  } else if (!isLocal && typeof window !== 'undefined') {
+    fileUrl = `${window.location.origin}/api/v1/resources/${encodeURIComponent(resourceId)}/preview`
+  }
+
+  if (size && size > OFFICE_VIEWER_MAX_SIZE) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          {t('previewOfficeTooLarge')}
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (!fileUrl) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          {t('previewOfficeLocalUnavailable')}
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const viewerUrl = `${OFFICE_VIEWER_BASE}?src=${encodeURIComponent(fileUrl)}`
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="overflow-hidden rounded-lg border">
+        <iframe
+          src={viewerUrl}
+          title={t('preview')}
+          className="block h-[700px] w-full"
+          style={{ border: 'none' }}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">{t('previewOfficeOnline')}</p>
     </div>
   )
 }

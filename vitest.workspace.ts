@@ -1,4 +1,5 @@
 import { defineWorkspace } from 'vitest/config'
+import { resolve } from 'path'
 
 export default defineWorkspace([
   {
@@ -47,6 +48,11 @@ export default defineWorkspace([
       root: './apps/worker',
       include: ['src/__tests__/**/*.test.ts'],
       environment: 'node',
+    },
+    resolve: {
+      alias: {
+        '@': resolve(__dirname, 'apps/worker/src'),
+      },
     },
   },
   {

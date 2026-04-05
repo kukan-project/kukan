@@ -14,6 +14,8 @@ import type { PipelineStatusData } from '@/hooks/use-pipeline-status'
 interface ResourcePipelinePreviewProps {
   resourceId: string
   format?: string | null
+  url?: string | null
+  size?: number | null
   canManage?: boolean
 }
 
@@ -25,6 +27,8 @@ interface ResourcePipelinePreviewProps {
 export function ResourcePipelinePreview({
   resourceId,
   format,
+  url,
+  size,
   canManage,
 }: ResourcePipelinePreviewProps) {
   const t = useTranslations('resource')
@@ -79,6 +83,8 @@ export function ResourcePipelinePreview({
         key={`${resourceId}-${previewKey}`}
         resourceId={resourceId}
         format={format}
+        url={url}
+        size={size}
       />
     </section>
   )

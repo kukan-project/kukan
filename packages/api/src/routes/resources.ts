@@ -41,10 +41,11 @@ async function resolvePreviewTarget(
   db: Database,
   resource: { id: string; packageId: string; format: string | null }
 ): Promise<{ storageKey: string; contentType: string } | null> {
-  if (resource.format?.toLowerCase() === 'pdf') {
+  const f = resource.format?.toLowerCase()
+  if (f === 'pdf' || f === 'xlsx' || f === 'xls' || f === 'doc' || f === 'docx' || f === 'ppt' || f === 'pptx') {
     return {
       storageKey: getStorageKey(resource.packageId, resource.id),
-      contentType: getMimeType('pdf')!,
+      contentType: getMimeType(f)!,
     }
   }
   const pipelineService = new PipelineService(db)

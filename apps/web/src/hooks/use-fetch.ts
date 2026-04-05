@@ -17,6 +17,10 @@ export function useFetch<T>(path: string): UseFetchResult<T> {
   const [error, setError] = useState(false)
 
   useEffect(() => {
+    setData(null)
+    setLoading(true)
+    setError(false)
+
     const controller = new AbortController()
 
     async function load() {

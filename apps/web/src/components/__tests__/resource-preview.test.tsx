@@ -81,19 +81,76 @@ describe('ResourcePreview', () => {
       expect(screen.getByTestId('geojson-preview')).toBeInTheDocument()
     })
 
-    it('should show not-available for non-text formats like XLSX', () => {
-      render(<ResourcePreview resourceId="r1" format="XLSX" />)
+    it('should show not-available for unsupported formats like RDF', () => {
+      render(<ResourcePreview resourceId="r1" format="RDF" />)
       expect(screen.getByText('Preview is not available for this format')).toBeInTheDocument()
     })
   })
 
   describe('PDF preview', () => {
-    it('should render iframe with /preview endpoint for PDF format', () => {
+    it('should render iframe with /preview endpoint for PDF format', async () => {
+      mockClientFetch.mockResolvedValueOnce({ ok: true } as Response)
       render(<ResourcePreview resourceId="r1" format="PDF" />)
 
+      await waitFor(() => {
+        const iframe = document.querySelector('iframe')
+        expect(iframe).not.toBeNull()
+        expect(iframe!.getAttribute('src')).toBe('/api/v1/resources/r1/preview')
+      })
+    })
+  })
+
+  describe('Office Online preview', () => {
+    it('should show local-unavailable for uploaded XLSX on localhost', () => {
+      render(<ResourcePreview resourceId="r1" format="XLSX" />)
+      expect(
+        screen.getByText(
+          'Office preview is not available in local environments. Download the file to view it.'
+        )
+      ).toBeInTheDocument()
+    })
+
+    it('should show local-unavailable for uploaded DOCX on localhost', () => {
+      render(<ResourcePreview resourceId="r1" format="DOCX" />)
+      expect(
+        screen.getByText(
+          'Office preview is not available in local environments. Download the file to view it.'
+        )
+      ).toBeInTheDocument()
+    })
+
+    it('should render Office Online iframe when external URL is provided', () => {
+      render(
+        <ResourcePreview
+          resourceId="r1"
+          format="XLSX"
+          url="https://example.com/data.xlsx"
+        />
+      )
       const iframe = document.querySelector('iframe')
       expect(iframe).not.toBeNull()
-      expect(iframe!.getAttribute('src')).toBe('/api/v1/resources/r1/preview')
+      expect(iframe!.getAttribute('src')).toContain('view.officeapps.live.com')
+      expect(iframe!.getAttribute('src')).toContain(
+        encodeURIComponent('https://example.com/data.xlsx')
+      )
+    })
+
+    it('should render Office Online iframe for DOC with external URL', () => {
+      render(
+        <ResourcePreview
+          resourceId="r1"
+          format="DOC"
+          url="https://example.com/report.doc"
+        />
+      )
+      const iframe = document.querySelector('iframe')
+      expect(iframe).not.toBeNull()
+      expect(iframe!.getAttribute('src')).toContain('view.officeapps.live.com')
+    })
+
+    it('should route XLS to Office Online preview (not generic not-available)', () => {
+      render(<ResourcePreview resourceId="r1" format="XLS" />)
+      expect(screen.queryByText('Preview is not available for this format')).not.toBeInTheDocument()
     })
   })
 })

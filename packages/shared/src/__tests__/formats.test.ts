@@ -6,6 +6,7 @@ import {
   detectContentType,
   isCsvFormat,
   isTextFormat,
+  isOfficeFormat,
   isZipFormat,
   toCharset,
   getStorageKey,
@@ -209,6 +210,29 @@ describe('getPreviewKey', () => {
 
   it('should compute preview key with specified extension', () => {
     expect(getPreviewKey('pkg-123', 'res-456', 'json')).toBe('previews/pkg-123/res-456.json')
+  })
+})
+
+describe('isOfficeFormat', () => {
+  it('should return true for Office formats', () => {
+    expect(isOfficeFormat('xlsx')).toBe(true)
+    expect(isOfficeFormat('xls')).toBe(true)
+    expect(isOfficeFormat('doc')).toBe(true)
+    expect(isOfficeFormat('docx')).toBe(true)
+    expect(isOfficeFormat('ppt')).toBe(true)
+    expect(isOfficeFormat('pptx')).toBe(true)
+    expect(isOfficeFormat('DOCX')).toBe(true)
+    expect(isOfficeFormat('PPTX')).toBe(true)
+  })
+
+  it('should return false for non-Office formats', () => {
+    expect(isOfficeFormat('pdf')).toBe(false)
+    expect(isOfficeFormat('csv')).toBe(false)
+    expect(isOfficeFormat('txt')).toBe(false)
+  })
+
+  it('should return false for null', () => {
+    expect(isOfficeFormat(null)).toBe(false)
   })
 })
 

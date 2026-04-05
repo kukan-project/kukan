@@ -303,6 +303,9 @@
     "zipTotalSize": "Total: {size}",
     "zipTruncated": "Showing first 10,000 entries",
     "previewGeneratedAt": "Generated: {date}",
+    "previewOfficeOnline": "Powered by Microsoft Office Online",
+    "previewOfficeLocalUnavailable": "Office preview is not available in local environments. Download the file to view it.",
+    "previewOfficeTooLarge": "This file exceeds the 10 MB limit for Office Online preview. Download the file to view it.",
     "source": "Source",
     "replaceFile": "Replace file",
     "download": "Download"

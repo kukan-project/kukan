@@ -148,8 +148,11 @@ export function ResourceExplorer({
           )}
 
           <ResourcePipelinePreview
+            key={selected.id}
             resourceId={selected.id}
             format={selected.format}
+            url={selected.urlType !== 'upload' ? selected.url : null}
+            size={selected.size}
             canManage={canManage}
           />
 

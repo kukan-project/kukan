@@ -303,6 +303,9 @@
     "zipTotalSize": "合計: {size}",
     "zipTruncated": "※ 表示上限（10,000件）を超えたため一部省略",
     "previewGeneratedAt": "生成日時: {date}",
+    "previewOfficeOnline": "Microsoft Office Online を利用",
+    "previewOfficeLocalUnavailable": "ローカル環境では Office プレビューを利用できません。ファイルをダウンロードしてご確認ください。",
+    "previewOfficeTooLarge": "このファイルは Office Online プレビューの上限（10 MB）を超えています。ファイルをダウンロードしてご確認ください。",
     "source": "ソース",
     "replaceFile": "ファイルを差し替え",
     "download": "ダウンロード"

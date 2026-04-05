@@ -16,6 +16,8 @@ const FORMAT_MAP: Record<string, string> = {
   zip: 'ZIP',
   doc: 'DOC',
   docx: 'DOCX',
+  ppt: 'PPT',
+  pptx: 'PPTX',
   txt: 'TXT',
   html: 'HTML',
   htm: 'HTML',
@@ -35,6 +37,8 @@ const MIME_MAP: Record<string, string> = {
   zip: 'application/zip',
   doc: 'application/msword',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   txt: 'text/plain',
   html: 'text/html',
   htm: 'text/html',
@@ -124,6 +128,14 @@ export function getPreviewKey(
   ext: 'parquet' | 'json' = 'parquet'
 ): string {
   return `${PREVIEW_PREFIX}${packageId}/${resourceId}.${ext}`
+}
+
+const OFFICE_FORMATS = new Set(['xlsx', 'xls', 'doc', 'docx', 'ppt', 'pptx'])
+
+/** Check if a format is viewable via Office Online Viewer (Excel/Word/PowerPoint) */
+export function isOfficeFormat(format: string | null): boolean {
+  if (!format) return false
+  return OFFICE_FORMATS.has(format.toLowerCase())
 }
 
 /** Check if a format is a ZIP archive */
