@@ -156,10 +156,7 @@ function PdfPreview({ resourceId }: { resourceId: string }) {
     let cancelled = false
     async function check() {
       try {
-        const res = await clientFetch(
-          `/api/v1/resources/${encodeURIComponent(resourceId)}/preview`,
-          { method: 'HEAD' }
-        )
+        const res = await clientFetch(previewUrl, { method: 'HEAD' })
         if (!cancelled) setState(res.ok ? 'ready' : 'error')
       } catch {
         if (!cancelled) setState('error')
