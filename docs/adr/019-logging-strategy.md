@@ -6,7 +6,7 @@
 
 ## コンテキスト
 
-KUKAN は AWS（App Runner + ECS Fargate）とオンプレ（Docker Compose）のハイブリッドデプロイを想定している。
+KUKAN は AWS（ECS Fargate + ALB）とオンプレ（Docker Compose）のハイブリッドデプロイを想定している。
 現状のロギングには以下の問題がある:
 
 - **`console.log` のみ**: 構造化されておらず、ログレベル（info / warn / error）の区分がない
@@ -37,7 +37,7 @@ ADR-005 で「メトリクス / ロギングはアダプター不要、ロガー
 
 | 環境     | Collector                         | Store           | Viewer                |
 | -------- | --------------------------------- | --------------- | --------------------- |
-| AWS      | App Runner / ECS 標準（自動収集） | CloudWatch Logs | CloudWatch コンソール |
+| AWS      | ECS Fargate 標準（自動収集）      | CloudWatch Logs | CloudWatch コンソール |
 | オンプレ | Fluent Bit                        | Loki            | Grafana               |
 
 ### アプリ側: pino による構造化ログ
@@ -49,9 +49,9 @@ ADR-005 で「メトリクス / ロギングはアダプター不要、ロガー
 
 ### AWS 環境: CloudWatch Logs
 
-- App Runner / ECS Fargate は stdout を自動的に CloudWatch Logs に送信
+- ECS Fargate は stdout を自動的に CloudWatch Logs に送信（awslogs ドライバー）
 - Worker は既に CDK で CloudWatch LogGroup を設定済み（`/kukan/worker`, 1ヶ月保持）
-- Web（App Runner）もシステムログとして自動収集される
+- Web（ECS Fargate）も同様に CloudWatch LogGroup で収集
 - JSON 形式のため CloudWatch Logs Insights でフィールド検索可能
 
 ### オンプレ環境: Fluent Bit + Loki + Grafana
@@ -123,13 +123,13 @@ ADR-005 の方針に沿い、アプリコードにログアダプターは不要
 
 - **pino 導入**: `packages/api` と `apps/worker` に pino を追加、既存 `console.log` を置換
 - **compose.yml**: Fluent Bit / Loki / Grafana の3サービスを追加（profile で分離可能）
-- **CDK**: Web（App Runner）の CloudWatch Logs 設定を明示化
+- **CDK**: Web（ECS Fargate）の CloudWatch Logs 設定を明示化
 
 ※ 具体的なコード実装は本 ADR のスコープ外。別タスクとして実施する。
 
 ## 関連
 
 - ADR-005: アダプターは4つだけ — メトリクス/ロギングはアダプター不要と決定
-- ADR-018: Web = App Runner, Worker = ECS Fargate — CloudWatch Logs の収集元
+- ADR-020: Web = ECS Fargate + ALB, Worker = ECS Fargate — CloudWatch Logs の収集元
 - CDK Worker ログ設定: `infra/lib/constructs/worker-service.ts`
 - 既存ロガーミドルウェア: `packages/api/src/middleware/logger.ts`
