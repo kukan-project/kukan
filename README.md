@@ -251,4 +251,4 @@ docker compose logs -f web worker
 
 ## License / ライセンス
 
-TBD
+[AGPL-3.0-only](LICENSE)
