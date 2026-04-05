@@ -2,6 +2,7 @@
   "name": "@kukan/queue-adapter",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "description": "KUKAN queue adapter (SQS/InProcess)",
   "type": "module",
   "main": "dist/index.js",

@@ -2,6 +2,7 @@
   "name": "@kukan/shared",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "description": "KUKAN shared types, validators, utilities",
   "type": "module",
   "main": "dist/index.js",

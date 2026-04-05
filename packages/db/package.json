@@ -2,6 +2,7 @@
   "name": "@kukan/db",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "description": "KUKAN database schema and migrations (Drizzle ORM)",
   "type": "module",
   "main": "dist/index.js",

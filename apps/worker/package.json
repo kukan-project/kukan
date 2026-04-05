@@ -2,6 +2,7 @@
   "name": "@kukan/worker",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "description": "KUKAN Worker — SQS queue consumer for resource pipeline",
   "type": "module",
   "scripts": {
