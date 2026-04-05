@@ -64,6 +64,12 @@ export interface SearchQuery {
   facets?: boolean
 }
 
+/** Query parameters for resource count aggregation (no pagination needed) */
+export interface ResourceCountQuery {
+  q?: string
+  filters?: SearchFilters
+}
+
 export interface SearchFacetBucket {
   name: string
   count: number
@@ -114,4 +120,10 @@ export interface SearchAdapter {
    * Delete all documents from the index (for full rebuild)
    */
   deleteAll(): Promise<void>
+
+  /**
+   * Sum total active resource count across packages matching the given query/filters.
+   * Uses the same visibility / filter logic as search().
+   */
+  sumResourceCount(query?: ResourceCountQuery): Promise<number>
 }

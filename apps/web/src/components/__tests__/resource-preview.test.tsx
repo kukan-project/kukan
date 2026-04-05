@@ -120,13 +120,7 @@ describe('ResourcePreview', () => {
     })
 
     it('should render Office Online iframe when external URL is provided', () => {
-      render(
-        <ResourcePreview
-          resourceId="r1"
-          format="XLSX"
-          url="https://example.com/data.xlsx"
-        />
-      )
+      render(<ResourcePreview resourceId="r1" format="XLSX" url="https://example.com/data.xlsx" />)
       const iframe = document.querySelector('iframe')
       expect(iframe).not.toBeNull()
       expect(iframe!.getAttribute('src')).toContain('view.officeapps.live.com')
@@ -136,13 +130,7 @@ describe('ResourcePreview', () => {
     })
 
     it('should render Office Online iframe for DOC with external URL', () => {
-      render(
-        <ResourcePreview
-          resourceId="r1"
-          format="DOC"
-          url="https://example.com/report.doc"
-        />
-      )
+      render(<ResourcePreview resourceId="r1" format="DOC" url="https://example.com/report.doc" />)
       const iframe = document.querySelector('iframe')
       expect(iframe).not.toBeNull()
       expect(iframe!.getAttribute('src')).toContain('view.officeapps.live.com')

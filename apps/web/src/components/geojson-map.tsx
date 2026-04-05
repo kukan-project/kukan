@@ -17,8 +17,9 @@ const DEFAULT_CENTER: L.LatLngExpression = [36.0, 138.0]
 const DEFAULT_ZOOM = 5
 
 function escapeHtml(str: string): string {
-  return str.replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c
+  return str.replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c
   )
 }
 
@@ -70,7 +71,9 @@ export default function GeoJsonMap({ data }: { data: GeoJSON.GeoJsonObject }) {
     })
 
     osm.addTo(map)
-    L.control.layers({ OpenStreetMap: osm, 国土地理院: gsi }, undefined, { position: 'topright' }).addTo(map)
+    L.control
+      .layers({ OpenStreetMap: osm, 国土地理院: gsi }, undefined, { position: 'topright' })
+      .addTo(map)
 
     // GeoJSON layer
     const geoJsonLayer = L.geoJSON(data, { onEachFeature }).addTo(map)
@@ -90,10 +93,6 @@ export default function GeoJsonMap({ data }: { data: GeoJSON.GeoJsonObject }) {
   }, [data])
 
   return (
-    <div
-      ref={containerRef}
-      className="overflow-hidden rounded-lg border"
-      style={{ height: 500 }}
-    />
+    <div ref={containerRef} className="overflow-hidden rounded-lg border" style={{ height: 500 }} />
   )
 }

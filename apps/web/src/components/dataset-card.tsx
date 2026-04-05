@@ -4,7 +4,9 @@ import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { Building2, FileText, FolderOpen, Tag } from 'lucide-react'
 import { Badge, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
+import { FormatBadge } from './format-badge'
 import { FormatBadges } from './format-badges'
+import { parseGroups } from '@/lib/parse-groups'
 import type { MatchedResource } from '@kukan/search-adapter'
 
 export interface DatasetCardItem {
@@ -19,14 +21,6 @@ export interface DatasetCardItem {
   tags?: string
   groups?: string
   matchedResources?: MatchedResource[]
-}
-
-function parseGroups(groups?: string): { name: string; title: string }[] {
-  if (!groups) return []
-  return groups.split(',').map((g) => {
-    const [name, ...rest] = g.split(':')
-    return { name, title: rest.join(':') || name }
-  })
 }
 
 export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
@@ -80,12 +74,12 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
           <CardContent className="space-y-3">
             {pkg.notes && <p className="line-clamp-2 text-sm text-muted-foreground">{pkg.notes}</p>}
             {pkg.matchedResources && pkg.matchedResources.length > 0 && (
-              <div className="relative z-10 border-l-2 border-muted-foreground/20 pl-3">
+              <div className="relative z-10">
                 <p className="mb-1.5 flex items-center gap-1 text-xs font-medium text-muted-foreground">
                   <FileText className="h-3 w-3" />
                   {t('matchedResources')}
                 </p>
-                <ul className="space-y-1.5">
+                <ul className="space-y-1.5 border-l-2 border-muted-foreground/20 pl-3">
                   {pkg.matchedResources.map((r) => (
                     <li key={r.id}>
                       <Link
@@ -97,11 +91,7 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                           <span className="truncate font-medium group-hover/resource:underline">
                             {r.name || r.id}
                           </span>
-                          {r.format && (
-                            <Badge variant="outline" className="shrink-0 text-xs">
-                              {r.format.toUpperCase()}
-                            </Badge>
-                          )}
+                          {r.format && <FormatBadge format={r.format} className="shrink-0" />}
                         </div>
                         {r.description && (
                           <p className="line-clamp-1 text-xs text-muted-foreground">

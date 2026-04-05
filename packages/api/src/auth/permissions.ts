@@ -102,3 +102,34 @@ export function checkOwnerOrSysadmin(user: AuthUser, ownerId: string | null): vo
   if (ownerId && user.id === ownerId) return
   throw new ForbiddenError('Only the owner or sysadmin can perform this action')
 }
+
+/**
+ * Resolve organization IDs that the user belongs to.
+ * Returns `undefined` for unauthenticated users and sysadmins (no restriction needed).
+ */
+export async function resolveUserOrgIds(
+  db: Database,
+  user: AuthUser | undefined
+): Promise<string[] | undefined> {
+  if (!user || user.sysadmin) return undefined
+  const memberships = await db
+    .select({ organizationId: userOrgMembership.organizationId })
+    .from(userOrgMembership)
+    .where(eq(userOrgMembership.userId, user.id))
+  return memberships.map((m) => m.organizationId)
+}
+
+/**
+ * Build visibility filters for SearchAdapter based on user context.
+ * Mirrors the visibility logic used across packages, resources, search, and CKAN-compat routes.
+ */
+export function buildVisibilityFilters(
+  user: AuthUser | undefined,
+  userOrgIds: string[] | undefined
+): { excludePrivate?: boolean; allowPrivateOrgIds?: string[] } {
+  if (user?.sysadmin) return {}
+  return {
+    excludePrivate: true,
+    ...(userOrgIds?.length && { allowPrivateOrgIds: userOrgIds }),
+  }
+}

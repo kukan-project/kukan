@@ -201,22 +201,22 @@ pnpm format        # Prettier フォーマット
 検索インデックス更新は API ルートハンドラーで CUD 操作時に実行。
 Extract のみフォーマット別処理を行う。
 
-| フォーマット   | isTextFormat | エンコーディング検出                         | Parquet 生成 |          プレビュー表示          |
-| -------------- | :----------: | -------------------------------------------- | :----------: | :------------------------------: |
-| CSV            |     Yes      | `Encoding.detect()`                          |     Yes      |      テーブル+テキスト切替       |
-| TSV            |     Yes      | `Encoding.detect()`                          |     Yes      |      テーブル+テキスト切替       |
-| TXT            |     Yes      | `Encoding.detect()`                          |      -       |            テキスト              |
-| HTML/HTM       |     Yes      | `Encoding.detect()`                          |      -       |            テキスト              |
-| XML            |     Yes      | `<?xml encoding>` 宣言パース、fallback UTF-8 |      -       |            テキスト              |
-| JSON           |     Yes      | UTF-8 固定（RFC 8259）                       |      -       |            テキスト              |
-| GeoJSON        |     Yes      | UTF-8 固定（RFC 7946）                       |      -       |      地図+テキスト切替           |
-| MD             |     Yes      | UTF-8 固定                                   |      -       |            テキスト              |
-| RDF            |      No      | スキップ                                     |      -       |              非対応              |
-| PDF            |      No      | スキップ                                     |      -       |         iframe（本体）           |
-| XLSX/XLS       |      No      | スキップ                                     |      -       |    Office Online Viewer          |
-| DOC/DOCX       |      No      | スキップ                                     |      -       |    Office Online Viewer          |
-| PPT/PPTX       |      No      | スキップ                                     |      -       |    Office Online Viewer          |
-| ZIP            |      No      | JSONマニフェスト生成（yauzl）                |      -       |        ファイル一覧              |
+| フォーマット | isTextFormat | エンコーディング検出                         | Parquet 生成 |    プレビュー表示     |
+| ------------ | :----------: | -------------------------------------------- | :----------: | :-------------------: |
+| CSV          |     Yes      | `Encoding.detect()`                          |     Yes      | テーブル+テキスト切替 |
+| TSV          |     Yes      | `Encoding.detect()`                          |     Yes      | テーブル+テキスト切替 |
+| TXT          |     Yes      | `Encoding.detect()`                          |      -       |       テキスト        |
+| HTML/HTM     |     Yes      | `Encoding.detect()`                          |      -       |       テキスト        |
+| XML          |     Yes      | `<?xml encoding>` 宣言パース、fallback UTF-8 |      -       |       テキスト        |
+| JSON         |     Yes      | UTF-8 固定（RFC 8259）                       |      -       |       テキスト        |
+| GeoJSON      |     Yes      | UTF-8 固定（RFC 7946）                       |      -       |   地図+テキスト切替   |
+| MD           |     Yes      | UTF-8 固定                                   |      -       |       テキスト        |
+| RDF          |      No      | スキップ                                     |      -       |        非対応         |
+| PDF          |      No      | スキップ                                     |      -       |    iframe（本体）     |
+| XLSX/XLS     |      No      | スキップ                                     |      -       | Office Online Viewer  |
+| DOC/DOCX     |      No      | スキップ                                     |      -       | Office Online Viewer  |
+| PPT/PPTX     |      No      | スキップ                                     |      -       | Office Online Viewer  |
+| ZIP          |      No      | JSONマニフェスト生成（yauzl）                |      -       |     ファイル一覧      |
 
 **サイズ制限:**
 

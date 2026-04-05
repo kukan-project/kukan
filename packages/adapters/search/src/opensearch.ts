@@ -8,6 +8,8 @@ import type {
   SearchAdapter,
   SearchQuery,
   SearchResult,
+  SearchFilters,
+  ResourceCountQuery,
   SearchFacets,
   SearchFacetBucket,
   DatasetDoc,
@@ -110,6 +112,74 @@ export class OpenSearchAdapter implements SearchAdapter {
     })
   }
 
+  /** Build OpenSearch filter clauses from SearchFilters */
+  private buildFilterClauses(filters?: SearchFilters): Record<string, unknown>[] {
+    const clauses: Record<string, unknown>[] = []
+
+    if (filters?.name) {
+      clauses.push({ prefix: { name: filters.name } })
+    }
+    if (filters?.organizations?.length) {
+      clauses.push({ terms: { organization: filters.organizations } })
+    }
+    if (filters?.tags?.length) {
+      for (const t of filters.tags) {
+        clauses.push({ term: { tags: t } })
+      }
+    }
+    if (filters?.formats?.length) {
+      for (const fmt of filters.formats) {
+        clauses.push({ term: { formats: fmt.toUpperCase() } })
+      }
+    }
+    if (filters?.licenses?.length) {
+      clauses.push({ terms: { license_id: filters.licenses } })
+    }
+    if (filters?.groups?.length) {
+      for (const g of filters.groups) {
+        clauses.push({ term: { groups: g } })
+      }
+    }
+    if (filters?.excludePrivate) {
+      if (filters.allowPrivateOrgIds?.length) {
+        clauses.push({
+          bool: {
+            should: [
+              { term: { private: false } },
+              { terms: { owner_org_id: filters.allowPrivateOrgIds } },
+            ],
+            minimum_should_match: 1,
+          },
+        })
+      } else {
+        clauses.push({ term: { private: false } })
+      }
+    }
+    if (filters?.ownerOrgIds?.length) {
+      clauses.push({ terms: { owner_org_id: filters.ownerOrgIds } })
+    }
+    if (filters?.isPrivate !== undefined) {
+      clauses.push({ term: { private: filters.isPrivate } })
+    }
+    if (filters?.creatorUserId) {
+      clauses.push({ term: { creator_user_id: filters.creatorUserId } })
+    }
+
+    return clauses
+  }
+
+  /** Build a package-level multi_match query clause */
+  private buildPackageMultiMatch(q: string): Record<string, unknown> {
+    return {
+      multi_match: {
+        query: q,
+        fields: ['title^3', 'name^2', 'notes', 'tags'],
+        type: 'cross_fields',
+        operator: 'and',
+      },
+    }
+  }
+
   async search(query: SearchQuery): Promise<SearchResult> {
     await this.ensureIndex()
 
@@ -118,21 +188,14 @@ export class OpenSearchAdapter implements SearchAdapter {
 
     // Build bool query
     const must: Record<string, unknown>[] = []
-    const filter: Record<string, unknown>[] = []
+    const filter = this.buildFilterClauses(query.filters)
 
     // Full-text search (dataset-level + nested resource-level)
     if (query.q && query.q.trim()) {
       must.push({
         bool: {
           should: [
-            {
-              multi_match: {
-                query: query.q,
-                fields: ['title^3', 'name^2', 'notes', 'tags'],
-                type: 'cross_fields',
-                operator: 'and',
-              },
-            },
+            this.buildPackageMultiMatch(query.q),
             {
               nested: {
                 path: 'resources',
@@ -153,74 +216,6 @@ export class OpenSearchAdapter implements SearchAdapter {
       })
     } else {
       must.push({ match_all: {} })
-    }
-
-    // Name prefix filter (keyword field)
-    if (query.filters?.name) {
-      filter.push({ prefix: { name: query.filters.name } })
-    }
-
-    // Organization filter (no scoring impact, per ADR-013)
-    if (query.filters?.organizations?.length) {
-      filter.push({ terms: { organization: query.filters.organizations } })
-    }
-
-    // Tags filter (AND — each selected tag must be present)
-    if (query.filters?.tags?.length) {
-      for (const tag of query.filters.tags) {
-        filter.push({ term: { tags: tag } })
-      }
-    }
-
-    // Formats filter (AND — each selected format must be present)
-    if (query.filters?.formats?.length) {
-      for (const fmt of query.filters.formats) {
-        filter.push({ term: { formats: fmt.toUpperCase() } })
-      }
-    }
-
-    // License filter (OR — a package has one license, AND would always be empty for 2+)
-    if (query.filters?.licenses?.length) {
-      filter.push({ terms: { license_id: query.filters.licenses } })
-    }
-
-    // Groups filter (AND — each selected group must be present)
-    if (query.filters?.groups?.length) {
-      for (const group of query.filters.groups) {
-        filter.push({ term: { groups: group } })
-      }
-    }
-
-    // Visibility: exclude private unless in allowed orgs
-    if (query.filters?.excludePrivate) {
-      if (query.filters.allowPrivateOrgIds?.length) {
-        filter.push({
-          bool: {
-            should: [
-              { term: { private: false } },
-              { terms: { owner_org_id: query.filters.allowPrivateOrgIds } },
-            ],
-            minimum_should_match: 1,
-          },
-        })
-      } else {
-        filter.push({ term: { private: false } })
-      }
-    }
-
-    // my_org filter
-    if (query.filters?.ownerOrgIds?.length) {
-      filter.push({ terms: { owner_org_id: query.filters.ownerOrgIds } })
-    }
-
-    // Explicit private filter
-    if (query.filters?.isPrivate !== undefined) {
-      filter.push({ term: { private: query.filters.isPrivate } })
-    }
-
-    // Creator filter
-    if (query.filters?.creatorUserId) {
-      filter.push({ term: { creator_user_id: query.filters.creatorUserId } })
     }
 
     // Build aggregations when facets are requested
@@ -344,5 +339,43 @@ export class OpenSearchAdapter implements SearchAdapter {
       )
       throw new Error(`Bulk indexing failed for ${failed.length} documents`)
     }
+  }
+
+  async sumResourceCount(query?: ResourceCountQuery): Promise<number> {
+    await this.ensureIndex()
+
+    const must: Record<string, unknown>[] = []
+    const filter = this.buildFilterClauses(query?.filters)
+
+    if (query?.q?.trim()) {
+      must.push(this.buildPackageMultiMatch(query.q))
+    } else {
+      must.push({ match_all: {} })
+    }
+
+    const response = await this.client.search({
+      index: this.indexName,
+      body: {
+        size: 0,
+        query: {
+          bool: {
+            must,
+            ...(filter.length > 0 && { filter }),
+          },
+        },
+        aggs: {
+          resource_count: {
+            nested: { path: 'resources' },
+            aggs: {
+              total: { value_count: { field: 'resources.id' } },
+            },
+          },
+        },
+      },
+    })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const aggs = response.body.aggregations as Record<string, any> | undefined
+    return (aggs?.resource_count?.total?.value as number) ?? 0
   }
 }

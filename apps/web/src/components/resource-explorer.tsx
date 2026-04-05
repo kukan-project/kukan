@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { Calendar } from 'lucide-react'
 import { Card, CardContent, cn } from '@kukan/ui'
-import { getFormatColorClass } from '@/lib/format-colors'
+import { FormatBadge } from './format-badge'
 import { formatBytes } from '@/lib/format-utils'
 import { renderSimpleMarkdown } from '@/lib/render-markdown'
 import { DownloadButton } from '@/components/download-button'
@@ -113,13 +113,14 @@ export function ResourceExplorer({
               onClick={() => selectResource(r.id)}
             >
               <CardContent className="flex items-center gap-3 px-3 py-2.5">
-                <span
-                  className={`inline-flex min-w-[48px] items-center justify-center rounded px-1.5 py-0.5 text-xs font-bold uppercase ${getFormatColorClass(r.format)}`}
-                >
-                  {r.format || '?'}
-                </span>
+                <FormatBadge
+                  format={r.format || '?'}
+                  className="inline-flex min-w-[48px] items-center justify-center text-xs"
+                />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium" title={r.name || undefined}>{r.name || t('unnamed')}</p>
+                  <p className="truncate text-sm font-medium" title={r.name || undefined}>
+                    {r.name || t('unnamed')}
+                  </p>
                 </div>
               </CardContent>
             </Card>

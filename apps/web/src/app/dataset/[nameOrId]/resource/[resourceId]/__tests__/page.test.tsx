@@ -17,7 +17,11 @@ vi.mock('@/components/dataset-detail-layout', () => ({
     pkg: { id: string; name: string }
     initialResourceId?: string
   }) => (
-    <div data-testid="dataset-detail-layout" data-pkg-id={pkg.id} data-resource-id={initialResourceId ?? ''}>
+    <div
+      data-testid="dataset-detail-layout"
+      data-pkg-id={pkg.id}
+      data-resource-id={initialResourceId ?? ''}
+    >
       {pkg.name}
     </div>
   ),

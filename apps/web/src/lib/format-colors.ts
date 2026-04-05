@@ -9,6 +9,8 @@ const FORMAT_COLORS: Record<string, string> = {
   zip: 'bg-gray-600 text-white',
   doc: 'bg-blue-500 text-white',
   docx: 'bg-blue-500 text-white',
+  ppt: 'bg-orange-600 text-white',
+  pptx: 'bg-orange-600 text-white',
   xml: 'bg-teal-600 text-white',
   rdf: 'bg-cyan-600 text-white',
   txt: 'bg-gray-500 text-white',

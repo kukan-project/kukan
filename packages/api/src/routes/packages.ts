@@ -9,8 +9,6 @@ import { z } from 'zod'
 import { PackageService } from '../services/package-service'
 import { ResourceService } from '../services/resource-service'
 import { PipelineService } from '../services/pipeline-service'
-import { eq } from 'drizzle-orm'
-import { userOrgMembership } from '@kukan/db'
 import {
   createPackageSchema,
   updatePackageSchema,
@@ -19,7 +17,7 @@ import {
   ForbiddenError,
 } from '@kukan/shared'
 import type { MatchedResource, SearchFilters } from '@kukan/search-adapter'
-import { checkOrgRole } from '../auth/permissions'
+import { checkOrgRole, resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
 import { indexPackage } from '../services/search-index'
 import type { AppContext } from '../context'
 
@@ -74,14 +72,7 @@ packagesRouter.get(
     const effectiveState = state === 'deleted' && my_org && user ? 'deleted' : 'active'
 
     // Resolve user's org memberships (for visibility and my_org filters)
-    let userOrgIds: string[] | undefined
-    if (user && !user.sysadmin) {
-      const memberships = await db
-        .select({ organizationId: userOrgMembership.organizationId })
-        .from(userOrgMembership)
-        .where(eq(userOrgMembership.userId, user.id))
-      userOrgIds = memberships.map((m) => m.organizationId)
-    }
+    const userOrgIds = await resolveUserOrgIds(db, user)
 
     // my_org=true with no memberships → guaranteed empty result
     if (my_org && userOrgIds !== undefined && userOrgIds.length === 0) {
@@ -96,11 +87,7 @@ packagesRouter.get(
       formats: res_format,
       licenses: rest.license_id,
       groups: rest.groups,
-      // Visibility
-      ...(!user?.sysadmin && {
-        excludePrivate: true,
-        ...(userOrgIds?.length && { allowPrivateOrgIds: userOrgIds }),
-      }),
+      ...buildVisibilityFilters(user, userOrgIds),
       // my_org filter
       ...(my_org && userOrgIds?.length && { ownerOrgIds: userOrgIds }),
       // Explicit filters

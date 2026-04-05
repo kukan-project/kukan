@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl'
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge } from '@kukan/ui'
 import { clientFetch } from '@/lib/client-api'
 import { useUser } from '@/components/dashboard/user-provider'
+import { StatCard } from '@/components/dashboard/stat-card'
 import { FormatBadges } from '@/components/format-badges'
 
 interface PkgItem {
@@ -22,34 +23,28 @@ export default function DashboardPage() {
   const tc = useTranslations('common')
   const [items, setItems] = useState<PkgItem[]>([])
   const [total, setTotal] = useState(0)
+  const [resourceTotal, setResourceTotal] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [reindexing, setReindexing] = useState(false)
-  const [reindexResult, setReindexResult] = useState<number | null>(null)
 
   useEffect(() => {
-    clientFetch('/api/v1/packages?my_org=true&limit=5').then(async (res) => {
-      if (res.ok) {
-        const data = await res.json()
-        setItems(data.items)
-        setTotal(data.total)
-      }
-      setLoading(false)
-    })
+    Promise.all([
+      clientFetch('/api/v1/packages?my_org=true&limit=5'),
+      clientFetch('/api/v1/resources/count?my_org=true'),
+    ])
+      .then(async ([pkgRes, resCountRes]) => {
+        if (pkgRes.ok) {
+          const data = await pkgRes.json()
+          setItems(data.items)
+          setTotal(data.total)
+        }
+        if (resCountRes.ok) {
+          const data = await resCountRes.json()
+          setResourceTotal(data.count)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [])
-
-  async function handleReindex() {
-    setReindexing(true)
-    setReindexResult(null)
-    try {
-      const res = await clientFetch('/api/v1/admin/reindex', { method: 'POST' })
-      if (res.ok) {
-        const data = await res.json()
-        setReindexResult(data.indexed)
-      }
-    } finally {
-      setReindexing(false)
-    }
-  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -59,16 +54,8 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {t('datasetCount')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">{loading ? '-' : total}</p>
-          </CardContent>
-        </Card>
+        <StatCard label={t('datasetCount')} value={loading ? undefined : total} />
+        <StatCard label={t('resourceCount')} value={loading ? undefined : resourceTotal} />
       </div>
 
       <Card>
@@ -108,24 +95,6 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
-
-      {user.sysadmin && (
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('admin.title')}</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center gap-4">
-            <Button onClick={handleReindex} disabled={reindexing}>
-              {reindexing ? t('admin.reindexing') : t('admin.reindex')}
-            </Button>
-            {reindexResult !== null && (
-              <p className="text-sm text-muted-foreground">
-                {t('admin.reindexResult', { count: reindexResult })}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }

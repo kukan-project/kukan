@@ -50,7 +50,9 @@
     "nameHelp": "半角英数字、ハイフン、アンダースコアのみ（2〜100文字）",
     "imageUrl": "画像URL",
     "basicInfo": "基本情報",
-    "fetchError": "データの読み込みに失敗しました"
+    "fetchError": "データの読み込みに失敗しました",
+    "apiTokens": "APIトークン",
+    "resources": "リソース"
   },
   "home": {
     "title": "KUKAN",
@@ -111,7 +113,8 @@
     "matchedResources": "一致したリソース",
     "tabPublic": "公開",
     "tabPrivate": "非公開",
-    "tabDeleted": "削除済"
+    "tabDeleted": "削除済",
+    "manageTitle": "データセット管理"
   },
   "organization": {
     "title": "組織",
@@ -161,29 +164,32 @@
     "title": "ダッシュボード",
     "welcome": "ようこそ、{name} さん",
     "datasetCount": "データセット数",
+    "resourceCount": "リソース数",
     "recentDatasets": "最近のデータセット",
     "noDatasets": "データセットがありません",
     "createDataset": "データセットを作成",
     "apiTokens": "APIトークン",
-    "admin": {
-      "title": "管理",
-      "reindex": "検索インデックス再構築",
+    "sidebar": {
+      "dashboard": "ダッシュボード",
+      "datasets": "データセット管理",
+      "organizations": "組織管理",
+      "categories": "カテゴリー管理",
+      "adminSection": "システム管理者",
+      "adminJobs": "ジョブ管理",
+      "adminSearch": "インデックス管理",
+      "adminReset": "データ管理"
+    },
+    "adminSearch": {
+      "title": "インデックス管理",
+      "reindexTitle": "検索インデックス再構築",
+      "reindexDescription": "データベースの全データセットから検索インデックスを再構築します。通常は自動更新されますが、検索結果に不整合がある場合に実行してください。",
+      "reindex": "再構築",
       "reindexing": "再構築中...",
       "reindexResult": "{count} 件のパッケージをインデックスしました"
     },
-    "sidebar": {
-      "dashboard": "ダッシュボード",
-      "datasets": "データセット",
-      "organizations": "組織",
-      "categories": "カテゴリー",
-      "apiTokens": "APIトークン",
-      "profile": "プロフィール",
-      "adminSection": "システム管理者",
-      "adminJobs": "ジョブ管理",
-      "adminReset": "データリセット"
-    },
     "adminReset": {
-      "title": "データリセット",
+      "title": "データ管理",
+      "resetTitle": "データリセット",
       "warning": "すべてのデータセット、リソース、組織、グループ、タグ、パイプラインジョブ、関連ファイルが完全に削除されます。ユーザーアカウントは保持されます。",
       "confirmLabel": "確認のため RESET と入力してください",
       "confirmPlaceholder": "RESET",
@@ -303,6 +309,8 @@
     "zipTotalSize": "合計: {size}",
     "zipTruncated": "※ 表示上限（10,000件）を超えたため一部省略",
     "previewGeneratedAt": "生成日時: {date}",
+    "previewLoading": "プレビューを読み込み中…",
+    "previewLoadingSlow": "表示に時間がかかる場合があります",
     "previewOfficeOnline": "Microsoft Office Online を利用",
     "previewOfficeLocalUnavailable": "ローカル環境では Office プレビューを利用できません。ファイルをダウンロードしてご確認ください。",
     "previewOfficeTooLarge": "このファイルは Office Online プレビューの上限（10 MB）を超えています。ファイルをダウンロードしてご確認ください。",

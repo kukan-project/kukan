@@ -8,6 +8,7 @@ import type {
   SearchAdapter,
   SearchQuery,
   SearchResult,
+  ResourceCountQuery,
   SearchFacets,
   SearchFacetBucket,
   DatasetDoc,
@@ -359,5 +360,20 @@ export class PostgresSearchAdapter implements SearchAdapter {
 
   async bulkIndex(_docs: DatasetDoc[]): Promise<void> {
     // No-op: data lives directly in the package table
+  }
+
+  async sumResourceCount(query?: ResourceCountQuery): Promise<number> {
+    const conditions = this.buildConditions({ q: query?.q ?? '', filters: query?.filters })
+
+    const [{ count }] = await this.db
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(packageTable)
+      .innerJoin(
+        resource,
+        and(eq(resource.packageId, packageTable.id), eq(resource.state, 'active'))
+      )
+      .where(and(...conditions))
+
+    return count
   }
 }

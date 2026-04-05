@@ -1,4 +1,4 @@
-import { getFormatColorClass } from '@/lib/format-colors'
+import { FormatBadge } from './format-badge'
 
 export function FormatBadges({ formats }: { formats: string | undefined }) {
   if (!formats) return null
@@ -8,12 +8,7 @@ export function FormatBadges({ formats }: { formats: string | undefined }) {
   return (
     <div className="flex shrink-0 gap-1">
       {list.map((f) => (
-        <span
-          key={f}
-          className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase leading-tight ${getFormatColorClass(f)}`}
-        >
-          {f}
-        </span>
+        <FormatBadge key={f} format={f} />
       ))}
     </div>
   )

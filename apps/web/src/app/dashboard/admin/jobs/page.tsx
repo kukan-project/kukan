@@ -8,10 +8,6 @@ import { Play, RefreshCw } from 'lucide-react'
 import {
   Badge,
   Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
   Table,
   TableBody,
   TableCell,
@@ -22,6 +18,7 @@ import {
 import { useUser } from '@/components/dashboard/user-provider'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
+import { StatCard } from '@/components/dashboard/stat-card'
 import { clientFetch } from '@/lib/client-api'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
 import { formatDateTimeCompact } from '@/components/date-time'
@@ -294,37 +291,5 @@ export default function AdminJobsPage() {
         </>
       )}
     </div>
-  )
-}
-
-function StatCard({
-  label,
-  value,
-  variant,
-  active,
-  onClick,
-}: {
-  label: string
-  value?: number
-  variant?: 'destructive'
-  active?: boolean
-  onClick?: () => void
-}) {
-  return (
-    <Card
-      className={`cursor-pointer transition-colors hover:border-primary/50 ${active ? 'border-primary bg-primary/5 ring-2 ring-primary/25' : ''}`}
-      onClick={onClick}
-    >
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p
-          className={`text-3xl font-bold ${variant === 'destructive' && value ? 'text-destructive' : ''}`}
-        >
-          {value ?? '-'}
-        </p>
-      </CardContent>
-    </Card>
   )
 }

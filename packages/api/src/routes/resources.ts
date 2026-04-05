@@ -18,12 +18,14 @@ import {
   getMimeType,
   detectContentType,
   toCharset,
+  isOfficeFormat,
 } from '@kukan/shared'
 import { TEXT_PREVIEW_LIMIT, DEFAULT_RANGE_CHUNK } from '../config'
-import { checkOrgRole } from '../auth/permissions'
+import { checkOrgRole, resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
 import { indexPackage } from '../services/search-index'
 import { Readable } from 'stream'
 import type { Database } from '@kukan/db'
+import type { SearchFilters } from '@kukan/search-adapter'
 import type { AppContext } from '../context'
 import type { Context } from 'hono'
 
@@ -42,10 +44,10 @@ async function resolvePreviewTarget(
   resource: { id: string; packageId: string; format: string | null }
 ): Promise<{ storageKey: string; contentType: string } | null> {
   const f = resource.format?.toLowerCase()
-  if (f === 'pdf' || f === 'xlsx' || f === 'xls' || f === 'doc' || f === 'docx' || f === 'ppt' || f === 'pptx') {
+  if (f === 'pdf' || isOfficeFormat(resource.format)) {
     return {
       storageKey: getStorageKey(resource.packageId, resource.id),
-      contentType: getMimeType(f)!,
+      contentType: getMimeType(f!)!,
     }
   }
   const pipelineService = new PipelineService(db)
@@ -68,6 +70,32 @@ async function checkResourcePermission(
 }
 
 // --- Read endpoints ---
+
+// GET /api/v1/resources/count - Count active resources with same visibility as package search
+resourcesRouter.get('/count', async (c) => {
+  const user = c.get('user')
+  const myOrg = c.req.query('my_org') === 'true'
+  const db = c.get('db')
+
+  // Resolve user's org memberships (for visibility and my_org filters)
+  const userOrgIds = await resolveUserOrgIds(db, user)
+
+  // my_org=true with no memberships → 0
+  if (myOrg && userOrgIds !== undefined && userOrgIds.length === 0) {
+    return c.json({ count: 0 })
+  }
+
+  // Build visibility filters (same logic as packages list)
+  const filters: SearchFilters = {
+    ...buildVisibilityFilters(user, userOrgIds),
+    ...(myOrg && userOrgIds?.length && { ownerOrgIds: userOrgIds }),
+  }
+
+  // Dashboard (my_org=true) uses PostgreSQL adapter for DB consistency
+  const search = myOrg ? c.get('dbSearch') : c.get('search')
+  const count = await search.sumResourceCount({ filters })
+  return c.json({ count })
+})
 
 // GET /api/v1/resources/formats - Get distinct resource formats
 resourcesRouter.get('/formats', async (c) => {

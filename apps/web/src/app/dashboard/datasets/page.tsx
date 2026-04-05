@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import {
   Button,
@@ -18,17 +18,17 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  Tabs,
-  TabsList,
-  TabsTrigger,
 } from '@kukan/ui'
 import { Building2, FolderOpen, Tag } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
+import { parseGroups } from '@/lib/parse-groups'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
+import { StatCard } from '@/components/dashboard/stat-card'
 import { FormatBadges } from '@/components/format-badges'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
+import { useDebouncedValue } from '@/hooks/use-debounced-value'
 
 interface PkgItem {
   id: string
@@ -50,16 +50,7 @@ interface OptionItem {
 
 const ALL = '__all__'
 
-function parseGroups(groups?: string): { name: string; title: string }[] {
-  if (!groups) return []
-  return groups
-    .split(',')
-    .filter(Boolean)
-    .map((g) => {
-      const [name, ...rest] = g.split(':')
-      return { name, title: rest.join(':') || name }
-    })
-}
+type CategoryFilter = 'public' | 'private' | 'deleted'
 
 export default function DatasetsManagePage() {
   const t = useTranslations('dataset')
@@ -67,43 +58,67 @@ export default function DatasetsManagePage() {
 
   // Filter state
   const [nameFilter, setNameFilter] = useState('')
-  const [debouncedName, setDebouncedName] = useState('')
+  const debouncedName = useDebouncedValue(nameFilter)
   const [keyword, setKeyword] = useState('')
-  const [debouncedKeyword, setDebouncedKeyword] = useState('')
+  const debouncedKeyword = useDebouncedValue(keyword)
   const [orgFilter, setOrgFilter] = useState('')
   const [groupFilter, setGroupFilter] = useState('')
-  const [activeTab, setActiveTab] = useState<'public' | 'private' | 'deleted'>('public')
+  const [activeCategory, setActiveCategory] = useState<CategoryFilter>('public')
+
+  // Stats (inactive categories fetched separately; active category uses pagination.total)
+  const [inactiveStats, setInactiveStats] = useState<Partial<Record<CategoryFilter, number>>>({})
+
+  const fetchInactiveStats = useCallback(async (active: CategoryFilter) => {
+    try {
+      const calls: { key: CategoryFilter; url: string }[] = []
+      if (active !== 'public')
+        calls.push({ key: 'public', url: '/api/v1/packages?my_org=true&private=false&limit=1' })
+      if (active !== 'private')
+        calls.push({ key: 'private', url: '/api/v1/packages?my_org=true&private=true&limit=1' })
+      if (active !== 'deleted')
+        calls.push({
+          key: 'deleted',
+          url: '/api/v1/packages?my_org=true&state=deleted&limit=1',
+        })
+      const responses = await Promise.all(calls.map((c) => clientFetch(c.url)))
+      const results = await Promise.all(responses.map((r) => (r.ok ? r.json() : null)))
+      const newStats: Partial<Record<CategoryFilter, number>> = {}
+      calls.forEach((c, i) => {
+        if (results[i]) newStats[c.key] = results[i].total
+      })
+      setInactiveStats(newStats)
+    } catch {
+      // Silently ignore — stat cards will show stale or missing values
+    }
+  }, [])
 
   // Filter options
   const [organizations, setOrganizations] = useState<OptionItem[]>([])
   const [groups, setGroups] = useState<OptionItem[]>([])
 
+  // Fetch org/group filter options once on mount
   useEffect(() => {
     Promise.all([
       clientFetch('/api/v1/organizations?limit=100'),
       clientFetch('/api/v1/groups?limit=100'),
-    ]).then(async ([orgRes, grpRes]) => {
-      if (orgRes.ok) {
-        const data = await orgRes.json()
-        setOrganizations(data.items)
-      }
-      if (grpRes.ok) {
-        const data = await grpRes.json()
-        setGroups(data.items)
-      }
-    })
+    ])
+      .then(async ([orgRes, grpRes]) => {
+        if (orgRes.ok) {
+          const data = await orgRes.json()
+          setOrganizations(data.items)
+        }
+        if (grpRes.ok) {
+          const data = await grpRes.json()
+          setGroups(data.items)
+        }
+      })
+      .catch(() => {})
   }, [])
 
-  // Debounce text inputs
+  // Refetch inactive stats when active category changes
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedName(nameFilter), 300)
-    return () => clearTimeout(timer)
-  }, [nameFilter])
-
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedKeyword(keyword), 300)
-    return () => clearTimeout(timer)
-  }, [keyword])
+    fetchInactiveStats(activeCategory)
+  }, [fetchInactiveStats, activeCategory])
 
   // Build dynamic URL
   const filterUrl = useMemo(() => {
@@ -112,13 +127,20 @@ export default function DatasetsManagePage() {
     if (debouncedKeyword) params.set('q', debouncedKeyword)
     if (orgFilter) params.set('organization', orgFilter)
     if (groupFilter) params.set('groups', groupFilter)
-    if (activeTab === 'public') params.set('private', 'false')
-    else if (activeTab === 'private') params.set('private', 'true')
-    else if (activeTab === 'deleted') params.set('state', 'deleted')
+    if (activeCategory === 'public') params.set('private', 'false')
+    else if (activeCategory === 'private') params.set('private', 'true')
+    else if (activeCategory === 'deleted') params.set('state', 'deleted')
     return `/api/v1/packages?${params}`
-  }, [debouncedName, debouncedKeyword, orgFilter, groupFilter, activeTab])
+  }, [debouncedName, debouncedKeyword, orgFilter, groupFilter, activeCategory])
 
   const { items, loading, error, ...pagination } = usePaginatedFetch<PkgItem>(filterUrl)
+
+  // Merge active category total from pagination with inactive stats
+  const stats: Record<CategoryFilter, number | undefined> = {
+    public: activeCategory === 'public' ? pagination.total : inactiveStats.public,
+    private: activeCategory === 'private' ? pagination.total : inactiveStats.private,
+    deleted: activeCategory === 'deleted' ? pagination.total : inactiveStats.deleted,
+  }
 
   function handleSelect(setter: (v: string) => void) {
     return (value: string) => setter(value === ALL ? '' : value)
@@ -126,20 +148,34 @@ export default function DatasetsManagePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={tc('datasets')}>
+      <PageHeader title={t('manageTitle')}>
         <Button asChild>
           <Link href="/dashboard/datasets/new">{tc('new')}</Link>
         </Button>
       </PageHeader>
 
-      {/* Visibility / State tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
-        <TabsList>
-          <TabsTrigger value="public">{t('tabPublic')}</TabsTrigger>
-          <TabsTrigger value="private">{t('tabPrivate')}</TabsTrigger>
-          <TabsTrigger value="deleted">{t('tabDeleted')}</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      {/* Stats Cards */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard
+          label={t('tabPublic')}
+          value={stats.public}
+          active={activeCategory === 'public'}
+          onClick={() => setActiveCategory('public')}
+        />
+        <StatCard
+          label={t('tabPrivate')}
+          value={stats.private}
+          active={activeCategory === 'private'}
+          onClick={() => setActiveCategory('private')}
+        />
+        <StatCard
+          label={t('tabDeleted')}
+          value={stats.deleted}
+          variant="destructive"
+          active={activeCategory === 'deleted'}
+          onClick={() => setActiveCategory('deleted')}
+        />
+      </div>
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-end gap-2">
@@ -247,7 +283,7 @@ export default function DatasetsManagePage() {
                       </div>
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
-                      {activeTab === 'deleted' ? (
+                      {activeCategory === 'deleted' ? (
                         <Badge variant="destructive">{t('tabDeleted')}</Badge>
                       ) : pkg.private ? (
                         <Badge variant="secondary">{tc('private')}</Badge>
@@ -262,7 +298,7 @@ export default function DatasetsManagePage() {
                       <Button variant="ghost" size="sm" asChild>
                         <Link
                           href={
-                            activeTab === 'deleted'
+                            activeCategory === 'deleted'
                               ? `/dashboard/datasets/${pkg.name}/edit?state=deleted`
                               : `/dashboard/datasets/${pkg.name}/edit`
                           }

@@ -50,7 +50,9 @@
     "nameHelp": "Alphanumeric characters, hyphens, and underscores only (2-100 characters)",
     "imageUrl": "Image URL",
     "basicInfo": "Basic Information",
-    "fetchError": "Failed to load data"
+    "fetchError": "Failed to load data",
+    "apiTokens": "API Tokens",
+    "resources": "Resources"
   },
   "home": {
     "title": "KUKAN",
@@ -111,7 +113,8 @@
     "matchedResources": "Matched resources",
     "tabPublic": "Public",
     "tabPrivate": "Private",
-    "tabDeleted": "Deleted"
+    "tabDeleted": "Deleted",
+    "manageTitle": "Dataset Management"
   },
   "organization": {
     "title": "Organizations",
@@ -161,29 +164,32 @@
     "title": "Dashboard",
     "welcome": "Welcome, {name}",
     "datasetCount": "Datasets",
+    "resourceCount": "Resources",
     "recentDatasets": "Recent Datasets",
     "noDatasets": "No datasets",
     "createDataset": "Create Dataset",
     "apiTokens": "API Tokens",
-    "admin": {
-      "title": "Administration",
-      "reindex": "Rebuild Search Index",
+    "sidebar": {
+      "dashboard": "Dashboard",
+      "datasets": "Dataset Management",
+      "organizations": "Organization Management",
+      "categories": "Category Management",
+      "adminSection": "System Admin",
+      "adminJobs": "Job Management",
+      "adminSearch": "Index Management",
+      "adminReset": "Data Management"
+    },
+    "adminSearch": {
+      "title": "Index Management",
+      "reindexTitle": "Rebuild Search Index",
+      "reindexDescription": "Rebuild the search index from all datasets in the database. This is normally updated automatically, but run it if search results are inconsistent.",
+      "reindex": "Rebuild",
       "reindexing": "Rebuilding...",
       "reindexResult": "{count} packages indexed"
     },
-    "sidebar": {
-      "dashboard": "Dashboard",
-      "datasets": "Datasets",
-      "organizations": "Organizations",
-      "categories": "Categories",
-      "apiTokens": "API Tokens",
-      "profile": "Profile",
-      "adminSection": "System Admin",
-      "adminJobs": "Job Monitor",
-      "adminReset": "Data Reset"
-    },
     "adminReset": {
-      "title": "Data Reset",
+      "title": "Data Management",
+      "resetTitle": "Data Reset",
       "warning": "This will permanently delete all datasets, resources, organizations, groups, tags, pipeline jobs, and associated files. User accounts will be preserved.",
       "confirmLabel": "Type RESET to confirm",
       "confirmPlaceholder": "RESET",
@@ -197,7 +203,7 @@
       "resultStorage": "{count} files"
     },
     "adminJobs": {
-      "title": "Job Monitor",
+      "title": "Job Management",
       "statsAll": "All",
       "statsQueued": "Queued",
       "statsProcessing": "Processing",
@@ -303,6 +309,8 @@
     "zipTotalSize": "Total: {size}",
     "zipTruncated": "Showing first 10,000 entries",
     "previewGeneratedAt": "Generated: {date}",
+    "previewLoading": "Loading preview…",
+    "previewLoadingSlow": "This may take a while",
     "previewOfficeOnline": "Powered by Microsoft Office Online",
     "previewOfficeLocalUnavailable": "Office preview is not available in local environments. Download the file to view it.",
     "previewOfficeTooLarge": "This file exceeds the 10 MB limit for Office Online preview. Download the file to view it.",

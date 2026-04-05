@@ -4,13 +4,12 @@
  */
 
 import { Hono, type Context } from 'hono'
-import { eq } from 'drizzle-orm'
-import { userOrgMembership } from '@kukan/db'
 import { PackageService } from '../services/package-service'
 import { ResourceService } from '../services/resource-service'
 import { OrganizationService } from '../services/organization-service'
 import { GroupService } from '../services/group-service'
 import { TagService } from '../services/tag-service'
+import { resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
 import type { AppContext } from '../context'
 
 export const ckanCompatRouter = new Hono<{ Variables: AppContext }>()
@@ -135,26 +134,14 @@ ckanCompatRouter.get('/package_search', async (c) => {
   const user = c.get('user')
 
   // Resolve user's org memberships for visibility
-  let userOrgIds: string[] | undefined
-  if (user && !user.sysadmin) {
-    const memberships = await db
-      .select({ organizationId: userOrgMembership.organizationId })
-      .from(userOrgMembership)
-      .where(eq(userOrgMembership.userId, user.id))
-    userOrgIds = memberships.map((m) => m.organizationId)
-  }
+  const userOrgIds = await resolveUserOrgIds(db, user)
 
   const searchAdapter = c.get('search')
   const result = await searchAdapter.search({
     q,
     offset,
     limit,
-    filters: {
-      ...(!user?.sysadmin && {
-        excludePrivate: true,
-        ...(userOrgIds?.length && { allowPrivateOrgIds: userOrgIds }),
-      }),
-    },
+    filters: buildVisibilityFilters(user, userOrgIds),
   })
 
   return ckanResponse(

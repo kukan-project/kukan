@@ -60,16 +60,15 @@ export default function AdminResetPage() {
     <div className="flex flex-col gap-6">
       <PageHeader title={t('title')} />
 
-      <div className="flex items-start gap-3 rounded-md border border-destructive bg-destructive/10 p-4">
-        <AlertTriangle className="mt-0.5 size-5 shrink-0 text-destructive" />
-        <p className="text-sm text-destructive">{t('warning')}</p>
-      </div>
-
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">{t('confirmLabel')}</CardTitle>
+          <CardTitle className="text-base">{t('resetTitle')}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
+          <div className="flex items-start gap-3 rounded-md border border-destructive bg-destructive/10 p-3">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+            <p className="text-sm text-destructive">{t('warning')}</p>
+          </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="confirm-input">{t('confirmLabel')}</Label>
             <Input
@@ -99,29 +98,25 @@ export default function AdminResetPage() {
               </>
             )}
           </Button>
+
+          {error && (
+            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+          )}
+
+          {result && (
+            <div className="rounded-md border p-3">
+              <p className="mb-2 text-sm font-medium">{t('resultTitle')}</p>
+              <ul className="flex flex-col gap-1 text-sm text-muted-foreground">
+                <li>{t('resultPackages', { count: result.deleted.packages })}</li>
+                <li>{t('resultOrganizations', { count: result.deleted.organizations })}</li>
+                <li>{t('resultGroups', { count: result.deleted.groups })}</li>
+                <li>{t('resultTags', { count: result.deleted.tags })}</li>
+                <li>{t('resultStorage', { count: result.deleted.storageObjects })}</li>
+              </ul>
+            </div>
+          )}
         </CardContent>
       </Card>
-
-      {error && (
-        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
-      )}
-
-      {result && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{t('resultTitle')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="flex flex-col gap-1 text-sm">
-              <li>{t('resultPackages', { count: result.deleted.packages })}</li>
-              <li>{t('resultOrganizations', { count: result.deleted.organizations })}</li>
-              <li>{t('resultGroups', { count: result.deleted.groups })}</li>
-              <li>{t('resultTags', { count: result.deleted.tags })}</li>
-              <li>{t('resultStorage', { count: result.deleted.storageObjects })}</li>
-            </ul>
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }

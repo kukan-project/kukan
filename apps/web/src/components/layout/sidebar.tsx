@@ -16,12 +16,11 @@ export function Sidebar() {
     { href: '/dashboard/datasets', label: t('datasets') },
     { href: '/dashboard/organizations', label: t('organizations') },
     { href: '/dashboard/groups', label: t('categories') },
-    { href: '/dashboard/api-tokens', label: t('apiTokens') },
-    { href: '/dashboard/profile', label: t('profile') },
   ]
 
   const adminItems = [
     { href: '/dashboard/admin/jobs', label: t('adminJobs') },
+    { href: '/dashboard/admin/search', label: t('adminSearch') },
     { href: '/dashboard/admin/reset', label: t('adminReset') },
   ]
 

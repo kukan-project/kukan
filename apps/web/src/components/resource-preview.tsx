@@ -208,6 +208,19 @@ function OfficeOnlinePreview({
   size?: number | null
 }) {
   const t = useTranslations('resource')
+  // Phase: 'visible' → 'fading' → 'hidden'
+  const [phase, setPhase] = useState<'visible' | 'fading' | 'hidden'>('visible')
+
+  // Start fading after 3s, then remove from DOM after the 5s CSS transition
+  useEffect(() => {
+    const fadeTimer = setTimeout(() => setPhase('fading'), 3000)
+    return () => clearTimeout(fadeTimer)
+  }, [])
+  useEffect(() => {
+    if (phase !== 'fading') return
+    const removeTimer = setTimeout(() => setPhase('hidden'), 5000)
+    return () => clearTimeout(removeTimer)
+  }, [phase])
 
   const isLocal =
     typeof window !== 'undefined' &&
@@ -246,7 +259,19 @@ function OfficeOnlinePreview({
 
   return (
     <div className="flex flex-col gap-1">
-      <div className="overflow-hidden rounded-lg border">
+      <div className="relative overflow-hidden rounded-lg border">
+        {phase !== 'hidden' && (
+          <div
+            className="absolute inset-0 z-10 flex items-center justify-center bg-background transition-opacity duration-[5000ms]"
+            style={{ opacity: phase === 'fading' ? 0 : 1 }}
+          >
+            <div className="flex flex-col items-center gap-3">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted-foreground/20 border-t-primary" />
+              <p className="text-sm text-muted-foreground">{t('previewLoading')}</p>
+              <p className="text-xs text-muted-foreground/60">{t('previewLoadingSlow')}</p>
+            </div>
+          </div>
+        )}
         <iframe
           src={viewerUrl}
           title={t('preview')}

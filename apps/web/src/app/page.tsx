@@ -8,13 +8,15 @@ import { DatasetCard, type DatasetCardItem } from '@/components/dataset-card'
 export default async function HomePage() {
   const t = await getTranslations()
   let datasetTotal = 0
+  let resourceTotal = 0
   let orgTotal = 0
   let groupTotal = 0
   let latestDatasets: DatasetCardItem[] = []
 
   try {
-    const [packagesRes, orgsRes, groupsRes] = await Promise.all([
+    const [packagesRes, resourceCountRes, orgsRes, groupsRes] = await Promise.all([
       serverFetch('/api/v1/packages?limit=5'),
+      serverFetch('/api/v1/resources/count'),
       serverFetch('/api/v1/organizations?limit=1'),
       serverFetch('/api/v1/groups?limit=1'),
     ])
@@ -23,6 +25,10 @@ export default async function HomePage() {
       const data: PaginatedResult<DatasetCardItem> = await packagesRes.json()
       datasetTotal = data.total
       latestDatasets = data.items
+    }
+    if (resourceCountRes.ok) {
+      const data = await resourceCountRes.json()
+      resourceTotal = data.count
     }
     if (orgsRes.ok) {
       const data: PaginatedResult<unknown> = await orgsRes.json()
@@ -48,7 +54,7 @@ export default async function HomePage() {
         <Button type="submit">{t('common.search')}</Button>
       </form>
 
-      <div className="grid w-full max-w-lg grid-cols-3 gap-4">
+      <div className="grid w-full max-w-2xl grid-cols-4 gap-4">
         <Link href="/dataset">
           <Card className="transition-colors hover:bg-accent/50">
             <CardContent className="flex flex-col items-center py-6">
@@ -57,6 +63,12 @@ export default async function HomePage() {
             </CardContent>
           </Card>
         </Link>
+        <Card>
+          <CardContent className="flex flex-col items-center py-6">
+            <p className="text-3xl font-bold">{resourceTotal}</p>
+            <p className="text-sm text-muted-foreground">{t('common.resources')}</p>
+          </CardContent>
+        </Card>
         <Link href="/organization">
           <Card className="transition-colors hover:bg-accent/50">
             <CardContent className="flex flex-col items-center py-6">

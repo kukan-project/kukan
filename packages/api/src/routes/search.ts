@@ -4,9 +4,8 @@
  */
 
 import { Hono } from 'hono'
-import { eq } from 'drizzle-orm'
-import { userOrgMembership } from '@kukan/db'
 import type { SearchFilters } from '@kukan/search-adapter'
+import { resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
 import type { AppContext } from '../context'
 
 export const searchRouter = new Hono<{ Variables: AppContext }>()
@@ -63,23 +62,13 @@ searchRouter.get('/', async (c) => {
   const searchAdapter = c.get('search')
 
   // Resolve user's org memberships for visibility
-  let userOrgIds: string[] | undefined
-  if (user && !user.sysadmin) {
-    const memberships = await db
-      .select({ organizationId: userOrgMembership.organizationId })
-      .from(userOrgMembership)
-      .where(eq(userOrgMembership.userId, user.id))
-    userOrgIds = memberships.map((m) => m.organizationId)
-  }
+  const userOrgIds = await resolveUserOrgIds(db, user)
 
   // Build filters with visibility controls
   const filters: SearchFilters = {
     ...(organization?.length && { organizations: organization }),
     ...(tags?.length && { tags }),
-    ...(!user?.sysadmin && {
-      excludePrivate: true,
-      ...(userOrgIds?.length && { allowPrivateOrgIds: userOrgIds }),
-    }),
+    ...buildVisibilityFilters(user, userOrgIds),
   }
 
   const result = await searchAdapter.search({
