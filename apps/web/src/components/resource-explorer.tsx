@@ -58,27 +58,43 @@ export function ResourceExplorer({
   })
   const selected = resources.find((r) => r.id === selectedId)
 
+  // Track visited resource IDs to keep their previews alive in the DOM
+  const [visitedIds, setVisitedIds] = useState<Set<string>>(() => {
+    const initial = new Set<string>()
+    if (selectedId) initial.add(selectedId)
+    return initial
+  })
+
+  const addVisited = useCallback((id: string) => {
+    setVisitedIds((prev) => {
+      if (prev.has(id)) return prev
+      return new Set(prev).add(id)
+    })
+  }, [])
+
   // Sync with browser back/forward
   useEffect(() => {
     const onPopState = () => {
       const id = getResourceIdFromPath()
       if (id && resources.some((r) => r.id === id)) {
         setSelectedId(id)
+        addVisited(id)
       } else {
         setSelectedId(resources[0]?.id ?? null)
       }
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
-  }, [resources])
+  }, [resources, addVisited])
 
   const selectResource = useCallback(
     (id: string) => {
       setSelectedId(id)
+      addVisited(id)
       const url = `/dataset/${encodeURIComponent(packageName)}/resource/${encodeURIComponent(id)}`
       window.history.pushState(null, '', url)
     },
-    [packageName]
+    [packageName, addVisited]
   )
 
   return (
@@ -147,14 +163,20 @@ export function ResourceExplorer({
             </div>
           )}
 
-          <ResourcePipelinePreview
-            key={selected.id}
-            resourceId={selected.id}
-            format={selected.format}
-            url={selected.urlType !== 'upload' ? selected.url : null}
-            size={selected.size}
-            canManage={canManage}
-          />
+          {/* Keep visited previews alive to avoid iframe re-loading (Office Online etc.) */}
+          {resources
+            .filter((r) => visitedIds.has(r.id))
+            .map((r) => (
+              <div key={r.id} className={r.id !== selectedId ? 'hidden' : undefined}>
+                <ResourcePipelinePreview
+                  resourceId={r.id}
+                  format={r.format}
+                  url={r.urlType !== 'upload' ? r.url : null}
+                  size={r.size}
+                  canManage={canManage}
+                />
+              </div>
+            ))}
 
           {/* Resource metadata (collapsible) */}
           <details className="group">
