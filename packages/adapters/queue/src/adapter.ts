@@ -18,11 +18,16 @@ export interface QueueStats {
   delayed: number
 }
 
+export interface EnqueueOptions {
+  /** Delay delivery of the message by this many seconds (0–900 for SQS) */
+  delaySeconds?: number
+}
+
 export interface QueueAdapter {
   /**
    * Enqueue a new job
    */
-  enqueue<T>(type: string, data: T): Promise<string>
+  enqueue<T>(type: string, data: T, options?: EnqueueOptions): Promise<string>
 
   /**
    * Get queue statistics (message counts)

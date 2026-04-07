@@ -7,6 +7,7 @@ import type { Database } from '@kukan/db'
 import { resource } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { PipelineContext, ResourceForPipeline } from './types'
+import { FETCH_RATE_LIMIT_INTERVAL_MS } from '@/config'
 
 export function buildPipelineContext(db: Database, storage: StorageAdapter): PipelineContext {
   return {
@@ -37,6 +38,18 @@ export function buildPipelineContext(db: Database, storage: StorageAdapter): Pip
         .update(resource)
         .set({ hash: meta.hash, size: meta.size, lastModified: sql`NOW()` })
         .where(eq(resource.id, id))
+    },
+
+    async acquireFetchSlot(fqdn: string): Promise<boolean> {
+      const result = await db.execute(sql`
+        INSERT INTO fetch_rate_limit (fqdn, last_fetched_at)
+        VALUES (${fqdn}, NOW())
+        ON CONFLICT (fqdn) DO UPDATE
+          SET last_fetched_at = NOW()
+          WHERE fetch_rate_limit.last_fetched_at < NOW() - ${`${FETCH_RATE_LIMIT_INTERVAL_MS} milliseconds`}::interval
+        RETURNING fqdn
+      `)
+      return result.rows.length > 0
     },
   }
 }

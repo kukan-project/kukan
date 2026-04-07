@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { processResource } from '../pipeline/process-resource'
 import type { PipelineContext } from '../pipeline/types'
 import type { Database } from '@kukan/db'
+import type { QueueAdapter } from '@kukan/queue-adapter'
 
 // Mock all step modules
 vi.mock('../pipeline/steps/fetch', () => ({
@@ -35,18 +36,30 @@ function createMockCtx(): PipelineContext {
     storage: { download: vi.fn(), upload: vi.fn() },
     getResource: vi.fn(),
     updateResourceHashAndSize: vi.fn(),
+    acquireFetchSlot: vi.fn().mockResolvedValue(true),
+  }
+}
+
+function createMockQueue(): QueueAdapter {
+  return {
+    enqueue: vi.fn().mockResolvedValue('job-requeue'),
+    getStats: vi.fn(),
+    process: vi.fn(),
+    stop: vi.fn(),
   }
 }
 
 describe('processResource', () => {
   let ctx: PipelineContext
   let db: Database
+  let queue: QueueAdapter
   let stepCounter: number
 
   beforeEach(() => {
     vi.clearAllMocks()
     ctx = createMockCtx()
     db = {} as Database
+    queue = createMockQueue()
     stepCounter = 0
 
     mockTracker.startPipeline.mockResolvedValue({ id: 'pipeline-1' })
@@ -59,18 +72,18 @@ describe('processResource', () => {
   })
 
   it('should run all steps for CSV resource', async () => {
-    const mockFetchResult = {
+    vi.mocked(executeFetch).mockResolvedValue({
       storageKey: 'resources/pkg-1/res-1',
       format: 'CSV',
       packageId: 'pkg-1',
-    }
-    vi.mocked(executeFetch).mockResolvedValue(mockFetchResult)
+      status: 'fetched',
+    })
     vi.mocked(executeExtract).mockResolvedValue({
       previewKey: 'previews/pkg-1/res-1.parquet',
       encoding: 'UTF8',
     })
 
-    await processResource('res-1', ctx, db)
+    await processResource('res-1', ctx, db, queue)
 
     expect(executeFetch).toHaveBeenCalledWith('res-1', ctx)
     expect(executeExtract).toHaveBeenCalledWith(
@@ -82,6 +95,7 @@ describe('processResource', () => {
     )
     // Fetch + Extract = 2 steps (index step removed)
     expect(mockTracker.startStep).toHaveBeenCalledTimes(2)
+    expect(mockTracker.completeStep).toHaveBeenCalledWith('step-0')
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
     expect(mockTracker.updateExtractResult).toHaveBeenCalledWith(
       'pipeline-1',
@@ -90,15 +104,31 @@ describe('processResource', () => {
     )
   })
 
+  it('should skip fetch step when upload already has hash', async () => {
+    vi.mocked(executeFetch).mockResolvedValue({
+      storageKey: 'resources/pkg-1/res-1',
+      format: 'CSV',
+      packageId: 'pkg-1',
+      status: 'skipped',
+    })
+    vi.mocked(executeExtract).mockResolvedValue(null)
+
+    await processResource('res-1', ctx, db, queue)
+
+    expect(mockTracker.skipStep).toHaveBeenCalledWith('step-0')
+    expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
+  })
+
   it('should skip extract when format is unsupported', async () => {
     vi.mocked(executeFetch).mockResolvedValue({
       storageKey: 'resources/pkg-1/res-1',
       format: 'PDF',
       packageId: 'pkg-1',
+      status: 'fetched',
     })
     vi.mocked(executeExtract).mockResolvedValue(null)
 
-    await processResource('res-1', ctx, db)
+    await processResource('res-1', ctx, db, queue)
 
     expect(mockTracker.skipStep).toHaveBeenCalledWith('step-1')
     expect(mockTracker.updateExtractResult).not.toHaveBeenCalled()
@@ -111,10 +141,11 @@ describe('processResource', () => {
       storageKey: 'resources/pkg-1/res-1',
       format: 'CSV',
       packageId: 'pkg-1',
+      status: 'fetched',
     })
     vi.mocked(executeExtract).mockRejectedValue(new Error('Parse error'))
 
-    await processResource('res-1', ctx, db)
+    await processResource('res-1', ctx, db, queue)
 
     expect(mockTracker.failStep).toHaveBeenCalled()
     expect(mockTracker.startStep).toHaveBeenCalledTimes(2)
@@ -124,8 +155,37 @@ describe('processResource', () => {
   it('should set error status if fetch fails', async () => {
     vi.mocked(executeFetch).mockRejectedValue(new Error('Download failed'))
 
-    await processResource('res-1', ctx, db)
+    await processResource('res-1', ctx, db, queue)
 
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'error', 'Download failed')
+  })
+
+  it('should requeue and set queued status when fetch is deferred', async () => {
+    vi.mocked(executeFetch).mockResolvedValue({ status: 'deferred' })
+
+    await processResource('res-1', ctx, db, queue)
+
+    // Fetch step should be skipped
+    expect(mockTracker.skipStep).toHaveBeenCalledWith('step-0')
+    // Pipeline set back to queued
+    expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'queued')
+    // Requeued with delay
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      'resource-pipeline',
+      { resourceId: 'res-1' },
+      { delaySeconds: 2 }
+    )
+    // Extract should NOT run
+    expect(executeExtract).not.toHaveBeenCalled()
+    expect(mockTracker.startStep).toHaveBeenCalledTimes(1) // Only fetch step
+  })
+
+  it('should return early when no pipeline record exists', async () => {
+    mockTracker.startPipeline.mockResolvedValue(undefined)
+
+    await processResource('res-1', ctx, db, queue)
+
+    expect(executeFetch).not.toHaveBeenCalled()
+    expect(mockTracker.startStep).not.toHaveBeenCalled()
   })
 })

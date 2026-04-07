@@ -41,11 +41,13 @@ describe('HomePage', () => {
 
   function setupMocks(
     packages = { items: sampleDatasets, total: 42, offset: 0, limit: 5 },
+    resourceCount = { count: 128 },
     orgs = { items: [], total: 10, offset: 0, limit: 1 },
     groups = { items: [], total: 5, offset: 0, limit: 1 }
   ) {
     vi.mocked(serverFetch).mockImplementation(async (url: string) => {
       if (url.includes('/packages')) return mockResponse(packages)
+      if (url.includes('/resources/count')) return mockResponse(resourceCount)
       if (url.includes('/organizations')) return mockResponse(orgs)
       if (url.includes('/groups')) return mockResponse(groups)
       return mockResponse({}, false)
@@ -79,6 +81,8 @@ describe('HomePage', () => {
 
     expect(screen.getByText('42')).toBeInTheDocument()
     expect(screen.getByText('Datasets')).toBeInTheDocument()
+    expect(screen.getByText('128')).toBeInTheDocument()
+    expect(screen.getByText('Resources')).toBeInTheDocument()
     expect(screen.getByText('10')).toBeInTheDocument()
     expect(screen.getByText('Organizations')).toBeInTheDocument()
     expect(screen.getByText('5')).toBeInTheDocument()
@@ -121,13 +125,14 @@ describe('HomePage', () => {
   })
 
   it('should hide latest datasets section when no datasets', async () => {
-    setupMocks({ items: [], total: 0, offset: 0, limit: 5 })
+    setupMocks({ items: [], total: 0, offset: 0, limit: 5 }, { count: 0 })
     const jsx = await HomePage()
     render(jsx)
 
     expect(screen.queryByText('Latest Datasets')).not.toBeInTheDocument()
-    // Stat card should show 0
-    expect(screen.getByText('0')).toBeInTheDocument()
+    // Both dataset and resource stat cards should show 0
+    const zeroCounts = screen.getAllByText('0')
+    expect(zeroCounts.length).toBe(2)
   })
 
   it('should handle API failure gracefully', async () => {
@@ -140,13 +145,14 @@ describe('HomePage', () => {
     expect(screen.queryByText('Latest Datasets')).not.toBeInTheDocument()
   })
 
-  it('should call all three API endpoints', async () => {
+  it('should call all four API endpoints', async () => {
     setupMocks()
     await HomePage()
 
-    expect(serverFetch).toHaveBeenCalledTimes(3)
+    expect(serverFetch).toHaveBeenCalledTimes(4)
     const urls = vi.mocked(serverFetch).mock.calls.map((c) => c[0] as string)
     expect(urls.some((u) => u.includes('/packages'))).toBe(true)
+    expect(urls.some((u) => u.includes('/resources/count'))).toBe(true)
     expect(urls.some((u) => u.includes('/organizations'))).toBe(true)
     expect(urls.some((u) => u.includes('/groups'))).toBe(true)
   })

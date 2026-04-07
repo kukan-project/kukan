@@ -11,7 +11,7 @@ import {
   DeleteMessageCommand,
   GetQueueAttributesCommand,
 } from '@aws-sdk/client-sqs'
-import type { Job, QueueAdapter, QueueStats } from './adapter'
+import type { EnqueueOptions, Job, QueueAdapter, QueueStats } from './adapter'
 
 export interface SQSConfig {
   region: string
@@ -49,7 +49,7 @@ export class SQSQueueAdapter implements QueueAdapter {
     })
   }
 
-  async enqueue<T>(type: string, data: T): Promise<string> {
+  async enqueue<T>(type: string, data: T, options?: EnqueueOptions): Promise<string> {
     const jobId = randomUUID()
     await this.client.send(
       new SendMessageCommand({
@@ -58,6 +58,7 @@ export class SQSQueueAdapter implements QueueAdapter {
         MessageAttributes: {
           JobId: { DataType: 'String', StringValue: jobId },
         },
+        ...(options?.delaySeconds != null && { DelaySeconds: options.delaySeconds }),
       })
     )
     return jobId

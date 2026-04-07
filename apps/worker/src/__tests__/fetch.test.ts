@@ -27,6 +27,7 @@ function createMockCtx(overrides?: Partial<PipelineContext>): PipelineContext {
     },
     getResource: vi.fn(),
     updateResourceHashAndSize: vi.fn(),
+    acquireFetchSlot: vi.fn().mockResolvedValue(true),
     ...overrides,
   }
 }
@@ -73,6 +74,7 @@ describe('executeFetch', () => {
       storageKey: 'resources/pkg-1/res-1',
       format: 'CSV',
       packageId: 'pkg-1',
+      status: 'fetched',
     })
     // Should not upload (data already in Storage)
     expect(ctx.storage.upload).not.toHaveBeenCalled()
@@ -94,8 +96,9 @@ describe('executeFetch', () => {
       hash: 'sha256:abc',
     })
 
-    await executeFetch('res-1', ctx)
+    const result = await executeFetch('res-1', ctx)
 
+    expect(result.status).toBe('skipped')
     expect(ctx.storage.download).not.toHaveBeenCalled()
     expect(ctx.updateResourceHashAndSize).not.toHaveBeenCalled()
   })
@@ -126,6 +129,7 @@ describe('executeFetch', () => {
       storageKey: 'resources/pkg-1/res-1',
       format: 'CSV',
       packageId: 'pkg-1',
+      status: 'fetched',
     })
     // Verify upload was called with correct key and a stream
     expect(ctx.storage.upload).toHaveBeenCalledWith('resources/pkg-1/res-1', expect.any(Readable))
@@ -244,8 +248,47 @@ describe('executeFetch', () => {
 
     const result = await executeFetch('res-1', ctx)
 
-    expect(result.format).toBe('JSON')
-    expect(result.packageId).toBe('pkg-99')
-    expect(result.storageKey).toBe('resources/pkg-99/res-1')
+    expect(result.status).toBe('fetched')
+    expect(result).toMatchObject({
+      format: 'JSON',
+      packageId: 'pkg-99',
+      storageKey: 'resources/pkg-99/res-1',
+    })
+  })
+
+  it('should return deferred when rate-limited', async () => {
+    const ctx = createMockCtx()
+    vi.mocked(ctx.acquireFetchSlot).mockResolvedValue(false)
+    vi.mocked(ctx.getResource).mockResolvedValue({
+      id: 'res-1',
+      packageId: 'pkg-1',
+      url: 'https://example.com/data.csv',
+      urlType: null,
+      format: 'CSV',
+      hash: null,
+    })
+
+    const result = await executeFetch('res-1', ctx)
+
+    expect(result).toEqual({ status: 'deferred' })
+    expect(ctx.acquireFetchSlot).toHaveBeenCalledWith('example.com')
+    expect(ctx.storage.upload).not.toHaveBeenCalled()
+  })
+
+  it('should not check rate limit for uploads', async () => {
+    const ctx = createMockCtx()
+    vi.mocked(ctx.storage.download).mockResolvedValue(Readable.from(Buffer.from('test')))
+    vi.mocked(ctx.getResource).mockResolvedValue({
+      id: 'res-1',
+      packageId: 'pkg-1',
+      url: null,
+      urlType: 'upload',
+      format: 'CSV',
+      hash: null,
+    })
+
+    await executeFetch('res-1', ctx)
+
+    expect(ctx.acquireFetchSlot).not.toHaveBeenCalled()
   })
 })

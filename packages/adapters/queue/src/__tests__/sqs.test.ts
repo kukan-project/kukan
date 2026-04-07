@@ -53,6 +53,33 @@ describe('SQSQueueAdapter', () => {
       const cmd = mockSend.mock.calls[0][0]
       expect(cmd.input.MessageAttributes.JobId.StringValue).toBe(jobId)
     })
+
+    it('should set DelaySeconds when provided', async () => {
+      mockSend.mockResolvedValue({})
+
+      await queue.enqueue('test', { resourceId: 'r1' }, { delaySeconds: 5 })
+
+      const cmd = mockSend.mock.calls[0][0]
+      expect(cmd.input.DelaySeconds).toBe(5)
+    })
+
+    it('should set DelaySeconds to 0 when explicitly provided', async () => {
+      mockSend.mockResolvedValue({})
+
+      await queue.enqueue('test', { resourceId: 'r1' }, { delaySeconds: 0 })
+
+      const cmd = mockSend.mock.calls[0][0]
+      expect(cmd.input.DelaySeconds).toBe(0)
+    })
+
+    it('should not set DelaySeconds when not provided', async () => {
+      mockSend.mockResolvedValue({})
+
+      await queue.enqueue('test', { resourceId: 'r1' })
+
+      const cmd = mockSend.mock.calls[0][0]
+      expect(cmd.input.DelaySeconds).toBeUndefined()
+    })
   })
 
   describe('process + stop', () => {

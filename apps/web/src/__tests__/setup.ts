@@ -36,7 +36,7 @@ function resolve(obj: Messages, key: string): string | undefined {
 
 function makeTranslator(namespace?: string) {
   const ns = namespace ? ((messages as Messages)[namespace] as Messages) || {} : null
-  return (key: string, params?: Record<string, unknown>) => {
+  const t = (key: string, params?: Record<string, unknown>) => {
     let msg: string | undefined
     if (ns) {
       // Namespaced: resolve key within namespace
@@ -55,6 +55,13 @@ function makeTranslator(namespace?: string) {
     }
     return msg
   }
+  t.has = (key: string) => {
+    if (ns) return resolve(ns, key) !== undefined
+    const [first, ...rest] = key.split('.')
+    const sub = (messages as Messages)[first] as Messages | undefined
+    return sub !== undefined && rest.length > 0 && resolve(sub, rest.join('.')) !== undefined
+  }
+  return t
 }
 
 vi.mock('next-intl', () => ({

@@ -33,7 +33,7 @@ export async function cleanDatabase() {
   const db = getTestDb()
   await db.execute(sql`
     TRUNCATE TABLE
-      resource_pipeline_step, resource_pipeline,
+      fetch_rate_limit, resource_pipeline_step, resource_pipeline,
       user_org_membership, user_group_membership,
       package_tag, resource, package, tag, vocabulary,
       api_token, audit_log, activity,

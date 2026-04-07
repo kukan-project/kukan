@@ -24,4 +24,10 @@ export interface PipelineContext {
   getResource(id: string): Promise<ResourceForPipeline | null>
   /** Update resource hash, size, and lastModified (without touching updated) */
   updateResourceHashAndSize(id: string, meta: { hash: string; size: number }): Promise<void>
+  /**
+   * Atomically acquire a fetch slot for the given FQDN.
+   * Returns true if the slot was acquired (i.e. last fetch was >1s ago or first time).
+   * Returns false if rate-limited (another fetch happened within the last second).
+   */
+  acquireFetchSlot(fqdn: string): Promise<boolean>
 }

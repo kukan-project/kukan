@@ -25,6 +25,9 @@ export * from './tag'
 // Memberships
 export * from './membership'
 
+// Pipeline utilities
+export * from './fetch-rate-limit'
+
 // Audit & Activity
 export * from './audit'
 export * from './activity'

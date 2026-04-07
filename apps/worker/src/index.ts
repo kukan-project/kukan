@@ -94,7 +94,7 @@ await queue.process<{ resourceId: string }>(
   PIPELINE_JOB_TYPE,
   async (job: Job<{ resourceId: string }>) => {
     console.log(`[Worker] Processing job ${job.id} for resource ${job.data.resourceId}`)
-    await processResource(job.data.resourceId, ctx, db)
+    await processResource(job.data.resourceId, ctx, db, queue)
     console.log(`[Worker] Completed job ${job.id}`)
   }
 )

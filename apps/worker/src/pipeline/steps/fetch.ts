@@ -13,12 +13,15 @@ import { MAX_FETCH_SIZE, FETCH_TIMEOUT_MS } from '@/config'
 const HASH_PREFIX = 'sha256:'
 const SIZE_LIMIT_MSG = `Resource exceeds ${MAX_FETCH_SIZE / 1024 / 1024}MB limit`
 
-export interface FetchResult {
+interface FetchResultData {
   storageKey: string
   format: string | null
   packageId: string
-  status: 'fetched' | 'skipped'
 }
+
+export type FetchResult =
+  | (FetchResultData & { status: 'fetched' | 'skipped' })
+  | { status: 'deferred' }
 
 /**
  * Fetch resource data into Storage.
@@ -46,6 +49,13 @@ export async function executeFetch(resourceId: string, ctx: PipelineContext): Pr
 
   if (!res.url) {
     throw new ValidationError('Resource has no file or URL')
+  }
+
+  // Rate limit: max 1 request per interval per FQDN
+  const fqdn = new URL(res.url).hostname
+  const acquired = await ctx.acquireFetchSlot(fqdn)
+  if (!acquired) {
+    return { status: 'deferred' }
   }
 
   const { hash, size } = await downloadToStorage(res.url, storageKey, ctx)

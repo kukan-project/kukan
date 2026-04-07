@@ -19,3 +19,9 @@ export const MAX_CSV_COLUMNS = 500
 
 /** Byte sample size for encoding detection (64 KB) */
 export const ENCODING_SAMPLE_SIZE = 64 * 1024
+
+/** Minimum interval between fetches to the same FQDN (1 s) */
+export const FETCH_RATE_LIMIT_INTERVAL_MS = 1_000
+
+/** Delay before retrying a rate-limited fetch (2 s) */
+export const FETCH_RATE_LIMIT_REQUEUE_DELAY_S = 2
