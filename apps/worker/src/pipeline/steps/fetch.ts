@@ -17,6 +17,7 @@ export interface FetchResult {
   storageKey: string
   format: string | null
   packageId: string
+  status: 'fetched' | 'skipped'
 }
 
 /**
@@ -38,18 +39,21 @@ export async function executeFetch(resourceId: string, ctx: PipelineContext): Pr
     if (!res.hash) {
       const { hash, size } = await computeHash(storageKey, ctx)
       await ctx.updateResourceHashAndSize(resourceId, { hash, size })
+      return { storageKey, format: res.format, packageId: res.packageId, status: 'fetched' }
     }
-  } else if (res.url) {
-    const { hash, size } = await downloadToStorage(res.url, storageKey, ctx)
+    return { storageKey, format: res.format, packageId: res.packageId, status: 'skipped' }
+  }
 
-    if (hash !== res.hash) {
-      await ctx.updateResourceHashAndSize(resourceId, { hash, size })
-    }
-  } else {
+  if (!res.url) {
     throw new ValidationError('Resource has no file or URL')
   }
 
-  return { storageKey, format: res.format, packageId: res.packageId }
+  const { hash, size } = await downloadToStorage(res.url, storageKey, ctx)
+  if (hash !== res.hash) {
+    await ctx.updateResourceHashAndSize(resourceId, { hash, size })
+  }
+
+  return { storageKey, format: res.format, packageId: res.packageId, status: 'fetched' }
 }
 
 /** Compute SHA-256 hash and size from an existing Storage object */

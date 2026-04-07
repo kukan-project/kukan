@@ -34,12 +34,11 @@ export async function processResource(
     // Step 1: Fetch — download external URL to Storage (uploads already there)
     const fetchStepId = await tracker.startStep(pipeline.id, 'fetch')
     const fetchResult = await executeFetch(resourceId, ctx)
-    if (fetchResult === null) {
+    if (fetchResult.status === 'skipped') {
       await tracker.skipStep(fetchStepId)
-      await tracker.updateStatus(pipeline.id, 'complete')
-      return
+    } else {
+      await tracker.completeStep(fetchStepId)
     }
-    await tracker.completeStep(fetchStepId)
 
     // Step 2: Extract — parse from Storage, generate Parquet preview
     // Non-critical: failures are recorded but don't fail the pipeline
