@@ -50,5 +50,6 @@ export const resource = pgTable(
     index('idx_resource_format').on(table.format),
     index('idx_resource_name_trgm').using('gin', table.name.op('gin_trgm_ops')),
     index('idx_resource_description_trgm').using('gin', table.description.op('gin_trgm_ops')),
+    index('idx_resource_health_check').on(table.urlType, table.state, table.healthCheckedAt),
   ]
 )

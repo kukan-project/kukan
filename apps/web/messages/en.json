@@ -179,6 +179,7 @@
       "categories": "Category Management",
       "adminSection": "System Admin",
       "adminJobs": "Job Management",
+      "adminHealth": "Health Check",
       "adminSearch": "Index Management",
       "adminSite": "Site Management"
     },
@@ -225,6 +226,22 @@
       "complete": "Complete",
       "error": "Error",
       "reprocess": "Reprocess"
+    },
+    "adminHealth": {
+      "title": "Health Check",
+      "statsAll": "All",
+      "statsOk": "OK",
+      "statsError": "Errors",
+      "colStatus": "Status",
+      "colResource": "Resource",
+      "colDataset": "Dataset",
+      "colUrl": "URL",
+      "colCheckedAt": "Checked",
+      "colError": "Error",
+      "noItems": "No URL resources",
+      "ok": "OK",
+      "error": "Error",
+      "unknown": "Unknown"
     }
   },
   "profile": {

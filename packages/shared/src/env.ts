@@ -42,6 +42,12 @@ export const envSchema = z.object({
   SQS_ACCESS_KEY: z.string().optional(), // ElasticMQ: required, AWS SQS: use IAM role
   SQS_SECRET_KEY: z.string().optional(),
 
+  // Health Check
+  HEALTH_CHECK_ENABLED: z.coerce.boolean().default(true),
+  HEALTH_CHECK_CRON: z.string().default('*/5 * * * *'),
+  HEALTH_CHECK_STALENESS_HOURS: z.coerce.number().default(24),
+  HEALTH_CHECK_FULL_FETCH_INTERVAL_HOURS: z.coerce.number().default(168),
+
   // AI
   AI_TYPE: z.enum(['bedrock', 'openai', 'ollama', 'none']).default('none'),
 

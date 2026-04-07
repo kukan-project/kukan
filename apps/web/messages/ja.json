@@ -179,6 +179,7 @@
       "categories": "カテゴリー管理",
       "adminSection": "システム管理者",
       "adminJobs": "ジョブ管理",
+      "adminHealth": "ヘルスチェック",
       "adminSearch": "インデックス管理",
       "adminSite": "サイト管理"
     },
@@ -225,6 +226,22 @@
       "complete": "完了",
       "error": "エラー",
       "reprocess": "再処理"
+    },
+    "adminHealth": {
+      "title": "ヘルスチェック",
+      "statsAll": "すべて",
+      "statsOk": "正常",
+      "statsError": "エラー",
+      "colStatus": "ステータス",
+      "colResource": "リソース",
+      "colDataset": "データセット",
+      "colUrl": "URL",
+      "colCheckedAt": "確認日時",
+      "colError": "エラー詳細",
+      "noItems": "URL リソースがありません",
+      "ok": "正常",
+      "error": "エラー",
+      "unknown": "未確認"
     }
   },
   "profile": {

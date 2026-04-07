@@ -4,7 +4,7 @@
  */
 
 import { Hono } from 'hono'
-import { eq, and, inArray, sql, desc } from 'drizzle-orm'
+import { eq, and, inArray, isNull, sql, desc } from 'drizzle-orm'
 import {
   packageTable,
   resource,
@@ -23,6 +23,41 @@ import type { AppContext } from '../context'
 export const adminRouter = new Hono<{ Variables: AppContext }>()
 
 const BATCH_SIZE = 100
+const DEFAULT_PAGE_LIMIT = 20
+const MAX_PAGE_LIMIT = 100
+
+/** Parse offset / limit / status query params shared by paginated admin endpoints */
+function parsePaginatedQuery(c: { req: { query: (k: string) => string | undefined } }) {
+  const offset = Math.max(0, Number(c.req.query('offset') ?? 0) || 0)
+  const limit = Math.min(
+    MAX_PAGE_LIMIT,
+    Math.max(1, Number(c.req.query('limit') ?? DEFAULT_PAGE_LIMIT) || DEFAULT_PAGE_LIMIT)
+  )
+  const statusParam = c.req.query('status')
+  const statusList = statusParam ? statusParam.split(',').filter(Boolean) : undefined
+  return { offset, limit, statusList }
+}
+
+/** Build standard paginated response from rows containing a `total` window column */
+function toPaginatedResponse<T extends { total: number }>(
+  rows: T[],
+  offset: number,
+  limit: number
+) {
+  return {
+    items: rows.map(({ total: _, ...rest }) => rest),
+    total: rows[0]?.total ?? 0,
+    offset,
+    limit,
+  }
+}
+
+/** WHERE conditions for external-URL resources (urlType IS NULL, active, url IS NOT NULL) */
+const externalUrlConditions = [
+  isNull(resource.urlType),
+  eq(resource.state, 'active'),
+  sql`${resource.url} IS NOT NULL`,
+]
 
 // POST /api/v1/admin/reindex — Rebuild search index from DB
 adminRouter.post('/reindex', async (c) => {
@@ -211,23 +246,13 @@ adminRouter.get('/jobs/stats', async (c) => {
   })
 })
 
-const DEFAULT_JOBS_LIMIT = 20
-const MAX_JOBS_LIMIT = 100
-
 // GET /api/v1/admin/jobs — Paginated pipeline job list
 adminRouter.get('/jobs', async (c) => {
   const user = c.get('user')
   if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view jobs')
 
   const db = c.get('db')
-
-  const offset = Math.max(0, Number(c.req.query('offset') ?? 0) || 0)
-  const limit = Math.min(
-    MAX_JOBS_LIMIT,
-    Math.max(1, Number(c.req.query('limit') ?? DEFAULT_JOBS_LIMIT) || DEFAULT_JOBS_LIMIT)
-  )
-  const statusParam = c.req.query('status')
-  const statusList = statusParam ? statusParam.split(',').filter(Boolean) : undefined
+  const { offset, limit, statusList } = parsePaginatedQuery(c)
 
   const statusOrder = sql`CASE ${resourcePipeline.status}
     WHEN 'processing' THEN 0
@@ -261,12 +286,7 @@ adminRouter.get('/jobs', async (c) => {
     .limit(limit)
     .offset(offset)
 
-  return c.json({
-    items: rows.map(({ total: _, ...rest }) => rest),
-    total: rows[0]?.total ?? 0,
-    offset,
-    limit,
-  })
+  return c.json(toPaginatedResponse(rows, offset, limit))
 })
 
 // DELETE /api/v1/admin/data — Delete all data (preserves users)
@@ -309,4 +329,70 @@ adminRouter.delete('/data', async (c) => {
   }
 
   return c.json({ deleted: { ...counts, storageObjects } })
+})
+
+// GET /api/v1/admin/health/stats — Health check statistics for URL resources
+adminRouter.get('/health/stats', async (c) => {
+  const user = c.get('user')
+  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view health stats')
+
+  const db = c.get('db')
+
+  const rows = await db
+    .select({
+      status: resource.healthStatus,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(resource)
+    .where(and(...externalUrlConditions))
+    .groupBy(resource.healthStatus)
+
+  const statusMap: Record<string, number> = {}
+  for (const row of rows) {
+    statusMap[row.status ?? 'unknown'] = row.count
+  }
+
+  return c.json(statusMap)
+})
+
+// GET /api/v1/admin/health — Paginated health check resource list
+adminRouter.get('/health', async (c) => {
+  const user = c.get('user')
+  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view health checks')
+
+  const db = c.get('db')
+  const { offset, limit, statusList } = parsePaginatedQuery(c)
+
+  const statusOrder = sql`CASE ${resource.healthStatus}
+    WHEN 'error' THEN 0
+    WHEN 'unknown' THEN 1
+    ELSE 2
+  END`
+
+  const conditions = [...externalUrlConditions]
+  if (statusList?.length) {
+    conditions.push(inArray(resource.healthStatus, statusList))
+  }
+
+  const rows = await db
+    .select({
+      id: resource.id,
+      url: resource.url,
+      name: resource.name,
+      healthStatus: resource.healthStatus,
+      healthCheckedAt: resource.healthCheckedAt,
+      extras: resource.extras,
+      packageId: resource.packageId,
+      packageName: packageTable.name,
+      packageTitle: packageTable.title,
+      total: sql<number>`COUNT(*) OVER()::int`.as('total'),
+    })
+    .from(resource)
+    .innerJoin(packageTable, eq(resource.packageId, packageTable.id))
+    .where(and(...conditions))
+    .orderBy(statusOrder, sql`${resource.healthCheckedAt} DESC NULLS LAST`)
+    .limit(limit)
+    .offset(offset)
+
+  return c.json(toPaginatedResponse(rows, offset, limit))
 })

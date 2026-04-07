@@ -13,6 +13,7 @@ import { SQSQueueAdapter } from '@kukan/queue-adapter'
 import { S3StorageAdapter } from '@kukan/storage-adapter'
 import { processResource } from './pipeline/process-resource'
 import { buildPipelineContext } from './pipeline/build-context'
+import { startHealthCheckScheduler } from './health-check/scheduler'
 
 // Skip dotenv in production (env vars injected by container/ECS)
 if (process.env.NODE_ENV !== 'production') {
@@ -90,6 +91,20 @@ serve({ fetch: health.fetch, port: HEALTH_PORT })
 await runMigrations(env.DATABASE_URL)
 ready = true
 
+// --- Health check scheduler ---
+let healthCheckJob: { stop: () => void } | null = null
+
+if (env.HEALTH_CHECK_ENABLED) {
+  healthCheckJob = startHealthCheckScheduler({
+    db,
+    queue,
+    cronExpression: env.HEALTH_CHECK_CRON,
+    stalenessHours: env.HEALTH_CHECK_STALENESS_HOURS,
+    fullFetchIntervalHours: env.HEALTH_CHECK_FULL_FETCH_INTERVAL_HOURS,
+    log: log.child({ component: 'health-check' }),
+  })
+}
+
 // --- SQS polling ---
 const ctx = buildPipelineContext(db, storage)
 await queue.process<{ resourceId: string }>(
@@ -106,6 +121,7 @@ log.info({ queueUrl: env.SQS_QUEUE_URL, healthPort: HEALTH_PORT }, 'Worker start
 // Graceful shutdown
 const shutdown = async () => {
   log.info('Shutting down...')
+  healthCheckJob?.stop()
   await queue.stop()
   await db.$client.end()
   process.exit(0)

@@ -1,0 +1,1 @@
+CREATE INDEX "idx_resource_health_check" ON "resource" USING btree ("url_type","state","health_checked_at");

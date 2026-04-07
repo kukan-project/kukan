@@ -25,3 +25,14 @@ export const FETCH_RATE_LIMIT_INTERVAL_MS = 1_000
 
 /** Delay before retrying a rate-limited fetch (2 s) */
 export const FETCH_RATE_LIMIT_REQUEUE_DELAY_S = 2
+
+// ── Health Check ──
+
+/** Number of resources to check per cron tick */
+export const HEALTH_CHECK_BATCH_SIZE = 200
+
+/** Maximum concurrent HEAD requests */
+export const HEALTH_CHECK_CONCURRENCY = 10
+
+/** Timeout for HEAD requests (10 s) */
+export const HEALTH_CHECK_TIMEOUT_MS = 10_000
