@@ -180,7 +180,7 @@
       "adminSection": "System Admin",
       "adminJobs": "Job Management",
       "adminSearch": "Index Management",
-      "adminReset": "Data Management"
+      "adminSite": "Site Management"
     },
     "adminSearch": {
       "title": "Index Management",
@@ -190,8 +190,8 @@
       "reindexing": "Rebuilding...",
       "reindexResult": "{count} packages indexed"
     },
-    "adminReset": {
-      "title": "Data Management",
+    "adminSite": {
+      "title": "Site Management",
       "resetTitle": "Data Reset",
       "warning": "This will permanently delete all datasets, resources, organizations, groups, tags, pipeline jobs, and associated files. User accounts will be preserved.",
       "confirmLabel": "Type RESET to confirm",

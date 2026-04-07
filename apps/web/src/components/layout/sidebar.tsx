@@ -21,7 +21,7 @@ export function Sidebar() {
   const adminItems = [
     { href: '/dashboard/admin/jobs', label: t('adminJobs') },
     { href: '/dashboard/admin/search', label: t('adminSearch') },
-    { href: '/dashboard/admin/reset', label: t('adminReset') },
+    { href: '/dashboard/admin/site', label: t('adminSite') },
   ]
 
   const isActive = (href: string, exact?: boolean) => {

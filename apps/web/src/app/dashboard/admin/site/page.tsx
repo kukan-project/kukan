@@ -22,7 +22,7 @@ interface ResetResult {
 export default function AdminResetPage() {
   const user = useUser()
   const router = useRouter()
-  const t = useTranslations('dashboard.adminReset')
+  const t = useTranslations('dashboard.adminSite')
 
   useEffect(() => {
     if (!user.sysadmin) router.replace('/dashboard')
