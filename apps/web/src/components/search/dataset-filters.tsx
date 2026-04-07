@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { Building2, FolderOpen, Tag, FileText, Scale, ChevronDown } from 'lucide-react'
 import { Badge } from '@kukan/ui'
-import type { FacetCounts, FacetItem } from '@kukan/shared'
+import { resolveLicenseLabel, type FacetCounts, type FacetItem } from '@kukan/shared'
 import { buildQuery } from '@/lib/query'
 
 interface DatasetFiltersProps {
@@ -120,6 +120,7 @@ export function DatasetFilters({
   facets,
 }: DatasetFiltersProps) {
   const t = useTranslations('search')
+  const tl = useTranslations('license')
 
   const baseParams: FilterParams = {
     q: query || undefined,
@@ -242,6 +243,7 @@ export function DatasetFilters({
                 license_id: toggleArray(currentLicenses, name),
               })
             }
+            displayName={(item) => resolveLicenseLabel(item.name, tl)}
           />
         </FilterSection>
       )}

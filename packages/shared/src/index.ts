@@ -24,6 +24,9 @@ export * from './formats'
 // Pipeline types (shared between API and Worker)
 export * from './pipeline-types'
 
+// Licenses
+export * from './licenses'
+
 // Validators
 export * from './validators/package'
 export * from './validators/organization'

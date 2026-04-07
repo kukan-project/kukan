@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { createPackageSchema, type CreatePackageInput } from '@kukan/shared'
+import { createPackageSchema, LICENSES, resolveLicenseLabel } from '@kukan/shared'
 import {
   Button,
   Input,
@@ -17,8 +17,15 @@ import {
   SelectValue,
   Switch,
 } from '@kukan/ui'
+import { z } from 'zod'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
+
+/** Form-level schema: license_id is required in the UI */
+const datasetFormSchema = createPackageSchema.extend({
+  license_id: z.string().min(1),
+})
+type DatasetFormInput = z.infer<typeof datasetFormSchema>
 
 interface Organization {
   id: string
@@ -28,7 +35,7 @@ interface Organization {
 
 interface DatasetFormProps {
   mode: 'create' | 'edit'
-  defaultValues?: Partial<CreatePackageInput>
+  defaultValues?: Partial<DatasetFormInput>
   nameOrId?: string
   organizations: Organization[]
 }
@@ -36,6 +43,7 @@ interface DatasetFormProps {
 export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: DatasetFormProps) {
   const router = useRouter()
   const t = useTranslations('dataset')
+  const tl = useTranslations('license')
   const tc = useTranslations('common')
   const [error, setError] = useState<string | null>(null)
   const [tagsInput, setTagsInput] = useState(
@@ -47,9 +55,9 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
     handleSubmit,
     control,
     formState: { errors, isSubmitting },
-  } = useForm<CreatePackageInput>({
+  } = useForm<DatasetFormInput>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(createPackageSchema) as any,
+    resolver: zodResolver(datasetFormSchema) as any,
     defaultValues: {
       private: false,
       type: 'dataset',
@@ -60,7 +68,7 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
     },
   })
 
-  const onSubmit = async (values: CreatePackageInput) => {
+  const onSubmit = async (values: DatasetFormInput) => {
     setError(null)
 
     // Parse comma-separated tags
@@ -144,7 +152,7 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
             </Select>
           )}
         />
-        {errors.owner_org && <p className="text-sm text-destructive">{errors.owner_org.message}</p>}
+        {errors.owner_org && <p className="text-sm text-destructive">{tc('required')}</p>}
       </div>
 
       <div className="flex items-center gap-3">
@@ -170,8 +178,28 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="license_id">{t('license')}</Label>
-        <Input id="license_id" placeholder="CC-BY-4.0" {...register('license_id')} />
+        <Label>{t('licenseRequired')}</Label>
+        <Controller
+          name="license_id"
+          control={control}
+          render={({ field }) => (
+            <Select value={field.value ?? ''} onValueChange={field.onChange}>
+              <SelectTrigger aria-invalid={!!errors.license_id}>
+                <SelectValue placeholder={t('licenseSelect')} />
+              </SelectTrigger>
+              <SelectContent>
+                {LICENSES.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>
+                    {resolveLicenseLabel(l.id, tl)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        />
+        {errors.license_id && (
+          <p className="text-sm text-destructive">{tc('required')}</p>
+        )}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">

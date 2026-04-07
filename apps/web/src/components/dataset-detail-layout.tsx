@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { getTranslations } from 'next-intl/server'
 import { Building2, Calendar, FolderOpen, Scale, Tag } from 'lucide-react'
 import { Badge, Separator } from '@kukan/ui'
+import { resolveLicenseLabel } from '@kukan/shared'
 import { serverFetch, getCurrentUser } from '@/lib/server-api'
 import { renderSimpleMarkdown } from '@/lib/render-markdown'
 import { DateTime } from '@/components/date-time'
@@ -43,8 +44,9 @@ interface DatasetDetailLayoutProps {
 }
 
 export async function DatasetDetailLayout({ pkg, initialResourceId }: DatasetDetailLayoutProps) {
-  const [t, user, orgsRes] = await Promise.all([
+  const [t, tl, user, orgsRes] = await Promise.all([
     getTranslations('dataset'),
+    getTranslations('license'),
     getCurrentUser(),
     serverFetch('/api/v1/users/me/organizations').catch(() => null),
   ])
@@ -109,7 +111,7 @@ export async function DatasetDetailLayout({ pkg, initialResourceId }: DatasetDet
               {pkg.licenseId && (
                 <span className="flex shrink-0 items-center gap-1">
                   <Scale className="h-3.5 w-3.5" />
-                  {pkg.licenseId}
+                  {resolveLicenseLabel(pkg.licenseId!, tl)}
                 </span>
               )}
             </div>

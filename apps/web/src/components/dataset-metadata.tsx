@@ -1,4 +1,5 @@
 import { getTranslations } from 'next-intl/server'
+import { resolveLicenseLabel } from '@kukan/shared'
 import { DateTime } from '@/components/date-time'
 import { KeyValueTable, extrasToRows } from '@/components/key-value-table'
 
@@ -14,7 +15,7 @@ interface MetadataPackage {
 }
 
 export async function DatasetMetadata({ pkg }: { pkg: MetadataPackage }) {
-  const t = await getTranslations('dataset')
+  const [t, tl] = await Promise.all([getTranslations('dataset'), getTranslations('license')])
 
   return (
     <details className="group">
@@ -27,7 +28,7 @@ export async function DatasetMetadata({ pkg }: { pkg: MetadataPackage }) {
           rows={[
             { label: t('maintainer'), value: pkg.maintainer },
             { label: t('author'), value: pkg.author },
-            { label: t('license'), value: pkg.licenseId },
+            { label: t('license'), value: pkg.licenseId ? resolveLicenseLabel(pkg.licenseId, tl) : null },
             { label: t('version'), value: pkg.version },
             { label: t('created'), value: <DateTime value={pkg.created} /> },
             { label: t('updated'), value: <DateTime value={pkg.updated} /> },

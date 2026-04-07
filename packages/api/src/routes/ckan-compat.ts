@@ -4,6 +4,7 @@
  */
 
 import { Hono, type Context } from 'hono'
+import { LICENSES, findLicense } from '@kukan/shared'
 import { PackageService } from '../services/package-service'
 import { ResourceService } from '../services/resource-service'
 import { OrganizationService } from '../services/organization-service'
@@ -29,6 +30,7 @@ function toCkanPackage(pkg: Record<string, unknown>) {
     creator_user_id: creatorUserId,
     owner_org: ownerOrg,
     license_id: licenseId,
+    license_title: licenseId ? (findLicense(licenseId as string)?.title ?? '') : '',
     ...(rest.resources
       ? { resources: (rest.resources as Record<string, unknown>[]).map(toCkanResource) }
       : {}),
@@ -267,4 +269,13 @@ ckanCompatRouter.get('/tag_show', async (c) => {
     const message = err instanceof Error ? err.message : 'Tag not found'
     return ckanError(message, c, 404)
   }
+})
+
+// ============================================================
+// License Actions
+// ============================================================
+
+// license_list - List all available licenses
+ckanCompatRouter.get('/license_list', (c) => {
+  return ckanResponse(LICENSES, c)
 })

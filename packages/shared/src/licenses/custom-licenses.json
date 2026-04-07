@@ -1,0 +1,16 @@
+[
+  {
+    "domain_content": true,
+    "domain_data": true,
+    "domain_software": false,
+    "family": "",
+    "id": "GJSTU-2.0",
+    "is_generic": false,
+    "maintainer": "Government of Japan",
+    "od_conformance": "approved",
+    "osd_conformance": "not reviewed",
+    "status": "active",
+    "title": "Government of Japan Standard Terms of Use (Version 2.0)",
+    "url": "https://www.kantei.go.jp/jp/singi/it2/densi/kettei/gl2_betten_1.pdf"
+  }
+]
