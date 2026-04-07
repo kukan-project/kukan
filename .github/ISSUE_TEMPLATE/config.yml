@@ -1,0 +1,7 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security Vulnerability / セキュリティ脆弱性
+    url: mailto:root@info-lounge.jp
+    about: |
+      Do not open a public issue for security vulnerabilities. Email us instead.
+      セキュリティ脆弱性については公開 Issue を作成せず、メールでご連絡ください。

@@ -191,10 +191,7 @@ describe('Admin Health API Routes', () => {
       const uploadRes = await resRes.json()
 
       // Manually set urlType to 'upload' to simulate uploaded file
-      await db
-        .update(resource)
-        .set({ urlType: 'upload' })
-        .where(eq(resource.id, uploadRes.id))
+      await db.update(resource).set({ urlType: 'upload' }).where(eq(resource.id, uploadRes.id))
 
       const res = await app.request('/api/v1/admin/health')
       expect(res.status).toBe(200)

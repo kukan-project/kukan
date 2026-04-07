@@ -1,0 +1,38 @@
+name: Feature Request / 機能要望
+description: Suggest a new feature or improvement / 新機能や改善を提案する
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for your suggestion! Please describe the feature you'd like.
+        ご提案ありがとうございます！ご希望の機能をご説明ください。
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / 課題
+      description: What problem does this solve? / どのような課題を解決しますか？
+      placeholder: "I'm always frustrated when..."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution / 提案する解決策
+      description: Describe the solution you'd like / 希望する解決策を記載してください
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered / 検討した代替案
+      description: Other solutions you've considered / 検討した他の解決策
+    validations:
+      required: false
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context / 追加情報
+      description: Any other context, screenshots, or references / その他の情報、スクリーンショット、参考資料
+    validations:
+      required: false

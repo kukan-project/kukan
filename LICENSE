@@ -1,5 +1,5 @@
 KUKAN - Knowledge Unified Katalog And Network
-Copyright (C) 2025 Info Lounge Corporation / インフォ・ラウンジ株式会社
+Copyright (C) 2026 Info Lounge Corporation / インフォ・ラウンジ株式会社
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published by
@@ -21,10 +21,11 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 A commercial license is available for organizations that do not wish to
-comply with the AGPL terms. Contact Info Lounge Corporation for details.
+comply with the AGPL terms. Contact Info Lounge Corporation at
+kukan@info-lounge.jp for details.
 
 AGPL の条項に従わない利用を希望する組織向けに商用ライセンスを提供しています。
-詳細はインフォ・ラウンジ株式会社までお問い合わせください。
+詳細はインフォ・ラウンジ株式会社（kukan@info-lounge.jp）までお問い合わせください。
 
 ------------------------------------------------------------------------
 
@@ -659,7 +660,7 @@ state the exclusion of warranty; and each file should have at least
 the "copyright" line and a pointer to where the full notice is found.
 
     KUKAN - Knowledge Unified Katalog And Network
-    Copyright (C) 2025 Info Lounge Corporation
+    Copyright (C) 2026 Info Lounge Corporation
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published by

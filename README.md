@@ -2,6 +2,11 @@
 
 **Knowledge Unified Katalog And Network**
 
+> [!WARNING]
+> **Beta (April 2026)** — KUKAN is under active development. APIs, schemas, and configurations may change without notice.
+>
+> **ベータ版（2026年4月）** — KUKAN は開発中です。API、スキーマ、設定は予告なく変更される場合があります。
+
 A modern, full-stack TypeScript alternative to CKAN.
 みんなが使えるデータカタログ — CKANモダンクローン。
 

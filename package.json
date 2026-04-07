@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kukan-project/kukan.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kukan-project/kukan/issues"
+  },
+  "homepage": "https://github.com/kukan-project/kukan#readme",
   "type": "module",
   "description": "Knowledge Unified Katalog And Network - Modern CKAN alternative",
   "scripts": {

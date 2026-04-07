@@ -16,11 +16,11 @@ KUKAN は現在開発中であり、**外部からのコントリビューショ
 ## Bug Reports and Feature Requests / バグ報告と機能要望
 
 We welcome bug reports and feature requests via
-[GitHub Issues](https://github.com/InfoLoungeLLC/kukan/issues). When
+[GitHub Issues](https://github.com/kukan-project/kukan/issues). When
 filing an issue, please include:
 
 バグ報告や機能要望は
-[GitHub Issues](https://github.com/InfoLoungeLLC/kukan/issues) で受け付けて
+[GitHub Issues](https://github.com/kukan-project/kukan/issues) で受け付けて
 います。Issue を作成する際は、以下の情報を含めてください。
 
 - A clear and descriptive title / 明確で分かりやすいタイトル
