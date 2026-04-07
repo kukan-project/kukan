@@ -83,37 +83,37 @@ ADR-005 で「メトリクス / ロギングはアダプター不要、ロガー
 
 すべてのログ行に含まれる pino 標準フィールド:
 
-| フィールド | 型     | 説明                                |
-| ---------- | ------ | ----------------------------------- |
-| `level`    | number | ログレベル（10〜60、下表参照）      |
-| `time`     | number | Unix epoch ミリ秒                   |
-| `name`     | string | ロガー名（`api` / `worker`）        |
-| `msg`      | string | ログメッセージ                      |
-| `pid`      | number | プロセス ID                         |
-| `hostname` | string | ホスト名                            |
+| フィールド | 型     | 説明                           |
+| ---------- | ------ | ------------------------------ |
+| `level`    | number | ログレベル（10〜60、下表参照） |
+| `time`     | number | Unix epoch ミリ秒              |
+| `name`     | string | ロガー名（`api` / `worker`）   |
+| `msg`      | string | ログメッセージ                 |
+| `pid`      | number | プロセス ID                    |
+| `hostname` | string | ホスト名                       |
 
 **ログレベル値:**
 
-| レベル  | 値 |
-| ------- | -- |
-| `trace` | 10 |
-| `debug` | 20 |
-| `info`  | 30 |
-| `warn`  | 40 |
-| `error` | 50 |
-| `fatal` | 60 |
+| レベル  | 値  |
+| ------- | --- |
+| `trace` | 10  |
+| `debug` | 20  |
+| `info`  | 30  |
+| `warn`  | 40  |
+| `error` | 50  |
+| `fatal` | 60  |
 
 ### コンテキスト別フィールド
 
 pino の `child()` で付与されるスコープ付きフィールド:
 
-| コンテキスト     | フィールド                               | 由来                                       |
-| ---------------- | ---------------------------------------- | ------------------------------------------ |
-| API リクエスト   | `requestId`                              | `hono/request-id` → `child({ requestId })` |
-| リクエスト完了   | `method`, `path`, `status`, `elapsed`    | logger ミドルウェア                        |
-| Worker ジョブ    | `jobId`, `resourceId`                    | ジョブ処理時に付与                         |
-| SQS アダプター   | `component: "sqs"`                       | `child({ component: 'sqs' })`             |
-| エラー           | `err` (`type`, `message`, `stack`)       | pino が自動シリアライズ                    |
+| コンテキスト   | フィールド                            | 由来                                       |
+| -------------- | ------------------------------------- | ------------------------------------------ |
+| API リクエスト | `requestId`                           | `hono/request-id` → `child({ requestId })` |
+| リクエスト完了 | `method`, `path`, `status`, `elapsed` | logger ミドルウェア                        |
+| Worker ジョブ  | `jobId`, `resourceId`                 | ジョブ処理時に付与                         |
+| SQS アダプター | `component: "sqs"`                    | `child({ component: 'sqs' })`              |
+| エラー         | `err` (`type`, `message`, `stack`)    | pino が自動シリアライズ                    |
 
 ### 出力例
 
@@ -200,8 +200,8 @@ fields @timestamp, msg, jobId, resourceId, err.message
 
 ### 環境変数
 
-| 変数        | デフォルト | 説明                                                     |
-| ----------- | ---------- | -------------------------------------------------------- |
+| 変数        | デフォルト | 説明                                                        |
+| ----------- | ---------- | ----------------------------------------------------------- |
 | `LOG_LEVEL` | `info`     | ログレベル（`trace`/`debug`/`info`/`warn`/`error`/`fatal`） |
 
 `createLogger()` の `level` オプションで明示指定した場合はそちらが優先される。

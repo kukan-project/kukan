@@ -55,27 +55,27 @@ BETTER_AUTH_SECRET=$(openssl rand -base64 32)
 
 #### Environment variable reference / 環境変数一覧
 
-| Variable                          | Default                 | Description                                                  |
-| --------------------------------- | ----------------------- | ------------------------------------------------------------ |
-| `POSTGRES_HOST`                   | `localhost`             | PostgreSQL hostname                                          |
-| `POSTGRES_PORT`                   | `5432`                  | PostgreSQL port                                              |
-| `POSTGRES_DB`                     | `kukan`                 | PostgreSQL database name                                     |
-| `POSTGRES_USER`                   | `kukan`                 | PostgreSQL user                                              |
-| `POSTGRES_PASSWORD`               | `kukan`                 | PostgreSQL password                                          |
-| `POSTGRES_SSLMODE`                | `disable`               | `require` for RDS/Aurora, `disable` for local                |
-| `BETTER_AUTH_SECRET`              | _(must set)_            | Auth session secret (min 32 chars)                           |
-| `BETTER_AUTH_URL`                 | `http://localhost:3000` | Auth callback base URL                                       |
-| `S3_ENDPOINT`                     | _(omit for AWS)_        | S3-compatible endpoint (MinIO: `http://localhost:9000`)      |
-| `S3_BUCKET`                       | `kukan-dev`             | S3 bucket name                                               |
-| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | _(omit for IAM role)_   | S3 credentials (MinIO: `minioadmin`)                         |
-| `SEARCH_TYPE`                     | `opensearch`            | `opensearch` or `postgres` (fallback)                        |
-| `OPENSEARCH_URL`                  | `http://localhost:9200` | OpenSearch endpoint                                          |
-| `SQS_ENDPOINT`                    | _(omit for AWS)_        | SQS-compatible endpoint (ElasticMQ: `http://localhost:9324`) |
-| `SQS_QUEUE_URL`                   | _(required)_            | SQS queue URL                                                |
-| `SQS_REGION`                      | _(omit for local)_      | AWS region for SQS                                           |
-| `AI_TYPE`                         | `none`                  | `none` / `bedrock` / `openai` / `ollama`                     |
-| `WEB_DB_POOL_MAX`                 | `5`                     | DB connection pool size (web)                                |
-| `WORKER_DB_POOL_MAX`              | `3`                     | DB connection pool size (worker)                             |
+| Variable                          | Default                 | Description                                                    |
+| --------------------------------- | ----------------------- | -------------------------------------------------------------- |
+| `POSTGRES_HOST`                   | `localhost`             | PostgreSQL hostname                                            |
+| `POSTGRES_PORT`                   | `5432`                  | PostgreSQL port                                                |
+| `POSTGRES_DB`                     | `kukan`                 | PostgreSQL database name                                       |
+| `POSTGRES_USER`                   | `kukan`                 | PostgreSQL user                                                |
+| `POSTGRES_PASSWORD`               | `kukan`                 | PostgreSQL password                                            |
+| `POSTGRES_SSLMODE`                | `disable`               | `require` for RDS/Aurora, `disable` for local                  |
+| `BETTER_AUTH_SECRET`              | _(must set)_            | Auth session secret (min 32 chars)                             |
+| `BETTER_AUTH_URL`                 | `http://localhost:3000` | Auth callback base URL                                         |
+| `S3_ENDPOINT`                     | _(omit for AWS)_        | S3-compatible endpoint (MinIO: `http://localhost:9000`)        |
+| `S3_BUCKET`                       | `kukan-dev`             | S3 bucket name                                                 |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | _(omit for IAM role)_   | S3 credentials (MinIO: `minioadmin`)                           |
+| `SEARCH_TYPE`                     | `opensearch`            | `opensearch` or `postgres` (fallback)                          |
+| `OPENSEARCH_URL`                  | `http://localhost:9200` | OpenSearch endpoint                                            |
+| `SQS_ENDPOINT`                    | _(omit for AWS)_        | SQS-compatible endpoint (ElasticMQ: `http://localhost:9324`)   |
+| `SQS_QUEUE_URL`                   | _(required)_            | SQS queue URL                                                  |
+| `SQS_REGION`                      | _(omit for local)_      | AWS region for SQS                                             |
+| `AI_TYPE`                         | `none`                  | `none` / `bedrock` / `openai` / `ollama`                       |
+| `WEB_DB_POOL_MAX`                 | `5`                     | DB connection pool size (web)                                  |
+| `WORKER_DB_POOL_MAX`              | `3`                     | DB connection pool size (worker)                               |
 | `LOG_LEVEL`                       | `info`                  | Pino log level (`trace`/`debug`/`info`/`warn`/`error`/`fatal`) |
 
 See [.env.example](.env.example) for all options including pool tuning.

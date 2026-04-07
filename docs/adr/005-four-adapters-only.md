@@ -15,14 +15,14 @@ v3設計では6つ以上のアダプター（Storage, Search, Cache, Queue, AI, 
 
 ## 分析
 
-| 機能       | AWS        | 開発/オンプレ   | 環境差あり？             |
-| ---------- | ---------- | --------------- | ------------------------ |
-| ストレージ | S3互換     | S3互換 (MinIO)  | ✅ Yes                   |
-| 全文検索   | OpenSearch | PG全文検索      | ✅ Yes                   |
-| AI推論     | Bedrock    | Ollama / OpenAI | ✅ Yes                   |
-| キュー     | SQS        | ElasticMQ       | ✅ Yes                   |
-| キャッシュ | lru-cache  | lru-cache       | ❌ No → ユーティリティ   |
-| DB         | PostgreSQL | PostgreSQL      | ❌ No → 直接使用         |
+| 機能       | AWS             | 開発/オンプレ   | 環境差あり？                       |
+| ---------- | --------------- | --------------- | ---------------------------------- |
+| ストレージ | S3互換          | S3互換 (MinIO)  | ✅ Yes                             |
+| 全文検索   | OpenSearch      | PG全文検索      | ✅ Yes                             |
+| AI推論     | Bedrock         | Ollama / OpenAI | ✅ Yes                             |
+| キュー     | SQS             | ElasticMQ       | ✅ Yes                             |
+| キャッシュ | lru-cache       | lru-cache       | ❌ No → ユーティリティ             |
+| DB         | PostgreSQL      | PostgreSQL      | ❌ No → 直接使用                   |
 | ロギング   | CloudWatch Logs | pino (JSON)     | ❌ No → pino 統一で十分（ADR-019） |
 
 ## 決定
