@@ -7,6 +7,7 @@ import { z } from 'zod'
 
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   POSTGRES_HOST: z.string().default('localhost'),
   POSTGRES_PORT: z.coerce.number().default(5432),
   POSTGRES_DB: z.string().default('kukan'),

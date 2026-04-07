@@ -4,7 +4,9 @@
  */
 
 import type { ErrorHandler } from 'hono'
-import { KukanError } from '@kukan/shared'
+import { KukanError, createLogger } from '@kukan/shared'
+
+const fallbackLogger = createLogger({ name: 'api', level: 'error' })
 
 export const errorHandler: ErrorHandler = (err, c) => {
   if (err instanceof KukanError) {
@@ -20,8 +22,9 @@ export const errorHandler: ErrorHandler = (err, c) => {
     )
   }
 
-  // Unknown error
-  console.error('Unhandled error:', err)
+  // Unknown error — fallback logger guards against errors before context middleware
+  const log = c.get('logger') ?? fallbackLogger
+  log.error({ err }, 'Unhandled error')
   return c.json(
     {
       type: 'about:blank',

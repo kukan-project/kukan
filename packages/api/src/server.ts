@@ -13,23 +13,10 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 const port = parseInt(process.env.PORT || '3000', 10)
+const { app, logger: log } = await createApp()
 
-console.log(`🚀 KUKAN API Server starting on port ${port}`)
+log.info({ port }, 'KUKAN API Server starting')
 
-const app = await createApp()
+serve({ fetch: app.fetch, port })
 
-serve({
-  fetch: app.fetch,
-  port,
-})
-
-console.log(`✅ Server is running at http://localhost:${port}`)
-console.log(`📊 Health check: http://localhost:${port}/api/health`)
-console.log(`📁 Organizations API: http://localhost:${port}/api/v1/organizations`)
-console.log(`📦 Packages API: http://localhost:${port}/api/v1/packages`)
-console.log(`📄 Resources API: http://localhost:${port}/api/v1/resources`)
-console.log(`👥 Groups API: http://localhost:${port}/api/v1/groups`)
-console.log(`🏷️  Tags API: http://localhost:${port}/api/v1/tags`)
-console.log(`👤 Users API: http://localhost:${port}/api/v1/users`)
-console.log(`🔍 Search API: http://localhost:${port}/api/v1/search`)
-console.log(`🔌 CKAN-compatible API: http://localhost:${port}/api/3/action/*`)
+log.info({ port, url: `http://localhost:${port}` }, 'Server is running')

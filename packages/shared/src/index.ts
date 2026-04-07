@@ -27,6 +27,9 @@ export * from './pipeline-types'
 // Licenses
 export * from './licenses'
 
+// Logger factory
+export * from './logger'
+
 // Validators
 export * from './validators/package'
 export * from './validators/organization'

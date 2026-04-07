@@ -8,7 +8,7 @@ import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
-import type { Env } from '@kukan/shared'
+import type { Env, Logger } from '@kukan/shared'
 
 export interface AppContext {
   db: Database
@@ -19,6 +19,8 @@ export interface AppContext {
   queue: QueueAdapter
   ai: AIAdapter
   env: Env
+  logger: Logger
+  requestId: string
   // Better Auth session will be added by middleware
   user?: {
     id: string
@@ -38,6 +40,8 @@ declare module 'hono' {
     queue: QueueAdapter
     ai: AIAdapter
     env: Env
+    logger: Logger
+    requestId: string
     user?: {
       id: string
       email: string

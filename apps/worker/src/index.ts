@@ -6,7 +6,7 @@
 import { serve } from '@hono/node-server'
 import { config } from 'dotenv'
 import { Hono } from 'hono'
-import { loadEnv, PIPELINE_JOB_TYPE } from '@kukan/shared'
+import { loadEnv, createLogger, PIPELINE_JOB_TYPE } from '@kukan/shared'
 import type { Job } from '@kukan/queue-adapter'
 import { createDb, runMigrations } from '@kukan/db'
 import { SQSQueueAdapter } from '@kukan/queue-adapter'
@@ -20,6 +20,7 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 const env = loadEnv()
+const log = createLogger({ name: 'worker', level: env.LOG_LEVEL })
 
 // Initialize database (worker processes jobs sequentially, so fewer connections needed)
 const db = createDb(env.DATABASE_URL, {
@@ -44,6 +45,7 @@ const queue = new SQSQueueAdapter({
   endpoint: env.SQS_ENDPOINT,
   accessKeyId: env.SQS_ACCESS_KEY,
   secretAccessKey: env.SQS_SECRET_KEY,
+  logger: log.child({ component: 'sqs' }),
 })
 
 // --- Health check HTTP server (for ECS Fargate health monitoring) ---
@@ -93,19 +95,17 @@ const ctx = buildPipelineContext(db, storage)
 await queue.process<{ resourceId: string }>(
   PIPELINE_JOB_TYPE,
   async (job: Job<{ resourceId: string }>) => {
-    console.log(`[Worker] Processing job ${job.id} for resource ${job.data.resourceId}`)
+    log.info({ jobId: job.id, resourceId: job.data.resourceId }, 'Processing job')
     await processResource(job.data.resourceId, ctx, db, queue)
-    console.log(`[Worker] Completed job ${job.id}`)
+    log.info({ jobId: job.id, resourceId: job.data.resourceId }, 'Completed job')
   }
 )
 
-console.log(`KUKAN Worker started`)
-console.log(`  Queue: ${env.SQS_QUEUE_URL}`)
-console.log(`  Health: http://localhost:${HEALTH_PORT}/health`)
+log.info({ queueUrl: env.SQS_QUEUE_URL, healthPort: HEALTH_PORT }, 'Worker started')
 
 // Graceful shutdown
 const shutdown = async () => {
-  console.log('[Worker] Shutting down...')
+  log.info('Shutting down...')
   await queue.stop()
   await db.$client.end()
   process.exit(0)

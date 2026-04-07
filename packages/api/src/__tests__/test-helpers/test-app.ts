@@ -10,7 +10,7 @@ import type { Database } from '@kukan/db'
 import { NoOpAIAdapter } from '@kukan/ai-adapter'
 import { PostgresSearchAdapter, type SearchAdapter } from '@kukan/search-adapter'
 import { errorHandler } from '../../middleware/error-handler'
-import type { Env } from '@kukan/shared'
+import { createLogger, type Env } from '@kukan/shared'
 
 import { packagesRouter } from '../../routes/packages'
 import { organizationsRouter } from '../../routes/organizations'
@@ -28,6 +28,7 @@ const mockSearch: SearchAdapter = {
   delete: async () => {},
   bulkIndex: async () => {},
   deleteAll: async () => {},
+  sumResourceCount: async () => 0,
 }
 
 const mockStorage = {
@@ -39,6 +40,7 @@ const mockStorage = {
     throw new Error('not implemented in test')
   },
   delete: async () => {},
+  deleteByPrefix: async () => 0,
   getSignedUrl: async () => 'file:///test',
   getSignedUploadUrl: async () => 'https://minio.test/upload?signed=true',
 }
@@ -82,6 +84,8 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
 
   const testUser = overrides?.user === null ? undefined : (overrides?.user ?? defaultTestUser)
 
+  const testLogger = createLogger({ name: 'test', level: 'silent' })
+
   // Inject context
   app.use('*', async (c, next) => {
     c.set('db', db)
@@ -91,6 +95,8 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
     c.set('queue', mockQueue)
     c.set('ai', mockAi)
     c.set('env', testEnv)
+    c.set('logger', testLogger)
+    c.set('requestId', 'test-request-id')
     if (testUser) c.set('user', testUser)
     await next()
   })

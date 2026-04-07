@@ -3,14 +3,14 @@
  * Creates adapter instances based on environment configuration
  */
 
-import type { Env } from '@kukan/shared'
+import type { Env, Logger } from '@kukan/shared'
 import type { Database } from '@kukan/db'
 import { S3StorageAdapter } from '@kukan/storage-adapter'
 import { PostgresSearchAdapter, OpenSearchAdapter } from '@kukan/search-adapter'
 import { SQSQueueAdapter } from '@kukan/queue-adapter'
 import { NoOpAIAdapter } from '@kukan/ai-adapter'
 
-export async function createAdapters(env: Env, db: Database) {
+export async function createAdapters(env: Env, db: Database, logger: Logger) {
   // Storage adapter (S3: AWS S3 or MinIO, determined by S3_ENDPOINT)
   const storage = new S3StorageAdapter({
     bucket: env.S3_BUCKET,
@@ -39,6 +39,7 @@ export async function createAdapters(env: Env, db: Database) {
     endpoint: env.SQS_ENDPOINT,
     accessKeyId: env.SQS_ACCESS_KEY,
     secretAccessKey: env.SQS_SECRET_KEY,
+    logger: logger.child({ component: 'sqs' }),
   })
 
   // AI adapter

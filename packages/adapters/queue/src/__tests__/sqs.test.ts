@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { createLogger } from '@kukan/shared'
 import { SQSQueueAdapter } from '../sqs'
 
 // Mock @aws-sdk/client-sqs
@@ -24,6 +25,7 @@ describe('SQSQueueAdapter', () => {
       endpoint: 'http://localhost:9324',
       accessKeyId: 'x',
       secretAccessKey: 'x',
+      logger: createLogger({ name: 'test', level: 'silent' }),
     })
   })
 
@@ -174,16 +176,11 @@ describe('SQSQueueAdapter', () => {
             })
         )
 
-      // Suppress console.error for expected error
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
       await queue.process('test', async () => {
         throw new Error('handler failed')
       })
       await new Promise((r) => setTimeout(r, 200))
       await queue.stop()
-
-      consoleSpy.mockRestore()
 
       // Only ReceiveMessage, no DeleteMessage after the failed handler
       const callTypes = mockSend.mock.calls.map((c) => c[0]._type)

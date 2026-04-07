@@ -269,9 +269,9 @@ packagesRouter.post(
     const enqueuePromise =
       input.url && input.url_type !== 'upload'
         ? new PipelineService(db, c.get('queue')).enqueue(resource.id).catch((err) => {
-            console.error(
-              `[Packages] Best-effort pipeline enqueue failed for resource ${resource.id}:`,
-              err
+            c.get('logger').error(
+              { err, resourceId: resource.id },
+              'Best-effort pipeline enqueue failed'
             )
           })
         : Promise.resolve()

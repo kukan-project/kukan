@@ -37,7 +37,7 @@ export function optionalAuth(auth: Auth) {
           return next()
         }
       } catch (err) {
-        console.warn('Invalid session:', err)
+        c.get('logger').warn({ err }, 'Invalid session')
       }
     }
 
@@ -59,7 +59,7 @@ export function optionalAuth(auth: Auth) {
           })
         }
       } catch (err) {
-        console.warn('API token validation error:', err)
+        c.get('logger').warn({ err }, 'API token validation error')
       }
     }
 

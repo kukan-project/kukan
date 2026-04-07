@@ -382,7 +382,7 @@ resourcesRouter.put('/:id', zValidator('json', updateResourceSchema), async (c) 
   const enqueuePromise =
     res.url && res.urlType !== 'upload'
       ? enqueuePipeline(c, id).catch((err) => {
-          console.error(`[Resources] Best-effort pipeline enqueue failed for resource ${id}:`, err)
+          c.get('logger').error({ err, resourceId: id }, 'Best-effort pipeline enqueue failed')
         })
       : Promise.resolve()
   await Promise.all([enqueuePromise, indexPackage(db, c.get('search'), res.packageId)])

@@ -5,7 +5,8 @@
 
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { loadEnv } from '@kukan/shared'
+import { requestId } from 'hono/request-id'
+import { createLogger, loadEnv } from '@kukan/shared'
 import { createDb } from '@kukan/db'
 import { createAdapters } from './adapters'
 import { createAuth } from './auth/auth'
@@ -31,7 +32,8 @@ export async function createApp() {
   const auth = createAuth(db)
 
   // Initialize adapters
-  const adapters = await createAdapters(env, db)
+  const baseLogger = createLogger({ name: 'api', level: env.LOG_LEVEL })
+  const adapters = await createAdapters(env, db, baseLogger)
 
   // CORS — enabled when TRUSTED_ORIGINS is set (standalone / cross-origin access)
   const trustedOrigins = process.env.TRUSTED_ORIGINS?.split(',').filter(Boolean)
@@ -45,6 +47,9 @@ export async function createApp() {
     )
   }
 
+  // Request ID (must come before logger)
+  app.use('*', requestId())
+
   // Set context variables
   app.use('*', async (c, next) => {
     c.set('db', db)
@@ -54,6 +59,7 @@ export async function createApp() {
     c.set('queue', adapters.queue)
     c.set('ai', adapters.ai)
     c.set('env', env)
+    c.set('logger', baseLogger.child({ requestId: c.get('requestId') }))
     await next()
   })
 
@@ -118,5 +124,5 @@ export async function createApp() {
     )
   })
 
-  return app
+  return { app, logger: baseLogger }
 }

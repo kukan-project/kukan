@@ -11,6 +11,7 @@ import {
   DeleteMessageCommand,
   GetQueueAttributesCommand,
 } from '@aws-sdk/client-sqs'
+import { createLogger, type Logger } from '@kukan/shared'
 import type { EnqueueOptions, Job, QueueAdapter, QueueStats } from './adapter'
 
 export interface SQSConfig {
@@ -19,11 +20,13 @@ export interface SQSConfig {
   endpoint?: string // ElasticMQ: 'http://localhost:9324', AWS SQS: omit
   accessKeyId?: string
   secretAccessKey?: string
+  logger?: Logger
 }
 
 export class SQSQueueAdapter implements QueueAdapter {
   private client: SQSClient
   private queueUrl: string
+  private log: Logger
   private running = false
   private pollPromise?: Promise<void>
   private abortController?: AbortController
@@ -36,6 +39,7 @@ export class SQSQueueAdapter implements QueueAdapter {
 
   constructor(config: SQSConfig) {
     this.queueUrl = config.queueUrl
+    this.log = config.logger ?? createLogger({ name: 'sqs-queue' })
     this.client = new SQSClient({
       region: config.region,
       ...(config.endpoint && { endpoint: config.endpoint }),
@@ -121,13 +125,16 @@ export class SQSQueueAdapter implements QueueAdapter {
           try {
             body = JSON.parse(message.Body!) as { type: string; data: T }
           } catch {
-            console.error('[SQSQueue] Invalid message body, deleting:', message.MessageId)
+            this.log.error({ messageId: message.MessageId }, 'Invalid message body, deleting')
             await this.deleteMessage(message.ReceiptHandle!)
             continue
           }
 
           if (body.type !== type) {
-            console.warn(`[SQSQueue] Unknown type "${body.type}", deleting:`, message.MessageId)
+            this.log.warn(
+              { type: body.type, messageId: message.MessageId },
+              'Unknown job type, deleting'
+            )
             await this.deleteMessage(message.ReceiptHandle!)
             continue
           }
@@ -143,12 +150,12 @@ export class SQSQueueAdapter implements QueueAdapter {
           } catch (err) {
             this.processingJobSince = null
             // Message returns to queue after visibility timeout
-            console.error(`[SQSQueue] Handler error for job ${jobId}:`, err)
+            this.log.error({ err, jobId }, 'Handler error')
           }
         }
       } catch (err) {
         if (!this.running) break
-        console.error('[SQSQueue] Poll error:', err)
+        this.log.error({ err }, 'Poll error')
         await new Promise((r) => setTimeout(r, 5000))
       }
     }

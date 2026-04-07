@@ -1,10 +1,14 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { Hono } from 'hono'
-import { KukanError, NotFoundError, ValidationError } from '@kukan/shared'
+import { KukanError, NotFoundError, ValidationError, createLogger } from '@kukan/shared'
 import { errorHandler } from '../../middleware/error-handler'
 
 function createTestApp(thrower: () => never) {
   const app = new Hono()
+  app.use('*', async (c, next) => {
+    c.set('logger', createLogger({ name: 'test', level: 'silent' }))
+    await next()
+  })
   app.onError(errorHandler)
   app.get('/test', () => thrower())
   return app
@@ -56,8 +60,6 @@ describe('errorHandler', () => {
   })
 
   it('should convert unknown errors to 500 RFC 7807', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-
     const app = createTestApp(() => {
       throw new Error('unexpected')
     })
@@ -78,5 +80,22 @@ describe('errorHandler', () => {
     const res = await app.request('/test')
     const body = await res.json()
     expect(body).not.toHaveProperty('details')
+  })
+
+  it('should use fallback logger when context logger is not set', async () => {
+    // Error handler should not crash when c.get('logger') is undefined
+    // (e.g. error thrown before context middleware runs)
+    const app = new Hono()
+    // No logger middleware — c.get('logger') returns undefined
+    app.onError(errorHandler)
+    app.get('/test', () => {
+      throw new Error('early error')
+    })
+
+    const res = await app.request('/test')
+    expect(res.status).toBe(500)
+
+    const body = await res.json()
+    expect(body.title).toBe('INTERNAL_SERVER_ERROR')
   })
 })

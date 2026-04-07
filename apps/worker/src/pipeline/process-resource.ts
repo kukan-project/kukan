@@ -45,9 +45,13 @@ export async function processResource(
       await Promise.all([
         tracker.skipStep(fetchStepId),
         tracker.updateStatus(pipeline.id, 'queued'),
-        queue.enqueue(PIPELINE_JOB_TYPE, { resourceId }, {
-          delaySeconds: FETCH_RATE_LIMIT_REQUEUE_DELAY_S,
-        }),
+        queue.enqueue(
+          PIPELINE_JOB_TYPE,
+          { resourceId },
+          {
+            delaySeconds: FETCH_RATE_LIMIT_REQUEUE_DELAY_S,
+          }
+        ),
       ])
       return
     }

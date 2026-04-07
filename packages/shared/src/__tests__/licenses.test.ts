@@ -54,10 +54,9 @@ describe('findLicense', () => {
 })
 
 describe('resolveLicenseLabel', () => {
-  const mockTranslator = Object.assign(
-    (key: string) => `translated:${key}`,
-    { has: (key: string) => key === 'CC-BY-4_0' || key === 'GJSTU-2_0' }
-  )
+  const mockTranslator = Object.assign((key: string) => `translated:${key}`, {
+    has: (key: string) => key === 'CC-BY-4_0' || key === 'GJSTU-2_0',
+  })
 
   it('should return i18n translation when available', () => {
     expect(resolveLicenseLabel('CC-BY-4.0', mockTranslator)).toBe('translated:CC-BY-4_0')

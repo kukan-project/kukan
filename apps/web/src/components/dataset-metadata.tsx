@@ -28,7 +28,10 @@ export async function DatasetMetadata({ pkg }: { pkg: MetadataPackage }) {
           rows={[
             { label: t('maintainer'), value: pkg.maintainer },
             { label: t('author'), value: pkg.author },
-            { label: t('license'), value: pkg.licenseId ? resolveLicenseLabel(pkg.licenseId, tl) : null },
+            {
+              label: t('license'),
+              value: pkg.licenseId ? resolveLicenseLabel(pkg.licenseId, tl) : null,
+            },
             { label: t('version'), value: pkg.version },
             { label: t('created'), value: <DateTime value={pkg.created} /> },
             { label: t('updated'), value: <DateTime value={pkg.updated} /> },

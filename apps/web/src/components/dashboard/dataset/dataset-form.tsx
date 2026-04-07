@@ -197,9 +197,7 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
             </Select>
           )}
         />
-        {errors.license_id && (
-          <p className="text-sm text-destructive">{tc('required')}</p>
-        )}
+        {errors.license_id && <p className="text-sm text-destructive">{tc('required')}</p>}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
