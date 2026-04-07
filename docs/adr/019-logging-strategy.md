@@ -77,6 +77,135 @@ ADR-005 で「メトリクス / ロギングはアダプター不要、ロガー
 - ログ検索・フィルタリング・アラート設定
 - CloudWatch Logs Insights に相当する機能をオンプレで提供
 
+## ログフォーマット仕様
+
+### 共通フィールド
+
+すべてのログ行に含まれる pino 標準フィールド:
+
+| フィールド | 型     | 説明                                |
+| ---------- | ------ | ----------------------------------- |
+| `level`    | number | ログレベル（10〜60、下表参照）      |
+| `time`     | number | Unix epoch ミリ秒                   |
+| `name`     | string | ロガー名（`api` / `worker`）        |
+| `msg`      | string | ログメッセージ                      |
+| `pid`      | number | プロセス ID                         |
+| `hostname` | string | ホスト名                            |
+
+**ログレベル値:**
+
+| レベル  | 値 |
+| ------- | -- |
+| `trace` | 10 |
+| `debug` | 20 |
+| `info`  | 30 |
+| `warn`  | 40 |
+| `error` | 50 |
+| `fatal` | 60 |
+
+### コンテキスト別フィールド
+
+pino の `child()` で付与されるスコープ付きフィールド:
+
+| コンテキスト     | フィールド                               | 由来                                       |
+| ---------------- | ---------------------------------------- | ------------------------------------------ |
+| API リクエスト   | `requestId`                              | `hono/request-id` → `child({ requestId })` |
+| リクエスト完了   | `method`, `path`, `status`, `elapsed`    | logger ミドルウェア                        |
+| Worker ジョブ    | `jobId`, `resourceId`                    | ジョブ処理時に付与                         |
+| SQS アダプター   | `component: "sqs"`                       | `child({ component: 'sqs' })`             |
+| エラー           | `err` (`type`, `message`, `stack`)       | pino が自動シリアライズ                    |
+
+### 出力例
+
+**リクエスト完了（本番 JSON）:**
+
+```json
+{
+  "level": 30,
+  "time": 1712467200000,
+  "name": "api",
+  "requestId": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "method": "GET",
+  "path": "/api/v1/packages",
+  "status": 200,
+  "elapsed": 42,
+  "msg": "request completed"
+}
+```
+
+**エラー（本番 JSON）:**
+
+```json
+{
+  "level": 50,
+  "time": 1712467200000,
+  "name": "api",
+  "requestId": "f47ac10b-...",
+  "err": {
+    "type": "Error",
+    "message": "connection refused",
+    "stack": "Error: connection refused\n    at ..."
+  },
+  "msg": "Unhandled error"
+}
+```
+
+**Worker ジョブ処理:**
+
+```json
+{
+  "level": 30,
+  "time": 1712467200000,
+  "name": "worker",
+  "jobId": "msg-abc123",
+  "resourceId": "res-456",
+  "msg": "Processing resource"
+}
+```
+
+**開発環境（pino-pretty）:**
+
+```
+14:23:45.123 INFO (api): request completed
+    requestId: "f47ac10b-..."
+    method: "GET"
+    path: "/api/v1/packages"
+    status: 200
+    elapsed: 42
+```
+
+### CloudWatch Logs Insights クエリ例
+
+```sql
+-- エラーログ一覧
+fields @timestamp, msg, err.message, requestId
+| filter level >= 50
+| sort @timestamp desc
+
+-- 特定リクエストの追跡（requestId で相関）
+fields @timestamp, msg, method, path, status, elapsed
+| filter requestId = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+| sort @timestamp asc
+
+-- 遅いリクエスト（500ms 超）
+fields method, path, status, elapsed
+| filter msg = "request completed" and elapsed > 500
+| sort elapsed desc
+
+-- Worker ジョブエラー
+fields @timestamp, msg, jobId, resourceId, err.message
+| filter name = "worker" and level >= 50
+| sort @timestamp desc
+```
+
+### 環境変数
+
+| 変数        | デフォルト | 説明                                                     |
+| ----------- | ---------- | -------------------------------------------------------- |
+| `LOG_LEVEL` | `info`     | ログレベル（`trace`/`debug`/`info`/`warn`/`error`/`fatal`） |
+
+`createLogger()` の `level` オプションで明示指定した場合はそちらが優先される。
+
 ## 根拠
 
 ### pino を選ぶ理由
@@ -125,7 +254,7 @@ ADR-005 の方針に沿い、アプリコードにログアダプターは不要
 - **compose.yml**: Fluent Bit / Loki / Grafana の3サービスを追加（profile で分離可能）
 - **CDK**: Web（ECS Fargate）の CloudWatch Logs 設定を明示化
 
-※ 具体的なコード実装は本 ADR のスコープ外。別タスクとして実施する。
+実装済み。ロガーファクトリは `packages/shared/src/logger.ts`、ESLint `no-console` ルールで今後の `console.*` 混入を防止。
 
 ## 関連
 

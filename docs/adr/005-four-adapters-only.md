@@ -23,7 +23,7 @@ v3設計では6つ以上のアダプター（Storage, Search, Cache, Queue, AI, 
 | キュー     | SQS        | ElasticMQ       | ✅ Yes                   |
 | キャッシュ | lru-cache  | lru-cache       | ❌ No → ユーティリティ   |
 | DB         | PostgreSQL | PostgreSQL      | ❌ No → 直接使用         |
-| メトリクス | CloudWatch | console.log     | ❌ No → ロガー設定で十分 |
+| ロギング   | CloudWatch Logs | pino (JSON)     | ❌ No → pino 統一で十分（ADR-019） |
 
 ## 決定
 

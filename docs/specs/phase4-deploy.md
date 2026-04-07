@@ -308,6 +308,7 @@ Client ─→ Caddy (:80/:443) ─→ web (:3000)
 | -------------------- | ---- | --------------------------------------------- |
 | `BETTER_AUTH_URL`    | Yes  | 公開 URL（例: `https://catalog.example.com`） |
 | `BETTER_AUTH_SECRET` | Yes  | 認証セッション秘密鍵（32 文字以上）           |
+| `LOG_LEVEL`          | No   | pino ログレベル（`trace`/`debug`/`info`/`warn`/`error`/`fatal`、デフォルト: `info`） |
 
 その他すべてのオプションは `.env.prod.example` を参照。
 

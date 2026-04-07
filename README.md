@@ -76,6 +76,7 @@ BETTER_AUTH_SECRET=$(openssl rand -base64 32)
 | `AI_TYPE`                         | `none`                  | `none` / `bedrock` / `openai` / `ollama`                     |
 | `WEB_DB_POOL_MAX`                 | `5`                     | DB connection pool size (web)                                |
 | `WORKER_DB_POOL_MAX`              | `3`                     | DB connection pool size (worker)                             |
+| `LOG_LEVEL`                       | `info`                  | Pino log level (`trace`/`debug`/`info`/`warn`/`error`/`fatal`) |
 
 See [.env.example](.env.example) for all options including pool tuning.
 プールチューニング等の全オプションは上記ファイルを参照。

@@ -549,7 +549,7 @@ export function errorHandler() {
           err.status
         )
       }
-      console.error(err)
+      c.get('logger').error({ err }, 'Unhandled error')
       return c.json(
         {
           type: 'about:blank',
