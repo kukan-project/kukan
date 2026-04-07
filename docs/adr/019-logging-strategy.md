@@ -35,10 +35,10 @@ ADR-005 で「メトリクス / ロギングはアダプター不要、ロガー
                                                       └──────────┘
 ```
 
-| 環境     | Collector                         | Store           | Viewer                |
-| -------- | --------------------------------- | --------------- | --------------------- |
-| AWS      | ECS Fargate 標準（自動収集）      | CloudWatch Logs | CloudWatch コンソール |
-| オンプレ | Fluent Bit                        | Loki            | Grafana               |
+| 環境     | Collector                    | Store           | Viewer                |
+| -------- | ---------------------------- | --------------- | --------------------- |
+| AWS      | ECS Fargate 標準（自動収集） | CloudWatch Logs | CloudWatch コンソール |
+| オンプレ | Fluent Bit                   | Loki            | Grafana               |
 
 ### アプリ側: pino による構造化ログ
 

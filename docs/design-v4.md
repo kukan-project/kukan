@@ -585,44 +585,44 @@ ECS タスクは Public サブネット構成（NAT Gateway 不要）、CloudFro
 
 **small — 小規模（最小コスト）**
 
-| 構成要素                                    | 月額概算                     |
-| ------------------------------------------- | ---------------------------- |
-| ECS Fargate "web" (0.25vCPU/0.5GB × 1)     | ~$10                         |
-| ECS Fargate "worker" (0.25vCPU/0.5GB × 1)  | ~$10                         |
-| ALB                                         | ~$18                         |
-| RDS db.t4g.micro (Single-AZ)               | ~$13                         |
-| SQS                                         | ~$0（月100万リクエスト無料） |
-| S3                                          | ~$3                          |
-| **合計（OpenSearch なし）**                 | **~$54/月**                  |
-| + OpenSearch t3.small.search × 1 (10GB)    | + ~$26                       |
-| **合計（OpenSearch あり）**                 | **~$80/月**                  |
+| 構成要素                                  | 月額概算                     |
+| ----------------------------------------- | ---------------------------- |
+| ECS Fargate "web" (0.25vCPU/0.5GB × 1)    | ~$10                         |
+| ECS Fargate "worker" (0.25vCPU/0.5GB × 1) | ~$10                         |
+| ALB                                       | ~$18                         |
+| RDS db.t4g.micro (Single-AZ)              | ~$13                         |
+| SQS                                       | ~$0（月100万リクエスト無料） |
+| S3                                        | ~$3                          |
+| **合計（OpenSearch なし）**               | **~$54/月**                  |
+| + OpenSearch t3.small.search × 1 (10GB)   | + ~$26                       |
+| **合計（OpenSearch あり）**               | **~$80/月**                  |
 
 **medium — 中規模（標準推奨）**
 
-| 構成要素                                    | 月額概算                     |
-| ------------------------------------------- | ---------------------------- |
-| ECS Fargate "web" (0.5vCPU/1GB × 1)        | ~$19                         |
-| ECS Fargate "worker" (0.5vCPU/1GB × 1)     | ~$19                         |
-| ALB                                         | ~$18                         |
-| Aurora Serverless v2 (0.5–2 ACU, Single-AZ) | ~$53                         |
-| SQS                                         | ~$0                          |
-| S3                                          | ~$3                          |
-| OpenSearch m6g.large.search × 1 (50GB)     | ~$120                        |
-| **合計**                                    | **~$232/月**                 |
+| 構成要素                                    | 月額概算     |
+| ------------------------------------------- | ------------ |
+| ECS Fargate "web" (0.5vCPU/1GB × 1)         | ~$19         |
+| ECS Fargate "worker" (0.5vCPU/1GB × 1)      | ~$19         |
+| ALB                                         | ~$18         |
+| Aurora Serverless v2 (0.5–2 ACU, Single-AZ) | ~$53         |
+| SQS                                         | ~$0          |
+| S3                                          | ~$3          |
+| OpenSearch m6g.large.search × 1 (50GB)      | ~$120        |
+| **合計**                                    | **~$232/月** |
 
 **large — 大規模**
 
-| 構成要素                                      | 月額概算                     |
-| --------------------------------------------- | ---------------------------- |
-| ECS Fargate "web" (1vCPU/2GB × 2)            | ~$76                         |
-| ECS Fargate "worker" (1vCPU/2GB × 2)         | ~$76                         |
-| ALB                                           | ~$18                         |
-| Aurora Serverless v2 (2–8 ACU, Multi-AZ)     | ~$260                        |
-| SQS                                           | ~$0                          |
-| S3                                            | ~$5                          |
-| OpenSearch m6g.xlarge.search × 2 (100GB, AZ) | ~$480                        |
-| WAF (optional)                                | ~$9                          |
-| **合計**                                      | **~$924/月**                 |
+| 構成要素                                     | 月額概算     |
+| -------------------------------------------- | ------------ |
+| ECS Fargate "web" (1vCPU/2GB × 2)            | ~$76         |
+| ECS Fargate "worker" (1vCPU/2GB × 2)         | ~$76         |
+| ALB                                          | ~$18         |
+| Aurora Serverless v2 (2–8 ACU, Multi-AZ)     | ~$260        |
+| SQS                                          | ~$0          |
+| S3                                           | ~$5          |
+| OpenSearch m6g.xlarge.search × 2 (100GB, AZ) | ~$480        |
+| WAF (optional)                               | ~$9          |
+| **合計**                                     | **~$924/月** |
 
 ※ Fargate 料金: 東京リージョン vCPU $0.05056/h, メモリ $0.00553/h
 ※ ALB 固定料金 $0.0243/h ≒ $18/月（LCU 従量分は低トラフィック時ほぼゼロ）
@@ -1731,11 +1731,11 @@ interface PiiFinding {
 
 品質チェックは環境に応じた方式で定期実行する。
 
-| 環境         | スケジューリング方式                     | 実行先              |
-| ------------ | ---------------------------------------- | ------------------- |
+| 環境         | スケジューリング方式                     | 実行先               |
+| ------------ | ---------------------------------------- | -------------------- |
 | aws-standard | **EventBridge Scheduler** → SQS → Worker | ECS Fargate "worker" |
-| development  | **node-cron**（プロセス内）              | APIプロセス         |
-| on-premise   | **node-cron**（プロセス内）              | Docker Compose app  |
+| development  | **node-cron**（プロセス内）              | APIプロセス          |
+| on-premise   | **node-cron**（プロセス内）              | Docker Compose app   |
 
 ```typescript
 // packages/quality/scheduler.ts
@@ -2511,7 +2511,7 @@ ckanCompat.all('/api/3/action/:action', async (c) => {
 | 日本語CSVの多様性                     | スマートパーサーの段階的改善 + AI活用                                        |
 | 既存CKANエクステンション非互換        | コア取り込み + プロトコルレベル互換                                          |
 | 自治体のIT環境制約（閉域網等）        | Docker Compose一括デプロイ、AI無効化可、Redis不要                            |
-| ECS Fargate タスク数上限              | デフォルトクォータ申請で拡張可、国レベルは EKS 検討                           |
+| ECS Fargate タスク数上限              | デフォルトクォータ申請で拡張可、国レベルは EKS 検討                          |
 | Embedding生成コスト                   | バッチ処理 + オプション化 + NoOpAdapter                                      |
 | Better Authの成熟度（まだ若い）       | OIDC標準準拠のため、将来IdP差し替え容易                                      |
 | Data Editorのスコープ肥大化           | アドオン設計で分離。コアカタログ機能と独立してリリース可                     |
