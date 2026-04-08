@@ -11,6 +11,7 @@ import { NoOpAIAdapter } from '@kukan/ai-adapter'
 import { PostgresSearchAdapter, type SearchAdapter } from '@kukan/search-adapter'
 import { errorHandler } from '../../middleware/error-handler'
 import { createLogger, type Env } from '@kukan/shared'
+import type { Auth } from '../../auth/auth'
 
 import { packagesRouter } from '../../routes/packages'
 import { organizationsRouter } from '../../routes/organizations'
@@ -53,6 +54,14 @@ const mockQueue = {
 }
 const mockAi = new NoOpAIAdapter()
 
+const mockAuth = {
+  api: {
+    createUser: vi
+      .fn()
+      .mockResolvedValue({ id: 'new-user-id', name: 'created', email: 'created@example.com' }),
+  },
+} as unknown as Auth
+
 const testEnv = {
   NODE_ENV: 'test',
   PORT: 3000,
@@ -77,6 +86,8 @@ interface TestAppOverrides {
   search?: SearchAdapter
   /** Override the authenticated user. Pass `null` for unauthenticated. */
   user?: { id: string; email: string; name: string; sysadmin: boolean } | null
+  /** Override the auth instance (for testing admin user creation). */
+  auth?: Auth
 }
 
 export function createTestApp(db: Database, overrides?: TestAppOverrides) {
@@ -94,6 +105,7 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
     c.set('storage', mockStorage)
     c.set('queue', mockQueue)
     c.set('ai', mockAi)
+    c.set('auth', overrides?.auth ?? mockAuth)
     c.set('env', testEnv)
     c.set('logger', testLogger)
     c.set('requestId', 'test-request-id')

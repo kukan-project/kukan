@@ -4,7 +4,9 @@
  */
 
 import { Hono } from 'hono'
-import { eq, and, inArray, isNull, sql, desc } from 'drizzle-orm'
+import { zValidator } from '@hono/zod-validator'
+import { z } from 'zod'
+import { eq, and, inArray, isNull, ilike, or, sql, desc } from 'drizzle-orm'
 import {
   packageTable,
   resource,
@@ -15,8 +17,9 @@ import {
   packageTag,
   tag,
   vocabulary,
+  user,
 } from '@kukan/db'
-import { ForbiddenError, RESOURCE_PREFIX, PREVIEW_PREFIX } from '@kukan/shared'
+import { ForbiddenError, RESOURCE_PREFIX, PREVIEW_PREFIX, escapeLike } from '@kukan/shared'
 import type { DatasetDoc } from '@kukan/search-adapter'
 import type { AppContext } from '../context'
 
@@ -396,3 +399,113 @@ adminRouter.get('/health', async (c) => {
 
   return c.json(toPaginatedResponse(rows, offset, limit))
 })
+
+// ---------------------------------------------------------------------------
+// User Management
+// ---------------------------------------------------------------------------
+
+// GET /api/v1/admin/users/stats — User count statistics
+adminRouter.get('/users/stats', async (c) => {
+  const currentUser = c.get('user')
+  if (!currentUser?.sysadmin) throw new ForbiddenError('Only sysadmin can view user stats')
+
+  const db = c.get('db')
+
+  const rows = await db
+    .select({
+      state: user.state,
+      role: user.role,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(user)
+    .groupBy(user.state, user.role)
+
+  let total = 0
+  let active = 0
+  let sysadmin = 0
+  for (const row of rows) {
+    total += row.count
+    if (row.state === 'active') active += row.count
+    if (row.state === 'active' && row.role === 'sysadmin') sysadmin += row.count
+  }
+
+  return c.json({ total, active, sysadmin })
+})
+
+// GET /api/v1/admin/users — Paginated user list with optional search
+adminRouter.get('/users', async (c) => {
+  const currentUser = c.get('user')
+  if (!currentUser?.sysadmin) throw new ForbiddenError('Only sysadmin can view users')
+
+  const db = c.get('db')
+  const { offset, limit } = parsePaginatedQuery(c)
+  const q = c.req.query('q')
+
+  const conditions = []
+  if (q) {
+    const pattern = `%${escapeLike(q)}%`
+    conditions.push(or(ilike(user.name, pattern), ilike(user.email, pattern)))
+  }
+
+  const rows = await db
+    .select({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      displayName: user.displayName,
+      role: user.role,
+      state: user.state,
+      createdAt: user.createdAt,
+      total: sql<number>`COUNT(*) OVER()::int`.as('total'),
+    })
+    .from(user)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(user.createdAt))
+    .limit(limit)
+    .offset(offset)
+
+  return c.json(toPaginatedResponse(rows, offset, limit))
+})
+
+// POST /api/v1/admin/users — Create a new user
+adminRouter.post(
+  '/users',
+  zValidator(
+    'json',
+    z.object({
+      name: z
+        .string()
+        .min(2)
+        .max(100)
+        .regex(/^[a-z0-9_-]+$/),
+      email: z.string().email().max(200),
+      password: z.string().min(8),
+      role: z.enum(['user', 'sysadmin']).default('user'),
+    })
+  ),
+  async (c) => {
+    const currentUser = c.get('user')
+    if (!currentUser?.sysadmin) throw new ForbiddenError('Only sysadmin can create users')
+
+    const auth = c.get('auth')
+    const body = c.req.valid('json')
+
+    const result = await auth.api.createUser({
+      body: {
+        name: body.name,
+        email: body.email,
+        password: body.password,
+        ...(body.role === 'sysadmin' && { role: 'sysadmin' as const }),
+      },
+    })
+
+    if (!result) {
+      return c.json(
+        { type: 'about:blank', title: 'BAD_REQUEST', status: 400, detail: 'Failed to create user' },
+        400
+      )
+    }
+
+    return c.json(result, 201)
+  }
+)

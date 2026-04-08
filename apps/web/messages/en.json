@@ -148,7 +148,7 @@
     "signUp": "Create Account",
     "email": "Email",
     "password": "Password",
-    "name": "Name",
+    "name": "Username",
     "noAccount": "Don't have an account?",
     "hasAccount": "Already have an account?",
     "signInDescription": "Sign in with your email and password",
@@ -158,10 +158,11 @@
     "signUpButton": "Create Account",
     "invalidEmail": "Please enter a valid email address",
     "passwordMinLength": "Password must be at least 8 characters",
-    "nameMinLength": "Name must be at least 2 characters",
+    "nameError": "Lowercase letters, numbers, hyphens, and underscores only (2-100 chars)",
     "invalidCredentials": "Invalid email or password",
     "signUpFailed": "Registration failed. Please try a different email address.",
-    "namePlaceholder": "John Doe"
+    "namePlaceholder": "john-doe",
+    "registrationDisabled": "Registration is currently disabled. Please contact your administrator."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -181,6 +182,7 @@
       "adminJobs": "Job Management",
       "adminHealth": "Health Check",
       "adminSearch": "Index Management",
+      "adminUsers": "Users",
       "adminSite": "Site Management"
     },
     "adminSearch": {
@@ -226,6 +228,35 @@
       "complete": "Complete",
       "error": "Error",
       "reprocess": "Reprocess"
+    },
+    "adminUsers": {
+      "title": "User Management",
+      "statsAll": "Total",
+      "statsActive": "Active",
+      "statsSysadmin": "sysadmin",
+      "searchPlaceholder": "Search by username or email...",
+      "colName": "Username",
+      "colEmail": "Email",
+      "colDisplayName": "Display Name",
+      "colRole": "Role",
+      "colState": "State",
+      "colCreated": "Created",
+      "noUsers": "No users",
+      "createUser": "Create User",
+      "createUserTitle": "Create New User",
+      "createUserDescription": "Create a user as an administrator.",
+      "fieldName": "Username",
+      "fieldNamePlaceholder": "john-doe",
+      "fieldNameError": "Lowercase letters, numbers, hyphens, and underscores only (2-100 chars)",
+      "fieldEmail": "Email",
+      "fieldEmailError": "Please enter a valid email address",
+      "fieldPassword": "Password",
+      "fieldPasswordError": "Password must be at least 8 characters",
+      "fieldRole": "Role",
+      "roleUser": "User",
+      "roleSysadmin": "sysadmin",
+      "stateActive": "Active",
+      "createError": "Failed to create user"
     },
     "adminHealth": {
       "title": "Health Check",

@@ -148,7 +148,7 @@
     "signUp": "アカウント登録",
     "email": "メールアドレス",
     "password": "パスワード",
-    "name": "名前",
+    "name": "ユーザー名",
     "noAccount": "アカウントをお持ちでない方は",
     "hasAccount": "すでにアカウントをお持ちの方は",
     "signInDescription": "メールアドレスとパスワードでログイン",
@@ -158,10 +158,11 @@
     "signUpButton": "アカウント作成",
     "invalidEmail": "有効なメールアドレスを入力してください",
     "passwordMinLength": "パスワードは8文字以上です",
-    "nameMinLength": "名前は2文字以上です",
+    "nameError": "半角英数字、ハイフン、アンダースコアのみ（2〜100文字）",
     "invalidCredentials": "メールアドレスまたはパスワードが正しくありません",
     "signUpFailed": "登録に失敗しました。別のメールアドレスをお試しください。",
-    "namePlaceholder": "山田 太郎"
+    "namePlaceholder": "taro-yamada",
+    "registrationDisabled": "新規登録は現在無効です。管理者にお問い合わせください。"
   },
   "dashboard": {
     "title": "ダッシュボード",
@@ -181,6 +182,7 @@
       "adminJobs": "ジョブ管理",
       "adminHealth": "ヘルスチェック",
       "adminSearch": "インデックス管理",
+      "adminUsers": "ユーザー管理",
       "adminSite": "サイト管理"
     },
     "adminSearch": {
@@ -226,6 +228,35 @@
       "complete": "完了",
       "error": "エラー",
       "reprocess": "再処理"
+    },
+    "adminUsers": {
+      "title": "ユーザー管理",
+      "statsAll": "全ユーザー",
+      "statsActive": "アクティブ",
+      "statsSysadmin": "sysadmin",
+      "searchPlaceholder": "ユーザー名またはメールで検索...",
+      "colName": "ユーザー名",
+      "colEmail": "メール",
+      "colDisplayName": "表示名",
+      "colRole": "ロール",
+      "colState": "状態",
+      "colCreated": "作成日時",
+      "noUsers": "ユーザーがいません",
+      "createUser": "ユーザー作成",
+      "createUserTitle": "新規ユーザー作成",
+      "createUserDescription": "管理者としてユーザーを作成します。",
+      "fieldName": "ユーザー名",
+      "fieldNamePlaceholder": "taro-yamada",
+      "fieldNameError": "半角英数字、ハイフン、アンダースコアのみ（2〜100文字）",
+      "fieldEmail": "メールアドレス",
+      "fieldEmailError": "有効なメールアドレスを入力してください",
+      "fieldPassword": "パスワード",
+      "fieldPasswordError": "パスワードは8文字以上です",
+      "fieldRole": "ロール",
+      "roleUser": "ユーザー",
+      "roleSysadmin": "sysadmin",
+      "stateActive": "アクティブ",
+      "createError": "ユーザーの作成に失敗しました"
     },
     "adminHealth": {
       "title": "ヘルスチェック",

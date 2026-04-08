@@ -18,9 +18,14 @@ import {
   CardFooter,
 } from '@kukan/ui'
 import { signUp } from '@/lib/auth-client'
+import { useSiteSettings } from '@/hooks/use-site-settings'
 
 const signUpSchema = z.object({
-  name: z.string().min(2),
+  name: z
+    .string()
+    .min(2)
+    .max(100)
+    .regex(/^[a-z0-9_-]+$/),
   email: z.string().email(),
   password: z.string().min(8),
 })
@@ -30,6 +35,7 @@ type SignUpValues = z.infer<typeof signUpSchema>
 export default function SignUpPage() {
   const t = useTranslations('auth')
   const [error, setError] = useState<string | null>(null)
+  const { registrationEnabled } = useSiteSettings()
 
   const {
     register,
@@ -53,6 +59,36 @@ export default function SignUpPage() {
     window.location.href = '/dashboard'
   }
 
+  if (registrationEnabled === null) {
+    return null
+  }
+
+  if (!registrationEnabled) {
+    return (
+      <div className="flex min-h-[calc(100vh-var(--kukan-header-height)-64px)] items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle>{t('signUp')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground">{t('registrationDisabled')}</p>
+          </CardContent>
+          <CardFooter className="justify-center">
+            <p className="text-sm text-muted-foreground">
+              {t('hasAccount')}{' '}
+              <Link
+                href="/auth/sign-in"
+                className="text-primary underline-offset-4 hover:underline"
+              >
+                {t('signIn')}
+              </Link>
+            </p>
+          </CardFooter>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="flex min-h-[calc(100vh-var(--kukan-header-height)-64px)] items-center justify-center p-4">
       <Card className="w-full max-w-md">
@@ -73,11 +109,11 @@ export default function SignUpPage() {
                 id="name"
                 type="text"
                 placeholder={t('namePlaceholder')}
-                autoComplete="name"
+                autoComplete="username"
                 {...register('name')}
                 aria-invalid={!!errors.name}
               />
-              {errors.name && <p className="text-sm text-destructive">{t('nameMinLength')}</p>}
+              {errors.name && <p className="text-sm text-destructive">{t('nameError')}</p>}
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="email">{t('email')}</Label>

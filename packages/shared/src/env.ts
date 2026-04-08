@@ -52,6 +52,7 @@ export const envSchema = z.object({
   AI_TYPE: z.enum(['bedrock', 'openai', 'ollama', 'none']).default('none'),
 
   // Auth
+  REGISTRATION_ENABLED: z.coerce.boolean().default(true),
   BETTER_AUTH_SECRET: z.string().min(32),
   BETTER_AUTH_URL: z
     .string()

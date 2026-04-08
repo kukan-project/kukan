@@ -18,6 +18,7 @@ import {
   CardFooter,
 } from '@kukan/ui'
 import { signIn } from '@/lib/auth-client'
+import { useSiteSettings } from '@/hooks/use-site-settings'
 
 const signInSchema = z.object({
   email: z.string().email(),
@@ -29,6 +30,7 @@ type SignInValues = z.infer<typeof signInSchema>
 export default function SignInPage() {
   const t = useTranslations('auth')
   const [error, setError] = useState<string | null>(null)
+  const { registrationEnabled } = useSiteSettings()
 
   const {
     register,
@@ -95,14 +97,19 @@ export default function SignInPage() {
             </Button>
           </form>
         </CardContent>
-        <CardFooter className="justify-center">
-          <p className="text-sm text-muted-foreground">
-            {t('noAccount')}{' '}
-            <Link href="/auth/sign-up" className="text-primary underline-offset-4 hover:underline">
-              {t('signUp')}
-            </Link>
-          </p>
-        </CardFooter>
+        {registrationEnabled && (
+          <CardFooter className="justify-center">
+            <p className="text-sm text-muted-foreground">
+              {t('noAccount')}{' '}
+              <Link
+                href="/auth/sign-up"
+                className="text-primary underline-offset-4 hover:underline"
+              >
+                {t('signUp')}
+              </Link>
+            </p>
+          </CardFooter>
+        )}
       </Card>
     </div>
   )

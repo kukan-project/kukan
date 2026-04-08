@@ -9,6 +9,7 @@ import type { SearchAdapter } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import type { Env, Logger } from '@kukan/shared'
+import type { Auth } from './auth/auth'
 
 export interface AppContext {
   db: Database
@@ -18,6 +19,7 @@ export interface AppContext {
   dbSearch: SearchAdapter
   queue: QueueAdapter
   ai: AIAdapter
+  auth: Auth
   env: Env
   logger: Logger
   requestId: string
@@ -39,6 +41,7 @@ declare module 'hono' {
     dbSearch: SearchAdapter
     queue: QueueAdapter
     ai: AIAdapter
+    auth: Auth
     env: Env
     logger: Logger
     requestId: string

@@ -11,7 +11,7 @@ export const createUserSchema = z.object({
     .min(2)
     .max(100)
     .regex(
-      /^[a-z0-9-_]+$/,
+      /^[a-z0-9_-]+$/,
       'Name must contain only lowercase letters, numbers, hyphens, and underscores'
     ),
   email: z.string().email().max(200),

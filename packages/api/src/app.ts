@@ -58,6 +58,7 @@ export async function createApp() {
     c.set('dbSearch', adapters.dbSearch)
     c.set('queue', adapters.queue)
     c.set('ai', adapters.ai)
+    c.set('auth', auth)
     c.set('env', env)
     c.set('logger', baseLogger.child({ requestId: c.get('requestId') }))
     await next()
@@ -72,9 +73,26 @@ export async function createApp() {
     return c.json({ status: 'ok', timestamp: new Date().toISOString() })
   })
 
+  // Public site settings (unauthenticated)
+  app.get('/api/v1/site/settings', (c) => {
+    return c.json({ registrationEnabled: env.REGISTRATION_ENABLED })
+  })
+
   // Better Auth endpoints - handle all /api/auth/** routes
   // Must be registered BEFORE optionalAuth to avoid body stream consumption
   app.on(['GET', 'POST'], '/api/auth/*', (c) => {
+    // Block self-registration when disabled
+    if (!env.REGISTRATION_ENABLED && c.req.path.endsWith('/sign-up/email')) {
+      return c.json(
+        {
+          type: 'about:blank',
+          title: 'FORBIDDEN',
+          status: 403,
+          detail: 'Self-registration is disabled',
+        },
+        403
+      )
+    }
     return auth.handler(c.req.raw)
   })
 
