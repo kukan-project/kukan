@@ -6,6 +6,7 @@ export interface DashboardUser {
   id: string
   name: string
   email: string
+  displayName: string | null
   role?: string
   sysadmin: boolean
 }

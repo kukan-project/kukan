@@ -17,15 +17,12 @@ import {
   CardContent,
   CardFooter,
 } from '@kukan/ui'
+import { userNameSchema } from '@kukan/shared'
 import { signUp } from '@/lib/auth-client'
 import { useSiteSettings } from '@/hooks/use-site-settings'
 
 const signUpSchema = z.object({
-  name: z
-    .string()
-    .min(2)
-    .max(100)
-    .regex(/^[a-z0-9_-]+$/),
+  name: userNameSchema,
   email: z.string().email(),
   password: z.string().min(8),
 })

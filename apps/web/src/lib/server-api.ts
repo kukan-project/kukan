@@ -43,6 +43,7 @@ export const getCurrentUser = cache(async () => {
     id: string
     name: string
     email: string
+    displayName: string | null
     role?: string
     sysadmin: boolean
   }>

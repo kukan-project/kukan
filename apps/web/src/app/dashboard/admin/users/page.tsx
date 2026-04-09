@@ -7,7 +7,7 @@ import { useLocale, useTranslations } from 'next-intl'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { RefreshCw } from 'lucide-react'
+import { Pencil, RefreshCw, Trash2 } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -35,6 +35,8 @@ import { useUser } from '@/components/dashboard/user-provider'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { StatCard } from '@/components/dashboard/stat-card'
+import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
+import { userNameSchema, userRoleSchema, type UserRole } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
 import { formatDateTimeCompact } from '@/components/date-time'
@@ -56,17 +58,21 @@ interface UserItem {
 }
 
 const createUserSchema = z.object({
-  name: z
-    .string()
-    .min(2)
-    .max(100)
-    .regex(/^[a-z0-9_-]+$/),
+  name: userNameSchema,
   email: z.string().email().max(200),
   password: z.string().min(8),
-  role: z.enum(['user', 'sysadmin']),
+  role: userRoleSchema,
 })
 
 type CreateUserValues = z.infer<typeof createUserSchema>
+
+const editUserSchema = z.object({
+  name: userNameSchema,
+  displayName: z.string().max(200).optional(),
+  role: userRoleSchema,
+})
+
+type EditUserValues = z.infer<typeof editUserSchema>
 
 export default function AdminUsersPage() {
   const user = useUser()
@@ -152,6 +158,65 @@ export default function AdminUsersPage() {
     await Promise.all([fetchPage(0), fetchStats()])
   }
 
+  // Edit user dialog
+  const [editTarget, setEditTarget] = useState<UserItem | null>(null)
+  const [editError, setEditError] = useState<string | null>(null)
+
+  const editForm = useForm<EditUserValues>({
+    resolver: zodResolver(editUserSchema),
+  })
+
+  const openEditDialog = (u: UserItem) => {
+    setEditError(null)
+    editForm.reset({
+      name: u.name,
+      displayName: u.displayName ?? '',
+      role: (u.role ?? 'user') as UserRole,
+    })
+    setEditTarget(u)
+  }
+
+  const onEditUser = async (values: EditUserValues) => {
+    if (!editTarget) return
+    setEditError(null)
+    const res = await clientFetch(`/api/v1/admin/users/${editTarget.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: values.name,
+        displayName: values.displayName || undefined,
+        role: values.role,
+      }),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setEditError(data.detail || data.message || t('editError'))
+      return
+    }
+    setEditTarget(null)
+    await Promise.all([fetchPage(offsetRef.current), fetchStats()])
+  }
+
+  // Delete user dialog
+  const [deleteTarget, setDeleteTarget] = useState<UserItem | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  const onDeleteUser = async () => {
+    if (!deleteTarget) return
+    setIsDeleting(true)
+    setDeleteError(null)
+    const res = await clientFetch(`/api/v1/admin/users/${deleteTarget.id}`, { method: 'DELETE' })
+    setIsDeleting(false)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setDeleteError(data.detail || data.message || t('deleteError'))
+      return
+    }
+    setDeleteTarget(null)
+    await Promise.all([fetchPage(offsetRef.current), fetchStats()])
+  }
+
   const roleBadge = (role: string | null) => {
     if (role === 'sysadmin') return <Badge>{t('roleSysadmin')}</Badge>
     return <Badge variant="outline">{t('roleUser')}</Badge>
@@ -227,11 +292,12 @@ export default function AdminUsersPage() {
                 <TableHead className="w-[10%]">{t('colRole')}</TableHead>
                 <TableHead className="w-[10%]">{t('colState')}</TableHead>
                 <TableHead className="w-[120px]">{t('colCreated')}</TableHead>
+                <TableHead className="w-[100px]">{t('colActions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {items.map((u) => (
-                <TableRow key={u.id}>
+                <TableRow key={u.id} className={u.state !== 'active' ? 'opacity-50' : undefined}>
                   <TableCell className="truncate font-medium" title={u.name}>
                     {u.name}
                   </TableCell>
@@ -245,6 +311,33 @@ export default function AdminUsersPage() {
                   <TableCell>{stateBadge(u.state)}</TableCell>
                   <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                     {formatDateTimeCompact(u.createdAt, locale)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => openEditDialog(u)}
+                        title={t('editUser')}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      {u.id !== user.id && u.state === 'active' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={() => {
+                            setDeleteError(null)
+                            setDeleteTarget(u)
+                          }}
+                          title={t('deleteUser')}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -309,10 +402,7 @@ export default function AdminUsersPage() {
             </div>
             <div className="flex flex-col gap-2">
               <Label>{t('fieldRole')}</Label>
-              <Select
-                defaultValue="user"
-                onValueChange={(v) => setValue('role', v as 'user' | 'sysadmin')}
-              >
+              <Select defaultValue="user" onValueChange={(v) => setValue('role', v as UserRole)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -330,6 +420,73 @@ export default function AdminUsersPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Edit User Dialog */}
+      <Dialog open={!!editTarget} onOpenChange={(open) => !open && setEditTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('editUserTitle')}</DialogTitle>
+            <DialogDescription>{t('editUserDescription')}</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={editForm.handleSubmit(onEditUser)} className="flex flex-col gap-4">
+            {editError && (
+              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                {editError}
+              </div>
+            )}
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit-name">{t('fieldName')}</Label>
+              <Input
+                id="edit-name"
+                placeholder={t('fieldNamePlaceholder')}
+                {...editForm.register('name')}
+                aria-invalid={!!editForm.formState.errors.name}
+              />
+              {editForm.formState.errors.name && (
+                <p className="text-sm text-destructive">{t('fieldNameError')}</p>
+              )}
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit-displayName">{t('fieldDisplayName')}</Label>
+              <Input
+                id="edit-displayName"
+                placeholder={t('fieldDisplayNamePlaceholder')}
+                {...editForm.register('displayName')}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>{t('fieldRole')}</Label>
+              <Select
+                value={editForm.watch('role')}
+                onValueChange={(v) => editForm.setValue('role', v as UserRole)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">{t('roleUser')}</SelectItem>
+                  <SelectItem value="sysadmin">{t('roleSysadmin')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <Button type="submit" disabled={editForm.formState.isSubmitting}>
+                {editForm.formState.isSubmitting ? t('saving') : tc('save')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete User Dialog */}
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title={t('deleteUserTitle')}
+        description={deleteError || t('deleteUserWarning')}
+        onConfirm={onDeleteUser}
+        isDeleting={isDeleting}
+      />
     </div>
   )
 }

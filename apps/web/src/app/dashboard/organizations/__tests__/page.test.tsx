@@ -9,7 +9,13 @@ vi.mock('@/lib/client-api', () => ({
 
 // Mock useUser — sysadmin by default
 vi.mock('@/components/dashboard/user-provider', () => ({
-  useUser: () => ({ id: 'u1', name: 'Admin', email: 'admin@test.com', sysadmin: true }),
+  useUser: () => ({
+    id: 'u1',
+    name: 'Admin',
+    email: 'admin@test.com',
+    displayName: null,
+    sysadmin: true,
+  }),
 }))
 
 function mockFetchResponse(data: unknown) {

@@ -79,13 +79,20 @@ const defaultTestUser = {
   id: '00000000-0000-0000-0000-000000000001',
   email: 'test-admin@example.com',
   name: 'test-admin',
+  displayName: null,
   sysadmin: true,
 }
 
 interface TestAppOverrides {
   search?: SearchAdapter
   /** Override the authenticated user. Pass `null` for unauthenticated. */
-  user?: { id: string; email: string; name: string; sysadmin: boolean } | null
+  user?: {
+    id: string
+    email: string
+    name: string
+    displayName?: string | null
+    sysadmin: boolean
+  } | null
   /** Override the auth instance (for testing admin user creation). */
   auth?: Auth
 }
@@ -109,7 +116,7 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
     c.set('env', testEnv)
     c.set('logger', testLogger)
     c.set('requestId', 'test-request-id')
-    if (testUser) c.set('user', testUser)
+    if (testUser) c.set('user', { displayName: null, ...testUser })
     await next()
   })
 

@@ -28,6 +28,7 @@ export interface AppContext {
     id: string
     email: string
     name: string
+    displayName: string | null
     sysadmin: boolean
   }
 }
@@ -49,6 +50,7 @@ declare module 'hono' {
       id: string
       email: string
       name: string
+      displayName: string | null
       sysadmin: boolean
     }
   }

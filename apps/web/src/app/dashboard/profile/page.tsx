@@ -22,6 +22,10 @@ export default function ProfilePage() {
             <p>{user.name}</p>
           </div>
           <div className="grid gap-1">
+            <Label className="text-muted-foreground">{t('displayName')}</Label>
+            <p>{user.displayName || '-'}</p>
+          </div>
+          <div className="grid gap-1">
             <Label className="text-muted-foreground">{t('email')}</Label>
             <p>{user.email}</p>
           </div>

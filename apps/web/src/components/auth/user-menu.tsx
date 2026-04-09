@@ -21,6 +21,7 @@ interface UserMenuProps {
   user: {
     name: string
     email: string
+    displayName?: string | null
   }
 }
 
@@ -28,8 +29,9 @@ export function UserMenu({ user }: UserMenuProps) {
   const router = useRouter()
   const t = useTranslations('common')
 
-  const initials = user.name
-    .split(' ')
+  const displayLabel = user.displayName || user.name
+  const initials = displayLabel
+    .split(/[\s-_]+/)
     .map((n) => n[0])
     .join('')
     .toUpperCase()
@@ -53,7 +55,7 @@ export function UserMenu({ user }: UserMenuProps) {
       <DropdownMenuContent className="w-56" align="end">
         <DropdownMenuLabel>
           <div className="flex flex-col gap-1">
-            <p className="text-sm font-medium leading-none">{user.name}</p>
+            <p className="text-sm font-medium leading-none">{displayLabel}</p>
             <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
           </div>
         </DropdownMenuLabel>

@@ -6,7 +6,7 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
-import { eq, and, inArray, isNull, ilike, or, sql, desc } from 'drizzle-orm'
+import { eq, ne, and, inArray, isNull, ilike, or, sql, desc } from 'drizzle-orm'
 import {
   packageTable,
   resource,
@@ -18,8 +18,17 @@ import {
   tag,
   vocabulary,
   user,
+  session,
+  apiToken,
 } from '@kukan/db'
-import { ForbiddenError, RESOURCE_PREFIX, PREVIEW_PREFIX, escapeLike } from '@kukan/shared'
+import {
+  ForbiddenError,
+  RESOURCE_PREFIX,
+  PREVIEW_PREFIX,
+  escapeLike,
+  userNameSchema,
+  userRoleSchema,
+} from '@kukan/shared'
 import type { DatasetDoc } from '@kukan/search-adapter'
 import type { AppContext } from '../context'
 
@@ -473,14 +482,10 @@ adminRouter.post(
   zValidator(
     'json',
     z.object({
-      name: z
-        .string()
-        .min(2)
-        .max(100)
-        .regex(/^[a-z0-9_-]+$/),
+      name: userNameSchema,
       email: z.string().email().max(200),
       password: z.string().min(8),
-      role: z.enum(['user', 'sysadmin']).default('user'),
+      role: userRoleSchema.default('user'),
     })
   ),
   async (c) => {
@@ -509,3 +514,137 @@ adminRouter.post(
     return c.json(result, 201)
   }
 )
+
+// PATCH /api/v1/admin/users/:userId — Update user (name, displayName, role)
+adminRouter.patch(
+  '/users/:userId',
+  zValidator(
+    'json',
+    z.object({
+      name: userNameSchema.optional(),
+      displayName: z.string().max(200).optional(),
+      role: userRoleSchema.optional(),
+    })
+  ),
+  async (c) => {
+    const currentUser = c.get('user')
+    if (!currentUser?.sysadmin) throw new ForbiddenError('Only sysadmin can update users')
+
+    const userId = c.req.param('userId')
+    const body = c.req.valid('json')
+
+    // Prevent self-demotion (sysadmin lockout)
+    if (userId === currentUser.id && body.role === 'user') {
+      return c.json(
+        {
+          type: 'about:blank',
+          title: 'BAD_REQUEST',
+          status: 400,
+          detail: 'Cannot demote yourself',
+        },
+        400
+      )
+    }
+
+    const db = c.get('db')
+
+    // Check name uniqueness
+    if (body.name) {
+      const [existing] = await db
+        .select({ id: user.id })
+        .from(user)
+        .where(and(eq(user.name, body.name), ne(user.id, userId)))
+        .limit(1)
+      if (existing) {
+        return c.json(
+          {
+            type: 'about:blank',
+            title: 'CONFLICT',
+            status: 409,
+            detail: 'Username already taken',
+          },
+          409
+        )
+      }
+    }
+
+    const updates: Partial<Pick<typeof user.$inferInsert, 'name' | 'displayName' | 'role'>> = {}
+    if (body.name !== undefined) updates.name = body.name
+    if (body.displayName !== undefined) updates.displayName = body.displayName
+    if (body.role !== undefined) updates.role = body.role
+
+    if (Object.keys(updates).length === 0) {
+      return c.json(
+        { type: 'about:blank', title: 'BAD_REQUEST', status: 400, detail: 'No fields to update' },
+        400
+      )
+    }
+
+    const [updated] = await db
+      .update(user)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(user.id, userId))
+      .returning({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        displayName: user.displayName,
+        role: user.role,
+        state: user.state,
+      })
+
+    if (!updated) {
+      return c.json(
+        { type: 'about:blank', title: 'Not Found', status: 404, detail: 'User not found' },
+        404
+      )
+    }
+
+    return c.json(updated)
+  }
+)
+
+// DELETE /api/v1/admin/users/:userId — Soft-delete user
+adminRouter.delete('/users/:userId', async (c) => {
+  const currentUser = c.get('user')
+  if (!currentUser?.sysadmin) throw new ForbiddenError('Only sysadmin can delete users')
+
+  const userId = c.req.param('userId')
+
+  // Prevent self-deletion
+  if (userId === currentUser.id) {
+    return c.json(
+      {
+        type: 'about:blank',
+        title: 'BAD_REQUEST',
+        status: 400,
+        detail: 'Cannot delete yourself',
+      },
+      400
+    )
+  }
+
+  const db = c.get('db')
+
+  // 1. Soft-delete: set state to 'deleted'
+  const [deleted] = await db
+    .update(user)
+    .set({ state: 'deleted', updatedAt: new Date() })
+    .where(eq(user.id, userId))
+    .returning({ id: user.id })
+
+  if (!deleted) {
+    return c.json(
+      { type: 'about:blank', title: 'Not Found', status: 404, detail: 'User not found' },
+      404
+    )
+  }
+
+  // 2. Revoke all sessions and API tokens (immediate logout)
+  await Promise.all([
+    db.delete(session).where(eq(session.userId, userId)),
+    db.delete(apiToken).where(eq(apiToken.userId, userId)),
+  ])
+
+  return c.json({ success: true })
+})

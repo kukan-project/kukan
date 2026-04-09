@@ -15,9 +15,9 @@ export const usersRouter = new Hono<{ Variables: AppContext }>()
 
 // GET /api/v1/users/me - Get current user info
 usersRouter.get('/me', async (c) => {
-  const user = c.get('user')
+  const currentUser = c.get('user')
 
-  if (!user) {
+  if (!currentUser) {
     return c.json(
       {
         type: 'about:blank',
@@ -29,7 +29,28 @@ usersRouter.get('/me', async (c) => {
     )
   }
 
-  return c.json(user)
+  // Fetch from DB to include displayName and other fields not in session
+  const db = c.get('db')
+  const [row] = await db
+    .select({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      displayName: user.displayName,
+      sysadmin: sql<boolean>`(${user.role} = 'sysadmin')`.as('sysadmin'),
+    })
+    .from(user)
+    .where(eq(user.id, currentUser.id))
+    .limit(1)
+
+  if (!row) {
+    return c.json(
+      { type: 'about:blank', title: 'Not Found', status: 404, detail: 'User not found' },
+      404
+    )
+  }
+
+  return c.json(row)
 })
 
 // GET /api/v1/users/me/organizations - Get organizations the current user belongs to

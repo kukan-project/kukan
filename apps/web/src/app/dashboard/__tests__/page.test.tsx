@@ -12,6 +12,7 @@ const mockUser: DashboardUser = {
   id: 'u1',
   name: 'Test User',
   email: 'test@example.com',
+  displayName: null,
   sysadmin: false,
 }
 

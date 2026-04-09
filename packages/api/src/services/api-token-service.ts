@@ -105,7 +105,9 @@ export class ApiTokenService {
         expiresAt: apiToken.expiresAt,
         email: user.email,
         name: user.name,
+        displayName: user.displayName,
         role: user.role,
+        state: user.state,
       })
       .from(apiToken)
       .innerJoin(user, eq(apiToken.userId, user.id))
@@ -113,6 +115,11 @@ export class ApiTokenService {
       .limit(1)
 
     if (!result) {
+      return null
+    }
+
+    // Block deleted/inactive users
+    if (result.state !== 'active') {
       return null
     }
 
@@ -131,6 +138,7 @@ export class ApiTokenService {
       id: result.userId,
       email: result.email,
       name: result.name,
+      displayName: result.displayName,
       sysadmin: result.role === 'sysadmin',
     }
   }

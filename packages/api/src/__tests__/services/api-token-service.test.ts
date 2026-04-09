@@ -123,7 +123,9 @@ describe('ApiTokenService', () => {
           expiresAt: new Date('2020-01-01'), // expired
           email: 'test@example.com',
           name: 'Test User',
+          displayName: null,
           role: 'user',
+          state: 'active',
         },
       ])
 
@@ -143,7 +145,9 @@ describe('ApiTokenService', () => {
           expiresAt: future,
           email: 'test@example.com',
           name: 'Test User',
+          displayName: null,
           role: 'user',
+          state: 'active',
         },
       ])
       addResult([]) // update lastUsed
@@ -155,6 +159,7 @@ describe('ApiTokenService', () => {
         id: 'user-1',
         email: 'test@example.com',
         name: 'Test User',
+        displayName: null,
         sysadmin: false,
       })
     })
@@ -168,7 +173,9 @@ describe('ApiTokenService', () => {
           expiresAt: null,
           email: 'admin@example.com',
           name: 'Admin',
+          displayName: null,
           role: 'sysadmin',
+          state: 'active',
         },
       ])
       addResult([]) // update lastUsed
@@ -180,8 +187,30 @@ describe('ApiTokenService', () => {
         id: 'user-1',
         email: 'admin@example.com',
         name: 'Admin',
+        displayName: null,
         sysadmin: true,
       })
+    })
+
+    it('should return null when user state is deleted', async () => {
+      const { db, addResult } = createMockDb()
+      addResult([
+        {
+          tokenId: 'tok-1',
+          userId: 'user-1',
+          expiresAt: null,
+          email: 'deleted@example.com',
+          name: 'Deleted User',
+          displayName: null,
+          role: 'user',
+          state: 'deleted',
+        },
+      ])
+
+      const service = new ApiTokenService(db)
+      const result = await service.validate('kukan_sometoken')
+
+      expect(result).toBeNull()
     })
 
     it('should set sysadmin flag based on user role', async () => {
@@ -193,7 +222,9 @@ describe('ApiTokenService', () => {
           expiresAt: null,
           email: 'a@b.com',
           name: 'SA',
+          displayName: null,
           role: 'sysadmin',
+          state: 'active',
         },
       ])
       addResult([])
