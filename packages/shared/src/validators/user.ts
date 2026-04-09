@@ -5,14 +5,14 @@
 
 import { z } from 'zod'
 
-/** Reusable slug-style name schema (lowercase alphanumeric, hyphens, underscores) */
+/** Reusable slug-style name schema (lowercase alphanumeric, hyphens, underscores, periods) */
 export const userNameSchema = z
   .string()
   .min(2)
   .max(100)
   .regex(
-    /^[a-z0-9_-]+$/,
-    'Name must contain only lowercase letters, numbers, hyphens, and underscores'
+    /^[a-z0-9._-]+$/,
+    'Name must contain only lowercase letters, numbers, hyphens, underscores, and periods'
   )
 
 /** User roles */

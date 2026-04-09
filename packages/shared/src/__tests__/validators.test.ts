@@ -23,8 +23,12 @@ describe('createUserSchema', () => {
 
     it('should reject special characters', () => {
       expect(valid('user@name').success).toBe(false)
-      expect(valid('user.name').success).toBe(false)
       expect(valid('user/name').success).toBe(false)
+    })
+
+    it('should allow periods', () => {
+      expect(valid('user.name').success).toBe(true)
+      expect(valid('john.doe').success).toBe(true)
     })
 
     it('should reject non-ASCII characters', () => {

@@ -11,8 +11,8 @@ export const createPackageSchema = z.object({
     .min(2)
     .max(100)
     .regex(
-      /^[a-z0-9-_]+$/,
-      'Name must contain only lowercase letters, numbers, hyphens, and underscores'
+      /^[a-z0-9._-]+$/,
+      'Name must contain only lowercase letters, numbers, hyphens, underscores, and periods'
     ),
   title: z.string().optional(),
   notes: z.string().optional(),
