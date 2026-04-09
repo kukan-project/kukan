@@ -16,7 +16,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@hono/node-server": "^1.19.12",
+    "@hono/node-server": "^1.19.13",
     "@hono/zod-validator": "0.7.6",
     "@kukan/ai-adapter": "workspace:*",
     "@kukan/db": "workspace:*",
@@ -27,7 +27,7 @@
     "better-auth": "^1.5.6",
     "dotenv": "^16.6.1",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.12.9",
+    "hono": "^4.12.12",
     "pg": "^8.20.0",
     "zod": "3.25.67"
   },
