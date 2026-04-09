@@ -34,7 +34,7 @@
   },
   "devDependencies": {
     "@types/encoding-japanese": "^2.2.1",
-    "@types/node": "^22.19.15",
+    "@types/node": "^24.12.2",
     "@types/papaparse": "^5.5.2",
     "@types/pg": "^8.20.0",
     "@types/yauzl": "^2.10.3",
