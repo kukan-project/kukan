@@ -109,7 +109,7 @@ export async function checkBatch(
       const healthMeta: Record<string, unknown> = {}
       if (result.etag !== null) healthMeta.healthEtag = result.etag
       if (result.lastModified !== null) healthMeta.healthLastModified = result.lastModified
-      if (result.errorMessage !== null) healthMeta.healthError = result.errorMessage
+      healthMeta.healthError = result.errorMessage
       if (result.httpStatus !== null) healthMeta.healthHttpStatus = result.httpStatus
 
       const hasHeaders = result.etag !== null || result.lastModified !== null
