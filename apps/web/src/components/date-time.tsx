@@ -41,3 +41,17 @@ export function DateTime({ value }: { value: string }) {
 
   return <time dateTime={value}>{formatted}</time>
 }
+
+export function CompactDate({ value }: { value: string }) {
+  const locale = useLocale()
+  const d = new Date(value)
+  if (isNaN(d.getTime())) return null
+
+  const formatted = d.toLocaleDateString(locale, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+
+  return <time dateTime={value}>{formatted}</time>
+}

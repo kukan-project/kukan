@@ -212,7 +212,7 @@ export default function DatasetsManagePage() {
           </Select>
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <Label className="text-xs text-muted-foreground">{tc('name')}</Label>
+          <Label className="text-xs text-muted-foreground">{tc('urlIdentifier')}</Label>
           <Input
             value={nameFilter}
             onChange={(e) => setNameFilter(e.target.value)}
@@ -245,7 +245,7 @@ export default function DatasetsManagePage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{tc('name')}</TableHead>
+                <TableHead>{tc('urlIdentifier')}</TableHead>
                 <TableHead colSpan={2}>{tc('title')}</TableHead>
                 <TableHead className="whitespace-nowrap">{t('visibility')}</TableHead>
                 <TableHead className="whitespace-nowrap">{tc('format')}</TableHead>

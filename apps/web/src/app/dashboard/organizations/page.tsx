@@ -52,7 +52,7 @@ export default function OrganizationsManagePage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{tc('name')}</TableHead>
+                <TableHead>{tc('urlIdentifier')}</TableHead>
                 <TableHead>{tc('title')}</TableHead>
                 <TableHead className="text-right">{tc('datasets')}</TableHead>
                 <TableHead className="w-[80px]">{tc('actions')}</TableHead>

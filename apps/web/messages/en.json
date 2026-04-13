@@ -46,8 +46,9 @@
     "members": "Members",
     "failedToCreate": "Failed to create",
     "failedToAdd": "Failed to add",
-    "nameRequired": "Name (required)",
-    "nameHelp": "Alphanumeric characters, hyphens, and underscores only (2-100 characters)",
+    "urlIdentifier": "URL Identifier",
+    "nameRequired": "URL Identifier (required)",
+    "nameHelp": "Used in URLs. Alphanumeric characters, hyphens, and underscores only (2-100 characters)",
     "imageUrl": "Image URL",
     "basicInfo": "Basic Information",
     "fetchError": "Failed to load data",
@@ -79,8 +80,8 @@
       "updated_asc": "Last Updated (Oldest)",
       "created_desc": "Date Created (Newest)",
       "created_asc": "Date Created (Oldest)",
-      "name_asc": "Name (A→Z)",
-      "name_desc": "Name (Z→A)"
+      "name_asc": "URL Identifier (A→Z)",
+      "name_desc": "URL Identifier (Z→A)"
     }
   },
   "dataset": {

@@ -2,10 +2,11 @@
 
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
-import { Building2, FileText, FolderOpen, Tag } from 'lucide-react'
+import { Building2, Calendar, FileText, FolderOpen, Tag } from 'lucide-react'
 import { Badge, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
 import { FormatBadge } from './format-badge'
 import { FormatBadges } from './format-badges'
+import { CompactDate } from './date-time'
 import { parseGroups } from '@/lib/parse-groups'
 import type { MatchedResource } from '@kukan/search-adapter'
 
@@ -20,6 +21,8 @@ export interface DatasetCardItem {
   orgTitle?: string | null
   tags?: string
   groups?: string
+  created?: string
+  updated?: string
   matchedResources?: MatchedResource[]
 }
 
@@ -31,11 +34,13 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
       <Card className="transition-colors hover:bg-accent/50">
         <CardHeader>
           <div className="flex items-start justify-between gap-2">
-            <CardTitle className="text-lg">
-              <Link href={datasetHref} className="after:absolute after:inset-0 after:content-['']">
-                {pkg.title || pkg.name}
-              </Link>
-            </CardTitle>
+            <div>
+              <CardTitle className="text-lg">
+                <Link href={datasetHref} className="after:absolute after:inset-0 after:content-['']">
+                  {pkg.title || pkg.name}
+                </Link>
+              </CardTitle>
+            </div>
             <div className="flex shrink-0 items-center gap-2">
               {typeof pkg.resourceCount === 'number' && (
                 <span className="text-xs text-muted-foreground">
@@ -45,6 +50,30 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
               <FormatBadges formats={pkg.formats} />
             </div>
           </div>
+          {(pkg.title || pkg.updated || pkg.created) && (
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              {pkg.title ? (
+                <span className="font-mono">{pkg.name}</span>
+              ) : (
+                <span />
+              )}
+              {(pkg.updated || pkg.created) && (
+                <span className="flex shrink-0 items-center gap-3">
+                  <Calendar className="h-3 w-3" />
+                  {pkg.updated && (
+                    <span>
+                      {t('updatedShort')}: <CompactDate value={pkg.updated} />
+                    </span>
+                  )}
+                  {pkg.created && (
+                    <span>
+                      {t('createdShort')}: <CompactDate value={pkg.created} />
+                    </span>
+                  )}
+                </span>
+              )}
+            </div>
+          )}
           {(pkg.orgName || pkg.groups || pkg.tags) && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
               {pkg.orgName && (

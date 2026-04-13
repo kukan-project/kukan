@@ -46,8 +46,9 @@
     "members": "メンバー",
     "failedToCreate": "作成に失敗しました",
     "failedToAdd": "追加に失敗しました",
-    "nameRequired": "名前（必須）",
-    "nameHelp": "半角英数字、ハイフン、アンダースコアのみ（2〜100文字）",
+    "urlIdentifier": "URL識別子",
+    "nameRequired": "URL識別子（必須）",
+    "nameHelp": "URLに使用される識別子。半角英数字、ハイフン、アンダースコアのみ（2〜100文字）",
     "imageUrl": "画像URL",
     "basicInfo": "基本情報",
     "fetchError": "データの読み込みに失敗しました",
@@ -79,8 +80,8 @@
       "updated_asc": "更新日（古い順）",
       "created_desc": "作成日（新しい順）",
       "created_asc": "作成日（古い順）",
-      "name_asc": "名前（A→Z）",
-      "name_desc": "名前（Z→A）"
+      "name_asc": "URL識別子（A→Z）",
+      "name_desc": "URL識別子（Z→A）"
     }
   },
   "dataset": {
