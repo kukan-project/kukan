@@ -71,7 +71,17 @@
     "filterByTag": "Filter by tag",
     "filterByFormat": "Filter by format",
     "filterByLicense": "Filter by license",
-    "clear": "Clear"
+    "clear": "Clear",
+    "sort": {
+      "label": "Sort by",
+      "relevance": "Relevance",
+      "updated_desc": "Last Updated (Newest)",
+      "updated_asc": "Last Updated (Oldest)",
+      "created_desc": "Date Created (Newest)",
+      "created_asc": "Date Created (Oldest)",
+      "name_asc": "Name (A→Z)",
+      "name_desc": "Name (Z→A)"
+    }
   },
   "dataset": {
     "title": "Datasets",

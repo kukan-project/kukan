@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import type { PaginatedResult, FacetCounts } from '@kukan/shared'
 import { getTranslations } from 'next-intl/server'
 import { Separator } from '@kukan/ui'
@@ -6,6 +7,7 @@ import { toArray } from '@/lib/query'
 import { SearchForm } from '@/components/search-form'
 import { DatasetCard, type DatasetCardItem } from '@/components/dataset-card'
 import { DatasetFilters } from '@/components/search/dataset-filters'
+import { DatasetSort } from '@/components/search/dataset-sort'
 import { PaginationNav } from '@/components/pagination-nav'
 
 interface Props {
@@ -18,6 +20,8 @@ interface Props {
     tags?: string | string[]
     res_format?: string | string[]
     license_id?: string | string[]
+    sort_by?: string
+    sort_order?: string
   }>
 }
 
@@ -39,14 +43,18 @@ export default async function DatasetsPage({ searchParams }: Props) {
   const currentTags = toArray(params.tags)
   const currentFormats = toArray(params.res_format)
   const currentLicenses = toArray(params.license_id)
+  const sortBy = params.sort_by
+  const sortOrder = params.sort_order
 
-  // Filter params as arrays (repeated params for URL, hidden fields, and API query)
-  const filterParams: Record<string, string[] | undefined> = {
+  // Shared params for URL, hidden fields, filter links, and pagination
+  const filterParams: Record<string, string | string[] | undefined> = {
     organization: currentOrgs.length ? currentOrgs : undefined,
     groups: currentGroups.length ? currentGroups : undefined,
     tags: currentTags.length ? currentTags : undefined,
     res_format: currentFormats.length ? currentFormats : undefined,
     license_id: currentLicenses.length ? currentLicenses : undefined,
+    sort_by: sortBy,
+    sort_order: sortOrder,
   }
 
   const query = new URLSearchParams()
@@ -57,6 +65,8 @@ export default async function DatasetsPage({ searchParams }: Props) {
     if (values) for (const v of values) query.append(key, v)
   }
   query.set('include_facets', 'true')
+  if (sortBy) query.set('sort_by', sortBy)
+  if (sortOrder) query.set('sort_order', sortOrder)
 
   let data: PaginatedResult<DatasetCardItem> & { facets?: FacetCounts } = {
     items: [],
@@ -81,9 +91,14 @@ export default async function DatasetsPage({ searchParams }: Props) {
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold tracking-tight">{t('dataset.title')}</h1>
-          <p className="text-sm text-muted-foreground">
-            {t('common.count', { count: data.total })}
-          </p>
+          <div className="flex items-center gap-4">
+            <p className="text-sm text-muted-foreground">
+              {t('common.count', { count: data.total })}
+            </p>
+            <Suspense>
+              <DatasetSort />
+            </Suspense>
+          </div>
         </div>
 
         <SearchForm action="/dataset" defaultValue={q} hiddenParams={filterParams} />
@@ -101,6 +116,8 @@ export default async function DatasetsPage({ searchParams }: Props) {
               currentFormats={currentFormats}
               currentLicenses={currentLicenses}
               facets={facets}
+              sortBy={sortBy}
+              sortOrder={sortOrder}
             />
           </aside>
 

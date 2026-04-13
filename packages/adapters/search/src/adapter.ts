@@ -62,6 +62,12 @@ export interface SearchQuery {
   filters?: SearchFilters
   /** Request aggregation-based facet counts */
   facets?: boolean
+  /** Sort field. When omitted, adapters use their default
+   *  (OpenSearch: _score+updated for queries, updated for browse;
+   *   PostgreSQL: updated DESC). */
+  sortBy?: 'updated' | 'created' | 'name'
+  /** Sort direction (default: desc) */
+  sortOrder?: 'asc' | 'desc'
 }
 
 /** Query parameters for resource count aggregation (no pagination needed) */

@@ -13,6 +13,8 @@ interface DatasetFiltersProps {
   currentFormats: string[]
   currentLicenses: string[]
   facets: FacetCounts
+  sortBy?: string
+  sortOrder?: string
 }
 
 type FilterParams = Record<string, string | string[] | undefined>
@@ -118,6 +120,8 @@ export function DatasetFilters({
   currentFormats,
   currentLicenses,
   facets,
+  sortBy,
+  sortOrder,
 }: DatasetFiltersProps) {
   const t = useTranslations('search')
   const tl = useTranslations('license')
@@ -129,6 +133,8 @@ export function DatasetFilters({
     tags: currentTags.length ? currentTags : undefined,
     res_format: currentFormats.length ? currentFormats : undefined,
     license_id: currentLicenses.length ? currentLicenses : undefined,
+    ...(sortBy && { sort_by: sortBy }),
+    ...(sortOrder && { sort_order: sortOrder }),
   }
 
   return (

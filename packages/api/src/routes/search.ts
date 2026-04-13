@@ -16,6 +16,8 @@ searchRouter.get('/', async (c) => {
   const q = c.req.query('q')
   const offset = parseInt(c.req.query('offset') || '0', 10)
   const limit = parseInt(c.req.query('limit') || '20', 10)
+  const sortByParam = c.req.query('sort_by')
+  const sortOrderParam = c.req.query('sort_order')
   const organization = c.req.queries('organization')
   const tags = c.req.queries('tags')
 
@@ -57,6 +59,18 @@ searchRouter.get('/', async (c) => {
     )
   }
 
+  // Validate sort parameters
+  const validSortBy = ['updated', 'created', 'name'] as const
+  const validSortOrder = ['asc', 'desc'] as const
+  const sortBy =
+    sortByParam && validSortBy.includes(sortByParam as (typeof validSortBy)[number])
+      ? (sortByParam as (typeof validSortBy)[number])
+      : undefined
+  const sortOrder =
+    sortOrderParam && validSortOrder.includes(sortOrderParam as (typeof validSortOrder)[number])
+      ? (sortOrderParam as (typeof validSortOrder)[number])
+      : undefined
+
   const db = c.get('db')
   const user = c.get('user')
   const searchAdapter = c.get('search')
@@ -76,6 +90,8 @@ searchRouter.get('/', async (c) => {
     offset,
     limit,
     filters,
+    sortBy,
+    sortOrder,
   })
 
   return c.json(result)

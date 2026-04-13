@@ -112,6 +112,18 @@ export class OpenSearchAdapter implements SearchAdapter {
     })
   }
 
+  /** Build OpenSearch sort clause from query */
+  private buildSort(query: SearchQuery): (string | Record<string, unknown>)[] {
+    if (query.sortBy) {
+      const order = query.sortOrder ?? 'desc'
+      return [{ [query.sortBy]: { order } }]
+    }
+    // Default: relevance (_score) + updated DESC when searching, updated DESC when browsing
+    return query.q?.trim()
+      ? ['_score', { updated: { order: 'desc' as const } }]
+      : [{ updated: { order: 'desc' as const } }]
+  }
+
   /** Build OpenSearch filter clauses from SearchFilters */
   private buildFilterClauses(filters?: SearchFilters): Record<string, unknown>[] {
     const clauses: Record<string, unknown>[] = []
@@ -240,9 +252,7 @@ export class OpenSearchAdapter implements SearchAdapter {
             ...(filter.length > 0 && { filter }),
           },
         },
-        sort: query.q?.trim()
-          ? ['_score', { updated: { order: 'desc' as const } }]
-          : [{ updated: { order: 'desc' as const } }],
+        sort: this.buildSort(query),
         ...(aggs && { aggs }),
       },
     }

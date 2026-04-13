@@ -26,7 +26,7 @@ import {
   group,
   packageGroup,
 } from '@kukan/db'
-import { ilike, eq, and, or, sql, inArray, desc } from 'drizzle-orm'
+import { ilike, eq, and, or, sql, inArray, asc, desc } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 
 export class PostgresSearchAdapter implements SearchAdapter {
@@ -162,6 +162,18 @@ export class PostgresSearchAdapter implements SearchAdapter {
     return conditions
   }
 
+  /** Build ORDER BY clause from query sort params */
+  private buildOrderBy(query: SearchQuery) {
+    if (!query.sortBy) return desc(packageTable.updated)
+    const col =
+      query.sortBy === 'name'
+        ? packageTable.name
+        : query.sortBy === 'created'
+          ? packageTable.created
+          : packageTable.updated
+    return query.sortOrder === 'asc' ? asc(col) : desc(col)
+  }
+
   async search(query: SearchQuery): Promise<SearchResult> {
     const offset = query.offset ?? 0
     const limit = query.limit ?? 20
@@ -190,7 +202,7 @@ export class PostgresSearchAdapter implements SearchAdapter {
       .from(packageTable)
       .leftJoin(organization, eq(packageTable.ownerOrg, organization.id))
       .where(where!)
-      .orderBy(desc(packageTable.updated))
+      .orderBy(this.buildOrderBy(query))
       .limit(limit)
       .offset(offset)
 

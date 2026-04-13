@@ -71,7 +71,17 @@
     "filterByTag": "タグで絞り込み",
     "filterByFormat": "フォーマットで絞り込み",
     "filterByLicense": "ライセンスで絞り込み",
-    "clear": "クリア"
+    "clear": "クリア",
+    "sort": {
+      "label": "並べ替え",
+      "relevance": "関連度順",
+      "updated_desc": "更新日（新しい順）",
+      "updated_asc": "更新日（古い順）",
+      "created_desc": "作成日（新しい順）",
+      "created_asc": "作成日（古い順）",
+      "name_asc": "名前（A→Z）",
+      "name_desc": "名前（Z→A）"
+    }
   },
   "dataset": {
     "title": "データセット",

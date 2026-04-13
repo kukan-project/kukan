@@ -60,10 +60,13 @@ packagesRouter.get(
         .string()
         .optional()
         .transform((val) => val === 'true'),
+      sort_by: z.enum(['updated', 'created', 'name']).optional(),
+      sort_order: z.enum(['asc', 'desc']).optional(),
     })
   ),
   async (c) => {
-    const { my_org, tags, res_format, include_facets, state, ...rest } = c.req.valid('query')
+    const { my_org, tags, res_format, include_facets, state, sort_by, sort_order, ...rest } =
+      c.req.valid('query')
     const db = c.get('db')
     const service = new PackageService(db)
     const user = c.get('user')
@@ -104,6 +107,8 @@ packagesRouter.get(
       limit: rest.limit,
       filters,
       facets: include_facets,
+      sortBy: sort_by,
+      sortOrder: sort_order,
     })
 
     // Build matchedResources lookup from search results
