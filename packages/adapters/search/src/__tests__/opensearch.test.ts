@@ -444,6 +444,56 @@ describe('OpenSearchAdapter', () => {
       expect(callArgs.body.aggs).toBeUndefined()
       expect(result.facets).toBeUndefined()
     })
+
+    describe('sort', () => {
+      beforeEach(() => {
+        mockClient.search.mockResolvedValue({
+          body: { hits: { total: { value: 0 }, hits: [] } },
+        })
+      })
+
+      it('should sort by updated DESC when browsing without explicit sort', async () => {
+        await adapter.search({ q: '' })
+
+        const callArgs = mockClient.search.mock.calls[0][0]
+        expect(callArgs.body.sort).toEqual([{ updated: { order: 'desc' } }])
+      })
+
+      it('should sort by _score then updated DESC when searching without explicit sort', async () => {
+        await adapter.search({ q: 'test query' })
+
+        const callArgs = mockClient.search.mock.calls[0][0]
+        expect(callArgs.body.sort).toEqual(['_score', { updated: { order: 'desc' } }])
+      })
+
+      it('should sort by specified field when sortBy is set', async () => {
+        await adapter.search({ q: 'test', sortBy: 'created', sortOrder: 'asc' })
+
+        const callArgs = mockClient.search.mock.calls[0][0]
+        expect(callArgs.body.sort).toEqual([{ created: { order: 'asc' } }])
+      })
+
+      it('should sort by name ascending', async () => {
+        await adapter.search({ q: '', sortBy: 'name', sortOrder: 'asc' })
+
+        const callArgs = mockClient.search.mock.calls[0][0]
+        expect(callArgs.body.sort).toEqual([{ name: { order: 'asc' } }])
+      })
+
+      it('should ignore _score when explicit sort is set even with query', async () => {
+        await adapter.search({ q: 'test query', sortBy: 'updated', sortOrder: 'desc' })
+
+        const callArgs = mockClient.search.mock.calls[0][0]
+        expect(callArgs.body.sort).toEqual([{ updated: { order: 'desc' } }])
+      })
+
+      it('should default sortOrder to desc when only sortBy is provided', async () => {
+        await adapter.search({ q: '', sortBy: 'created' })
+
+        const callArgs = mockClient.search.mock.calls[0][0]
+        expect(callArgs.body.sort).toEqual([{ created: { order: 'desc' } }])
+      })
+    })
   })
 
   describe('delete', () => {

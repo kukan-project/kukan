@@ -185,6 +185,56 @@ describe('PostgresSearchAdapter', () => {
     })
   })
 
+  describe('sort', () => {
+    it('should accept sortBy and sortOrder without errors', async () => {
+      const db = createMockDb([
+        [{ count: 1 }],
+        [{ id: 'p1', name: 'pkg-1', title: null, notes: null, organization: null }],
+        [], // tags
+      ])
+
+      const result = await new PostgresSearchAdapter(db).search({
+        q: '',
+        sortBy: 'name',
+        sortOrder: 'asc',
+      })
+
+      expect(result.items).toHaveLength(1)
+      expect(result.total).toBe(1)
+    })
+
+    it('should accept sortBy created with desc order', async () => {
+      const db = createMockDb([
+        [{ count: 1 }],
+        [{ id: 'p1', name: 'pkg-1', title: null, notes: null, organization: null }],
+        [], // tags
+      ])
+
+      const result = await new PostgresSearchAdapter(db).search({
+        q: '',
+        sortBy: 'created',
+        sortOrder: 'desc',
+      })
+
+      expect(result.items).toHaveLength(1)
+    })
+
+    it('should work with sortBy and no explicit sortOrder', async () => {
+      const db = createMockDb([
+        [{ count: 1 }],
+        [{ id: 'p1', name: 'pkg-1', title: null, notes: null, organization: null }],
+        [], // tags
+      ])
+
+      const result = await new PostgresSearchAdapter(db).search({
+        q: '',
+        sortBy: 'updated',
+      })
+
+      expect(result.items).toHaveLength(1)
+    })
+  })
+
   describe('facets', () => {
     it('should compute facets when requested', async () => {
       const db = createMockDb([

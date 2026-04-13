@@ -20,6 +20,7 @@ vi.mock('next/link', () => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
   usePathname: () => '/',
+  useSearchParams: () => new URLSearchParams(),
   notFound: vi.fn(() => {
     throw new Error('NEXT_NOT_FOUND')
   }),
