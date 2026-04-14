@@ -1,0 +1,29 @@
+/* Dark mode */
+:root {
+  --sl-color-accent-low: hsl(214 81% 20%);
+  --sl-color-accent: hsl(214 81% 54%);
+  --sl-color-accent-high: hsl(214 81% 82%);
+  --sl-color-white: hsl(0 0% 100%);
+  --sl-color-gray-1: hsl(214 10% 90%);
+  --sl-color-gray-2: hsl(214 10% 72%);
+  --sl-color-gray-3: hsl(214 10% 50%);
+  --sl-color-gray-4: hsl(214 10% 28%);
+  --sl-color-gray-5: hsl(214 10% 18%);
+  --sl-color-gray-6: hsl(214 20% 10%);
+  --sl-color-black: hsl(214 30% 6%);
+}
+
+/* Light mode */
+:root[data-theme='light'] {
+  --sl-color-accent-low: hsl(214 81% 90%);
+  --sl-color-accent: hsl(214 81% 46%);
+  --sl-color-accent-high: hsl(214 81% 24%);
+  --sl-color-white: hsl(214 30% 6%);
+  --sl-color-gray-1: hsl(214 10% 18%);
+  --sl-color-gray-2: hsl(214 10% 28%);
+  --sl-color-gray-3: hsl(214 10% 50%);
+  --sl-color-gray-4: hsl(214 10% 72%);
+  --sl-color-gray-5: hsl(214 10% 90%);
+  --sl-color-gray-6: hsl(214 10% 96%);
+  --sl-color-black: hsl(0 0% 100%);
+}

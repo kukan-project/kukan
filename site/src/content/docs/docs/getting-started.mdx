@@ -1,0 +1,55 @@
+---
+title: クイックスタート
+description: KUKAN のセットアップ手順
+sidebar:
+  order: 1
+---
+
+## 必要環境
+
+- Node.js 24+
+- pnpm 9+
+- Docker / Docker Compose
+
+## セットアップ
+
+### 1. リポジトリのクローン
+
+```bash
+git clone https://github.com/kukan-project/kukan.git
+cd kukan
+```
+
+### 2. 依存関係インストール
+
+```bash
+pnpm install
+```
+
+### 3. インフラ起動
+
+PostgreSQL、MinIO、ElasticMQ、OpenSearch を Docker Compose で起動します。
+
+```bash
+docker compose up -d
+```
+
+### 4. 環境変数
+
+```bash
+cp .env.example .env
+```
+
+### 5. データベースマイグレーション
+
+```bash
+pnpm db:migrate
+```
+
+### 6. 開発サーバー起動
+
+```bash
+pnpm dev
+```
+
+`http://localhost:3000` でアクセスできます。

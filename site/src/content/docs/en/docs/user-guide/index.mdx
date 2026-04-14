@@ -1,0 +1,57 @@
+---
+title: User Guide
+description: How to search and browse data in KUKAN
+sidebar:
+  order: 2
+---
+
+## Searching datasets
+
+Use the search bar on the top page to search by keyword.
+
+### Filtering
+
+- **Organization** — Filter by the organization that published the data
+- **Category** — Filter by data classification
+- **Tags** — Filter by keyword tags
+
+### Sorting
+
+Search results can be sorted by relevance, last updated, or name.
+
+## Browsing datasets
+
+The dataset page displays the following information:
+
+- **Metadata** — Title, description, author, license, etc.
+- **Resource list** — Files and URLs included in the dataset
+- **Categories & tags** — Classification information
+
+## Resource preview
+
+The resource page provides format-specific previews:
+
+| Format | Preview |
+|--------|---------|
+| CSV / TSV | Table view + text view |
+| JSON / XML / TXT | Text view |
+| GeoJSON | Map view + text view |
+| PDF | PDF viewer |
+| Excel / Word / PowerPoint | Office Online Viewer |
+
+## Downloading data
+
+Click the "Download" button on the resource page to download a file.
+External URL resources also work through the same button (redirects to the original URL).
+
+## API access
+
+KUKAN provides a REST API for programmatic data access.
+
+```bash
+# List datasets
+curl https://your-kukan-site/api/v1/packages
+
+# Search datasets
+curl https://your-kukan-site/api/v1/search?q=population
+```

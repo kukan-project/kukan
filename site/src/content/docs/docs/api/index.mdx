@@ -1,0 +1,63 @@
+---
+title: API 概要
+description: KUKAN が提供する API の種類と使い方
+sidebar:
+  order: 5
+---
+
+KUKAN は用途に応じて 2 種類の API を提供します。
+
+| API | パス | 用途 |
+|-----|------|------|
+| REST API (v1) | `/api/v1/*` | KUKAN ネイティブの API。推奨 |
+| CKAN 互換 API | `/api/3/action/*` | CKAN 既存ツールとの互換性 |
+
+## ベース URL
+
+```
+https://your-kukan-site
+```
+
+## レスポンス形式
+
+REST API は標準的な JSON を返します。エラーは [RFC 7807 Problem Details](https://datatracker.ietf.org/doc/html/rfc7807) 形式です。
+
+```json
+{
+  "type": "about:blank",
+  "title": "Not Found",
+  "status": 404,
+  "detail": "Package not found"
+}
+```
+
+CKAN 互換 API は CKAN の慣習に従い以下の形式を返します。
+
+```json
+{
+  "help": "https://docs.ckan.org/...",
+  "success": true,
+  "result": { ... }
+}
+```
+
+## ページネーション
+
+一覧エンドポイントは `offset` / `limit` クエリパラメータでページネーションを指定します。
+
+```
+GET /api/v1/packages?offset=0&limit=20
+```
+
+レスポンスは以下の形式です。
+
+```json
+{
+  "total": 123,
+  "items": [...]
+}
+```
+
+## レート制限
+
+現状、API レート制限は設定されていません。大量のリクエストを送る場合は運用側にご相談ください。

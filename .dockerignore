@@ -9,6 +9,7 @@ dist
 .vscode
 .claude
 .turbo
+.astro
 coverage
 *.log
 docker

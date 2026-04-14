@@ -1,0 +1,63 @@
+---
+title: API Overview
+description: Available APIs in KUKAN
+sidebar:
+  order: 5
+---
+
+KUKAN provides two APIs for different use cases.
+
+| API | Path | Purpose |
+|-----|------|---------|
+| REST API (v1) | `/api/v1/*` | KUKAN native API. Recommended |
+| CKAN-compatible API | `/api/3/action/*` | Compatibility with existing CKAN tools |
+
+## Base URL
+
+```
+https://your-kukan-site
+```
+
+## Response format
+
+The REST API returns standard JSON. Errors follow [RFC 7807 Problem Details](https://datatracker.ietf.org/doc/html/rfc7807).
+
+```json
+{
+  "type": "about:blank",
+  "title": "Not Found",
+  "status": 404,
+  "detail": "Package not found"
+}
+```
+
+The CKAN-compatible API follows CKAN conventions:
+
+```json
+{
+  "help": "https://docs.ckan.org/...",
+  "success": true,
+  "result": { ... }
+}
+```
+
+## Pagination
+
+List endpoints use `offset` / `limit` query parameters.
+
+```
+GET /api/v1/packages?offset=0&limit=20
+```
+
+The response format is:
+
+```json
+{
+  "total": 123,
+  "items": [...]
+}
+```
+
+## Rate limits
+
+Currently there are no rate limits. Contact operators before sending large bursts.

@@ -1,0 +1,89 @@
+---
+title: システム管理者ガイド
+description: KUKAN のデプロイ・運用・システム管理
+sidebar:
+  order: 4
+---
+
+## デプロイ方法
+
+KUKAN は2つのデプロイ方式に対応しています。
+
+### AWS デプロイ
+
+AWS CDK を使って ECS Fargate + ALB 構成でデプロイします。
+
+```bash
+cd infra
+npx cdk deploy
+```
+
+主要な AWS リソース:
+
+- **ECS Fargate** — Web アプリケーション + Pipeline Worker
+- **ALB** — ロードバランサー
+- **Aurora Serverless v2** — PostgreSQL データベース
+- **S3** — ファイルストレージ
+- **SQS** — パイプラインキュー
+- **OpenSearch** — 全文検索エンジン
+
+### Docker Compose（オンプレミス）
+
+Docker Compose を使ったオンプレミス・閉域網デプロイに対応しています。
+
+```bash
+cp .env.prod.example .env.prod
+# .env.prod を編集
+docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
+```
+
+オンプレミス構成では以下の代替サービスを使用します。
+
+| AWS サービス | オンプレミス代替 |
+|-------------|----------------|
+| S3 | MinIO |
+| SQS | ElasticMQ |
+| OpenSearch | PostgreSQL 全文検索 |
+
+## ユーザー管理
+
+システム管理者（sysadmin）は管理画面からユーザーを管理できます。
+
+### ユーザー一覧・編集
+
+- ユーザーの表示名・役割（user / sysadmin）の変更
+- 自分自身の役割降格は不可（ロックアウト防止）
+
+### ユーザーの削除
+
+- ソフトデリート方式（state を deleted に変更）
+- 削除時に全セッション・API トークンを即時無効化
+- 監査ログ・アクティビティ履歴は保持
+
+### 自己登録制御
+
+環境変数 `REGISTRATION_ENABLED` で新規ユーザーの自己登録を制御します（デフォルト: 有効）。
+
+## ヘルスチェック
+
+外部 URL リソースの死活監視を自動で行います。
+
+- 定期的なスケジューラーによる自動チェック
+- 管理画面からヘルスチェック結果の確認
+- エラーリソースの特定と対応
+
+## 環境変数
+
+主要な環境変数の一覧です。詳細は `.env.example` を参照してください。
+
+| 変数名 | 説明 | デフォルト |
+|--------|------|-----------|
+| `DATABASE_URL` | PostgreSQL 接続文字列 | - |
+| `STORAGE_TYPE` | ストレージ種別（`s3`） | `s3` |
+| `S3_BUCKET` | S3 バケット名 | - |
+| `S3_ENDPOINT` | S3 エンドポイント（MinIO 用） | - |
+| `SEARCH_ADAPTER` | 検索エンジン（`opensearch` / `postgres`） | `postgres` |
+| `OPENSEARCH_URL` | OpenSearch エンドポイント | - |
+| `QUEUE_TYPE` | キュー種別（`sqs`） | `sqs` |
+| `SQS_QUEUE_URL` | SQS キュー URL | - |
+| `REGISTRATION_ENABLED` | ユーザー自己登録の有効/無効 | `true` |

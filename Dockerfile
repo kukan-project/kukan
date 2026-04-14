@@ -26,7 +26,7 @@ RUN pnpm install --frozen-lockfile
 # ---- Build ----
 FROM deps AS build
 COPY . .
-RUN pnpm build
+RUN pnpm build --filter='!@kukan/site'
 
 # ---- Web (Next.js standalone) ----
 FROM base AS web

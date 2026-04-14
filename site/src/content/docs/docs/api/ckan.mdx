@@ -1,0 +1,109 @@
+---
+title: CKAN 互換 API
+description: CKAN Action API v3 との互換エンドポイント
+sidebar:
+  order: 3
+---
+
+KUKAN は [CKAN Action API v3](https://docs.ckan.org/en/latest/api/) と互換性のあるエンドポイントを提供します。
+既存の CKAN クライアントツール（`ckanapi` 等）や CKAN を想定した Web スクレイピングコードから KUKAN にアクセスできます。
+
+ベースパス: `/api/3/action`
+
+## レスポンス形式
+
+すべての CKAN 互換エンドポイントは以下の形式を返します。
+
+### 成功時
+
+```json
+{
+  "help": "https://docs.ckan.org/...",
+  "success": true,
+  "result": { ... }
+}
+```
+
+### 失敗時
+
+```json
+{
+  "help": "https://docs.ckan.org/...",
+  "success": false,
+  "error": {
+    "__type": "Not Found Error",
+    "message": "Not found"
+  }
+}
+```
+
+## エンドポイント一覧
+
+すべて公開（認証不要）、GET メソッドです。
+
+| Path | 説明 |
+|------|------|
+| `/api/3/action/package_list` | データセット名の一覧 |
+| `/api/3/action/package_show?id={nameOrId}` | データセット詳細（CKAN フィールド名） |
+| `/api/3/action/package_search?q={query}` | データセット検索 |
+| `/api/3/action/resource_show?id={id}` | リソース詳細（CKAN フィールド名） |
+| `/api/3/action/organization_list` | 組織名の一覧 |
+| `/api/3/action/organization_show?id={nameOrId}` | 組織詳細 |
+| `/api/3/action/group_list` | カテゴリー名の一覧 |
+| `/api/3/action/group_show?id={nameOrId}` | カテゴリー詳細 |
+| `/api/3/action/tag_list` | タグ名の一覧 |
+| `/api/3/action/tag_show?id={id}` | タグ詳細 |
+| `/api/3/action/license_list` | ライセンス一覧 |
+
+## フィールド名のマッピング
+
+KUKAN は内部で camelCase のフィールドを使用しますが、CKAN 互換 API では CKAN の snake_case 名に変換して返します。
+
+### データセット (package)
+
+| KUKAN (REST) | CKAN |
+|-------------|------|
+| `created` | `metadata_created` |
+| `updated` | `metadata_modified` |
+| `creatorUserId` | `creator_user_id` |
+| `ownerOrg` | `owner_org` |
+| `licenseId` | `license_id` |
+
+### リソース (resource)
+
+| KUKAN (REST) | CKAN |
+|-------------|------|
+| `updated` | `metadata_modified` |
+| `lastModified` | `last_modified` |
+| `packageId` | `package_id` |
+| `resourceType` | `resource_type` |
+
+## 使用例
+
+### ckanapi (Python)
+
+```python
+from ckanapi import RemoteCKAN
+
+ckan = RemoteCKAN('https://your-kukan-site')
+packages = ckan.action.package_search(q='人口', rows=10)
+
+for pkg in packages['results']:
+    print(pkg['name'], pkg['title'])
+```
+
+### curl
+
+```bash
+# データセット検索
+curl "https://your-kukan-site/api/3/action/package_search?q=人口&rows=10"
+
+# データセット詳細
+curl "https://your-kukan-site/api/3/action/package_show?id=population-stats-2024"
+```
+
+## 制限事項
+
+- 読み取り専用（GET のみ）。書き込み系の CKAN エンドポイントは提供しません
+- データセットの作成・編集は REST API (`/api/v1/*`) を利用してください
+- CKAN の全フィールドを再現しているわけではありません。詳細は実際のレスポンスをご確認ください

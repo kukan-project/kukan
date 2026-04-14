@@ -1,0 +1,89 @@
+---
+title: Authentication
+description: API authentication (session cookie / API token)
+sidebar:
+  order: 1
+---
+
+KUKAN API supports two authentication methods.
+
+## Session cookie
+
+Browser access uses Better Auth session cookies (prefixed with `__Secure-` over HTTPS). After login, they are sent automatically with `fetch`.
+
+```javascript
+const res = await fetch('/api/v1/users/me', {
+  credentials: 'include',
+})
+```
+
+## API token (Bearer authentication)
+
+Use API tokens for programmatic access.
+
+### Creating a token
+
+Create tokens from the dashboard API tokens page, or via the API:
+
+```bash
+curl -X POST https://your-kukan-site/api/v1/api-tokens \
+  -H "Content-Type: application/json" \
+  -H "Cookie: <session-cookie>" \
+  -d '{"name":"my-script","expiresInDays":90}'
+```
+
+Response:
+
+```json
+{
+  "id": "tok_...",
+  "token": "kukan_xxxxxxxx...",
+  "name": "my-script",
+  "expiresAt": "2026-07-13T00:00:00.000Z"
+}
+```
+
+:::caution
+The `token` value is shown only at creation time. Store it securely.
+:::
+
+### Using a token
+
+Send the token in the `Authorization: Bearer` header.
+
+```bash
+curl https://your-kukan-site/api/v1/users/me \
+  -H "Authorization: Bearer kukan_xxxxxxxx..."
+```
+
+### Managing tokens
+
+```bash
+# List
+curl https://your-kukan-site/api/v1/api-tokens \
+  -H "Authorization: Bearer <token>"
+
+# Revoke
+curl -X DELETE https://your-kukan-site/api/v1/api-tokens/tok_... \
+  -H "Authorization: Bearer <token>"
+```
+
+## Permission model
+
+| Level | Description |
+|-------|-------------|
+| Public (no auth) | Search, view public datasets |
+| Authenticated | Own profile, private datasets in member orgs |
+| Organization member / editor / admin | Create, edit, manage organization data |
+| Category member / editor / admin | Add, manage datasets in categories |
+| System administrator (sysadmin) | Manage all users, organizations, jobs |
+
+## Error codes
+
+| HTTP | Meaning |
+|------|---------|
+| 401 | Not authenticated (login or token required) |
+| 403 | Insufficient permissions |
+| 404 | Resource not found |
+| 409 | Conflict (e.g., duplicate resource) |
+| 422 | Validation error |

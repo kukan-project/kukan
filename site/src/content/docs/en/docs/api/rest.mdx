@@ -1,0 +1,156 @@
+---
+title: REST API
+description: KUKAN native REST API endpoints
+sidebar:
+  order: 2
+---
+
+Base path: `/api/v1`
+
+Auth column legend:
+
+- **Public** — no authentication required
+- **Auth** — login or API token required
+- **Org** — organization member / editor / admin
+- **sysadmin** — system administrator only
+
+## Datasets (packages)
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/packages` | List datasets (with search and filters) | Public |
+| POST | `/packages` | Create dataset | Org editor |
+| GET | `/packages/{nameOrId}` | Get dataset details | Public |
+| PUT | `/packages/{nameOrId}` | Update dataset | Org editor |
+| PATCH | `/packages/{nameOrId}` | Partial update | Org editor |
+| DELETE | `/packages/{nameOrId}` | Soft-delete dataset | Org editor |
+| POST | `/packages/{nameOrId}/purge` | Permanently delete soft-deleted dataset | Org admin |
+| GET | `/packages/{id}/resources` | List resources | Public |
+| POST | `/packages/{id}/resources` | Add resource | Org editor |
+| PUT | `/packages/{id}/resources/reorder` | Reorder resources | Org editor |
+
+### Key query parameters (GET /packages)
+
+| Parameter | Description |
+|-----------|-------------|
+| `q` | Keyword search |
+| `offset` / `limit` | Pagination (max 100) |
+| `organization[]` | Filter by organization |
+| `groups[]` | Filter by category |
+| `tags[]` | Filter by tag |
+| `res_format[]` | Filter by resource format (e.g., `CSV`) |
+| `license_id[]` | Filter by license |
+| `state` | `active` / `deleted` |
+| `my_org` | Limit to user's organizations |
+| `private` | Include private datasets |
+| `sort_by` | `updated` / `created` / `name` |
+| `sort_order` | `asc` / `desc` |
+| `include_facets` | Include facet information |
+
+### Example: dataset search
+
+```bash
+curl "https://your-kukan-site/api/v1/packages?q=population&organization[]=stat-bureau&limit=10"
+```
+
+## Resources
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/resources/count` | Active resource count | Public |
+| GET | `/resources/formats` | List used formats | Public |
+| GET | `/resources/{id}` | Resource details | Public |
+| GET | `/resources/{id}/text` | Text content (preview-size limited) | Public |
+| GET | `/resources/{id}/download` | Download file (302 redirect for external URLs) | Public |
+| GET | `/resources/{id}/preview` | Server-proxied preview (Range supported) | Public |
+| GET | `/resources/{id}/pipeline-status` | Pipeline job status | Public |
+| POST | `/resources/{id}/upload-url` | Issue presigned upload URL | Org editor |
+| POST | `/resources/{id}/upload` | Server-proxied upload | Org editor |
+| POST | `/resources/{id}/upload-complete` | Notify completion, enqueue pipeline | Org editor |
+| POST | `/resources/{id}/run-pipeline` | Manually trigger pipeline | Org editor |
+| PUT | `/resources/{id}` | Update resource | Org editor |
+| DELETE | `/resources/{id}` | Delete resource | Org editor |
+
+## Organizations
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/organizations` | List organizations | Public |
+| POST | `/organizations` | Create organization | sysadmin |
+| GET | `/organizations/{nameOrId}` | Organization details | Public |
+| PUT | `/organizations/{nameOrId}` | Update organization | Org admin |
+| DELETE | `/organizations/{nameOrId}` | Soft-delete organization | Org admin |
+| GET | `/organizations/{nameOrId}/members` | List members | Org member |
+| POST | `/organizations/{nameOrId}/members` | Add member / change role | Org admin |
+| DELETE | `/organizations/{nameOrId}/members/{userId}` | Remove member | Org admin |
+
+Member roles are one of `admin` / `editor` / `member`.
+
+## Categories (groups)
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/groups` | List categories | Public |
+| POST | `/groups` | Create category | sysadmin |
+| GET | `/groups/{nameOrId}` | Category details | Public |
+| PUT | `/groups/{nameOrId}` | Update category | Category admin |
+| DELETE | `/groups/{nameOrId}` | Delete category | Category admin |
+| GET | `/groups/{nameOrId}/members` | List members | Category member |
+| POST | `/groups/{nameOrId}/members` | Add member / change role | Category admin |
+| DELETE | `/groups/{nameOrId}/members/{userId}` | Remove member | Category admin |
+
+## Tags
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/tags` | List tags | Public |
+| GET | `/tags/{id}` | Tag details | Public |
+
+## Search
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/search` | Full-text search (`q` required) | Public |
+
+Query parameters: `q`, `offset`, `limit` (1-100), `organization[]`, `tags[]`, `sort_by`, `sort_order`
+
+## Users
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/users/me` | Current user info | Auth |
+| GET | `/users/me/organizations` | User's organizations | Auth |
+| GET | `/users` | Search users (for member management) | Auth |
+
+## API tokens
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/api-tokens` | Create token | Auth |
+| GET | `/api-tokens` | List own tokens | Auth |
+| DELETE | `/api-tokens/{id}` | Revoke token | Auth |
+
+## Admin
+
+All sysadmin only.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/admin/reindex` | Rebuild search index |
+| GET | `/admin/jobs/stats` | Pipeline job statistics |
+| GET | `/admin/jobs` | List pipeline jobs |
+| DELETE | `/admin/data` | Delete all data (preserves users) |
+| GET | `/admin/health/stats` | Health check statistics |
+| GET | `/admin/health` | Health check results |
+| GET | `/admin/users/stats` | User statistics |
+| GET | `/admin/users` | List users |
+| POST | `/admin/users` | Create user |
+| PATCH | `/admin/users/{userId}` | Update user |
+| DELETE | `/admin/users/{userId}` | Soft-delete user (revokes sessions/tokens) |
+
+## Other
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/api/health` | Health check | Public |
+| GET | `/api/v1/site/settings` | Site settings (registration etc.) | Public |

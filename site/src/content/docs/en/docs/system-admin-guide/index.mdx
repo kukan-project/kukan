@@ -1,0 +1,89 @@
+---
+title: System Admin Guide
+description: Deploying, operating, and managing KUKAN
+sidebar:
+  order: 4
+---
+
+## Deployment
+
+KUKAN supports two deployment methods.
+
+### AWS Deployment
+
+Deploy with AWS CDK using an ECS Fargate + ALB architecture.
+
+```bash
+cd infra
+npx cdk deploy
+```
+
+Key AWS resources:
+
+- **ECS Fargate** — Web application + Pipeline Worker
+- **ALB** — Load balancer
+- **Aurora Serverless v2** — PostgreSQL database
+- **S3** — File storage
+- **SQS** — Pipeline queue
+- **OpenSearch** — Full-text search engine
+
+### Docker Compose (On-Premises)
+
+Deploy on-premises or in isolated networks using Docker Compose.
+
+```bash
+cp .env.prod.example .env.prod
+# Edit .env.prod
+docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
+```
+
+On-premises deployments use the following alternative services:
+
+| AWS Service | On-Premises Alternative |
+|-------------|------------------------|
+| S3 | MinIO |
+| SQS | ElasticMQ |
+| OpenSearch | PostgreSQL full-text search |
+
+## User management
+
+System administrators (sysadmin) can manage users from the admin dashboard.
+
+### User list & editing
+
+- Change user display name and role (user / sysadmin)
+- Cannot demote your own role (lockout prevention)
+
+### Deleting users
+
+- Soft-delete (sets state to deleted)
+- All sessions and API tokens are immediately revoked
+- Audit logs and activity history are preserved
+
+### Self-registration control
+
+Control new user self-registration via the `REGISTRATION_ENABLED` environment variable (default: enabled).
+
+## Health checks
+
+KUKAN automatically monitors the health of external URL resources.
+
+- Periodic automated checks via scheduler
+- View health check results from the admin dashboard
+- Identify and address failing resources
+
+## Environment variables
+
+Key environment variables are listed below. See `.env.example` for the full list.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DATABASE_URL` | PostgreSQL connection string | - |
+| `STORAGE_TYPE` | Storage type (`s3`) | `s3` |
+| `S3_BUCKET` | S3 bucket name | - |
+| `S3_ENDPOINT` | S3 endpoint (for MinIO) | - |
+| `SEARCH_ADAPTER` | Search engine (`opensearch` / `postgres`) | `postgres` |
+| `OPENSEARCH_URL` | OpenSearch endpoint | - |
+| `QUEUE_TYPE` | Queue type (`sqs`) | `sqs` |
+| `SQS_QUEUE_URL` | SQS queue URL | - |
+| `REGISTRATION_ENABLED` | Enable/disable user self-registration | `true` |

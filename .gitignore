@@ -42,6 +42,9 @@ skills-lock.json
 .DS_Store
 Thumbs.db
 
+# Astro
+.astro/
+
 # Turbo
 .turbo/
 

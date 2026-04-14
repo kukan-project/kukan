@@ -1,0 +1,76 @@
+---
+title: Data Admin Guide
+description: Creating, managing, and publishing datasets
+sidebar:
+  order: 3
+---
+
+## Creating a dataset
+
+1. Log in to the dashboard
+2. Click "Create Dataset"
+3. Fill in the required information
+
+### Basic information
+
+| Field | Description | Required |
+|-------|-------------|:--------:|
+| Name (URL slug) | Alphanumeric, hyphens, underscores, periods | Yes |
+| Title | Display title | - |
+| Description | Detailed description of the dataset | - |
+| Organization | The organization that owns the data | Yes |
+| License | Data license | Yes |
+| Public / Private | Private datasets are only visible to organization members | - |
+
+### Tags
+
+Add tags to classify your dataset.
+Choose from existing tags or create new ones.
+
+## Managing resources
+
+Resources are files or URLs associated with a dataset.
+
+### Adding resources
+
+- **File upload** — Upload directly from the browser (up to 100 MB)
+- **External URL** — Specify a URL to an external file
+
+### Supported formats
+
+KUKAN supports many formats including CSV, TSV, JSON, GeoJSON, XML, PDF, and Excel.
+
+Uploaded files are automatically processed through the pipeline:
+
+- Text file encoding detection and conversion
+- CSV/TSV to Parquet conversion (for table preview)
+- ZIP file manifest generation
+
+## Organization management
+
+Organizations are the ownership unit for datasets.
+
+### Member management
+
+Organization admins can add, remove, and change member roles.
+
+| Role | View datasets | Edit datasets | Manage members |
+|------|:------------:|:------------:|:-------------:|
+| Member | Yes | - | - |
+| Editor | Yes | Yes | - |
+| Admin | Yes | Yes | Yes |
+
+## Categories (Groups)
+
+Categories classify datasets across organizations.
+Assign categories when creating a dataset.
+
+### Category member management
+
+Categories also have member management with the same role structure as organizations.
+
+| Role | View category | Add datasets | Manage members |
+|------|:------------:|:----------:|:-------------:|
+| Member | Yes | - | - |
+| Editor | Yes | Yes | - |
+| Admin | Yes | Yes | Yes |

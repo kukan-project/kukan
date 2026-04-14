@@ -1,0 +1,109 @@
+---
+title: CKAN-Compatible API
+description: Compatible endpoints for CKAN Action API v3
+sidebar:
+  order: 3
+---
+
+KUKAN provides endpoints compatible with the [CKAN Action API v3](https://docs.ckan.org/en/latest/api/).
+Existing CKAN client tools (such as `ckanapi`) and code written for CKAN can access KUKAN directly.
+
+Base path: `/api/3/action`
+
+## Response format
+
+All CKAN-compatible endpoints return responses in the following format.
+
+### Success
+
+```json
+{
+  "help": "https://docs.ckan.org/...",
+  "success": true,
+  "result": { ... }
+}
+```
+
+### Error
+
+```json
+{
+  "help": "https://docs.ckan.org/...",
+  "success": false,
+  "error": {
+    "__type": "Not Found Error",
+    "message": "Not found"
+  }
+}
+```
+
+## Endpoints
+
+All are public (no authentication) and use the GET method.
+
+| Path | Description |
+|------|-------------|
+| `/api/3/action/package_list` | List of dataset names |
+| `/api/3/action/package_show?id={nameOrId}` | Dataset details (CKAN field names) |
+| `/api/3/action/package_search?q={query}` | Dataset search |
+| `/api/3/action/resource_show?id={id}` | Resource details (CKAN field names) |
+| `/api/3/action/organization_list` | List of organization names |
+| `/api/3/action/organization_show?id={nameOrId}` | Organization details |
+| `/api/3/action/group_list` | List of category names |
+| `/api/3/action/group_show?id={nameOrId}` | Category details |
+| `/api/3/action/tag_list` | List of tag names |
+| `/api/3/action/tag_show?id={id}` | Tag details |
+| `/api/3/action/license_list` | List of available licenses |
+
+## Field name mapping
+
+KUKAN uses camelCase fields internally, but the CKAN-compatible API converts them to CKAN's snake_case conventions.
+
+### Dataset (package)
+
+| KUKAN (REST) | CKAN |
+|-------------|------|
+| `created` | `metadata_created` |
+| `updated` | `metadata_modified` |
+| `creatorUserId` | `creator_user_id` |
+| `ownerOrg` | `owner_org` |
+| `licenseId` | `license_id` |
+
+### Resource
+
+| KUKAN (REST) | CKAN |
+|-------------|------|
+| `updated` | `metadata_modified` |
+| `lastModified` | `last_modified` |
+| `packageId` | `package_id` |
+| `resourceType` | `resource_type` |
+
+## Usage examples
+
+### ckanapi (Python)
+
+```python
+from ckanapi import RemoteCKAN
+
+ckan = RemoteCKAN('https://your-kukan-site')
+packages = ckan.action.package_search(q='population', rows=10)
+
+for pkg in packages['results']:
+    print(pkg['name'], pkg['title'])
+```
+
+### curl
+
+```bash
+# Search datasets
+curl "https://your-kukan-site/api/3/action/package_search?q=population&rows=10"
+
+# Get dataset details
+curl "https://your-kukan-site/api/3/action/package_show?id=population-stats-2024"
+```
+
+## Limitations
+
+- Read-only (GET only). CKAN write endpoints are not provided
+- Use the REST API (`/api/v1/*`) to create or edit datasets
+- Not all CKAN fields are reproduced. Check the actual responses for specifics

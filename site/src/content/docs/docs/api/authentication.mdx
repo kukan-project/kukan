@@ -1,0 +1,89 @@
+---
+title: 認証
+description: API 認証の方法（セッション Cookie / API トークン）
+sidebar:
+  order: 1
+---
+
+KUKAN API は 2 つの認証方式に対応しています。
+
+## セッション Cookie
+
+ブラウザからのアクセスは Better Auth のセッション Cookie（HTTPS では `__Secure-` プレフィックス付き）で認証されます。ログイン後、通常の `fetch` で自動的に送信されます。
+
+```javascript
+const res = await fetch('/api/v1/users/me', {
+  credentials: 'include',
+})
+```
+
+## API トークン（Bearer 認証）
+
+プログラムからのアクセスには API トークンを使用します。
+
+### トークンの発行
+
+ダッシュボード → API トークン画面、または API から発行できます。
+
+```bash
+curl -X POST https://your-kukan-site/api/v1/api-tokens \
+  -H "Content-Type: application/json" \
+  -H "Cookie: <session-cookie>" \
+  -d '{"name":"my-script","expiresInDays":90}'
+```
+
+レスポンス:
+
+```json
+{
+  "id": "tok_...",
+  "token": "kukan_xxxxxxxx...",
+  "name": "my-script",
+  "expiresAt": "2026-07-13T00:00:00.000Z"
+}
+```
+
+:::caution
+`token` フィールドの値は発行時のみ表示されます。安全な場所に保管してください。
+:::
+
+### トークンの使用
+
+`Authorization: Bearer` ヘッダーでトークンを送信します。
+
+```bash
+curl https://your-kukan-site/api/v1/users/me \
+  -H "Authorization: Bearer kukan_xxxxxxxx..."
+```
+
+### トークンの管理
+
+```bash
+# 一覧
+curl https://your-kukan-site/api/v1/api-tokens \
+  -H "Authorization: Bearer <token>"
+
+# 失効
+curl -X DELETE https://your-kukan-site/api/v1/api-tokens/tok_... \
+  -H "Authorization: Bearer <token>"
+```
+
+## 権限モデル
+
+| 権限レベル | 説明 |
+|----------|------|
+| 公開（認証不要） | 検索、公開データセットの閲覧 |
+| 認証済み | 自分の情報、非公開データセット（所属組織） |
+| 組織メンバー / 編集者 / 管理者 | 組織データの作成・編集・管理 |
+| カテゴリー メンバー / 編集者 / 管理者 | カテゴリーへのデータセット追加・管理 |
+| システム管理者（sysadmin） | 全ユーザー・組織・ジョブの管理 |
+
+## エラーコード
+
+| HTTP | 意味 |
+|------|------|
+| 401 | 未認証（ログインまたはトークンが必要） |
+| 403 | 権限不足 |
+| 404 | リソースが存在しない |
+| 409 | 競合（例: 同名リソースの重複） |
+| 422 | バリデーションエラー |

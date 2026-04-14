@@ -1,0 +1,156 @@
+---
+title: REST API
+description: KUKAN ネイティブの REST API エンドポイント一覧
+sidebar:
+  order: 2
+---
+
+ベースパス: `/api/v1`
+
+認証列の記号:
+
+- **公開** — 認証不要
+- **認証** — ログインまたは API トークンが必要
+- **組織** — 組織の member / editor / admin のいずれか
+- **sysadmin** — システム管理者のみ
+
+## データセット (packages)
+
+| Method | Path | 説明 | 認証 |
+|--------|------|------|------|
+| GET | `/packages` | データセット一覧（検索・絞り込み対応） | 公開 |
+| POST | `/packages` | データセット作成 | 組織 editor |
+| GET | `/packages/{nameOrId}` | データセット詳細 | 公開 |
+| PUT | `/packages/{nameOrId}` | データセット更新 | 組織 editor |
+| PATCH | `/packages/{nameOrId}` | データセット部分更新 | 組織 editor |
+| DELETE | `/packages/{nameOrId}` | データセット論理削除 | 組織 editor |
+| POST | `/packages/{nameOrId}/purge` | 論理削除済みを完全削除 | 組織 admin |
+| GET | `/packages/{id}/resources` | リソース一覧 | 公開 |
+| POST | `/packages/{id}/resources` | リソース追加 | 組織 editor |
+| PUT | `/packages/{id}/resources/reorder` | リソース順序変更 | 組織 editor |
+
+### 主なクエリパラメータ（GET /packages）
+
+| パラメータ | 説明 |
+|----------|------|
+| `q` | キーワード検索 |
+| `offset` / `limit` | ページネーション（最大 100） |
+| `organization[]` | 組織で絞り込み |
+| `groups[]` | カテゴリーで絞り込み |
+| `tags[]` | タグで絞り込み |
+| `res_format[]` | リソース形式で絞り込み（例: `CSV`） |
+| `license_id[]` | ライセンスで絞り込み |
+| `state` | `active` / `deleted` |
+| `my_org` | 自分の所属組織に限定 |
+| `private` | 非公開データを含む |
+| `sort_by` | `updated` / `created` / `name` |
+| `sort_order` | `asc` / `desc` |
+| `include_facets` | ファセット情報を含める |
+
+### 例: データセット検索
+
+```bash
+curl "https://your-kukan-site/api/v1/packages?q=人口&organization[]=stat-bureau&limit=10"
+```
+
+## リソース (resources)
+
+| Method | Path | 説明 | 認証 |
+|--------|------|------|------|
+| GET | `/resources/count` | アクティブなリソース数 | 公開 |
+| GET | `/resources/formats` | 使われているフォーマット一覧 | 公開 |
+| GET | `/resources/{id}` | リソース詳細 | 公開 |
+| GET | `/resources/{id}/text` | テキストコンテンツ取得（プレビューサイズ制限） | 公開 |
+| GET | `/resources/{id}/download` | ファイルダウンロード（外部 URL は 302 リダイレクト） | 公開 |
+| GET | `/resources/{id}/preview` | サーバー経由プレビュー（Range 対応） | 公開 |
+| GET | `/resources/{id}/pipeline-status` | パイプライン処理状態 | 公開 |
+| POST | `/resources/{id}/upload-url` | プリサインドアップロード URL 発行 | 組織 editor |
+| POST | `/resources/{id}/upload` | サーバー経由アップロード | 組織 editor |
+| POST | `/resources/{id}/upload-complete` | アップロード完了通知・パイプライン投入 | 組織 editor |
+| POST | `/resources/{id}/run-pipeline` | パイプライン手動実行 | 組織 editor |
+| PUT | `/resources/{id}` | リソース更新 | 組織 editor |
+| DELETE | `/resources/{id}` | リソース削除 | 組織 editor |
+
+## 組織 (organizations)
+
+| Method | Path | 説明 | 認証 |
+|--------|------|------|------|
+| GET | `/organizations` | 組織一覧 | 公開 |
+| POST | `/organizations` | 組織作成 | sysadmin |
+| GET | `/organizations/{nameOrId}` | 組織詳細 | 公開 |
+| PUT | `/organizations/{nameOrId}` | 組織更新 | 組織 admin |
+| DELETE | `/organizations/{nameOrId}` | 組織論理削除 | 組織 admin |
+| GET | `/organizations/{nameOrId}/members` | メンバー一覧 | 組織 member |
+| POST | `/organizations/{nameOrId}/members` | メンバー追加・ロール変更 | 組織 admin |
+| DELETE | `/organizations/{nameOrId}/members/{userId}` | メンバー削除 | 組織 admin |
+
+メンバーのロールは `admin` / `editor` / `member` のいずれか。
+
+## カテゴリー (groups)
+
+| Method | Path | 説明 | 認証 |
+|--------|------|------|------|
+| GET | `/groups` | カテゴリー一覧 | 公開 |
+| POST | `/groups` | カテゴリー作成 | sysadmin |
+| GET | `/groups/{nameOrId}` | カテゴリー詳細 | 公開 |
+| PUT | `/groups/{nameOrId}` | カテゴリー更新 | カテゴリー admin |
+| DELETE | `/groups/{nameOrId}` | カテゴリー削除 | カテゴリー admin |
+| GET | `/groups/{nameOrId}/members` | メンバー一覧 | カテゴリー member |
+| POST | `/groups/{nameOrId}/members` | メンバー追加・ロール変更 | カテゴリー admin |
+| DELETE | `/groups/{nameOrId}/members/{userId}` | メンバー削除 | カテゴリー admin |
+
+## タグ (tags)
+
+| Method | Path | 説明 | 認証 |
+|--------|------|------|------|
+| GET | `/tags` | タグ一覧 | 公開 |
+| GET | `/tags/{id}` | タグ詳細 | 公開 |
+
+## 検索 (search)
+
+| Method | Path | 説明 | 認証 |
+|--------|------|------|------|
+| GET | `/search` | 全文検索（`q` 必須） | 公開 |
+
+クエリパラメータ: `q`, `offset`, `limit`（1-100）, `organization[]`, `tags[]`, `sort_by`, `sort_order`
+
+## ユーザー (users)
+
+| Method | Path | 説明 | 認証 |
+|--------|------|------|------|
+| GET | `/users/me` | 自分の情報 | 認証 |
+| GET | `/users/me/organizations` | 所属組織一覧 | 認証 |
+| GET | `/users` | ユーザー検索（メンバー管理用） | 認証 |
+
+## API トークン (api-tokens)
+
+| Method | Path | 説明 | 認証 |
+|--------|------|------|------|
+| POST | `/api-tokens` | トークン発行 | 認証 |
+| GET | `/api-tokens` | 自分のトークン一覧 | 認証 |
+| DELETE | `/api-tokens/{id}` | トークン失効 | 認証 |
+
+## 管理 (admin)
+
+すべて sysadmin 限定。
+
+| Method | Path | 説明 |
+|--------|------|------|
+| POST | `/admin/reindex` | 検索インデックス再構築 |
+| GET | `/admin/jobs/stats` | パイプラインジョブ統計 |
+| GET | `/admin/jobs` | パイプラインジョブ一覧 |
+| DELETE | `/admin/data` | 全データ削除（ユーザー除く） |
+| GET | `/admin/health/stats` | ヘルスチェック統計 |
+| GET | `/admin/health` | ヘルスチェック結果一覧 |
+| GET | `/admin/users/stats` | ユーザー統計 |
+| GET | `/admin/users` | ユーザー一覧 |
+| POST | `/admin/users` | ユーザー作成 |
+| PATCH | `/admin/users/{userId}` | ユーザー更新 |
+| DELETE | `/admin/users/{userId}` | ユーザー論理削除（セッション・トークン即時失効） |
+
+## その他
+
+| Method | Path | 説明 | 認証 |
+|--------|------|------|------|
+| GET | `/api/health` | ヘルスチェック | 公開 |
+| GET | `/api/v1/site/settings` | サイト設定（登録可否等） | 公開 |
