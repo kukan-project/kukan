@@ -93,6 +93,10 @@ export default function GeoJsonMap({ data }: { data: GeoJSON.GeoJsonObject }) {
   }, [data])
 
   return (
-    <div ref={containerRef} className="overflow-hidden rounded-lg border" style={{ height: 500 }} />
+    <div
+      ref={containerRef}
+      className="relative z-0 overflow-hidden rounded-lg border"
+      style={{ height: 500 }}
+    />
   )
 }
