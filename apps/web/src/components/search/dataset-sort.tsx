@@ -58,9 +58,7 @@ export function DatasetSort() {
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {hasQuery && (
-          <SelectItem value={RELEVANCE_VALUE}>{t('sort.relevance')}</SelectItem>
-        )}
+        {hasQuery && <SelectItem value={RELEVANCE_VALUE}>{t('sort.relevance')}</SelectItem>}
         {SORT_OPTIONS.map((option) => (
           <SelectItem key={option.value} value={option.value}>
             {t(`sort.${option.value.replace(':', '_')}`)}

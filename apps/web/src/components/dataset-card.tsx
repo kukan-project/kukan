@@ -36,7 +36,10 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
           <div className="flex items-start justify-between gap-2">
             <div>
               <CardTitle className="text-lg">
-                <Link href={datasetHref} className="after:absolute after:inset-0 after:content-['']">
+                <Link
+                  href={datasetHref}
+                  className="after:absolute after:inset-0 after:content-['']"
+                >
                   {pkg.title || pkg.name}
                 </Link>
               </CardTitle>
@@ -52,11 +55,7 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
           </div>
           {(pkg.title || pkg.updated || pkg.created) && (
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              {pkg.title ? (
-                <span className="font-mono">{pkg.name}</span>
-              ) : (
-                <span />
-              )}
+              {pkg.title ? <span className="font-mono">{pkg.name}</span> : <span />}
               {(pkg.updated || pkg.created) && (
                 <span className="flex shrink-0 items-center gap-3">
                   <Calendar className="h-3 w-3" />
