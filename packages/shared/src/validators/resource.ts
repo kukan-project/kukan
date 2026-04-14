@@ -65,3 +65,9 @@ export const uploadCompleteSchema = z.object({
 })
 
 export type UploadCompleteInput = z.infer<typeof uploadCompleteSchema>
+
+export const reorderResourcesSchema = z.object({
+  resource_ids: z.array(z.string().uuid()).min(1),
+})
+
+export type ReorderResourcesInput = z.infer<typeof reorderResourcesSchema>

@@ -165,6 +165,94 @@ describe('Resources API Routes', () => {
     })
   })
 
+  describe('PUT /api/v1/packages/:packageId/resources/reorder', () => {
+    it('should reorder resources by resource_ids order', async () => {
+      const pkg = await createPackage('reorder-pkg')
+      const res1 = await createResource(pkg.id, { name: 'first' })
+      const res2 = await createResource(pkg.id, { name: 'second' })
+      const res3 = await createResource(pkg.id, { name: 'third' })
+
+      const res = await app.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resource_ids: [res3.id, res1.id, res2.id] }),
+      })
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body).toHaveLength(3)
+      expect(body[0].id).toBe(res3.id)
+      expect(body[0].position).toBe(0)
+      expect(body[1].id).toBe(res1.id)
+      expect(body[1].position).toBe(1)
+      expect(body[2].id).toBe(res2.id)
+      expect(body[2].position).toBe(2)
+    })
+
+    it('should reject partial resource_ids (missing IDs)', async () => {
+      const pkg = await createPackage('reorder-partial-pkg')
+      const res1 = await createResource(pkg.id, { name: 'first' })
+      await createResource(pkg.id, { name: 'second' })
+
+      const res = await app.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resource_ids: [res1.id] }),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    it('should reject duplicate IDs in resource_ids', async () => {
+      const pkg = await createPackage('reorder-dup-pkg')
+      const res1 = await createResource(pkg.id, { name: 'first' })
+      const res2 = await createResource(pkg.id, { name: 'second' })
+
+      const res = await app.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resource_ids: [res1.id, res1.id, res2.id] }),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    it('should reject IDs that do not belong to the package', async () => {
+      const pkg1 = await createPackage('reorder-other-pkg-1')
+      const pkg2 = await createPackage('reorder-other-pkg-2')
+      const other = await createResource(pkg2.id, { name: 'other' })
+      const own = await createResource(pkg1.id, { name: 'own' })
+
+      const res = await app.request(`/api/v1/packages/${pkg1.id}/resources/reorder`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resource_ids: [own.id, other.id] }),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    it('should reject invalid UUIDs', async () => {
+      const pkg = await createPackage('reorder-invalid-pkg')
+
+      const res = await app.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resource_ids: ['not-a-uuid'] }),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    it('should reject unauthenticated requests', async () => {
+      const pkg = await createPackage('reorder-unauth-pkg')
+      const resource = await createResource(pkg.id)
+
+      const res = await unauthApp.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resource_ids: [resource.id] }),
+      })
+      expect(res.status).toBe(403)
+    })
+  })
+
   // --- Upload flow ---
 
   describe('POST /api/v1/resources/:id/upload-url', () => {

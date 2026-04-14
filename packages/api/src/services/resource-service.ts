@@ -6,7 +6,7 @@
 import { eq, and, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, packageTable } from '@kukan/db'
-import { NotFoundError, normalizeFormat, detectFormat } from '@kukan/shared'
+import { NotFoundError, ValidationError, normalizeFormat, detectFormat } from '@kukan/shared'
 import type { CreateResourceInput, UpdateResourceInput } from '@kukan/shared'
 
 export class ResourceService {
@@ -146,6 +146,46 @@ export class ResourceService {
       .returning()
 
     return updated
+  }
+
+  /**
+   * Reorder resources within a package.
+   * Requires the complete list of active resource IDs in the desired order.
+   */
+  async reorder(packageId: string, resourceIds: string[]) {
+    return await this.db.transaction(async (tx) => {
+      const existing = await tx
+        .select({ id: resource.id })
+        .from(resource)
+        .where(and(eq(resource.packageId, packageId), eq(resource.state, 'active')))
+
+      const existingIds = new Set(existing.map((r) => r.id))
+      const inputIds = new Set(resourceIds)
+
+      if (resourceIds.length !== existingIds.size || inputIds.size !== resourceIds.length) {
+        throw new ValidationError(
+          'resource_ids must contain all active resource IDs with no duplicates'
+        )
+      }
+      for (const id of resourceIds) {
+        if (!existingIds.has(id)) {
+          throw new ValidationError(`Resource ${id} does not belong to this package`)
+        }
+      }
+
+      for (let i = 0; i < resourceIds.length; i++) {
+        await tx
+          .update(resource)
+          .set({ position: i, updated: sql`NOW()` })
+          .where(eq(resource.id, resourceIds[i]))
+      }
+
+      return await tx
+        .select()
+        .from(resource)
+        .where(and(eq(resource.packageId, packageId), eq(resource.state, 'active')))
+        .orderBy(resource.position)
+    })
   }
 
   /**

@@ -14,6 +14,7 @@ import {
   updatePackageSchema,
   patchPackageSchema,
   createResourceBodySchema,
+  reorderResourcesSchema,
   ForbiddenError,
 } from '@kukan/shared'
 import type { MatchedResource, SearchFilters } from '@kukan/search-adapter'
@@ -232,6 +233,29 @@ packagesRouter.post('/:nameOrId/purge', async (c) => {
   await c.get('search').delete(pkg.id)
   return c.json(pkg)
 })
+
+// PUT /api/v1/packages/:packageId/resources/reorder - Reorder resources (org editor+)
+packagesRouter.put(
+  '/:packageId/resources/reorder',
+  zValidator('json', reorderResourcesSchema),
+  async (c) => {
+    const user = c.get('user')
+    if (!user) throw new ForbiddenError('Authentication required')
+
+    const db = c.get('db')
+    const packageId = c.req.param('packageId')
+
+    const packageService = new PackageService(db)
+    const pkg = await packageService.getByNameOrId(packageId)
+    if (pkg.ownerOrg) await checkOrgRole(db, user, pkg.ownerOrg, 'editor')
+
+    const { resource_ids } = c.req.valid('json')
+    const resourceService = new ResourceService(db)
+    const resources = await resourceService.reorder(pkg.id, resource_ids)
+
+    return c.json(resources)
+  }
+)
 
 // GET /api/v1/packages/:packageId/resources - List resources for package
 packagesRouter.get('/:packageId/resources', async (c) => {

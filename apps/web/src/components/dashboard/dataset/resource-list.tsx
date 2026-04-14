@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useState, useRef, useCallback } from 'react'
+import { Fragment, useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import {
   Button,
   Table,
@@ -17,9 +17,26 @@ import {
   TabsTrigger,
   TabsContent,
 } from '@kukan/ui'
-import { Upload, X, Plus } from 'lucide-react'
+import { Upload, X, Plus, GripVertical } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { detectFormat } from '@kukan/shared'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import type { DragEndEvent } from '@dnd-kit/core'
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+  sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { clientFetch } from '@/lib/client-api'
 import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
 import { PipelineStatusBadge } from './pipeline-status-badge'
@@ -53,6 +70,81 @@ interface ResourceListProps {
   onUpdated: () => void
 }
 
+function SortableResourceRow({
+  resource: r,
+  isDragDisabled,
+  isActionsDisabled,
+  onEdit,
+  onDelete,
+}: {
+  resource: Resource
+  isDragDisabled: boolean
+  isActionsDisabled: boolean
+  onEdit: (r: Resource) => void
+  onDelete: (id: string) => void
+}) {
+  const t = useTranslations('resource')
+  const tc = useTranslations('common')
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: r.id,
+    disabled: isDragDisabled,
+  })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  return (
+    <TableRow ref={setNodeRef} style={style}>
+      <TableCell className="w-8 p-2">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="cursor-grab touch-none p-1 text-muted-foreground hover:text-foreground disabled:cursor-default disabled:opacity-30"
+          disabled={isDragDisabled}
+          aria-label={tc('reorder')}
+        >
+          <GripVertical className="size-4" />
+        </button>
+      </TableCell>
+      <TableCell>{r.name || '-'}</TableCell>
+      <TableCell>{r.format ? <Badge variant="secondary">{r.format}</Badge> : '-'}</TableCell>
+      <TableCell className="whitespace-nowrap">
+        {r.urlType === 'upload' ? (
+          <Badge variant="outline">{t('sourceUpload')}</Badge>
+        ) : r.url ? (
+          <Badge variant="outline">{t('sourceUrl')}</Badge>
+        ) : (
+          '-'
+        )}
+      </TableCell>
+      <TableCell>
+        {r.pipelineStatus && (
+          <PipelineStatusBadge resourceId={r.id} initialStatus={r.pipelineStatus} />
+        )}
+      </TableCell>
+      <TableCell>
+        <div className="flex gap-1">
+          <Button variant="ghost" size="sm" onClick={() => onEdit(r)} disabled={isActionsDisabled}>
+            {tc('edit')}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onDelete(r.id)}
+            disabled={isActionsDisabled}
+          >
+            {tc('delete')}
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  )
+}
+
 export function ResourceList({ packageId, resources, onUpdated }: ResourceListProps) {
   const t = useTranslations('resource')
   const tc = useTranslations('common')
@@ -72,6 +164,68 @@ export function ResourceList({ packageId, resources, onUpdated }: ResourceListPr
   const [uploadingResourceId, setUploadingResourceId] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Staged order — committed via Save button
+  const [items, setItems] = useState<Resource[]>(resources)
+  const [reorderError, setReorderError] = useState<string | null>(null)
+  const [savingOrder, setSavingOrder] = useState(false)
+
+  useEffect(() => {
+    setItems(resources)
+  }, [resources])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+
+  const isDirty = useMemo(
+    () =>
+      items.length === resources.length && items.some((r, i) => r.id !== resources[i]?.id),
+    [items, resources]
+  )
+
+  const itemIds = useMemo(() => items.map((r) => r.id), [items])
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const oldIndex = items.findIndex((r) => r.id === active.id)
+    const newIndex = items.findIndex((r) => r.id === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+
+    setItems(arrayMove(items, oldIndex, newIndex))
+    setReorderError(null)
+  }
+
+  async function saveOrder() {
+    setSavingOrder(true)
+    setReorderError(null)
+    try {
+      const res = await clientFetch(`/api/v1/packages/${packageId}/resources/reorder`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resource_ids: items.map((r) => r.id) }),
+      })
+      if (!res.ok) {
+        setReorderError(t('reorderFailed'))
+        return
+      }
+      onUpdated()
+    } catch {
+      setReorderError(t('reorderFailed'))
+    } finally {
+      setSavingOrder(false)
+    }
+  }
+
+  function cancelOrder() {
+    setItems(resources)
+    setReorderError(null)
+  }
+
+  const isFormOpen = editId !== null || creating
 
   // --- Helpers ---
 
@@ -383,74 +537,74 @@ export function ResourceList({ packageId, resources, onUpdated }: ResourceListPr
 
   return (
     <>
-      {resources.length === 0 && !creating ? (
+      {reorderError && (
+        <div className="mb-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {reorderError}
+        </div>
+      )}
+      {isDirty && (
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+          <span className="text-muted-foreground">{t('reorderPending')}</span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={cancelOrder} disabled={savingOrder}>
+              {tc('cancel')}
+            </Button>
+            <Button size="sm" onClick={saveOrder} disabled={savingOrder}>
+              {savingOrder ? tc('updating') : t('saveOrder')}
+            </Button>
+          </div>
+        </div>
+      )}
+      {items.length === 0 && !creating ? (
         <p className="py-4 text-center text-sm text-muted-foreground">{t('noResources')}</p>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{tc('name')}</TableHead>
-              <TableHead>{tc('format')}</TableHead>
-              <TableHead>{t('source')}</TableHead>
-              <TableHead>{t('status')}</TableHead>
-              <TableHead className="w-[120px]">{tc('actions')}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {resources.map((r) => (
-              <Fragment key={r.id}>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-8" />
+                <TableHead>{tc('name')}</TableHead>
+                <TableHead>{tc('format')}</TableHead>
+                <TableHead>{t('source')}</TableHead>
+                <TableHead>{t('status')}</TableHead>
+                <TableHead className="w-[120px]">{tc('actions')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
+                {items.map((r) => (
+                  <Fragment key={r.id}>
+                    <SortableResourceRow
+                      resource={r}
+                      isDragDisabled={isFormOpen || savingOrder}
+                      isActionsDisabled={isDirty || savingOrder}
+                      onEdit={startEdit}
+                      onDelete={setDeleteId}
+                    />
+                    {activeFormId === r.id && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="bg-muted/30 p-4">
+                          {renderInlineForm()}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
+                ))}
+              </SortableContext>
+              {creating && (
                 <TableRow>
-                  <TableCell>{r.name || '-'}</TableCell>
-                  <TableCell>
-                    {r.format ? <Badge variant="secondary">{r.format}</Badge> : '-'}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {r.urlType === 'upload' ? (
-                      <Badge variant="outline">{t('sourceUpload')}</Badge>
-                    ) : r.url ? (
-                      <Badge variant="outline">{t('sourceUrl')}</Badge>
-                    ) : (
-                      '-'
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {r.pipelineStatus && (
-                      <PipelineStatusBadge resourceId={r.id} initialStatus={r.pipelineStatus} />
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => startEdit(r)}>
-                        {tc('edit')}
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleteId(r.id)}>
-                        {tc('delete')}
-                      </Button>
-                    </div>
+                  <TableCell colSpan={6} className="bg-muted/30 p-4">
+                    {renderInlineForm()}
                   </TableCell>
                 </TableRow>
-                {activeFormId === r.id && (
-                  <TableRow key={`${r.id}-edit`}>
-                    <TableCell colSpan={5} className="bg-muted/30 p-4">
-                      {renderInlineForm()}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </Fragment>
-            ))}
-            {creating && (
-              <TableRow>
-                <TableCell colSpan={5} className="bg-muted/30 p-4">
-                  {renderInlineForm()}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+              )}
+            </TableBody>
+          </Table>
+        </DndContext>
       )}
 
       {!creating && !editId && (
-        <Button variant="outline" size="sm" onClick={startCreate}>
+        <Button variant="outline" size="sm" onClick={startCreate} disabled={isDirty || savingOrder}>
           <Plus className="mr-1 size-4" />
           {t('addResource')}
         </Button>
