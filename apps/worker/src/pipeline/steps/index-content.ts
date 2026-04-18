@@ -88,7 +88,8 @@ export async function executeIndexContent(
   const doc: ResourceDoc = {
     id: resourceId,
     packageId,
-    name: res.url ?? undefined,
+    name: res.name ?? res.url ?? undefined,
+    description: res.description ?? undefined,
     format: res.format ?? undefined,
     extractedText: indexedText,
     contentType,

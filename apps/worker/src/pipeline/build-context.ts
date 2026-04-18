@@ -23,6 +23,8 @@ export function buildPipelineContext(
         .select({
           id: resource.id,
           packageId: resource.packageId,
+          name: resource.name,
+          description: resource.description,
           url: resource.url,
           urlType: resource.urlType,
           format: resource.format,

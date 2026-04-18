@@ -121,9 +121,14 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                           </span>
                           {r.format && <FormatBadge format={r.format} className="shrink-0" />}
                         </div>
+                        {r.description && (
+                          <p className="line-clamp-1 text-xs text-muted-foreground">
+                            {r.description}
+                          </p>
+                        )}
                         {r.matchSource === 'content' && r.contentSnippet && (
                           <p
-                            className="line-clamp-2 text-xs text-muted-foreground"
+                            className="line-clamp-2 text-xs text-muted-foreground/80 italic"
                             dangerouslySetInnerHTML={{ __html: r.contentSnippet }}
                           />
                         )}
@@ -132,11 +137,6 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                             <Search className="h-2.5 w-2.5" />
                             {t('contentMatch')}
                           </span>
-                        )}
-                        {r.matchSource !== 'content' && r.description && (
-                          <p className="line-clamp-1 text-xs text-muted-foreground">
-                            {r.description}
-                          </p>
                         )}
                       </Link>
                     </li>

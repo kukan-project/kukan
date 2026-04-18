@@ -10,6 +10,8 @@ import type { ResourceDoc } from '@kukan/search-adapter'
 export interface ResourceForPipeline {
   id: string
   packageId: string
+  name: string | null
+  description: string | null
   url: string | null
   urlType: string | null
   format: string | null
