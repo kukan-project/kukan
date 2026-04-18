@@ -389,7 +389,6 @@ export class OpenSearchAdapter implements SearchAdapter {
       },
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const msearchResponse = await this.client.msearch({
       body: [
         { index: this.packagesIndex },
@@ -397,6 +396,7 @@ export class OpenSearchAdapter implements SearchAdapter {
         { index: this.resourcesIndex },
         resourcesBody,
       ],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -458,7 +458,6 @@ export class OpenSearchAdapter implements SearchAdapter {
     const byPackage = new Map<string, MatchedResource[]>()
     const packageScores = new Map<string, number>()
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (const hit of resourceHits) {
       const src = hit._source
       const pkgId = src.packageId as string
