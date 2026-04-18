@@ -6,13 +6,13 @@ import type { SearchAdapter, DatasetDoc } from '@kukan/search-adapter'
 function createMockSearch() {
   const indexed: DatasetDoc[] = []
   const adapter: SearchAdapter = {
-    index: vi.fn(async (doc: DatasetDoc) => {
+    indexPackage: vi.fn(async (doc: DatasetDoc) => {
       indexed.push(doc)
     }),
+    deletePackage: vi.fn(),
+    bulkIndexPackages: vi.fn(),
+    deleteAllPackages: vi.fn(),
     search: vi.fn(),
-    delete: vi.fn(),
-    deleteAll: vi.fn(),
-    bulkIndex: vi.fn(),
     sumResourceCount: vi.fn(),
     indexResource: vi.fn(),
     bulkIndexResources: vi.fn(),
@@ -55,7 +55,7 @@ describe('indexPackage', () => {
 
     await indexPackage(db, adapter, 'pkg-1')
 
-    expect(adapter.index).toHaveBeenCalledOnce()
+    expect(adapter.indexPackage).toHaveBeenCalledOnce()
     expect(indexed).toHaveLength(1)
 
     const doc = indexed[0]
@@ -83,7 +83,7 @@ describe('indexPackage', () => {
 
     await indexPackage(db, adapter, 'pkg-missing')
 
-    expect(adapter.index).not.toHaveBeenCalled()
+    expect(adapter.indexPackage).not.toHaveBeenCalled()
   })
 
   it('should handle package without organization', async () => {

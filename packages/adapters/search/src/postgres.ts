@@ -37,7 +37,7 @@ export class PostgresSearchAdapter implements SearchAdapter {
     this.db = db
   }
 
-  async index(_doc: DatasetDoc): Promise<void> {
+  async indexPackage(_doc: DatasetDoc): Promise<void> {
     // No-op: data lives directly in the package table
   }
 
@@ -363,15 +363,15 @@ export class PostgresSearchAdapter implements SearchAdapter {
     }
   }
 
-  async delete(_id: string): Promise<void> {
+  async deletePackage(_id: string): Promise<void> {
     // No-op: deletion handled by database cascade
   }
 
-  async deleteAll(): Promise<void> {
+  async deleteAllPackages(): Promise<void> {
     // No-op: data lives directly in the package table
   }
 
-  async bulkIndex(_docs: DatasetDoc[]): Promise<void> {
+  async bulkIndexPackages(_docs: DatasetDoc[]): Promise<void> {
     // No-op: data lives directly in the package table
   }
 

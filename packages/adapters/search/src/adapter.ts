@@ -121,57 +121,39 @@ export interface SearchResult {
 // ============================================================
 
 export interface SearchAdapter {
-  /**
-   * Index a dataset document (kukan-packages)
-   */
-  index(doc: DatasetDoc): Promise<void>
+  // ---- Dataset-level index (kukan-packages) ----
 
-  /**
-   * Search for datasets (kukan-packages + kukan-resources via msearch)
-   */
-  search(query: SearchQuery): Promise<SearchResult>
+  /** Index a dataset document */
+  indexPackage(doc: DatasetDoc): Promise<void>
 
-  /**
-   * Delete a dataset from the index (kukan-packages)
-   */
-  delete(id: string): Promise<void>
+  /** Delete a dataset from the index */
+  deletePackage(id: string): Promise<void>
 
-  /**
-   * Bulk index multiple dataset documents (kukan-packages)
-   */
-  bulkIndex(docs: DatasetDoc[]): Promise<void>
+  /** Bulk index multiple dataset documents */
+  bulkIndexPackages(docs: DatasetDoc[]): Promise<void>
 
-  /**
-   * Delete all dataset documents from the index (kukan-packages, for full rebuild)
-   */
-  deleteAll(): Promise<void>
-
-  /**
-   * Sum total active resource count across packages matching the given query/filters.
-   * Uses the same visibility / filter logic as search().
-   */
-  sumResourceCount(query?: ResourceCountQuery): Promise<number>
+  /** Delete all dataset documents (for full rebuild) */
+  deleteAllPackages(): Promise<void>
 
   // ---- Resource-level index (kukan-resources) ----
 
-  /**
-   * Index a resource document (metadata + optional extracted content).
-   * Upsert semantics: creates or replaces the document.
-   */
+  /** Index a resource document (metadata + optional extracted content). Upsert semantics. */
   indexResource(doc: ResourceDoc): Promise<void>
 
-  /**
-   * Bulk index multiple resource documents
-   */
-  bulkIndexResources(docs: ResourceDoc[]): Promise<void>
-
-  /**
-   * Delete a resource from the resource index
-   */
+  /** Delete a resource from the resource index */
   deleteResource(resourceId: string): Promise<void>
 
-  /**
-   * Delete all resource documents (for full rebuild)
-   */
+  /** Bulk index multiple resource documents */
+  bulkIndexResources(docs: ResourceDoc[]): Promise<void>
+
+  /** Delete all resource documents (for full rebuild) */
   deleteAllResources(): Promise<void>
+
+  // ---- Cross-index operations ----
+
+  /** Search for datasets (kukan-packages + kukan-resources via msearch) */
+  search(query: SearchQuery): Promise<SearchResult>
+
+  /** Sum total active resource count across packages matching the given query/filters */
+  sumResourceCount(query?: ResourceCountQuery): Promise<number>
 }

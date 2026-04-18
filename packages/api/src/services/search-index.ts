@@ -92,7 +92,7 @@ export async function indexPackage(
     updated: pkg.updated,
   }
 
-  await search.index(doc)
+  await search.indexPackage(doc)
 }
 
 /**

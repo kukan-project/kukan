@@ -145,7 +145,7 @@ export class OpenSearchAdapter implements SearchAdapter {
   // Dataset-level index (kukan-packages)
   // ------------------------------------------------------------------
 
-  async index(doc: DatasetDoc): Promise<void> {
+  async indexPackage(doc: DatasetDoc): Promise<void> {
     await this.ensureIndex()
     await this.client.index({
       index: this.packagesIndex,
@@ -155,7 +155,7 @@ export class OpenSearchAdapter implements SearchAdapter {
     })
   }
 
-  async delete(id: string): Promise<void> {
+  async deletePackage(id: string): Promise<void> {
     await this.ensureIndex()
     try {
       await this.client.delete({ index: this.packagesIndex, id, refresh: 'wait_for' })
@@ -165,7 +165,7 @@ export class OpenSearchAdapter implements SearchAdapter {
     }
   }
 
-  async deleteAll(): Promise<void> {
+  async deleteAllPackages(): Promise<void> {
     await this.ensureIndex()
     await this.client.deleteByQuery({
       index: this.packagesIndex,
@@ -174,7 +174,7 @@ export class OpenSearchAdapter implements SearchAdapter {
     })
   }
 
-  async bulkIndex(docs: DatasetDoc[]): Promise<void> {
+  async bulkIndexPackages(docs: DatasetDoc[]): Promise<void> {
     if (docs.length === 0) return
     await this.ensureIndex()
 

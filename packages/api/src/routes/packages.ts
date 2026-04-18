@@ -214,7 +214,7 @@ packagesRouter.delete('/:nameOrId', async (c) => {
   if (existing.ownerOrg) await checkOrgRole(db, user, existing.ownerOrg, 'editor')
 
   const pkg = await service.delete(nameOrId)
-  await c.get('search').delete(pkg.id)
+  await c.get('search').deletePackage(pkg.id)
   return c.json(pkg)
 })
 
@@ -230,7 +230,7 @@ packagesRouter.post('/:nameOrId/purge', async (c) => {
   if (existing.ownerOrg) await checkOrgRole(db, user, existing.ownerOrg, 'admin')
 
   const pkg = await service.purge(existing.id)
-  await c.get('search').delete(pkg.id)
+  await c.get('search').deletePackage(pkg.id)
   return c.json(pkg)
 })
 

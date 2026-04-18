@@ -6,16 +6,16 @@ import type { SearchAdapter } from '@kukan/search-adapter'
 const db = getTestDb()
 
 const mockSearch: SearchAdapter = {
-  search: async () => ({ items: [], total: 0, offset: 0, limit: 20 }),
-  index: async () => {},
-  delete: async () => {},
-  bulkIndex: vi.fn().mockResolvedValue(undefined),
-  deleteAll: vi.fn().mockResolvedValue(undefined),
-  sumResourceCount: async () => 0,
+  indexPackage: async () => {},
+  deletePackage: async () => {},
+  bulkIndexPackages: vi.fn().mockResolvedValue(undefined),
+  deleteAllPackages: vi.fn().mockResolvedValue(undefined),
   indexResource: async () => {},
-  bulkIndexResources: async () => {},
   deleteResource: async () => {},
+  bulkIndexResources: async () => {},
   deleteAllResources: async () => {},
+  search: async () => ({ items: [], total: 0, offset: 0, limit: 20 }),
+  sumResourceCount: async () => 0,
 }
 
 const app = createTestApp(db, { search: mockSearch })
@@ -33,7 +33,7 @@ const nonAdminApp = createTestApp(db, {
 beforeEach(async () => {
   await cleanDatabase()
   await ensureTestUser()
-  vi.mocked(mockSearch.bulkIndex).mockClear()
+  vi.mocked(mockSearch.bulkIndexPackages).mockClear()
 })
 
 afterAll(async () => {
@@ -95,7 +95,7 @@ describe('Admin API Routes', () => {
 
       const body = await res.json()
       expect(body.indexed).toBe(0)
-      expect(mockSearch.bulkIndex).not.toHaveBeenCalled()
+      expect(mockSearch.bulkIndexPackages).not.toHaveBeenCalled()
     })
 
     it('should reindex all active packages', async () => {
@@ -108,9 +108,9 @@ describe('Admin API Routes', () => {
 
       const body = await res.json()
       expect(body.indexed).toBe(2)
-      expect(mockSearch.bulkIndex).toHaveBeenCalledOnce()
+      expect(mockSearch.bulkIndexPackages).toHaveBeenCalledOnce()
 
-      const docs = vi.mocked(mockSearch.bulkIndex).mock.calls[0][0]
+      const docs = vi.mocked(mockSearch.bulkIndexPackages).mock.calls[0][0]
       expect(docs).toHaveLength(2)
 
       const names = docs.map((d) => d.name).sort()

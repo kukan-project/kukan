@@ -44,20 +44,20 @@ describe('PostgresSearchAdapter', () => {
   describe('no-op methods', () => {
     const adapter = new PostgresSearchAdapter(createMockDb([]))
 
-    it('index should be a no-op', async () => {
-      await expect(adapter.index({ id: '1', name: 'test' })).resolves.toBeUndefined()
+    it('indexPackage should be a no-op', async () => {
+      await expect(adapter.indexPackage({ id: '1', name: 'test' })).resolves.toBeUndefined()
     })
 
-    it('delete should be a no-op', async () => {
-      await expect(adapter.delete('1')).resolves.toBeUndefined()
+    it('deletePackage should be a no-op', async () => {
+      await expect(adapter.deletePackage('1')).resolves.toBeUndefined()
     })
 
-    it('bulkIndex should be a no-op', async () => {
-      await expect(adapter.bulkIndex([{ id: '1', name: 'test' }])).resolves.toBeUndefined()
+    it('bulkIndexPackages should be a no-op', async () => {
+      await expect(adapter.bulkIndexPackages([{ id: '1', name: 'test' }])).resolves.toBeUndefined()
     })
 
-    it('deleteAll should be a no-op', async () => {
-      await expect(adapter.deleteAll()).resolves.toBeUndefined()
+    it('deleteAllPackages should be a no-op', async () => {
+      await expect(adapter.deleteAllPackages()).resolves.toBeUndefined()
     })
   })
 

@@ -119,11 +119,11 @@ describe('OpenSearchAdapter', () => {
     })
   })
 
-  describe('index', () => {
+  describe('indexPackage', () => {
     it('should index a document to packages index', async () => {
       mockClient.index.mockResolvedValue({ body: {} })
 
-      await adapter.index({
+      await adapter.indexPackage({
         id: 'pkg-1',
         name: 'test-dataset',
         title: 'Test Dataset',
@@ -286,11 +286,11 @@ describe('OpenSearchAdapter', () => {
     })
   })
 
-  describe('delete', () => {
+  describe('deletePackage', () => {
     it('should delete from packages index', async () => {
       mockClient.delete.mockResolvedValue({ body: {} })
 
-      await adapter.delete('pkg-1')
+      await adapter.deletePackage('pkg-1')
 
       expect(mockClient.delete).toHaveBeenCalledWith({
         index: 'kukan-packages',
@@ -301,7 +301,7 @@ describe('OpenSearchAdapter', () => {
 
     it('should ignore 404 errors', async () => {
       mockClient.delete.mockRejectedValue({ statusCode: 404 })
-      await expect(adapter.delete('nonexistent')).resolves.toBeUndefined()
+      await expect(adapter.deletePackage('nonexistent')).resolves.toBeUndefined()
     })
   })
 
@@ -319,11 +319,11 @@ describe('OpenSearchAdapter', () => {
     })
   })
 
-  describe('bulkIndex', () => {
+  describe('bulkIndexPackages', () => {
     it('should bulk index to packages index', async () => {
       mockClient.bulk.mockResolvedValue({ body: { errors: false, items: [] } })
 
-      await adapter.bulkIndex([
+      await adapter.bulkIndexPackages([
         { id: 'pkg-1', name: 'dataset-1' },
         { id: 'pkg-2', name: 'dataset-2' },
       ])
@@ -340,7 +340,7 @@ describe('OpenSearchAdapter', () => {
     })
 
     it('should skip empty array', async () => {
-      await adapter.bulkIndex([])
+      await adapter.bulkIndexPackages([])
       expect(mockClient.bulk).not.toHaveBeenCalled()
     })
   })

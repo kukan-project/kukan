@@ -25,15 +25,15 @@ import { ckanCompatRouter } from '../../routes/ckan-compat'
 // Minimal mock adapters (search/storage are no-ops for route tests)
 const mockSearch: SearchAdapter = {
   search: async () => ({ items: [], total: 0, offset: 0, limit: 20 }),
-  index: async () => {},
-  delete: async () => {},
-  bulkIndex: async () => {},
-  deleteAll: async () => {},
-  sumResourceCount: async () => 0,
+  indexPackage: async () => {},
+  deletePackage: async () => {},
+  bulkIndexPackages: async () => {},
+  deleteAllPackages: async () => {},
   indexResource: async () => {},
-  bulkIndexResources: async () => {},
   deleteResource: async () => {},
+  bulkIndexResources: async () => {},
   deleteAllResources: async () => {},
+  sumResourceCount: async () => 0,
 }
 
 const mockStorage = {

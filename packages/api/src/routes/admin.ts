@@ -80,7 +80,7 @@ adminRouter.post('/reindex', async (c) => {
   const search = c.get('search')
 
   // Clear all existing documents to remove stale entries
-  await search.deleteAll()
+  await search.deleteAllPackages()
 
   // Fetch all active package IDs
   const packages = await db
@@ -205,7 +205,7 @@ adminRouter.post('/reindex', async (c) => {
     })
 
     if (docs.length > 0) {
-      await search.bulkIndex(docs)
+      await search.bulkIndexPackages(docs)
       indexed += docs.length
     }
   }
@@ -326,7 +326,7 @@ adminRouter.delete('/data', async (c) => {
   })
 
   // 2. Clear search index (best-effort)
-  await search.deleteAll().catch(() => {})
+  await search.deleteAllPackages().catch(() => {})
 
   // 3. Clear storage files (best-effort)
   let storageObjects = 0
