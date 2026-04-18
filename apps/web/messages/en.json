@@ -240,7 +240,10 @@
       "processing": "Processing",
       "complete": "Complete",
       "error": "Error",
-      "reprocess": "Reprocess"
+      "reprocess": "Reprocess",
+      "enqueueAll": "Reprocess all",
+      "enqueueAllConfirm": "This will enqueue pipeline jobs for all resources. Continue?",
+      "enqueueAllResult": "{count} resources enqueued"
     },
     "adminUsers": {
       "title": "User Management",

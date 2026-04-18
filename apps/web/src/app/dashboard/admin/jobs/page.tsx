@@ -94,6 +94,8 @@ export default function AdminJobsPage() {
 
   const [refreshing, setRefreshing] = useState(false)
   const [reprocessing, setReprocessing] = useState<string | null>(null)
+  const [enqueuingAll, setEnqueuingAll] = useState(false)
+  const [enqueueResult, setEnqueueResult] = useState<number | null>(null)
 
   // Track current offset for use in callbacks without stale closures
   const offsetRef = useRef(offset)
@@ -142,21 +144,51 @@ export default function AdminJobsPage() {
     setRefreshing(false)
   }, [fetchPage, fetchStats])
 
+  const enqueueAll = useCallback(async () => {
+    if (!confirm(t('enqueueAllConfirm'))) return
+    setEnqueuingAll(true)
+    setEnqueueResult(null)
+    const res = await clientFetch('/api/v1/admin/jobs/enqueue-all', { method: 'POST' })
+    if (res.ok) {
+      const body = await res.json()
+      setEnqueueResult(body.enqueued)
+    }
+    setEnqueuingAll(false)
+    await Promise.all([fetchPage(0), fetchStats()])
+  }, [fetchPage, fetchStats, t])
+
   if (!user.sysadmin) return null
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title={t('title')}>
-        <Button
-          variant="outline"
-          size="icon"
-          className="h-8 w-8"
-          onClick={refresh}
-          disabled={refreshing}
-        >
-          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={enqueueAll}
+            disabled={enqueuingAll}
+          >
+            <Play className={`mr-1 h-3.5 w-3.5 ${enqueuingAll ? 'animate-pulse' : ''}`} />
+            {t('enqueueAll')}
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            onClick={refresh}
+            disabled={refreshing}
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
       </PageHeader>
+
+      {enqueueResult !== null && (
+        <p className="text-sm text-muted-foreground">
+          {t('enqueueAllResult', { count: enqueueResult })}
+        </p>
+      )}
 
       {/* Stats Cards (DB-based) */}
       <div className="grid gap-4 sm:grid-cols-5">

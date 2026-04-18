@@ -240,7 +240,10 @@
       "processing": "処理中",
       "complete": "完了",
       "error": "エラー",
-      "reprocess": "再処理"
+      "reprocess": "再処理",
+      "enqueueAll": "全リソース再処理",
+      "enqueueAllConfirm": "全リソースのパイプラインを予約します。よろしいですか？",
+      "enqueueAllResult": "{count} 件のリソースを予約しました"
     },
     "adminUsers": {
       "title": "ユーザー管理",
