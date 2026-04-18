@@ -126,6 +126,7 @@
     "maintainerEmail": "Maintainer Email",
     "resourceCount": "All {count} resources",
     "matchedResources": "Matched resources",
+    "contentMatch": "Content match",
     "tabPublic": "Public",
     "tabPrivate": "Private",
     "tabDeleted": "Deleted",

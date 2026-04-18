@@ -126,6 +126,7 @@
     "maintainerEmail": "管理者メール",
     "resourceCount": "全{count}リソース",
     "matchedResources": "一致したリソース",
+    "contentMatch": "データ内容に一致",
     "tabPublic": "公開",
     "tabPrivate": "非公開",
     "tabDeleted": "削除済",

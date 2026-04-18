@@ -29,7 +29,7 @@ import {
   userNameSchema,
   userRoleSchema,
 } from '@kukan/shared'
-import type { DatasetDoc } from '@kukan/search-adapter'
+import type { DatasetDoc, ResourceDoc } from '@kukan/search-adapter'
 import type { AppContext } from '../context'
 
 export const adminRouter = new Hono<{ Variables: AppContext }>()
@@ -80,7 +80,7 @@ adminRouter.post('/reindex', async (c) => {
   const search = c.get('search')
 
   // Clear all existing documents to remove stale entries
-  await search.deleteAllPackages()
+  await Promise.all([search.deleteAllPackages(), search.deleteAllResources()])
 
   // Fetch all active package IDs
   const packages = await db
@@ -89,6 +89,7 @@ adminRouter.post('/reindex', async (c) => {
     .where(eq(packageTable.state, 'active'))
 
   let indexed = 0
+  let resourcesIndexed = 0
 
   // Process in batches
   for (let i = 0; i < packages.length; i += BATCH_SIZE) {
@@ -175,6 +176,7 @@ adminRouter.post('/reindex', async (c) => {
       arr.push(t.name)
     }
 
+    // Build dataset docs (without resources — they go to kukan-resources)
     const docs: DatasetDoc[] = details.map((detail) => {
       const pkgResources = resourcesByPkg.get(detail.id) ?? []
       const formatSet = new Set(
@@ -195,22 +197,29 @@ adminRouter.post('/reindex', async (c) => {
         creator_user_id: detail.creatorUserId ?? undefined,
         created: detail.created,
         updated: detail.updated,
-        resources: pkgResources.map((r) => ({
-          id: r.id,
-          name: r.name ?? undefined,
-          description: r.description ?? undefined,
-          format: r.format ?? undefined,
-        })),
       }
     })
+
+    // Build resource docs (metadata only — content is added by pipeline)
+    const resourceDocs: ResourceDoc[] = allResources.map((r) => ({
+      id: r.id,
+      packageId: r.packageId,
+      name: r.name ?? undefined,
+      description: r.description ?? undefined,
+      format: r.format ?? undefined,
+    }))
 
     if (docs.length > 0) {
       await search.bulkIndexPackages(docs)
       indexed += docs.length
     }
+    if (resourceDocs.length > 0) {
+      await search.bulkIndexResources(resourceDocs)
+      resourcesIndexed += resourceDocs.length
+    }
   }
 
-  return c.json({ indexed })
+  return c.json({ indexed, resourcesIndexed })
 })
 
 const RECENT_ERROR_LIMIT = 10
@@ -326,7 +335,10 @@ adminRouter.delete('/data', async (c) => {
   })
 
   // 2. Clear search index (best-effort)
-  await search.deleteAllPackages().catch(() => {})
+  await Promise.all([
+    search.deleteAllPackages().catch(() => {}),
+    search.deleteAllResources().catch(() => {}),
+  ])
 
   // 3. Clear storage files (best-effort)
   let storageObjects = 0

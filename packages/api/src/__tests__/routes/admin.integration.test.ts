@@ -116,16 +116,17 @@ describe('Admin API Routes', () => {
       const names = docs.map((d) => d.name).sort()
       expect(names).toEqual(['pkg-alpha', 'pkg-beta'])
 
-      // Each doc should have resources for OpenSearch nested indexing
+      // Dataset docs should NOT contain resources (moved to kukan-resources)
       for (const doc of docs) {
-        expect(doc.resources).toHaveLength(1)
-        expect((doc.resources as Array<{ format: string }>)[0].format).toBe('CSV')
-        // New fields for aggregations
+        expect(doc['resources']).toBeUndefined()
         expect(doc.organization).toBe('test-org')
         expect(doc.formats).toEqual(['CSV'])
         expect(doc.tags).toEqual([])
         expect(doc.groups).toEqual([])
       }
+
+      // Resources should be indexed separately
+      expect(body.resourcesIndexed).toBe(2)
     })
   })
 })

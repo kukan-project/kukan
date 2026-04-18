@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
-import { Building2, Calendar, FileText, FolderOpen, Tag } from 'lucide-react'
+import { Building2, Calendar, FileText, FolderOpen, Search, Tag } from 'lucide-react'
 import { Badge, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
 import { FormatBadge } from './format-badge'
 import { FormatBadges } from './format-badges'
@@ -121,7 +121,19 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                           </span>
                           {r.format && <FormatBadge format={r.format} className="shrink-0" />}
                         </div>
-                        {r.description && (
+                        {r.matchSource === 'content' && r.contentSnippet && (
+                          <p
+                            className="line-clamp-2 text-xs text-muted-foreground"
+                            dangerouslySetInnerHTML={{ __html: r.contentSnippet }}
+                          />
+                        )}
+                        {r.matchSource === 'content' && (
+                          <span className="mt-0.5 inline-flex items-center gap-0.5 text-[10px] text-primary">
+                            <Search className="h-2.5 w-2.5" />
+                            {t('contentMatch')}
+                          </span>
+                        )}
+                        {r.matchSource !== 'content' && r.description && (
                           <p className="line-clamp-1 text-xs text-muted-foreground">
                             {r.description}
                           </p>
