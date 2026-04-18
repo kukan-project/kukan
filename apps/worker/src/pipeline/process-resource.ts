@@ -1,7 +1,6 @@
 /**
  * KUKAN Pipeline — Resource Processing Orchestrator
- * Runs Fetch → Extract steps with error isolation.
- * Index step removed — indexing is handled by API route handlers on CUD.
+ * Runs Fetch → Extract → Index steps with error isolation.
  */
 
 import type { Database } from '@kukan/db'
@@ -10,13 +9,14 @@ import { PIPELINE_JOB_TYPE } from '@kukan/shared'
 import { StepTracker } from './step-tracker'
 import { executeFetch } from './steps/fetch'
 import { executeExtract } from './steps/extract'
+import { executeIndexContent } from './steps/index-content'
 import type { PipelineContext } from './types'
 import { FETCH_RATE_LIMIT_REQUEUE_DELAY_S } from '@/config'
 
 /**
  * Process a resource through the full pipeline.
  * Each step is recorded in resource_pipeline_step.
- * Extract failure is caught so the pipeline can still complete.
+ * Extract/Index failures are caught so the pipeline can still complete.
  *
  * @param db - Database instance for pipeline state management (resource_pipeline tables)
  * @param queue - Queue adapter for requeueing rate-limited fetches
@@ -64,9 +64,10 @@ export async function processResource(
 
     // Step 2: Extract — parse from Storage, generate Parquet preview
     // Non-critical: failures are recorded but don't fail the pipeline
+    let extractResult: Awaited<ReturnType<typeof executeExtract>> = null
     const extractStepId = await tracker.startStep(pipeline.id, 'extract')
     try {
-      const extractResult = await executeExtract(
+      extractResult = await executeExtract(
         resourceId,
         fetchResult.packageId,
         fetchResult.storageKey,
@@ -83,6 +84,30 @@ export async function processResource(
       }
     } catch (err) {
       await tracker.failStep(extractStepId, (err as Error).message)
+    }
+
+    // Step 3: Index — extract text content and index to search engine
+    // Non-critical: failures are recorded but don't fail the pipeline
+    const indexStepId = await tracker.startStep(pipeline.id, 'index')
+    try {
+      const indexResult = await executeIndexContent(
+        resourceId,
+        fetchResult.packageId,
+        fetchResult.storageKey,
+        fetchResult.format,
+        extractResult,
+        ctx
+      )
+      if (indexResult === null) {
+        await tracker.skipStep(indexStepId)
+        await ctx.updatePipelineMetadata(pipeline.id, { contentIndexed: false })
+      } else {
+        await tracker.completeStep(indexStepId)
+        await ctx.updatePipelineMetadata(pipeline.id, { ...indexResult })
+      }
+    } catch (err) {
+      await tracker.failStep(indexStepId, (err as Error).message)
+      await ctx.updatePipelineMetadata(pipeline.id, { contentIndexed: false })
     }
 
     await tracker.updateStatus(pipeline.id, 'complete')

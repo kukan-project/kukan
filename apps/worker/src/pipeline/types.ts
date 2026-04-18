@@ -4,6 +4,7 @@
  */
 
 import type { Readable } from 'node:stream'
+import type { ResourceDoc } from '@kukan/search-adapter'
 
 /** Minimal resource data needed by pipeline steps */
 export interface ResourceForPipeline {
@@ -30,4 +31,9 @@ export interface PipelineContext {
    * Returns false if rate-limited (another fetch happened within the last second).
    */
   acquireFetchSlot(fqdn: string): Promise<boolean>
+  /** Index a resource document (metadata + optional content) into the search index.
+   *  No-op when OpenSearch is not configured. */
+  indexResource(doc: ResourceDoc): Promise<void>
+  /** Update pipeline metadata JSONB (merges with existing metadata) */
+  updatePipelineMetadata(pipelineId: string, metadata: Record<string, unknown>): Promise<void>
 }

@@ -11,6 +11,9 @@ vi.mock('../pipeline/steps/fetch', () => ({
 vi.mock('../pipeline/steps/extract', () => ({
   executeExtract: vi.fn(),
 }))
+vi.mock('../pipeline/steps/index-content', () => ({
+  executeIndexContent: vi.fn(),
+}))
 
 // Mock StepTracker
 const mockTracker = {
@@ -30,6 +33,7 @@ vi.mock('../pipeline/step-tracker', () => ({
 // Import mocked modules
 import { executeFetch } from '../pipeline/steps/fetch'
 import { executeExtract } from '../pipeline/steps/extract'
+import { executeIndexContent } from '../pipeline/steps/index-content'
 
 function createMockCtx(): PipelineContext {
   return {
@@ -37,6 +41,8 @@ function createMockCtx(): PipelineContext {
     getResource: vi.fn(),
     updateResourceHashAndSize: vi.fn(),
     acquireFetchSlot: vi.fn().mockResolvedValue(true),
+    indexResource: vi.fn(),
+    updatePipelineMetadata: vi.fn(),
   }
 }
 
@@ -82,6 +88,13 @@ describe('processResource', () => {
       previewKey: 'previews/pkg-1/res-1.parquet',
       encoding: 'UTF8',
     })
+    vi.mocked(executeIndexContent).mockResolvedValue({
+      contentIndexed: true,
+      contentType: 'tabular',
+      contentOriginalSize: 5000,
+      contentIndexedSize: 5000,
+      contentTruncated: false,
+    })
 
     await processResource('res-1', ctx, db, queue)
 
@@ -93,8 +106,8 @@ describe('processResource', () => {
       'CSV',
       ctx
     )
-    // Fetch + Extract = 2 steps (index step removed)
-    expect(mockTracker.startStep).toHaveBeenCalledTimes(2)
+    // Fetch + Extract + Index = 3 steps
+    expect(mockTracker.startStep).toHaveBeenCalledTimes(3)
     expect(mockTracker.completeStep).toHaveBeenCalledWith('step-0')
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
     expect(mockTracker.updateExtractResult).toHaveBeenCalledWith(
@@ -112,6 +125,7 @@ describe('processResource', () => {
       status: 'skipped',
     })
     vi.mocked(executeExtract).mockResolvedValue(null)
+    vi.mocked(executeIndexContent).mockResolvedValue(null)
 
     await processResource('res-1', ctx, db, queue)
 
@@ -119,7 +133,7 @@ describe('processResource', () => {
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
   })
 
-  it('should skip extract when format is unsupported', async () => {
+  it('should skip extract and index when format is unsupported', async () => {
     vi.mocked(executeFetch).mockResolvedValue({
       storageKey: 'resources/pkg-1/res-1',
       format: 'PDF',
@@ -127,12 +141,14 @@ describe('processResource', () => {
       status: 'fetched',
     })
     vi.mocked(executeExtract).mockResolvedValue(null)
+    vi.mocked(executeIndexContent).mockResolvedValue(null)
 
     await processResource('res-1', ctx, db, queue)
 
-    expect(mockTracker.skipStep).toHaveBeenCalledWith('step-1')
+    expect(mockTracker.skipStep).toHaveBeenCalledWith('step-1') // extract skipped
+    expect(mockTracker.skipStep).toHaveBeenCalledWith('step-2') // index skipped
     expect(mockTracker.updateExtractResult).not.toHaveBeenCalled()
-    expect(mockTracker.startStep).toHaveBeenCalledTimes(2)
+    expect(mockTracker.startStep).toHaveBeenCalledTimes(3)
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
   })
 
@@ -144,11 +160,12 @@ describe('processResource', () => {
       status: 'fetched',
     })
     vi.mocked(executeExtract).mockRejectedValue(new Error('Parse error'))
+    vi.mocked(executeIndexContent).mockResolvedValue(null)
 
     await processResource('res-1', ctx, db, queue)
 
     expect(mockTracker.failStep).toHaveBeenCalled()
-    expect(mockTracker.startStep).toHaveBeenCalledTimes(2)
+    expect(mockTracker.startStep).toHaveBeenCalledTimes(3)
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
   })
 

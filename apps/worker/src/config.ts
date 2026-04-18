@@ -26,6 +26,14 @@ export const FETCH_RATE_LIMIT_INTERVAL_MS = 1_000
 /** Delay before retrying a rate-limited fetch (2 s) */
 export const FETCH_RATE_LIMIT_REQUEUE_DELAY_S = 2
 
+// ── Content Indexing ──
+
+/** Maximum text size to index per resource (100 KB) */
+export const MAX_CONTENT_INDEX_SIZE = 100 * 1024
+
+/** Maximum bytes to download from storage for text extraction (2 MB) */
+export const MAX_CONTENT_DOWNLOAD_SIZE = 2 * 1024 * 1024
+
 // ── Health Check ──
 
 /** Number of resources to check per cron tick */

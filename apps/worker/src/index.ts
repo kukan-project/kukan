@@ -11,6 +11,7 @@ import type { Job } from '@kukan/queue-adapter'
 import { createDb, runMigrations } from '@kukan/db'
 import { SQSQueueAdapter } from '@kukan/queue-adapter'
 import { S3StorageAdapter } from '@kukan/storage-adapter'
+import { OpenSearchAdapter } from '@kukan/search-adapter'
 import { processResource } from './pipeline/process-resource'
 import { buildPipelineContext } from './pipeline/build-context'
 import { startHealthCheckScheduler } from './health-check/scheduler'
@@ -105,8 +106,14 @@ if (env.HEALTH_CHECK_ENABLED) {
   })
 }
 
+// --- Search adapter (optional, for content indexing) ---
+const search =
+  env.SEARCH_TYPE === 'opensearch'
+    ? new OpenSearchAdapter({ endpoint: env.OPENSEARCH_URL })
+    : undefined
+
 // --- SQS polling ---
-const ctx = buildPipelineContext(db, storage)
+const ctx = buildPipelineContext(db, storage, search)
 await queue.process<{ resourceId: string }>(
   PIPELINE_JOB_TYPE,
   async (job: Job<{ resourceId: string }>) => {

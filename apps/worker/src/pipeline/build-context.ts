@@ -4,12 +4,17 @@
 
 import { eq, and, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { resource } from '@kukan/db'
+import { resource, resourcePipeline } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
+import type { SearchAdapter, ResourceDoc } from '@kukan/search-adapter'
 import type { PipelineContext, ResourceForPipeline } from './types'
 import { FETCH_RATE_LIMIT_INTERVAL_MS } from '@/config'
 
-export function buildPipelineContext(db: Database, storage: StorageAdapter): PipelineContext {
+export function buildPipelineContext(
+  db: Database,
+  storage: StorageAdapter,
+  search?: SearchAdapter
+): PipelineContext {
   return {
     storage,
 
@@ -50,6 +55,26 @@ export function buildPipelineContext(db: Database, storage: StorageAdapter): Pip
         RETURNING fqdn
       `)
       return result.rows.length > 0
+    },
+
+    async indexResource(doc: ResourceDoc): Promise<void> {
+      if (search) {
+        await search.indexResource(doc)
+      }
+    },
+
+    async updatePipelineMetadata(
+      pipelineId: string,
+      metadata: Record<string, unknown>
+    ): Promise<void> {
+      // Merge with existing metadata using jsonb_concat (||)
+      await db
+        .update(resourcePipeline)
+        .set({
+          metadata: sql`COALESCE(${resourcePipeline.metadata}, '{}'::jsonb) || ${JSON.stringify(metadata)}::jsonb`,
+          updated: sql`NOW()`,
+        })
+        .where(eq(resourcePipeline.id, pipelineId))
     },
   }
 }
