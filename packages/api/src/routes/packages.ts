@@ -19,7 +19,7 @@ import {
 } from '@kukan/shared'
 import type { MatchedResource, SearchFilters } from '@kukan/search-adapter'
 import { checkOrgRole, resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
-import { indexPackage } from '../services/search-index'
+import { indexPackage, indexResourceMetadata } from '../services/search-index'
 import type { AppContext } from '../context'
 
 export const packagesRouter = new Hono<{ Variables: AppContext }>()
@@ -305,7 +305,11 @@ packagesRouter.post(
           })
         : Promise.resolve()
 
-    await Promise.all([enqueuePromise, indexPackage(db, c.get('search'), pkg.id)])
+    await Promise.all([
+      enqueuePromise,
+      indexPackage(db, c.get('search'), pkg.id),
+      indexResourceMetadata(db, c.get('search'), resource.id),
+    ])
     return c.json(resource, 201)
   }
 )

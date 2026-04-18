@@ -1,6 +1,12 @@
 /**
  * KUKAN OpenSearch Adapter
- * Full-text search with kuromoji analyzer for Japanese text
+ * Full-text search with kuromoji analyzer for Japanese text.
+ *
+ * Two indices:
+ *   kukan-packages  — dataset-level metadata (title, notes, tags, org, …)
+ *   kukan-resources  — resource-level metadata + extracted text content
+ *
+ * Searching with `q` fires an msearch across both indices and merges results.
  */
 
 import { Client } from '@opensearch-project/opensearch'
@@ -13,8 +19,13 @@ import type {
   SearchFacets,
   SearchFacetBucket,
   DatasetDoc,
+  ResourceDoc,
+  MatchedResource,
 } from './adapter'
 import { MAX_MATCHED_RESOURCES_PER_PACKAGE } from './adapter'
+
+/** Score multiplier applied to resource hits when merging with package hits */
+const RESOURCE_BOOST = 0.4
 
 export interface OpenSearchConfig {
   endpoint: string
@@ -27,7 +38,8 @@ export interface OpenSearchConfig {
 
 export class OpenSearchAdapter implements SearchAdapter {
   private client: Client
-  private indexName: string
+  private packagesIndex: string
+  private resourcesIndex: string
   private initialized = false
 
   constructor(config: OpenSearchConfig) {
@@ -37,29 +49,44 @@ export class OpenSearchAdapter implements SearchAdapter {
         auth: { username: config.auth.username, password: config.auth.password },
       }),
     })
-    this.indexName = `${config.indexPrefix || 'kukan'}-packages`
+    const prefix = config.indexPrefix || 'kukan'
+    this.packagesIndex = `${prefix}-packages`
+    this.resourcesIndex = `${prefix}-resources`
   }
 
-  /** Ensure index exists with kuromoji mapping. Idempotent. */
+  // ------------------------------------------------------------------
+  // Index initialisation
+  // ------------------------------------------------------------------
+
+  private static readonly KUROMOJI_SETTINGS = {
+    analysis: {
+      analyzer: {
+        kuromoji_analyzer: {
+          type: 'custom' as const,
+          tokenizer: 'kuromoji_tokenizer',
+          filter: ['kuromoji_baseform', 'kuromoji_part_of_speech', 'lowercase'],
+        },
+      },
+    },
+  }
+
+  /** Ensure both indices exist with kuromoji mapping. Idempotent. */
   async ensureIndex(): Promise<void> {
     if (this.initialized) return
 
-    const exists = await this.client.indices.exists({ index: this.indexName })
+    await this.ensurePackagesIndex()
+    await this.ensureResourcesIndex()
+
+    this.initialized = true
+  }
+
+  private async ensurePackagesIndex(): Promise<void> {
+    const exists = await this.client.indices.exists({ index: this.packagesIndex })
     if (!exists.body) {
       await this.client.indices.create({
-        index: this.indexName,
+        index: this.packagesIndex,
         body: {
-          settings: {
-            analysis: {
-              analyzer: {
-                kuromoji_analyzer: {
-                  type: 'custom',
-                  tokenizer: 'kuromoji_tokenizer',
-                  filter: ['kuromoji_baseform', 'kuromoji_part_of_speech', 'lowercase'],
-                },
-              },
-            },
-          },
+          settings: OpenSearchAdapter.KUROMOJI_SETTINGS,
           mappings: {
             properties: {
               id: { type: 'keyword' },
@@ -75,19 +102,6 @@ export class OpenSearchAdapter implements SearchAdapter {
               license_id: { type: 'keyword' },
               groups: { type: 'keyword' },
               formats: { type: 'keyword' },
-              resources: {
-                type: 'nested',
-                properties: {
-                  id: { type: 'keyword' },
-                  name: {
-                    type: 'text',
-                    analyzer: 'kuromoji_analyzer',
-                    fields: { keyword: { type: 'keyword' } },
-                  },
-                  description: { type: 'text', analyzer: 'kuromoji_analyzer' },
-                  format: { type: 'keyword' },
-                },
-              },
               private: { type: 'boolean' },
               owner_org_id: { type: 'keyword' },
               creator_user_id: { type: 'keyword' },
@@ -98,19 +112,138 @@ export class OpenSearchAdapter implements SearchAdapter {
         },
       })
     }
-
-    this.initialized = true
   }
+
+  private async ensureResourcesIndex(): Promise<void> {
+    const exists = await this.client.indices.exists({ index: this.resourcesIndex })
+    if (!exists.body) {
+      await this.client.indices.create({
+        index: this.resourcesIndex,
+        body: {
+          settings: OpenSearchAdapter.KUROMOJI_SETTINGS,
+          mappings: {
+            properties: {
+              id: { type: 'keyword' },
+              packageId: { type: 'keyword' },
+              name: {
+                type: 'text',
+                analyzer: 'kuromoji_analyzer',
+                fields: { keyword: { type: 'keyword' } },
+              },
+              description: { type: 'text', analyzer: 'kuromoji_analyzer' },
+              format: { type: 'keyword' },
+              extractedText: { type: 'text', analyzer: 'kuromoji_analyzer' },
+              contentType: { type: 'keyword' },
+            },
+          },
+        },
+      })
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Dataset-level index (kukan-packages)
+  // ------------------------------------------------------------------
 
   async index(doc: DatasetDoc): Promise<void> {
     await this.ensureIndex()
     await this.client.index({
-      index: this.indexName,
+      index: this.packagesIndex,
       id: doc.id,
       body: doc,
       refresh: 'wait_for',
     })
   }
+
+  async delete(id: string): Promise<void> {
+    await this.ensureIndex()
+    try {
+      await this.client.delete({ index: this.packagesIndex, id, refresh: 'wait_for' })
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 404) return
+      throw err
+    }
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.ensureIndex()
+    await this.client.deleteByQuery({
+      index: this.packagesIndex,
+      body: { query: { match_all: {} } },
+      refresh: true,
+    })
+  }
+
+  async bulkIndex(docs: DatasetDoc[]): Promise<void> {
+    if (docs.length === 0) return
+    await this.ensureIndex()
+
+    const body = docs.flatMap((doc) => [
+      { index: { _index: this.packagesIndex, _id: doc.id } },
+      doc,
+    ])
+    const response = await this.client.bulk({ body, refresh: 'wait_for' })
+    if (response.body.errors) {
+      const failed = response.body.items.filter(
+        (item: { index?: { error?: unknown } }) => item.index?.error
+      )
+      throw new Error(`Bulk indexing failed for ${failed.length} documents`)
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Resource-level index (kukan-resources)
+  // ------------------------------------------------------------------
+
+  async indexResource(doc: ResourceDoc): Promise<void> {
+    await this.ensureIndex()
+    await this.client.index({
+      index: this.resourcesIndex,
+      id: doc.id,
+      body: doc,
+      refresh: 'wait_for',
+    })
+  }
+
+  async deleteResource(resourceId: string): Promise<void> {
+    await this.ensureIndex()
+    try {
+      await this.client.delete({ index: this.resourcesIndex, id: resourceId, refresh: 'wait_for' })
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 404) return
+      throw err
+    }
+  }
+
+  async deleteAllResources(): Promise<void> {
+    await this.ensureIndex()
+    await this.client.deleteByQuery({
+      index: this.resourcesIndex,
+      body: { query: { match_all: {} } },
+      refresh: true,
+    })
+  }
+
+  async bulkIndexResources(docs: ResourceDoc[]): Promise<void> {
+    if (docs.length === 0) return
+    await this.ensureIndex()
+
+    const body = docs.flatMap((doc) => [
+      { index: { _index: this.resourcesIndex, _id: doc.id } },
+      doc,
+    ])
+    const response = await this.client.bulk({ body, refresh: 'wait_for' })
+    if (response.body.errors) {
+      const failed = response.body.items.filter(
+        (item: { index?: { error?: unknown } }) => item.index?.error
+      )
+      throw new Error(`Bulk resource indexing failed for ${failed.length} documents`)
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Search
+  // ------------------------------------------------------------------
 
   /** Build OpenSearch sort clause from query */
   private buildSort(query: SearchQuery): (string | Record<string, unknown>)[] {
@@ -118,7 +251,6 @@ export class OpenSearchAdapter implements SearchAdapter {
       const order = query.sortOrder ?? 'desc'
       return [{ [query.sortBy]: { order } }]
     }
-    // Default: relevance (_score) + updated DESC when searching, updated DESC when browsing
     return query.q?.trim()
       ? ['_score', { updated: { order: 'desc' as const } }]
       : [{ updated: { order: 'desc' as const } }]
@@ -197,40 +329,18 @@ export class OpenSearchAdapter implements SearchAdapter {
 
     const offset = query.offset ?? 0
     const limit = query.limit ?? 20
+    const hasQuery = Boolean(query.q?.trim())
 
-    // Build bool query
+    // Build packages query
     const must: Record<string, unknown>[] = []
     const filter = this.buildFilterClauses(query.filters)
 
-    // Full-text search (dataset-level + nested resource-level)
-    if (query.q && query.q.trim()) {
-      must.push({
-        bool: {
-          should: [
-            this.buildPackageMultiMatch(query.q),
-            {
-              nested: {
-                path: 'resources',
-                query: {
-                  multi_match: {
-                    query: query.q,
-                    fields: ['resources.name^2', 'resources.description'],
-                    type: 'cross_fields',
-                    operator: 'and',
-                  },
-                },
-                inner_hits: { size: MAX_MATCHED_RESOURCES_PER_PACKAGE },
-              },
-            },
-          ],
-          minimum_should_match: 1,
-        },
-      })
+    if (hasQuery) {
+      must.push(this.buildPackageMultiMatch(query.q!))
     } else {
       must.push({ match_all: {} })
     }
 
-    // Build aggregations when facets are requested
     const aggs = query.facets
       ? {
           organizations: { terms: { field: 'organization', size: 200 } },
@@ -241,54 +351,83 @@ export class OpenSearchAdapter implements SearchAdapter {
         }
       : undefined
 
-    const searchParams = {
-      index: this.indexName,
-      body: {
-        from: offset,
-        size: limit,
-        query: {
-          bool: {
-            must,
-            ...(filter.length > 0 && { filter }),
+    const packagesBody = {
+      from: offset,
+      size: limit,
+      query: { bool: { must, ...(filter.length > 0 && { filter }) } },
+      sort: this.buildSort(query),
+      ...(aggs && { aggs }),
+    }
+
+    // If no full-text query, skip resource search entirely
+    if (!hasQuery) {
+      const response = await this.client.search({ index: this.packagesIndex, body: packagesBody })
+      return this.parsePackagesResponse(response, query, offset, limit)
+    }
+
+    // msearch: packages + resources in parallel
+    const resourcesBody = {
+      from: 0,
+      size: MAX_MATCHED_RESOURCES_PER_PACKAGE,
+      query: {
+        multi_match: {
+          query: query.q!,
+          fields: ['name^3', 'description^2', 'extractedText'],
+          type: 'cross_fields' as const,
+          operator: 'and' as const,
+        },
+      },
+      highlight: {
+        fields: {
+          extractedText: {
+            fragment_size: 150,
+            number_of_fragments: 3,
+            pre_tags: ['<mark>'],
+            post_tags: ['</mark>'],
           },
         },
-        sort: this.buildSort(query),
-        ...(aggs && { aggs }),
       },
     }
 
-    const response = await this.client.search(searchParams)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const msearchResponse = await this.client.msearch({
+      body: [
+        { index: this.packagesIndex },
+        packagesBody,
+        { index: this.resourcesIndex },
+        resourcesBody,
+      ],
+    } as any)
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [packagesResult, resourcesResult] = msearchResponse.body.responses as any[]
+
+    // Parse packages
+    const result = this.parsePackagesResponse({ body: packagesResult }, query, offset, limit)
+
+    // Parse resources and merge
+    const resourceHits = resourcesResult.hits?.hits ?? []
+    if (resourceHits.length > 0) {
+      this.mergeResourceHits(result, resourceHits)
+    }
+
+    return result
+  }
+
+  /** Parse a packages search response into SearchResult */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private parsePackagesResponse(response: any, query: SearchQuery, offset: number, limit: number): SearchResult {
     const hits = response.body.hits
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const items: DatasetDoc[] = (hits?.hits ?? []).map((hit: any) => {
-      const doc: DatasetDoc = {
-        ...hit._source,
-        id: hit._id,
-      }
-
-      // Extract matched resources from nested inner_hits
-      const innerHits = hit.inner_hits?.resources?.hits?.hits
-      if (innerHits && innerHits.length > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        doc.matchedResources = innerHits.map((ih: any) => ({
-          id: ih._source.id,
-          name: ih._source.name,
-          description: ih._source.description,
-          format: ih._source.format,
-        }))
-      }
-
-      // Remove resources array from search results (it's for indexing, not display)
-      delete doc.resources
-
-      return doc
-    })
+    const items: DatasetDoc[] = (hits?.hits ?? []).map((hit: any) => ({
+      ...hit._source,
+      id: hit._id,
+      _score: hit._score ?? 0,
+    }))
 
     const total = hits?.total
     const totalCount = typeof total === 'number' ? total : (total?.value ?? 0)
 
-    // Parse aggregation results into SearchFacets
     let facets: SearchFacets | undefined
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const aggregations = response.body.aggregations as Record<string, any> | undefined
@@ -312,48 +451,115 @@ export class OpenSearchAdapter implements SearchAdapter {
     return { items, total: totalCount, offset, limit, ...(facets && { facets }) }
   }
 
-  async delete(id: string): Promise<void> {
-    await this.ensureIndex()
-    try {
-      await this.client.delete({
-        index: this.indexName,
-        id,
-        refresh: 'wait_for',
-      })
-    } catch (err: unknown) {
-      // Ignore 404 (document not found)
-      if (err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 404) return
-      throw err
-    }
-  }
+  /** Merge resource hits into a packages SearchResult */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private mergeResourceHits(result: SearchResult, resourceHits: any[]): void {
+    // Group resource hits by packageId
+    const byPackage = new Map<string, MatchedResource[]>()
+    const packageScores = new Map<string, number>()
 
-  async deleteAll(): Promise<void> {
-    await this.ensureIndex()
-    await this.client.deleteByQuery({
-      index: this.indexName,
-      body: { query: { match_all: {} } },
-      refresh: true,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const hit of resourceHits) {
+      const src = hit._source
+      const pkgId = src.packageId as string
+      const score = (hit._score as number) ?? 0
+
+      const highlights = hit.highlight?.extractedText as string[] | undefined
+      const contentSnippet = highlights?.[0]
+      const hasContentMatch = Boolean(contentSnippet)
+
+      const matched: MatchedResource = {
+        id: src.id,
+        name: src.name,
+        description: src.description,
+        format: src.format,
+        ...(contentSnippet && { contentSnippet }),
+        matchSource: hasContentMatch ? 'content' : 'metadata',
+      }
+
+      if (!byPackage.has(pkgId)) {
+        byPackage.set(pkgId, [])
+        packageScores.set(pkgId, 0)
+      }
+      byPackage.get(pkgId)!.push(matched)
+      packageScores.set(pkgId, Math.max(packageScores.get(pkgId)!, score))
+    }
+
+    // Attach matchedResources to existing items and adjust scores
+    const existingIds = new Set(result.items.map((item) => item.id))
+    for (const item of result.items) {
+      const resources = byPackage.get(item.id)
+      if (resources) {
+        item.matchedResources = resources
+        const existingScore = (item as DatasetDoc & { _score?: number })._score ?? 0
+        const resourceScore = packageScores.get(item.id) ?? 0
+        ;(item as DatasetDoc & { _score?: number })._score =
+          existingScore + resourceScore * RESOURCE_BOOST
+      }
+    }
+
+    // Add packages found only via resource content (not in packages result)
+    const contentOnlyPackageIds: string[] = []
+    for (const pkgId of byPackage.keys()) {
+      if (!existingIds.has(pkgId)) {
+        contentOnlyPackageIds.push(pkgId)
+      }
+    }
+
+    if (contentOnlyPackageIds.length > 0) {
+      // Fetch missing package docs via mget
+      this.fetchAndAppendMissingPackages(result, contentOnlyPackageIds, byPackage, packageScores)
+        .catch(() => {
+          // Best-effort: if mget fails, we still return the packages we have
+        })
+    }
+
+    // Re-sort by _score descending
+    result.items.sort((a, b) => {
+      const sa = (a as DatasetDoc & { _score?: number })._score ?? 0
+      const sb = (b as DatasetDoc & { _score?: number })._score ?? 0
+      return sb - sa
     })
-  }
 
-  async bulkIndex(docs: DatasetDoc[]): Promise<void> {
-    if (docs.length === 0) return
-    await this.ensureIndex()
-
-    const body = docs.flatMap((doc) => [{ index: { _index: this.indexName, _id: doc.id } }, doc])
-
-    const response = await this.client.bulk({ body, refresh: 'wait_for' })
-    if (response.body.errors) {
-      const failed = response.body.items.filter(
-        (item: { index?: { error?: unknown } }) => item.index?.error
-      )
-      throw new Error(`Bulk indexing failed for ${failed.length} documents`)
+    // Clean up internal _score from response
+    for (const item of result.items) {
+      delete (item as Record<string, unknown>)._score
     }
   }
+
+  /** Fetch packages not in the main result but matched via resources */
+  private async fetchAndAppendMissingPackages(
+    result: SearchResult,
+    packageIds: string[],
+    byPackage: Map<string, MatchedResource[]>,
+    packageScores: Map<string, number>
+  ): Promise<void> {
+    const mgetResponse = await this.client.mget({
+      index: this.packagesIndex,
+      body: { ids: packageIds },
+    })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const doc of mgetResponse.body.docs as any[]) {
+      if (!doc.found) continue
+      const item: DatasetDoc = { ...doc._source, id: doc._id }
+      item.matchedResources = byPackage.get(doc._id)
+      const resourceScore = packageScores.get(doc._id) ?? 0
+      ;(item as DatasetDoc & { _score?: number })._score = resourceScore * RESOURCE_BOOST
+      result.items.push(item)
+      result.total += 1
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Resource count
+  // ------------------------------------------------------------------
 
   async sumResourceCount(query?: ResourceCountQuery): Promise<number> {
     await this.ensureIndex()
 
+    // Count resource documents matching packages that satisfy the query/filters.
+    // Step 1: find matching package IDs
     const must: Record<string, unknown>[] = []
     const filter = this.buildFilterClauses(query?.filters)
 
@@ -363,29 +569,33 @@ export class OpenSearchAdapter implements SearchAdapter {
       must.push({ match_all: {} })
     }
 
-    const response = await this.client.search({
-      index: this.indexName,
+    const pkgResponse = await this.client.search({
+      index: this.packagesIndex,
       body: {
         size: 0,
-        query: {
-          bool: {
-            must,
-            ...(filter.length > 0 && { filter }),
-          },
-        },
+        query: { bool: { must, ...(filter.length > 0 && { filter }) } },
         aggs: {
-          resource_count: {
-            nested: { path: 'resources' },
-            aggs: {
-              total: { value_count: { field: 'resources.id' } },
-            },
-          },
+          package_ids: { terms: { field: 'id', size: 10000 } },
         },
       },
     })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const aggs = response.body.aggregations as Record<string, any> | undefined
-    return (aggs?.resource_count?.total?.value as number) ?? 0
+    const pkgAggs = pkgResponse.body.aggregations as Record<string, any> | undefined
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const packageBuckets = pkgAggs?.package_ids?.buckets as any[] | undefined
+    if (!packageBuckets || packageBuckets.length === 0) return 0
+
+    const packageIds = packageBuckets.map((b: { key: string }) => b.key)
+
+    // Step 2: count resources belonging to those packages
+    const countResponse = await this.client.count({
+      index: this.resourcesIndex,
+      body: {
+        query: { terms: { packageId: packageIds } },
+      },
+    })
+
+    return (countResponse.body.count as number) ?? 0
   }
 }

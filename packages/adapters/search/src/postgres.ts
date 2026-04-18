@@ -13,6 +13,7 @@ import type {
   SearchFacetBucket,
   DatasetDoc,
   MatchedResource,
+  ResourceDoc,
 } from './adapter'
 import { MAX_MATCHED_RESOURCES_PER_PACKAGE } from './adapter'
 import { escapeLike } from '@kukan/shared'
@@ -373,6 +374,13 @@ export class PostgresSearchAdapter implements SearchAdapter {
   async bulkIndex(_docs: DatasetDoc[]): Promise<void> {
     // No-op: data lives directly in the package table
   }
+
+  // Resource-level index methods: no-op for PostgreSQL adapter
+  // (PostgreSQL searches resource metadata directly via SQL)
+  async indexResource(_doc: ResourceDoc): Promise<void> {}
+  async bulkIndexResources(_docs: ResourceDoc[]): Promise<void> {}
+  async deleteResource(_resourceId: string): Promise<void> {}
+  async deleteAllResources(): Promise<void> {}
 
   async sumResourceCount(query?: ResourceCountQuery): Promise<number> {
     const conditions = this.buildConditions({ q: query?.q ?? '', filters: query?.filters })

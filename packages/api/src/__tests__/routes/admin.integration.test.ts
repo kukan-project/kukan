@@ -11,6 +11,11 @@ const mockSearch: SearchAdapter = {
   delete: async () => {},
   bulkIndex: vi.fn().mockResolvedValue(undefined),
   deleteAll: vi.fn().mockResolvedValue(undefined),
+  sumResourceCount: async () => 0,
+  indexResource: async () => {},
+  bulkIndexResources: async () => {},
+  deleteResource: async () => {},
+  deleteAllResources: async () => {},
 }
 
 const app = createTestApp(db, { search: mockSearch })

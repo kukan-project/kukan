@@ -1,6 +1,7 @@
 /**
  * Search index helpers for CUD operations.
- * Builds a DatasetDoc for a single package and indexes it.
+ * - indexPackage: builds a DatasetDoc (metadata only) and indexes to kukan-packages
+ * - indexResource: indexes a single resource to kukan-resources (metadata, no content)
  */
 
 import { eq, and } from 'drizzle-orm'
@@ -14,10 +15,11 @@ import {
   packageTag,
   tag,
 } from '@kukan/db'
-import type { SearchAdapter, DatasetDoc } from '@kukan/search-adapter'
+import type { SearchAdapter, DatasetDoc, ResourceDoc } from '@kukan/search-adapter'
 
 /**
- * Build a DatasetDoc from DB and upsert it into the search index.
+ * Build a DatasetDoc from DB and upsert it into the search index (kukan-packages).
+ * Does NOT include resource-level data — use indexResource() for that.
  */
 export async function indexPackage(
   db: Database,
@@ -44,13 +46,9 @@ export async function indexPackage(
   if (!pkg) return
 
   const [resources, orgRow, groups, tags] = await Promise.all([
+    // Only fetch format for the formats facet
     db
-      .select({
-        id: resource.id,
-        name: resource.name,
-        description: resource.description,
-        format: resource.format,
-      })
+      .select({ format: resource.format })
       .from(resource)
       .where(and(eq(resource.packageId, packageId), eq(resource.state, 'active'))),
     pkg.ownerOrg
@@ -92,13 +90,41 @@ export async function indexPackage(
     creator_user_id: pkg.creatorUserId ?? undefined,
     created: pkg.created,
     updated: pkg.updated,
-    resources: resources.map((r) => ({
-      id: r.id,
-      name: r.name ?? undefined,
-      description: r.description ?? undefined,
-      format: r.format ?? undefined,
-    })),
   }
 
   await search.index(doc)
+}
+
+/**
+ * Index a single resource's metadata into kukan-resources.
+ * Does NOT include extractedText — that is added by the pipeline Index step.
+ */
+export async function indexResourceMetadata(
+  db: Database,
+  search: SearchAdapter,
+  resourceId: string
+): Promise<void> {
+  const [res] = await db
+    .select({
+      id: resource.id,
+      packageId: resource.packageId,
+      name: resource.name,
+      description: resource.description,
+      format: resource.format,
+    })
+    .from(resource)
+    .where(and(eq(resource.id, resourceId), eq(resource.state, 'active')))
+    .limit(1)
+
+  if (!res) return
+
+  const doc: ResourceDoc = {
+    id: res.id,
+    packageId: res.packageId,
+    name: res.name ?? undefined,
+    description: res.description ?? undefined,
+    format: res.format ?? undefined,
+  }
+
+  await search.indexResource(doc)
 }

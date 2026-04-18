@@ -13,6 +13,11 @@ function createMockSearch() {
     delete: vi.fn(),
     deleteAll: vi.fn(),
     bulkIndex: vi.fn(),
+    sumResourceCount: vi.fn(),
+    indexResource: vi.fn(),
+    bulkIndexResources: vi.fn(),
+    deleteResource: vi.fn(),
+    deleteAllResources: vi.fn(),
   }
   return { adapter, indexed }
 }
@@ -20,7 +25,7 @@ function createMockSearch() {
 const now = new Date('2024-06-01T00:00:00Z')
 
 describe('indexPackage', () => {
-  it('should build and index a complete DatasetDoc', async () => {
+  it('should build and index a DatasetDoc without resources', async () => {
     const { db, addResult } = createMockDb()
     const { adapter, indexed } = createMockSearch()
 
@@ -41,11 +46,8 @@ describe('indexPackage', () => {
     ])
     // 2. Promise.all: organization (explicit .then() consumes result before Promise.all resolves)
     addResult([{ name: 'my-org' }])
-    // 3. Promise.all: resources
-    addResult([
-      { id: 'res-1', name: 'data.csv', description: 'CSV file', format: 'csv' },
-      { id: 'res-2', name: 'info.pdf', description: null, format: 'PDF' },
-    ])
+    // 3. Promise.all: resources (format only, for facets)
+    addResult([{ format: 'csv' }, { format: 'PDF' }])
     // 4. Promise.all: groups
     addResult([{ name: 'science' }, { name: 'open-data' }])
     // 5. Promise.all: tags
@@ -69,19 +71,8 @@ describe('indexPackage', () => {
     expect(doc.groups).toEqual(['science', 'open-data'])
     expect(doc.tags).toEqual(['environment', 'tokyo'])
     expect(doc.formats).toEqual(expect.arrayContaining(['CSV', 'PDF']))
-    const resources = doc['resources'] as {
-      id: string
-      name?: string
-      description?: string
-      format?: string
-    }[]
-    expect(resources).toHaveLength(2)
-    expect(resources[0]).toEqual({
-      id: 'res-1',
-      name: 'data.csv',
-      description: 'CSV file',
-      format: 'csv',
-    })
+    // Resources should NOT be included in dataset doc
+    expect(doc['resources']).toBeUndefined()
   })
 
   it('should skip indexing when package is not found', async () => {
@@ -113,7 +104,7 @@ describe('indexPackage', () => {
         updated: now,
       },
     ])
-    // resources
+    // resources (format only)
     addResult([])
     // ownerOrg is null, so org query is skipped (Promise.resolve(null))
     // groups
@@ -132,7 +123,7 @@ describe('indexPackage', () => {
     expect(doc.groups).toEqual([])
     expect(doc.tags).toEqual([])
     expect(doc.formats).toEqual([])
-    expect(doc['resources']).toEqual([])
+    expect(doc['resources']).toBeUndefined()
   })
 
   it('should deduplicate formats (case-insensitive uppercase)', async () => {
@@ -154,11 +145,7 @@ describe('indexPackage', () => {
       },
     ])
     // resources with duplicate formats (different casing)
-    addResult([
-      { id: 'r1', name: 'a.csv', description: null, format: 'csv' },
-      { id: 'r2', name: 'b.csv', description: null, format: 'CSV' },
-      { id: 'r3', name: 'c.json', description: null, format: 'json' },
-    ])
+    addResult([{ format: 'csv' }, { format: 'CSV' }, { format: 'json' }])
     addResult([]) // groups
     addResult([]) // tags
 
@@ -186,15 +173,12 @@ describe('indexPackage', () => {
         updated: now,
       },
     ])
-    addResult([{ id: 'r1', name: 'unknown', description: null, format: null }])
+    addResult([{ format: null }])
     addResult([]) // groups
     addResult([]) // tags
 
     await indexPackage(db, adapter, 'pkg-4')
 
     expect(indexed[0].formats).toEqual([])
-    expect(indexed[0]['resources']).toEqual([
-      { id: 'r1', name: 'unknown', description: undefined, format: undefined },
-    ])
   })
 })

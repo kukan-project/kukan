@@ -12,6 +12,25 @@ export interface MatchedResource {
   name?: string
   description?: string
   format?: string
+  /** Highlighted snippet from content match */
+  contentSnippet?: string
+  /** Whether the match came from resource metadata or extracted content */
+  matchSource?: 'metadata' | 'content'
+}
+
+/** Document stored in the kukan-resources index */
+export interface ResourceDoc {
+  /** Resource UUID (used as OpenSearch document ID) */
+  id: string
+  /** Parent package UUID */
+  packageId: string
+  name?: string
+  description?: string
+  format?: string
+  /** Extracted text content for full-text search (up to 100KB) */
+  extractedText?: string
+  /** Content type: 'tabular' | 'text' | 'manifest' | null */
+  contentType?: string
 }
 
 /** Maximum matched resources returned per package across all search adapters.
@@ -103,27 +122,27 @@ export interface SearchResult {
 
 export interface SearchAdapter {
   /**
-   * Index a dataset document
+   * Index a dataset document (kukan-packages)
    */
   index(doc: DatasetDoc): Promise<void>
 
   /**
-   * Search for datasets
+   * Search for datasets (kukan-packages + kukan-resources via msearch)
    */
   search(query: SearchQuery): Promise<SearchResult>
 
   /**
-   * Delete a dataset from the index
+   * Delete a dataset from the index (kukan-packages)
    */
   delete(id: string): Promise<void>
 
   /**
-   * Bulk index multiple documents
+   * Bulk index multiple dataset documents (kukan-packages)
    */
   bulkIndex(docs: DatasetDoc[]): Promise<void>
 
   /**
-   * Delete all documents from the index (for full rebuild)
+   * Delete all dataset documents from the index (kukan-packages, for full rebuild)
    */
   deleteAll(): Promise<void>
 
@@ -132,4 +151,27 @@ export interface SearchAdapter {
    * Uses the same visibility / filter logic as search().
    */
   sumResourceCount(query?: ResourceCountQuery): Promise<number>
+
+  // ---- Resource-level index (kukan-resources) ----
+
+  /**
+   * Index a resource document (metadata + optional extracted content).
+   * Upsert semantics: creates or replaces the document.
+   */
+  indexResource(doc: ResourceDoc): Promise<void>
+
+  /**
+   * Bulk index multiple resource documents
+   */
+  bulkIndexResources(docs: ResourceDoc[]): Promise<void>
+
+  /**
+   * Delete a resource from the resource index
+   */
+  deleteResource(resourceId: string): Promise<void>
+
+  /**
+   * Delete all resource documents (for full rebuild)
+   */
+  deleteAllResources(): Promise<void>
 }

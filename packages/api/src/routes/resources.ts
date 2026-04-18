@@ -22,7 +22,7 @@ import {
 } from '@kukan/shared'
 import { TEXT_PREVIEW_LIMIT, DEFAULT_RANGE_CHUNK } from '../config'
 import { checkOrgRole, resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
-import { indexPackage } from '../services/search-index'
+import { indexPackage, indexResourceMetadata } from '../services/search-index'
 import { Readable } from 'stream'
 import type { Database } from '@kukan/db'
 import type { SearchFilters } from '@kukan/search-adapter'
@@ -385,7 +385,11 @@ resourcesRouter.put('/:id', zValidator('json', updateResourceSchema), async (c) 
           c.get('logger').error({ err, resourceId: id }, 'Best-effort pipeline enqueue failed')
         })
       : Promise.resolve()
-  await Promise.all([enqueuePromise, indexPackage(db, c.get('search'), res.packageId)])
+  await Promise.all([
+    enqueuePromise,
+    indexPackage(db, c.get('search'), res.packageId),
+    indexResourceMetadata(db, c.get('search'), id),
+  ])
   return c.json(res)
 })
 
@@ -395,11 +399,15 @@ resourcesRouter.delete('/:id', async (c) => {
   if (!user) throw new ForbiddenError('Authentication required')
 
   const db = c.get('db')
+  const search = c.get('search')
   const id = c.req.param('id')
   const resourceService = new ResourceService(db)
   await checkResourcePermission(db, user, resourceService, id)
 
   const res = await resourceService.delete(id)
-  await indexPackage(db, c.get('search'), res.packageId)
+  await Promise.all([
+    indexPackage(db, search, res.packageId),
+    search.deleteResource(id),
+  ])
   return c.json(res)
 })
