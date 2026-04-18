@@ -365,4 +365,148 @@ describe('OpenSearchAdapter', () => {
       })
     })
   })
+
+  describe('highlight sanitization', () => {
+    it('should sanitize XSS in highlighted title', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: { name: 'test' },
+                _score: 5,
+                highlight: {
+                  title: ['<script>alert(1)</script><mark>test</mark>'],
+                },
+              },
+            ],
+          },
+        },
+      })
+
+      // Use empty query to go through single search path (not msearch)
+      // We need a query to trigger highlighting, but the browse path won't have highlights
+      // So we test via msearch path
+      mockClient.msearch.mockResolvedValue({
+        body: {
+          responses: [
+            {
+              hits: {
+                total: { value: 1 },
+                hits: [
+                  {
+                    _id: 'pkg-1',
+                    _source: { name: 'test' },
+                    _score: 5,
+                    highlight: {
+                      title: ['<script>alert(1)</script><mark>test</mark>'],
+                      notes: ['<img onerror=alert(1)><mark>note</mark>'],
+                    },
+                  },
+                ],
+              },
+            },
+            { hits: { total: { value: 0 }, hits: [] } },
+          ],
+        },
+      })
+
+      const result = await adapter.search({ q: 'test' })
+
+      // Script and img tags should be stripped, only <mark> preserved
+      expect(result.items[0].highlightedTitle).toBe('alert(1)<mark>test</mark>')
+      expect(result.items[0].highlightedNotes).toBe('<mark>note</mark>')
+    })
+
+    it('should sanitize XSS in resource highlight snippets', async () => {
+      mockClient.msearch.mockResolvedValue({
+        body: {
+          responses: [
+            {
+              hits: {
+                total: { value: 1 },
+                hits: [{ _id: 'pkg-1', _source: { name: 'test' }, _score: 5 }],
+              },
+            },
+            {
+              hits: {
+                total: { value: 1 },
+                hits: [
+                  {
+                    _id: 'res-1',
+                    _source: { id: 'res-1', packageId: 'pkg-1', name: 'data.csv' },
+                    _score: 3,
+                    highlight: {
+                      extractedText: ['<a href="javascript:void(0)">click</a><mark>data</mark>'],
+                      name: ['<script>x</script><mark>data</mark>.csv'],
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      })
+
+      const result = await adapter.search({ q: 'data' })
+
+      const matched = result.items[0].matchedResources![0]
+      expect(matched.contentSnippet).toBe('click<mark>data</mark>')
+      expect(matched.highlightedName).toBe('x<mark>data</mark>.csv')
+    })
+  })
+
+  describe('content-only match (mget fallback)', () => {
+    it('should fetch and include packages matched only via resource content', async () => {
+      mockClient.msearch.mockResolvedValue({
+        body: {
+          responses: [
+            // Packages: no direct match
+            { hits: { total: { value: 0 }, hits: [] } },
+            // Resources: match in pkg-2 (not in packages result)
+            {
+              hits: {
+                total: { value: 1 },
+                hits: [
+                  {
+                    _id: 'res-1',
+                    _source: { id: 'res-1', packageId: 'pkg-2', name: 'data.csv', format: 'CSV' },
+                    _score: 3,
+                    highlight: { extractedText: ['<mark>keyword</mark> found'] },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      })
+
+      // mget returns the missing package
+      mockClient.mget.mockResolvedValue({
+        body: {
+          docs: [
+            {
+              _id: 'pkg-2',
+              found: true,
+              _source: { name: 'content-only-pkg', title: 'Content Only Package' },
+            },
+          ],
+        },
+      })
+
+      const result = await adapter.search({ q: 'keyword' })
+
+      expect(mockClient.mget).toHaveBeenCalledWith({
+        index: 'kukan-packages',
+        body: { ids: ['pkg-2'] },
+      })
+      expect(result.items).toHaveLength(1)
+      expect(result.items[0].name).toBe('content-only-pkg')
+      expect(result.items[0].matchedResources).toHaveLength(1)
+      expect(result.items[0].matchedResources![0].contentSnippet).toBe('<mark>keyword</mark> found')
+      expect(result.items[0].matchedResources![0].matchSource).toBe('content')
+    })
+  })
 })
