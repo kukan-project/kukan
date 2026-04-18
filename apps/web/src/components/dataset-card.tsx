@@ -127,16 +127,16 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                           </p>
                         )}
                         {r.matchSource === 'content' && r.contentSnippet && (
-                          <p
-                            className="line-clamp-2 text-xs text-muted-foreground/80 italic"
-                            dangerouslySetInnerHTML={{ __html: r.contentSnippet }}
-                          />
-                        )}
-                        {r.matchSource === 'content' && (
-                          <span className="mt-0.5 inline-flex items-center gap-0.5 text-[10px] text-primary">
-                            <Search className="h-2.5 w-2.5" />
-                            {t('contentMatch')}
-                          </span>
+                          <div className="mt-1 rounded border border-primary/20 bg-primary/5 px-2 py-1.5">
+                            <span className="mb-0.5 flex items-center gap-0.5 text-[10px] font-medium text-primary">
+                              <Search className="h-2.5 w-2.5" />
+                              {t('contentMatch')}
+                            </span>
+                            <p
+                              className="line-clamp-2 text-xs text-muted-foreground [&>mark]:rounded-sm [&>mark]:bg-primary/20 [&>mark]:px-0.5 [&>mark]:text-foreground"
+                              dangerouslySetInnerHTML={{ __html: r.contentSnippet }}
+                            />
+                          </div>
                         )}
                       </Link>
                     </li>
