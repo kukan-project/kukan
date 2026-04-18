@@ -30,7 +30,7 @@ import {
   userRoleSchema,
 } from '@kukan/shared'
 import type { DatasetDoc, ResourceDoc } from '@kukan/search-adapter'
-import { PIPELINE_JOB_TYPE } from '@kukan/shared'
+import { PipelineService } from '../services/pipeline-service'
 import type { AppContext } from '../context'
 
 export const adminRouter = new Hono<{ Variables: AppContext }>()
@@ -229,9 +229,9 @@ adminRouter.post('/jobs/enqueue-all', async (c) => {
   if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can enqueue all pipelines')
 
   const db = c.get('db')
-  const queue = c.get('queue')
+  const pipelineService = new PipelineService(db, c.get('queue'))
 
-  // Fetch all active resources
+  // Fetch all active resource IDs
   const resources = await db
     .select({ id: resource.id })
     .from(resource)
@@ -239,34 +239,11 @@ adminRouter.post('/jobs/enqueue-all', async (c) => {
 
   let enqueued = 0
 
-  // Process in batches to avoid overwhelming the queue
   for (let i = 0; i < resources.length; i += BATCH_SIZE) {
     const batch = resources.slice(i, i + BATCH_SIZE)
-
-    // Upsert pipeline records + enqueue in parallel
     await Promise.all(
-      batch.map(async (r) => {
-        await db
-          .insert(resourcePipeline)
-          .values({
-            resourceId: r.id,
-            status: 'queued',
-            error: null,
-            previewKey: null,
-            metadata: null,
-          })
-          .onConflictDoUpdate({
-            target: resourcePipeline.resourceId,
-            set: {
-              status: 'queued',
-              error: null,
-              updated: sql`NOW()`,
-            },
-          })
-        await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: r.id })
-      })
+      batch.map((r) => pipelineService.enqueue(r.id).catch(() => {}))
     )
-
     enqueued += batch.length
   }
 

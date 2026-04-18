@@ -7,7 +7,7 @@
  * Non-text formats (PDF, Office, RDF, images) are skipped (contentIndexed: false).
  */
 
-import { isTextFormat, isCsvFormat, isZipFormat } from '@kukan/shared'
+import { isTextFormat, isCsvFormat, isZipFormat, type ContentType } from '@kukan/shared'
 import type { ResourceDoc } from '@kukan/search-adapter'
 import type { PipelineContext } from '../types'
 import type { ExtractResult } from './extract'
@@ -16,7 +16,7 @@ import { MAX_CONTENT_INDEX_SIZE, MAX_CONTENT_DOWNLOAD_SIZE } from '@/config'
 
 export interface IndexContentResult {
   contentIndexed: boolean
-  contentType: string | null
+  contentType: ContentType | null
   contentOriginalSize: number
   contentIndexedSize: number
   contentTruncated: boolean
@@ -107,7 +107,7 @@ export async function executeIndexContent(
 }
 
 /** Determine content type for indexing, or null if not indexable */
-function getContentType(format: string | null): 'tabular' | 'text' | 'manifest' | null {
+function getContentType(format: string | null): ContentType | null {
   if (isCsvFormat(format)) return 'tabular'
   if (isZipFormat(format)) return 'manifest'
   if (isTextFormat(format)) return 'text'

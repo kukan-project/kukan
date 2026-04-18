@@ -10,6 +10,13 @@ import { CompactDate } from './date-time'
 import { parseGroups } from '@/lib/parse-groups'
 import type { MatchedResource } from '@kukan/search-adapter'
 
+/** Tailwind classes for search term highlighting (metadata matches — yellow) */
+const METADATA_HIGHLIGHT =
+  '[&>mark]:rounded-sm [&>mark]:bg-yellow-200/60 [&>mark]:px-0.5 dark:[&>mark]:bg-yellow-500/30'
+/** Tailwind classes for content match highlighting (primary color) */
+const CONTENT_HIGHLIGHT =
+  '[&>mark]:rounded-sm [&>mark]:bg-primary/20 [&>mark]:px-0.5 [&>mark]:text-foreground'
+
 export interface DatasetCardItem {
   id: string
   name: string
@@ -40,7 +47,7 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
               <CardTitle className="text-lg">
                 <Link
                   href={datasetHref}
-                  className="after:absolute after:inset-0 after:content-[''] [&>mark]:rounded-sm [&>mark]:bg-yellow-200/60 [&>mark]:px-0.5 dark:[&>mark]:bg-yellow-500/30"
+                  className={`after:absolute after:inset-0 after:content-[''] ${METADATA_HIGHLIGHT}`}
                   {...(pkg.highlightedTitle
                     ? { dangerouslySetInnerHTML: { __html: pkg.highlightedTitle } }
                     : { children: pkg.title || pkg.name })}
@@ -106,7 +113,7 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
             {(pkg.notes || pkg.highlightedNotes) &&
               (pkg.highlightedNotes ? (
                 <p
-                  className="line-clamp-2 text-sm text-muted-foreground [&>mark]:rounded-sm [&>mark]:bg-yellow-200/60 [&>mark]:px-0.5 dark:[&>mark]:bg-yellow-500/30"
+                  className={`line-clamp-2 text-sm text-muted-foreground ${METADATA_HIGHLIGHT}`}
                   dangerouslySetInnerHTML={{ __html: pkg.highlightedNotes }}
                 />
               ) : (
@@ -129,7 +136,7 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                         <div className="flex items-center gap-2 text-sm">
                           {r.highlightedName ? (
                             <span
-                              className="truncate font-medium group-hover/resource:underline [&>mark]:rounded-sm [&>mark]:bg-yellow-200/60 [&>mark]:px-0.5 dark:[&>mark]:bg-yellow-500/30"
+                              className={`truncate font-medium group-hover/resource:underline ${METADATA_HIGHLIGHT}`}
                               dangerouslySetInnerHTML={{ __html: r.highlightedName }}
                             />
                           ) : (
@@ -142,7 +149,7 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                         {(r.description || r.highlightedDescription) &&
                           (r.highlightedDescription ? (
                             <p
-                              className="line-clamp-1 text-xs text-muted-foreground [&>mark]:rounded-sm [&>mark]:bg-yellow-200/60 [&>mark]:px-0.5 dark:[&>mark]:bg-yellow-500/30"
+                              className={`line-clamp-1 text-xs text-muted-foreground ${METADATA_HIGHLIGHT}`}
                               dangerouslySetInnerHTML={{ __html: r.highlightedDescription }}
                             />
                           ) : (
@@ -157,7 +164,7 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                               {t('contentMatch')}
                             </span>
                             <p
-                              className="line-clamp-2 text-xs text-muted-foreground [&>mark]:rounded-sm [&>mark]:bg-primary/20 [&>mark]:px-0.5 [&>mark]:text-foreground"
+                              className={`line-clamp-2 text-xs text-muted-foreground ${CONTENT_HIGHLIGHT}`}
                               dangerouslySetInnerHTML={{ __html: r.contentSnippet }}
                             />
                           </div>

@@ -3,6 +3,8 @@
  * Pluggable search backend (OpenSearch or PostgreSQL)
  */
 
+import type { ContentType } from '@kukan/shared'
+
 // ============================================================
 // Search Types
 // ============================================================
@@ -33,8 +35,8 @@ export interface ResourceDoc {
   format?: string
   /** Extracted text content for full-text search (up to 100KB) */
   extractedText?: string
-  /** Content type: 'tabular' | 'text' | 'manifest' | null */
-  contentType?: string
+  /** Content type for indexed text */
+  contentType?: ContentType
 }
 
 /** Maximum matched resources returned per package across all search adapters.

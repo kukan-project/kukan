@@ -27,6 +27,11 @@ import { MAX_MATCHED_RESOURCES_PER_PACKAGE } from './adapter'
 /** Score multiplier applied to resource hits when merging with package hits */
 const RESOURCE_BOOST = 0.4
 
+/** Sanitize OpenSearch highlight output: strip all HTML except <mark> tags */
+function sanitizeHighlight(html: string): string {
+  return html.replace(/<\/?(?!mark\b)[a-z][^>]*>/gi, '')
+}
+
 export interface OpenSearchConfig {
   endpoint: string
   indexPrefix?: string
@@ -432,7 +437,7 @@ export class OpenSearchAdapter implements SearchAdapter {
     // Parse resources and merge
     const resourceHits = resourcesResult.hits?.hits ?? []
     if (resourceHits.length > 0) {
-      this.mergeResourceHits(result, resourceHits)
+      await this.mergeResourceHits(result, resourceHits)
     }
 
     return result
@@ -450,8 +455,8 @@ export class OpenSearchAdapter implements SearchAdapter {
         _score: hit._score ?? 0,
       }
       // Attach highlighted fields if available
-      if (hit.highlight?.title?.[0]) doc.highlightedTitle = hit.highlight.title[0]
-      if (hit.highlight?.notes?.[0]) doc.highlightedNotes = hit.highlight.notes[0]
+      if (hit.highlight?.title?.[0]) doc.highlightedTitle = sanitizeHighlight(hit.highlight.title[0])
+      if (hit.highlight?.notes?.[0]) doc.highlightedNotes = sanitizeHighlight(hit.highlight.notes[0])
       return doc
     })
 
@@ -483,7 +488,7 @@ export class OpenSearchAdapter implements SearchAdapter {
 
   /** Merge resource hits into a packages SearchResult */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private mergeResourceHits(result: SearchResult, resourceHits: any[]): void {
+  private async mergeResourceHits(result: SearchResult, resourceHits: any[]): Promise<void> {
     // Group resource hits by packageId
     const byPackage = new Map<string, MatchedResource[]>()
     const packageScores = new Map<string, number>()
@@ -493,10 +498,14 @@ export class OpenSearchAdapter implements SearchAdapter {
       const pkgId = src.packageId as string
       const score = (hit._score as number) ?? 0
 
-      const contentHighlights = hit.highlight?.extractedText as string[] | undefined
-      const contentSnippet = contentHighlights?.[0]
+      const rawContentHighlights = hit.highlight?.extractedText as string[] | undefined
+      const contentSnippet = rawContentHighlights?.[0] ? sanitizeHighlight(rawContentHighlights[0]) : undefined
       const highlightedName = (hit.highlight?.name as string[] | undefined)?.[0]
+        ? sanitizeHighlight((hit.highlight.name as string[])[0])
+        : undefined
       const highlightedDescription = (hit.highlight?.description as string[] | undefined)?.[0]
+        ? sanitizeHighlight((hit.highlight.description as string[])[0])
+        : undefined
       const hasContentMatch = Boolean(contentSnippet)
 
       const matched: MatchedResource = {
@@ -540,11 +549,11 @@ export class OpenSearchAdapter implements SearchAdapter {
     }
 
     if (contentOnlyPackageIds.length > 0) {
-      // Fetch missing package docs via mget
-      this.fetchAndAppendMissingPackages(result, contentOnlyPackageIds, byPackage, packageScores)
-        .catch(() => {
-          // Best-effort: if mget fails, we still return the packages we have
-        })
+      try {
+        await this.fetchAndAppendMissingPackages(result, contentOnlyPackageIds, byPackage, packageScores)
+      } catch {
+        // Best-effort: if mget fails, we still return the packages we have
+      }
     }
 
     // Re-sort by _score descending
