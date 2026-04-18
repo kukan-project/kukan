@@ -181,6 +181,7 @@ pnpm format        # Prettier フォーマット
 - Web=App Runner, Worker=Fargate → `docs/adr/018-app-runner-plus-fargate.md`（置換済み → ADR-020）
 - Web=ECS Fargate+ALB, Worker=Fargate → `docs/adr/020-ecs-fargate-alb-migration.md`
 - ロギング戦略 → `docs/adr/019-logging-strategy.md`
+- リソースコンテンツ全文検索 → `docs/adr/021-resource-content-indexing.md`
 
 新しい設計判断が必要になったら、同じフォーマットでADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
