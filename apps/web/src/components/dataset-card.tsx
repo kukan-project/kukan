@@ -24,6 +24,8 @@ export interface DatasetCardItem {
   created?: string
   updated?: string
   matchedResources?: MatchedResource[]
+  highlightedTitle?: string
+  highlightedNotes?: string
 }
 
 export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
@@ -38,10 +40,11 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
               <CardTitle className="text-lg">
                 <Link
                   href={datasetHref}
-                  className="after:absolute after:inset-0 after:content-['']"
-                >
-                  {pkg.title || pkg.name}
-                </Link>
+                  className="after:absolute after:inset-0 after:content-[''] [&>mark]:rounded-sm [&>mark]:bg-yellow-200/60 [&>mark]:px-0.5 dark:[&>mark]:bg-yellow-500/30"
+                  {...(pkg.highlightedTitle
+                    ? { dangerouslySetInnerHTML: { __html: pkg.highlightedTitle } }
+                    : { children: pkg.title || pkg.name })}
+                />
               </CardTitle>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -98,9 +101,17 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
             </div>
           )}
         </CardHeader>
-        {(pkg.notes || (pkg.matchedResources && pkg.matchedResources.length > 0)) && (
+        {(pkg.notes || pkg.highlightedNotes || (pkg.matchedResources && pkg.matchedResources.length > 0)) && (
           <CardContent className="space-y-3">
-            {pkg.notes && <p className="line-clamp-2 text-sm text-muted-foreground">{pkg.notes}</p>}
+            {(pkg.notes || pkg.highlightedNotes) &&
+              (pkg.highlightedNotes ? (
+                <p
+                  className="line-clamp-2 text-sm text-muted-foreground [&>mark]:rounded-sm [&>mark]:bg-yellow-200/60 [&>mark]:px-0.5 dark:[&>mark]:bg-yellow-500/30"
+                  dangerouslySetInnerHTML={{ __html: pkg.highlightedNotes }}
+                />
+              ) : (
+                <p className="line-clamp-2 text-sm text-muted-foreground">{pkg.notes}</p>
+              ))}
             {pkg.matchedResources && pkg.matchedResources.length > 0 && (
               <div className="relative z-10">
                 <p className="mb-1.5 flex items-center gap-1 text-xs font-medium text-muted-foreground">
@@ -116,16 +127,29 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                         className="group/resource block rounded-sm hover:bg-accent/50"
                       >
                         <div className="flex items-center gap-2 text-sm">
-                          <span className="truncate font-medium group-hover/resource:underline">
-                            {r.name || r.id}
-                          </span>
+                          {r.highlightedName ? (
+                            <span
+                              className="truncate font-medium group-hover/resource:underline [&>mark]:rounded-sm [&>mark]:bg-yellow-200/60 [&>mark]:px-0.5 dark:[&>mark]:bg-yellow-500/30"
+                              dangerouslySetInnerHTML={{ __html: r.highlightedName }}
+                            />
+                          ) : (
+                            <span className="truncate font-medium group-hover/resource:underline">
+                              {r.name || r.id}
+                            </span>
+                          )}
                           {r.format && <FormatBadge format={r.format} className="shrink-0" />}
                         </div>
-                        {r.description && (
-                          <p className="line-clamp-1 text-xs text-muted-foreground">
-                            {r.description}
-                          </p>
-                        )}
+                        {(r.description || r.highlightedDescription) &&
+                          (r.highlightedDescription ? (
+                            <p
+                              className="line-clamp-1 text-xs text-muted-foreground [&>mark]:rounded-sm [&>mark]:bg-yellow-200/60 [&>mark]:px-0.5 dark:[&>mark]:bg-yellow-500/30"
+                              dangerouslySetInnerHTML={{ __html: r.highlightedDescription }}
+                            />
+                          ) : (
+                            <p className="line-clamp-1 text-xs text-muted-foreground">
+                              {r.description}
+                            </p>
+                          ))}
                         {r.matchSource === 'content' && r.contentSnippet && (
                           <div className="mt-1 rounded border border-primary/20 bg-primary/5 px-2 py-1.5">
                             <span className="mb-0.5 flex items-center gap-0.5 text-[10px] font-medium text-primary">

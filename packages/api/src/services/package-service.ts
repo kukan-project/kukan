@@ -34,6 +34,8 @@ export interface PackageFilterParams {
   searchTotal?: number
   /** Matched resources from SearchAdapter, keyed by package ID */
   searchMatchedResources?: Record<string, MatchedResource[]>
+  /** Highlighted fields from SearchAdapter, keyed by package ID */
+  searchHighlights?: Record<string, { highlightedTitle?: string; highlightedNotes?: string }>
   /** Package state filter (default: 'active') */
   state?: 'active' | 'deleted'
 }
@@ -116,6 +118,7 @@ export class PackageService {
           ...(params.searchMatchedResources?.[row.id] && {
             matchedResources: params.searchMatchedResources[row.id],
           }),
+          ...(params.searchHighlights?.[row.id] && params.searchHighlights[row.id]),
         }))
 
       return {

@@ -351,12 +351,29 @@ export class OpenSearchAdapter implements SearchAdapter {
         }
       : undefined
 
+    const packagesHighlight = hasQuery
+      ? {
+          highlight: {
+            fields: {
+              title: { number_of_fragments: 0, pre_tags: ['<mark>'], post_tags: ['</mark>'] },
+              notes: {
+                fragment_size: 200,
+                number_of_fragments: 1,
+                pre_tags: ['<mark>'],
+                post_tags: ['</mark>'],
+              },
+            },
+          },
+        }
+      : {}
+
     const packagesBody = {
       from: offset,
       size: limit,
       query: { bool: { must, ...(filter.length > 0 && { filter }) } },
       sort: this.buildSort(query),
       ...(aggs && { aggs }),
+      ...packagesHighlight,
     }
 
     // If no full-text query, skip resource search entirely
@@ -379,6 +396,13 @@ export class OpenSearchAdapter implements SearchAdapter {
       },
       highlight: {
         fields: {
+          name: { number_of_fragments: 0, pre_tags: ['<mark>'], post_tags: ['</mark>'] },
+          description: {
+            fragment_size: 200,
+            number_of_fragments: 1,
+            pre_tags: ['<mark>'],
+            post_tags: ['</mark>'],
+          },
           extractedText: {
             fragment_size: 150,
             number_of_fragments: 3,
@@ -419,11 +443,17 @@ export class OpenSearchAdapter implements SearchAdapter {
   private parsePackagesResponse(response: any, query: SearchQuery, offset: number, limit: number): SearchResult {
     const hits = response.body.hits
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const items: DatasetDoc[] = (hits?.hits ?? []).map((hit: any) => ({
-      ...hit._source,
-      id: hit._id,
-      _score: hit._score ?? 0,
-    }))
+    const items: DatasetDoc[] = (hits?.hits ?? []).map((hit: any) => {
+      const doc: DatasetDoc = {
+        ...hit._source,
+        id: hit._id,
+        _score: hit._score ?? 0,
+      }
+      // Attach highlighted fields if available
+      if (hit.highlight?.title?.[0]) doc.highlightedTitle = hit.highlight.title[0]
+      if (hit.highlight?.notes?.[0]) doc.highlightedNotes = hit.highlight.notes[0]
+      return doc
+    })
 
     const total = hits?.total
     const totalCount = typeof total === 'number' ? total : (total?.value ?? 0)
@@ -463,8 +493,10 @@ export class OpenSearchAdapter implements SearchAdapter {
       const pkgId = src.packageId as string
       const score = (hit._score as number) ?? 0
 
-      const highlights = hit.highlight?.extractedText as string[] | undefined
-      const contentSnippet = highlights?.[0]
+      const contentHighlights = hit.highlight?.extractedText as string[] | undefined
+      const contentSnippet = contentHighlights?.[0]
+      const highlightedName = (hit.highlight?.name as string[] | undefined)?.[0]
+      const highlightedDescription = (hit.highlight?.description as string[] | undefined)?.[0]
       const hasContentMatch = Boolean(contentSnippet)
 
       const matched: MatchedResource = {
@@ -472,6 +504,8 @@ export class OpenSearchAdapter implements SearchAdapter {
         name: src.name,
         description: src.description,
         format: src.format,
+        ...(highlightedName && { highlightedName }),
+        ...(highlightedDescription && { highlightedDescription }),
         ...(contentSnippet && { contentSnippet }),
         matchSource: hasContentMatch ? 'content' : 'metadata',
       }

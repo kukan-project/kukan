@@ -112,11 +112,18 @@ packagesRouter.get(
       sortOrder: sort_order,
     })
 
-    // Build matchedResources lookup from search results
+    // Build matchedResources + highlights lookup from search results
     const searchMatchedResources: Record<string, MatchedResource[]> = {}
+    const searchHighlights: Record<string, { highlightedTitle?: string; highlightedNotes?: string }> = {}
     for (const item of searchResult.items) {
       if (item.matchedResources && item.matchedResources.length > 0) {
         searchMatchedResources[item.id] = item.matchedResources
+      }
+      if (item.highlightedTitle || item.highlightedNotes) {
+        searchHighlights[item.id] = {
+          ...(item.highlightedTitle && { highlightedTitle: item.highlightedTitle }),
+          ...(item.highlightedNotes && { highlightedNotes: item.highlightedNotes }),
+        }
       }
     }
 
@@ -125,6 +132,7 @@ packagesRouter.get(
       searchMatchIds: searchResult.items.map((i) => i.id),
       searchTotal: searchResult.total,
       searchMatchedResources,
+      searchHighlights,
       state: effectiveState,
     })
 

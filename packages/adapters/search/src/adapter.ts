@@ -12,6 +12,10 @@ export interface MatchedResource {
   name?: string
   description?: string
   format?: string
+  /** Highlighted name (HTML with <mark> tags) */
+  highlightedName?: string
+  /** Highlighted description (HTML with <mark> tags) */
+  highlightedDescription?: string
   /** Highlighted snippet from content match */
   contentSnippet?: string
   /** Whether the match came from resource metadata or extracted content */
@@ -53,6 +57,10 @@ export interface DatasetDoc {
   creator_user_id?: string
   created?: Date | string
   updated?: Date | string
+  /** Highlighted title (HTML with <mark> tags) — populated by search only */
+  highlightedTitle?: string
+  /** Highlighted notes (HTML with <mark> tags) — populated by search only */
+  highlightedNotes?: string
   [key: string]: unknown
 }
 
