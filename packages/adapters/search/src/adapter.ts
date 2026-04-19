@@ -24,7 +24,7 @@ export interface MatchedResource {
   matchSource?: 'metadata' | 'content'
 }
 
-/** Document stored in the kukan-resources index */
+/** Document stored in the kukan-resources index (metadata only) */
 export interface ResourceDoc {
   /** Resource UUID (used as OpenSearch document ID) */
   id: string
@@ -33,10 +33,18 @@ export interface ResourceDoc {
   name?: string
   description?: string
   format?: string
-  /** Extracted text content for full-text search (up to 100KB) */
-  extractedText?: string
+}
+
+/** Document stored in the kukan-contents index (extracted text for full-text search) */
+export interface ContentDoc {
+  /** Resource UUID (used as OpenSearch document ID) */
+  id: string
+  /** Parent package UUID */
+  packageId: string
+  /** Extracted text content (up to 100KB) */
+  extractedText: string
   /** Content type for indexed text */
-  contentType?: ContentType
+  contentType: ContentType
   /** Whether extracted text was truncated */
   contentTruncated?: boolean
   /** Original text size in bytes (before truncation) */
@@ -151,7 +159,7 @@ export interface SearchAdapter {
 
   // ---- Resource-level index (kukan-resources) ----
 
-  /** Index a resource document (metadata + optional extracted content). Upsert semantics. */
+  /** Index a resource document (metadata only). Upsert semantics. */
   indexResource(doc: ResourceDoc): Promise<void>
 
   /** Delete a resource from the resource index */
@@ -163,9 +171,20 @@ export interface SearchAdapter {
   /** Delete all resource documents (for full rebuild) */
   deleteAllResources(): Promise<void>
 
+  // ---- Content-level index (kukan-contents) ----
+
+  /** Index extracted text content for a resource. Upsert semantics. */
+  indexContent(doc: ContentDoc): Promise<void>
+
+  /** Delete content for a resource */
+  deleteContent(resourceId: string): Promise<void>
+
+  /** Delete all content documents (for full rebuild) */
+  deleteAllContents(): Promise<void>
+
   // ---- Cross-index operations ----
 
-  /** Search for datasets (kukan-packages + kukan-resources via msearch) */
+  /** Search for datasets (kukan-packages + kukan-resources + kukan-contents via msearch) */
   search(query: SearchQuery): Promise<SearchResult>
 
   /** Sum total active resource count across packages matching the given query/filters */
@@ -175,11 +194,14 @@ export interface SearchAdapter {
   getIndexStats(): Promise<IndexStats | null>
 
   /** Get a single document from an index by ID. Returns null if not found or not supported. */
-  getDocument(index: 'packages' | 'resources', id: string): Promise<Record<string, unknown> | null>
+  getDocument(
+    index: 'packages' | 'resources' | 'contents',
+    id: string
+  ): Promise<Record<string, unknown> | null>
 
   /** Browse/search documents in an index with pagination. Returns null if not supported. */
   browseDocuments(
-    index: 'packages' | 'resources',
+    index: 'packages' | 'resources' | 'contents',
     options: { q?: string; offset?: number; limit?: number }
   ): Promise<BrowseResult | null>
 }
@@ -201,4 +223,5 @@ export interface IndexStatsEntry {
 export interface IndexStats {
   packages: IndexStatsEntry
   resources: IndexStatsEntry
+  contents: IndexStatsEntry
 }

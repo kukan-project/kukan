@@ -8,7 +8,7 @@
  */
 
 import { isTextFormat, isCsvFormat, isZipFormat, type ContentType } from '@kukan/shared'
-import type { ResourceDoc } from '@kukan/search-adapter'
+import type { ContentDoc } from '@kukan/search-adapter'
 import type { PipelineContext } from '../types'
 import type { ExtractResult } from './extract'
 import { streamToBuffer, bufferToUtf8 } from '../node-utils'
@@ -85,20 +85,17 @@ export async function executeIndexContent(
 
   const indexedSize = Buffer.byteLength(indexedText, 'utf-8')
 
-  // Build and index the resource document
-  const doc: ResourceDoc = {
+  // Build and index the content document
+  const doc: ContentDoc = {
     id: resourceId,
     packageId,
-    name: res.name ?? res.url ?? undefined,
-    description: res.description ?? undefined,
-    format: res.format ?? undefined,
     extractedText: indexedText,
     contentType,
     contentTruncated: truncated,
     contentOriginalSize: originalSize,
   }
 
-  await ctx.indexResource(doc)
+  await ctx.indexContent(doc)
 
   return {
     contentIndexed: true,

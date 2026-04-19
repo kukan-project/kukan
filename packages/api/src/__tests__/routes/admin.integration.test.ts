@@ -17,6 +17,9 @@ const mockSearch: SearchAdapter = {
   search: async () => ({ items: [], total: 0, offset: 0, limit: 20 }),
   sumResourceCount: async () => 0,
   getIndexStats: async () => null,
+  indexContent: async () => {},
+  deleteContent: async () => {},
+  deleteAllContents: async () => {},
   getDocument: async () => null,
   browseDocuments: async () => null,
 }

@@ -87,7 +87,7 @@ adminRouter.get('/search/doc/:index/:id', async (c) => {
   if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view search documents')
 
   const index = c.req.param('index')
-  if (index !== 'packages' && index !== 'resources') {
+  if (index !== 'packages' && index !== 'resources' && index !== 'contents') {
     return c.json(
       { type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Invalid index' },
       400
@@ -109,7 +109,7 @@ adminRouter.get('/search/browse/:index', async (c) => {
   if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can browse search index')
 
   const index = c.req.param('index')
-  if (index !== 'packages' && index !== 'resources') {
+  if (index !== 'packages' && index !== 'resources' && index !== 'contents') {
     return c.json(
       { type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Invalid index' },
       400

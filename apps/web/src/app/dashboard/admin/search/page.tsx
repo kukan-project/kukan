@@ -39,7 +39,7 @@ interface IndexStatsEntry {
 
 interface IndexStatsResponse {
   enabled: boolean
-  stats: { packages: IndexStatsEntry; resources: IndexStatsEntry } | null
+  stats: { packages: IndexStatsEntry; resources: IndexStatsEntry; contents: IndexStatsEntry } | null
 }
 
 interface BrowseItem {
@@ -61,7 +61,7 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 ** 3).toFixed(1)} GB`
 }
 
-type IndexTab = 'packages' | 'resources'
+type IndexTab = 'packages' | 'resources' | 'contents'
 
 const PAGE_SIZE = 20
 
@@ -189,8 +189,8 @@ export default function AdminSearchPage() {
 
       {/* Index Stats */}
       {stats?.stats && (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {(['packages', 'resources'] as const).map((idx) => {
+        <div className="grid gap-4 sm:grid-cols-3">
+          {(['packages', 'resources', 'contents'] as const).map((idx) => {
             const entry = stats.stats![idx]
             return (
               <Card

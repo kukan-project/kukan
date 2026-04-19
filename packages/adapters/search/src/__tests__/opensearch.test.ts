@@ -57,37 +57,37 @@ describe('OpenSearchAdapter', () => {
   })
 
   describe('ensureIndex', () => {
-    it('should create both packages and resources indices', async () => {
+    it('should create packages, resources, and contents indices', async () => {
       await adapter.ensureIndex()
 
-      expect(mockClient.indices.exists).toHaveBeenCalledTimes(2)
-      expect(mockClient.indices.create).toHaveBeenCalledTimes(2)
+      expect(mockClient.indices.exists).toHaveBeenCalledTimes(3)
+      expect(mockClient.indices.create).toHaveBeenCalledTimes(3)
 
       const createCalls = mockClient.indices.create.mock.calls
       expect(createCalls[0][0].index).toBe('kukan-packages')
       expect(createCalls[1][0].index).toBe('kukan-resources')
+      expect(createCalls[2][0].index).toBe('kukan-contents')
     })
 
-    it('should not create nested resources mapping in packages index', async () => {
-      await adapter.ensureIndex()
-
-      const packagesCreateCall = mockClient.indices.create.mock.calls[0][0]
-      const props = packagesCreateCall.body.mappings.properties
-      expect(props.resources).toBeUndefined()
-      expect(props.title.type).toBe('text')
-      expect(props.formats.type).toBe('keyword')
-    })
-
-    it('should create resources index with extractedText field', async () => {
+    it('should not include extractedText in resources index', async () => {
       await adapter.ensureIndex()
 
       const resourcesCreateCall = mockClient.indices.create.mock.calls[1][0]
       const props = resourcesCreateCall.body.mappings.properties
-      expect(props.extractedText).toEqual({ type: 'text', analyzer: 'kuromoji_analyzer' })
-      expect(props.packageId.type).toBe('keyword')
+      expect(props.extractedText).toBeUndefined()
       expect(props.name.type).toBe('text')
       expect(props.description.type).toBe('text')
+      expect(props.format.type).toBe('keyword')
+    })
+
+    it('should create contents index with extractedText field', async () => {
+      await adapter.ensureIndex()
+
+      const contentsCreateCall = mockClient.indices.create.mock.calls[2][0]
+      const props = contentsCreateCall.body.mappings.properties
+      expect(props.extractedText).toEqual({ type: 'text', analyzer: 'kuromoji_analyzer' })
       expect(props.contentType.type).toBe('keyword')
+      expect(props.packageId.type).toBe('keyword')
     })
 
     it('should skip creation when indices already exist', async () => {
@@ -102,8 +102,8 @@ describe('OpenSearchAdapter', () => {
       await adapter.ensureIndex()
       await adapter.ensureIndex()
 
-      // 2 calls on first ensureIndex (packages + resources), then 0 on second
-      expect(mockClient.indices.exists).toHaveBeenCalledTimes(2)
+      // 3 calls on first ensureIndex (packages + resources + contents), then 0 on second
+      expect(mockClient.indices.exists).toHaveBeenCalledTimes(3)
     })
 
     it('should use custom index prefix', async () => {
@@ -149,7 +149,6 @@ describe('OpenSearchAdapter', () => {
         packageId: 'pkg-1',
         name: 'data.csv',
         format: 'CSV',
-        extractedText: 'Tokyo,13960000',
       })
 
       expect(mockClient.index).toHaveBeenCalledWith({
@@ -158,7 +157,6 @@ describe('OpenSearchAdapter', () => {
         body: expect.objectContaining({
           id: 'res-1',
           packageId: 'pkg-1',
-          extractedText: 'Tokyo,13960000',
         }),
         refresh: 'wait_for',
       })
@@ -176,6 +174,7 @@ describe('OpenSearchAdapter', () => {
                 hits: [{ _id: 'pkg-1', _source: { name: 'test' }, _score: 5 }],
               },
             },
+            { hits: { total: { value: 0 }, hits: [] } },
             { hits: { total: { value: 0 }, hits: [] } },
           ],
         },
@@ -199,7 +198,7 @@ describe('OpenSearchAdapter', () => {
       expect(mockClient.msearch).not.toHaveBeenCalled()
     })
 
-    it('should merge resource content matches into matchedResources', async () => {
+    it('should merge content matches into matchedResources', async () => {
       mockClient.msearch.mockResolvedValue({
         body: {
           responses: [
@@ -209,13 +208,14 @@ describe('OpenSearchAdapter', () => {
                 hits: [{ _id: 'pkg-1', _source: { name: 'population' }, _score: 5 }],
               },
             },
+            { hits: { total: { value: 0 }, hits: [] } },
             {
               hits: {
                 total: { value: 1 },
                 hits: [
                   {
                     _id: 'res-1',
-                    _source: { id: 'res-1', packageId: 'pkg-1', name: 'data.csv', format: 'CSV' },
+                    _source: { id: 'res-1', packageId: 'pkg-1' },
                     _score: 3,
                     highlight: { extractedText: ['...東京都の<mark>人口</mark>は...'] },
                   },
@@ -233,7 +233,6 @@ describe('OpenSearchAdapter', () => {
       expect(result.items[0].matchedResources![0]).toEqual(
         expect.objectContaining({
           id: 'res-1',
-          name: 'data.csv',
           matchSource: 'content',
           contentSnippets: ['...東京都の<mark>人口</mark>は...'],
         })
@@ -373,6 +372,25 @@ describe('OpenSearchAdapter', () => {
     })
   })
 
+  describe('deleteContent', () => {
+    it('should delete from contents index', async () => {
+      mockClient.delete.mockResolvedValue({ body: {} })
+
+      await adapter.deleteContent('res-1')
+
+      expect(mockClient.delete).toHaveBeenCalledWith({
+        index: 'kukan-contents',
+        id: 'res-1',
+        refresh: 'wait_for',
+      })
+    })
+
+    it('should ignore 404 errors', async () => {
+      mockClient.delete.mockRejectedValue({ statusCode: 404 })
+      await expect(adapter.deleteContent('nonexistent')).resolves.toBeUndefined()
+    })
+  })
+
   describe('highlight sanitization', () => {
     it('should sanitize XSS in highlighted title', async () => {
       mockClient.search.mockResolvedValue({
@@ -416,6 +434,7 @@ describe('OpenSearchAdapter', () => {
               },
             },
             { hits: { total: { value: 0 }, hits: [] } },
+            { hits: { total: { value: 0 }, hits: [] } },
           ],
         },
       })
@@ -427,7 +446,7 @@ describe('OpenSearchAdapter', () => {
       expect(result.items[0].highlightedNotes).toBe('<mark>note</mark>')
     })
 
-    it('should sanitize XSS in resource highlight snippets', async () => {
+    it('should sanitize XSS in resource and content highlight snippets', async () => {
       mockClient.msearch.mockResolvedValue({
         body: {
           responses: [
@@ -446,8 +465,22 @@ describe('OpenSearchAdapter', () => {
                     _source: { id: 'res-1', packageId: 'pkg-1', name: 'data.csv' },
                     _score: 3,
                     highlight: {
-                      extractedText: ['<a href="javascript:void(0)">click</a><mark>data</mark>'],
                       name: ['<script>x</script><mark>data</mark>.csv'],
+                    },
+                  },
+                ],
+              },
+            },
+            {
+              hits: {
+                total: { value: 1 },
+                hits: [
+                  {
+                    _id: 'res-1',
+                    _source: { id: 'res-1', packageId: 'pkg-1' },
+                    _score: 2,
+                    highlight: {
+                      extractedText: ['<a href="javascript:void(0)">click</a><mark>data</mark>'],
                     },
                   },
                 ],
@@ -460,8 +493,8 @@ describe('OpenSearchAdapter', () => {
       const result = await adapter.search({ q: 'data' })
 
       const matched = result.items[0].matchedResources![0]
-      expect(matched.contentSnippets).toEqual(['click<mark>data</mark>'])
       expect(matched.highlightedName).toBe('x<mark>data</mark>.csv')
+      expect(matched.contentSnippets).toEqual(['click<mark>data</mark>'])
     })
   })
 
@@ -519,18 +552,18 @@ describe('OpenSearchAdapter', () => {
       expect(result!.items[0].source.name).toBe('alpha')
     })
 
-    it('should exclude extractedText from source', async () => {
+    it('should exclude extractedText from contents browse', async () => {
       mockClient.search.mockResolvedValue({
         body: { hits: { total: { value: 0 }, hits: [] } },
       })
 
-      await adapter.browseDocuments('resources', { offset: 0, limit: 10 })
+      await adapter.browseDocuments('contents', { offset: 0, limit: 10 })
 
       const callArgs = mockClient.search.mock.calls[0][0]
       expect(callArgs.body._source).toEqual({ excludes: ['extractedText'] })
     })
 
-    it('should search with multi_match when q is provided', async () => {
+    it('should search with correct fields per index', async () => {
       mockClient.search.mockResolvedValue({
         body: { hits: { total: { value: 0 }, hits: [] } },
       })
@@ -541,7 +574,7 @@ describe('OpenSearchAdapter', () => {
       expect(callArgs.body.query.multi_match).toEqual(
         expect.objectContaining({
           query: 'test',
-          fields: ['name', 'description', 'extractedText'],
+          fields: ['name', 'description'],
         })
       )
     })
@@ -565,14 +598,16 @@ describe('OpenSearchAdapter', () => {
           responses: [
             // Packages: no direct match
             { hits: { total: { value: 0 }, hits: [] } },
-            // Resources: match in pkg-2 (not in packages result)
+            // Resources: no metadata match
+            { hits: { total: { value: 0 }, hits: [] } },
+            // Contents: match in pkg-2 (not in packages result)
             {
               hits: {
                 total: { value: 1 },
                 hits: [
                   {
                     _id: 'res-1',
-                    _source: { id: 'res-1', packageId: 'pkg-2', name: 'data.csv', format: 'CSV' },
+                    _source: { id: 'res-1', packageId: 'pkg-2' },
                     _score: 3,
                     highlight: { extractedText: ['<mark>keyword</mark> found'] },
                   },

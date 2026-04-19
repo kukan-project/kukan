@@ -6,7 +6,7 @@ import { eq, and, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, resourcePipeline } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
-import type { SearchAdapter, ResourceDoc } from '@kukan/search-adapter'
+import type { SearchAdapter, ContentDoc } from '@kukan/search-adapter'
 import type { PipelineContext, ResourceForPipeline } from './types'
 import { FETCH_RATE_LIMIT_INTERVAL_MS } from '@/config'
 
@@ -59,9 +59,9 @@ export function buildPipelineContext(
       return result.rows.length > 0
     },
 
-    async indexResource(doc: ResourceDoc): Promise<void> {
+    async indexContent(doc: ContentDoc): Promise<void> {
       if (search) {
-        await search.indexResource(doc)
+        await search.indexContent(doc)
       }
     },
 

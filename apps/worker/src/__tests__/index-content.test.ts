@@ -3,7 +3,7 @@ import { Readable } from 'node:stream'
 import { executeIndexContent } from '../pipeline/steps/index-content'
 import type { PipelineContext } from '../pipeline/types'
 import type { ExtractResult } from '../pipeline/steps/extract'
-import type { ResourceDoc } from '@kukan/search-adapter'
+import type { ContentDoc } from '@kukan/search-adapter'
 
 function bufferToStream(buf: Buffer): Readable {
   return Readable.from(buf)
@@ -27,7 +27,7 @@ function createMockCtx(overrides?: Partial<PipelineContext>): PipelineContext {
     }),
     updateResourceHashAndSize: vi.fn(),
     acquireFetchSlot: vi.fn(),
-    indexResource: vi.fn(),
+    indexContent: vi.fn(),
     updatePipelineMetadata: vi.fn(),
     ...overrides,
   }
@@ -44,7 +44,7 @@ describe('executeIndexContent', () => {
       const ctx = createMockCtx()
       const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)
       expect(result).toBeNull()
-      expect(ctx.indexResource).not.toHaveBeenCalled()
+      expect(ctx.indexContent).not.toHaveBeenCalled()
     })
 
     it('should return null for XLSX (not indexable)', async () => {
@@ -124,7 +124,7 @@ describe('executeIndexContent', () => {
       expect(result!.contentIndexed).toBe(true)
       expect(result!.contentTruncated).toBe(false)
 
-      const indexedDoc = vi.mocked(ctx.indexResource).mock.calls[0][0] as ResourceDoc
+      const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
       expect(indexedDoc.extractedText).toBe(csvContent)
       expect(indexedDoc.packageId).toBe('pkg-1')
       expect(indexedDoc.id).toBe('res-1')
@@ -144,7 +144,7 @@ describe('executeIndexContent', () => {
         ctx
       )
 
-      const indexedDoc = vi.mocked(ctx.indexResource).mock.calls[0][0] as ResourceDoc
+      const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
       expect(indexedDoc.extractedText).not.toContain('<')
       expect(indexedDoc.extractedText).toContain('Title')
       expect(indexedDoc.extractedText).toContain('Hello')
@@ -167,7 +167,7 @@ describe('executeIndexContent', () => {
         ctx
       )
 
-      const indexedDoc = vi.mocked(ctx.indexResource).mock.calls[0][0] as ResourceDoc
+      const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
       expect(indexedDoc.extractedText).toBe('東京')
       expect(result!.contentIndexed).toBe(true)
     })
@@ -198,7 +198,7 @@ describe('executeIndexContent', () => {
       )
 
       expect(result!.contentType).toBe('manifest')
-      const indexedDoc = vi.mocked(ctx.indexResource).mock.calls[0][0] as ResourceDoc
+      const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
       expect(indexedDoc.extractedText).toBe('data/population.csv\ndata/income.csv\nREADME.md')
     })
 
@@ -272,7 +272,7 @@ describe('executeIndexContent', () => {
 
       expect(result!.contentTruncated).toBe(true)
       // Verify no replacement characters from bad truncation
-      const indexedDoc = vi.mocked(ctx.indexResource).mock.calls[0][0] as ResourceDoc
+      const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
       expect(indexedDoc.extractedText).not.toContain('\uFFFD')
     })
   })
@@ -291,29 +291,19 @@ describe('executeIndexContent', () => {
         ctx
       )
       expect(result).toBeNull()
-      expect(ctx.indexResource).not.toHaveBeenCalled()
+      expect(ctx.indexContent).not.toHaveBeenCalled()
     })
 
-    it('should include resource name and description in indexed doc', async () => {
+    it('should include resourceId and packageId in content doc', async () => {
       const ctx = createMockCtx()
-      vi.mocked(ctx.getResource).mockResolvedValue({
-        id: 'res-1',
-        packageId: 'pkg-1',
-        name: 'Population Data',
-        description: 'Annual population statistics',
-        url: 'population.csv',
-        urlType: 'upload',
-        format: 'CSV',
-        hash: null,
-      })
       vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('a,b')))
 
       await executeIndexContent('res-1', 'pkg-1', 'key', 'CSV', defaultExtractResult, ctx)
 
-      const indexedDoc = vi.mocked(ctx.indexResource).mock.calls[0][0] as ResourceDoc
-      expect(indexedDoc.name).toBe('Population Data')
-      expect(indexedDoc.description).toBe('Annual population statistics')
-      expect(indexedDoc.format).toBe('CSV')
+      const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
+      expect(indexedDoc.id).toBe('res-1')
+      expect(indexedDoc.packageId).toBe('pkg-1')
+      expect(indexedDoc.contentType).toBe('tabular')
     })
   })
 })

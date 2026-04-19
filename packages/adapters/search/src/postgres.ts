@@ -363,36 +363,29 @@ export class PostgresSearchAdapter implements SearchAdapter {
     }
   }
 
-  async deletePackage(_id: string): Promise<void> {
-    // No-op: deletion handled by database cascade
-  }
-
-  async deleteAllPackages(): Promise<void> {
-    // No-op: data lives directly in the package table
-  }
-
-  async bulkIndexPackages(_docs: DatasetDoc[]): Promise<void> {
-    // No-op: data lives directly in the package table
-  }
-
-  // Resource-level index methods: no-op for PostgreSQL adapter
-  // (PostgreSQL searches resource metadata directly via SQL)
-  async getIndexStats() {
-    return null
-  }
-
-  async getDocument() {
-    return null
-  }
-
-  async browseDocuments() {
-    return null
-  }
-
+  // No-op: PostgreSQL adapter searches directly via SQL.
+  // Index write/delete operations are handled by database cascade.
+  async deletePackage(_id: string): Promise<void> {}
+  async deleteAllPackages(): Promise<void> {}
+  async bulkIndexPackages(_docs: DatasetDoc[]): Promise<void> {}
   async indexResource(_doc: ResourceDoc): Promise<void> {}
   async bulkIndexResources(_docs: ResourceDoc[]): Promise<void> {}
   async deleteResource(_resourceId: string): Promise<void> {}
   async deleteAllResources(): Promise<void> {}
+  async indexContent(): Promise<void> {}
+  async deleteContent(): Promise<void> {}
+  async deleteAllContents(): Promise<void> {}
+
+  // Not supported in PostgreSQL mode (returns null).
+  async getIndexStats() {
+    return null
+  }
+  async getDocument() {
+    return null
+  }
+  async browseDocuments() {
+    return null
+  }
 
   async sumResourceCount(query?: ResourceCountQuery): Promise<number> {
     const conditions = this.buildConditions({ q: query?.q ?? '', filters: query?.filters })

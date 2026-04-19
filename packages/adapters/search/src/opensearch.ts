@@ -20,6 +20,7 @@ import type {
   SearchFacetBucket,
   DatasetDoc,
   ResourceDoc,
+  ContentDoc,
   MatchedResource,
   IndexStats,
   BrowseResult,
@@ -28,6 +29,11 @@ import { MAX_MATCHED_RESOURCES_PER_PACKAGE } from './adapter'
 
 /** Score multiplier applied to resource hits when merging with package hits */
 const RESOURCE_BOOST = 0.4
+
+/** Check if an error is an OpenSearch 404 (not found) */
+function isNotFoundError(err: unknown): boolean {
+  return Boolean(err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 404)
+}
 
 /** Sanitize OpenSearch highlight output: strip all HTML except <mark> tags */
 function sanitizeHighlight(html: string): string {
@@ -49,6 +55,7 @@ export class OpenSearchAdapter implements SearchAdapter {
   private client: Client
   private packagesIndex: string
   private resourcesIndex: string
+  private contentsIndex: string
   private replicas: number
   private initialized = false
 
@@ -62,6 +69,7 @@ export class OpenSearchAdapter implements SearchAdapter {
     const prefix = config.indexPrefix || 'kukan'
     this.packagesIndex = `${prefix}-packages`
     this.resourcesIndex = `${prefix}-resources`
+    this.contentsIndex = `${prefix}-contents`
     this.replicas = config.replicas ?? 0
   }
 
@@ -87,6 +95,7 @@ export class OpenSearchAdapter implements SearchAdapter {
 
     await this.ensurePackagesIndex()
     await this.ensureResourcesIndex()
+    await this.ensureContentsIndex()
 
     this.initialized = true
   }
@@ -98,9 +107,9 @@ export class OpenSearchAdapter implements SearchAdapter {
         index: this.packagesIndex,
         body: {
           settings: {
-              number_of_replicas: this.replicas,
-              ...OpenSearchAdapter.KUROMOJI_ANALYSIS,
-            },
+            number_of_replicas: this.replicas,
+            ...OpenSearchAdapter.KUROMOJI_ANALYSIS,
+          },
           mappings: {
             properties: {
               id: { type: 'keyword' },
@@ -135,9 +144,9 @@ export class OpenSearchAdapter implements SearchAdapter {
         index: this.resourcesIndex,
         body: {
           settings: {
-              number_of_replicas: this.replicas,
-              ...OpenSearchAdapter.KUROMOJI_ANALYSIS,
-            },
+            number_of_replicas: this.replicas,
+            ...OpenSearchAdapter.KUROMOJI_ANALYSIS,
+          },
           mappings: {
             properties: {
               id: { type: 'keyword' },
@@ -149,6 +158,27 @@ export class OpenSearchAdapter implements SearchAdapter {
               },
               description: { type: 'text', analyzer: 'kuromoji_analyzer' },
               format: { type: 'keyword' },
+            },
+          },
+        },
+      })
+    }
+  }
+
+  private async ensureContentsIndex(): Promise<void> {
+    const exists = await this.client.indices.exists({ index: this.contentsIndex })
+    if (!exists.body) {
+      await this.client.indices.create({
+        index: this.contentsIndex,
+        body: {
+          settings: {
+            number_of_replicas: this.replicas,
+            ...OpenSearchAdapter.KUROMOJI_ANALYSIS,
+          },
+          mappings: {
+            properties: {
+              id: { type: 'keyword' },
+              packageId: { type: 'keyword' },
               extractedText: { type: 'text', analyzer: 'kuromoji_analyzer' },
               contentType: { type: 'keyword' },
               contentTruncated: { type: 'boolean' },
@@ -158,6 +188,27 @@ export class OpenSearchAdapter implements SearchAdapter {
         },
       })
     }
+  }
+
+  /** Delete a single document, ignoring 404 */
+  private async deleteDoc(index: string, id: string): Promise<void> {
+    try {
+      await this.client.delete({ index, id, refresh: 'wait_for' })
+    } catch (err: unknown) {
+      if (isNotFoundError(err)) return
+      throw err
+    }
+  }
+
+  /** Delete an index and recreate it with latest settings */
+  private async recreateIndex(index: string): Promise<void> {
+    try {
+      await this.client.indices.delete({ index })
+    } catch (err: unknown) {
+      if (!isNotFoundError(err)) throw err
+    }
+    this.initialized = false
+    await this.ensureIndex()
   }
 
   // ------------------------------------------------------------------
@@ -176,23 +227,11 @@ export class OpenSearchAdapter implements SearchAdapter {
 
   async deletePackage(id: string): Promise<void> {
     await this.ensureIndex()
-    try {
-      await this.client.delete({ index: this.packagesIndex, id, refresh: 'wait_for' })
-    } catch (err: unknown) {
-      if (err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 404) return
-      throw err
-    }
+    await this.deleteDoc(this.packagesIndex, id)
   }
 
   async deleteAllPackages(): Promise<void> {
-    // Delete and recreate index to apply latest settings (replicas, mappings)
-    try {
-      await this.client.indices.delete({ index: this.packagesIndex })
-    } catch (err: unknown) {
-      if (!(err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 404)) throw err
-    }
-    this.initialized = false
-    await this.ensureIndex()
+    await this.recreateIndex(this.packagesIndex)
   }
 
   async bulkIndexPackages(docs: DatasetDoc[]): Promise<void> {
@@ -228,22 +267,11 @@ export class OpenSearchAdapter implements SearchAdapter {
 
   async deleteResource(resourceId: string): Promise<void> {
     await this.ensureIndex()
-    try {
-      await this.client.delete({ index: this.resourcesIndex, id: resourceId, refresh: 'wait_for' })
-    } catch (err: unknown) {
-      if (err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 404) return
-      throw err
-    }
+    await this.deleteDoc(this.resourcesIndex, resourceId)
   }
 
   async deleteAllResources(): Promise<void> {
-    try {
-      await this.client.indices.delete({ index: this.resourcesIndex })
-    } catch (err: unknown) {
-      if (!(err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 404)) throw err
-    }
-    this.initialized = false
-    await this.ensureIndex()
+    await this.recreateIndex(this.resourcesIndex)
   }
 
   async bulkIndexResources(docs: ResourceDoc[]): Promise<void> {
@@ -261,6 +289,29 @@ export class OpenSearchAdapter implements SearchAdapter {
       )
       throw new Error(`Bulk resource indexing failed for ${failed.length} documents`)
     }
+  }
+
+  // ------------------------------------------------------------------
+  // Content-level index (kukan-contents)
+  // ------------------------------------------------------------------
+
+  async indexContent(doc: ContentDoc): Promise<void> {
+    await this.ensureIndex()
+    await this.client.index({
+      index: this.contentsIndex,
+      id: doc.id,
+      body: doc,
+      refresh: 'wait_for',
+    })
+  }
+
+  async deleteContent(resourceId: string): Promise<void> {
+    await this.ensureIndex()
+    await this.deleteDoc(this.contentsIndex, resourceId)
+  }
+
+  async deleteAllContents(): Promise<void> {
+    await this.recreateIndex(this.contentsIndex)
   }
 
   // ------------------------------------------------------------------
@@ -404,14 +455,14 @@ export class OpenSearchAdapter implements SearchAdapter {
       return this.parsePackagesResponse(response, query, offset, limit)
     }
 
-    // msearch: packages + resources in parallel
+    // msearch: packages + resources + contents in parallel
     const resourcesBody = {
       from: 0,
       size: MAX_MATCHED_RESOURCES_PER_PACKAGE,
       query: {
         multi_match: {
           query: query.q!,
-          fields: ['name^3', 'description^2', 'extractedText'],
+          fields: ['name^3', 'description^2'],
           type: 'cross_fields' as const,
           operator: 'and' as const,
         },
@@ -425,6 +476,20 @@ export class OpenSearchAdapter implements SearchAdapter {
             pre_tags: ['<mark>'],
             post_tags: ['</mark>'],
           },
+        },
+      },
+    }
+
+    const contentsBody = {
+      from: 0,
+      size: MAX_MATCHED_RESOURCES_PER_PACKAGE,
+      query: {
+        match: {
+          extractedText: { query: query.q!, operator: 'and' as const },
+        },
+      },
+      highlight: {
+        fields: {
           extractedText: {
             fragment_size: 150,
             number_of_fragments: 3,
@@ -441,20 +506,29 @@ export class OpenSearchAdapter implements SearchAdapter {
         packagesBody,
         { index: this.resourcesIndex },
         resourcesBody,
+        { index: this.contentsIndex },
+        contentsBody,
       ],
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [packagesResult, resourcesResult] = msearchResponse.body.responses as any[]
+    const [packagesResult, resourcesResult, contentsResult] =
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      msearchResponse.body.responses as any[]
 
     // Parse packages
     const result = this.parsePackagesResponse({ body: packagesResult }, query, offset, limit)
 
-    // Parse resources and merge
+    // Parse resource metadata matches and merge
     const resourceHits = resourcesResult.hits?.hits ?? []
     if (resourceHits.length > 0) {
       await this.mergeResourceHits(result, resourceHits)
+    }
+
+    // Parse content matches and merge
+    const contentHits = contentsResult.hits?.hits ?? []
+    if (contentHits.length > 0) {
+      await this.mergeContentHits(result, contentHits)
     }
 
     return result
@@ -522,17 +596,12 @@ export class OpenSearchAdapter implements SearchAdapter {
       const pkgId = src.packageId as string
       const score = (hit._score as number) ?? 0
 
-      const rawContentHighlights = hit.highlight?.extractedText as string[] | undefined
-      const contentSnippets = rawContentHighlights?.length
-        ? rawContentHighlights.map(sanitizeHighlight)
-        : undefined
       const highlightedName = (hit.highlight?.name as string[] | undefined)?.[0]
         ? sanitizeHighlight((hit.highlight.name as string[])[0])
         : undefined
       const highlightedDescription = (hit.highlight?.description as string[] | undefined)?.[0]
         ? sanitizeHighlight((hit.highlight.description as string[])[0])
         : undefined
-      const hasContentMatch = Boolean(contentSnippets)
 
       const matched: MatchedResource = {
         id: src.id,
@@ -541,8 +610,7 @@ export class OpenSearchAdapter implements SearchAdapter {
         format: src.format,
         ...(highlightedName && { highlightedName }),
         ...(highlightedDescription && { highlightedDescription }),
-        ...(contentSnippets && { contentSnippets }),
-        matchSource: hasContentMatch ? 'content' : 'metadata',
+        matchSource: 'metadata',
       }
 
       if (!byPackage.has(pkgId)) {
@@ -624,6 +692,81 @@ export class OpenSearchAdapter implements SearchAdapter {
     }
   }
 
+  /** Merge content hits into matchedResources on existing items */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async mergeContentHits(result: SearchResult, contentHits: any[]): Promise<void> {
+    // Build a lookup of existing matchedResources by resource ID
+    const existingMatched = new Map<string, MatchedResource>()
+    for (const item of result.items) {
+      for (const mr of item.matchedResources ?? []) {
+        existingMatched.set(mr.id, mr)
+      }
+    }
+
+    // Group content hits by packageId
+    const contentByPackage = new Map<string, MatchedResource[]>()
+
+    for (const hit of contentHits) {
+      const src = hit._source
+      const resourceId = src.id as string
+      const pkgId = src.packageId as string
+
+      const rawHighlights = hit.highlight?.extractedText as string[] | undefined
+      const contentSnippets = rawHighlights?.length
+        ? rawHighlights.map(sanitizeHighlight)
+        : undefined
+
+      // If this resource already has a metadata match, add content snippets to it
+      const existing = existingMatched.get(resourceId)
+      if (existing) {
+        existing.contentSnippets = contentSnippets
+        existing.matchSource = 'content'
+        continue
+      }
+
+      // New resource match (content only)
+      const matched: MatchedResource = {
+        id: resourceId,
+        ...(contentSnippets && { contentSnippets }),
+        matchSource: 'content',
+      }
+
+      if (!contentByPackage.has(pkgId)) contentByPackage.set(pkgId, [])
+      contentByPackage.get(pkgId)!.push(matched)
+    }
+
+    // Attach content-only matches to existing items
+    for (const item of result.items) {
+      const contentMatches = contentByPackage.get(item.id)
+      if (contentMatches) {
+        item.matchedResources = [...(item.matchedResources ?? []), ...contentMatches]
+        contentByPackage.delete(item.id)
+      }
+    }
+
+    // Fetch packages not in the main result but matched via content
+    const missingPkgIds = [...contentByPackage.keys()]
+    if (missingPkgIds.length > 0) {
+      try {
+        const mgetResponse = await this.client.mget({
+          index: this.packagesIndex,
+          body: { ids: missingPkgIds },
+        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const doc of mgetResponse.body.docs as any[]) {
+          if (!doc.found) continue
+          const item: DatasetDoc = { ...doc._source, id: doc._id }
+          item.matchedResources = contentByPackage.get(doc._id)
+          ;(item as DatasetDoc & { _score?: number })._score = RESOURCE_BOOST
+          result.items.push(item)
+          result.total += 1
+        }
+      } catch {
+        // Best-effort
+      }
+    }
+  }
+
   // ------------------------------------------------------------------
   // Resource count
   // ------------------------------------------------------------------
@@ -681,7 +824,7 @@ export class OpenSearchAdapter implements SearchAdapter {
 
     const [catResponse, recentResponse] = await Promise.all([
       this.client.cat.indices({
-        index: [this.packagesIndex, this.resourcesIndex],
+        index: [this.packagesIndex, this.resourcesIndex, this.contentsIndex],
         format: 'json',
         h: ['index', 'docs.count', 'store.size'],
       }),
@@ -695,6 +838,12 @@ export class OpenSearchAdapter implements SearchAdapter {
           },
           { index: this.resourcesIndex },
           { size: 5, sort: [{ _doc: { order: 'desc' } }], _source: ['name', 'packageId'] },
+          { index: this.contentsIndex },
+          {
+            size: 5,
+            sort: [{ _doc: { order: 'desc' } }],
+            _source: ['contentType', 'contentOriginalSize'],
+          },
         ],
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any),
@@ -715,7 +864,7 @@ export class OpenSearchAdapter implements SearchAdapter {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [pkgRecent, resRecent] = recentResponse.body.responses as any[]
+    const [pkgRecent, resRecent, contRecent] = recentResponse.body.responses as any[]
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pkgRecentDocs = (pkgRecent.hits?.hits ?? []).map((h: any) => ({
@@ -730,18 +879,27 @@ export class OpenSearchAdapter implements SearchAdapter {
       name: h._source.name as string | undefined,
     }))
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const contRecentDocs = (contRecent.hits?.hits ?? []).map((h: any) => ({
+      id: h._id as string,
+      name: h._source.contentType as string | undefined,
+    }))
+
     return {
       packages: { ...parseCatEntry(this.packagesIndex), recentDocs: pkgRecentDocs },
       resources: { ...parseCatEntry(this.resourcesIndex), recentDocs: resRecentDocs },
+      contents: { ...parseCatEntry(this.contentsIndex), recentDocs: contRecentDocs },
     }
   }
 
-  private resolveIndex(index: 'packages' | 'resources'): string {
-    return index === 'packages' ? this.packagesIndex : this.resourcesIndex
+  private resolveIndex(index: 'packages' | 'resources' | 'contents'): string {
+    if (index === 'packages') return this.packagesIndex
+    if (index === 'resources') return this.resourcesIndex
+    return this.contentsIndex
   }
 
   async getDocument(
-    index: 'packages' | 'resources',
+    index: 'packages' | 'resources' | 'contents',
     id: string
   ): Promise<Record<string, unknown> | null> {
     await this.ensureIndex()
@@ -749,14 +907,13 @@ export class OpenSearchAdapter implements SearchAdapter {
       const response = await this.client.get({ index: this.resolveIndex(index), id })
       return response.body._source as Record<string, unknown>
     } catch (err: unknown) {
-      if (err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 404)
-        return null
+      if (isNotFoundError(err)) return null
       throw err
     }
   }
 
   async browseDocuments(
-    index: 'packages' | 'resources',
+    index: 'packages' | 'resources' | 'contents',
     options: { q?: string; offset?: number; limit?: number }
   ): Promise<BrowseResult> {
     await this.ensureIndex()
@@ -770,17 +927,20 @@ export class OpenSearchAdapter implements SearchAdapter {
       from: offset,
       size: limit,
       sort: [{ _doc: { order: 'desc' } }],
-      _source: { excludes: ['extractedText'] },
+      ...(index === 'contents' && { _source: { excludes: ['extractedText'] } }),
+    }
+
+    const searchFields: Record<string, string[]> = {
+      packages: ['title', 'name', 'notes'],
+      resources: ['name', 'description'],
+      contents: ['extractedText'],
     }
 
     if (options.q?.trim()) {
       body.query = {
         multi_match: {
           query: options.q,
-          fields:
-            index === 'packages'
-              ? ['title', 'name', 'notes']
-              : ['name', 'description', 'extractedText'],
+          fields: searchFields[index],
           type: 'cross_fields' as const,
           operator: 'and' as const,
         },
