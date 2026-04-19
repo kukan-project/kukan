@@ -42,7 +42,7 @@ export class SearchConstruct extends Construct {
 
     this.domain = new opensearch.Domain(this, 'Domain', {
       domainName: 'kukan-search',
-      version: opensearch.EngineVersion.OPENSEARCH_2_17,
+      version: opensearch.EngineVersion.openSearch('3.5'),
       vpc,
       vpcSubnets: [
         {
