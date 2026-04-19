@@ -20,6 +20,7 @@
     "@kukan/search-adapter": "workspace:*",
     "@kukan/shared": "workspace:*",
     "@kukan/storage-adapter": "workspace:*",
+    "@opensearch-project/opensearch": "^3.5.1",
     "croner": "^10.0.1",
     "dotenv": "^16.6.1",
     "drizzle-orm": "^0.45.2",
