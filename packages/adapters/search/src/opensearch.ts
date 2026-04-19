@@ -448,8 +448,8 @@ export class OpenSearchAdapter implements SearchAdapter {
   }
 
   /** Parse a packages search response into SearchResult */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private parsePackagesResponse(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     response: any,
     query: SearchQuery,
     offset: number,
