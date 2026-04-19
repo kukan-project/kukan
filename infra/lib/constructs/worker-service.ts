@@ -63,6 +63,7 @@ export class WorkerServiceConstruct extends Construct {
     // Grant permissions to task role
     bucket.grantReadWrite(taskDef.taskRole)
     queue.grantConsumeMessages(taskDef.taskRole)
+    queue.grantSendMessages(taskDef.taskRole)
     // Environment variables
     const environment: Record<string, string> = {
       NODE_ENV: 'production',
