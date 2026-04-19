@@ -434,9 +434,6 @@ resourcesRouter.delete('/:id', async (c) => {
   await checkResourcePermission(db, user, resourceService, id)
 
   const res = await resourceService.delete(id)
-  await Promise.all([
-    indexPackage(db, search, res.packageId),
-    search.deleteResource(id),
-  ])
+  await Promise.all([indexPackage(db, search, res.packageId), search.deleteResource(id)])
   return c.json(res)
 })

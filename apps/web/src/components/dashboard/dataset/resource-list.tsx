@@ -180,8 +180,7 @@ export function ResourceList({ packageId, resources, onUpdated }: ResourceListPr
   )
 
   const isDirty = useMemo(
-    () =>
-      items.length === resources.length && items.some((r, i) => r.id !== resources[i]?.id),
+    () => items.length === resources.length && items.some((r, i) => r.id !== resources[i]?.id),
     [items, resources]
   )
 

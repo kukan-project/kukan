@@ -170,7 +170,12 @@ describe('OpenSearchAdapter', () => {
       mockClient.msearch.mockResolvedValue({
         body: {
           responses: [
-            { hits: { total: { value: 1 }, hits: [{ _id: 'pkg-1', _source: { name: 'test' }, _score: 5 }] } },
+            {
+              hits: {
+                total: { value: 1 },
+                hits: [{ _id: 'pkg-1', _source: { name: 'test' }, _score: 5 }],
+              },
+            },
             { hits: { total: { value: 0 }, hits: [] } },
           ],
         },
@@ -230,7 +235,7 @@ describe('OpenSearchAdapter', () => {
           id: 'res-1',
           name: 'data.csv',
           matchSource: 'content',
-          contentSnippet: '...東京都の<mark>人口</mark>は...',
+          contentSnippets: ['...東京都の<mark>人口</mark>は...'],
         })
       )
     })
@@ -455,7 +460,7 @@ describe('OpenSearchAdapter', () => {
       const result = await adapter.search({ q: 'data' })
 
       const matched = result.items[0].matchedResources![0]
-      expect(matched.contentSnippet).toBe('click<mark>data</mark>')
+      expect(matched.contentSnippets).toEqual(['click<mark>data</mark>'])
       expect(matched.highlightedName).toBe('x<mark>data</mark>.csv')
     })
   })
@@ -600,7 +605,9 @@ describe('OpenSearchAdapter', () => {
       expect(result.items).toHaveLength(1)
       expect(result.items[0].name).toBe('content-only-pkg')
       expect(result.items[0].matchedResources).toHaveLength(1)
-      expect(result.items[0].matchedResources![0].contentSnippet).toBe('<mark>keyword</mark> found')
+      expect(result.items[0].matchedResources![0].contentSnippets).toEqual([
+        '<mark>keyword</mark> found',
+      ])
       expect(result.items[0].matchedResources![0].matchSource).toBe('content')
     })
   })

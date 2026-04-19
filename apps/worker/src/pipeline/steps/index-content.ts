@@ -55,9 +55,7 @@ export async function executeIndexContent(
     const manifestBuf = await streamToBuffer(manifestStream, MAX_CONTENT_DOWNLOAD_SIZE)
     const manifest = JSON.parse(manifestBuf.toString('utf-8'))
     // Extract file paths as searchable text
-    const paths = (manifest.entries ?? [])
-      .map((e: { path: string }) => e.path)
-      .join('\n')
+    const paths = (manifest.entries ?? []).map((e: { path: string }) => e.path).join('\n')
     extractedText = paths
   } else {
     // Text formats: download original file
@@ -68,7 +66,10 @@ export async function executeIndexContent(
 
     // Strip HTML tags for HTML/HTM
     if (normalizedFormat === 'html' || normalizedFormat === 'htm') {
-      extractedText = extractedText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+      extractedText = extractedText
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
     }
   }
 

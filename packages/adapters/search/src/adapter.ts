@@ -18,8 +18,8 @@ export interface MatchedResource {
   highlightedName?: string
   /** Highlighted description (HTML with <mark> tags) */
   highlightedDescription?: string
-  /** Highlighted snippet from content match */
-  contentSnippet?: string
+  /** Highlighted snippets from content match (up to 3 fragments) */
+  contentSnippets?: string[]
   /** Whether the match came from resource metadata or extracted content */
   matchSource?: 'metadata' | 'content'
 }

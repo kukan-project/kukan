@@ -114,7 +114,10 @@ packagesRouter.get(
 
     // Build matchedResources + highlights lookup from search results
     const searchMatchedResources: Record<string, MatchedResource[]> = {}
-    const searchHighlights: Record<string, { highlightedTitle?: string; highlightedNotes?: string }> = {}
+    const searchHighlights: Record<
+      string,
+      { highlightedTitle?: string; highlightedNotes?: string }
+    > = {}
     for (const item of searchResult.items) {
       if (item.matchedResources && item.matchedResources.length > 0) {
         searchMatchedResources[item.id] = item.matchedResources

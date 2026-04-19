@@ -12,7 +12,7 @@ import type { MatchedResource } from '@kukan/search-adapter'
 
 /** Tailwind classes for search term highlighting */
 const HIGHLIGHT_MARK =
-  '[&>mark]:rounded-sm [&>mark]:bg-yellow-200/60 [&>mark]:px-0.5 dark:[&>mark]:bg-yellow-500/30'
+  '[&>mark]:rounded-sm [&>mark]:bg-yellow-200/60 [&>mark]:px-0.5 dark:[&>mark]:bg-yellow-500/30 [&>mark+mark]:pl-0 [&>mark+mark]:rounded-l-none [&>mark:has(+mark)]:pr-0 [&>mark:has(+mark)]:rounded-r-none'
 
 export interface DatasetCardItem {
   id: string
@@ -105,7 +105,9 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
             </div>
           )}
         </CardHeader>
-        {(pkg.notes || pkg.highlightedNotes || (pkg.matchedResources && pkg.matchedResources.length > 0)) && (
+        {(pkg.notes ||
+          pkg.highlightedNotes ||
+          (pkg.matchedResources && pkg.matchedResources.length > 0)) && (
           <CardContent className="space-y-3">
             {(pkg.notes || pkg.highlightedNotes) &&
               (pkg.highlightedNotes ? (
@@ -154,18 +156,26 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                               {r.description}
                             </p>
                           ))}
-                        {r.matchSource === 'content' && r.contentSnippet && (
-                          <div className="mt-1 rounded border border-primary/20 bg-primary/5 px-2 py-1.5">
-                            <span className="mb-0.5 flex items-center gap-0.5 text-[10px] font-medium text-primary">
-                              <Search className="h-2.5 w-2.5" />
-                              {t('contentMatch')}
-                            </span>
-                            <p
-                              className={`line-clamp-2 text-xs text-muted-foreground ${HIGHLIGHT_MARK}`}
-                              dangerouslySetInnerHTML={{ __html: r.contentSnippet }}
-                            />
-                          </div>
-                        )}
+                        {r.matchSource === 'content' &&
+                          r.contentSnippets &&
+                          r.contentSnippets.length > 0 && (
+                            <div className="mt-1 space-y-1">
+                              <span className="flex items-center gap-0.5 text-[10px] font-medium text-primary">
+                                <Search className="h-2.5 w-2.5" />
+                                {t('contentMatch')}
+                                <span className="font-normal text-muted-foreground">
+                                  {t('contentMatchNote')}
+                                </span>
+                              </span>
+                              {r.contentSnippets.map((snippet, i) => (
+                                <p
+                                  key={i}
+                                  className={`line-clamp-3 rounded border border-primary/20 bg-primary/5 px-2 py-1.5 text-xs text-muted-foreground ${HIGHLIGHT_MARK}`}
+                                  dangerouslySetInnerHTML={{ __html: snippet }}
+                                />
+                              ))}
+                            </div>
+                          )}
                       </Link>
                     </li>
                   ))}

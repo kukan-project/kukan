@@ -88,11 +88,18 @@ adminRouter.get('/search/doc/:index/:id', async (c) => {
 
   const index = c.req.param('index')
   if (index !== 'packages' && index !== 'resources') {
-    return c.json({ type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Invalid index' }, 400)
+    return c.json(
+      { type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Invalid index' },
+      400
+    )
   }
 
   const doc = await c.get('search').getDocument(index, c.req.param('id'))
-  if (!doc) return c.json({ type: 'about:blank', title: 'Not Found', status: 404, detail: 'Document not found' }, 404)
+  if (!doc)
+    return c.json(
+      { type: 'about:blank', title: 'Not Found', status: 404, detail: 'Document not found' },
+      404
+    )
   return c.json(doc)
 })
 
@@ -103,7 +110,10 @@ adminRouter.get('/search/browse/:index', async (c) => {
 
   const index = c.req.param('index')
   if (index !== 'packages' && index !== 'resources') {
-    return c.json({ type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Invalid index' }, 400)
+    return c.json(
+      { type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Invalid index' },
+      400
+    )
   }
 
   const q = c.req.query('q') ?? ''
@@ -111,7 +121,16 @@ adminRouter.get('/search/browse/:index', async (c) => {
   const limit = parseInt(c.req.query('limit') ?? '20', 10)
 
   const result = await c.get('search').browseDocuments(index, { q, offset, limit })
-  if (!result) return c.json({ type: 'about:blank', title: 'Not Available', status: 404, detail: 'OpenSearch not enabled' }, 404)
+  if (!result)
+    return c.json(
+      {
+        type: 'about:blank',
+        title: 'Not Available',
+        status: 404,
+        detail: 'OpenSearch not enabled',
+      },
+      404
+    )
   return c.json(result)
 })
 
@@ -284,9 +303,7 @@ adminRouter.post('/jobs/enqueue-all', async (c) => {
 
   for (let i = 0; i < resources.length; i += BATCH_SIZE) {
     const batch = resources.slice(i, i + BATCH_SIZE)
-    await Promise.all(
-      batch.map((r) => pipelineService.enqueue(r.id).catch(() => {}))
-    )
+    await Promise.all(batch.map((r) => pipelineService.enqueue(r.id).catch(() => {})))
     enqueued += batch.length
   }
 

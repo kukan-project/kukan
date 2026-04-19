@@ -63,7 +63,14 @@ describe('executeIndexContent', () => {
       const ctx = createMockCtx()
       vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('a,b\n1,2')))
 
-      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'CSV', defaultExtractResult, ctx)
+      const result = await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'key',
+        'CSV',
+        defaultExtractResult,
+        ctx
+      )
       expect(result?.contentType).toBe('tabular')
     })
 
@@ -71,7 +78,14 @@ describe('executeIndexContent', () => {
       const ctx = createMockCtx()
       vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('hello')))
 
-      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'TXT', defaultExtractResult, ctx)
+      const result = await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'key',
+        'TXT',
+        defaultExtractResult,
+        ctx
+      )
       expect(result?.contentType).toBe('text')
     })
 
@@ -79,7 +93,14 @@ describe('executeIndexContent', () => {
       const ctx = createMockCtx()
       vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('{"a":1}')))
 
-      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'JSON', defaultExtractResult, ctx)
+      const result = await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'key',
+        'JSON',
+        defaultExtractResult,
+        ctx
+      )
       expect(result?.contentType).toBe('text')
     })
   })
@@ -90,7 +111,14 @@ describe('executeIndexContent', () => {
       const ctx = createMockCtx()
       vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from(csvContent)))
 
-      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'CSV', defaultExtractResult, ctx)
+      const result = await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'key',
+        'CSV',
+        defaultExtractResult,
+        ctx
+      )
 
       expect(result).not.toBeNull()
       expect(result!.contentIndexed).toBe(true)
@@ -107,7 +135,14 @@ describe('executeIndexContent', () => {
       const ctx = createMockCtx()
       vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from(html)))
 
-      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'HTML', defaultExtractResult, ctx)
+      const result = await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'key',
+        'HTML',
+        defaultExtractResult,
+        ctx
+      )
 
       const indexedDoc = vi.mocked(ctx.indexResource).mock.calls[0][0] as ResourceDoc
       expect(indexedDoc.extractedText).not.toContain('<')
@@ -124,7 +159,10 @@ describe('executeIndexContent', () => {
       vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(sjisBuffer))
 
       const result = await executeIndexContent(
-        'res-1', 'pkg-1', 'key', 'CSV',
+        'res-1',
+        'pkg-1',
+        'key',
+        'CSV',
         { previewKey: null, encoding: 'SJIS' },
         ctx
       )
@@ -151,7 +189,10 @@ describe('executeIndexContent', () => {
       )
 
       const result = await executeIndexContent(
-        'res-1', 'pkg-1', 'key', 'ZIP',
+        'res-1',
+        'pkg-1',
+        'key',
+        'ZIP',
         { previewKey: 'previews/pkg-1/res-1.json', encoding: 'UTF8' },
         ctx
       )
@@ -164,7 +205,10 @@ describe('executeIndexContent', () => {
     it('should return null for ZIP without preview key', async () => {
       const ctx = createMockCtx()
       const result = await executeIndexContent(
-        'res-1', 'pkg-1', 'key', 'ZIP',
+        'res-1',
+        'pkg-1',
+        'key',
+        'ZIP',
         { previewKey: null, encoding: 'UTF8' },
         ctx
       )
@@ -179,7 +223,14 @@ describe('executeIndexContent', () => {
       const ctx = createMockCtx()
       vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from(largeContent)))
 
-      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'TXT', defaultExtractResult, ctx)
+      const result = await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'key',
+        'TXT',
+        defaultExtractResult,
+        ctx
+      )
 
       expect(result!.contentTruncated).toBe(true)
       expect(result!.contentOriginalSize).toBe(200 * 1024)
@@ -191,7 +242,14 @@ describe('executeIndexContent', () => {
       const ctx = createMockCtx()
       vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from(smallContent)))
 
-      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'TXT', defaultExtractResult, ctx)
+      const result = await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'key',
+        'TXT',
+        defaultExtractResult,
+        ctx
+      )
 
       expect(result!.contentTruncated).toBe(false)
       expect(result!.contentOriginalSize).toBe(result!.contentIndexedSize)
@@ -203,7 +261,14 @@ describe('executeIndexContent', () => {
       const ctx = createMockCtx()
       vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from(japaneseText)))
 
-      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'TXT', defaultExtractResult, ctx)
+      const result = await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'key',
+        'TXT',
+        defaultExtractResult,
+        ctx
+      )
 
       expect(result!.contentTruncated).toBe(true)
       // Verify no replacement characters from bad truncation
@@ -217,7 +282,14 @@ describe('executeIndexContent', () => {
       const ctx = createMockCtx({ getResource: vi.fn().mockResolvedValue(null) })
       vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('test')))
 
-      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'TXT', defaultExtractResult, ctx)
+      const result = await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'key',
+        'TXT',
+        defaultExtractResult,
+        ctx
+      )
       expect(result).toBeNull()
       expect(ctx.indexResource).not.toHaveBeenCalled()
     })

@@ -449,7 +449,12 @@ export class OpenSearchAdapter implements SearchAdapter {
 
   /** Parse a packages search response into SearchResult */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private parsePackagesResponse(response: any, query: SearchQuery, offset: number, limit: number): SearchResult {
+  private parsePackagesResponse(
+    response: any,
+    query: SearchQuery,
+    offset: number,
+    limit: number
+  ): SearchResult {
     const hits = response.body.hits
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const items: DatasetDoc[] = (hits?.hits ?? []).map((hit: any) => {
@@ -459,8 +464,10 @@ export class OpenSearchAdapter implements SearchAdapter {
         _score: hit._score ?? 0,
       }
       // Attach highlighted fields if available
-      if (hit.highlight?.title?.[0]) doc.highlightedTitle = sanitizeHighlight(hit.highlight.title[0])
-      if (hit.highlight?.notes?.[0]) doc.highlightedNotes = sanitizeHighlight(hit.highlight.notes[0])
+      if (hit.highlight?.title?.[0])
+        doc.highlightedTitle = sanitizeHighlight(hit.highlight.title[0])
+      if (hit.highlight?.notes?.[0])
+        doc.highlightedNotes = sanitizeHighlight(hit.highlight.notes[0])
       return doc
     })
 
@@ -503,14 +510,16 @@ export class OpenSearchAdapter implements SearchAdapter {
       const score = (hit._score as number) ?? 0
 
       const rawContentHighlights = hit.highlight?.extractedText as string[] | undefined
-      const contentSnippet = rawContentHighlights?.[0] ? sanitizeHighlight(rawContentHighlights[0]) : undefined
+      const contentSnippets = rawContentHighlights?.length
+        ? rawContentHighlights.map(sanitizeHighlight)
+        : undefined
       const highlightedName = (hit.highlight?.name as string[] | undefined)?.[0]
         ? sanitizeHighlight((hit.highlight.name as string[])[0])
         : undefined
       const highlightedDescription = (hit.highlight?.description as string[] | undefined)?.[0]
         ? sanitizeHighlight((hit.highlight.description as string[])[0])
         : undefined
-      const hasContentMatch = Boolean(contentSnippet)
+      const hasContentMatch = Boolean(contentSnippets)
 
       const matched: MatchedResource = {
         id: src.id,
@@ -519,7 +528,7 @@ export class OpenSearchAdapter implements SearchAdapter {
         format: src.format,
         ...(highlightedName && { highlightedName }),
         ...(highlightedDescription && { highlightedDescription }),
-        ...(contentSnippet && { contentSnippet }),
+        ...(contentSnippets && { contentSnippets }),
         matchSource: hasContentMatch ? 'content' : 'metadata',
       }
 
@@ -554,7 +563,12 @@ export class OpenSearchAdapter implements SearchAdapter {
 
     if (contentOnlyPackageIds.length > 0) {
       try {
-        await this.fetchAndAppendMissingPackages(result, contentOnlyPackageIds, byPackage, packageScores)
+        await this.fetchAndAppendMissingPackages(
+          result,
+          contentOnlyPackageIds,
+          byPackage,
+          packageScores
+        )
       } catch {
         // Best-effort: if mget fails, we still return the packages we have
       }
@@ -661,7 +675,11 @@ export class OpenSearchAdapter implements SearchAdapter {
       this.client.msearch({
         body: [
           { index: this.packagesIndex },
-          { size: 5, sort: [{ updated: { order: 'desc' } }], _source: ['name', 'title', 'updated'] },
+          {
+            size: 5,
+            sort: [{ updated: { order: 'desc' } }],
+            _source: ['name', 'title', 'updated'],
+          },
           { index: this.resourcesIndex },
           { size: 5, sort: [{ _doc: { order: 'desc' } }], _source: ['name', 'packageId'] },
         ],
@@ -746,9 +764,10 @@ export class OpenSearchAdapter implements SearchAdapter {
       body.query = {
         multi_match: {
           query: options.q,
-          fields: index === 'packages'
-            ? ['title', 'name', 'notes']
-            : ['name', 'description', 'extractedText'],
+          fields:
+            index === 'packages'
+              ? ['title', 'name', 'notes']
+              : ['name', 'description', 'extractedText'],
           type: 'cross_fields' as const,
           operator: 'and' as const,
         },

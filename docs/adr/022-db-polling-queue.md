@@ -10,6 +10,7 @@
 `@kukan/queue-adapter` パッケージがアダプター層を提供し、API が SQS にメッセージを送り、Worker が SQS をポーリングして処理する。
 
 この構成は以下のコンポーネントを必要とする:
+
 - `@kukan/queue-adapter` パッケージ
 - SQS（AWS 環境）
 - ElasticMQ（開発・オンプレ環境、Docker コンテナ）
@@ -46,7 +47,8 @@ while (running) {
       .limit(1)
 
     if (row) {
-      await tx.update(resourcePipeline)
+      await tx
+        .update(resourcePipeline)
         .set({ status: 'processing' })
         .where(eq(resourcePipeline.id, row.id))
     }
@@ -56,23 +58,23 @@ while (running) {
   if (job) {
     await processResource(job.resourceId, ctx, db)
   } else {
-    await sleep(2000)  // キューが空なら待機
+    await sleep(2000) // キューが空なら待機
   }
 }
 ```
 
 ### SQS が提供する機能の代替
 
-| SQS の機能 | DB 代替 | 方法 |
-|---|---|---|
-| メッセージ配信 | `status='queued'` の行を SELECT | ポーリング |
-| 排他的消費（1メッセージ=1Worker） | `FOR UPDATE SKIP LOCKED` | PostgreSQL 標準 |
-| 可視性タイムアウト | `status='processing'` + `updated` の経過時間チェック | 既存の仕組みで対応 |
-| 遅延配信 | `WHERE created + delay < NOW()` | SQL 条件 |
-| DLQ | `status='error'` + retry count | 既に `resource_pipeline` に実装済み |
-| 複数 Worker の負荷分散 | `SKIP LOCKED` | 自動分散 |
-| メッセージ永続化 | DB そのもの | 当然 |
-| バックプレッシャー | Worker が空いたら取りに行く | pull 型（SQS と同じ） |
+| SQS の機能                        | DB 代替                                              | 方法                                |
+| --------------------------------- | ---------------------------------------------------- | ----------------------------------- |
+| メッセージ配信                    | `status='queued'` の行を SELECT                      | ポーリング                          |
+| 排他的消費（1メッセージ=1Worker） | `FOR UPDATE SKIP LOCKED`                             | PostgreSQL 標準                     |
+| 可視性タイムアウト                | `status='processing'` + `updated` の経過時間チェック | 既存の仕組みで対応                  |
+| 遅延配信                          | `WHERE created + delay < NOW()`                      | SQL 条件                            |
+| DLQ                               | `status='error'` + retry count                       | 既に `resource_pipeline` に実装済み |
+| 複数 Worker の負荷分散            | `SKIP LOCKED`                                        | 自動分散                            |
+| メッセージ永続化                  | DB そのもの                                          | 当然                                |
+| バックプレッシャー                | Worker が空いたら取りに行く                          | pull 型（SQS と同じ）               |
 
 ### コネクションプール
 

@@ -127,6 +127,7 @@
     "resourceCount": "All {count} resources",
     "matchedResources": "Matched resources",
     "contentMatch": "Content match",
+    "contentMatchNote": "(up to 3 matches)",
     "tabPublic": "Public",
     "tabPrivate": "Private",
     "tabDeleted": "Deleted",

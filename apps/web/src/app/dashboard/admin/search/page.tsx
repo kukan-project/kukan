@@ -262,8 +262,12 @@ export default function AdminSearchPage() {
                   <TableRow>
                     <TableHead className="w-[280px]">ID</TableHead>
                     <TableHead>{activeTab === 'packages' ? t('colTitle') : t('colName')}</TableHead>
-                    {activeTab === 'resources' && <TableHead className="w-[100px]">{t('colFormat')}</TableHead>}
-                    {activeTab === 'resources' && <TableHead className="w-[100px]">{t('colContent')}</TableHead>}
+                    {activeTab === 'resources' && (
+                      <TableHead className="w-[100px]">{t('colFormat')}</TableHead>
+                    )}
+                    {activeTab === 'resources' && (
+                      <TableHead className="w-[100px]">{t('colContent')}</TableHead>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -273,11 +277,13 @@ export default function AdminSearchPage() {
                       className="cursor-pointer hover:bg-accent/50"
                       onClick={() => showDocument(item.id)}
                     >
-                      <TableCell className="whitespace-nowrap font-mono text-xs">{item.id}</TableCell>
+                      <TableCell className="whitespace-nowrap font-mono text-xs">
+                        {item.id}
+                      </TableCell>
                       <TableCell>
                         {activeTab === 'packages'
-                          ? (item.source.title as string) ?? (item.source.name as string) ?? '-'
-                          : (item.source.name as string) ?? '-'}
+                          ? ((item.source.title as string) ?? (item.source.name as string) ?? '-')
+                          : ((item.source.name as string) ?? '-')}
                       </TableCell>
                       {activeTab === 'resources' && (
                         <TableCell>
@@ -292,7 +298,9 @@ export default function AdminSearchPage() {
                             <span className="flex items-center gap-1">
                               {typeof item.source.contentTruncated === 'boolean' && (
                                 <Badge
-                                  variant={item.source.contentTruncated ? 'destructive' : 'secondary'}
+                                  variant={
+                                    item.source.contentTruncated ? 'destructive' : 'secondary'
+                                  }
                                   className="text-xs"
                                 >
                                   {item.source.contentTruncated ? t('truncated') : t('full')}
@@ -380,7 +388,12 @@ export default function AdminSearchPage() {
               <JsonView
                 data={docDialogContent.body}
                 shouldExpandNode={collapseAllNested}
-                style={typeof window !== 'undefined' && document.documentElement.classList.contains('dark') ? darkStyles : defaultStyles}
+                style={
+                  typeof window !== 'undefined' &&
+                  document.documentElement.classList.contains('dark')
+                    ? darkStyles
+                    : defaultStyles
+                }
               />
             )}
           </div>
