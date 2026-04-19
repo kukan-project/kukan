@@ -185,12 +185,14 @@ export class OpenSearchAdapter implements SearchAdapter {
   }
 
   async deleteAllPackages(): Promise<void> {
+    // Delete and recreate index to apply latest settings (replicas, mappings)
+    try {
+      await this.client.indices.delete({ index: this.packagesIndex })
+    } catch (err: unknown) {
+      if (!(err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 404)) throw err
+    }
+    this.initialized = false
     await this.ensureIndex()
-    await this.client.deleteByQuery({
-      index: this.packagesIndex,
-      body: { query: { match_all: {} } },
-      refresh: true,
-    })
   }
 
   async bulkIndexPackages(docs: DatasetDoc[]): Promise<void> {
@@ -235,12 +237,13 @@ export class OpenSearchAdapter implements SearchAdapter {
   }
 
   async deleteAllResources(): Promise<void> {
+    try {
+      await this.client.indices.delete({ index: this.resourcesIndex })
+    } catch (err: unknown) {
+      if (!(err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 404)) throw err
+    }
+    this.initialized = false
     await this.ensureIndex()
-    await this.client.deleteByQuery({
-      index: this.resourcesIndex,
-      body: { query: { match_all: {} } },
-      refresh: true,
-    })
   }
 
   async bulkIndexResources(docs: ResourceDoc[]): Promise<void> {
