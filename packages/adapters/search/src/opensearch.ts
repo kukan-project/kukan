@@ -37,6 +37,8 @@ function sanitizeHighlight(html: string): string {
 export interface OpenSearchConfig {
   endpoint: string
   indexPrefix?: string
+  /** Number of replicas per index shard (default: 0). Set to 1+ for multi-node clusters. */
+  replicas?: number
   auth?: {
     username: string
     password: string
@@ -47,6 +49,7 @@ export class OpenSearchAdapter implements SearchAdapter {
   private client: Client
   private packagesIndex: string
   private resourcesIndex: string
+  private replicas: number
   private initialized = false
 
   constructor(config: OpenSearchConfig) {
@@ -59,20 +62,19 @@ export class OpenSearchAdapter implements SearchAdapter {
     const prefix = config.indexPrefix || 'kukan'
     this.packagesIndex = `${prefix}-packages`
     this.resourcesIndex = `${prefix}-resources`
+    this.replicas = config.replicas ?? 0
   }
 
   // ------------------------------------------------------------------
   // Index initialisation
   // ------------------------------------------------------------------
 
-  private static readonly KUROMOJI_SETTINGS = {
-    analysis: {
-      analyzer: {
-        kuromoji_analyzer: {
-          type: 'custom' as const,
-          tokenizer: 'kuromoji_tokenizer',
-          filter: ['kuromoji_baseform', 'kuromoji_part_of_speech', 'lowercase'],
-        },
+  private static readonly KUROMOJI_ANALYSIS = {
+    analyzer: {
+      kuromoji_analyzer: {
+        type: 'custom' as const,
+        tokenizer: 'kuromoji_tokenizer',
+        filter: ['kuromoji_baseform', 'kuromoji_part_of_speech', 'lowercase'],
       },
     },
   }
@@ -93,7 +95,10 @@ export class OpenSearchAdapter implements SearchAdapter {
       await this.client.indices.create({
         index: this.packagesIndex,
         body: {
-          settings: OpenSearchAdapter.KUROMOJI_SETTINGS,
+          settings: {
+              number_of_replicas: this.replicas,
+              ...OpenSearchAdapter.KUROMOJI_ANALYSIS,
+            },
           mappings: {
             properties: {
               id: { type: 'keyword' },
@@ -127,7 +132,10 @@ export class OpenSearchAdapter implements SearchAdapter {
       await this.client.indices.create({
         index: this.resourcesIndex,
         body: {
-          settings: OpenSearchAdapter.KUROMOJI_SETTINGS,
+          settings: {
+              number_of_replicas: this.replicas,
+              ...OpenSearchAdapter.KUROMOJI_ANALYSIS,
+            },
           mappings: {
             properties: {
               id: { type: 'keyword' },

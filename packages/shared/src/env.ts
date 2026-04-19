@@ -34,6 +34,7 @@ export const envSchema = z.object({
   // Search (opensearch recommended; postgres fallback for cost savings)
   SEARCH_TYPE: z.enum(['opensearch', 'postgres']).default('opensearch'),
   OPENSEARCH_URL: z.string().default('http://localhost:9200'),
+  OPENSEARCH_REPLICAS: z.coerce.number().int().min(0).default(0),
 
   // Queue (SQS-compatible: AWS SQS or ElasticMQ, determined by SQS_ENDPOINT)
   SQS_QUEUE_URL: z.string(),

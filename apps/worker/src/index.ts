@@ -109,7 +109,7 @@ if (env.HEALTH_CHECK_ENABLED) {
 // --- Search adapter (optional, for content indexing) ---
 const search =
   env.SEARCH_TYPE === 'opensearch'
-    ? new OpenSearchAdapter({ endpoint: env.OPENSEARCH_URL })
+    ? new OpenSearchAdapter({ endpoint: env.OPENSEARCH_URL, replicas: env.OPENSEARCH_REPLICAS })
     : undefined
 
 // --- SQS polling ---

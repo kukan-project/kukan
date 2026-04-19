@@ -57,6 +57,8 @@ export interface KukanConfig {
     instanceCount: number
     volumeSize: number // GB
     multiAz: boolean
+    /** Number of index replicas. Should be < instanceCount. */
+    indexReplicas: number
   }
   dbPool: {
     webMax: number
@@ -88,6 +90,7 @@ const SCALE_DEFAULTS: Record<
       instanceCount: 1,
       volumeSize: 10,
       multiAz: false,
+      indexReplicas: 0,
     },
     dbPool: { webMax: 5, workerMax: 3 },
   },
@@ -100,6 +103,7 @@ const SCALE_DEFAULTS: Record<
       instanceCount: 1,
       volumeSize: 50,
       multiAz: false,
+      indexReplicas: 0,
     },
     dbPool: { webMax: 10, workerMax: 5 },
   },
@@ -112,6 +116,7 @@ const SCALE_DEFAULTS: Record<
       instanceCount: 2,
       volumeSize: 100,
       multiAz: true,
+      indexReplicas: 1,
     },
     dbPool: { webMax: 20, workerMax: 10 },
   },

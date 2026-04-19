@@ -89,6 +89,7 @@ export class WebServiceConstruct extends Construct {
     }
     if (searchDomainEndpoint) {
       environment.OPENSEARCH_URL = `https://${searchDomainEndpoint}`
+      environment.OPENSEARCH_REPLICAS = String(config.opensearch.indexReplicas)
     }
     if (config.domainName) {
       environment.BETTER_AUTH_URL = `https://${config.domainName}`

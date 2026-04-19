@@ -27,7 +27,7 @@ export async function createAdapters(env: Env, db: Database, logger: Logger) {
   if (env.SEARCH_TYPE === 'postgres') {
     search = dbSearch
   } else if (env.SEARCH_TYPE === 'opensearch') {
-    search = new OpenSearchAdapter({ endpoint: env.OPENSEARCH_URL })
+    search = new OpenSearchAdapter({ endpoint: env.OPENSEARCH_URL, replicas: env.OPENSEARCH_REPLICAS })
   } else {
     throw new Error(`Unknown search type: ${env.SEARCH_TYPE}`)
   }

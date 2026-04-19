@@ -80,6 +80,7 @@ export class WorkerServiceConstruct extends Construct {
     }
     if (searchDomainEndpoint) {
       environment.OPENSEARCH_URL = `https://${searchDomainEndpoint}`
+      environment.OPENSEARCH_REPLICAS = String(config.opensearch.indexReplicas)
     }
 
     // Container
