@@ -472,13 +472,15 @@ adminRouter.get('/users/stats', async (c) => {
   let total = 0
   let active = 0
   let sysadmin = 0
+  let deleted = 0
   for (const row of rows) {
     total += row.count
     if (row.state === 'active') active += row.count
     if (row.state === 'active' && row.role === 'sysadmin') sysadmin += row.count
+    if (row.state === 'deleted') deleted += row.count
   }
 
-  return c.json({ total, active, sysadmin })
+  return c.json({ total, active, sysadmin, deleted })
 })
 
 // GET /api/v1/admin/users — Paginated user list with optional search

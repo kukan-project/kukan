@@ -7,7 +7,7 @@ import { useLocale, useTranslations } from 'next-intl'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Pencil, RefreshCw, Trash2 } from 'lucide-react'
+import { Pencil, Trash2 } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -45,6 +45,7 @@ interface UserStatsResponse {
   total: number
   active: number
   sysadmin: number
+  deleted: number
 }
 
 interface UserItem {
@@ -113,18 +114,10 @@ export default function AdminUsersPage() {
   const { items, loading, error, fetchPage, offset, total, pageSize, totalPages, currentPage } =
     usePaginatedFetch<UserItem>(usersUrl)
 
-  // Refresh
-  const [refreshing, setRefreshing] = useState(false)
   const offsetRef = useRef(offset)
   useEffect(() => {
     offsetRef.current = offset
   }, [offset])
-
-  const refresh = useCallback(async () => {
-    setRefreshing(true)
-    await Promise.all([fetchPage(offsetRef.current), fetchStats()])
-    setRefreshing(false)
-  }, [fetchPage, fetchStats])
 
   // Create user dialog
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -224,6 +217,7 @@ export default function AdminUsersPage() {
 
   const stateBadge = (state: string | null) => {
     if (state === 'active') return <Badge variant="secondary">{t('stateActive')}</Badge>
+    if (state === 'deleted') return <Badge variant="destructive">{t('stateDeleted')}</Badge>
     return <Badge variant="destructive">{state ?? 'unknown'}</Badge>
   }
 
@@ -232,33 +226,25 @@ export default function AdminUsersPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title={t('title')}>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8"
-            onClick={refresh}
-            disabled={refreshing}
-          >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-          </Button>
-          <Button
-            onClick={() => {
-              setCreateError(null)
-              reset()
-              setDialogOpen(true)
-            }}
-          >
-            {t('createUser')}
-          </Button>
-        </div>
+        <Button
+          onClick={() => {
+            setCreateError(null)
+            reset()
+            setDialogOpen(true)
+          }}
+        >
+          {t('createUser')}
+        </Button>
       </PageHeader>
 
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label={t('statsAll')} value={stats?.total} />
-        <StatCard label={t('statsActive')} value={stats?.active} />
         <StatCard label={t('statsSysadmin')} value={stats?.sysadmin} />
+        <StatCard
+          label={t('statsRegularUser')}
+          value={stats ? stats.active - stats.sysadmin : undefined}
+        />
+        <StatCard label={t('statsDeleted')} value={stats?.deleted} />
       </div>
 
       {/* Search */}
@@ -307,8 +293,8 @@ export default function AdminUsersPage() {
                   <TableCell className="truncate" title={u.displayName ?? undefined}>
                     {u.displayName ?? '-'}
                   </TableCell>
-                  <TableCell>{roleBadge(u.role)}</TableCell>
-                  <TableCell>{stateBadge(u.state)}</TableCell>
+                  <TableCell className="whitespace-nowrap">{roleBadge(u.role)}</TableCell>
+                  <TableCell className="whitespace-nowrap">{stateBadge(u.state)}</TableCell>
                   <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                     {formatDateTimeCompact(u.createdAt, locale)}
                   </TableCell>

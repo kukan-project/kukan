@@ -78,7 +78,7 @@ describe('Admin Users API', () => {
       expect(res.status).toBe(200)
 
       const body = await res.json()
-      expect(body).toEqual({ total: 1, active: 1, sysadmin: 1 })
+      expect(body).toEqual({ total: 1, active: 1, sysadmin: 1, deleted: 0 })
     })
 
     it('should count users by state and role', async () => {
@@ -110,6 +110,7 @@ describe('Admin Users API', () => {
       expect(body.total).toBe(4) // test-admin + 3
       expect(body.active).toBe(3) // test-admin + user-a + user-b
       expect(body.sysadmin).toBe(1) // test-admin only
+      expect(body.deleted).toBe(1) // user-c
     })
   })
 
