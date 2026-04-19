@@ -215,7 +215,7 @@ describe('OpenSearchAdapter', () => {
                 hits: [
                   {
                     _id: 'res-1',
-                    _source: { id: 'res-1', packageId: 'pkg-1' },
+                    _source: { resourceId: 'res-1', packageId: 'pkg-1' },
                     _score: 3,
                     highlight: { extractedText: ['...東京都の<mark>人口</mark>は...'] },
                   },
@@ -477,7 +477,7 @@ describe('OpenSearchAdapter', () => {
                 hits: [
                   {
                     _id: 'res-1',
-                    _source: { id: 'res-1', packageId: 'pkg-1' },
+                    _source: { resourceId: 'res-1', packageId: 'pkg-1' },
                     _score: 2,
                     highlight: {
                       extractedText: ['<a href="javascript:void(0)">click</a><mark>data</mark>'],
@@ -607,7 +607,7 @@ describe('OpenSearchAdapter', () => {
                 hits: [
                   {
                     _id: 'res-1',
-                    _source: { id: 'res-1', packageId: 'pkg-2' },
+                    _source: { resourceId: 'res-1', packageId: 'pkg-2' },
                     _score: 3,
                     highlight: { extractedText: ['<mark>keyword</mark> found'] },
                   },

@@ -208,7 +208,10 @@
       "colTitle": "タイトル",
       "colName": "名前",
       "colFormat": "形式",
-      "colContent": "コンテンツ",
+      "colResourceId": "リソースID",
+      "colContentType": "種別",
+      "colSize": "サイズ",
+      "colContent": "状態",
       "full": "全文",
       "truncated": "切詰",
       "noDocuments": "ドキュメントがありません",
@@ -218,7 +221,7 @@
       "reindexing": "再構築中...",
       "reindexResult": "{count} 件のデータセット、{resourceCount} 件のリソースをインデックスしました",
       "includeContent": "コンテンツも再処理する（テキスト抽出を含む、時間がかかります）",
-      "contentEnqueuedResult": "{count} 件のリソースの再処理を予約しました",
+      "contentEnqueuedResult": "{count} 件のコンテンツの再処理を予約しました",
       "contentSizeNote": "コンテンツインデックスはリソースあたり最大 100KB に切り詰められます。"
     },
     "adminSite": {

@@ -37,8 +37,8 @@ export interface ResourceDoc {
 
 /** Document stored in the kukan-contents index (extracted text for full-text search) */
 export interface ContentDoc {
-  /** Resource UUID (used as OpenSearch document ID) */
-  id: string
+  /** Resource UUID */
+  resourceId: string
   /** Parent package UUID */
   packageId: string
   /** Extracted text content (up to 100KB) */

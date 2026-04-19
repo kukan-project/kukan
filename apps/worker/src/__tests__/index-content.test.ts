@@ -127,7 +127,7 @@ describe('executeIndexContent', () => {
       const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
       expect(indexedDoc.extractedText).toBe(csvContent)
       expect(indexedDoc.packageId).toBe('pkg-1')
-      expect(indexedDoc.id).toBe('res-1')
+      expect(indexedDoc.resourceId).toBe('res-1')
     })
 
     it('should strip HTML tags for HTML format', async () => {
@@ -301,7 +301,7 @@ describe('executeIndexContent', () => {
       await executeIndexContent('res-1', 'pkg-1', 'key', 'CSV', defaultExtractResult, ctx)
 
       const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
-      expect(indexedDoc.id).toBe('res-1')
+      expect(indexedDoc.resourceId).toBe('res-1')
       expect(indexedDoc.packageId).toBe('pkg-1')
       expect(indexedDoc.contentType).toBe('tabular')
     })

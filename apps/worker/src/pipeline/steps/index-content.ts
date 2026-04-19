@@ -87,7 +87,7 @@ export async function executeIndexContent(
 
   // Build and index the content document
   const doc: ContentDoc = {
-    id: resourceId,
+    resourceId,
     packageId,
     extractedText: indexedText,
     contentType,

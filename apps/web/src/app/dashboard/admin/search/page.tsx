@@ -232,7 +232,7 @@ export default function AdminSearchPage() {
                 </span>
               )}
             </CardTitle>
-            {activeTab === 'resources' && (
+            {activeTab === 'contents' && (
               <p className="text-xs text-muted-foreground">{t('contentSizeNote')}</p>
             )}
           </div>
@@ -261,12 +261,19 @@ export default function AdminSearchPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[280px]">ID</TableHead>
-                    <TableHead>{activeTab === 'packages' ? t('colTitle') : t('colName')}</TableHead>
+                    {activeTab === 'packages' && <TableHead>{t('colTitle')}</TableHead>}
+                    {activeTab === 'resources' && <TableHead>{t('colName')}</TableHead>}
                     {activeTab === 'resources' && (
                       <TableHead className="w-[100px]">{t('colFormat')}</TableHead>
                     )}
-                    {activeTab === 'resources' && (
-                      <TableHead className="w-[100px]">{t('colContent')}</TableHead>
+                    {activeTab === 'contents' && (
+                      <TableHead className="w-[120px]">{t('colContentType')}</TableHead>
+                    )}
+                    {activeTab === 'contents' && (
+                      <TableHead className="w-[100px]">{t('colSize')}</TableHead>
+                    )}
+                    {activeTab === 'contents' && (
+                      <TableHead className="w-[80px]">{t('colContent')}</TableHead>
                     )}
                   </TableRow>
                 </TableHeader>
@@ -280,11 +287,14 @@ export default function AdminSearchPage() {
                       <TableCell className="whitespace-nowrap font-mono text-xs">
                         {item.id}
                       </TableCell>
-                      <TableCell>
-                        {activeTab === 'packages'
-                          ? ((item.source.title as string) ?? (item.source.name as string) ?? '-')
-                          : ((item.source.name as string) ?? '-')}
-                      </TableCell>
+                      {activeTab === 'packages' && (
+                        <TableCell>
+                          {(item.source.title as string) ?? (item.source.name as string) ?? '-'}
+                        </TableCell>
+                      )}
+                      {activeTab === 'resources' && (
+                        <TableCell>{(item.source.name as string) ?? '-'}</TableCell>
+                      )}
                       {activeTab === 'resources' && (
                         <TableCell>
                           {typeof item.source.format === 'string' && (
@@ -292,28 +302,31 @@ export default function AdminSearchPage() {
                           )}
                         </TableCell>
                       )}
-                      {activeTab === 'resources' && (
-                        <TableCell className="whitespace-nowrap">
-                          {item.source.contentType ? (
-                            <span className="flex items-center gap-1">
-                              {typeof item.source.contentTruncated === 'boolean' && (
-                                <Badge
-                                  variant={
-                                    item.source.contentTruncated ? 'destructive' : 'secondary'
-                                  }
-                                  className="text-xs"
-                                >
-                                  {item.source.contentTruncated ? t('truncated') : t('full')}
-                                </Badge>
-                              )}
-                              {typeof item.source.contentOriginalSize === 'number' && (
-                                <span className="text-[10px] text-muted-foreground">
-                                  {formatBytes(item.source.contentOriginalSize as number)}
-                                </span>
-                              )}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">-</span>
+                      {activeTab === 'contents' && (
+                        <TableCell>
+                          {typeof item.source.contentType === 'string' && (
+                            <Badge variant="outline" className="text-xs">
+                              {item.source.contentType}
+                            </Badge>
+                          )}
+                        </TableCell>
+                      )}
+                      {activeTab === 'contents' && (
+                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                          {typeof item.source.contentOriginalSize === 'number'
+                            ? formatBytes(item.source.contentOriginalSize as number)
+                            : '-'}
+                        </TableCell>
+                      )}
+                      {activeTab === 'contents' && (
+                        <TableCell>
+                          {typeof item.source.contentTruncated === 'boolean' && (
+                            <Badge
+                              variant={item.source.contentTruncated ? 'destructive' : 'secondary'}
+                              className="text-xs"
+                            >
+                              {item.source.contentTruncated ? t('truncated') : t('full')}
+                            </Badge>
                           )}
                         </TableCell>
                       )}

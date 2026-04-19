@@ -177,7 +177,7 @@ export class OpenSearchAdapter implements SearchAdapter {
           },
           mappings: {
             properties: {
-              id: { type: 'keyword' },
+              resourceId: { type: 'keyword' },
               packageId: { type: 'keyword' },
               extractedText: { type: 'text', analyzer: 'kuromoji_analyzer' },
               contentType: { type: 'keyword' },
@@ -299,7 +299,7 @@ export class OpenSearchAdapter implements SearchAdapter {
     await this.ensureIndex()
     await this.client.index({
       index: this.contentsIndex,
-      id: doc.id,
+      id: doc.resourceId,
       body: doc,
       refresh: 'wait_for',
     })
@@ -708,7 +708,7 @@ export class OpenSearchAdapter implements SearchAdapter {
 
     for (const hit of contentHits) {
       const src = hit._source
-      const resourceId = src.id as string
+      const resourceId = src.resourceId as string
       const pkgId = src.packageId as string
 
       const rawHighlights = hit.highlight?.extractedText as string[] | undefined
