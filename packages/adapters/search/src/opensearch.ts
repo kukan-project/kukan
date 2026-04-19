@@ -70,11 +70,13 @@ export class OpenSearchAdapter implements SearchAdapter {
   // ------------------------------------------------------------------
 
   private static readonly KUROMOJI_ANALYSIS = {
-    analyzer: {
-      kuromoji_analyzer: {
-        type: 'custom' as const,
-        tokenizer: 'kuromoji_tokenizer',
-        filter: ['kuromoji_baseform', 'kuromoji_part_of_speech', 'lowercase'],
+    analysis: {
+      analyzer: {
+        kuromoji_analyzer: {
+          type: 'custom' as const,
+          tokenizer: 'kuromoji_tokenizer',
+          filter: ['kuromoji_baseform', 'kuromoji_part_of_speech', 'lowercase'],
+        },
       },
     },
   }
