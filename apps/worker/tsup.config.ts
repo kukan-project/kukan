@@ -9,7 +9,8 @@ export default defineConfig({
   noExternal: [/^@kukan\//],
   // pino uses dynamic require() for Node built-ins — must stay external
   // croner uses Node.js timer APIs — keep external to avoid bundling issues
-  external: ['pino', 'pino-pretty', 'croner'],
+  // @opensearch-project/opensearch uses CommonJS require('events') etc.
+  external: ['pino', 'pino-pretty', 'croner', '@opensearch-project/opensearch'],
   splitting: false,
   clean: true,
   sourcemap: true,
