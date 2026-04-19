@@ -12,6 +12,7 @@ vi.mock('@opensearch-project/opensearch', () => {
     search: vi.fn(),
     msearch: vi.fn(),
     mget: vi.fn(),
+    get: vi.fn(),
     count: vi.fn(),
     delete: vi.fn(),
     deleteByQuery: vi.fn(),
@@ -29,6 +30,7 @@ interface MockClient {
   search: ReturnType<typeof vi.fn>
   msearch: ReturnType<typeof vi.fn>
   mget: ReturnType<typeof vi.fn>
+  get: ReturnType<typeof vi.fn>
   count: ReturnType<typeof vi.fn>
   delete: ReturnType<typeof vi.fn>
   deleteByQuery: ReturnType<typeof vi.fn>
@@ -455,6 +457,99 @@ describe('OpenSearchAdapter', () => {
       const matched = result.items[0].matchedResources![0]
       expect(matched.contentSnippet).toBe('click<mark>data</mark>')
       expect(matched.highlightedName).toBe('x<mark>data</mark>.csv')
+    })
+  })
+
+  describe('getDocument', () => {
+    it('should return document source by ID', async () => {
+      mockClient.get.mockResolvedValue({
+        body: { _id: 'pkg-1', _source: { name: 'test', title: 'Test' } },
+      })
+
+      const doc = await adapter.getDocument('packages', 'pkg-1')
+
+      expect(mockClient.get).toHaveBeenCalledWith({ index: 'kukan-packages', id: 'pkg-1' })
+      expect(doc).toEqual({ name: 'test', title: 'Test' })
+    })
+
+    it('should return null for non-existent document', async () => {
+      mockClient.get.mockRejectedValue({ statusCode: 404 })
+
+      const doc = await adapter.getDocument('resources', 'nonexistent')
+
+      expect(doc).toBeNull()
+    })
+
+    it('should resolve correct index name', async () => {
+      mockClient.get.mockResolvedValue({
+        body: { _id: 'res-1', _source: { name: 'data.csv' } },
+      })
+
+      await adapter.getDocument('resources', 'res-1')
+
+      expect(mockClient.get).toHaveBeenCalledWith({ index: 'kukan-resources', id: 'res-1' })
+    })
+  })
+
+  describe('browseDocuments', () => {
+    it('should return paginated documents', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: {
+            total: { value: 50 },
+            hits: [
+              { _id: 'pkg-1', _source: { name: 'alpha', title: 'Alpha' } },
+              { _id: 'pkg-2', _source: { name: 'beta', title: 'Beta' } },
+            ],
+          },
+        },
+      })
+
+      const result = await adapter.browseDocuments('packages', { offset: 0, limit: 20 })
+
+      expect(result).not.toBeNull()
+      expect(result!.items).toHaveLength(2)
+      expect(result!.total).toBe(50)
+      expect(result!.items[0].id).toBe('pkg-1')
+      expect(result!.items[0].source.name).toBe('alpha')
+    })
+
+    it('should exclude extractedText from source', async () => {
+      mockClient.search.mockResolvedValue({
+        body: { hits: { total: { value: 0 }, hits: [] } },
+      })
+
+      await adapter.browseDocuments('resources', { offset: 0, limit: 10 })
+
+      const callArgs = mockClient.search.mock.calls[0][0]
+      expect(callArgs.body._source).toEqual({ excludes: ['extractedText'] })
+    })
+
+    it('should search with multi_match when q is provided', async () => {
+      mockClient.search.mockResolvedValue({
+        body: { hits: { total: { value: 0 }, hits: [] } },
+      })
+
+      await adapter.browseDocuments('resources', { q: 'test', offset: 0 })
+
+      const callArgs = mockClient.search.mock.calls[0][0]
+      expect(callArgs.body.query.multi_match).toEqual(
+        expect.objectContaining({
+          query: 'test',
+          fields: ['name', 'description', 'extractedText'],
+        })
+      )
+    })
+
+    it('should cap limit at 100', async () => {
+      mockClient.search.mockResolvedValue({
+        body: { hits: { total: { value: 0 }, hits: [] } },
+      })
+
+      await adapter.browseDocuments('packages', { limit: 500 })
+
+      const callArgs = mockClient.search.mock.calls[0][0]
+      expect(callArgs.body.size).toBe(100)
     })
   })
 

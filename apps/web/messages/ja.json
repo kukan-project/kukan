@@ -194,11 +194,23 @@
       "adminSection": "システム管理者",
       "adminJobs": "ジョブ管理",
       "adminHealth": "ヘルスチェック",
+      "adminSearch": "インデックス管理",
       "adminUsers": "ユーザー管理",
       "adminSite": "サイト管理"
     },
-    "adminSite": {
-      "title": "サイト管理",
+    "adminSearch": {
+      "title": "インデックス管理",
+      "indexStatsDocs": "{count} 件",
+      "selected": "選択中",
+      "searchPlaceholder": "ドキュメントを検索...",
+      "search": "検索",
+      "colTitle": "タイトル",
+      "colName": "名前",
+      "colFormat": "形式",
+      "colContent": "コンテンツ",
+      "full": "全文",
+      "truncated": "切詰",
+      "noDocuments": "ドキュメントがありません",
       "reindexTitle": "検索インデックス再構築",
       "reindexDescription": "データベースの全データセットから検索インデックスを再構築します。通常は自動更新されますが、検索結果に不整合がある場合に実行してください。",
       "reindex": "再構築",
@@ -206,6 +218,10 @@
       "reindexResult": "{count} 件のデータセット、{resourceCount} 件のリソースをインデックスしました",
       "includeContent": "コンテンツも再処理する（テキスト抽出を含む、時間がかかります）",
       "contentEnqueuedResult": "{count} 件のリソースの再処理を予約しました",
+      "contentSizeNote": "コンテンツインデックスはリソースあたり最大 100KB に切り詰められます。"
+    },
+    "adminSite": {
+      "title": "サイト管理",
       "resetTitle": "データリセット",
       "warning": "すべてのデータセット、リソース、組織、グループ、タグ、パイプラインジョブ、関連ファイルが完全に削除されます。ユーザーアカウントは保持されます。",
       "confirmLabel": "確認のため RESET と入力してください",

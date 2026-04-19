@@ -194,11 +194,23 @@
       "adminSection": "System Admin",
       "adminJobs": "Job Management",
       "adminHealth": "Health Check",
+      "adminSearch": "Index Management",
       "adminUsers": "Users",
       "adminSite": "Site Management"
     },
-    "adminSite": {
-      "title": "Site Management",
+    "adminSearch": {
+      "title": "Index Management",
+      "indexStatsDocs": "{count} docs",
+      "selected": "Selected",
+      "searchPlaceholder": "Search documents...",
+      "search": "Search",
+      "colTitle": "Title",
+      "colName": "Name",
+      "colFormat": "Format",
+      "colContent": "Content",
+      "full": "Full",
+      "truncated": "Truncated",
+      "noDocuments": "No documents",
       "reindexTitle": "Rebuild Search Index",
       "reindexDescription": "Rebuild the search index from all datasets in the database. This is normally updated automatically, but run it if search results are inconsistent.",
       "reindex": "Rebuild",
@@ -206,6 +218,10 @@
       "reindexResult": "{count} datasets, {resourceCount} resources indexed",
       "includeContent": "Also reprocess content (includes text extraction, takes longer)",
       "contentEnqueuedResult": "{count} resources enqueued for reprocessing",
+      "contentSizeNote": "Content index is truncated to a maximum of 100KB per resource."
+    },
+    "adminSite": {
+      "title": "Site Management",
       "resetTitle": "Data Reset",
       "warning": "This will permanently delete all datasets, resources, organizations, groups, tags, pipeline jobs, and associated files. User accounts will be preserved.",
       "confirmLabel": "Type RESET to confirm",

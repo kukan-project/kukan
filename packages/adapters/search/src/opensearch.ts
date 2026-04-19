@@ -21,6 +21,8 @@ import type {
   DatasetDoc,
   ResourceDoc,
   MatchedResource,
+  IndexStats,
+  BrowseResult,
 } from './adapter'
 import { MAX_MATCHED_RESOURCES_PER_PACKAGE } from './adapter'
 
@@ -139,6 +141,8 @@ export class OpenSearchAdapter implements SearchAdapter {
               format: { type: 'keyword' },
               extractedText: { type: 'text', analyzer: 'kuromoji_analyzer' },
               contentType: { type: 'keyword' },
+              contentTruncated: { type: 'boolean' },
+              contentOriginalSize: { type: 'integer' },
             },
           },
         },
@@ -640,4 +644,138 @@ export class OpenSearchAdapter implements SearchAdapter {
 
     return (countResponse.body.count as number) ?? 0
   }
+
+  // ------------------------------------------------------------------
+  // Index stats
+  // ------------------------------------------------------------------
+
+  async getIndexStats(): Promise<IndexStats> {
+    await this.ensureIndex()
+
+    const [catResponse, recentResponse] = await Promise.all([
+      this.client.cat.indices({
+        index: [this.packagesIndex, this.resourcesIndex],
+        format: 'json',
+        h: ['index', 'docs.count', 'store.size'],
+      }),
+      this.client.msearch({
+        body: [
+          { index: this.packagesIndex },
+          { size: 5, sort: [{ updated: { order: 'desc' } }], _source: ['name', 'title', 'updated'] },
+          { index: this.resourcesIndex },
+          { size: 5, sort: [{ _doc: { order: 'desc' } }], _source: ['name', 'packageId'] },
+        ],
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any),
+    ])
+
+    const indices = catResponse.body as Array<{
+      index: string
+      'docs.count': string
+      'store.size': string
+    }>
+
+    const parseCatEntry = (indexName: string) => {
+      const row = indices.find((i) => i.index === indexName)
+      return {
+        docCount: parseInt(row?.['docs.count'] ?? '0', 10),
+        sizeBytes: parseSizeToBytes(row?.['store.size'] ?? '0b'),
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [pkgRecent, resRecent] = recentResponse.body.responses as any[]
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pkgRecentDocs = (pkgRecent.hits?.hits ?? []).map((h: any) => ({
+      id: h._id as string,
+      name: (h._source.title ?? h._source.name) as string | undefined,
+      updated: h._source.updated as string | undefined,
+    }))
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const resRecentDocs = (resRecent.hits?.hits ?? []).map((h: any) => ({
+      id: h._id as string,
+      name: h._source.name as string | undefined,
+    }))
+
+    return {
+      packages: { ...parseCatEntry(this.packagesIndex), recentDocs: pkgRecentDocs },
+      resources: { ...parseCatEntry(this.resourcesIndex), recentDocs: resRecentDocs },
+    }
+  }
+
+  private resolveIndex(index: 'packages' | 'resources'): string {
+    return index === 'packages' ? this.packagesIndex : this.resourcesIndex
+  }
+
+  async getDocument(
+    index: 'packages' | 'resources',
+    id: string
+  ): Promise<Record<string, unknown> | null> {
+    await this.ensureIndex()
+    try {
+      const response = await this.client.get({ index: this.resolveIndex(index), id })
+      return response.body._source as Record<string, unknown>
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 404)
+        return null
+      throw err
+    }
+  }
+
+  async browseDocuments(
+    index: 'packages' | 'resources',
+    options: { q?: string; offset?: number; limit?: number }
+  ): Promise<BrowseResult> {
+    await this.ensureIndex()
+
+    const offset = options.offset ?? 0
+    const limit = Math.min(options.limit ?? 20, 100)
+    const indexName = this.resolveIndex(index)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body: any = {
+      from: offset,
+      size: limit,
+      sort: [{ _doc: { order: 'desc' } }],
+      _source: { excludes: ['extractedText'] },
+    }
+
+    if (options.q?.trim()) {
+      body.query = {
+        multi_match: {
+          query: options.q,
+          fields: index === 'packages'
+            ? ['title', 'name', 'notes']
+            : ['name', 'description', 'extractedText'],
+          type: 'cross_fields' as const,
+          operator: 'and' as const,
+        },
+      }
+      body.sort = ['_score', { _doc: { order: 'desc' } }]
+    }
+
+    const response = await this.client.search({ index: indexName, body })
+    const hits = response.body.hits
+    const total = typeof hits.total === 'number' ? hits.total : (hits.total?.value ?? 0)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items = (hits.hits ?? []).map((hit: any) => ({
+      id: hit._id as string,
+      source: hit._source as Record<string, unknown>,
+    }))
+
+    return { items, total, offset, limit }
+  }
+}
+
+/** Parse OpenSearch human-readable size (e.g. "12.5kb", "1.2mb") to bytes */
+function parseSizeToBytes(size: string): number {
+  const match = size.match(/^([\d.]+)(b|kb|mb|gb)$/i)
+  if (!match) return 0
+  const value = parseFloat(match[1])
+  const unit = match[2].toLowerCase()
+  const multipliers: Record<string, number> = { b: 1, kb: 1024, mb: 1024 ** 2, gb: 1024 ** 3 }
+  return Math.round(value * (multipliers[unit] ?? 1))
 }

@@ -72,6 +72,49 @@ const externalUrlConditions = [
   sql`${resource.url} IS NOT NULL`,
 ]
 
+// GET /api/v1/admin/search/stats — Index statistics
+adminRouter.get('/search/stats', async (c) => {
+  const user = c.get('user')
+  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view search stats')
+
+  const stats = await c.get('search').getIndexStats()
+  return c.json({ enabled: stats !== null, stats })
+})
+
+// GET /api/v1/admin/search/doc/:index/:id — Get a single document from OpenSearch
+adminRouter.get('/search/doc/:index/:id', async (c) => {
+  const user = c.get('user')
+  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view search documents')
+
+  const index = c.req.param('index')
+  if (index !== 'packages' && index !== 'resources') {
+    return c.json({ type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Invalid index' }, 400)
+  }
+
+  const doc = await c.get('search').getDocument(index, c.req.param('id'))
+  if (!doc) return c.json({ type: 'about:blank', title: 'Not Found', status: 404, detail: 'Document not found' }, 404)
+  return c.json(doc)
+})
+
+// GET /api/v1/admin/search/browse/:index — Browse/search documents in an index
+adminRouter.get('/search/browse/:index', async (c) => {
+  const user = c.get('user')
+  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can browse search index')
+
+  const index = c.req.param('index')
+  if (index !== 'packages' && index !== 'resources') {
+    return c.json({ type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Invalid index' }, 400)
+  }
+
+  const q = c.req.query('q') ?? ''
+  const offset = parseInt(c.req.query('offset') ?? '0', 10)
+  const limit = parseInt(c.req.query('limit') ?? '20', 10)
+
+  const result = await c.get('search').browseDocuments(index, { q, offset, limit })
+  if (!result) return c.json({ type: 'about:blank', title: 'Not Available', status: 404, detail: 'OpenSearch not enabled' }, 404)
+  return c.json(result)
+})
+
 // POST /api/v1/admin/reindex — Rebuild search index from DB
 adminRouter.post('/reindex', async (c) => {
   const user = c.get('user')

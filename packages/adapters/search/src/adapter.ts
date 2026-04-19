@@ -37,6 +37,10 @@ export interface ResourceDoc {
   extractedText?: string
   /** Content type for indexed text */
   contentType?: ContentType
+  /** Whether extracted text was truncated */
+  contentTruncated?: boolean
+  /** Original text size in bytes (before truncation) */
+  contentOriginalSize?: number
 }
 
 /** Maximum matched resources returned per package across all search adapters.
@@ -166,4 +170,35 @@ export interface SearchAdapter {
 
   /** Sum total active resource count across packages matching the given query/filters */
   sumResourceCount(query?: ResourceCountQuery): Promise<number>
+
+  /** Get index statistics (document counts, sizes). Returns null if not supported. */
+  getIndexStats(): Promise<IndexStats | null>
+
+  /** Get a single document from an index by ID. Returns null if not found or not supported. */
+  getDocument(index: 'packages' | 'resources', id: string): Promise<Record<string, unknown> | null>
+
+  /** Browse/search documents in an index with pagination. Returns null if not supported. */
+  browseDocuments(
+    index: 'packages' | 'resources',
+    options: { q?: string; offset?: number; limit?: number }
+  ): Promise<BrowseResult | null>
+}
+
+export interface BrowseResult {
+  items: Array<{ id: string; source: Record<string, unknown> }>
+  total: number
+  offset: number
+  limit: number
+}
+
+export interface IndexStatsEntry {
+  docCount: number
+  sizeBytes: number
+  /** Most recently indexed documents (up to 5) */
+  recentDocs: Array<{ id: string; name?: string; updated?: string }>
+}
+
+export interface IndexStats {
+  packages: IndexStatsEntry
+  resources: IndexStatsEntry
 }

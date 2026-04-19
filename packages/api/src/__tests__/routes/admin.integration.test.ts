@@ -16,6 +16,9 @@ const mockSearch: SearchAdapter = {
   deleteAllResources: async () => {},
   search: async () => ({ items: [], total: 0, offset: 0, limit: 20 }),
   sumResourceCount: async () => 0,
+  getIndexStats: async () => null,
+  getDocument: async () => null,
+  browseDocuments: async () => null,
 }
 
 const app = createTestApp(db, { search: mockSearch })

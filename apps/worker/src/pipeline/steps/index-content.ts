@@ -93,6 +93,8 @@ export async function executeIndexContent(
     format: res.format ?? undefined,
     extractedText: indexedText,
     contentType,
+    contentTruncated: truncated,
+    contentOriginalSize: originalSize,
   }
 
   await ctx.indexResource(doc)

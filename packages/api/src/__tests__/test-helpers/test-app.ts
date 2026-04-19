@@ -34,6 +34,9 @@ const mockSearch: SearchAdapter = {
   bulkIndexResources: async () => {},
   deleteAllResources: async () => {},
   sumResourceCount: async () => 0,
+  getIndexStats: async () => null,
+  getDocument: async () => null,
+  browseDocuments: async () => null,
 }
 
 const mockStorage = {

@@ -377,6 +377,18 @@ export class PostgresSearchAdapter implements SearchAdapter {
 
   // Resource-level index methods: no-op for PostgreSQL adapter
   // (PostgreSQL searches resource metadata directly via SQL)
+  async getIndexStats() {
+    return null
+  }
+
+  async getDocument() {
+    return null
+  }
+
+  async browseDocuments() {
+    return null
+  }
+
   async indexResource(_doc: ResourceDoc): Promise<void> {}
   async bulkIndexResources(_docs: ResourceDoc[]): Promise<void> {}
   async deleteResource(_resourceId: string): Promise<void> {}

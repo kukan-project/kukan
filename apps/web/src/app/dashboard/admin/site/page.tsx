@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { AlertTriangle, Loader2, Search, Trash2 } from 'lucide-react'
+import { AlertTriangle, Loader2, Trash2 } from 'lucide-react'
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from '@kukan/ui'
 import { useUser } from '@/components/dashboard/user-provider'
 import { PageHeader } from '@/components/dashboard/page-header'
@@ -19,7 +19,7 @@ interface ResetResult {
   }
 }
 
-export default function AdminResetPage() {
+export default function AdminSitePage() {
   const user = useUser()
   const router = useRouter()
   const t = useTranslations('dashboard.adminSite')
@@ -28,40 +28,6 @@ export default function AdminResetPage() {
     if (!user.sysadmin) router.replace('/dashboard')
   }, [user.sysadmin, router])
 
-  // Reindex
-  const [reindexing, setReindexing] = useState(false)
-  const [includeContent, setIncludeContent] = useState(false)
-  const [reindexResult, setReindexResult] = useState<{
-    indexed: number
-    resourcesIndexed: number
-    contentEnqueued?: number
-  } | null>(null)
-
-  async function handleReindex() {
-    setReindexing(true)
-    setReindexResult(null)
-    try {
-      const res = await clientFetch('/api/v1/admin/reindex', { method: 'POST' })
-      if (!res.ok) return
-      const data = await res.json()
-
-      if (includeContent) {
-        const enqueueRes = await clientFetch('/api/v1/admin/jobs/enqueue-all', { method: 'POST' })
-        if (enqueueRes.ok) {
-          const enqueueData = await enqueueRes.json()
-          setReindexResult({ ...data, contentEnqueued: enqueueData.enqueued })
-        } else {
-          setReindexResult(data)
-        }
-      } else {
-        setReindexResult(data)
-      }
-    } finally {
-      setReindexing(false)
-    }
-  }
-
-  // Reset
   const [confirmText, setConfirmText] = useState('')
   const [executing, setExecuting] = useState(false)
   const [result, setResult] = useState<ResetResult | null>(null)
@@ -94,46 +60,6 @@ export default function AdminResetPage() {
     <div className="flex flex-col gap-6">
       <PageHeader title={t('title')} />
 
-      {/* Search Index */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t('reindexTitle')}</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <p className="text-sm text-muted-foreground">{t('reindexDescription')}</p>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={includeContent}
-              onChange={(e) => setIncludeContent(e.target.checked)}
-              disabled={reindexing}
-              className="rounded border-input"
-            />
-            {t('includeContent')}
-          </label>
-          <div className="flex items-center gap-4">
-            <Button onClick={handleReindex} disabled={reindexing}>
-              <Search className="mr-2 h-4 w-4" />
-              {reindexing ? t('reindexing') : t('reindex')}
-            </Button>
-            {reindexResult !== null && (
-              <div className="text-sm text-muted-foreground">
-                <p>
-                  {t('reindexResult', {
-                    count: reindexResult.indexed,
-                    resourceCount: reindexResult.resourcesIndexed,
-                  })}
-                </p>
-                {reindexResult.contentEnqueued !== undefined && (
-                  <p>{t('contentEnqueuedResult', { count: reindexResult.contentEnqueued })}</p>
-                )}
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Data Reset */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{t('resetTitle')}</CardTitle>
