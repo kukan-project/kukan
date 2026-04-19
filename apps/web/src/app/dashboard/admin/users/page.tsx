@@ -272,13 +272,13 @@ export default function AdminUsersPage() {
           <Table className="table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[20%]">{t('colName')}</TableHead>
-                <TableHead className="w-[25%]">{t('colEmail')}</TableHead>
-                <TableHead className="w-[15%]">{t('colDisplayName')}</TableHead>
-                <TableHead className="w-[10%]">{t('colRole')}</TableHead>
-                <TableHead className="w-[10%]">{t('colState')}</TableHead>
+                <TableHead className="w-[15%]">{t('colName')}</TableHead>
+                <TableHead className="w-[22%]">{t('colEmail')}</TableHead>
+                <TableHead className="w-[13%]">{t('colDisplayName')}</TableHead>
+                <TableHead className="w-[110px]">{t('colRole')}</TableHead>
+                <TableHead className="w-[80px]">{t('colState')}</TableHead>
                 <TableHead className="w-[120px]">{t('colCreated')}</TableHead>
-                <TableHead className="w-[100px]">{t('colActions')}</TableHead>
+                <TableHead className="w-[80px]">{t('colActions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
