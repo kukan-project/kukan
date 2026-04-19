@@ -13,6 +13,7 @@ import {
   uploadUrlSchema,
   uploadCompleteSchema,
   ForbiddenError,
+  NotFoundError,
   ValidationError,
   getStorageKey,
   getMimeType,
@@ -30,6 +31,14 @@ import type { AppContext } from '../context'
 import type { Context } from 'hono'
 
 export const resourcesRouter = new Hono<{ Variables: AppContext }>()
+
+/** Convert S3 NoSuchKey errors to 404 NotFoundError */
+function throwIfNotFound(err: unknown, resourceId: string): never {
+  if (err && typeof err === 'object' && 'name' in err && err.name === 'NoSuchKey') {
+    throw new NotFoundError('Resource file', resourceId)
+  }
+  throw err
+}
 
 /** Create pipeline record and enqueue processing job */
 async function enqueuePipeline(c: Context<{ Variables: AppContext }>, resourceId: string) {
@@ -130,7 +139,12 @@ resourcesRouter.get('/:id/text', async (c) => {
   const charset = toCharset(encoding)
   const storage = c.get('storage')
   const storageKey = getStorageKey(resource.packageId, resource.id)
-  const result = await storage.downloadRange(storageKey, 0, TEXT_PREVIEW_LIMIT - 1)
+  let result
+  try {
+    result = await storage.downloadRange(storageKey, 0, TEXT_PREVIEW_LIMIT - 1)
+  } catch (err) {
+    throwIfNotFound(err, id)
+  }
   const isTruncated = result.totalSize > TEXT_PREVIEW_LIMIT
 
   return new Response(Readable.toWeb(result.stream) as ReadableStream, {
@@ -158,7 +172,12 @@ resourcesRouter.get('/:id/download', async (c) => {
   // Uploaded file: stream from Storage
   const storage = c.get('storage')
   const storageKey = getStorageKey(resource.packageId, resource.id)
-  const nodeStream = await storage.download(storageKey)
+  let nodeStream
+  try {
+    nodeStream = await storage.download(storageKey)
+  } catch (err) {
+    throwIfNotFound(err, id)
+  }
 
   const filename = resource.url || resource.id
   const encodedFilename = encodeURIComponent(filename)
@@ -203,7 +222,12 @@ resourcesRouter.get('/:id/preview', async (c) => {
     const start = parseInt(match[1], 10)
     const end = match[2] ? parseInt(match[2], 10) : start + DEFAULT_RANGE_CHUNK - 1
 
-    const result = await storage.downloadRange(storageKey, start, end)
+    let result
+    try {
+      result = await storage.downloadRange(storageKey, start, end)
+    } catch (err) {
+      throwIfNotFound(err, id)
+    }
 
     return new Response(Readable.toWeb(result.stream) as ReadableStream, {
       status: 206,
@@ -218,7 +242,12 @@ resourcesRouter.get('/:id/preview', async (c) => {
   }
 
   // Full response (no Range header)
-  const nodeStream = await storage.download(storageKey)
+  let nodeStream
+  try {
+    nodeStream = await storage.download(storageKey)
+  } catch (err) {
+    throwIfNotFound(err, id)
+  }
 
   return new Response(Readable.toWeb(nodeStream) as ReadableStream, {
     headers: {

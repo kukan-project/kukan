@@ -39,10 +39,14 @@ const mockSearch: SearchAdapter = {
 const mockStorage = {
   upload: async () => {},
   download: async () => {
-    throw new Error('not implemented in test')
+    const err = new Error('The specified key does not exist.')
+    err.name = 'NoSuchKey'
+    throw err
   },
   downloadRange: async () => {
-    throw new Error('not implemented in test')
+    const err = new Error('The specified key does not exist.')
+    err.name = 'NoSuchKey'
+    throw err
   },
   delete: async () => {},
   deleteByPrefix: async () => 0,

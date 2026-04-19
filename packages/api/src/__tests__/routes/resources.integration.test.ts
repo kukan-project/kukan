@@ -534,6 +534,17 @@ describe('Resources API Routes', () => {
       )
       expect(res.status).toBe(404)
     })
+
+    it('should return 404 when file is missing from storage (NoSuchKey)', async () => {
+      const pkg = await createPackage('dl-missing-pkg')
+      const resource = await createResource(pkg.id, {
+        url: 'missing.csv',
+        url_type: 'upload',
+      })
+
+      const res = await app.request(`/api/v1/resources/${resource.id}/download`)
+      expect(res.status).toBe(404)
+    })
   })
 
   describe('GET /api/v1/resources/formats', () => {
