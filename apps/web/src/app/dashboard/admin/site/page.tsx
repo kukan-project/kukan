@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { AlertTriangle, Loader2, Trash2 } from 'lucide-react'
+import { AlertTriangle, Loader2, Search, Trash2 } from 'lucide-react'
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from '@kukan/ui'
 import { useUser } from '@/components/dashboard/user-provider'
 import { PageHeader } from '@/components/dashboard/page-header'
@@ -28,6 +28,22 @@ export default function AdminResetPage() {
     if (!user.sysadmin) router.replace('/dashboard')
   }, [user.sysadmin, router])
 
+  // Reindex
+  const [reindexing, setReindexing] = useState(false)
+  const [reindexResult, setReindexResult] = useState<{ indexed: number; resourcesIndexed: number } | null>(null)
+
+  async function handleReindex() {
+    setReindexing(true)
+    setReindexResult(null)
+    try {
+      const res = await clientFetch('/api/v1/admin/reindex', { method: 'POST' })
+      if (res.ok) setReindexResult(await res.json())
+    } finally {
+      setReindexing(false)
+    }
+  }
+
+  // Reset
   const [confirmText, setConfirmText] = useState('')
   const [executing, setExecuting] = useState(false)
   const [result, setResult] = useState<ResetResult | null>(null)
@@ -60,6 +76,31 @@ export default function AdminResetPage() {
     <div className="flex flex-col gap-6">
       <PageHeader title={t('title')} />
 
+      {/* Search Index */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t('reindexTitle')}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <p className="text-sm text-muted-foreground">{t('reindexDescription')}</p>
+          <div className="flex items-center gap-4">
+            <Button onClick={handleReindex} disabled={reindexing}>
+              <Search className="mr-2 h-4 w-4" />
+              {reindexing ? t('reindexing') : t('reindex')}
+            </Button>
+            {reindexResult !== null && (
+              <p className="text-sm text-muted-foreground">
+                {t('reindexResult', {
+                  count: reindexResult.indexed,
+                  resourceCount: reindexResult.resourcesIndexed,
+                })}
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Data Reset */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{t('resetTitle')}</CardTitle>

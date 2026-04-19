@@ -194,20 +194,16 @@
       "adminSection": "System Admin",
       "adminJobs": "Job Management",
       "adminHealth": "Health Check",
-      "adminSearch": "Index Management",
       "adminUsers": "Users",
       "adminSite": "Site Management"
     },
-    "adminSearch": {
-      "title": "Index Management",
+    "adminSite": {
+      "title": "Site Management",
       "reindexTitle": "Rebuild Search Index",
       "reindexDescription": "Rebuild the search index from all datasets in the database. This is normally updated automatically, but run it if search results are inconsistent.",
       "reindex": "Rebuild",
       "reindexing": "Rebuilding...",
-      "reindexResult": "{count} packages indexed"
-    },
-    "adminSite": {
-      "title": "Site Management",
+      "reindexResult": "{count} datasets, {resourceCount} resources indexed",
       "resetTitle": "Data Reset",
       "warning": "This will permanently delete all datasets, resources, organizations, groups, tags, pipeline jobs, and associated files. User accounts will be preserved.",
       "confirmLabel": "Type RESET to confirm",
