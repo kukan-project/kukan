@@ -7,33 +7,48 @@ const dark = 'hsl(214, 44%, 18%)'
 const features = [
   {
     icon: '⚡',
-    title: 'TypeScript フルスタック',
-    desc: 'API からフロントエンドまで TypeScript で統一。Hono + Next.js App Router 構成。',
+    title: '高速レスポンス',
+    desc: '非同期イベント駆動アーキテクチャにより、大量データでも快適な応答速度を実現。TypeScript フルスタックで API からフロントエンドまで統一。',
   },
   {
     icon: '☁',
-    title: 'ハイブリッドデプロイ',
-    desc: 'AWS（ECS Fargate + Aurora）からオンプレミス・閉域網（LGWAN 等）まで対応。',
+    title: 'かんたんデプロイ',
+    desc: 'コンテナ構成で AWS にも Docker Compose にもすぐデプロイ。閉域網（LGWAN 等）にも対応するハイブリッド設計。',
   },
   {
     icon: '🔍',
-    title: '高性能な検索',
-    desc: 'OpenSearch（kuromoji 日本語形態素解析）と PostgreSQL 全文検索のデュアル対応。',
+    title: 'コンテンツまで検索',
+    desc: 'メタデータだけでなく CSV やテキストファイルの中身まで全文検索。日本語形態素解析（kuromoji）にネイティブ対応。',
   },
   {
     icon: '📄',
     title: '多様なファイル形式',
-    desc: 'CSV/TSV/JSON/GeoJSON/PDF/XLSX 等のプレビュー・パイプライン処理に対応。',
+    desc: 'CSV/TSV/JSON/GeoJSON/PDF/XLSX 等のプレビューに対応。GeoJSON は国土地理院地図・OpenStreetMap 上に地図表示。',
   },
   {
     icon: '🔒',
-    title: '認証・アクセス制御',
-    desc: 'Better Auth + OIDC プラグインでシングルサインオンに対応。役割ベースの権限管理。',
+    title: '組織アカウント連携',
+    desc: 'OIDC / SAML 対応で自治体や企業の既存アカウント基盤と連携可能。役割ベースのアクセス制御で公開・非公開を柔軟に管理。',
   },
   {
     icon: '🗃',
-    title: 'CKAN 互換設計',
-    desc: '組織・カテゴリー・データセット・リソースの概念を継承しながらモダンな API を提供。',
+    title: 'CKAN 互換 API',
+    desc: '主要な Read 系 API で CKAN 互換性を確保。既存の CKAN ツールや他カタログとのデータ連携が可能。',
+  },
+  {
+    icon: '✅',
+    title: '品質チェック内蔵',
+    desc: 'リンク切れ検出やメタデータの自動チェックをビルトイン。信頼性が求められる自治体等の運用負荷を軽減。',
+  },
+  {
+    icon: '🧠',
+    title: 'AI・セマンティック検索',
+    desc: 'Embedding によるベクトル検索に対応予定。キーワードだけでなく「意味」でデータを見つけるセマンティック検索を実現。',
+  },
+  {
+    icon: '🌐',
+    title: 'オープンソース・多言語',
+    desc: 'AGPL-3.0 ライセンスでソースコードを公開。日本語・英語の UI 切替に対応し、国際的な利用にも対応。',
   },
 ]
 
@@ -98,8 +113,10 @@ const techStack = [
           {
             features.map((f) => (
               <div class="feature-card">
-                <div class="feature-icon">{f.icon}</div>
-                <h3 class="feature-title">{f.title}</h3>
+                <div class="feature-header">
+                  <span class="feature-icon">{f.icon}</span>
+                  <h3 class="feature-title">{f.title}</h3>
+                </div>
                 <p class="feature-desc">{f.desc}</p>
               </div>
             ))
@@ -272,19 +289,19 @@ const techStack = [
 
       /* Features */
       .features {
-        padding: 5rem 1rem;
+        padding: 3rem 1rem;
       }
       .section-title {
         font-size: 1.875rem;
         font-weight: 700;
         text-align: center;
         color: var(--dark);
-        margin-bottom: 3rem;
+        margin-bottom: 2rem;
       }
       .feature-grid {
         display: grid;
         grid-template-columns: repeat(1, 1fr);
-        gap: 2rem;
+        gap: 1.25rem;
       }
       @media (min-width: 768px) {
         .feature-grid {
@@ -297,7 +314,7 @@ const techStack = [
         }
       }
       .feature-card {
-        padding: 1.5rem;
+        padding: 1rem 1.25rem;
         border-radius: 0.75rem;
         border: 1px solid #e2e8f0;
         transition: all 0.2s;
@@ -306,15 +323,20 @@ const techStack = [
         border-color: var(--brand);
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
       }
+      .feature-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.25rem;
+      }
       .feature-icon {
-        font-size: 1.875rem;
-        margin-bottom: 0.75rem;
+        font-size: 1.25rem;
+        flex-shrink: 0;
       }
       .feature-title {
-        font-size: 1.125rem;
+        font-size: 1.075rem;
         font-weight: 600;
         color: var(--dark);
-        margin-bottom: 0.5rem;
       }
       .feature-desc {
         font-size: 0.875rem;
