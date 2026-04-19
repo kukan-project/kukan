@@ -136,12 +136,7 @@ export default function AdminSearchPage() {
     body: Record<string, unknown>
   } | null>(null)
 
-  async function showDocument(id: string, source?: Record<string, unknown>) {
-    if (source) {
-      setDocDialogContent({ index: activeTab, id, body: source })
-      setDocDialogOpen(true)
-      return
-    }
+  async function showDocument(id: string) {
     const res = await clientFetch(`/api/v1/admin/search/doc/${activeTab}/${id}`)
     if (res.ok) {
       setDocDialogContent({ index: activeTab, id, body: await res.json() })
@@ -276,7 +271,7 @@ export default function AdminSearchPage() {
                     <TableRow
                       key={item.id}
                       className="cursor-pointer hover:bg-accent/50"
-                      onClick={() => showDocument(item.id, item.source)}
+                      onClick={() => showDocument(item.id)}
                     >
                       <TableCell className="whitespace-nowrap font-mono text-xs">{item.id}</TableCell>
                       <TableCell>

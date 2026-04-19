@@ -53,6 +53,7 @@ KUKAN/
 │   ├── editor-core/        # Data Editor ビジネスロジック（アドオン）             ※ Phase 7+
 │   ├── quality/            # Quality Monitor（リンク切れ、CSV検証、メタデータ監査、PII）※ Phase 4+
 │   └── ui/                 # shadcn/ui 共有コンポーネント                        ※ Phase 2+
+├── site/                   # ドキュメントサイト（Astro + Starlight、日英対応）
 ├── docs/
 │   ├── design-v4.md        # 設計書（全体像、参照用）
 │   ├── adr/                # Architecture Decision Records

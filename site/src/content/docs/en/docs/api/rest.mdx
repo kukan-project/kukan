@@ -136,7 +136,11 @@ All sysadmin only.
 
 | Method | Path | Description |
 |--------|------|-------------|
+| GET | `/admin/search/stats` | Search index statistics (doc count, size) |
+| GET | `/admin/search/doc/{index}/{id}` | Get index document (index: `packages` / `resources`) |
+| GET | `/admin/search/browse/{index}` | Browse index documents (pagination, search) |
 | POST | `/admin/reindex` | Rebuild search index |
+| POST | `/admin/jobs/enqueue-all` | Enqueue pipeline for all resources |
 | GET | `/admin/jobs/stats` | Pipeline job statistics |
 | GET | `/admin/jobs` | List pipeline jobs |
 | DELETE | `/admin/data` | Delete all data (preserves users) |

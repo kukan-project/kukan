@@ -136,7 +136,11 @@ curl "https://your-kukan-site/api/v1/packages?q=人口&organization[]=stat-burea
 
 | Method | Path | 説明 |
 |--------|------|------|
+| GET | `/admin/search/stats` | 検索インデックス統計（件数・サイズ） |
+| GET | `/admin/search/doc/{index}/{id}` | インデックスドキュメント取得（index: `packages` / `resources`） |
+| GET | `/admin/search/browse/{index}` | インデックスドキュメント一覧（ページング・検索対応） |
 | POST | `/admin/reindex` | 検索インデックス再構築 |
+| POST | `/admin/jobs/enqueue-all` | 全リソースのパイプライン一括予約 |
 | GET | `/admin/jobs/stats` | パイプラインジョブ統計 |
 | GET | `/admin/jobs` | パイプラインジョブ一覧 |
 | DELETE | `/admin/data` | 全データ削除（ユーザー除く） |
