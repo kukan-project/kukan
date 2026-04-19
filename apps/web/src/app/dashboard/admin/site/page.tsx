@@ -30,14 +30,32 @@ export default function AdminResetPage() {
 
   // Reindex
   const [reindexing, setReindexing] = useState(false)
-  const [reindexResult, setReindexResult] = useState<{ indexed: number; resourcesIndexed: number } | null>(null)
+  const [includeContent, setIncludeContent] = useState(false)
+  const [reindexResult, setReindexResult] = useState<{
+    indexed: number
+    resourcesIndexed: number
+    contentEnqueued?: number
+  } | null>(null)
 
   async function handleReindex() {
     setReindexing(true)
     setReindexResult(null)
     try {
       const res = await clientFetch('/api/v1/admin/reindex', { method: 'POST' })
-      if (res.ok) setReindexResult(await res.json())
+      if (!res.ok) return
+      const data = await res.json()
+
+      if (includeContent) {
+        const enqueueRes = await clientFetch('/api/v1/admin/jobs/enqueue-all', { method: 'POST' })
+        if (enqueueRes.ok) {
+          const enqueueData = await enqueueRes.json()
+          setReindexResult({ ...data, contentEnqueued: enqueueData.enqueued })
+        } else {
+          setReindexResult(data)
+        }
+      } else {
+        setReindexResult(data)
+      }
     } finally {
       setReindexing(false)
     }
@@ -83,18 +101,33 @@ export default function AdminResetPage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <p className="text-sm text-muted-foreground">{t('reindexDescription')}</p>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={includeContent}
+              onChange={(e) => setIncludeContent(e.target.checked)}
+              disabled={reindexing}
+              className="rounded border-input"
+            />
+            {t('includeContent')}
+          </label>
           <div className="flex items-center gap-4">
             <Button onClick={handleReindex} disabled={reindexing}>
               <Search className="mr-2 h-4 w-4" />
               {reindexing ? t('reindexing') : t('reindex')}
             </Button>
             {reindexResult !== null && (
-              <p className="text-sm text-muted-foreground">
-                {t('reindexResult', {
-                  count: reindexResult.indexed,
-                  resourceCount: reindexResult.resourcesIndexed,
-                })}
-              </p>
+              <div className="text-sm text-muted-foreground">
+                <p>
+                  {t('reindexResult', {
+                    count: reindexResult.indexed,
+                    resourceCount: reindexResult.resourcesIndexed,
+                  })}
+                </p>
+                {reindexResult.contentEnqueued !== undefined && (
+                  <p>{t('contentEnqueuedResult', { count: reindexResult.contentEnqueued })}</p>
+                )}
+              </div>
             )}
           </div>
         </CardContent>

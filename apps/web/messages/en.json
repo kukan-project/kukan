@@ -204,6 +204,8 @@
       "reindex": "Rebuild",
       "reindexing": "Rebuilding...",
       "reindexResult": "{count} datasets, {resourceCount} resources indexed",
+      "includeContent": "Also reprocess content (includes text extraction, takes longer)",
+      "contentEnqueuedResult": "{count} resources enqueued for reprocessing",
       "resetTitle": "Data Reset",
       "warning": "This will permanently delete all datasets, resources, organizations, groups, tags, pipeline jobs, and associated files. User accounts will be preserved.",
       "confirmLabel": "Type RESET to confirm",
@@ -236,10 +238,7 @@
       "processing": "Processing",
       "complete": "Complete",
       "error": "Error",
-      "reprocess": "Reprocess",
-      "enqueueAll": "Reprocess all",
-      "enqueueAllConfirm": "This will enqueue pipeline jobs for all resources. Continue?",
-      "enqueueAllResult": "{count} resources enqueued"
+      "reprocess": "Reprocess"
     },
     "adminUsers": {
       "title": "User Management",

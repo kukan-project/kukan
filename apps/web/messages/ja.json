@@ -204,6 +204,8 @@
       "reindex": "再構築",
       "reindexing": "再構築中...",
       "reindexResult": "{count} 件のデータセット、{resourceCount} 件のリソースをインデックスしました",
+      "includeContent": "コンテンツも再処理する（テキスト抽出を含む、時間がかかります）",
+      "contentEnqueuedResult": "{count} 件のリソースの再処理を予約しました",
       "resetTitle": "データリセット",
       "warning": "すべてのデータセット、リソース、組織、グループ、タグ、パイプラインジョブ、関連ファイルが完全に削除されます。ユーザーアカウントは保持されます。",
       "confirmLabel": "確認のため RESET と入力してください",
@@ -236,10 +238,7 @@
       "processing": "処理中",
       "complete": "完了",
       "error": "エラー",
-      "reprocess": "再処理",
-      "enqueueAll": "全リソース再処理",
-      "enqueueAllConfirm": "全リソースのパイプラインを予約します。よろしいですか？",
-      "enqueueAllResult": "{count} 件のリソースを予約しました"
+      "reprocess": "再処理"
     },
     "adminUsers": {
       "title": "ユーザー管理",
