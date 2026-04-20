@@ -70,6 +70,13 @@ const techStack = [
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {import.meta.env.PROD && (
+      <script is:inline>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+      new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+      j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+      'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+      })(window,document,'script','dataLayer','GTM-NCMB89RM');</script>
+    )}
     <title>KUKAN — みんなが使えるデータカタログ</title>
     <meta name="description" content="Knowledge Unified Katalog And Network — CKANのモダンな後継として設計されたオープンソース データカタログシステム" />
     <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
@@ -80,6 +87,9 @@ const techStack = [
     <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
+    {import.meta.env.PROD && (
+      <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NCMB89RM" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+    )}
     <header class="header">
       <div class="container header-inner">
         <a href={base} class="logo-link">
