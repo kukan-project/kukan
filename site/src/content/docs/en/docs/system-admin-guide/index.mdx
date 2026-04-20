@@ -78,12 +78,18 @@ Key environment variables are listed below. See `.env.example` for the full list
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | - |
-| `STORAGE_TYPE` | Storage type (`s3`) | `s3` |
-| `S3_BUCKET` | S3 bucket name | - |
-| `S3_ENDPOINT` | S3 endpoint (for MinIO) | - |
-| `SEARCH_ADAPTER` | Search engine (`opensearch` / `postgres`) | `postgres` |
-| `OPENSEARCH_URL` | OpenSearch endpoint | - |
-| `QUEUE_TYPE` | Queue type (`sqs`) | `sqs` |
+| `POSTGRES_HOST` | PostgreSQL host | `localhost` |
+| `POSTGRES_PORT` | PostgreSQL port | `5432` |
+| `POSTGRES_DB` | Database name | `kukan` |
+| `POSTGRES_USER` | Database user | `kukan` |
+| `POSTGRES_PASSWORD` | Database password | `kukan` |
+| `S3_BUCKET` | S3 bucket name | `kukan-dev` |
+| `S3_ENDPOINT` | S3 endpoint (MinIO: `http://localhost:9000`, AWS: omit) | - |
+| `SEARCH_TYPE` | Search engine (`opensearch` / `postgres`) | `opensearch` |
+| `OPENSEARCH_URL` | OpenSearch endpoint | `http://localhost:9200` |
 | `SQS_QUEUE_URL` | SQS queue URL | - |
+| `SQS_ENDPOINT` | SQS endpoint (ElasticMQ: `http://localhost:9324`, AWS: omit) | - |
+| `BETTER_AUTH_SECRET` | Auth session secret (32+ characters) | - |
+| `BETTER_AUTH_URL` | Public URL | `http://localhost:3000` |
 | `REGISTRATION_ENABLED` | Enable/disable user self-registration | `true` |
+| `LOG_LEVEL` | Log level (`trace`–`fatal`) | `info` |

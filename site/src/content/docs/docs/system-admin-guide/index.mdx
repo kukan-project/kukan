@@ -78,12 +78,18 @@ docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 
 | 変数名 | 説明 | デフォルト |
 |--------|------|-----------|
-| `DATABASE_URL` | PostgreSQL 接続文字列 | - |
-| `STORAGE_TYPE` | ストレージ種別（`s3`） | `s3` |
-| `S3_BUCKET` | S3 バケット名 | - |
-| `S3_ENDPOINT` | S3 エンドポイント（MinIO 用） | - |
-| `SEARCH_ADAPTER` | 検索エンジン（`opensearch` / `postgres`） | `postgres` |
-| `OPENSEARCH_URL` | OpenSearch エンドポイント | - |
-| `QUEUE_TYPE` | キュー種別（`sqs`） | `sqs` |
+| `POSTGRES_HOST` | PostgreSQL ホスト | `localhost` |
+| `POSTGRES_PORT` | PostgreSQL ポート | `5432` |
+| `POSTGRES_DB` | データベース名 | `kukan` |
+| `POSTGRES_USER` | データベースユーザー | `kukan` |
+| `POSTGRES_PASSWORD` | データベースパスワード | `kukan` |
+| `S3_BUCKET` | S3 バケット名 | `kukan-dev` |
+| `S3_ENDPOINT` | S3 エンドポイント（MinIO: `http://localhost:9000`、AWS: 省略） | - |
+| `SEARCH_TYPE` | 検索エンジン（`opensearch` / `postgres`） | `opensearch` |
+| `OPENSEARCH_URL` | OpenSearch エンドポイント | `http://localhost:9200` |
 | `SQS_QUEUE_URL` | SQS キュー URL | - |
+| `SQS_ENDPOINT` | SQS エンドポイント（ElasticMQ: `http://localhost:9324`、AWS: 省略） | - |
+| `BETTER_AUTH_SECRET` | 認証セッション秘密鍵（32 文字以上） | - |
+| `BETTER_AUTH_URL` | 公開 URL | `http://localhost:3000` |
 | `REGISTRATION_ENABLED` | ユーザー自己登録の有効/無効 | `true` |
+| `LOG_LEVEL` | ログレベル（`trace`〜`fatal`） | `info` |
