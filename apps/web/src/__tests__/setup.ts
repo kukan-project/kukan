@@ -21,6 +21,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
   usePathname: () => '/',
   useSearchParams: () => new URLSearchParams(),
+  useParams: () => ({ nameOrId: 'test-entity' }),
   notFound: vi.fn(() => {
     throw new Error('NEXT_NOT_FOUND')
   }),
@@ -35,8 +36,21 @@ function resolve(obj: Messages, key: string): string | undefined {
   return undefined
 }
 
+function resolveNamespace(obj: Messages, path: string): Messages | null {
+  const parts = path.split('.')
+  let current: unknown = obj
+  for (const part of parts) {
+    if (current && typeof current === 'object' && part in (current as Messages)) {
+      current = (current as Messages)[part]
+    } else {
+      return null
+    }
+  }
+  return typeof current === 'object' && current !== null ? (current as Messages) : null
+}
+
 function makeTranslator(namespace?: string) {
-  const ns = namespace ? ((messages as Messages)[namespace] as Messages) || {} : null
+  const ns = namespace ? resolveNamespace(messages as Messages, namespace) : null
   const t = (key: string, params?: Record<string, unknown>) => {
     let msg: string | undefined
     if (ns) {
