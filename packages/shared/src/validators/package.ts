@@ -26,7 +26,7 @@ export const createPackageSchema = z.object({
   owner_org: z.string().uuid(),
   private: z.boolean().default(false),
   type: z.string().max(100).default('dataset'),
-  extras: z.record(z.unknown()).default({}),
+  extras: z.record(z.string(), z.unknown()).default({}),
   tags: z.array(z.object({ name: z.string() })).default([]),
   resources: z
     .array(

@@ -16,7 +16,7 @@ const resourceFieldsSchema = z.object({
   size: z.number().int().positive().optional(),
   hash: z.string().optional(),
   resource_type: z.string().max(50).optional(),
-  extras: z.record(z.unknown()).default({}),
+  extras: z.record(z.string(), z.unknown()).default({}),
 })
 
 /** Validate that url is a valid URL when url_type is not 'upload' */
@@ -25,8 +25,7 @@ function refineUrl(data: { url?: string; url_type?: string }, ctx: z.RefinementC
     const result = z.string().url().safeParse(data.url)
     if (!result.success) {
       ctx.addIssue({
-        code: z.ZodIssueCode.invalid_string,
-        validation: 'url',
+        code: 'custom',
         message: 'Invalid URL',
         path: ['url'],
       })

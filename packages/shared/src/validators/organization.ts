@@ -17,7 +17,7 @@ export const createOrganizationSchema = z.object({
   title: z.string().optional(),
   description: z.string().optional(),
   image_url: z.string().url().optional(),
-  extras: z.record(z.unknown()).default({}),
+  extras: z.record(z.string(), z.unknown()).default({}),
 })
 
 export const updateOrganizationSchema = createOrganizationSchema.partial().extend({
