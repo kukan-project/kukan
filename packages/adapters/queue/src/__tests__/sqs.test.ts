@@ -195,6 +195,99 @@ describe('SQSQueueAdapter', () => {
       expect(callTypes).not.toContain('Delete')
     })
 
+    it('should throw when process() is called twice', async () => {
+      mockSend.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            setTimeout(() => resolve({ Messages: [] }), 50)
+          })
+      )
+
+      await queue.process('test', async () => {})
+
+      await expect(queue.process('test', async () => {})).rejects.toThrow('already running')
+
+      await queue.stop()
+    })
+
+    it('should delete and skip messages with invalid JSON body', async () => {
+      mockSend
+        .mockResolvedValueOnce({
+          Messages: [
+            {
+              MessageId: 'msg-bad',
+              Body: 'not json',
+              ReceiptHandle: 'rh-bad',
+              MessageAttributes: {},
+            },
+          ],
+        })
+        .mockResolvedValueOnce({}) // DeleteMessage for bad body
+        .mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              setTimeout(() => resolve({ Messages: [] }), 50)
+            })
+        )
+
+      const handler = vi.fn()
+      await queue.process('test', handler)
+      await new Promise((r) => setTimeout(r, 200))
+      await queue.stop()
+
+      expect(handler).not.toHaveBeenCalled()
+      const deleteCmd = mockSend.mock.calls[1][0]
+      expect(deleteCmd._type).toBe('Delete')
+      expect(deleteCmd.input.ReceiptHandle).toBe('rh-bad')
+    })
+
+    it('should delete and skip messages with wrong type', async () => {
+      mockSend
+        .mockResolvedValueOnce({
+          Messages: [
+            {
+              MessageId: 'msg-wrong',
+              Body: JSON.stringify({ type: 'unknown-type', data: {} }),
+              ReceiptHandle: 'rh-wrong',
+              MessageAttributes: {},
+            },
+          ],
+        })
+        .mockResolvedValueOnce({}) // DeleteMessage
+        .mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              setTimeout(() => resolve({ Messages: [] }), 50)
+            })
+        )
+
+      const handler = vi.fn()
+      await queue.process('test', handler)
+      await new Promise((r) => setTimeout(r, 200))
+      await queue.stop()
+
+      expect(handler).not.toHaveBeenCalled()
+      const deleteCmd = mockSend.mock.calls[1][0]
+      expect(deleteCmd._type).toBe('Delete')
+    })
+
+    it('should update lastPollAt after receiving messages', async () => {
+      expect(queue.lastPollAt).toBeNull()
+
+      mockSend.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            setTimeout(() => resolve({ Messages: [] }), 50)
+          })
+      )
+
+      await queue.process('test', async () => {})
+      await new Promise((r) => setTimeout(r, 200))
+      await queue.stop()
+
+      expect(queue.lastPollAt).toBeInstanceOf(Date)
+    })
+
     it('should stop polling when stop() is called', async () => {
       mockSend.mockImplementation(
         () =>
