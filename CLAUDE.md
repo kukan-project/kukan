@@ -200,8 +200,9 @@ pnpm format        # Prettier フォーマット
 
 ## パイプライン フォーマット別処理マトリクス
 
-パイプラインは Fetch → Extract → Index の3ステップ（Index は no-op）。
-検索インデックス更新は API ルートハンドラーで CUD 操作時に実行。
+パイプラインは Fetch → Extract → Index の3ステップ。
+Index ステップでリソースコンテンツのテキスト抽出・OpenSearch 投入を行う（ADR-021）。
+メタデータの検索インデックス更新は API ルートハンドラーで CUD 操作時に実行。
 Extract のみフォーマット別処理を行う。
 
 | フォーマット | isTextFormat | エンコーディング検出                         | Parquet 生成 |    プレビュー表示     |
