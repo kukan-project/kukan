@@ -343,4 +343,39 @@ describe('S3StorageAdapter', () => {
       )
     })
   })
+
+  describe('downloadRange', () => {
+    it('should send GetObjectCommand with Range header', async () => {
+      const { Readable } = await import('stream')
+      const mockStream = new Readable({ read() { this.push(null) } })
+      mockSend.mockResolvedValue({
+        Body: mockStream,
+        ContentRange: 'bytes 0-99/500',
+        ContentLength: 100,
+      })
+
+      const result = await storage.downloadRange('files/doc.pdf', 0, 99)
+
+      const cmd = mockSend.mock.calls[0][0]
+      expect(cmd.input.Bucket).toBe('test-bucket')
+      expect(cmd.input.Key).toBe('files/doc.pdf')
+      expect(cmd.input.Range).toBe('bytes=0-99')
+      expect(result.totalSize).toBe(500)
+      expect(result.start).toBe(0)
+      expect(result.end).toBe(99)
+    })
+
+    it('should fall back to ContentLength when ContentRange is absent', async () => {
+      const { Readable } = await import('stream')
+      const mockStream = new Readable({ read() { this.push(null) } })
+      mockSend.mockResolvedValue({
+        Body: mockStream,
+        ContentLength: 200,
+      })
+
+      const result = await storage.downloadRange('files/small.txt', 0, 199)
+
+      expect(result.totalSize).toBe(200)
+    })
+  })
 })

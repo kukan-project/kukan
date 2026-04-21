@@ -72,4 +72,39 @@ describe('renderSimpleMarkdown', () => {
     const strong = link?.querySelector('strong')
     expect(strong?.textContent).toBe('Bold Link')
   })
+
+  it('should handle multiple inline styles in one line', () => {
+    const container = renderToText('**bold** and *italic* and `code`')
+    expect(container.querySelector('strong')?.textContent).toBe('bold')
+    expect(container.querySelector('em')?.textContent).toBe('italic')
+    expect(container.querySelector('code')?.textContent).toBe('code')
+  })
+
+  it('should handle multiple newlines', () => {
+    const container = renderToText('A\nB\nC')
+    const brs = container.querySelectorAll('br')
+    expect(brs.length).toBe(2)
+    expect(container.textContent).toBe('ABC')
+  })
+
+  it('should handle empty string', () => {
+    const container = renderToText('')
+    expect(container.textContent).toBe('')
+  })
+
+  it('should handle named HTML entities', () => {
+    const container = renderToText('&copy; &reg; &trade; &yen;')
+    expect(container.textContent).toBe('© ® ™ ¥')
+  })
+
+  it('should preserve unknown HTML entities', () => {
+    const container = renderToText('&unknown;')
+    expect(container.textContent).toBe('&unknown;')
+  })
+
+  it('should handle adjacent markdown tokens', () => {
+    const container = renderToText('**bold***italic*')
+    expect(container.querySelector('strong')?.textContent).toBe('bold')
+    expect(container.querySelector('em')?.textContent).toBe('italic')
+  })
 })

@@ -713,4 +713,60 @@ describe('OpenSearchAdapter', () => {
       expect(result.items[0].matchedResources![0].matchSource).toBe('content')
     })
   })
+
+  describe('sumResourceCount', () => {
+    it('should return resource count for matching packages', async () => {
+      mockClient.indices.exists.mockResolvedValue({ body: true })
+      mockClient.search.mockResolvedValue({
+        body: {
+          aggregations: {
+            package_ids: {
+              buckets: [{ key: 'pkg-1' }, { key: 'pkg-2' }],
+            },
+          },
+        },
+      })
+      mockClient.count.mockResolvedValue({ body: { count: 5 } })
+
+      const result = await adapter.sumResourceCount()
+
+      expect(mockClient.search).toHaveBeenCalledWith(
+        expect.objectContaining({ index: 'kukan-packages' })
+      )
+      expect(mockClient.count).toHaveBeenCalledWith({
+        index: 'kukan-resources',
+        body: { query: { terms: { packageId: ['pkg-1', 'pkg-2'] } } },
+      })
+      expect(result).toBe(5)
+    })
+
+    it('should return 0 when no packages match', async () => {
+      mockClient.indices.exists.mockResolvedValue({ body: true })
+      mockClient.search.mockResolvedValue({
+        body: { aggregations: { package_ids: { buckets: [] } } },
+      })
+
+      const result = await adapter.sumResourceCount()
+
+      expect(result).toBe(0)
+      expect(mockClient.count).not.toHaveBeenCalled()
+    })
+
+    it('should pass query and filters to package search', async () => {
+      mockClient.indices.exists.mockResolvedValue({ body: true })
+      mockClient.search.mockResolvedValue({
+        body: { aggregations: { package_ids: { buckets: [{ key: 'pkg-1' }] } } },
+      })
+      mockClient.count.mockResolvedValue({ body: { count: 3 } })
+
+      await adapter.sumResourceCount({
+        q: 'population',
+        filters: { organizations: ['tokyo'] },
+      })
+
+      const searchCall = mockClient.search.mock.calls[0][0]
+      expect(searchCall.index).toBe('kukan-packages')
+      expect(searchCall.body.query.bool.must).toBeDefined()
+    })
+  })
 })
