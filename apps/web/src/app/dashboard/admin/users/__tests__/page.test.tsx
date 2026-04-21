@@ -53,7 +53,9 @@ describe('AdminUsersPage', () => {
     mockClientFetch.mockResolvedValue(
       mockFetchResponse({ total: 15, active: 12, sysadmin: 2, deleted: 3 })
     )
-    mockUsePaginatedFetch.mockReturnValue(mockPaginatedFetch as ReturnType<typeof usePaginatedFetch>)
+    mockUsePaginatedFetch.mockReturnValue(
+      mockPaginatedFetch as ReturnType<typeof usePaginatedFetch>
+    )
   })
 
   it('renders the page title', () => {

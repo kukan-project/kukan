@@ -45,6 +45,8 @@ export interface OpenSearchConfig {
   indexPrefix?: string
   /** Number of replicas per index shard (default: 0). Set to 1+ for multi-node clusters. */
   replicas?: number
+  /** Maximum content chunk size in bytes. Used to set highlight.max_analyzed_offset. */
+  contentChunkSize?: number
   auth?: {
     username: string
     password: string
@@ -57,6 +59,7 @@ export class OpenSearchAdapter implements SearchAdapter {
   private resourcesIndex: string
   private contentsIndex: string
   private replicas: number
+  private highlightMaxAnalyzedOffset: number
   private initialized = false
 
   constructor(config: OpenSearchConfig) {
@@ -71,6 +74,8 @@ export class OpenSearchAdapter implements SearchAdapter {
     this.resourcesIndex = `${prefix}-resources`
     this.contentsIndex = `${prefix}-contents`
     this.replicas = config.replicas ?? 0
+    // OpenSearch highlight.max_analyzed_offset must be >= chunk size
+    this.highlightMaxAnalyzedOffset = Math.ceil((config.contentChunkSize ?? 1_000_000) * 1.1)
   }
 
   // ------------------------------------------------------------------
@@ -173,6 +178,7 @@ export class OpenSearchAdapter implements SearchAdapter {
         body: {
           settings: {
             number_of_replicas: this.replicas,
+            'highlight.max_analyzed_offset': this.highlightMaxAnalyzedOffset,
             ...OpenSearchAdapter.KUROMOJI_ANALYSIS,
           },
           mappings: {
@@ -181,6 +187,8 @@ export class OpenSearchAdapter implements SearchAdapter {
               packageId: { type: 'keyword' },
               extractedText: { type: 'text', analyzer: 'kuromoji_analyzer' },
               contentType: { type: 'keyword' },
+              chunkIndex: { type: 'integer' },
+              totalChunks: { type: 'integer' },
               contentTruncated: { type: 'boolean' },
               contentOriginalSize: { type: 'integer' },
             },
@@ -297,9 +305,11 @@ export class OpenSearchAdapter implements SearchAdapter {
 
   async indexContent(doc: ContentDoc): Promise<void> {
     await this.ensureIndex()
+    const docId =
+      doc.totalChunks === 1 ? doc.resourceId : `${doc.resourceId}_chunk_${doc.chunkIndex}`
     await this.client.index({
       index: this.contentsIndex,
-      id: doc.resourceId,
+      id: docId,
       body: doc,
       refresh: 'wait_for',
     })
@@ -307,7 +317,12 @@ export class OpenSearchAdapter implements SearchAdapter {
 
   async deleteContent(resourceId: string): Promise<void> {
     await this.ensureIndex()
-    await this.deleteDoc(this.contentsIndex, resourceId)
+    // Delete all chunks for a resource (matches both single-doc and chunked)
+    await this.client.deleteByQuery({
+      index: this.contentsIndex,
+      body: { query: { term: { resourceId } } },
+      refresh: true,
+    })
   }
 
   async deleteAllContents(): Promise<void> {
@@ -724,7 +739,7 @@ export class OpenSearchAdapter implements SearchAdapter {
         continue
       }
 
-      // New resource match (content only)
+      // New resource match (content only) — metadata will be filled below
       const matched: MatchedResource = {
         id: resourceId,
         ...(contentSnippets && { contentSnippets }),
@@ -733,6 +748,31 @@ export class OpenSearchAdapter implements SearchAdapter {
 
       if (!contentByPackage.has(pkgId)) contentByPackage.set(pkgId, [])
       contentByPackage.get(pkgId)!.push(matched)
+    }
+
+    // Fetch resource metadata (name, description, format) for content-only matches
+    const allContentMatches = [...contentByPackage.values()].flat()
+    const contentOnlyResources = allContentMatches.filter((m) => m.name === undefined)
+    if (contentOnlyResources.length > 0) {
+      try {
+        const resourceLookup = new Map(contentOnlyResources.map((m) => [m.id, m]))
+        const resMget = await this.client.mget({
+          index: this.resourcesIndex,
+          body: { ids: [...resourceLookup.keys()] },
+        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const doc of resMget.body.docs as any[]) {
+          if (!doc.found) continue
+          const mr = resourceLookup.get(doc._id)
+          if (mr) {
+            mr.name = doc._source.name
+            mr.description = doc._source.description
+            mr.format = doc._source.format
+          }
+        }
+      } catch {
+        // Best-effort: display without metadata
+      }
     }
 
     // Attach content-only matches to existing items
@@ -762,7 +802,7 @@ export class OpenSearchAdapter implements SearchAdapter {
           result.total += 1
         }
       } catch {
-        // Best-effort
+        // Best-effort: mget for content-only packages
       }
     }
   }

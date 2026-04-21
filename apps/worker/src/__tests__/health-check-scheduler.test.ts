@@ -6,7 +6,11 @@ let cronCallback: (() => Promise<void>) | null = null
 const mockCronInstance = { stop: vi.fn() }
 
 vi.mock('croner', () => ({
-  Cron: vi.fn().mockImplementation(function (_expr: string, _opts: unknown, cb: () => Promise<void>) {
+  Cron: vi.fn().mockImplementation(function (
+    _expr: string,
+    _opts: unknown,
+    cb: () => Promise<void>
+  ) {
     cronCallback = cb
     return mockCronInstance
   }),

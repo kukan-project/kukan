@@ -13,24 +13,13 @@ describe('DownloadButton', () => {
   it('should render a download link with correct href', () => {
     render(<DownloadButton {...defaultProps} />)
     const link = screen.getByRole('link', { name: /Download/ })
-    expect(link).toHaveAttribute(
-      'href',
-      '/dataset/my-dataset/resource/res-123/download/data.csv'
-    )
+    expect(link).toHaveAttribute('href', '/dataset/my-dataset/resource/res-123/download/data.csv')
   })
 
   it('should extract filename from a full URL', () => {
-    render(
-      <DownloadButton
-        {...defaultProps}
-        filename="https://example.com/files/report.pdf"
-      />
-    )
+    render(<DownloadButton {...defaultProps} filename="https://example.com/files/report.pdf" />)
     const link = screen.getByRole('link', { name: /Download/ })
-    expect(link).toHaveAttribute(
-      'href',
-      '/dataset/my-dataset/resource/res-123/download/report.pdf'
-    )
+    expect(link).toHaveAttribute('href', '/dataset/my-dataset/resource/res-123/download/report.pdf')
   })
 
   it('should show formatted size when provided', () => {

@@ -12,7 +12,13 @@ vi.mock('encoding-japanese', () => ({
 }))
 
 import Encoding from 'encoding-japanese'
-import { detectEncoding, bufferToUtf8, streamToBuffer, streamToTempFile, cleanupTempFile } from '../pipeline/node-utils'
+import {
+  detectEncoding,
+  bufferToUtf8,
+  streamToBuffer,
+  streamToTempFile,
+  cleanupTempFile,
+} from '../pipeline/node-utils'
 
 const mockEncoding = vi.mocked(Encoding)
 

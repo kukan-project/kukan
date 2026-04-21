@@ -338,16 +338,18 @@ describe('S3StorageAdapter', () => {
           Errors: [{ Key: 'prefix/a.txt', Code: 'AccessDenied' }],
         })
 
-      await expect(storage.deleteByPrefix('prefix/')).rejects.toThrow(
-        'Failed to delete 1 objects'
-      )
+      await expect(storage.deleteByPrefix('prefix/')).rejects.toThrow('Failed to delete 1 objects')
     })
   })
 
   describe('downloadRange', () => {
     it('should send GetObjectCommand with Range header', async () => {
       const { Readable } = await import('stream')
-      const mockStream = new Readable({ read() { this.push(null) } })
+      const mockStream = new Readable({
+        read() {
+          this.push(null)
+        },
+      })
       mockSend.mockResolvedValue({
         Body: mockStream,
         ContentRange: 'bytes 0-99/500',
@@ -367,7 +369,11 @@ describe('S3StorageAdapter', () => {
 
     it('should fall back to ContentLength when ContentRange is absent', async () => {
       const { Readable } = await import('stream')
-      const mockStream = new Readable({ read() { this.push(null) } })
+      const mockStream = new Readable({
+        read() {
+          this.push(null)
+        },
+      })
       mockSend.mockResolvedValue({
         Body: mockStream,
         ContentLength: 200,

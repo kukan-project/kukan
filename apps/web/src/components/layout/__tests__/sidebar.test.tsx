@@ -49,10 +49,7 @@ describe('Sidebar', () => {
   it('should render admin links with correct hrefs', () => {
     mockUseUser.mockReturnValue({ sysadmin: true })
     render(<Sidebar />)
-    expect(screen.getByText('Users').closest('a')).toHaveAttribute(
-      'href',
-      '/dashboard/admin/users'
-    )
+    expect(screen.getByText('Users').closest('a')).toHaveAttribute('href', '/dashboard/admin/users')
     expect(screen.getByText('Job Management').closest('a')).toHaveAttribute(
       'href',
       '/dashboard/admin/jobs'

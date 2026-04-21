@@ -124,4 +124,21 @@ describe('buildPipelineContext', () => {
 
     expect(ctx.storage).toBe(mockStorage)
   })
+
+  it('deleteContent should call search.deleteContent when search is provided', async () => {
+    const { db } = createMockDb()
+    const mockSearch = { deleteContent: vi.fn() }
+    const ctx = buildPipelineContext(db, mockStorage, mockSearch as never)
+
+    await ctx.deleteContent('res-1')
+
+    expect(mockSearch.deleteContent).toHaveBeenCalledWith('res-1')
+  })
+
+  it('deleteContent should be no-op when search is not provided', async () => {
+    const { db } = createMockDb()
+    const ctx = buildPipelineContext(db, mockStorage)
+
+    await expect(ctx.deleteContent('res-1')).resolves.toBeUndefined()
+  })
 })

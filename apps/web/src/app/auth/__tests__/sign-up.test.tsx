@@ -34,9 +34,7 @@ describe('SignUpPage', () => {
     mockRegistrationEnabled = false
     render(<SignUpPage />)
     expect(
-      screen.getByText(
-        'Registration is currently disabled. Please contact your administrator.'
-      )
+      screen.getByText('Registration is currently disabled. Please contact your administrator.')
     ).toBeInTheDocument()
   })
 

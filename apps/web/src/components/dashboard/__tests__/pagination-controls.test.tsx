@@ -29,16 +29,12 @@ describe('PaginationControls', () => {
   })
 
   it('should disable Next on last page', () => {
-    render(
-      <PaginationControls {...defaultProps} offset={80} currentPage={5} />
-    )
+    render(<PaginationControls {...defaultProps} offset={80} currentPage={5} />)
     expect(screen.getByText('Next')).toBeDisabled()
   })
 
   it('should enable both buttons on middle page', () => {
-    render(
-      <PaginationControls {...defaultProps} offset={40} currentPage={3} />
-    )
+    render(<PaginationControls {...defaultProps} offset={40} currentPage={3} />)
     expect(screen.getByText('Previous')).not.toBeDisabled()
     expect(screen.getByText('Next')).not.toBeDisabled()
   })
@@ -59,17 +55,13 @@ describe('PaginationControls', () => {
 
   it('should call onPageChange with next offset', () => {
     const onPageChange = vi.fn()
-    render(
-      <PaginationControls {...defaultProps} onPageChange={onPageChange} />
-    )
+    render(<PaginationControls {...defaultProps} onPageChange={onPageChange} />)
     fireEvent.click(screen.getByText('Next'))
     expect(onPageChange).toHaveBeenCalledWith(20)
   })
 
   it('should return null when totalPages <= 1', () => {
-    const { container } = render(
-      <PaginationControls {...defaultProps} totalPages={1} />
-    )
+    const { container } = render(<PaginationControls {...defaultProps} totalPages={1} />)
     expect(container.firstChild).toBeNull()
   })
 })

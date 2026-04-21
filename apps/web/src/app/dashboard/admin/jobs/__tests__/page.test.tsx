@@ -56,7 +56,9 @@ describe('AdminJobsPage', () => {
         jobs: { queued: 3, processing: 1, complete: 10, error: 2 },
       })
     )
-    mockUsePaginatedFetch.mockReturnValue(mockPaginatedFetch as ReturnType<typeof usePaginatedFetch>)
+    mockUsePaginatedFetch.mockReturnValue(
+      mockPaginatedFetch as ReturnType<typeof usePaginatedFetch>
+    )
   })
 
   it('renders the page title', () => {

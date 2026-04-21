@@ -36,6 +36,9 @@ export interface PipelineContext {
   /** Index extracted content into the search index.
    *  No-op when OpenSearch is not configured. */
   indexContent(doc: ContentDoc): Promise<void>
+  /** Delete all content chunks for a resource.
+   *  No-op when OpenSearch is not configured. */
+  deleteContent(resourceId: string): Promise<void>
   /** Update pipeline metadata JSONB (merges with existing metadata) */
   updatePipelineMetadata(pipelineId: string, metadata: Record<string, unknown>): Promise<void>
 }

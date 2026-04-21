@@ -1,6 +1,7 @@
 /**
  * KUKAN Pipeline — Index Step
- * Extracts text content from resources and indexes it into OpenSearch (kukan-resources).
+ * Extracts text content from resources and indexes it into OpenSearch (kukan-contents).
+ * Large texts are split into multiple chunks (up to MAX_CONTENT_CHUNKS × MAX_CONTENT_CHUNK_SIZE).
  * Also records content indexing metadata in resource_pipeline.metadata.
  *
  * Supported formats: CSV, TSV, TXT, MD, HTML, HTM, JSON, GeoJSON, XML, ZIP
@@ -12,7 +13,7 @@ import type { ContentDoc } from '@kukan/search-adapter'
 import type { PipelineContext } from '../types'
 import type { ExtractResult } from './extract'
 import { streamToBuffer, bufferToUtf8 } from '../node-utils'
-import { MAX_CONTENT_INDEX_SIZE, MAX_CONTENT_DOWNLOAD_SIZE } from '@/config'
+import { MAX_CONTENT_CHUNK_SIZE, MAX_CONTENT_CHUNKS, MAX_CONTENT_DOWNLOAD_SIZE } from '@/config'
 
 export interface IndexContentResult {
   contentIndexed: boolean
@@ -20,6 +21,7 @@ export interface IndexContentResult {
   contentOriginalSize: number
   contentIndexedSize: number
   contentTruncated: boolean
+  contentChunks: number
 }
 
 /**
@@ -74,35 +76,35 @@ export async function executeIndexContent(
   }
 
   const originalSize = Buffer.byteLength(extractedText, 'utf-8')
-  let indexedText = extractedText
-  let truncated = false
 
-  if (originalSize > MAX_CONTENT_INDEX_SIZE) {
-    // Truncate at character boundary near the byte limit
-    indexedText = truncateToByteLimit(extractedText, MAX_CONTENT_INDEX_SIZE)
-    truncated = true
+  const chunks = splitIntoChunks(extractedText, MAX_CONTENT_CHUNK_SIZE, MAX_CONTENT_CHUNKS)
+  const truncated = originalSize > MAX_CONTENT_CHUNK_SIZE * MAX_CONTENT_CHUNKS
+
+  await ctx.deleteContent(resourceId)
+
+  let totalIndexedSize = 0
+  for (let i = 0; i < chunks.length; i++) {
+    const doc: ContentDoc = {
+      resourceId,
+      packageId,
+      extractedText: chunks[i],
+      contentType,
+      chunkIndex: i,
+      totalChunks: chunks.length,
+      contentTruncated: truncated,
+      contentOriginalSize: originalSize,
+    }
+    await ctx.indexContent(doc)
+    totalIndexedSize += Buffer.byteLength(chunks[i], 'utf-8')
   }
-
-  const indexedSize = Buffer.byteLength(indexedText, 'utf-8')
-
-  // Build and index the content document
-  const doc: ContentDoc = {
-    resourceId,
-    packageId,
-    extractedText: indexedText,
-    contentType,
-    contentTruncated: truncated,
-    contentOriginalSize: originalSize,
-  }
-
-  await ctx.indexContent(doc)
 
   return {
     contentIndexed: true,
     contentType,
     contentOriginalSize: originalSize,
-    contentIndexedSize: indexedSize,
+    contentIndexedSize: totalIndexedSize,
     contentTruncated: truncated,
+    contentChunks: chunks.length,
   }
 }
 
@@ -114,11 +116,65 @@ function getContentType(format: string | null): ContentType | null {
   return null
 }
 
+/**
+ * Split text into chunks at line boundaries.
+ * Each chunk is at most `maxChunkBytes` UTF-8 bytes.
+ * Returns at most `maxChunks` chunks.
+ */
+export function splitIntoChunks(text: string, maxChunkBytes: number, maxChunks: number): string[] {
+  const totalBytes = Buffer.byteLength(text, 'utf-8')
+
+  // Small enough for a single chunk
+  if (totalBytes <= maxChunkBytes) {
+    return [text]
+  }
+
+  const lines = text.split('\n')
+  const chunks: string[] = []
+  let currentLines: string[] = []
+  let currentBytes = 0
+
+  for (const line of lines) {
+    const lineBytes = Buffer.byteLength(line, 'utf-8') + 1 // +1 for newline
+
+    if (currentBytes + lineBytes > maxChunkBytes && currentLines.length > 0) {
+      // Flush current chunk
+      chunks.push(currentLines.join('\n'))
+      if (chunks.length >= maxChunks) return chunks
+
+      currentLines = []
+      currentBytes = 0
+    }
+
+    // Handle single line exceeding chunk size: truncate it
+    if (lineBytes > maxChunkBytes) {
+      if (currentLines.length > 0) {
+        chunks.push(currentLines.join('\n'))
+        if (chunks.length >= maxChunks) return chunks
+        currentLines = []
+        currentBytes = 0
+      }
+      chunks.push(truncateToByteLimit(line, maxChunkBytes))
+      if (chunks.length >= maxChunks) return chunks
+      continue
+    }
+
+    currentLines.push(line)
+    currentBytes += lineBytes
+  }
+
+  // Flush remaining
+  if (currentLines.length > 0 && chunks.length < maxChunks) {
+    chunks.push(currentLines.join('\n'))
+  }
+
+  return chunks
+}
+
 /** Truncate a UTF-8 string to fit within a byte limit without splitting multi-byte characters */
 function truncateToByteLimit(text: string, maxBytes: number): string {
   const buf = Buffer.from(text, 'utf-8')
   if (buf.length <= maxBytes) return text
-  // Slice at byte boundary, then decode — invalid trailing bytes are dropped
   const sliced = buf.subarray(0, maxBytes)
   return sliced.toString('utf-8').replace(/\uFFFD$/, '')
 }

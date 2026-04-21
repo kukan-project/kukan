@@ -41,13 +41,17 @@ export interface ContentDoc {
   resourceId: string
   /** Parent package UUID */
   packageId: string
-  /** Extracted text content (up to 100KB) */
+  /** Extracted text content (one chunk) */
   extractedText: string
   /** Content type for indexed text */
   contentType: ContentType
-  /** Whether extracted text was truncated */
+  /** Zero-based chunk index */
+  chunkIndex: number
+  /** Total number of chunks for this resource */
+  totalChunks: number
+  /** Whether the full text was truncated (exceeded max chunks) */
   contentTruncated?: boolean
-  /** Original text size in bytes (before truncation) */
+  /** Original text size in bytes (full resource, before chunking) */
   contentOriginalSize?: number
 }
 

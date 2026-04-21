@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { Readable } from 'node:stream'
-import { executeIndexContent } from '../pipeline/steps/index-content'
+import { executeIndexContent, splitIntoChunks } from '../pipeline/steps/index-content'
 import type { PipelineContext } from '../pipeline/types'
 import type { ExtractResult } from '../pipeline/steps/extract'
 import type { ContentDoc } from '@kukan/search-adapter'
@@ -28,6 +28,7 @@ function createMockCtx(overrides?: Partial<PipelineContext>): PipelineContext {
     updateResourceHashAndSize: vi.fn(),
     acquireFetchSlot: vi.fn(),
     indexContent: vi.fn(),
+    deleteContent: vi.fn(),
     updatePipelineMetadata: vi.fn(),
     ...overrides,
   }
@@ -216,28 +217,8 @@ describe('executeIndexContent', () => {
     })
   })
 
-  describe('truncation', () => {
-    it('should truncate content exceeding MAX_CONTENT_INDEX_SIZE', async () => {
-      // Create content larger than 100KB
-      const largeContent = 'A'.repeat(200 * 1024)
-      const ctx = createMockCtx()
-      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from(largeContent)))
-
-      const result = await executeIndexContent(
-        'res-1',
-        'pkg-1',
-        'key',
-        'TXT',
-        defaultExtractResult,
-        ctx
-      )
-
-      expect(result!.contentTruncated).toBe(true)
-      expect(result!.contentOriginalSize).toBe(200 * 1024)
-      expect(result!.contentIndexedSize).toBeLessThanOrEqual(100 * 1024)
-    })
-
-    it('should not truncate content within limit', async () => {
+  describe('chunking', () => {
+    it('should create single chunk for small content', async () => {
       const smallContent = 'Hello World'
       const ctx = createMockCtx()
       vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from(smallContent)))
@@ -252,14 +233,17 @@ describe('executeIndexContent', () => {
       )
 
       expect(result!.contentTruncated).toBe(false)
+      expect(result!.contentChunks).toBe(1)
       expect(result!.contentOriginalSize).toBe(result!.contentIndexedSize)
+
+      const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
+      expect(indexedDoc.chunkIndex).toBe(0)
+      expect(indexedDoc.totalChunks).toBe(1)
     })
 
-    it('should handle multi-byte truncation correctly', async () => {
-      // Japanese text where truncation might split a multi-byte char
-      const japaneseText = '東京都'.repeat(50000) // ~450KB in UTF-8
+    it('should set chunk metadata for single-chunk content', async () => {
       const ctx = createMockCtx()
-      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from(japaneseText)))
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('small')))
 
       const result = await executeIndexContent(
         'res-1',
@@ -270,10 +254,40 @@ describe('executeIndexContent', () => {
         ctx
       )
 
-      expect(result!.contentTruncated).toBe(true)
-      // Verify no replacement characters from bad truncation
-      const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
-      expect(indexedDoc.extractedText).not.toContain('\uFFFD')
+      expect(result!.contentChunks).toBe(1)
+      const doc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
+      expect(doc.chunkIndex).toBe(0)
+      expect(doc.totalChunks).toBe(1)
+    })
+
+    it('should delete existing content before re-indexing', async () => {
+      const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('test')))
+
+      await executeIndexContent('res-1', 'pkg-1', 'key', 'TXT', defaultExtractResult, ctx)
+
+      expect(ctx.deleteContent).toHaveBeenCalledWith('res-1')
+      // deleteContent should be called before indexContent
+      const deleteOrder = vi.mocked(ctx.deleteContent).mock.invocationCallOrder[0]
+      const indexOrder = vi.mocked(ctx.indexContent).mock.invocationCallOrder[0]
+      expect(deleteOrder).toBeLessThan(indexOrder)
+    })
+
+    it('should report contentTruncated false for small content', async () => {
+      const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('hello')))
+
+      const result = await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'key',
+        'TXT',
+        defaultExtractResult,
+        ctx
+      )
+
+      expect(result!.contentTruncated).toBe(false)
+      expect(result!.contentOriginalSize).toBe(result!.contentIndexedSize)
     })
   })
 
@@ -305,5 +319,41 @@ describe('executeIndexContent', () => {
       expect(indexedDoc.packageId).toBe('pkg-1')
       expect(indexedDoc.contentType).toBe('tabular')
     })
+  })
+})
+
+describe('splitIntoChunks', () => {
+  it('should return single chunk for small text', () => {
+    const chunks = splitIntoChunks('hello world', 1024, 10)
+    expect(chunks).toEqual(['hello world'])
+  })
+
+  it('should split at line boundaries', () => {
+    const text = 'line1\nline2\nline3'
+    // maxChunkBytes small enough to force split
+    const chunks = splitIntoChunks(text, 10, 10)
+    expect(chunks.length).toBeGreaterThan(1)
+    // No chunk should contain a partial line
+    for (const chunk of chunks) {
+      expect(chunk).not.toMatch(/\n$/) // trailing newline stripped by join
+    }
+  })
+
+  it('should respect maxChunks limit', () => {
+    const text = Array.from({ length: 100 }, (_, i) => `line ${i}`).join('\n')
+    const chunks = splitIntoChunks(text, 20, 3)
+    expect(chunks.length).toBeLessThanOrEqual(3)
+  })
+
+  it('should handle single line exceeding chunk size', () => {
+    const longLine = 'A'.repeat(200)
+    const chunks = splitIntoChunks(longLine, 50, 10)
+    expect(chunks.length).toBe(1)
+    expect(Buffer.byteLength(chunks[0], 'utf-8')).toBeLessThanOrEqual(50)
+  })
+
+  it('should handle empty text', () => {
+    const chunks = splitIntoChunks('', 1024, 10)
+    expect(chunks).toEqual([''])
   })
 })

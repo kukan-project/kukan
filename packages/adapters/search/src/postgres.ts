@@ -14,6 +14,7 @@ import type {
   DatasetDoc,
   MatchedResource,
   ResourceDoc,
+  ContentDoc,
 } from './adapter'
 import { MAX_MATCHED_RESOURCES_PER_PACKAGE } from './adapter'
 import { escapeLike } from '@kukan/shared'
@@ -372,18 +373,18 @@ export class PostgresSearchAdapter implements SearchAdapter {
   async bulkIndexResources(_docs: ResourceDoc[]): Promise<void> {}
   async deleteResource(_resourceId: string): Promise<void> {}
   async deleteAllResources(): Promise<void> {}
-  async indexContent(): Promise<void> {}
-  async deleteContent(): Promise<void> {}
+  async indexContent(_doc: ContentDoc): Promise<void> {}
+  async deleteContent(_resourceId: string): Promise<void> {}
   async deleteAllContents(): Promise<void> {}
 
   // Not supported in PostgreSQL mode (returns null).
   async getIndexStats() {
     return null
   }
-  async getDocument() {
+  async getDocument(_index: string, _id: string) {
     return null
   }
-  async browseDocuments() {
+  async browseDocuments(_index: string, _options?: Record<string, unknown>) {
     return null
   }
 

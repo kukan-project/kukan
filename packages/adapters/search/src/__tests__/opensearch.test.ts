@@ -28,7 +28,11 @@ vi.mock('@opensearch-project/opensearch', () => {
 })
 
 interface MockClient {
-  indices: { exists: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn>; delete: ReturnType<typeof vi.fn> }
+  indices: {
+    exists: ReturnType<typeof vi.fn>
+    create: ReturnType<typeof vi.fn>
+    delete: ReturnType<typeof vi.fn>
+  }
   index: ReturnType<typeof vi.fn>
   search: ReturnType<typeof vi.fn>
   msearch: ReturnType<typeof vi.fn>
@@ -375,25 +379,6 @@ describe('OpenSearchAdapter', () => {
     })
   })
 
-  describe('deleteContent', () => {
-    it('should delete from contents index', async () => {
-      mockClient.delete.mockResolvedValue({ body: {} })
-
-      await adapter.deleteContent('res-1')
-
-      expect(mockClient.delete).toHaveBeenCalledWith({
-        index: 'kukan-contents',
-        id: 'res-1',
-        refresh: 'wait_for',
-      })
-    })
-
-    it('should ignore 404 errors', async () => {
-      mockClient.delete.mockRejectedValue({ statusCode: 404 })
-      await expect(adapter.deleteContent('nonexistent')).resolves.toBeUndefined()
-    })
-  })
-
   describe('highlight sanitization', () => {
     it('should sanitize XSS in highlighted title', async () => {
       mockClient.search.mockResolvedValue({
@@ -595,7 +580,7 @@ describe('OpenSearchAdapter', () => {
   })
 
   describe('indexContent', () => {
-    it('should index a content document to contents index using resourceId as doc id', async () => {
+    it('should use resourceId as doc id for single-chunk content', async () => {
       mockClient.index.mockResolvedValue({ body: {} })
 
       await adapter.indexContent({
@@ -603,6 +588,8 @@ describe('OpenSearchAdapter', () => {
         packageId: 'pkg-1',
         extractedText: 'some text content',
         contentType: 'text',
+        chunkIndex: 0,
+        totalChunks: 1,
       })
 
       expect(mockClient.index).toHaveBeenCalledWith({
@@ -610,10 +597,48 @@ describe('OpenSearchAdapter', () => {
         id: 'res-1',
         body: expect.objectContaining({
           resourceId: 'res-1',
-          packageId: 'pkg-1',
-          extractedText: 'some text content',
+          chunkIndex: 0,
+          totalChunks: 1,
         }),
         refresh: 'wait_for',
+      })
+    })
+
+    it('should use resourceId_chunk_N as doc id for multi-chunk content', async () => {
+      mockClient.index.mockResolvedValue({ body: {} })
+
+      await adapter.indexContent({
+        resourceId: 'res-1',
+        packageId: 'pkg-1',
+        extractedText: 'chunk 2 content',
+        contentType: 'tabular',
+        chunkIndex: 1,
+        totalChunks: 3,
+      })
+
+      expect(mockClient.index).toHaveBeenCalledWith({
+        index: 'kukan-contents',
+        id: 'res-1_chunk_1',
+        body: expect.objectContaining({
+          resourceId: 'res-1',
+          chunkIndex: 1,
+          totalChunks: 3,
+        }),
+        refresh: 'wait_for',
+      })
+    })
+  })
+
+  describe('deleteContent', () => {
+    it('should delete all chunks by resourceId using deleteByQuery', async () => {
+      mockClient.deleteByQuery.mockResolvedValue({ body: {} })
+
+      await adapter.deleteContent('res-1')
+
+      expect(mockClient.deleteByQuery).toHaveBeenCalledWith({
+        index: 'kukan-contents',
+        body: { query: { term: { resourceId: 'res-1' } } },
+        refresh: true,
       })
     })
   })
@@ -711,6 +736,70 @@ describe('OpenSearchAdapter', () => {
         '<mark>keyword</mark> found',
       ])
       expect(result.items[0].matchedResources![0].matchSource).toBe('content')
+    })
+
+    it('should fetch resource metadata (name, format) for content-only matches', async () => {
+      mockClient.msearch.mockResolvedValue({
+        body: {
+          responses: [
+            { hits: { total: { value: 0 }, hits: [] } },
+            { hits: { total: { value: 0 }, hits: [] } },
+            {
+              hits: {
+                total: { value: 1 },
+                hits: [
+                  {
+                    _id: 'res-1',
+                    _source: { resourceId: 'res-1', packageId: 'pkg-1' },
+                    _score: 2,
+                    highlight: { extractedText: ['<mark>test</mark>'] },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      })
+
+      // First mget: resource metadata
+      mockClient.mget.mockResolvedValueOnce({
+        body: {
+          docs: [
+            {
+              _id: 'res-1',
+              found: true,
+              _source: { name: 'data.csv', description: 'Test data', format: 'CSV' },
+            },
+          ],
+        },
+      })
+
+      // Second mget: missing package
+      mockClient.mget.mockResolvedValueOnce({
+        body: {
+          docs: [
+            {
+              _id: 'pkg-1',
+              found: true,
+              _source: { name: 'my-dataset', title: 'My Dataset' },
+            },
+          ],
+        },
+      })
+
+      const result = await adapter.search({ q: 'test' })
+
+      // Should have fetched resource metadata from kukan-resources
+      expect(mockClient.mget).toHaveBeenCalledWith({
+        index: 'kukan-resources',
+        body: { ids: ['res-1'] },
+      })
+
+      const mr = result.items[0].matchedResources![0]
+      expect(mr.name).toBe('data.csv')
+      expect(mr.description).toBe('Test data')
+      expect(mr.format).toBe('CSV')
+      expect(mr.matchSource).toBe('content')
     })
   })
 

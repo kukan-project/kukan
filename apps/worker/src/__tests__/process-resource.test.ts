@@ -44,6 +44,7 @@ function createMockCtx(): PipelineContext {
     updateResourceHashAndSize: vi.fn(),
     acquireFetchSlot: vi.fn().mockResolvedValue(true),
     indexContent: vi.fn(),
+    deleteContent: vi.fn(),
     updatePipelineMetadata: vi.fn(),
   }
 }

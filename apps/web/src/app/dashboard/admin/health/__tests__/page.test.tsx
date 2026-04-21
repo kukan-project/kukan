@@ -51,7 +51,9 @@ describe('AdminHealthPage', () => {
     mockPaginatedFetch.error = null
     mockPaginatedFetch.total = 0
     mockClientFetch.mockResolvedValue(mockFetchResponse({ ok: 3, error: 1 }))
-    mockUsePaginatedFetch.mockReturnValue(mockPaginatedFetch as ReturnType<typeof usePaginatedFetch>)
+    mockUsePaginatedFetch.mockReturnValue(
+      mockPaginatedFetch as ReturnType<typeof usePaginatedFetch>
+    )
   })
 
   it('renders the page title', () => {

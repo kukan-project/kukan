@@ -37,9 +37,7 @@ describe('DatasetCard', () => {
   })
 
   it('should render organization name', () => {
-    render(
-      <DatasetCard pkg={{ ...basePkg, orgName: 'my-org', orgTitle: 'My Organization' }} />
-    )
+    render(<DatasetCard pkg={{ ...basePkg, orgName: 'my-org', orgTitle: 'My Organization' }} />)
     expect(screen.getByText('My Organization')).toBeInTheDocument()
   })
 

@@ -65,6 +65,12 @@ export function buildPipelineContext(
       }
     },
 
+    async deleteContent(resourceId: string): Promise<void> {
+      if (search) {
+        await search.deleteContent(resourceId)
+      }
+    },
+
     async updatePipelineMetadata(
       pipelineId: string,
       metadata: Record<string, unknown>

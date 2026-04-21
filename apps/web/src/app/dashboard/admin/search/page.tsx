@@ -319,7 +319,12 @@ export default function AdminSearchPage() {
                         </TableCell>
                       )}
                       {activeTab === 'contents' && (
-                        <TableCell>
+                        <TableCell className="flex flex-wrap gap-1">
+                          {typeof item.source.totalChunks === 'number' && (
+                            <Badge variant="outline" className="text-xs">
+                              {(item.source.chunkIndex as number) + 1}/{item.source.totalChunks}
+                            </Badge>
+                          )}
                           {typeof item.source.contentTruncated === 'boolean' && (
                             <Badge
                               variant={item.source.contentTruncated ? 'destructive' : 'secondary'}

@@ -16,9 +16,7 @@ vi.mock('../../services/api-token-service', () => ({
 function createMockAuth(sessionUser: Record<string, unknown> | null = null) {
   return {
     api: {
-      getSession: vi.fn().mockResolvedValue(
-        sessionUser ? { user: sessionUser } : null
-      ),
+      getSession: vi.fn().mockResolvedValue(sessionUser ? { user: sessionUser } : null),
     },
   } as never
 }

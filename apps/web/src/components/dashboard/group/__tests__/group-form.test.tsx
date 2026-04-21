@@ -58,8 +58,6 @@ describe('GroupForm', () => {
 
   it('should render name help text', () => {
     render(<GroupForm />)
-    expect(
-      screen.getByText(/Used in URLs\. Alphanumeric characters/)
-    ).toBeInTheDocument()
+    expect(screen.getByText(/Used in URLs\. Alphanumeric characters/)).toBeInTheDocument()
   })
 })

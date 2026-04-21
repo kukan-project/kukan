@@ -1,11 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { createTestApp } from '../test-helpers/test-app'
-import {
-  getTestDb,
-  cleanDatabase,
-  closeTestDb,
-  ensureTestUser,
-} from '../test-helpers/test-db'
+import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 
 const db = getTestDb()
 const app = createTestApp(db)
@@ -134,9 +129,12 @@ describe('API Tokens API', () => {
     })
 
     it('should return 401 for unauthenticated request', async () => {
-      const res = await unauthApp.request('/api/v1/api-tokens/00000000-0000-0000-0000-000000000099', {
-        method: 'DELETE',
-      })
+      const res = await unauthApp.request(
+        '/api/v1/api-tokens/00000000-0000-0000-0000-000000000099',
+        {
+          method: 'DELETE',
+        }
+      )
       expect(res.status).toBe(401)
     })
   })

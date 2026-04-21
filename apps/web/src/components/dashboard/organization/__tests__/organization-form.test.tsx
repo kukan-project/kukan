@@ -57,8 +57,6 @@ describe('OrganizationForm', () => {
 
   it('should render name help text', () => {
     render(<OrganizationForm />)
-    expect(
-      screen.getByText(/Used in URLs\. Alphanumeric characters/)
-    ).toBeInTheDocument()
+    expect(screen.getByText(/Used in URLs\. Alphanumeric characters/)).toBeInTheDocument()
   })
 })

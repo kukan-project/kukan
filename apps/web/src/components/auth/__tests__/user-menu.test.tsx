@@ -35,9 +35,7 @@ describe('UserMenu', () => {
   })
 
   it('should truncate initials to two characters', () => {
-    render(
-      <UserMenu user={{ ...defaultUser, displayName: 'Alice Bob Charlie' }} />
-    )
+    render(<UserMenu user={{ ...defaultUser, displayName: 'Alice Bob Charlie' }} />)
     // ABC truncated to AB
     expect(screen.getByText('AB')).toBeInTheDocument()
   })
