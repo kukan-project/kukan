@@ -19,7 +19,9 @@ vi.mock('@opensearch-project/opensearch', () => {
     bulk: vi.fn(),
   }
   return {
-    Client: vi.fn(() => mockClient),
+    Client: vi.fn(function () {
+      return mockClient
+    }),
     __mockClient: mockClient,
   }
 })

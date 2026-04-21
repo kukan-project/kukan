@@ -27,7 +27,9 @@ const mockTracker = {
 }
 
 vi.mock('../pipeline/step-tracker', () => ({
-  StepTracker: vi.fn(() => mockTracker),
+  StepTracker: vi.fn(function () {
+    return mockTracker
+  }),
 }))
 
 // Import mocked modules

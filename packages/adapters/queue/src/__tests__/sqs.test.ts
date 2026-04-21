@@ -5,13 +5,21 @@ import { SQSQueueAdapter } from '../sqs'
 // Mock @aws-sdk/client-sqs
 const mockSend = vi.fn()
 vi.mock('@aws-sdk/client-sqs', () => ({
-  SQSClient: vi.fn().mockImplementation(() => ({ send: mockSend })),
-  SendMessageCommand: vi.fn().mockImplementation((input) => ({ input, _type: 'Send' })),
-  ReceiveMessageCommand: vi.fn().mockImplementation((input) => ({ input, _type: 'Receive' })),
-  DeleteMessageCommand: vi.fn().mockImplementation((input) => ({ input, _type: 'Delete' })),
-  GetQueueAttributesCommand: vi
-    .fn()
-    .mockImplementation((input) => ({ input, _type: 'GetQueueAttributes' })),
+  SQSClient: vi.fn().mockImplementation(function () {
+    return { send: mockSend }
+  }),
+  SendMessageCommand: vi.fn().mockImplementation(function (input: unknown) {
+    return { input, _type: 'Send' }
+  }),
+  ReceiveMessageCommand: vi.fn().mockImplementation(function (input: unknown) {
+    return { input, _type: 'Receive' }
+  }),
+  DeleteMessageCommand: vi.fn().mockImplementation(function (input: unknown) {
+    return { input, _type: 'Delete' }
+  }),
+  GetQueueAttributesCommand: vi.fn().mockImplementation(function (input: unknown) {
+    return { input, _type: 'GetQueueAttributes' }
+  }),
 }))
 
 describe('SQSQueueAdapter', () => {

@@ -5,16 +5,26 @@ import { S3StorageAdapter } from '../s3'
 // Mock @aws-sdk/client-s3
 const mockSend = vi.fn()
 vi.mock('@aws-sdk/client-s3', () => ({
-  S3Client: vi.fn().mockImplementation(() => ({ send: mockSend })),
-  PutObjectCommand: vi.fn().mockImplementation((input) => ({ input, _type: 'PutObject' })),
-  GetObjectCommand: vi.fn().mockImplementation((input) => ({ input, _type: 'GetObject' })),
-  DeleteObjectCommand: vi.fn().mockImplementation((input) => ({ input, _type: 'DeleteObject' })),
+  S3Client: vi.fn().mockImplementation(function () {
+    return { send: mockSend }
+  }),
+  PutObjectCommand: vi.fn().mockImplementation(function (input: unknown) {
+    return { input, _type: 'PutObject' }
+  }),
+  GetObjectCommand: vi.fn().mockImplementation(function (input: unknown) {
+    return { input, _type: 'GetObject' }
+  }),
+  DeleteObjectCommand: vi.fn().mockImplementation(function (input: unknown) {
+    return { input, _type: 'DeleteObject' }
+  }),
 }))
 
 // Mock @aws-sdk/lib-storage
 const mockUploadDone = vi.fn()
 vi.mock('@aws-sdk/lib-storage', () => ({
-  Upload: vi.fn().mockImplementation(() => ({ done: mockUploadDone })),
+  Upload: vi.fn().mockImplementation(function () {
+    return { done: mockUploadDone }
+  }),
 }))
 
 // Mock @aws-sdk/s3-request-presigner

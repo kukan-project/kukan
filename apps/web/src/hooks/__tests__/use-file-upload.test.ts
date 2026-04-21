@@ -46,7 +46,9 @@ function mockXHR() {
 
   vi.stubGlobal(
     'XMLHttpRequest',
-    vi.fn(() => xhr)
+    vi.fn(function () {
+      return xhr
+    })
   )
 
   return xhr
