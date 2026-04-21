@@ -275,6 +275,30 @@ describe('PostgresSearchAdapter', () => {
       expect(result.facets).toBeUndefined()
     })
 
+    it('should include facets with filters applied', async () => {
+      const db = createMockDb([
+        [{ count: 1 }],
+        [{ id: 'p1', name: 'pkg-1', title: null, notes: null, organization: null }],
+        [], // tags
+        [], // matchedResources (q is present)
+        // Facet queries: org, tags, formats, licenses, groups
+        [{ name: 'org-a', count: 3 }],
+        [{ name: 'env', count: 2 }],
+        [{ name: 'CSV', count: 1 }],
+        [],
+        [],
+      ])
+
+      const result = await new PostgresSearchAdapter(db).search({
+        q: 'data',
+        facets: true,
+        filters: { organizations: ['org-a'] },
+      })
+
+      expect(result.facets).toBeDefined()
+      expect(result.facets!.organizations).toEqual([{ name: 'org-a', count: 3 }])
+    })
+
     it('should filter out null facet names', async () => {
       const db = createMockDb([
         [{ count: 0 }],
@@ -293,6 +317,72 @@ describe('PostgresSearchAdapter', () => {
       const result = await new PostgresSearchAdapter(db).search({ q: '', facets: true })
 
       expect(result.facets!.organizations).toEqual([{ name: 'org-a', count: 5 }])
+    })
+  })
+
+  describe('no-op resource/content methods', () => {
+    const adapter = new PostgresSearchAdapter(createMockDb([]))
+
+    it('indexResource should be a no-op', async () => {
+      await expect(adapter.indexResource({ id: 'r1', packageId: 'p1' })).resolves.toBeUndefined()
+    })
+
+    it('bulkIndexResources should be a no-op', async () => {
+      await expect(adapter.bulkIndexResources([])).resolves.toBeUndefined()
+    })
+
+    it('deleteResource should be a no-op', async () => {
+      await expect(adapter.deleteResource('r1')).resolves.toBeUndefined()
+    })
+
+    it('deleteAllResources should be a no-op', async () => {
+      await expect(adapter.deleteAllResources()).resolves.toBeUndefined()
+    })
+
+    it('indexContent should be a no-op', async () => {
+      await expect(adapter.indexContent({ resourceId: 'r1' } as never)).resolves.toBeUndefined()
+    })
+
+    it('deleteContent should be a no-op', async () => {
+      await expect(adapter.deleteContent('r1')).resolves.toBeUndefined()
+    })
+
+    it('deleteAllContents should be a no-op', async () => {
+      await expect(adapter.deleteAllContents()).resolves.toBeUndefined()
+    })
+  })
+
+  describe('admin methods return null', () => {
+    const adapter = new PostgresSearchAdapter(createMockDb([]))
+
+    it('getIndexStats should return null', async () => {
+      expect(await adapter.getIndexStats()).toBeNull()
+    })
+
+    it('getDocument should return null', async () => {
+      expect(await adapter.getDocument('packages', 'p1')).toBeNull()
+    })
+
+    it('browseDocuments should return null', async () => {
+      expect(await adapter.browseDocuments('packages')).toBeNull()
+    })
+  })
+
+  describe('sumResourceCount', () => {
+    it('should return resource count', async () => {
+      const db = createMockDb([[{ count: 15 }]])
+
+      const result = await new PostgresSearchAdapter(db).sumResourceCount()
+
+      expect(result).toBe(15)
+    })
+
+    it('should pass query to count', async () => {
+      const db = createMockDb([[{ count: 3 }]])
+
+      const result = await new PostgresSearchAdapter(db).sumResourceCount({ q: 'population' })
+
+      expect(result).toBe(3)
     })
   })
 })
