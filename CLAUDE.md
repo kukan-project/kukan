@@ -18,7 +18,7 @@ CKANの後継として設計されたTypeScriptフルスタックのデータカ
 | ランタイム     | Node.js 24 LTS                                        |
 | モノレポ       | Turborepo + pnpm workspaces                           |
 | API            | Hono 4.x（Cloudflare Workers / Node.js / Bun 対応）   |
-| フロントエンド | Next.js 15 (App Router) + shadcn/ui + Tailwind CSS 4  |
+| フロントエンド | Next.js 16 (App Router) + shadcn/ui + Tailwind CSS 4  |
 | DB             | PostgreSQL 16 / Aurora Serverless v2                  |
 | ORM            | Drizzle ORM（PostgreSQL ドライバ）                    |
 | 検索           | OpenSearch 3.x / PostgreSQL全文検索（フォールバック） |

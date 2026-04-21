@@ -51,7 +51,7 @@ CKAN のテンプレート階層（デフォルト → エクステンション 
   - **Tailwind CSS 統合**: ユーティリティファーストで柔軟なスタイリング
   - **CSS Variables**: ランタイムでのテーマ変更が容易
   - **型安全性**: TypeScript の恩恵を完全に享受
-  - **React Server Components 対応**: Next.js 15 App Router と完全互換
+  - **React Server Components 対応**: Next.js 16 App Router と完全互換
   - **軽量**: 必要なコンポーネントだけ配置、依存関係最小限
 - 問題点:
   - 手動更新: shadcn/ui の更新は自動適用されない（コピーなので）
@@ -272,7 +272,7 @@ export default function RootLayout({ children }) {
 2. **ベンダーロックインなし**: コンポーネントが自プロジェクトにあり、完全カスタマイズ可能
 3. **型安全性**: カスタマイズ時も TypeScript の intellisense が機能
 4. **アクセシビリティ組み込み**: Radix UI により WCAG 準拠
-5. **モダンスタック**: React Server Components、Next.js 15 互換
+5. **モダンスタック**: React Server Components、Next.js 16 互換
 6. **Storybook 統合**: 自治体向けコンポーネントカタログが容易
 
 ### デメリット

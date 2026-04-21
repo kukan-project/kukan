@@ -1,6 +1,6 @@
 # Phase 2: Frontend — 実装仕様書
 
-> **目標**: Next.js 15 によるカタログUI、認証フロー、管理画面を実装し、Phase 1 API をブラウザから操作可能にする
+> **目標**: Next.js 16 によるカタログUI、認証フロー、管理画面を実装し、Phase 1 API をブラウザから操作可能にする
 
 ## 1. 前提
 
@@ -12,7 +12,7 @@
 
 | カテゴリ         | 技術                               | 備考                                    |
 | ---------------- | ---------------------------------- | --------------------------------------- |
-| フレームワーク   | Next.js 15 (App Router)            | Server Components 優先                  |
+| フレームワーク   | Next.js 16 (App Router)            | Server Components 優先                  |
 | UIライブラリ     | shadcn/ui                          | Radix UI ベース、`packages/ui` にコピー |
 | スタイリング     | Tailwind CSS 4                     | CSS-first config                        |
 | 状態管理         | React Server Components + `nuqs`   | URL state 管理                          |
@@ -389,7 +389,7 @@ API は `packages/api` に移動済み。`next.config.ts` で `dotenv` を使っ
 ### Step 1: プロジェクトスケルトン
 
 1. `packages/ui` — shadcn/ui セットアップ、基本コンポーネント追加
-2. `apps/web` — Next.js 15 初期化、Tailwind CSS 4、globals.css
+2. `apps/web` — Next.js 16 初期化、Tailwind CSS 4、globals.css
 3. turbo.json / pnpm-workspace は既に対応済み
 4. 環境変数設定
 
@@ -441,7 +441,7 @@ API は `packages/api` に移動済み。`next.config.ts` で `dotenv` を使っ
     "nuqs": "2.x",
     "react-hook-form": "7.x",
     "@hookform/resolvers": "3.x",
-    "zod": "3.x"
+    "zod": "4.x"
   },
   "devDependencies": {
     "typescript": "5.x",

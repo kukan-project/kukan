@@ -208,20 +208,20 @@ datastore_info
 | API仕様                | OpenAPI 3.1                 | 自動生成・互換性                                     |
 | テスト                 | Vitest + Playwright         | モダンテスティング                                   |
 
-#### バージョン詳細（2026年3月時点）
+#### バージョン詳細（2026年4月時点）
 
 | モジュール                     | バージョン                  | 備考                                                          |
 | ------------------------------ | --------------------------- | ------------------------------------------------------------- |
 | Node.js                        | **v24 LTS "Krypton"**       | Active LTS（2028/4まで）。v22は Maintenance LTS               |
 | TypeScript                     | **5.9.3**（安定版）         | 6.0-beta公開中（JS最終版）。7.0はGo native移行（10x高速化）   |
-| Hono                           | **4.12.3**                  | Express比3.5x高速。Web Standards準拠マルチランタイム          |
+| Hono                           | **4.12.14**                 | Express比3.5x高速。Web Standards準拠マルチランタイム          |
 | PostgreSQL                     | **18.3**                    | 最新安定版（Aurora Serverless v2はPG 16互換）                 |
 | Drizzle ORM                    | **0.45.1** / **1.0.0-beta** | v1.0 RC段階。スキーマ定義+マイグレーション統合管理            |
 | OpenSearch                     | **3.3.1** (OSS)             | Apache 2.0。Lucene 10ベース。v1.3比9.5x性能向上               |
-| Better Auth                    | **1.x**                     | フレームワーク非依存（Hono/Next.js対応）。Drizzle ORM直接統合 |
+| Better Auth                    | **1.6.x**                   | フレームワーク非依存（Hono/Next.js対応）。Drizzle ORM直接統合 |
 | lru-cache                      | **11.x**                    | Node.js標準インメモリキャッシュ。Redis不要                    |
-| React                          | **19.2.4**                  | Activity API、Server Components安定                           |
-| Next.js                        | **16.1.6**                  | Turbopack FSキャッシュ安定化、App Router                      |
+| React                          | **19.2.5**                  | Activity API、Server Components安定                           |
+| Next.js                        | **16.2.4**                  | Turbopack FSキャッシュ安定化、App Router                      |
 | @opensearch-project/opensearch | **3.5.1**                   | Node.js用OpenSearchクライアント                               |
 
 > **注記**: Drizzle ORMとKyselyは両方とも0.x台だが、Drizzleはv1.0-betaに到達。
@@ -2433,7 +2433,7 @@ ckanCompat.all('/api/3/action/:action', async (c) => {
 
 ### Phase 2: フロントエンド
 
-- Next.js 15 (App Router) + shadcn/ui + Tailwind CSS 4（`apps/web`）
+- Next.js 16 (App Router) + shadcn/ui + Tailwind CSS 4（`apps/web`）
 - データセット一覧・詳細・検索UI
 - 組織・グループ一覧・詳細UI
 - 管理画面（パッケージ/組織/グループ CRUD）

@@ -5,7 +5,7 @@
 ## 1. 前提
 
 - Phase 1 API 完成済み（CRUD + CKAN 互換 + 検索 + 認証）
-- Phase 2 Frontend 完成済み（Next.js 15 カタログ UI + 管理画面）
+- Phase 2 Frontend 完成済み（Next.js 16 カタログ UI + 管理画面）
 - `resource` テーブルに `urlType` カラム定義済み
 - StorageAdapter / QueueAdapter / SearchAdapter インターフェース定義済み
 - S3StorageAdapter（MinIO / AWS S3 統合）, SqsQueueAdapter（SQS / ElasticMQ）, PostgresSearchAdapter 実装済み
