@@ -5,7 +5,7 @@
 
 # ---- Base (shared by all targets: upgraded OS + pnpm) ----
 FROM node:24-alpine AS base
-RUN apk upgrade --no-cache && corepack enable && corepack prepare pnpm@9 --activate
+RUN apk upgrade --no-cache && corepack enable && corepack prepare pnpm@10 --activate
 WORKDIR /app
 
 # ---- Dependencies ----
