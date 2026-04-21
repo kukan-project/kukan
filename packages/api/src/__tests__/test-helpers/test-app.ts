@@ -20,6 +20,8 @@ import { tagsRouter } from '../../routes/tags'
 import { resourcesRouter } from '../../routes/resources'
 import { searchRouter } from '../../routes/search'
 import { adminRouter } from '../../routes/admin'
+import { usersRouter } from '../../routes/users'
+import { apiTokensRouter } from '../../routes/api-tokens'
 import { ckanCompatRouter } from '../../routes/ckan-compat'
 
 // Minimal mock adapters (search/storage are no-ops for route tests)
@@ -150,6 +152,8 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
   apiV1.route('/tags', tagsRouter)
   apiV1.route('/search', searchRouter)
   apiV1.route('/admin', adminRouter)
+  apiV1.route('/users', usersRouter)
+  apiV1.route('/api-tokens', apiTokensRouter)
   app.route('/api/v1', apiV1)
 
   // CKAN compat
