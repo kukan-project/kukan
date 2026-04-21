@@ -22,7 +22,7 @@
     "@kukan/storage-adapter": "workspace:*",
     "@opensearch-project/opensearch": "^3.5.1",
     "croner": "^10.0.1",
-    "dotenv": "^16.6.1",
+    "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "encoding-japanese": "^2.2.0",
     "hono": "^4.12.14",
