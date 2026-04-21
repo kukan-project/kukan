@@ -17,6 +17,12 @@ vi.mock('@aws-sdk/client-s3', () => ({
   DeleteObjectCommand: vi.fn().mockImplementation(function (input: unknown) {
     return { input, _type: 'DeleteObject' }
   }),
+  ListObjectsV2Command: vi.fn().mockImplementation(function (input: unknown) {
+    return { input, _type: 'ListObjectsV2' }
+  }),
+  DeleteObjectsCommand: vi.fn().mockImplementation(function (input: unknown) {
+    return { input, _type: 'DeleteObjects' }
+  }),
 }))
 
 // Mock @aws-sdk/lib-storage
@@ -252,6 +258,89 @@ describe('S3StorageAdapter', () => {
 
       const [, , opts] = mockGetSignedUrl.mock.calls[0]
       expect(opts.expiresIn).toBe(900)
+    })
+  })
+
+  describe('deleteByPrefix', () => {
+    it('should list and batch-delete objects matching prefix', async () => {
+      mockSend
+        .mockResolvedValueOnce({
+          Contents: [{ Key: 'prefix/a.txt' }, { Key: 'prefix/b.txt' }],
+          IsTruncated: false,
+        })
+        .mockResolvedValueOnce({ Errors: undefined })
+
+      const deleted = await storage.deleteByPrefix('prefix/')
+
+      expect(deleted).toBe(2)
+      expect(mockSend).toHaveBeenCalledTimes(2)
+
+      const listCmd = mockSend.mock.calls[0][0]
+      expect(listCmd._type).toBe('ListObjectsV2')
+      expect(listCmd.input.Bucket).toBe('test-bucket')
+      expect(listCmd.input.Prefix).toBe('prefix/')
+
+      const deleteCmd = mockSend.mock.calls[1][0]
+      expect(deleteCmd._type).toBe('DeleteObjects')
+      expect(deleteCmd.input.Bucket).toBe('test-bucket')
+      expect(deleteCmd.input.Delete.Objects).toEqual([
+        { Key: 'prefix/a.txt' },
+        { Key: 'prefix/b.txt' },
+      ])
+    })
+
+    it('should return 0 when no objects match prefix', async () => {
+      mockSend.mockResolvedValueOnce({
+        Contents: undefined,
+        IsTruncated: false,
+      })
+
+      const deleted = await storage.deleteByPrefix('empty/')
+
+      expect(deleted).toBe(0)
+      expect(mockSend).toHaveBeenCalledTimes(1)
+    })
+
+    it('should handle pagination with continuation tokens', async () => {
+      mockSend
+        // First page
+        .mockResolvedValueOnce({
+          Contents: [{ Key: 'prefix/a.txt' }],
+          IsTruncated: true,
+          NextContinuationToken: 'token-1',
+        })
+        .mockResolvedValueOnce({ Errors: undefined }) // delete first batch
+        // Second page
+        .mockResolvedValueOnce({
+          Contents: [{ Key: 'prefix/b.txt' }],
+          IsTruncated: false,
+        })
+        .mockResolvedValueOnce({ Errors: undefined }) // delete second batch
+
+      const deleted = await storage.deleteByPrefix('prefix/')
+
+      expect(deleted).toBe(2)
+      expect(mockSend).toHaveBeenCalledTimes(4)
+
+      // Second list call should include ContinuationToken
+      const secondListCmd = mockSend.mock.calls[2][0]
+      expect(secondListCmd._type).toBe('ListObjectsV2')
+      expect(secondListCmd.input.ContinuationToken).toBe('token-1')
+    })
+
+    it('should throw when DeleteObjects returns errors', async () => {
+      mockSend
+        .mockResolvedValueOnce({
+          Contents: [{ Key: 'prefix/a.txt' }],
+          IsTruncated: false,
+        })
+        .mockResolvedValueOnce({
+          Errors: [{ Key: 'prefix/a.txt', Code: 'AccessDenied' }],
+        })
+
+      await expect(storage.deleteByPrefix('prefix/')).rejects.toThrow(
+        'Failed to delete 1 objects'
+      )
     })
   })
 })

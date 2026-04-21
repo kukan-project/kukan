@@ -7,6 +7,7 @@ vi.mock('@opensearch-project/opensearch', () => {
     indices: {
       exists: vi.fn(),
       create: vi.fn(),
+      delete: vi.fn(),
     },
     index: vi.fn(),
     search: vi.fn(),
@@ -27,7 +28,7 @@ vi.mock('@opensearch-project/opensearch', () => {
 })
 
 interface MockClient {
-  indices: { exists: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn> }
+  indices: { exists: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn>; delete: ReturnType<typeof vi.fn> }
   index: ReturnType<typeof vi.fn>
   search: ReturnType<typeof vi.fn>
   msearch: ReturnType<typeof vi.fn>
@@ -590,6 +591,70 @@ describe('OpenSearchAdapter', () => {
 
       const callArgs = mockClient.search.mock.calls[0][0]
       expect(callArgs.body.size).toBe(100)
+    })
+  })
+
+  describe('indexContent', () => {
+    it('should index a content document to contents index using resourceId as doc id', async () => {
+      mockClient.index.mockResolvedValue({ body: {} })
+
+      await adapter.indexContent({
+        resourceId: 'res-1',
+        packageId: 'pkg-1',
+        extractedText: 'some text content',
+        contentType: 'text',
+      })
+
+      expect(mockClient.index).toHaveBeenCalledWith({
+        index: 'kukan-contents',
+        id: 'res-1',
+        body: expect.objectContaining({
+          resourceId: 'res-1',
+          packageId: 'pkg-1',
+          extractedText: 'some text content',
+        }),
+        refresh: 'wait_for',
+      })
+    })
+  })
+
+  describe('deleteAllPackages', () => {
+    it('should delete and recreate the packages index', async () => {
+      mockClient.indices.delete.mockResolvedValue({ body: {} })
+
+      await adapter.deleteAllPackages()
+
+      expect(mockClient.indices.delete).toHaveBeenCalledWith({ index: 'kukan-packages' })
+      // After delete, ensureIndex is called which recreates all indices
+      expect(mockClient.indices.create).toHaveBeenCalled()
+    })
+
+    it('should ignore 404 when index does not exist', async () => {
+      mockClient.indices.delete.mockRejectedValue({ statusCode: 404 })
+
+      await expect(adapter.deleteAllPackages()).resolves.toBeUndefined()
+    })
+  })
+
+  describe('deleteAllResources', () => {
+    it('should delete and recreate the resources index', async () => {
+      mockClient.indices.delete.mockResolvedValue({ body: {} })
+
+      await adapter.deleteAllResources()
+
+      expect(mockClient.indices.delete).toHaveBeenCalledWith({ index: 'kukan-resources' })
+      expect(mockClient.indices.create).toHaveBeenCalled()
+    })
+  })
+
+  describe('deleteAllContents', () => {
+    it('should delete and recreate the contents index', async () => {
+      mockClient.indices.delete.mockResolvedValue({ body: {} })
+
+      await adapter.deleteAllContents()
+
+      expect(mockClient.indices.delete).toHaveBeenCalledWith({ index: 'kukan-contents' })
+      expect(mockClient.indices.create).toHaveBeenCalled()
     })
   })
 
