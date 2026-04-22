@@ -168,7 +168,11 @@ adminRouter.post('/reindex', async (c) => {
   const search = c.get('search')
 
   // Clear all existing documents to remove stale entries
-  await Promise.all([search.deleteAllPackages(), search.deleteAllResources()])
+  await Promise.all([
+    search.deleteAllPackages(),
+    search.deleteAllResources(),
+    search.deleteAllContents(),
+  ])
 
   // Fetch all active package IDs
   const packages = await db
