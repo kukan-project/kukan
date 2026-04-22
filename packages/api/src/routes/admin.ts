@@ -103,6 +103,18 @@ adminRouter.get('/search/doc/:index/:id', async (c) => {
   return c.json(doc)
 })
 
+// GET /api/v1/admin/search/chunks/:resourceId — List content chunks for a resource
+adminRouter.get('/search/chunks/:resourceId', async (c) => {
+  const user = c.get('user')
+  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view search documents')
+
+  const resourceId = c.req.param('resourceId')
+  const search = c.get('search')
+
+  const chunks = await search.getContentChunks(resourceId)
+  return c.json({ items: chunks })
+})
+
 // GET /api/v1/admin/search/browse/:index — Browse/search documents in an index
 adminRouter.get('/search/browse/:index', async (c) => {
   const user = c.get('user')
@@ -120,7 +132,20 @@ adminRouter.get('/search/browse/:index', async (c) => {
   const offset = parseInt(c.req.query('offset') ?? '0', 10)
   const limit = parseInt(c.req.query('limit') ?? '20', 10)
 
-  const result = await c.get('search').browseDocuments(index, { q, offset, limit })
+  const search = c.get('search')
+
+  // Contents tab uses a dedicated grouped-by-resource response
+  if (index === 'contents') {
+    const result = await search.browseContentsByResource({ q, offset, limit })
+    if (!result)
+      return c.json(
+        { type: 'about:blank', title: 'Not Available', status: 404, detail: 'OpenSearch not enabled' },
+        404
+      )
+    return c.json(result)
+  }
+
+  const result = await search.browseDocuments(index, { q, offset, limit })
   if (!result)
     return c.json(
       {

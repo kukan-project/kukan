@@ -204,10 +204,40 @@ export interface SearchAdapter {
     index: 'packages' | 'resources' | 'contents',
     options: { q?: string; offset?: number; limit?: number }
   ): Promise<BrowseResult | null>
+
+  /** Get individual content chunks for a resource. Returns empty array if not supported. */
+  getContentChunks(
+    resourceId: string
+  ): Promise<Array<{ id: string; chunkIndex: number; chunkSize: number }>>
+
+  /** Browse contents grouped by resource. Returns null if not supported. */
+  browseContentsByResource(options: {
+    q?: string
+    offset?: number
+    limit?: number
+  }): Promise<ContentBrowseResult | null>
 }
 
 export interface BrowseResult {
   items: Array<{ id: string; source: Record<string, unknown> }>
+  total: number
+  offset: number
+  limit: number
+}
+
+/** Grouped content browse result — one entry per resource */
+export interface ContentBrowseItem {
+  resourceId: string
+  packageId: string
+  contentType: string
+  chunks: number
+  totalSize: number
+  resourceName?: string
+  resourceFormat?: string
+}
+
+export interface ContentBrowseResult {
+  items: ContentBrowseItem[]
   total: number
   offset: number
   limit: number

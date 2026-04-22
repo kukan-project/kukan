@@ -854,4 +854,126 @@ describe('OpenSearchAdapter', () => {
       expect(searchCall.body.query.bool.must).toBeDefined()
     })
   })
+
+  describe('getContentChunks', () => {
+    it('should return chunks sorted by chunkIndex', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: {
+            hits: [
+              { _id: 'res-1_chunk_0', _source: { chunkIndex: 0, chunkSize: 500 } },
+              { _id: 'res-1_chunk_1', _source: { chunkIndex: 1, chunkSize: 300 } },
+            ],
+          },
+        },
+      })
+
+      const chunks = await adapter.getContentChunks('res-1')
+
+      expect(mockClient.search).toHaveBeenCalledWith({
+        index: 'kukan-contents',
+        body: expect.objectContaining({
+          query: { term: { resourceId: 'res-1' } },
+          sort: [{ chunkIndex: { order: 'asc' } }],
+        }),
+      })
+      expect(chunks).toEqual([
+        { id: 'res-1_chunk_0', chunkIndex: 0, chunkSize: 500 },
+        { id: 'res-1_chunk_1', chunkIndex: 1, chunkSize: 300 },
+      ])
+    })
+
+    it('should return empty array when no chunks found', async () => {
+      mockClient.search.mockResolvedValue({ body: { hits: { hits: [] } } })
+
+      const chunks = await adapter.getContentChunks('nonexistent')
+
+      expect(chunks).toEqual([])
+    })
+  })
+
+  describe('browseContentsByResource', () => {
+    it('should group chunks by resourceId with metadata', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          aggregations: {
+            by_resource: {
+              buckets: [
+                {
+                  key: 'res-1',
+                  doc_count: 3,
+                  sample: { hits: { hits: [{ _source: { packageId: 'pkg-1', contentType: 'tabular' } }] } },
+                  total_size: { value: 3000 },
+                },
+                {
+                  key: 'res-2',
+                  doc_count: 1,
+                  sample: { hits: { hits: [{ _source: { packageId: 'pkg-1', contentType: 'text' } }] } },
+                  total_size: { value: 500 },
+                },
+              ],
+            },
+          },
+        },
+      })
+
+      mockClient.mget.mockResolvedValue({
+        body: {
+          docs: [
+            { _id: 'res-1', found: true, _source: { name: 'data.csv', format: 'CSV' } },
+            { _id: 'res-2', found: true, _source: { name: 'notes.txt', format: 'TXT' } },
+          ],
+        },
+      })
+
+      const result = await adapter.browseContentsByResource({})
+
+      expect(result.total).toBe(2)
+      expect(result.items[0]).toEqual({
+        resourceId: 'res-1',
+        packageId: 'pkg-1',
+        contentType: 'tabular',
+        chunks: 3,
+        totalSize: 3000,
+        resourceName: 'data.csv',
+        resourceFormat: 'CSV',
+      })
+      expect(result.items[1].resourceName).toBe('notes.txt')
+    })
+
+    it('should support pagination', async () => {
+      const buckets = Array.from({ length: 5 }, (_, i) => ({
+        key: `res-${i}`,
+        doc_count: 1,
+        sample: { hits: { hits: [{ _source: { packageId: 'pkg-1', contentType: 'text' } }] } },
+        total_size: { value: 100 },
+      }))
+
+      mockClient.search.mockResolvedValue({
+        body: { aggregations: { by_resource: { buckets } } },
+      })
+      mockClient.mget.mockResolvedValue({ body: { docs: [] } })
+
+      const result = await adapter.browseContentsByResource({ offset: 2, limit: 2 })
+
+      expect(result.total).toBe(5)
+      expect(result.items).toHaveLength(2)
+      expect(result.items[0].resourceId).toBe('res-2')
+      expect(result.offset).toBe(2)
+      expect(result.limit).toBe(2)
+    })
+
+    it('should support search query', async () => {
+      mockClient.search.mockResolvedValue({
+        body: { aggregations: { by_resource: { buckets: [] } } },
+      })
+
+      await adapter.browseContentsByResource({ q: 'population' })
+
+      const searchCall = mockClient.search.mock.calls[0][0]
+      expect(searchCall.body.query).toEqual({
+        match: { extractedText: { query: 'population', operator: 'and' } },
+      })
+    })
+  })
 })

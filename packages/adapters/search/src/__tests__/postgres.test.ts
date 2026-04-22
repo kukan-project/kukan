@@ -366,6 +366,14 @@ describe('PostgresSearchAdapter', () => {
     it('browseDocuments should return null', async () => {
       expect(await adapter.browseDocuments('packages')).toBeNull()
     })
+
+    it('getContentChunks should return empty array', async () => {
+      expect(await adapter.getContentChunks()).toEqual([])
+    })
+
+    it('browseContentsByResource should return null', async () => {
+      expect(await adapter.browseContentsByResource()).toBeNull()
+    })
   })
 
   describe('sumResourceCount', () => {

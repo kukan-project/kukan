@@ -24,6 +24,8 @@ import type {
   MatchedResource,
   IndexStats,
   BrowseResult,
+  ContentBrowseResult,
+  ContentBrowseItem,
 } from './adapter'
 import { MAX_MATCHED_RESOURCES_PER_PACKAGE } from './adapter'
 
@@ -1011,6 +1013,108 @@ export class OpenSearchAdapter implements SearchAdapter {
       id: hit._id as string,
       source: hit._source as Record<string, unknown>,
     }))
+
+    return { items, total, offset, limit }
+  }
+
+  async getContentChunks(
+    resourceId: string
+  ): Promise<Array<{ id: string; chunkIndex: number; chunkSize: number }>> {
+    await this.ensureIndex()
+
+    const response = await this.client.search({
+      index: this.contentsIndex,
+      body: {
+        size: 100,
+        query: { term: { resourceId } },
+        _source: ['chunkIndex', 'chunkSize'],
+        sort: [{ chunkIndex: { order: 'asc' } }],
+      },
+    })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (response.body.hits.hits ?? []).map((hit: any) => ({
+      id: hit._id as string,
+      chunkIndex: (hit._source.chunkIndex as number) ?? 0,
+      chunkSize: (hit._source.chunkSize as number) ?? 0,
+    }))
+  }
+
+  async browseContentsByResource(options: {
+    q?: string
+    offset?: number
+    limit?: number
+  }): Promise<ContentBrowseResult> {
+    await this.ensureIndex()
+
+    const offset = options.offset ?? 0
+    const limit = Math.min(options.limit ?? 20, 100)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const query: any = options.q?.trim()
+      ? { match: { extractedText: { query: options.q, operator: 'and' } } }
+      : { match_all: {} }
+
+    const response = await this.client.search({
+      index: this.contentsIndex,
+      body: {
+        size: 0,
+        query,
+        aggs: {
+          by_resource: {
+            terms: {
+              field: 'resourceId',
+              size: 10000,
+              order: { _key: 'asc' as const },
+            },
+            aggs: {
+              sample: { top_hits: { size: 1, _source: ['packageId', 'contentType'] } },
+              total_size: { sum: { field: 'chunkSize' } },
+            },
+          },
+        },
+      },
+    })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const aggs = response.body.aggregations as Record<string, any> | undefined
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const buckets = (aggs?.by_resource?.buckets ?? []) as any[]
+    const total = buckets.length
+
+    const paginated = buckets.slice(offset, offset + limit)
+    const items: ContentBrowseItem[] = paginated.map((bucket) => {
+      const hit = bucket.sample.hits.hits[0]?._source ?? {}
+      return {
+        resourceId: bucket.key as string,
+        packageId: hit.packageId ?? '',
+        contentType: hit.contentType ?? '',
+        chunks: bucket.doc_count as number,
+        totalSize: bucket.total_size.value as number,
+      }
+    })
+
+    // Fetch resource names from kukan-resources
+    const resourceIds = items.map((item) => item.resourceId)
+    if (resourceIds.length > 0) {
+      try {
+        const resMget = await this.client.mget({
+          index: this.resourcesIndex,
+          body: { ids: resourceIds },
+        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const doc of resMget.body.docs as any[]) {
+          if (!doc.found) continue
+          const item = items.find((i) => i.resourceId === doc._id)
+          if (item) {
+            item.resourceName = doc._source.name ?? undefined
+            item.resourceFormat = doc._source.format ?? undefined
+          }
+        }
+      } catch {
+        // Best-effort
+      }
+    }
 
     return { items, total, offset, limit }
   }

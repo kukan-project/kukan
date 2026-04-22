@@ -387,6 +387,12 @@ export class PostgresSearchAdapter implements SearchAdapter {
   async browseDocuments(_index: string, _options?: Record<string, unknown>) {
     return null
   }
+  async getContentChunks() {
+    return []
+  }
+  async browseContentsByResource() {
+    return null
+  }
 
   async sumResourceCount(query?: ResourceCountQuery): Promise<number> {
     const conditions = this.buildConditions({ q: query?.q ?? '', filters: query?.filters })

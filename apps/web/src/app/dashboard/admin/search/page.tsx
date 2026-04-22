@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Database, Search } from 'lucide-react'
@@ -54,6 +54,23 @@ interface BrowseResponse {
   limit: number
 }
 
+interface ContentBrowseItem {
+  resourceId: string
+  packageId: string
+  contentType: string
+  chunks: number
+  totalSize: number
+  resourceName?: string
+  resourceFormat?: string
+}
+
+interface ContentBrowseResponse {
+  items: ContentBrowseItem[]
+  total: number
+  offset: number
+  limit: number
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
@@ -62,6 +79,12 @@ function formatBytes(bytes: number): string {
 }
 
 type IndexTab = 'packages' | 'resources' | 'contents'
+
+/** Must match apps/worker/src/config.ts MAX_FETCH_SIZE */
+const MAX_FETCH_SIZE = 100 * 1024 * 1024
+
+/** Must match apps/worker/src/config.ts MAX_CONTENT_CHUNK_SIZE */
+const MAX_CONTENT_CHUNK_SIZE = 1024 * 1024
 
 const PAGE_SIZE = 20
 
@@ -94,8 +117,9 @@ export default function AdminSearchPage() {
   // Tab
   const [activeTab, setActiveTab] = useState<IndexTab>('packages')
 
-  // Browse
+  // Browse (packages/resources use BrowseResponse, contents uses ContentBrowseResponse)
   const [browseData, setBrowseData] = useState<BrowseResponse | null>(null)
+  const [contentBrowseData, setContentBrowseData] = useState<ContentBrowseResponse | null>(null)
   const [browseLoading, setBrowseLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [submittedQuery, setSubmittedQuery] = useState('')
@@ -107,7 +131,16 @@ export default function AdminSearchPage() {
         const params = new URLSearchParams({ offset: String(offset), limit: String(PAGE_SIZE) })
         if (q) params.set('q', q)
         const res = await clientFetch(`/api/v1/admin/search/browse/${activeTab}?${params}`)
-        if (res.ok) setBrowseData(await res.json())
+        if (res.ok) {
+          const data = await res.json()
+          if (activeTab === 'contents') {
+            setContentBrowseData(data)
+            setBrowseData(null)
+          } else {
+            setBrowseData(data)
+            setContentBrowseData(null)
+          }
+        }
       } finally {
         setBrowseLoading(false)
       }
@@ -145,6 +178,26 @@ export default function AdminSearchPage() {
   }
 
   // Reindex
+  // Contents tree view: expanded resource → chunk list
+  const [expandedResourceId, setExpandedResourceId] = useState<string | null>(null)
+  const [expandedChunks, setExpandedChunks] = useState<
+    Array<{ id: string; chunkIndex: number; chunkSize: number }>
+  >([])
+
+  async function toggleResourceExpand(resourceId: string) {
+    if (expandedResourceId === resourceId) {
+      setExpandedResourceId(null)
+      setExpandedChunks([])
+      return
+    }
+    setExpandedResourceId(resourceId)
+    const res = await clientFetch(`/api/v1/admin/search/chunks/${resourceId}`)
+    if (res.ok) {
+      const data = await res.json()
+      setExpandedChunks(data.items)
+    }
+  }
+
   const [reindexing, setReindexing] = useState(false)
   const [includeContent, setIncludeContent] = useState(false)
   const [reindexResult, setReindexResult] = useState<{
@@ -180,8 +233,9 @@ export default function AdminSearchPage() {
 
   if (!user.sysadmin) return null
 
-  const totalPages = browseData ? Math.ceil(browseData.total / PAGE_SIZE) : 0
-  const currentPage = browseData ? Math.floor(browseData.offset / PAGE_SIZE) + 1 : 1
+  const activeBrowse = activeTab === 'contents' ? contentBrowseData : browseData
+  const totalPages = activeBrowse ? Math.ceil(activeBrowse.total / PAGE_SIZE) : 0
+  const currentPage = activeBrowse ? Math.floor(activeBrowse.offset / PAGE_SIZE) + 1 : 1
 
   return (
     <div className="flex flex-col gap-6">
@@ -250,85 +304,141 @@ export default function AdminSearchPage() {
           </form>
 
           {/* Table */}
-          {browseLoading && !browseData ? (
+          {browseLoading && !activeBrowse ? (
             <p className="py-8 text-center text-muted-foreground">{tc('loading')}</p>
-          ) : browseData && browseData.items.length > 0 ? (
+          ) : activeBrowse && activeBrowse.items.length > 0 ? (
             <>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[280px]">ID</TableHead>
+                    <TableHead className={activeTab === 'contents' ? '' : 'w-[280px]'}>
+                      ID
+                    </TableHead>
+                    {activeTab === 'contents' && <TableHead>{t('colName')}</TableHead>}
                     {activeTab === 'packages' && <TableHead>{t('colTitle')}</TableHead>}
                     {activeTab === 'resources' && <TableHead>{t('colName')}</TableHead>}
                     {activeTab === 'resources' && (
                       <TableHead className="w-[100px]">{t('colFormat')}</TableHead>
                     )}
                     {activeTab === 'contents' && (
-                      <TableHead className="w-[120px]">{t('colContentType')}</TableHead>
+                      <TableHead className="w-[80px]">{t('colContentType')}</TableHead>
+                    )}
+                    {activeTab === 'contents' && (
+                      <TableHead className="w-[80px]">Chunks</TableHead>
                     )}
                     {activeTab === 'contents' && (
                       <TableHead className="w-[100px]">{t('colSize')}</TableHead>
                     )}
-                    {activeTab === 'contents' && (
-                      <TableHead className="w-[60px]">Index</TableHead>
-                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {browseData.items.map((item) => (
-                    <TableRow
-                      key={item.id}
-                      className="cursor-pointer hover:bg-accent/50"
-                      onClick={() => showDocument(item.id)}
-                    >
-                      <TableCell className="whitespace-nowrap font-mono text-xs">
-                        {item.id}
-                      </TableCell>
-                      {activeTab === 'packages' && (
-                        <TableCell>
-                          {(item.source.title as string) ?? (item.source.name as string) ?? '-'}
-                        </TableCell>
-                      )}
-                      {activeTab === 'resources' && (
-                        <TableCell>{(item.source.name as string) ?? '-'}</TableCell>
-                      )}
-                      {activeTab === 'resources' && (
-                        <TableCell>
-                          {typeof item.source.format === 'string' && (
-                            <FormatBadge format={item.source.format} />
+                  {activeTab === 'contents' && contentBrowseData
+                    ? contentBrowseData.items.map((item) => (
+                        <React.Fragment key={item.resourceId}>
+                          <TableRow
+                            className="cursor-pointer hover:bg-accent/50"
+                            onClick={() => toggleResourceExpand(item.resourceId)}
+                          >
+                            <TableCell className="whitespace-nowrap font-mono text-xs">
+                              <span className="mr-1">
+                                {expandedResourceId === item.resourceId ? '▼' : '▶'}
+                              </span>
+                              {item.resourceId}
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              {item.resourceName ?? '-'}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-xs">
+                                {item.contentType}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-center text-xs text-muted-foreground">
+                              {item.chunks}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              <div className="flex items-center gap-1.5">
+                                <div className="h-2 w-16 rounded-full bg-muted">
+                                  <div
+                                    className="h-2 rounded-full bg-primary/60"
+                                    style={{
+                                      width: `${Math.min((item.totalSize / MAX_FETCH_SIZE) * 100, 100)}%`,
+                                    }}
+                                  />
+                                </div>
+                                <span className="whitespace-nowrap">
+                                  {formatBytes(item.totalSize)}
+                                </span>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                          {expandedResourceId === item.resourceId &&
+                            expandedChunks.map((chunk) => (
+                              <TableRow
+                                key={chunk.id}
+                                className="cursor-pointer bg-muted/30 hover:bg-accent/50"
+                                onClick={() => showDocument(chunk.id)}
+                              >
+                                <TableCell className="whitespace-nowrap pl-8 font-mono text-xs text-muted-foreground">
+                                  {chunk.id}
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  chunk #{chunk.chunkIndex}
+                                </TableCell>
+                                <TableCell />
+                                <TableCell />
+                                <TableCell className="text-xs text-muted-foreground">
+                                  <div className="flex items-center gap-1.5">
+                                    <div className="h-2 w-16 rounded-full bg-muted">
+                                      <div
+                                        className="h-2 rounded-full bg-muted-foreground/40"
+                                        style={{
+                                          width: `${Math.min((chunk.chunkSize / MAX_CONTENT_CHUNK_SIZE) * 100, 100)}%`,
+                                        }}
+                                      />
+                                    </div>
+                                    <span className="whitespace-nowrap">
+                                      {formatBytes(chunk.chunkSize)}
+                                    </span>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                        </React.Fragment>
+                      ))
+                    : browseData?.items.map((item) => (
+                        <TableRow
+                          key={item.id}
+                          className="cursor-pointer hover:bg-accent/50"
+                          onClick={() => showDocument(item.id)}
+                        >
+                          <TableCell className="whitespace-nowrap font-mono text-xs">
+                            {item.id}
+                          </TableCell>
+                          {activeTab === 'packages' && (
+                            <TableCell>
+                              {(item.source.title as string) ??
+                                (item.source.name as string) ??
+                                '-'}
+                            </TableCell>
                           )}
-                        </TableCell>
-                      )}
-                      {activeTab === 'contents' && (
-                        <TableCell>
-                          {typeof item.source.contentType === 'string' && (
-                            <Badge variant="outline" className="text-xs">
-                              {item.source.contentType}
-                            </Badge>
+                          {activeTab === 'resources' && (
+                            <TableCell>{(item.source.name as string) ?? '-'}</TableCell>
                           )}
-                        </TableCell>
-                      )}
-                      {activeTab === 'contents' && (
-                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                          {typeof item.source.chunkSize === 'number'
-                            ? formatBytes(item.source.chunkSize as number)
-                            : '-'}
-                        </TableCell>
-                      )}
-                      {activeTab === 'contents' && (
-                        <TableCell className="text-xs text-muted-foreground">
-                          {typeof item.source.chunkIndex === 'number'
-                            ? item.source.chunkIndex
-                            : '-'}
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  ))}
+                          {activeTab === 'resources' && (
+                            <TableCell>
+                              {typeof item.source.format === 'string' && (
+                                <FormatBadge format={item.source.format} />
+                              )}
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      ))}
                 </TableBody>
               </Table>
               <PaginationControls
-                offset={browseData.offset}
-                total={browseData.total}
+                offset={activeBrowse!.offset}
+                total={activeBrowse!.total}
                 pageSize={PAGE_SIZE}
                 totalPages={totalPages}
                 currentPage={currentPage}
