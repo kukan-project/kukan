@@ -280,9 +280,9 @@ export default function AdminSearchPage() {
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">
               kukan-{activeTab}
-              {browseData && (
+              {activeBrowse && (
                 <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  ({tc('count', { count: browseData.total })})
+                  ({tc('count', { count: activeBrowse.total })})
                 </span>
               )}
             </CardTitle>

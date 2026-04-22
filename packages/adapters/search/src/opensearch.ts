@@ -1098,6 +1098,7 @@ export class OpenSearchAdapter implements SearchAdapter {
     const resourceIds = items.map((item) => item.resourceId)
     if (resourceIds.length > 0) {
       try {
+        const itemLookup = new Map(items.map((item) => [item.resourceId, item]))
         const resMget = await this.client.mget({
           index: this.resourcesIndex,
           body: { ids: resourceIds },
@@ -1105,7 +1106,7 @@ export class OpenSearchAdapter implements SearchAdapter {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         for (const doc of resMget.body.docs as any[]) {
           if (!doc.found) continue
-          const item = items.find((i) => i.resourceId === doc._id)
+          const item = itemLookup.get(doc._id)
           if (item) {
             item.resourceName = doc._source.name ?? undefined
             item.resourceFormat = doc._source.format ?? undefined
