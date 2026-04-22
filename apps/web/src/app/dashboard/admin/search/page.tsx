@@ -210,7 +210,11 @@ export default function AdminSearchPage() {
     setReindexing(true)
     setReindexResult(null)
     try {
-      const res = await clientFetch('/api/v1/admin/reindex', { method: 'POST' })
+      const res = await clientFetch('/api/v1/admin/reindex', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ includeContent }),
+      })
       if (!res.ok) return
       const data = await res.json()
 
