@@ -148,12 +148,13 @@ export default function AdminSearchPage() {
     [activeTab]
   )
 
-  // Reset search and fetch on tab change
+  // Reset search, refresh stats, and fetch on tab change
   useEffect(() => {
     setSearchQuery('')
     setSubmittedQuery('')
+    fetchStats()
     fetchBrowse(0, '')
-  }, [activeTab, fetchBrowse])
+  }, [activeTab, fetchBrowse, fetchStats])
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault()
