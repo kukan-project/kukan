@@ -1,6 +1,7 @@
 /**
  * KUKAN Pipeline — Index Step
  * Extracts text content from resources and indexes it into OpenSearch (kukan-contents).
+ * Text formats are processed as a stream — no file size limit on indexable content.
  * Large texts are split into multiple chunks (up to MAX_CONTENT_CHUNKS × MAX_CONTENT_CHUNK_SIZE).
  * Also records content indexing metadata in resource_pipeline.metadata.
  *
@@ -12,8 +13,8 @@ import { isTextFormat, isCsvFormat, isZipFormat, type ContentType } from '@kukan
 import type { ContentDoc } from '@kukan/search-adapter'
 import type { PipelineContext } from '../types'
 import type { ExtractResult } from './extract'
-import { streamToBuffer, bufferToUtf8 } from '../node-utils'
-import { MAX_CONTENT_CHUNK_SIZE, MAX_CONTENT_CHUNKS, MAX_CONTENT_DOWNLOAD_SIZE } from '@/config'
+import { streamToBuffer, streamUtf8Lines, bufferToUtf8 } from '../node-utils'
+import { MAX_CONTENT_CHUNK_SIZE, MAX_CONTENT_CHUNKS } from '@/config'
 
 export interface IndexContentResult {
   contentIndexed: boolean
@@ -26,6 +27,7 @@ export interface IndexContentResult {
 
 /**
  * Extract text from the resource and index it into the search engine.
+ * Text formats are streamed line-by-line to avoid loading the entire file into memory.
  * Returns metadata about the indexing, or null if the format is not indexable.
  */
 export async function executeIndexContent(
@@ -38,73 +40,170 @@ export async function executeIndexContent(
 ): Promise<IndexContentResult | null> {
   const normalizedFormat = format?.toLowerCase() ?? null
 
-  // Determine content type
   const contentType = getContentType(normalizedFormat)
   if (!contentType) {
-    return null // Not indexable (PDF, Office, etc.)
+    return null
   }
 
-  // Get resource metadata for the search document
   const res = await ctx.getResource(resourceId)
   if (!res) return null
 
-  let extractedText: string
-
   if (contentType === 'manifest') {
-    // ZIP: read manifest JSON from preview key
-    if (!extractResult?.previewKey) return null
-    const manifestStream = await ctx.storage.download(extractResult.previewKey)
-    const manifestBuf = await streamToBuffer(manifestStream, MAX_CONTENT_DOWNLOAD_SIZE)
-    const manifest = JSON.parse(manifestBuf.toString('utf-8'))
-    // Extract file paths as searchable text
-    const paths = (manifest.entries ?? []).map((e: { path: string }) => e.path).join('\n')
-    extractedText = paths
-  } else {
-    // Text formats: download original file
-    const stream = await ctx.storage.download(storageKey)
-    const buf = await streamToBuffer(stream, MAX_CONTENT_DOWNLOAD_SIZE)
-    const encoding = extractResult?.encoding ?? 'UTF8'
-    extractedText = bufferToUtf8(buf, encoding)
-
-    // Strip HTML tags for HTML/HTM
-    if (normalizedFormat === 'html' || normalizedFormat === 'htm') {
-      extractedText = extractedText
-        .replace(/<[^>]*>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-    }
+    return indexManifest(resourceId, packageId, contentType, extractResult, ctx)
   }
 
-  const originalSize = Buffer.byteLength(extractedText, 'utf-8')
+  return indexTextStream(resourceId, packageId, storageKey, normalizedFormat!, contentType, extractResult, ctx)
+}
 
-  const chunks = splitIntoChunks(extractedText, MAX_CONTENT_CHUNK_SIZE, MAX_CONTENT_CHUNKS)
-  const truncated = originalSize > MAX_CONTENT_CHUNK_SIZE * MAX_CONTENT_CHUNKS
+/** Index ZIP manifest (small JSON, loaded fully) */
+async function indexManifest(
+  resourceId: string,
+  packageId: string,
+  contentType: ContentType,
+  extractResult: ExtractResult | null,
+  ctx: PipelineContext
+): Promise<IndexContentResult | null> {
+  if (!extractResult?.previewKey) return null
+
+  const manifestStream = await ctx.storage.download(extractResult.previewKey)
+  const manifestBuf = await streamToBuffer(manifestStream)
+  const manifest = JSON.parse(manifestBuf.toString('utf-8'))
+  const paths = (manifest.entries ?? []).map((e: { path: string }) => e.path).join('\n')
+
+  const originalSize = Buffer.byteLength(paths, 'utf-8')
 
   await ctx.deleteContent(resourceId)
 
-  let totalIndexedSize = 0
-  for (let i = 0; i < chunks.length; i++) {
-    const doc: ContentDoc = {
-      resourceId,
-      packageId,
-      extractedText: chunks[i],
-      contentType,
-      chunkIndex: i,
-      totalChunks: chunks.length,
-      contentTruncated: truncated,
-      contentOriginalSize: originalSize,
-    }
-    await ctx.indexContent(doc)
-    totalIndexedSize += Buffer.byteLength(chunks[i], 'utf-8')
+  const doc: ContentDoc = {
+    resourceId,
+    packageId,
+    extractedText: paths,
+    contentType,
+    chunkIndex: 0,
+    chunkSize: originalSize,
   }
+  await ctx.indexContent(doc)
 
   return {
     contentIndexed: true,
     contentType,
     contentOriginalSize: originalSize,
-    contentIndexedSize: totalIndexedSize,
+    contentIndexedSize: originalSize,
+    contentTruncated: false,
+    contentChunks: 1,
+  }
+}
+
+/** Stream text content line-by-line, chunking and indexing incrementally */
+async function indexTextStream(
+  resourceId: string,
+  packageId: string,
+  storageKey: string,
+  format: string,
+  contentType: ContentType,
+  extractResult: ExtractResult | null,
+  ctx: PipelineContext
+): Promise<IndexContentResult> {
+  const stream = await ctx.storage.download(storageKey)
+  const encoding = extractResult?.encoding ?? 'UTF8'
+  const isHtml = format === 'html' || format === 'htm'
+  const isUtf8 = encoding === 'UTF8' || encoding === 'ASCII' || encoding === 'UNKNOWN'
+
+  // Non-UTF-8: buffer entire file and convert (stateful encodings need full context)
+  let lines: AsyncIterable<string> | Iterable<string>
+  if (isUtf8) {
+    lines = streamUtf8Lines(stream)
+  } else {
+    const buf = await streamToBuffer(stream)
+    const text = bufferToUtf8(buf, encoding)
+    lines = text.split('\n')
+  }
+
+  await ctx.deleteContent(resourceId)
+
+  let chunkLines: string[] = []
+  let chunkBytes = 0
+  let chunkIndex = 0
+  let totalOriginalBytes = 0
+  let totalIndexedBytes = 0
+  let truncated = false
+
+  async function flushChunk() {
+    const text = chunkLines.join('\n')
+    const textBytes = Buffer.byteLength(text, 'utf-8')
+
+    const doc: ContentDoc = {
+      resourceId,
+      packageId,
+      extractedText: text,
+      contentType,
+      chunkIndex,
+      chunkSize: textBytes,
+    }
+    await ctx.indexContent(doc)
+
+    totalIndexedBytes += textBytes
+    chunkIndex++
+    chunkLines = []
+    chunkBytes = 0
+  }
+
+  let lineCount = 0
+  for await (const rawLine of lines) {
+    let line = rawLine
+    if (isHtml) {
+      line = line.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+      if (!line) continue
+    }
+
+    const lineBytes = Buffer.byteLength(line, 'utf-8')
+    totalOriginalBytes += lineBytes + (lineCount > 0 ? 1 : 0) // +1 for newline separator
+    lineCount++
+
+    if (chunkIndex >= MAX_CONTENT_CHUNKS) {
+      truncated = true
+      continue // keep counting totalOriginalBytes but don't index
+    }
+
+    const lineBytesWithSep = lineBytes + (chunkLines.length > 0 ? 1 : 0)
+    if (chunkBytes + lineBytesWithSep > MAX_CONTENT_CHUNK_SIZE && chunkLines.length > 0) {
+      await flushChunk()
+      if (chunkIndex >= MAX_CONTENT_CHUNKS) {
+        truncated = true
+        continue
+      }
+    }
+
+    if (lineBytes > MAX_CONTENT_CHUNK_SIZE) {
+      if (chunkLines.length > 0) {
+        await flushChunk()
+        if (chunkIndex >= MAX_CONTENT_CHUNKS) {
+          truncated = true
+          continue
+        }
+      }
+      chunkLines.push(truncateToByteLimit(line, MAX_CONTENT_CHUNK_SIZE))
+      chunkBytes = MAX_CONTENT_CHUNK_SIZE
+      await flushChunk()
+      continue
+    }
+
+    chunkLines.push(line)
+    chunkBytes += lineBytesWithSep
+  }
+
+  // Flush remaining lines
+  if (chunkLines.length > 0 && chunkIndex < MAX_CONTENT_CHUNKS) {
+    await flushChunk()
+  }
+
+  return {
+    contentIndexed: chunkIndex > 0,
+    contentType,
+    contentOriginalSize: totalOriginalBytes,
+    contentIndexedSize: totalIndexedBytes,
     contentTruncated: truncated,
-    contentChunks: chunks.length,
+    contentChunks: chunkIndex,
   }
 }
 
@@ -124,7 +223,6 @@ function getContentType(format: string | null): ContentType | null {
 export function splitIntoChunks(text: string, maxChunkBytes: number, maxChunks: number): string[] {
   const totalBytes = Buffer.byteLength(text, 'utf-8')
 
-  // Small enough for a single chunk
   if (totalBytes <= maxChunkBytes) {
     return [text]
   }
@@ -135,18 +233,15 @@ export function splitIntoChunks(text: string, maxChunkBytes: number, maxChunks: 
   let currentBytes = 0
 
   for (const line of lines) {
-    const lineBytes = Buffer.byteLength(line, 'utf-8') + 1 // +1 for newline
+    const lineBytes = Buffer.byteLength(line, 'utf-8') + 1
 
     if (currentBytes + lineBytes > maxChunkBytes && currentLines.length > 0) {
-      // Flush current chunk
       chunks.push(currentLines.join('\n'))
       if (chunks.length >= maxChunks) return chunks
-
       currentLines = []
       currentBytes = 0
     }
 
-    // Handle single line exceeding chunk size: truncate it
     if (lineBytes > maxChunkBytes) {
       if (currentLines.length > 0) {
         chunks.push(currentLines.join('\n'))
@@ -163,7 +258,6 @@ export function splitIntoChunks(text: string, maxChunkBytes: number, maxChunks: 
     currentBytes += lineBytes
   }
 
-  // Flush remaining
   if (currentLines.length > 0 && chunks.length < maxChunks) {
     chunks.push(currentLines.join('\n'))
   }

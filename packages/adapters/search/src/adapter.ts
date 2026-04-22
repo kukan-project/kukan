@@ -47,12 +47,8 @@ export interface ContentDoc {
   contentType: ContentType
   /** Zero-based chunk index */
   chunkIndex: number
-  /** Total number of chunks for this resource */
-  totalChunks: number
-  /** Whether the full text was truncated (exceeded max chunks) */
-  contentTruncated?: boolean
-  /** Original text size in bytes (full resource, before chunking) */
-  contentOriginalSize?: number
+  /** Size of this chunk in bytes */
+  chunkSize?: number
 }
 
 /** Maximum matched resources returned per package across all search adapters.

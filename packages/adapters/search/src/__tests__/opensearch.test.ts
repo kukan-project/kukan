@@ -580,7 +580,7 @@ describe('OpenSearchAdapter', () => {
   })
 
   describe('indexContent', () => {
-    it('should use resourceId as doc id for single-chunk content', async () => {
+    it('should use resourceId_chunk_N as doc id', async () => {
       mockClient.index.mockResolvedValue({ body: {} })
 
       await adapter.indexContent({
@@ -589,22 +589,20 @@ describe('OpenSearchAdapter', () => {
         extractedText: 'some text content',
         contentType: 'text',
         chunkIndex: 0,
-        totalChunks: 1,
       })
 
       expect(mockClient.index).toHaveBeenCalledWith({
         index: 'kukan-contents',
-        id: 'res-1',
+        id: 'res-1_chunk_0',
         body: expect.objectContaining({
           resourceId: 'res-1',
           chunkIndex: 0,
-          totalChunks: 1,
         }),
         refresh: 'wait_for',
       })
     })
 
-    it('should use resourceId_chunk_N as doc id for multi-chunk content', async () => {
+    it('should increment chunk index in doc id', async () => {
       mockClient.index.mockResolvedValue({ body: {} })
 
       await adapter.indexContent({
@@ -613,7 +611,6 @@ describe('OpenSearchAdapter', () => {
         extractedText: 'chunk 2 content',
         contentType: 'tabular',
         chunkIndex: 1,
-        totalChunks: 3,
       })
 
       expect(mockClient.index).toHaveBeenCalledWith({
@@ -622,7 +619,6 @@ describe('OpenSearchAdapter', () => {
         body: expect.objectContaining({
           resourceId: 'res-1',
           chunkIndex: 1,
-          totalChunks: 3,
         }),
         refresh: 'wait_for',
       })

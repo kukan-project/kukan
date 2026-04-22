@@ -188,9 +188,7 @@ export class OpenSearchAdapter implements SearchAdapter {
               extractedText: { type: 'text', analyzer: 'kuromoji_analyzer' },
               contentType: { type: 'keyword' },
               chunkIndex: { type: 'integer' },
-              totalChunks: { type: 'integer' },
-              contentTruncated: { type: 'boolean' },
-              contentOriginalSize: { type: 'integer' },
+              chunkSize: { type: 'integer' },
             },
           },
         },
@@ -215,8 +213,12 @@ export class OpenSearchAdapter implements SearchAdapter {
     } catch (err: unknown) {
       if (!isNotFoundError(err)) throw err
     }
+    // Re-create only the deleted index (not all indices) to avoid race conditions
+    // when multiple deleteAll* are called in parallel via Promise.all
     this.initialized = false
-    await this.ensureIndex()
+    if (index === this.packagesIndex) await this.ensurePackagesIndex()
+    else if (index === this.resourcesIndex) await this.ensureResourcesIndex()
+    else if (index === this.contentsIndex) await this.ensureContentsIndex()
   }
 
   // ------------------------------------------------------------------
@@ -305,8 +307,7 @@ export class OpenSearchAdapter implements SearchAdapter {
 
   async indexContent(doc: ContentDoc): Promise<void> {
     await this.ensureIndex()
-    const docId =
-      doc.totalChunks === 1 ? doc.resourceId : `${doc.resourceId}_chunk_${doc.chunkIndex}`
+    const docId = `${doc.resourceId}_chunk_${doc.chunkIndex}`
     await this.client.index({
       index: this.contentsIndex,
       id: docId,
@@ -718,8 +719,9 @@ export class OpenSearchAdapter implements SearchAdapter {
       }
     }
 
-    // Group content hits by packageId
+    // Group content hits by packageId, deduplicating by resourceId
     const contentByPackage = new Map<string, MatchedResource[]>()
+    const contentByResource = new Map<string, MatchedResource>()
 
     for (const hit of contentHits) {
       const src = hit._source
@@ -739,31 +741,43 @@ export class OpenSearchAdapter implements SearchAdapter {
         continue
       }
 
-      // New resource match (content only) — metadata will be filled below
+      // Deduplicate by resourceId: merge snippets from multiple chunks into one MatchedResource
+      const existingInContent = contentByResource.get(resourceId)
+      if (existingInContent) {
+        if (contentSnippets) {
+          existingInContent.contentSnippets = [
+            ...(existingInContent.contentSnippets ?? []),
+            ...contentSnippets,
+          ].slice(0, 3) // cap at 3 snippets
+        }
+        continue
+      }
+
       const matched: MatchedResource = {
         id: resourceId,
         ...(contentSnippets && { contentSnippets }),
         matchSource: 'content',
       }
 
+      contentByResource.set(resourceId, matched)
       if (!contentByPackage.has(pkgId)) contentByPackage.set(pkgId, [])
       contentByPackage.get(pkgId)!.push(matched)
     }
 
     // Fetch resource metadata (name, description, format) for content-only matches
-    const allContentMatches = [...contentByPackage.values()].flat()
-    const contentOnlyResources = allContentMatches.filter((m) => m.name === undefined)
-    if (contentOnlyResources.length > 0) {
+    const contentOnlyResourceIds = [...contentByResource.keys()].filter(
+      (id) => contentByResource.get(id)!.name === undefined
+    )
+    if (contentOnlyResourceIds.length > 0) {
       try {
-        const resourceLookup = new Map(contentOnlyResources.map((m) => [m.id, m]))
         const resMget = await this.client.mget({
           index: this.resourcesIndex,
-          body: { ids: [...resourceLookup.keys()] },
+          body: { ids: contentOnlyResourceIds },
         })
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         for (const doc of resMget.body.docs as any[]) {
           if (!doc.found) continue
-          const mr = resourceLookup.get(doc._id)
+          const mr = contentByResource.get(doc._id)
           if (mr) {
             mr.name = doc._source.name
             mr.description = doc._source.description

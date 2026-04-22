@@ -232,9 +232,6 @@ export default function AdminSearchPage() {
                 </span>
               )}
             </CardTitle>
-            {activeTab === 'contents' && (
-              <p className="text-xs text-muted-foreground">{t('contentSizeNote')}</p>
-            )}
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -273,7 +270,7 @@ export default function AdminSearchPage() {
                       <TableHead className="w-[100px]">{t('colSize')}</TableHead>
                     )}
                     {activeTab === 'contents' && (
-                      <TableHead className="w-[80px]">{t('colContent')}</TableHead>
+                      <TableHead className="w-[60px]">Index</TableHead>
                     )}
                   </TableRow>
                 </TableHeader>
@@ -313,26 +310,16 @@ export default function AdminSearchPage() {
                       )}
                       {activeTab === 'contents' && (
                         <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                          {typeof item.source.contentOriginalSize === 'number'
-                            ? formatBytes(item.source.contentOriginalSize as number)
+                          {typeof item.source.chunkSize === 'number'
+                            ? formatBytes(item.source.chunkSize as number)
                             : '-'}
                         </TableCell>
                       )}
                       {activeTab === 'contents' && (
-                        <TableCell className="flex flex-wrap gap-1">
-                          {typeof item.source.totalChunks === 'number' && (
-                            <Badge variant="outline" className="text-xs">
-                              {(item.source.chunkIndex as number) + 1}/{item.source.totalChunks}
-                            </Badge>
-                          )}
-                          {typeof item.source.contentTruncated === 'boolean' && (
-                            <Badge
-                              variant={item.source.contentTruncated ? 'destructive' : 'secondary'}
-                              className="text-xs"
-                            >
-                              {item.source.contentTruncated ? t('truncated') : t('full')}
-                            </Badge>
-                          )}
+                        <TableCell className="text-xs text-muted-foreground">
+                          {typeof item.source.chunkIndex === 'number'
+                            ? item.source.chunkIndex
+                            : '-'}
                         </TableCell>
                       )}
                     </TableRow>

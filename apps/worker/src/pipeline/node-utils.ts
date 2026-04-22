@@ -86,6 +86,29 @@ export async function streamToBuffer(stream: Readable, maxBytes?: number): Promi
   return Buffer.concat(chunks)
 }
 
+/** Yield lines from a UTF-8 stream without loading the entire file into memory.
+ *  Uses StringDecoder to handle multi-byte characters split across chunk boundaries. */
+export async function* streamUtf8Lines(stream: Readable): AsyncGenerator<string> {
+  const { StringDecoder } = await import('node:string_decoder')
+  const decoder = new StringDecoder('utf-8')
+  let leftover = ''
+
+  for await (const chunk of stream) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    const text = decoder.write(buf)
+    const parts = (leftover + text).split('\n')
+    leftover = parts.pop()!
+    for (const line of parts) {
+      yield line
+    }
+  }
+
+  const remaining = decoder.end()
+  if (remaining || leftover) {
+    yield leftover + remaining
+  }
+}
+
 /** Write a Readable stream to a temp file and return its path */
 export async function streamToTempFile(stream: Readable): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'kukan-'))

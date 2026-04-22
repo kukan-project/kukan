@@ -34,9 +34,6 @@ export const MAX_CONTENT_CHUNK_SIZE = 1024 * 1024
 /** Maximum number of chunks per resource */
 export const MAX_CONTENT_CHUNKS = 100
 
-/** Maximum bytes to download from storage for text extraction (2 MB) */
-export const MAX_CONTENT_DOWNLOAD_SIZE = 2 * 1024 * 1024
-
 // ── Health Check ──
 
 /** Number of resources to check per cron tick */

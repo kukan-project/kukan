@@ -232,13 +232,14 @@ describe('executeIndexContent', () => {
         ctx
       )
 
+      expect(result).not.toBeNull()
       expect(result!.contentTruncated).toBe(false)
       expect(result!.contentChunks).toBe(1)
-      expect(result!.contentOriginalSize).toBe(result!.contentIndexedSize)
+      expect(ctx.indexContent).toHaveBeenCalledTimes(1)
 
       const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
       expect(indexedDoc.chunkIndex).toBe(0)
-      expect(indexedDoc.totalChunks).toBe(1)
+      expect(indexedDoc.extractedText).toBe(smallContent)
     })
 
     it('should set chunk metadata for single-chunk content', async () => {
@@ -257,7 +258,7 @@ describe('executeIndexContent', () => {
       expect(result!.contentChunks).toBe(1)
       const doc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
       expect(doc.chunkIndex).toBe(0)
-      expect(doc.totalChunks).toBe(1)
+      expect(doc.extractedText).toBe('small')
     })
 
     it('should delete existing content before re-indexing', async () => {
