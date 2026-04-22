@@ -169,10 +169,10 @@ adminRouter.post('/reindex', async (c) => {
   const body = await c.req.json().catch(() => ({}))
   const includeContent = body.includeContent === true
 
-  // Clear existing indices (contents only when reprocessing)
-  const deletes = [search.deleteAllPackages(), search.deleteAllResources()]
-  if (includeContent) deletes.push(search.deleteAllContents())
-  await Promise.all(deletes)
+  // Clear existing indices sequentially to avoid overloading single-node OpenSearch
+  await search.deleteAllPackages()
+  await search.deleteAllResources()
+  if (includeContent) await search.deleteAllContents()
 
   // Fetch all active package IDs
   const packages = await db
