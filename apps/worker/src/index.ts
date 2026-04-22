@@ -15,7 +15,6 @@ import { OpenSearchAdapter } from '@kukan/search-adapter'
 import { processResource } from './pipeline/process-resource'
 import { buildPipelineContext } from './pipeline/build-context'
 import { startHealthCheckScheduler } from './health-check/scheduler'
-import { MAX_CONTENT_CHUNK_SIZE } from './config'
 
 // Skip dotenv in production (env vars injected by container/ECS)
 if (process.env.NODE_ENV !== 'production') {
@@ -113,7 +112,6 @@ const search =
     ? new OpenSearchAdapter({
         endpoint: env.OPENSEARCH_URL,
         replicas: env.OPENSEARCH_REPLICAS,
-        contentChunkSize: MAX_CONTENT_CHUNK_SIZE,
       })
     : undefined
 

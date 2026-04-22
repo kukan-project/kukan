@@ -47,8 +47,6 @@ export interface OpenSearchConfig {
   indexPrefix?: string
   /** Number of replicas per index shard (default: 0). Set to 1+ for multi-node clusters. */
   replicas?: number
-  /** Maximum content chunk size in bytes. Used to set highlight.max_analyzed_offset. */
-  contentChunkSize?: number
   auth?: {
     username: string
     password: string
@@ -61,7 +59,6 @@ export class OpenSearchAdapter implements SearchAdapter {
   private resourcesIndex: string
   private contentsIndex: string
   private replicas: number
-  private highlightMaxAnalyzedOffset: number
   private initialized = false
 
   constructor(config: OpenSearchConfig) {
@@ -76,8 +73,6 @@ export class OpenSearchAdapter implements SearchAdapter {
     this.resourcesIndex = `${prefix}-resources`
     this.contentsIndex = `${prefix}-contents`
     this.replicas = config.replicas ?? 0
-    // OpenSearch highlight.max_analyzed_offset must be >= chunk size
-    this.highlightMaxAnalyzedOffset = Math.ceil((config.contentChunkSize ?? 1_000_000) * 1.1)
   }
 
   // ------------------------------------------------------------------
@@ -180,7 +175,6 @@ export class OpenSearchAdapter implements SearchAdapter {
         body: {
           settings: {
             number_of_replicas: this.replicas,
-            'highlight.max_analyzed_offset': this.highlightMaxAnalyzedOffset,
             ...OpenSearchAdapter.KUROMOJI_ANALYSIS,
           },
           mappings: {
@@ -498,6 +492,17 @@ export class OpenSearchAdapter implements SearchAdapter {
       },
     }
 
+    const contentHighlight = {
+      fields: {
+        extractedText: {
+          fragment_size: 150,
+          number_of_fragments: 3,
+          pre_tags: ['<mark>'],
+          post_tags: ['</mark>'],
+        },
+      },
+    }
+
     const contentsBody = {
       from: 0,
       size: MAX_MATCHED_RESOURCES_PER_PACKAGE,
@@ -506,14 +511,12 @@ export class OpenSearchAdapter implements SearchAdapter {
           extractedText: { query: query.q!, operator: 'and' as const },
         },
       },
-      highlight: {
-        fields: {
-          extractedText: {
-            fragment_size: 150,
-            number_of_fragments: 3,
-            pre_tags: ['<mark>'],
-            post_tags: ['</mark>'],
-          },
+      collapse: {
+        field: 'resourceId',
+        inner_hits: {
+          name: 'top_chunks',
+          size: 3,
+          highlight: contentHighlight,
         },
       },
     }
@@ -710,7 +713,7 @@ export class OpenSearchAdapter implements SearchAdapter {
     }
   }
 
-  /** Merge content hits into matchedResources on existing items */
+  /** Merge content hits (collapsed by resourceId with inner_hits) into matchedResources */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async mergeContentHits(result: SearchResult, contentHits: any[]): Promise<void> {
     // Build a lookup of existing matchedResources by resource ID
@@ -721,7 +724,7 @@ export class OpenSearchAdapter implements SearchAdapter {
       }
     }
 
-    // Group content hits by packageId, deduplicating by resourceId
+    // Each hit is already one per resource (collapsed). Collect snippets from inner_hits.
     const contentByPackage = new Map<string, MatchedResource[]>()
     const contentByResource = new Map<string, MatchedResource>()
 
@@ -730,34 +733,32 @@ export class OpenSearchAdapter implements SearchAdapter {
       const resourceId = src.resourceId as string
       const pkgId = src.packageId as string
 
-      const rawHighlights = hit.highlight?.extractedText as string[] | undefined
-      const contentSnippets = rawHighlights?.length
-        ? rawHighlights.map(sanitizeHighlight)
-        : undefined
+      // Collect snippets from inner_hits (top 3 chunks per resource)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const innerHits = (hit.inner_hits?.top_chunks?.hits?.hits ?? []) as any[]
+      const contentSnippets: string[] = []
+      for (const inner of innerHits) {
+        const fragments = inner.highlight?.extractedText as string[] | undefined
+        if (fragments) {
+          for (const f of fragments) {
+            contentSnippets.push(sanitizeHighlight(f))
+            if (contentSnippets.length >= 3) break
+          }
+        }
+        if (contentSnippets.length >= 3) break
+      }
 
       // If this resource already has a metadata match, add content snippets to it
       const existing = existingMatched.get(resourceId)
       if (existing) {
-        existing.contentSnippets = contentSnippets
+        if (contentSnippets.length > 0) existing.contentSnippets = contentSnippets
         existing.matchSource = 'content'
-        continue
-      }
-
-      // Deduplicate by resourceId: merge snippets from multiple chunks into one MatchedResource
-      const existingInContent = contentByResource.get(resourceId)
-      if (existingInContent) {
-        if (contentSnippets) {
-          existingInContent.contentSnippets = [
-            ...(existingInContent.contentSnippets ?? []),
-            ...contentSnippets,
-          ].slice(0, 3) // cap at 3 snippets
-        }
         continue
       }
 
       const matched: MatchedResource = {
         id: resourceId,
-        ...(contentSnippets && { contentSnippets }),
+        ...(contentSnippets.length > 0 && { contentSnippets }),
         matchSource: 'content',
       }
 

@@ -14,7 +14,7 @@ import type { ContentDoc } from '@kukan/search-adapter'
 import type { PipelineContext } from '../types'
 import type { ExtractResult } from './extract'
 import { streamToBuffer, streamUtf8Lines, bufferToUtf8 } from '../node-utils'
-import { MAX_CONTENT_CHUNK_SIZE, MAX_CONTENT_CHUNKS } from '@/config'
+import { MAX_CONTENT_CHUNK_SIZE } from '@/config'
 
 export interface IndexContentResult {
   contentIndexed: boolean
@@ -126,7 +126,6 @@ async function indexTextStream(
   let chunkIndex = 0
   let totalOriginalBytes = 0
   let totalIndexedBytes = 0
-  let truncated = false
 
   async function flushChunk() {
     const text = chunkLines.join('\n')
@@ -160,27 +159,14 @@ async function indexTextStream(
     totalOriginalBytes += lineBytes + (lineCount > 0 ? 1 : 0) // +1 for newline separator
     lineCount++
 
-    if (chunkIndex >= MAX_CONTENT_CHUNKS) {
-      truncated = true
-      continue // keep counting totalOriginalBytes but don't index
-    }
-
     const lineBytesWithSep = lineBytes + (chunkLines.length > 0 ? 1 : 0)
     if (chunkBytes + lineBytesWithSep > MAX_CONTENT_CHUNK_SIZE && chunkLines.length > 0) {
       await flushChunk()
-      if (chunkIndex >= MAX_CONTENT_CHUNKS) {
-        truncated = true
-        continue
-      }
     }
 
     if (lineBytes > MAX_CONTENT_CHUNK_SIZE) {
       if (chunkLines.length > 0) {
         await flushChunk()
-        if (chunkIndex >= MAX_CONTENT_CHUNKS) {
-          truncated = true
-          continue
-        }
       }
       chunkLines.push(truncateToByteLimit(line, MAX_CONTENT_CHUNK_SIZE))
       chunkBytes = MAX_CONTENT_CHUNK_SIZE
@@ -193,7 +179,7 @@ async function indexTextStream(
   }
 
   // Flush remaining lines
-  if (chunkLines.length > 0 && chunkIndex < MAX_CONTENT_CHUNKS) {
+  if (chunkLines.length > 0) {
     await flushChunk()
   }
 
@@ -202,7 +188,7 @@ async function indexTextStream(
     contentType,
     contentOriginalSize: totalOriginalBytes,
     contentIndexedSize: totalIndexedBytes,
-    contentTruncated: truncated,
+    contentTruncated: false,
     contentChunks: chunkIndex,
   }
 }

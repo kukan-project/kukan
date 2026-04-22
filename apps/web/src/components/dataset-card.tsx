@@ -171,7 +171,10 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                                 <p
                                   key={i}
                                   className={`line-clamp-3 rounded border border-primary/20 bg-primary/5 px-2 py-1.5 text-xs text-muted-foreground ${HIGHLIGHT_MARK}`}
-                                  dangerouslySetInnerHTML={{ __html: snippet }}
+                                  suppressHydrationWarning
+                                  dangerouslySetInnerHTML={{
+                                    __html: snippet.replace(/\n/g, ' '),
+                                  }}
                                 />
                               ))}
                             </div>

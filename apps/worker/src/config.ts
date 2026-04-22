@@ -28,11 +28,8 @@ export const FETCH_RATE_LIMIT_REQUEUE_DELAY_S = 2
 
 // ── Content Indexing ──
 
-/** Maximum text size per chunk for content indexing (1 MB) */
-export const MAX_CONTENT_CHUNK_SIZE = 1024 * 1024
-
-/** Maximum number of chunks per resource */
-export const MAX_CONTENT_CHUNKS = 100
+/** Maximum text size per chunk for content indexing (100 KB) */
+export const MAX_CONTENT_CHUNK_SIZE = 100 * 1024
 
 // ── Health Check ──
 

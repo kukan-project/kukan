@@ -84,7 +84,7 @@ type IndexTab = 'packages' | 'resources' | 'contents'
 const MAX_FETCH_SIZE = 100 * 1024 * 1024
 
 /** Must match apps/worker/src/config.ts MAX_CONTENT_CHUNK_SIZE */
-const MAX_CONTENT_CHUNK_SIZE = 1024 * 1024
+const MAX_CONTENT_CHUNK_SIZE = 100 * 1024
 
 const PAGE_SIZE = 20
 
