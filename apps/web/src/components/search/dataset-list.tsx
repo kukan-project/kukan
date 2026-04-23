@@ -45,8 +45,11 @@ export function DatasetList({ initialData }: Props) {
 
   const hasQuery = q.length > 0
 
-  // Use SSR data only on initial render with no query and no filters/pagination
-  const isInitialSsr = !hasQuery && paramsKey === '' && initialData !== null
+  // Track whether this is the very first render with SSR data
+  const ssrUsed = useRef(false)
+  const isInitialSsr = !ssrUsed.current && !hasQuery && paramsKey === '' && initialData !== null
+  if (isInitialSsr) ssrUsed.current = true
+
   const [data, setData] = useState<DatasetData | null>(isInitialSsr ? initialData : null)
   const [loading, setLoading] = useState(!isInitialSsr)
 
