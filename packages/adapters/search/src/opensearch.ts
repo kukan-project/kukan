@@ -36,7 +36,6 @@ const RESOURCE_BOOST = 0.4
 const CONTENT_HIGHLIGHT = {
   fields: {
     extractedText: {
-      type: 'fvh' as const,
       fragment_size: 300,
       number_of_fragments: 1,
       pre_tags: ['<mark>'],
@@ -197,7 +196,7 @@ export class OpenSearchAdapter implements SearchAdapter {
               extractedText: {
                 type: 'text',
                 analyzer: 'kuromoji_analyzer',
-                term_vector: 'with_positions_offsets',
+                index_options: 'offsets',
               },
               contentType: { type: 'keyword' },
               chunkIndex: { type: 'integer' },
