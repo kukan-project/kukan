@@ -92,7 +92,11 @@ describe('OpenSearchAdapter', () => {
 
       const contentsCreateCall = mockClient.indices.create.mock.calls[2][0]
       const props = contentsCreateCall.body.mappings.properties
-      expect(props.extractedText).toEqual({ type: 'text', analyzer: 'kuromoji_analyzer' })
+      expect(props.extractedText).toEqual({
+        type: 'text',
+        analyzer: 'kuromoji_analyzer',
+        term_vector: 'with_positions_offsets',
+      })
       expect(props.contentType.type).toBe('keyword')
       expect(props.packageId.type).toBe('keyword')
     })
