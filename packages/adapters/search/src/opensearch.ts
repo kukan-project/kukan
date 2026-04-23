@@ -517,6 +517,10 @@ export class OpenSearchAdapter implements SearchAdapter {
       collapse: { field: 'resourceId' },
     }
 
+    const _t: Record<string, number> = {}
+    const _mark = (label: string) => { _t[label] = Date.now() }
+
+    _mark('start')
     const msearchResponse = await this.client.msearch({
       body: [
         { index: this.packagesIndex },
@@ -528,6 +532,7 @@ export class OpenSearchAdapter implements SearchAdapter {
       ],
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
+    _mark('msearch')
 
     const [packagesResult, resourcesResult, contentsResult] =
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -535,18 +540,21 @@ export class OpenSearchAdapter implements SearchAdapter {
 
     // Parse packages
     const result = this.parsePackagesResponse({ body: packagesResult }, query, offset, limit)
+    _mark('parse')
 
     // Parse resource metadata matches and merge
     const resourceHits = resourcesResult.hits?.hits ?? []
     if (resourceHits.length > 0) {
       await this.mergeResourceHits(result, resourceHits)
     }
+    _mark('mergeRes')
 
     // Stage 1: merge content matches (no highlights yet)
     const contentHits = contentsResult.hits?.hits ?? []
     if (contentHits.length > 0) {
       await this.mergeContentHits(result, contentHits)
     }
+    _mark('mergeContent')
 
     // Trim to page size before expensive highlight fetch
     if (result.items.length > limit) {
@@ -557,9 +565,26 @@ export class OpenSearchAdapter implements SearchAdapter {
       )
       result.items = result.items.slice(0, limit)
     }
+    _mark('trim')
 
     // Stage 2: fetch highlights only for resources in the final result page
+    const highlightResourceCount = result.items.reduce(
+      (n, item) => n + (item.matchedResources?.filter((r) => r.matchSource === 'content').length ?? 0), 0
+    )
     await this.fetchContentHighlights(result, query.q!)
+    _mark('highlights')
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[search-profile] q="${query.q}" ` +
+      `msearch=${_t.msearch - _t.start}ms ` +
+      `parse=${_t.parse - _t.msearch}ms ` +
+      `mergeRes=${_t.mergeRes - _t.parse}ms(${resourceHits.length}hits) ` +
+      `mergeContent=${_t.mergeContent - _t.mergeRes}ms(${contentHits.length}hits) ` +
+      `trim=${_t.trim - _t.mergeContent}ms(${result.items.length}items) ` +
+      `highlights=${_t.highlights - _t.trim}ms(${highlightResourceCount}resources) ` +
+      `total=${_t.highlights - _t.start}ms`
+    )
 
     return result
   }
@@ -761,6 +786,7 @@ export class OpenSearchAdapter implements SearchAdapter {
     const contentOnlyResourceIds = [...contentByResource.keys()].filter(
       (id) => contentByResource.get(id)!.name === undefined
     )
+    const _mc0 = Date.now()
     if (contentOnlyResourceIds.length > 0) {
       try {
         const resMget = await this.client.mget({
@@ -781,6 +807,8 @@ export class OpenSearchAdapter implements SearchAdapter {
         // Best-effort: display without metadata
       }
     }
+
+    const _mc1 = Date.now()
 
     // Attach content-only matches to existing items
     for (const item of result.items) {
@@ -812,6 +840,14 @@ export class OpenSearchAdapter implements SearchAdapter {
         // Best-effort: mget for content-only packages
       }
     }
+    const _mc2 = Date.now()
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[mergeContent-profile] ` +
+      `resMget=${_mc1 - _mc0}ms(${contentOnlyResourceIds.length}ids) ` +
+      `pkgMget=${_mc2 - _mc1}ms(${missingPkgIds.length}ids)`
+    )
   }
 
   /** Stage 2: fetch content highlights only for resources visible in the result page */
