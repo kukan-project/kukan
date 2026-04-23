@@ -90,16 +90,21 @@ OpenSearch のドキュメントサイズに関する実用上の制約:
 日本語テキスト 100KB ≈ 約 3〜5 万文字 ≈ A4 で 40〜60 ページ分。
 CSV なら数千行のヘッダー + データを十分カバーできる。
 
-### 決定: 100KB を上限とする
+### 決定: 100KB チャンク × ストリーム処理（更新: 2026-04-22）
 
-- `MAX_CONTENT_INDEX_SIZE = 100 * 1024`（100KB）
-- 100KB を超えるファイルは先頭 100KB で切り詰め
-- 切り詰め情報を `resource_pipeline.metadata` に記録:
+当初は 100KB 上限で切り詰める方式だったが、チャンク分割とストリーム処理に移行した。
+
+- `MAX_CONTENT_CHUNK_SIZE = 100 * 1024`（100KB / チャンク）
+- チャンク数制限なし（ファイルサイズ全体をカバー、`MAX_FETCH_SIZE` = 100MB が実質上限）
+- テキスト系フォーマットはストリーム処理で行単位読み取り（メモリ使用量 ~100KB）
+- 非 UTF-8 エンコーディングはバッファ変換にフォールバック
+- 100KB チャンクは kuromoji のハイライト処理がデフォルトの `max_analyzed_offset`（1MB）に収まる
+- メタデータを `resource_pipeline.metadata` に記録:
   - `contentIndexed`: boolean — インデックスされたか
   - `contentType`: string — `'tabular' | 'text' | 'manifest'`
-  - `contentOriginalSize`: number — 元テキストのバイト数
+  - `contentOriginalSize`: number — テキスト全体のバイト数
   - `contentIndexedSize`: number — 実際にインデックスしたバイト数
-  - `contentTruncated`: boolean — 切り詰められたか
+  - `contentChunks`: number — 作成したチャンク数
 
 ---
 
@@ -235,27 +240,30 @@ kukan-embeddings  → Embedding 用小チャンク（~500 tokens × N、knn_vect
 
 ### 段階的な移行パス
 
-1. **現在（Phase 4）**: 3 インデックス構成。`kukan-contents` は 1 リソース = 1 ドキュメント（100KB 切り詰め）
-2. **Phase 5a**: `kukan-contents` をチャンク分割（1 リソース = N ドキュメント）。大きな PDF/CSV に対応
-3. **Phase 5b**: `kukan-embeddings` を追加。AIAdapter で Embedding 生成。ハイブリッド検索（BM25 + kNN）
+1. ~~**Phase 4**: 3 インデックス構成。1 リソース = 1 ドキュメント（100KB 切り詰め）~~ → **実装済み（下記）**
+2. **Phase 5a**: `kukan-embeddings` を追加。AIAdapter で Embedding 生成。ハイブリッド検索（BM25 + kNN）
 
-各ステップで変更されるのは該当インデックスのみ。`kukan-packages` / `kukan-resources` は不変。
+### 決定（更新: 2026-04-22）
 
-### 決定
+Phase 4 でチャンク分割を導入済み:
 
-- 現時点では 3 インデックス分離 + 100KB 切り詰めを維持
-- チャンク分割は Phase 5 で Embedding と合わせて導入
-- `kukan-contents` と `kukan-embeddings` を分離する設計を前提とする
+- `kukan-contents` は 1 リソース = N ドキュメント（100KB チャンク × 無制限）
+- ストリーム処理で大きなファイル（100MB まで）にも対応
+- `collapse` でリソース単位の重複排除
+- 2 段階ハイライト（検索はハイライトなし → 表示対象のみハイライト取得）で性能確保
+- `kukan-embeddings` は Phase 5 で追加予定
 
 ---
 
 ## 実装概要
 
-1. Pipeline の Index ステップ（現在 no-op）を復活
-2. テキスト抽出 → OpenSearch `kukan-contents` インデックスに投入
+1. Pipeline の Index ステップでテキスト抽出 → 100KB チャンクに分割 → OpenSearch `kukan-contents` に投入
+2. テキスト系フォーマットは `streamUtf8Lines` でストリーム処理（メモリ効率）
 3. `kukan-packages` から nested resources を廃止、リソースメタデータは `kukan-resources` に移動
-4. 検索時は `msearch` で `kukan-packages` + `kukan-resources` + `kukan-contents` を並列クエリ、アプリ層でスコアマージ
-5. メタデータ再構築は `kukan-contents` に影響しない
+4. 検索は 2 段階:
+   - **Stage 1**: `msearch` で 3 インデックスを並列クエリ（コンテンツはハイライトなし、`collapse` by resourceId）
+   - **Stage 2**: ページサイズに切り詰め後、表示対象リソースのみ `collapse` + `inner_hits` でハイライト取得
+5. メタデータ再構築（reindex）は `kukan-contents` に影響しない（`includeContent` 指定時のみ削除・再構築）
 6. `postgres.ts` は変更最小限（新メソッドを no-op で実装、既存の DB 直接クエリは変更なし）
 
 ## 関連 ADR

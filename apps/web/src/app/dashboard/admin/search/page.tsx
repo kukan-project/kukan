@@ -328,9 +328,7 @@ export default function AdminSearchPage() {
                     {activeTab === 'contents' && (
                       <TableHead className="w-[80px]">{t('colContentType')}</TableHead>
                     )}
-                    {activeTab === 'contents' && (
-                      <TableHead className="w-[80px]">Chunks</TableHead>
-                    )}
+                    {activeTab === 'contents' && <TableHead className="w-[80px]">Chunks</TableHead>}
                     {activeTab === 'contents' && (
                       <TableHead className="w-[100px]">{t('colSize')}</TableHead>
                     )}
@@ -350,9 +348,7 @@ export default function AdminSearchPage() {
                               </span>
                               {item.resourceId}
                             </TableCell>
-                            <TableCell className="text-xs">
-                              {item.resourceName ?? '-'}
-                            </TableCell>
+                            <TableCell className="text-xs">{item.resourceName ?? '-'}</TableCell>
                             <TableCell>
                               <Badge variant="outline" className="text-xs">
                                 {item.contentType}
@@ -422,9 +418,7 @@ export default function AdminSearchPage() {
                           </TableCell>
                           {activeTab === 'packages' && (
                             <TableCell>
-                              {(item.source.title as string) ??
-                                (item.source.name as string) ??
-                                '-'}
+                              {(item.source.title as string) ?? (item.source.name as string) ?? '-'}
                             </TableCell>
                           )}
                           {activeTab === 'resources' && (

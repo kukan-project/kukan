@@ -234,7 +234,9 @@ describe('OpenSearchAdapter', () => {
 
       // mget for resource metadata (content-only match needs name/format)
       mockClient.mget.mockResolvedValueOnce({
-        body: { docs: [{ _id: 'res-1', found: true, _source: { name: 'data.csv', format: 'CSV' } }] },
+        body: {
+          docs: [{ _id: 'res-1', found: true, _source: { name: 'data.csv', format: 'CSV' } }],
+        },
       })
 
       // Stage 2: fetchContentHighlights calls client.search for highlights
@@ -793,9 +795,7 @@ describe('OpenSearchAdapter', () => {
                 inner_hits: {
                   top_chunks: {
                     hits: {
-                      hits: [
-                        { highlight: { extractedText: ['<mark>keyword</mark> found'] } },
-                      ],
+                      hits: [{ highlight: { extractedText: ['<mark>keyword</mark> found'] } }],
                     },
                   },
                 },
@@ -1007,13 +1007,17 @@ describe('OpenSearchAdapter', () => {
                 {
                   key: 'res-1',
                   doc_count: 3,
-                  sample: { hits: { hits: [{ _source: { packageId: 'pkg-1', contentType: 'tabular' } }] } },
+                  sample: {
+                    hits: { hits: [{ _source: { packageId: 'pkg-1', contentType: 'tabular' } }] },
+                  },
                   total_size: { value: 3000 },
                 },
                 {
                   key: 'res-2',
                   doc_count: 1,
-                  sample: { hits: { hits: [{ _source: { packageId: 'pkg-1', contentType: 'text' } }] } },
+                  sample: {
+                    hits: { hits: [{ _source: { packageId: 'pkg-1', contentType: 'text' } }] },
+                  },
                   total_size: { value: 500 },
                 },
               ],

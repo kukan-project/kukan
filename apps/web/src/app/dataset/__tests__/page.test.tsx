@@ -120,14 +120,11 @@ describe('DatasetsPage', () => {
     expect(screen.getByText('No datasets')).toBeInTheDocument()
   })
 
-  it('should show no-match message when query has no results', async () => {
-    vi.mocked(serverFetch).mockResolvedValue(
-      mockResponse({ items: [], total: 0, offset: 0, limit: 20, facets: sampleFacets })
-    )
-    const jsx = await DatasetsPage(makeSearchParams({ q: 'nonexistent' }))
+  it('should use CSR when query is present (no serverFetch)', async () => {
+    const jsx = await DatasetsPage(makeSearchParams({ q: 'test' }))
     render(jsx)
 
-    expect(screen.getByText('No datasets matching "nonexistent"')).toBeInTheDocument()
+    expect(serverFetch).not.toHaveBeenCalled()
   })
 
   it('should show pagination when total exceeds limit', async () => {
@@ -166,15 +163,14 @@ describe('DatasetsPage', () => {
     expect(screen.getByText('Filter by license')).toBeInTheDocument()
   })
 
-  it('should pass query parameters to API', async () => {
+  it('should pass filter parameters to SSR API when no query', async () => {
     vi.mocked(serverFetch).mockResolvedValue(
       mockResponse({ items: [], total: 0, offset: 0, limit: 20, facets: sampleFacets })
     )
-    await DatasetsPage(makeSearchParams({ q: 'test', organization: 'tokyo', offset: '20' }))
+    await DatasetsPage(makeSearchParams({ organization: 'tokyo', offset: '20' }))
 
     expect(serverFetch).toHaveBeenCalledTimes(1)
     const url = vi.mocked(serverFetch).mock.calls[0][0] as string
-    expect(url).toContain('q=test')
     expect(url).toContain('organization=tokyo')
     expect(url).toContain('offset=20')
     expect(url).toContain('include_facets=true')
@@ -185,9 +181,8 @@ describe('DatasetsPage', () => {
     const jsx = await DatasetsPage(makeSearchParams())
     render(jsx)
 
-    // Should show empty state, not throw
-    expect(screen.getByText('No datasets')).toBeInTheDocument()
-    expect(screen.getByText('0 items')).toBeInTheDocument()
+    // SSR failed → initialData=null → CSR fallback shows loading skeleton
+    expect(document.querySelector('.animate-pulse')).toBeInTheDocument()
   })
 
   it('should link dataset cards to detail page', async () => {

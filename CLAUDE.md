@@ -108,12 +108,15 @@ pnpm format        # Prettier フォーマット
 
 ### フロントエンド SSR / CSR 使い分け
 
-| 領域                                               | レンダリング | API クライアント                    | 理由                                   |
-| -------------------------------------------------- | ------------ | ----------------------------------- | -------------------------------------- |
-| 公開ページ（dataset, organization, group, search） | SSR          | `serverFetch`（`server-api.ts`）    | SEO・初回表示速度                      |
-| Dashboard layout（認証ガード）                     | SSR          | `getCurrentUser`（`server-api.ts`） | 未認証フラッシュ防止                   |
-| Dashboard 各ページ                                 | CSR          | `clientFetch`（`client-api.ts`）    | インタラクティブ性・ページ遷移の軽量化 |
-| ヘッダー                                           | SSR          | `getCurrentUser`（`server-api.ts`） | ユーザーメニュー表示                   |
+| 領域                                              | レンダリング | API クライアント                    | 理由                                          |
+| ------------------------------------------------- | ------------ | ----------------------------------- | --------------------------------------------- |
+| 公開一覧（dataset, organization, group）          | SSR          | `serverFetch`（`server-api.ts`）    | SEO・初回表示速度                             |
+| データセット詳細（dataset/[nameOrId]）            | SSR          | `serverFetch`（`server-api.ts`）    | SEO・OGP 対応                                 |
+| リソース詳細（dataset/.../resource/[resourceId]） | SSR          | `serverFetch`（`server-api.ts`）    | SEO・ダウンロードリンク                       |
+| データセット検索結果（dataset?q=...）             | CSR          | `clientFetch`（`client-api.ts`）    | OpenSearch 待ちを避け体感向上・クローラー制御 |
+| Dashboard layout（認証ガード）                    | SSR          | `getCurrentUser`（`server-api.ts`） | 未認証フラッシュ防止                          |
+| Dashboard 各ページ                                | CSR          | `clientFetch`（`client-api.ts`）    | インタラクティブ性・ページ遷移の軽量化        |
+| ヘッダー                                          | SSR          | `getCurrentUser`（`server-api.ts`） | ユーザーメニュー表示                          |
 
 - `server-api.ts` は `import 'server-only'` でクライアントバンドルへの混入を防止
 - Dashboard のユーザー情報は `UserProvider`（layout SSR → 子 CSR）で伝播、`useUser()` で参照

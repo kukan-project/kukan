@@ -139,7 +139,12 @@ adminRouter.get('/search/browse/:index', async (c) => {
     const result = await search.browseContentsByResource({ q, offset, limit })
     if (!result)
       return c.json(
-        { type: 'about:blank', title: 'Not Available', status: 404, detail: 'OpenSearch not enabled' },
+        {
+          type: 'about:blank',
+          title: 'Not Available',
+          status: 404,
+          detail: 'OpenSearch not enabled',
+        },
         404
       )
     return c.json(result)

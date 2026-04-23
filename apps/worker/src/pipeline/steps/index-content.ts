@@ -52,7 +52,15 @@ export async function executeIndexContent(
     return indexManifest(resourceId, packageId, contentType, extractResult, ctx)
   }
 
-  return indexTextStream(resourceId, packageId, storageKey, normalizedFormat!, contentType, extractResult, ctx)
+  return indexTextStream(
+    resourceId,
+    packageId,
+    storageKey,
+    normalizedFormat!,
+    contentType,
+    extractResult,
+    ctx
+  )
 }
 
 /** Index ZIP manifest (small JSON, loaded fully) */
@@ -151,7 +159,10 @@ async function indexTextStream(
   for await (const rawLine of lines) {
     let line = rawLine
     if (isHtml) {
-      line = line.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+      line = line
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
       if (!line) continue
     }
 

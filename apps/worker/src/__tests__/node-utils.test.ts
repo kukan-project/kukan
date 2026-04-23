@@ -190,7 +190,7 @@ describe('streamUtf8Lines', () => {
   it('should handle multi-byte characters split across chunks', async () => {
     // '東' = E6 9D B1 in UTF-8. Split it across two chunks.
     const chunk1 = Buffer.from([0x41, 0x0a, 0xe6, 0x9d]) // 'A\n' + first 2 bytes of '東'
-    const chunk2 = Buffer.from([0xb1, 0x0a, 0x42])        // last byte of '東' + '\nB'
+    const chunk2 = Buffer.from([0xb1, 0x0a, 0x42]) // last byte of '東' + '\nB'
 
     const stream = new Readable({
       read() {
