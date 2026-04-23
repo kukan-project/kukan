@@ -32,6 +32,18 @@ import { MAX_MATCHED_RESOURCES_PER_PACKAGE } from './adapter'
 /** Score multiplier applied to resource hits when merging with package hits */
 const RESOURCE_BOOST = 0.4
 
+/** Highlight config for content snippets (shared between search stages) */
+const CONTENT_HIGHLIGHT = {
+  fields: {
+    extractedText: {
+      fragment_size: 300,
+      number_of_fragments: 1,
+      pre_tags: ['<mark>'],
+      post_tags: ['</mark>'],
+    },
+  },
+}
+
 /** Check if an error is an OpenSearch 404 (not found) */
 function isNotFoundError(err: unknown): boolean {
   return Boolean(err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 404)
@@ -492,17 +504,7 @@ export class OpenSearchAdapter implements SearchAdapter {
       },
     }
 
-    const contentHighlight = {
-      fields: {
-        extractedText: {
-          fragment_size: 150,
-          number_of_fragments: 3,
-          pre_tags: ['<mark>'],
-          post_tags: ['</mark>'],
-        },
-      },
-    }
-
+    // Stage 1: content search WITHOUT highlight (fast — just match + collapse)
     const contentsBody = {
       from: 0,
       size: MAX_MATCHED_RESOURCES_PER_PACKAGE,
@@ -511,14 +513,8 @@ export class OpenSearchAdapter implements SearchAdapter {
           extractedText: { query: query.q!, operator: 'and' as const },
         },
       },
-      collapse: {
-        field: 'resourceId',
-        inner_hits: {
-          name: 'top_chunks',
-          size: 3,
-          highlight: contentHighlight,
-        },
-      },
+      _source: ['resourceId', 'packageId'],
+      collapse: { field: 'resourceId' },
     }
 
     const msearchResponse = await this.client.msearch({
@@ -546,11 +542,24 @@ export class OpenSearchAdapter implements SearchAdapter {
       await this.mergeResourceHits(result, resourceHits)
     }
 
-    // Parse content matches and merge
+    // Stage 1: merge content matches (no highlights yet)
     const contentHits = contentsResult.hits?.hits ?? []
     if (contentHits.length > 0) {
       await this.mergeContentHits(result, contentHits)
     }
+
+    // Trim to page size before expensive highlight fetch
+    if (result.items.length > limit) {
+      result.items.sort(
+        (a, b) =>
+          ((b as DatasetDoc & { _score?: number })._score ?? 0) -
+          ((a as DatasetDoc & { _score?: number })._score ?? 0)
+      )
+      result.items = result.items.slice(0, limit)
+    }
+
+    // Stage 2: fetch highlights only for resources in the final result page
+    await this.fetchContentHighlights(result, query.q!)
 
     return result
   }
@@ -713,10 +722,9 @@ export class OpenSearchAdapter implements SearchAdapter {
     }
   }
 
-  /** Merge content hits (collapsed by resourceId with inner_hits) into matchedResources */
+  /** Merge content hits (collapsed by resourceId, no highlight) into matchedResources */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async mergeContentHits(result: SearchResult, contentHits: any[]): Promise<void> {
-    // Build a lookup of existing matchedResources by resource ID
     const existingMatched = new Map<string, MatchedResource>()
     for (const item of result.items) {
       for (const mr of item.matchedResources ?? []) {
@@ -724,7 +732,7 @@ export class OpenSearchAdapter implements SearchAdapter {
       }
     }
 
-    // Each hit is already one per resource (collapsed). Collect snippets from inner_hits.
+    // Each hit is one per resource (collapsed). No snippets yet — added in stage 2.
     const contentByPackage = new Map<string, MatchedResource[]>()
     const contentByResource = new Map<string, MatchedResource>()
 
@@ -733,32 +741,14 @@ export class OpenSearchAdapter implements SearchAdapter {
       const resourceId = src.resourceId as string
       const pkgId = src.packageId as string
 
-      // Collect snippets from inner_hits (top 3 chunks per resource)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const innerHits = (hit.inner_hits?.top_chunks?.hits?.hits ?? []) as any[]
-      const contentSnippets: string[] = []
-      for (const inner of innerHits) {
-        const fragments = inner.highlight?.extractedText as string[] | undefined
-        if (fragments) {
-          for (const f of fragments) {
-            contentSnippets.push(sanitizeHighlight(f))
-            if (contentSnippets.length >= 3) break
-          }
-        }
-        if (contentSnippets.length >= 3) break
-      }
-
-      // If this resource already has a metadata match, add content snippets to it
       const existing = existingMatched.get(resourceId)
       if (existing) {
-        if (contentSnippets.length > 0) existing.contentSnippets = contentSnippets
         existing.matchSource = 'content'
         continue
       }
 
       const matched: MatchedResource = {
         id: resourceId,
-        ...(contentSnippets.length > 0 && { contentSnippets }),
         matchSource: 'content',
       }
 
@@ -821,6 +811,63 @@ export class OpenSearchAdapter implements SearchAdapter {
       } catch {
         // Best-effort: mget for content-only packages
       }
+    }
+  }
+
+  /** Stage 2: fetch content highlights only for resources visible in the result page */
+  private async fetchContentHighlights(result: SearchResult, queryText: string): Promise<void> {
+    const resourceIds: string[] = []
+    for (const item of result.items) {
+      for (const mr of item.matchedResources ?? []) {
+        if (mr.matchSource === 'content') {
+          resourceIds.push(mr.id)
+        }
+      }
+    }
+    if (resourceIds.length === 0) return
+
+    try {
+      const response = await this.client.search({
+        index: this.contentsIndex,
+        body: {
+          size: resourceIds.length,
+          query: {
+            bool: {
+              must: { match: { extractedText: { query: queryText, operator: 'and' } } },
+              filter: { terms: { resourceId: resourceIds } },
+            },
+          },
+          collapse: {
+            field: 'resourceId',
+            inner_hits: {
+              name: 'top_chunks',
+              size: 1,
+              highlight: CONTENT_HIGHLIGHT,
+            },
+          },
+        },
+      })
+
+      const snippetsByResource = new Map<string, string[]>()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const hit of (response.body.hits.hits ?? []) as any[]) {
+        const resourceId = hit._source.resourceId as string
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const inner = (hit.inner_hits?.top_chunks?.hits?.hits ?? []) as any[]
+        const fragment = inner[0]?.highlight?.extractedText?.[0] as string | undefined
+        if (fragment) {
+          snippetsByResource.set(resourceId, [sanitizeHighlight(fragment)])
+        }
+      }
+
+      for (const item of result.items) {
+        for (const mr of item.matchedResources ?? []) {
+          const snippets = snippetsByResource.get(mr.id)
+          if (snippets) mr.contentSnippets = snippets
+        }
+      }
+    } catch {
+      // Best-effort: search works without highlights
     }
   }
 

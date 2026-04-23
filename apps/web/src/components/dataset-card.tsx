@@ -163,14 +163,11 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                               <span className="flex items-center gap-0.5 text-[10px] font-medium text-primary">
                                 <Search className="h-2.5 w-2.5" />
                                 {t('contentMatch')}
-                                <span className="font-normal text-muted-foreground">
-                                  {t('contentMatchNote')}
-                                </span>
                               </span>
                               {r.contentSnippets.map((snippet, i) => (
                                 <p
                                   key={i}
-                                  className={`line-clamp-3 rounded border border-primary/20 bg-primary/5 px-2 py-1.5 text-xs text-muted-foreground ${HIGHLIGHT_MARK}`}
+                                  className={`line-clamp-4 rounded border border-primary/20 bg-primary/5 px-2 py-1.5 text-xs text-muted-foreground ${HIGHLIGHT_MARK}`}
                                   suppressHydrationWarning
                                   dangerouslySetInnerHTML={{
                                     __html: snippet.replace(/\n/g, ' '),

@@ -224,20 +224,39 @@ describe('OpenSearchAdapter', () => {
                     _id: 'res-1',
                     _source: { resourceId: 'res-1', packageId: 'pkg-1' },
                     _score: 3,
-                    inner_hits: {
-                      top_chunks: {
-                        hits: {
-                          hits: [
-                            { highlight: { extractedText: ['...東京都の<mark>人口</mark>は...'] } },
-                          ],
-                        },
-                      },
-                    },
                   },
                 ],
               },
             },
           ],
+        },
+      })
+
+      // mget for resource metadata (content-only match needs name/format)
+      mockClient.mget.mockResolvedValueOnce({
+        body: { docs: [{ _id: 'res-1', found: true, _source: { name: 'data.csv', format: 'CSV' } }] },
+      })
+
+      // Stage 2: fetchContentHighlights calls client.search for highlights
+      // Stage 2: highlight search with collapse + inner_hits
+      mockClient.search.mockResolvedValueOnce({
+        body: {
+          hits: {
+            hits: [
+              {
+                _source: { resourceId: 'res-1' },
+                inner_hits: {
+                  top_chunks: {
+                    hits: {
+                      hits: [
+                        { highlight: { extractedText: ['...東京都の<mark>人口</mark>は...'] } },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
         },
       })
 
@@ -475,24 +494,39 @@ describe('OpenSearchAdapter', () => {
                     _id: 'res-1',
                     _source: { resourceId: 'res-1', packageId: 'pkg-1' },
                     _score: 2,
-                    inner_hits: {
-                      top_chunks: {
-                        hits: {
-                          hits: [
-                            {
-                              highlight: {
-                                extractedText: ['<a href="javascript:void(0)">click</a><mark>data</mark>'],
-                              },
-                            },
-                          ],
-                        },
-                      },
-                    },
                   },
                 ],
               },
             },
           ],
+        },
+      })
+
+      // Stage 2: highlight with collapse + inner_hits
+      mockClient.search.mockResolvedValueOnce({
+        body: {
+          hits: {
+            hits: [
+              {
+                _source: { resourceId: 'res-1' },
+                inner_hits: {
+                  top_chunks: {
+                    hits: {
+                      hits: [
+                        {
+                          highlight: {
+                            extractedText: [
+                              '<a href="javascript:void(0)">click</a><mark>data</mark>',
+                            ],
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
         },
       })
 
@@ -715,15 +749,6 @@ describe('OpenSearchAdapter', () => {
                     _id: 'res-1',
                     _source: { resourceId: 'res-1', packageId: 'pkg-2' },
                     _score: 3,
-                    inner_hits: {
-                      top_chunks: {
-                        hits: {
-                          hits: [
-                            { highlight: { extractedText: ['<mark>keyword</mark> found'] } },
-                          ],
-                        },
-                      },
-                    },
                   },
                 ],
               },
@@ -732,8 +757,21 @@ describe('OpenSearchAdapter', () => {
         },
       })
 
+      // mget for resource metadata (content-only match)
+      mockClient.mget.mockResolvedValueOnce({
+        body: {
+          docs: [
+            {
+              _id: 'res-1',
+              found: true,
+              _source: { name: 'data.csv', format: 'CSV' },
+            },
+          ],
+        },
+      })
+
       // mget returns the missing package
-      mockClient.mget.mockResolvedValue({
+      mockClient.mget.mockResolvedValueOnce({
         body: {
           docs: [
             {
@@ -742,6 +780,28 @@ describe('OpenSearchAdapter', () => {
               _source: { name: 'content-only-pkg', title: 'Content Only Package' },
             },
           ],
+        },
+      })
+
+      // Stage 2: highlight with collapse + inner_hits
+      mockClient.search.mockResolvedValueOnce({
+        body: {
+          hits: {
+            hits: [
+              {
+                _source: { resourceId: 'res-1' },
+                inner_hits: {
+                  top_chunks: {
+                    hits: {
+                      hits: [
+                        { highlight: { extractedText: ['<mark>keyword</mark> found'] } },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
         },
       })
 
@@ -774,15 +834,6 @@ describe('OpenSearchAdapter', () => {
                     _id: 'res-1',
                     _source: { resourceId: 'res-1', packageId: 'pkg-1' },
                     _score: 2,
-                    inner_hits: {
-                      top_chunks: {
-                        hits: {
-                          hits: [
-                            { highlight: { extractedText: ['<mark>test</mark>'] } },
-                          ],
-                        },
-                      },
-                    },
                   },
                 ],
               },
@@ -814,6 +865,26 @@ describe('OpenSearchAdapter', () => {
               _source: { name: 'my-dataset', title: 'My Dataset' },
             },
           ],
+        },
+      })
+
+      // Stage 2: highlight with collapse + inner_hits
+      mockClient.search.mockResolvedValueOnce({
+        body: {
+          hits: {
+            hits: [
+              {
+                _source: { resourceId: 'res-1' },
+                inner_hits: {
+                  top_chunks: {
+                    hits: {
+                      hits: [{ highlight: { extractedText: ['<mark>test</mark>'] } }],
+                    },
+                  },
+                },
+              },
+            ],
+          },
         },
       })
 
