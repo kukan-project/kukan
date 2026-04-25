@@ -5,15 +5,17 @@
  * Large texts are split into multiple chunks (up to MAX_CONTENT_CHUNKS × MAX_CONTENT_CHUNK_SIZE).
  * Also records content indexing metadata in resource_pipeline.metadata.
  *
- * Supported formats: CSV, TSV, TXT, MD, HTML, HTM, JSON, GeoJSON, XML, ZIP
- * Non-text formats (PDF, Office, RDF, images) are skipped (contentIndexed: false).
+ * Supported formats: CSV, TSV, TXT, MD, HTML, HTM, JSON, GeoJSON, XML, ZIP,
+ *                    PDF, DOCX, XLSX, PPTX, ODT, ODP, ODS, RTF
+ * Non-text formats (DOC, XLS, PPT, RDF, images) are skipped (contentIndexed: false).
  */
 
-import { isTextFormat, isCsvFormat, isZipFormat, type ContentType } from '@kukan/shared'
+import { isTextFormat, isCsvFormat, isZipFormat, isDocumentFormat, type ContentType } from '@kukan/shared'
+import { OfficeParser } from 'officeparser'
 import type { ContentDoc } from '@kukan/search-adapter'
 import type { PipelineContext } from '../types'
 import type { ExtractResult } from './extract'
-import { streamToBuffer, streamUtf8Lines, bufferToUtf8 } from '../node-utils'
+import { streamToBuffer, streamUtf8Lines, bufferToUtf8, streamToTempFile, cleanupTempFile } from '../node-utils'
 import { MAX_CONTENT_CHUNK_SIZE } from '@/config'
 
 export interface IndexContentResult {
@@ -50,6 +52,10 @@ export async function executeIndexContent(
 
   if (contentType === 'manifest') {
     return indexManifest(resourceId, packageId, contentType, extractResult, ctx)
+  }
+
+  if (contentType === 'document') {
+    return indexDocument(resourceId, packageId, storageKey, normalizedFormat!, contentType, ctx)
   }
 
   return indexTextStream(
@@ -100,6 +106,73 @@ async function indexManifest(
     contentTruncated: false,
     contentChunks: 1,
   }
+}
+
+/** Extract text from a binary document (PDF, etc.), chunk and index */
+async function indexDocument(
+  resourceId: string,
+  packageId: string,
+  storageKey: string,
+  format: string,
+  contentType: ContentType,
+  ctx: PipelineContext
+): Promise<IndexContentResult> {
+  const stream = await ctx.storage.download(storageKey)
+  const tempPath = await streamToTempFile(stream, format)
+
+  try {
+    const text = await extractDocumentText(tempPath)
+    if (!text) {
+      return {
+        contentIndexed: false,
+        contentType,
+        contentOriginalSize: 0,
+        contentIndexedSize: 0,
+        contentTruncated: false,
+        contentChunks: 0,
+      }
+    }
+
+    await ctx.deleteContent(resourceId)
+
+    const chunks = splitIntoChunks(text, MAX_CONTENT_CHUNK_SIZE, Infinity)
+    let totalIndexedBytes = 0
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkSize = Buffer.byteLength(chunks[i], 'utf-8')
+      const doc: ContentDoc = {
+        resourceId,
+        packageId,
+        extractedText: chunks[i],
+        contentType,
+        chunkIndex: i,
+        chunkSize,
+      }
+      await ctx.indexContent(doc)
+      totalIndexedBytes += chunkSize
+    }
+
+    return {
+      contentIndexed: chunks.length > 0,
+      contentType,
+      contentOriginalSize: Buffer.byteLength(text, 'utf-8'),
+      contentIndexedSize: totalIndexedBytes,
+      contentTruncated: false,
+      contentChunks: chunks.length,
+    }
+  } finally {
+    await cleanupTempFile(tempPath)
+  }
+}
+
+/**
+ * Extract text from a document file (PDF, DOCX, XLSX, PPTX) using officeparser.
+ * NOTE: patches/officeparser.patch fixes XLSX cell value extraction (harshankur/officeParser#90).
+ * Remove the patch once a fixed version is released.
+ */
+async function extractDocumentText(filePath: string): Promise<string> {
+  const ast = await OfficeParser.parseOffice(filePath)
+  return ast.toText()
 }
 
 /** Stream text content line-by-line, chunking and indexing incrementally */
@@ -209,6 +282,7 @@ function getContentType(format: string | null): ContentType | null {
   if (isCsvFormat(format)) return 'tabular'
   if (isZipFormat(format)) return 'manifest'
   if (isTextFormat(format)) return 'text'
+  if (isDocumentFormat(format)) return 'document'
   return null
 }
 

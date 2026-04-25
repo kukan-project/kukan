@@ -21,6 +21,7 @@ COPY packages/adapters/queue/package.json packages/adapters/queue/
 COPY packages/adapters/ai/package.json packages/adapters/ai/
 COPY apps/web/package.json apps/web/
 COPY apps/worker/package.json apps/worker/
+COPY patches/ patches/
 RUN pnpm install --frozen-lockfile
 
 # ---- Build ----

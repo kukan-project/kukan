@@ -18,6 +18,10 @@ const FORMAT_MAP: Record<string, string> = {
   docx: 'DOCX',
   ppt: 'PPT',
   pptx: 'PPTX',
+  odt: 'ODT',
+  odp: 'ODP',
+  ods: 'ODS',
+  rtf: 'RTF',
   txt: 'TXT',
   html: 'HTML',
   htm: 'HTML',
@@ -39,6 +43,10 @@ const MIME_MAP: Record<string, string> = {
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   ppt: 'application/vnd.ms-powerpoint',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  odt: 'application/vnd.oasis.opendocument.text',
+  odp: 'application/vnd.oasis.opendocument.presentation',
+  ods: 'application/vnd.oasis.opendocument.spreadsheet',
+  rtf: 'application/rtf',
   txt: 'text/plain',
   html: 'text/html',
   htm: 'text/html',
@@ -136,6 +144,26 @@ const OFFICE_FORMATS = new Set(['xlsx', 'xls', 'doc', 'docx', 'ppt', 'pptx'])
 export function isOfficeFormat(format: string | null): boolean {
   if (!format) return false
   return OFFICE_FORMATS.has(format.toLowerCase())
+}
+
+const DOCUMENT_FORMATS = new Set(['pdf', 'docx', 'xlsx', 'pptx', 'odt', 'odp', 'ods', 'rtf'])
+
+/** Check if a format is a document that supports text extraction via officeparser */
+export function isDocumentFormat(format: string | null): boolean {
+  if (!format) return false
+  return DOCUMENT_FORMATS.has(format.toLowerCase())
+}
+
+/** Check if a format is a PDF document */
+export function isPdfFormat(format: string | null): boolean {
+  if (!format) return false
+  return format.toLowerCase() === 'pdf'
+}
+
+/** Check if a format is GeoJSON */
+export function isGeoJsonFormat(format: string | null): boolean {
+  if (!format) return false
+  return format.toLowerCase() === 'geojson'
 }
 
 /** Check if a format is a ZIP archive */

@@ -20,6 +20,7 @@ import {
   detectContentType,
   toCharset,
   isOfficeFormat,
+  isPdfFormat,
 } from '@kukan/shared'
 import { TEXT_PREVIEW_LIMIT, DEFAULT_RANGE_CHUNK } from '../config'
 import { checkOrgRole, resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
@@ -52,11 +53,10 @@ async function resolvePreviewTarget(
   db: Database,
   resource: { id: string; packageId: string; format: string | null }
 ): Promise<{ storageKey: string; contentType: string } | null> {
-  const f = resource.format?.toLowerCase()
-  if (f === 'pdf' || isOfficeFormat(resource.format)) {
+  if (isPdfFormat(resource.format) || isOfficeFormat(resource.format)) {
     return {
       storageKey: getStorageKey(resource.packageId, resource.id),
-      contentType: getMimeType(f!)!,
+      contentType: getMimeType(resource.format!)!,
     }
   }
   const pipelineService = new PipelineService(db)

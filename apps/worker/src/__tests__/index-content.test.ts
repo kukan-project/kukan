@@ -5,6 +5,15 @@ import type { PipelineContext } from '../pipeline/types'
 import type { ExtractResult } from '../pipeline/steps/extract'
 import type { ContentDoc } from '@kukan/search-adapter'
 
+const mockToText = vi.fn().mockReturnValue('Extracted document text\nPage 2 content')
+
+vi.mock('officeparser', () => ({
+  OfficeParser: {
+    parseOffice: vi.fn().mockImplementation(() => Promise.resolve({ toText: mockToText })),
+  },
+}))
+
+
 function bufferToStream(buf: Buffer): Readable {
   return Readable.from(buf)
 }
@@ -41,17 +50,22 @@ const defaultExtractResult: ExtractResult = {
 
 describe('executeIndexContent', () => {
   describe('format classification', () => {
-    it('should return null for PDF (not indexable)', async () => {
+    it('should classify PDF as document', async () => {
       const ctx = createMockCtx()
+      // storage.download returns a stream that will be written to a temp file
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('fake-pdf')))
+
       const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)
-      expect(result).toBeNull()
-      expect(ctx.indexContent).not.toHaveBeenCalled()
+      expect(result?.contentType).toBe('document')
+      expect(result?.contentIndexed).toBe(true)
     })
 
-    it('should return null for XLSX (not indexable)', async () => {
+    it('should classify XLSX as document', async () => {
       const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('fake-xlsx')))
+
       const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'XLSX', null, ctx)
-      expect(result).toBeNull()
+      expect(result?.contentType).toBe('document')
     })
 
     it('should return null for null format', async () => {
@@ -214,6 +228,90 @@ describe('executeIndexContent', () => {
         ctx
       )
       expect(result).toBeNull()
+    })
+  })
+
+  describe('PDF extraction', () => {
+    it('should extract text from PDF and index it', async () => {
+      const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('fake-pdf')))
+
+      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)
+
+      expect(result).not.toBeNull()
+      expect(result!.contentIndexed).toBe(true)
+      expect(result!.contentType).toBe('document')
+      expect(result!.contentChunks).toBeGreaterThanOrEqual(1)
+      expect(ctx.deleteContent).toHaveBeenCalledWith('res-1')
+
+      const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
+      expect(indexedDoc.extractedText).toContain('Extracted document text')
+      expect(indexedDoc.resourceId).toBe('res-1')
+      expect(indexedDoc.packageId).toBe('pkg-1')
+      expect(indexedDoc.contentType).toBe('document')
+    })
+
+    it('should handle PDF with empty text', async () => {
+      mockToText.mockReturnValueOnce('')
+
+      const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('fake-pdf')))
+
+      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)
+
+      expect(result!.contentIndexed).toBe(false)
+      expect(result!.contentChunks).toBe(0)
+    })
+
+    it('should clean up temp file even on extraction error', async () => {
+      mockToText.mockImplementationOnce(() => { throw new Error('corrupt PDF') })
+
+      const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('fake-pdf')))
+
+      await expect(
+        executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)
+      ).rejects.toThrow('corrupt PDF')
+
+      // Temp file cleanup is in the finally block — no leaked files
+    })
+  })
+
+  describe('Office extraction', () => {
+    it.each(['DOCX', 'XLSX', 'PPTX'])('should extract text from %s and index it', async (format) => {
+      const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('fake')))
+
+      const result = await executeIndexContent('res-1', 'pkg-1', 'key', format, null, ctx)
+
+      expect(result).not.toBeNull()
+      expect(result!.contentIndexed).toBe(true)
+      expect(result!.contentType).toBe('document')
+      expect(ctx.deleteContent).toHaveBeenCalledWith('res-1')
+
+      const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
+      expect(indexedDoc.extractedText).toContain('Extracted document text')
+      expect(indexedDoc.resourceId).toBe('res-1')
+      expect(indexedDoc.packageId).toBe('pkg-1')
+    })
+
+    it.each(['DOC', 'XLS', 'PPT'])('should return null for legacy format %s', async (format) => {
+      const ctx = createMockCtx()
+      const result = await executeIndexContent('res-1', 'pkg-1', 'key', format, null, ctx)
+      expect(result).toBeNull()
+      expect(ctx.indexContent).not.toHaveBeenCalled()
+    })
+
+    it('should handle Office document with empty text', async () => {
+      mockToText.mockReturnValueOnce('')
+
+      const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('fake')))
+
+      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'DOCX', null, ctx)
+
+      expect(result!.contentIndexed).toBe(false)
+      expect(result!.contentChunks).toBe(0)
     })
   })
 

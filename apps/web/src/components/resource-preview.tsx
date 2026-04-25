@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, Skeleton, Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import { isCsvFormat, isTextFormat, isZipFormat, isOfficeFormat } from '@kukan/shared'
+import { isCsvFormat, isTextFormat, isZipFormat, isOfficeFormat, isPdfFormat, isGeoJsonFormat } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
 import { ParquetPreview } from './parquet-preview'
 import { GeoJsonPreview } from './geojson-preview'
@@ -27,28 +27,14 @@ type PreviewSource = 'parquet' | 'raw'
  * If no preview data exists in Storage, shows "not available".
  */
 export function ResourcePreview({ resourceId, format, url, size }: ResourcePreviewProps) {
-  const f = format?.toLowerCase()
+  const f = format ?? null
 
-  // PDF: render via Storage signed URL
-  if (f === 'pdf') return <PdfPreview resourceId={resourceId} />
-
-  // CSV/TSV: Parquet table with raw text toggle
-  if (isCsvFormat(format)) return <TablePreview resourceId={resourceId} />
-
-  // GeoJSON: map with raw text toggle
-  if (f === 'geojson') return <GeoJsonPreview resourceId={resourceId} />
-
-  // ZIP: file listing preview
-  if (isZipFormat(format ?? null)) return <ZipPreview resourceId={resourceId} />
-
-  // Office formats (XLSX, XLS, DOC, DOCX): Office Online Viewer
-  if (isOfficeFormat(format ?? null))
-    return <OfficeOnlinePreview resourceId={resourceId} url={url} size={size} />
-
-  // Text formats (JSON, XML, HTML, TXT, MD, etc.): raw text preview
-  if (isTextFormat(format ?? null)) return <TextOnlyPreview resourceId={resourceId} />
-
-  // Non-text formats (RDF, etc.): not available
+  if (isPdfFormat(f)) return <PdfPreview resourceId={resourceId} />
+  if (isCsvFormat(f)) return <TablePreview resourceId={resourceId} />
+  if (isGeoJsonFormat(f)) return <GeoJsonPreview resourceId={resourceId} />
+  if (isZipFormat(f)) return <ZipPreview resourceId={resourceId} />
+  if (isOfficeFormat(f)) return <OfficeOnlinePreview resourceId={resourceId} url={url} size={size} />
+  if (isTextFormat(f)) return <TextOnlyPreview resourceId={resourceId} />
   return <PreviewNotAvailable />
 }
 
@@ -211,14 +197,13 @@ function OfficeOnlinePreview({
   // Phase: 'visible' → 'fading' → 'hidden'
   const [phase, setPhase] = useState<'visible' | 'fading' | 'hidden'>('visible')
 
-  // Start fading after 3s, then remove from DOM after the 5s CSS transition
   useEffect(() => {
-    const fadeTimer = setTimeout(() => setPhase('fading'), 3000)
+    const fadeTimer = setTimeout(() => setPhase('fading'), 1000)
     return () => clearTimeout(fadeTimer)
   }, [])
   useEffect(() => {
     if (phase !== 'fading') return
-    const removeTimer = setTimeout(() => setPhase('hidden'), 5000)
+    const removeTimer = setTimeout(() => setPhase('hidden'), 1000)
     return () => clearTimeout(removeTimer)
   }, [phase])
 
@@ -262,13 +247,12 @@ function OfficeOnlinePreview({
       <div className="relative overflow-hidden rounded-lg border">
         {phase !== 'hidden' && (
           <div
-            className="absolute inset-0 z-10 flex items-center justify-center bg-background transition-opacity duration-[5000ms]"
+            className="absolute inset-0 z-10 flex items-center justify-center bg-background transition-opacity duration-[1000ms]"
             style={{ opacity: phase === 'fading' ? 0 : 1 }}
           >
             <div className="flex flex-col items-center gap-3">
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted-foreground/20 border-t-primary" />
               <p className="text-sm text-muted-foreground">{t('previewLoading')}</p>
-              <p className="text-xs text-muted-foreground/60">{t('previewLoadingSlow')}</p>
             </div>
           </div>
         )}

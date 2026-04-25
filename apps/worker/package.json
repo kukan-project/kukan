@@ -27,6 +27,7 @@
     "encoding-japanese": "^2.2.0",
     "hono": "^4.12.14",
     "hyparquet-writer": "^0.13.0",
+    "officeparser": "^6.1.0",
     "p-limit": "^7.3.0",
     "papaparse": "^5.5.3",
     "pg": "^8.20.0",

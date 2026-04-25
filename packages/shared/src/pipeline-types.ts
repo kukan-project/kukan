@@ -9,7 +9,7 @@ export type PipelineStepStatus = 'pending' | 'running' | 'complete' | 'error' | 
 export type PipelineStepName = 'fetch' | 'extract' | 'index'
 
 /** Content type for indexed resource text */
-export type ContentType = 'tabular' | 'text' | 'manifest'
+export type ContentType = 'tabular' | 'text' | 'manifest' | 'document'
 
 export const PIPELINE_JOB_TYPE = 'resource-pipeline' as const
 

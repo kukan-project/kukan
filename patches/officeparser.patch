@@ -1,0 +1,31 @@
+diff --git a/dist/parsers/ExcelParser.js b/dist/parsers/ExcelParser.js
+index 93c2fcab0cc2aa14b1e8df733e27976f05f1ef4d..895fc883f0c7774e3d4ff15030495b9477ca4029 100644
+--- a/dist/parsers/ExcelParser.js
++++ b/dist/parsers/ExcelParser.js
+@@ -422,10 +422,10 @@ const parseExcel = async (buffer, config) => {
+                     if (cMatches) {
+                         for (const cXml of cMatches) {
+                             // Extract cell value
+-                            const typeMatch = cXml.match(/t="([a-z]+)"/);
++                            const typeMatch = cXml.match(/t="([a-zA-Z]+)"/);
+                             const type = typeMatch ? typeMatch[1] : 'n'; // n = number (default)
+-                            const vMatch = cXml.match(/<v>(.*?)<\/v>/);
+-                            const tMatch = cXml.match(/<t>(.*?)<\/t>/);
++                            const vMatch = cXml.match(/<v>([\s\S]*?)<\/v>/);
++                            const tMatch = cXml.match(/<t>([\s\S]*?)<\/t>/);
+                             let text = '';
+                             let cellNodes = [];
+                             if (type === 's' && vMatch) {
+@@ -442,10 +442,10 @@ const parseExcel = async (buffer, config) => {
+                                 }
+                             }
+                             else if (type === 'inlineStr' && tMatch) {
+-                                text = tMatch[1];
++                                text = tMatch[1].trim();
+                             }
+                             else if (vMatch) {
+-                                text = vMatch[1];
++                                text = vMatch[1].trim();
+                             }
+                             // Parse cell coordinate
+                             const coordMatch = cXml.match(/r="([A-Z]+)(\d+)"/);

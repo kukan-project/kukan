@@ -7,6 +7,9 @@ import {
   isCsvFormat,
   isTextFormat,
   isOfficeFormat,
+  isPdfFormat,
+  isDocumentFormat,
+  isGeoJsonFormat,
   isZipFormat,
   toCharset,
   getStorageKey,
@@ -233,6 +236,74 @@ describe('isOfficeFormat', () => {
 
   it('should return false for null', () => {
     expect(isOfficeFormat(null)).toBe(false)
+  })
+})
+
+describe('isPdfFormat', () => {
+  it('should return true for PDF format', () => {
+    expect(isPdfFormat('pdf')).toBe(true)
+    expect(isPdfFormat('PDF')).toBe(true)
+    expect(isPdfFormat('Pdf')).toBe(true)
+  })
+
+  it('should return false for non-PDF formats', () => {
+    expect(isPdfFormat('docx')).toBe(false)
+    expect(isPdfFormat('csv')).toBe(false)
+  })
+
+  it('should return false for null', () => {
+    expect(isPdfFormat(null)).toBe(false)
+  })
+})
+
+describe('isDocumentFormat', () => {
+  it('should return true for all officeparser-supported formats', () => {
+    expect(isDocumentFormat('pdf')).toBe(true)
+    expect(isDocumentFormat('docx')).toBe(true)
+    expect(isDocumentFormat('xlsx')).toBe(true)
+    expect(isDocumentFormat('pptx')).toBe(true)
+    expect(isDocumentFormat('odt')).toBe(true)
+    expect(isDocumentFormat('odp')).toBe(true)
+    expect(isDocumentFormat('ods')).toBe(true)
+    expect(isDocumentFormat('rtf')).toBe(true)
+  })
+
+  it('should be case-insensitive', () => {
+    expect(isDocumentFormat('DOCX')).toBe(true)
+    expect(isDocumentFormat('PDF')).toBe(true)
+  })
+
+  it('should return false for legacy Office formats', () => {
+    expect(isDocumentFormat('doc')).toBe(false)
+    expect(isDocumentFormat('xls')).toBe(false)
+    expect(isDocumentFormat('ppt')).toBe(false)
+  })
+
+  it('should return false for non-document formats', () => {
+    expect(isDocumentFormat('csv')).toBe(false)
+    expect(isDocumentFormat('txt')).toBe(false)
+    expect(isDocumentFormat('zip')).toBe(false)
+  })
+
+  it('should return false for null', () => {
+    expect(isDocumentFormat(null)).toBe(false)
+  })
+})
+
+describe('isGeoJsonFormat', () => {
+  it('should return true for GeoJSON format', () => {
+    expect(isGeoJsonFormat('geojson')).toBe(true)
+    expect(isGeoJsonFormat('GeoJSON')).toBe(true)
+    expect(isGeoJsonFormat('GEOJSON')).toBe(true)
+  })
+
+  it('should return false for non-GeoJSON formats', () => {
+    expect(isGeoJsonFormat('json')).toBe(false)
+    expect(isGeoJsonFormat('csv')).toBe(false)
+  })
+
+  it('should return false for null', () => {
+    expect(isGeoJsonFormat(null)).toBe(false)
   })
 })
 
