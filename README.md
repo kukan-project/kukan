@@ -7,6 +7,15 @@
 >
 > **ベータ版（2026年4月）** — KUKAN は開発中です。API、スキーマ、設定は予告なく変更される場合があります。
 
+> [!NOTE]
+> **No versioning yet** — KUKAN does not follow semantic versioning at this time. Always use the `main` branch for
+> trial deployments. After pulling updates, a search index rebuild (`POST /api/v1/admin/reindex`) may be required
+> due to mapping or schema changes.
+>
+> **バージョニング未実施** — 現時点でセマンティックバージョニングは行っていません。試用の際は `main` ブランチを
+> ご利用ください。更新後、マッピングやスキーマの変更により検索インデックスの再構築
+> （`POST /api/v1/admin/reindex`）が必要になる場合があります。
+
 A modern, full-stack TypeScript alternative to CKAN.
 みんなが使えるデータカタログ — CKANモダンクローン。
 
