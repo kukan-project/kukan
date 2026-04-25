@@ -122,8 +122,10 @@ await queue.process<{ resourceId: string }>(
   PIPELINE_JOB_TYPE,
   async (job: Job<{ resourceId: string }>) => {
     log.info({ jobId: job.id, resourceId: job.data.resourceId }, 'Processing job')
+    const start = performance.now()
     await processResource(job.data.resourceId, ctx, db, queue)
-    log.info({ jobId: job.id, resourceId: job.data.resourceId }, 'Completed job')
+    const elapsed = Math.round(performance.now() - start)
+    log.info({ jobId: job.id, resourceId: job.data.resourceId, elapsed }, 'Completed job')
   }
 )
 
