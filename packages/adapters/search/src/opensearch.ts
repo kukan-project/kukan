@@ -544,9 +544,11 @@ export class OpenSearchAdapter implements SearchAdapter {
     })
     const tMsearch = Date.now()
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [packagesResult, resourcesResult, contentsResult] = msearchResponse.body
-      .responses as any[]
+    const [packagesResult, resourcesResult, contentsResult] = msearchResponse.body.responses as Array<{
+      hits: { total: { value: number } | number; hits: Record<string, unknown>[] }
+      aggregations?: Record<string, unknown>
+      took: number
+    }>
 
     // Parse packages
     const result = this.parsePackagesResponse({ body: packagesResult }, query, offset, limit)
