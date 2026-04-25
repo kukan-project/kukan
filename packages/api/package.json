@@ -24,10 +24,10 @@
     "@kukan/search-adapter": "workspace:*",
     "@kukan/shared": "workspace:*",
     "@kukan/storage-adapter": "workspace:*",
-    "better-auth": "^1.6.5",
+    "better-auth": "^1.6.9",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.12.14",
+    "hono": "^4.12.15",
     "pg": "^8.20.0",
     "zod": "4.3.6"
   },

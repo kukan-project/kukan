@@ -72,19 +72,19 @@ CDK の `dbEngine` パラメータ（`rds` | `aurora`）で切替。
 
 ## コスト試算
 
-### Small（デモ / PoC）: ~$60/月
+### Small（デモ / PoC）: ~$64/月
 
 | サービス           | スペック            | 月額 USD |
 | ------------------ | ------------------- | -------- |
 | ECS Fargate Web    | 0.25 vCPU / 0.5 GB  | ~$9      |
 | ALB                | 常時稼働            | ~$18     |
-| ECS Fargate Worker | 0.25 vCPU / 0.5 GB  | ~$9      |
+| ECS Fargate Worker | 0.25 vCPU / 1 GB    | ~$13     |
 | RDS PostgreSQL     | db.t4g.micro        | ~$15     |
 | OpenSearch         | t3.small.search × 1 | ~$27     |
 | S3 + SQS           | 最小                | ~$2      |
 | Secrets Manager    | 2 secrets           | ~$1      |
 
-OpenSearch なし（SEARCH_TYPE=postgres）: ~$33/月
+OpenSearch なし（SEARCH_TYPE=postgres）: ~$37/月
 WAF 追加（enableWaf=true）: +~$9/月
 IP 制限は ALB SG で対応（追加コストなし）
 
@@ -160,8 +160,8 @@ infra/
 | ----------------------- | ------------------- | -------------------- | -------------------------------- |
 | Web vCPU / Memory       | 0.25 / 512 MB       | 0.5 / 1 GB           | 1 / 2 GB                         |
 | Web min / max instances | 1 / 2               | 1 / 5                | 2 / 10                           |
-| Worker vCPU / Memory    | 0.25 / 512 MB       | 0.5 / 1 GB           | 1 / 2 GB                         |
-| Worker min / max tasks  | 1 / 1               | 1 / 2                | 2 / 5                            |
+| Worker vCPU / Memory    | 0.25 / 1 GB         | 0.5 / 1 GB           | 1 / 2 GB                         |
+| Worker min / max tasks  | 1 / 2               | 1 / 2                | 2 / 5                            |
 | DB                      | RDS db.t4g.micro    | Aurora 0.5-2 ACU     | Aurora 2-8 ACU, multi-AZ         |
 | OpenSearch              | t3.small × 1, 10 GB | m6g.large × 1, 50 GB | m6g.xlarge × 2, 100 GB, multi-AZ |
 | DB Pool (web / worker)  | 5 / 3               | 10 / 5               | 20 / 10                          |

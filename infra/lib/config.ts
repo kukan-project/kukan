@@ -83,7 +83,7 @@ const SCALE_DEFAULTS: Record<
 > = {
   small: {
     web: { cpu: 256, memory: 512, minSize: 1, maxSize: 2 },
-    worker: { cpu: 256, memory: 512, minTasks: 1, maxTasks: 2, healthPort: 8080 },
+    worker: { cpu: 256, memory: 1024, minTasks: 1, maxTasks: 2, healthPort: 8080 },
     db: { engine: 'rds', instanceClass: 'db.t4g.micro', multiAz: false },
     opensearch: {
       instanceType: 't3.small.search',
