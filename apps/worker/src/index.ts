@@ -112,6 +112,7 @@ const search =
     ? new OpenSearchAdapter({
         endpoint: env.OPENSEARCH_URL,
         replicas: env.OPENSEARCH_REPLICAS,
+        logger: log.child({ component: 'opensearch' }),
       })
     : undefined
 

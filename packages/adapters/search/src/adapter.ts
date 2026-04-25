@@ -22,6 +22,8 @@ export interface MatchedResource {
   contentSnippets?: string[]
   /** Whether the match came from resource metadata or extracted content */
   matchSource?: 'metadata' | 'content'
+  /** Content chunk document ID for lazy highlight loading (passed to POST /highlights) */
+  _contentDocId?: string
 }
 
 /** Document stored in the kukan-resources index (metadata only) */
@@ -216,6 +218,11 @@ export interface SearchAdapter {
     offset?: number
     limit?: number
   }): Promise<ContentBrowseResult | null>
+
+  /** Fetch content highlights for specific chunk document IDs.
+   *  Returns a map of chunkDocId → highlighted snippet.
+   *  Used for lazy-loading snippets after initial search results are displayed. */
+  fetchContentHighlights(chunkDocIds: string[], queryText: string): Promise<Record<string, string>>
 }
 
 export interface BrowseResult {

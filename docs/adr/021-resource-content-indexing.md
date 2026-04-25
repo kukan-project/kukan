@@ -90,15 +90,28 @@ OpenSearch のドキュメントサイズに関する実用上の制約:
 日本語テキスト 100KB ≈ 約 3〜5 万文字 ≈ A4 で 40〜60 ページ分。
 CSV なら数千行のヘッダー + データを十分カバーできる。
 
-### 決定: 100KB チャンク × ストリーム処理（更新: 2026-04-22）
+### 決定: 500KB チャンク × ストリーム処理 × 遅延ハイライト（更新: 2026-04-25）
 
 当初は 100KB 上限で切り詰める方式だったが、チャンク分割とストリーム処理に移行した。
 
-- `MAX_CONTENT_CHUNK_SIZE = 100 * 1024`（100KB / チャンク）
+**チャンクサイズ**: 100KB / 500KB / 1MB を t3.small 上で比較検証した結果、500KB に決定。
+
+- 100KB: マッチチャンク数が多く（465 vs 93）、JVM Young GC スパイクが頻発
+- 500KB: マッチ数と `_source` ロードのバランスが良く、GC 安定後は大半 200ms 以下
+- 1MB: `max_analyzed_offset`（100万文字）の境界に近く、`_source` 解凍コストも大きい
+
+**ハイライト遅延読込**: コンテンツハイライト（スニペット）の取得を検索レスポンスから分離。
+
+- 検索 API（`GET /api/v1/packages`）は Stage 1（msearch + collapse）のみ実行し、
+  `_contentDocId` を含むレスポンスを即座に返す
+- スニペットは `POST /api/v1/packages/highlights` で遅延取得（ids クエリ、collapse なし）
+- フロントエンドはカードを先行表示し、スニペットを非同期で追加表示
+
+- `MAX_CONTENT_CHUNK_SIZE = 500 * 1024`（500KB / チャンク）
 - チャンク数制限なし（ファイルサイズ全体をカバー、`MAX_FETCH_SIZE` = 100MB が実質上限）
-- テキスト系フォーマットはストリーム処理で行単位読み取り（メモリ使用量 ~100KB）
+- テキスト系フォーマットはストリーム処理で行単位読み取り（メモリ使用量 ~500KB）
 - 非 UTF-8 エンコーディングはバッファ変換にフォールバック
-- 100KB チャンクは kuromoji のハイライト処理がデフォルトの `max_analyzed_offset`（1MB）に収まる
+- 500KB チャンクは kuromoji のハイライト処理がデフォルトの `max_analyzed_offset`（100万文字）に収まる
 - メタデータを `resource_pipeline.metadata` に記録:
   - `contentIndexed`: boolean — インデックスされたか
   - `contentType`: string — `'tabular' | 'text' | 'manifest'`
@@ -230,7 +243,7 @@ PDF（数百ページ、数 MB のテキスト）には対応できない。
 ```
 kukan-packages    → データセットメタデータ（変更なし）
 kukan-resources   → リソースメタデータ（変更なし）
-kukan-contents    → キーワード検索用テキスト（~100KB、切り詰め or チャンク分割）
+kukan-contents    → キーワード検索用テキスト（~500KB チャンク分割）
 kukan-embeddings  → Embedding 用小チャンク（~500 tokens × N、knn_vector フィールド付き）
 ```
 
@@ -243,28 +256,27 @@ kukan-embeddings  → Embedding 用小チャンク（~500 tokens × N、knn_vect
 1. ~~**Phase 4**: 3 インデックス構成。1 リソース = 1 ドキュメント（100KB 切り詰め）~~ → **実装済み（下記）**
 2. **Phase 5a**: `kukan-embeddings` を追加。AIAdapter で Embedding 生成。ハイブリッド検索（BM25 + kNN）
 
-### 決定（更新: 2026-04-22）
+### 決定（更新: 2026-04-25）
 
-Phase 4 でチャンク分割を導入済み:
+Phase 4 でチャンク分割 + 遅延ハイライトを導入済み:
 
-- `kukan-contents` は 1 リソース = N ドキュメント（100KB チャンク × 無制限）
+- `kukan-contents` は 1 リソース = N ドキュメント（500KB チャンク × 無制限）
 - ストリーム処理で大きなファイル（100MB まで）にも対応
 - `collapse` でリソース単位の重複排除
-- 2 段階ハイライト（検索はハイライトなし → 表示対象のみハイライト取得）で性能確保
+- ハイライトは `POST /api/v1/packages/highlights` で遅延取得（検索レスポンスから分離）
 - `kukan-embeddings` は Phase 5 で追加予定
 
 ---
 
 ## 実装概要
 
-1. Pipeline の Index ステップでテキスト抽出 → 100KB チャンクに分割 → OpenSearch `kukan-contents` に投入
+1. Pipeline の Index ステップでテキスト抽出 → 500KB チャンクに分割 → OpenSearch `kukan-contents` に投入
 2. テキスト系フォーマットは `streamUtf8Lines` でストリーム処理（メモリ効率）
 3. `kukan-packages` から nested resources を廃止、リソースメタデータは `kukan-resources` に移動
-4. 検索は 2 段階:
-   - **Stage 1**: `msearch` で 3 インデックスを並列クエリ（コンテンツはハイライトなし、`collapse` by resourceId）
-   - **Stage 2**: ページサイズに切り詰め後、表示対象リソースのみ `collapse` + `inner_hits` でハイライト取得
-5. メタデータ再構築（reindex）は `kukan-contents` に影響しない（`includeContent` 指定時のみ削除・再構築）
-6. `postgres.ts` は変更最小限（新メソッドを no-op で実装、既存の DB 直接クエリは変更なし）
+4. 検索は `msearch` で 3 インデックスを並列クエリ（コンテンツは `collapse` by resourceId、ハイライトなし）
+5. コンテンツハイライトは `POST /api/v1/packages/highlights` で遅延取得（`ids` クエリ、collapse なし）
+6. メタデータ再構築（reindex）は `kukan-contents` に影響しない（`includeContent` 指定時のみ削除・再構築）
+7. `postgres.ts` は変更最小限（新メソッドを no-op で実装、既存の DB 直接クエリは変更なし）
 
 ## 関連 ADR
 

@@ -30,6 +30,7 @@ export async function createAdapters(env: Env, db: Database, logger: Logger) {
     search = new OpenSearchAdapter({
       endpoint: env.OPENSEARCH_URL,
       replicas: env.OPENSEARCH_REPLICAS,
+      logger: logger.child({ component: 'opensearch' }),
     })
   } else {
     throw new Error(`Unknown search type: ${env.SEARCH_TYPE}`)

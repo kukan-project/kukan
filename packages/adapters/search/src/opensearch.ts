@@ -10,6 +10,7 @@
  */
 
 import { Client } from '@opensearch-project/opensearch'
+import { createLogger, type Logger } from '@kukan/shared'
 import type {
   SearchAdapter,
   SearchQuery,
@@ -63,6 +64,8 @@ export interface OpenSearchConfig {
     username: string
     password: string
   }
+  /** Optional structured logger (pino). Falls back to no-op if omitted. */
+  logger?: Logger
 }
 
 export class OpenSearchAdapter implements SearchAdapter {
@@ -71,6 +74,7 @@ export class OpenSearchAdapter implements SearchAdapter {
   private resourcesIndex: string
   private contentsIndex: string
   private replicas: number
+  private log: Logger
   private initialized = false
 
   constructor(config: OpenSearchConfig) {
@@ -79,12 +83,18 @@ export class OpenSearchAdapter implements SearchAdapter {
       ...(config.auth && {
         auth: { username: config.auth.username, password: config.auth.password },
       }),
+      // Reduce recovery time after transient connection failures (e.g. during deploy).
+      // 'optimistic' skips ping check and sends real requests to revive dead nodes faster.
+      maxRetries: 3,
+      requestTimeout: 10_000,
+      resurrectStrategy: 'optimistic',
     })
     const prefix = config.indexPrefix || 'kukan'
     this.packagesIndex = `${prefix}-packages`
     this.resourcesIndex = `${prefix}-resources`
     this.contentsIndex = `${prefix}-contents`
     this.replicas = config.replicas ?? 0
+    this.log = config.logger ?? createLogger({ name: 'opensearch', level: 'silent' })
   }
 
   // ------------------------------------------------------------------
@@ -483,7 +493,6 @@ export class OpenSearchAdapter implements SearchAdapter {
       return this.parsePackagesResponse(response, query, offset, limit)
     }
 
-    // msearch: packages + resources + contents in parallel
     const resourcesBody = {
       from: 0,
       size: MAX_MATCHED_RESOURCES_PER_PACKAGE,
@@ -521,10 +530,8 @@ export class OpenSearchAdapter implements SearchAdapter {
       collapse: { field: 'resourceId' },
     }
 
-    const _t: Record<string, number> = {}
-    const _mark = (label: string) => { _t[label] = Date.now() }
-
-    _mark('start')
+    // msearch: packages + resources + contents in parallel
+    const t0 = Date.now()
     const msearchResponse = await this.client.msearch({
       body: [
         { index: this.packagesIndex },
@@ -534,33 +541,30 @@ export class OpenSearchAdapter implements SearchAdapter {
         { index: this.contentsIndex },
         contentsBody,
       ],
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any)
-    _mark('msearch')
+    })
+    const tMsearch = Date.now()
 
-    const [packagesResult, resourcesResult, contentsResult] =
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      msearchResponse.body.responses as any[]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [packagesResult, resourcesResult, contentsResult] = msearchResponse.body
+      .responses as any[]
 
     // Parse packages
     const result = this.parsePackagesResponse({ body: packagesResult }, query, offset, limit)
-    _mark('parse')
 
     // Parse resource metadata matches and merge
     const resourceHits = resourcesResult.hits?.hits ?? []
     if (resourceHits.length > 0) {
       await this.mergeResourceHits(result, resourceHits)
     }
-    _mark('mergeRes')
 
     // Stage 1: merge content matches (no highlights yet)
     const contentHits = contentsResult.hits?.hits ?? []
     if (contentHits.length > 0) {
       await this.mergeContentHits(result, contentHits)
     }
-    _mark('mergeContent')
+    const tMerge = Date.now()
 
-    // Trim to page size before expensive highlight fetch
+    // Trim to page size (content highlights are fetched lazily by the client)
     if (result.items.length > limit) {
       result.items.sort(
         (a, b) =>
@@ -569,26 +573,17 @@ export class OpenSearchAdapter implements SearchAdapter {
       )
       result.items = result.items.slice(0, limit)
     }
-    _mark('trim')
 
-    // Stage 2: fetch highlights only for resources in the final result page
-    const highlightResourceCount = result.items.reduce(
-      (n, item) => n + (item.matchedResources?.filter((r) => r.matchSource === 'content').length ?? 0), 0
-    )
-    await this.fetchContentHighlights(result, query.q!)
-    _mark('highlights')
-
-    // eslint-disable-next-line no-console
-    console.log(
-      `[search-profile] q="${query.q}" ` +
-      `msearch=${_t.msearch - _t.start}ms ` +
-      `parse=${_t.parse - _t.msearch}ms ` +
-      `mergeRes=${_t.mergeRes - _t.parse}ms(${resourceHits.length}hits) ` +
-      `mergeContent=${_t.mergeContent - _t.mergeRes}ms(${contentHits.length}hits) ` +
-      `trim=${_t.trim - _t.mergeContent}ms(${result.items.length}items) ` +
-      `highlights=${_t.highlights - _t.trim}ms(${highlightResourceCount}resources) ` +
-      `total=${_t.highlights - _t.start}ms`
-    )
+    this.log.info({
+      msg: 'search',
+      q: query.q,
+      msearch: tMsearch - t0,
+      pkg: packagesResult.took,
+      res: resourcesResult.took,
+      cnt: contentsResult.took,
+      merge: tMerge - tMsearch,
+      total: Date.now() - t0,
+    })
 
     return result
   }
@@ -773,12 +768,15 @@ export class OpenSearchAdapter implements SearchAdapter {
       const existing = existingMatched.get(resourceId)
       if (existing) {
         existing.matchSource = 'content'
+        // Store the chunk doc ID for Stage 2 highlight
+        existing._contentDocId = hit._id as string
         continue
       }
 
       const matched: MatchedResource = {
         id: resourceId,
         matchSource: 'content',
+        _contentDocId: hit._id as string,
       }
 
       contentByResource.set(resourceId, matched)
@@ -790,7 +788,6 @@ export class OpenSearchAdapter implements SearchAdapter {
     const contentOnlyResourceIds = [...contentByResource.keys()].filter(
       (id) => contentByResource.get(id)!.name === undefined
     )
-    const _mc0 = Date.now()
     if (contentOnlyResourceIds.length > 0) {
       try {
         const resMget = await this.client.mget({
@@ -811,8 +808,6 @@ export class OpenSearchAdapter implements SearchAdapter {
         // Best-effort: display without metadata
       }
     }
-
-    const _mc1 = Date.now()
 
     // Attach content-only matches to existing items
     for (const item of result.items) {
@@ -844,70 +839,45 @@ export class OpenSearchAdapter implements SearchAdapter {
         // Best-effort: mget for content-only packages
       }
     }
-    const _mc2 = Date.now()
-
-    // eslint-disable-next-line no-console
-    console.log(
-      `[mergeContent-profile] ` +
-      `resMget=${_mc1 - _mc0}ms(${contentOnlyResourceIds.length}ids) ` +
-      `pkgMget=${_mc2 - _mc1}ms(${missingPkgIds.length}ids)`
-    )
   }
 
-  /** Stage 2: fetch content highlights only for resources visible in the result page */
-  private async fetchContentHighlights(result: SearchResult, queryText: string): Promise<void> {
-    const resourceIds: string[] = []
-    for (const item of result.items) {
-      for (const mr of item.matchedResources ?? []) {
-        if (mr.matchSource === 'content') {
-          resourceIds.push(mr.id)
-        }
-      }
-    }
-    if (resourceIds.length === 0) return
+  /** Fetch content highlights for specific chunk document IDs.
+   *  Uses an `ids` query — no collapse, no full-text re-scan.
+   *  Returns a map of chunkDocId → sanitized highlight snippet. */
+  async fetchContentHighlights(
+    chunkDocIds: string[],
+    queryText: string
+  ): Promise<Record<string, string>> {
+    if (chunkDocIds.length === 0) return {}
+    await this.ensureIndex()
 
     try {
       const response = await this.client.search({
         index: this.contentsIndex,
         body: {
-          size: resourceIds.length,
+          size: chunkDocIds.length,
           query: {
             bool: {
               must: { match: { extractedText: { query: queryText, operator: 'and' } } },
-              filter: { terms: { resourceId: resourceIds } },
+              filter: { ids: { values: chunkDocIds } },
             },
           },
-          collapse: {
-            field: 'resourceId',
-            inner_hits: {
-              name: 'top_chunks',
-              size: 1,
-              highlight: CONTENT_HIGHLIGHT,
-            },
-          },
+          _source: false,
+          highlight: CONTENT_HIGHLIGHT,
         },
       })
 
-      const snippetsByResource = new Map<string, string[]>()
+      const result: Record<string, string> = {}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       for (const hit of (response.body.hits.hits ?? []) as any[]) {
-        const resourceId = hit._source.resourceId as string
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const inner = (hit.inner_hits?.top_chunks?.hits?.hits ?? []) as any[]
-        const fragment = inner[0]?.highlight?.extractedText?.[0] as string | undefined
+        const fragment = hit.highlight?.extractedText?.[0] as string | undefined
         if (fragment) {
-          snippetsByResource.set(resourceId, [sanitizeHighlight(fragment)])
+          result[hit._id as string] = sanitizeHighlight(fragment)
         }
       }
-
-      for (const item of result.items) {
-        for (const mr of item.matchedResources ?? []) {
-          const snippets = snippetsByResource.get(mr.id)
-          if (snippets) mr.contentSnippets = snippets
-        }
-      }
+      return result
     } catch {
-      // Best-effort: search works without highlights
+      return {}
     }
   }
 

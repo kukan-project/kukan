@@ -225,7 +225,7 @@ describe('OpenSearchAdapter', () => {
                 total: { value: 1 },
                 hits: [
                   {
-                    _id: 'res-1',
+                    _id: 'chunk-res1-0',
                     _source: { resourceId: 'res-1', packageId: 'pkg-1' },
                     _score: 3,
                   },
@@ -243,29 +243,6 @@ describe('OpenSearchAdapter', () => {
         },
       })
 
-      // Stage 2: fetchContentHighlights calls client.search for highlights
-      // Stage 2: highlight search with collapse + inner_hits
-      mockClient.search.mockResolvedValueOnce({
-        body: {
-          hits: {
-            hits: [
-              {
-                _source: { resourceId: 'res-1' },
-                inner_hits: {
-                  top_chunks: {
-                    hits: {
-                      hits: [
-                        { highlight: { extractedText: ['...東京都の<mark>人口</mark>は...'] } },
-                      ],
-                    },
-                  },
-                },
-              },
-            ],
-          },
-        },
-      })
-
       const result = await adapter.search({ q: '人口', offset: 0, limit: 10 })
 
       expect(result.items).toHaveLength(1)
@@ -274,7 +251,7 @@ describe('OpenSearchAdapter', () => {
         expect.objectContaining({
           id: 'res-1',
           matchSource: 'content',
-          contentSnippets: ['...東京都の<mark>人口</mark>は...'],
+          _contentDocId: 'chunk-res1-0',
         })
       )
     })
@@ -497,7 +474,7 @@ describe('OpenSearchAdapter', () => {
                 total: { value: 1 },
                 hits: [
                   {
-                    _id: 'res-1',
+                    _id: 'chunk-res1-0',
                     _source: { resourceId: 'res-1', packageId: 'pkg-1' },
                     _score: 2,
                   },
@@ -508,39 +485,12 @@ describe('OpenSearchAdapter', () => {
         },
       })
 
-      // Stage 2: highlight with collapse + inner_hits
-      mockClient.search.mockResolvedValueOnce({
-        body: {
-          hits: {
-            hits: [
-              {
-                _source: { resourceId: 'res-1' },
-                inner_hits: {
-                  top_chunks: {
-                    hits: {
-                      hits: [
-                        {
-                          highlight: {
-                            extractedText: [
-                              '<a href="javascript:void(0)">click</a><mark>data</mark>',
-                            ],
-                          },
-                        },
-                      ],
-                    },
-                  },
-                },
-              },
-            ],
-          },
-        },
-      })
-
       const result = await adapter.search({ q: 'data' })
 
       const matched = result.items[0].matchedResources![0]
       expect(matched.highlightedName).toBe('x<mark>data</mark>.csv')
-      expect(matched.contentSnippets).toEqual(['click<mark>data</mark>'])
+      // Content snippets are now fetched lazily via fetchContentHighlights
+      expect(matched._contentDocId).toBe('chunk-res1-0')
     })
   })
 
@@ -752,7 +702,7 @@ describe('OpenSearchAdapter', () => {
                 total: { value: 1 },
                 hits: [
                   {
-                    _id: 'res-1',
+                    _id: 'chunk-res1-0',
                     _source: { resourceId: 'res-1', packageId: 'pkg-2' },
                     _score: 3,
                   },
@@ -789,26 +739,6 @@ describe('OpenSearchAdapter', () => {
         },
       })
 
-      // Stage 2: highlight with collapse + inner_hits
-      mockClient.search.mockResolvedValueOnce({
-        body: {
-          hits: {
-            hits: [
-              {
-                _source: { resourceId: 'res-1' },
-                inner_hits: {
-                  top_chunks: {
-                    hits: {
-                      hits: [{ highlight: { extractedText: ['<mark>keyword</mark> found'] } }],
-                    },
-                  },
-                },
-              },
-            ],
-          },
-        },
-      })
-
       const result = await adapter.search({ q: 'keyword' })
 
       expect(mockClient.mget).toHaveBeenCalledWith({
@@ -818,9 +748,7 @@ describe('OpenSearchAdapter', () => {
       expect(result.items).toHaveLength(1)
       expect(result.items[0].name).toBe('content-only-pkg')
       expect(result.items[0].matchedResources).toHaveLength(1)
-      expect(result.items[0].matchedResources![0].contentSnippets).toEqual([
-        '<mark>keyword</mark> found',
-      ])
+      expect(result.items[0].matchedResources![0]._contentDocId).toBe('chunk-res1-0')
       expect(result.items[0].matchedResources![0].matchSource).toBe('content')
     })
 
@@ -835,7 +763,7 @@ describe('OpenSearchAdapter', () => {
                 total: { value: 1 },
                 hits: [
                   {
-                    _id: 'res-1',
+                    _id: 'chunk-res1-0',
                     _source: { resourceId: 'res-1', packageId: 'pkg-1' },
                     _score: 2,
                   },
@@ -872,26 +800,6 @@ describe('OpenSearchAdapter', () => {
         },
       })
 
-      // Stage 2: highlight with collapse + inner_hits
-      mockClient.search.mockResolvedValueOnce({
-        body: {
-          hits: {
-            hits: [
-              {
-                _source: { resourceId: 'res-1' },
-                inner_hits: {
-                  top_chunks: {
-                    hits: {
-                      hits: [{ highlight: { extractedText: ['<mark>test</mark>'] } }],
-                    },
-                  },
-                },
-              },
-            ],
-          },
-        },
-      })
-
       const result = await adapter.search({ q: 'test' })
 
       // Should have fetched resource metadata from kukan-resources
@@ -905,6 +813,137 @@ describe('OpenSearchAdapter', () => {
       expect(mr.description).toBe('Test data')
       expect(mr.format).toBe('CSV')
       expect(mr.matchSource).toBe('content')
+      expect(mr._contentDocId).toBe('chunk-res1-0')
+    })
+  })
+
+  describe('fetchContentHighlights', () => {
+    it('should return highlights keyed by chunk doc ID', async () => {
+      mockClient.search.mockResolvedValueOnce({
+        body: {
+          hits: {
+            hits: [
+              { _id: 'chunk-1', highlight: { extractedText: ['<mark>test</mark> data'] } },
+              { _id: 'chunk-2', highlight: { extractedText: ['more <mark>test</mark>'] } },
+            ],
+          },
+        },
+      })
+
+      const result = await adapter.fetchContentHighlights(['chunk-1', 'chunk-2'], 'test')
+
+      expect(result).toEqual({
+        'chunk-1': '<mark>test</mark> data',
+        'chunk-2': 'more <mark>test</mark>',
+      })
+    })
+
+    it('should return empty object for empty input', async () => {
+      const result = await adapter.fetchContentHighlights([], 'test')
+      expect(result).toEqual({})
+      expect(mockClient.search).not.toHaveBeenCalled()
+    })
+
+    it('should sanitize XSS in highlight snippets', async () => {
+      mockClient.search.mockResolvedValueOnce({
+        body: {
+          hits: {
+            hits: [
+              {
+                _id: 'chunk-1',
+                highlight: {
+                  extractedText: ['<script>alert(1)</script><mark>data</mark>'],
+                },
+              },
+            ],
+          },
+        },
+      })
+
+      const result = await adapter.fetchContentHighlights(['chunk-1'], 'data')
+      expect(result['chunk-1']).toBe('alert(1)<mark>data</mark>')
+    })
+
+    it('should return empty object on OpenSearch error', async () => {
+      mockClient.search.mockRejectedValueOnce(new Error('connection refused'))
+
+      const result = await adapter.fetchContentHighlights(['chunk-1'], 'test')
+      expect(result).toEqual({})
+    })
+
+    it('should skip chunks without highlight fragments', async () => {
+      mockClient.search.mockResolvedValueOnce({
+        body: {
+          hits: {
+            hits: [
+              { _id: 'chunk-1', highlight: { extractedText: ['<mark>found</mark>'] } },
+              { _id: 'chunk-2', highlight: {} },
+              { _id: 'chunk-3' },
+            ],
+          },
+        },
+      })
+
+      const result = await adapter.fetchContentHighlights(
+        ['chunk-1', 'chunk-2', 'chunk-3'],
+        'found'
+      )
+      expect(result).toEqual({ 'chunk-1': '<mark>found</mark>' })
+    })
+  })
+
+  describe('search content + resource overlap', () => {
+    it('should attach _contentDocId when resource matches both metadata and content', async () => {
+      mockClient.msearch.mockResolvedValue({
+        body: {
+          responses: [
+            {
+              hits: {
+                total: { value: 1 },
+                hits: [{ _id: 'pkg-1', _source: { name: 'test-pkg' }, _score: 5 }],
+              },
+            },
+            // Resource metadata match
+            {
+              hits: {
+                total: { value: 1 },
+                hits: [
+                  {
+                    _id: 'res-1',
+                    _source: { id: 'res-1', packageId: 'pkg-1', name: 'data.csv' },
+                    _score: 3,
+                    highlight: { name: ['<mark>data</mark>.csv'] },
+                  },
+                ],
+              },
+            },
+            // Content match for same resource
+            {
+              hits: {
+                total: { value: 1 },
+                hits: [
+                  {
+                    _id: 'chunk-res1-0',
+                    _source: { resourceId: 'res-1', packageId: 'pkg-1' },
+                    _score: 2,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      })
+
+      const result = await adapter.search({ q: 'data', offset: 0, limit: 10 })
+
+      // Should have 1 matched resource (not duplicated)
+      expect(result.items[0].matchedResources).toHaveLength(1)
+      const mr = result.items[0].matchedResources![0]
+      // Both metadata and content matched — matchSource upgraded to 'content'
+      expect(mr.matchSource).toBe('content')
+      expect(mr._contentDocId).toBe('chunk-res1-0')
+      // Metadata highlight still present
+      expect(mr.highlightedName).toBe('<mark>data</mark>.csv')
     })
   })
 

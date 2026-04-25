@@ -147,6 +147,24 @@ packagesRouter.get(
   }
 )
 
+// POST /api/v1/packages/highlights - Fetch content highlights for specific chunks (lazy loading)
+packagesRouter.post(
+  '/highlights',
+  zValidator(
+    'json',
+    z.object({
+      q: z.string().min(1),
+      chunks: z.array(z.string()).min(1).max(200),
+    })
+  ),
+  async (c) => {
+    const { q, chunks } = c.req.valid('json')
+    const search = c.get('search')
+    const result = await search.fetchContentHighlights(chunks, q)
+    return c.json(result)
+  }
+)
+
 // POST /api/v1/packages - Create new package (org editor+)
 packagesRouter.post('/', zValidator('json', createPackageSchema), async (c) => {
   const user = c.get('user')

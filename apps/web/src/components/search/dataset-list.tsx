@@ -84,7 +84,13 @@ export function DatasetList({ initialData }: Props) {
     clientFetch(`/api/v1/packages?${query}`, { signal: controller.signal })
       .then(async (res) => {
         if (!controller.signal.aborted && res.ok) {
-          setData(await res.json())
+          const result: DatasetData = await res.json()
+          setData(result)
+
+          // Lazy-load content highlights after rendering search results
+          if (query.get('q')) {
+            fetchSnippets(result, query.get('q')!, controller.signal)
+          }
         }
       })
       .catch(() => {
@@ -96,6 +102,62 @@ export function DatasetList({ initialData }: Props) {
 
     return () => controller.abort()
   }, [paramsKey, isInitialSsr, searchParams])
+
+  /** Fetch content snippets for matched resources and merge into state */
+  function fetchSnippets(result: DatasetData, queryText: string, signal: AbortSignal) {
+    // Map chunk doc IDs to resource IDs for stable lookup (not positional indices)
+    const chunkToResource = new Map<string, string>()
+    const chunkIds: string[] = []
+    for (const item of result.items) {
+      for (const mr of item.matchedResources ?? []) {
+        if (mr.matchSource === 'content' && mr._contentDocId) {
+          chunkToResource.set(mr._contentDocId, mr.id)
+          chunkIds.push(mr._contentDocId)
+        }
+      }
+    }
+    if (chunkIds.length === 0) return
+
+    clientFetch('/api/v1/packages/highlights', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: queryText, chunks: chunkIds }),
+      signal,
+    })
+      .then(async (res) => {
+        if (signal.aborted || !res.ok) return
+        const highlights: Record<string, string> = await res.json()
+
+        // Build resourceId → snippet map
+        const snippetsByResource = new Map<string, string>()
+        for (const [docId, snippet] of Object.entries(highlights)) {
+          const resourceId = chunkToResource.get(docId)
+          if (resourceId) snippetsByResource.set(resourceId, snippet)
+        }
+        if (snippetsByResource.size === 0) return
+
+        setData((prev) => {
+          if (!prev) return prev
+          const updatedItems = [...prev.items]
+          let changed = false
+          for (const [i, item] of updatedItems.entries()) {
+            if (!item.matchedResources?.some((mr) => snippetsByResource.has(mr.id))) continue
+            updatedItems[i] = {
+              ...item,
+              matchedResources: item.matchedResources!.map((mr) => {
+                const snippet = snippetsByResource.get(mr.id)
+                return snippet ? { ...mr, contentSnippets: [snippet] } : mr
+              }),
+            }
+            changed = true
+          }
+          return changed ? { ...prev, items: updatedItems } : prev
+        })
+      })
+      .catch(() => {
+        // Best-effort: cards still render without snippets
+      })
+  }
 
   const facets = data?.facets ?? emptyFacets
 
