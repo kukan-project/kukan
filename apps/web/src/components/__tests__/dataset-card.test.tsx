@@ -78,4 +78,38 @@ describe('DatasetCard', () => {
     const link = screen.getByRole('link', { name: /Resource One/ })
     expect(link).toHaveAttribute('href', '/dataset/test-dataset/resource/r1')
   })
+
+  it('should show loading spinner when content match has no snippets yet', () => {
+    render(
+      <DatasetCard
+        pkg={{
+          ...basePkg,
+          matchedResources: [{ id: 'r1', name: 'data.csv', matchSource: 'content' }],
+        }}
+      />
+    )
+    expect(screen.getByText('Content match')).toBeInTheDocument()
+    expect(screen.getByText('Loading…')).toBeInTheDocument()
+  })
+
+  it('should show content snippets when loaded', () => {
+    render(
+      <DatasetCard
+        pkg={{
+          ...basePkg,
+          matchedResources: [
+            {
+              id: 'r1',
+              name: 'data.csv',
+              matchSource: 'content',
+              contentSnippets: ['matched <mark>text</mark> here'],
+            },
+          ],
+        }}
+      />
+    )
+    expect(screen.getByText('Content match')).toBeInTheDocument()
+    expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
+    expect(screen.getByText(/matched/)).toBeInTheDocument()
+  })
 })

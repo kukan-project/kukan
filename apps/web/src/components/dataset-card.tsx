@@ -156,15 +156,14 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                               {r.description}
                             </p>
                           ))}
-                        {r.matchSource === 'content' &&
-                          r.contentSnippets &&
-                          r.contentSnippets.length > 0 && (
-                            <div className="mt-1 space-y-1">
-                              <span className="flex items-center gap-0.5 text-[10px] font-medium text-primary">
-                                <Search className="h-2.5 w-2.5" />
-                                {t('contentMatch')}
-                              </span>
-                              {r.contentSnippets.map((snippet, i) => (
+                        {r.matchSource === 'content' && (
+                          <div className="mt-1 space-y-1">
+                            <span className="flex items-center gap-0.5 text-[10px] font-medium text-primary">
+                              <Search className="h-2.5 w-2.5" />
+                              {t('contentMatch')}
+                            </span>
+                            {r.contentSnippets && r.contentSnippets.length > 0 ? (
+                              r.contentSnippets.map((snippet, i) => (
                                 <p
                                   key={i}
                                   className={`line-clamp-4 rounded border border-primary/20 bg-primary/5 px-2 py-1.5 text-xs text-muted-foreground ${HIGHLIGHT_MARK}`}
@@ -173,9 +172,17 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                                     __html: snippet.replace(/\n/g, ' '),
                                   }}
                                 />
-                              ))}
-                            </div>
-                          )}
+                              ))
+                            ) : (
+                              <div className="flex h-7 w-full items-center gap-2 rounded border border-primary/10 bg-primary/5 px-2">
+                                <div className="h-3 w-3 animate-spin rounded-full border-2 border-primary/20 border-t-primary/60" />
+                                <span className="text-[10px] text-muted-foreground">
+                                  {t('loadingSnippet')}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </Link>
                     </li>
                   ))}

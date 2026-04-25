@@ -544,7 +544,8 @@ export class OpenSearchAdapter implements SearchAdapter {
     })
     const tMsearch = Date.now()
 
-    const [packagesResult, resourcesResult, contentsResult] = msearchResponse.body.responses as Array<{
+    const [packagesResult, resourcesResult, contentsResult] = msearchResponse.body
+      .responses as Array<{
       hits: { total: { value: number } | number; hits: Record<string, unknown>[] }
       aggregations?: Record<string, unknown>
       took: number
