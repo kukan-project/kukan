@@ -24,7 +24,7 @@ import {
 } from '@kukan/shared'
 import { TEXT_PREVIEW_LIMIT, DEFAULT_RANGE_CHUNK } from '../config'
 import { checkOrgRole, resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
-import { indexPackage, indexResourceMetadata } from '../services/search-index'
+import { indexPackageMetadata, indexResourceMetadata } from '../services/search-index'
 import { Readable } from 'stream'
 import type { Database } from '@kukan/db'
 import type { SearchFilters } from '@kukan/search-adapter'
@@ -416,7 +416,7 @@ resourcesRouter.put('/:id', zValidator('json', updateResourceSchema), async (c) 
       : Promise.resolve()
   await Promise.all([
     enqueuePromise,
-    indexPackage(db, c.get('search'), res.packageId),
+    indexPackageMetadata(db, c.get('search'), res.packageId),
     indexResourceMetadata(db, c.get('search'), id),
   ])
   return c.json(res)
@@ -434,6 +434,10 @@ resourcesRouter.delete('/:id', async (c) => {
   await checkResourcePermission(db, user, resourceService, id)
 
   const res = await resourceService.delete(id)
-  await Promise.all([indexPackage(db, search, res.packageId), search.deleteResource(id)])
+  await Promise.all([
+    indexPackageMetadata(db, search, res.packageId),
+    search.deleteResource(id),
+    search.deleteContent(id),
+  ])
   return c.json(res)
 })

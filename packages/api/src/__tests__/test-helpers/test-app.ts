@@ -25,23 +25,26 @@ import { apiTokensRouter } from '../../routes/api-tokens'
 import { ckanCompatRouter } from '../../routes/ckan-compat'
 
 // Minimal mock adapters (search/storage are no-ops for route tests)
-const mockSearch: SearchAdapter = {
+export const mockSearch: SearchAdapter = {
   search: async () => ({ items: [], total: 0, offset: 0, limit: 20 }),
   indexPackage: async () => {},
   deletePackage: async () => {},
   bulkIndexPackages: async () => {},
   deleteAllPackages: async () => {},
   indexResource: async () => {},
-  deleteResource: async () => {},
+  deleteResource: vi.fn(async () => {}),
   bulkIndexResources: async () => {},
   deleteAllResources: async () => {},
   sumResourceCount: async () => 0,
   getIndexStats: async () => null,
   indexContent: async () => {},
-  deleteContent: async () => {},
+  deleteContent: vi.fn(async () => {}),
   deleteAllContents: async () => {},
   getDocument: async () => null,
   browseDocuments: async () => null,
+  getContentChunks: async () => [],
+  browseContentsByResource: async () => ({ items: [], total: 0, offset: 0, limit: 20 }),
+  fetchContentHighlights: async () => ({}),
 }
 
 const mockStorage = {

@@ -186,7 +186,7 @@ finalScore = packages_score + max(resource_scores) * RESOURCE_BOOST
 初期実装では `kukan-resources` にリソースメタデータとコンテンツテキスト（`extractedText`）を
 同居させていたが、運用上の問題が判明した。
 
-**問題**: メタデータ再構築（`POST /admin/reindex`）時に `kukan-resources` を全削除→再投入すると、
+**問題**: メタデータ再構築（`POST /admin/reindex-metadata`）時に `kukan-resources` を全削除→再投入すると、
 コンテンツテキスト（Pipeline で生成、S3 から再取得が必要）も消失する。
 コンテンツ再処理なしでメタデータだけ再構築したいケースに対応できない。
 

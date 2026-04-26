@@ -10,12 +10,24 @@
  * Non-text formats (DOC, XLS, PPT, RDF, images) are skipped (contentIndexed: false).
  */
 
-import { isTextFormat, isCsvFormat, isZipFormat, isDocumentFormat, type ContentType } from '@kukan/shared'
+import {
+  isTextFormat,
+  isCsvFormat,
+  isZipFormat,
+  isDocumentFormat,
+  type ContentType,
+} from '@kukan/shared'
 import { OfficeParser } from 'officeparser'
 import type { ContentDoc } from '@kukan/search-adapter'
 import type { PipelineContext } from '../types'
 import type { ExtractResult } from './extract'
-import { streamToBuffer, streamUtf8Lines, bufferToUtf8, streamToTempFile, cleanupTempFile } from '../node-utils'
+import {
+  streamToBuffer,
+  streamUtf8Lines,
+  bufferToUtf8,
+  streamToTempFile,
+  cleanupTempFile,
+} from '../node-utils'
 import { MAX_CONTENT_CHUNK_SIZE } from '@/config'
 
 export interface IndexContentResult {
@@ -44,6 +56,8 @@ export async function executeIndexContent(
 
   const contentType = getContentType(normalizedFormat)
   if (!contentType) {
+    // Clean up any previously indexed content (e.g. format changed to non-indexable)
+    await ctx.deleteContent(resourceId)
     return null
   }
 

@@ -202,19 +202,18 @@ export default function AdminSearchPage() {
   const [reindexing, setReindexing] = useState(false)
   const [includeContent, setIncludeContent] = useState(false)
   const [reindexResult, setReindexResult] = useState<{
-    indexed: number
+    packagesIndexed: number
     resourcesIndexed: number
     contentEnqueued?: number
+    contentFailed?: number
   } | null>(null)
 
   async function handleReindex() {
     setReindexing(true)
     setReindexResult(null)
     try {
-      const res = await clientFetch('/api/v1/admin/reindex', {
+      const res = await clientFetch('/api/v1/admin/reindex-metadata', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ includeContent }),
       })
       if (!res.ok) return
       const data = await res.json()
@@ -223,7 +222,11 @@ export default function AdminSearchPage() {
         const enqueueRes = await clientFetch('/api/v1/admin/jobs/enqueue-all', { method: 'POST' })
         if (enqueueRes.ok) {
           const enqueueData = await enqueueRes.json()
-          setReindexResult({ ...data, contentEnqueued: enqueueData.enqueued })
+          setReindexResult({
+            ...data,
+            contentEnqueued: enqueueData.enqueued,
+            contentFailed: enqueueData.failed,
+          })
         } else {
           setReindexResult(data)
         }
@@ -476,12 +479,15 @@ export default function AdminSearchPage() {
               <div className="text-sm text-muted-foreground">
                 <p>
                   {t('reindexResult', {
-                    count: reindexResult.indexed,
+                    count: reindexResult.packagesIndexed,
                     resourceCount: reindexResult.resourcesIndexed,
                   })}
                 </p>
                 {reindexResult.contentEnqueued !== undefined && (
-                  <p>{t('contentEnqueuedResult', { count: reindexResult.contentEnqueued })}</p>
+                  <p>
+                    {t('contentEnqueuedResult', { count: reindexResult.contentEnqueued })}
+                    {reindexResult.contentFailed ? ` (${t('contentEnqueuedFailed', { count: reindexResult.contentFailed })})` : ''}
+                  </p>
                 )}
               </div>
             )}

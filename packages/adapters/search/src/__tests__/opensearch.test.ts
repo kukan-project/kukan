@@ -109,12 +109,92 @@ describe('OpenSearchAdapter', () => {
       expect(mockClient.indices.create).not.toHaveBeenCalled()
     })
 
-    it('should only check once (idempotent)', async () => {
+    it('should skip re-check within TTL (60s)', async () => {
       await adapter.ensureIndex()
       await adapter.ensureIndex()
 
       // 3 calls on first ensureIndex (packages + resources + contents), then 0 on second
       expect(mockClient.indices.exists).toHaveBeenCalledTimes(3)
+    })
+
+    it('should re-check after TTL expires', async () => {
+      await adapter.ensureIndex()
+      expect(mockClient.indices.exists).toHaveBeenCalledTimes(3)
+
+      // Advance time past 60s TTL
+      vi.useFakeTimers()
+      vi.setSystemTime(Date.now() + 61_000)
+
+      mockClient.indices.exists.mockResolvedValue({ body: true })
+      await adapter.ensureIndex()
+
+      expect(mockClient.indices.exists).toHaveBeenCalledTimes(6)
+      expect(mockClient.indices.create).toHaveBeenCalledTimes(3) // no new creates
+      vi.useRealTimers()
+    })
+
+    it('should call onIndexRecreated when index is recreated after loss', async () => {
+      const onRecreated = vi.fn()
+      const adapterWithCallback = new OpenSearchAdapter({
+        endpoint: 'http://localhost:9200',
+        onIndexRecreated: onRecreated,
+      })
+
+      // First call: indices don't exist → create
+      mockClient.indices.exists.mockResolvedValue({ body: false })
+      await adapterWithCallback.ensureIndex()
+      expect(onRecreated).toHaveBeenCalledOnce()
+
+      // Advance past TTL, indices exist → no callback
+      vi.useFakeTimers()
+      vi.setSystemTime(Date.now() + 61_000)
+      mockClient.indices.exists.mockResolvedValue({ body: true })
+      onRecreated.mockClear()
+      await adapterWithCallback.ensureIndex()
+      expect(onRecreated).not.toHaveBeenCalled()
+
+      // Advance past TTL, indices lost again → callback
+      vi.setSystemTime(Date.now() + 61_000)
+      mockClient.indices.exists.mockResolvedValue({ body: false })
+      mockClient.indices.create.mockResolvedValue({ body: {} })
+      await adapterWithCallback.ensureIndex()
+      expect(onRecreated).toHaveBeenCalledOnce()
+      vi.useRealTimers()
+    })
+
+    it('should delete indices and throttle retry when callback fails', async () => {
+      const onRecreated = vi.fn().mockRejectedValue(new Error('DB connection failed'))
+      const adapterWithCallback = new OpenSearchAdapter({
+        endpoint: 'http://localhost:9200',
+        onIndexRecreated: onRecreated,
+      })
+
+      // First call: indices created, callback fails → indices deleted, TTL set
+      mockClient.indices.exists.mockResolvedValue({ body: false })
+      mockClient.indices.create.mockResolvedValue({ body: {} })
+      mockClient.indices.delete.mockResolvedValue({ body: {} })
+      await adapterWithCallback.ensureIndex()
+
+      expect(onRecreated).toHaveBeenCalledOnce()
+      expect(mockClient.indices.delete).toHaveBeenCalledTimes(3)
+
+      // Within TTL: ensureIndex skips (no re-check, no retry)
+      onRecreated.mockClear()
+      mockClient.indices.exists.mockClear()
+      await adapterWithCallback.ensureIndex()
+      expect(mockClient.indices.exists).not.toHaveBeenCalled()
+      expect(onRecreated).not.toHaveBeenCalled()
+
+      // After TTL: re-detects loss, retries callback
+      vi.useFakeTimers()
+      vi.setSystemTime(Date.now() + 61_000)
+      mockClient.indices.exists.mockResolvedValue({ body: false })
+      mockClient.indices.create.mockResolvedValue({ body: {} })
+      await adapterWithCallback.ensureIndex()
+
+      expect(mockClient.indices.exists).toHaveBeenCalledTimes(3)
+      expect(onRecreated).toHaveBeenCalledOnce() // retried
+      vi.useRealTimers()
     })
 
     it('should use custom index prefix', async () => {

@@ -223,6 +223,7 @@
       "reindexResult": "{count} datasets, {resourceCount} resources indexed",
       "includeContent": "Also reprocess content (includes text extraction, takes longer)",
       "contentEnqueuedResult": "{count} contents enqueued for reprocessing",
+      "contentEnqueuedFailed": "{count} failed",
       "contentSizeNote": "Content index is truncated to a maximum of 100KB per resource."
     },
     "adminSite": {

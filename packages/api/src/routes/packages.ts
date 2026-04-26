@@ -19,7 +19,7 @@ import {
 } from '@kukan/shared'
 import type { MatchedResource, SearchFilters } from '@kukan/search-adapter'
 import { checkOrgRole, resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
-import { indexPackage, indexResourceMetadata } from '../services/search-index'
+import { indexPackageMetadata, indexResourceMetadata } from '../services/search-index'
 import type { AppContext } from '../context'
 
 export const packagesRouter = new Hono<{ Variables: AppContext }>()
@@ -176,7 +176,7 @@ packagesRouter.post('/', zValidator('json', createPackageSchema), async (c) => {
 
   const service = new PackageService(db)
   const pkg = await service.create(input, user.id)
-  await indexPackage(db, c.get('search'), pkg.id)
+  await indexPackageMetadata(db, c.get('search'), pkg.id)
   return c.json(pkg, 201)
 })
 
@@ -210,7 +210,7 @@ packagesRouter.put('/:nameOrId', zValidator('json', updatePackageSchema), async 
 
   const input = c.req.valid('json')
   const pkg = await service.update(nameOrId, input)
-  await indexPackage(db, c.get('search'), pkg.id)
+  await indexPackageMetadata(db, c.get('search'), pkg.id)
   return c.json(pkg)
 })
 
@@ -227,7 +227,7 @@ packagesRouter.patch('/:nameOrId', zValidator('json', patchPackageSchema), async
 
   const input = c.req.valid('json')
   const pkg = await service.patch(nameOrId, input)
-  await indexPackage(db, c.get('search'), pkg.id)
+  await indexPackageMetadata(db, c.get('search'), pkg.id)
   return c.json(pkg)
 })
 
@@ -336,7 +336,7 @@ packagesRouter.post(
 
     await Promise.all([
       enqueuePromise,
-      indexPackage(db, c.get('search'), pkg.id),
+      indexPackageMetadata(db, c.get('search'), pkg.id),
       indexResourceMetadata(db, c.get('search'), resource.id),
     ])
     return c.json(resource, 201)

@@ -5,7 +5,7 @@
 
 import { eq, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { resourcePipeline, resourcePipelineStep } from '@kukan/db'
+import { resource, resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import { ValidationError, PIPELINE_JOB_TYPE } from '@kukan/shared'
 import type { PipelineStatus } from '@kukan/shared'
 import type { QueueAdapter } from '@kukan/queue-adapter'
@@ -60,6 +60,30 @@ export class PipelineService {
         .where(eq(resourcePipeline.id, pipeline.id))
       throw err
     }
+  }
+
+  /**
+   * Enqueue pipeline processing for all active resources.
+   * Individual enqueue failures are counted but do not stop the batch.
+   */
+  async enqueueAll(): Promise<{ enqueued: number; failed: number }> {
+    const resources = await this.db
+      .select({ id: resource.id })
+      .from(resource)
+      .where(eq(resource.state, 'active'))
+
+    const BATCH_SIZE = 100
+    let enqueued = 0
+    let failed = 0
+    for (let i = 0; i < resources.length; i += BATCH_SIZE) {
+      const batch = resources.slice(i, i + BATCH_SIZE)
+      const results = await Promise.allSettled(batch.map((r) => this.enqueue(r.id)))
+      for (const r of results) {
+        if (r.status === 'fulfilled') enqueued++
+        else failed++
+      }
+    }
+    return { enqueued, failed }
   }
 
   /**

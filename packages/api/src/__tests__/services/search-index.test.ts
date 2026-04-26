@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createMockDb } from '../test-helpers/mock-db'
-import { indexPackage } from '../../services/search-index'
+import { indexPackageMetadata } from '../../services/search-index'
 import type { SearchAdapter, DatasetDoc } from '@kukan/search-adapter'
 
 function createMockSearch() {
@@ -24,7 +24,7 @@ function createMockSearch() {
 
 const now = new Date('2024-06-01T00:00:00Z')
 
-describe('indexPackage', () => {
+describe('indexPackageMetadata', () => {
   it('should build and index a DatasetDoc without resources', async () => {
     const { db, addResult } = createMockDb()
     const { adapter, indexed } = createMockSearch()
@@ -53,7 +53,7 @@ describe('indexPackage', () => {
     // 5. Promise.all: tags
     addResult([{ name: 'environment' }, { name: 'tokyo' }])
 
-    await indexPackage(db, adapter, 'pkg-1')
+    await indexPackageMetadata(db, adapter, 'pkg-1')
 
     expect(adapter.indexPackage).toHaveBeenCalledOnce()
     expect(indexed).toHaveLength(1)
@@ -81,7 +81,7 @@ describe('indexPackage', () => {
 
     addResult([]) // no package found
 
-    await indexPackage(db, adapter, 'pkg-missing')
+    await indexPackageMetadata(db, adapter, 'pkg-missing')
 
     expect(adapter.indexPackage).not.toHaveBeenCalled()
   })
@@ -112,7 +112,7 @@ describe('indexPackage', () => {
     // tags
     addResult([])
 
-    await indexPackage(db, adapter, 'pkg-2')
+    await indexPackageMetadata(db, adapter, 'pkg-2')
 
     expect(indexed).toHaveLength(1)
     const doc = indexed[0]
@@ -149,7 +149,7 @@ describe('indexPackage', () => {
     addResult([]) // groups
     addResult([]) // tags
 
-    await indexPackage(db, adapter, 'pkg-3')
+    await indexPackageMetadata(db, adapter, 'pkg-3')
 
     const doc = indexed[0]
     expect(doc.formats).toEqual(['CSV', 'JSON'])
@@ -177,7 +177,7 @@ describe('indexPackage', () => {
     addResult([]) // groups
     addResult([]) // tags
 
-    await indexPackage(db, adapter, 'pkg-4')
+    await indexPackageMetadata(db, adapter, 'pkg-4')
 
     expect(indexed[0].formats).toEqual([])
   })

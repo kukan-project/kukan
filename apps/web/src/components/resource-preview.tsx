@@ -3,7 +3,14 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, Skeleton, Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import { isCsvFormat, isTextFormat, isZipFormat, isOfficeFormat, isPdfFormat, isGeoJsonFormat } from '@kukan/shared'
+import {
+  isCsvFormat,
+  isTextFormat,
+  isZipFormat,
+  isOfficeFormat,
+  isPdfFormat,
+  isGeoJsonFormat,
+} from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
 import { ParquetPreview } from './parquet-preview'
 import { GeoJsonPreview } from './geojson-preview'
@@ -33,7 +40,8 @@ export function ResourcePreview({ resourceId, format, url, size }: ResourcePrevi
   if (isCsvFormat(f)) return <TablePreview resourceId={resourceId} />
   if (isGeoJsonFormat(f)) return <GeoJsonPreview resourceId={resourceId} />
   if (isZipFormat(f)) return <ZipPreview resourceId={resourceId} />
-  if (isOfficeFormat(f)) return <OfficeOnlinePreview resourceId={resourceId} url={url} size={size} />
+  if (isOfficeFormat(f))
+    return <OfficeOnlinePreview resourceId={resourceId} url={url} size={size} />
   if (isTextFormat(f)) return <TextOnlyPreview resourceId={resourceId} />
   return <PreviewNotAvailable />
 }

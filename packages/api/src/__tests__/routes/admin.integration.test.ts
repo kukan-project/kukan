@@ -84,23 +84,23 @@ async function createPackageWithResource(name: string, orgId: string) {
 }
 
 describe('Admin API Routes', () => {
-  describe('POST /api/v1/admin/reindex', () => {
+  describe('POST /api/v1/admin/reindex-metadata', () => {
     it('should reject unauthenticated requests', async () => {
-      const res = await unauthApp.request('/api/v1/admin/reindex', { method: 'POST' })
+      const res = await unauthApp.request('/api/v1/admin/reindex-metadata', { method: 'POST' })
       expect(res.status).toBe(403)
     })
 
     it('should reject non-sysadmin requests', async () => {
-      const res = await nonAdminApp.request('/api/v1/admin/reindex', { method: 'POST' })
+      const res = await nonAdminApp.request('/api/v1/admin/reindex-metadata', { method: 'POST' })
       expect(res.status).toBe(403)
     })
 
     it('should return 0 indexed when no packages exist', async () => {
-      const res = await app.request('/api/v1/admin/reindex', { method: 'POST' })
+      const res = await app.request('/api/v1/admin/reindex-metadata', { method: 'POST' })
       expect(res.status).toBe(200)
 
       const body = await res.json()
-      expect(body.indexed).toBe(0)
+      expect(body.packagesIndexed).toBe(0)
       expect(mockSearch.bulkIndexPackages).not.toHaveBeenCalled()
     })
 
@@ -109,11 +109,11 @@ describe('Admin API Routes', () => {
       await createPackageWithResource('alpha', orgId)
       await createPackageWithResource('beta', orgId)
 
-      const res = await app.request('/api/v1/admin/reindex', { method: 'POST' })
+      const res = await app.request('/api/v1/admin/reindex-metadata', { method: 'POST' })
       expect(res.status).toBe(200)
 
       const body = await res.json()
-      expect(body.indexed).toBe(2)
+      expect(body.packagesIndexed).toBe(2)
       expect(mockSearch.bulkIndexPackages).toHaveBeenCalledOnce()
 
       const docs = vi.mocked(mockSearch.bulkIndexPackages).mock.calls[0][0]

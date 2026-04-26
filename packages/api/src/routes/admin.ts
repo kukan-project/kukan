@@ -13,8 +13,6 @@ import {
   resourcePipeline,
   organization,
   group,
-  packageGroup,
-  packageTag,
   tag,
   vocabulary,
   user,
@@ -29,13 +27,12 @@ import {
   userNameSchema,
   userRoleSchema,
 } from '@kukan/shared'
-import type { DatasetDoc, ResourceDoc } from '@kukan/search-adapter'
 import { PipelineService } from '../services/pipeline-service'
+import { rebuildMetadataIndex } from '../services/search-index'
 import type { AppContext } from '../context'
 
 export const adminRouter = new Hono<{ Variables: AppContext }>()
 
-const BATCH_SIZE = 100
 const DEFAULT_PAGE_LIMIT = 20
 const MAX_PAGE_LIMIT = 100
 
@@ -164,159 +161,17 @@ adminRouter.get('/search/browse/:index', async (c) => {
   return c.json(result)
 })
 
-// POST /api/v1/admin/reindex — Rebuild search index from DB
-adminRouter.post('/reindex', async (c) => {
+// POST /api/v1/admin/reindex-metadata — Rebuild package/resource search index from DB
+adminRouter.post('/reindex-metadata', async (c) => {
   const user = c.get('user')
   if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can reindex')
 
   const db = c.get('db')
   const search = c.get('search')
-  const body = await c.req.json().catch(() => ({}))
-  const includeContent = body.includeContent === true
+  const log = c.get('logger')
 
-  // Clear existing indices sequentially to avoid overloading single-node OpenSearch
-  await search.deleteAllPackages()
-  await search.deleteAllResources()
-  if (includeContent) await search.deleteAllContents()
-
-  // Fetch all active package IDs
-  const packages = await db
-    .select({ id: packageTable.id })
-    .from(packageTable)
-    .where(eq(packageTable.state, 'active'))
-
-  let indexed = 0
-  let resourcesIndexed = 0
-
-  // Process in batches
-  for (let i = 0; i < packages.length; i += BATCH_SIZE) {
-    const batch = packages.slice(i, i + BATCH_SIZE)
-
-    const batchIds = batch.map((p) => p.id)
-
-    // Batch queries: 5 queries per batch instead of 5 per package
-    const [details, allResources, allGroups, allTags] = await Promise.all([
-      db
-        .select({
-          id: packageTable.id,
-          name: packageTable.name,
-          title: packageTable.title,
-          notes: packageTable.notes,
-          ownerOrg: packageTable.ownerOrg,
-          private: packageTable.private,
-          creatorUserId: packageTable.creatorUserId,
-          licenseId: packageTable.licenseId,
-          created: packageTable.created,
-          updated: packageTable.updated,
-        })
-        .from(packageTable)
-        .where(inArray(packageTable.id, batchIds)),
-      db
-        .select({
-          packageId: resource.packageId,
-          id: resource.id,
-          name: resource.name,
-          description: resource.description,
-          format: resource.format,
-        })
-        .from(resource)
-        .where(and(inArray(resource.packageId, batchIds), eq(resource.state, 'active'))),
-      db
-        .select({ packageId: packageGroup.packageId, name: group.name })
-        .from(packageGroup)
-        .innerJoin(group, eq(packageGroup.groupId, group.id))
-        .where(inArray(packageGroup.packageId, batchIds)),
-      db
-        .select({ packageId: packageTag.packageId, name: tag.name })
-        .from(packageTag)
-        .innerJoin(tag, eq(packageTag.tagId, tag.id))
-        .where(inArray(packageTag.packageId, batchIds)),
-    ])
-
-    // Resolve organization names in bulk
-    const orgIds = [...new Set(details.map((d) => d.ownerOrg).filter((id): id is string => !!id))]
-    const orgMap = new Map<string, string>()
-    if (orgIds.length > 0) {
-      const orgs = await db
-        .select({ id: organization.id, name: organization.name })
-        .from(organization)
-        .where(inArray(organization.id, orgIds))
-      for (const o of orgs) orgMap.set(o.id, o.name)
-    }
-
-    // Group by packageId in memory
-    const resourcesByPkg = new Map<string, typeof allResources>()
-    for (const r of allResources) {
-      let arr = resourcesByPkg.get(r.packageId)
-      if (!arr) {
-        arr = []
-        resourcesByPkg.set(r.packageId, arr)
-      }
-      arr.push(r)
-    }
-    const groupsByPkg = new Map<string, string[]>()
-    for (const g of allGroups) {
-      let arr = groupsByPkg.get(g.packageId)
-      if (!arr) {
-        arr = []
-        groupsByPkg.set(g.packageId, arr)
-      }
-      arr.push(g.name)
-    }
-    const tagsByPkg = new Map<string, string[]>()
-    for (const t of allTags) {
-      let arr = tagsByPkg.get(t.packageId)
-      if (!arr) {
-        arr = []
-        tagsByPkg.set(t.packageId, arr)
-      }
-      arr.push(t.name)
-    }
-
-    // Build dataset docs (without resources — they go to kukan-resources)
-    const docs: DatasetDoc[] = details.map((detail) => {
-      const pkgResources = resourcesByPkg.get(detail.id) ?? []
-      const formatSet = new Set(
-        pkgResources.map((r) => r.format?.toUpperCase()).filter((f): f is string => !!f)
-      )
-      return {
-        id: detail.id,
-        name: detail.name,
-        title: detail.title ?? undefined,
-        notes: detail.notes ?? undefined,
-        organization: detail.ownerOrg ? orgMap.get(detail.ownerOrg) : undefined,
-        license_id: detail.licenseId ?? undefined,
-        groups: groupsByPkg.get(detail.id) ?? [],
-        tags: tagsByPkg.get(detail.id) ?? [],
-        formats: [...formatSet],
-        private: detail.private,
-        owner_org_id: detail.ownerOrg ?? undefined,
-        creator_user_id: detail.creatorUserId ?? undefined,
-        created: detail.created,
-        updated: detail.updated,
-      }
-    })
-
-    // Build resource docs (metadata only — content is added by pipeline)
-    const resourceDocs: ResourceDoc[] = allResources.map((r) => ({
-      id: r.id,
-      packageId: r.packageId,
-      name: r.name ?? undefined,
-      description: r.description ?? undefined,
-      format: r.format ?? undefined,
-    }))
-
-    if (docs.length > 0) {
-      await search.bulkIndexPackages(docs)
-      indexed += docs.length
-    }
-    if (resourceDocs.length > 0) {
-      await search.bulkIndexResources(resourceDocs)
-      resourcesIndexed += resourceDocs.length
-    }
-  }
-
-  return c.json({ indexed, resourcesIndexed })
+  const result = await rebuildMetadataIndex(db, search, log)
+  return c.json(result)
 })
 
 // POST /api/v1/admin/jobs/enqueue-all — Enqueue pipeline for all active resources
@@ -325,23 +180,15 @@ adminRouter.post('/jobs/enqueue-all', async (c) => {
   if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can enqueue all pipelines')
 
   const db = c.get('db')
+  const search = c.get('search')
   const pipelineService = new PipelineService(db, c.get('queue'))
 
-  // Fetch all active resource IDs
-  const resources = await db
-    .select({ id: resource.id })
-    .from(resource)
-    .where(eq(resource.state, 'active'))
+  // Clear stale content (deleted resources, format changes) before re-processing.
+  // Per-resource content is also cleaned in the pipeline Index step.
+  await search.deleteAllContents()
+  const result = await pipelineService.enqueueAll()
 
-  let enqueued = 0
-
-  for (let i = 0; i < resources.length; i += BATCH_SIZE) {
-    const batch = resources.slice(i, i + BATCH_SIZE)
-    await Promise.all(batch.map((r) => pipelineService.enqueue(r.id).catch(() => {})))
-    enqueued += batch.length
-  }
-
-  return c.json({ enqueued })
+  return c.json(result)
 })
 
 const RECENT_ERROR_LIMIT = 10

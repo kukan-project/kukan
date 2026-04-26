@@ -66,6 +66,13 @@ export interface OpenSearchConfig {
   }
   /** Optional structured logger (pino). Falls back to no-op if omitted. */
   logger?: Logger
+  /**
+   * Called when an index is recreated after being lost (e.g. OpenSearch maintenance).
+   * Use this to rebuild the metadata index from DB. Content (text extraction) rebuild
+   * should be fire-and-forget as it requires pipeline re-processing.
+   * If this callback throws, indices are deleted and retried after the TTL (60s).
+   */
+  onIndexRecreated?: () => Promise<void> | void
 }
 
 export class OpenSearchAdapter implements SearchAdapter {
@@ -75,7 +82,8 @@ export class OpenSearchAdapter implements SearchAdapter {
   private contentsIndex: string
   private replicas: number
   private log: Logger
-  private initialized = false
+  private onIndexRecreated?: () => Promise<void> | void
+  private initializedAt = 0
 
   constructor(config: OpenSearchConfig) {
     this.client = new Client({
@@ -95,6 +103,7 @@ export class OpenSearchAdapter implements SearchAdapter {
     this.contentsIndex = `${prefix}-contents`
     this.replicas = config.replicas ?? 0
     this.log = config.logger ?? createLogger({ name: 'opensearch', level: 'silent' })
+    this.onIndexRecreated = config.onIndexRecreated
   }
 
   // ------------------------------------------------------------------
@@ -113,18 +122,46 @@ export class OpenSearchAdapter implements SearchAdapter {
     },
   }
 
-  /** Ensure both indices exist with kuromoji mapping. Idempotent. */
+  /**
+   * Ensure all indices exist with kuromoji mapping. Idempotent.
+   * Re-checks every 60 seconds to recover from index loss (e.g. OpenSearch maintenance).
+   */
   async ensureIndex(): Promise<void> {
-    if (this.initialized) return
+    if (Date.now() - this.initializedAt < 60 * 1000) return
 
-    await this.ensurePackagesIndex()
-    await this.ensureResourcesIndex()
-    await this.ensureContentsIndex()
+    // Sequential to avoid overloading single-node OpenSearch with concurrent index creation
+    const created = [
+      await this.ensurePackagesIndex(),
+      await this.ensureResourcesIndex(),
+      await this.ensureContentsIndex(),
+    ]
 
-    this.initialized = true
+    if (created.some(Boolean) && this.onIndexRecreated) {
+      this.log.warn('Index was recreated — triggering rebuild')
+      try {
+        await this.onIndexRecreated()
+      } catch (err) {
+        this.log.error({ err }, 'Index rebuild failed — will retry in 60s')
+        // Intentional degradation: delete the empty indices so the next ensureIndex
+        // (after TTL) detects the loss again and retries the rebuild callback.
+        // During the 60s TTL window, search requests will get index_not_found errors
+        // and Worker pipeline indexing may fail (retried via SQS visibility timeout).
+        // This is preferred over leaving permanently empty indices with no retry path.
+        await Promise.all([
+          this.client.indices.delete({ index: this.packagesIndex }).catch(() => {}),
+          this.client.indices.delete({ index: this.resourcesIndex }).catch(() => {}),
+          this.client.indices.delete({ index: this.contentsIndex }).catch(() => {}),
+        ])
+        this.initializedAt = Date.now()
+        return
+      }
+    }
+
+    this.initializedAt = Date.now()
   }
 
-  private async ensurePackagesIndex(): Promise<void> {
+  /** @returns true if the index was just created (didn't exist before) */
+  private async ensurePackagesIndex(): Promise<boolean> {
     const exists = await this.client.indices.exists({ index: this.packagesIndex })
     if (!exists.body) {
       await this.client.indices.create({
@@ -158,10 +195,13 @@ export class OpenSearchAdapter implements SearchAdapter {
           },
         },
       })
+      return true
     }
+    return false
   }
 
-  private async ensureResourcesIndex(): Promise<void> {
+  /** @returns true if the index was just created */
+  private async ensureResourcesIndex(): Promise<boolean> {
     const exists = await this.client.indices.exists({ index: this.resourcesIndex })
     if (!exists.body) {
       await this.client.indices.create({
@@ -186,10 +226,13 @@ export class OpenSearchAdapter implements SearchAdapter {
           },
         },
       })
+      return true
     }
+    return false
   }
 
-  private async ensureContentsIndex(): Promise<void> {
+  /** @returns true if the index was just created */
+  private async ensureContentsIndex(): Promise<boolean> {
     const exists = await this.client.indices.exists({ index: this.contentsIndex })
     if (!exists.body) {
       await this.client.indices.create({
@@ -215,7 +258,9 @@ export class OpenSearchAdapter implements SearchAdapter {
           },
         },
       })
+      return true
     }
+    return false
   }
 
   /** Delete a single document, ignoring 404 */
@@ -235,9 +280,7 @@ export class OpenSearchAdapter implements SearchAdapter {
     } catch (err: unknown) {
       if (!isNotFoundError(err)) throw err
     }
-    // Re-create only the deleted index (not all indices) to avoid race conditions
-    // when multiple deleteAll* are called in parallel via Promise.all
-    this.initialized = false
+    // Re-create only the deleted index (not all indices)
     if (index === this.packagesIndex) await this.ensurePackagesIndex()
     else if (index === this.resourcesIndex) await this.ensureResourcesIndex()
     else if (index === this.contentsIndex) await this.ensureContentsIndex()

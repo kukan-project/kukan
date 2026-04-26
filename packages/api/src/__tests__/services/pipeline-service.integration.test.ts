@@ -132,6 +132,47 @@ describe('PipelineService', () => {
     })
   })
 
+  describe('enqueueAll', () => {
+    it('should enqueue all active resources', async () => {
+      const queue = createMockQueue()
+      const service = new PipelineService(db, queue)
+
+      const result = await service.enqueueAll()
+
+      expect(result).toEqual({ enqueued: 1, failed: 0 })
+      expect(queue.enqueue).toHaveBeenCalledOnce()
+    })
+
+    it('should return 0 when no active resources exist', async () => {
+      await db.execute(sql`UPDATE resource SET state = 'deleted'`)
+
+      const queue = createMockQueue()
+      const service = new PipelineService(db, queue)
+
+      const result = await service.enqueueAll()
+      expect(result).toEqual({ enqueued: 0, failed: 0 })
+      expect(queue.enqueue).not.toHaveBeenCalled()
+    })
+
+    it('should continue even if individual enqueue fails', async () => {
+      // Add a second resource
+      await db.execute(sql`
+        INSERT INTO resource (package_id, url, url_type, name, state, position)
+        VALUES (${testPkgId}, 'http://example.com/data2.csv', 'url', 'data2', 'active', 1)
+      `)
+
+      const queue = createMockQueue()
+      ;(queue.enqueue as ReturnType<typeof vi.fn>)
+        .mockRejectedValueOnce(new Error('fail'))
+        .mockResolvedValueOnce('job-2')
+      const service = new PipelineService(db, queue)
+
+      const result = await service.enqueueAll()
+      expect(result).toEqual({ enqueued: 1, failed: 1 })
+      expect(queue.enqueue).toHaveBeenCalledTimes(2)
+    })
+  })
+
   describe('getStatus', () => {
     it('should return null for resource with no pipeline', async () => {
       const service = new PipelineService(db)

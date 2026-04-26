@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vitest'
-import { createTestApp } from '../test-helpers/test-app'
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
+import { createTestApp, mockSearch } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 
 const db = getTestDb()
@@ -140,15 +140,20 @@ describe('Resources API Routes', () => {
   })
 
   describe('DELETE /api/v1/resources/:id', () => {
-    it('should soft delete resource', async () => {
+    it('should soft delete resource and clean up search indices', async () => {
       const pkg = await createPackage('delete-res-pkg')
       const resource = await createResource(pkg.id)
+
+      vi.mocked(mockSearch.deleteResource).mockClear()
+      vi.mocked(mockSearch.deleteContent).mockClear()
 
       const res = await app.request(`/api/v1/resources/${resource.id}`, { method: 'DELETE' })
       expect(res.status).toBe(200)
 
       const body = await res.json()
       expect(body.state).toBe('deleted')
+      expect(mockSearch.deleteResource).toHaveBeenCalledWith(resource.id)
+      expect(mockSearch.deleteContent).toHaveBeenCalledWith(resource.id)
     })
   })
 

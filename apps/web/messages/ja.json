@@ -223,6 +223,7 @@
       "reindexResult": "{count} 件のデータセット、{resourceCount} 件のリソースをインデックスしました",
       "includeContent": "コンテンツも再処理する（テキスト抽出を含む、時間がかかります）",
       "contentEnqueuedResult": "{count} 件のコンテンツの再処理を予約しました",
+      "contentEnqueuedFailed": "{count} 件失敗",
       "contentSizeNote": "コンテンツインデックスはリソースあたり最大 100KB に切り詰められます。"
     },
     "adminSite": {
