@@ -73,6 +73,13 @@ describe('executeIndexContent', () => {
       expect(result).toBeNull()
     })
 
+    it('should delete existing content for non-indexable format', async () => {
+      const ctx = createMockCtx()
+      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'RDF', null, ctx)
+      expect(result).toBeNull()
+      expect(ctx.deleteContent).toHaveBeenCalledWith('res-1')
+    })
+
     it('should classify CSV as tabular', async () => {
       const ctx = createMockCtx()
       vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('a,b\n1,2')))
