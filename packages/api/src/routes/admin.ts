@@ -18,6 +18,8 @@ import {
   user,
   session,
   apiToken,
+  activity,
+  auditLog,
 } from '@kukan/db'
 import {
   ForbiddenError,
@@ -628,6 +630,139 @@ adminRouter.delete('/users/:userId', async (c) => {
     db.delete(session).where(eq(session.userId, userId)),
     db.delete(apiToken).where(eq(apiToken.userId, userId)),
   ])
+
+  return c.json({ success: true })
+})
+
+// POST /api/v1/admin/users/:userId/restore — Restore a soft-deleted user
+adminRouter.post('/users/:userId/restore', async (c) => {
+  const currentUser = c.get('user')
+  if (!currentUser?.sysadmin) throw new ForbiddenError('Only sysadmin can restore users')
+
+  const userId = c.req.param('userId')
+
+  if (userId === currentUser.id) {
+    return c.json(
+      { type: 'about:blank', title: 'BAD_REQUEST', status: 400, detail: 'Cannot restore yourself' },
+      400
+    )
+  }
+
+  const db = c.get('db')
+
+  const [target] = await db
+    .select({ id: user.id, state: user.state })
+    .from(user)
+    .where(eq(user.id, userId))
+    .limit(1)
+
+  if (!target) {
+    return c.json(
+      { type: 'about:blank', title: 'Not Found', status: 404, detail: 'User not found' },
+      404
+    )
+  }
+
+  if (target.state !== 'deleted') {
+    return c.json(
+      {
+        type: 'about:blank',
+        title: 'BAD_REQUEST',
+        status: 400,
+        detail: 'Only soft-deleted users can be restored',
+      },
+      400
+    )
+  }
+
+  await db.update(user).set({ state: 'active', updatedAt: new Date() }).where(eq(user.id, userId))
+
+  return c.json({ success: true })
+})
+
+// POST /api/v1/admin/users/:userId/purge — Permanently delete a soft-deleted user
+adminRouter.post('/users/:userId/purge', async (c) => {
+  const currentUser = c.get('user')
+  if (!currentUser?.sysadmin) throw new ForbiddenError('Only sysadmin can purge users')
+
+  const userId = c.req.param('userId')
+
+  if (userId === currentUser.id) {
+    return c.json(
+      { type: 'about:blank', title: 'BAD_REQUEST', status: 400, detail: 'Cannot purge yourself' },
+      400
+    )
+  }
+
+  const db = c.get('db')
+
+  // Verify user exists and is soft-deleted
+  const [target] = await db
+    .select({ id: user.id, email: user.email, name: user.name, state: user.state })
+    .from(user)
+    .where(eq(user.id, userId))
+    .limit(1)
+
+  if (!target) {
+    return c.json(
+      { type: 'about:blank', title: 'Not Found', status: 404, detail: 'User not found' },
+      404
+    )
+  }
+
+  if (target.state !== 'deleted') {
+    return c.json(
+      {
+        type: 'about:blank',
+        title: 'BAD_REQUEST',
+        status: 400,
+        detail: 'Only soft-deleted users can be purged',
+      },
+      400
+    )
+  }
+
+  // Purge within a transaction (includes linked package check for consistency)
+  const conflict = await db.transaction(async (tx) => {
+    // 1. Check for linked packages inside transaction to prevent race conditions
+    const [linkedPkg] = await tx
+      .select({ id: packageTable.id })
+      .from(packageTable)
+      .where(eq(packageTable.creatorUserId, userId))
+      .limit(1)
+
+    if (linkedPkg) return true
+
+    // Nullify FK references that don't cascade
+    await tx.update(activity).set({ userId: null }).where(eq(activity.userId, userId))
+    await tx.update(auditLog).set({ userId: null }).where(eq(auditLog.userId, userId))
+
+    // Record the purge in audit log (before deleting the user)
+    // entityId is uuid; Better Auth user IDs are text, so store in changes instead
+    await tx.insert(auditLog).values({
+      entityType: 'user',
+      entityId: sql`gen_random_uuid()`,
+      action: 'purge',
+      userId: currentUser.id,
+      changes: { purgedUserId: userId, purgedEmail: target.email, purgedName: target.name },
+    })
+
+    // Delete user (CASCADE handles session, account, apiToken, memberships)
+    await tx.delete(user).where(eq(user.id, userId))
+    return false
+  })
+
+  if (conflict) {
+    return c.json(
+      {
+        type: 'about:blank',
+        title: 'CONFLICT',
+        status: 409,
+        detail: 'User has linked packages. Purge or reassign them first.',
+      },
+      409
+    )
+  }
 
   return c.json({ success: true })
 })

@@ -7,7 +7,7 @@ import { useLocale, useTranslations } from 'next-intl'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Pencil, Trash2 } from 'lucide-react'
+import { Pencil, Trash2, RotateCcw, XCircle } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -210,6 +210,48 @@ export default function AdminUsersPage() {
     await Promise.all([fetchPage(offsetRef.current), fetchStats()])
   }
 
+  // Restore user
+  const [restoreTarget, setRestoreTarget] = useState<UserItem | null>(null)
+  const [isRestoring, setIsRestoring] = useState(false)
+  const [restoreError, setRestoreError] = useState<string | null>(null)
+
+  const onRestoreUser = async () => {
+    if (!restoreTarget) return
+    setIsRestoring(true)
+    setRestoreError(null)
+    const res = await clientFetch(`/api/v1/admin/users/${restoreTarget.id}/restore`, {
+      method: 'POST',
+    })
+    setIsRestoring(false)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setRestoreError(data.detail || t('restoreError'))
+      return
+    }
+    setRestoreTarget(null)
+    await Promise.all([fetchPage(offsetRef.current), fetchStats()])
+  }
+
+  // Purge user dialog
+  const [purgeTarget, setPurgeTarget] = useState<UserItem | null>(null)
+  const [isPurging, setIsPurging] = useState(false)
+  const [purgeError, setPurgeError] = useState<string | null>(null)
+
+  const onPurgeUser = async () => {
+    if (!purgeTarget) return
+    setIsPurging(true)
+    setPurgeError(null)
+    const res = await clientFetch(`/api/v1/admin/users/${purgeTarget.id}/purge`, { method: 'POST' })
+    setIsPurging(false)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setPurgeError(data.detail || t('purgeError'))
+      return
+    }
+    setPurgeTarget(null)
+    await Promise.all([fetchPage(offsetRef.current), fetchStats()])
+  }
+
   const roleBadge = (role: string | null) => {
     if (role === 'sysadmin') return <Badge>{t('roleSysadmin')}</Badge>
     return <Badge variant="outline">{t('roleUser')}</Badge>
@@ -278,7 +320,7 @@ export default function AdminUsersPage() {
                 <TableHead className="w-[110px]">{t('colRole')}</TableHead>
                 <TableHead className="w-[80px]">{t('colState')}</TableHead>
                 <TableHead className="w-[120px]">{t('colCreated')}</TableHead>
-                <TableHead className="w-[80px]">{t('colActions')}</TableHead>
+                <TableHead className="w-[120px]">{t('colActions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -322,6 +364,34 @@ export default function AdminUsersPage() {
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
+                      )}
+                      {u.id !== user.id && u.state === 'deleted' && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => {
+                              setRestoreError(null)
+                              setRestoreTarget(u)
+                            }}
+                            title={t('restoreUser')}
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => {
+                              setPurgeError(null)
+                              setPurgeTarget(u)
+                            }}
+                            title={t('purgeUser')}
+                          >
+                            <XCircle className="h-4 w-4" />
+                          </Button>
+                        </>
                       )}
                     </div>
                   </TableCell>
@@ -472,6 +542,35 @@ export default function AdminUsersPage() {
         description={deleteError || t('deleteUserWarning')}
         onConfirm={onDeleteUser}
         isDeleting={isDeleting}
+      />
+
+      {/* Restore User Dialog */}
+      <Dialog open={!!restoreTarget} onOpenChange={(open) => !open && setRestoreTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('restoreUserTitle')}</DialogTitle>
+            <DialogDescription>{restoreError || t('restoreUserDescription')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRestoreTarget(null)}>
+              {tc('cancel')}
+            </Button>
+            <Button onClick={onRestoreUser} disabled={isRestoring}>
+              {isRestoring ? tc('loading') : t('restoreUser')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Purge User Dialog */}
+      <DeleteConfirmDialog
+        open={!!purgeTarget}
+        onOpenChange={(open) => !open && setPurgeTarget(null)}
+        title={t('purgeUserTitle')}
+        description={purgeError || t('purgeUserWarning')}
+        onConfirm={onPurgeUser}
+        isDeleting={isPurging}
+        confirmLabel={t('purgeUser')}
       />
     </div>
   )

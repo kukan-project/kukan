@@ -18,6 +18,9 @@ interface DeleteConfirmDialogProps {
   description: string
   onConfirm: () => void
   isDeleting?: boolean
+  /** Custom label for the confirm button (defaults to "Delete" / "Deleting...") */
+  confirmLabel?: string
+  confirmingLabel?: string
 }
 
 export function DeleteConfirmDialog({
@@ -27,6 +30,8 @@ export function DeleteConfirmDialog({
   description,
   onConfirm,
   isDeleting,
+  confirmLabel,
+  confirmingLabel,
 }: DeleteConfirmDialogProps) {
   const tc = useTranslations('common')
 
@@ -42,7 +47,7 @@ export function DeleteConfirmDialog({
             {tc('cancel')}
           </Button>
           <Button variant="destructive" onClick={onConfirm} disabled={isDeleting}>
-            {isDeleting ? tc('deleting') : tc('delete')}
+            {isDeleting ? (confirmingLabel ?? tc('deleting')) : (confirmLabel ?? tc('delete'))}
           </Button>
         </DialogFooter>
       </DialogContent>
