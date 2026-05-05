@@ -45,6 +45,7 @@ interface PackageDetail {
   extras?: Record<string, unknown> | null
   tags?: { id: string; name: string }[]
   resources?: Resource[]
+  organization?: { id: string; name: string; title?: string | null } | null
 }
 
 /** API response (camelCase) → form defaults (snake_case) */
@@ -118,6 +119,20 @@ export default function EditDatasetPage() {
     }
   }
 
+  const [restoring, setRestoring] = useState(false)
+
+  async function handleRestore() {
+    setRestoring(true)
+    try {
+      const res = await clientFetch(`/api/v1/packages/${nameOrId}/restore`, { method: 'POST' })
+      if (res.ok) {
+        router.push(`/dashboard/datasets/${nameOrId}/edit`)
+      }
+    } finally {
+      setRestoring(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col gap-6">
@@ -140,28 +155,127 @@ export default function EditDatasetPage() {
     <div className="flex flex-col gap-6">
       <PageHeader title={t('editDataset')} />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{tc('basicInfo')}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <DatasetForm
-            mode="edit"
-            nameOrId={nameOrId}
-            defaultValues={toFormDefaults(pkg)}
-            organizations={organizations}
-          />
-        </CardContent>
-      </Card>
+      {isDeleted ? (
+        <>
+          <Card className="opacity-70">
+            <CardHeader>
+              <CardTitle>{tc('basicInfo')}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <div>
+                <span className="font-medium text-muted-foreground">{tc('name')}: </span>
+                {pkg.name}
+              </div>
+              {pkg.title && (
+                <div>
+                  <span className="font-medium text-muted-foreground">{tc('title')}: </span>
+                  {pkg.title}
+                </div>
+              )}
+              {pkg.notes && (
+                <div>
+                  <span className="font-medium text-muted-foreground">{tc('description')}: </span>
+                  {pkg.notes}
+                </div>
+              )}
+              {pkg.organization && (
+                <div>
+                  <span className="font-medium text-muted-foreground">{tc('organization')}: </span>
+                  {pkg.organization.title || pkg.organization.name}
+                </div>
+              )}
+              {pkg.licenseId && (
+                <div>
+                  <span className="font-medium text-muted-foreground">{tc('license')}: </span>
+                  {pkg.licenseId}
+                </div>
+              )}
+              {pkg.tags && pkg.tags.length > 0 && (
+                <div>
+                  <span className="font-medium text-muted-foreground">{tc('tags')}: </span>
+                  {pkg.tags.map((tag: { name: string }) => tag.name).join(', ')}
+                </div>
+              )}
+              <div>
+                <span className="font-medium text-muted-foreground">
+                  {pkg.private ? tc('private') : tc('public')}
+                </span>
+              </div>
+              {pkg.author && (
+                <div>
+                  <span className="font-medium text-muted-foreground">{tc('author')}: </span>
+                  {pkg.author}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('resources')}</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <ResourceList packageId={pkg.id} resources={pkg.resources ?? []} onUpdated={fetchData} />
-        </CardContent>
-      </Card>
+          {pkg.resources && pkg.resources.length > 0 && (
+            <Card className="opacity-60">
+              <CardHeader>
+                <CardTitle>{t('resources')}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-1 text-sm">
+                  {pkg.resources.map(
+                    (r: { id: string; name?: string | null; format?: string | null }) => (
+                      <li key={r.id} className="flex items-center gap-2">
+                        <span>{r.name || r.id}</span>
+                        {r.format && (
+                          <span className="text-xs text-muted-foreground">{r.format}</span>
+                        )}
+                      </li>
+                    )
+                  )}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      ) : (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>{tc('basicInfo')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <DatasetForm
+                mode="edit"
+                nameOrId={nameOrId}
+                defaultValues={toFormDefaults(pkg)}
+                organizations={organizations}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('resources')}</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <ResourceList
+                packageId={pkg.id}
+                resources={pkg.resources ?? []}
+                onUpdated={fetchData}
+              />
+            </CardContent>
+          </Card>
+        </>
+      )}
+
+      {isDeleted && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('restoreDataset')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-3 text-sm text-muted-foreground">{t('restoreDatasetConfirm')}</p>
+            <Button onClick={handleRestore} disabled={restoring}>
+              {restoring ? tc('loading') : t('restoreDataset')}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <Card
         className={
@@ -195,6 +309,7 @@ export default function EditDatasetPage() {
         description={isDeleted ? t('purgeDatasetConfirm') : t('deleteDatasetConfirm')}
         onConfirm={handleDelete}
         isDeleting={deleting}
+        confirmLabel={isDeleted ? t('purgeDataset') : undefined}
       />
     </div>
   )

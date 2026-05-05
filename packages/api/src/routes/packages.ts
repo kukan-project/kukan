@@ -18,6 +18,8 @@ import {
   ForbiddenError,
 } from '@kukan/shared'
 import type { MatchedResource, SearchFilters } from '@kukan/search-adapter'
+import { eq, ne, and } from 'drizzle-orm'
+import { userOrgMembership } from '@kukan/db'
 import { checkOrgRole, resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
 import { indexPackageMetadata, indexResourceMetadata } from '../services/search-index'
 import type { AppContext } from '../context'
@@ -76,7 +78,16 @@ packagesRouter.get(
     const effectiveState = state === 'deleted' && my_org && user ? 'deleted' : 'active'
 
     // Resolve user's org memberships (for visibility and my_org filters)
-    const userOrgIds = await resolveUserOrgIds(db, user)
+    let userOrgIds = await resolveUserOrgIds(db, user)
+
+    // Deleted packages list requires editor+ role — filter out member-only orgs
+    if (effectiveState === 'deleted' && userOrgIds) {
+      const editorOrgs = await db
+        .select({ organizationId: userOrgMembership.organizationId })
+        .from(userOrgMembership)
+        .where(and(eq(userOrgMembership.userId, user!.id), ne(userOrgMembership.role, 'member')))
+      userOrgIds = editorOrgs.map((m) => m.organizationId)
+    }
 
     // my_org=true with no memberships → guaranteed empty result
     if (my_org && userOrgIds !== undefined && userOrgIds.length === 0) {
@@ -260,6 +271,22 @@ packagesRouter.post('/:nameOrId/purge', async (c) => {
 
   const pkg = await service.purge(existing.id)
   await c.get('search').deletePackage(pkg.id)
+  return c.json(pkg)
+})
+
+// POST /api/v1/packages/:nameOrId/restore - Restore a soft-deleted package (org editor+)
+packagesRouter.post('/:nameOrId/restore', async (c) => {
+  const user = c.get('user')
+  if (!user) throw new ForbiddenError('Authentication required')
+
+  const db = c.get('db')
+  const nameOrId = c.req.param('nameOrId')
+  const service = new PackageService(db)
+  const existing = await service.getByNameOrId(nameOrId, 'deleted')
+  if (existing.ownerOrg) await checkOrgRole(db, user, existing.ownerOrg, 'editor')
+
+  const pkg = await service.restore(existing.id)
+  await indexPackageMetadata(db, c.get('search'), pkg.id)
   return c.json(pkg)
 })
 

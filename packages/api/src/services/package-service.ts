@@ -247,12 +247,16 @@ export class PackageService {
   ) {
     const pkg = await this.getByNameOrId(nameOrId, state)
 
-    if (pkg.private && !viewer?.sysadmin) {
+    // Private packages: org member+ or sysadmin
+    // Deleted packages: org editor+ or sysadmin (member alone cannot restore/purge)
+    const requiresAccess = (state === 'deleted' || pkg.private) && !viewer?.sysadmin
+
+    if (requiresAccess) {
       if (!viewer?.userId || !pkg.ownerOrg) {
         throw new NotFoundError('Package', nameOrId)
       }
       const [membership] = await this.db
-        .select({ id: userOrgMembership.id })
+        .select({ id: userOrgMembership.id, role: userOrgMembership.role })
         .from(userOrgMembership)
         .where(
           and(
@@ -262,6 +266,10 @@ export class PackageService {
         )
         .limit(1)
       if (!membership) {
+        throw new NotFoundError('Package', nameOrId)
+      }
+      // Deleted packages require editor+ role
+      if (state === 'deleted' && membership.role === 'member') {
         throw new NotFoundError('Package', nameOrId)
       }
     }
@@ -530,5 +538,20 @@ export class PackageService {
 
     if (!purged) throw new NotFoundError('Package', id)
     return purged
+  }
+
+  /** Restore a soft-deleted package back to active state. */
+  async restore(id: string) {
+    const [restored] = await this.db
+      .update(packageTable)
+      .set({
+        state: 'active',
+        updated: sql`NOW()`,
+      })
+      .where(eq(packageTable.id, id))
+      .returning()
+
+    if (!restored) throw new NotFoundError('Package', id)
+    return restored
   }
 }

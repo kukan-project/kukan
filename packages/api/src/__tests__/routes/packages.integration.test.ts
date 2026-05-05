@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
+import { sql } from 'drizzle-orm'
 import { createTestApp } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import { PostgresSearchAdapter } from '@kukan/search-adapter'
@@ -484,6 +485,132 @@ describe('Packages API Routes', () => {
 
       const body = await res.json()
       expect(body.name).toBe('secret-pkg3')
+    })
+  })
+
+  describe('POST /api/v1/packages/:nameOrId/restore', () => {
+    it('should reject unauthenticated requests', async () => {
+      const unauthApp = createTestApp(db, { user: null, search })
+      const res = await unauthApp.request('/api/v1/packages/any-pkg/restore', { method: 'POST' })
+      expect(res.status).toBe(403)
+    })
+
+    it('should restore a soft-deleted package', async () => {
+      await createPackage({ name: 'restore-pkg' })
+
+      // Soft-delete
+      const deleteRes = await app.request('/api/v1/packages/restore-pkg', { method: 'DELETE' })
+      expect(deleteRes.status).toBe(200)
+
+      // Restore
+      const restoreRes = await app.request('/api/v1/packages/restore-pkg/restore', {
+        method: 'POST',
+      })
+      expect(restoreRes.status).toBe(200)
+      const body = await restoreRes.json()
+      expect(body.state).toBe('active')
+
+      // Verify it's visible again
+      const getRes = await app.request('/api/v1/packages/restore-pkg')
+      expect(getRes.status).toBe(200)
+    })
+
+    it('should return 404 for active package', async () => {
+      await createPackage({ name: 'active-restore-pkg' })
+
+      const res = await app.request('/api/v1/packages/active-restore-pkg/restore', {
+        method: 'POST',
+      })
+      expect(res.status).toBe(404) // getByNameOrId with state='deleted' throws NotFound
+    })
+
+    it('should return 404 for non-existent package', async () => {
+      const res = await app.request('/api/v1/packages/non-existent/restore', { method: 'POST' })
+      expect(res.status).toBe(404)
+    })
+
+    it('should re-index package in search after restore', async () => {
+      await createPackage({ name: 'reindex-restore-pkg' })
+
+      await app.request('/api/v1/packages/reindex-restore-pkg', { method: 'DELETE' })
+
+      // Search should not find it
+      const searchBefore = await app.request('/api/v1/packages?q=reindex-restore-pkg')
+      const beforeBody = await searchBefore.json()
+      expect(beforeBody.items).toHaveLength(0)
+
+      // Restore
+      await app.request('/api/v1/packages/reindex-restore-pkg/restore', { method: 'POST' })
+
+      // Search should find it again
+      const searchAfter = await app.request('/api/v1/packages?q=reindex-restore-pkg')
+      const afterBody = await searchAfter.json()
+      expect(afterBody.items.length).toBeGreaterThan(0)
+    })
+  })
+
+  describe('Deleted package access control', () => {
+    it('should deny non-member access to deleted public package', async () => {
+      await createPackage({ name: 'deleted-access-pkg' })
+
+      // Soft-delete
+      await app.request('/api/v1/packages/deleted-access-pkg', { method: 'DELETE' })
+
+      // Non-member user tries to access deleted package
+      const otherUserApp = createTestApp(db, {
+        user: {
+          id: '00000000-0000-0000-0000-000000000099',
+          email: 'other@example.com',
+          name: 'other-user',
+          sysadmin: false,
+        },
+        search,
+      })
+
+      const res = await otherUserApp.request('/api/v1/packages/deleted-access-pkg?state=deleted')
+      expect(res.status).toBe(404)
+    })
+
+    it('should deny member (non-editor) access to deleted package', async () => {
+      await createPackage({ name: 'deleted-member-pkg' })
+
+      await app.request('/api/v1/packages/deleted-member-pkg', { method: 'DELETE' })
+
+      // Create a member user and add to the org as 'member' role
+      const memberId = '00000000-0000-0000-0000-000000000098'
+      await db.execute(
+        sql`INSERT INTO "user" (id, name, email, "emailVerified", state, role, "createdAt", "updatedAt")
+            VALUES (${memberId}, 'member-user', 'member@example.com', false, 'active', 'user', NOW(), NOW())
+            ON CONFLICT (id) DO NOTHING`
+      )
+      await db.execute(
+        sql`INSERT INTO user_org_membership (user_id, organization_id, role)
+            VALUES (${memberId}, ${testOrgId}, 'member')
+            ON CONFLICT DO NOTHING`
+      )
+
+      const memberApp = createTestApp(db, {
+        user: {
+          id: memberId,
+          email: 'member@example.com',
+          name: 'member-user',
+          sysadmin: false,
+        },
+        search,
+      })
+
+      const res = await memberApp.request('/api/v1/packages/deleted-member-pkg?state=deleted')
+      expect(res.status).toBe(404)
+    })
+
+    it('should allow sysadmin access to deleted package', async () => {
+      await createPackage({ name: 'deleted-admin-pkg' })
+
+      await app.request('/api/v1/packages/deleted-admin-pkg', { method: 'DELETE' })
+
+      // sysadmin (default test user) should be able to access
+      const res = await app.request('/api/v1/packages/deleted-admin-pkg?state=deleted')
+      expect(res.status).toBe(200)
     })
   })
 })
