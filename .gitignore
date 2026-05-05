@@ -20,6 +20,12 @@ out/
 coverage/
 .nyc_output
 
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+apps/web/src/__tests__/.auth/
+
 # Logs
 *.log
 npm-debug.log*

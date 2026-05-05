@@ -486,7 +486,9 @@ export default function AdminSearchPage() {
                 {reindexResult.contentEnqueued !== undefined && (
                   <p>
                     {t('contentEnqueuedResult', { count: reindexResult.contentEnqueued })}
-                    {reindexResult.contentFailed ? ` (${t('contentEnqueuedFailed', { count: reindexResult.contentFailed })})` : ''}
+                    {reindexResult.contentFailed
+                      ? ` (${t('contentEnqueuedFailed', { count: reindexResult.contentFailed })})`
+                      : ''}
                   </p>
                 )}
               </div>

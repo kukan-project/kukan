@@ -52,7 +52,8 @@ export async function createAdapters(env: Env, db: Database, logger: Logger) {
         new PipelineService(db, queue)
           .enqueueAll()
           .then(({ enqueued, failed }) => {
-            if (failed > 0) osLogger.warn({ enqueued, failed }, 'Content re-enqueue partially failed')
+            if (failed > 0)
+              osLogger.warn({ enqueued, failed }, 'Content re-enqueue partially failed')
           })
           .catch((err) => {
             osLogger.error({ err }, 'Content re-enqueue failed')

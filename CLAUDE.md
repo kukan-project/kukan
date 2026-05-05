@@ -140,8 +140,9 @@ pnpm format        # Prettier フォーマット
 
 - ユニットテスト: Vitest（`*.test.ts`）
 - 統合テスト: Vitest + テスト用DB（`*.integration.test.ts`）
-- E2Eテスト: Playwright（`*.e2e.ts`）
+- E2Eテスト: Playwright（`*.e2e.ts`、`apps/web/src/__tests__/e2e/`）
 - テストファイルは `__tests__/` サブディレクトリに配置（例: `src/__tests__/errors.test.ts`）
+- E2Eテストは dev サーバー + Docker Compose サービス起動中に実行
 
 ### 環境変数
 
@@ -247,7 +248,8 @@ Extract のみフォーマット別処理を行う。
 pnpm install                    # 依存関係インストール
 pnpm dev                        # 全apps/packages の開発サーバー起動
 pnpm build                      # 全パッケージビルド
-pnpm test                       # 全テスト実行
+pnpm test                       # 全テスト実行（ユニット + 統合）
+pnpm test:e2e                   # E2Eテスト実行（Playwright、要 dev サーバー）
 pnpm db:generate                # Drizzle マイグレーション生成
 pnpm db:migrate                 # マイグレーション実行
 pnpm lint                       # ESLint
