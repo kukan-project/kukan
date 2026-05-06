@@ -495,6 +495,39 @@ describe('Packages API Routes', () => {
       expect(res.status).toBe(403)
     })
 
+    it('should reject restore by org editor (requires admin+)', async () => {
+      await createPackage({ name: 'editor-restore-pkg' })
+      await app.request('/api/v1/packages/editor-restore-pkg', { method: 'DELETE' })
+
+      // Create an editor user
+      const editorId = '00000000-0000-0000-0000-000000000097'
+      await db.execute(
+        sql`INSERT INTO "user" (id, name, email, "emailVerified", state, role, "createdAt", "updatedAt")
+            VALUES (${editorId}, 'editor-user', 'editor@example.com', false, 'active', 'user', NOW(), NOW())
+            ON CONFLICT (id) DO NOTHING`
+      )
+      await db.execute(
+        sql`INSERT INTO user_org_membership (user_id, organization_id, role)
+            VALUES (${editorId}, ${testOrgId}, 'editor')
+            ON CONFLICT DO NOTHING`
+      )
+
+      const editorApp = createTestApp(db, {
+        user: {
+          id: editorId,
+          email: 'editor@example.com',
+          name: 'editor-user',
+          sysadmin: false,
+        },
+        search,
+      })
+
+      const res = await editorApp.request('/api/v1/packages/editor-restore-pkg/restore', {
+        method: 'POST',
+      })
+      expect(res.status).toBe(403)
+    })
+
     it('should restore a soft-deleted package', async () => {
       await createPackage({ name: 'restore-pkg' })
 
@@ -571,7 +604,7 @@ describe('Packages API Routes', () => {
       expect(res.status).toBe(404)
     })
 
-    it('should deny member (non-editor) access to deleted package', async () => {
+    it('should allow org member access to deleted package', async () => {
       await createPackage({ name: 'deleted-member-pkg' })
 
       await app.request('/api/v1/packages/deleted-member-pkg', { method: 'DELETE' })
@@ -600,7 +633,7 @@ describe('Packages API Routes', () => {
       })
 
       const res = await memberApp.request('/api/v1/packages/deleted-member-pkg?state=deleted')
-      expect(res.status).toBe(404)
+      expect(res.status).toBe(200)
     })
 
     it('should allow sysadmin access to deleted package', async () => {

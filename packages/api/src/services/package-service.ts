@@ -247,16 +247,16 @@ export class PackageService {
   ) {
     const pkg = await this.getByNameOrId(nameOrId, state)
 
-    // Private packages: org member+ or sysadmin
-    // Deleted packages: org editor+ or sysadmin (member alone cannot restore/purge)
-    const requiresAccess = (state === 'deleted' || pkg.private) && !viewer?.sysadmin
+    // Private and deleted packages: org member+ or sysadmin
+    // (restore/purge operations are separately guarded by editor+/admin+ role checks)
+    const requiresMembership = (state === 'deleted' || pkg.private) && !viewer?.sysadmin
 
-    if (requiresAccess) {
+    if (requiresMembership) {
       if (!viewer?.userId || !pkg.ownerOrg) {
         throw new NotFoundError('Package', nameOrId)
       }
       const [membership] = await this.db
-        .select({ id: userOrgMembership.id, role: userOrgMembership.role })
+        .select({ id: userOrgMembership.id })
         .from(userOrgMembership)
         .where(
           and(
@@ -266,10 +266,6 @@ export class PackageService {
         )
         .limit(1)
       if (!membership) {
-        throw new NotFoundError('Package', nameOrId)
-      }
-      // Deleted packages require editor+ role
-      if (state === 'deleted' && membership.role === 'member') {
         throw new NotFoundError('Package', nameOrId)
       }
     }
