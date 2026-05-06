@@ -5,8 +5,8 @@
 
 import { eq, ilike, and, or, sql, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { organization, userOrgMembership, user } from '@kukan/db'
-import { NotFoundError, ValidationError, isUuid, escapeLike } from '@kukan/shared'
+import { organization, userOrgMembership, user, packageTable } from '@kukan/db'
+import { NotFoundError, ValidationError, ConflictError, isUuid, escapeLike } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult } from '@kukan/shared'
 
 export interface CreateOrganizationInput {
@@ -64,14 +64,14 @@ export class OrganizationService {
     return { items, total, offset, limit } as PaginatedResult<(typeof items)[0]>
   }
 
-  async getByNameOrId(nameOrId: string) {
+  async getByNameOrId(nameOrId: string, state: 'active' | 'deleted' = 'active') {
     const [result] = await this.db
       .select()
       .from(organization)
       .where(
         and(
           isUuid(nameOrId) ? eq(organization.id, nameOrId) : eq(organization.name, nameOrId),
-          eq(organization.state, 'active')
+          eq(organization.state, state)
         )
       )
       .limit(1)
@@ -138,6 +138,35 @@ export class OrganizationService {
       .where(eq(organization.id, existing.id))
 
     return { success: true }
+  }
+
+  /** Hard-delete a soft-deleted organization. Rejects if packages are linked. */
+  async purge(id: string) {
+    await this.db.transaction(async (tx) => {
+      const [linkedPkg] = await tx
+        .select({ id: packageTable.id })
+        .from(packageTable)
+        .where(eq(packageTable.ownerOrg, id))
+        .limit(1)
+
+      if (linkedPkg) {
+        throw new ConflictError('Organization has linked packages. Purge or reassign them first.')
+      }
+
+      await tx.delete(organization).where(eq(organization.id, id))
+    })
+  }
+
+  /** Restore a soft-deleted organization back to active state. */
+  async restore(id: string) {
+    const [restored] = await this.db
+      .update(organization)
+      .set({ state: 'active', updated: new Date() })
+      .where(eq(organization.id, id))
+      .returning()
+
+    if (!restored) throw new NotFoundError('Organization', id)
+    return restored
   }
 
   // ── Member management ──

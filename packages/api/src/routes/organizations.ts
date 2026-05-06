@@ -88,6 +88,34 @@ organizationsRouter.delete('/:nameOrId', async (c) => {
   return c.json(result)
 })
 
+// POST /api/v1/organizations/:nameOrId/purge - Permanently delete a soft-deleted organization (sysadmin only)
+organizationsRouter.post('/:nameOrId/purge', async (c) => {
+  const user = c.get('user')
+  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can purge organizations')
+
+  const db = c.get('db')
+  const service = new OrganizationService(db)
+  const nameOrId = c.req.param('nameOrId')
+  const existing = await service.getByNameOrId(nameOrId, 'deleted')
+
+  await service.purge(existing.id)
+  return c.json({ success: true })
+})
+
+// POST /api/v1/organizations/:nameOrId/restore - Restore a soft-deleted organization (sysadmin only)
+organizationsRouter.post('/:nameOrId/restore', async (c) => {
+  const user = c.get('user')
+  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can restore organizations')
+
+  const db = c.get('db')
+  const service = new OrganizationService(db)
+  const nameOrId = c.req.param('nameOrId')
+  const existing = await service.getByNameOrId(nameOrId, 'deleted')
+
+  const result = await service.restore(existing.id)
+  return c.json(result)
+})
+
 // ── Member management ──
 
 // GET /api/v1/organizations/:nameOrId/members - List members

@@ -82,6 +82,34 @@ groupsRouter.delete('/:nameOrId', async (c) => {
   return c.json(result)
 })
 
+// POST /api/v1/groups/:nameOrId/purge - Permanently delete a soft-deleted group (sysadmin only)
+groupsRouter.post('/:nameOrId/purge', async (c) => {
+  const user = c.get('user')
+  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can purge groups')
+
+  const db = c.get('db')
+  const service = new GroupService(db)
+  const nameOrId = c.req.param('nameOrId')
+  const existing = await service.getByNameOrId(nameOrId, 'deleted')
+
+  const result = await service.purge(existing.id)
+  return c.json(result)
+})
+
+// POST /api/v1/groups/:nameOrId/restore - Restore a soft-deleted group (sysadmin only)
+groupsRouter.post('/:nameOrId/restore', async (c) => {
+  const user = c.get('user')
+  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can restore groups')
+
+  const db = c.get('db')
+  const service = new GroupService(db)
+  const nameOrId = c.req.param('nameOrId')
+  const existing = await service.getByNameOrId(nameOrId, 'deleted')
+
+  const result = await service.restore(existing.id)
+  return c.json(result)
+})
+
 // ── Member management ──
 
 // GET /api/v1/groups/:nameOrId/members - List members

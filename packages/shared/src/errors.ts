@@ -38,3 +38,9 @@ export class ForbiddenError extends KukanError {
     super(message, 'FORBIDDEN', 403)
   }
 }
+
+export class ConflictError extends KukanError {
+  constructor(message = 'Conflict') {
+    super(message, 'CONFLICT', 409)
+  }
+}

@@ -16,10 +16,6 @@ import {
   tag,
   vocabulary,
   user,
-  session,
-  apiToken,
-  activity,
-  auditLog,
 } from '@kukan/db'
 import {
   ForbiddenError,
@@ -30,6 +26,7 @@ import {
   userRoleSchema,
 } from '@kukan/shared'
 import { PipelineService } from '../services/pipeline-service'
+import { UserService } from '../services/user-service'
 import { rebuildMetadataIndex } from '../services/search-index'
 import type { AppContext } from '../context'
 
@@ -595,42 +592,15 @@ adminRouter.delete('/users/:userId', async (c) => {
   if (!currentUser?.sysadmin) throw new ForbiddenError('Only sysadmin can delete users')
 
   const userId = c.req.param('userId')
-
-  // Prevent self-deletion
   if (userId === currentUser.id) {
     return c.json(
-      {
-        type: 'about:blank',
-        title: 'BAD_REQUEST',
-        status: 400,
-        detail: 'Cannot delete yourself',
-      },
+      { type: 'about:blank', title: 'BAD_REQUEST', status: 400, detail: 'Cannot delete yourself' },
       400
     )
   }
 
-  const db = c.get('db')
-
-  // 1. Soft-delete: set state to 'deleted'
-  const [deleted] = await db
-    .update(user)
-    .set({ state: 'deleted', updatedAt: new Date() })
-    .where(eq(user.id, userId))
-    .returning({ id: user.id })
-
-  if (!deleted) {
-    return c.json(
-      { type: 'about:blank', title: 'Not Found', status: 404, detail: 'User not found' },
-      404
-    )
-  }
-
-  // 2. Revoke all sessions and API tokens (immediate logout)
-  await Promise.all([
-    db.delete(session).where(eq(session.userId, userId)),
-    db.delete(apiToken).where(eq(apiToken.userId, userId)),
-  ])
-
+  const service = new UserService(c.get('db'))
+  await service.delete(userId)
   return c.json({ success: true })
 })
 
@@ -640,7 +610,6 @@ adminRouter.post('/users/:userId/restore', async (c) => {
   if (!currentUser?.sysadmin) throw new ForbiddenError('Only sysadmin can restore users')
 
   const userId = c.req.param('userId')
-
   if (userId === currentUser.id) {
     return c.json(
       { type: 'about:blank', title: 'BAD_REQUEST', status: 400, detail: 'Cannot restore yourself' },
@@ -648,35 +617,8 @@ adminRouter.post('/users/:userId/restore', async (c) => {
     )
   }
 
-  const db = c.get('db')
-
-  const [target] = await db
-    .select({ id: user.id, state: user.state })
-    .from(user)
-    .where(eq(user.id, userId))
-    .limit(1)
-
-  if (!target) {
-    return c.json(
-      { type: 'about:blank', title: 'Not Found', status: 404, detail: 'User not found' },
-      404
-    )
-  }
-
-  if (target.state !== 'deleted') {
-    return c.json(
-      {
-        type: 'about:blank',
-        title: 'BAD_REQUEST',
-        status: 400,
-        detail: 'Only soft-deleted users can be restored',
-      },
-      400
-    )
-  }
-
-  await db.update(user).set({ state: 'active', updatedAt: new Date() }).where(eq(user.id, userId))
-
+  const service = new UserService(c.get('db'))
+  await service.restore(userId)
   return c.json({ success: true })
 })
 
@@ -686,7 +628,6 @@ adminRouter.post('/users/:userId/purge', async (c) => {
   if (!currentUser?.sysadmin) throw new ForbiddenError('Only sysadmin can purge users')
 
   const userId = c.req.param('userId')
-
   if (userId === currentUser.id) {
     return c.json(
       { type: 'about:blank', title: 'BAD_REQUEST', status: 400, detail: 'Cannot purge yourself' },
@@ -694,75 +635,7 @@ adminRouter.post('/users/:userId/purge', async (c) => {
     )
   }
 
-  const db = c.get('db')
-
-  // Verify user exists and is soft-deleted
-  const [target] = await db
-    .select({ id: user.id, email: user.email, name: user.name, state: user.state })
-    .from(user)
-    .where(eq(user.id, userId))
-    .limit(1)
-
-  if (!target) {
-    return c.json(
-      { type: 'about:blank', title: 'Not Found', status: 404, detail: 'User not found' },
-      404
-    )
-  }
-
-  if (target.state !== 'deleted') {
-    return c.json(
-      {
-        type: 'about:blank',
-        title: 'BAD_REQUEST',
-        status: 400,
-        detail: 'Only soft-deleted users can be purged',
-      },
-      400
-    )
-  }
-
-  // Purge within a transaction (includes linked package check for consistency)
-  const conflict = await db.transaction(async (tx) => {
-    // 1. Check for linked packages inside transaction to prevent race conditions
-    const [linkedPkg] = await tx
-      .select({ id: packageTable.id })
-      .from(packageTable)
-      .where(eq(packageTable.creatorUserId, userId))
-      .limit(1)
-
-    if (linkedPkg) return true
-
-    // Nullify FK references that don't cascade
-    await tx.update(activity).set({ userId: null }).where(eq(activity.userId, userId))
-    await tx.update(auditLog).set({ userId: null }).where(eq(auditLog.userId, userId))
-
-    // Record the purge in audit log (before deleting the user)
-    // entityId is uuid; Better Auth user IDs are text, so store in changes instead
-    await tx.insert(auditLog).values({
-      entityType: 'user',
-      entityId: sql`gen_random_uuid()`,
-      action: 'purge',
-      userId: currentUser.id,
-      changes: { purgedUserId: userId, purgedEmail: target.email, purgedName: target.name },
-    })
-
-    // Delete user (CASCADE handles session, account, apiToken, memberships)
-    await tx.delete(user).where(eq(user.id, userId))
-    return false
-  })
-
-  if (conflict) {
-    return c.json(
-      {
-        type: 'about:blank',
-        title: 'CONFLICT',
-        status: 409,
-        detail: 'User has linked packages. Purge or reassign them first.',
-      },
-      409
-    )
-  }
-
+  const service = new UserService(c.get('db'))
+  await service.purge(userId, currentUser.id)
   return c.json({ success: true })
 })

@@ -254,4 +254,93 @@ describe('Organizations API Routes', () => {
       expect(res.status).toBe(403)
     })
   })
+
+  describe('POST /api/v1/organizations/:nameOrId/purge', () => {
+    it('should reject non-sysadmin requests', async () => {
+      const regularApp = createTestApp(db, {
+        user: { id: 'regular', email: 'r@r.com', name: 'regular', sysadmin: false },
+      })
+      const res = await regularApp.request('/api/v1/organizations/any/purge', { method: 'POST' })
+      expect(res.status).toBe(403)
+    })
+
+    it('should return 404 for active organization', async () => {
+      await app.request('/api/v1/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'active-purge-org', title: 'Active' }),
+      })
+      const res = await app.request('/api/v1/organizations/active-purge-org/purge', {
+        method: 'POST',
+      })
+      expect(res.status).toBe(404)
+    })
+
+    it('should reject purge when organization has packages', async () => {
+      // Create org and soft-delete
+      const orgRes = await app.request('/api/v1/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'pkg-purge-org', title: 'Has Packages' }),
+      })
+      const org = await orgRes.json()
+
+      // Create package in this org
+      await app.request('/api/v1/packages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'org-linked-pkg', title: 'Linked', owner_org: org.id }),
+      })
+
+      // Soft-delete org
+      await app.request('/api/v1/organizations/pkg-purge-org', { method: 'DELETE' })
+
+      const res = await app.request('/api/v1/organizations/pkg-purge-org/purge', { method: 'POST' })
+      expect(res.status).toBe(409)
+    })
+
+    it('should purge a soft-deleted organization', async () => {
+      await app.request('/api/v1/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'purge-org', title: 'To Purge' }),
+      })
+      await app.request('/api/v1/organizations/purge-org', { method: 'DELETE' })
+
+      const res = await app.request('/api/v1/organizations/purge-org/purge', { method: 'POST' })
+      expect(res.status).toBe(200)
+
+      // Verify it's gone
+      const getRes = await app.request('/api/v1/organizations/purge-org')
+      expect(getRes.status).toBe(404)
+    })
+  })
+
+  describe('POST /api/v1/organizations/:nameOrId/restore', () => {
+    it('should reject non-sysadmin requests', async () => {
+      const regularApp = createTestApp(db, {
+        user: { id: 'regular', email: 'r@r.com', name: 'regular', sysadmin: false },
+      })
+      const res = await regularApp.request('/api/v1/organizations/any/restore', { method: 'POST' })
+      expect(res.status).toBe(403)
+    })
+
+    it('should restore a soft-deleted organization', async () => {
+      await app.request('/api/v1/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'restore-org', title: 'To Restore' }),
+      })
+      await app.request('/api/v1/organizations/restore-org', { method: 'DELETE' })
+
+      const res = await app.request('/api/v1/organizations/restore-org/restore', { method: 'POST' })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.state).toBe('active')
+
+      // Verify it's visible again
+      const getRes = await app.request('/api/v1/organizations/restore-org')
+      expect(getRes.status).toBe(200)
+    })
+  })
 })

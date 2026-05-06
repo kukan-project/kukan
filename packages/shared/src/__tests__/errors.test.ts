@@ -5,6 +5,7 @@ import {
   ValidationError,
   UnauthorizedError,
   ForbiddenError,
+  ConflictError,
 } from '../errors'
 
 describe('KukanError', () => {
@@ -92,5 +93,19 @@ describe('ForbiddenError', () => {
   it('should accept custom message', () => {
     const error = new ForbiddenError('Admin only')
     expect(error.message).toBe('Admin only')
+  })
+})
+
+describe('ConflictError', () => {
+  it('should have default message', () => {
+    const error = new ConflictError()
+    expect(error.message).toBe('Conflict')
+    expect(error.code).toBe('CONFLICT')
+    expect(error.status).toBe(409)
+  })
+
+  it('should accept custom message', () => {
+    const error = new ConflictError('Resource already exists')
+    expect(error.message).toBe('Resource already exists')
   })
 })

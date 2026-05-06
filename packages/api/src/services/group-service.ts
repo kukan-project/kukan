@@ -66,14 +66,14 @@ export class GroupService {
     return { items, total, offset, limit } as PaginatedResult<(typeof items)[0]>
   }
 
-  async getByNameOrId(nameOrId: string) {
+  async getByNameOrId(nameOrId: string, state: 'active' | 'deleted' = 'active') {
     const [result] = await this.db
       .select()
       .from(group)
       .where(
         and(
           isUuid(nameOrId) ? eq(group.id, nameOrId) : eq(group.name, nameOrId),
-          eq(group.state, 'active')
+          eq(group.state, state)
         )
       )
       .limit(1)
@@ -141,6 +141,26 @@ export class GroupService {
       .where(eq(group.id, existing.id))
 
     return { success: true }
+  }
+
+  /** Hard-delete a soft-deleted group and all related data (CASCADE). */
+  async purge(id: string) {
+    const [purged] = await this.db.delete(group).where(eq(group.id, id)).returning()
+
+    if (!purged) throw new NotFoundError('Group', id)
+    return purged
+  }
+
+  /** Restore a soft-deleted group back to active state. */
+  async restore(id: string) {
+    const [restored] = await this.db
+      .update(group)
+      .set({ state: 'active', updated: new Date() })
+      .where(eq(group.id, id))
+      .returning()
+
+    if (!restored) throw new NotFoundError('Group', id)
+    return restored
   }
 
   // ── Member management ──

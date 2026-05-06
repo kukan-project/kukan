@@ -216,4 +216,66 @@ describe('Groups API Routes', () => {
       expect(res.status).toBe(403)
     })
   })
+
+  describe('POST /api/v1/groups/:nameOrId/purge', () => {
+    it('should reject non-sysadmin requests', async () => {
+      const regularApp = createTestApp(db, {
+        user: { id: 'regular', email: 'r@r.com', name: 'regular', sysadmin: false },
+      })
+      const res = await regularApp.request('/api/v1/groups/any/purge', { method: 'POST' })
+      expect(res.status).toBe(403)
+    })
+
+    it('should return 404 for active group', async () => {
+      await app.request('/api/v1/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'active-purge-group', title: 'Active' }),
+      })
+      const res = await app.request('/api/v1/groups/active-purge-group/purge', { method: 'POST' })
+      expect(res.status).toBe(404)
+    })
+
+    it('should purge a soft-deleted group', async () => {
+      await app.request('/api/v1/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'purge-group', title: 'To Purge' }),
+      })
+      await app.request('/api/v1/groups/purge-group', { method: 'DELETE' })
+
+      const res = await app.request('/api/v1/groups/purge-group/purge', { method: 'POST' })
+      expect(res.status).toBe(200)
+
+      const getRes = await app.request('/api/v1/groups/purge-group')
+      expect(getRes.status).toBe(404)
+    })
+  })
+
+  describe('POST /api/v1/groups/:nameOrId/restore', () => {
+    it('should reject non-sysadmin requests', async () => {
+      const regularApp = createTestApp(db, {
+        user: { id: 'regular', email: 'r@r.com', name: 'regular', sysadmin: false },
+      })
+      const res = await regularApp.request('/api/v1/groups/any/restore', { method: 'POST' })
+      expect(res.status).toBe(403)
+    })
+
+    it('should restore a soft-deleted group', async () => {
+      await app.request('/api/v1/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'restore-group', title: 'To Restore' }),
+      })
+      await app.request('/api/v1/groups/restore-group', { method: 'DELETE' })
+
+      const res = await app.request('/api/v1/groups/restore-group/restore', { method: 'POST' })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.state).toBe('active')
+
+      const getRes = await app.request('/api/v1/groups/restore-group')
+      expect(getRes.status).toBe(200)
+    })
+  })
 })
