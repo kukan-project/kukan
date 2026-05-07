@@ -120,8 +120,10 @@ describe('SQSQueueAdapter', () => {
             })
         )
 
-      await queue.process<{ value: number }>('test', async (job) => {
-        processed.push(job)
+      await queue.process({
+        test: async (job) => {
+          processed.push(job)
+        },
       })
 
       // Wait for processing
@@ -156,7 +158,7 @@ describe('SQSQueueAdapter', () => {
             })
         )
 
-      await queue.process('test', async () => {})
+      await queue.process({ test: async () => {} })
       await new Promise((r) => setTimeout(r, 200))
       await queue.stop()
 
@@ -184,8 +186,10 @@ describe('SQSQueueAdapter', () => {
             })
         )
 
-      await queue.process('test', async () => {
-        throw new Error('handler failed')
+      await queue.process({
+        test: async () => {
+          throw new Error('handler failed')
+        },
       })
       await new Promise((r) => setTimeout(r, 200))
       await queue.stop()
@@ -203,9 +207,9 @@ describe('SQSQueueAdapter', () => {
           })
       )
 
-      await queue.process('test', async () => {})
+      await queue.process({ test: async () => {} })
 
-      await expect(queue.process('test', async () => {})).rejects.toThrow('already running')
+      await expect(queue.process({ test: async () => {} })).rejects.toThrow('already running')
 
       await queue.stop()
     })
@@ -231,7 +235,7 @@ describe('SQSQueueAdapter', () => {
         )
 
       const handler = vi.fn()
-      await queue.process('test', handler)
+      await queue.process({ test: handler })
       await new Promise((r) => setTimeout(r, 200))
       await queue.stop()
 
@@ -262,13 +266,57 @@ describe('SQSQueueAdapter', () => {
         )
 
       const handler = vi.fn()
-      await queue.process('test', handler)
+      await queue.process({ test: handler })
       await new Promise((r) => setTimeout(r, 200))
       await queue.stop()
 
       expect(handler).not.toHaveBeenCalled()
       const deleteCmd = mockSend.mock.calls[1][0]
       expect(deleteCmd._type).toBe('Delete')
+    })
+
+    it('should route messages to the correct handler when multiple are registered', async () => {
+      const handlerA = vi.fn()
+      const handlerB = vi.fn()
+
+      mockSend
+        .mockResolvedValueOnce({
+          Messages: [
+            {
+              MessageId: 'msg-a',
+              Body: JSON.stringify({ type: 'type-a', data: { x: 1 } }),
+              ReceiptHandle: 'rh-a',
+              MessageAttributes: {},
+            },
+          ],
+        })
+        .mockResolvedValueOnce({}) // DeleteMessage for type-a
+        .mockResolvedValueOnce({
+          Messages: [
+            {
+              MessageId: 'msg-b',
+              Body: JSON.stringify({ type: 'type-b', data: { y: 2 } }),
+              ReceiptHandle: 'rh-b',
+              MessageAttributes: {},
+            },
+          ],
+        })
+        .mockResolvedValueOnce({}) // DeleteMessage for type-b
+        .mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              setTimeout(() => resolve({ Messages: [] }), 50)
+            })
+        )
+
+      await queue.process({ 'type-a': handlerA, 'type-b': handlerB })
+      await new Promise((r) => setTimeout(r, 400))
+      await queue.stop()
+
+      expect(handlerA).toHaveBeenCalledOnce()
+      expect(handlerA.mock.calls[0][0].data).toEqual({ x: 1 })
+      expect(handlerB).toHaveBeenCalledOnce()
+      expect(handlerB.mock.calls[0][0].data).toEqual({ y: 2 })
     })
 
     it('should update lastPollAt after receiving messages', async () => {
@@ -281,7 +329,7 @@ describe('SQSQueueAdapter', () => {
           })
       )
 
-      await queue.process('test', async () => {})
+      await queue.process({ test: async () => {} })
       await new Promise((r) => setTimeout(r, 200))
       await queue.stop()
 
@@ -296,7 +344,7 @@ describe('SQSQueueAdapter', () => {
           })
       )
 
-      await queue.process('test', async () => {})
+      await queue.process({ test: async () => {} })
       await queue.stop()
 
       // After stop, no more send calls should happen

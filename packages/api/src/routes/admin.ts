@@ -19,6 +19,7 @@ import {
 } from '@kukan/db'
 import {
   ForbiddenError,
+  REINDEX_JOB_TYPE,
   RESOURCE_PREFIX,
   PREVIEW_PREFIX,
   escapeLike,
@@ -27,7 +28,6 @@ import {
 } from '@kukan/shared'
 import { PipelineService } from '../services/pipeline-service'
 import { UserService } from '../services/user-service'
-import { rebuildMetadataIndex } from '../services/search-index'
 import type { AppContext } from '../context'
 
 export const adminRouter = new Hono<{ Variables: AppContext }>()
@@ -68,13 +68,30 @@ const externalUrlConditions = [
   sql`${resource.url} IS NOT NULL`,
 ]
 
-// GET /api/v1/admin/search/stats — Index statistics
+// GET /api/v1/admin/search/stats — Index statistics (OpenSearch + DB counts)
 adminRouter.get('/search/stats', async (c) => {
   const user = c.get('user')
   if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view search stats')
 
-  const stats = await c.get('search').getIndexStats()
-  return c.json({ enabled: stats !== null, stats })
+  const db = c.get('db')
+
+  const [stats, pkgCountRows, resCountRows] = await Promise.all([
+    c.get('search').getIndexStats(),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(packageTable)
+      .where(eq(packageTable.state, 'active')),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(resource)
+      .where(eq(resource.state, 'active')),
+  ])
+
+  return c.json({
+    enabled: stats !== null,
+    stats,
+    db: { packages: pkgCountRows[0]?.count ?? 0, resources: resCountRows[0]?.count ?? 0 },
+  })
 })
 
 // GET /api/v1/admin/search/doc/:index/:id — Get a single document from OpenSearch
@@ -160,18 +177,34 @@ adminRouter.get('/search/browse/:index', async (c) => {
   return c.json(result)
 })
 
-// POST /api/v1/admin/reindex-metadata — Rebuild package/resource search index from DB
-adminRouter.post('/reindex-metadata', async (c) => {
-  const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can reindex')
+// POST /api/v1/admin/reindex-metadata — Enqueue metadata rebuild job to Worker
+adminRouter.post(
+  '/reindex-metadata',
+  zValidator('json', z.object({ includeContent: z.boolean().optional() }).default({})),
+  async (c) => {
+    const user = c.get('user')
+    if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can reindex')
 
-  const db = c.get('db')
-  const search = c.get('search')
-  const log = c.get('logger')
+    const search = c.get('search')
+    const stats = await search.getIndexStats()
+    if (!stats) {
+      return c.json(
+        {
+          type: 'about:blank',
+          title: 'Not Available',
+          status: 400,
+          detail: 'OpenSearch not enabled',
+        },
+        400
+      )
+    }
 
-  const result = await rebuildMetadataIndex(db, search, log)
-  return c.json(result)
-})
+    const { includeContent } = c.req.valid('json')
+    const queue = c.get('queue')
+    await queue.enqueue(REINDEX_JOB_TYPE, { includeContent })
+    return c.json({ queued: true })
+  }
+)
 
 // POST /api/v1/admin/jobs/enqueue-all — Enqueue pipeline for all active resources
 adminRouter.post('/jobs/enqueue-all', async (c) => {

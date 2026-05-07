@@ -12,6 +12,7 @@ export type PipelineStepName = 'fetch' | 'extract' | 'index'
 export type ContentType = 'tabular' | 'text' | 'manifest' | 'document'
 
 export const PIPELINE_JOB_TYPE = 'resource-pipeline' as const
+export const REINDEX_JOB_TYPE = 'reindex-metadata' as const
 
 /** A single file/directory entry in a ZIP manifest */
 export interface ZipEntry {

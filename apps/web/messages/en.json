@@ -226,11 +226,9 @@
       "reindexDescription": "Rebuild the search index from all datasets in the database. This is normally updated automatically, but run it if search results are inconsistent.",
       "reindex": "Rebuild",
       "reindexing": "Rebuilding...",
-      "reindexResult": "{count} datasets, {resourceCount} resources indexed",
-      "includeContent": "Also reprocess content (includes text extraction, takes longer)",
-      "contentEnqueuedResult": "{count} contents enqueued for reprocessing",
-      "contentEnqueuedFailed": "{count} failed",
-      "contentSizeNote": "Content index is truncated to a maximum of 100KB per resource."
+      "reindexQueued": "Rebuild job queued. Index stats will update automatically.",
+      "contentPipelineNote": "Content reprocessing is also queued and will run in the background.",
+      "includeContent": "Also reprocess content (includes text extraction, takes longer)"
     },
     "adminSite": {
       "title": "Site Management",

@@ -6,8 +6,12 @@
 import { serve } from '@hono/node-server'
 import { config } from 'dotenv'
 import { Hono } from 'hono'
-import { loadEnv, createLogger, PIPELINE_JOB_TYPE } from '@kukan/shared'
+import { loadEnv, createLogger, PIPELINE_JOB_TYPE, REINDEX_JOB_TYPE } from '@kukan/shared'
+import { eq, sql } from 'drizzle-orm'
+import { packageTable } from '@kukan/db'
 import type { Job } from '@kukan/queue-adapter'
+import { rebuildMetadataIndex } from '@kukan/api/services/search-index'
+import { PipelineService } from '@kukan/api/services/pipeline-service'
 import { createDb, runMigrations } from '@kukan/db'
 import { SQSQueueAdapter } from '@kukan/queue-adapter'
 import { S3StorageAdapter } from '@kukan/storage-adapter'
@@ -107,27 +111,81 @@ if (env.HEALTH_CHECK_ENABLED) {
 }
 
 // --- Search adapter (optional, for content indexing) ---
+const osLogger = log.child({ component: 'opensearch' })
 const search =
   env.SEARCH_TYPE === 'opensearch'
     ? new OpenSearchAdapter({
         endpoint: env.OPENSEARCH_URL,
         replicas: env.OPENSEARCH_REPLICAS,
-        logger: log.child({ component: 'opensearch' }),
+        logger: osLogger,
       })
     : undefined
 
 // --- SQS polling ---
 const ctx = buildPipelineContext(db, storage, search)
-await queue.process<{ resourceId: string }>(
-  PIPELINE_JOB_TYPE,
-  async (job: Job<{ resourceId: string }>) => {
-    log.info({ jobId: job.id, resourceId: job.data.resourceId }, 'Processing job')
+await queue.process({
+  [PIPELINE_JOB_TYPE]: async (job: Job) => {
+    const { resourceId } = job.data as { resourceId: string }
+    log.info({ jobId: job.id, type: job.type, resourceId }, 'Processing job')
     const start = performance.now()
-    await processResource(job.data.resourceId, ctx, db, queue)
+    await processResource(resourceId, ctx, db, queue)
     const elapsed = Math.round(performance.now() - start)
-    log.info({ jobId: job.id, resourceId: job.data.resourceId, elapsed }, 'Completed job')
-  }
-)
+    log.info({ jobId: job.id, type: job.type, resourceId, elapsed }, 'Completed job')
+  },
+  [REINDEX_JOB_TYPE]: async (job: Job) => {
+    const { includeContent } = (job.data ?? {}) as { includeContent?: boolean }
+    log.info({ jobId: job.id, type: job.type, includeContent }, 'Reindex metadata job started')
+    const start = performance.now()
+    if (search) {
+      const jobLogger = osLogger.child({ jobId: job.id, type: job.type })
+      await rebuildMetadataIndex(db, search, jobLogger, true)
+      if (includeContent) {
+        await search.deleteAllContents()
+        const pipelineService = new PipelineService(db, queue)
+        const { enqueued, failed } = await pipelineService.enqueueAll()
+        log.info(
+          { jobId: job.id, type: job.type, enqueued, failed },
+          'Content pipeline jobs enqueued'
+        )
+      }
+      const elapsed = Math.round(performance.now() - start)
+      log.info({ jobId: job.id, type: job.type, elapsed }, 'Reindex metadata job completed')
+    } else {
+      log.warn({ jobId: job.id, type: job.type }, 'Reindex skipped — OpenSearch not configured')
+    }
+  },
+})
+
+// --- Periodic index health check (detect data loss even when queue is idle) ---
+const INDEX_CHECK_INTERVAL_MS = 60_000
+const REBUILD_COOLDOWN_MS = 5 * 60 * 1000
+let lastRebuildEnqueuedAt = 0
+let indexCheckTimer: ReturnType<typeof setInterval> | undefined
+if (search) {
+  indexCheckTimer = setInterval(async () => {
+    try {
+      const osCount = await search.getPackagesDocCount()
+      if (osCount < 0) return // OpenSearch error — skip this tick
+
+      const [{ count: dbCount }] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(packageTable)
+        .where(eq(packageTable.state, 'active'))
+
+      if (
+        dbCount > 0 &&
+        osCount === 0 &&
+        Date.now() - lastRebuildEnqueuedAt > REBUILD_COOLDOWN_MS
+      ) {
+        osLogger.warn({ dbCount, osCount }, 'Index out of sync — enqueuing auto-recovery')
+        lastRebuildEnqueuedAt = Date.now()
+        await queue.enqueue(REINDEX_JOB_TYPE, { includeContent: true })
+      }
+    } catch (err) {
+      osLogger.error({ err }, 'Periodic index check failed')
+    }
+  }, INDEX_CHECK_INTERVAL_MS)
+}
 
 log.info({ queueUrl: env.SQS_QUEUE_URL, healthPort: HEALTH_PORT }, 'Worker started')
 
@@ -135,6 +193,7 @@ log.info({ queueUrl: env.SQS_QUEUE_URL, healthPort: HEALTH_PORT }, 'Worker start
 const shutdown = async () => {
   log.info('Shutting down...')
   healthCheckJob?.stop()
+  if (indexCheckTimer) clearInterval(indexCheckTimer)
   await queue.stop()
   await db.$client.end()
   process.exit(0)

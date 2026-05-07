@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Database, Search } from 'lucide-react'
@@ -40,6 +40,7 @@ interface IndexStatsEntry {
 interface IndexStatsResponse {
   enabled: boolean
   stats: { packages: IndexStatsEntry; resources: IndexStatsEntry; contents: IndexStatsEntry } | null
+  db?: { packages: number; resources: number }
 }
 
 interface BrowseItem {
@@ -87,6 +88,7 @@ const MAX_FETCH_SIZE = 100 * 1024 * 1024
 const MAX_CONTENT_CHUNK_SIZE = 500 * 1024
 
 const PAGE_SIZE = 20
+const STATS_POLL_COUNT = 20
 
 export default function AdminSearchPage() {
   const user = useUser()
@@ -201,42 +203,64 @@ export default function AdminSearchPage() {
 
   const [reindexing, setReindexing] = useState(false)
   const [includeContent, setIncludeContent] = useState(false)
-  const [reindexResult, setReindexResult] = useState<{
-    packagesIndexed: number
-    resourcesIndexed: number
-    contentEnqueued?: number
-    contentFailed?: number
-  } | null>(null)
+  const [reindexQueued, setReindexQueued] = useState(false)
+  const [reindexIncludedContent, setReindexIncludedContent] = useState(false)
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) clearInterval(pollingRef.current)
+    pollingRef.current = null
+  }, [])
+
+  // Cleanup polling on unmount
+  useEffect(() => stopPolling, [stopPolling])
 
   async function handleReindex() {
     setReindexing(true)
-    setReindexResult(null)
-    try {
-      const res = await clientFetch('/api/v1/admin/reindex-metadata', {
-        method: 'POST',
-      })
-      if (!res.ok) return
-      const data = await res.json()
+    setReindexQueued(false)
+    setReindexIncludedContent(includeContent)
 
-      if (includeContent) {
-        const enqueueRes = await clientFetch('/api/v1/admin/jobs/enqueue-all', { method: 'POST' })
-        if (enqueueRes.ok) {
-          const enqueueData = await enqueueRes.json()
-          setReindexResult({
-            ...data,
-            contentEnqueued: enqueueData.enqueued,
-            contentFailed: enqueueData.failed,
-          })
-        } else {
-          setReindexResult(data)
-        }
-      } else {
-        setReindexResult(data)
-      }
-    } finally {
+    const res = await clientFetch('/api/v1/admin/reindex-metadata', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ includeContent }),
+    })
+    if (!res.ok) {
       setReindexing(false)
-      await Promise.all([fetchStats(), fetchBrowse(0, submittedQuery)])
+      return
     }
+
+    setReindexQueued(true)
+    setReindexing(false)
+
+    // Poll stats so the index cards update live while Worker processes
+    stopPolling()
+    let pollCount = 0
+    pollingRef.current = setInterval(async () => {
+      pollCount++
+      if (pollCount >= STATS_POLL_COUNT) {
+        stopPolling()
+        fetchBrowse(0, submittedQuery)
+        return
+      }
+      try {
+        const statsRes = await clientFetch('/api/v1/admin/search/stats')
+        if (!statsRes.ok) return
+        const latest: IndexStatsResponse = await statsRes.json()
+
+        setStats((prev) => {
+          if (
+            prev?.stats?.packages.docCount === latest.stats?.packages.docCount &&
+            prev?.stats?.resources.docCount === latest.stats?.resources.docCount
+          ) {
+            return prev
+          }
+          return latest
+        })
+      } catch {
+        // ignore transient errors
+      }
+    }, 3000)
   }
 
   if (!user.sysadmin) return null
@@ -475,22 +499,10 @@ export default function AdminSearchPage() {
               <Search className="mr-2 h-4 w-4" />
               {reindexing ? t('reindexing') : t('reindex')}
             </Button>
-            {reindexResult !== null && (
+            {reindexQueued && (
               <div className="text-sm text-muted-foreground">
-                <p>
-                  {t('reindexResult', {
-                    count: reindexResult.packagesIndexed,
-                    resourceCount: reindexResult.resourcesIndexed,
-                  })}
-                </p>
-                {reindexResult.contentEnqueued !== undefined && (
-                  <p>
-                    {t('contentEnqueuedResult', { count: reindexResult.contentEnqueued })}
-                    {reindexResult.contentFailed
-                      ? ` (${t('contentEnqueuedFailed', { count: reindexResult.contentFailed })})`
-                      : ''}
-                  </p>
-                )}
+                <p>{t('reindexQueued')}</p>
+                {reindexIncludedContent && <p>{t('contentPipelineNote')}</p>}
               </div>
             )}
           </div>

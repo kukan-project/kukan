@@ -226,11 +226,9 @@
       "reindexDescription": "データベースの全データセットから検索インデックスを再構築します。通常は自動更新されますが、検索結果に不整合がある場合に実行してください。",
       "reindex": "再構築",
       "reindexing": "再構築中...",
-      "reindexResult": "{count} 件のデータセット、{resourceCount} 件のリソースをインデックスしました",
-      "includeContent": "コンテンツも再処理する（テキスト抽出を含む、時間がかかります）",
-      "contentEnqueuedResult": "{count} 件のコンテンツの再処理を予約しました",
-      "contentEnqueuedFailed": "{count} 件失敗",
-      "contentSizeNote": "コンテンツインデックスはリソースあたり最大 100KB に切り詰められます。"
+      "reindexQueued": "再構築ジョブを投入しました。インデックスの件数は自動的に更新されます。",
+      "contentPipelineNote": "コンテンツの再処理もキューに投入済みです。バックグラウンドで順次実行されます。",
+      "includeContent": "コンテンツも再処理する（テキスト抽出を含む、時間がかかります）"
     },
     "adminSite": {
       "title": "サイト管理",

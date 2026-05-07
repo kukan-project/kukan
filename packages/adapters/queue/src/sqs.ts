@@ -87,11 +87,11 @@ export class SQSQueueAdapter implements QueueAdapter {
     }
   }
 
-  async process<T>(type: string, handler: (job: Job<T>) => Promise<void>): Promise<void> {
+  async process(handlers: Record<string, (job: Job<unknown>) => Promise<void>>): Promise<void> {
     if (this.running) throw new Error('SQSQueueAdapter.process() already running')
     this.running = true
     this.abortController = new AbortController()
-    this.pollPromise = this.pollLoop(type, handler)
+    this.pollPromise = this.pollLoop(handlers)
   }
 
   async stop(): Promise<void> {
@@ -103,7 +103,9 @@ export class SQSQueueAdapter implements QueueAdapter {
     }
   }
 
-  private async pollLoop<T>(type: string, handler: (job: Job<T>) => Promise<void>): Promise<void> {
+  private async pollLoop(
+    handlers: Record<string, (job: Job<unknown>) => Promise<void>>
+  ): Promise<void> {
     while (this.running) {
       try {
         const response = await this.client.send(
@@ -121,16 +123,17 @@ export class SQSQueueAdapter implements QueueAdapter {
         if (!response.Messages?.length) continue
 
         for (const message of response.Messages) {
-          let body: { type: string; data: T }
+          let body: { type: string; data: unknown }
           try {
-            body = JSON.parse(message.Body!) as { type: string; data: T }
+            body = JSON.parse(message.Body!) as { type: string; data: unknown }
           } catch {
             this.log.error({ messageId: message.MessageId }, 'Invalid message body, deleting')
             await this.deleteMessage(message.ReceiptHandle!)
             continue
           }
 
-          if (body.type !== type) {
+          const handler = handlers[body.type]
+          if (!handler) {
             this.log.warn(
               { type: body.type, messageId: message.MessageId },
               'Unknown job type, deleting'
@@ -140,7 +143,7 @@ export class SQSQueueAdapter implements QueueAdapter {
           }
 
           const jobId = message.MessageAttributes?.JobId?.StringValue ?? randomUUID()
-          const job: Job<T> = { id: jobId, type: body.type, data: body.data }
+          const job: Job<unknown> = { id: jobId, type: body.type, data: body.data }
 
           try {
             this.processingJobSince = new Date()

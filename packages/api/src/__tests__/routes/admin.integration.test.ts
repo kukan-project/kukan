@@ -17,7 +17,11 @@ const mockSearch: SearchAdapter = {
   deleteAllResources: async () => {},
   search: async () => ({ items: [], total: 0, offset: 0, limit: 20 }),
   sumResourceCount: async () => 0,
-  getIndexStats: async () => null,
+  getIndexStats: async () => ({
+    packages: { docCount: 0, sizeBytes: 0, recentDocs: [] },
+    resources: { docCount: 0, sizeBytes: 0, recentDocs: [] },
+    contents: { docCount: 0, sizeBytes: 0, recentDocs: [] },
+  }),
   indexContent: async () => {},
   deleteContent: async () => {},
   deleteAllContents: async () => {},
@@ -43,7 +47,6 @@ const nonAdminApp = createTestApp(db, {
 beforeEach(async () => {
   await cleanDatabase()
   await ensureTestUser()
-  vi.mocked(mockSearch.bulkIndexPackages).mockClear()
 })
 
 afterAll(async () => {
@@ -61,32 +64,6 @@ async function ensureOrg(name: string): Promise<string> {
   return org.id
 }
 
-/** Create a package with a resource via API */
-async function createPackageWithResource(name: string, orgId: string) {
-  const pkgRes = await app.request('/api/v1/packages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name: `pkg-${name}`,
-      title: `Package ${name}`,
-      owner_org: orgId,
-    }),
-  })
-  const pkg = await pkgRes.json()
-
-  await app.request(`/api/v1/packages/${pkg.id}/resources`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name: `resource-${name}`,
-      url: `https://example.com/${name}.csv`,
-      format: 'CSV',
-    }),
-  })
-
-  return pkg
-}
-
 describe('Admin API Routes', () => {
   describe('POST /api/v1/admin/reindex-metadata', () => {
     it('should reject unauthenticated requests', async () => {
@@ -99,44 +76,41 @@ describe('Admin API Routes', () => {
       expect(res.status).toBe(403)
     })
 
-    it('should return 0 indexed when no packages exist', async () => {
+    it('should enqueue reindex job via SQS', async () => {
       const res = await app.request('/api/v1/admin/reindex-metadata', { method: 'POST' })
       expect(res.status).toBe(200)
 
       const body = await res.json()
-      expect(body.packagesIndexed).toBe(0)
-      expect(mockSearch.bulkIndexPackages).not.toHaveBeenCalled()
+      expect(body.queued).toBe(true)
     })
 
-    it('should reindex all active packages', async () => {
-      const orgId = await ensureOrg('test-org')
-      await createPackageWithResource('alpha', orgId)
-      await createPackageWithResource('beta', orgId)
+    it('should return 400 when OpenSearch is not enabled', async () => {
+      const pgSearch: SearchAdapter = { ...mockSearch, getIndexStats: async () => null }
+      const pgApp = createTestApp(db, { search: pgSearch })
 
-      const res = await app.request('/api/v1/admin/reindex-metadata', { method: 'POST' })
+      const res = await pgApp.request('/api/v1/admin/reindex-metadata', { method: 'POST' })
+      expect(res.status).toBe(400)
+
+      const body = await res.json()
+      expect(body.detail).toBe('OpenSearch not enabled')
+    })
+  })
+
+  describe('GET /api/v1/admin/search/stats', () => {
+    it('should return index stats with DB counts', async () => {
+      const res = await app.request('/api/v1/admin/search/stats')
       expect(res.status).toBe(200)
 
       const body = await res.json()
-      expect(body.packagesIndexed).toBe(2)
-      expect(mockSearch.bulkIndexPackages).toHaveBeenCalledOnce()
+      expect(body.enabled).toBe(true)
+      expect(body.db).toBeDefined()
+      expect(typeof body.db.packages).toBe('number')
+      expect(typeof body.db.resources).toBe('number')
+    })
 
-      const docs = vi.mocked(mockSearch.bulkIndexPackages).mock.calls[0][0]
-      expect(docs).toHaveLength(2)
-
-      const names = docs.map((d) => d.name).sort()
-      expect(names).toEqual(['pkg-alpha', 'pkg-beta'])
-
-      // Dataset docs should NOT contain resources (moved to kukan-resources)
-      for (const doc of docs) {
-        expect(doc['resources']).toBeUndefined()
-        expect(doc.organization).toBe('test-org')
-        expect(doc.formats).toEqual(['CSV'])
-        expect(doc.tags).toEqual([])
-        expect(doc.groups).toEqual([])
-      }
-
-      // Resources should be indexed separately
-      expect(body.resourcesIndexed).toBe(2)
+    it('should reject non-sysadmin requests', async () => {
+      const res = await nonAdminApp.request('/api/v1/admin/search/stats')
+      expect(res.status).toBe(403)
     })
   })
 

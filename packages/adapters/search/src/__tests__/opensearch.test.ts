@@ -61,6 +61,8 @@ describe('OpenSearchAdapter', () => {
     // Default: indices do not exist
     mockClient.indices.exists.mockResolvedValue({ body: false })
     mockClient.indices.create.mockResolvedValue({ body: {} })
+    // Default: non-empty index (for empty-index detection)
+    mockClient.count.mockResolvedValue({ body: { count: 10 } })
   })
 
   describe('ensureIndex', () => {
@@ -133,68 +135,52 @@ describe('OpenSearchAdapter', () => {
       vi.useRealTimers()
     })
 
-    it('should call onIndexRecreated when index is recreated after loss', async () => {
-      const onRecreated = vi.fn()
-      const adapterWithCallback = new OpenSearchAdapter({
-        endpoint: 'http://localhost:9200',
-        onIndexRecreated: onRecreated,
-      })
-
-      // First call: indices don't exist → create
+    it('should not re-check within TTL', async () => {
       mockClient.indices.exists.mockResolvedValue({ body: false })
-      await adapterWithCallback.ensureIndex()
-      expect(onRecreated).toHaveBeenCalledOnce()
+      await adapter.ensureIndex()
 
-      // Advance past TTL, indices exist → no callback
-      vi.useFakeTimers()
-      vi.setSystemTime(Date.now() + 61_000)
-      mockClient.indices.exists.mockResolvedValue({ body: true })
-      onRecreated.mockClear()
-      await adapterWithCallback.ensureIndex()
-      expect(onRecreated).not.toHaveBeenCalled()
+      // Within TTL: skip
+      mockClient.indices.exists.mockClear()
+      await adapter.ensureIndex()
+      expect(mockClient.indices.exists).not.toHaveBeenCalled()
 
-      // Advance past TTL, indices lost again → callback
-      vi.setSystemTime(Date.now() + 61_000)
-      mockClient.indices.exists.mockResolvedValue({ body: false })
-      mockClient.indices.create.mockResolvedValue({ body: {} })
-      await adapterWithCallback.ensureIndex()
-      expect(onRecreated).toHaveBeenCalledOnce()
       vi.useRealTimers()
     })
+  })
 
-    it('should delete indices and throttle retry when callback fails', async () => {
-      const onRecreated = vi.fn().mockRejectedValue(new Error('DB connection failed'))
-      const adapterWithCallback = new OpenSearchAdapter({
-        endpoint: 'http://localhost:9200',
-        onIndexRecreated: onRecreated,
-      })
+  describe('getPackagesDocCount', () => {
+    it('should return 0 when packages index is empty', async () => {
+      mockClient.indices.exists.mockResolvedValue({ body: true })
+      mockClient.count.mockResolvedValue({ body: { count: 0 } })
 
-      // First call: indices created, callback fails → indices deleted, TTL set
+      const result = await adapter.getPackagesDocCount()
+      expect(result).toBe(0)
+    })
+
+    it('should return document count', async () => {
+      mockClient.indices.exists.mockResolvedValue({ body: true })
+      mockClient.count.mockResolvedValue({ body: { count: 42 } })
+
+      const result = await adapter.getPackagesDocCount()
+      expect(result).toBe(42)
+    })
+
+    it('should create missing indices before checking', async () => {
       mockClient.indices.exists.mockResolvedValue({ body: false })
       mockClient.indices.create.mockResolvedValue({ body: {} })
-      mockClient.indices.delete.mockResolvedValue({ body: {} })
-      await adapterWithCallback.ensureIndex()
+      mockClient.count.mockResolvedValue({ body: { count: 0 } })
 
-      expect(onRecreated).toHaveBeenCalledOnce()
-      expect(mockClient.indices.delete).toHaveBeenCalledTimes(3)
+      const result = await adapter.getPackagesDocCount()
+      expect(result).toBe(0)
+      expect(mockClient.indices.create).toHaveBeenCalledTimes(3)
+    })
 
-      // Within TTL: ensureIndex skips (no re-check, no retry)
-      onRecreated.mockClear()
-      mockClient.indices.exists.mockClear()
-      await adapterWithCallback.ensureIndex()
-      expect(mockClient.indices.exists).not.toHaveBeenCalled()
-      expect(onRecreated).not.toHaveBeenCalled()
+    it('should return -1 when count API fails', async () => {
+      mockClient.indices.exists.mockResolvedValue({ body: true })
+      mockClient.count.mockRejectedValue(new Error('OpenSearch unavailable'))
 
-      // After TTL: re-detects loss, retries callback
-      vi.useFakeTimers()
-      vi.setSystemTime(Date.now() + 61_000)
-      mockClient.indices.exists.mockResolvedValue({ body: false })
-      mockClient.indices.create.mockResolvedValue({ body: {} })
-      await adapterWithCallback.ensureIndex()
-
-      expect(mockClient.indices.exists).toHaveBeenCalledTimes(3)
-      expect(onRecreated).toHaveBeenCalledOnce() // retried
-      vi.useRealTimers()
+      const result = await adapter.getPackagesDocCount()
+      expect(result).toBe(-1)
     })
 
     it('should use custom index prefix', async () => {
@@ -1062,7 +1048,6 @@ describe('OpenSearchAdapter', () => {
       const result = await adapter.sumResourceCount()
 
       expect(result).toBe(0)
-      expect(mockClient.count).not.toHaveBeenCalled()
     })
 
     it('should pass query and filters to package search', async () => {

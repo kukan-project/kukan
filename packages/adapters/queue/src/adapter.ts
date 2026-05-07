@@ -35,9 +35,10 @@ export interface QueueAdapter {
   getStats(): Promise<QueueStats>
 
   /**
-   * Start processing jobs with a handler function
+   * Start processing jobs. Dispatches each message to the handler matching its type.
+   * Messages with unknown types are logged and deleted.
    */
-  process<T>(type: string, handler: (job: Job<T>) => Promise<void>): Promise<void>
+  process(handlers: Record<string, (job: Job<unknown>) => Promise<void>>): Promise<void>
 
   /**
    * Stop processing jobs

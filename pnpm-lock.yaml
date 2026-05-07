@@ -173,6 +173,9 @@ importers:
       '@hono/node-server':
         specifier: ^2.0.0
         version: 2.0.0(hono@4.12.15)
+      '@kukan/api':
+        specifier: workspace:*
+        version: link:../../packages/api
       '@kukan/db':
         specifier: workspace:*
         version: link:../../packages/db

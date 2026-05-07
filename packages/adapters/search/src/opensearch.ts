@@ -66,13 +66,6 @@ export interface OpenSearchConfig {
   }
   /** Optional structured logger (pino). Falls back to no-op if omitted. */
   logger?: Logger
-  /**
-   * Called when an index is recreated after being lost (e.g. OpenSearch maintenance).
-   * Use this to rebuild the metadata index from DB. Content (text extraction) rebuild
-   * should be fire-and-forget as it requires pipeline re-processing.
-   * If this callback throws, indices are deleted and retried after the TTL (60s).
-   */
-  onIndexRecreated?: () => Promise<void> | void
 }
 
 export class OpenSearchAdapter implements SearchAdapter {
@@ -82,7 +75,6 @@ export class OpenSearchAdapter implements SearchAdapter {
   private contentsIndex: string
   private replicas: number
   private log: Logger
-  private onIndexRecreated?: () => Promise<void> | void
   private initializedAt = 0
 
   constructor(config: OpenSearchConfig) {
@@ -103,7 +95,6 @@ export class OpenSearchAdapter implements SearchAdapter {
     this.contentsIndex = `${prefix}-contents`
     this.replicas = config.replicas ?? 0
     this.log = config.logger ?? createLogger({ name: 'opensearch', level: 'silent' })
-    this.onIndexRecreated = config.onIndexRecreated
   }
 
   // ------------------------------------------------------------------
@@ -130,34 +121,24 @@ export class OpenSearchAdapter implements SearchAdapter {
     if (Date.now() - this.initializedAt < 60 * 1000) return
 
     // Sequential to avoid overloading single-node OpenSearch with concurrent index creation
-    const created = [
-      await this.ensurePackagesIndex(),
-      await this.ensureResourcesIndex(),
-      await this.ensureContentsIndex(),
-    ]
-
-    if (created.some(Boolean) && this.onIndexRecreated) {
-      this.log.warn('Index was recreated — triggering rebuild')
-      try {
-        await this.onIndexRecreated()
-      } catch (err) {
-        this.log.error({ err }, 'Index rebuild failed — will retry in 60s')
-        // Intentional degradation: delete the empty indices so the next ensureIndex
-        // (after TTL) detects the loss again and retries the rebuild callback.
-        // During the 60s TTL window, search requests will get index_not_found errors
-        // and Worker pipeline indexing may fail (retried via SQS visibility timeout).
-        // This is preferred over leaving permanently empty indices with no retry path.
-        await Promise.all([
-          this.client.indices.delete({ index: this.packagesIndex }).catch(() => {}),
-          this.client.indices.delete({ index: this.resourcesIndex }).catch(() => {}),
-          this.client.indices.delete({ index: this.contentsIndex }).catch(() => {}),
-        ])
-        this.initializedAt = Date.now()
-        return
-      }
-    }
-
+    await this.ensurePackagesIndex()
+    await this.ensureResourcesIndex()
+    await this.ensureContentsIndex()
     this.initializedAt = Date.now()
+  }
+
+  /**
+   * Return the number of documents in the packages index.
+   * Ensures indices exist before checking. Returns -1 on error.
+   */
+  async getPackagesDocCount(): Promise<number> {
+    await this.ensureIndex()
+    try {
+      const count = await this.client.count({ index: this.packagesIndex })
+      return count.body.count
+    } catch {
+      return -1
+    }
   }
 
   /** @returns true if the index was just created (didn't exist before) */

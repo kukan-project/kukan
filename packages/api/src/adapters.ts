@@ -9,8 +9,6 @@ import { S3StorageAdapter } from '@kukan/storage-adapter'
 import { PostgresSearchAdapter, OpenSearchAdapter } from '@kukan/search-adapter'
 import { SQSQueueAdapter } from '@kukan/queue-adapter'
 import { NoOpAIAdapter } from '@kukan/ai-adapter'
-import { rebuildMetadataIndex } from './services/search-index'
-import { PipelineService } from './services/pipeline-service'
 
 export async function createAdapters(env: Env, db: Database, logger: Logger) {
   // Storage adapter (S3: AWS S3 or MinIO, determined by S3_ENDPOINT)
@@ -39,26 +37,11 @@ export async function createAdapters(env: Env, db: Database, logger: Logger) {
   if (env.SEARCH_TYPE === 'postgres') {
     search = dbSearch
   } else if (env.SEARCH_TYPE === 'opensearch') {
-    const osLogger = logger.child({ component: 'opensearch' })
     const osAdapter = new OpenSearchAdapter({
       endpoint: env.OPENSEARCH_URL,
       replicas: env.OPENSEARCH_REPLICAS,
-      logger: osLogger,
-      onIndexRecreated: async () => {
-        // Auto-recovery guarantees metadata (packages + resources) rebuild only.
-        // Content re-enqueue is best-effort; failures are logged but not retried.
-        // If content indexing fails, use admin UI "enqueue all" to manually retry.
-        await rebuildMetadataIndex(db, osAdapter, osLogger, false)
-        new PipelineService(db, queue)
-          .enqueueAll()
-          .then(({ enqueued, failed }) => {
-            if (failed > 0)
-              osLogger.warn({ enqueued, failed }, 'Content re-enqueue partially failed')
-          })
-          .catch((err) => {
-            osLogger.error({ err }, 'Content re-enqueue failed')
-          })
-      },
+      logger: logger.child({ component: 'opensearch' }),
+      // Auto-recovery (empty index detection) is handled by the Worker periodic check
     })
     search = osAdapter
   } else {
