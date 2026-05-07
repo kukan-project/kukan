@@ -10,6 +10,7 @@ test.use({ storageState: ADMIN_FILE })
 
 let adminRequest: APIRequestContext
 let orgId: string
+const datasetName = `e2e-crud-${Date.now()}`
 
 test.beforeAll(async () => {
   adminRequest = await createAdminRequest()
@@ -19,13 +20,18 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   if (!adminRequest) return
-  if (orgId) await adminRequest.delete(`/api/v1/organizations/${orgId}`).catch(() => {})
+  // Soft-delete then purge dataset (may already be deleted by the test)
+  await adminRequest.delete(`/api/v1/packages/${datasetName}`).catch(() => {})
+  await adminRequest.post(`/api/v1/packages/${datasetName}/purge`).catch(() => {})
+  if (orgId) {
+    await adminRequest.delete(`/api/v1/organizations/${orgId}`).catch(() => {})
+    await adminRequest.post(`/api/v1/organizations/${orgId}/purge`).catch(() => {})
+  }
   await adminRequest.dispose()
 })
 
 test.describe('Dataset CRUD', () => {
   test.describe.configure({ mode: 'serial' })
-  const datasetName = `e2e-crud-${Date.now()}`
 
   test('create dataset via API and view it', async ({ page, request }) => {
     const res = await request.post('/api/v1/packages', {

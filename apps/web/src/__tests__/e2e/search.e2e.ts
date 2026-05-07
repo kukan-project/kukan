@@ -22,9 +22,14 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   if (!adminRequest) return
-  if (resourceId) await adminRequest.delete(`/api/v1/resources/${resourceId}`).catch(() => {})
-  if (datasetName) await adminRequest.delete(`/api/v1/packages/${datasetName}`).catch(() => {})
-  if (orgId) await adminRequest.delete(`/api/v1/organizations/${orgId}`).catch(() => {})
+  if (datasetName) {
+    await adminRequest.delete(`/api/v1/packages/${datasetName}`).catch(() => {})
+    await adminRequest.post(`/api/v1/packages/${datasetName}/purge`).catch(() => {})
+  }
+  if (orgId) {
+    await adminRequest.delete(`/api/v1/organizations/${orgId}`).catch(() => {})
+    await adminRequest.post(`/api/v1/organizations/${orgId}/purge`).catch(() => {})
+  }
   await adminRequest.dispose()
 })
 

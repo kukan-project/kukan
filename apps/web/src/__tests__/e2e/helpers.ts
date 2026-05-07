@@ -3,7 +3,6 @@
  */
 
 import { request as playwrightRequest, type APIRequestContext } from '@playwright/test'
-import pg from 'pg'
 
 export const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000'
 export const DB_URL = process.env.DATABASE_URL || 'postgresql://kukan:kukan@localhost:5432/kukan'
@@ -20,25 +19,54 @@ export async function createAdminRequest() {
 }
 
 /**
- * Remove all E2E test data (e2e-* prefix) from the database.
- * TODO: Replace with API-based cleanup (purge endpoints) to avoid direct DB access.
+ * Remove all E2E test data (e2e-* prefix) via API.
+ * Requires an authenticated admin request context.
+ * Order: packages (CASCADE deletes resources) → organizations → users
  */
-export async function cleanupE2eData() {
-  const client = new pg.Client({ connectionString: DB_URL })
-  await client.connect()
-  try {
-    // Application data (FK order: resource → package → organization)
-    await client.query(`DELETE FROM resource WHERE name LIKE 'E2E%' OR name LIKE 'CRUD%'`)
-    await client.query(`DELETE FROM package WHERE name LIKE 'e2e-%'`)
-    await client.query(`DELETE FROM organization WHERE name LIKE 'e2e-%'`)
-    // User data (cascade handles session/account, but activity/audit_log need explicit delete)
-    const userIdSubquery = `SELECT id FROM "user" WHERE email LIKE 'e2e-%'`
-    await client.query(`DELETE FROM activity WHERE user_id IN (${userIdSubquery})`)
-    await client.query(`DELETE FROM session WHERE "userId" IN (${userIdSubquery})`)
-    await client.query(`DELETE FROM account WHERE "userId" IN (${userIdSubquery})`)
-    await client.query(`DELETE FROM "user" WHERE email LIKE 'e2e-%'`)
-  } finally {
-    await client.end()
+export async function cleanupE2eData(request: APIRequestContext) {
+  // Best-effort cleanup of active e2e data via API.
+  // Deleted data that is not listed by the API is handled by individual afterAll hooks.
+
+  // Packages: purge deleted, then soft-delete active and purge
+  for (const state of ['deleted', 'active'] as const) {
+    const url = `/api/v1/packages?my_org=true&state=${state}&limit=100`
+    const pkgRes = await request.get(url)
+    if (!pkgRes.ok()) continue
+    const { items } = await pkgRes.json()
+    for (const pkg of items) {
+      if (typeof pkg.name === 'string' && pkg.name.startsWith('e2e-')) {
+        if (state === 'active') {
+          await request.delete(`/api/v1/packages/${pkg.name}`).catch(() => {})
+        }
+        await request.post(`/api/v1/packages/${pkg.name}/purge`).catch(() => {})
+      }
+    }
+  }
+
+  // Organizations: soft-delete then purge
+  const orgRes = await request.get('/api/v1/organizations?limit=100')
+  if (orgRes.ok()) {
+    const { items } = await orgRes.json()
+    for (const org of items) {
+      if (typeof org.name === 'string' && org.name.startsWith('e2e-')) {
+        await request.delete(`/api/v1/organizations/${org.name}`).catch(() => {})
+        await request.post(`/api/v1/organizations/${org.name}/purge`).catch(() => {})
+      }
+    }
+  }
+
+  // Users: soft-delete then purge
+  const userRes = await request.get('/api/v1/admin/users?q=e2e-&limit=100')
+  if (userRes.ok()) {
+    const { items } = await userRes.json()
+    for (const u of items) {
+      if (typeof u.email === 'string' && u.email.startsWith('e2e-')) {
+        if (u.state === 'active') {
+          await request.delete(`/api/v1/admin/users/${u.id}`).catch(() => {})
+        }
+        await request.post(`/api/v1/admin/users/${u.id}/purge`).catch(() => {})
+      }
+    }
   }
 }
 

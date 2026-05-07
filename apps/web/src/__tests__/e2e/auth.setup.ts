@@ -4,6 +4,9 @@
  * Runs before all other E2E tests. Creates two users:
  * - e2e-user@test.local (regular user) → .auth/user.json
  * - e2e-admin@test.local (sysadmin) → .auth/admin.json
+ *
+ * NOTE: sysadmin promotion requires direct DB access because the PATCH API
+ * needs an existing sysadmin session (chicken-and-egg problem).
  */
 
 import { test as setup, expect, type Page } from '@playwright/test'
@@ -16,7 +19,6 @@ async function trySignIn(page: Page, email: string, password: string) {
   await page.locator('#email').fill(email)
   await page.locator('#password').fill(password)
   await page.locator('button[type="submit"]').click()
-
   try {
     await page.waitForURL('/dashboard', { timeout: 15_000 })
     return true
@@ -50,6 +52,7 @@ setup('create admin user', async ({ page }) => {
   }
   await expect(page).toHaveURL('/dashboard')
 
+  // Promote to sysadmin via direct DB (PATCH API requires existing sysadmin session)
   const client = new pg.Client({ connectionString: DB_URL })
   await client.connect()
   try {
