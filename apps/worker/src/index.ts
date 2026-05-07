@@ -165,18 +165,15 @@ if (search) {
   indexCheckTimer = setInterval(async () => {
     try {
       const osCount = await search.getPackagesDocCount()
-      if (osCount < 0) return // OpenSearch error — skip this tick
+      if (osCount !== 0) return // Non-empty or error — no action needed
 
+      // OS index is empty — check DB to confirm data loss (avoid Aurora wake for normal state)
       const [{ count: dbCount }] = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(packageTable)
         .where(eq(packageTable.state, 'active'))
 
-      if (
-        dbCount > 0 &&
-        osCount === 0 &&
-        Date.now() - lastRebuildEnqueuedAt > REBUILD_COOLDOWN_MS
-      ) {
+      if (dbCount > 0 && Date.now() - lastRebuildEnqueuedAt > REBUILD_COOLDOWN_MS) {
         osLogger.warn({ dbCount, osCount }, 'Index out of sync — enqueuing auto-recovery')
         lastRebuildEnqueuedAt = Date.now()
         await queue.enqueue(REINDEX_JOB_TYPE, { includeContent: true })
