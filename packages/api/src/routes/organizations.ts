@@ -41,9 +41,9 @@ organizationsRouter.post('/', zValidator('json', createOrganizationSchema), asyn
   if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can create organizations')
 
   const service = new OrganizationService(db)
-  const { image_url, ...rest } = c.req.valid('json')
+  const input = c.req.valid('json')
 
-  const created = await service.create({ ...rest, imageUrl: image_url })
+  const created = await service.create(input)
   return c.json(created, 201)
 })
 
@@ -68,8 +68,8 @@ organizationsRouter.put('/:nameOrId', zValidator('json', updateOrganizationSchem
   const org = await service.getByNameOrId(nameOrId)
   await checkOrgRole(db, user, org.id, 'admin')
 
-  const { image_url, ...rest } = c.req.valid('json')
-  const updated = await service.update(nameOrId, { ...rest, imageUrl: image_url })
+  const input = c.req.valid('json')
+  const updated = await service.update(nameOrId, input)
   return c.json(updated)
 })
 

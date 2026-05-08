@@ -175,9 +175,9 @@ export const createPackageSchema = z.object({
     .regex(/^[a-z0-9-_]+$/),
   title: z.string().optional(),
   notes: z.string().optional(),
-  owner_org: z.string().uuid().optional(),
+  ownerOrg: z.uuid(),
   private: z.boolean().default(false),
-  license_id: z.string().optional(),
+  licenseId: z.string().optional(),
   extras: z.record(z.unknown()).default({}),
   tags: z.array(z.object({ name: z.string() })).default([]),
   resources: z

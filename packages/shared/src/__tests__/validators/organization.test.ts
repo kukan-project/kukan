@@ -26,10 +26,10 @@ describe('createOrganizationSchema', () => {
     expect(result.success).toBe(true)
   })
 
-  it('should reject invalid image_url', () => {
+  it('should reject invalid imageUrl', () => {
     const result = createOrganizationSchema.safeParse({
       name: 'my-org',
-      image_url: 'not-a-url',
+      imageUrl: 'not-a-url',
     })
     expect(result.success).toBe(false)
   })
@@ -44,8 +44,18 @@ describe('createOrganizationSchema', () => {
 })
 
 describe('updateOrganizationSchema', () => {
-  it('should allow all fields to be optional', () => {
-    const result = updateOrganizationSchema.safeParse({})
+  it('should require name', () => {
+    expect(updateOrganizationSchema.safeParse({}).success).toBe(false)
+    expect(updateOrganizationSchema.safeParse({ name: 'test-org' }).success).toBe(true)
+  })
+
+  it('should accept null for nullable fields (PUT with API response)', () => {
+    const result = updateOrganizationSchema.safeParse({
+      name: 'test-org',
+      title: null,
+      description: null,
+      imageUrl: null,
+    })
     expect(result.success).toBe(true)
   })
 })

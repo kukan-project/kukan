@@ -39,7 +39,7 @@ test.describe('Dataset CRUD', () => {
         name: datasetName,
         title: 'E2E CRUD Test Dataset',
         notes: 'Created by E2E test',
-        owner_org: orgId,
+        ownerOrg: orgId,
       },
     })
     expect(res.ok()).toBe(true)
@@ -49,8 +49,11 @@ test.describe('Dataset CRUD', () => {
   })
 
   test('edit dataset title via API and verify', async ({ page, request }) => {
-    const res = await request.patch(`/api/v1/packages/${datasetName}`, {
-      data: { title: 'E2E CRUD Updated Title' },
+    const getRes = await request.get(`/api/v1/packages/${datasetName}`)
+    const pkg = await getRes.json()
+
+    const res = await request.put(`/api/v1/packages/${datasetName}`, {
+      data: { name: pkg.name, ownerOrg: pkg.ownerOrg, title: 'E2E CRUD Updated Title' },
     })
     expect(res.ok()).toBe(true)
 

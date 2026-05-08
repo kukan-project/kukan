@@ -7,22 +7,12 @@ import { eq, ilike, and, or, sql, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { organization, userOrgMembership, user, packageTable } from '@kukan/db'
 import { NotFoundError, ValidationError, ConflictError, isUuid, escapeLike } from '@kukan/shared'
-import type { PaginationParams, PaginatedResult } from '@kukan/shared'
-
-export interface CreateOrganizationInput {
-  name: string
-  title?: string
-  description?: string
-  imageUrl?: string
-  state?: string
-}
-
-export interface UpdateOrganizationInput {
-  title?: string
-  description?: string
-  imageUrl?: string
-  state?: string
-}
+import type {
+  PaginationParams,
+  PaginatedResult,
+  CreateOrganizationInput,
+  UpdateOrganizationInput,
+} from '@kukan/shared'
 
 export class OrganizationService {
   constructor(private db: Database) {}
@@ -104,7 +94,8 @@ export class OrganizationService {
         title: input.title,
         description: input.description,
         imageUrl: input.imageUrl,
-        state: input.state || 'active',
+        extras: input.extras,
+        state: input.state,
       })
       .returning()
 
@@ -117,7 +108,12 @@ export class OrganizationService {
     const [updated] = await this.db
       .update(organization)
       .set({
-        ...input,
+        name: input.name,
+        title: input.title ?? null,
+        description: input.description ?? null,
+        imageUrl: input.imageUrl ?? null,
+        extras: input.extras,
+        state: input.state ?? 'active',
         updated: new Date(),
       })
       .where(eq(organization.id, existing.id))

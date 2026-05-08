@@ -20,7 +20,7 @@ import {
 import { NotFoundError, ValidationError, isUuid } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult, FacetCounts } from '@kukan/shared'
 import type { SearchFacets, MatchedResource } from '@kukan/search-adapter'
-import type { CreatePackageInput, UpdatePackageInput, PatchPackageInput } from '@kukan/shared'
+import type { CreatePackageInput, UpdatePackageInput } from '@kukan/shared'
 
 interface ViewerContext {
   userId?: string
@@ -332,16 +332,16 @@ export class PackageService {
         throw new ValidationError('Package name already exists', { name: input.name })
       }
 
-      // Validate owner_org if provided
-      if (input.owner_org) {
+      // Validate ownerOrg if provided
+      if (input.ownerOrg) {
         const orgExists = await tx
           .select({ id: organization.id })
           .from(organization)
-          .where(and(eq(organization.id, input.owner_org), eq(organization.state, 'active')))
+          .where(and(eq(organization.id, input.ownerOrg), eq(organization.state, 'active')))
           .limit(1)
 
         if (orgExists.length === 0) {
-          throw new NotFoundError('Organization', input.owner_org)
+          throw new NotFoundError('Organization', input.ownerOrg)
         }
       }
 
@@ -354,12 +354,12 @@ export class PackageService {
           notes: input.notes,
           url: input.url,
           version: input.version,
-          licenseId: input.license_id,
+          licenseId: input.licenseId,
           author: input.author,
-          authorEmail: input.author_email,
+          authorEmail: input.authorEmail,
           maintainer: input.maintainer,
-          maintainerEmail: input.maintainer_email,
-          ownerOrg: input.owner_org,
+          maintainerEmail: input.maintainerEmail,
+          ownerOrg: input.ownerOrg,
           private: input.private,
           type: input.type,
           extras: input.extras,
@@ -418,16 +418,16 @@ export class PackageService {
         }
       }
 
-      // Validate owner_org if being changed
-      if (input.owner_org && input.owner_org !== existing.ownerOrg) {
+      // Validate ownerOrg if being changed
+      if (input.ownerOrg && input.ownerOrg !== existing.ownerOrg) {
         const orgExists = await tx
           .select({ id: organization.id })
           .from(organization)
-          .where(and(eq(organization.id, input.owner_org), eq(organization.state, 'active')))
+          .where(and(eq(organization.id, input.ownerOrg), eq(organization.state, 'active')))
           .limit(1)
 
         if (orgExists.length === 0) {
-          throw new NotFoundError('Organization', input.owner_org)
+          throw new NotFoundError('Organization', input.ownerOrg)
         }
       }
 
@@ -435,19 +435,19 @@ export class PackageService {
         .update(packageTable)
         .set({
           name: input.name,
-          title: input.title,
-          notes: input.notes,
-          url: input.url,
-          version: input.version,
-          licenseId: input.license_id,
-          author: input.author,
-          authorEmail: input.author_email,
-          maintainer: input.maintainer,
-          maintainerEmail: input.maintainer_email,
-          ownerOrg: input.owner_org,
+          title: input.title ?? null,
+          notes: input.notes ?? null,
+          url: input.url ?? null,
+          version: input.version ?? null,
+          licenseId: input.licenseId ?? null,
+          author: input.author ?? null,
+          authorEmail: input.authorEmail ?? null,
+          maintainer: input.maintainer ?? null,
+          maintainerEmail: input.maintainerEmail ?? null,
+          ownerOrg: input.ownerOrg,
           private: input.private,
-          type: input.type,
-          extras: input.extras,
+          type: input.type ?? null,
+          extras: input.extras ?? {},
           updated: sql`NOW()`,
         })
         .where(eq(packageTable.id, existing.id))
@@ -486,31 +486,6 @@ export class PackageService {
 
       return updated
     })
-  }
-
-  async patch(nameOrId: string, input: PatchPackageInput) {
-    const existing = await this.getByNameOrId(nameOrId)
-
-    // Merge with existing data for partial update
-    const merged: UpdatePackageInput = {
-      name: input.name ?? existing.name,
-      title: input.title ?? existing.title ?? undefined,
-      notes: input.notes ?? existing.notes ?? undefined,
-      url: input.url ?? existing.url ?? undefined,
-      version: input.version ?? existing.version ?? undefined,
-      license_id: input.license_id ?? existing.licenseId ?? undefined,
-      author: input.author ?? existing.author ?? undefined,
-      author_email: input.author_email ?? existing.authorEmail ?? undefined,
-      maintainer: input.maintainer ?? existing.maintainer ?? undefined,
-      maintainer_email: input.maintainer_email ?? existing.maintainerEmail ?? undefined,
-      owner_org: input.owner_org ?? existing.ownerOrg ?? undefined,
-      private: input.private ?? existing.private,
-      type: input.type ?? existing.type ?? undefined,
-      extras: input.extras ?? existing.extras ?? undefined,
-      tags: input.tags, // Only update if provided
-    }
-
-    return await this.update(nameOrId, merged)
   }
 
   async delete(nameOrId: string) {

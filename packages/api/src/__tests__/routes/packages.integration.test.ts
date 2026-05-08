@@ -38,7 +38,7 @@ async function createPackage(data: Record<string, unknown>) {
   return app.request('/api/v1/packages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ owner_org: orgId, ...data }),
+    body: JSON.stringify({ ownerOrg: orgId, ...data }),
   })
 }
 
@@ -136,7 +136,7 @@ describe('Packages API Routes', () => {
       const res = await app.request('/api/v1/packages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'A', owner_org: '550e8400-e29b-41d4-a716-446655440000' }),
+        body: JSON.stringify({ name: 'A', ownerOrg: '550e8400-e29b-41d4-a716-446655440000' }),
       })
       expect(res.status).toBe(400)
     })
@@ -183,35 +183,33 @@ describe('Packages API Routes', () => {
   describe('PUT /api/v1/packages/:nameOrId', () => {
     it('should update package', async () => {
       await createPackage({ name: 'update-test', title: 'Original' })
+      const orgId = await ensureTestOrg()
 
       const res = await app.request('/api/v1/packages/update-test', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'update-test', title: 'Updated' }),
+        body: JSON.stringify({ name: 'update-test', ownerOrg: orgId, title: 'Updated' }),
       })
       expect(res.status).toBe(200)
 
       const body = await res.json()
       expect(body.title).toBe('Updated')
     })
-  })
 
-  describe('PATCH /api/v1/packages/:nameOrId', () => {
-    it('should partially update package', async () => {
-      await createPackage({ name: 'patch-test', title: 'Original', notes: 'Keep this' })
+    it('should clear omitted optional fields (PUT semantics)', async () => {
+      await createPackage({ name: 'put-clear-test', title: 'Title', notes: 'Notes' })
+      const orgId = await ensureTestOrg()
 
-      const res = await app.request('/api/v1/packages/patch-test', {
-        method: 'PATCH',
+      const res = await app.request('/api/v1/packages/put-clear-test', {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'Patched' }),
+        body: JSON.stringify({ name: 'put-clear-test', ownerOrg: orgId }),
       })
       expect(res.status).toBe(200)
 
-      // Verify notes was preserved
-      const getRes = await app.request('/api/v1/packages/patch-test')
-      const body = await getRes.json()
-      expect(body.title).toBe('Patched')
-      expect(body.notes).toBe('Keep this')
+      const body = await res.json()
+      expect(body.title).toBeNull()
+      expect(body.notes).toBeNull()
     })
   })
 
@@ -334,9 +332,9 @@ describe('Packages API Routes', () => {
     })
 
     it('should OR filter licenses — packages with ANY selected license', async () => {
-      await createPackage({ name: 'pkg-cc', license_id: 'cc-by' })
-      await createPackage({ name: 'pkg-mit', license_id: 'mit' })
-      await createPackage({ name: 'pkg-apache', license_id: 'apache-2.0' })
+      await createPackage({ name: 'pkg-cc', licenseId: 'cc-by' })
+      await createPackage({ name: 'pkg-mit', licenseId: 'mit' })
+      await createPackage({ name: 'pkg-apache', licenseId: 'apache-2.0' })
 
       const res = await app.request('/api/v1/packages?license_id=cc-by&license_id=mit')
       const body = await res.json()
@@ -353,17 +351,17 @@ describe('Packages API Routes', () => {
       await app.request('/api/v1/packages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'pkg-alpha', owner_org: org1.id }),
+        body: JSON.stringify({ name: 'pkg-alpha', ownerOrg: org1.id }),
       })
       await app.request('/api/v1/packages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'pkg-beta', owner_org: org2.id }),
+        body: JSON.stringify({ name: 'pkg-beta', ownerOrg: org2.id }),
       })
       await app.request('/api/v1/packages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'pkg-gamma', owner_org: org3.id }),
+        body: JSON.stringify({ name: 'pkg-gamma', ownerOrg: org3.id }),
       })
 
       const res = await app.request(

@@ -7,24 +7,12 @@ import { eq, ilike, and, or, sql, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { group, userGroupMembership, user } from '@kukan/db'
 import { NotFoundError, ValidationError, isUuid, escapeLike } from '@kukan/shared'
-import type { PaginationParams, PaginatedResult } from '@kukan/shared'
-
-export interface CreateGroupInput {
-  name: string
-  title?: string
-  description?: string
-  imageUrl?: string
-  state?: string
-  extras?: Record<string, unknown>
-}
-
-export interface UpdateGroupInput {
-  title?: string
-  description?: string
-  imageUrl?: string
-  state?: string
-  extras?: Record<string, unknown>
-}
+import type {
+  PaginationParams,
+  PaginatedResult,
+  CreateGroupInput,
+  UpdateGroupInput,
+} from '@kukan/shared'
 
 export class GroupService {
   constructor(private db: Database) {}
@@ -102,8 +90,8 @@ export class GroupService {
         title: input.title,
         description: input.description,
         imageUrl: input.imageUrl,
-        state: input.state || 'active',
         extras: input.extras,
+        state: input.state,
       })
       .returning()
 
@@ -116,11 +104,12 @@ export class GroupService {
     const [updated] = await this.db
       .update(group)
       .set({
-        title: input.title,
-        description: input.description,
-        imageUrl: input.imageUrl,
-        state: input.state,
+        name: input.name,
+        title: input.title ?? null,
+        description: input.description ?? null,
+        imageUrl: input.imageUrl ?? null,
         extras: input.extras,
+        state: input.state ?? 'active',
         updated: new Date(),
       })
       .where(eq(group.id, existing.id))

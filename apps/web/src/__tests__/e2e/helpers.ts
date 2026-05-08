@@ -88,7 +88,7 @@ export async function seedDataset(request: APIRequestContext, orgId: string) {
       name,
       title: `E2E Dataset`,
       notes: 'E2E test dataset',
-      owner_org: orgId,
+      ownerOrg: orgId,
     },
   })
   if (!res.ok()) throw new Error(`Failed to create dataset: ${res.status()}`)

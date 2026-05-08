@@ -21,9 +21,9 @@ import { z } from 'zod'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 
-/** Form-level schema: license_id is required in the UI */
+/** Form-level schema: licenseId is required in the UI */
 const datasetFormSchema = createPackageSchema.extend({
-  license_id: z.string().min(1),
+  licenseId: z.string().min(1),
 })
 type DatasetFormInput = z.infer<typeof datasetFormSchema>
 
@@ -133,13 +133,13 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="owner_org">{t('orgRequired')}</Label>
+        <Label htmlFor="ownerOrg">{t('orgRequired')}</Label>
         <Controller
-          name="owner_org"
+          name="ownerOrg"
           control={control}
           render={({ field }) => (
             <Select value={field.value ?? ''} onValueChange={field.onChange}>
-              <SelectTrigger aria-invalid={!!errors.owner_org}>
+              <SelectTrigger aria-invalid={!!errors.ownerOrg}>
                 <SelectValue placeholder={t('orgSelect')} />
               </SelectTrigger>
               <SelectContent>
@@ -152,7 +152,7 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
             </Select>
           )}
         />
-        {errors.owner_org && <p className="text-sm text-destructive">{tc('required')}</p>}
+        {errors.ownerOrg && <p className="text-sm text-destructive">{tc('required')}</p>}
       </div>
 
       <div className="flex items-center gap-3">
@@ -180,11 +180,11 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
       <div className="flex flex-col gap-2">
         <Label>{t('licenseRequired')}</Label>
         <Controller
-          name="license_id"
+          name="licenseId"
           control={control}
           render={({ field }) => (
             <Select value={field.value ?? ''} onValueChange={field.onChange}>
-              <SelectTrigger aria-invalid={!!errors.license_id}>
+              <SelectTrigger aria-invalid={!!errors.licenseId}>
                 <SelectValue placeholder={t('licenseSelect')} />
               </SelectTrigger>
               <SelectContent>
@@ -197,7 +197,7 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
             </Select>
           )}
         />
-        {errors.license_id && <p className="text-sm text-destructive">{tc('required')}</p>}
+        {errors.licenseId && <p className="text-sm text-destructive">{tc('required')}</p>}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -206,15 +206,15 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
           <Input id="author" {...register('author')} />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="author_email">{t('authorEmail')}</Label>
+          <Label htmlFor="authorEmail">{t('authorEmail')}</Label>
           <Input
-            id="author_email"
+            id="authorEmail"
             type="email"
-            {...register('author_email')}
-            aria-invalid={!!errors.author_email}
+            {...register('authorEmail')}
+            aria-invalid={!!errors.authorEmail}
           />
-          {errors.author_email && (
-            <p className="text-sm text-destructive">{errors.author_email.message}</p>
+          {errors.authorEmail && (
+            <p className="text-sm text-destructive">{errors.authorEmail.message}</p>
           )}
         </div>
       </div>
@@ -225,15 +225,15 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
           <Input id="maintainer" {...register('maintainer')} />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="maintainer_email">{t('maintainerEmail')}</Label>
+          <Label htmlFor="maintainerEmail">{t('maintainerEmail')}</Label>
           <Input
-            id="maintainer_email"
+            id="maintainerEmail"
             type="email"
-            {...register('maintainer_email')}
-            aria-invalid={!!errors.maintainer_email}
+            {...register('maintainerEmail')}
+            aria-invalid={!!errors.maintainerEmail}
           />
-          {errors.maintainer_email && (
-            <p className="text-sm text-destructive">{errors.maintainer_email.message}</p>
+          {errors.maintainerEmail && (
+            <p className="text-sm text-destructive">{errors.maintainerEmail.message}</p>
           )}
         </div>
       </div>

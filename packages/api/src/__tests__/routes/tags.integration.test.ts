@@ -36,7 +36,7 @@ describe('Tags API Routes', () => {
     return app.request('/api/v1/packages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, owner_org: orgId, tags: tags.map((t) => ({ name: t })) }),
+      body: JSON.stringify({ name, ownerOrg: orgId, tags: tags.map((t) => ({ name: t })) }),
     })
   }
 

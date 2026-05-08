@@ -205,7 +205,7 @@ export function ResourceList({ packageId, resources, onUpdated }: ResourceListPr
       const res = await clientFetch(`/api/v1/packages/${packageId}/resources/reorder`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resource_ids: items.map((r) => r.id) }),
+        body: JSON.stringify({ resourceIds: items.map((r) => r.id) }),
       })
       if (!res.ok) {
         setReorderError(t('reorderFailed'))
@@ -301,15 +301,23 @@ export function ResourceList({ packageId, resources, onUpdated }: ResourceListPr
     setSaving(true)
     setFormError(null)
     try {
-      const body: Record<string, string> = {}
-      if (formState.name) body.name = formState.name
-      if (formState.urlType === 'upload') {
-        body.url_type = 'upload'
-      } else if (formState.url) {
-        body.url = formState.url
+      // Fetch current resource to preserve non-editable fields (mimetype, size, hash, etc.)
+      const currentRes = await clientFetch(`/api/v1/resources/${editId}`)
+      if (!currentRes.ok) {
+        setFormError(t('failedToUpdate'))
+        return
       }
-      if (formState.format) body.format = formState.format
-      if (formState.description) body.description = formState.description
+      const current = await currentRes.json()
+
+      const body = {
+        ...current,
+        // Overwrite with form state (urlType reflects user's tab choice, not existing value)
+        name: formState.name || undefined,
+        url: formState.urlType === 'upload' ? current.url : formState.url || undefined,
+        urlType: formState.urlType ?? undefined,
+        format: formState.format || undefined,
+        description: formState.description || undefined,
+      }
       const res = await clientFetch(`/api/v1/resources/${editId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -344,7 +352,7 @@ export function ResourceList({ packageId, resources, onUpdated }: ResourceListPr
 
       if (formState.urlType === 'upload') {
         if (!pendingFile) return
-        body.url_type = 'upload'
+        body.urlType = 'upload'
         body.format = formState.format || detectFormat(pendingFile.name) || ''
       } else {
         if (formState.url) body.url = formState.url

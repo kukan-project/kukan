@@ -300,13 +300,13 @@ resourcesRouter.post('/:id/upload-url', zValidator('json', uploadUrlSchema), asy
 
   const res = await resourceService.prepareForUpload(
     id,
-    { filename: input.filename, contentType: input.content_type, format: input.format },
+    { filename: input.filename, contentType: input.contentType, format: input.format },
     existing
   )
 
   const storage = c.get('storage')
   const storageKey = getStorageKey(res.packageId, res.id)
-  const uploadUrl = await storage.getSignedUploadUrl(storageKey, input.content_type, undefined, {
+  const uploadUrl = await storage.getSignedUploadUrl(storageKey, input.contentType, undefined, {
     originalFilename: input.filename,
   })
 

@@ -9,7 +9,11 @@ import { Button, Input, Label, Textarea } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 
-export function GroupForm() {
+type GroupFormProps =
+  | { mode?: 'create'; defaultValues?: Partial<CreateGroupInput>; nameOrId?: undefined }
+  | { mode: 'edit'; defaultValues?: Partial<CreateGroupInput>; nameOrId: string }
+
+export function GroupForm({ mode = 'create', defaultValues, nameOrId }: GroupFormProps) {
   const router = useRouter()
   const t = useTranslations('category')
   const tc = useTranslations('common')
@@ -22,12 +26,16 @@ export function GroupForm() {
   } = useForm<CreateGroupInput>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(createGroupSchema) as any,
+    defaultValues,
   })
 
   const onSubmit = async (values: CreateGroupInput) => {
     setError(null)
-    const res = await clientFetch('/api/v1/groups', {
-      method: 'POST',
+
+    const url = mode === 'create' ? '/api/v1/groups' : `/api/v1/groups/${nameOrId}`
+    const method = mode === 'create' ? 'POST' : 'PUT'
+    const res = await clientFetch(url, {
+      method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(values),
     })
@@ -38,6 +46,11 @@ export function GroupForm() {
     }
     router.push('/dashboard/groups')
   }
+
+  const submitLabels =
+    mode === 'edit'
+      ? { idle: tc('update'), loading: tc('updating') }
+      : { idle: tc('create'), loading: tc('creating') }
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
@@ -51,6 +64,7 @@ export function GroupForm() {
           placeholder="my-group"
           {...register('name')}
           aria-invalid={!!errors.name}
+          disabled={mode === 'edit'}
         />
         <p className="text-xs text-muted-foreground">{tc('nameHelp')}</p>
         {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
@@ -69,18 +83,18 @@ export function GroupForm() {
         />
       </div>
       <div className="flex flex-col gap-2">
-        <Label htmlFor="image_url">{tc('imageUrl')}</Label>
+        <Label htmlFor="imageUrl">{tc('imageUrl')}</Label>
         <Input
-          id="image_url"
+          id="imageUrl"
           type="url"
           placeholder="https://example.com/logo.png"
-          {...register('image_url')}
-          aria-invalid={!!errors.image_url}
+          {...register('imageUrl')}
+          aria-invalid={!!errors.imageUrl}
         />
-        {errors.image_url && <p className="text-sm text-destructive">{errors.image_url.message}</p>}
+        {errors.imageUrl && <p className="text-sm text-destructive">{errors.imageUrl.message}</p>}
       </div>
       <Button type="submit" disabled={isSubmitting}>
-        {isSubmitting ? tc('creating') : tc('create')}
+        {isSubmitting ? submitLabels.loading : submitLabels.idle}
       </Button>
     </form>
   )

@@ -32,7 +32,7 @@ async function createPackage(name: string, extra?: Record<string, unknown>) {
   const res = await app.request('/api/v1/packages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, owner_org: orgId, ...extra }),
+    body: JSON.stringify({ name, ownerOrg: orgId, ...extra }),
   })
   return res.json()
 }

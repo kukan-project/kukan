@@ -12,7 +12,6 @@ import { PipelineService } from '../services/pipeline-service'
 import {
   createPackageSchema,
   updatePackageSchema,
-  patchPackageSchema,
   createResourceBodySchema,
   reorderResourcesSchema,
   ForbiddenError,
@@ -172,7 +171,7 @@ packagesRouter.post('/', zValidator('json', createPackageSchema), async (c) => {
 
   const input = c.req.valid('json')
   const db = c.get('db')
-  await checkOrgRole(db, user, input.owner_org, 'editor')
+  await checkOrgRole(db, user, input.ownerOrg, 'editor')
 
   const service = new PackageService(db)
   const pkg = await service.create(input, user.id)
@@ -210,23 +209,6 @@ packagesRouter.put('/:nameOrId', zValidator('json', updatePackageSchema), async 
 
   const input = c.req.valid('json')
   const pkg = await service.update(nameOrId, input)
-  await indexPackageMetadata(db, c.get('search'), pkg.id)
-  return c.json(pkg)
-})
-
-// PATCH /api/v1/packages/:nameOrId - Patch package (org editor+)
-packagesRouter.patch('/:nameOrId', zValidator('json', patchPackageSchema), async (c) => {
-  const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
-
-  const db = c.get('db')
-  const nameOrId = c.req.param('nameOrId')
-  const service = new PackageService(db)
-  const existing = await service.getByNameOrId(nameOrId)
-  if (existing.ownerOrg) await checkOrgRole(db, user, existing.ownerOrg, 'editor')
-
-  const input = c.req.valid('json')
-  const pkg = await service.patch(nameOrId, input)
   await indexPackageMetadata(db, c.get('search'), pkg.id)
   return c.json(pkg)
 })
@@ -294,9 +276,9 @@ packagesRouter.put(
     const pkg = await packageService.getByNameOrId(packageId)
     if (pkg.ownerOrg) await checkOrgRole(db, user, pkg.ownerOrg, 'editor')
 
-    const { resource_ids } = c.req.valid('json')
+    const { resourceIds } = c.req.valid('json')
     const resourceService = new ResourceService(db)
-    const resources = await resourceService.reorder(pkg.id, resource_ids)
+    const resources = await resourceService.reorder(pkg.id, resourceIds)
 
     return c.json(resources)
   }
@@ -335,13 +317,13 @@ packagesRouter.post(
     const resourceService = new ResourceService(db)
     const resource = await resourceService.create({
       ...input,
-      package_id: pkg.id,
+      packageId: pkg.id,
     })
 
     // Enqueue pipeline + index search in parallel (best-effort enqueue)
     // Skip upload resources — pipeline is triggered by upload-complete after file is in storage
     const enqueuePromise =
-      input.url && input.url_type !== 'upload'
+      input.url && input.urlType !== 'upload'
         ? new PipelineService(db, c.get('queue')).enqueue(resource.id).catch((err) => {
             c.get('logger').error(
               { err, resourceId: resource.id },

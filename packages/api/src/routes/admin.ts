@@ -498,7 +498,7 @@ adminRouter.post(
     'json',
     z.object({
       name: userNameSchema,
-      email: z.string().email().max(200),
+      email: z.email().max(200),
       password: z.string().min(8),
       role: userRoleSchema.default('user'),
     })

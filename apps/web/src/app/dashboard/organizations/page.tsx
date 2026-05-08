@@ -67,6 +67,9 @@ export default function OrganizationsManagePage() {
                   <TableCell>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="sm" asChild>
+                        <Link href={`/dashboard/organizations/${org.name}/edit`}>{tc('edit')}</Link>
+                      </Button>
+                      <Button variant="ghost" size="sm" asChild>
                         <Link href={`/dashboard/organizations/${org.name}/members`}>
                           {tc('members')}
                         </Link>

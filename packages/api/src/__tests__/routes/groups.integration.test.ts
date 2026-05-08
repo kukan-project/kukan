@@ -88,7 +88,7 @@ describe('Groups API Routes', () => {
       const res = await app.request('/api/v1/groups/update-group', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'Updated' }),
+        body: JSON.stringify({ name: 'update-group', title: 'Updated' }),
       })
       expect(res.status).toBe(200)
 
@@ -153,7 +153,7 @@ describe('Groups API Routes', () => {
       const res = await noAuthApp.request('/api/v1/groups/auth-update-group', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'Hacked' }),
+        body: JSON.stringify({ name: 'auth-update-group', title: 'Hacked' }),
       })
       expect(res.status).toBe(403)
     })
@@ -190,7 +190,7 @@ describe('Groups API Routes', () => {
       const res = await regularApp.request('/api/v1/groups/no-member-update-group', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'Hacked' }),
+        body: JSON.stringify({ name: 'no-member-update-group', title: 'Hacked' }),
       })
       expect(res.status).toBe(403)
     })

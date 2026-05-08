@@ -19,6 +19,7 @@
     "save": "保存",
     "cancel": "キャンセル",
     "loading": "読み込み中...",
+    "notFound": "見つかりません",
     "noResults": "結果がありません",
     "retry": "再試行",
     "count": "{count} 件",
@@ -148,6 +149,7 @@
     "datasetCount": "{count} データセット",
     "searchDatasetsPlaceholder": "この組織のデータセットを検索...",
     "createOrg": "組織を作成",
+    "editOrg": "組織を編集",
     "titlePlaceholder": "組織の表示名",
     "descriptionPlaceholder": "組織の説明",
     "orgMembers": "組織メンバー: {name}"
@@ -160,6 +162,7 @@
     "datasetCount": "{count} データセット",
     "searchDatasetsPlaceholder": "このカテゴリーのデータセットを検索...",
     "createCategory": "カテゴリーを作成",
+    "editCategory": "カテゴリーを編集",
     "titlePlaceholder": "カテゴリーの表示名",
     "descriptionPlaceholder": "カテゴリーの説明",
     "categoryMembers": "カテゴリーメンバー: {name}"

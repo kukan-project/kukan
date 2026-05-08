@@ -37,13 +37,13 @@ async function ensureTestOrg() {
   return testOrgId
 }
 
-// Helper: create a package via API (auto-injects owner_org)
+// Helper: create a package via API (auto-injects ownerOrg)
 async function createPackage(data: Record<string, unknown>) {
-  const orgId = data.owner_org || (await ensureTestOrg())
+  const orgId = data.ownerOrg || (await ensureTestOrg())
   return app.request('/api/v1/packages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ owner_org: orgId, ...data }),
+    body: JSON.stringify({ ownerOrg: orgId, ...data }),
   })
 }
 
@@ -259,7 +259,7 @@ describe('Search API Routes', () => {
       const orgRes = await createOrg('filter-org')
       const org = await orgRes.json()
 
-      const pkg1Res = await createPackage({ name: 'org-pkg', owner_org: org.id })
+      const pkg1Res = await createPackage({ name: 'org-pkg', ownerOrg: org.id })
       const pkg1 = await pkg1Res.json()
       await createResource(pkg1.id, { name: 'filterable-resource.csv' })
 
@@ -280,7 +280,7 @@ describe('Search API Routes', () => {
       const orgRes = await createOrg('test-city')
       const org = await orgRes.json()
 
-      await createPackage({ name: 'city-data', owner_org: org.id })
+      await createPackage({ name: 'city-data', ownerOrg: org.id })
       await createPackage({ name: 'other-data' })
 
       // Both match "data" but only one belongs to test-city

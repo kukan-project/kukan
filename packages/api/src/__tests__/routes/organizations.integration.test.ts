@@ -124,12 +124,32 @@ describe('Organizations API Routes', () => {
       const res = await app.request('/api/v1/organizations/update-org', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'Updated' }),
+        body: JSON.stringify({ name: 'update-org', title: 'Updated' }),
       })
       expect(res.status).toBe(200)
 
       const body = await res.json()
       expect(body.title).toBe('Updated')
+    })
+
+    it('should clear omitted optional fields (PUT semantics)', async () => {
+      await app.request('/api/v1/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'put-clear-org', title: 'Title', description: 'Desc' }),
+      })
+
+      // PUT with only name — title and description should be cleared
+      const res = await app.request('/api/v1/organizations/put-clear-org', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'put-clear-org' }),
+      })
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.title).toBeNull()
+      expect(body.description).toBeNull()
     })
   })
 
@@ -191,7 +211,7 @@ describe('Organizations API Routes', () => {
       const res = await noAuthApp.request('/api/v1/organizations/auth-update-org', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'Hacked' }),
+        body: JSON.stringify({ name: 'auth-update-org', title: 'Hacked' }),
       })
       expect(res.status).toBe(403)
     })
@@ -228,7 +248,7 @@ describe('Organizations API Routes', () => {
       const res = await regularApp.request('/api/v1/organizations/no-member-update-org', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'Hacked' }),
+        body: JSON.stringify({ name: 'no-member-update-org', title: 'Hacked' }),
       })
       expect(res.status).toBe(403)
     })
@@ -289,7 +309,7 @@ describe('Organizations API Routes', () => {
       await app.request('/api/v1/packages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'org-linked-pkg', title: 'Linked', owner_org: org.id }),
+        body: JSON.stringify({ name: 'org-linked-pkg', title: 'Linked', ownerOrg: org.id }),
       })
 
       // Soft-delete org

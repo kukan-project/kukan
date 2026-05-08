@@ -82,18 +82,18 @@ export class ResourceService {
       const [pkg] = await tx
         .select({ id: packageTable.id })
         .from(packageTable)
-        .where(and(eq(packageTable.id, input.package_id), eq(packageTable.state, 'active')))
+        .where(and(eq(packageTable.id, input.packageId), eq(packageTable.state, 'active')))
         .limit(1)
 
       if (!pkg) {
-        throw new NotFoundError('Package', input.package_id)
+        throw new NotFoundError('Package', input.packageId)
       }
 
       // Get max position for this package
       const [maxPos] = await tx
         .select({ maxPosition: sql<number>`COALESCE(MAX(${resource.position}), -1)` })
         .from(resource)
-        .where(eq(resource.packageId, input.package_id))
+        .where(eq(resource.packageId, input.packageId))
 
       const nextPosition = (maxPos?.maxPosition ?? -1) + 1
 
@@ -101,9 +101,9 @@ export class ResourceService {
       const [newResource] = await tx
         .insert(resource)
         .values({
-          packageId: input.package_id,
+          packageId: input.packageId,
           url: input.url,
-          urlType: input.url_type,
+          urlType: input.urlType,
           name: input.name,
           description: input.description,
           format: input.format ? normalizeFormat(input.format) : undefined,
@@ -111,7 +111,7 @@ export class ResourceService {
           size: input.size,
           hash: input.hash,
           position: nextPosition,
-          resourceType: input.resource_type,
+          resourceType: input.resourceType,
           extras: input.extras,
           state: 'active',
         })
@@ -130,16 +130,16 @@ export class ResourceService {
     const [updated] = await this.db
       .update(resource)
       .set({
-        url: input.url,
-        urlType: input.url_type,
-        name: input.name,
-        description: input.description,
-        format: input.format ? normalizeFormat(input.format) : undefined,
-        mimetype: input.mimetype,
-        size: input.size,
-        hash: input.hash,
-        resourceType: input.resource_type,
-        extras: input.extras,
+        url: input.url ?? null,
+        urlType: input.urlType ?? null,
+        name: input.name ?? null,
+        description: input.description ?? null,
+        format: input.format ? normalizeFormat(input.format) : null,
+        mimetype: input.mimetype ?? null,
+        size: input.size ?? null,
+        hash: input.hash ?? null,
+        resourceType: input.resourceType ?? null,
+        extras: input.extras ?? {},
         updated: sql`NOW()`,
       })
       .where(eq(resource.id, existing.id))

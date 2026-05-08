@@ -22,8 +22,8 @@ export const userRoleSchema = z.enum(USER_ROLES)
 
 export const createUserSchema = z.object({
   name: userNameSchema,
-  email: z.string().email().max(200),
-  display_name: z.string().optional(),
+  email: z.email().max(200),
+  displayName: z.string().optional(),
   password: z.string().min(8).optional(), // Optional for OIDC users
 })
 

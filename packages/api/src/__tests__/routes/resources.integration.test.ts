@@ -35,7 +35,7 @@ async function createPackage(name: string) {
   const res = await app.request('/api/v1/packages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, owner_org: orgId }),
+    body: JSON.stringify({ name, ownerOrg: orgId }),
   })
   return res.json()
 }
@@ -83,6 +83,27 @@ describe('Resources API Routes', () => {
       const body = await res.json()
       expect(body.name).toBe('updated-resource')
       expect(body.format).toBe('JSON')
+    })
+
+    it('should clear omitted optional fields (PUT semantics)', async () => {
+      const pkg = await createPackage('put-clear-res-pkg')
+      const resource = await createResource(pkg.id, {
+        name: 'original',
+        description: 'to be cleared',
+        format: 'CSV',
+      })
+
+      const res = await app.request(`/api/v1/resources/${resource.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'kept' }),
+      })
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.name).toBe('kept')
+      expect(body.description).toBeNull()
+      expect(body.format).toBeNull()
     })
 
     it('should enqueue pipeline when resource has an external URL', async () => {
@@ -171,7 +192,7 @@ describe('Resources API Routes', () => {
   })
 
   describe('PUT /api/v1/packages/:packageId/resources/reorder', () => {
-    it('should reorder resources by resource_ids order', async () => {
+    it('should reorder resources by resourceIds order', async () => {
       const pkg = await createPackage('reorder-pkg')
       const res1 = await createResource(pkg.id, { name: 'first' })
       const res2 = await createResource(pkg.id, { name: 'second' })
@@ -180,7 +201,7 @@ describe('Resources API Routes', () => {
       const res = await app.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resource_ids: [res3.id, res1.id, res2.id] }),
+        body: JSON.stringify({ resourceIds: [res3.id, res1.id, res2.id] }),
       })
       expect(res.status).toBe(200)
 
@@ -194,7 +215,7 @@ describe('Resources API Routes', () => {
       expect(body[2].position).toBe(2)
     })
 
-    it('should reject partial resource_ids (missing IDs)', async () => {
+    it('should reject partial resourceIds (missing IDs)', async () => {
       const pkg = await createPackage('reorder-partial-pkg')
       const res1 = await createResource(pkg.id, { name: 'first' })
       await createResource(pkg.id, { name: 'second' })
@@ -202,12 +223,12 @@ describe('Resources API Routes', () => {
       const res = await app.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resource_ids: [res1.id] }),
+        body: JSON.stringify({ resourceIds: [res1.id] }),
       })
       expect(res.status).toBe(400)
     })
 
-    it('should reject duplicate IDs in resource_ids', async () => {
+    it('should reject duplicate IDs in resourceIds', async () => {
       const pkg = await createPackage('reorder-dup-pkg')
       const res1 = await createResource(pkg.id, { name: 'first' })
       const res2 = await createResource(pkg.id, { name: 'second' })
@@ -215,7 +236,7 @@ describe('Resources API Routes', () => {
       const res = await app.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resource_ids: [res1.id, res1.id, res2.id] }),
+        body: JSON.stringify({ resourceIds: [res1.id, res1.id, res2.id] }),
       })
       expect(res.status).toBe(400)
     })
@@ -229,7 +250,7 @@ describe('Resources API Routes', () => {
       const res = await app.request(`/api/v1/packages/${pkg1.id}/resources/reorder`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resource_ids: [own.id, other.id] }),
+        body: JSON.stringify({ resourceIds: [own.id, other.id] }),
       })
       expect(res.status).toBe(400)
     })
@@ -240,7 +261,7 @@ describe('Resources API Routes', () => {
       const res = await app.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resource_ids: ['not-a-uuid'] }),
+        body: JSON.stringify({ resourceIds: ['not-a-uuid'] }),
       })
       expect(res.status).toBe(400)
     })
@@ -252,7 +273,7 @@ describe('Resources API Routes', () => {
       const res = await unauthApp.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resource_ids: [resource.id] }),
+        body: JSON.stringify({ resourceIds: [resource.id] }),
       })
       expect(res.status).toBe(403)
     })
@@ -268,7 +289,7 @@ describe('Resources API Routes', () => {
       const res = await app.request(`/api/v1/resources/${resource.id}/upload-url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: 'data.csv', content_type: 'text/csv' }),
+        body: JSON.stringify({ filename: 'data.csv', contentType: 'text/csv' }),
       })
       expect(res.status).toBe(200)
 
@@ -284,7 +305,7 @@ describe('Resources API Routes', () => {
       await app.request(`/api/v1/resources/${resource.id}/upload-url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: 'data.csv', content_type: 'text/csv' }),
+        body: JSON.stringify({ filename: 'data.csv', contentType: 'text/csv' }),
       })
 
       // Verify resource was updated
@@ -303,7 +324,7 @@ describe('Resources API Routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           filename: 'report.xlsx',
-          content_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         }),
       })
 
@@ -319,7 +340,7 @@ describe('Resources API Routes', () => {
       const res = await unauthApp.request(`/api/v1/resources/${resource.id}/upload-url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: 'data.csv', content_type: 'text/csv' }),
+        body: JSON.stringify({ filename: 'data.csv', contentType: 'text/csv' }),
       })
       expect(res.status).toBe(403)
     })
@@ -331,7 +352,7 @@ describe('Resources API Routes', () => {
       const res = await app.request(`/api/v1/resources/${resource.id}/upload-url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content_type: 'text/csv' }),
+        body: JSON.stringify({ contentType: 'text/csv' }),
       })
       expect(res.status).toBe(400)
     })
@@ -416,7 +437,7 @@ describe('Resources API Routes', () => {
       await app.request(`/api/v1/resources/${resource.id}/upload-url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: 'data.csv', content_type: 'text/csv' }),
+        body: JSON.stringify({ filename: 'data.csv', contentType: 'text/csv' }),
       })
 
       const res = await app.request(`/api/v1/resources/${resource.id}/upload-complete`, {
@@ -438,7 +459,7 @@ describe('Resources API Routes', () => {
       await app.request(`/api/v1/resources/${resource.id}/upload-url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: 'data.csv', content_type: 'text/csv' }),
+        body: JSON.stringify({ filename: 'data.csv', contentType: 'text/csv' }),
       })
 
       await app.request(`/api/v1/resources/${resource.id}/upload-complete`, {
@@ -502,7 +523,7 @@ describe('Resources API Routes', () => {
       await app.request(`/api/v1/resources/${resource.id}/upload-url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: 'data.csv', content_type: 'text/csv' }),
+        body: JSON.stringify({ filename: 'data.csv', contentType: 'text/csv' }),
       })
       await app.request(`/api/v1/resources/${resource.id}/upload-complete`, {
         method: 'POST',
@@ -544,7 +565,7 @@ describe('Resources API Routes', () => {
       const pkg = await createPackage('dl-missing-pkg')
       const resource = await createResource(pkg.id, {
         url: 'missing.csv',
-        url_type: 'upload',
+        urlType: 'upload',
       })
 
       const res = await app.request(`/api/v1/resources/${resource.id}/download`)

@@ -90,15 +90,19 @@ describe('GroupsManagePage', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
   })
 
-  it('should link to members and view pages', async () => {
+  it('should link to edit, members and view pages', async () => {
     vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: sampleGroups, total: 2 }))
     render(<GroupsManagePage />)
 
     await waitFor(() => {
-      const memberLinks = screen.getAllByText('Members')
-      const link = memberLinks[0].closest('a')
-      expect(link).toHaveAttribute('href', '/dashboard/groups/demographics/members')
+      const editLinks = screen.getAllByText('Edit')
+      const editLink = editLinks[0].closest('a')
+      expect(editLink).toHaveAttribute('href', '/dashboard/groups/demographics/edit')
     })
+
+    const memberLinks = screen.getAllByText('Members')
+    const memberLink = memberLinks[0].closest('a')
+    expect(memberLink).toHaveAttribute('href', '/dashboard/groups/demographics/members')
 
     const viewLinks = screen.getAllByText('View')
     const viewLink = viewLinks[0].closest('a')

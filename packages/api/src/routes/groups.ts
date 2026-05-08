@@ -37,9 +37,9 @@ groupsRouter.post('/', zValidator('json', createGroupSchema), async (c) => {
   const user = c.get('user')
   if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can create groups')
 
-  const { image_url, ...rest } = c.req.valid('json')
+  const input = c.req.valid('json')
   const service = new GroupService(c.get('db'))
-  const grp = await service.create({ ...rest, imageUrl: image_url })
+  const grp = await service.create(input)
   return c.json(grp, 201)
 })
 
@@ -62,8 +62,8 @@ groupsRouter.put('/:nameOrId', zValidator('json', updateGroupSchema), async (c) 
   const existing = await service.getByNameOrId(nameOrId)
   await checkGroupRole(db, user, existing.id, 'admin')
 
-  const { image_url, ...rest } = c.req.valid('json')
-  const grp = await service.update(nameOrId, { ...rest, imageUrl: image_url })
+  const input = c.req.valid('json')
+  const grp = await service.update(nameOrId, input)
   return c.json(grp)
 })
 

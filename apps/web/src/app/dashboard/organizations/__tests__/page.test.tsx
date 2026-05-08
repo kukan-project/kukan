@@ -100,15 +100,19 @@ describe('OrganizationsManagePage', () => {
     expect(link).toHaveAttribute('href', '/dashboard/organizations/new')
   })
 
-  it('should link to members and view pages', async () => {
+  it('should link to edit, members and view pages', async () => {
     vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: sampleOrgs, total: 2 }))
     render(<OrganizationsManagePage />)
 
     await waitFor(() => {
-      const memberLinks = screen.getAllByText('Members')
-      const link = memberLinks[0].closest('a')
-      expect(link).toHaveAttribute('href', '/dashboard/organizations/tokyo/members')
+      const editLinks = screen.getAllByText('Edit')
+      const editLink = editLinks[0].closest('a')
+      expect(editLink).toHaveAttribute('href', '/dashboard/organizations/tokyo/edit')
     })
+
+    const memberLinks = screen.getAllByText('Members')
+    const memberLink = memberLinks[0].closest('a')
+    expect(memberLink).toHaveAttribute('href', '/dashboard/organizations/tokyo/members')
 
     const viewLinks = screen.getAllByText('View')
     const viewLink = viewLinks[0].closest('a')

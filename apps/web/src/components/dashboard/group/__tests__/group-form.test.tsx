@@ -16,7 +16,7 @@ vi.mock('@kukan/shared', async () => {
         .regex(/^[a-z0-9_-]+$/, 'Invalid characters'),
       title: z.string().optional(),
       description: z.string().optional(),
-      image_url: z.string().url('Invalid URL').optional().or(z.literal('')),
+      imageUrl: z.string().url('Invalid URL').optional().or(z.literal('')),
     }),
   }
 })
@@ -59,5 +59,27 @@ describe('GroupForm', () => {
   it('should render name help text', () => {
     render(<GroupForm />)
     expect(screen.getByText(/Used in URLs\. Alphanumeric characters/)).toBeInTheDocument()
+  })
+
+  it('should show Update button in edit mode', () => {
+    render(<GroupForm mode="edit" nameOrId="test-group" defaultValues={{ name: 'test-group' }} />)
+    expect(screen.getByRole('button', { name: 'Update' })).toBeInTheDocument()
+  })
+
+  it('should disable name field in edit mode', () => {
+    render(<GroupForm mode="edit" nameOrId="test-group" defaultValues={{ name: 'test-group' }} />)
+    expect(screen.getByLabelText('URL Identifier (required)')).toBeDisabled()
+  })
+
+  it('should populate default values in edit mode', () => {
+    render(
+      <GroupForm
+        mode="edit"
+        nameOrId="test-group"
+        defaultValues={{ name: 'test-group', title: 'Test Category', description: 'A desc' }}
+      />
+    )
+    expect(screen.getByLabelText('Title')).toHaveValue('Test Category')
+    expect(screen.getByLabelText('Description')).toHaveValue('A desc')
   })
 })

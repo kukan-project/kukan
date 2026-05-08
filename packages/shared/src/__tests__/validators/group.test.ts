@@ -17,7 +17,7 @@ describe('createGroupSchema', () => {
       name: 'my-group',
       title: 'My Group',
       description: 'A test group',
-      image_url: 'https://example.com/image.png',
+      imageUrl: 'https://example.com/image.png',
     })
     expect(result.success).toBe(true)
   })
@@ -32,8 +32,8 @@ describe('createGroupSchema', () => {
 })
 
 describe('updateGroupSchema', () => {
-  it('should allow all fields to be optional', () => {
-    const result = updateGroupSchema.safeParse({})
-    expect(result.success).toBe(true)
+  it('should require name', () => {
+    expect(updateGroupSchema.safeParse({}).success).toBe(false)
+    expect(updateGroupSchema.safeParse({ name: 'test-group' }).success).toBe(true)
   })
 })

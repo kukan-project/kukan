@@ -16,7 +16,7 @@ vi.mock('@kukan/shared', async () => {
         .regex(/^[a-z0-9_-]+$/, 'Invalid characters'),
       title: z.string().optional(),
       description: z.string().optional(),
-      image_url: z.string().url('Invalid URL').optional().or(z.literal('')),
+      imageUrl: z.string().url('Invalid URL').optional().or(z.literal('')),
     }),
   }
 })
@@ -58,5 +58,31 @@ describe('OrganizationForm', () => {
   it('should render name help text', () => {
     render(<OrganizationForm />)
     expect(screen.getByText(/Used in URLs\. Alphanumeric characters/)).toBeInTheDocument()
+  })
+
+  it('should show Update button in edit mode', () => {
+    render(
+      <OrganizationForm mode="edit" nameOrId="test-org" defaultValues={{ name: 'test-org' }} />
+    )
+    expect(screen.getByRole('button', { name: 'Update' })).toBeInTheDocument()
+  })
+
+  it('should disable name field in edit mode', () => {
+    render(
+      <OrganizationForm mode="edit" nameOrId="test-org" defaultValues={{ name: 'test-org' }} />
+    )
+    expect(screen.getByLabelText('URL Identifier (required)')).toBeDisabled()
+  })
+
+  it('should populate default values in edit mode', () => {
+    render(
+      <OrganizationForm
+        mode="edit"
+        nameOrId="test-org"
+        defaultValues={{ name: 'test-org', title: 'Test Organization', description: 'A desc' }}
+      />
+    )
+    expect(screen.getByLabelText('Title')).toHaveValue('Test Organization')
+    expect(screen.getByLabelText('Description')).toHaveValue('A desc')
   })
 })

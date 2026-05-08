@@ -62,6 +62,9 @@ export default function GroupsManagePage() {
                   <TableCell>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="sm" asChild>
+                        <Link href={`/dashboard/groups/${grp.name}/edit`}>{tc('edit')}</Link>
+                      </Button>
+                      <Button variant="ghost" size="sm" asChild>
                         <Link href={`/dashboard/groups/${grp.name}/members`}>{tc('members')}</Link>
                       </Button>
                       <Button variant="ghost" size="sm" asChild>

@@ -39,7 +39,7 @@ async function createUrlResource(name: string, healthStatus = 'unknown') {
   const pkgRes = await app.request('/api/v1/packages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: `pkg-${name}`, title: `Package ${name}`, owner_org: org.id }),
+    body: JSON.stringify({ name: `pkg-${name}`, title: `Package ${name}`, ownerOrg: org.id }),
   })
   const pkg = await pkgRes.json()
 
@@ -180,7 +180,7 @@ describe('Admin Health API Routes', () => {
       const pkgRes = await app.request('/api/v1/packages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'pkg-upload', title: 'Upload Pkg', owner_org: org.id }),
+        body: JSON.stringify({ name: 'pkg-upload', title: 'Upload Pkg', ownerOrg: org.id }),
       })
       const pkg = await pkgRes.json()
       const resRes = await app.request(`/api/v1/packages/${pkg.id}/resources`, {

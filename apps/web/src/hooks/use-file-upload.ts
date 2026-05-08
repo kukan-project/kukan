@@ -70,7 +70,7 @@ export function useFileUpload({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             filename: file.name,
-            content_type: contentType,
+            contentType,
             format,
           }),
         })

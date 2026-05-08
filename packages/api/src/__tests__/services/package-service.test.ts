@@ -66,7 +66,7 @@ describe('PackageService', () => {
       await expect(
         service.create({
           name: 'duplicate',
-          owner_org: '550e8400-e29b-41d4-a716-446655440000',
+          ownerOrg: '550e8400-e29b-41d4-a716-446655440000',
           private: false,
           type: 'dataset',
           extras: {},
@@ -76,14 +76,14 @@ describe('PackageService', () => {
       ).rejects.toThrow('Package name already exists')
     })
 
-    it('should throw NotFoundError if owner_org does not exist', async () => {
+    it('should throw NotFoundError if ownerOrg does not exist', async () => {
       mock.addResult([]) // name check: no duplicate
       mock.addResult([]) // org check: not found
 
       await expect(
         service.create({
           name: 'new-pkg',
-          owner_org: '550e8400-e29b-41d4-a716-446655440000',
+          ownerOrg: '550e8400-e29b-41d4-a716-446655440000',
           private: false,
           type: 'dataset',
           extras: {},
@@ -101,7 +101,7 @@ describe('PackageService', () => {
 
       const result = await service.create({
         name: 'new-pkg',
-        owner_org: '550e8400-e29b-41d4-a716-446655440000',
+        ownerOrg: '550e8400-e29b-41d4-a716-446655440000',
         private: false,
         type: 'dataset',
         extras: {},
@@ -119,26 +119,6 @@ describe('PackageService', () => {
       await expect(service.update('nonexistent', { name: 'updated' })).rejects.toThrow(
         'Package not found: nonexistent'
       )
-    })
-  })
-
-  describe('patch', () => {
-    it('should merge input with existing package data', async () => {
-      const existing = createPackageFixture({
-        name: 'old-name',
-        title: 'Old Title',
-        notes: 'Old notes',
-      })
-      // getByNameOrId query
-      mock.addResult([existing])
-      // update: getByNameOrId again (called from update)
-      mock.addResult([existing])
-      // update: name uniqueness check is skipped because name didn't change
-      // update: the actual update
-      mock.addResult([{ ...existing, title: 'New Title' }])
-
-      const result = await service.patch('old-name', { title: 'New Title' })
-      expect(result.title).toBe('New Title')
     })
   })
 

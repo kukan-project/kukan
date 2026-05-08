@@ -19,6 +19,7 @@
     "save": "Save",
     "cancel": "Cancel",
     "loading": "Loading...",
+    "notFound": "Not found",
     "noResults": "No results",
     "retry": "Retry",
     "count": "{count} items",
@@ -148,6 +149,7 @@
     "datasetCount": "{count} datasets",
     "searchDatasetsPlaceholder": "Search datasets in this organization...",
     "createOrg": "Create Organization",
+    "editOrg": "Edit Organization",
     "titlePlaceholder": "Organization display name",
     "descriptionPlaceholder": "Organization description",
     "orgMembers": "Organization Members: {name}"
@@ -160,6 +162,7 @@
     "datasetCount": "{count} datasets",
     "searchDatasetsPlaceholder": "Search datasets in this category...",
     "createCategory": "Create Category",
+    "editCategory": "Edit Category",
     "titlePlaceholder": "Category display name",
     "descriptionPlaceholder": "Category description",
     "categoryMembers": "Category Members: {name}"

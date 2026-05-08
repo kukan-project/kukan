@@ -10,7 +10,6 @@ import { DatasetForm } from '@/components/dashboard/dataset/dataset-form'
 import { ResourceList } from '@/components/dashboard/dataset/resource-list'
 import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
 import { Button } from '@kukan/ui'
-import type { CreatePackageInput } from '@kukan/shared'
 
 interface Organization {
   id: string
@@ -48,25 +47,24 @@ interface PackageDetail {
   organization?: { id: string; name: string; title?: string | null } | null
 }
 
-/** API response (camelCase) → form defaults (snake_case) */
-function toFormDefaults(pkg: PackageDetail): Partial<CreatePackageInput> {
+/** API response → form defaults */
+function toFormDefaults(pkg: PackageDetail) {
   return {
     name: pkg.name,
     title: pkg.title ?? undefined,
     notes: pkg.notes ?? undefined,
     url: pkg.url ?? undefined,
     version: pkg.version ?? undefined,
-    license_id: pkg.licenseId ?? undefined,
+    licenseId: pkg.licenseId ?? undefined,
     author: pkg.author ?? undefined,
-    author_email: pkg.authorEmail ?? undefined,
+    authorEmail: pkg.authorEmail ?? undefined,
     maintainer: pkg.maintainer ?? undefined,
-    maintainer_email: pkg.maintainerEmail ?? undefined,
-    owner_org: pkg.ownerOrg ?? undefined,
+    maintainerEmail: pkg.maintainerEmail ?? undefined,
+    ownerOrg: pkg.ownerOrg ?? undefined,
     private: pkg.private,
     type: pkg.type ?? 'dataset',
     extras: (pkg.extras as Record<string, unknown>) ?? {},
     tags: pkg.tags?.map((t) => ({ name: t.name })) ?? [],
-    resources: [],
   }
 }
 

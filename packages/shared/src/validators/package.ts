@@ -1,6 +1,5 @@
 /**
  * KUKAN Package (Dataset) Validators
- * CKAN-compatible package validation schemas
  */
 
 import { z } from 'zod'
@@ -14,24 +13,25 @@ export const createPackageSchema = z.object({
       /^[a-z0-9._-]+$/,
       'Name must contain only lowercase letters, numbers, hyphens, underscores, and periods'
     ),
-  title: z.string().optional(),
-  notes: z.string().optional(),
-  url: z.union([z.string().url(), z.literal('')]).optional(),
-  version: z.string().max(100).optional(),
-  license_id: z.string().max(100).optional(),
-  author: z.string().optional(),
-  author_email: z.union([z.string().email(), z.literal('')]).optional(),
-  maintainer: z.string().optional(),
-  maintainer_email: z.union([z.string().email(), z.literal('')]).optional(),
-  owner_org: z.string().uuid(),
+  title: z.string().nullish(),
+  notes: z.string().nullish(),
+  url: z.union([z.url(), z.literal('')]).nullish(),
+  version: z.string().max(100).nullish(),
+  licenseId: z.string().max(100).nullish(),
+  author: z.string().nullish(),
+  authorEmail: z.union([z.email(), z.literal('')]).nullish(),
+  maintainer: z.string().nullish(),
+  maintainerEmail: z.union([z.email(), z.literal('')]).nullish(),
+  ownerOrg: z.uuid(),
   private: z.boolean().default(false),
   type: z.string().max(100).default('dataset'),
   extras: z.record(z.string(), z.unknown()).default({}),
   tags: z.array(z.object({ name: z.string() })).default([]),
+  state: z.enum(['active', 'deleted']).default('active'),
   resources: z
     .array(
       z.object({
-        url: z.string().url().optional(),
+        url: z.url().optional(),
         name: z.string().optional(),
         description: z.string().optional(),
         format: z.string().optional(),
@@ -41,11 +41,7 @@ export const createPackageSchema = z.object({
     .default([]),
 })
 
-export const updatePackageSchema = createPackageSchema.partial().extend({
-  state: z.enum(['active', 'deleted']).optional(),
-})
-export const patchPackageSchema = updatePackageSchema
-
+/** PUT: same as create minus resources (update doesn't accept inline resources) */
+export const updatePackageSchema = createPackageSchema.omit({ resources: true })
 export type CreatePackageInput = z.infer<typeof createPackageSchema>
 export type UpdatePackageInput = z.infer<typeof updatePackageSchema>
-export type PatchPackageInput = z.infer<typeof patchPackageSchema>

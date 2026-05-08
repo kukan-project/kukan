@@ -50,7 +50,7 @@ describe('ResourceService', () => {
     it('should throw NotFoundError if package does not exist', async () => {
       mock.addResult([]) // package check
       await expect(
-        service.create({ package_id: '550e8400-e29b-41d4-a716-446655440000', extras: {} })
+        service.create({ packageId: '550e8400-e29b-41d4-a716-446655440000', extras: {} })
       ).rejects.toThrow('Package not found')
     })
 
@@ -61,7 +61,7 @@ describe('ResourceService', () => {
       mock.addResult([{ maxPosition: -1 }]) // max position query
       mock.addResult([created]) // insert returning
 
-      const result = await service.create({ package_id: pkg.id as string, extras: {} })
+      const result = await service.create({ packageId: pkg.id as string, extras: {} })
       expect(result.position).toBe(0)
     })
   })
