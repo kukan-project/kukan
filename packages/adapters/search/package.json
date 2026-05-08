@@ -21,7 +21,7 @@
   "dependencies": {
     "@kukan/db": "workspace:*",
     "@kukan/shared": "workspace:*",
-    "@opensearch-project/opensearch": "^3.5.1",
+    "@opensearch-project/opensearch": "^3.6.0",
     "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
