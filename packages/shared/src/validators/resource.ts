@@ -29,16 +29,17 @@ const resourceFieldsSchema = z.object({
   size: z.number().int().positive().nullish(),
   hash: z.string().nullish(),
   resourceType: z.string().max(50).nullish(),
-  extras: z.record(z.string(), z.unknown()).default({}),
   state: z.enum(['active', 'deleted']).default('active'),
 })
 
 export const createResourceSchema = resourceFieldsSchema.superRefine(refineUrl)
 
-/** Without packageId — used for nested creation under package route and PUT update */
+/** Without packageId — used for nested resource creation under a package route */
 export const createResourceBodySchema = resourceFieldsSchema
   .omit({ packageId: true })
   .superRefine(refineUrl)
+
+/** PUT update: same as createResourceBodySchema (extras is system-managed, not user-editable) */
 export const updateResourceSchema = createResourceBodySchema
 
 export type CreateResourceInput = z.infer<typeof createResourceSchema>

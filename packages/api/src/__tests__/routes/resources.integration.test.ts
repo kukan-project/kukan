@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
+import { eq } from 'drizzle-orm'
+import { resource as resourceTable } from '@kukan/db'
 import { createTestApp, mockSearch } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 
@@ -104,6 +106,29 @@ describe('Resources API Routes', () => {
       expect(body.name).toBe('kept')
       expect(body.description).toBeNull()
       expect(body.format).toBeNull()
+    })
+
+    it('should preserve system-managed extras on PUT', async () => {
+      const pkg = await createPackage('extras-preserve-pkg')
+      const resource = await createResource(pkg.id, { name: 'with-extras' })
+
+      // Set extras directly via DB (simulating pipeline metadata)
+      await db
+        .update(resourceTable)
+        .set({ extras: { pipeline_version: '2', content_hash: 'abc123' } })
+        .where(eq(resourceTable.id, resource.id))
+
+      // PUT update — should NOT clear extras
+      const res = await app.request(`/api/v1/resources/${resource.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'renamed' }),
+      })
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.name).toBe('renamed')
+      expect(body.extras).toEqual({ pipeline_version: '2', content_hash: 'abc123' })
     })
 
     it('should enqueue pipeline when resource has an external URL', async () => {

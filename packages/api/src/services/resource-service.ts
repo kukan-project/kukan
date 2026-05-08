@@ -112,7 +112,6 @@ export class ResourceService {
           hash: input.hash,
           position: nextPosition,
           resourceType: input.resourceType,
-          extras: input.extras,
           state: 'active',
         })
         .returning()
@@ -139,7 +138,8 @@ export class ResourceService {
         size: input.size ?? null,
         hash: input.hash ?? null,
         resourceType: input.resourceType ?? null,
-        extras: input.extras ?? {},
+        // extras is system-managed (pipeline metadata) — preserve existing value on update
+        extras: existing.extras,
         updated: sql`NOW()`,
       })
       .where(eq(resource.id, existing.id))

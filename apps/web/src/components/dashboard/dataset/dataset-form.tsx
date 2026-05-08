@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -46,9 +46,31 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
   const tl = useTranslations('license')
   const tc = useTranslations('common')
   const [error, setError] = useState<string | null>(null)
+  const [extrasError, setExtrasError] = useState<string | null>(null)
   const [tagsInput, setTagsInput] = useState(
     defaultValues?.tags?.map((t) => t.name).join(', ') ?? ''
   )
+  const nextExtrasId = useRef(0)
+  const [extrasRows, setExtrasRows] = useState<{ id: number; key: string; value: string }[]>(() => {
+    const extras = (defaultValues?.extras ?? {}) as Record<string, unknown>
+    return Object.entries(extras).map(([key, value]) => {
+      const strValue = typeof value === 'string' ? value : JSON.stringify(value ?? '')
+      return { id: nextExtrasId.current++, key, value: strValue }
+    })
+  })
+
+  const addExtrasRow = useCallback(() => {
+    setExtrasRows((rows) => [...rows, { id: nextExtrasId.current++, key: '', value: '' }])
+  }, [])
+
+  const removeExtrasRow = useCallback((id: number) => {
+    setExtrasRows((rows) => rows.filter((r) => r.id !== id))
+    setExtrasError(null)
+  }, [])
+
+  const updateExtrasRow = useCallback((id: number, field: 'key' | 'value', val: string) => {
+    setExtrasRows((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: val } : r)))
+  }, [])
 
   const {
     register,
@@ -78,7 +100,22 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
       .filter(Boolean)
       .map((name) => ({ name }))
 
-    const body = { ...values, tags }
+    // Build extras from key-value rows (skip empty keys)
+    const filledRows = extrasRows.filter((r) => r.key.trim())
+    const keyCount = new Map<string, number>()
+    for (const r of filledRows) {
+      const k = r.key.trim()
+      keyCount.set(k, (keyCount.get(k) ?? 0) + 1)
+    }
+    const duplicateKeys = [...keyCount.entries()].filter(([, c]) => c > 1).map(([k]) => k)
+    if (duplicateKeys.length > 0) {
+      setExtrasError(t('extrasDuplicateKey', { keys: duplicateKeys.join(', ') }))
+      return
+    }
+    setExtrasError(null)
+    const extras = Object.fromEntries(filledRows.map((r) => [r.key.trim(), r.value]))
+
+    const body = { ...values, tags, extras }
 
     const url = mode === 'create' ? '/api/v1/packages' : `/api/v1/packages/${nameOrId}`
     const method = mode === 'create' ? 'POST' : 'PUT'
@@ -254,6 +291,39 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
           <Label htmlFor="version">{t('version')}</Label>
           <Input id="version" placeholder="1.0" {...register('version')} />
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>{t('extras')}</Label>
+        <p className="text-xs text-muted-foreground">{t('extrasHelp')}</p>
+        {extrasRows.map((row) => (
+          <div key={row.id} className="flex gap-2">
+            <Input
+              placeholder={t('extrasKeyPlaceholder')}
+              value={row.key}
+              onChange={(e) => updateExtrasRow(row.id, 'key', e.target.value)}
+              className="flex-1"
+            />
+            <Input
+              placeholder={t('extrasValuePlaceholder')}
+              value={row.value}
+              onChange={(e) => updateExtrasRow(row.id, 'value', e.target.value)}
+              className="flex-1"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => removeExtrasRow(row.id)}
+            >
+              ×
+            </Button>
+          </div>
+        ))}
+        <Button type="button" variant="outline" size="sm" className="w-fit" onClick={addExtrasRow}>
+          {t('extrasAdd')}
+        </Button>
+        {extrasError && <p className="text-sm text-destructive">{extrasError}</p>}
       </div>
 
       <Button type="submit" disabled={isSubmitting}>

@@ -75,11 +75,11 @@ describe('createResourceSchema', () => {
     expect(result.success).toBe(false)
   })
 
-  it('should default extras to empty object', () => {
+  it('should not include extras (system-managed)', () => {
     const result = createResourceSchema.safeParse({ packageId: validUuid })
     expect(result.success).toBe(true)
     if (result.success) {
-      expect(result.data.extras).toEqual({})
+      expect('extras' in result.data).toBe(false)
     }
   })
 })
