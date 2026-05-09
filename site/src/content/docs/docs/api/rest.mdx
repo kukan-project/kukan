@@ -14,6 +14,11 @@ sidebar:
 - **組織** — 組織の member / editor / admin のいずれか
 - **sysadmin** — システム管理者のみ
 
+:::note[PUT セマンティクス]
+PUT エンドポイントは全フィールド置換です。リクエストに含めないフィールドは `null`（またはデフォルト値）にクリアされます。
+既存値を保持するには、現在のデータを GET で取得し、変更を加えた全体を送信してください。
+:::
+
 ## データセット (packages)
 
 | Method | Path | 説明 | 認証 |
@@ -21,9 +26,9 @@ sidebar:
 | GET | `/packages` | データセット一覧（検索・絞り込み対応） | 公開 |
 | POST | `/packages` | データセット作成 | 組織 editor |
 | GET | `/packages/{nameOrId}` | データセット詳細 | 公開 |
-| PUT | `/packages/{nameOrId}` | データセット更新 | 組織 editor |
-| PATCH | `/packages/{nameOrId}` | データセット部分更新 | 組織 editor |
+| PUT | `/packages/{nameOrId}` | データセット更新（全フィールド置換） | 組織 editor |
 | DELETE | `/packages/{nameOrId}` | データセット論理削除 | 組織 editor |
+| POST | `/packages/{nameOrId}/restore` | 論理削除済みを復元 | sysadmin |
 | POST | `/packages/{nameOrId}/purge` | 論理削除済みを完全削除 | 組織 admin |
 | GET | `/packages/{id}/resources` | リソース一覧 | 公開 |
 | POST | `/packages/{id}/resources` | リソース追加 | 組織 editor |
@@ -68,7 +73,7 @@ curl "https://your-kukan-site/api/v1/packages?q=人口&organization[]=stat-burea
 | POST | `/resources/{id}/upload` | サーバー経由アップロード | 組織 editor |
 | POST | `/resources/{id}/upload-complete` | アップロード完了通知・パイプライン投入 | 組織 editor |
 | POST | `/resources/{id}/run-pipeline` | パイプライン手動実行 | 組織 editor |
-| PUT | `/resources/{id}` | リソース更新 | 組織 editor |
+| PUT | `/resources/{id}` | リソース更新（全フィールド置換、extras はシステム管理） | 組織 editor |
 | DELETE | `/resources/{id}` | リソース削除 | 組織 editor |
 
 ## 組織 (organizations)
@@ -78,8 +83,10 @@ curl "https://your-kukan-site/api/v1/packages?q=人口&organization[]=stat-burea
 | GET | `/organizations` | 組織一覧 | 公開 |
 | POST | `/organizations` | 組織作成 | sysadmin |
 | GET | `/organizations/{nameOrId}` | 組織詳細 | 公開 |
-| PUT | `/organizations/{nameOrId}` | 組織更新 | 組織 admin |
+| PUT | `/organizations/{nameOrId}` | 組織更新（全フィールド置換） | 組織 admin |
 | DELETE | `/organizations/{nameOrId}` | 組織論理削除 | 組織 admin |
+| POST | `/organizations/{nameOrId}/restore` | 論理削除済みを復元 | sysadmin |
+| POST | `/organizations/{nameOrId}/purge` | 論理削除済みを完全削除 | sysadmin |
 | GET | `/organizations/{nameOrId}/members` | メンバー一覧 | 組織 member |
 | POST | `/organizations/{nameOrId}/members` | メンバー追加・ロール変更 | 組織 admin |
 | DELETE | `/organizations/{nameOrId}/members/{userId}` | メンバー削除 | 組織 admin |
@@ -93,8 +100,10 @@ curl "https://your-kukan-site/api/v1/packages?q=人口&organization[]=stat-burea
 | GET | `/groups` | カテゴリー一覧 | 公開 |
 | POST | `/groups` | カテゴリー作成 | sysadmin |
 | GET | `/groups/{nameOrId}` | カテゴリー詳細 | 公開 |
-| PUT | `/groups/{nameOrId}` | カテゴリー更新 | カテゴリー admin |
+| PUT | `/groups/{nameOrId}` | カテゴリー更新（全フィールド置換） | カテゴリー admin |
 | DELETE | `/groups/{nameOrId}` | カテゴリー削除 | カテゴリー admin |
+| POST | `/groups/{nameOrId}/restore` | 論理削除済みを復元 | sysadmin |
+| POST | `/groups/{nameOrId}/purge` | 論理削除済みを完全削除 | sysadmin |
 | GET | `/groups/{nameOrId}/members` | メンバー一覧 | カテゴリー member |
 | POST | `/groups/{nameOrId}/members` | メンバー追加・ロール変更 | カテゴリー admin |
 | DELETE | `/groups/{nameOrId}/members/{userId}` | メンバー削除 | カテゴリー admin |
@@ -136,10 +145,10 @@ curl "https://your-kukan-site/api/v1/packages?q=人口&organization[]=stat-burea
 
 | Method | Path | 説明 |
 |--------|------|------|
-| GET | `/admin/search/stats` | 検索インデックス統計（件数・サイズ） |
-| GET | `/admin/search/doc/{index}/{id}` | インデックスドキュメント取得（index: `packages` / `resources`） |
+| GET | `/admin/search/stats` | 検索インデックス統計（件数・サイズ・DB カウント） |
+| GET | `/admin/search/doc/{index}/{id}` | インデックスドキュメント取得（index: `packages` / `resources` / `contents`） |
 | GET | `/admin/search/browse/{index}` | インデックスドキュメント一覧（ページング・検索対応） |
-| POST | `/admin/reindex-metadata` | 検索インデックス再構築（packages + resources） |
+| POST | `/admin/reindex-metadata` | 検索インデックス再構築（SQS 経由、非同期） |
 | POST | `/admin/jobs/enqueue-all` | 全リソースのパイプライン一括予約 |
 | GET | `/admin/jobs/stats` | パイプラインジョブ統計 |
 | GET | `/admin/jobs` | パイプラインジョブ一覧 |
@@ -151,6 +160,8 @@ curl "https://your-kukan-site/api/v1/packages?q=人口&organization[]=stat-burea
 | POST | `/admin/users` | ユーザー作成 |
 | PATCH | `/admin/users/{userId}` | ユーザー更新 |
 | DELETE | `/admin/users/{userId}` | ユーザー論理削除（セッション・トークン即時失効） |
+| POST | `/admin/users/{userId}/restore` | ユーザー復元 |
+| POST | `/admin/users/{userId}/purge` | ユーザー完全削除 |
 
 ## その他
 

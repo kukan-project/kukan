@@ -14,6 +14,11 @@ Auth column legend:
 - **Org** — organization member / editor / admin
 - **sysadmin** — system administrator only
 
+:::note[PUT Semantics]
+PUT endpoints perform full-resource replacement. Fields not included in the request body will be cleared to `null` (or their default value).
+To preserve existing values, GET the current data, apply your changes, and send the full object.
+:::
+
 ## Datasets (packages)
 
 | Method | Path | Description | Auth |
@@ -21,9 +26,9 @@ Auth column legend:
 | GET | `/packages` | List datasets (with search and filters) | Public |
 | POST | `/packages` | Create dataset | Org editor |
 | GET | `/packages/{nameOrId}` | Get dataset details | Public |
-| PUT | `/packages/{nameOrId}` | Update dataset | Org editor |
-| PATCH | `/packages/{nameOrId}` | Partial update | Org editor |
+| PUT | `/packages/{nameOrId}` | Update dataset (full replacement) | Org editor |
 | DELETE | `/packages/{nameOrId}` | Soft-delete dataset | Org editor |
+| POST | `/packages/{nameOrId}/restore` | Restore soft-deleted dataset | sysadmin |
 | POST | `/packages/{nameOrId}/purge` | Permanently delete soft-deleted dataset | Org admin |
 | GET | `/packages/{id}/resources` | List resources | Public |
 | POST | `/packages/{id}/resources` | Add resource | Org editor |
@@ -68,7 +73,7 @@ curl "https://your-kukan-site/api/v1/packages?q=population&organization[]=stat-b
 | POST | `/resources/{id}/upload` | Server-proxied upload | Org editor |
 | POST | `/resources/{id}/upload-complete` | Notify completion, enqueue pipeline | Org editor |
 | POST | `/resources/{id}/run-pipeline` | Manually trigger pipeline | Org editor |
-| PUT | `/resources/{id}` | Update resource | Org editor |
+| PUT | `/resources/{id}` | Update resource (full replacement; extras is system-managed) | Org editor |
 | DELETE | `/resources/{id}` | Delete resource | Org editor |
 
 ## Organizations
@@ -78,8 +83,10 @@ curl "https://your-kukan-site/api/v1/packages?q=population&organization[]=stat-b
 | GET | `/organizations` | List organizations | Public |
 | POST | `/organizations` | Create organization | sysadmin |
 | GET | `/organizations/{nameOrId}` | Organization details | Public |
-| PUT | `/organizations/{nameOrId}` | Update organization | Org admin |
+| PUT | `/organizations/{nameOrId}` | Update organization (full replacement) | Org admin |
 | DELETE | `/organizations/{nameOrId}` | Soft-delete organization | Org admin |
+| POST | `/organizations/{nameOrId}/restore` | Restore soft-deleted organization | sysadmin |
+| POST | `/organizations/{nameOrId}/purge` | Permanently delete soft-deleted organization | sysadmin |
 | GET | `/organizations/{nameOrId}/members` | List members | Org member |
 | POST | `/organizations/{nameOrId}/members` | Add member / change role | Org admin |
 | DELETE | `/organizations/{nameOrId}/members/{userId}` | Remove member | Org admin |
@@ -93,8 +100,10 @@ Member roles are one of `admin` / `editor` / `member`.
 | GET | `/groups` | List categories | Public |
 | POST | `/groups` | Create category | sysadmin |
 | GET | `/groups/{nameOrId}` | Category details | Public |
-| PUT | `/groups/{nameOrId}` | Update category | Category admin |
+| PUT | `/groups/{nameOrId}` | Update category (full replacement) | Category admin |
 | DELETE | `/groups/{nameOrId}` | Delete category | Category admin |
+| POST | `/groups/{nameOrId}/restore` | Restore soft-deleted category | sysadmin |
+| POST | `/groups/{nameOrId}/purge` | Permanently delete soft-deleted category | sysadmin |
 | GET | `/groups/{nameOrId}/members` | List members | Category member |
 | POST | `/groups/{nameOrId}/members` | Add member / change role | Category admin |
 | DELETE | `/groups/{nameOrId}/members/{userId}` | Remove member | Category admin |
@@ -136,10 +145,10 @@ All sysadmin only.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/admin/search/stats` | Search index statistics (doc count, size) |
-| GET | `/admin/search/doc/{index}/{id}` | Get index document (index: `packages` / `resources`) |
+| GET | `/admin/search/stats` | Search index statistics (doc count, size, DB counts) |
+| GET | `/admin/search/doc/{index}/{id}` | Get index document (index: `packages` / `resources` / `contents`) |
 | GET | `/admin/search/browse/{index}` | Browse index documents (pagination, search) |
-| POST | `/admin/reindex-metadata` | Rebuild search index (packages + resources) |
+| POST | `/admin/reindex-metadata` | Rebuild search index (async via SQS) |
 | POST | `/admin/jobs/enqueue-all` | Enqueue pipeline for all resources |
 | GET | `/admin/jobs/stats` | Pipeline job statistics |
 | GET | `/admin/jobs` | List pipeline jobs |
@@ -151,6 +160,8 @@ All sysadmin only.
 | POST | `/admin/users` | Create user |
 | PATCH | `/admin/users/{userId}` | Update user |
 | DELETE | `/admin/users/{userId}` | Soft-delete user (revokes sessions/tokens) |
+| POST | `/admin/users/{userId}/restore` | Restore user |
+| POST | `/admin/users/{userId}/purge` | Permanently delete user |
 
 ## Other
 
