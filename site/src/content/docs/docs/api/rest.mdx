@@ -24,9 +24,9 @@ PUT エンドポイントは全フィールド置換です。リクエストに�
 | Method | Path | 説明 | 認証 |
 |--------|------|------|------|
 | GET | `/packages` | データセット一覧（検索・絞り込み対応） | 公開 |
-| POST | `/packages` | データセット作成 | 組織 editor |
+| POST | `/packages` | データセット作成（`resources` 配列でリソース同時作成可） | 組織 editor |
 | GET | `/packages/{nameOrId}` | データセット詳細 | 公開 |
-| PUT | `/packages/{nameOrId}` | データセット更新（全フィールド置換） | 組織 editor |
+| PUT | `/packages/{nameOrId}` | データセット更新（全フィールド置換、`resources` は対象外） | 組織 editor |
 | DELETE | `/packages/{nameOrId}` | データセット論理削除 | 組織 editor |
 | POST | `/packages/{nameOrId}/restore` | 論理削除済みを復元 | sysadmin |
 | POST | `/packages/{nameOrId}/purge` | 論理削除済みを完全削除 | 組織 admin |

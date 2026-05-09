@@ -24,9 +24,9 @@ To preserve existing values, GET the current data, apply your changes, and send 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
 | GET | `/packages` | List datasets (with search and filters) | Public |
-| POST | `/packages` | Create dataset | Org editor |
+| POST | `/packages` | Create dataset (include `resources` array to create resources simultaneously) | Org editor |
 | GET | `/packages/{nameOrId}` | Get dataset details | Public |
-| PUT | `/packages/{nameOrId}` | Update dataset (full replacement) | Org editor |
+| PUT | `/packages/{nameOrId}` | Update dataset (full replacement; `resources` not included) | Org editor |
 | DELETE | `/packages/{nameOrId}` | Soft-delete dataset | Org editor |
 | POST | `/packages/{nameOrId}/restore` | Restore soft-deleted dataset | sysadmin |
 | POST | `/packages/{nameOrId}/purge` | Permanently delete soft-deleted dataset | Org admin |
