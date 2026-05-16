@@ -164,6 +164,9 @@ export default function RootLayout({ children }) {
 
 #### Tier 2: Theme Package（Phase 2+）
 
+> **注意: 本セクションは ADR-023（ブランドオーバーライドレイヤー）で置換済み。**
+> Tier 2 の実装方針は `apps/web-custom-*` ではなく `apps/web/src/brand/` ディレクトリによるオーバーライドパターンを採用する。以下は当初の検討内容として残す。
+
 より深いカスタマイズが必要な自治体向け:
 
 ```
@@ -329,4 +332,5 @@ export default function RootLayout({ children }) {
 ## 関連 ADR
 
 - ADR-008: Turborepo Monorepo（packages/ui の分離）
+- ADR-023: ブランドオーバーライドレイヤー（Tier 2 を具体化・置換）
 - 将来: Plugin System の ADR（Tier 3 実装時）
