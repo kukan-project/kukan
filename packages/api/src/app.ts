@@ -125,6 +125,10 @@ export async function createApp() {
 
   app.route('/api/v1', apiV1)
 
+  // MCP server endpoint (Streamable HTTP)
+  const { mcpRouter } = await import('./routes/mcp')
+  app.route('/api/mcp', mcpRouter)
+
   // CKAN-compatible API v3 routes
   const { ckanCompatRouter } = await import('./routes/ckan-compat')
   app.route('/api/3/action', ckanCompatRouter)

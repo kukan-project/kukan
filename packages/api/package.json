@@ -29,6 +29,7 @@
     "@kukan/search-adapter": "workspace:*",
     "@kukan/shared": "workspace:*",
     "@kukan/storage-adapter": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "better-auth": "^1.6.9",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",

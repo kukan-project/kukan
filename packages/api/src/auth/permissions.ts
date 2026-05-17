@@ -10,7 +10,7 @@ import { ForbiddenError } from '@kukan/shared'
 
 export type MembershipRole = 'admin' | 'editor' | 'member'
 
-interface AuthUser {
+export interface AuthUser {
   id: string
   sysadmin: boolean
 }
