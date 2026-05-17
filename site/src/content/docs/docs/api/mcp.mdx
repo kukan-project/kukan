@@ -1,0 +1,135 @@
+---
+title: MCP サーバー
+description: AI エージェントから KUKAN のデータカタログにアクセスする
+sidebar:
+  order: 4
+---
+
+KUKAN は [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) に準拠したサーバーエンドポイントを提供します。Claude、ChatGPT、その他の MCP 対応 AI エージェントからデータカタログの検索・閲覧が可能です。
+
+## エンドポイント
+
+```
+POST /api/mcp
+```
+
+Streamable HTTP トランスポートを使用したステートレスモードで動作します。
+
+## 接続方法
+
+### Claude Code / Claude Desktop
+
+設定ファイルに以下を追加します。
+
+```json
+{
+  "mcpServers": {
+    "kukan": {
+      "type": "url",
+      "url": "https://your-kukan-site/api/mcp"
+    }
+  }
+}
+```
+
+### curl でのテスト
+
+```bash
+curl -X POST https://your-kukan-site/api/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+      "protocolVersion": "2025-03-26",
+      "capabilities": {},
+      "clientInfo": { "name": "test", "version": "0.1" }
+    }
+  }'
+```
+
+## 提供ツール
+
+すべてのツールは読み取り専用です。認証済みユーザーの権限に基づいて、非公開データセットへのアクセスが制御されます。
+
+| ツール | 説明 |
+|--------|------|
+| `search_datasets` | キーワードでデータセットを検索。組織・タグでのフィルタリング対応 |
+| `get_dataset` | データセットの詳細情報を取得（リソース一覧含む） |
+| `get_resource` | リソース（ファイル）のメタデータと URL を取得 |
+| `list_organizations` | 組織の一覧を取得 |
+| `list_groups` | グループ（カテゴリ）の一覧を取得 |
+| `list_tags` | タグの一覧を取得 |
+
+## ツール詳細
+
+### search_datasets
+
+データカタログをキーワード検索します。
+
+| パラメータ | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| `q` | string | Yes | 検索キーワード |
+| `organization` | string | No | 組織名（slug）でフィルタ |
+| `tags` | string[] | No | タグ名でフィルタ |
+| `offset` | number | No | スキップ件数（デフォルト: 0） |
+| `limit` | number | No | 最大件数（デフォルト: 10、最大: 50） |
+
+### get_dataset
+
+データセットの詳細情報を取得します。
+
+| パラメータ | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| `nameOrId` | string | Yes | データセット名（slug）または UUID |
+
+### get_resource
+
+リソースのメタデータを取得します。アップロード済みファイルの場合はダウンロード URL を返します。
+
+| パラメータ | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| `id` | string | Yes | リソース UUID |
+
+### list_organizations
+
+| パラメータ | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| `q` | string | No | 名前で検索 |
+| `offset` | number | No | スキップ件数（デフォルト: 0） |
+| `limit` | number | No | 最大件数（デフォルト: 20、最大: 100） |
+
+### list_groups
+
+| パラメータ | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| `q` | string | No | 名前で検索 |
+| `offset` | number | No | スキップ件数（デフォルト: 0） |
+| `limit` | number | No | 最大件数（デフォルト: 20、最大: 100） |
+
+### list_tags
+
+| パラメータ | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| `q` | string | No | 名前で検索 |
+| `offset` | number | No | スキップ件数（デフォルト: 0） |
+| `limit` | number | No | 最大件数（デフォルト: 50、最大: 200） |
+
+## 認証
+
+MCP エンドポイントは KUKAN の認証システムと連携しています。
+
+- **未認証**: 公開データセットのみアクセス可能
+- **認証済み**: 所属組織の非公開データセットもアクセス可能
+- **システム管理者**: すべてのデータセットにアクセス可能
+
+認証が必要な場合は、リクエストに認証ヘッダーを含めてください。
+
+## 技術仕様
+
+- **プロトコル**: MCP (Model Context Protocol) 2025-03-26
+- **トランスポート**: Streamable HTTP
+- **モード**: ステートレス（セッション管理なし）
+- **レスポンス形式**: JSON-RPC 2.0
