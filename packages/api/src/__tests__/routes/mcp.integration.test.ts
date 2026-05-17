@@ -66,10 +66,7 @@ async function ensureTestOrg(app: ReturnType<typeof mcpApp>) {
   return testOrgId
 }
 
-async function createPackage(
-  app: ReturnType<typeof mcpApp>,
-  data: Record<string, unknown>
-) {
+async function createPackage(app: ReturnType<typeof mcpApp>, data: Record<string, unknown>) {
   const orgId = await ensureTestOrg(app)
   const res = await app.request('/api/v1/packages', {
     method: 'POST',

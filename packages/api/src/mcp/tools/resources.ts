@@ -42,10 +42,7 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
         throw err
       }
 
-      const url =
-        res.urlType === 'upload'
-          ? `/api/v1/resources/${res.id}/download`
-          : res.url
+      const url = res.urlType === 'upload' ? `/api/v1/resources/${res.id}/download` : res.url
 
       const text = [
         `Name: ${res.name || '(untitled)'}`,
