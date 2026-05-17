@@ -1,0 +1,268 @@
+---
+title: 外観カスタマイズ
+description: フォーク先での見た目・テキスト・コンポーネントのカスタマイズ方法
+sidebar:
+  order: 1
+---
+
+KUKAN をフォークして自組織向けにカスタマイズする際のガイドです。
+変更は段階的に行えます。軽い変更から順に試してください。
+
+## カスタマイズの範囲
+
+フォーク側で変更するファイルは以下の 2 箇所に限定されます。
+
+| ディレクトリ | 内容 |
+|---|---|
+| `apps/web/src/brand/` | 設定・CSS 変数・コンポーネント override |
+| `apps/web/public/brand/` | ロゴ、ファビコン、OG 画像などの静的ファイル |
+
+これ以外のファイルは変更しないでください。本体の更新を取り込む際にコンフリクトが発生します。
+
+## Tier 1: 色・サイズの変更
+
+`brand/theme.css` に CSS 変数を記述するだけで、サイト全体の配色やサイズを変更できます。
+
+```css
+/* apps/web/src/brand/theme.css */
+:root {
+  --primary: 142 64% 32%;            /* メインカラー（HSL） */
+  --primary-foreground: 0 0% 100%;   /* メインカラー上のテキスト色 */
+  --kukan-header-height: 72px;       /* ヘッダー高さ */
+  --kukan-container-max-width: 1400px;
+}
+```
+
+### 利用可能な CSS 変数
+
+shadcn/ui 標準の変数（`--primary`, `--secondary`, `--muted`, `--destructive` 等）と、KUKAN 固有の変数（`--kukan-*` プレフィックス）が利用できます。
+
+変数の一覧は `apps/web/src/app/globals.css` を参照してください。
+
+## Tier 2: テキスト・メタデータの変更
+
+`brand/brand-config.ts` を編集して、サイト名・著作権表示・メタデータを変更します。
+
+```typescript
+// apps/web/src/brand/brand-config.ts
+import type { BrandConfig } from '@/types/brand'
+
+export const brandConfig: BrandConfig = {
+  siteName: '○○市オープンデータカタログ',
+  siteDescription: '○○市が公開するオープンデータを検索・ダウンロードできます',
+  copyright: '○○市.',
+  copyrightUrl: 'https://www.city.example.lg.jp',
+
+  logo: { type: 'image', src: '/brand/logo.svg', width: 160, height: 40, alt: '○○市' },
+
+  headerNavExtra: [
+    { label: '市公式サイト', href: 'https://www.city.example.lg.jp', external: true },
+  ],
+  footerLinks: [
+    { label: '利用規約', href: '/terms' },
+    { label: 'お問い合わせ', href: '/contact' },
+  ],
+
+  ogImage: '/brand/og-image.png',
+  faviconPath: '/brand/favicon.ico',
+}
+```
+
+### 各フィールドの説明
+
+| フィールド | 説明 |
+|---|---|
+| `siteName` | サイトタイトル（ブラウザタブ、ヘッダー等） |
+| `siteDescription` | meta description（検索エンジン向け） |
+| `copyright` | フッターの著作権表示テキスト（`© 2026` は自動付与） |
+| `copyrightUrl` | フッターのサイト名リンク先（省略時はリンクなし） |
+| `logo` | ヘッダーロゴの設定（後述） |
+| `headerNavExtra` | ヘッダーナビゲーションの追加項目 |
+| `footerLinks` | フッターのリンク一覧 |
+| `ogImage` | OGP 画像のパス（`public/` 配下のパス） |
+| `faviconPath` | ファビコンのパス |
+
+### ロゴの設定
+
+`logo` フィールドは 2 つのモードから選択できます。
+
+```typescript
+// デフォルト（KUKAN ロゴ）
+logo: { type: 'default' }
+
+// 画像ファイル（推奨: 高さ 32〜40px、SVG 形式）
+logo: { type: 'image', src: '/brand/logo.svg', width: 160, height: 40, alt: '○○市' }
+```
+
+## Tier 3: コンポーネント差し替え
+
+Header や Footer の構造自体を変更したい場合は、カスタムコンポーネントを作成して差し替えます。
+
+### 手順
+
+**1. カスタムコンポーネントを作成**
+
+```tsx
+// apps/web/src/brand/overrides/header.tsx
+import { getCurrentUser } from '@/lib/server-api'
+import { LanguageSwitcher } from '@/components/layout/language-switcher'
+import { MobileNav } from '@/components/layout/mobile-nav'
+import { UserMenu } from '@/components/auth/user-menu'
+
+export async function Header() {
+  const user = await getCurrentUser()
+
+  return (
+    <header className="sticky top-0 z-40 bg-[hsl(var(--primary))]">
+      <div className="mx-auto flex h-[var(--kukan-header-height)] max-w-[var(--kukan-container-max-width)] items-center justify-between px-4">
+        <img src="/brand/logo.svg" alt="○○市" className="h-8" />
+        <div className="flex items-center gap-2">
+          <LanguageSwitcher />
+          {user && <UserMenu user={user} />}
+          <MobileNav user={user} />
+        </div>
+      </div>
+    </header>
+  )
+}
+```
+
+**2. `overrides/index.ts` に登録**
+
+```typescript
+// apps/web/src/brand/overrides/index.ts
+import type { BrandOverrides } from '@/types/brand'
+import { Header } from './header'
+
+export const overrides: BrandOverrides = {
+  Header,
+}
+```
+
+これだけで Header が差し替わります。
+
+### 利用可能なスロット
+
+| スロット名 | 差し替え対象 |
+|---|---|
+| `Header` | サイトヘッダー全体 |
+| `Footer` | サイトフッター全体 |
+
+### デフォルト部品の再利用
+
+カスタムコンポーネント内では、本体のデフォルト実装をインポートして部分的に再利用できます。
+循環参照を避けるため、`Header` ではなく `DefaultHeader` / `DefaultFooter` を使用してください。
+
+```tsx
+import { DefaultHeader } from '@/components/layout/header'
+import { DefaultFooter } from '@/components/layout/footer'
+```
+
+### ファイルの階層化
+
+override が増えた場合、ディレクトリで整理できます。
+
+```
+brand/overrides/
+├── index.ts
+├── layout/
+│   ├── header.tsx
+│   └── footer.tsx
+└── pages/
+    └── hero-section.tsx
+```
+
+`index.ts` で全て集約すれば、内部構造は自由です。
+
+## 静的ページの追加
+
+利用規約やプライバシーポリシーなど、組織固有の静的ページを追加できます。
+初期状態ではサンプルの利用規約ページ（`/terms`）が含まれています。不要であれば削除してください。
+
+### 手順
+
+**1. `brand/pages/` にページコンポーネントを作成**
+
+```tsx
+// apps/web/src/brand/pages/privacy.tsx
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'プライバシーポリシー',
+}
+
+export default function PrivacyPage() {
+  return (
+    <article className="mx-auto max-w-3xl px-4 py-12">
+      <h1 className="mb-8 text-2xl font-bold">プライバシーポリシー</h1>
+      <p>...</p>
+    </article>
+  )
+}
+```
+
+**2. `brand/pages/index.ts` に登録**
+
+```typescript
+export const pages: Record<string, () => Promise<BrandPage>> = {
+  terms: () => import('./terms'),
+  privacy: () => import('./privacy'),  // 追加
+}
+```
+
+これで `/privacy` にアクセスするとページが表示されます。
+
+**3. 必要に応じて `brand-config.ts` の `headerNavExtra` や `footerLinks` にリンクを追加**
+
+```typescript
+headerNavExtra: [
+  { label: 'プライバシーポリシー', href: '/privacy' },
+],
+footerLinks: [
+  { label: '利用規約', href: '/terms' },
+  { label: 'プライバシーポリシー', href: '/privacy' },
+],
+```
+
+### ページの削除
+
+不要なページは `brand/pages/index.ts` のマップから削除し、対応する `.tsx` ファイルを削除してください。
+
+## 静的ファイルの配置
+
+ロゴ、ファビコン、OG 画像などは `apps/web/public/brand/` に配置します。
+
+```
+apps/web/public/brand/
+├── logo.svg
+├── favicon.ico
+└── og-image.png
+```
+
+配置したファイルは `/brand/logo.svg` のような URL で参照できます。
+
+## 本体更新の取り込み
+
+フォーク側は定期的に本体の `main` ブランチを取り込んでください。
+
+```bash
+git remote add upstream https://github.com/kukan-project/kukan.git
+git fetch upstream
+git merge upstream/main
+```
+
+カスタマイズが `src/brand/` と `public/brand/` に限定されていれば、コンフリクトは原則発生しません。
+
+### コンフリクトが発生した場合
+
+本体側が `src/types/brand.ts` に型を追加した場合、`brand-config.ts` で新しいフィールドの追加が必要になることがあります。TypeScript の型エラーとして検出されるので、エラーメッセージに従って対応してください。
+
+## まとめ: カスタマイズの段階
+
+| やりたいこと | 方法 | 所要時間の目安 |
+|---|---|---|
+| 配色を変えたい | `brand/theme.css` に CSS 変数を記述 | 5 分 |
+| サイト名・テキストを変えたい | `brand/brand-config.ts` を編集 | 30 分 |
+| ロゴを差し替えたい | `public/brand/` にファイルを配置 + config 編集 | 10 分 |
+| ヘッダー/フッターの構造を変えたい | `brand/overrides/` にコンポーネント作成 | 数時間 |
+| 静的ページを追加したい | `brand/pages/` にコンポーネント作成 + 登録 | 30 分 |

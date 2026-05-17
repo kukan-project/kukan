@@ -1,0 +1,268 @@
+---
+title: Appearance Customization
+description: How to customize appearance, text, and components in a forked instance
+sidebar:
+  order: 1
+---
+
+This guide explains how to customize KUKAN when you fork the repository for your organization.
+Changes can be applied incrementally — start with the simplest approach.
+
+## Scope of Changes
+
+Files you modify in a fork should be limited to these two locations:
+
+| Directory | Contents |
+|---|---|
+| `apps/web/src/brand/` | Config, CSS variables, component overrides |
+| `apps/web/public/brand/` | Logo, favicon, OG image, and other static files |
+
+Do not modify files outside these directories. Doing so will cause merge conflicts when pulling upstream updates.
+
+## Tier 1: Colors and Sizing
+
+Write CSS variables in `brand/theme.css` to change colors and sizes across the entire site.
+
+```css
+/* apps/web/src/brand/theme.css */
+:root {
+  --primary: 142 64% 32%;            /* Main color (HSL) */
+  --primary-foreground: 0 0% 100%;   /* Text color on main color */
+  --kukan-header-height: 72px;       /* Header height */
+  --kukan-container-max-width: 1400px;
+}
+```
+
+### Available CSS Variables
+
+You can override shadcn/ui standard variables (`--primary`, `--secondary`, `--muted`, `--destructive`, etc.) and KUKAN-specific variables (prefixed with `--kukan-*`).
+
+See `apps/web/src/app/globals.css` for the full list of variables.
+
+## Tier 2: Text and Metadata
+
+Edit `brand/brand-config.ts` to change the site name, copyright, and metadata.
+
+```typescript
+// apps/web/src/brand/brand-config.ts
+import type { BrandConfig } from '@/types/brand'
+
+export const brandConfig: BrandConfig = {
+  siteName: 'City of Example Open Data Catalog',
+  siteDescription: 'Search and download open data published by the City of Example',
+  copyright: 'City of Example.',
+  copyrightUrl: 'https://www.city.example.lg.jp',
+
+  logo: { type: 'image', src: '/brand/logo.svg', width: 160, height: 40, alt: 'City of Example' },
+
+  headerNavExtra: [
+    { label: 'Official Site', href: 'https://www.city.example.lg.jp', external: true },
+  ],
+  footerLinks: [
+    { label: 'Terms of Use', href: '/terms' },
+    { label: 'Contact', href: '/contact' },
+  ],
+
+  ogImage: '/brand/og-image.png',
+  faviconPath: '/brand/favicon.ico',
+}
+```
+
+### Field Reference
+
+| Field | Description |
+|---|---|
+| `siteName` | Site title (browser tab, header, etc.) |
+| `siteDescription` | meta description (for search engines) |
+| `copyright` | Footer copyright text (`© 2026` is prepended automatically) |
+| `copyrightUrl` | Link target for the site name in the footer (omit for no link) |
+| `logo` | Header logo configuration (see below) |
+| `headerNavExtra` | Additional navigation items for the header |
+| `footerLinks` | Footer link list |
+| `ogImage` | OGP image path (relative to `public/`) |
+| `faviconPath` | Favicon path |
+
+### Logo Configuration
+
+The `logo` field supports two modes:
+
+```typescript
+// Default (KUKAN logo)
+logo: { type: 'default' }
+
+// Image file (recommended: 32-40px height, SVG format)
+logo: { type: 'image', src: '/brand/logo.svg', width: 160, height: 40, alt: 'City of Example' }
+```
+
+## Tier 3: Component Replacement
+
+To change the structure of the Header or Footer, create custom components and register them as overrides.
+
+### Steps
+
+**1. Create a custom component**
+
+```tsx
+// apps/web/src/brand/overrides/header.tsx
+import { getCurrentUser } from '@/lib/server-api'
+import { LanguageSwitcher } from '@/components/layout/language-switcher'
+import { MobileNav } from '@/components/layout/mobile-nav'
+import { UserMenu } from '@/components/auth/user-menu'
+
+export async function Header() {
+  const user = await getCurrentUser()
+
+  return (
+    <header className="sticky top-0 z-40 bg-[hsl(var(--primary))]">
+      <div className="mx-auto flex h-[var(--kukan-header-height)] max-w-[var(--kukan-container-max-width)] items-center justify-between px-4">
+        <img src="/brand/logo.svg" alt="City of Example" className="h-8" />
+        <div className="flex items-center gap-2">
+          <LanguageSwitcher />
+          {user && <UserMenu user={user} />}
+          <MobileNav user={user} />
+        </div>
+      </div>
+    </header>
+  )
+}
+```
+
+**2. Register in `overrides/index.ts`**
+
+```typescript
+// apps/web/src/brand/overrides/index.ts
+import type { BrandOverrides } from '@/types/brand'
+import { Header } from './header'
+
+export const overrides: BrandOverrides = {
+  Header,
+}
+```
+
+That's all it takes to replace the Header.
+
+### Available Slots
+
+| Slot | Replaces |
+|---|---|
+| `Header` | Entire site header |
+| `Footer` | Entire site footer |
+
+### Reusing Default Parts
+
+Inside custom components, you can import and reuse parts of the default implementation.
+Use `DefaultHeader` / `DefaultFooter` instead of `Header` / `Footer` to avoid circular references.
+
+```tsx
+import { DefaultHeader } from '@/components/layout/header'
+import { DefaultFooter } from '@/components/layout/footer'
+```
+
+### Organizing Override Files
+
+If you have many overrides, organize them into subdirectories:
+
+```
+brand/overrides/
+├── index.ts
+├── layout/
+│   ├── header.tsx
+│   └── footer.tsx
+└── pages/
+    └── hero-section.tsx
+```
+
+The internal structure is up to you as long as `index.ts` exports everything.
+
+## Static Pages
+
+You can add organization-specific static pages such as terms of use or privacy policies.
+A sample terms page (`/terms`) is included by default. Remove it if not needed.
+
+### Steps
+
+**1. Create a page component in `brand/pages/`**
+
+```tsx
+// apps/web/src/brand/pages/privacy.tsx
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Privacy Policy',
+}
+
+export default function PrivacyPage() {
+  return (
+    <article className="mx-auto max-w-3xl px-4 py-12">
+      <h1 className="mb-8 text-2xl font-bold">Privacy Policy</h1>
+      <p>...</p>
+    </article>
+  )
+}
+```
+
+**2. Register in `brand/pages/index.ts`**
+
+```typescript
+export const pages: Record<string, () => Promise<BrandPage>> = {
+  terms: () => import('./terms'),
+  privacy: () => import('./privacy'),  // added
+}
+```
+
+The page is now accessible at `/privacy`.
+
+**3. Optionally add links to `headerNavExtra` or `footerLinks` in `brand-config.ts`**
+
+```typescript
+headerNavExtra: [
+  { label: 'Privacy Policy', href: '/privacy' },
+],
+footerLinks: [
+  { label: 'Terms of Use', href: '/terms' },
+  { label: 'Privacy Policy', href: '/privacy' },
+],
+```
+
+### Removing Pages
+
+To remove a page, delete its entry from the `pages` map in `brand/pages/index.ts` and delete the corresponding `.tsx` file.
+
+## Static Files
+
+Place logos, favicons, and OG images in `apps/web/public/brand/`.
+
+```
+apps/web/public/brand/
+├── logo.svg
+├── favicon.ico
+└── og-image.png
+```
+
+Files placed here are served at URLs like `/brand/logo.svg`.
+
+## Pulling Upstream Updates
+
+Periodically pull updates from the upstream `main` branch:
+
+```bash
+git remote add upstream https://github.com/kukan-project/kukan.git
+git fetch upstream
+git merge upstream/main
+```
+
+As long as your changes are limited to `src/brand/` and `public/brand/`, merge conflicts should not occur.
+
+### If Conflicts Occur
+
+When the upstream adds new fields to `src/types/brand.ts`, you may need to add them to your `brand-config.ts`. TypeScript will report type errors — follow the error messages to add the missing fields.
+
+## Summary
+
+| Goal | Method | Estimated time |
+|---|---|---|
+| Change colors | Write CSS variables in `brand/theme.css` | 5 min |
+| Change site name and text | Edit `brand/brand-config.ts` | 30 min |
+| Replace logo | Place file in `public/brand/` + edit config | 10 min |
+| Change header/footer structure | Create components in `brand/overrides/` | A few hours |
+| Add static pages | Create components in `brand/pages/` + register | 30 min |
