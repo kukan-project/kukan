@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">KUKAN Open Graph image</title>
+  <desc id="desc">Default Open Graph image for KUKAN, an open source data catalog.</desc>
+  <defs>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M 48 0 L 0 0 0 48" fill="none" stroke="#dbe9fb" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="630" fill="#f8fbff"/>
+  <rect x="0" y="0" width="1200" height="630" fill="#fbfdff"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+
+  <circle cx="990" cy="120" r="220" fill="#edf5ff"/>
+  <circle cx="1080" cy="520" r="170" fill="#f0f6ff"/>
+  <circle cx="866" cy="304" r="132" fill="#17365d" opacity="0.08"/>
+  <circle cx="866" cy="304" r="132" fill="none" stroke="#b9d7fb" stroke-width="3"/>
+
+  <g stroke="#9fc5f8" stroke-width="3" fill="none" stroke-linecap="round">
+    <path d="M760 180 C850 116 954 148 1028 246"/>
+    <path d="M746 396 C844 470 956 432 1037 320"/>
+    <path d="M850 304 L1038 304"/>
+    <path d="M866 172 L866 436"/>
+  </g>
+  <g fill="#2f7ee8">
+    <circle cx="760" cy="180" r="8"/>
+    <circle cx="1028" cy="246" r="8"/>
+    <circle cx="746" cy="396" r="8"/>
+    <circle cx="1037" cy="320" r="8"/>
+    <circle cx="850" cy="304" r="8"/>
+    <circle cx="866" cy="172" r="8"/>
+    <circle cx="866" cy="436" r="8"/>
+  </g>
+
+  <g>
+    <rect x="738" y="188" width="310" height="92" rx="16" fill="#dfe9f6"/>
+    <rect x="724" y="172" width="310" height="92" rx="16" fill="#ffffff"/>
+    <rect x="754" y="202" width="86" height="10" rx="5" fill="#2f7ee8"/>
+    <rect x="754" y="226" width="216" height="10" rx="5" fill="#d8e8fb"/>
+    <rect x="980" y="198" width="24" height="36" rx="6" fill="#d8e8fb"/>
+    <circle cx="1034" cy="246" r="5" fill="#2f7ee8"/>
+
+    <rect x="698" y="320" width="360" height="104" rx="16" fill="#dfe9f6"/>
+    <rect x="684" y="304" width="360" height="104" rx="16" fill="#ffffff"/>
+    <rect x="716" y="336" width="124" height="10" rx="5" fill="#2f7ee8"/>
+    <rect x="716" y="362" width="258" height="10" rx="5" fill="#d8e8fb"/>
+    <rect x="716" y="382" width="188" height="10" rx="5" fill="#d8e8fb"/>
+    <rect x="938" y="344" width="18" height="40" rx="6" fill="#d8e8fb"/>
+    <rect x="966" y="326" width="18" height="58" rx="6" fill="#9fc5f8"/>
+    <rect x="994" y="306" width="18" height="78" rx="6" fill="#2f7ee8"/>
+
+    <rect x="788" y="464" width="272" height="74" rx="16" fill="#dfe9f6"/>
+    <rect x="774" y="448" width="272" height="74" rx="16" fill="#ffffff"/>
+    <rect x="804" y="476" width="76" height="10" rx="5" fill="#2f7ee8"/>
+    <rect x="804" y="500" width="184" height="10" rx="5" fill="#d8e8fb"/>
+    <circle cx="774" cy="448" r="5" fill="#2f7ee8"/>
+  </g>
+
+  <g transform="translate(96 126)">
+    <rect width="92" height="92" rx="20" fill="#2f7ee8"/>
+    <text x="46" y="49" text-anchor="middle" dominant-baseline="central"
+      font-family="Arial, Helvetica, sans-serif" font-size="58" font-weight="800" fill="#ffffff">K</text>
+  </g>
+
+  <text x="96" y="300" font-family="Arial, Helvetica, sans-serif" font-size="96" font-weight="800" fill="#17365d" letter-spacing="1">KUKAN</text>
+  <text x="100" y="358" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="600" fill="#2d5f9b">Knowledge Unified Katalog And Network</text>
+  <text x="100" y="428" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="500" fill="#52677f">Open source data catalog platform</text>
+
+</svg>

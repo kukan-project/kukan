@@ -196,6 +196,7 @@ pnpm format        # Prettier フォーマット
 - ロギング戦略 → `docs/adr/019-logging-strategy.md`
 - リソースコンテンツ全文検索 → `docs/adr/021-resource-content-indexing.md`
 - DB ポーリングによる SQS 代替（提案） → `docs/adr/022-db-polling-queue.md`
+- ブランドオーバーライドレイヤー → `docs/adr/023-brand-override-layer.md`
 
 新しい設計判断が必要になったら、同じフォーマットでADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、

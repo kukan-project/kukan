@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import { Globe, Menu } from 'lucide-react'
 import { Button, cn, Separator, Sheet, SheetContent, SheetHeader, SheetTitle } from '@kukan/ui'
+import { brandConfig } from '@/brand/brand-config'
 
 interface MobileNavProps {
   user: { name: string; email: string } | null
@@ -38,7 +39,7 @@ export function MobileNav({ user }: MobileNavProps) {
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="left">
           <SheetHeader>
-            <SheetTitle>KUKAN</SheetTitle>
+            <SheetTitle>{brandConfig.siteName}</SheetTitle>
           </SheetHeader>
           <nav className="flex flex-col gap-2 p-4">
             {navItems.map((item) => (
@@ -53,6 +54,17 @@ export function MobileNav({ user }: MobileNavProps) {
               >
                 {item.label}
               </Link>
+            ))}
+            {brandConfig.headerNavExtra.map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                onClick={() => setOpen(false)}
+                className="rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+                {...(item.external && { target: '_blank', rel: 'noopener noreferrer' })}
+              >
+                {item.label}
+              </a>
             ))}
             <Separator className="my-2" />
             {user ? (

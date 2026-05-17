@@ -103,6 +103,9 @@ CKAN のテンプレート階層（デフォルト → エクステンション 
 
 #### Tier 1: CSS Variables（Phase 1）
 
+> **注意: カスタマイズ手段は ADR-023 で具体化済み。**
+> `CUSTOM_THEME_URL` 環境変数による外部 CSS 注入ではなく、`apps/web/src/brand/theme.css` にフォーク側が CSS 変数を直接記述する方式を採用する。以下は当初の検討内容として残す。
+
 **実装:**
 
 ```css
