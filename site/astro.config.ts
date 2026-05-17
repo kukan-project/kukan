@@ -112,6 +112,11 @@ export default defineConfig({
               translations: { en: 'CKAN-Compatible API' },
               slug: 'docs/api/ckan',
             },
+            {
+              label: 'MCP サーバー',
+              translations: { en: 'MCP Server' },
+              slug: 'docs/api/mcp',
+            },
           ],
         },
       ],
