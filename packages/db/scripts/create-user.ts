@@ -6,9 +6,11 @@
 import { parseArgs } from 'node:util'
 import { randomBytes, scrypt } from 'node:crypto'
 import { config } from 'dotenv'
+import { and, eq, or, count } from 'drizzle-orm'
 import { loadEnv } from '@kukan/shared'
 import { createUserSchema, userRoleSchema, type UserRole } from '@kukan/shared/validators/user'
-import { Client } from 'pg'
+import { createDb, closePool } from '../src/client'
+import { user, account } from '../src/schema'
 
 // Skip dotenv in production (env vars injected by container/ECS)
 if (process.env.NODE_ENV !== 'production') {
@@ -118,43 +120,42 @@ function hashPassword(password: string): Promise<string> {
 
 async function createUser(args: CreateUserArgs): Promise<void> {
   const { DATABASE_URL } = loadEnv()
-  const ssl = process.env.POSTGRES_SSLMODE === 'require' ? { rejectUnauthorized: false } : undefined
-  const client = new Client({ connectionString: DATABASE_URL, ...(ssl && { ssl }) })
-  await client.connect()
+  const db = createDb(DATABASE_URL, { max: 1 })
 
   try {
-    await client.query('BEGIN')
-
-    const existing = await client.query(
-      'SELECT email, name FROM "user" WHERE email = $1 OR name = $2',
-      [args.email, args.name]
-    )
-    if (existing.rows.length > 0) {
-      const row = existing.rows[0]
-      if (row.email === args.email) {
-        throw new Error(`A user with email "${args.email}" already exists.`)
+    await db.transaction(async (tx) => {
+      const existing = await tx
+        .select({ email: user.email, name: user.name })
+        .from(user)
+        .where(or(eq(user.email, args.email), eq(user.name, args.name)))
+      if (existing.length > 0) {
+        if (existing[0].email === args.email) {
+          throw new Error(`A user with email "${args.email}" already exists.`)
+        }
+        throw new Error(`A user with name "${args.name}" already exists.`)
       }
-      throw new Error(`A user with name "${args.name}" already exists.`)
-    }
 
-    const hashedPassword = await hashPassword(args.password)
-    const now = new Date()
-    const userId = generateId()
-    const accountId = generateId()
+      const hashedPassword = await hashPassword(args.password)
+      const userId = generateId()
+      const accountId = generateId()
 
-    await client.query(
-      `INSERT INTO "user" (id, email, "emailVerified", name, role, state, "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [userId, args.email, true, args.name, args.role, 'active', now, now]
-    )
+      await tx.insert(user).values({
+        id: userId,
+        email: args.email,
+        emailVerified: true,
+        name: args.name,
+        role: args.role,
+        state: 'active',
+      })
 
-    await client.query(
-      `INSERT INTO "account" (id, "userId", "accountId", "providerId", password, "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [accountId, userId, userId, 'credential', hashedPassword, now, now]
-    )
-
-    await client.query('COMMIT')
+      await tx.insert(account).values({
+        id: accountId,
+        userId: userId,
+        accountId: userId,
+        providerId: 'credential',
+        password: hashedPassword,
+      })
+    })
 
     console.log(`✓ User created successfully:`)
     console.log(`  Name:  ${args.name}`)
@@ -162,19 +163,21 @@ async function createUser(args: CreateUserArgs): Promise<void> {
     console.log(`  Role:  ${args.role}`)
 
     if (args.role !== 'sysadmin') {
-      const sysadminCount = await client.query(
-        `SELECT COUNT(*) as count FROM "user" WHERE role = 'sysadmin' AND state = 'active'`
-      )
-      if (Number(sysadminCount.rows[0].count) === 0) {
-        console.log('')
-        console.log('⚠ Warning: No sysadmin user exists. Create one with --role sysadmin')
+      try {
+        const [result] = await db
+          .select({ value: count() })
+          .from(user)
+          .where(and(eq(user.role, 'sysadmin'), eq(user.state, 'active')))
+        if (result.value === 0) {
+          console.log('')
+          console.log('⚠ Warning: No sysadmin user exists. Create one with --role sysadmin')
+        }
+      } catch {
+        // Non-critical: user was created successfully, just skip the warning
       }
     }
-  } catch (err) {
-    await client.query('ROLLBACK').catch(() => {})
-    throw err
   } finally {
-    await client.end()
+    await closePool()
   }
 }
 
