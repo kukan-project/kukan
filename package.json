@@ -25,6 +25,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules",
+    "db:create-user": "pnpm --filter @kukan/db db:create-user --",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,astro}\""
   },
   "devDependencies": {

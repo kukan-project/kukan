@@ -261,6 +261,7 @@ pnpm test                       # 全テスト実行（ユニット + 統合）
 pnpm test:e2e                   # E2Eテスト実行（Playwright、要 dev サーバー）
 pnpm db:generate                # Drizzle マイグレーション生成
 pnpm db:migrate                 # マイグレーション実行
+pnpm db:create-user             # ユーザー作成（初期 sysadmin 作成等）
 pnpm lint                       # ESLint
 pnpm typecheck                  # TypeScript 型チェック
 ```

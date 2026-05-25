@@ -248,7 +248,13 @@ cd infra && npx cdk bootstrap
 # 3. CDK デプロイ（Docker ビルド + ECR プッシュ + 全リソース作成）
 npx cdk deploy
 
-# 4. 確認
+# 4. 初期ユーザー作成（初回のみ）
+# sysadmin ユーザーを作成（DB 接続情報は環境変数から取得）
+pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
+# 一般ユーザーも作成可能（--role 省略でデフォルト 'user'）
+pnpm db:create-user --email user@example.com --name taro --password <password>
+
+# 5. 確認
 # - ALB ドメイン（またはカスタムドメイン）でアクセス
 # - データセット作成 → ファイルアップロード → パイプライン完了
 # - 検索動作確認
@@ -331,7 +337,10 @@ cp .env.prod.example .env.prod
 # 2. ビルド＆起動
 docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 
-# 3. 動作確認
+# 3. 初期ユーザー作成（初回のみ）
+pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
+
+# 4. 動作確認
 curl http://localhost/api/health
 ```
 

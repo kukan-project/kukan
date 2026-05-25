@@ -45,6 +45,28 @@ On-premises deployments use the following alternative services:
 | SQS | ElasticMQ |
 | OpenSearch | PostgreSQL full-text search |
 
+## Initial setup
+
+After deployment, you must create the first sysadmin user via CLI.
+Without a sysadmin, no system administration operations are possible.
+
+```bash
+pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
+```
+
+| Option | Description | Required |
+|--------|-------------|----------|
+| `--email` | Email address | Yes |
+| `--name` | Username (lowercase alphanumeric, hyphens, underscores, periods) | Yes |
+| `--password` | Password (8+ characters) | Yes |
+| `--role` | `user` or `sysadmin` (default: `user`) | No |
+
+When `REGISTRATION_ENABLED=false` (self-registration disabled), use this command to create regular users as well.
+
+```bash
+pnpm db:create-user --email user@example.com --name taro --password <password>
+```
+
 ## User management
 
 System administrators (sysadmin) can manage users from the admin dashboard.

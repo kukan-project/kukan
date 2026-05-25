@@ -45,6 +45,28 @@ docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 | SQS | ElasticMQ |
 | OpenSearch | PostgreSQL 全文検索 |
 
+## 初期セットアップ
+
+デプロイ後、最初に sysadmin ユーザーを CLI で作成する必要があります。
+sysadmin が存在しないとシステム管理操作ができません。
+
+```bash
+pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
+```
+
+| オプション | 説明 | 必須 |
+|-----------|------|------|
+| `--email` | メールアドレス | Yes |
+| `--name` | ユーザー名（小文字英数字、ハイフン、アンダースコア、ピリオド） | Yes |
+| `--password` | パスワード（8文字以上） | Yes |
+| `--role` | `user` または `sysadmin`（デフォルト: `user`） | No |
+
+`REGISTRATION_ENABLED=false`（自己登録無効）の環境では、一般ユーザーもこのコマンドで作成します。
+
+```bash
+pnpm db:create-user --email user@example.com --name taro --password <password>
+```
+
 ## ユーザー管理
 
 システム管理者（sysadmin）は管理画面からユーザーを管理できます。

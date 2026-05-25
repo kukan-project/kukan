@@ -46,7 +46,21 @@ cp .env.example .env
 pnpm db:migrate
 ```
 
-### 6. Start the development server
+### 6. Create initial user
+
+Create the first sysadmin (system administrator) user.
+
+```bash
+pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
+```
+
+You can also create regular users (`--role` defaults to `user` when omitted).
+
+```bash
+pnpm db:create-user --email user@example.com --name taro --password <password>
+```
+
+### 7. Start the development server
 
 ```bash
 pnpm dev
