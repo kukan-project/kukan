@@ -24,7 +24,9 @@ test.describe('Admin', () => {
     })
     await reindexButton.click()
 
-    await expect(page.locator('main')).toContainText(/queued|indexed|インデックス/i, { timeout: 30_000 })
+    await expect(page.locator('main')).toContainText(/queued|indexed|インデックス/i, {
+      timeout: 30_000,
+    })
   })
 
   test('job management section is visible', async ({ page }) => {
