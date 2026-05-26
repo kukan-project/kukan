@@ -4,53 +4,138 @@ const base = rawBase.endsWith('/') ? rawBase : rawBase + '/'
 const brand = 'hsl(214, 81%, 54%)'
 const dark = 'hsl(214, 44%, 18%)'
 
-const features = [
-  {
-    icon: '⚡',
-    title: '高速レスポンス',
-    desc: '非同期イベント駆動アーキテクチャにより、大量データでも快適な応答速度を実現。TypeScript フルスタックで API からフロントエンドまで統一。',
+type Locale = 'ja' | 'en'
+
+const t = {
+  ja: {
+    title: 'KUKAN — みんなが使えるデータカタログ',
+    description:
+      'Knowledge Unified Katalog And Network — CKANのモダンな後継として設計されたオープンソース データカタログシステム',
+    tagline: 'みんなが使えるデータカタログ',
+    heroDesc:
+      'CKANの後継を目指す、オープンソースのデータカタログ',
+    docs: 'ドキュメント',
+    readDocs: 'ドキュメントを読む',
+    viewOnGitHub: 'GitHub で見る',
+    featuresTitle: '主な特長',
+    techTitle: '技術スタック',
+    ctaTitle: 'さっそく始めてみましょう',
+    ctaDesc: '詳細なセットアップ手順はドキュメントをご覧ください。',
+    ctaButton: 'ドキュメントへ',
+    switchLang: 'English',
+    features: [
+      {
+        icon: '⚡',
+        title: '高速レスポンス',
+        desc: '大量データでも快適な応答速度を実現するイベント駆動設計。TypeScript フルスタックで API からフロントエンドまで統一。',
+      },
+      {
+        icon: '☁',
+        title: 'かんたんデプロイ',
+        desc: 'コンテナ構成で AWS にも Docker Compose にもすぐデプロイ。閉域網（LGWAN 等）にも対応するハイブリッド設計。',
+      },
+      {
+        icon: '🔍',
+        title: 'コンテンツまで検索',
+        desc: 'メタデータだけでなく CSV やテキストファイルの中身まで全文検索。日本語形態素解析（kuromoji）にネイティブ対応。',
+      },
+      {
+        icon: '📄',
+        title: 'ファイルプレビュー',
+        desc: 'CSV/TSV/JSON/GeoJSON/PDF/XLSX 等のプレビューに対応。GeoJSON は国土地理院地図・OpenStreetMap 上に地図表示。',
+      },
+      {
+        icon: '🔒',
+        title: 'SSO 連携',
+        desc: 'OIDC / SAML 対応で自治体や企業の既存アカウント基盤と連携可能。役割ベースのアクセス制御で公開・非公開を柔軟に管理。',
+      },
+      {
+        icon: '🗃',
+        title: 'CKAN 互換 API',
+        desc: '主要な Read 系 API で CKAN 互換性を確保。既存の CKAN ツールや他カタログとのデータ連携が可能。',
+      },
+      {
+        icon: '✅',
+        title: '品質チェック内蔵',
+        desc: 'リンク切れ検出やメタデータの自動チェックをビルトイン。信頼性が求められる自治体等の運用負荷を軽減。',
+      },
+      {
+        icon: '🧠',
+        title: 'AI エージェント連携',
+        desc: 'MCP サーバーを内蔵し、AI エージェントからカタログを直接検索・閲覧可能。セマンティック検索にも拡張可能。',
+      },
+      {
+        icon: '🌐',
+        title: 'オープンソース・多言語',
+        desc: 'AGPL-3.0 ライセンスでソースコードを公開。日本語・英語の UI 切替に対応し、国際的な利用にも対応。',
+      },
+    ],
   },
-  {
-    icon: '☁',
-    title: 'かんたんデプロイ',
-    desc: 'コンテナ構成で AWS にも Docker Compose にもすぐデプロイ。閉域網（LGWAN 等）にも対応するハイブリッド設計。',
+  en: {
+    title: 'KUKAN — A Data Catalog for Everyone',
+    description:
+      'Knowledge Unified Katalog And Network — The modern, open-source alternative to CKAN',
+    tagline: 'A Data Catalog for Everyone',
+    heroDesc:
+      'The modern, open-source alternative to CKAN',
+    docs: 'Docs',
+    readDocs: 'Read the Docs',
+    viewOnGitHub: 'View on GitHub',
+    featuresTitle: 'Key Features',
+    techTitle: 'Tech Stack',
+    ctaTitle: 'Get Started',
+    ctaDesc: 'Check the documentation for detailed setup instructions.',
+    ctaButton: 'Go to Docs',
+    switchLang: '日本語',
+    features: [
+      {
+        icon: '⚡',
+        title: 'Built for Speed',
+        desc: 'Event-driven architecture handles large datasets with ease. Unified TypeScript stack from API to frontend.',
+      },
+      {
+        icon: '☁',
+        title: 'Easy to Deploy',
+        desc: 'Deploy on AWS or with Docker Compose in minutes. Hybrid design supports air-gapped networks.',
+      },
+      {
+        icon: '🔍',
+        title: 'Deep Search',
+        desc: 'Full-text search across metadata, CSV files, and text files. Native Japanese morphological analysis via kuromoji.',
+      },
+      {
+        icon: '📄',
+        title: 'Rich File Previews',
+        desc: 'Preview CSV, JSON, GeoJSON, PDF, XLSX, and more. GeoJSON is rendered on maps with GSI and OpenStreetMap.',
+      },
+      {
+        icon: '🔒',
+        title: 'SSO Integration',
+        desc: 'OIDC / SAML integration with existing identity providers. Role-based access control for public and private data.',
+      },
+      {
+        icon: '🗃',
+        title: 'CKAN Compatible',
+        desc: 'Drop-in compatibility with major CKAN read APIs. Works with existing CKAN tools and catalogs.',
+      },
+      {
+        icon: '✅',
+        title: 'Quality Checks',
+        desc: 'Broken-link detection and metadata validation built in. Reduces ops burden for high-reliability environments.',
+      },
+      {
+        icon: '🧠',
+        title: 'AI-Ready',
+        desc: 'Built-in MCP server lets AI agents search and browse your catalog directly. Extensible with semantic search.',
+      },
+      {
+        icon: '🌐',
+        title: 'Open Source',
+        desc: 'AGPL-3.0 licensed. Ships with Japanese and English UI out of the box.',
+      },
+    ],
   },
-  {
-    icon: '🔍',
-    title: 'コンテンツまで検索',
-    desc: 'メタデータだけでなく CSV やテキストファイルの中身まで全文検索。日本語形態素解析（kuromoji）にネイティブ対応。',
-  },
-  {
-    icon: '📄',
-    title: '多様なファイル形式',
-    desc: 'CSV/TSV/JSON/GeoJSON/PDF/XLSX 等のプレビューに対応。GeoJSON は国土地理院地図・OpenStreetMap 上に地図表示。',
-  },
-  {
-    icon: '🔒',
-    title: '組織アカウント連携',
-    desc: 'OIDC / SAML 対応で自治体や企業の既存アカウント基盤と連携可能。役割ベースのアクセス制御で公開・非公開を柔軟に管理。',
-  },
-  {
-    icon: '🗃',
-    title: 'CKAN 互換 API',
-    desc: '主要な Read 系 API で CKAN 互換性を確保。既存の CKAN ツールや他カタログとのデータ連携が可能。',
-  },
-  {
-    icon: '✅',
-    title: '品質チェック内蔵',
-    desc: 'リンク切れ検出やメタデータの自動チェックをビルトイン。信頼性が求められる自治体等の運用負荷を軽減。',
-  },
-  {
-    icon: '🧠',
-    title: 'AI エージェント連携',
-    desc: 'Model Context Protocol (MCP) サーバーを内蔵し、Claude や ChatGPT などの AI エージェントからデータカタログを直接検索・閲覧可能。セマンティック検索にも対応予定。',
-  },
-  {
-    icon: '🌐',
-    title: 'オープンソース・多言語',
-    desc: 'AGPL-3.0 ライセンスでソースコードを公開。日本語・英語の UI 切替に対応し、国際的な利用にも対応。',
-  },
-]
+} as const
 
 const techStack = [
   'TypeScript',
@@ -66,7 +151,7 @@ const techStack = [
 ---
 
 <!doctype html>
-<html lang="ja">
+<html lang="ja" data-locale="ja">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -77,14 +162,31 @@ const techStack = [
       'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
       })(window,document,'script','dataLayer','GTM-NCMB89RM');</script>
     )}
-    <title>KUKAN — みんなが使えるデータカタログ</title>
-    <meta name="description" content="Knowledge Unified Katalog And Network — CKANのモダンな後継として設計されたオープンソース データカタログシステム" />
+    <title data-ja={t.ja.title} data-en={t.en.title}>{t.ja.title}</title>
+    <meta name="description" data-ja={t.ja.description} data-en={t.en.description} content={t.ja.description} />
     <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
-    <meta property="og:title" content="KUKAN — みんなが使えるデータカタログ" />
-    <meta property="og:description" content="CKANのモダンな後継として設計されたオープンソース データカタログシステム" />
+    <meta property="og:title" data-ja={t.ja.title} data-en={t.en.title} content={t.ja.title} />
+    <meta property="og:description" data-ja={t.ja.description} data-en={t.en.description} content={t.ja.description} />
     <meta property="og:image" content={`https://kukan-project.github.io${base}og-image.png`} />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script is:inline define:vars={{ translations: t, base }}>
+      (function () {
+        var stored = localStorage.getItem('kukan-locale')
+        var lang = stored || (navigator.language.startsWith('ja') ? 'ja' : 'en')
+        if (!stored) localStorage.setItem('kukan-locale', lang)
+        if (lang === 'en') {
+          document.documentElement.lang = 'en'
+          document.documentElement.dataset.locale = 'en'
+          // Update meta tags before paint
+          var title = document.querySelector('title')
+          if (title) title.textContent = title.dataset.en
+          document.querySelectorAll('meta[data-en]').forEach(function (el) {
+            el.setAttribute('content', el.dataset.en)
+          })
+        }
+      })()
+    </script>
   </head>
   <body>
     {import.meta.env.PROD && (
@@ -97,8 +199,8 @@ const techStack = [
           <span class="logo-text">KUKAN</span>
         </a>
         <nav class="nav">
-          <a href={`${base}ja/`} class="nav-link">ドキュメント</a>
-          <a href={`${base}en/`} class="nav-link">Docs (EN)</a>
+          <a href={`${base}ja/`} class="nav-link" data-i18n="docs">{t.ja.docs}</a>
+          <button type="button" class="nav-link lang-switch" data-i18n="switchLang" id="lang-switch">{t.ja.switchLang}</button>
           <a href="https://github.com/kukan-project/kukan" class="nav-btn">GitHub</a>
         </nav>
       </div>
@@ -109,30 +211,27 @@ const techStack = [
         <img src={`${base}logo.svg`} alt="KUKAN" width="96" height="96" class="hero-logo" />
         <h1 class="hero-title">KUKAN</h1>
         <p class="hero-subtitle">Knowledge Unified Katalog And Network</p>
-        <p class="hero-tagline">みんなが使えるデータカタログ</p>
-        <p class="hero-desc">
-          CKANのモダンな後継として設計された TypeScript フルスタックの<br />
-          オープンソース データカタログシステム
-        </p>
+        <p class="hero-tagline" data-i18n="tagline">{t.ja.tagline}</p>
+        <p class="hero-desc" data-i18n-html="heroDesc">{t.ja.heroDesc}</p>
         <div class="hero-actions">
-          <a href={`${base}ja/`} class="btn-primary">ドキュメントを読む</a>
-          <a href="https://github.com/kukan-project/kukan" class="btn-outline">GitHub で見る</a>
+          <a href={`${base}ja/`} class="btn-primary" data-i18n="readDocs" id="docs-link">{t.ja.readDocs}</a>
+          <a href="https://github.com/kukan-project/kukan" class="btn-outline" data-i18n="viewOnGitHub">{t.ja.viewOnGitHub}</a>
         </div>
       </div>
     </section>
 
     <section class="features">
       <div class="container">
-        <h2 class="section-title">主な特長</h2>
+        <h2 class="section-title" data-i18n="featuresTitle">{t.ja.featuresTitle}</h2>
         <div class="feature-grid">
           {
-            features.map((f) => (
+            t.ja.features.map((f, i) => (
               <div class="feature-card">
                 <div class="feature-header">
                   <span class="feature-icon">{f.icon}</span>
-                  <h3 class="feature-title">{f.title}</h3>
+                  <h3 class="feature-title" data-i18n={`features.${i}.title`}>{f.title}</h3>
                 </div>
-                <p class="feature-desc">{f.desc}</p>
+                <p class="feature-desc" data-i18n={`features.${i}.desc`}>{f.desc}</p>
               </div>
             ))
           }
@@ -142,7 +241,7 @@ const techStack = [
 
     <section class="tech-section">
       <div class="container">
-        <h2 class="section-title">技術スタック</h2>
+        <h2 class="section-title" data-i18n="techTitle">{t.ja.techTitle}</h2>
         <div class="tech-badges">
           {techStack.map((tech) => <span class="tech-badge">{tech}</span>)}
         </div>
@@ -151,9 +250,9 @@ const techStack = [
 
     <section class="cta">
       <div class="container">
-        <h2 class="section-title">さっそく始めてみましょう</h2>
-        <p class="cta-desc">詳細なセットアップ手順はドキュメントをご覧ください。</p>
-        <a href={`${base}ja/`} class="btn-primary btn-lg">ドキュメントへ</a>
+        <h2 class="section-title" data-i18n="ctaTitle">{t.ja.ctaTitle}</h2>
+        <p class="cta-desc" data-i18n="ctaDesc">{t.ja.ctaDesc}</p>
+        <a href={`${base}ja/`} class="btn-primary btn-lg" data-i18n="ctaButton" id="cta-link">{t.ja.ctaButton}</a>
       </div>
     </section>
 
@@ -163,6 +262,66 @@ const techStack = [
         <a href="https://github.com/kukan-project/kukan/blob/main/LICENSE">AGPL-3.0</a>.
       </p>
     </footer>
+
+    <script is:inline define:vars={{ translations: t, base }}>
+      (function () {
+        function getLocale() {
+          return document.documentElement.dataset.locale || 'ja'
+        }
+
+        function applyLocale(lang) {
+          var tr = translations[lang]
+          document.documentElement.lang = lang
+          document.documentElement.dataset.locale = lang
+          localStorage.setItem('kukan-locale', lang)
+
+          // Update title and meta
+          var title = document.querySelector('title')
+          if (title) title.textContent = title.dataset[lang]
+          document.querySelectorAll('meta[data-' + lang + ']').forEach(function (el) {
+            el.setAttribute('content', el.dataset[lang])
+          })
+
+          // Update text content
+          document.querySelectorAll('[data-i18n]').forEach(function (el) {
+            var key = el.dataset.i18n
+            var value = key.split('.').reduce(function (obj, k) { return obj && obj[k] }, tr)
+            if (value) el.textContent = value
+          })
+
+          // Update innerHTML (for <br> etc.)
+          document.querySelectorAll('[data-i18n-html]').forEach(function (el) {
+            var key = el.dataset.i18nHtml
+            var value = key.split('.').reduce(function (obj, k) { return obj && obj[k] }, tr)
+            if (value) el.innerHTML = value
+          })
+
+          // Update doc links to point to correct locale
+          var docsBase = base + lang + '/'
+          var docsLink = document.getElementById('docs-link')
+          var ctaLink = document.getElementById('cta-link')
+          var docsNav = document.querySelector('[data-i18n="docs"]')
+          if (docsLink) docsLink.href = docsBase
+          if (ctaLink) ctaLink.href = docsBase
+          if (docsNav) docsNav.href = docsBase
+        }
+
+        // Apply on load (for en, since head script already ran; reinforce with full DOM)
+        var currentLang = getLocale()
+        if (currentLang === 'en') {
+          applyLocale('en')
+        }
+
+        // Language switch button
+        var btn = document.getElementById('lang-switch')
+        if (btn) {
+          btn.addEventListener('click', function () {
+            var next = getLocale() === 'ja' ? 'en' : 'ja'
+            applyLocale(next)
+          })
+        }
+      })()
+    </script>
 
     <style define:vars={{ brand, dark }}>
       * {
@@ -224,6 +383,20 @@ const techStack = [
         color: #fff;
         text-decoration: none;
       }
+      .lang-switch {
+        background: none;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.375rem;
+        padding: 0.25rem 0.625rem;
+        cursor: pointer;
+        font-size: 0.875rem;
+        color: #475569;
+        transition: all 0.2s;
+      }
+      .lang-switch:hover {
+        border-color: var(--brand);
+        color: var(--brand);
+      }
 
       /* Hero */
       .hero {
@@ -245,20 +418,20 @@ const techStack = [
         margin-bottom: 1rem;
       }
       .hero-subtitle {
-        font-size: 1.25rem;
+        font-size: 1.375rem;
         color: #64748b;
         margin-bottom: 0.5rem;
       }
       .hero-tagline {
-        font-size: 1.5rem;
+        font-size: 1.75rem;
         font-weight: 600;
         color: var(--dark);
         margin-bottom: 2rem;
       }
       .hero-desc {
-        font-size: 1.125rem;
+        font-size: 1.25rem;
         color: #64748b;
-        max-width: 36rem;
+        max-width: 38rem;
         margin: 0 auto 2.5rem;
         line-height: 1.7;
       }
@@ -304,14 +477,14 @@ const techStack = [
 
       /* Features */
       .features {
-        padding: 3rem 1rem;
+        padding: 4.5rem 1rem 3rem;
       }
       .section-title {
         font-size: 1.875rem;
         font-weight: 700;
         text-align: center;
         color: var(--dark);
-        margin-bottom: 2rem;
+        margin-bottom: 2.5rem;
       }
       .feature-grid {
         display: grid;
@@ -329,7 +502,7 @@ const techStack = [
         }
       }
       .feature-card {
-        padding: 1rem 1.25rem;
+        padding: 1.25rem 1.5rem;
         border-radius: 0.75rem;
         border: 1px solid #e2e8f0;
         transition: all 0.2s;
@@ -342,26 +515,26 @@ const techStack = [
         display: flex;
         align-items: center;
         gap: 0.5rem;
-        margin-bottom: 0.25rem;
+        margin-bottom: 0.5rem;
       }
       .feature-icon {
         font-size: 1.25rem;
         flex-shrink: 0;
       }
       .feature-title {
-        font-size: 1.075rem;
+        font-size: 1.125rem;
         font-weight: 600;
         color: var(--dark);
       }
       .feature-desc {
-        font-size: 0.875rem;
+        font-size: 0.9375rem;
         color: #64748b;
-        line-height: 1.6;
+        line-height: 1.65;
       }
 
       /* Tech Stack */
       .tech-section {
-        padding: 4rem 1rem;
+        padding: 4.5rem 1rem;
         background: #f8fafc;
       }
       .tech-badges {
@@ -386,6 +559,7 @@ const techStack = [
         text-align: center;
       }
       .cta-desc {
+        font-size: 1.0625rem;
         color: #64748b;
         margin-bottom: 2rem;
       }
