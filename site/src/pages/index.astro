@@ -151,7 +151,7 @@ const techStack = [
 ---
 
 <!doctype html>
-<html lang="ja" data-locale="ja">
+<html lang="en" data-locale="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -162,11 +162,11 @@ const techStack = [
       'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
       })(window,document,'script','dataLayer','GTM-NCMB89RM');</script>
     )}
-    <title data-ja={t.ja.title} data-en={t.en.title}>{t.ja.title}</title>
-    <meta name="description" data-ja={t.ja.description} data-en={t.en.description} content={t.ja.description} />
+    <title data-ja={t.ja.title} data-en={t.en.title}>{t.en.title}</title>
+    <meta name="description" data-ja={t.ja.description} data-en={t.en.description} content={t.en.description} />
     <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
-    <meta property="og:title" data-ja={t.ja.title} data-en={t.en.title} content={t.ja.title} />
-    <meta property="og:description" data-ja={t.ja.description} data-en={t.en.description} content={t.ja.description} />
+    <meta property="og:title" data-ja={t.ja.title} data-en={t.en.title} content={t.en.title} />
+    <meta property="og:description" data-ja={t.ja.description} data-en={t.en.description} content={t.en.description} />
     <meta property="og:image" content={`https://kukan-project.github.io${base}og-image.png`} />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
@@ -175,14 +175,14 @@ const techStack = [
         var stored = localStorage.getItem('kukan-locale')
         var lang = stored || (navigator.language.startsWith('ja') ? 'ja' : 'en')
         if (!stored) localStorage.setItem('kukan-locale', lang)
-        if (lang === 'en') {
-          document.documentElement.lang = 'en'
-          document.documentElement.dataset.locale = 'en'
+        if (lang === 'ja') {
+          document.documentElement.lang = 'ja'
+          document.documentElement.dataset.locale = 'ja'
           // Update meta tags before paint
           var title = document.querySelector('title')
-          if (title) title.textContent = title.dataset.en
-          document.querySelectorAll('meta[data-en]').forEach(function (el) {
-            el.setAttribute('content', el.dataset.en)
+          if (title) title.textContent = title.dataset.ja
+          document.querySelectorAll('meta[data-ja]').forEach(function (el) {
+            el.setAttribute('content', el.dataset.ja)
           })
         }
       })()
@@ -199,8 +199,8 @@ const techStack = [
           <span class="logo-text">KUKAN</span>
         </a>
         <nav class="nav">
-          <a href={`${base}ja/`} class="nav-link" data-i18n="docs">{t.ja.docs}</a>
-          <button type="button" class="nav-link lang-switch" data-i18n="switchLang" id="lang-switch">{t.ja.switchLang}</button>
+          <a href={`${base}en/`} class="nav-link" data-i18n="docs">{t.en.docs}</a>
+          <button type="button" class="nav-link lang-switch" data-i18n="switchLang" id="lang-switch">{t.en.switchLang}</button>
           <a href="https://github.com/kukan-project/kukan" class="nav-btn">GitHub</a>
         </nav>
       </div>
@@ -211,21 +211,21 @@ const techStack = [
         <img src={`${base}logo.svg`} alt="KUKAN" width="96" height="96" class="hero-logo" />
         <h1 class="hero-title">KUKAN</h1>
         <p class="hero-subtitle">Knowledge Unified Katalog And Network</p>
-        <p class="hero-tagline" data-i18n="tagline">{t.ja.tagline}</p>
-        <p class="hero-desc" data-i18n-html="heroDesc">{t.ja.heroDesc}</p>
+        <p class="hero-tagline" data-i18n="tagline">{t.en.tagline}</p>
+        <p class="hero-desc" data-i18n-html="heroDesc">{t.en.heroDesc}</p>
         <div class="hero-actions">
-          <a href={`${base}ja/`} class="btn-primary" data-i18n="readDocs" id="docs-link">{t.ja.readDocs}</a>
-          <a href="https://github.com/kukan-project/kukan" class="btn-outline" data-i18n="viewOnGitHub">{t.ja.viewOnGitHub}</a>
+          <a href={`${base}en/`} class="btn-primary" data-i18n="readDocs" id="docs-link">{t.en.readDocs}</a>
+          <a href="https://github.com/kukan-project/kukan" class="btn-outline" data-i18n="viewOnGitHub">{t.en.viewOnGitHub}</a>
         </div>
       </div>
     </section>
 
     <section class="features">
       <div class="container">
-        <h2 class="section-title" data-i18n="featuresTitle">{t.ja.featuresTitle}</h2>
+        <h2 class="section-title" data-i18n="featuresTitle">{t.en.featuresTitle}</h2>
         <div class="feature-grid">
           {
-            t.ja.features.map((f, i) => (
+            t.en.features.map((f, i) => (
               <div class="feature-card">
                 <div class="feature-header">
                   <span class="feature-icon">{f.icon}</span>
@@ -241,7 +241,7 @@ const techStack = [
 
     <section class="tech-section">
       <div class="container">
-        <h2 class="section-title" data-i18n="techTitle">{t.ja.techTitle}</h2>
+        <h2 class="section-title" data-i18n="techTitle">{t.en.techTitle}</h2>
         <div class="tech-badges">
           {techStack.map((tech) => <span class="tech-badge">{tech}</span>)}
         </div>
@@ -250,9 +250,9 @@ const techStack = [
 
     <section class="cta">
       <div class="container">
-        <h2 class="section-title" data-i18n="ctaTitle">{t.ja.ctaTitle}</h2>
-        <p class="cta-desc" data-i18n="ctaDesc">{t.ja.ctaDesc}</p>
-        <a href={`${base}ja/`} class="btn-primary btn-lg" data-i18n="ctaButton" id="cta-link">{t.ja.ctaButton}</a>
+        <h2 class="section-title" data-i18n="ctaTitle">{t.en.ctaTitle}</h2>
+        <p class="cta-desc" data-i18n="ctaDesc">{t.en.ctaDesc}</p>
+        <a href={`${base}en/`} class="btn-primary btn-lg" data-i18n="ctaButton" id="cta-link">{t.en.ctaButton}</a>
       </div>
     </section>
 
@@ -266,7 +266,7 @@ const techStack = [
     <script is:inline define:vars={{ translations: t, base }}>
       (function () {
         function getLocale() {
-          return document.documentElement.dataset.locale || 'ja'
+          return document.documentElement.dataset.locale || 'en'
         }
 
         function applyLocale(lang) {
@@ -306,10 +306,10 @@ const techStack = [
           if (docsNav) docsNav.href = docsBase
         }
 
-        // Apply on load (for en, since head script already ran; reinforce with full DOM)
+        // Apply on load (for ja, since head script already ran; reinforce with full DOM)
         var currentLang = getLocale()
-        if (currentLang === 'en') {
-          applyLocale('en')
+        if (currentLang === 'ja') {
+          applyLocale('ja')
         }
 
         // Language switch button
