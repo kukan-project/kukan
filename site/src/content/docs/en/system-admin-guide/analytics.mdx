@@ -1,0 +1,118 @@
+---
+title: Access Analytics (GA4)
+description: How to set up Google Analytics 4 for access statistics
+sidebar:
+  order: 2
+---
+
+KUKAN can track page views, file downloads, and search keywords using Google Analytics 4.
+This feature is designed for internet-facing deployments. In closed networks (LGWAN, air-gapped), leave the configuration unset and analytics will be fully disabled.
+
+## Overview
+
+| What is tracked | How |
+|---|---|
+| Page views | Automatic (gtag.js) |
+| File downloads | Custom event on download button click |
+| Site search keywords | Automatic (Enhanced Measurement detects `?q=` parameter) |
+
+Analytics data can be viewed in the GA4 console. A built-in analytics dashboard in the KUKAN admin panel is planned for a future release.
+
+## Step 1: Create a GA4 Property
+
+1. Go to [Google Analytics](https://analytics.google.com/) and sign in
+2. Click **Admin** (gear icon) in the bottom-left
+3. Click **Create** > **Property**
+4. Enter a property name (e.g. "My City Open Data Catalog")
+5. Select your time zone and currency
+6. Choose **Web** as the platform
+7. Enter your site URL and a stream name
+8. After creation, copy the **Measurement ID** (format: `G-XXXXXXXXXX`)
+
+## Step 2: Enable Enhanced Measurement
+
+Enhanced Measurement is usually enabled by default. Verify:
+
+1. In GA4 Admin, go to **Data Streams** and click your web stream
+2. Under **Enhanced measurement**, ensure these are toggled on:
+   - **Page views** (always on)
+   - **Site search** — detects the `q` parameter in URLs like `/dataset?q=...`
+   - **File downloads** — optional (KUKAN also sends a custom event)
+
+## Step 3: Configure KUKAN
+
+Set the Measurement ID in your brand configuration file:
+
+```typescript
+// apps/web/src/brand/brand-config.ts
+export const brandConfig: BrandConfig = {
+  // ...other settings
+  gaMeasurementId: 'G-XXXXXXXXXX',  // your Measurement ID
+}
+```
+
+Redeploy after saving the file. When `gaMeasurementId` is set, the gtag.js script is automatically loaded on every page.
+
+When `gaMeasurementId` is `null` (the default), no external scripts are loaded and no data is sent to Google.
+
+## Step 4: Register Custom Dimensions (Optional)
+
+KUKAN sends a `file_download` custom event with additional parameters. To use these in GA4 reports:
+
+1. In GA4 Admin, go to **Custom definitions** > **Custom dimensions**
+2. Create the following event-scoped dimensions:
+
+| Dimension name | Event parameter | Scope |
+|---|---|---|
+| Dataset Name | `dataset_name` | Event |
+| Resource ID | `resource_id` | Event |
+| File Format | `format` | Event |
+
+This step is optional but recommended for detailed download analysis.
+
+## Step 5: Set Up the Admin Dashboard (Future)
+
+The KUKAN admin panel will include a built-in analytics dashboard that fetches data from the GA4 Data API. This requires a Google Cloud service account:
+
+1. Create a GCP project (or use an existing one)
+2. Enable the **Google Analytics Data API**
+3. Create a **Service Account** and download the JSON key
+4. In GA4 Admin > **Property Access Management**, add the service account email with **Viewer** role
+5. Set the following environment variables in your deployment:
+
+| Variable | Value |
+|---|---|
+| `GA4_PROPERTY_ID` | Your GA4 property ID (numeric, found in Admin > Property Settings) |
+| `GA4_CREDENTIALS_JSON` | The full JSON key content (as a string) |
+
+:::note
+The admin dashboard is under development. Steps 1-4 above are sufficient to start collecting data. You can view reports in the GA4 console in the meantime.
+:::
+
+## Verifying the Setup
+
+After deploying with a Measurement ID configured:
+
+1. Open your site in a browser
+2. In GA4, go to **Reports** > **Realtime**
+3. You should see your visit appear within a few seconds
+4. Click a download button and verify a `file_download` event appears in Realtime
+5. Perform a search and verify a `view_search_results` event appears
+
+## FAQ
+
+### Does this work in closed networks (LGWAN)?
+
+No. GA4 requires internet access to send data to Google servers. In closed networks, leave `gaMeasurementId` as `null` (default). No external scripts will be loaded.
+
+### Can I use Google Tag Manager instead?
+
+KUKAN uses gtag.js directly for simplicity and performance. GTM is not needed since the only tracking tag is GA4. If you have a specific need for GTM, you can replace the gtag.js scripts in a component override (see [Appearance Customization](/en/system-admin-guide/brand-customization/)).
+
+### What about API access statistics?
+
+GA4 only tracks browser-based access. API calls made directly (e.g. via `curl` or programmatic clients) are not captured. Server-side API analytics is planned as a separate feature.
+
+### How long until data appears?
+
+Real-time data appears within seconds in the GA4 Realtime report. Standard reports may take 24-48 hours to fully process.

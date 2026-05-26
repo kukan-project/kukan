@@ -13,4 +13,6 @@ export const brandConfig: BrandConfig = {
 
   ogImage: '/og-default.png',
   faviconPath: '/favicon.ico',
+
+  gaMeasurementId: null,
 }

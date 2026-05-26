@@ -141,6 +141,7 @@ export function ResourceExplorer({
                 datasetNameOrId={packageName}
                 resourceId={selected.id}
                 filename={selected.url || selected.id}
+                format={selected.format ?? undefined}
                 label={t('download')}
                 size={selected.size}
               />

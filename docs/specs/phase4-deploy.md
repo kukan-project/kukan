@@ -350,3 +350,91 @@ curl http://localhost/api/health
 - Compose: `compose.yml`
 - Caddy: `docker/Caddyfile`
 - 環境変数テンプレート: `.env.prod.example`
+
+## アクセス統計（GA4 連携）
+
+インターネット公開環境向けのアクセス統計機能。GA4 を計測基盤とし、KUKAN 自体には計測ロジックを持たない。
+LGWAN 等の閉域網では `brandConfig.gaMeasurementId` 未設定（デフォルト）により自動的に無効化される。
+
+設計判断の詳細: `docs/adr/024-ga4-access-analytics.md`
+
+### 4a: gtag.js 条件埋め込み
+
+`brandConfig.gaMeasurementId`（`brand-config.ts`）で制御。`null`（デフォルト）の場合は gtag.js をロードしない。フォーク側が Measurement ID を直接記述する（ADR-023 の方針に準拠、環境変数は介さない）。
+
+**計測対象:**
+
+| 計測項目             | 方式                          | 追加コード                       |
+| -------------------- | ----------------------------- | -------------------------------- |
+| ページビュー         | GA4 自動計測                  | なし                             |
+| ファイルダウンロード | カスタムイベント              | `DownloadButton` の `onClick`    |
+| サイト内検索         | Enhanced Measurement 自動検出 | なし（`?q=` パラメータから自動） |
+
+**実装対象ファイル:**
+
+| ファイル                                      | 変更内容                                         |
+| --------------------------------------------- | ------------------------------------------------ |
+| `apps/web/src/types/brand.ts`                 | `gaMeasurementId?: string \| null` 追加          |
+| `apps/web/src/brand/brand-config.ts`          | `gaMeasurementId: null` をデフォルト値として追加 |
+| `apps/web/src/app/layout.tsx`                 | `<Script>` で gtag.js 条件埋め込み               |
+| `apps/web/src/components/download-button.tsx` | `onClick` でカスタムイベント送信                 |
+
+**ダウンロードイベント:**
+
+```typescript
+gtag('event', 'file_download', {
+  file_name: displayFilename,
+  link_url: href,
+  dataset_name: datasetNameOrId,
+  resource_id: resourceId,
+  format: format,
+})
+```
+
+### 4b: 管理画面の統計ダッシュボード
+
+GA4 Data API からデータを取得し、管理画面（sysadmin 限定）に統計ランキングを表示する。
+
+**環境変数:**
+
+| 環境変数               | 用途                         | 未設定時                   |
+| ---------------------- | ---------------------------- | -------------------------- |
+| `GA4_PROPERTY_ID`      | GA4 プロパティ ID            | 統計ページに設定案内を表示 |
+| `GA4_CREDENTIALS_JSON` | サービスアカウント JSON キー | 同上                       |
+
+**統計ページ:**
+
+| ランキング             | 説明                                        |
+| ---------------------- | ------------------------------------------- |
+| データセット閲覧数     | `/dataset/{name}` のページビュー            |
+| リソース閲覧数         | `/dataset/.../resource/{id}` のページビュー |
+| リソースダウンロード数 | `file_download` カスタムイベント            |
+| 検索キーワード         | Enhanced Measurement のサイト内検索         |
+
+**UI 機能:**
+
+- 期間指定: プリセット（7 日 / 30 日 / 90 日 / 1 年）+ カレンダー自由選択
+- ランキング: ページネーション付き
+- 未設定時: メニュー表示あり、ページ内に GA4 セットアップ手順の案内を表示
+
+**データ取得:**
+
+- GA4 Data API をリアルタイム呼び出し + lru-cache（TTL 1 時間）
+- `@google-analytics/data` Node.js クライアント使用
+- サービスアカウント認証
+
+**実装対象ファイル:**
+
+| ファイル                                                     | 内容                                        |
+| ------------------------------------------------------------ | ------------------------------------------- |
+| `packages/api/src/services/analytics-service.ts`             | GA4 Data API 呼び出し + キャッシュ          |
+| `packages/api/src/routes/admin.ts`                           | `GET /admin/analytics/*` エンドポイント追加 |
+| `apps/web/src/app/dashboard/admin/analytics/page.tsx`        | 統計ダッシュボードページ                    |
+| `apps/web/src/components/analytics/analytics-ranking.tsx`    | ランキング表示コンポーネント                |
+| `apps/web/src/components/analytics/analytics-date-range.tsx` | 期間選択コンポーネント                      |
+
+### 関連ファイル（アクセス統計）
+
+- ADR: `docs/adr/024-ga4-access-analytics.md`
+- ダウンロードボタン: `apps/web/src/components/download-button.tsx`
+- ブランド設定: `apps/web/src/brand/brand-config.ts`（ADR-023）

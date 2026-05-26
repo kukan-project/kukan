@@ -23,6 +23,7 @@ export function Sidebar() {
     { href: '/dashboard/admin/jobs', label: t('adminJobs') },
     { href: '/dashboard/admin/health', label: t('adminHealth') },
     { href: '/dashboard/admin/search', label: t('adminSearch') },
+    { href: '/dashboard/admin/analytics', label: t('adminAnalytics') },
     { href: '/dashboard/admin/site', label: t('adminSite') },
   ]
 

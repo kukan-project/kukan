@@ -213,6 +213,7 @@
       "adminHealth": "Health Check",
       "adminSearch": "Index Management",
       "adminUsers": "Users",
+      "adminAnalytics": "Access Analytics",
       "adminSite": "Site Management"
     },
     "adminSearch": {
@@ -253,6 +254,17 @@
       "resultGroups": "{count} groups",
       "resultTags": "{count} tags",
       "resultStorage": "{count} files"
+    },
+    "adminAnalytics": {
+      "title": "Access Analytics",
+      "notConfiguredTitle": "GA4 Not Configured",
+      "notConfiguredDescription": "To view access analytics, configure a Google Analytics 4 Measurement ID in your brand configuration (brand-config.ts).",
+      "setupStepsTitle": "Setup steps:",
+      "setupStep1": "Create a GA4 property at Google Analytics",
+      "setupStep2": "Copy the Measurement ID (G-XXXXXXXXXX)",
+      "setupStep3": "Set gaMeasurementId in brand-config.ts and redeploy",
+      "openGA4": "Open Google Analytics",
+      "comingSoon": "The analytics dashboard is under development. In the meantime, you can view analytics data in the Google Analytics console."
     },
     "adminJobs": {
       "title": "Job Management",

@@ -21,6 +21,8 @@ export interface BrandConfig {
   footerLinks: NavItem[]
   ogImage: string
   faviconPath: string
+  /** GA4 Measurement ID (e.g. 'G-XXXXXXXXXX'). null = GA4 disabled. */
+  gaMeasurementId?: string | null
 }
 
 /** コンポーネントオーバーライドのスロット定義 */

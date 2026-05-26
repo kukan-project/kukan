@@ -213,6 +213,7 @@
       "adminHealth": "ヘルスチェック",
       "adminSearch": "インデックス管理",
       "adminUsers": "ユーザー管理",
+      "adminAnalytics": "アクセス統計",
       "adminSite": "サイト管理"
     },
     "adminSearch": {
@@ -253,6 +254,17 @@
       "resultGroups": "{count} グループ",
       "resultTags": "{count} タグ",
       "resultStorage": "{count} ファイル"
+    },
+    "adminAnalytics": {
+      "title": "アクセス統計",
+      "notConfiguredTitle": "GA4 未設定",
+      "notConfiguredDescription": "アクセス統計を表示するには、ブランド設定（brand-config.ts）に Google Analytics 4 の測定 ID を設定してください。",
+      "setupStepsTitle": "設定手順:",
+      "setupStep1": "Google Analytics で GA4 プロパティを作成",
+      "setupStep2": "測定 ID（G-XXXXXXXXXX）をコピー",
+      "setupStep3": "brand-config.ts の gaMeasurementId に設定し再デプロイ",
+      "openGA4": "Google Analytics を開く",
+      "comingSoon": "統計ダッシュボードは開発中です。現時点では Google Analytics のコンソールからデータを確認できます。"
     },
     "adminJobs": {
       "title": "ジョブ管理",
