@@ -26,6 +26,7 @@ describe('Sidebar', () => {
     expect(screen.getByText('Job Management')).toBeInTheDocument()
     expect(screen.getByText('Health Check')).toBeInTheDocument()
     expect(screen.getByText('Index Management')).toBeInTheDocument()
+    expect(screen.getByText('Access Analytics')).toBeInTheDocument()
     expect(screen.getByText('Site Management')).toBeInTheDocument()
   })
 

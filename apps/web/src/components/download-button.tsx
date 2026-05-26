@@ -2,12 +2,6 @@ import { Download } from 'lucide-react'
 import { Button } from '@kukan/ui'
 import { formatBytes } from '@/lib/format-utils'
 
-declare global {
-  interface Window {
-    gtag?: (...args: unknown[]) => void
-  }
-}
-
 /** Extract filename from a URL path, or return as-is if already a filename */
 function extractFilename(urlOrFilename: string): string {
   try {
@@ -23,7 +17,7 @@ interface DownloadButtonProps {
   datasetNameOrId: string
   resourceId: string
   filename: string
-  format?: string
+  format?: string | null
   label: string
   size?: number | null
 }

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { DownloadButton } from '../download-button'
 
 describe('DownloadButton', () => {
@@ -9,6 +9,10 @@ describe('DownloadButton', () => {
     filename: 'data.csv',
     label: 'Download',
   }
+
+  beforeEach(() => {
+    delete window.gtag
+  })
 
   it('should render a download link with correct href', () => {
     render(<DownloadButton {...defaultProps} />)
@@ -35,5 +39,28 @@ describe('DownloadButton', () => {
   it('should not show size when zero', () => {
     render(<DownloadButton {...defaultProps} size={0} />)
     expect(screen.queryByText(/\(.*\)/)).not.toBeInTheDocument()
+  })
+
+  it('should call gtag with file_download event on click', () => {
+    const mockGtag = vi.fn()
+    window.gtag = mockGtag
+
+    render(<DownloadButton {...defaultProps} format="csv" />)
+    const link = screen.getByRole('link', { name: /Download/ })
+    fireEvent.click(link)
+
+    expect(mockGtag).toHaveBeenCalledWith('event', 'file_download', {
+      file_name: 'data.csv',
+      link_url: '/dataset/my-dataset/resource/res-123/download/data.csv',
+      dataset_name: 'my-dataset',
+      resource_id: 'res-123',
+      format: 'csv',
+    })
+  })
+
+  it('should not throw when gtag is not defined', () => {
+    render(<DownloadButton {...defaultProps} />)
+    const link = screen.getByRole('link', { name: /Download/ })
+    expect(() => fireEvent.click(link)).not.toThrow()
   })
 })
