@@ -26,6 +26,9 @@ export function createAuth(db: Database) {
       // Auto-trust Vercel preview URLs (*.vercel.app)
       ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
     ],
+    rateLimit: {
+      enabled: true,
+    },
     plugins: [
       admin({
         defaultRole: 'user',

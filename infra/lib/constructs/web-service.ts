@@ -16,13 +16,14 @@ import * as sqs from 'aws-cdk-lib/aws-sqs'
 import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
 import { DOCKER_ASSET_EXCLUDES } from '../docker-excludes.js'
+import type { DatabaseConstruct } from './database.js'
 
 export interface WebServiceProps {
   config: KukanConfig
   cluster: ecs.ICluster
   albSecurityGroup: ec2.ISecurityGroup
   webSecurityGroup: ec2.ISecurityGroup
-  postgresEnv: Record<string, string>
+  database: DatabaseConstruct
   authSecret: secretsmanager.ISecret
   bucket: s3.IBucket
   queue: sqs.IQueue
@@ -45,7 +46,7 @@ export class WebServiceConstruct extends Construct {
       cluster,
       albSecurityGroup,
       webSecurityGroup,
-      postgresEnv,
+      database,
       authSecret,
       bucket,
       queue,
@@ -77,8 +78,7 @@ export class WebServiceConstruct extends Construct {
     // Environment variables
     const environment: Record<string, string> = {
       NODE_ENV: 'production',
-      ...postgresEnv,
-      BETTER_AUTH_SECRET: authSecret.secretValue.unsafeUnwrap(),
+      ...database.buildPostgresEnvironment(),
       AI_TYPE: 'none',
       S3_BUCKET: bucket.bucketName,
       S3_REGION: cdk.Aws.REGION,
@@ -99,6 +99,10 @@ export class WebServiceConstruct extends Construct {
     taskDef.addContainer('Web', {
       image: ecs.ContainerImage.fromDockerImageAsset(imageAsset),
       environment,
+      secrets: {
+        ...database.buildPostgresSecrets(),
+        BETTER_AUTH_SECRET: ecs.Secret.fromSecretsManager(authSecret),
+      },
       logging: ecs.LogDrivers.awsLogs({
         logGroup: new logs.LogGroup(this, 'WebLogs', {
           retention: logs.RetentionDays.ONE_MONTH,

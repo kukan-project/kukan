@@ -58,9 +58,6 @@ export class KukanStack extends cdk.Stack {
       })
     }
 
-    // Shared: POSTGRES_* env vars from Secrets Manager
-    const postgresEnv = database.buildPostgresEnv()
-
     // --- ECS Cluster (shared by Web + Worker) ---
     const cluster = new ecs.Cluster(this, 'Cluster', {
       vpc: network.vpc,
@@ -88,7 +85,7 @@ export class KukanStack extends cdk.Stack {
       cluster,
       albSecurityGroup: network.albSecurityGroup,
       webSecurityGroup: network.webSecurityGroup,
-      postgresEnv,
+      database,
       authSecret,
       bucket: storage.bucket,
       queue: queue.queue,
@@ -101,7 +98,7 @@ export class KukanStack extends cdk.Stack {
       config,
       cluster,
       workerSecurityGroup: network.workerSecurityGroup,
-      postgresEnv,
+      database,
       authSecret,
       bucket: storage.bucket,
       queue: queue.queue,

@@ -6,6 +6,7 @@
 
 import * as cdk from 'aws-cdk-lib'
 import * as ec2 from 'aws-cdk-lib/aws-ec2'
+import * as ecs from 'aws-cdk-lib/aws-ecs'
 import * as rds from 'aws-cdk-lib/aws-rds'
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
 import { Construct } from 'constructs'
@@ -70,15 +71,21 @@ export class DatabaseConstruct extends Construct {
     cdk.Tags.of(this).add('kukan:component', 'database')
   }
 
-  /** Build POSTGRES_* env vars from Secrets Manager secret */
-  buildPostgresEnv(): Record<string, string> {
+  /** Non-secret POSTGRES_* environment variables for ECS containers */
+  buildPostgresEnvironment(): Record<string, string> {
     return {
       POSTGRES_HOST: this.endpoint,
       POSTGRES_PORT: String(this.port),
       POSTGRES_DB: 'kukan',
-      POSTGRES_USER: this.secret.secretValueFromJson('username').unsafeUnwrap(),
-      POSTGRES_PASSWORD: this.secret.secretValueFromJson('password').unsafeUnwrap(),
       POSTGRES_SSLMODE: 'require',
+    }
+  }
+
+  /** POSTGRES_USER/PASSWORD as ECS secrets (injected at runtime via Secrets Manager) */
+  buildPostgresSecrets(): Record<string, ecs.Secret> {
+    return {
+      POSTGRES_USER: ecs.Secret.fromSecretsManager(this.secret, 'username'),
+      POSTGRES_PASSWORD: ecs.Secret.fromSecretsManager(this.secret, 'password'),
     }
   }
 }

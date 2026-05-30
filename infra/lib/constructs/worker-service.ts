@@ -15,12 +15,13 @@ import * as sqs from 'aws-cdk-lib/aws-sqs'
 import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
 import { DOCKER_ASSET_EXCLUDES } from '../docker-excludes.js'
+import type { DatabaseConstruct } from './database.js'
 
 export interface WorkerServiceProps {
   config: KukanConfig
   cluster: ecs.ICluster
   workerSecurityGroup: ec2.ISecurityGroup
-  postgresEnv: Record<string, string>
+  database: DatabaseConstruct
   authSecret: secretsmanager.ISecret
   bucket: s3.IBucket
   queue: sqs.IQueue
@@ -37,7 +38,7 @@ export class WorkerServiceConstruct extends Construct {
       config,
       cluster,
       workerSecurityGroup,
-      postgresEnv,
+      database,
       authSecret,
       bucket,
       queue,
@@ -67,8 +68,7 @@ export class WorkerServiceConstruct extends Construct {
     // Environment variables
     const environment: Record<string, string> = {
       NODE_ENV: 'production',
-      ...postgresEnv,
-      BETTER_AUTH_SECRET: authSecret.secretValue.unsafeUnwrap(),
+      ...database.buildPostgresEnvironment(),
       AI_TYPE: 'none',
       S3_BUCKET: bucket.bucketName,
       S3_REGION: cdk.Aws.REGION,
@@ -87,6 +87,10 @@ export class WorkerServiceConstruct extends Construct {
     taskDef.addContainer('Worker', {
       image: ecs.ContainerImage.fromDockerImageAsset(imageAsset),
       environment,
+      secrets: {
+        ...database.buildPostgresSecrets(),
+        BETTER_AUTH_SECRET: ecs.Secret.fromSecretsManager(authSecret),
+      },
       // Allow up to 120s for in-flight pipeline job to finish on SIGTERM (Fargate max)
       stopTimeout: cdk.Duration.seconds(120),
       logging: ecs.LogDrivers.awsLogs({

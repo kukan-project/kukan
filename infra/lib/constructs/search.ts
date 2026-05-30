@@ -67,12 +67,14 @@ export class SearchConstruct extends Construct {
       encryptionAtRest: { enabled: true },
       enforceHttps: true,
       zoneAwareness: config.opensearch.multiAz ? { availabilityZoneCount: 2 } : undefined,
+      // VPC + Security Group provides network-level access control.
+      // Actions restricted to HTTP API only (no domain management).
       accessPolicies: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
           principals: [new iam.AnyPrincipal()],
-          actions: ['es:*'],
-          resources: ['*'],
+          actions: ['es:ESHttp*'],
+          resources: [`arn:aws:es:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:domain/kukan-search/*`],
         }),
       ],
       removalPolicy: cdk.RemovalPolicy.DESTROY,
