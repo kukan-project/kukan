@@ -35,6 +35,8 @@ WORKDIR /app
 COPY --from=build /app/apps/web/.next/standalone ./
 COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build /app/apps/web/public ./apps/web/public
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup && chown -R appuser:appgroup /app
+USER appuser
 ENV NODE_ENV=production PORT=3000
 EXPOSE 3000
 # Override HOSTNAME so Next.js standalone server binds to 0.0.0.0 (not the container IP).
@@ -50,6 +52,8 @@ COPY --from=deps /app/apps/worker/node_modules ./apps/worker/node_modules
 COPY --from=build /app/apps/worker/dist ./apps/worker/dist
 COPY --from=build /app/apps/worker/package.json ./apps/worker/
 COPY --from=build /app/packages/db/drizzle ./apps/worker/drizzle
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup && chown -R appuser:appgroup /app
+USER appuser
 ENV NODE_ENV=production HEALTH_PORT=8080
 EXPOSE 8080
 CMD ["node", "apps/worker/dist/index.js"]

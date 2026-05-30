@@ -109,7 +109,6 @@ export async function createApp() {
   const { groupsRouter } = await import('./routes/groups')
   const { tagsRouter } = await import('./routes/tags')
   const { usersRouter } = await import('./routes/users')
-  const { searchRouter } = await import('./routes/search')
   const { apiTokensRouter } = await import('./routes/api-tokens')
   const { adminRouter } = await import('./routes/admin')
 
@@ -119,7 +118,6 @@ export async function createApp() {
   apiV1.route('/groups', groupsRouter)
   apiV1.route('/tags', tagsRouter)
   apiV1.route('/users', usersRouter)
-  apiV1.route('/search', searchRouter)
   apiV1.route('/api-tokens', apiTokensRouter)
   apiV1.route('/admin', adminRouter)
 

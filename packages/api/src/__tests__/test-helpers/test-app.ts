@@ -18,7 +18,6 @@ import { organizationsRouter } from '../../routes/organizations'
 import { groupsRouter } from '../../routes/groups'
 import { tagsRouter } from '../../routes/tags'
 import { resourcesRouter } from '../../routes/resources'
-import { searchRouter } from '../../routes/search'
 import { adminRouter } from '../../routes/admin'
 import { usersRouter } from '../../routes/users'
 import { apiTokensRouter } from '../../routes/api-tokens'
@@ -154,7 +153,6 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
   apiV1.route('/resources', resourcesRouter)
   apiV1.route('/groups', groupsRouter)
   apiV1.route('/tags', tagsRouter)
-  apiV1.route('/search', searchRouter)
   apiV1.route('/admin', adminRouter)
   apiV1.route('/users', usersRouter)
   apiV1.route('/api-tokens', apiTokensRouter)

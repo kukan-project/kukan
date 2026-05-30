@@ -85,6 +85,7 @@ function ckanError(
 // ============================================================
 
 // package_list - List all packages (names only)
+// CKAN compat: returns public packages only (private packages are accessible via package_show/search)
 ckanCompatRouter.get('/package_list', async (c) => {
   const user = c.get('user')
   const search = c.get('search')
@@ -128,8 +129,8 @@ ckanCompatRouter.get('/package_show', async (c) => {
 // package_search - Search packages
 ckanCompatRouter.get('/package_search', async (c) => {
   const q = c.req.query('q') || ''
-  const offset = parseInt(c.req.query('start') || '0', 10)
-  const limit = parseInt(c.req.query('rows') || '20', 10)
+  const offset = Math.max(0, parseInt(c.req.query('start') || '0', 10) || 0)
+  const limit = Math.min(1000, Math.max(1, parseInt(c.req.query('rows') || '20', 10) || 20))
 
   const db = c.get('db')
   const user = c.get('user')

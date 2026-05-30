@@ -32,6 +32,13 @@ import type { AppContext } from '../context'
 
 export const adminRouter = new Hono<{ Variables: AppContext }>()
 
+// All admin endpoints require sysadmin role — enforced at the router level
+adminRouter.use('*', async (c, next) => {
+  const user = c.get('user')
+  if (!user?.sysadmin) throw new ForbiddenError('Sysadmin role required')
+  await next()
+})
+
 const DEFAULT_PAGE_LIMIT = 20
 const MAX_PAGE_LIMIT = 100
 
@@ -70,9 +77,6 @@ const externalUrlConditions = [
 
 // GET /api/v1/admin/search/stats — Index statistics (OpenSearch + DB counts)
 adminRouter.get('/search/stats', async (c) => {
-  const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view search stats')
-
   const db = c.get('db')
 
   const [stats, pkgCountRows, resCountRows] = await Promise.all([
@@ -96,9 +100,6 @@ adminRouter.get('/search/stats', async (c) => {
 
 // GET /api/v1/admin/search/doc/:index/:id — Get a single document from OpenSearch
 adminRouter.get('/search/doc/:index/:id', async (c) => {
-  const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view search documents')
-
   const index = c.req.param('index')
   if (index !== 'packages' && index !== 'resources' && index !== 'contents') {
     return c.json(
@@ -118,9 +119,6 @@ adminRouter.get('/search/doc/:index/:id', async (c) => {
 
 // GET /api/v1/admin/search/chunks/:resourceId — List content chunks for a resource
 adminRouter.get('/search/chunks/:resourceId', async (c) => {
-  const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view search documents')
-
   const resourceId = c.req.param('resourceId')
   const search = c.get('search')
 
@@ -130,9 +128,6 @@ adminRouter.get('/search/chunks/:resourceId', async (c) => {
 
 // GET /api/v1/admin/search/browse/:index — Browse/search documents in an index
 adminRouter.get('/search/browse/:index', async (c) => {
-  const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can browse search index')
-
   const index = c.req.param('index')
   if (index !== 'packages' && index !== 'resources' && index !== 'contents') {
     return c.json(
@@ -182,9 +177,6 @@ adminRouter.post(
   '/reindex-metadata',
   zValidator('json', z.object({ includeContent: z.boolean().optional() }).default({})),
   async (c) => {
-    const user = c.get('user')
-    if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can reindex')
-
     const search = c.get('search')
     const stats = await search.getIndexStats()
     if (!stats) {
@@ -208,9 +200,6 @@ adminRouter.post(
 
 // POST /api/v1/admin/jobs/enqueue-all — Enqueue pipeline for all active resources
 adminRouter.post('/jobs/enqueue-all', async (c) => {
-  const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can enqueue all pipelines')
-
   const db = c.get('db')
   const search = c.get('search')
   const pipelineService = new PipelineService(db, c.get('queue'))
@@ -227,9 +216,6 @@ const RECENT_ERROR_LIMIT = 10
 
 // GET /api/v1/admin/jobs/stats — Pipeline job statistics
 adminRouter.get('/jobs/stats', async (c) => {
-  const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view job stats')
-
   const db = c.get('db')
   const queue = c.get('queue')
 
@@ -270,9 +256,6 @@ adminRouter.get('/jobs/stats', async (c) => {
 
 // GET /api/v1/admin/jobs — Paginated pipeline job list
 adminRouter.get('/jobs', async (c) => {
-  const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view jobs')
-
   const db = c.get('db')
   const { offset, limit, statusList } = parsePaginatedQuery(c)
 
@@ -313,9 +296,6 @@ adminRouter.get('/jobs', async (c) => {
 
 // DELETE /api/v1/admin/data — Delete all data (preserves users)
 adminRouter.delete('/data', async (c) => {
-  const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can reset data')
-
   const db = c.get('db')
   const search = c.get('search')
   const storage = c.get('storage')
@@ -358,9 +338,6 @@ adminRouter.delete('/data', async (c) => {
 
 // GET /api/v1/admin/health/stats — Health check statistics for URL resources
 adminRouter.get('/health/stats', async (c) => {
-  const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view health stats')
-
   const db = c.get('db')
 
   const rows = await db
@@ -382,9 +359,6 @@ adminRouter.get('/health/stats', async (c) => {
 
 // GET /api/v1/admin/health — Paginated health check resource list
 adminRouter.get('/health', async (c) => {
-  const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view health checks')
-
   const db = c.get('db')
   const { offset, limit, statusList } = parsePaginatedQuery(c)
 
@@ -428,9 +402,6 @@ adminRouter.get('/health', async (c) => {
 
 // GET /api/v1/admin/users/stats — User count statistics
 adminRouter.get('/users/stats', async (c) => {
-  const currentUser = c.get('user')
-  if (!currentUser?.sysadmin) throw new ForbiddenError('Only sysadmin can view user stats')
-
   const db = c.get('db')
 
   const rows = await db
@@ -458,9 +429,6 @@ adminRouter.get('/users/stats', async (c) => {
 
 // GET /api/v1/admin/users — Paginated user list with optional search
 adminRouter.get('/users', async (c) => {
-  const currentUser = c.get('user')
-  if (!currentUser?.sysadmin) throw new ForbiddenError('Only sysadmin can view users')
-
   const db = c.get('db')
   const { offset, limit } = parsePaginatedQuery(c)
   const q = c.req.query('q')
@@ -504,9 +472,6 @@ adminRouter.post(
     })
   ),
   async (c) => {
-    const currentUser = c.get('user')
-    if (!currentUser?.sysadmin) throw new ForbiddenError('Only sysadmin can create users')
-
     const auth = c.get('auth')
     const body = c.req.valid('json')
 
@@ -542,9 +507,7 @@ adminRouter.patch(
     })
   ),
   async (c) => {
-    const currentUser = c.get('user')
-    if (!currentUser?.sysadmin) throw new ForbiddenError('Only sysadmin can update users')
-
+    const currentUser = c.get('user')!
     const userId = c.req.param('userId')
     const body = c.req.valid('json')
 
@@ -621,9 +584,7 @@ adminRouter.patch(
 
 // DELETE /api/v1/admin/users/:userId — Soft-delete user
 adminRouter.delete('/users/:userId', async (c) => {
-  const currentUser = c.get('user')
-  if (!currentUser?.sysadmin) throw new ForbiddenError('Only sysadmin can delete users')
-
+  const currentUser = c.get('user')!
   const userId = c.req.param('userId')
   if (userId === currentUser.id) {
     return c.json(
@@ -639,9 +600,7 @@ adminRouter.delete('/users/:userId', async (c) => {
 
 // POST /api/v1/admin/users/:userId/restore — Restore a soft-deleted user
 adminRouter.post('/users/:userId/restore', async (c) => {
-  const currentUser = c.get('user')
-  if (!currentUser?.sysadmin) throw new ForbiddenError('Only sysadmin can restore users')
-
+  const currentUser = c.get('user')!
   const userId = c.req.param('userId')
   if (userId === currentUser.id) {
     return c.json(
@@ -657,9 +616,7 @@ adminRouter.post('/users/:userId/restore', async (c) => {
 
 // POST /api/v1/admin/users/:userId/purge — Permanently delete a soft-deleted user
 adminRouter.post('/users/:userId/purge', async (c) => {
-  const currentUser = c.get('user')
-  if (!currentUser?.sysadmin) throw new ForbiddenError('Only sysadmin can purge users')
-
+  const currentUser = c.get('user')!
   const userId = c.req.param('userId')
   if (userId === currentUser.id) {
     return c.json(

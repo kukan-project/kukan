@@ -33,7 +33,7 @@ services:
     image: postgres:16-alpine
     container_name: kukan-postgres
     ports:
-      - '5432:5432'
+      - '127.0.0.1:5432:5432'
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-kukan}
       POSTGRES_USER: ${POSTGRES_USER:-kukan}
@@ -50,8 +50,8 @@ services:
     image: pgsty/minio:latest
     container_name: kukan-minio
     ports:
-      - '9000:9000'
-      - '9001:9001'
+      - '127.0.0.1:9000:9000'
+      - '127.0.0.1:9001:9001'
     environment:
       <<: *minio-credentials
     command: server /data --console-address ":9001"
@@ -86,8 +86,8 @@ services:
     image: softwaremill/elasticmq-native:latest
     container_name: kukan-elasticmq
     ports:
-      - '9324:9324'
-      - '9325:9325'
+      - '127.0.0.1:9324:9324'
+      - '127.0.0.1:9325:9325'
     volumes:
       - ./docker/elasticmq.conf:/opt/elasticmq.conf
     healthcheck:
@@ -107,7 +107,7 @@ services:
       - DISABLE_SECURITY_PLUGIN=true
       - OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}
     ports:
-      - '9200:9200'
+      - '127.0.0.1:9200:9200'
     volumes:
       - opensearch-data:/usr/share/opensearch/data
     healthcheck:
@@ -120,7 +120,7 @@ services:
     image: opensearchproject/opensearch-dashboards:3
     container_name: kukan-opensearch-dashboards
     ports:
-      - '5601:5601'
+      - '127.0.0.1:5601:5601'
     environment:
       - OPENSEARCH_HOSTS=["http://opensearch:9200"]
       - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true

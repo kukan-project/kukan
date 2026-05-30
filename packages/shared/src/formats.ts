@@ -118,6 +118,9 @@ export function toCharset(encoding: string): string {
   return ENCODING_TO_CHARSET[encoding] ?? 'utf-8'
 }
 
+/** Maximum upload file size (100 MB) — shared between client and server */
+export const MAX_UPLOAD_SIZE = 100 * 1024 * 1024
+
 /** Storage key prefix for resource raw files */
 export const RESOURCE_PREFIX = 'resources/'
 

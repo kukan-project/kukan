@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { clientFetch } from '@/lib/client-api'
 import { detectFormat, detectContentType } from '@kukan/shared'
-import { MAX_UPLOAD_SIZE } from '@/config'
+import { MAX_UPLOAD_SIZE } from '@kukan/shared'
 
 export type UploadStatus = 'idle' | 'requesting' | 'uploading' | 'completing' | 'done' | 'error'
 

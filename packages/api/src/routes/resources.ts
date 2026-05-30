@@ -4,6 +4,7 @@
  */
 
 import { Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { zValidator } from '@hono/zod-validator'
 import { ResourceService } from '../services/resource-service'
 import { PipelineService } from '../services/pipeline-service'
@@ -21,6 +22,7 @@ import {
   toCharset,
   isOfficeFormat,
   isPdfFormat,
+  MAX_UPLOAD_SIZE,
 } from '@kukan/shared'
 import { TEXT_PREVIEW_LIMIT, DEFAULT_RANGE_CHUNK } from '../config'
 import { checkOrgRole, resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
@@ -171,8 +173,11 @@ resourcesRouter.get('/:id/download', async (c) => {
   const service = new ResourceService(c.get('db'))
   const resource = await service.getByIdWithAccessCheck(id, user)
 
-  // External URL: redirect to original URL
+  // External URL: redirect to original URL (http/https only to prevent open redirect)
   if (resource.urlType !== 'upload' && resource.url) {
+    if (!/^https?:\/\//i.test(resource.url)) {
+      throw new ValidationError('Resource URL has an unsupported scheme')
+    }
     return c.redirect(resource.url, 302)
   }
 
@@ -322,7 +327,7 @@ resourcesRouter.post('/:id/upload-url', zValidator('json', uploadUrlSchema), asy
 })
 
 // POST /api/v1/resources/:id/upload - Server-side upload (multipart, for local storage)
-resourcesRouter.post('/:id/upload', async (c) => {
+resourcesRouter.post('/:id/upload', bodyLimit({ maxSize: MAX_UPLOAD_SIZE }), async (c) => {
   const user = c.get('user')
   if (!user) throw new ForbiddenError('Authentication required')
 
