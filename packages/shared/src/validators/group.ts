@@ -18,7 +18,6 @@ export const createGroupSchema = z.object({
   description: z.string().nullish(),
   imageUrl: z.union([z.url(), z.literal('')]).nullish(),
   extras: z.record(z.string(), z.unknown()).default({}),
-  state: z.enum(['active', 'deleted']).default('active'),
 })
 
 export const updateGroupSchema = createGroupSchema

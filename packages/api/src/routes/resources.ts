@@ -74,7 +74,11 @@ async function checkResourcePermission(
 ) {
   const existing = await resourceService.getById(resourceId)
   const pkg = await new PackageService(db).getByNameOrId(existing.packageId)
-  if (pkg.ownerOrg) await checkOrgRole(db, user, pkg.ownerOrg, 'editor')
+  if (pkg.ownerOrg) {
+    await checkOrgRole(db, user, pkg.ownerOrg, 'editor')
+  } else if (!user.sysadmin) {
+    throw new ForbiddenError('Only sysadmin can modify resources without an organization')
+  }
   return existing
 }
 

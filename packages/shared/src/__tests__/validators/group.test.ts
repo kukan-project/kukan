@@ -29,6 +29,14 @@ describe('createGroupSchema', () => {
       expect(result.data.extras).toEqual({})
     }
   })
+
+  it('should strip state from input', () => {
+    const result = createGroupSchema.safeParse({ name: 'test-group', state: 'deleted' })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect('state' in result.data).toBe(false)
+    }
+  })
 })
 
 describe('updateGroupSchema', () => {

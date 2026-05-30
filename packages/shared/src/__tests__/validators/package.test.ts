@@ -116,6 +116,20 @@ describe('createPackageSchema', () => {
       expect(result.success).toBe(false)
     })
   })
+
+  describe('state field', () => {
+    it('should strip state from input', () => {
+      const result = createPackageSchema.safeParse({
+        name: 'test-pkg',
+        ownerOrg: TEST_ORG_ID,
+        state: 'deleted',
+      })
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect('state' in result.data).toBe(false)
+      }
+    })
+  })
 })
 
 describe('updatePackageSchema', () => {

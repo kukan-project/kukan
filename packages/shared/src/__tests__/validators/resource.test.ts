@@ -82,6 +82,14 @@ describe('createResourceSchema', () => {
       expect('extras' in result.data).toBe(false)
     }
   })
+
+  it('should strip state from input', () => {
+    const result = createResourceSchema.safeParse({ packageId: validUuid, state: 'deleted' })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect('state' in result.data).toBe(false)
+    }
+  })
 })
 
 describe('updateResourceSchema', () => {

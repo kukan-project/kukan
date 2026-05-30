@@ -29,7 +29,6 @@ const resourceFieldsSchema = z.object({
   size: z.number().int().positive().nullish(),
   hash: z.string().nullish(),
   resourceType: z.string().max(50).nullish(),
-  state: z.enum(['active', 'deleted']).default('active'),
 })
 
 export const createResourceSchema = resourceFieldsSchema.superRefine(refineUrl)

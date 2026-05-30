@@ -1,19 +1,36 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { createTestApp } from '../test-helpers/test-app'
-import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
+import {
+  getTestDb,
+  cleanDatabase,
+  closeTestDb,
+  ensureTestUser,
+  OUTSIDER_USER_ID,
+  ensureOutsiderUser,
+} from '../test-helpers/test-db'
 import { PostgresSearchAdapter } from '@kukan/search-adapter'
 import { packageGroup } from '@kukan/db'
 
 const db = getTestDb()
 const search = new PostgresSearchAdapter(db)
 const app = createTestApp(db, { search })
+const outsiderApp = createTestApp(db, {
+  search,
+  user: {
+    id: OUTSIDER_USER_ID,
+    email: 'outsider@example.com',
+    name: 'outsider',
+    sysadmin: false,
+  },
+})
 
 let testOrgId: string
 
 beforeEach(async () => {
   await cleanDatabase()
   await ensureTestUser()
+  await ensureOutsiderUser()
   testOrgId = undefined as unknown as string
 })
 
@@ -642,6 +659,108 @@ describe('Packages API Routes', () => {
       // sysadmin (default test user) should be able to access
       const res = await app.request('/api/v1/packages/deleted-admin-pkg?state=deleted')
       expect(res.status).toBe(200)
+    })
+  })
+
+  describe('ownerOrg transfer (SEC-003)', () => {
+    it('should reject transfer to org where user is not editor', async () => {
+      await createPackage({ name: 'transfer-pkg' })
+      const orgId = await ensureTestOrg()
+
+      // Create a second org (outsider has no membership)
+      const org2Res = await app.request('/api/v1/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'target-org' }),
+      })
+      const org2 = await org2Res.json()
+
+      // Add outsider as editor in source org so they can initiate the update
+      await app.request(`/api/v1/organizations/${orgId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: OUTSIDER_USER_ID, role: 'editor' }),
+      })
+
+      // Outsider tries to transfer package to org2 (no membership)
+      const res = await outsiderApp.request('/api/v1/packages/transfer-pkg', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'transfer-pkg', ownerOrg: org2.id }),
+      })
+      expect(res.status).toBe(403)
+    })
+
+    it('should allow transfer when user is editor in both orgs', async () => {
+      await createPackage({ name: 'transfer-pkg2' })
+      const orgId = await ensureTestOrg()
+
+      const org2Res = await app.request('/api/v1/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'target-org2' }),
+      })
+      const org2 = await org2Res.json()
+
+      // Add outsider as editor in both orgs
+      await app.request(`/api/v1/organizations/${orgId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: OUTSIDER_USER_ID, role: 'editor' }),
+      })
+      await app.request(`/api/v1/organizations/${org2.id}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: OUTSIDER_USER_ID, role: 'editor' }),
+      })
+
+      const res = await outsiderApp.request('/api/v1/packages/transfer-pkg2', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'transfer-pkg2', ownerOrg: org2.id }),
+      })
+      expect(res.status).toBe(200)
+    })
+  })
+
+  describe('ownerOrg null guard (SEC-005)', () => {
+    it('should reject non-sysadmin updating a package without ownerOrg', async () => {
+      // Create package via sysadmin, then remove ownerOrg directly in DB
+      const createRes = await createPackage({ name: 'no-org-pkg' })
+      const pkg = await createRes.json()
+      await db.execute(sql`UPDATE package SET owner_org = NULL WHERE id = ${pkg.id}`)
+
+      // Outsider is not a sysadmin — should be rejected regardless of org membership
+      const res = await outsiderApp.request('/api/v1/packages/no-org-pkg', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'no-org-pkg', ownerOrg: testOrgId }),
+      })
+      expect(res.status).toBe(403)
+    })
+
+    it('should allow sysadmin to update a package without ownerOrg', async () => {
+      const createRes = await createPackage({ name: 'no-org-pkg2' })
+      const pkg = await createRes.json()
+      await db.execute(sql`UPDATE package SET owner_org = NULL WHERE id = ${pkg.id}`)
+
+      const res = await app.request('/api/v1/packages/no-org-pkg2', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'no-org-pkg2', ownerOrg: testOrgId }),
+      })
+      expect(res.status).toBe(200)
+    })
+
+    it('should reject non-sysadmin deleting a package without ownerOrg', async () => {
+      const createRes = await createPackage({ name: 'no-org-del-pkg' })
+      const pkg = await createRes.json()
+      await db.execute(sql`UPDATE package SET owner_org = NULL WHERE id = ${pkg.id}`)
+
+      const res = await outsiderApp.request('/api/v1/packages/no-org-del-pkg', {
+        method: 'DELETE',
+      })
+      expect(res.status).toBe(403)
     })
   })
 })

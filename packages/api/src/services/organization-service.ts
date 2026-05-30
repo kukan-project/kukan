@@ -95,7 +95,7 @@ export class OrganizationService {
         description: input.description,
         imageUrl: input.imageUrl,
         extras: input.extras,
-        state: input.state,
+        state: 'active',
       })
       .returning()
 
@@ -113,7 +113,6 @@ export class OrganizationService {
         description: input.description ?? null,
         imageUrl: input.imageUrl ?? null,
         extras: input.extras,
-        state: input.state ?? 'active',
         updated: new Date(),
       })
       .where(eq(organization.id, existing.id))

@@ -1,10 +1,15 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
-import { eq, sql } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { resource as resourceTable } from '@kukan/db'
 import { createTestApp, mockSearch } from '../test-helpers/test-app'
-import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
-
-const OUTSIDER_USER_ID = '00000000-0000-0000-0000-000000000099'
+import {
+  getTestDb,
+  cleanDatabase,
+  closeTestDb,
+  ensureTestUser,
+  OUTSIDER_USER_ID,
+  ensureOutsiderUser,
+} from '../test-helpers/test-db'
 
 const db = getTestDb()
 const app = createTestApp(db)
@@ -20,14 +25,6 @@ const outsiderApp = createTestApp(db, {
 })
 
 let testOrgId: string
-
-async function ensureOutsiderUser() {
-  await db.execute(sql`
-    INSERT INTO "user" (id, email, name, "emailVerified", role, state)
-    VALUES (${OUTSIDER_USER_ID}, 'outsider@example.com', 'outsider', true, 'user', 'active')
-    ON CONFLICT (id) DO NOTHING
-  `)
-}
 
 beforeEach(async () => {
   await cleanDatabase()

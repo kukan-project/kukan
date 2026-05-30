@@ -58,4 +58,12 @@ describe('updateOrganizationSchema', () => {
     })
     expect(result.success).toBe(true)
   })
+
+  it('should strip state from input', () => {
+    const result = createOrganizationSchema.safeParse({ name: 'test-org', state: 'deleted' })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect('state' in result.data).toBe(false)
+    }
+  })
 })

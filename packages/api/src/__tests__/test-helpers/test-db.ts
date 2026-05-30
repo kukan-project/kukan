@@ -58,6 +58,22 @@ export async function ensureTestUser() {
   `)
 }
 
+/** Non-sysadmin outsider user ID for permission tests */
+export const OUTSIDER_USER_ID = '00000000-0000-0000-0000-000000000099'
+
+/**
+ * Ensure the outsider test user exists in the database.
+ * Call in beforeEach() for tests that need a non-sysadmin user.
+ */
+export async function ensureOutsiderUser() {
+  const db = getTestDb()
+  await db.execute(sql`
+    INSERT INTO "user" (id, email, name, "emailVerified", role, state)
+    VALUES (${OUTSIDER_USER_ID}, 'outsider@example.com', 'outsider', true, 'user', 'active')
+    ON CONFLICT (id) DO NOTHING
+  `)
+}
+
 /**
  * Close the connection pool. Call in afterAll() of the top-level suite.
  */
