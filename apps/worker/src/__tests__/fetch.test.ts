@@ -2,7 +2,26 @@ import { describe, it, expect, vi } from 'vitest'
 import { createHash } from 'crypto'
 import { Readable } from 'stream'
 import { executeFetch } from '../pipeline/steps/fetch'
-import type { PipelineContext } from '../pipeline/types'
+import type { PipelineContext, ResourceForPipeline } from '../pipeline/types'
+
+// Mock safeFetch to use globalThis.fetch directly (SSRF logic tested separately)
+vi.mock('@/safe-fetch', () => ({
+  safeFetch: (...args: unknown[]) => globalThis.fetch(...(args as Parameters<typeof fetch>)),
+}))
+
+function makeResource(overrides: Partial<ResourceForPipeline>): ResourceForPipeline {
+  return {
+    id: 'res-1',
+    packageId: 'pkg-1',
+    name: null,
+    description: null,
+    url: null,
+    urlType: null,
+    format: 'CSV',
+    hash: null,
+    ...overrides,
+  }
+}
 
 /** Collect all data from a stream into a Buffer */
 async function streamToBuffer(stream: Readable): Promise<Buffer> {
@@ -19,7 +38,6 @@ function createMockCtx(overrides?: Partial<PipelineContext>): PipelineContext {
     storage: {
       download: vi.fn(),
       upload: vi.fn(async (_key: string, body: Buffer | Readable) => {
-        // Consume the stream so the Transform pipeline completes
         if (body instanceof Readable) {
           await streamToBuffer(body)
         }
@@ -28,6 +46,9 @@ function createMockCtx(overrides?: Partial<PipelineContext>): PipelineContext {
     getResource: vi.fn(),
     updateResourceHashAndSize: vi.fn(),
     acquireFetchSlot: vi.fn().mockResolvedValue(true),
+    indexContent: vi.fn(),
+    deleteContent: vi.fn(),
+    updatePipelineMetadata: vi.fn(),
     ...overrides,
   }
 }
@@ -42,14 +63,7 @@ describe('executeFetch', () => {
 
   it('should throw ValidationError when resource has no file or URL', async () => {
     const ctx = createMockCtx()
-    vi.mocked(ctx.getResource).mockResolvedValue({
-      id: 'res-1',
-      packageId: 'pkg-1',
-      url: null,
-      urlType: null,
-      format: 'CSV',
-      hash: null,
-    })
+    vi.mocked(ctx.getResource).mockResolvedValue(makeResource({}))
 
     await expect(executeFetch('res-1', ctx)).rejects.toThrow('no file or URL')
   })
@@ -59,14 +73,7 @@ describe('executeFetch', () => {
     const expectedHash = `sha256:${createHash('sha256').update(content).digest('hex')}`
     const ctx = createMockCtx()
     vi.mocked(ctx.storage.download).mockResolvedValue(Readable.from(Buffer.from(content)))
-    vi.mocked(ctx.getResource).mockResolvedValue({
-      id: 'res-1',
-      packageId: 'pkg-1',
-      url: null,
-      urlType: 'upload',
-      format: 'CSV',
-      hash: null,
-    })
+    vi.mocked(ctx.getResource).mockResolvedValue(makeResource({ urlType: 'upload' }))
 
     const result = await executeFetch('res-1', ctx)
 
@@ -76,9 +83,7 @@ describe('executeFetch', () => {
       packageId: 'pkg-1',
       status: 'fetched',
     })
-    // Should not upload (data already in Storage)
     expect(ctx.storage.upload).not.toHaveBeenCalled()
-    // Should compute and save hash
     expect(ctx.updateResourceHashAndSize).toHaveBeenCalledWith('res-1', {
       hash: expectedHash,
       size: content.length,
@@ -87,14 +92,9 @@ describe('executeFetch', () => {
 
   it('should skip hash computation for upload resources when already set', async () => {
     const ctx = createMockCtx()
-    vi.mocked(ctx.getResource).mockResolvedValue({
-      id: 'res-1',
-      packageId: 'pkg-1',
-      url: null,
-      urlType: 'upload',
-      format: 'CSV',
-      hash: 'sha256:abc',
-    })
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ urlType: 'upload', hash: 'sha256:abc' })
+    )
 
     const result = await executeFetch('res-1', ctx)
 
@@ -114,14 +114,9 @@ describe('executeFetch', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse)
 
     const ctx = createMockCtx()
-    vi.mocked(ctx.getResource).mockResolvedValue({
-      id: 'res-1',
-      packageId: 'pkg-1',
-      url: 'https://example.com/data.csv',
-      urlType: null,
-      format: 'CSV',
-      hash: null,
-    })
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ url: 'https://example.com/data.csv' })
+    )
 
     const result = await executeFetch('res-1', ctx)
 
@@ -131,7 +126,6 @@ describe('executeFetch', () => {
       packageId: 'pkg-1',
       status: 'fetched',
     })
-    // Verify upload was called with correct key and a stream
     expect(ctx.storage.upload).toHaveBeenCalledWith('resources/pkg-1/res-1', expect.any(Readable))
     expect(ctx.updateResourceHashAndSize).toHaveBeenCalledWith('res-1', {
       hash: expectedHash,
@@ -149,14 +143,9 @@ describe('executeFetch', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse)
 
     const ctx = createMockCtx()
-    vi.mocked(ctx.getResource).mockResolvedValue({
-      id: 'res-1',
-      packageId: 'pkg-1',
-      url: 'https://example.com/data.csv',
-      urlType: null,
-      format: 'CSV',
-      hash: existingHash,
-    })
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ url: 'https://example.com/data.csv', hash: existingHash })
+    )
 
     await executeFetch('res-1', ctx)
 
@@ -170,14 +159,9 @@ describe('executeFetch', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse)
 
     const ctx = createMockCtx()
-    vi.mocked(ctx.getResource).mockResolvedValue({
-      id: 'res-1',
-      packageId: 'pkg-1',
-      url: 'https://example.com/not-found.csv',
-      urlType: null,
-      format: 'CSV',
-      hash: null,
-    })
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ url: 'https://example.com/not-found.csv' })
+    )
 
     await expect(executeFetch('res-1', ctx)).rejects.toThrow('Failed to fetch')
 
@@ -192,14 +176,9 @@ describe('executeFetch', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse)
 
     const ctx = createMockCtx()
-    vi.mocked(ctx.getResource).mockResolvedValue({
-      id: 'res-1',
-      packageId: 'pkg-1',
-      url: 'https://example.com/big.csv',
-      urlType: null,
-      format: 'CSV',
-      hash: null,
-    })
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ url: 'https://example.com/big.csv' })
+    )
 
     await expect(executeFetch('res-1', ctx)).rejects.toThrow('100MB limit')
 
@@ -220,14 +199,9 @@ describe('executeFetch', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse)
 
     const ctx = createMockCtx()
-    vi.mocked(ctx.getResource).mockResolvedValue({
-      id: 'res-1',
-      packageId: 'pkg-1',
-      url: 'https://example.com/big.csv',
-      urlType: null,
-      format: 'CSV',
-      hash: null,
-    })
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ url: 'https://example.com/big.csv' })
+    )
 
     await expect(executeFetch('res-1', ctx)).rejects.toThrow('100MB limit')
 
@@ -237,14 +211,9 @@ describe('executeFetch', () => {
   it('should return correct format and packageId', async () => {
     const ctx = createMockCtx()
     vi.mocked(ctx.storage.download).mockResolvedValue(Readable.from(Buffer.from('test')))
-    vi.mocked(ctx.getResource).mockResolvedValue({
-      id: 'res-1',
-      packageId: 'pkg-99',
-      url: null,
-      urlType: 'upload',
-      format: 'JSON',
-      hash: null,
-    })
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ packageId: 'pkg-99', urlType: 'upload', format: 'JSON' })
+    )
 
     const result = await executeFetch('res-1', ctx)
 
@@ -259,14 +228,9 @@ describe('executeFetch', () => {
   it('should return deferred when rate-limited', async () => {
     const ctx = createMockCtx()
     vi.mocked(ctx.acquireFetchSlot).mockResolvedValue(false)
-    vi.mocked(ctx.getResource).mockResolvedValue({
-      id: 'res-1',
-      packageId: 'pkg-1',
-      url: 'https://example.com/data.csv',
-      urlType: null,
-      format: 'CSV',
-      hash: null,
-    })
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ url: 'https://example.com/data.csv' })
+    )
 
     const result = await executeFetch('res-1', ctx)
 
@@ -278,14 +242,7 @@ describe('executeFetch', () => {
   it('should not check rate limit for uploads', async () => {
     const ctx = createMockCtx()
     vi.mocked(ctx.storage.download).mockResolvedValue(Readable.from(Buffer.from('test')))
-    vi.mocked(ctx.getResource).mockResolvedValue({
-      id: 'res-1',
-      packageId: 'pkg-1',
-      url: null,
-      urlType: 'upload',
-      format: 'CSV',
-      hash: null,
-    })
+    vi.mocked(ctx.getResource).mockResolvedValue(makeResource({ urlType: 'upload' }))
 
     await executeFetch('res-1', ctx)
 

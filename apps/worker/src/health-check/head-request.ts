@@ -3,6 +3,7 @@
  * Lightweight liveness check + ETag/Last-Modified change detection.
  */
 
+import { safeFetch } from '@/safe-fetch'
 import { HEALTH_CHECK_TIMEOUT_MS } from '@/config'
 import type { HeadCheckResult, ResourceForHealthCheck } from './types'
 
@@ -12,10 +13,9 @@ import type { HeadCheckResult, ResourceForHealthCheck } from './types'
  */
 export async function executeHeadCheck(res: ResourceForHealthCheck): Promise<HeadCheckResult> {
   try {
-    const response = await fetch(res.url, {
+    const response = await safeFetch(res.url, {
       method: 'HEAD',
       signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
-      redirect: 'follow',
     })
 
     const etag = response.headers.get('etag')

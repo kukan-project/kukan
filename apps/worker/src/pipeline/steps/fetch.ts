@@ -7,6 +7,7 @@
 import { createHash } from 'crypto'
 import { Transform, Readable } from 'stream'
 import { KukanError, NotFoundError, ValidationError, getStorageKey } from '@kukan/shared'
+import { safeFetch } from '@/safe-fetch'
 import type { PipelineContext } from '../types'
 import { MAX_FETCH_SIZE, FETCH_TIMEOUT_MS } from '@/config'
 
@@ -87,7 +88,7 @@ async function downloadToStorage(
   storageKey: string,
   ctx: PipelineContext
 ): Promise<{ hash: string; size: number }> {
-  const response = await fetch(url, {
+  const response = await safeFetch(url, {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   })
 

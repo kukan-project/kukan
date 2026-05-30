@@ -510,6 +510,36 @@ describe('OpenSearchAdapter', () => {
       expect(result.items[0].highlightedNotes).toBe('<mark>note</mark>')
     })
 
+    it('should strip attributes from mark tags to prevent XSS', async () => {
+      mockClient.msearch.mockResolvedValue({
+        body: {
+          responses: [
+            {
+              hits: {
+                total: { value: 1 },
+                hits: [
+                  {
+                    _id: 'pkg-1',
+                    _source: { name: 'test' },
+                    _score: 5,
+                    highlight: {
+                      title: ['<mark onmouseover="alert(1)">test</mark>'],
+                    },
+                  },
+                ],
+              },
+            },
+            { hits: { total: { value: 0 }, hits: [] } },
+            { hits: { total: { value: 0 }, hits: [] } },
+          ],
+        },
+      })
+
+      const result = await adapter.search({ q: 'test' })
+
+      expect(result.items[0].highlightedTitle).toBe('<mark>test</mark>')
+    })
+
     it('should sanitize XSS in resource and content highlight snippets', async () => {
       mockClient.msearch.mockResolvedValue({
         body: {

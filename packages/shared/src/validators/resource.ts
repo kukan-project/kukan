@@ -4,14 +4,53 @@
 
 import { z } from 'zod'
 
-/** Validate that url is a valid URL when urlType is not 'upload' */
+const BLOCKED_HOSTS = new Set(['localhost', 'metadata.google.internal'])
+
+/** Check if a hostname is an IPv4 address in a private/reserved range */
+function isPrivateIPv4(host: string): boolean {
+  const parts = host.split('.')
+  if (parts.length !== 4) return false
+  const nums = parts.map(Number)
+  if (nums.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false
+  const [a, b] = nums
+  // Private ranges (10/8, 172.16/12, 192.168/16) are allowed for intranet deployments
+  return (
+    a === 127 || // loopback
+    a === 0 || // 0.0.0.0/8
+    (a === 169 && b === 254) // 169.254.0.0/16 (link-local, AWS IMDS)
+  )
+}
+
+/** Check if a hostname is an IPv6 address in a private/reserved range */
+function isPrivateIPv6(host: string): boolean {
+  const addr = host.replace(/^\[|\]$/g, '').toLowerCase()
+  if (addr === '::' || addr === '::1' || addr === '0:0:0:0:0:0:0:1') return true
+  if (/^fe[89ab][0-9a-f]:/.test(addr)) return true
+  return false
+}
+
+/** Validate that url is a valid http(s) URL when urlType is not 'upload' */
 function refineUrl(data: { url?: string | null; urlType?: string | null }, ctx: z.RefinementCtx) {
   if (data.url && data.urlType !== 'upload') {
     const result = z.url().safeParse(data.url)
     if (!result.success) {
+      ctx.addIssue({ code: 'custom', message: 'Invalid URL', path: ['url'] })
+      return
+    }
+    const parsed = new URL(data.url)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       ctx.addIssue({
         code: 'custom',
-        message: 'Invalid URL',
+        message: 'Only http and https URLs are allowed',
+        path: ['url'],
+      })
+      return
+    }
+    const hostname = parsed.hostname.toLowerCase()
+    if (BLOCKED_HOSTS.has(hostname) || isPrivateIPv4(hostname) || isPrivateIPv6(hostname)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'URL points to a private or reserved address',
         path: ['url'],
       })
     }

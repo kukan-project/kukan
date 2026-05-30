@@ -83,6 +83,67 @@ describe('createResourceSchema', () => {
     }
   })
 
+  it('should reject loopback and link-local IPv4 URLs', () => {
+    const blockedUrls = ['http://127.0.0.1/', 'http://169.254.169.254/latest/meta-data/']
+    for (const url of blockedUrls) {
+      const result = createResourceSchema.safeParse({ packageId: validUuid, url })
+      expect(result.success, `expected ${url} to be rejected`).toBe(false)
+    }
+  })
+
+  it('should allow private network IPv4 URLs for intranet use', () => {
+    const allowedUrls = ['http://10.0.0.1/data', 'http://192.168.1.1/api', 'http://172.16.0.1/']
+    for (const url of allowedUrls) {
+      const result = createResourceSchema.safeParse({ packageId: validUuid, url })
+      expect(result.success, `expected ${url} to be allowed`).toBe(true)
+    }
+  })
+
+  it('should reject loopback and link-local IPv6 URLs', () => {
+    const blockedUrls = [
+      'http://[::1]/',
+      'http://[fe80::1]/',
+      'http://[fe90::1]/',
+      'http://[febf::1]/',
+    ]
+    for (const url of blockedUrls) {
+      const result = createResourceSchema.safeParse({ packageId: validUuid, url })
+      expect(result.success, `expected ${url} to be rejected`).toBe(false)
+    }
+  })
+
+  it('should allow ULA IPv6 URLs for intranet use', () => {
+    const allowedUrls = ['http://[fc00::1]/', 'http://[fd00::1]/']
+    for (const url of allowedUrls) {
+      const result = createResourceSchema.safeParse({ packageId: validUuid, url })
+      expect(result.success, `expected ${url} to be allowed`).toBe(true)
+    }
+  })
+
+  it('should reject localhost', () => {
+    const result = createResourceSchema.safeParse({
+      packageId: validUuid,
+      url: 'http://localhost/data',
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('should reject non-http(s) URLs', () => {
+    const result = createResourceSchema.safeParse({
+      packageId: validUuid,
+      url: 'ftp://example.com/data',
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('should allow public URLs', () => {
+    const result = createResourceSchema.safeParse({
+      packageId: validUuid,
+      url: 'https://data.example.com/dataset.csv',
+    })
+    expect(result.success).toBe(true)
+  })
+
   it('should strip state from input', () => {
     const result = createResourceSchema.safeParse({ packageId: validUuid, state: 'deleted' })
     expect(result.success).toBe(true)

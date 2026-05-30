@@ -50,9 +50,9 @@ function isNotFoundError(err: unknown): boolean {
   return Boolean(err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 404)
 }
 
-/** Sanitize OpenSearch highlight output: strip all HTML except <mark> tags */
+/** Sanitize OpenSearch highlight output: allow only bare <mark> and </mark> tags */
 function sanitizeHighlight(html: string): string {
-  return html.replace(/<\/?(?!mark\b)[a-z][^>]*>/gi, '')
+  return html.replace(/<mark\b[^>]*>/gi, '<mark>').replace(/<\/?(?!mark\b)[a-z][^>]*>/gi, '')
 }
 
 export interface OpenSearchConfig {

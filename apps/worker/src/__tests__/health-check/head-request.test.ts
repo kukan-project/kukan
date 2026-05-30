@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { executeHeadCheck } from '../../health-check/head-request'
 import type { ResourceForHealthCheck } from '../../health-check/types'
 
+// Mock safeFetch to use globalThis.fetch directly (SSRF logic tested separately)
+vi.mock('@/safe-fetch', () => ({
+  safeFetch: (...args: unknown[]) => globalThis.fetch(...(args as Parameters<typeof fetch>)),
+}))
+
 function makeResource(overrides: Partial<ResourceForHealthCheck> = {}): ResourceForHealthCheck {
   return {
     id: 'res-1',
@@ -138,7 +143,6 @@ describe('executeHeadCheck', () => {
     expect(fetchSpy).toHaveBeenCalledWith('https://example.com/data.csv', {
       method: 'HEAD',
       signal: expect.any(AbortSignal),
-      redirect: 'follow',
     })
   })
 })
