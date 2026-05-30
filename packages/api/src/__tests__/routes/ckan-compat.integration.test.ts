@@ -6,6 +6,16 @@ import { PostgresSearchAdapter } from '@kukan/search-adapter'
 const db = getTestDb()
 const search = new PostgresSearchAdapter(db)
 const app = createTestApp(db, { search })
+const unauthApp = createTestApp(db, { search, user: null })
+const outsiderApp = createTestApp(db, {
+  search,
+  user: {
+    id: '00000000-0000-0000-0000-000000000099',
+    email: 'outsider@example.com',
+    name: 'outsider',
+    sysadmin: false,
+  },
+})
 
 beforeEach(async () => {
   await cleanDatabase()
@@ -160,6 +170,40 @@ describe('CKAN-Compatible API (/api/3/action)', () => {
       const res = await app.request(
         '/api/3/action/resource_show?id=00000000-0000-0000-0000-000000000000'
       )
+      expect(res.status).toBe(404)
+
+      const body = await res.json()
+      expect(body.success).toBe(false)
+    })
+
+    it('should return 404 for private package resource when unauthenticated', async () => {
+      const pkg = await createPackage('private-ckan-res', { private: true })
+
+      const createRes = await app.request(`/api/v1/packages/${pkg.id}/resources`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'secret-resource', format: 'CSV' }),
+      })
+      const resource = await createRes.json()
+
+      const res = await unauthApp.request(`/api/3/action/resource_show?id=${resource.id}`)
+      expect(res.status).toBe(404)
+
+      const body = await res.json()
+      expect(body.success).toBe(false)
+    })
+
+    it('should return 404 for private package resource when user is not org member', async () => {
+      const pkg = await createPackage('private-ckan-res2', { private: true })
+
+      const createRes = await app.request(`/api/v1/packages/${pkg.id}/resources`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'secret-resource-2', format: 'CSV' }),
+      })
+      const resource = await createRes.json()
+
+      const res = await outsiderApp.request(`/api/3/action/resource_show?id=${resource.id}`)
       expect(res.status).toBe(404)
 
       const body = await res.json()

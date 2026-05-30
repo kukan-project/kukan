@@ -1,18 +1,38 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { resource as resourceTable } from '@kukan/db'
 import { createTestApp, mockSearch } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 
+const OUTSIDER_USER_ID = '00000000-0000-0000-0000-000000000099'
+
 const db = getTestDb()
 const app = createTestApp(db)
 const unauthApp = createTestApp(db, { user: null })
+/** Non-sysadmin user with no org membership */
+const outsiderApp = createTestApp(db, {
+  user: {
+    id: OUTSIDER_USER_ID,
+    email: 'outsider@example.com',
+    name: 'outsider',
+    sysadmin: false,
+  },
+})
 
 let testOrgId: string
+
+async function ensureOutsiderUser() {
+  await db.execute(sql`
+    INSERT INTO "user" (id, email, name, "emailVerified", role, state)
+    VALUES (${OUTSIDER_USER_ID}, 'outsider@example.com', 'outsider', true, 'user', 'active')
+    ON CONFLICT (id) DO NOTHING
+  `)
+}
 
 beforeEach(async () => {
   await cleanDatabase()
   await ensureTestUser()
+  await ensureOutsiderUser()
   testOrgId = undefined as unknown as string
 })
 
@@ -32,12 +52,12 @@ async function ensureTestOrg() {
   return testOrgId
 }
 
-async function createPackage(name: string) {
+async function createPackage(name: string, options?: { private?: boolean }) {
   const orgId = await ensureTestOrg()
   const res = await app.request('/api/v1/packages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, ownerOrg: orgId }),
+    body: JSON.stringify({ name, ownerOrg: orgId, private: options?.private ?? false }),
   })
   return res.json()
 }
@@ -66,6 +86,99 @@ describe('Resources API Routes', () => {
 
     it('should return 404 for non-existent', async () => {
       const res = await app.request('/api/v1/resources/550e8400-e29b-41d4-a716-446655440000')
+      expect(res.status).toBe(404)
+    })
+
+    it('should return 404 for private package resource when unauthenticated', async () => {
+      const pkg = await createPackage('private-res-pkg', { private: true })
+      const resource = await createResource(pkg.id)
+
+      const res = await unauthApp.request(`/api/v1/resources/${resource.id}`)
+      expect(res.status).toBe(404)
+    })
+
+    it('should return 404 for private package resource when user is not org member', async () => {
+      const pkg = await createPackage('private-res-pkg2', { private: true })
+      const resource = await createResource(pkg.id)
+
+      const res = await outsiderApp.request(`/api/v1/resources/${resource.id}`)
+      expect(res.status).toBe(404)
+    })
+
+    it('should return resource for private package when user is sysadmin', async () => {
+      const pkg = await createPackage('private-res-pkg3', { private: true })
+      const resource = await createResource(pkg.id)
+
+      const res = await app.request(`/api/v1/resources/${resource.id}`)
+      expect(res.status).toBe(200)
+    })
+
+    it('should return resource for private package when user is org member', async () => {
+      const pkg = await createPackage('private-res-pkg4', { private: true })
+      const resource = await createResource(pkg.id)
+
+      // Add outsider as org member
+      await app.request(`/api/v1/organizations/${testOrgId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: OUTSIDER_USER_ID, role: 'member' }),
+      })
+
+      const res = await outsiderApp.request(`/api/v1/resources/${resource.id}`)
+      expect(res.status).toBe(200)
+    })
+  })
+
+  describe('GET /api/v1/resources/:id/download — private visibility', () => {
+    it('should return 404 for private package resource when unauthenticated', async () => {
+      const pkg = await createPackage('private-dl-pkg', { private: true })
+      const resource = await createResource(pkg.id)
+
+      const res = await unauthApp.request(`/api/v1/resources/${resource.id}/download`)
+      expect(res.status).toBe(404)
+    })
+
+    it('should return 404 for private package resource when user is not org member', async () => {
+      const pkg = await createPackage('private-dl-pkg2', { private: true })
+      const resource = await createResource(pkg.id)
+
+      const res = await outsiderApp.request(`/api/v1/resources/${resource.id}/download`)
+      expect(res.status).toBe(404)
+    })
+  })
+
+  describe('GET /api/v1/resources/:id/text — private visibility', () => {
+    it('should return 404 for private package resource when unauthenticated', async () => {
+      const pkg = await createPackage('private-text-pkg', { private: true })
+      const resource = await createResource(pkg.id)
+
+      const res = await unauthApp.request(`/api/v1/resources/${resource.id}/text`)
+      expect(res.status).toBe(404)
+    })
+
+    it('should return 404 for private package resource when user is not org member', async () => {
+      const pkg = await createPackage('private-text-pkg2', { private: true })
+      const resource = await createResource(pkg.id)
+
+      const res = await outsiderApp.request(`/api/v1/resources/${resource.id}/text`)
+      expect(res.status).toBe(404)
+    })
+  })
+
+  describe('GET /api/v1/resources/:id/preview — private visibility', () => {
+    it('should return 404 for private package resource when unauthenticated', async () => {
+      const pkg = await createPackage('private-prev-pkg', { private: true })
+      const resource = await createResource(pkg.id)
+
+      const res = await unauthApp.request(`/api/v1/resources/${resource.id}/preview`)
+      expect(res.status).toBe(404)
+    })
+
+    it('should return 404 for private package resource when user is not org member', async () => {
+      const pkg = await createPackage('private-prev-pkg2', { private: true })
+      const resource = await createResource(pkg.id)
+
+      const res = await outsiderApp.request(`/api/v1/resources/${resource.id}/preview`)
       expect(res.status).toBe(404)
     })
   })

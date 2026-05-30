@@ -186,12 +186,11 @@ packagesRouter.get(
   async (c) => {
     const nameOrId = c.req.param('nameOrId')
     const user = c.get('user')
-    const viewer = user ? { userId: user.id, sysadmin: user.sysadmin } : undefined
     // state=deleted requires authenticated user
     const reqState = c.req.valid('query').state
     const effectiveState = reqState === 'deleted' && user ? 'deleted' : 'active'
     const service = new PackageService(c.get('db'))
-    const pkg = await service.getDetailByNameOrId(nameOrId, viewer, effectiveState)
+    const pkg = await service.getDetailByNameOrId(nameOrId, user, effectiveState)
     return c.json(pkg)
   }
 )
@@ -288,10 +287,9 @@ packagesRouter.put(
 packagesRouter.get('/:packageId/resources', async (c) => {
   const packageId = c.req.param('packageId')
   const user = c.get('user')
-  const viewer = user ? { userId: user.id, sysadmin: user.sysadmin } : undefined
   const packageService = new PackageService(c.get('db'))
   // Resolve name or ID to UUID, with private visibility check
-  const pkg = await packageService.getByNameOrIdWithAccessCheck(packageId, viewer)
+  const pkg = await packageService.getByNameOrIdWithAccessCheck(packageId, user)
 
   const resourceService = new ResourceService(c.get('db'))
   const resources = await resourceService.listByPackage(pkg.id)

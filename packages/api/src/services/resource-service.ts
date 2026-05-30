@@ -8,6 +8,7 @@ import type { Database } from '@kukan/db'
 import { resource, packageTable } from '@kukan/db'
 import { NotFoundError, ValidationError, normalizeFormat, detectFormat } from '@kukan/shared'
 import type { CreateResourceInput, UpdateResourceInput } from '@kukan/shared'
+import { hasOrgMembership, type AuthUser } from '../auth/permissions'
 
 export class ResourceService {
   constructor(private db: Database) {}
@@ -52,6 +53,35 @@ export class ResourceService {
     }
 
     return res
+  }
+
+  /**
+   * Get resource by ID with parent package visibility check.
+   * Throws NotFoundError if the parent package is private and the viewer lacks access.
+   */
+  async getByIdWithAccessCheck(id: string, viewer?: AuthUser) {
+    const [row] = await this.db
+      .select({
+        resource,
+        pkgPrivate: packageTable.private,
+        pkgOwnerOrg: packageTable.ownerOrg,
+      })
+      .from(resource)
+      .innerJoin(packageTable, eq(packageTable.id, resource.packageId))
+      .where(
+        and(eq(resource.id, id), eq(resource.state, 'active'), eq(packageTable.state, 'active'))
+      )
+      .limit(1)
+
+    if (!row) {
+      throw new NotFoundError('Resource', id)
+    }
+
+    if (row.pkgPrivate && !(await hasOrgMembership(this.db, row.pkgOwnerOrg, viewer))) {
+      throw new NotFoundError('Resource', id)
+    }
+
+    return row.resource
   }
 
   /**

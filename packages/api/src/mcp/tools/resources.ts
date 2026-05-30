@@ -5,14 +5,12 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Database } from '@kukan/db'
-import { NotFoundError } from '@kukan/shared'
 import { ResourceService } from '../../services/resource-service'
-import { PackageService } from '../../services/package-service'
-import { resolveUserOrgIds } from '../../auth/permissions'
+import type { AuthUser } from '../../auth/permissions'
 
 interface ResourceToolsContext {
   db: Database
-  user?: Parameters<typeof resolveUserOrgIds>[1]
+  user?: AuthUser
 }
 
 export function registerResourceTools(server: McpServer, ctx: ResourceToolsContext) {
@@ -29,18 +27,7 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
     },
     async ({ id }) => {
       const service = new ResourceService(db)
-      const res = await service.getById(id)
-
-      // Verify the caller can access the parent dataset.
-      // Re-throw NotFoundError as NotFoundError('Resource', id) to avoid leaking package UUID.
-      const pkgService = new PackageService(db)
-      const viewer = user ? { userId: user.id, sysadmin: user.sysadmin } : undefined
-      try {
-        await pkgService.getByNameOrIdWithAccessCheck(res.packageId, viewer)
-      } catch (err) {
-        if (err instanceof NotFoundError) throw new NotFoundError('Resource', id)
-        throw err
-      }
+      const res = await service.getByIdWithAccessCheck(id, user)
 
       const url = res.urlType === 'upload' ? `/api/v1/resources/${res.id}/download` : res.url
 

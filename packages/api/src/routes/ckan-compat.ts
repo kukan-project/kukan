@@ -115,10 +115,9 @@ ckanCompatRouter.get('/package_show', async (c) => {
   }
 
   const user = c.get('user')
-  const viewer = user ? { userId: user.id, sysadmin: user.sysadmin } : undefined
   const service = new PackageService(c.get('db'))
   try {
-    const pkg = await service.getDetailByNameOrId(id, viewer)
+    const pkg = await service.getDetailByNameOrId(id, user)
     return ckanResponse(toCkanPackage(pkg as unknown as Record<string, unknown>), c)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Package not found'
@@ -161,19 +160,17 @@ ckanCompatRouter.get('/package_search', async (c) => {
 // Resource Actions
 // ============================================================
 
-// resource_show - Get resource by ID
+// resource_show - Get resource by ID (with parent package visibility check)
 ckanCompatRouter.get('/resource_show', async (c) => {
   const id = c.req.query('id')
   if (!id) {
     return ckanError('Missing parameter: id', c)
   }
 
+  const user = c.get('user')
   const service = new ResourceService(c.get('db'))
   try {
-    const resource = await service.getById(id)
-    if (!resource) {
-      return ckanError('Resource not found', c, 404)
-    }
+    const resource = await service.getByIdWithAccessCheck(id, user)
     return ckanResponse(toCkanResource(resource as unknown as Record<string, unknown>), c)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Resource not found'

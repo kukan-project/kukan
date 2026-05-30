@@ -15,17 +15,12 @@ import {
   resourcePipeline,
   group,
   packageGroup,
-  userOrgMembership,
 } from '@kukan/db'
 import { NotFoundError, ValidationError, isUuid } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult, FacetCounts } from '@kukan/shared'
 import type { SearchFacets, MatchedResource } from '@kukan/search-adapter'
 import type { CreatePackageInput, UpdatePackageInput } from '@kukan/shared'
-
-interface ViewerContext {
-  userId?: string
-  sysadmin?: boolean
-}
+import { hasOrgMembership, type AuthUser } from '../auth/permissions'
 
 export interface PackageFilterParams {
   /** Package IDs from SearchAdapter */
@@ -242,32 +237,17 @@ export class PackageService {
    */
   async getByNameOrIdWithAccessCheck(
     nameOrId: string,
-    viewer?: ViewerContext,
+    viewer?: AuthUser,
     state: 'active' | 'deleted' = 'active'
   ) {
     const pkg = await this.getByNameOrId(nameOrId, state)
 
     // Private and deleted packages: org member+ or sysadmin
     // (restore/purge operations are separately guarded by editor+/admin+ role checks)
-    const requiresMembership = (state === 'deleted' || pkg.private) && !viewer?.sysadmin
+    const requiresMembership = state === 'deleted' || pkg.private
 
-    if (requiresMembership) {
-      if (!viewer?.userId || !pkg.ownerOrg) {
-        throw new NotFoundError('Package', nameOrId)
-      }
-      const [membership] = await this.db
-        .select({ id: userOrgMembership.id })
-        .from(userOrgMembership)
-        .where(
-          and(
-            eq(userOrgMembership.userId, viewer.userId),
-            eq(userOrgMembership.organizationId, pkg.ownerOrg)
-          )
-        )
-        .limit(1)
-      if (!membership) {
-        throw new NotFoundError('Package', nameOrId)
-      }
+    if (requiresMembership && !(await hasOrgMembership(this.db, pkg.ownerOrg, viewer))) {
+      throw new NotFoundError('Package', nameOrId)
     }
 
     return pkg
@@ -275,7 +255,7 @@ export class PackageService {
 
   async getDetailByNameOrId(
     nameOrId: string,
-    viewer?: ViewerContext,
+    viewer?: AuthUser,
     state: 'active' | 'deleted' = 'active'
   ) {
     const pkg = await this.getByNameOrIdWithAccessCheck(nameOrId, viewer, state)

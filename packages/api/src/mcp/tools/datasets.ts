@@ -7,12 +7,12 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Database } from '@kukan/db'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import { PackageService } from '../../services/package-service'
-import { resolveUserOrgIds, buildVisibilityFilters } from '../../auth/permissions'
+import { resolveUserOrgIds, buildVisibilityFilters, type AuthUser } from '../../auth/permissions'
 
 interface DatasetToolsContext {
   db: Database
   search: SearchAdapter
-  user?: Parameters<typeof resolveUserOrgIds>[1]
+  user?: AuthUser
 }
 
 export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext) {
@@ -83,8 +83,7 @@ export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext
     },
     async ({ nameOrId }) => {
       const service = new PackageService(db)
-      const viewer = user ? { userId: user.id, sysadmin: user.sysadmin } : undefined
-      const result = await service.getDetailByNameOrId(nameOrId, viewer)
+      const result = await service.getDetailByNameOrId(nameOrId, user)
 
       const resources =
         result.resources

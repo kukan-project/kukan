@@ -104,6 +104,29 @@ export function checkOwnerOrSysadmin(user: AuthUser, ownerId: string | null): vo
 }
 
 /**
+ * Check if a viewer has membership in a given organization.
+ * Sysadmins always pass. Returns false for anonymous viewers or missing ownerOrg.
+ */
+export async function hasOrgMembership(
+  db: Database,
+  ownerOrg: string | null,
+  viewer?: AuthUser
+): Promise<boolean> {
+  if (viewer?.sysadmin) return true
+  if (!viewer?.id || !ownerOrg) return false
+
+  const [membership] = await db
+    .select({ id: userOrgMembership.id })
+    .from(userOrgMembership)
+    .where(
+      and(eq(userOrgMembership.userId, viewer.id), eq(userOrgMembership.organizationId, ownerOrg))
+    )
+    .limit(1)
+
+  return !!membership
+}
+
+/**
  * Resolve organization IDs that the user belongs to.
  * Returns `undefined` for unauthenticated users and sysadmins (no restriction needed).
  */

@@ -116,8 +116,9 @@ resourcesRouter.get('/formats', async (c) => {
 // GET /api/v1/resources/:id - Get resource by ID
 resourcesRouter.get('/:id', async (c) => {
   const id = c.req.param('id')
+  const user = c.get('user')
   const service = new ResourceService(c.get('db'))
-  const res = await service.getById(id)
+  const res = await service.getByIdWithAccessCheck(id, user)
   return c.json(res)
 })
 
@@ -127,8 +128,9 @@ resourcesRouter.get('/:id', async (c) => {
 resourcesRouter.get('/:id/text', async (c) => {
   const id = c.req.param('id')
   const db = c.get('db')
+  const user = c.get('user')
   const [resource, pipelineStatus] = await Promise.all([
-    new ResourceService(db).getById(id),
+    new ResourceService(db).getByIdWithAccessCheck(id, user),
     new PipelineService(db).getStatus(id),
   ])
   const encoding =
@@ -161,8 +163,9 @@ resourcesRouter.get('/:id/text', async (c) => {
 // Upload resources: stream from Storage. External URL: 302 redirect.
 resourcesRouter.get('/:id/download', async (c) => {
   const id = c.req.param('id')
+  const user = c.get('user')
   const service = new ResourceService(c.get('db'))
-  const resource = await service.getById(id)
+  const resource = await service.getByIdWithAccessCheck(id, user)
 
   // External URL: redirect to original URL
   if (resource.urlType !== 'upload' && resource.url) {
@@ -200,8 +203,9 @@ resourcesRouter.get('/:id/download', async (c) => {
 // Used by hyparquet (Parquet preview) and local storage (file:// URLs).
 resourcesRouter.get('/:id/preview', async (c) => {
   const id = c.req.param('id')
+  const user = c.get('user')
   const service = new ResourceService(c.get('db'))
-  const resource = await service.getById(id)
+  const resource = await service.getByIdWithAccessCheck(id, user)
   const storage = c.get('storage')
 
   const target = await resolvePreviewTarget(c.get('db'), resource)
