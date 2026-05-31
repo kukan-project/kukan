@@ -8,14 +8,11 @@ vi.mock('@/lib/client-api', () => ({
   clientFetch: vi.fn(),
 }))
 
-const mockUser = { id: 'u1', name: 'admin', email: 'admin@test.com', sysadmin: true }
 vi.mock('@/components/dashboard/user-provider', () => ({
-  useUser: () => mockUser,
+  useUser: () => ({ id: 'u1', name: 'admin', email: 'admin@test.com', sysadmin: true }),
 }))
 
-const mockReplace = vi.fn()
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), replace: mockReplace, back: vi.fn() }),
   usePathname: () => '/',
   useSearchParams: () => new URLSearchParams(),
 }))
@@ -45,7 +42,6 @@ function mockFetchResponse(data: unknown) {
 describe('AdminUsersPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockUser.sysadmin = true
     mockPaginatedFetch.items = []
     mockPaginatedFetch.loading = false
     mockPaginatedFetch.error = null
@@ -61,12 +57,6 @@ describe('AdminUsersPage', () => {
   it('renders the page title', () => {
     render(<AdminUsersPage />)
     expect(screen.getByText('User Management')).toBeInTheDocument()
-  })
-
-  it('redirects non-sysadmin users', () => {
-    mockUser.sysadmin = false
-    const { container } = render(<AdminUsersPage />)
-    expect(container.innerHTML).toBe('')
   })
 
   it('displays stats cards when data loads', async () => {

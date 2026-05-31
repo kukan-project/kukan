@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import { RefreshCw } from 'lucide-react'
 import {
@@ -15,7 +14,6 @@ import {
   TableHeader,
   TableRow,
 } from '@kukan/ui'
-import { useUser } from '@/components/dashboard/user-provider'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { StatCard } from '@/components/dashboard/stat-card'
@@ -51,16 +49,9 @@ function healthBadgeVariant(status: string | null) {
 }
 
 export default function AdminHealthPage() {
-  const user = useUser()
   const locale = useLocale()
-  const router = useRouter()
   const t = useTranslations('dashboard.adminHealth')
   const tc = useTranslations('common')
-
-  // sysadmin guard
-  useEffect(() => {
-    if (!user.sysadmin) router.replace('/dashboard')
-  }, [user.sysadmin, router])
 
   // Stats
   const [stats, setStats] = useState<HealthStatsResponse | null>(null)
@@ -104,8 +95,6 @@ export default function AdminHealthPage() {
   }, [fetchPage, fetchStats])
 
   const totalAll = stats ? Object.values(stats).reduce((sum, n) => sum + n, 0) : undefined
-
-  if (!user.sysadmin) return null
 
   return (
     <div className="flex flex-col gap-6">

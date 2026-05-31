@@ -1,24 +1,13 @@
 'use client'
 
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { BarChart3, ExternalLink } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
-import { useUser } from '@/components/dashboard/user-provider'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { brandConfig } from '@/brand'
 
 export default function AdminAnalyticsPage() {
-  const user = useUser()
-  const router = useRouter()
   const t = useTranslations('dashboard.adminAnalytics')
-
-  useEffect(() => {
-    if (!user.sysadmin) router.replace('/dashboard')
-  }, [user.sysadmin, router])
-
-  if (!user.sysadmin) return null
 
   const isConfigured = !!brandConfig.gaMeasurementId
 

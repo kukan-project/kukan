@@ -1,11 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { AlertTriangle, Loader2, Trash2 } from 'lucide-react'
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from '@kukan/ui'
-import { useUser } from '@/components/dashboard/user-provider'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { clientFetch } from '@/lib/client-api'
 
@@ -20,13 +18,7 @@ interface ResetResult {
 }
 
 export default function AdminSitePage() {
-  const user = useUser()
-  const router = useRouter()
   const t = useTranslations('dashboard.adminSite')
-
-  useEffect(() => {
-    if (!user.sysadmin) router.replace('/dashboard')
-  }, [user.sysadmin, router])
 
   const [confirmText, setConfirmText] = useState('')
   const [executing, setExecuting] = useState(false)
@@ -53,8 +45,6 @@ export default function AdminSitePage() {
       setExecuting(false)
     }
   }
-
-  if (!user.sysadmin) return null
 
   return (
     <div className="flex flex-col gap-6">

@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import { Play, RefreshCw } from 'lucide-react'
 import {
@@ -15,7 +14,6 @@ import {
   TableHeader,
   TableRow,
 } from '@kukan/ui'
-import { useUser } from '@/components/dashboard/user-provider'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { StatCard } from '@/components/dashboard/stat-card'
@@ -57,16 +55,9 @@ function statusBadgeVariant(status: string) {
 }
 
 export default function AdminJobsPage() {
-  const user = useUser()
   const locale = useLocale()
-  const router = useRouter()
   const t = useTranslations('dashboard.adminJobs')
   const tc = useTranslations('common')
-
-  // sysadmin guard
-  useEffect(() => {
-    if (!user.sysadmin) router.replace('/dashboard')
-  }, [user.sysadmin, router])
 
   // Stats
   const [stats, setStats] = useState<QueueStatsResponse | null>(null)
@@ -141,8 +132,6 @@ export default function AdminJobsPage() {
     await Promise.all([fetchPage(offsetRef.current), fetchStats()])
     setRefreshing(false)
   }, [fetchPage, fetchStats])
-
-  if (!user.sysadmin) return null
 
   return (
     <div className="flex flex-col gap-6">

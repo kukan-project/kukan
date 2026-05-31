@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
-import { useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -78,14 +77,8 @@ type EditUserValues = z.infer<typeof editUserSchema>
 export default function AdminUsersPage() {
   const user = useUser()
   const locale = useLocale()
-  const router = useRouter()
   const t = useTranslations('dashboard.adminUsers')
   const tc = useTranslations('common')
-
-  // sysadmin guard
-  useEffect(() => {
-    if (!user.sysadmin) router.replace('/dashboard')
-  }, [user.sysadmin, router])
 
   // Stats
   const [stats, setStats] = useState<UserStatsResponse | null>(null)
@@ -262,8 +255,6 @@ export default function AdminUsersPage() {
     if (state === 'deleted') return <Badge variant="destructive">{t('stateDeleted')}</Badge>
     return <Badge variant="destructive">{state ?? 'unknown'}</Badge>
   }
-
-  if (!user.sysadmin) return null
 
   return (
     <div className="flex flex-col gap-6">

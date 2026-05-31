@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Database, Search } from 'lucide-react'
 import { JsonView, collapseAllNested, darkStyles, defaultStyles } from 'react-json-view-lite'
@@ -25,7 +24,6 @@ import {
   TableHeader,
   TableRow,
 } from '@kukan/ui'
-import { useUser } from '@/components/dashboard/user-provider'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { FormatBadge } from '@/components/format-badge'
@@ -96,14 +94,8 @@ const PAGE_SIZE = 20
 const STATS_POLL_COUNT = 20
 
 export default function AdminSearchPage() {
-  const user = useUser()
-  const router = useRouter()
   const t = useTranslations('dashboard.adminSearch')
   const tc = useTranslations('common')
-
-  useEffect(() => {
-    if (!user.sysadmin) router.replace('/dashboard')
-  }, [user.sysadmin, router])
 
   // Index stats
   const [stats, setStats] = useState<IndexStatsResponse | null>(null)
@@ -267,8 +259,6 @@ export default function AdminSearchPage() {
       }
     }, 3000)
   }
-
-  if (!user.sysadmin) return null
 
   const activeBrowse = activeTab === 'contents' ? contentBrowseData : browseData
   const totalPages = activeBrowse ? Math.ceil(activeBrowse.total / PAGE_SIZE) : 0

@@ -3,33 +3,19 @@ import { render, screen } from '@testing-library/react'
 import AdminAnalyticsPage from '../page'
 import { brandConfig } from '@/brand'
 
-const mockUser = { id: 'u1', name: 'admin', email: 'admin@test.com', sysadmin: true }
-vi.mock('@/components/dashboard/user-provider', () => ({
-  useUser: () => mockUser,
-}))
-
-const mockReplace = vi.fn()
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), replace: mockReplace, back: vi.fn() }),
   usePathname: () => '/',
   useSearchParams: () => new URLSearchParams(),
 }))
 
 describe('AdminAnalyticsPage', () => {
   beforeEach(() => {
-    mockUser.sysadmin = true
     brandConfig.gaMeasurementId = null
   })
 
   it('renders the page title', () => {
     render(<AdminAnalyticsPage />)
     expect(screen.getByText('Access Analytics')).toBeInTheDocument()
-  })
-
-  it('redirects non-sysadmin users', () => {
-    mockUser.sysadmin = false
-    const { container } = render(<AdminAnalyticsPage />)
-    expect(container.innerHTML).toBe('')
   })
 
   it('shows setup instructions when GA4 is not configured', () => {

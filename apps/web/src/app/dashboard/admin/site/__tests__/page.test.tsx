@@ -7,14 +7,7 @@ vi.mock('@/lib/client-api', () => ({
   clientFetch: vi.fn(),
 }))
 
-const mockUser = { id: 'u1', name: 'admin', email: 'admin@test.com', sysadmin: true }
-vi.mock('@/components/dashboard/user-provider', () => ({
-  useUser: () => mockUser,
-}))
-
-const mockReplace = vi.fn()
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), replace: mockReplace, back: vi.fn() }),
   usePathname: () => '/',
   useSearchParams: () => new URLSearchParams(),
 }))
@@ -28,18 +21,11 @@ function mockFetchResponse(data: unknown) {
 describe('AdminSitePage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockUser.sysadmin = true
   })
 
   it('renders the page title', () => {
     render(<AdminSitePage />)
     expect(screen.getByText('Site Management')).toBeInTheDocument()
-  })
-
-  it('redirects non-sysadmin users', () => {
-    mockUser.sysadmin = false
-    const { container } = render(<AdminSitePage />)
-    expect(container.innerHTML).toBe('')
   })
 
   it('renders the data reset card with warning', () => {
