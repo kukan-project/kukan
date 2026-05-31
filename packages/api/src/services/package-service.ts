@@ -390,11 +390,7 @@ export class PackageService {
     })
   }
 
-  async update(
-    nameOrId: string,
-    input: UpdatePackageInput,
-    authorize?: PackageAuthorize
-  ) {
+  async update(nameOrId: string, input: UpdatePackageInput, authorize?: PackageAuthorize) {
     return await this.db.transaction(async (tx) => {
       const existing = await this.getByNameOrId(nameOrId, 'active', { tx, forUpdate: true })
       if (authorize) await authorize(existing)
@@ -482,10 +478,7 @@ export class PackageService {
     })
   }
 
-  async delete(
-    nameOrId: string,
-    authorize?: PackageAuthorize
-  ) {
+  async delete(nameOrId: string, authorize?: PackageAuthorize) {
     return await this.db.transaction(async (tx) => {
       const existing = await this.getByNameOrId(nameOrId, 'active', { tx, forUpdate: true })
       if (authorize) await authorize(existing)
@@ -504,10 +497,7 @@ export class PackageService {
   }
 
   /** Hard-delete a soft-deleted package and all related data (CASCADE). */
-  async purge(
-    nameOrId: string,
-    authorize?: PackageAuthorize
-  ) {
+  async purge(nameOrId: string, authorize?: PackageAuthorize) {
     return await this.db.transaction(async (tx) => {
       const existing = await this.getByNameOrId(nameOrId, 'deleted', { tx, forUpdate: true })
       if (authorize) await authorize(existing)
@@ -521,10 +511,7 @@ export class PackageService {
   }
 
   /** Restore a soft-deleted package back to active state. */
-  async restore(
-    nameOrId: string,
-    authorize?: PackageAuthorize
-  ) {
+  async restore(nameOrId: string, authorize?: PackageAuthorize) {
     return await this.db.transaction(async (tx) => {
       const existing = await this.getByNameOrId(nameOrId, 'deleted', { tx, forUpdate: true })
       if (authorize) await authorize(existing)

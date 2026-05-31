@@ -627,9 +627,7 @@ export class OpenSearchAdapter implements SearchAdapter {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const contentInnerHits = hit.inner_hits?.content_hits?.hits?.hits as any[] | undefined
       if (contentInnerHits?.length) {
-        const existingResourceIds = new Set(
-          (doc.matchedResources ?? []).map((mr) => mr.id)
-        )
+        const existingResourceIds = new Set((doc.matchedResources ?? []).map((mr) => mr.id))
         for (const ch of contentInnerHits) {
           const resourceId = ch._source.resourceId as string
           // If already matched by metadata, upgrade to content match
@@ -697,7 +695,10 @@ export class OpenSearchAdapter implements SearchAdapter {
         index: this.searchIndex,
         body: { docs: docsToFetch },
       })
-      const metadataMap = new Map<string, { name?: string; description?: string; format?: string }>()
+      const metadataMap = new Map<
+        string,
+        { name?: string; description?: string; format?: string }
+      >()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       for (const doc of resMget.body.docs as any[]) {
         if (!doc.found) continue
@@ -907,7 +908,12 @@ export class OpenSearchAdapter implements SearchAdapter {
         body: {
           size: 1,
           query: {
-            bool: { filter: [{ term: { _id: id } }, { term: { join_field: OpenSearchAdapter.JOIN_TYPE[index] } }] },
+            bool: {
+              filter: [
+                { term: { _id: id } },
+                { term: { join_field: OpenSearchAdapter.JOIN_TYPE[index] } },
+              ],
+            },
           },
         },
       })
@@ -987,7 +993,9 @@ export class OpenSearchAdapter implements SearchAdapter {
       index: this.searchIndex,
       body: {
         size: 100,
-        query: { bool: { filter: [{ term: { resourceId } }, { term: { join_field: 'content' } }] } },
+        query: {
+          bool: { filter: [{ term: { resourceId } }, { term: { join_field: 'content' } }] },
+        },
         _source: ['chunkIndex', 'chunkSize'],
         sort: [{ chunkIndex: { order: 'asc' } }],
       },

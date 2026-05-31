@@ -6,7 +6,12 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
-import { createOrganizationSchema, updateOrganizationSchema, ForbiddenError, UnauthorizedError } from '@kukan/shared'
+import {
+  createOrganizationSchema,
+  updateOrganizationSchema,
+  ForbiddenError,
+  UnauthorizedError,
+} from '@kukan/shared'
 import { OrganizationService } from '../services/organization-service'
 import { checkOrgRole } from '../auth/permissions'
 import type { AppContext } from '../context'

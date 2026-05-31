@@ -7,9 +7,7 @@ import { z } from 'zod'
 
 const booleanString = z.preprocess(
   (v) => (typeof v === 'string' ? v : String(v)),
-  z
-    .enum(['true', 'false', '1', '0'])
-    .transform((v) => v === 'true' || v === '1')
+  z.enum(['true', 'false', '1', '0']).transform((v) => v === 'true' || v === '1')
 )
 
 export const envSchema = z.object({

@@ -7,7 +7,12 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { GroupService } from '../services/group-service'
-import { createGroupSchema, updateGroupSchema, ForbiddenError, UnauthorizedError } from '@kukan/shared'
+import {
+  createGroupSchema,
+  updateGroupSchema,
+  ForbiddenError,
+  UnauthorizedError,
+} from '@kukan/shared'
 import { checkGroupRole } from '../auth/permissions'
 import type { AppContext } from '../context'
 

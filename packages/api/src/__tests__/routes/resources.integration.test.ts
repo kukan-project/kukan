@@ -696,9 +696,7 @@ describe('Resources API Routes', () => {
       })
 
       // Sysadmin sees raw error
-      const adminRes = await app.request(
-        `/api/v1/resources/${resource.id}/pipeline-status`
-      )
+      const adminRes = await app.request(`/api/v1/resources/${resource.id}/pipeline-status`)
       const adminBody = await adminRes.json()
       expect(adminBody.error).toContain('S3 bucket kukan-prod')
       expect(adminBody.steps[0].error).toContain('10.0.1.42')

@@ -32,7 +32,11 @@ import type { PackageAuthorize } from '../services/package-service'
 
 export const packagesRouter = new Hono<{ Variables: AppContext }>()
 
-function makePackageAuthorize(db: Database, user: AuthUser, role: MembershipRole): PackageAuthorize {
+function makePackageAuthorize(
+  db: Database,
+  user: AuthUser,
+  role: MembershipRole
+): PackageAuthorize {
   return async (existing) => {
     if (existing.ownerOrg) {
       await checkOrgRole(db, user, existing.ownerOrg, role)
