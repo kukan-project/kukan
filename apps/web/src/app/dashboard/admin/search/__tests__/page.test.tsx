@@ -36,9 +36,9 @@ function mockFetchResponse(data: unknown) {
 const mockStats = {
   enabled: true,
   stats: {
-    packages: { docCount: 100, sizeBytes: 1024 * 1024, recentDocs: [] },
-    resources: { docCount: 500, sizeBytes: 5 * 1024 * 1024, recentDocs: [] },
-    contents: { docCount: 200, sizeBytes: 50 * 1024 * 1024, recentDocs: [] },
+    packages: { docCount: 100, recentDocs: [] },
+    resources: { docCount: 500, recentDocs: [] },
+    contents: { docCount: 200, recentDocs: [] },
   },
 }
 
@@ -74,10 +74,10 @@ describe('AdminSearchPage', () => {
     render(<AdminSearchPage />)
 
     await waitFor(() => {
-      expect(screen.getByText('kukan-packages')).toBeInTheDocument()
+      expect(screen.getByText('packages')).toBeInTheDocument()
     })
-    expect(screen.getByText('kukan-resources')).toBeInTheDocument()
-    expect(screen.getByText('kukan-contents')).toBeInTheDocument()
+    expect(screen.getByText('resources')).toBeInTheDocument()
+    expect(screen.getByText('contents')).toBeInTheDocument()
   })
 
   it('shows browse items in table', async () => {

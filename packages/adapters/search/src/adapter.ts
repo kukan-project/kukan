@@ -252,12 +252,13 @@ export interface ContentBrowseResult {
 
 export interface IndexStatsEntry {
   docCount: number
-  sizeBytes: number
   /** Most recently indexed documents (up to 5) */
   recentDocs: Array<{ id: string; name?: string; updated?: string }>
 }
 
 export interface IndexStats {
+  indexName: string
+  totalSizeBytes: number
   packages: IndexStatsEntry
   resources: IndexStatsEntry
   contents: IndexStatsEntry

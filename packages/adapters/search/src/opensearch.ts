@@ -30,9 +30,6 @@ import type {
 } from './adapter'
 import { MAX_MATCHED_RESOURCES_PER_PACKAGE } from './adapter'
 
-/** Score multiplier applied to resource hits when merging with package hits */
-const RESOURCE_BOOST = 0.4
-
 /** Highlight config for content snippets (shared between search stages) */
 const CONTENT_HIGHLIGHT = {
   fields: {
@@ -70,9 +67,7 @@ export interface OpenSearchConfig {
 
 export class OpenSearchAdapter implements SearchAdapter {
   private client: Client
-  private packagesIndex: string
-  private resourcesIndex: string
-  private contentsIndex: string
+  private searchIndex: string
   private replicas: number
   private log: Logger
   private initializedAt = 0
@@ -90,9 +85,7 @@ export class OpenSearchAdapter implements SearchAdapter {
       resurrectStrategy: 'optimistic',
     })
     const prefix = config.indexPrefix || 'kukan'
-    this.packagesIndex = `${prefix}-packages`
-    this.resourcesIndex = `${prefix}-resources`
-    this.contentsIndex = `${prefix}-contents`
+    this.searchIndex = `${prefix}-search`
     this.replicas = config.replicas ?? 0
     this.log = config.logger ?? createLogger({ name: 'opensearch', level: 'silent' })
   }
@@ -114,27 +107,26 @@ export class OpenSearchAdapter implements SearchAdapter {
   }
 
   /**
-   * Ensure all indices exist with kuromoji mapping. Idempotent.
+   * Ensure the search index exists with kuromoji mapping and join field. Idempotent.
    * Re-checks every 60 seconds to recover from index loss (e.g. OpenSearch maintenance).
    */
   async ensureIndex(): Promise<void> {
     if (Date.now() - this.initializedAt < 60 * 1000) return
-
-    // Sequential to avoid overloading single-node OpenSearch with concurrent index creation
-    await this.ensurePackagesIndex()
-    await this.ensureResourcesIndex()
-    await this.ensureContentsIndex()
+    await this.ensureSearchIndex()
     this.initializedAt = Date.now()
   }
 
   /**
-   * Return the number of documents in the packages index.
-   * Ensures indices exist before checking. Returns -1 on error.
+   * Return the number of package documents in the search index.
+   * Ensures index exists before checking. Returns -1 on error.
    */
   async getPackagesDocCount(): Promise<number> {
     await this.ensureIndex()
     try {
-      const count = await this.client.count({ index: this.packagesIndex })
+      const count = await this.client.count({
+        index: this.searchIndex,
+        body: { query: { term: { join_field: 'package' } } },
+      })
       return count.body.count
     } catch {
       return -1
@@ -142,11 +134,11 @@ export class OpenSearchAdapter implements SearchAdapter {
   }
 
   /** @returns true if the index was just created (didn't exist before) */
-  private async ensurePackagesIndex(): Promise<boolean> {
-    const exists = await this.client.indices.exists({ index: this.packagesIndex })
+  private async ensureSearchIndex(): Promise<boolean> {
+    const exists = await this.client.indices.exists({ index: this.searchIndex })
     if (!exists.body) {
       await this.client.indices.create({
-        index: this.packagesIndex,
+        index: this.searchIndex,
         body: {
           settings: {
             number_of_replicas: this.replicas,
@@ -154,8 +146,18 @@ export class OpenSearchAdapter implements SearchAdapter {
           },
           mappings: {
             properties: {
+              // Join field: package is parent, resource and content are children
+              join_field: {
+                type: 'join',
+                relations: { package: ['resource', 'content'] },
+              },
+              // --- Package fields ---
               id: { type: 'keyword' },
-              name: { type: 'keyword' },
+              name: {
+                type: 'text',
+                analyzer: 'kuromoji_analyzer',
+                fields: { keyword: { type: 'keyword' } },
+              },
               title: {
                 type: 'text',
                 analyzer: 'kuromoji_analyzer',
@@ -172,61 +174,12 @@ export class OpenSearchAdapter implements SearchAdapter {
               creator_user_id: { type: 'keyword' },
               created: { type: 'date' },
               updated: { type: 'date' },
-            },
-          },
-        },
-      })
-      return true
-    }
-    return false
-  }
-
-  /** @returns true if the index was just created */
-  private async ensureResourcesIndex(): Promise<boolean> {
-    const exists = await this.client.indices.exists({ index: this.resourcesIndex })
-    if (!exists.body) {
-      await this.client.indices.create({
-        index: this.resourcesIndex,
-        body: {
-          settings: {
-            number_of_replicas: this.replicas,
-            ...OpenSearchAdapter.KUROMOJI_ANALYSIS,
-          },
-          mappings: {
-            properties: {
-              id: { type: 'keyword' },
+              // --- Resource fields ---
               packageId: { type: 'keyword' },
-              name: {
-                type: 'text',
-                analyzer: 'kuromoji_analyzer',
-                fields: { keyword: { type: 'keyword' } },
-              },
               description: { type: 'text', analyzer: 'kuromoji_analyzer' },
               format: { type: 'keyword' },
-            },
-          },
-        },
-      })
-      return true
-    }
-    return false
-  }
-
-  /** @returns true if the index was just created */
-  private async ensureContentsIndex(): Promise<boolean> {
-    const exists = await this.client.indices.exists({ index: this.contentsIndex })
-    if (!exists.body) {
-      await this.client.indices.create({
-        index: this.contentsIndex,
-        body: {
-          settings: {
-            number_of_replicas: this.replicas,
-            ...OpenSearchAdapter.KUROMOJI_ANALYSIS,
-          },
-          mappings: {
-            properties: {
+              // --- Content fields ---
               resourceId: { type: 'keyword' },
-              packageId: { type: 'keyword' },
               extractedText: {
                 type: 'text',
                 analyzer: 'kuromoji_analyzer',
@@ -254,40 +207,63 @@ export class OpenSearchAdapter implements SearchAdapter {
     }
   }
 
-  /** Delete an index and recreate it with latest settings */
-  private async recreateIndex(index: string): Promise<void> {
+  /** Delete all documents of a specific type (package/resource/content) */
+  private async deleteByType(type: string): Promise<void> {
+    await this.ensureIndex()
     try {
-      await this.client.indices.delete({ index })
+      await this.client.deleteByQuery({
+        index: this.searchIndex,
+        body: { query: { term: { join_field: type } } },
+        refresh: true,
+      })
     } catch (err: unknown) {
       if (!isNotFoundError(err)) throw err
     }
-    // Re-create only the deleted index (not all indices)
-    if (index === this.packagesIndex) await this.ensurePackagesIndex()
-    else if (index === this.resourcesIndex) await this.ensureResourcesIndex()
-    else if (index === this.contentsIndex) await this.ensureContentsIndex()
   }
 
   // ------------------------------------------------------------------
-  // Dataset-level index (kukan-packages)
+  // Dataset-level operations (package documents)
   // ------------------------------------------------------------------
 
   async indexPackage(doc: DatasetDoc): Promise<void> {
     await this.ensureIndex()
     await this.client.index({
-      index: this.packagesIndex,
+      index: this.searchIndex,
       id: doc.id,
-      body: doc,
+      body: { ...doc, join_field: 'package' },
       refresh: 'wait_for',
     })
   }
 
   async deletePackage(id: string): Promise<void> {
     await this.ensureIndex()
-    await this.deleteDoc(this.packagesIndex, id)
+    // Delete all child documents (resources + contents) routed to this package
+    try {
+      await this.client.deleteByQuery({
+        index: this.searchIndex,
+        body: {
+          query: {
+            bool: {
+              should: [
+                { parent_id: { type: 'resource', id } },
+                { parent_id: { type: 'content', id } },
+              ],
+              minimum_should_match: 1,
+            },
+          },
+        },
+        routing: id,
+        refresh: true,
+      })
+    } catch (err: unknown) {
+      if (!isNotFoundError(err)) throw err
+    }
+    // Then delete the package itself
+    await this.deleteDoc(this.searchIndex, id)
   }
 
   async deleteAllPackages(): Promise<void> {
-    await this.recreateIndex(this.packagesIndex)
+    await this.deleteByType('package')
   }
 
   async bulkIndexPackages(docs: DatasetDoc[]): Promise<void> {
@@ -295,8 +271,8 @@ export class OpenSearchAdapter implements SearchAdapter {
     await this.ensureIndex()
 
     const body = docs.flatMap((doc) => [
-      { index: { _index: this.packagesIndex, _id: doc.id } },
-      doc,
+      { index: { _index: this.searchIndex, _id: doc.id } },
+      { ...doc, join_field: 'package' },
     ])
     const response = await this.client.bulk({ body, refresh: 'wait_for' })
     if (response.body.errors) {
@@ -308,26 +284,38 @@ export class OpenSearchAdapter implements SearchAdapter {
   }
 
   // ------------------------------------------------------------------
-  // Resource-level index (kukan-resources)
+  // Resource-level operations (child documents of package)
   // ------------------------------------------------------------------
 
   async indexResource(doc: ResourceDoc): Promise<void> {
     await this.ensureIndex()
     await this.client.index({
-      index: this.resourcesIndex,
+      index: this.searchIndex,
       id: doc.id,
-      body: doc,
+      body: { ...doc, join_field: { name: 'resource', parent: doc.packageId } },
+      routing: doc.packageId,
       refresh: 'wait_for',
     })
   }
 
   async deleteResource(resourceId: string): Promise<void> {
     await this.ensureIndex()
-    await this.deleteDoc(this.resourcesIndex, resourceId)
+    // deleteByQuery scatters to all shards — works without explicit routing
+    await this.client.deleteByQuery({
+      index: this.searchIndex,
+      body: {
+        query: {
+          bool: {
+            filter: [{ term: { _id: resourceId } }, { term: { join_field: 'resource' } }],
+          },
+        },
+      },
+      refresh: true,
+    })
   }
 
   async deleteAllResources(): Promise<void> {
-    await this.recreateIndex(this.resourcesIndex)
+    await this.deleteByType('resource')
   }
 
   async bulkIndexResources(docs: ResourceDoc[]): Promise<void> {
@@ -335,8 +323,8 @@ export class OpenSearchAdapter implements SearchAdapter {
     await this.ensureIndex()
 
     const body = docs.flatMap((doc) => [
-      { index: { _index: this.resourcesIndex, _id: doc.id } },
-      doc,
+      { index: { _index: this.searchIndex, _id: doc.id, routing: doc.packageId } },
+      { ...doc, join_field: { name: 'resource', parent: doc.packageId } },
     ])
     const response = await this.client.bulk({ body, refresh: 'wait_for' })
     if (response.body.errors) {
@@ -348,41 +336,54 @@ export class OpenSearchAdapter implements SearchAdapter {
   }
 
   // ------------------------------------------------------------------
-  // Content-level index (kukan-contents)
+  // Content-level operations (child documents of package)
   // ------------------------------------------------------------------
 
   async indexContent(doc: ContentDoc): Promise<void> {
     await this.ensureIndex()
     const docId = `${doc.resourceId}_chunk_${doc.chunkIndex}`
     await this.client.index({
-      index: this.contentsIndex,
+      index: this.searchIndex,
       id: docId,
-      body: doc,
+      body: { ...doc, join_field: { name: 'content', parent: doc.packageId } },
+      routing: doc.packageId,
       refresh: 'wait_for',
     })
   }
 
   async deleteContent(resourceId: string): Promise<void> {
     await this.ensureIndex()
-    // Delete all chunks for a resource (matches both single-doc and chunked)
+    // Delete all chunks for a resource — deleteByQuery scatters to all shards
     await this.client.deleteByQuery({
-      index: this.contentsIndex,
-      body: { query: { term: { resourceId } } },
+      index: this.searchIndex,
+      body: {
+        query: {
+          bool: { filter: [{ term: { resourceId } }, { term: { join_field: 'content' } }] },
+        },
+      },
       refresh: true,
     })
   }
 
   async deleteAllContents(): Promise<void> {
-    await this.recreateIndex(this.contentsIndex)
+    await this.deleteByType('content')
   }
 
   // ------------------------------------------------------------------
   // Search
   // ------------------------------------------------------------------
 
+  private static readonly VALID_SORT_FIELDS = new Set(['updated', 'created', 'name'])
+
+  private static readonly JOIN_TYPE: Record<'packages' | 'resources' | 'contents', string> = {
+    packages: 'package',
+    resources: 'resource',
+    contents: 'content',
+  }
+
   /** Build OpenSearch sort clause from query */
   private buildSort(query: SearchQuery): (string | Record<string, unknown>)[] {
-    if (query.sortBy) {
+    if (query.sortBy && OpenSearchAdapter.VALID_SORT_FIELDS.has(query.sortBy)) {
       const order = query.sortOrder ?? 'desc'
       return [{ [query.sortBy]: { order } }]
     }
@@ -396,7 +397,7 @@ export class OpenSearchAdapter implements SearchAdapter {
     const clauses: Record<string, unknown>[] = []
 
     if (filters?.name) {
-      clauses.push({ prefix: { name: filters.name } })
+      clauses.push({ prefix: { 'name.keyword': filters.name } })
     }
     if (filters?.organizations?.length) {
       clauses.push({ terms: { organization: filters.organizations } })
@@ -466,12 +467,69 @@ export class OpenSearchAdapter implements SearchAdapter {
     const limit = query.limit ?? 20
     const hasQuery = Boolean(query.q?.trim())
 
-    // Build packages query
-    const must: Record<string, unknown>[] = []
-    const filter = this.buildFilterClauses(query.filters)
+    // Filters apply at the package (parent) level
+    const filter: Record<string, unknown>[] = [{ term: { join_field: 'package' } }]
+    filter.push(...this.buildFilterClauses(query.filters))
 
+    // Build the must clause: keyword match or match_all
+    const must: Record<string, unknown>[] = []
     if (hasQuery) {
-      must.push(this.buildPackageMultiMatch(query.q!))
+      must.push({
+        bool: {
+          should: [
+            this.buildPackageMultiMatch(query.q!),
+            {
+              has_child: {
+                type: 'resource',
+                query: {
+                  multi_match: {
+                    query: query.q!,
+                    fields: ['name^3', 'description^2'],
+                    type: 'cross_fields',
+                    operator: 'and',
+                  },
+                },
+                score_mode: 'max',
+                boost: 0.4,
+                inner_hits: {
+                  size: MAX_MATCHED_RESOURCES_PER_PACKAGE,
+                  highlight: {
+                    fields: {
+                      name: {
+                        number_of_fragments: 0,
+                        pre_tags: ['<mark>'],
+                        post_tags: ['</mark>'],
+                      },
+                      description: {
+                        fragment_size: 200,
+                        number_of_fragments: 1,
+                        pre_tags: ['<mark>'],
+                        post_tags: ['</mark>'],
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            {
+              has_child: {
+                type: 'content',
+                query: {
+                  match: { extractedText: { query: query.q!, operator: 'and' } },
+                },
+                score_mode: 'max',
+                boost: 0.4,
+                inner_hits: {
+                  size: MAX_MATCHED_RESOURCES_PER_PACKAGE,
+                  _source: ['resourceId', 'packageId'],
+                  name: 'content_hits',
+                },
+              },
+            },
+          ],
+          minimum_should_match: 1,
+        },
+      })
     } else {
       must.push({ match_all: {} })
     }
@@ -486,137 +544,47 @@ export class OpenSearchAdapter implements SearchAdapter {
         }
       : undefined
 
-    const packagesHighlight = hasQuery
+    const highlight = hasQuery
       ? {
-          highlight: {
-            fields: {
-              title: { number_of_fragments: 0, pre_tags: ['<mark>'], post_tags: ['</mark>'] },
-              notes: {
-                fragment_size: 200,
-                number_of_fragments: 1,
-                pre_tags: ['<mark>'],
-                post_tags: ['</mark>'],
-              },
+          fields: {
+            title: { number_of_fragments: 0, pre_tags: ['<mark>'], post_tags: ['</mark>'] },
+            notes: {
+              fragment_size: 200,
+              number_of_fragments: 1,
+              pre_tags: ['<mark>'],
+              post_tags: ['</mark>'],
             },
           },
         }
-      : {}
+      : undefined
 
-    const packagesBody = {
+    const body = {
       from: offset,
       size: limit,
-      query: { bool: { must, ...(filter.length > 0 && { filter }) } },
+      query: { bool: { must, filter } },
       sort: this.buildSort(query),
       ...(aggs && { aggs }),
-      ...packagesHighlight,
+      ...(highlight && { highlight }),
     }
 
-    // If no full-text query, skip resource search entirely
-    if (!hasQuery) {
-      const response = await this.client.search({ index: this.packagesIndex, body: packagesBody })
-      return this.parsePackagesResponse(response, query, offset, limit)
-    }
-
-    const resourcesBody = {
-      from: 0,
-      size: MAX_MATCHED_RESOURCES_PER_PACKAGE,
-      query: {
-        multi_match: {
-          query: query.q!,
-          fields: ['name^3', 'description^2'],
-          type: 'cross_fields' as const,
-          operator: 'and' as const,
-        },
-      },
-      highlight: {
-        fields: {
-          name: { number_of_fragments: 0, pre_tags: ['<mark>'], post_tags: ['</mark>'] },
-          description: {
-            fragment_size: 200,
-            number_of_fragments: 1,
-            pre_tags: ['<mark>'],
-            post_tags: ['</mark>'],
-          },
-        },
-      },
-    }
-
-    // Stage 1: content search WITHOUT highlight (fast — just match + collapse)
-    const contentsBody = {
-      from: 0,
-      size: MAX_MATCHED_RESOURCES_PER_PACKAGE,
-      query: {
-        match: {
-          extractedText: { query: query.q!, operator: 'and' as const },
-        },
-      },
-      _source: ['resourceId', 'packageId'],
-      collapse: { field: 'resourceId' },
-    }
-
-    // msearch: packages + resources + contents in parallel
     const t0 = Date.now()
-    const msearchResponse = await this.client.msearch({
-      body: [
-        { index: this.packagesIndex },
-        packagesBody,
-        { index: this.resourcesIndex },
-        resourcesBody,
-        { index: this.contentsIndex },
-        contentsBody,
-      ],
-    })
-    const tMsearch = Date.now()
+    const response = await this.client.search({ index: this.searchIndex, body })
+    const elapsed = Date.now() - t0
 
-    const [packagesResult, resourcesResult, contentsResult] = msearchResponse.body
-      .responses as Array<{
-      hits: { total: { value: number } | number; hits: Record<string, unknown>[] }
-      aggregations?: Record<string, unknown>
-      took: number
-    }>
+    const result = this.parseSearchResponse(response, query, offset, limit)
 
-    // Parse packages
-    const result = this.parsePackagesResponse({ body: packagesResult }, query, offset, limit)
-
-    // Parse resource metadata matches and merge
-    const resourceHits = resourcesResult.hits?.hits ?? []
-    if (resourceHits.length > 0) {
-      await this.mergeResourceHits(result, resourceHits)
+    // For content-only matches, fetch resource metadata (name, format) via mget
+    if (hasQuery) {
+      await this.enrichContentMatchMetadata(result)
     }
 
-    // Stage 1: merge content matches (no highlights yet)
-    const contentHits = contentsResult.hits?.hits ?? []
-    if (contentHits.length > 0) {
-      await this.mergeContentHits(result, contentHits)
-    }
-    const tMerge = Date.now()
-
-    // Trim to page size (content highlights are fetched lazily by the client)
-    if (result.items.length > limit) {
-      result.items.sort(
-        (a, b) =>
-          ((b as DatasetDoc & { _score?: number })._score ?? 0) -
-          ((a as DatasetDoc & { _score?: number })._score ?? 0)
-      )
-      result.items = result.items.slice(0, limit)
-    }
-
-    this.log.info({
-      msg: 'search',
-      q: query.q,
-      msearch: tMsearch - t0,
-      pkg: packagesResult.took,
-      res: resourcesResult.took,
-      cnt: contentsResult.took,
-      merge: tMerge - tMsearch,
-      total: Date.now() - t0,
-    })
+    this.log.info({ msg: 'search', q: query.q, took: elapsed, total: result.total })
 
     return result
   }
 
-  /** Parse a packages search response into SearchResult */
-  private parsePackagesResponse(
+  /** Parse search response with inner_hits into SearchResult */
+  private parseSearchResponse(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     response: any,
     query: SearchQuery,
@@ -626,16 +594,63 @@ export class OpenSearchAdapter implements SearchAdapter {
     const hits = response.body.hits
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const items: DatasetDoc[] = (hits?.hits ?? []).map((hit: any) => {
-      const doc: DatasetDoc = {
-        ...hit._source,
-        id: hit._id,
-        _score: hit._score ?? 0,
-      }
-      // Attach highlighted fields if available
+      const { join_field: _, ...source } = hit._source
+      const doc: DatasetDoc = { ...source, id: hit._id }
+
+      // Package-level highlights
       if (hit.highlight?.title?.[0])
         doc.highlightedTitle = sanitizeHighlight(hit.highlight.title[0])
       if (hit.highlight?.notes?.[0])
         doc.highlightedNotes = sanitizeHighlight(hit.highlight.notes[0])
+
+      // Resource metadata matches from inner_hits
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const resourceInnerHits = hit.inner_hits?.resource?.hits?.hits as any[] | undefined
+      if (resourceInnerHits?.length) {
+        const matched: MatchedResource[] = resourceInnerHits.map((rh) => ({
+          id: rh._source.id ?? rh._id,
+          name: rh._source.name,
+          description: rh._source.description,
+          format: rh._source.format,
+          matchSource: 'metadata' as const,
+          ...(rh.highlight?.name?.[0] && {
+            highlightedName: sanitizeHighlight(rh.highlight.name[0]),
+          }),
+          ...(rh.highlight?.description?.[0] && {
+            highlightedDescription: sanitizeHighlight(rh.highlight.description[0]),
+          }),
+        }))
+        doc.matchedResources = [...(doc.matchedResources ?? []), ...matched]
+      }
+
+      // Content matches from inner_hits (resourceId only, highlights loaded lazily)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const contentInnerHits = hit.inner_hits?.content_hits?.hits?.hits as any[] | undefined
+      if (contentInnerHits?.length) {
+        const existingResourceIds = new Set(
+          (doc.matchedResources ?? []).map((mr) => mr.id)
+        )
+        for (const ch of contentInnerHits) {
+          const resourceId = ch._source.resourceId as string
+          // If already matched by metadata, upgrade to content match
+          const existing = (doc.matchedResources ?? []).find((mr) => mr.id === resourceId)
+          if (existing) {
+            existing.matchSource = 'content'
+            existing._contentDocId = ch._id as string
+          } else if (!existingResourceIds.has(resourceId)) {
+            existingResourceIds.add(resourceId)
+            doc.matchedResources = [
+              ...(doc.matchedResources ?? []),
+              {
+                id: resourceId,
+                matchSource: 'content',
+                _contentDocId: ch._id as string,
+              },
+            ]
+          }
+        }
+      }
+
       return doc
     })
 
@@ -665,206 +680,45 @@ export class OpenSearchAdapter implements SearchAdapter {
     return { items, total: totalCount, offset, limit, ...(facets && { facets }) }
   }
 
-  /** Merge resource hits into a packages SearchResult */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async mergeResourceHits(result: SearchResult, resourceHits: any[]): Promise<void> {
-    // Group resource hits by packageId
-    const byPackage = new Map<string, MatchedResource[]>()
-    const packageScores = new Map<string, number>()
-
-    for (const hit of resourceHits) {
-      const src = hit._source
-      const pkgId = src.packageId as string
-      const score = (hit._score as number) ?? 0
-
-      const highlightedName = (hit.highlight?.name as string[] | undefined)?.[0]
-        ? sanitizeHighlight((hit.highlight.name as string[])[0])
-        : undefined
-      const highlightedDescription = (hit.highlight?.description as string[] | undefined)?.[0]
-        ? sanitizeHighlight((hit.highlight.description as string[])[0])
-        : undefined
-
-      const matched: MatchedResource = {
-        id: src.id,
-        name: src.name,
-        description: src.description,
-        format: src.format,
-        ...(highlightedName && { highlightedName }),
-        ...(highlightedDescription && { highlightedDescription }),
-        matchSource: 'metadata',
-      }
-
-      if (!byPackage.has(pkgId)) {
-        byPackage.set(pkgId, [])
-        packageScores.set(pkgId, 0)
-      }
-      byPackage.get(pkgId)!.push(matched)
-      packageScores.set(pkgId, Math.max(packageScores.get(pkgId)!, score))
-    }
-
-    // Attach matchedResources to existing items and adjust scores
-    const existingIds = new Set(result.items.map((item) => item.id))
-    for (const item of result.items) {
-      const resources = byPackage.get(item.id)
-      if (resources) {
-        item.matchedResources = resources
-        const existingScore = (item as DatasetDoc & { _score?: number })._score ?? 0
-        const resourceScore = packageScores.get(item.id) ?? 0
-        ;(item as DatasetDoc & { _score?: number })._score =
-          existingScore + resourceScore * RESOURCE_BOOST
-      }
-    }
-
-    // Add packages found only via resource content (not in packages result)
-    const contentOnlyPackageIds: string[] = []
-    for (const pkgId of byPackage.keys()) {
-      if (!existingIds.has(pkgId)) {
-        contentOnlyPackageIds.push(pkgId)
-      }
-    }
-
-    if (contentOnlyPackageIds.length > 0) {
-      try {
-        await this.fetchAndAppendMissingPackages(
-          result,
-          contentOnlyPackageIds,
-          byPackage,
-          packageScores
-        )
-      } catch {
-        // Best-effort: if mget fails, we still return the packages we have
-      }
-    }
-
-    // Re-sort by _score descending
-    result.items.sort((a, b) => {
-      const sa = (a as DatasetDoc & { _score?: number })._score ?? 0
-      const sb = (b as DatasetDoc & { _score?: number })._score ?? 0
-      return sb - sa
-    })
-
-    // Clean up internal _score from response
-    for (const item of result.items) {
-      delete (item as Record<string, unknown>)._score
-    }
-  }
-
-  /** Fetch packages not in the main result but matched via resources */
-  private async fetchAndAppendMissingPackages(
-    result: SearchResult,
-    packageIds: string[],
-    byPackage: Map<string, MatchedResource[]>,
-    packageScores: Map<string, number>
-  ): Promise<void> {
-    const mgetResponse = await this.client.mget({
-      index: this.packagesIndex,
-      body: { ids: packageIds },
-    })
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const doc of mgetResponse.body.docs as any[]) {
-      if (!doc.found) continue
-      const item: DatasetDoc = { ...doc._source, id: doc._id }
-      item.matchedResources = byPackage.get(doc._id)
-      const resourceScore = packageScores.get(doc._id) ?? 0
-      ;(item as DatasetDoc & { _score?: number })._score = resourceScore * RESOURCE_BOOST
-      result.items.push(item)
-      result.total += 1
-    }
-  }
-
-  /** Merge content hits (collapsed by resourceId, no highlight) into matchedResources */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async mergeContentHits(result: SearchResult, contentHits: any[]): Promise<void> {
-    const existingMatched = new Map<string, MatchedResource>()
+  /** Fetch resource metadata (name, format) for content-only matched resources via mget */
+  private async enrichContentMatchMetadata(result: SearchResult): Promise<void> {
+    const docsToFetch: Array<{ _id: string; routing: string }> = []
     for (const item of result.items) {
       for (const mr of item.matchedResources ?? []) {
-        existingMatched.set(mr.id, mr)
+        if (mr.matchSource === 'content' && mr.name === undefined) {
+          docsToFetch.push({ _id: mr.id, routing: item.id })
+        }
       }
     }
+    if (docsToFetch.length === 0) return
 
-    // Each hit is one per resource (collapsed). No snippets yet — added in stage 2.
-    const contentByPackage = new Map<string, MatchedResource[]>()
-    const contentByResource = new Map<string, MatchedResource>()
-
-    for (const hit of contentHits) {
-      const src = hit._source
-      const resourceId = src.resourceId as string
-      const pkgId = src.packageId as string
-
-      const existing = existingMatched.get(resourceId)
-      if (existing) {
-        existing.matchSource = 'content'
-        // Store the chunk doc ID for Stage 2 highlight
-        existing._contentDocId = hit._id as string
-        continue
-      }
-
-      const matched: MatchedResource = {
-        id: resourceId,
-        matchSource: 'content',
-        _contentDocId: hit._id as string,
-      }
-
-      contentByResource.set(resourceId, matched)
-      if (!contentByPackage.has(pkgId)) contentByPackage.set(pkgId, [])
-      contentByPackage.get(pkgId)!.push(matched)
-    }
-
-    // Fetch resource metadata (name, description, format) for content-only matches
-    const contentOnlyResourceIds = [...contentByResource.keys()].filter(
-      (id) => contentByResource.get(id)!.name === undefined
-    )
-    if (contentOnlyResourceIds.length > 0) {
-      try {
-        const resMget = await this.client.mget({
-          index: this.resourcesIndex,
-          body: { ids: contentOnlyResourceIds },
+    try {
+      const resMget = await this.client.mget({
+        index: this.searchIndex,
+        body: { docs: docsToFetch },
+      })
+      const metadataMap = new Map<string, { name?: string; description?: string; format?: string }>()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const doc of resMget.body.docs as any[]) {
+        if (!doc.found) continue
+        metadataMap.set(doc._id, {
+          name: doc._source.name,
+          description: doc._source.description,
+          format: doc._source.format,
         })
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        for (const doc of resMget.body.docs as any[]) {
-          if (!doc.found) continue
-          const mr = contentByResource.get(doc._id)
-          if (mr) {
-            mr.name = doc._source.name
-            mr.description = doc._source.description
-            mr.format = doc._source.format
+      }
+      for (const item of result.items) {
+        for (const mr of item.matchedResources ?? []) {
+          const meta = metadataMap.get(mr.id)
+          if (meta) {
+            mr.name = meta.name
+            mr.description = meta.description
+            mr.format = meta.format
           }
         }
-      } catch {
-        // Best-effort: display without metadata
       }
-    }
-
-    // Attach content-only matches to existing items
-    for (const item of result.items) {
-      const contentMatches = contentByPackage.get(item.id)
-      if (contentMatches) {
-        item.matchedResources = [...(item.matchedResources ?? []), ...contentMatches]
-        contentByPackage.delete(item.id)
-      }
-    }
-
-    // Fetch packages not in the main result but matched via content
-    const missingPkgIds = [...contentByPackage.keys()]
-    if (missingPkgIds.length > 0) {
-      try {
-        const mgetResponse = await this.client.mget({
-          index: this.packagesIndex,
-          body: { ids: missingPkgIds },
-        })
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        for (const doc of mgetResponse.body.docs as any[]) {
-          if (!doc.found) continue
-          const item: DatasetDoc = { ...doc._source, id: doc._id }
-          item.matchedResources = contentByPackage.get(doc._id)
-          ;(item as DatasetDoc & { _score?: number })._score = RESOURCE_BOOST
-          result.items.push(item)
-          result.total += 1
-        }
-      } catch {
-        // Best-effort: mget for content-only packages
-      }
+    } catch {
+      // Best-effort: display without metadata
     }
   }
 
@@ -880,13 +734,13 @@ export class OpenSearchAdapter implements SearchAdapter {
 
     try {
       const response = await this.client.search({
-        index: this.contentsIndex,
+        index: this.searchIndex,
         body: {
           size: chunkDocIds.length,
           query: {
             bool: {
               must: { match: { extractedText: { query: queryText, operator: 'and' } } },
-              filter: { ids: { values: chunkDocIds } },
+              filter: [{ ids: { values: chunkDocIds } }, { term: { join_field: 'content' } }],
             },
           },
           _source: false,
@@ -915,10 +769,9 @@ export class OpenSearchAdapter implements SearchAdapter {
   async sumResourceCount(query?: ResourceCountQuery): Promise<number> {
     await this.ensureIndex()
 
-    // Count resource documents matching packages that satisfy the query/filters.
-    // Step 1: find matching package IDs
+    // Count resource child documents whose parent packages match the query/filters
     const must: Record<string, unknown>[] = []
-    const filter = this.buildFilterClauses(query?.filters)
+    const parentFilter = this.buildFilterClauses(query?.filters)
 
     if (query?.q?.trim()) {
       must.push(this.buildPackageMultiMatch(query.q))
@@ -926,30 +779,24 @@ export class OpenSearchAdapter implements SearchAdapter {
       must.push({ match_all: {} })
     }
 
-    const pkgResponse = await this.client.search({
-      index: this.packagesIndex,
-      body: {
-        size: 0,
-        query: { bool: { must, ...(filter.length > 0 && { filter }) } },
-        aggs: {
-          package_ids: { terms: { field: 'id', size: 10000 } },
-        },
-      },
-    })
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pkgAggs = pkgResponse.body.aggregations as Record<string, any> | undefined
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const packageBuckets = pkgAggs?.package_ids?.buckets as any[] | undefined
-    if (!packageBuckets || packageBuckets.length === 0) return 0
-
-    const packageIds = packageBuckets.map((b: { key: string }) => b.key)
-
-    // Step 2: count resources belonging to those packages
     const countResponse = await this.client.count({
-      index: this.resourcesIndex,
+      index: this.searchIndex,
       body: {
-        query: { terms: { packageId: packageIds } },
+        query: {
+          bool: {
+            filter: [
+              { term: { join_field: 'resource' } },
+              {
+                has_parent: {
+                  parent_type: 'package',
+                  query: {
+                    bool: { must, ...(parentFilter.length > 0 && { filter: parentFilter }) },
+                  },
+                },
+              },
+            ],
+          },
+        },
       },
     })
 
@@ -963,27 +810,47 @@ export class OpenSearchAdapter implements SearchAdapter {
   async getIndexStats(): Promise<IndexStats> {
     await this.ensureIndex()
 
-    const [catResponse, recentResponse] = await Promise.all([
+    // Count documents by type and get recent docs in parallel
+    const [catResponse, pkgCount, resCount, contCount, recentResponse] = await Promise.all([
       this.client.cat.indices({
-        index: [this.packagesIndex, this.resourcesIndex, this.contentsIndex],
+        index: this.searchIndex,
         format: 'json',
         h: ['index', 'docs.count', 'store.size'],
       }),
+      this.client.count({
+        index: this.searchIndex,
+        body: { query: { term: { join_field: 'package' } } },
+      }),
+      this.client.count({
+        index: this.searchIndex,
+        body: { query: { term: { join_field: 'resource' } } },
+      }),
+      this.client.count({
+        index: this.searchIndex,
+        body: { query: { term: { join_field: 'content' } } },
+      }),
       this.client.msearch({
         body: [
-          { index: this.packagesIndex },
+          { index: this.searchIndex },
           {
             size: 5,
+            query: { term: { join_field: 'package' } },
             sort: [{ updated: { order: 'desc' } }],
             _source: ['name', 'title', 'updated'],
           },
-          { index: this.resourcesIndex },
-          { size: 5, sort: [{ _doc: { order: 'desc' } }], _source: ['name', 'packageId'] },
-          { index: this.contentsIndex },
+          { index: this.searchIndex },
           {
             size: 5,
+            query: { term: { join_field: 'resource' } },
             sort: [{ _doc: { order: 'desc' } }],
-            _source: ['contentType', 'contentOriginalSize'],
+            _source: ['name', 'packageId'],
+          },
+          { index: this.searchIndex },
+          {
+            size: 5,
+            query: { term: { join_field: 'content' } },
+            sort: [{ _doc: { order: 'desc' } }],
+            _source: ['contentType'],
           },
         ],
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -995,14 +862,8 @@ export class OpenSearchAdapter implements SearchAdapter {
       'docs.count': string
       'store.size': string
     }>
-
-    const parseCatEntry = (indexName: string) => {
-      const row = indices.find((i) => i.index === indexName)
-      return {
-        docCount: parseInt(row?.['docs.count'] ?? '0', 10),
-        sizeBytes: parseSizeToBytes(row?.['store.size'] ?? '0b'),
-      }
-    }
+    const row = indices.find((i) => i.index === this.searchIndex)
+    const sizeBytes = parseSizeToBytes(row?.['store.size'] ?? '0b')
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [pkgRecent, resRecent, contRecent] = recentResponse.body.responses as any[]
@@ -1027,16 +888,12 @@ export class OpenSearchAdapter implements SearchAdapter {
     }))
 
     return {
-      packages: { ...parseCatEntry(this.packagesIndex), recentDocs: pkgRecentDocs },
-      resources: { ...parseCatEntry(this.resourcesIndex), recentDocs: resRecentDocs },
-      contents: { ...parseCatEntry(this.contentsIndex), recentDocs: contRecentDocs },
+      indexName: this.searchIndex,
+      totalSizeBytes: sizeBytes,
+      packages: { docCount: pkgCount.body.count, recentDocs: pkgRecentDocs },
+      resources: { docCount: resCount.body.count, recentDocs: resRecentDocs },
+      contents: { docCount: contCount.body.count, recentDocs: contRecentDocs },
     }
-  }
-
-  private resolveIndex(index: 'packages' | 'resources' | 'contents'): string {
-    if (index === 'packages') return this.packagesIndex
-    if (index === 'resources') return this.resourcesIndex
-    return this.contentsIndex
   }
 
   async getDocument(
@@ -1045,8 +902,18 @@ export class OpenSearchAdapter implements SearchAdapter {
   ): Promise<Record<string, unknown> | null> {
     await this.ensureIndex()
     try {
-      const response = await this.client.get({ index: this.resolveIndex(index), id })
-      return response.body._source as Record<string, unknown>
+      const response = await this.client.search({
+        index: this.searchIndex,
+        body: {
+          size: 1,
+          query: {
+            bool: { filter: [{ term: { _id: id } }, { term: { join_field: OpenSearchAdapter.JOIN_TYPE[index] } }] },
+          },
+        },
+      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const hit = (response.body.hits?.hits as any[])?.[0]
+      return hit ? (hit._source as Record<string, unknown>) : null
     } catch (err: unknown) {
       if (isNotFoundError(err)) return null
       throw err
@@ -1061,15 +928,8 @@ export class OpenSearchAdapter implements SearchAdapter {
 
     const offset = options.offset ?? 0
     const limit = Math.min(options.limit ?? 20, 100)
-    const indexName = this.resolveIndex(index)
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const body: any = {
-      from: offset,
-      size: limit,
-      sort: [{ _doc: { order: 'desc' } }],
-      ...(index === 'contents' && { _source: { excludes: ['extractedText'] } }),
-    }
+    // Map plural index name to join_field type (e.g. 'packages' → 'package')
+    const joinType = OpenSearchAdapter.JOIN_TYPE[index]
 
     const searchFields: Record<string, string[]> = {
       packages: ['title', 'name', 'notes'],
@@ -1077,19 +937,35 @@ export class OpenSearchAdapter implements SearchAdapter {
       contents: ['extractedText'],
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body: any = {
+      from: offset,
+      size: limit,
+      sort: [{ _doc: { order: 'desc' } }],
+      query: { term: { join_field: joinType } },
+      ...(index === 'contents' && { _source: { excludes: ['extractedText'] } }),
+    }
+
     if (options.q?.trim()) {
       body.query = {
-        multi_match: {
-          query: options.q,
-          fields: searchFields[index],
-          type: 'cross_fields' as const,
-          operator: 'and' as const,
+        bool: {
+          filter: [{ term: { join_field: joinType } }],
+          must: [
+            {
+              multi_match: {
+                query: options.q,
+                fields: searchFields[index],
+                type: 'cross_fields' as const,
+                operator: 'and' as const,
+              },
+            },
+          ],
         },
       }
       body.sort = ['_score', { _doc: { order: 'desc' } }]
     }
 
-    const response = await this.client.search({ index: indexName, body })
+    const response = await this.client.search({ index: this.searchIndex, body })
     const hits = response.body.hits
     const total = typeof hits.total === 'number' ? hits.total : (hits.total?.value ?? 0)
 
@@ -1108,10 +984,10 @@ export class OpenSearchAdapter implements SearchAdapter {
     await this.ensureIndex()
 
     const response = await this.client.search({
-      index: this.contentsIndex,
+      index: this.searchIndex,
       body: {
         size: 100,
-        query: { term: { resourceId } },
+        query: { bool: { filter: [{ term: { resourceId } }, { term: { join_field: 'content' } }] } },
         _source: ['chunkIndex', 'chunkSize'],
         sort: [{ chunkIndex: { order: 'asc' } }],
       },
@@ -1136,15 +1012,15 @@ export class OpenSearchAdapter implements SearchAdapter {
     const limit = Math.min(options.limit ?? 20, 100)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const query: any = options.q?.trim()
+    const must: any = options.q?.trim()
       ? { match: { extractedText: { query: options.q, operator: 'and' } } }
       : { match_all: {} }
 
     const response = await this.client.search({
-      index: this.contentsIndex,
+      index: this.searchIndex,
       body: {
         size: 0,
-        query,
+        query: { bool: { must, filter: [{ term: { join_field: 'content' } }] } },
         aggs: {
           by_resource: {
             terms: {
@@ -1179,14 +1055,15 @@ export class OpenSearchAdapter implements SearchAdapter {
       }
     })
 
-    // Fetch resource names from kukan-resources
-    const resourceIds = items.map((item) => item.resourceId)
-    if (resourceIds.length > 0) {
+    // Fetch resource names from search index (resource documents, with routing)
+    if (items.length > 0) {
       try {
         const itemLookup = new Map(items.map((item) => [item.resourceId, item]))
         const resMget = await this.client.mget({
-          index: this.resourcesIndex,
-          body: { ids: resourceIds },
+          index: this.searchIndex,
+          body: {
+            docs: items.map((item) => ({ _id: item.resourceId, routing: item.packageId })),
+          },
         })
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         for (const doc of resMget.body.docs as any[]) {

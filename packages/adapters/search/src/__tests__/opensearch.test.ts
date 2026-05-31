@@ -18,6 +18,9 @@ vi.mock('@opensearch-project/opensearch', () => {
     delete: vi.fn(),
     deleteByQuery: vi.fn(),
     bulk: vi.fn(),
+    cat: {
+      indices: vi.fn(),
+    },
   }
   return {
     Client: vi.fn(function () {
@@ -42,6 +45,9 @@ interface MockClient {
   delete: ReturnType<typeof vi.fn>
   deleteByQuery: ReturnType<typeof vi.fn>
   bulk: ReturnType<typeof vi.fn>
+  cat: {
+    indices: ReturnType<typeof vi.fn>
+  }
 }
 
 // Access the mock client
@@ -66,44 +72,37 @@ describe('OpenSearchAdapter', () => {
   })
 
   describe('ensureIndex', () => {
-    it('should create packages, resources, and contents indices', async () => {
+    it('should create a single search index with join field', async () => {
       await adapter.ensureIndex()
 
-      expect(mockClient.indices.exists).toHaveBeenCalledTimes(3)
-      expect(mockClient.indices.create).toHaveBeenCalledTimes(3)
+      expect(mockClient.indices.exists).toHaveBeenCalledTimes(1)
+      expect(mockClient.indices.create).toHaveBeenCalledTimes(1)
 
-      const createCalls = mockClient.indices.create.mock.calls
-      expect(createCalls[0][0].index).toBe('kukan-packages')
-      expect(createCalls[1][0].index).toBe('kukan-resources')
-      expect(createCalls[2][0].index).toBe('kukan-contents')
-    })
-
-    it('should not include extractedText in resources index', async () => {
-      await adapter.ensureIndex()
-
-      const resourcesCreateCall = mockClient.indices.create.mock.calls[1][0]
-      const props = resourcesCreateCall.body.mappings.properties
-      expect(props.extractedText).toBeUndefined()
-      expect(props.name.type).toBe('text')
+      const createCall = mockClient.indices.create.mock.calls[0][0]
+      expect(createCall.index).toBe('kukan-search')
+      const props = createCall.body.mappings.properties
+      expect(props.join_field).toEqual({
+        type: 'join',
+        relations: { package: ['resource', 'content'] },
+      })
+      // Package fields
+      expect(props.title.type).toBe('text')
+      expect(props.organization.type).toBe('keyword')
+      // Resource fields
       expect(props.description.type).toBe('text')
       expect(props.format.type).toBe('keyword')
-    })
-
-    it('should create contents index with extractedText field', async () => {
-      await adapter.ensureIndex()
-
-      const contentsCreateCall = mockClient.indices.create.mock.calls[2][0]
-      const props = contentsCreateCall.body.mappings.properties
+      // Content fields
       expect(props.extractedText).toEqual({
         type: 'text',
         analyzer: 'kuromoji_analyzer',
         index_options: 'offsets',
       })
-      expect(props.contentType.type).toBe('keyword')
-      expect(props.packageId.type).toBe('keyword')
+      // Unified name field (text + keyword subfield)
+      expect(props.name.type).toBe('text')
+      expect(props.name.fields.keyword.type).toBe('keyword')
     })
 
-    it('should skip creation when indices already exist', async () => {
+    it('should skip creation when index already exists', async () => {
       mockClient.indices.exists.mockResolvedValue({ body: true })
 
       await adapter.ensureIndex()
@@ -115,35 +114,21 @@ describe('OpenSearchAdapter', () => {
       await adapter.ensureIndex()
       await adapter.ensureIndex()
 
-      // 3 calls on first ensureIndex (packages + resources + contents), then 0 on second
-      expect(mockClient.indices.exists).toHaveBeenCalledTimes(3)
+      expect(mockClient.indices.exists).toHaveBeenCalledTimes(1)
     })
 
     it('should re-check after TTL expires', async () => {
       await adapter.ensureIndex()
-      expect(mockClient.indices.exists).toHaveBeenCalledTimes(3)
+      expect(mockClient.indices.exists).toHaveBeenCalledTimes(1)
 
-      // Advance time past 60s TTL
       vi.useFakeTimers()
       vi.setSystemTime(Date.now() + 61_000)
 
       mockClient.indices.exists.mockResolvedValue({ body: true })
       await adapter.ensureIndex()
 
-      expect(mockClient.indices.exists).toHaveBeenCalledTimes(6)
-      expect(mockClient.indices.create).toHaveBeenCalledTimes(3) // no new creates
-      vi.useRealTimers()
-    })
-
-    it('should not re-check within TTL', async () => {
-      mockClient.indices.exists.mockResolvedValue({ body: false })
-      await adapter.ensureIndex()
-
-      // Within TTL: skip
-      mockClient.indices.exists.mockClear()
-      await adapter.ensureIndex()
-      expect(mockClient.indices.exists).not.toHaveBeenCalled()
-
+      expect(mockClient.indices.exists).toHaveBeenCalledTimes(2)
+      expect(mockClient.indices.create).toHaveBeenCalledTimes(1)
       vi.useRealTimers()
     })
   })
@@ -163,16 +148,20 @@ describe('OpenSearchAdapter', () => {
 
       const result = await adapter.getPackagesDocCount()
       expect(result).toBe(42)
+      expect(mockClient.count).toHaveBeenCalledWith({
+        index: 'kukan-search',
+        body: { query: { term: { join_field: 'package' } } },
+      })
     })
 
-    it('should create missing indices before checking', async () => {
+    it('should create missing index before checking', async () => {
       mockClient.indices.exists.mockResolvedValue({ body: false })
       mockClient.indices.create.mockResolvedValue({ body: {} })
       mockClient.count.mockResolvedValue({ body: { count: 0 } })
 
       const result = await adapter.getPackagesDocCount()
       expect(result).toBe(0)
-      expect(mockClient.indices.create).toHaveBeenCalledTimes(3)
+      expect(mockClient.indices.create).toHaveBeenCalledTimes(1)
     })
 
     it('should return -1 when count API fails', async () => {
@@ -193,13 +182,12 @@ describe('OpenSearchAdapter', () => {
       await customAdapter.ensureIndex()
 
       const existsCalls = mockClient.indices.exists.mock.calls
-      expect(existsCalls[0][0].index).toBe('test-packages')
-      expect(existsCalls[1][0].index).toBe('test-resources')
+      expect(existsCalls[0][0].index).toBe('test-search')
     })
   })
 
   describe('indexPackage', () => {
-    it('should index a document to packages index', async () => {
+    it('should index a document to search index with join_field', async () => {
       mockClient.index.mockResolvedValue({ body: {} })
 
       await adapter.indexPackage({
@@ -209,16 +197,20 @@ describe('OpenSearchAdapter', () => {
       })
 
       expect(mockClient.index).toHaveBeenCalledWith({
-        index: 'kukan-packages',
+        index: 'kukan-search',
         id: 'pkg-1',
-        body: expect.objectContaining({ id: 'pkg-1', name: 'test-dataset' }),
+        body: expect.objectContaining({
+          id: 'pkg-1',
+          name: 'test-dataset',
+          join_field: 'package',
+        }),
         refresh: 'wait_for',
       })
     })
   })
 
   describe('indexResource', () => {
-    it('should index a resource document', async () => {
+    it('should index a resource document with join_field and routing', async () => {
       mockClient.index.mockResolvedValue({ body: {} })
 
       await adapter.indexResource({
@@ -229,42 +221,51 @@ describe('OpenSearchAdapter', () => {
       })
 
       expect(mockClient.index).toHaveBeenCalledWith({
-        index: 'kukan-resources',
+        index: 'kukan-search',
         id: 'res-1',
         body: expect.objectContaining({
           id: 'res-1',
           packageId: 'pkg-1',
+          join_field: { name: 'resource', parent: 'pkg-1' },
         }),
+        routing: 'pkg-1',
         refresh: 'wait_for',
       })
     })
   })
 
   describe('search', () => {
-    it('should use msearch for queries with q parameter', async () => {
-      mockClient.msearch.mockResolvedValue({
+    it('should use single search with has_child for keyword queries', async () => {
+      mockClient.search.mockResolvedValue({
         body: {
-          responses: [
-            {
-              hits: {
-                total: { value: 1 },
-                hits: [{ _id: 'pkg-1', _source: { name: 'test' }, _score: 5 }],
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: { name: 'test', join_field: 'package' },
+                _score: 5,
               },
-            },
-            { hits: { total: { value: 0 }, hits: [] } },
-            { hits: { total: { value: 0 }, hits: [] } },
-          ],
+            ],
+          },
         },
       })
 
       const result = await adapter.search({ q: 'test query', offset: 0, limit: 10 })
 
-      expect(mockClient.msearch).toHaveBeenCalled()
-      expect(mockClient.search).not.toHaveBeenCalled()
+      expect(mockClient.search).toHaveBeenCalled()
+      expect(mockClient.msearch).not.toHaveBeenCalled()
+      const callArgs = mockClient.search.mock.calls[0][0]
+      expect(callArgs.index).toBe('kukan-search')
+      // Should have has_child queries in the bool.should
+      const must = callArgs.body.query.bool.must[0].bool.should
+      expect(must).toHaveLength(3) // package multi_match, has_child resource, has_child content
+      expect(must[1].has_child.type).toBe('resource')
+      expect(must[2].has_child.type).toBe('content')
       expect(result.items).toHaveLength(1)
     })
 
-    it('should use single search for empty query (browse mode)', async () => {
+    it('should use single search with match_all for empty query (browse mode)', async () => {
       mockClient.search.mockResolvedValue({
         body: { hits: { total: { value: 0 }, hits: [] } },
       })
@@ -272,33 +273,41 @@ describe('OpenSearchAdapter', () => {
       await adapter.search({ q: '', offset: 0, limit: 20 })
 
       expect(mockClient.search).toHaveBeenCalled()
-      expect(mockClient.msearch).not.toHaveBeenCalled()
+      const callArgs = mockClient.search.mock.calls[0][0]
+      expect(callArgs.index).toBe('kukan-search')
+      expect(callArgs.body.query.bool.filter).toEqual(
+        expect.arrayContaining([{ term: { join_field: 'package' } }])
+      )
+      expect(callArgs.body.query.bool.must).toEqual([{ match_all: {} }])
     })
 
-    it('should merge content matches into matchedResources', async () => {
-      mockClient.msearch.mockResolvedValue({
+    it('should merge content matches into matchedResources via inner_hits', async () => {
+      mockClient.search.mockResolvedValue({
         body: {
-          responses: [
-            {
-              hits: {
-                total: { value: 1 },
-                hits: [{ _id: 'pkg-1', _source: { name: 'population' }, _score: 5 }],
-              },
-            },
-            { hits: { total: { value: 0 }, hits: [] } },
-            {
-              hits: {
-                total: { value: 1 },
-                hits: [
-                  {
-                    _id: 'chunk-res1-0',
-                    _source: { resourceId: 'res-1', packageId: 'pkg-1' },
-                    _score: 3,
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: { name: 'population', join_field: 'package' },
+                _score: 5,
+                inner_hits: {
+                  resource: { hits: { hits: [] } },
+                  content_hits: {
+                    hits: {
+                      hits: [
+                        {
+                          _id: 'chunk-res1-0',
+                          _source: { resourceId: 'res-1' },
+                          _score: 3,
+                        },
+                      ],
+                    },
                   },
-                ],
+                },
               },
-            },
-          ],
+            ],
+          },
         },
       })
 
@@ -376,40 +385,66 @@ describe('OpenSearchAdapter', () => {
   })
 
   describe('deletePackage', () => {
-    it('should delete from packages index', async () => {
+    it('should delete children via deleteByQuery then delete the package', async () => {
+      mockClient.deleteByQuery.mockResolvedValue({ body: {} })
       mockClient.delete.mockResolvedValue({ body: {} })
 
       await adapter.deletePackage('pkg-1')
 
+      // First: deleteByQuery for children
+      expect(mockClient.deleteByQuery).toHaveBeenCalledWith({
+        index: 'kukan-search',
+        body: {
+          query: {
+            bool: {
+              should: [
+                { parent_id: { type: 'resource', id: 'pkg-1' } },
+                { parent_id: { type: 'content', id: 'pkg-1' } },
+              ],
+              minimum_should_match: 1,
+            },
+          },
+        },
+        routing: 'pkg-1',
+        refresh: true,
+      })
+      // Then: delete the package doc itself
       expect(mockClient.delete).toHaveBeenCalledWith({
-        index: 'kukan-packages',
+        index: 'kukan-search',
         id: 'pkg-1',
         refresh: 'wait_for',
       })
     })
 
     it('should ignore 404 errors', async () => {
+      mockClient.deleteByQuery.mockRejectedValue({ statusCode: 404 })
       mockClient.delete.mockRejectedValue({ statusCode: 404 })
       await expect(adapter.deletePackage('nonexistent')).resolves.toBeUndefined()
     })
   })
 
   describe('deleteResource', () => {
-    it('should delete from resources index', async () => {
-      mockClient.delete.mockResolvedValue({ body: {} })
+    it('should delete from search index using deleteByQuery', async () => {
+      mockClient.deleteByQuery.mockResolvedValue({ body: {} })
 
       await adapter.deleteResource('res-1')
 
-      expect(mockClient.delete).toHaveBeenCalledWith({
-        index: 'kukan-resources',
-        id: 'res-1',
-        refresh: 'wait_for',
+      expect(mockClient.deleteByQuery).toHaveBeenCalledWith({
+        index: 'kukan-search',
+        body: {
+          query: {
+            bool: {
+              filter: [{ term: { _id: 'res-1' } }, { term: { join_field: 'resource' } }],
+            },
+          },
+        },
+        refresh: true,
       })
     })
   })
 
   describe('bulkIndexPackages', () => {
-    it('should bulk index to packages index', async () => {
+    it('should bulk index to search index with join_field', async () => {
       mockClient.bulk.mockResolvedValue({ body: { errors: false, items: [] } })
 
       await adapter.bulkIndexPackages([
@@ -419,10 +454,10 @@ describe('OpenSearchAdapter', () => {
 
       expect(mockClient.bulk).toHaveBeenCalledWith({
         body: [
-          { index: { _index: 'kukan-packages', _id: 'pkg-1' } },
-          expect.objectContaining({ id: 'pkg-1' }),
-          { index: { _index: 'kukan-packages', _id: 'pkg-2' } },
-          expect.objectContaining({ id: 'pkg-2' }),
+          { index: { _index: 'kukan-search', _id: 'pkg-1' } },
+          expect.objectContaining({ id: 'pkg-1', join_field: 'package' }),
+          { index: { _index: 'kukan-search', _id: 'pkg-2' } },
+          expect.objectContaining({ id: 'pkg-2', join_field: 'package' }),
         ],
         refresh: 'wait_for',
       })
@@ -435,7 +470,7 @@ describe('OpenSearchAdapter', () => {
   })
 
   describe('bulkIndexResources', () => {
-    it('should bulk index to resources index', async () => {
+    it('should bulk index to search index with join_field and routing', async () => {
       mockClient.bulk.mockResolvedValue({ body: { errors: false, items: [] } })
 
       await adapter.bulkIndexResources([
@@ -445,10 +480,18 @@ describe('OpenSearchAdapter', () => {
 
       expect(mockClient.bulk).toHaveBeenCalledWith({
         body: [
-          { index: { _index: 'kukan-resources', _id: 'res-1' } },
-          expect.objectContaining({ id: 'res-1', packageId: 'pkg-1' }),
-          { index: { _index: 'kukan-resources', _id: 'res-2' } },
-          expect.objectContaining({ id: 'res-2' }),
+          { index: { _index: 'kukan-search', _id: 'res-1', routing: 'pkg-1' } },
+          expect.objectContaining({
+            id: 'res-1',
+            packageId: 'pkg-1',
+            join_field: { name: 'resource', parent: 'pkg-1' },
+          }),
+          { index: { _index: 'kukan-search', _id: 'res-2', routing: 'pkg-1' } },
+          expect.objectContaining({
+            id: 'res-2',
+            packageId: 'pkg-1',
+            join_field: { name: 'resource', parent: 'pkg-1' },
+          }),
         ],
         refresh: 'wait_for',
       })
@@ -464,42 +507,15 @@ describe('OpenSearchAdapter', () => {
             hits: [
               {
                 _id: 'pkg-1',
-                _source: { name: 'test' },
+                _source: { name: 'test', join_field: 'package' },
                 _score: 5,
                 highlight: {
                   title: ['<script>alert(1)</script><mark>test</mark>'],
+                  notes: ['<img onerror=alert(1)><mark>note</mark>'],
                 },
               },
             ],
           },
-        },
-      })
-
-      // Use empty query to go through single search path (not msearch)
-      // We need a query to trigger highlighting, but the browse path won't have highlights
-      // So we test via msearch path
-      mockClient.msearch.mockResolvedValue({
-        body: {
-          responses: [
-            {
-              hits: {
-                total: { value: 1 },
-                hits: [
-                  {
-                    _id: 'pkg-1',
-                    _source: { name: 'test' },
-                    _score: 5,
-                    highlight: {
-                      title: ['<script>alert(1)</script><mark>test</mark>'],
-                      notes: ['<img onerror=alert(1)><mark>note</mark>'],
-                    },
-                  },
-                ],
-              },
-            },
-            { hits: { total: { value: 0 }, hits: [] } },
-            { hits: { total: { value: 0 }, hits: [] } },
-          ],
         },
       })
 
@@ -511,27 +527,21 @@ describe('OpenSearchAdapter', () => {
     })
 
     it('should strip attributes from mark tags to prevent XSS', async () => {
-      mockClient.msearch.mockResolvedValue({
+      mockClient.search.mockResolvedValue({
         body: {
-          responses: [
-            {
-              hits: {
-                total: { value: 1 },
-                hits: [
-                  {
-                    _id: 'pkg-1',
-                    _source: { name: 'test' },
-                    _score: 5,
-                    highlight: {
-                      title: ['<mark onmouseover="alert(1)">test</mark>'],
-                    },
-                  },
-                ],
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: { name: 'test', join_field: 'package' },
+                _score: 5,
+                highlight: {
+                  title: ['<mark onmouseover="alert(1)">test</mark>'],
+                },
               },
-            },
-            { hits: { total: { value: 0 }, hits: [] } },
-            { hits: { total: { value: 0 }, hits: [] } },
-          ],
+            ],
+          },
         },
       })
 
@@ -540,44 +550,46 @@ describe('OpenSearchAdapter', () => {
       expect(result.items[0].highlightedTitle).toBe('<mark>test</mark>')
     })
 
-    it('should sanitize XSS in resource and content highlight snippets', async () => {
-      mockClient.msearch.mockResolvedValue({
+    it('should sanitize XSS in resource highlight snippets via inner_hits', async () => {
+      mockClient.search.mockResolvedValue({
         body: {
-          responses: [
-            {
-              hits: {
-                total: { value: 1 },
-                hits: [{ _id: 'pkg-1', _source: { name: 'test' }, _score: 5 }],
-              },
-            },
-            {
-              hits: {
-                total: { value: 1 },
-                hits: [
-                  {
-                    _id: 'res-1',
-                    _source: { id: 'res-1', packageId: 'pkg-1', name: 'data.csv' },
-                    _score: 3,
-                    highlight: {
-                      name: ['<script>x</script><mark>data</mark>.csv'],
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: { name: 'test', join_field: 'package' },
+                _score: 5,
+                inner_hits: {
+                  resource: {
+                    hits: {
+                      hits: [
+                        {
+                          _id: 'res-1',
+                          _source: { id: 'res-1', packageId: 'pkg-1', name: 'data.csv' },
+                          _score: 3,
+                          highlight: {
+                            name: ['<script>x</script><mark>data</mark>.csv'],
+                          },
+                        },
+                      ],
                     },
                   },
-                ],
-              },
-            },
-            {
-              hits: {
-                total: { value: 1 },
-                hits: [
-                  {
-                    _id: 'chunk-res1-0',
-                    _source: { resourceId: 'res-1', packageId: 'pkg-1' },
-                    _score: 2,
+                  content_hits: {
+                    hits: {
+                      hits: [
+                        {
+                          _id: 'chunk-res1-0',
+                          _source: { resourceId: 'res-1' },
+                          _score: 2,
+                        },
+                      ],
+                    },
                   },
-                ],
+                },
               },
-            },
-          ],
+            ],
+          },
         },
       })
 
@@ -591,38 +603,66 @@ describe('OpenSearchAdapter', () => {
   })
 
   describe('getDocument', () => {
-    it('should return document source by ID', async () => {
-      mockClient.get.mockResolvedValue({
-        body: { _id: 'pkg-1', _source: { name: 'test', title: 'Test' } },
+    it('should return document source by ID using search with type filter', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: {
+            hits: [{ _id: 'pkg-1', _source: { name: 'test', title: 'Test' } }],
+          },
+        },
       })
 
       const doc = await adapter.getDocument('packages', 'pkg-1')
 
-      expect(mockClient.get).toHaveBeenCalledWith({ index: 'kukan-packages', id: 'pkg-1' })
+      expect(mockClient.search).toHaveBeenCalledWith({
+        index: 'kukan-search',
+        body: {
+          size: 1,
+          query: {
+            bool: {
+              filter: [{ term: { _id: 'pkg-1' } }, { term: { join_field: 'package' } }],
+            },
+          },
+        },
+      })
       expect(doc).toEqual({ name: 'test', title: 'Test' })
     })
 
     it('should return null for non-existent document', async () => {
-      mockClient.get.mockRejectedValue({ statusCode: 404 })
+      mockClient.search.mockResolvedValue({
+        body: { hits: { hits: [] } },
+      })
 
       const doc = await adapter.getDocument('resources', 'nonexistent')
 
       expect(doc).toBeNull()
     })
 
-    it('should resolve correct index name', async () => {
-      mockClient.get.mockResolvedValue({
-        body: { _id: 'res-1', _source: { name: 'data.csv' } },
+    it('should use correct join_field type for each index', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: { hits: [{ _id: 'res-1', _source: { name: 'data.csv' } }] },
+        },
       })
 
       await adapter.getDocument('resources', 'res-1')
 
-      expect(mockClient.get).toHaveBeenCalledWith({ index: 'kukan-resources', id: 'res-1' })
+      expect(mockClient.search).toHaveBeenCalledWith({
+        index: 'kukan-search',
+        body: {
+          size: 1,
+          query: {
+            bool: {
+              filter: [{ term: { _id: 'res-1' } }, { term: { join_field: 'resource' } }],
+            },
+          },
+        },
+      })
     })
   })
 
   describe('browseDocuments', () => {
-    it('should return paginated documents', async () => {
+    it('should return paginated documents with join_field filter', async () => {
       mockClient.search.mockResolvedValue({
         body: {
           hits: {
@@ -642,6 +682,10 @@ describe('OpenSearchAdapter', () => {
       expect(result!.total).toBe(50)
       expect(result!.items[0].id).toBe('pkg-1')
       expect(result!.items[0].source.name).toBe('alpha')
+
+      const callArgs = mockClient.search.mock.calls[0][0]
+      expect(callArgs.index).toBe('kukan-search')
+      expect(callArgs.body.query).toEqual({ term: { join_field: 'package' } })
     })
 
     it('should exclude extractedText from contents browse', async () => {
@@ -655,7 +699,7 @@ describe('OpenSearchAdapter', () => {
       expect(callArgs.body._source).toEqual({ excludes: ['extractedText'] })
     })
 
-    it('should search with correct fields per index', async () => {
+    it('should search with correct fields per index and join_field filter', async () => {
       mockClient.search.mockResolvedValue({
         body: { hits: { total: { value: 0 }, hits: [] } },
       })
@@ -663,7 +707,9 @@ describe('OpenSearchAdapter', () => {
       await adapter.browseDocuments('resources', { q: 'test', offset: 0 })
 
       const callArgs = mockClient.search.mock.calls[0][0]
-      expect(callArgs.body.query.multi_match).toEqual(
+      expect(callArgs.index).toBe('kukan-search')
+      expect(callArgs.body.query.bool.filter).toEqual([{ term: { join_field: 'resource' } }])
+      expect(callArgs.body.query.bool.must[0].multi_match).toEqual(
         expect.objectContaining({
           query: 'test',
           fields: ['name', 'description'],
@@ -684,7 +730,7 @@ describe('OpenSearchAdapter', () => {
   })
 
   describe('indexContent', () => {
-    it('should use resourceId_chunk_N as doc id', async () => {
+    it('should use resourceId_chunk_N as doc id with join_field and routing', async () => {
       mockClient.index.mockResolvedValue({ body: {} })
 
       await adapter.indexContent({
@@ -696,12 +742,15 @@ describe('OpenSearchAdapter', () => {
       })
 
       expect(mockClient.index).toHaveBeenCalledWith({
-        index: 'kukan-contents',
+        index: 'kukan-search',
         id: 'res-1_chunk_0',
         body: expect.objectContaining({
           resourceId: 'res-1',
+          packageId: 'pkg-1',
           chunkIndex: 0,
+          join_field: { name: 'content', parent: 'pkg-1' },
         }),
+        routing: 'pkg-1',
         refresh: 'wait_for',
       })
     })
@@ -718,159 +767,119 @@ describe('OpenSearchAdapter', () => {
       })
 
       expect(mockClient.index).toHaveBeenCalledWith({
-        index: 'kukan-contents',
+        index: 'kukan-search',
         id: 'res-1_chunk_1',
         body: expect.objectContaining({
           resourceId: 'res-1',
           chunkIndex: 1,
+          join_field: { name: 'content', parent: 'pkg-1' },
         }),
+        routing: 'pkg-1',
         refresh: 'wait_for',
       })
     })
   })
 
   describe('deleteContent', () => {
-    it('should delete all chunks by resourceId using deleteByQuery', async () => {
+    it('should delete all chunks by resourceId and join_field using deleteByQuery', async () => {
       mockClient.deleteByQuery.mockResolvedValue({ body: {} })
 
       await adapter.deleteContent('res-1')
 
       expect(mockClient.deleteByQuery).toHaveBeenCalledWith({
-        index: 'kukan-contents',
-        body: { query: { term: { resourceId: 'res-1' } } },
+        index: 'kukan-search',
+        body: {
+          query: {
+            bool: {
+              filter: [{ term: { resourceId: 'res-1' } }, { term: { join_field: 'content' } }],
+            },
+          },
+        },
         refresh: true,
       })
     })
   })
 
   describe('deleteAllPackages', () => {
-    it('should delete and recreate the packages index', async () => {
-      mockClient.indices.delete.mockResolvedValue({ body: {} })
+    it('should delete all package documents using deleteByQuery', async () => {
+      mockClient.deleteByQuery.mockResolvedValue({ body: {} })
 
       await adapter.deleteAllPackages()
 
-      expect(mockClient.indices.delete).toHaveBeenCalledWith({ index: 'kukan-packages' })
-      // After delete, ensureIndex is called which recreates all indices
-      expect(mockClient.indices.create).toHaveBeenCalled()
+      expect(mockClient.deleteByQuery).toHaveBeenCalledWith({
+        index: 'kukan-search',
+        body: { query: { term: { join_field: 'package' } } },
+        refresh: true,
+      })
     })
 
     it('should ignore 404 when index does not exist', async () => {
-      mockClient.indices.delete.mockRejectedValue({ statusCode: 404 })
+      mockClient.deleteByQuery.mockRejectedValue({ statusCode: 404 })
 
       await expect(adapter.deleteAllPackages()).resolves.toBeUndefined()
     })
   })
 
   describe('deleteAllResources', () => {
-    it('should delete and recreate the resources index', async () => {
-      mockClient.indices.delete.mockResolvedValue({ body: {} })
+    it('should delete all resource documents using deleteByQuery', async () => {
+      mockClient.deleteByQuery.mockResolvedValue({ body: {} })
 
       await adapter.deleteAllResources()
 
-      expect(mockClient.indices.delete).toHaveBeenCalledWith({ index: 'kukan-resources' })
-      expect(mockClient.indices.create).toHaveBeenCalled()
+      expect(mockClient.deleteByQuery).toHaveBeenCalledWith({
+        index: 'kukan-search',
+        body: { query: { term: { join_field: 'resource' } } },
+        refresh: true,
+      })
     })
   })
 
   describe('deleteAllContents', () => {
-    it('should delete and recreate the contents index', async () => {
-      mockClient.indices.delete.mockResolvedValue({ body: {} })
+    it('should delete all content documents using deleteByQuery', async () => {
+      mockClient.deleteByQuery.mockResolvedValue({ body: {} })
 
       await adapter.deleteAllContents()
 
-      expect(mockClient.indices.delete).toHaveBeenCalledWith({ index: 'kukan-contents' })
-      expect(mockClient.indices.create).toHaveBeenCalled()
+      expect(mockClient.deleteByQuery).toHaveBeenCalledWith({
+        index: 'kukan-search',
+        body: { query: { term: { join_field: 'content' } } },
+        refresh: true,
+      })
     })
   })
 
-  describe('content-only match (mget fallback)', () => {
-    it('should fetch and include packages matched only via resource content', async () => {
-      mockClient.msearch.mockResolvedValue({
+  describe('content-only match (inner_hits + mget enrichment)', () => {
+    it('should fetch resource metadata for content-only matches via mget', async () => {
+      mockClient.search.mockResolvedValue({
         body: {
-          responses: [
-            // Packages: no direct match
-            { hits: { total: { value: 0 }, hits: [] } },
-            // Resources: no metadata match
-            { hits: { total: { value: 0 }, hits: [] } },
-            // Contents: match in pkg-2 (not in packages result)
-            {
-              hits: {
-                total: { value: 1 },
-                hits: [
-                  {
-                    _id: 'chunk-res1-0',
-                    _source: { resourceId: 'res-1', packageId: 'pkg-2' },
-                    _score: 3,
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: { name: 'my-dataset', title: 'My Dataset', join_field: 'package' },
+                _score: 3,
+                inner_hits: {
+                  resource: { hits: { hits: [] } },
+                  content_hits: {
+                    hits: {
+                      hits: [
+                        {
+                          _id: 'chunk-res1-0',
+                          _source: { resourceId: 'res-1' },
+                          _score: 2,
+                        },
+                      ],
+                    },
                   },
-                ],
+                },
               },
-            },
-          ],
+            ],
+          },
         },
       })
 
       // mget for resource metadata (content-only match)
-      mockClient.mget.mockResolvedValueOnce({
-        body: {
-          docs: [
-            {
-              _id: 'res-1',
-              found: true,
-              _source: { name: 'data.csv', format: 'CSV' },
-            },
-          ],
-        },
-      })
-
-      // mget returns the missing package
-      mockClient.mget.mockResolvedValueOnce({
-        body: {
-          docs: [
-            {
-              _id: 'pkg-2',
-              found: true,
-              _source: { name: 'content-only-pkg', title: 'Content Only Package' },
-            },
-          ],
-        },
-      })
-
-      const result = await adapter.search({ q: 'keyword' })
-
-      expect(mockClient.mget).toHaveBeenCalledWith({
-        index: 'kukan-packages',
-        body: { ids: ['pkg-2'] },
-      })
-      expect(result.items).toHaveLength(1)
-      expect(result.items[0].name).toBe('content-only-pkg')
-      expect(result.items[0].matchedResources).toHaveLength(1)
-      expect(result.items[0].matchedResources![0]._contentDocId).toBe('chunk-res1-0')
-      expect(result.items[0].matchedResources![0].matchSource).toBe('content')
-    })
-
-    it('should fetch resource metadata (name, format) for content-only matches', async () => {
-      mockClient.msearch.mockResolvedValue({
-        body: {
-          responses: [
-            { hits: { total: { value: 0 }, hits: [] } },
-            { hits: { total: { value: 0 }, hits: [] } },
-            {
-              hits: {
-                total: { value: 1 },
-                hits: [
-                  {
-                    _id: 'chunk-res1-0',
-                    _source: { resourceId: 'res-1', packageId: 'pkg-1' },
-                    _score: 2,
-                  },
-                ],
-              },
-            },
-          ],
-        },
-      })
-
-      // First mget: resource metadata
       mockClient.mget.mockResolvedValueOnce({
         body: {
           docs: [
@@ -883,26 +892,15 @@ describe('OpenSearchAdapter', () => {
         },
       })
 
-      // Second mget: missing package
-      mockClient.mget.mockResolvedValueOnce({
-        body: {
-          docs: [
-            {
-              _id: 'pkg-1',
-              found: true,
-              _source: { name: 'my-dataset', title: 'My Dataset' },
-            },
-          ],
-        },
-      })
+      const result = await adapter.search({ q: 'keyword' })
 
-      const result = await adapter.search({ q: 'test' })
-
-      // Should have fetched resource metadata from kukan-resources
+      // Should have fetched resource metadata with routing
       expect(mockClient.mget).toHaveBeenCalledWith({
-        index: 'kukan-resources',
-        body: { ids: ['res-1'] },
+        index: 'kukan-search',
+        body: { docs: [{ _id: 'res-1', routing: 'pkg-1' }] },
       })
+      expect(result.items).toHaveLength(1)
+      expect(result.items[0].matchedResources).toHaveLength(1)
 
       const mr = result.items[0].matchedResources![0]
       expect(mr.name).toBe('data.csv')
@@ -910,6 +908,59 @@ describe('OpenSearchAdapter', () => {
       expect(mr.format).toBe('CSV')
       expect(mr.matchSource).toBe('content')
       expect(mr._contentDocId).toBe('chunk-res1-0')
+    })
+
+    it('should not duplicate resources matched by both metadata and content', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: { name: 'test', join_field: 'package' },
+                _score: 5,
+                inner_hits: {
+                  resource: {
+                    hits: {
+                      hits: [
+                        {
+                          _id: 'res-1',
+                          _source: { id: 'res-1', packageId: 'pkg-1', name: 'data.csv' },
+                          _score: 3,
+                          highlight: { name: ['<mark>data</mark>.csv'] },
+                        },
+                      ],
+                    },
+                  },
+                  content_hits: {
+                    hits: {
+                      hits: [
+                        {
+                          _id: 'chunk-res1-0',
+                          _source: { resourceId: 'res-1' },
+                          _score: 2,
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      })
+
+      const result = await adapter.search({ q: 'data', offset: 0, limit: 10 })
+
+      // Should have 1 matched resource (not duplicated)
+      expect(result.items[0].matchedResources).toHaveLength(1)
+      const mr = result.items[0].matchedResources![0]
+      // Both metadata and content matched — matchSource upgraded to 'content'
+      expect(mr.matchSource).toBe('content')
+      expect(mr._contentDocId).toBe('chunk-res1-0')
+      // Metadata highlight still present
+      expect(mr.highlightedName).toBe('<mark>data</mark>.csv')
     })
   })
 
@@ -932,6 +983,13 @@ describe('OpenSearchAdapter', () => {
         'chunk-1': '<mark>test</mark> data',
         'chunk-2': 'more <mark>test</mark>',
       })
+
+      // Verify it uses kukan-search with content type filter
+      const callArgs = mockClient.search.mock.calls[0][0]
+      expect(callArgs.index).toBe('kukan-search')
+      expect(callArgs.body.query.bool.filter).toEqual(
+        expect.arrayContaining([{ term: { join_field: 'content' } }])
+      )
     })
 
     it('should return empty object for empty input', async () => {
@@ -990,43 +1048,45 @@ describe('OpenSearchAdapter', () => {
 
   describe('search content + resource overlap', () => {
     it('should attach _contentDocId when resource matches both metadata and content', async () => {
-      mockClient.msearch.mockResolvedValue({
+      mockClient.search.mockResolvedValue({
         body: {
-          responses: [
-            {
-              hits: {
-                total: { value: 1 },
-                hits: [{ _id: 'pkg-1', _source: { name: 'test-pkg' }, _score: 5 }],
-              },
-            },
-            // Resource metadata match
-            {
-              hits: {
-                total: { value: 1 },
-                hits: [
-                  {
-                    _id: 'res-1',
-                    _source: { id: 'res-1', packageId: 'pkg-1', name: 'data.csv' },
-                    _score: 3,
-                    highlight: { name: ['<mark>data</mark>.csv'] },
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: { name: 'test-pkg', join_field: 'package' },
+                _score: 5,
+                inner_hits: {
+                  // Resource metadata match
+                  resource: {
+                    hits: {
+                      hits: [
+                        {
+                          _id: 'res-1',
+                          _source: { id: 'res-1', packageId: 'pkg-1', name: 'data.csv' },
+                          _score: 3,
+                          highlight: { name: ['<mark>data</mark>.csv'] },
+                        },
+                      ],
+                    },
                   },
-                ],
-              },
-            },
-            // Content match for same resource
-            {
-              hits: {
-                total: { value: 1 },
-                hits: [
-                  {
-                    _id: 'chunk-res1-0',
-                    _source: { resourceId: 'res-1', packageId: 'pkg-1' },
-                    _score: 2,
+                  // Content match for same resource
+                  content_hits: {
+                    hits: {
+                      hits: [
+                        {
+                          _id: 'chunk-res1-0',
+                          _source: { resourceId: 'res-1' },
+                          _score: 2,
+                        },
+                      ],
+                    },
                   },
-                ],
+                },
               },
-            },
-          ],
+            ],
+          },
         },
       })
 
@@ -1044,47 +1104,46 @@ describe('OpenSearchAdapter', () => {
   })
 
   describe('sumResourceCount', () => {
-    it('should return resource count for matching packages', async () => {
+    it('should return resource count using has_parent query', async () => {
       mockClient.indices.exists.mockResolvedValue({ body: true })
-      mockClient.search.mockResolvedValue({
-        body: {
-          aggregations: {
-            package_ids: {
-              buckets: [{ key: 'pkg-1' }, { key: 'pkg-2' }],
-            },
-          },
-        },
-      })
       mockClient.count.mockResolvedValue({ body: { count: 5 } })
 
       const result = await adapter.sumResourceCount()
 
-      expect(mockClient.search).toHaveBeenCalledWith(
-        expect.objectContaining({ index: 'kukan-packages' })
-      )
       expect(mockClient.count).toHaveBeenCalledWith({
-        index: 'kukan-resources',
-        body: { query: { terms: { packageId: ['pkg-1', 'pkg-2'] } } },
+        index: 'kukan-search',
+        body: {
+          query: {
+            bool: {
+              filter: [
+                { term: { join_field: 'resource' } },
+                {
+                  has_parent: {
+                    parent_type: 'package',
+                    query: {
+                      bool: { must: [{ match_all: {} }] },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
       })
       expect(result).toBe(5)
     })
 
-    it('should return 0 when no packages match', async () => {
+    it('should return 0 when count returns 0', async () => {
       mockClient.indices.exists.mockResolvedValue({ body: true })
-      mockClient.search.mockResolvedValue({
-        body: { aggregations: { package_ids: { buckets: [] } } },
-      })
+      mockClient.count.mockResolvedValue({ body: { count: 0 } })
 
       const result = await adapter.sumResourceCount()
 
       expect(result).toBe(0)
     })
 
-    it('should pass query and filters to package search', async () => {
+    it('should pass query and filters to has_parent', async () => {
       mockClient.indices.exists.mockResolvedValue({ body: true })
-      mockClient.search.mockResolvedValue({
-        body: { aggregations: { package_ids: { buckets: [{ key: 'pkg-1' }] } } },
-      })
       mockClient.count.mockResolvedValue({ body: { count: 3 } })
 
       await adapter.sumResourceCount({
@@ -1092,9 +1151,13 @@ describe('OpenSearchAdapter', () => {
         filters: { organizations: ['tokyo'] },
       })
 
-      const searchCall = mockClient.search.mock.calls[0][0]
-      expect(searchCall.index).toBe('kukan-packages')
-      expect(searchCall.body.query.bool.must).toBeDefined()
+      const countCall = mockClient.count.mock.calls[0][0]
+      expect(countCall.index).toBe('kukan-search')
+      const parentQuery = countCall.body.query.bool.filter[1].has_parent.query.bool
+      expect(parentQuery.must).toBeDefined()
+      expect(parentQuery.filter).toEqual(
+        expect.arrayContaining([{ terms: { organization: ['tokyo'] } }])
+      )
     })
   })
 
@@ -1114,9 +1177,13 @@ describe('OpenSearchAdapter', () => {
       const chunks = await adapter.getContentChunks('res-1')
 
       expect(mockClient.search).toHaveBeenCalledWith({
-        index: 'kukan-contents',
+        index: 'kukan-search',
         body: expect.objectContaining({
-          query: { term: { resourceId: 'res-1' } },
+          query: {
+            bool: {
+              filter: [{ term: { resourceId: 'res-1' } }, { term: { join_field: 'content' } }],
+            },
+          },
           sort: [{ chunkIndex: { order: 'asc' } }],
         }),
       })
@@ -1175,6 +1242,22 @@ describe('OpenSearchAdapter', () => {
 
       const result = await adapter.browseContentsByResource({})
 
+      // Verify search uses kukan-search with content type filter
+      const searchCall = mockClient.search.mock.calls[0][0]
+      expect(searchCall.index).toBe('kukan-search')
+      expect(searchCall.body.query.bool.filter).toEqual([{ term: { join_field: 'content' } }])
+
+      // Verify mget uses kukan-search with routing
+      expect(mockClient.mget).toHaveBeenCalledWith({
+        index: 'kukan-search',
+        body: {
+          docs: [
+            { _id: 'res-1', routing: 'pkg-1' },
+            { _id: 'res-2', routing: 'pkg-1' },
+          ],
+        },
+      })
+
       expect(result.total).toBe(2)
       expect(result.items[0]).toEqual({
         resourceId: 'res-1',
@@ -1218,9 +1301,10 @@ describe('OpenSearchAdapter', () => {
       await adapter.browseContentsByResource({ q: 'population' })
 
       const searchCall = mockClient.search.mock.calls[0][0]
-      expect(searchCall.body.query).toEqual({
+      expect(searchCall.body.query.bool.must).toEqual({
         match: { extractedText: { query: 'population', operator: 'and' } },
       })
+      expect(searchCall.body.query.bool.filter).toEqual([{ term: { join_field: 'content' } }])
     })
   })
 })

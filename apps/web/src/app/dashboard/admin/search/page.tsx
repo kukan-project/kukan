@@ -33,13 +33,18 @@ import { clientFetch } from '@/lib/client-api'
 
 interface IndexStatsEntry {
   docCount: number
-  sizeBytes: number
   recentDocs: Array<{ id: string; name?: string; updated?: string }>
 }
 
 interface IndexStatsResponse {
   enabled: boolean
-  stats: { packages: IndexStatsEntry; resources: IndexStatsEntry; contents: IndexStatsEntry } | null
+  stats: {
+    indexName: string
+    totalSizeBytes: number
+    packages: IndexStatsEntry
+    resources: IndexStatsEntry
+    contents: IndexStatsEntry
+  } | null
   db?: { packages: number; resources: number }
 }
 
@@ -275,35 +280,42 @@ export default function AdminSearchPage() {
 
       {/* Index Stats */}
       {stats?.stats && (
-        <div className="grid gap-4 sm:grid-cols-3">
-          {(['packages', 'resources', 'contents'] as const).map((idx) => {
-            const entry = stats.stats![idx]
-            return (
-              <Card
-                key={idx}
-                className={`cursor-pointer transition-colors ${activeTab === idx ? 'border-primary' : ''}`}
-                onClick={() => setActiveTab(idx)}
-              >
-                <CardContent className="flex items-center gap-3 p-4">
-                  <Database className="h-5 w-5 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">kukan-{idx}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {t('indexStatsDocs', { count: entry.docCount })}
-                      {' / '}
-                      {formatBytes(entry.sizeBytes)}
-                    </p>
-                  </div>
-                  {activeTab === idx && (
-                    <Badge variant="secondary" className="ml-auto text-xs">
-                      {t('selected')}
-                    </Badge>
-                  )}
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
+        <>
+          <div className="flex items-center gap-2">
+            <Database className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">{stats.stats.indexName}</span>
+            <Badge variant="outline" className="text-xs">
+              {formatBytes(stats.stats.totalSizeBytes)}
+            </Badge>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {(['packages', 'resources', 'contents'] as const).map((idx) => {
+              const entry = stats.stats![idx]
+              return (
+                <Card
+                  key={idx}
+                  className={`cursor-pointer transition-colors ${activeTab === idx ? 'border-primary' : ''}`}
+                  onClick={() => setActiveTab(idx)}
+                >
+                  <CardContent className="flex items-center gap-3 p-4">
+                    <Database className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">{idx}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {t('indexStatsDocs', { count: entry.docCount })}
+                      </p>
+                    </div>
+                    {activeTab === idx && (
+                      <Badge variant="secondary" className="ml-auto text-xs">
+                        {t('selected')}
+                      </Badge>
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        </>
       )}
 
       {/* Document Browser */}
@@ -311,7 +323,7 @@ export default function AdminSearchPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">
-              kukan-{activeTab}
+              {activeTab}
               {activeBrowse && (
                 <span className="ml-2 text-sm font-normal text-muted-foreground">
                   ({tc('count', { count: activeBrowse.total })})
@@ -514,7 +526,7 @@ export default function AdminSearchPage() {
         <DialogContent className="flex max-h-[80vh] max-w-2xl flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle className="font-mono text-sm">
-              kukan-{docDialogContent?.index} / {docDialogContent?.id}
+              {docDialogContent?.index} / {docDialogContent?.id}
             </DialogTitle>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-auto rounded-md bg-muted p-4 text-xs">

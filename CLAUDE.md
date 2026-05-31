@@ -198,6 +198,7 @@ pnpm format        # Prettier フォーマット
 - DB ポーリングによる SQS 代替（提案） → `docs/adr/022-db-polling-queue.md`
 - ブランドオーバーライドレイヤー → `docs/adr/023-brand-override-layer.md`
 - GA4 アクセス統計 → `docs/adr/024-ga4-access-analytics.md`
+- OpenSearch parent-child 統合 → `docs/adr/025-opensearch-parent-child-index.md`
 
 新しい設計判断が必要になったら、同じフォーマットでADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
