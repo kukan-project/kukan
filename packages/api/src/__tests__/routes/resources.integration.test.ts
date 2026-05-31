@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
-import { eq } from 'drizzle-orm'
-import { resource as resourceTable } from '@kukan/db'
+import { eq, sql } from 'drizzle-orm'
+import { resource as resourceTable, resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import { createTestApp, mockSearch } from '../test-helpers/test-app'
 import {
   getTestDb,
@@ -672,6 +672,46 @@ describe('Resources API Routes', () => {
       const body = await res.json()
       expect(body.pipeline_status).toBe('queued')
       expect(body.updated).toBeDefined()
+    })
+
+    it('should redact error details for non-sysadmin users', async () => {
+      const pkg = await createPackage('pipeline-error-redact-pkg')
+      const resource = await createResource(pkg.id)
+
+      // Insert pipeline with an error containing internal details
+      const [pipeline] = await db
+        .insert(resourcePipeline)
+        .values({
+          resourceId: resource.id,
+          status: 'error',
+          error: 'S3 bucket kukan-prod: AccessDenied at /internal/path',
+        })
+        .returning()
+
+      await db.insert(resourcePipelineStep).values({
+        pipelineId: pipeline.id,
+        stepName: 'fetch',
+        status: 'error',
+        error: 'Connection refused to 10.0.1.42:9000',
+      })
+
+      // Sysadmin sees raw error
+      const adminRes = await app.request(
+        `/api/v1/resources/${resource.id}/pipeline-status`
+      )
+      const adminBody = await adminRes.json()
+      expect(adminBody.error).toContain('S3 bucket kukan-prod')
+      expect(adminBody.steps[0].error).toContain('10.0.1.42')
+
+      // Non-sysadmin sees generic message
+      const outsiderRes = await outsiderApp.request(
+        `/api/v1/resources/${resource.id}/pipeline-status`
+      )
+      const outsiderBody = await outsiderRes.json()
+      expect(outsiderBody.error).toBe('Processing failed')
+      expect(outsiderBody.steps[0].error).toBe('Processing failed')
+      expect(JSON.stringify(outsiderBody)).not.toContain('kukan-prod')
+      expect(JSON.stringify(outsiderBody)).not.toContain('10.0.1.42')
     })
   })
 

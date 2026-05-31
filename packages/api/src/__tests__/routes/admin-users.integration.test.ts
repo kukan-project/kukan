@@ -13,7 +13,16 @@ import type { Auth } from '../../auth/auth'
 const db = getTestDb()
 
 const mockCreateUser = vi.fn().mockResolvedValue({
-  user: { id: 'new-user-id', name: 'new-user', email: 'new@example.com', role: 'user' },
+  user: {
+    id: 'new-user-id',
+    name: 'new-user',
+    email: 'new@example.com',
+    role: 'user',
+    // Internal fields that should NOT be exposed in the response
+    emailVerified: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
 })
 const mockAuth = {
   api: { createUser: mockCreateUser },
@@ -222,6 +231,24 @@ describe('Admin Users API', () => {
           email: 'new@example.com',
           password: 'password123',
         },
+      })
+    })
+
+    it('should only return id, name, email, role in response', async () => {
+      const res = await app.request('/api/v1/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(validBody),
+      })
+      expect(res.status).toBe(201)
+
+      const body = await res.json()
+      expect(Object.keys(body).sort()).toEqual(['email', 'id', 'name', 'role'])
+      expect(body).toEqual({
+        id: 'new-user-id',
+        name: 'new-user',
+        email: 'new@example.com',
+        role: 'user',
       })
     })
 
