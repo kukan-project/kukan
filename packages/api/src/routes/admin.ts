@@ -19,6 +19,7 @@ import {
 } from '@kukan/db'
 import {
   ForbiddenError,
+  UnauthorizedError,
   REINDEX_JOB_TYPE,
   RESOURCE_PREFIX,
   PREVIEW_PREFIX,
@@ -35,7 +36,8 @@ export const adminRouter = new Hono<{ Variables: AppContext }>()
 // All admin endpoints require sysadmin role — enforced at the router level
 adminRouter.use('*', async (c, next) => {
   const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Sysadmin role required')
+  if (!user) throw new UnauthorizedError()
+  if (!user.sysadmin) throw new ForbiddenError('Sysadmin role required')
   await next()
 })
 

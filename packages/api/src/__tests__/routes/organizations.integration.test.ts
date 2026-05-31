@@ -179,7 +179,7 @@ describe('Organizations API Routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'no-auth-org' }),
       })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should reject non-sysadmin create', async () => {
@@ -213,7 +213,7 @@ describe('Organizations API Routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'auth-update-org', title: 'Hacked' }),
       })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should reject unauthenticated delete', async () => {
@@ -227,7 +227,7 @@ describe('Organizations API Routes', () => {
       const res = await noAuthApp.request('/api/v1/organizations/auth-delete-org', {
         method: 'DELETE',
       })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should reject non-member update', async () => {

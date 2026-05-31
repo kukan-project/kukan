@@ -70,7 +70,7 @@ describe('Admin Health API Routes', () => {
   describe('GET /api/v1/admin/health/stats', () => {
     it('should reject unauthenticated requests', async () => {
       const res = await unauthApp.request('/api/v1/admin/health/stats')
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should reject non-sysadmin requests', async () => {
@@ -104,7 +104,7 @@ describe('Admin Health API Routes', () => {
   describe('GET /api/v1/admin/health', () => {
     it('should reject unauthenticated requests', async () => {
       const res = await unauthApp.request('/api/v1/admin/health')
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should reject non-sysadmin requests', async () => {

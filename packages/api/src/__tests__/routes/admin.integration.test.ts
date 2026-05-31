@@ -18,6 +18,8 @@ const mockSearch: SearchAdapter = {
   search: async () => ({ items: [], total: 0, offset: 0, limit: 20 }),
   sumResourceCount: async () => 0,
   getIndexStats: async () => ({
+    indexName: 'kukan-test',
+    totalSizeBytes: 0,
     packages: { docCount: 0, sizeBytes: 0, recentDocs: [] },
     resources: { docCount: 0, sizeBytes: 0, recentDocs: [] },
     contents: { docCount: 0, sizeBytes: 0, recentDocs: [] },
@@ -68,7 +70,7 @@ describe('Admin API Routes', () => {
   describe('POST /api/v1/admin/reindex-metadata', () => {
     it('should reject unauthenticated requests', async () => {
       const res = await unauthApp.request('/api/v1/admin/reindex-metadata', { method: 'POST' })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should reject non-sysadmin requests', async () => {
@@ -122,7 +124,7 @@ describe('Admin API Routes', () => {
 
     it('should reject unauthenticated requests', async () => {
       const res = await unauthApp.request('/api/v1/admin/users/fake-id/restore', { method: 'POST' })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should reject non-sysadmin requests', async () => {
@@ -200,7 +202,7 @@ describe('Admin API Routes', () => {
 
     it('should reject unauthenticated requests', async () => {
       const res = await unauthApp.request('/api/v1/admin/users/fake-id/purge', { method: 'POST' })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should reject non-sysadmin requests', async () => {

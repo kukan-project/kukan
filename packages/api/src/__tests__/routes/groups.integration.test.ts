@@ -122,7 +122,7 @@ describe('Groups API Routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'no-auth-group' }),
       })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should reject non-sysadmin create', async () => {
@@ -155,7 +155,7 @@ describe('Groups API Routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'auth-update-group', title: 'Hacked' }),
       })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should reject unauthenticated delete', async () => {
@@ -169,7 +169,7 @@ describe('Groups API Routes', () => {
       const res = await noAuthApp.request('/api/v1/groups/auth-delete-group', {
         method: 'DELETE',
       })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should reject non-member update', async () => {

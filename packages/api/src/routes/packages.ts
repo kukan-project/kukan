@@ -15,6 +15,7 @@ import {
   createResourceBodySchema,
   reorderResourcesSchema,
   ForbiddenError,
+  UnauthorizedError,
 } from '@kukan/shared'
 import type { MatchedResource, SearchFilters } from '@kukan/search-adapter'
 import { checkOrgRole, resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
@@ -167,7 +168,7 @@ packagesRouter.post(
 // POST /api/v1/packages - Create new package (org editor+)
 packagesRouter.post('/', zValidator('json', createPackageSchema), async (c) => {
   const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
+  if (!user) throw new UnauthorizedError()
 
   const input = c.req.valid('json')
   const db = c.get('db')
@@ -198,7 +199,7 @@ packagesRouter.get(
 // PUT /api/v1/packages/:nameOrId - Update package (org editor+)
 packagesRouter.put('/:nameOrId', zValidator('json', updatePackageSchema), async (c) => {
   const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
+  if (!user) throw new UnauthorizedError()
 
   const db = c.get('db')
   const nameOrId = c.req.param('nameOrId')
@@ -225,7 +226,7 @@ packagesRouter.put('/:nameOrId', zValidator('json', updatePackageSchema), async 
 // DELETE /api/v1/packages/:nameOrId - Delete package (org editor+)
 packagesRouter.delete('/:nameOrId', async (c) => {
   const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
+  if (!user) throw new UnauthorizedError()
 
   const db = c.get('db')
   const nameOrId = c.req.param('nameOrId')
@@ -245,7 +246,7 @@ packagesRouter.delete('/:nameOrId', async (c) => {
 // POST /api/v1/packages/:nameOrId/purge - Permanently delete a soft-deleted package (org admin+)
 packagesRouter.post('/:nameOrId/purge', async (c) => {
   const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
+  if (!user) throw new UnauthorizedError()
 
   const db = c.get('db')
   const nameOrId = c.req.param('nameOrId')
@@ -265,7 +266,7 @@ packagesRouter.post('/:nameOrId/purge', async (c) => {
 // POST /api/v1/packages/:nameOrId/restore - Restore a soft-deleted package (org admin+)
 packagesRouter.post('/:nameOrId/restore', async (c) => {
   const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
+  if (!user) throw new UnauthorizedError()
 
   const db = c.get('db')
   const nameOrId = c.req.param('nameOrId')
@@ -288,7 +289,7 @@ packagesRouter.put(
   zValidator('json', reorderResourcesSchema),
   async (c) => {
     const user = c.get('user')
-    if (!user) throw new ForbiddenError('Authentication required')
+    if (!user) throw new UnauthorizedError()
 
     const db = c.get('db')
     const packageId = c.req.param('packageId')
@@ -328,7 +329,7 @@ packagesRouter.post(
   zValidator('json', createResourceBodySchema),
   async (c) => {
     const user = c.get('user')
-    if (!user) throw new ForbiddenError('Authentication required')
+    if (!user) throw new UnauthorizedError()
 
     const db = c.get('db')
     const packageId = c.req.param('packageId')

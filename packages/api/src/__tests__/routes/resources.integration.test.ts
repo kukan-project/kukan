@@ -410,7 +410,7 @@ describe('Resources API Routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ resourceIds: [resource.id] }),
       })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
   })
 
@@ -477,7 +477,7 @@ describe('Resources API Routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename: 'data.csv', contentType: 'text/csv' }),
       })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should reject invalid input (missing filename)', async () => {
@@ -559,7 +559,7 @@ describe('Resources API Routes', () => {
         method: 'POST',
         body: formData,
       })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
   })
 
@@ -632,7 +632,7 @@ describe('Resources API Routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
   })
 
@@ -751,14 +751,14 @@ describe('Resources API Routes', () => {
       expect(body.job_id).toBeDefined()
     })
 
-    it('should return 403 for unauthenticated users', async () => {
+    it('should return 401 for unauthenticated users', async () => {
       const pkg = await createPackage('run-pipeline-unauth-pkg')
       const resource = await createResource(pkg.id)
 
       const res = await unauthApp.request(`/api/v1/resources/${resource.id}/run-pipeline`, {
         method: 'POST',
       })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should return 404 for nonexistent resource', async () => {

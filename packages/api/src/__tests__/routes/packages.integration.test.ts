@@ -507,7 +507,7 @@ describe('Packages API Routes', () => {
     it('should reject unauthenticated requests', async () => {
       const unauthApp = createTestApp(db, { user: null, search })
       const res = await unauthApp.request('/api/v1/packages/any-pkg/restore', { method: 'POST' })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should reject restore by org editor (requires admin+)', async () => {

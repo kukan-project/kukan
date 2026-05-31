@@ -6,7 +6,7 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
-import { createOrganizationSchema, updateOrganizationSchema, ForbiddenError } from '@kukan/shared'
+import { createOrganizationSchema, updateOrganizationSchema, ForbiddenError, UnauthorizedError } from '@kukan/shared'
 import { OrganizationService } from '../services/organization-service'
 import { checkOrgRole } from '../auth/permissions'
 import type { AppContext } from '../context'
@@ -38,7 +38,8 @@ organizationsRouter.get(
 organizationsRouter.post('/', zValidator('json', createOrganizationSchema), async (c) => {
   const db = c.get('db')
   const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can create organizations')
+  if (!user) throw new UnauthorizedError()
+  if (!user.sysadmin) throw new ForbiddenError('Only sysadmin can create organizations')
 
   const service = new OrganizationService(db)
   const input = c.req.valid('json')
@@ -61,7 +62,7 @@ organizationsRouter.get('/:nameOrId', async (c) => {
 organizationsRouter.put('/:nameOrId', zValidator('json', updateOrganizationSchema), async (c) => {
   const db = c.get('db')
   const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
+  if (!user) throw new UnauthorizedError()
 
   const service = new OrganizationService(db)
   const nameOrId = c.req.param('nameOrId')
@@ -77,7 +78,7 @@ organizationsRouter.put('/:nameOrId', zValidator('json', updateOrganizationSchem
 organizationsRouter.delete('/:nameOrId', async (c) => {
   const db = c.get('db')
   const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
+  if (!user) throw new UnauthorizedError()
 
   const service = new OrganizationService(db)
   const nameOrId = c.req.param('nameOrId')
@@ -91,7 +92,8 @@ organizationsRouter.delete('/:nameOrId', async (c) => {
 // POST /api/v1/organizations/:nameOrId/purge - Permanently delete a soft-deleted organization (sysadmin only)
 organizationsRouter.post('/:nameOrId/purge', async (c) => {
   const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can purge organizations')
+  if (!user) throw new UnauthorizedError()
+  if (!user.sysadmin) throw new ForbiddenError('Only sysadmin can purge organizations')
 
   const db = c.get('db')
   const service = new OrganizationService(db)
@@ -105,7 +107,8 @@ organizationsRouter.post('/:nameOrId/purge', async (c) => {
 // POST /api/v1/organizations/:nameOrId/restore - Restore a soft-deleted organization (sysadmin only)
 organizationsRouter.post('/:nameOrId/restore', async (c) => {
   const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can restore organizations')
+  if (!user) throw new UnauthorizedError()
+  if (!user.sysadmin) throw new ForbiddenError('Only sysadmin can restore organizations')
 
   const db = c.get('db')
   const service = new OrganizationService(db)
@@ -122,7 +125,7 @@ organizationsRouter.post('/:nameOrId/restore', async (c) => {
 organizationsRouter.get('/:nameOrId/members', async (c) => {
   const db = c.get('db')
   const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
+  if (!user) throw new UnauthorizedError()
 
   const service = new OrganizationService(db)
   const org = await service.getByNameOrId(c.req.param('nameOrId'))
@@ -145,7 +148,7 @@ organizationsRouter.post(
   async (c) => {
     const db = c.get('db')
     const user = c.get('user')
-    if (!user) throw new ForbiddenError('Authentication required')
+    if (!user) throw new UnauthorizedError()
 
     const service = new OrganizationService(db)
     const org = await service.getByNameOrId(c.req.param('nameOrId'))
@@ -161,7 +164,7 @@ organizationsRouter.post(
 organizationsRouter.delete('/:nameOrId/members/:userId', async (c) => {
   const db = c.get('db')
   const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
+  if (!user) throw new UnauthorizedError()
 
   const service = new OrganizationService(db)
   const org = await service.getByNameOrId(c.req.param('nameOrId'))

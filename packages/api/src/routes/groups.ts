@@ -7,7 +7,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { GroupService } from '../services/group-service'
-import { createGroupSchema, updateGroupSchema, ForbiddenError } from '@kukan/shared'
+import { createGroupSchema, updateGroupSchema, ForbiddenError, UnauthorizedError } from '@kukan/shared'
 import { checkGroupRole } from '../auth/permissions'
 import type { AppContext } from '../context'
 
@@ -35,7 +35,8 @@ groupsRouter.get(
 // POST /api/v1/groups - Create new group (sysadmin only)
 groupsRouter.post('/', zValidator('json', createGroupSchema), async (c) => {
   const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can create groups')
+  if (!user) throw new UnauthorizedError()
+  if (!user.sysadmin) throw new ForbiddenError('Only sysadmin can create groups')
 
   const input = c.req.valid('json')
   const service = new GroupService(c.get('db'))
@@ -54,7 +55,7 @@ groupsRouter.get('/:nameOrId', async (c) => {
 // PUT /api/v1/groups/:nameOrId - Update group (sysadmin or group admin)
 groupsRouter.put('/:nameOrId', zValidator('json', updateGroupSchema), async (c) => {
   const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
+  if (!user) throw new UnauthorizedError()
 
   const db = c.get('db')
   const nameOrId = c.req.param('nameOrId')
@@ -70,7 +71,7 @@ groupsRouter.put('/:nameOrId', zValidator('json', updateGroupSchema), async (c) 
 // DELETE /api/v1/groups/:nameOrId - Delete group (sysadmin or group admin)
 groupsRouter.delete('/:nameOrId', async (c) => {
   const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
+  if (!user) throw new UnauthorizedError()
 
   const db = c.get('db')
   const nameOrId = c.req.param('nameOrId')
@@ -85,7 +86,8 @@ groupsRouter.delete('/:nameOrId', async (c) => {
 // POST /api/v1/groups/:nameOrId/purge - Permanently delete a soft-deleted group (sysadmin only)
 groupsRouter.post('/:nameOrId/purge', async (c) => {
   const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can purge groups')
+  if (!user) throw new UnauthorizedError()
+  if (!user.sysadmin) throw new ForbiddenError('Only sysadmin can purge groups')
 
   const db = c.get('db')
   const service = new GroupService(db)
@@ -99,7 +101,8 @@ groupsRouter.post('/:nameOrId/purge', async (c) => {
 // POST /api/v1/groups/:nameOrId/restore - Restore a soft-deleted group (sysadmin only)
 groupsRouter.post('/:nameOrId/restore', async (c) => {
   const user = c.get('user')
-  if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can restore groups')
+  if (!user) throw new UnauthorizedError()
+  if (!user.sysadmin) throw new ForbiddenError('Only sysadmin can restore groups')
 
   const db = c.get('db')
   const service = new GroupService(db)
@@ -116,7 +119,7 @@ groupsRouter.post('/:nameOrId/restore', async (c) => {
 groupsRouter.get('/:nameOrId/members', async (c) => {
   const db = c.get('db')
   const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
+  if (!user) throw new UnauthorizedError()
 
   const service = new GroupService(db)
   const grp = await service.getByNameOrId(c.req.param('nameOrId'))
@@ -139,7 +142,7 @@ groupsRouter.post(
   async (c) => {
     const db = c.get('db')
     const user = c.get('user')
-    if (!user) throw new ForbiddenError('Authentication required')
+    if (!user) throw new UnauthorizedError()
 
     const service = new GroupService(db)
     const grp = await service.getByNameOrId(c.req.param('nameOrId'))
@@ -155,7 +158,7 @@ groupsRouter.post(
 groupsRouter.delete('/:nameOrId/members/:userId', async (c) => {
   const db = c.get('db')
   const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
+  if (!user) throw new UnauthorizedError()
 
   const service = new GroupService(db)
   const grp = await service.getByNameOrId(c.req.param('nameOrId'))

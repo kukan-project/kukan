@@ -65,7 +65,7 @@ describe('Admin Users API', () => {
   describe('GET /api/v1/admin/users/stats', () => {
     it('should reject unauthenticated requests', async () => {
       const res = await unauthApp.request('/api/v1/admin/users/stats')
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should reject non-sysadmin requests', async () => {
@@ -118,7 +118,7 @@ describe('Admin Users API', () => {
   describe('GET /api/v1/admin/users', () => {
     it('should reject unauthenticated requests', async () => {
       const res = await unauthApp.request('/api/v1/admin/users')
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should reject non-sysadmin requests', async () => {
@@ -197,7 +197,7 @@ describe('Admin Users API', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(validBody),
       })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should reject non-sysadmin requests', async () => {
@@ -288,7 +288,7 @@ describe('Admin Users API', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ displayName: 'New Name' }),
       })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should reject non-sysadmin requests', async () => {
@@ -412,7 +412,7 @@ describe('Admin Users API', () => {
       const res = await unauthApp.request(`/api/v1/admin/users/${targetId}`, {
         method: 'DELETE',
       })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     })
 
     it('should reject non-sysadmin requests', async () => {

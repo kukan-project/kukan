@@ -14,6 +14,7 @@ import {
   uploadUrlSchema,
   uploadCompleteSchema,
   ForbiddenError,
+  UnauthorizedError,
   NotFoundError,
   ValidationError,
   getStorageKey,
@@ -302,7 +303,7 @@ resourcesRouter.get('/:id/pipeline-status', async (c) => {
 // POST /api/v1/resources/:id/upload-url - Get presigned upload URL (new upload or replacement)
 resourcesRouter.post('/:id/upload-url', zValidator('json', uploadUrlSchema), async (c) => {
   const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
+  if (!user) throw new UnauthorizedError()
 
   const db = c.get('db')
   const id = c.req.param('id')
@@ -329,7 +330,7 @@ resourcesRouter.post('/:id/upload-url', zValidator('json', uploadUrlSchema), asy
 // POST /api/v1/resources/:id/upload - Server-side upload (multipart, for local storage)
 resourcesRouter.post('/:id/upload', bodyLimit({ maxSize: MAX_UPLOAD_SIZE }), async (c) => {
   const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
+  if (!user) throw new UnauthorizedError()
 
   const db = c.get('db')
   const id = c.req.param('id')
@@ -370,7 +371,7 @@ resourcesRouter.post(
   zValidator('json', uploadCompleteSchema),
   async (c) => {
     const user = c.get('user')
-    if (!user) throw new ForbiddenError('Authentication required')
+    if (!user) throw new UnauthorizedError()
 
     const db = c.get('db')
     const id = c.req.param('id')
@@ -394,7 +395,7 @@ resourcesRouter.post(
 // POST /api/v1/resources/:id/run-pipeline - Manually trigger pipeline processing (reprocess)
 resourcesRouter.post('/:id/run-pipeline', async (c) => {
   const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
+  if (!user) throw new UnauthorizedError()
 
   const db = c.get('db')
   const id = c.req.param('id')
@@ -409,7 +410,7 @@ resourcesRouter.post('/:id/run-pipeline', async (c) => {
 // PUT /api/v1/resources/:id - Update resource (org editor+)
 resourcesRouter.put('/:id', zValidator('json', updateResourceSchema), async (c) => {
   const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
+  if (!user) throw new UnauthorizedError()
 
   const db = c.get('db')
   const id = c.req.param('id')
@@ -438,7 +439,7 @@ resourcesRouter.put('/:id', zValidator('json', updateResourceSchema), async (c) 
 // DELETE /api/v1/resources/:id - Delete resource (org editor+)
 resourcesRouter.delete('/:id', async (c) => {
   const user = c.get('user')
-  if (!user) throw new ForbiddenError('Authentication required')
+  if (!user) throw new UnauthorizedError()
 
   const db = c.get('db')
   const search = c.get('search')
