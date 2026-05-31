@@ -13,9 +13,7 @@ import type { Auth } from '../../auth/auth'
 const db = getTestDb()
 
 const mockCreateUser = vi.fn().mockResolvedValue({
-  id: 'new-user-id',
-  name: 'new-user',
-  email: 'new@example.com',
+  user: { id: 'new-user-id', name: 'new-user', email: 'new@example.com', role: 'user' },
 })
 const mockAuth = {
   api: { createUser: mockCreateUser },

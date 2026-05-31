@@ -194,11 +194,12 @@ resourcesRouter.get('/:id/download', async (c) => {
 
   const filename = resource.url || resource.id
   const encodedFilename = encodeURIComponent(filename)
+  const asciiFilename = filename.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, "'")
   const contentType = resource.mimetype || detectContentType(filename)
 
   const headers: Record<string, string> = {
     'Content-Type': contentType,
-    'Content-Disposition': `attachment; filename="${encodedFilename}"; filename*=UTF-8''${encodedFilename}`,
+    'Content-Disposition': `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`,
     'Cache-Control': 'private, max-age=0',
   }
 
@@ -282,16 +283,21 @@ resourcesRouter.get('/:id/pipeline-status', async (c) => {
     return c.json({ id, pipeline_status: null, steps: [] })
   }
 
+  // Only expose raw error details to sysadmin; others get a generic message
+  const user = c.get('user')
+  const sanitizeError = (err: string | null) =>
+    !err ? null : user?.sysadmin ? err : 'Processing failed'
+
   return c.json({
     id,
     pipeline_status: status.status,
-    error: status.error,
+    error: sanitizeError(status.error),
     updated: status.updated,
     steps: status.steps.map((s) => ({
       id: s.id,
       step_name: s.stepName,
       status: s.status,
-      error: s.error,
+      error: sanitizeError(s.error),
       started_at: s.startedAt,
       completed_at: s.completedAt,
     })),

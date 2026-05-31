@@ -5,6 +5,13 @@
 
 import { z } from 'zod'
 
+const booleanString = z.preprocess(
+  (v) => (typeof v === 'string' ? v : String(v)),
+  z
+    .enum(['true', 'false', '1', '0'])
+    .transform((v) => v === 'true' || v === '1')
+)
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
@@ -44,7 +51,7 @@ export const envSchema = z.object({
   SQS_SECRET_KEY: z.string().optional(),
 
   // Health Check
-  HEALTH_CHECK_ENABLED: z.coerce.boolean().default(true),
+  HEALTH_CHECK_ENABLED: booleanString.default(true),
   HEALTH_CHECK_CRON: z.string().default('*/5 * * * *'),
   HEALTH_CHECK_STALENESS_HOURS: z.coerce.number().default(24),
   HEALTH_CHECK_FULL_FETCH_INTERVAL_HOURS: z.coerce.number().default(168),
@@ -53,7 +60,7 @@ export const envSchema = z.object({
   AI_TYPE: z.enum(['bedrock', 'openai', 'ollama', 'none']).default('none'),
 
   // Auth
-  REGISTRATION_ENABLED: z.coerce.boolean().default(true),
+  REGISTRATION_ENABLED: booleanString.default(false),
   BETTER_AUTH_SECRET: z.string().min(32),
   BETTER_AUTH_URL: z
     .string()

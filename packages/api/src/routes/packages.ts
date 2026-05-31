@@ -18,11 +18,29 @@ import {
   UnauthorizedError,
 } from '@kukan/shared'
 import type { MatchedResource, SearchFilters } from '@kukan/search-adapter'
-import { checkOrgRole, resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
+import {
+  checkOrgRole,
+  resolveUserOrgIds,
+  buildVisibilityFilters,
+  type AuthUser,
+  type MembershipRole,
+} from '../auth/permissions'
 import { indexPackageMetadata, indexResourceMetadata } from '../services/search-index'
 import type { AppContext } from '../context'
+import type { Database } from '@kukan/db'
+import type { PackageAuthorize } from '../services/package-service'
 
 export const packagesRouter = new Hono<{ Variables: AppContext }>()
+
+function makePackageAuthorize(db: Database, user: AuthUser, role: MembershipRole): PackageAuthorize {
+  return async (existing) => {
+    if (existing.ownerOrg) {
+      await checkOrgRole(db, user, existing.ownerOrg, role)
+    } else if (!user.sysadmin) {
+      throw new ForbiddenError('Only sysadmin can modify packages without an organization')
+    }
+  }
+}
 
 const stateParam = z.enum(['active', 'deleted']).optional()
 
@@ -203,22 +221,17 @@ packagesRouter.put('/:nameOrId', zValidator('json', updatePackageSchema), async 
 
   const db = c.get('db')
   const nameOrId = c.req.param('nameOrId')
-  const service = new PackageService(db)
-  const existing = await service.getByNameOrId(nameOrId)
-  if (existing.ownerOrg) {
-    await checkOrgRole(db, user, existing.ownerOrg, 'editor')
-  } else if (!user.sysadmin) {
-    throw new ForbiddenError('Only sysadmin can modify packages without an organization')
-  }
-
   const input = c.req.valid('json')
+  const service = new PackageService(db)
 
-  // Changing ownerOrg requires editor role in the target org
-  if (input.ownerOrg && input.ownerOrg !== existing.ownerOrg) {
-    await checkOrgRole(db, user, input.ownerOrg, 'editor')
-  }
+  const pkg = await service.update(nameOrId, input, async (existing) => {
+    await makePackageAuthorize(db, user, 'editor')(existing)
+    // Changing ownerOrg requires editor role in the target org
+    if (input.ownerOrg && input.ownerOrg !== existing.ownerOrg) {
+      await checkOrgRole(db, user, input.ownerOrg, 'editor')
+    }
+  })
 
-  const pkg = await service.update(nameOrId, input)
   await indexPackageMetadata(db, c.get('search'), pkg.id)
   return c.json(pkg)
 })
@@ -231,14 +244,9 @@ packagesRouter.delete('/:nameOrId', async (c) => {
   const db = c.get('db')
   const nameOrId = c.req.param('nameOrId')
   const service = new PackageService(db)
-  const existing = await service.getByNameOrId(nameOrId)
-  if (existing.ownerOrg) {
-    await checkOrgRole(db, user, existing.ownerOrg, 'editor')
-  } else if (!user.sysadmin) {
-    throw new ForbiddenError('Only sysadmin can modify packages without an organization')
-  }
 
-  const pkg = await service.delete(nameOrId)
+  const pkg = await service.delete(nameOrId, makePackageAuthorize(db, user, 'editor'))
+
   await c.get('search').deletePackage(pkg.id)
   return c.json(pkg)
 })
@@ -251,14 +259,9 @@ packagesRouter.post('/:nameOrId/purge', async (c) => {
   const db = c.get('db')
   const nameOrId = c.req.param('nameOrId')
   const service = new PackageService(db)
-  const existing = await service.getByNameOrId(nameOrId, 'deleted')
-  if (existing.ownerOrg) {
-    await checkOrgRole(db, user, existing.ownerOrg, 'admin')
-  } else if (!user.sysadmin) {
-    throw new ForbiddenError('Only sysadmin can modify packages without an organization')
-  }
 
-  const pkg = await service.purge(existing.id)
+  const pkg = await service.purge(nameOrId, makePackageAuthorize(db, user, 'admin'))
+
   await c.get('search').deletePackage(pkg.id)
   return c.json(pkg)
 })
@@ -271,14 +274,9 @@ packagesRouter.post('/:nameOrId/restore', async (c) => {
   const db = c.get('db')
   const nameOrId = c.req.param('nameOrId')
   const service = new PackageService(db)
-  const existing = await service.getByNameOrId(nameOrId, 'deleted')
-  if (existing.ownerOrg) {
-    await checkOrgRole(db, user, existing.ownerOrg, 'admin')
-  } else if (!user.sysadmin) {
-    throw new ForbiddenError('Only sysadmin can modify packages without an organization')
-  }
 
-  const pkg = await service.restore(existing.id)
+  const pkg = await service.restore(nameOrId, makePackageAuthorize(db, user, 'admin'))
+
   await indexPackageMetadata(db, c.get('search'), pkg.id)
   return c.json(pkg)
 })

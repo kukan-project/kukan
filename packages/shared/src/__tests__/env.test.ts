@@ -18,7 +18,7 @@ describe('envSchema', () => {
     expect(result.data.PORT).toBe(3000)
     expect(result.data.SEARCH_TYPE).toBe('opensearch')
     expect(result.data.AI_TYPE).toBe('none')
-    expect(result.data.REGISTRATION_ENABLED).toBe(true)
+    expect(result.data.REGISTRATION_ENABLED).toBe(false)
   })
 
   it('should reject missing required fields', () => {
@@ -54,19 +54,34 @@ describe('envSchema', () => {
     expect(result.data.PORT).toBe(8080)
   })
 
-  it('should coerce booleans from non-string values', () => {
-    // z.coerce.boolean() uses Boolean() — any non-empty string is true
+  it('should parse boolean strings correctly', () => {
+    const parse = (overrides: Record<string, string>) =>
+      envSchema.safeParse({
+        SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
+        BETTER_AUTH_SECRET: 'a'.repeat(32),
+        ...overrides,
+      })
+
+    const trueResult = parse({ HEALTH_CHECK_ENABLED: 'true', REGISTRATION_ENABLED: '1' })
+    expect(trueResult.success).toBe(true)
+    if (!trueResult.success) return
+    expect(trueResult.data.HEALTH_CHECK_ENABLED).toBe(true)
+    expect(trueResult.data.REGISTRATION_ENABLED).toBe(true)
+
+    const falseResult = parse({ HEALTH_CHECK_ENABLED: 'false', REGISTRATION_ENABLED: '0' })
+    expect(falseResult.success).toBe(true)
+    if (!falseResult.success) return
+    expect(falseResult.data.HEALTH_CHECK_ENABLED).toBe(false)
+    expect(falseResult.data.REGISTRATION_ENABLED).toBe(false)
+  })
+
+  it('should reject invalid boolean strings', () => {
     const result = envSchema.safeParse({
       SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
       BETTER_AUTH_SECRET: 'a'.repeat(32),
-      HEALTH_CHECK_ENABLED: 'true',
-      REGISTRATION_ENABLED: 'true',
+      REGISTRATION_ENABLED: 'yes',
     })
-
-    expect(result.success).toBe(true)
-    if (!result.success) return
-    expect(result.data.HEALTH_CHECK_ENABLED).toBe(true)
-    expect(result.data.REGISTRATION_ENABLED).toBe(true)
+    expect(result.success).toBe(false)
   })
 
   it('should reject invalid SEARCH_TYPE', () => {

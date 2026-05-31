@@ -493,7 +493,11 @@ adminRouter.post(
       )
     }
 
-    return c.json(result, 201)
+    const created = result.user
+    return c.json(
+      { id: created.id, name: created.name, email: created.email, role: created.role },
+      201
+    )
   }
 )
 

@@ -47,7 +47,7 @@ services:
       retries: 5
 
   minio:
-    image: pgsty/minio:latest
+    image: pgsty/minio:RELEASE.2026-04-17T00-00-00Z
     container_name: kukan-minio
     ports:
       - '127.0.0.1:9000:9000'
@@ -64,7 +64,7 @@ services:
       retries: 5
 
   minio-init:
-    image: pgsty/minio:latest
+    image: pgsty/minio:RELEASE.2026-04-17T00-00-00Z
     container_name: kukan-minio-init
     depends_on:
       minio:
@@ -83,7 +83,7 @@ services:
         mc cors set "local/$$S3_BUCKET" /tmp/cors.xml
 
   elasticmq:
-    image: softwaremill/elasticmq-native:latest
+    image: softwaremill/elasticmq-native:1.7.1
     container_name: kukan-elasticmq
     ports:
       - '127.0.0.1:9324:9324'

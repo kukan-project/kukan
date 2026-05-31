@@ -135,6 +135,13 @@ describe('streamToBuffer', () => {
 })
 
 describe('streamToTempFile + cleanupTempFile', () => {
+  it('should sanitize extension to prevent path traversal', async () => {
+    const stream = Readable.from([Buffer.from('x')])
+    const filePath = await streamToTempFile(stream, '../../../etc/passwd')
+    expect(filePath).toMatch(/data\.etcpasswd$/)
+    await cleanupTempFile(filePath)
+  })
+
   it('should write stream to a temp file and clean up', async () => {
     const content = 'temp file content'
     const stream = Readable.from([Buffer.from(content)])

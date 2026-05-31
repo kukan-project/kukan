@@ -22,6 +22,9 @@ import type { SearchFacets, MatchedResource } from '@kukan/search-adapter'
 import type { CreatePackageInput, UpdatePackageInput } from '@kukan/shared'
 import { hasOrgMembership, type AuthUser } from '../auth/permissions'
 
+type PackageRow = typeof packageTable.$inferSelect
+export type PackageAuthorize = (pkg: PackageRow) => Promise<void>
+
 export interface PackageFilterParams {
   /** Package IDs from SearchAdapter */
   searchMatchIds?: string[]
@@ -212,8 +215,12 @@ export class PackageService {
     }
   }
 
-  async getByNameOrId(nameOrId: string, state: 'active' | 'deleted' = 'active') {
-    const [result] = await this.db
+  async getByNameOrId(
+    nameOrId: string,
+    state: 'active' | 'deleted' = 'active',
+    opts?: { tx?: Pick<Database, 'select'>; forUpdate?: boolean }
+  ) {
+    const qb = (opts?.tx ?? this.db)
       .select()
       .from(packageTable)
       .where(
@@ -223,6 +230,8 @@ export class PackageService {
         )
       )
       .limit(1)
+
+    const [result] = opts?.forUpdate ? await qb.for('update') : await qb
 
     if (!result) {
       throw new NotFoundError('Package', nameOrId)
@@ -381,9 +390,14 @@ export class PackageService {
     })
   }
 
-  async update(nameOrId: string, input: UpdatePackageInput) {
+  async update(
+    nameOrId: string,
+    input: UpdatePackageInput,
+    authorize?: PackageAuthorize
+  ) {
     return await this.db.transaction(async (tx) => {
-      const existing = await this.getByNameOrId(nameOrId)
+      const existing = await this.getByNameOrId(nameOrId, 'active', { tx, forUpdate: true })
+      if (authorize) await authorize(existing)
 
       // If name is being changed, check uniqueness
       if (input.name && input.name !== existing.name) {
@@ -468,41 +482,63 @@ export class PackageService {
     })
   }
 
-  async delete(nameOrId: string) {
-    const existing = await this.getByNameOrId(nameOrId)
+  async delete(
+    nameOrId: string,
+    authorize?: PackageAuthorize
+  ) {
+    return await this.db.transaction(async (tx) => {
+      const existing = await this.getByNameOrId(nameOrId, 'active', { tx, forUpdate: true })
+      if (authorize) await authorize(existing)
 
-    const [deleted] = await this.db
-      .update(packageTable)
-      .set({
-        state: 'deleted',
-        updated: sql`NOW()`,
-      })
-      .where(eq(packageTable.id, existing.id))
-      .returning()
+      const [deleted] = await tx
+        .update(packageTable)
+        .set({
+          state: 'deleted',
+          updated: sql`NOW()`,
+        })
+        .where(eq(packageTable.id, existing.id))
+        .returning()
 
-    return deleted
+      return deleted!
+    })
   }
 
   /** Hard-delete a soft-deleted package and all related data (CASCADE). */
-  async purge(id: string) {
-    const [purged] = await this.db.delete(packageTable).where(eq(packageTable.id, id)).returning()
+  async purge(
+    nameOrId: string,
+    authorize?: PackageAuthorize
+  ) {
+    return await this.db.transaction(async (tx) => {
+      const existing = await this.getByNameOrId(nameOrId, 'deleted', { tx, forUpdate: true })
+      if (authorize) await authorize(existing)
 
-    if (!purged) throw new NotFoundError('Package', id)
-    return purged
+      const [purged] = await tx
+        .delete(packageTable)
+        .where(eq(packageTable.id, existing.id))
+        .returning()
+      return purged!
+    })
   }
 
   /** Restore a soft-deleted package back to active state. */
-  async restore(id: string) {
-    const [restored] = await this.db
-      .update(packageTable)
-      .set({
-        state: 'active',
-        updated: sql`NOW()`,
-      })
-      .where(eq(packageTable.id, id))
-      .returning()
+  async restore(
+    nameOrId: string,
+    authorize?: PackageAuthorize
+  ) {
+    return await this.db.transaction(async (tx) => {
+      const existing = await this.getByNameOrId(nameOrId, 'deleted', { tx, forUpdate: true })
+      if (authorize) await authorize(existing)
 
-    if (!restored) throw new NotFoundError('Package', id)
-    return restored
+      const [restored] = await tx
+        .update(packageTable)
+        .set({
+          state: 'active',
+          updated: sql`NOW()`,
+        })
+        .where(eq(packageTable.id, existing.id))
+        .returning()
+
+      return restored!
+    })
   }
 }

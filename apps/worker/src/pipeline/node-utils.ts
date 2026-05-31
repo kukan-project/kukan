@@ -112,7 +112,8 @@ export async function* streamUtf8Lines(stream: Readable): AsyncGenerator<string>
 /** Write a Readable stream to a temp file and return its path */
 export async function streamToTempFile(stream: Readable, ext?: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'kukan-'))
-  const filePath = join(dir, ext ? `data.${ext}` : 'data')
+  const safeExt = ext?.replace(/[^a-zA-Z0-9]/g, '')
+  const filePath = join(dir, safeExt ? `data.${safeExt}` : 'data')
   await pipelineAsync(stream, createWriteStream(filePath))
   return filePath
 }
