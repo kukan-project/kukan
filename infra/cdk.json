@@ -3,5 +3,8 @@
   "watch": {
     "include": ["**"],
     "exclude": ["node_modules", "cdk.out", "dist", "**/*.js", "**/*.d.ts"]
+  },
+  "context": {
+    "@aws-cdk/customresources:installLatestAwsSdkDefault": false
   }
 }
