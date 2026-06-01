@@ -4,3 +4,6 @@ packages:
   - 'packages/adapters/*'
   - 'infra'
   - 'site'
+
+# Reject packages published less than 1 day ago (supply chain attack mitigation)
+minimumReleaseAge: 1440
