@@ -85,3 +85,10 @@ export { Switch } from './components/ui/switch'
 export { Skeleton } from './components/ui/skeleton'
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs'
 export { Progress } from './components/ui/progress'
+export {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  PopoverAnchor,
+  PopoverClose,
+} from './components/ui/popover'

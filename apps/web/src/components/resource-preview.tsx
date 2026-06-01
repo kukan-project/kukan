@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Card, CardContent, Skeleton, Badge } from '@kukan/ui'
+import { useCallback, useEffect, useId, useState, useSyncExternalStore } from 'react'
+import { Card, CardContent, Skeleton, Badge, Switch, Label } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
+import dynamic from 'next/dynamic'
 import {
   isCsvFormat,
   isTextFormat,
@@ -16,6 +17,11 @@ import { ParquetPreview } from './parquet-preview'
 import { GeoJsonPreview } from './geojson-preview'
 import { ZipPreview } from './zip-preview'
 
+const DataExplorer = dynamic(
+  () => import('./data-explorer/data-explorer').then((m) => ({ default: m.DataExplorer })),
+  { ssr: false }
+)
+
 interface ResourcePreviewProps {
   resourceId: string
   format?: string | null
@@ -27,6 +33,37 @@ interface ResourcePreviewProps {
 
 type PreviewSource = 'parquet' | 'raw'
 
+const ANALYSIS_MODE_KEY = 'kukan:analysisMode'
+const ANALYSIS_MODE_EVENT = 'kukan:analysisMode:change'
+
+function subscribeAnalysisMode(callback: () => void) {
+  window.addEventListener(ANALYSIS_MODE_EVENT, callback)
+  return () => window.removeEventListener(ANALYSIS_MODE_EVENT, callback)
+}
+
+function getAnalysisModeSnapshot(): boolean {
+  return sessionStorage.getItem(ANALYSIS_MODE_KEY) === '1'
+}
+
+function getAnalysisModeServerSnapshot(): boolean {
+  return false
+}
+
+function useAnalysisMode() {
+  const mode = useSyncExternalStore(
+    subscribeAnalysisMode,
+    getAnalysisModeSnapshot,
+    getAnalysisModeServerSnapshot
+  )
+
+  const setMode = useCallback((checked: boolean) => {
+    sessionStorage.setItem(ANALYSIS_MODE_KEY, checked ? '1' : '0')
+    window.dispatchEvent(new Event(ANALYSIS_MODE_EVENT))
+  }, [])
+
+  return [mode, setMode] as const
+}
+
 /**
  * Checks for Parquet preview (pipeline output) first.
  * PDF is displayed via Storage signed URL (iframe).
@@ -37,7 +74,7 @@ export function ResourcePreview({ resourceId, format, url, size }: ResourcePrevi
   const f = format ?? null
 
   if (isPdfFormat(f)) return <PdfPreview resourceId={resourceId} />
-  if (isCsvFormat(f)) return <TablePreview resourceId={resourceId} />
+  if (isCsvFormat(f)) return <TablePreview key={resourceId} resourceId={resourceId} />
   if (isGeoJsonFormat(f)) return <GeoJsonPreview resourceId={resourceId} />
   if (isZipFormat(f)) return <ZipPreview resourceId={resourceId} />
   if (isOfficeFormat(f))
@@ -61,7 +98,9 @@ function TextOnlyPreview({ resourceId }: { resourceId: string }) {
 
 function TablePreview({ resourceId }: { resourceId: string }) {
   const t = useTranslations('resource')
+  const switchId = useId()
   const [source, setSource] = useState<PreviewSource>('parquet')
+  const [analysisMode, setAnalysisMode] = useAnalysisMode()
 
   const sources: { key: PreviewSource; label: string }[] = [
     { key: 'parquet', label: t('previewSourceTable') },
@@ -70,19 +109,34 @@ function TablePreview({ resourceId }: { resourceId: string }) {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex gap-2">
-        {sources.map((s) => (
-          <Badge
-            key={s.key}
-            variant={source === s.key ? 'default' : 'outline'}
-            className="cursor-pointer"
-            onClick={() => setSource(s.key)}
-          >
-            {s.label}
-          </Badge>
-        ))}
+      <div className="flex items-center justify-between">
+        <div className="flex gap-2">
+          {sources.map((s) => (
+            <Badge
+              key={s.key}
+              variant={source === s.key ? 'default' : 'outline'}
+              className="cursor-pointer"
+              onClick={() => setSource(s.key)}
+            >
+              {s.label}
+            </Badge>
+          ))}
+        </div>
+        {source === 'parquet' && (
+          <div className="flex items-center gap-2">
+            <Switch id={switchId} checked={analysisMode} onCheckedChange={setAnalysisMode} />
+            <Label htmlFor={switchId} className="cursor-pointer text-sm">
+              {t('analysisMode')}
+            </Label>
+          </div>
+        )}
       </div>
-      {source === 'parquet' && <ParquetPreview resourceId={resourceId} />}
+      {source === 'parquet' &&
+        (analysisMode ? (
+          <DataExplorer resourceId={resourceId} />
+        ) : (
+          <ParquetPreview resourceId={resourceId} />
+        ))}
       {source === 'raw' && <RawTextPreview resourceId={resourceId} />}
     </div>
   )

@@ -5,8 +5,8 @@
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
-    "dev": "next dev --port 3000",
-    "build": "next build",
+    "dev": "node scripts/copy-duckdb-wasm.mjs && next dev --port 3000",
+    "build": "node scripts/copy-duckdb-wasm.mjs && next build",
     "start": "next start",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -18,6 +18,7 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@duckdb/duckdb-wasm": "1.33.1-dev45.0",
     "@hookform/resolvers": "^5.2.2",
     "@kukan/api": "workspace:*",
     "@kukan/search-adapter": "workspace:*",

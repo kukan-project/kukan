@@ -2,7 +2,7 @@
 
 ## ステータス
 
-**提案（Proposed）**
+**承認（Accepted）**
 
 ## コンテキスト
 
@@ -34,23 +34,78 @@ CKAN のデータエクスプローラーのような、データの閲覧・フ
   - サーバー負荷増大
   - レイテンシがクライアント側処理より大きい
 
-### C) DuckDB-WASM — 提案
+### C) DuckDB-WASM — 採用
 
 - 良い点:
   - **SQL でクエリ**: `SELECT`, `WHERE`, `ORDER BY`, `GROUP BY`, `LIMIT/OFFSET` が全て使える
-  - **Range Read 対応**: Parquet ファイル全体をダウンロードせず、必要な Row Group のみ取得
-  - **型付き Parquet の活用**: 数値型・日付型の統計で Row Group スキップが可能
+  - **型付き Parquet の活用**: 数値型・日付型の統計で Row Group スキップが可能（型推定追加後）
   - **集計機能**: SUM, AVG, COUNT, MIN, MAX 等がネイティブ
   - **業界標準**: データ分析エコシステムで広く採用
 - 問題点:
-  - WASM バイナリ ~3MB（初回ロード）
+  - WASM バイナリ ~35MB（EH バンドル、初回ロード。ブラウザキャッシュ後は 0）
   - メモリ使用量が hyparquet より大きい
 
-## 決定（提案）
+## 決定
 
-**DuckDB-WASM をデータエクスプローラーのクエリエンジンとして採用し、Parquet 書き込み時に型推定を追加する。**
+**DuckDB-WASM をデータエクスプローラーのクエリエンジンとして採用する。**
 
-### 1. Parquet 書き込み時の型推定
+型推定（全列 STRING → 型付き Parquet）は後続フェーズで追加する。
+現時点では全列を `CAST(col AS VARCHAR)` で比較し、STRING のままでも全機能が動作する設計とする。
+
+### 1. DuckDB-WASM 統合
+
+```
+ブラウザ:
+  DuckDB-WASM (内部 Web Worker)
+    ↓ SQL クエリ
+  registerFileBuffer (インメモリ)
+    ↑ fetch + ArrayBuffer
+  /api/v1/resources/:id/preview (同一オリジンプロキシ)
+    ↓
+  S3 / MinIO
+```
+
+- DuckDB-WASM インスタンスはシングルトンで管理（一度ロードすればページ内遷移で再ダウンロードなし）
+- `httpfs` 拡張は使わず、`fetch` + `registerFileBuffer` でファイルを登録（httpfs の追加 WASM ロードを回避、同一オリジン API で CORS 問題なし）
+- 遅延ロード: 「解析モード」を ON にしたときのみ WASM をロード（`next/dynamic` + `ssr: false`）
+- WASM + Worker ファイルは `public/duckdb/` に配置（`scripts/copy-duckdb-wasm.mjs` で `node_modules` からコピー）
+
+### 2. UI 設計: 解析モード
+
+テーブル表示内の Switch トグル「解析モード」で hyparquet と DuckDB-WASM を切り替える:
+
+- **OFF（デフォルト）**: hyparquet による軽量テーブル表示（WASM ロードなし）
+- **ON**: DuckDB-WASM によるフィルター・ソート・検索付きテーブル
+
+解析モードの状態は `sessionStorage` + `useSyncExternalStore` で管理:
+
+- 同一セッション内でリソースをまたいで ON/OFF が保持される
+- 複数の `TablePreview` インスタンスが同時に DOM に存在するケース（`ResourceExplorer` の `visitedIds` パターン）でも状態が同期される
+- ページリロードで OFF にリセット（`sessionStorage` はタブ単位）
+
+### 3. 現在実装済みの機能
+
+| 機能               | SQL 変換例                                           |
+| ------------------ | ---------------------------------------------------- |
+| 列ソート           | `ORDER BY col ASC/DESC`                              |
+| フィルター（等値） | `CAST(col AS VARCHAR) = 'value'`                     |
+| フィルター（不等） | `CAST(col AS VARCHAR) != 'value'`                    |
+| フィルター（含む） | `CAST(col AS VARCHAR) ILIKE '%keyword%'`             |
+| フィルター（前方） | `CAST(col AS VARCHAR) ILIKE 'prefix%'`               |
+| フィルター（後方） | `CAST(col AS VARCHAR) ILIKE '%suffix'`               |
+| テキスト検索       | 全列に `CAST(col AS VARCHAR) ILIKE '%keyword%'` (OR) |
+| ページネーション   | `LIMIT 100 OFFSET n`                                 |
+
+### 4. 今後のフェーズ
+
+| 順序 | 内容                                                             |
+| ---- | ---------------------------------------------------------------- |
+| 1    | ✅ DuckDB-WASM 統合 + 基本クエリ（ソート・フィルター・検索）     |
+| 2    | Parquet 書き込み時の型推定追加（Extract ステップ、ADR-014 拡張） |
+| 3    | 範囲フィルター（`BETWEEN`、型推定後に有効）                      |
+| 4    | 集計・グラフ表示（Phase 7 Data Editor と連携）                   |
+
+### 5. Parquet 書き込み時の型推定（フェーズ 2 で実装予定）
 
 Extract ステップで CSV パース後、各列のデータ型を推定する:
 
@@ -68,56 +123,13 @@ Extract ステップで CSV パース後、各列のデータ型を推定する:
 - 混合型の列は STRING にフォールバック
 - 型推定は**ベストエフォート**。誤判定のリスクは許容し、元データは常に保持
 
-### 2. DuckDB-WASM 統合
-
-```
-ブラウザ:
-  DuckDB-WASM (Worker Thread)
-    ↓ SQL クエリ
-  Parquet ファイル (Storage / Presigned URL)
-    ↓ HTTP Range Request
-  S3 / MinIO
-```
-
-- DuckDB-WASM は Web Worker で動作させ、メインスレッドをブロックしない
-- `httpfs` 拡張で Presigned URL から直接 Parquet を読み取り
-- 遅延ロード: データエクスプローラー画面を開いたときのみ WASM をロード
-
-### 3. UI 機能
-
-| 機能               | SQL 変換例                                   |
-| ------------------ | -------------------------------------------- |
-| 列ソート           | `ORDER BY col ASC/DESC`                      |
-| フィルター（等値） | `WHERE col = 'value'`                        |
-| フィルター（範囲） | `WHERE col BETWEEN 100 AND 200`              |
-| テキスト検索       | `WHERE col ILIKE '%keyword%'`                |
-| ページネーション   | `LIMIT 100 OFFSET 200`                       |
-| 集計               | `SELECT col, COUNT(*) FROM ... GROUP BY col` |
-
-### 4. hyparquet との共存
-
-- **簡易プレビュー**（リソース詳細ページ）: hyparquet のまま（軽量、即時表示）
-- **データエクスプローラー**（専用ページ/モーダル）: DuckDB-WASM（リッチ機能）
-
-hyparquet は簡易プレビュー用に残し、DuckDB-WASM はリッチな探索が必要な場面で使う。
-
-### 5. 実装フェーズ
-
-| 順序 | 内容                                                      |
-| ---- | --------------------------------------------------------- |
-| 1    | Parquet 書き込み時の型推定追加（Extract ステップ変更）    |
-| 2    | DuckDB-WASM 統合 + 基本クエリ（ソート・ページネーション） |
-| 3    | フィルター UI（列ヘッダーのフィルターアイコン）           |
-| 4    | 集計・グラフ表示（Phase 7 Data Editor と連携）            |
-
 ## 影響
 
 - `apps/web` に `@duckdb/duckdb-wasm` 依存を追加（遅延ロード）
-- `@kukan/pipeline` の Extract ステップに型推定ロジックを追加
-- ADR-014 の「列型: 全列 STRING」を変更（型推定結果に基づく型指定）
-- Parquet の再生成が必要（既存データはパイプライン再実行で対応）
+- WASM バイナリ（~35MB）は `public/duckdb/` から静的配信（`.gitignore` 対象）
+- 型推定追加時: `@kukan/pipeline` の Extract ステップ変更、ADR-014 の「列型: 全列 STRING」を変更、Parquet 再生成が必要
 
 ## 関連 ADR
 
-- ADR-014: プレビューデータの Parquet 形式（本 ADR で列型を拡張）
+- ADR-014: プレビューデータの Parquet 形式（型推定追加時に列型を拡張）
 - ADR-007: Data Editor アドオン（Phase 7 で集計・グラフ機能と連携）
