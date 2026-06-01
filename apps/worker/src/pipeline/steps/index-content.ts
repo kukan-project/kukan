@@ -179,11 +179,7 @@ async function indexDocument(
   }
 }
 
-/**
- * Extract text from a document file (PDF, DOCX, XLSX, PPTX) using officeparser.
- * NOTE: patches/officeparser.patch fixes XLSX cell value extraction (harshankur/officeParser#90).
- * Remove the patch once a fixed version is released.
- */
+/** Extract text from a document file (PDF, DOCX, XLSX, PPTX) using officeparser. */
 async function extractDocumentText(filePath: string): Promise<string> {
   const ast = await OfficeParser.parseOffice(filePath)
   return ast.toText()
