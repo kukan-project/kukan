@@ -27,7 +27,7 @@
     "drizzle-orm": "^0.45.2",
     "encoding-japanese": "^2.2.0",
     "hono": "^4.12.23",
-    "hyparquet-writer": "^0.14.0",
+    "hyparquet-writer": "^0.15.6",
     "officeparser": "^7.1.0",
     "p-limit": "^7.3.0",
     "papaparse": "^5.5.3",

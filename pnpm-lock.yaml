@@ -208,8 +208,8 @@ importers:
         specifier: ^4.12.23
         version: 4.12.23
       hyparquet-writer:
-        specifier: ^0.14.0
-        version: 0.14.0
+        specifier: ^0.15.6
+        version: 0.15.6
       officeparser:
         specifier: ^7.1.0
         version: 7.1.0
@@ -355,8 +355,8 @@ importers:
         specifier: ^2.0.4
         version: 2.0.4(hono@4.12.23)
       '@hono/zod-validator':
-        specifier: 0.7.6
-        version: 0.7.6(hono@4.12.23)(zod@4.4.3)
+        specifier: ^0.8.0
+        version: 0.8.0(hono@4.12.23)(zod@4.4.3)
       '@kukan/ai-adapter':
         specifier: workspace:*
         version: link:../adapters/ai
@@ -1664,10 +1664,10 @@ packages:
     peerDependencies:
       hono: ^4
 
-  '@hono/zod-validator@0.7.6':
-    resolution: {integrity: sha512-Io1B6d011Gj1KknV4rXYz4le5+5EubcWEU/speUjuw9XMMIaP3n78yXLhjd2A3PXaXaUwEAluOiAyLqhBEJgsw==}
+  '@hono/zod-validator@0.8.0':
+    resolution: {integrity: sha512-5uS4S1/LKtZQYvD4BtpPUFkOv8d1wNxHHrChm26buMiEYc1FrHWvDUaKVBwkiVtvSExHSpLGDvcnpI2Copyj9w==}
     peerDependencies:
-      hono: '>=3.9.0'
+      hono: '>=4.10.0'
       zod: ^3.25.0 || ^4.0.0
 
   '@hookform/resolvers@5.4.0':
@@ -4739,11 +4739,8 @@ packages:
     resolution: {integrity: sha512-4FbRdAX+bSdmo4AUFuS0WNiPz8NgFt+r8ThgNWmlrjQjt1Q7ZR9+zTlce2859x4KSXrwIsaeTqDoKQmtP8pLmQ==}
     engines: {node: '>= 0.8'}
 
-  hyparquet-writer@0.14.0:
-    resolution: {integrity: sha512-XRDZcw5pcoZoazLsKGnISGKzm8ql0dWwO9MamyU2sGOotypM8JW95J3oaLCroiCcO0sexfoI8naAK6KASFtNjg==}
-
-  hyparquet@1.25.6:
-    resolution: {integrity: sha512-Q9W5IjkVch3ZMnYd4qFv2q8suu5Jc36yt7J+zUNM9grwnP1S189icp0jdEQKM5HJvQkTVy8NMiQ8n/dM5QAt1A==}
+  hyparquet-writer@0.15.6:
+    resolution: {integrity: sha512-fRjEEePceAwowCTX8p/CTDdsAzLFbfDhCAoLK5s1H+V54RGcQMuscfH/MFMy7S3bXRdkGsbe3fqImG/mdlz9cg==}
 
   hyparquet@1.26.0:
     resolution: {integrity: sha512-yxUiViPZ+z5h+xdX4rA1G+k30jXoEsG9I2xEpjaM84imGznbKjZzxuZFsdzqg6C4LxNnnAlDFvzpk4uxQWTbTQ==}
@@ -7828,7 +7825,7 @@ snapshots:
     dependencies:
       hono: 4.12.23
 
-  '@hono/zod-validator@0.7.6(hono@4.12.23)(zod@4.4.3)':
+  '@hono/zod-validator@0.8.0(hono@4.12.23)(zod@4.4.3)':
     dependencies:
       hono: 4.12.23
       zod: 4.4.3
@@ -10946,11 +10943,9 @@ snapshots:
       statuses: 2.0.2
       toidentifier: 1.0.1
 
-  hyparquet-writer@0.14.0:
+  hyparquet-writer@0.15.6:
     dependencies:
-      hyparquet: 1.25.6
-
-  hyparquet@1.25.6: {}
+      hyparquet: 1.26.0
 
   hyparquet@1.26.0: {}
 
