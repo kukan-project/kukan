@@ -2,11 +2,14 @@ import Link from 'next/link'
 import { getTranslations } from 'next-intl/server'
 import { Badge, Button, Card, CardContent, Input, Separator } from '@kukan/ui'
 import type { PaginatedResult } from '@kukan/shared'
+import { overrides } from '@/brand'
 import { serverFetch } from '@/lib/server-api'
 import { DatasetCard, type DatasetCardItem } from '@/components/dataset-card'
 import { CompactDate } from '@/components/date-time'
 
 export default async function HomePage() {
+  const Custom = overrides.TopPage
+  if (Custom) return <Custom />
   const t = await getTranslations()
   let datasetTotal = 0
   let resourceTotal = 0

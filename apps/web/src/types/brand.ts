@@ -29,4 +29,5 @@ export interface BrandConfig {
 export interface BrandOverrides {
   Header?: ComponentType
   Footer?: ComponentType
+  TopPage?: ComponentType
 }

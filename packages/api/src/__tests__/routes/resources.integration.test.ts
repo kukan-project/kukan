@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
-import { eq, sql } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { resource as resourceTable, resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import { createTestApp, mockSearch } from '../test-helpers/test-app'
 import {

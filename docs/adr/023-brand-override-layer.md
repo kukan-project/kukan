@@ -113,6 +113,7 @@ export type LogoConfig =
 export interface BrandOverrides {
   Header?: ComponentType
   Footer?: ComponentType
+  TopPage?: ComponentType
   // 需要に応じて追加（型を追加しても既存フォークは壊れない）
 }
 ```
@@ -155,6 +156,17 @@ export async function Header() {
 }
 
 export async function DefaultHeader() {
+  // ...デフォルト実装
+}
+```
+
+```typescript
+// apps/web/src/app/page.tsx（本体側）
+import { overrides } from '@/brand'
+
+export default async function HomePage() {
+  const Custom = overrides.TopPage
+  if (Custom) return <Custom />
   // ...デフォルト実装
 }
 ```
@@ -208,6 +220,7 @@ export const metadata: Metadata = {
 | `brand/pages/index.ts`         | サンプルのみ                     | **変更する**     | **極低**                   |
 | `brand/pages/*.tsx`            | サンプルのみ                     | **追加/削除**    | **極低**                   |
 | `public/brand/*`               | デフォルトのみ                   | **差し替え**     | **極低**                   |
+| `app/page.tsx`                 | 通常通り開発                     | 変更しない       | なし                       |
 | `components/layout/header.tsx` | 通常通り開発                     | 変更しない       | なし                       |
 | `app/globals.css`              | 通常通り開発                     | 変更しない       | なし                       |
 
@@ -306,7 +319,7 @@ const show = brandConfig.showBreadcrumb ?? true
 ### Step 3（将来、複数自治体展開時）
 
 8. `brand/` のテンプレートジェネレーター（scaffolding CLI）を検討
-9. オーバーライドスロットの拡充（検索ページ、ダッシュボード等）
+9. オーバーライドスロットの拡充（検索ページ、ダッシュボード等）。TopPage スロットは Step 1 で実装済み
 
 ## 結果
 
