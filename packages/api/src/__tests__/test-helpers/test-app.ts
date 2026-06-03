@@ -22,6 +22,7 @@ import { adminRouter } from '../../routes/admin'
 import { usersRouter } from '../../routes/users'
 import { apiTokensRouter } from '../../routes/api-tokens'
 import { ckanCompatRouter } from '../../routes/ckan-compat'
+import { announcementsRouter } from '../../routes/announcements'
 import { mcpRouter } from '../../routes/mcp'
 
 // Minimal mock adapters (search/storage are no-ops for route tests)
@@ -156,6 +157,7 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
   apiV1.route('/admin', adminRouter)
   apiV1.route('/users', usersRouter)
   apiV1.route('/api-tokens', apiTokensRouter)
+  apiV1.route('/announcements', announcementsRouter)
   app.route('/api/v1', apiV1)
 
   // MCP server

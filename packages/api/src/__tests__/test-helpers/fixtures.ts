@@ -88,3 +88,16 @@ export function createTagFixture(overrides?: Record<string, unknown>) {
     ...overrides,
   }
 }
+
+export function createAnnouncementFixture(overrides?: Record<string, unknown>) {
+  return {
+    id: randomUUID(),
+    title: 'Test Announcement',
+    category: 'info',
+    link: null,
+    publishedAt: new Date(),
+    created: new Date(),
+    updated: new Date(),
+    ...overrides,
+  }
+}

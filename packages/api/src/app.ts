@@ -111,6 +111,7 @@ export async function createApp() {
   const { usersRouter } = await import('./routes/users')
   const { apiTokensRouter } = await import('./routes/api-tokens')
   const { adminRouter } = await import('./routes/admin')
+  const { announcementsRouter } = await import('./routes/announcements')
 
   apiV1.route('/organizations', organizationsRouter)
   apiV1.route('/packages', packagesRouter)
@@ -120,6 +121,7 @@ export async function createApp() {
   apiV1.route('/users', usersRouter)
   apiV1.route('/api-tokens', apiTokensRouter)
   apiV1.route('/admin', adminRouter)
+  apiV1.route('/announcements', announcementsRouter)
 
   app.route('/api/v1', apiV1)
 

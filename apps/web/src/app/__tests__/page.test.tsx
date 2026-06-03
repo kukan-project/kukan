@@ -145,15 +145,16 @@ describe('HomePage', () => {
     expect(screen.queryByText('Latest Datasets')).not.toBeInTheDocument()
   })
 
-  it('should call all four API endpoints', async () => {
+  it('should call all five API endpoints', async () => {
     setupMocks()
     await HomePage()
 
-    expect(serverFetch).toHaveBeenCalledTimes(4)
+    expect(serverFetch).toHaveBeenCalledTimes(5)
     const urls = vi.mocked(serverFetch).mock.calls.map((c) => c[0] as string)
     expect(urls.some((u) => u.includes('/packages'))).toBe(true)
     expect(urls.some((u) => u.includes('/resources/count'))).toBe(true)
     expect(urls.some((u) => u.includes('/organizations'))).toBe(true)
     expect(urls.some((u) => u.includes('/groups'))).toBe(true)
+    expect(urls.some((u) => u.includes('/announcements'))).toBe(true)
   })
 })

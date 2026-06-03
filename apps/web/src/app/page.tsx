@@ -1,9 +1,10 @@
 import Link from 'next/link'
 import { getTranslations } from 'next-intl/server'
-import { Button, Card, CardContent, Input, Separator } from '@kukan/ui'
+import { Badge, Button, Card, CardContent, Input, Separator } from '@kukan/ui'
 import type { PaginatedResult } from '@kukan/shared'
 import { serverFetch } from '@/lib/server-api'
 import { DatasetCard, type DatasetCardItem } from '@/components/dataset-card'
+import { CompactDate } from '@/components/date-time'
 
 export default async function HomePage() {
   const t = await getTranslations()
@@ -12,6 +13,19 @@ export default async function HomePage() {
   let orgTotal = 0
   let groupTotal = 0
   let latestDatasets: DatasetCardItem[] = []
+  let announcements: {
+    id: string
+    title: string
+    category: string
+    link?: string | null
+    publishedAt: string
+  }[] = []
+
+  const announcementsPromise = serverFetch('/api/v1/announcements?limit=5')
+    .then(async (res) => {
+      if (res.ok) announcements = (await res.json()).items
+    })
+    .catch(() => {})
 
   try {
     const [packagesRes, resourceCountRes, orgsRes, groupsRes] = await Promise.all([
@@ -41,6 +55,8 @@ export default async function HomePage() {
   } catch {
     // API unavailable (e.g. during build)
   }
+
+  await announcementsPromise
 
   return (
     <div className="mx-auto flex max-w-[var(--kukan-container-max-width)] flex-col items-center gap-8 px-4 py-16">
@@ -86,6 +102,37 @@ export default async function HomePage() {
           </Card>
         </Link>
       </div>
+
+      {announcements.length > 0 && (
+        <>
+          <Separator className="w-full max-w-2xl" />
+          <section className="flex w-full max-w-2xl flex-col gap-3">
+            <h2 className="text-xl font-semibold">{t('home.announcements')}</h2>
+            {announcements.map((a) => (
+              <div key={a.id} className="flex items-baseline gap-3 text-sm">
+                <span className="shrink-0 text-muted-foreground">
+                  <CompactDate value={a.publishedAt} />
+                </span>
+                <Badge variant="outline" className="shrink-0">
+                  {t(`announcement.category_${a.category}`)}
+                </Badge>
+                {a.link ? (
+                  <a
+                    href={a.link}
+                    className="hover:underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {a.title}
+                  </a>
+                ) : (
+                  <span>{a.title}</span>
+                )}
+              </div>
+            ))}
+          </section>
+        </>
+      )}
 
       {latestDatasets.length > 0 && (
         <>

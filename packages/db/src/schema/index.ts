@@ -31,3 +31,6 @@ export * from './fetch-rate-limit'
 // Audit & Activity
 export * from './audit'
 export * from './activity'
+
+// Announcements
+export * from './announcement'

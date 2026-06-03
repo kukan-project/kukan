@@ -66,7 +66,8 @@
     "title": "KUKAN",
     "description": "みんなが使えるデータカタログ — データを検索・活用するためのプラットフォーム",
     "searchPlaceholder": "データセットを検索...",
-    "latestDatasets": "最新データセット"
+    "latestDatasets": "最新データセット",
+    "announcements": "お知らせ"
   },
   "search": {
     "title": "検索",
@@ -214,7 +215,8 @@
       "adminSearch": "インデックス管理",
       "adminUsers": "ユーザー管理",
       "adminAnalytics": "アクセス統計",
-      "adminSite": "サイト管理"
+      "adminSite": "サイト管理",
+      "adminAnnouncements": "お知らせ管理"
     },
     "adminSearch": {
       "title": "インデックス管理",
@@ -524,5 +526,27 @@
     "notFound": "ページが見つかりません",
     "serverError": "予期しないエラーが発生しました",
     "backToHome": "トップページに戻る"
+  },
+  "announcement": {
+    "announcements": "お知らせ",
+    "createAnnouncement": "お知らせを作成",
+    "editAnnouncement": "お知らせを編集",
+    "noAnnouncements": "お知らせはありません",
+    "title": "タイトル",
+    "titlePlaceholder": "お知らせのタイトル",
+    "category": "カテゴリー",
+    "category_info": "お知らせ",
+    "category_maintenance": "メンテナンス",
+    "category_release": "新機能",
+    "category_important": "重要",
+    "link": "リンク（任意）",
+    "linkPlaceholder": "https://example.com",
+    "publishedAt": "公開日時",
+    "publishedAtHelp": "空欄の場合は下書きとして保存されます。未来の日時を指定すると予約公開になります。",
+    "status": "ステータス",
+    "published": "公開中",
+    "scheduled": "予約公開",
+    "draft": "下書き",
+    "confirmDelete": "このお知らせを削除しますか？"
   }
 }

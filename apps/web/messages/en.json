@@ -66,7 +66,8 @@
     "title": "KUKAN",
     "description": "Data catalog for everyone — A platform for searching and utilizing data",
     "searchPlaceholder": "Search datasets...",
-    "latestDatasets": "Latest Datasets"
+    "latestDatasets": "Latest Datasets",
+    "announcements": "Announcements"
   },
   "search": {
     "title": "Search",
@@ -214,7 +215,8 @@
       "adminSearch": "Index Management",
       "adminUsers": "Users",
       "adminAnalytics": "Access Analytics",
-      "adminSite": "Site Management"
+      "adminSite": "Site Management",
+      "adminAnnouncements": "Announcements"
     },
     "adminSearch": {
       "title": "Index Management",
@@ -509,5 +511,27 @@
     "notFound": "Page not found",
     "serverError": "An unexpected error occurred",
     "backToHome": "Back to home"
+  },
+  "announcement": {
+    "announcements": "Announcements",
+    "createAnnouncement": "Create Announcement",
+    "editAnnouncement": "Edit Announcement",
+    "noAnnouncements": "No announcements",
+    "title": "Title",
+    "titlePlaceholder": "Announcement title",
+    "category": "Category",
+    "category_info": "Info",
+    "category_maintenance": "Maintenance",
+    "category_release": "Release",
+    "category_important": "Important",
+    "link": "Link (optional)",
+    "linkPlaceholder": "https://example.com",
+    "publishedAt": "Publish Date",
+    "publishedAtHelp": "Leave empty to save as draft. Set a future date for scheduled publishing.",
+    "status": "Status",
+    "published": "Published",
+    "scheduled": "Scheduled",
+    "draft": "Draft",
+    "confirmDelete": "Are you sure you want to delete this announcement?"
   }
 }

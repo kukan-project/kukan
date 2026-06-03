@@ -19,6 +19,7 @@ export function Sidebar() {
   ]
 
   const adminItems = [
+    { href: '/dashboard/admin/announcements', label: t('adminAnnouncements') },
     { href: '/dashboard/admin/users', label: t('adminUsers') },
     { href: '/dashboard/admin/jobs', label: t('adminJobs') },
     { href: '/dashboard/admin/health', label: t('adminHealth') },
