@@ -11,6 +11,7 @@ import { createDb } from '@kukan/db'
 import { createAdapters } from './adapters'
 import { createAuth } from './auth/auth'
 import { optionalAuth } from './middleware/auth'
+import { cacheControl, publicCache, noCache } from './middleware/cache-control'
 import { errorHandler } from './middleware/error-handler'
 import { logger } from './middleware/logger'
 import type { AppContext } from './context'
@@ -66,15 +67,16 @@ export async function createApp() {
 
   // Middleware
   app.use('*', logger)
+  app.use('*', cacheControl)
   app.onError(errorHandler)
 
   // Health check
-  app.get('/api/health', (c) => {
+  app.get('/api/health', noCache(), (c) => {
     return c.json({ status: 'ok', timestamp: new Date().toISOString() })
   })
 
   // Public site settings (unauthenticated)
-  app.get('/api/v1/site/settings', (c) => {
+  app.get('/api/v1/site/settings', publicCache(), (c) => {
     return c.json({ registrationEnabled: env.REGISTRATION_ENABLED })
   })
 

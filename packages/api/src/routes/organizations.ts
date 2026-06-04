@@ -14,6 +14,7 @@ import {
 } from '@kukan/shared'
 import { OrganizationService } from '../services/organization-service'
 import { checkOrgRole } from '../auth/permissions'
+import { publicCache } from '../middleware/cache-control'
 import type { AppContext } from '../context'
 
 export const organizationsRouter = new Hono<{ Variables: AppContext }>()
@@ -21,6 +22,7 @@ export const organizationsRouter = new Hono<{ Variables: AppContext }>()
 // GET /api/v1/organizations - List all organizations
 organizationsRouter.get(
   '/',
+  publicCache(),
   zValidator(
     'query',
     z.object({
@@ -54,7 +56,7 @@ organizationsRouter.post('/', zValidator('json', createOrganizationSchema), asyn
 })
 
 // GET /api/v1/organizations/:nameOrId - Get organization by name or ID
-organizationsRouter.get('/:nameOrId', async (c) => {
+organizationsRouter.get('/:nameOrId', publicCache(), async (c) => {
   const db = c.get('db')
   const service = new OrganizationService(db)
   const nameOrId = c.req.param('nameOrId')

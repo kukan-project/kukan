@@ -7,9 +7,13 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { TagService } from '../services/tag-service'
+import { publicCache } from '../middleware/cache-control'
 import type { AppContext } from '../context'
 
 export const tagsRouter = new Hono<{ Variables: AppContext }>()
+
+// All GET routes return public data — apply public cache
+tagsRouter.use(publicCache())
 
 // GET /api/v1/tags - List tags with pagination and search
 tagsRouter.get(

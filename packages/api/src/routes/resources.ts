@@ -31,6 +31,7 @@ import { indexPackageMetadata, indexResourceMetadata } from '../services/search-
 import { Readable } from 'stream'
 import type { Database } from '@kukan/db'
 import type { SearchFilters } from '@kukan/search-adapter'
+import { publicCache } from '../middleware/cache-control'
 import type { AppContext } from '../context'
 import type { Context } from 'hono'
 
@@ -114,7 +115,7 @@ resourcesRouter.get('/count', async (c) => {
 })
 
 // GET /api/v1/resources/formats - Get distinct resource formats
-resourcesRouter.get('/formats', async (c) => {
+resourcesRouter.get('/formats', publicCache(), async (c) => {
   const service = new ResourceService(c.get('db'))
   const formats = await service.getDistinctFormats()
   return c.json(formats)

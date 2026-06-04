@@ -199,6 +199,8 @@ pnpm format        # Prettier フォーマット
 - ブランドオーバーライドレイヤー → `docs/adr/023-brand-override-layer.md`
 - GA4 アクセス統計 → `docs/adr/024-ga4-access-analytics.md`
 - OpenSearch parent-child 統合 → `docs/adr/025-opensearch-parent-child-index.md`
+- API Cache-Control 戦略 → `docs/adr/026-api-cache-control.md`
+- CloudFront 再導入 → `docs/adr/027-cloudfront-reintroduction.md`
 
 新しい設計判断が必要になったら、同じフォーマットでADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、

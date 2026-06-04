@@ -11,6 +11,7 @@ import { OrganizationService } from '../services/organization-service'
 import { GroupService } from '../services/group-service'
 import { TagService } from '../services/tag-service'
 import { resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
+import { publicCache } from '../middleware/cache-control'
 import type { AppContext } from '../context'
 
 export const ckanCompatRouter = new Hono<{ Variables: AppContext }>()
@@ -184,7 +185,7 @@ ckanCompatRouter.get('/resource_show', async (c) => {
 // ============================================================
 
 // organization_list - List all organizations (names only)
-ckanCompatRouter.get('/organization_list', async (c) => {
+ckanCompatRouter.get('/organization_list', publicCache(), async (c) => {
   const service = new OrganizationService(c.get('db'))
   const result = await service.list({ offset: 0, limit: 1000 })
   const names = result.items.map((org) => org.name)
@@ -192,7 +193,7 @@ ckanCompatRouter.get('/organization_list', async (c) => {
 })
 
 // organization_show - Get organization by ID or name
-ckanCompatRouter.get('/organization_show', async (c) => {
+ckanCompatRouter.get('/organization_show', publicCache(), async (c) => {
   const id = c.req.query('id')
   if (!id) {
     return ckanError('Missing parameter: id', c)
@@ -213,7 +214,7 @@ ckanCompatRouter.get('/organization_show', async (c) => {
 // ============================================================
 
 // group_list - List all groups (names only)
-ckanCompatRouter.get('/group_list', async (c) => {
+ckanCompatRouter.get('/group_list', publicCache(), async (c) => {
   const service = new GroupService(c.get('db'))
   const result = await service.list({ offset: 0, limit: 1000 })
   const names = result.items.map((grp) => grp.name)
@@ -221,7 +222,7 @@ ckanCompatRouter.get('/group_list', async (c) => {
 })
 
 // group_show - Get group by ID or name
-ckanCompatRouter.get('/group_show', async (c) => {
+ckanCompatRouter.get('/group_show', publicCache(), async (c) => {
   const id = c.req.query('id')
   if (!id) {
     return ckanError('Missing parameter: id', c)
@@ -242,7 +243,7 @@ ckanCompatRouter.get('/group_show', async (c) => {
 // ============================================================
 
 // tag_list - List all tags (names only)
-ckanCompatRouter.get('/tag_list', async (c) => {
+ckanCompatRouter.get('/tag_list', publicCache(), async (c) => {
   const service = new TagService(c.get('db'))
   const result = await service.list({ offset: 0, limit: 1000 })
   const names = result.items.map((tag) => tag.name)
@@ -250,7 +251,7 @@ ckanCompatRouter.get('/tag_list', async (c) => {
 })
 
 // tag_show - Get tag by ID
-ckanCompatRouter.get('/tag_show', async (c) => {
+ckanCompatRouter.get('/tag_show', publicCache(), async (c) => {
   const id = c.req.query('id')
   if (!id) {
     return ckanError('Missing parameter: id', c)
@@ -274,6 +275,6 @@ ckanCompatRouter.get('/tag_show', async (c) => {
 // ============================================================
 
 // license_list - List all available licenses
-ckanCompatRouter.get('/license_list', (c) => {
+ckanCompatRouter.get('/license_list', publicCache(3600, 86400), (c) => {
   return ckanResponse(LICENSES, c)
 })

@@ -14,6 +14,7 @@ import {
   UnauthorizedError,
 } from '@kukan/shared'
 import { checkGroupRole } from '../auth/permissions'
+import { publicCache } from '../middleware/cache-control'
 import type { AppContext } from '../context'
 
 export const groupsRouter = new Hono<{ Variables: AppContext }>()
@@ -21,6 +22,7 @@ export const groupsRouter = new Hono<{ Variables: AppContext }>()
 // GET /api/v1/groups - List groups with pagination and search
 groupsRouter.get(
   '/',
+  publicCache(),
   zValidator(
     'query',
     z.object({
@@ -50,7 +52,7 @@ groupsRouter.post('/', zValidator('json', createGroupSchema), async (c) => {
 })
 
 // GET /api/v1/groups/:nameOrId - Get group by name or ID
-groupsRouter.get('/:nameOrId', async (c) => {
+groupsRouter.get('/:nameOrId', publicCache(), async (c) => {
   const nameOrId = c.req.param('nameOrId')
   const service = new GroupService(c.get('db'))
   const grp = await service.getByNameOrId(nameOrId)
