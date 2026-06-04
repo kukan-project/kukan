@@ -24,10 +24,10 @@ declare cache control.
 
 Applied to all API routes. Sets `Cache-Control` only if not already present on the response.
 
-| HTTP Method                | Default Value       | Reason                                                     |
-| -------------------------- | ------------------- | ---------------------------------------------------------- |
-| GET / HEAD                 | `private, no-cache` | Results may vary by authentication, so err on the safe side |
-| POST / PUT / PATCH / DELETE | `private, no-store` | Requests with side effects                                |
+| HTTP Method                 | Default Value       | Reason                                                      |
+| --------------------------- | ------------------- | ----------------------------------------------------------- |
+| GET / HEAD                  | `private, no-cache` | Results may vary by authentication, so err on the safe side |
+| POST / PUT / PATCH / DELETE | `private, no-store` | Requests with side effects                                  |
 
 - `private` — Do not store in shared caches (CDN / proxy)
 - `no-cache` — May store in browser cache, but must revalidate with origin before use
@@ -54,14 +54,14 @@ This prevents temporary DB errors or other failure responses from being cached b
 
 ### Route Classification
 
-| Category                                                       | Cache-Control                                        | Application Method                |
-| -------------------------------------------------------------- | ---------------------------------------------------- | --------------------------------- |
-| GET where results vary by auth (packages, announcements, etc.) | `private, no-cache`                                  | Default (no change needed)        |
-| Auth-required GET (users/me, admin, etc.)                      | `private, no-cache`                                  | Default (no change needed)        |
-| Writes (POST/PUT/DELETE)                                       | `private, no-store`                                  | Default (no change needed)        |
-| Fully public GET (organizations, groups, tags, etc.)           | `public, max-age=60, stale-while-revalidate=300`     | Apply `publicCache()`             |
-| Static public data (license_list)                              | `public, max-age=3600, stale-while-revalidate=86400` | Apply `publicCache(3600, 86400)`  |
-| File streams (download, preview, text)                         | `private, max-age=0` / `private, max-age=300`        | Keep existing                     |
+| Category                                                       | Cache-Control                                        | Application Method                     |
+| -------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------- |
+| GET where results vary by auth (packages, announcements, etc.) | `private, no-cache`                                  | Default (no change needed)             |
+| Auth-required GET (users/me, admin, etc.)                      | `private, no-cache`                                  | Default (no change needed)             |
+| Writes (POST/PUT/DELETE)                                       | `private, no-store`                                  | Default (no change needed)             |
+| Fully public GET (organizations, groups, tags, etc.)           | `public, max-age=60, stale-while-revalidate=300`     | Apply `publicCache()`                  |
+| Static public data (license_list)                              | `public, max-age=3600, stale-while-revalidate=86400` | Apply `publicCache(3600, 86400)`       |
+| File streams (download, preview, text)                         | `private, max-age=0` / `private, max-age=300`        | Keep existing                          |
 | Health check                                                   | `no-cache`                                           | Individual setting (no sensitive data) |
 
 ### publicCache() Applied Routes

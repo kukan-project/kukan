@@ -43,24 +43,24 @@ KUKAN uses OpenSearch as its search engine (ADR-009), but a decision is needed o
 
 ### Responsibility Assignment
 
-| Operation                                    | Data Source                       | Endpoint                              |
-| -------------------------------------------- | --------------------------------- | ------------------------------------- |
-| Public keyword full-text search              | `search` (SearchAdapter)         | `GET /api/v1/search?q=...`            |
-| Public listing (search, filters, facets)     | `search` (SearchAdapter)         | `GET /api/v1/packages`                |
-| CKAN-compatible search                       | `search` (SearchAdapter)         | `GET /api/3/action/package_search`    |
-| **Dashboard listing and management**         | **`dbSearch` (PostgreSQL only)** | `GET /api/v1/packages?my_org=true`    |
-| Organization / group listing                 | Direct DB                        | `GET /api/v1/organizations`, `groups` |
-| Organization detail (affiliated datasets)    | Direct DB                        | `GET /api/v1/organizations/:id`       |
-| Package detail / resource listing            | Direct DB                        | `GET /api/v1/packages/:id`            |
+| Operation                                 | Data Source                      | Endpoint                              |
+| ----------------------------------------- | -------------------------------- | ------------------------------------- |
+| Public keyword full-text search           | `search` (SearchAdapter)         | `GET /api/v1/search?q=...`            |
+| Public listing (search, filters, facets)  | `search` (SearchAdapter)         | `GET /api/v1/packages`                |
+| CKAN-compatible search                    | `search` (SearchAdapter)         | `GET /api/3/action/package_search`    |
+| **Dashboard listing and management**      | **`dbSearch` (PostgreSQL only)** | `GET /api/v1/packages?my_org=true`    |
+| Organization / group listing              | Direct DB                        | `GET /api/v1/organizations`, `groups` |
+| Organization detail (affiliated datasets) | Direct DB                        | `GET /api/v1/organizations/:id`       |
+| Package detail / resource listing         | Direct DB                        | `GET /api/v1/packages/:id`            |
 
 ### Dual Adapter Architecture
 
 Two SearchAdapter instances are injected into AppContext:
 
-| Context Variable | Adapter                                       | Purpose                         |
-| ---------------- | --------------------------------------------- | ------------------------------- |
-| `search`         | Per configuration (OpenSearch / PostgreSQL)    | Public search and index writes  |
-| `dbSearch`       | Always PostgresSearchAdapter                  | Dashboard reads                 |
+| Context Variable | Adapter                                     | Purpose                        |
+| ---------------- | ------------------------------------------- | ------------------------------ |
+| `search`         | Per configuration (OpenSearch / PostgreSQL) | Public search and index writes |
+| `dbSearch`       | Always PostgresSearchAdapter                | Dashboard reads                |
 
 ```typescript
 // packages/api/src/adapters.ts

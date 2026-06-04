@@ -37,10 +37,10 @@ Application code is identical across AWS and on-premises. Environment-specific d
                                                       └──────────┘
 ```
 
-| Environment | Collector                              | Store           | Viewer                  |
-| ----------- | -------------------------------------- | --------------- | ----------------------- |
-| AWS         | ECS Fargate built-in (auto-collection) | CloudWatch Logs | CloudWatch console      |
-| On-premises | Fluent Bit                             | Loki            | Grafana                 |
+| Environment | Collector                              | Store           | Viewer             |
+| ----------- | -------------------------------------- | --------------- | ------------------ |
+| AWS         | ECS Fargate built-in (auto-collection) | CloudWatch Logs | CloudWatch console |
+| On-premises | Fluent Bit                             | Loki            | Grafana            |
 
 ### Application side: structured logging with pino
 
@@ -85,14 +85,14 @@ Three components are added to `compose.yml`:
 
 pino standard fields included in every log line:
 
-| Field      | Type   | Description                              |
-| ---------- | ------ | ---------------------------------------- |
-| `level`    | number | Log level (10–60, see table below)       |
-| `time`     | number | Unix epoch milliseconds                  |
-| `name`     | string | Logger name (`api` / `worker`)           |
-| `msg`      | string | Log message                              |
-| `pid`      | number | Process ID                               |
-| `hostname` | string | Hostname                                 |
+| Field      | Type   | Description                        |
+| ---------- | ------ | ---------------------------------- |
+| `level`    | number | Log level (10–60, see table below) |
+| `time`     | number | Unix epoch milliseconds            |
+| `name`     | string | Logger name (`api` / `worker`)     |
+| `msg`      | string | Log message                        |
+| `pid`      | number | Process ID                         |
+| `hostname` | string | Hostname                           |
 
 **Log level values:**
 
@@ -202,9 +202,9 @@ fields @timestamp, msg, jobId, resourceId, err.message
 
 ### Environment Variables
 
-| Variable    | Default | Description                                                       |
-| ----------- | ------- | ----------------------------------------------------------------- |
-| `LOG_LEVEL` | `info`  | Log level (`trace`/`debug`/`info`/`warn`/`error`/`fatal`)        |
+| Variable    | Default | Description                                               |
+| ----------- | ------- | --------------------------------------------------------- |
+| `LOG_LEVEL` | `info`  | Log level (`trace`/`debug`/`info`/`warn`/`error`/`fatal`) |
 
 When `level` is explicitly specified in the `createLogger()` options, that takes precedence.
 
@@ -212,22 +212,22 @@ When `level` is explicitly specified in the `createLogger()` options, that takes
 
 ### Why pino
 
-| Library | Speed   | Native JSON | Ecosystem                   |
-| ------- | ------- | ----------- | --------------------------- |
-| pino    | Fastest | Yes         | Proven with Hono / Fastify  |
+| Library | Speed   | Native JSON | Ecosystem                        |
+| ------- | ------- | ----------- | -------------------------------- |
+| pino    | Fastest | Yes         | Proven with Hono / Fastify       |
 | winston | Slow    | Plugin      | Legacy standard from Express era |
-| bunyan  | Medium  | Yes         | Maintenance stalled         |
-| console | N/A     | No          | Insufficient for production |
+| bunyan  | Medium  | Yes         | Maintenance stalled              |
+| console | N/A     | No          | Insufficient for production      |
 
 ### Why Loki + Fluent Bit (vs ELK)
 
-| Aspect              | ELK (Elasticsearch + Logstash + Kibana) | Loki + Fluent Bit + Grafana                      |
-| ------------------- | --------------------------------------- | ------------------------------------------------- |
-| Memory consumption  | Several GB                              | ~500MB total                                      |
-| Disk consumption    | Large (full-text index)                 | Small (labels-only index)                         |
-| Setup               | Complex                                 | Easy with Docker Compose                          |
-| Air-gapped suitability | Too heavy                            | Lightweight and suitable                          |
-| OpenSearch conflict  | Roles overlap between search engine and log platform | Separation of concerns (search = OpenSearch, logs = Loki) |
+| Aspect                 | ELK (Elasticsearch + Logstash + Kibana)              | Loki + Fluent Bit + Grafana                               |
+| ---------------------- | ---------------------------------------------------- | --------------------------------------------------------- |
+| Memory consumption     | Several GB                                           | ~500MB total                                              |
+| Disk consumption       | Large (full-text index)                              | Small (labels-only index)                                 |
+| Setup                  | Complex                                              | Easy with Docker Compose                                  |
+| Air-gapped suitability | Too heavy                                            | Lightweight and suitable                                  |
+| OpenSearch conflict    | Roles overlap between search engine and log platform | Separation of concerns (search = OpenSearch, logs = Loki) |
 
 Since KUKAN already uses OpenSearch as a search engine,
 using OpenSearch for log infrastructure as well would mix responsibilities and complicate operations. Loki provides separation.
@@ -244,11 +244,11 @@ Following ADR-005's principle, no log adapter is needed in application code:
 
 ### Resource Consumption (on-premises additions)
 
-| Component  | Memory     | Disk                                  |
-| ---------- | ---------- | ------------------------------------- |
-| Fluent Bit | ~30MB      | Negligible                            |
+| Component  | Memory     | Disk                                                |
+| ---------- | ---------- | --------------------------------------------------- |
+| Fluent Bit | ~30MB      | Negligible                                          |
 | Loki       | ~200-500MB | Proportional to log volume (high compression ratio) |
-| Grafana    | ~100-200MB | ~several hundred MB                   |
+| Grafana    | ~100-200MB | ~several hundred MB                                 |
 
 ### Implementation Scope
 

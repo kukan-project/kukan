@@ -15,9 +15,9 @@ export interface KukanConfig {
   dbEngine: DbEngine
   /** Enable OpenSearch (false = PostgreSQL full-text fallback) */
   enableOpenSearch: boolean
-  /** Enable WAF on ALB (managed rule groups + optional IP allowlist) */
+  /** Enable WAF (CLOUDFRONT scope, managed rules + optional IP allowlist) */
   enableWaf: boolean
-  /** IP allowlist (CIDR notation). When set, WAF blocks all other IPs. */
+  /** IP allowlist (CIDR notation). When set, CloudFront Function blocks non-matching IPs. */
   allowedIpRanges?: string[]
   /** Custom domain name */
   domainName?: string
@@ -128,8 +128,9 @@ export function loadConfig(scope: Construct): KukanConfig {
     (scope.node.tryGetContext('dbEngine') as DbEngine) ?? SCALE_DEFAULTS[scale].db.engine
   const enableOpenSearch = scope.node.tryGetContext('enableOpenSearch') ?? true
   const allowedIpRanges = scope.node.tryGetContext('allowedIpRanges') as string[] | undefined
-  // IP restriction is handled by ALB Security Group, so WAF is only needed
-  // for managed rules. Default OFF when allowedIpRanges is set (saves ~$9/month).
+  // WAF provides managed rules on CloudFront scope (ADR-027).
+  // IP restriction is handled by CF Function, so WAF is optional when
+  // only IP restriction is needed. Default OFF when allowedIpRanges is set (saves ~$9/month).
   const enableWafExplicit = scope.node.tryGetContext('enableWaf') as boolean | undefined
   const enableWaf = enableWafExplicit ?? !allowedIpRanges
   const domainName = scope.node.tryGetContext('domainName') as string | undefined

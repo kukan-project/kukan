@@ -8,7 +8,7 @@ OSS 公開時にユーザーが `cdk deploy` で自環境を構築できるこ�
 ## アーキテクチャ
 
 ```
-Route53 ─→ ALB (ACM/HTTPS) ─→ ECS Fargate "web" (:3000)
+Route53 ─→ CloudFront (WAF + Cache) ─→ ALB (HTTP) ─→ ECS Fargate "web" (:3000)
                                          │
                               ┌─── Public Subnets ────┐
                               │  ALB                   │
@@ -26,15 +26,15 @@ SQS ← API enqueue → Worker consume (ロングポーリング)
 
 ### コンポーネント
 
-| コンポーネント | サービス                              | 理由                                                   |
-| -------------- | ------------------------------------- | ------------------------------------------------------ |
-| Web            | ECS Fargate + ALB                     | L2 コンストラクト、SG で IP 制限、カスタムドメイン対応 |
-| Worker         | ECS Fargate Service                   | SQS ロングポーリング、タイムアウトなし                 |
-| DB             | RDS PostgreSQL / Aurora Serverless v2 | CDK パラメータで切替                                   |
-| 検索           | OpenSearch (VPC)                      | kuromoji プラグイン、PostgreSQL フォールバック可       |
-| ストレージ     | S3                                    | presigned URL でブラウザ直接アップロード               |
-| キュー         | SQS + DLQ                             | 無料枠内、ElasticMQ と同一 API                         |
-| WAF            | ALB WAF (オプション)                  | マネージドルール、IP 制限は SG で対応                  |
+| コンポーネント | サービス                              | 理由                                                            |
+| -------------- | ------------------------------------- | --------------------------------------------------------------- |
+| Web            | ECS Fargate + ALB + CloudFront        | L2 コンストラクト、CF Function で IP 制限、カスタムドメイン対応 |
+| Worker         | ECS Fargate Service                   | SQS ロングポーリング、タイムアウトなし                          |
+| DB             | RDS PostgreSQL / Aurora Serverless v2 | CDK パラメータで切替                                            |
+| 検索           | OpenSearch (VPC)                      | kuromoji プラグイン、PostgreSQL フォールバック可                |
+| ストレージ     | S3                                    | presigned URL でブラウザ直接アップロード                        |
+| キュー         | SQS + DLQ                             | 無料枠内、ElasticMQ と同一 API                                  |
+| WAF            | CloudFront WAF (オプション)           | マネージドルール（ADR-027）                                     |
 
 ## VPC 設計
 
@@ -86,7 +86,8 @@ CDK の `dbEngine` パラメータ（`rds` | `aurora`）で切替。
 
 OpenSearch なし（SEARCH_TYPE=postgres）: ~$37/月
 WAF 追加（enableWaf=true）: +~$9/月
-IP 制限は ALB SG で対応（追加コストなし）
+CloudFront: +~$1–3/月（リクエスト + データ転送）
+IP 制限は CloudFront Function で対応（追加コストなし）
 
 ### Medium（単一自治体）: ~$250/月
 
@@ -126,17 +127,17 @@ infra/
 環境固有の値（ドメイン名等）を永続化したい場合は `infra/cdk.context.json` に記述する。
 `cdk.context.json` は `.gitignore` 対象のため、環境ごとに安全に管理できる。
 
-| パラメータ         | 型                             | デフォルト                                         | 説明                                                   |
-| ------------------ | ------------------------------ | -------------------------------------------------- | ------------------------------------------------------ |
-| `scale`            | `small` \| `medium` \| `large` | `small`                                            | デプロイ規模（リソースサイズを一括制御）               |
-| `dbEngine`         | `rds` \| `aurora`              | スケール依存（small=`rds`, medium/large=`aurora`） | DB エンジン                                            |
-| `enableOpenSearch` | boolean                        | `true`                                             | `false` → PostgreSQL 全文検索フォールバック            |
-| `enableWaf`        | boolean                        | `!allowedIpRanges`                                 | WAF on ALB（マネージドルール、~$9/月追加）             |
-| `domainName`       | string                         | なし                                               | カスタムドメイン（未設定時は ALB デフォルトドメイン）  |
-| `hostedZoneId`     | string                         | なし                                               | Route53 Hosted Zone ID（`domainName` 設定時に必要）    |
-| `hostedZoneName`   | string                         | なし                                               | Route53 Hosted Zone 名（`domainName` 設定時に必要）    |
-| `allowedIpRanges`  | string[]                       | なし                                               | IP 制限（ALB SG、IPv4 CIDR + IPv6 プレフィックス対応） |
-| `bucketName`       | string                         | `kukan-resources`                                  | S3 バケット名                                          |
+| パラメータ         | 型                             | デフォルト                                         | 説明                                                         |
+| ------------------ | ------------------------------ | -------------------------------------------------- | ------------------------------------------------------------ |
+| `scale`            | `small` \| `medium` \| `large` | `small`                                            | デプロイ規模（リソースサイズを一括制御）                     |
+| `dbEngine`         | `rds` \| `aurora`              | スケール依存（small=`rds`, medium/large=`aurora`） | DB エンジン                                                  |
+| `enableOpenSearch` | boolean                        | `true`                                             | `false` → PostgreSQL 全文検索フォールバック                  |
+| `enableWaf`        | boolean                        | `!allowedIpRanges`                                 | WAF on CloudFront（マネージドルール、~$9/月追加）            |
+| `domainName`       | string                         | なし                                               | カスタムドメイン（未設定時は CloudFront デフォルトドメイン） |
+| `hostedZoneId`     | string                         | なし                                               | Route53 Hosted Zone ID（`domainName` 設定時に必要）          |
+| `hostedZoneName`   | string                         | なし                                               | Route53 Hosted Zone 名（`domainName` 設定時に必要）          |
+| `allowedIpRanges`  | string[]                       | なし                                               | IP 制限（CloudFront Function、IPv4 CIDR + IPv6 対応）        |
+| `bucketName`       | string                         | `kukan-resources`                                  | S3 バケット名                                                |
 
 パラメータの指定方法（優先度順）:
 
@@ -172,7 +173,7 @@ infra/
 # 最小構成（WAF 自動有効、カスタムドメインなし）
 npx cdk deploy
 
-# IP 制限あり（ALB SG で制御、WAF 自動無効）
+# IP 制限あり（CloudFront Function で制御、WAF 自動無効）
 npx cdk deploy -c allowedIpRanges='["203.0.113.0/24"]'
 
 # IP 制限 + WAF 二重防御
@@ -184,18 +185,20 @@ npx cdk deploy -c enableWaf=false
 
 ## セキュリティ
 
-### IP 制限（ALB Security Group）
+### IP 制限（CloudFront Function）
 
-`allowedIpRanges` 設定時、ALB の Security Group で IP アドレスを制限。
+`allowedIpRanges` 設定時、CloudFront Function（Viewer Request）で IP アドレスを制限（ADR-027）。
 IPv4 CIDR と IPv6 プレフィックスの両方に対応。追加コストなし。
 
+- ALB: Origin Verify ヘッダーで CloudFront 経由のみ許可（リスナールール）
 - Web タスク SG: ALB からの 3000 番ポートのみ許可（直接アクセス不可）
 - Worker タスク SG: インバウンドなし
 
 ### WAF（オプション）
 
-WAF は `allowedIpRanges` の有無で自動制御される。
-IP 制限は ALB SG で行うため、WAF はマネージドルール（SQLi/XSS 保護等）が必要な場合のみ有効化。
+WAF は `allowedIpRanges` の有無で自動制御される（ADR-027）。
+IP 制限は CloudFront Function で行うため、WAF はマネージドルール（SQLi/XSS 保護等）が必要な場合のみ有効化。
+WAF は CLOUDFRONT スコープで us-east-1（KukanGlobalStack）にデプロイされる。
 
 | `allowedIpRanges` | `enableWaf` 指定 | WAF 動作                               |
 | ----------------- | ---------------- | -------------------------------------- |

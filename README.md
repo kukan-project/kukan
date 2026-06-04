@@ -150,17 +150,17 @@ Deploys a `small` configuration by default:
 
 ### CDK parameters / CDK パラメータ一覧
 
-| Parameter          | Type                           | Default            | Description                                                 |
-| ------------------ | ------------------------------ | ------------------ | ----------------------------------------------------------- |
-| `scale`            | `small` \| `medium` \| `large` | `small`            | Resource sizing preset                                      |
-| `dbEngine`         | `rds` \| `aurora`              | Scale-dependent    | DB engine (`small`=RDS, `medium`+=Aurora)                   |
-| `enableOpenSearch` | boolean                        | `true`             | `false` → PostgreSQL full-text fallback                     |
-| `enableWaf`        | boolean                        | `!allowedIpRanges` | WAF on ALB (~$9/mo). Auto-enabled when no `allowedIpRanges` |
-| `domainName`       | string                         | —                  | Custom domain (ALB default domain when unset)               |
-| `hostedZoneId`     | string                         | —                  | Route53 Hosted Zone ID (required with `domainName`)         |
-| `hostedZoneName`   | string                         | —                  | Route53 Hosted Zone name (required with `domainName`)       |
-| `allowedIpRanges`  | string[]                       | —                  | IP allowlist via ALB Security Group (CIDR, IPv4+IPv6)       |
-| `bucketName`       | string                         | `kukan-resources`  | S3 bucket name                                              |
+| Parameter          | Type                           | Default            | Description                                                        |
+| ------------------ | ------------------------------ | ------------------ | ------------------------------------------------------------------ |
+| `scale`            | `small` \| `medium` \| `large` | `small`            | Resource sizing preset                                             |
+| `dbEngine`         | `rds` \| `aurora`              | Scale-dependent    | DB engine (`small`=RDS, `medium`+=Aurora)                          |
+| `enableOpenSearch` | boolean                        | `true`             | `false` → PostgreSQL full-text fallback                            |
+| `enableWaf`        | boolean                        | `!allowedIpRanges` | WAF on CloudFront (~$9/mo). Auto-enabled when no `allowedIpRanges` |
+| `domainName`       | string                         | —                  | Custom domain (CloudFront default domain when unset)               |
+| `hostedZoneId`     | string                         | —                  | Route53 Hosted Zone ID (required with `domainName`)                |
+| `hostedZoneName`   | string                         | —                  | Route53 Hosted Zone name (required with `domainName`)              |
+| `allowedIpRanges`  | string[]                       | —                  | IP allowlist via CloudFront Function (CIDR, IPv4+IPv6)             |
+| `bucketName`       | string                         | `kukan-resources`  | S3 bucket name                                                     |
 
 ### Environment-specific settings / 環境固有の設定
 

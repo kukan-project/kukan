@@ -49,10 +49,10 @@ The initial implementation stored only the first 200 rows in JSON format, which 
 
 ### Library Selection
 
-| Purpose              | Library            | Rationale                                                                        |
-| -------------------- | ------------------ | -------------------------------------------------------------------------------- |
-| Server-side writing  | `hyparquet-writer`  | Pure JS, 137KB, zero dependencies (hyparquet only), ESM support                  |
-| Browser-side reading | `hyparquet`         | Pure JS, 200KB, zero dependencies, Range-based reading via `asyncBufferFromUrl`  |
+| Purpose              | Library            | Rationale                                                                       |
+| -------------------- | ------------------ | ------------------------------------------------------------------------------- |
+| Server-side writing  | `hyparquet-writer` | Pure JS, 137KB, zero dependencies (hyparquet only), ESM support                 |
+| Browser-side reading | `hyparquet`        | Pure JS, 200KB, zero dependencies, Range-based reading via `asyncBufferFromUrl` |
 
 Other libraries considered:
 
@@ -89,10 +89,10 @@ Raw data (before parsing) is not included in the preview Parquet file. Since the
 
 ### Storage Key Structure
 
-| Data             | Key                                         |
-| ---------------- | ------------------------------------------- |
-| Original file    | `resources/{packageId}/{resourceId}`        |
-| Parsed preview   | `previews/{packageId}/{resourceId}.parquet` |
+| Data           | Key                                         |
+| -------------- | ------------------------------------------- |
+| Original file  | `resources/{packageId}/{resourceId}`        |
+| Parsed preview | `previews/{packageId}/{resourceId}.parquet` |
 
 ### Types and Concepts No Longer Needed
 

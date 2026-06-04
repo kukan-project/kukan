@@ -212,19 +212,19 @@ Fork-side example:
 
 ### Conflict Avoidance Mechanism
 
-| File                           | Main-side change frequency         | Fork-side changes   | Conflict Risk                     |
-| ------------------------------ | ---------------------------------- | ------------------- | --------------------------------- |
-| `types/brand.ts`               | Low (only when adding slots)       | Does not modify     | None (type additions are backward-compatible) |
-| `brand/brand-config.ts`        | Does not change (defaults fixed)   | **Modifies**        | **Very low** (main doesn't touch) |
-| `brand/theme.css`              | Does not change                    | **Modifies**        | **Very low**                      |
-| `brand/overrides/index.ts`     | Does not change (empty object)     | **Modifies**        | **Very low**                      |
-| `brand/overrides/*.tsx`        | Does not exist                     | **Newly added**     | **None**                          |
-| `brand/pages/index.ts`         | Sample only                        | **Modifies**        | **Very low**                      |
-| `brand/pages/*.tsx`            | Sample only                        | **Adds/removes**    | **Very low**                      |
-| `public/brand/*`               | Defaults only                      | **Replaces**        | **Very low**                      |
-| `app/page.tsx`                 | Normal development                 | Does not modify     | None                              |
-| `components/layout/header.tsx` | Normal development                 | Does not modify     | None                              |
-| `app/globals.css`              | Normal development                 | Does not modify     | None                              |
+| File                           | Main-side change frequency       | Fork-side changes | Conflict Risk                                 |
+| ------------------------------ | -------------------------------- | ----------------- | --------------------------------------------- |
+| `types/brand.ts`               | Low (only when adding slots)     | Does not modify   | None (type additions are backward-compatible) |
+| `brand/brand-config.ts`        | Does not change (defaults fixed) | **Modifies**      | **Very low** (main doesn't touch)             |
+| `brand/theme.css`              | Does not change                  | **Modifies**      | **Very low**                                  |
+| `brand/overrides/index.ts`     | Does not change (empty object)   | **Modifies**      | **Very low**                                  |
+| `brand/overrides/*.tsx`        | Does not exist                   | **Newly added**   | **None**                                      |
+| `brand/pages/index.ts`         | Sample only                      | **Modifies**      | **Very low**                                  |
+| `brand/pages/*.tsx`            | Sample only                      | **Adds/removes**  | **Very low**                                  |
+| `public/brand/*`               | Defaults only                    | **Replaces**      | **Very low**                                  |
+| `app/page.tsx`                 | Normal development               | Does not modify   | None                                          |
+| `components/layout/header.tsx` | Normal development               | Does not modify   | None                                          |
+| `app/globals.css`              | Normal development               | Does not modify   | None                                          |
 
 ### Reusing Main Components from Override Components
 
@@ -259,12 +259,12 @@ export async function Header() {
 
 This ADR **concretizes and supersedes** ADR-010's Tier 1 and Tier 2.
 
-| ADR-010 (old)                              | ADR-023 (new)                                               |
-| ------------------------------------------ | ----------------------------------------------------------- |
-| Tier 1: External CSS injection via `CUSTOM_THEME_URL` | Fork-side writes directly in `brand/theme.css`    |
-| Tier 2: Separate apps as `apps/web-custom-*` | Same-app override via `src/brand/` directory              |
-| Required `@kukan/web-core` packageization  | No packageization needed, immediately usable                |
-| Unclear relationship with forks            | Designed with fork operations in mind                       |
+| ADR-010 (old)                                         | ADR-023 (new)                                  |
+| ----------------------------------------------------- | ---------------------------------------------- |
+| Tier 1: External CSS injection via `CUSTOM_THEME_URL` | Fork-side writes directly in `brand/theme.css` |
+| Tier 2: Separate apps as `apps/web-custom-*`          | Same-app override via `src/brand/` directory   |
+| Required `@kukan/web-core` packageization             | No packageization needed, immediately usable   |
+| Unclear relationship with forks                       | Designed with fork operations in mind          |
 
 Tier 3 (plugin system) maintains ADR-010's policy as-is.
 

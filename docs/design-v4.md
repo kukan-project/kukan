@@ -493,7 +493,7 @@ Web / Worker ともに ECS Fargate で運用する。Web は ALB 経由でリク
 ┌───────────────────────────────────────────────────────────┐
 │ AWS                                                        │
 │                                                            │
-│  Route53 → ALB (ACM証明書)                                  │
+│  Route53 → CloudFront (WAF + Cache) → ALB (HTTP)             │
 │               │                                            │
 │  ┌────────────▼──────────────────────────────────────┐    │
 │  │ VPC                                                │    │
@@ -546,8 +546,8 @@ Web / Worker ともに ECS Fargate で運用する。Web は ALB 経由でリク
 **Web に ECS Fargate + ALB を選定した理由**
 
 - Honoの同一Dockerイメージがオンプレ/Docker Composeとそのまま共通
-- ALB でカスタムドメイン + ACM 証明書を直接設定（CloudFront 不要）
-- ALB の SG で IP 制限を直接制御（WAF はオプション）
+- CloudFront でカスタムドメイン + ACM 証明書を設定、ALB は HTTP のみ（ADR-027）
+- CloudFront Function で IP 制限を制御（WAF はオプション、ADR-027）
 - CDK L2 コンストラクトで型安全に構成可能
 - `autoScaleTaskCount` でリクエスト数ベースの Auto Scaling
 - 元は App Runner を採用していたが、AWS のメンテナンスモード移行に伴い ECS Fargate + ALB に移行（ADR-020 参照）
@@ -660,7 +660,7 @@ ECS タスクは Public サブネット構成（NAT Gateway 不要）、CloudFro
 ※ ALB 固定料金 $0.0243/h ≒ $18/月（LCU 従量分は低トラフィック時ほぼゼロ）
 ※ Aurora Serverless v2: $0.12/ACU/h（東京）、0.5 ACU 常時 ≒ $44/月 + I/O
 ※ small の RDS db.t4g.micro は単価 ~$13/月（リザーブドで更に削減可）
-※ WAF は small/medium では ALB SG の IP 制限で代替可（デフォルト OFF）
+※ WAF は small/medium では CloudFront Function の IP 制限で代替可（デフォルト OFF、ADR-027）
 
 **オンプレ構成**
 

@@ -33,11 +33,11 @@ In the initial implementation, CSV/TSV used `preview-url` and PDF used `download
 
 ## Current Preview Architecture
 
-| Endpoint        | Purpose                           | Method                           |
-| --------------- | --------------------------------- | -------------------------------- |
-| `GET /preview`  | Preview delivery (Range-capable)  | Server-side streaming            |
-| `GET /text`     | Text preview                      | Server-side (with charset conversion) |
-| `GET /download` | File download                     | Server-side / 302 for external URLs |
+| Endpoint        | Purpose                          | Method                                |
+| --------------- | -------------------------------- | ------------------------------------- |
+| `GET /preview`  | Preview delivery (Range-capable) | Server-side streaming                 |
+| `GET /text`     | Text preview                     | Server-side (with charset conversion) |
+| `GET /download` | File download                    | Server-side / 302 for external URLs   |
 
 Frontend component branching:
 

@@ -19,12 +19,12 @@ It operates as part of the catalog itself, not as an external plugin.
 
 ## Quality Checkers (Implemented in Phase 4)
 
-| Checker         | Function                                                | Frequency             |
-| --------------- | ------------------------------------------------------- | --------------------- |
-| LinkChecker     | Liveness monitoring of resource URLs                    | Daily                 |
-| CsvValidator    | CSV structure validation (headers, types, encoding)     | On upload + weekly    |
-| MetadataAuditor | Completeness scoring of required metadata               | Real-time             |
-| PiiScanner      | Personal information detection (using AIAdapter)        | On upload             |
+| Checker         | Function                                            | Frequency          |
+| --------------- | --------------------------------------------------- | ------------------ |
+| LinkChecker     | Liveness monitoring of resource URLs                | Daily              |
+| CsvValidator    | CSV structure validation (headers, types, encoding) | On upload + weekly |
+| MetadataAuditor | Completeness scoring of required metadata           | Real-time          |
+| PiiScanner      | Personal information detection (using AIAdapter)    | On upload          |
 
 ## Quality Score
 

@@ -17,12 +17,12 @@ A decision is needed on the execution strategy for KUKAN's deployment infrastruc
 
 ### Options Considered
 
-| Option | Web         | Worker                          | Notes                                             |
-| ------ | ----------- | ------------------------------- | ------------------------------------------------- |
-| A      | App Runner  | App Runner                      | Worker CPU throttling stops SQS polling            |
-| B      | App Runner  | ECS Fargate Service             | Adopted                                           |
-| C      | App Runner  | EventBridge Pipes → ECS RunTask | 30-60s cold start, dual mode required             |
-| D      | ECS Fargate | ECS Fargate                     | Higher ops cost (ALB required), no added benefit  |
+| Option | Web         | Worker                          | Notes                                            |
+| ------ | ----------- | ------------------------------- | ------------------------------------------------ |
+| A      | App Runner  | App Runner                      | Worker CPU throttling stops SQS polling          |
+| B      | App Runner  | ECS Fargate Service             | Adopted                                          |
+| C      | App Runner  | EventBridge Pipes → ECS RunTask | 30-60s cold start, dual mode required            |
+| D      | ECS Fargate | ECS Fargate                     | Higher ops cost (ALB required), no added benefit |
 
 ## Decision
 

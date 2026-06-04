@@ -47,25 +47,25 @@ After implementing the frontend (`apps/web`) in Phase 2, it became clear that mo
 
 ### Issue Resolution Status
 
-| Original Issue                               | Current State                                                                                                                                      |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Duplication between frontend and backend     | Zod schemas from `@kukan/shared` are shared by both react-hook-form (zodResolver) and Hono (zValidator), so no duplicate rule definitions occur    |
-| Unclear validation layer responsibilities    | Clearly separated: zValidator (format checking) → Route Handler (authorization) → Service (business rules)                                        |
-| Multilingual support is difficult            | No current demand. When needed, `zod-i18n` or Zod's `errorMap` can handle it without FormRequest abstraction                                      |
+| Original Issue                            | Current State                                                                                                                                   |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Duplication between frontend and backend  | Zod schemas from `@kukan/shared` are shared by both react-hook-form (zodResolver) and Hono (zValidator), so no duplicate rule definitions occur |
+| Unclear validation layer responsibilities | Clearly separated: zValidator (format checking) → Route Handler (authorization) → Service (business rules)                                      |
+| Multilingual support is difficult         | No current demand. When needed, `zod-i18n` or Zod's `errorMap` can handle it without FormRequest abstraction                                    |
 
 ### Comparison with Laravel FormRequest
 
-| Feature                    | Laravel FormRequest          | Current Zod Setup                          |
-| -------------------------- | ---------------------------- | ------------------------------------------ |
-| Single field validation    | Rule strings                 | Zod method chaining                        |
-| Cross-field consistency    | `required_if`, `same`, etc.  | `.refine()` / `.superRefine()`             |
-| Conditional rules          | `sometimes`, `Rule::when()`  | `.refine()`, `z.discriminatedUnion()`      |
-| Nested / arrays            | `'items.*.name'`             | `z.array(z.object({...}))`                 |
-| Type inference             | None                         | Auto-generated via `z.infer<typeof schema>`|
-| Client sharing             | Not possible (PHP)           | **Directly shareable**                     |
-| DB-dependent checks        | `Rule::unique()`, etc.       | Implemented in Service layer (appropriate separation of concerns) |
-| Authorization              | `authorize()`                | Implemented in `permissions.ts`            |
-| i18n                       | `validation.php`             | Can be handled with `zod-i18n` / `errorMap`|
+| Feature                 | Laravel FormRequest         | Current Zod Setup                                                 |
+| ----------------------- | --------------------------- | ----------------------------------------------------------------- |
+| Single field validation | Rule strings                | Zod method chaining                                               |
+| Cross-field consistency | `required_if`, `same`, etc. | `.refine()` / `.superRefine()`                                    |
+| Conditional rules       | `sometimes`, `Rule::when()` | `.refine()`, `z.discriminatedUnion()`                             |
+| Nested / arrays         | `'items.*.name'`            | `z.array(z.object({...}))`                                        |
+| Type inference          | None                        | Auto-generated via `z.infer<typeof schema>`                       |
+| Client sharing          | Not possible (PHP)          | **Directly shareable**                                            |
+| DB-dependent checks     | `Rule::unique()`, etc.      | Implemented in Service layer (appropriate separation of concerns) |
+| Authorization           | `authorize()`               | Implemented in `permissions.ts`                                   |
+| i18n                    | `validation.php`            | Can be handled with `zod-i18n` / `errorMap`                       |
 
 The FormRequest-style abstraction consolidates authorization, DB checks, and format validation into a single class. However, in KUKAN these are already separated into appropriate layers, and consolidating them offers little benefit. Rather, an additional abstraction layer would increase learning cost and bundle size.
 

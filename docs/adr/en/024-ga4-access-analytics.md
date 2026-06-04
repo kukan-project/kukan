@@ -31,12 +31,12 @@ When KUKAN is publicly accessible on the internet, there is a requirement to vie
 
 ### Alternatives Comparison
 
-| Approach                     | Pros                                        | Cons                                                       | Verdict      |
-| ---------------------------- | ------------------------------------------- | ---------------------------------------------------------- | ------------ |
-| **GA4 Data API (adopted)**   | No measurement infrastructure needed, rich metrics, free | External dependency, data delay (hours–48h), LGWAN incompatible | **Adopted** |
-| Self-built counting (DB)     | LGWAN compatible, real-time                 | Requires table design, write load handling, bot exclusion  | Deferred     |
-| Matomo self-hosted           | LGWAN compatible, GA4-equivalent features   | Additional Docker service, increased operational cost      | Deferred     |
-| Via GTM                      | Tag management flexibility                  | Unnecessary complexity for a data catalog, additional JS load | Deferred  |
+| Approach                   | Pros                                                     | Cons                                                            | Verdict     |
+| -------------------------- | -------------------------------------------------------- | --------------------------------------------------------------- | ----------- |
+| **GA4 Data API (adopted)** | No measurement infrastructure needed, rich metrics, free | External dependency, data delay (hours–48h), LGWAN incompatible | **Adopted** |
+| Self-built counting (DB)   | LGWAN compatible, real-time                              | Requires table design, write load handling, bot exclusion       | Deferred    |
+| Matomo self-hosted         | LGWAN compatible, GA4-equivalent features                | Additional Docker service, increased operational cost           | Deferred    |
+| Via GTM                    | Tag management flexibility                               | Unnecessary complexity for a data catalog, additional JS load   | Deferred    |
 
 **Reasons for choosing GA4:**
 
@@ -89,11 +89,11 @@ Only when `brandConfig.gaMeasurementId` is truthy, gtag.js is loaded via Next.js
 
 **Measurement targets:**
 
-| Measurement Item   | Method                       | Implementation                                                                     |
-| ------------------ | ---------------------------- | ---------------------------------------------------------------------------------- |
-| Page views         | GA4 auto-measurement         | gtag.js loading only                                                               |
-| File downloads     | Custom event                 | `gtag('event', 'file_download', {...})` in `DownloadButton`'s `onClick`            |
-| Site search        | Enhanced Measurement auto-detection | Automatically measured from URL's `?q=` parameter (no additional code needed) |
+| Measurement Item | Method                              | Implementation                                                                |
+| ---------------- | ----------------------------------- | ----------------------------------------------------------------------------- |
+| Page views       | GA4 auto-measurement                | gtag.js loading only                                                          |
+| File downloads   | Custom event                        | `gtag('event', 'file_download', {...})` in `DownloadButton`'s `onClick`       |
+| Site search      | Enhanced Measurement auto-detection | Automatically measured from URL's `?q=` parameter (no additional code needed) |
 
 **Download event design:**
 
@@ -118,19 +118,19 @@ Using GA4's `file_download` event name ensures data appears in GA4's standard re
 
 Authenticate with the GA4 Data API using a GCP service account JSON key.
 
-| Environment Variable     | Purpose                                     | When Unset                       |
-| ------------------------ | ------------------------------------------- | -------------------------------- |
-| `GA4_PROPERTY_ID`        | GA4 property ID (numeric)                   | Show setup instructions on page  |
-| `GA4_CREDENTIALS_JSON`   | Service account JSON key (string)           | Same                             |
+| Environment Variable   | Purpose                           | When Unset                      |
+| ---------------------- | --------------------------------- | ------------------------------- |
+| `GA4_PROPERTY_ID`      | GA4 property ID (numeric)         | Show setup instructions on page |
+| `GA4_CREDENTIALS_JSON` | Service account JSON key (string) | Same                            |
 
 **Statistics Items:**
 
-| Ranking                  | GA4 Dimension                                                 | GA4 Metric        | URL Pattern                              |
-| ------------------------ | ------------------------------------------------------------- | ----------------- | ---------------------------------------- |
-| Dataset views            | `pagePath`                                                    | `screenPageViews` | Filter by `/dataset/{name}`              |
-| Resource views           | `pagePath`                                                    | `screenPageViews` | Filter by `/dataset/.../resource/{id}`   |
-| Resource downloads       | `customEvent:file_download`'s `dataset_name`, `resource_id`  | `eventCount`      | Aggregated from custom event             |
-| Search keywords          | `searchTerm`                                                  | `eventCount`      | Enhanced Measurement auto-collection     |
+| Ranking            | GA4 Dimension                                               | GA4 Metric        | URL Pattern                            |
+| ------------------ | ----------------------------------------------------------- | ----------------- | -------------------------------------- |
+| Dataset views      | `pagePath`                                                  | `screenPageViews` | Filter by `/dataset/{name}`            |
+| Resource views     | `pagePath`                                                  | `screenPageViews` | Filter by `/dataset/.../resource/{id}` |
+| Resource downloads | `customEvent:file_download`'s `dataset_name`, `resource_id` | `eventCount`      | Aggregated from custom event           |
+| Search keywords    | `searchTerm`                                                | `eventCount`      | Enhanced Measurement auto-collection   |
 
 **Date range:**
 
@@ -163,10 +163,10 @@ Statistics for direct API calls without a browser are not measurable with GA4. T
 
 ### GA4 Data API Quotas
 
-| Limit                                   | Value  |
-| --------------------------------------- | ------ |
-| Daily requests per property             | 25,000 |
-| Concurrent requests                     | 10     |
+| Limit                       | Value  |
+| --------------------------- | ------ |
+| Daily requests per property | 25,000 |
+| Concurrent requests         | 10     |
 
 With lru-cache (TTL 1 hour), even if an admin reloads the page repeatedly, API calls max out at 24/day/query pattern. The risk of quota exhaustion is extremely low.
 

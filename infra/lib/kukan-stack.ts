@@ -1,14 +1,17 @@
 /**
  * KUKAN Main CDK Stack
  * Orchestrates all infrastructure constructs.
+ *
+ * CloudFront is always deployed as the front-facing layer (ADR-027).
+ * TLS termination, WAF, and caching are handled at CloudFront;
+ * ALB receives HTTP traffic only.
  */
 
 import * as cdk from 'aws-cdk-lib'
-import * as acm from 'aws-cdk-lib/aws-certificatemanager'
 import * as ecs from 'aws-cdk-lib/aws-ecs'
 import * as route53 from 'aws-cdk-lib/aws-route53'
+import * as route53Targets from 'aws-cdk-lib/aws-route53-targets'
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
-import * as wafv2 from 'aws-cdk-lib/aws-wafv2'
 import type { Construct } from 'constructs'
 import { loadConfig } from './config.js'
 import { NetworkConstruct } from './constructs/network.js'
@@ -18,10 +21,17 @@ import { QueueConstruct } from './constructs/queue.js'
 import { SearchConstruct } from './constructs/search.js'
 import { WebServiceConstruct } from './constructs/web-service.js'
 import { WorkerServiceConstruct } from './constructs/worker-service.js'
-import { WafConstruct } from './constructs/waf.js'
+import { CdnConstruct } from './constructs/cdn.js'
+
+export interface KukanStackProps extends cdk.StackProps {
+  /** CloudFront viewer certificate ARN from KukanGlobalStack (us-east-1). */
+  globalCertificateArn?: string
+  /** WAF WebACL ARN from KukanGlobalStack (us-east-1). */
+  globalWebAclArn?: string
+}
 
 export class KukanStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props: cdk.StackProps = {}) {
+  constructor(scope: Construct, id: string, props: KukanStackProps = {}) {
     super(scope, id, props)
 
     const config = loadConfig(this)
@@ -38,8 +48,12 @@ export class KukanStack extends cdk.Stack {
 
     // --- Auth Secret ---
     const authSecret = new secretsmanager.Secret(this, 'AuthSecret', {
-      secretName: 'kukan-auth-secret',
       generateSecretString: { excludePunctuation: true, passwordLength: 64 },
+    })
+
+    // --- Origin Verify Secret (shared between ALB listener rule and CloudFront) ---
+    const originVerifySecret = new secretsmanager.Secret(this, 'OriginVerifySecret', {
+      generateSecretString: { excludePunctuation: true, passwordLength: 32 },
     })
 
     // --- Storage (S3) ---
@@ -64,22 +78,9 @@ export class KukanStack extends cdk.Stack {
       clusterName: 'kukan',
     })
 
-    // --- Custom Domain (ACM + Route53) ---
-    let certificate: acm.ICertificate | undefined
-    let hostedZone: route53.IHostedZone | undefined
-    if (config.domainName && config.hostedZoneId && config.hostedZoneName) {
-      hostedZone = route53.HostedZone.fromHostedZoneAttributes(this, 'Zone', {
-        hostedZoneId: config.hostedZoneId,
-        zoneName: config.hostedZoneName,
-      })
-
-      certificate = new acm.Certificate(this, 'Certificate', {
-        domainName: config.domainName,
-        validation: acm.CertificateValidation.fromDns(hostedZone),
-      })
-    }
-
-    // --- Web Service (ECS Fargate + ALB) ---
+    // --- Web Service (ECS Fargate + ALB, HTTP only) ---
+    // CloudFront terminates TLS; ALB does not need an ACM certificate.
+    // Origin Verify is enforced at the ALB listener rule level (ADR-027).
     const webService = new WebServiceConstruct(this, 'WebService', {
       config,
       cluster,
@@ -90,7 +91,7 @@ export class KukanStack extends cdk.Stack {
       bucket: storage.bucket,
       queue: queue.queue,
       searchDomainEndpoint: search?.domainEndpoint,
-      certificate,
+      originVerifyHeaderValue: originVerifySecret.secretValue.unsafeUnwrap(),
     })
 
     // --- Worker Service (ECS Fargate) ---
@@ -105,28 +106,44 @@ export class KukanStack extends cdk.Stack {
       searchDomainEndpoint: search?.domainEndpoint,
     })
 
-    // --- WAF (optional, REGIONAL scope for ALB) ---
-    if (config.enableWaf) {
-      const waf = new WafConstruct(this, 'Waf')
-      new wafv2.CfnWebACLAssociation(this, 'WafAssociation', {
-        resourceArn: webService.loadBalancerArn,
-        webAclArn: waf.webAcl.attrArn,
-      })
+    // --- CDN (CloudFront) ---
+    const cdn = new CdnConstruct(this, 'CDN', {
+      config,
+      albDnsName: webService.loadBalancerDnsName,
+      originVerifySecret,
+      certificateArn: props.globalCertificateArn,
+      webAclArn: props.globalWebAclArn,
+    })
+
+    // Set BETTER_AUTH_URL to CloudFront domain when no custom domain
+    if (!config.domainName) {
+      webService.addEnvironment('BETTER_AUTH_URL', `https://${cdn.distributionDomainName}`)
     }
 
-    // --- DNS Record ---
-    if (hostedZone && config.domainName) {
-      new route53.CnameRecord(this, 'DnsRecord', {
+    // --- DNS Record (A Alias → CloudFront) ---
+    if (config.domainName && config.hostedZoneId && config.hostedZoneName) {
+      const hostedZone = route53.HostedZone.fromHostedZoneAttributes(this, 'Zone', {
+        hostedZoneId: config.hostedZoneId,
+        zoneName: config.hostedZoneName,
+      })
+
+      new route53.ARecord(this, 'DnsRecord', {
         zone: hostedZone,
         recordName: config.domainName,
-        domainName: webService.loadBalancerDnsName,
+        target: route53.RecordTarget.fromAlias(
+          new route53Targets.CloudFrontTarget(cdn.distribution)
+        ),
       })
     }
 
     // --- Outputs ---
-    new cdk.CfnOutput(this, 'WebServiceUrl', {
+    new cdk.CfnOutput(this, 'CloudFrontDomainName', {
+      value: cdn.distributionDomainName,
+      description: 'CloudFront Distribution Domain Name',
+    })
+    new cdk.CfnOutput(this, 'AlbDnsName', {
       value: webService.loadBalancerDnsName,
-      description: 'ALB DNS Name',
+      description: 'ALB DNS Name (internal, behind CloudFront)',
     })
     new cdk.CfnOutput(this, 'BucketName', {
       value: storage.bucket.bucketName,

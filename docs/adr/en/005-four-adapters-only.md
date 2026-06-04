@@ -17,15 +17,15 @@ We re-evaluated the cost of abstraction (interface definitions, doubled testing,
 
 ## Analysis
 
-| Feature  | AWS            | Development/On-prem | Environment difference? |
-| -------- | -------------- | ------------------- | ----------------------- |
-| Storage  | S3-compatible  | S3-compatible (MinIO) | ✅ Yes                 |
-| Search   | OpenSearch     | PG full-text search | ✅ Yes                  |
-| AI       | Bedrock        | Ollama / OpenAI     | ✅ Yes                  |
-| Queue    | SQS            | ElasticMQ           | ✅ Yes                  |
-| Cache    | lru-cache      | lru-cache           | ❌ No → utility         |
-| DB       | PostgreSQL     | PostgreSQL          | ❌ No → use directly    |
-| Logging  | CloudWatch Logs | pino (JSON)        | ❌ No → pino is sufficient for all (ADR-019) |
+| Feature | AWS             | Development/On-prem   | Environment difference?                      |
+| ------- | --------------- | --------------------- | -------------------------------------------- |
+| Storage | S3-compatible   | S3-compatible (MinIO) | ✅ Yes                                       |
+| Search  | OpenSearch      | PG full-text search   | ✅ Yes                                       |
+| AI      | Bedrock         | Ollama / OpenAI       | ✅ Yes                                       |
+| Queue   | SQS             | ElasticMQ             | ✅ Yes                                       |
+| Cache   | lru-cache       | lru-cache             | ❌ No → utility                              |
+| DB      | PostgreSQL      | PostgreSQL            | ❌ No → use directly                         |
+| Logging | CloudWatch Logs | pino (JSON)           | ❌ No → pino is sufficient for all (ADR-019) |
 
 ## Decision
 

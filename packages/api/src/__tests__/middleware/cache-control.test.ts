@@ -68,9 +68,7 @@ describe('publicCache', () => {
     app.get('/test', publicCache(), (c) => c.json({ ok: true }))
 
     const res = await app.request('/test')
-    expect(res.headers.get('Cache-Control')).toBe(
-      'public, max-age=60, stale-while-revalidate=300'
-    )
+    expect(res.headers.get('Cache-Control')).toBe('public, max-age=60, stale-while-revalidate=300')
   })
 
   it('should set public cache with custom values', async () => {

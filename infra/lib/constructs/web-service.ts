@@ -4,7 +4,6 @@
  */
 
 import * as cdk from 'aws-cdk-lib'
-import * as acm from 'aws-cdk-lib/aws-certificatemanager'
 import * as ec2 from 'aws-cdk-lib/aws-ec2'
 import * as assets from 'aws-cdk-lib/aws-ecr-assets'
 import * as ecs from 'aws-cdk-lib/aws-ecs'
@@ -28,15 +27,22 @@ export interface WebServiceProps {
   bucket: s3.IBucket
   queue: sqs.IQueue
   searchDomainEndpoint?: string
-  /** ACM certificate for HTTPS listener. When omitted, HTTP listener is used. */
-  certificate?: acm.ICertificate
+  /**
+   * Origin Verify header value for ALB listener rule (ADR-027).
+   * When set, ALB rejects requests without a matching X-Origin-Verify header.
+   */
+  originVerifyHeaderValue?: string
 }
 
 export class WebServiceConstruct extends Construct {
-  /** ALB ARN — used for WAF association. */
-  readonly loadBalancerArn: string
-  /** ALB DNS name — used for Route53 CNAME. */
+  /** ALB DNS name — used for CloudFront origin / Route53. */
   readonly loadBalancerDnsName: string
+  private readonly webContainer: ecs.ContainerDefinition
+
+  /** Add an environment variable to the web container after construction. */
+  addEnvironment(key: string, value: string) {
+    this.webContainer.addEnvironment(key, value)
+  }
 
   constructor(scope: Construct, id: string, props: WebServiceProps) {
     super(scope, id)
@@ -51,7 +57,7 @@ export class WebServiceConstruct extends Construct {
       bucket,
       queue,
       searchDomainEndpoint,
-      certificate,
+      originVerifyHeaderValue,
     } = props
 
     // Docker image (built and pushed automatically by CDK)
@@ -95,14 +101,17 @@ export class WebServiceConstruct extends Construct {
       environment.BETTER_AUTH_URL = `https://${config.domainName}`
     }
 
+    // Secrets injected into the container
+    const containerSecrets: Record<string, ecs.Secret> = {
+      ...database.buildPostgresSecrets(),
+      BETTER_AUTH_SECRET: ecs.Secret.fromSecretsManager(authSecret),
+    }
+
     // Container
-    taskDef.addContainer('Web', {
+    this.webContainer = taskDef.addContainer('Web', {
       image: ecs.ContainerImage.fromDockerImageAsset(imageAsset),
       environment,
-      secrets: {
-        ...database.buildPostgresSecrets(),
-        BETTER_AUTH_SECRET: ecs.Secret.fromSecretsManager(authSecret),
-      },
+      secrets: containerSecrets,
       logging: ecs.LogDrivers.awsLogs({
         logGroup: new logs.LogGroup(this, 'WebLogs', {
           retention: logs.RetentionDays.ONE_MONTH,
@@ -144,34 +153,20 @@ export class WebServiceConstruct extends Construct {
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
     })
 
-    // Listener: HTTPS with ACM cert, or HTTP for dev/test
-    // open: false — all SG ingress rules managed by NetworkConstruct
-    let listener: elbv2.ApplicationListener
-    if (certificate) {
-      listener = alb.addListener('HttpsListener', {
-        port: 443,
-        protocol: elbv2.ApplicationProtocol.HTTPS,
-        certificates: [certificate],
-        open: false,
-      })
-      // HTTP → HTTPS redirect
-      alb.addListener('HttpRedirect', {
-        port: 80,
-        protocol: elbv2.ApplicationProtocol.HTTP,
-        open: false,
-        defaultAction: elbv2.ListenerAction.redirect({
-          protocol: 'HTTPS',
-          port: '443',
-          permanent: true,
+    // HTTP Listener (open: false — SG rules managed by NetworkConstruct)
+    // When Origin Verify is set, default action is 403; only CloudFront traffic
+    // with the correct header is forwarded. ALB health checks bypass listener rules.
+    const listener = alb.addListener('HttpListener', {
+      port: 80,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      open: false,
+      ...(originVerifyHeaderValue && {
+        defaultAction: elbv2.ListenerAction.fixedResponse(403, {
+          contentType: 'text/plain',
+          messageBody: 'Direct access is not allowed',
         }),
-      })
-    } else {
-      listener = alb.addListener('HttpListener', {
-        port: 80,
-        protocol: elbv2.ApplicationProtocol.HTTP,
-        open: false,
-      })
-    }
+      }),
+    })
 
     const targetGroup = listener.addTargets('WebTarget', {
       port: 3000,
@@ -184,6 +179,12 @@ export class WebServiceConstruct extends Construct {
         healthyThresholdCount: 2,
         unhealthyThresholdCount: 3,
       },
+      ...(originVerifyHeaderValue && {
+        conditions: [
+          elbv2.ListenerCondition.httpHeader('X-Origin-Verify', [originVerifyHeaderValue]),
+        ],
+        priority: 1,
+      }),
     })
 
     // Auto Scaling
@@ -198,7 +199,6 @@ export class WebServiceConstruct extends Construct {
       })
     }
 
-    this.loadBalancerArn = alb.loadBalancerArn
     this.loadBalancerDnsName = alb.loadBalancerDnsName
 
     cdk.Tags.of(this).add('kukan:component', 'web-service')

@@ -2,7 +2,7 @@
 
 ## ステータス
 
-**提案中（Proposed）**
+**承認（Accepted）**
 
 ## コンテキスト
 
@@ -34,7 +34,7 @@ ADR-020 で CloudFront を廃止し、ALB が前面に立つ構成を採用し�
 
 | ADR-020 のデメリット                          | 本 ADR での対応                                                                   |
 | --------------------------------------------- | --------------------------------------------------------------------------------- |
-| us-east-1 の ACM 証明書でクロスリージョン依存 | SSM パラメータで ARN を連携。2 スタック構成を受け入れる                           |
+| us-east-1 の ACM 証明書でクロスリージョン依存 | CDK `crossRegionReferences` で ARN を連携。2 スタック構成を受け入れる             |
 | CloudFront → ALB データ転送の二重課金         | AWS 内部転送は無料。CloudFront の転送単価は EC2→Internet より安い                 |
 | WAF 二重コスト                                | WAF を CloudFront 側に一本化（ALB の WAF を廃止）                                 |
 | リクエスト経路 3 段で障害切り分け困難         | CloudFront アクセスログ + ALB ログの 2 箇所になるが、Origin Verify で経路を明確化 |
@@ -128,9 +128,12 @@ CloudFront が前段に立つため、ALB に到達するリクエストの送�
 すべて CloudFront の IP になる。**ALB の Security Group ではクライアント IP を
 判別できない**。
 
-IP 制限は **CloudFront WAF の IP セットルール** で実施する。
-`allowedIpRanges` が設定されている場合、WAF WebACL に IP セット条件を追加し、
-許可リスト外の IP からのリクエストをブロックする。
+IP 制限は **CloudFront Function（Viewer Request）** で実施する。
+`allowedIpRanges` が設定されている場合、CDK が synth 時に IP リストを
+CF Function コードに埋め込み、`event.viewer.ip` で CIDR マッチング（IPv4/IPv6 対応）を行う。
+許可リスト外の IP からのリクエストには 403 を返す。
+WAF の IP セットルールは使用しない（CF Function で実現することで、WAF なしでも
+IP 制限が可能 = `enableWaf: false` で ~$9/月を節約可能）。
 ALB SG の IP 制限ルールは廃止し、Origin Verify による CloudFront 経由のみ許可に変更する。
 
 ### Origin Verify（ALB 直アクセス防止）
@@ -138,19 +141,19 @@ ALB SG の IP 制限ルールは廃止し、Origin Verify による CloudFront �
 CloudFront がオリジンにリクエストする際、カスタムヘッダー
 `X-Origin-Verify: <secret>` を付与する。
 
-- Secret は Secrets Manager で管理
-- Hono ミドルウェアでヘッダーを検証し、不一致なら 403 を返す
-- 環境変数 `ORIGIN_VERIFY_SECRET` 未設定時はスキップ（オンプレ・ローカル互換）
+- Secret は Secrets Manager で自動生成（CDK が管理）
+- **ALB リスナールール** でヘッダーを検証（デフォルトアクション: 403、ヘッダー一致時のみ転送）
+- ALB ヘルスチェックはリスナールールをバイパスするため影響なし
+- アプリケーションコードの変更は不要（ミドルウェアではなくインフラ層で制御）
+- オンプレ / ローカルでは CloudFront を使わないため Origin Verify も不要
 
 ### CDK スタック構成
 
 ```
-KukanGlobalStack (us-east-1)
-├── ACM Certificate (CloudFront 用)
-├── WAF WebACL (CLOUDFRONT scope)
-│   ├── マネージドルール (Common, BadInputs, IpReputation)
-│   └── IP セットルール (allowedIpRanges 設定時のみ)
-└── SSM Parameter (certificateArn, webAclArn をエクスポート)
+KukanGlobalStack (us-east-1)          ※ crossRegionReferences で ARN を連携
+├── ACM Certificate (CloudFront 用、domainName 設定時のみ)
+└── WAF WebACL (CLOUDFRONT scope、enableWaf 有効時のみ)
+    └── マネージドルール (Common, BadInputs, IpReputation)
 
 KukanStack (ap-northeast-1)
 ├── Network (VPC, SG)
@@ -159,19 +162,21 @@ KukanStack (ap-northeast-1)
 ├── Queue (SQS)
 ├── Search (OpenSearch)
 ├── ECS Cluster
-├── WebService (Fargate + ALB)  ← ALB の WAF を廃止
+├── Origin Verify Secret (Secrets Manager)  ← ALB + CloudFront で共有
+├── WebService (Fargate + ALB)
+│   └── ALB Listener Rule (X-Origin-Verify ヘッダー検証)
 ├── WorkerService (Fargate)
-├── CDN (CloudFront Distribution)  ← 新規
-│   ├── CloudFront Functions (Cookie-based cache bypass)
+├── CDN (CloudFront Distribution)
+│   ├── CloudFront Functions (IP 制限 + Cookie bypass)
 │   ├── Cache Policy / Origin Request Policy
-│   └── Origin Verify Secret
-└── Route53 A (Alias) → CloudFront  ← CNAME → ALB から変更
+│   └── カスタムオリジンヘッダー (X-Origin-Verify)
+└── Route53 A (Alias) → CloudFront
 ```
 
 ### オンプレ版への影響
 
 なし。CloudFront は AWS 固有のインフラ。
-Origin Verify ミドルウェアは環境変数未設定時にスキップする設計のため、
+Origin Verify は ALB リスナールールで実施するため、アプリケーションコードに変更はなく、
 オンプレ / Docker Compose 環境に影響しない。
 
 ## コスト影響
@@ -188,24 +193,71 @@ Origin Verify ミドルウェアは環境変数未設定時にスキップする
 
 ## 移行手順
 
+### 実装（完了）
+
 1. ADR 承認
-2. KukanGlobalStack 作成（us-east-1: ACM 証明書 + WAF WebACL）
-3. `infra/lib/constructs/cdn.ts` 作成（CloudFront Distribution, CF Functions, Origin Verify）
-4. `infra/lib/config.ts` に `enableCloudFront` オプション追加
+2. `infra/lib/global-stack.ts` 作成（us-east-1: ACM 証明書 + WAF WebACL）
+3. `infra/lib/constructs/cdn.ts` 作成（CloudFront Distribution, Origin Verify Secret）
+4. `infra/lib/cf-functions/viewer-request.js` 作成（IP 制限 + Cookie bypass）
 5. `infra/lib/constructs/network.ts` 更新
-   - ALB SG の IP 制限ルールを廃止（`allowedIpRanges` による SG ルールを削除）
-   - ALB SG は CloudFront からのアクセスのみ許可（Origin Verify で制御）
+   - ALB SG の IP 制限ルールを廃止（IP 制限は CF Function に移行）
+   - ALB SG は port 80 のみ許可（CloudFront → ALB は HTTP）
 6. `infra/lib/kukan-stack.ts` 更新
+   - 地域 ACM 証明書を廃止（CloudFront が TLS 終端）
    - CDN コンストラクト追加
    - Route53 レコードを CNAME → ALB から A (Alias) → CloudFront に変更
    - ALB の WAF Association を削除（WAF は CloudFront 側に移行済み）
-7. Origin Verify ミドルウェア追加（`packages/api/src/middleware/origin-verify.ts`）
-8. デプロイ: KukanGlobalStack → KukanStack の順
-9. 動作確認
-   - `X-Cache: Hit from cloudfront` でキャッシュヒットを確認
-   - ログイン時にバイパスされることを確認
-   - API エンドポイントの正常動作
-   - WAF ルールの動作確認
+7. `infra/bin/app.ts` 更新（KukanGlobalStack + crossRegionReferences）
+
+### デプロイ
+
+```bash
+# 1. GlobalStack（us-east-1）
+npx cdk deploy KukanGlobalStack
+
+# 2. KukanStack（ap-northeast-1）
+npx cdk deploy KukanStack
+```
+
+#### 既存環境からの移行時の注意
+
+旧構成の ALB には HTTPS リスナー（port 443）と HTTP→HTTPS リダイレクトリスナー（port 80）が
+存在する。新構成では ALB は HTTP リスナー（port 80）のみとなるが、CloudFormation は新リスナーを
+作成してから旧リスナーを削除するため、同じ port 80 に2つのリスナーが一時的に共存しようとして
+エラーになる。
+
+**対処**: デプロイ前に旧リスナーを手動で削除する。
+
+```bash
+# ALB のリスナー一覧を確認
+aws elbv2 describe-listeners --load-balancer-arn <ALB_ARN> \
+  --query 'Listeners[*].[Port,Protocol,ListenerArn]' --output table
+
+# port 80（HTTP redirect）と port 443（HTTPS）のリスナーを削除
+aws elbv2 delete-listener --listener-arn <port-80-listener-arn>
+aws elbv2 delete-listener --listener-arn <port-443-listener-arn>
+
+# 再デプロイ
+npx cdk deploy KukanStack
+```
+
+この手順は旧構成からの一度きりのマイグレーションでのみ必要。新規デプロイでは不要。
+
+### 動作確認
+
+```bash
+# キャッシュヒット確認（未ログイン）
+curl -sI https://<domain> | grep x-cache
+# → X-Cache: Hit from cloudfront
+
+# Origin Verify 確認（ALB 直アクセスがブロックされること）
+curl -sI http://<ALB DNS>
+# → 403 Forbidden
+
+# ログイン時にバイパスされることを確認
+# API エンドポイントの正常動作
+# WAF ルールの動作確認（enableWaf 有効時）
+```
 
 ## 関連
 

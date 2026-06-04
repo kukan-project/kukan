@@ -85,36 +85,36 @@ Analysis mode state is managed via `sessionStorage` + `useSyncExternalStore`:
 
 ### 3. Currently Implemented Features
 
-| Feature                | SQL Translation Example                              |
-| ---------------------- | ---------------------------------------------------- |
-| Column sort            | `ORDER BY col ASC/DESC`                              |
-| Filter (equals)        | `CAST(col AS VARCHAR) = 'value'`                     |
-| Filter (not equals)    | `CAST(col AS VARCHAR) != 'value'`                    |
-| Filter (contains)      | `CAST(col AS VARCHAR) ILIKE '%keyword%'`             |
-| Filter (starts with)   | `CAST(col AS VARCHAR) ILIKE 'prefix%'`               |
-| Filter (ends with)     | `CAST(col AS VARCHAR) ILIKE '%suffix'`               |
-| Text search            | `CAST(col AS VARCHAR) ILIKE '%keyword%'` (OR) across all columns |
-| Pagination             | `LIMIT 100 OFFSET n`                                 |
+| Feature              | SQL Translation Example                                          |
+| -------------------- | ---------------------------------------------------------------- |
+| Column sort          | `ORDER BY col ASC/DESC`                                          |
+| Filter (equals)      | `CAST(col AS VARCHAR) = 'value'`                                 |
+| Filter (not equals)  | `CAST(col AS VARCHAR) != 'value'`                                |
+| Filter (contains)    | `CAST(col AS VARCHAR) ILIKE '%keyword%'`                         |
+| Filter (starts with) | `CAST(col AS VARCHAR) ILIKE 'prefix%'`                           |
+| Filter (ends with)   | `CAST(col AS VARCHAR) ILIKE '%suffix'`                           |
+| Text search          | `CAST(col AS VARCHAR) ILIKE '%keyword%'` (OR) across all columns |
+| Pagination           | `LIMIT 100 OFFSET n`                                             |
 
 ### 4. Future Phases
 
-| Order | Content                                                              |
-| ----- | -------------------------------------------------------------------- |
-| 1     | DuckDB-WASM integration + basic queries (sorting, filtering, search) |
+| Order | Content                                                                 |
+| ----- | ----------------------------------------------------------------------- |
+| 1     | DuckDB-WASM integration + basic queries (sorting, filtering, search)    |
 | 2     | Type inference during Parquet writing (Extract step, ADR-014 extension) |
-| 3     | Range filters (`BETWEEN`, effective after type inference)            |
-| 4     | Aggregation and chart display (Phase 7 Data Editor integration)      |
+| 3     | Range filters (`BETWEEN`, effective after type inference)               |
+| 4     | Aggregation and chart display (Phase 7 Data Editor integration)         |
 
 ### 5. Type Inference During Parquet Writing (planned for Phase 2)
 
 After CSV parsing in the Extract step, infer the data type of each column:
 
-| Inferred Type    | Condition                                     | Parquet Type                |
-| ---------------- | --------------------------------------------- | --------------------------- |
-| Integer          | All rows match integer pattern (`/^-?\d+$/`)  | INT64                       |
-| Floating point   | All rows match numeric pattern (`/^-?\d+\.?\d*$/`) | DOUBLE                |
-| Date             | All rows match date pattern (ISO 8601, etc.)  | STRING (future TIMESTAMP)   |
-| String           | None of the above                             | STRING                      |
+| Inferred Type  | Condition                                          | Parquet Type              |
+| -------------- | -------------------------------------------------- | ------------------------- |
+| Integer        | All rows match integer pattern (`/^-?\d+$/`)       | INT64                     |
+| Floating point | All rows match numeric pattern (`/^-?\d+\.?\d*$/`) | DOUBLE                    |
+| Date           | All rows match date pattern (ISO 8601, etc.)       | STRING (future TIMESTAMP) |
+| String         | None of the above                                  | STRING                    |
 
 Notes:
 

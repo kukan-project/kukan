@@ -24,10 +24,10 @@ Currently, resource downloads use a two-step process: obtain a Signed URL (S3 pr
 
 #### URL Patterns
 
-| URL                                                             | Purpose                           | Implementation        |
-| --------------------------------------------------------------- | --------------------------------- | --------------------- |
-| `/dataset/{nameOrId}/resource/{resourceId}/download/{filename}` | Public permalink (CKAN-compatible)| Next.js Route Handler |
-| `GET /api/v1/resources/:id/download`                            | API endpoint                      | Hono route            |
+| URL                                                             | Purpose                            | Implementation        |
+| --------------------------------------------------------------- | ---------------------------------- | --------------------- |
+| `/dataset/{nameOrId}/resource/{resourceId}/download/{filename}` | Public permalink (CKAN-compatible) | Next.js Route Handler |
+| `GET /api/v1/resources/:id/download`                            | API endpoint                       | Hono route            |
 
 Both use the same logic: fetch the file from Storage and stream it to the response.
 
@@ -74,8 +74,8 @@ The `preview-url`, initially kept as a Signed URL, was also consolidated into a 
 
 ### 3. Deprecated Endpoints
 
-| Endpoint                                 | Status                             |
-| ---------------------------------------- | ---------------------------------- |
+| Endpoint                                 | Status                                  |
+| ---------------------------------------- | --------------------------------------- |
 | `GET /api/v1/resources/:id/download-url` | **Deprecated** → replaced by `download` |
 | `GET /api/v1/resources/:id/preview-url`  | **Deprecated** → replaced by `preview`  |
 
@@ -83,12 +83,12 @@ The `preview-url`, initially kept as a Signed URL, was also consolidated into a 
 
 The only endpoint returning a presigned URL is `upload-url` (for PUT uploads). All read endpoints use server-side streaming:
 
-| Endpoint           | Purpose                            | Method                             |
-| ------------------ | ---------------------------------- | ---------------------------------- |
-| `GET /download`    | File download                      | Server-side / 302 for external URLs|
-| `GET /preview`     | Preview delivery (Range-capable)   | Server-side streaming              |
-| `GET /text`        | Text preview                       | Server-side (with charset conversion) |
-| `POST /upload-url` | Presigned URL for upload           | Signed URL (for PUT)               |
+| Endpoint           | Purpose                          | Method                                |
+| ------------------ | -------------------------------- | ------------------------------------- |
+| `GET /download`    | File download                    | Server-side / 302 for external URLs   |
+| `GET /preview`     | Preview delivery (Range-capable) | Server-side streaming                 |
+| `GET /text`        | Text preview                     | Server-side (with charset conversion) |
+| `POST /upload-url` | Presigned URL for upload         | Signed URL (for PUT)                  |
 
 ## Frontend Impact
 

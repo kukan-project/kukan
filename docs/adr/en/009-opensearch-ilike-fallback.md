@@ -58,10 +58,10 @@ The previous ADR-009 adopted pg_bigm, but the approach was changed for the follo
 
 **OpenSearch as the production search engine, PostgreSQL ILIKE as the fallback.**
 
-| Deployment Scale          | Search Engine    | SEARCH_TYPE  |
-| ------------------------- | ---------------- | ------------ |
-| Small-scale / Development | PostgreSQL ILIKE | `postgres`   |
-| Medium-to-large / Production | OpenSearch    | `opensearch` |
+| Deployment Scale             | Search Engine    | SEARCH_TYPE  |
+| ---------------------------- | ---------------- | ------------ |
+| Small-scale / Development    | PostgreSQL ILIKE | `postgres`   |
+| Medium-to-large / Production | OpenSearch       | `opensearch` |
 
 ### PostgreSQL ILIKE Fallback + pg_trgm GIN Indexes
 

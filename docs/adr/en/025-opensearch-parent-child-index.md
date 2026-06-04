@@ -40,11 +40,11 @@ Maintaining consistency of scoring, pagination, and highlights is difficult.
 
 ## Options Considered
 
-| Option                   | Overview                                                                | Pros                                                                        | Cons                                                                             |
-| ------------------------ | ----------------------------------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| A. 2-phase search        | Phase 1 collects packageIds, Phase 2 uses ids+filter+aggs              | No index changes needed                                                     | Scoring, highlights, and pagination consistency cannot be achieved                |
-| B. Denormalize into packages | Embed resource names into package documents                         | Single query for search (up to resource names)                              | Requires package re-indexing on resource update. Content remains in separate index |
-| **C. Parent-child consolidation** | Consolidate 3 document types into a single index using join field | Fundamentally resolves all issues. Search, aggs, highlights, pagination in 1 query | Re-indexing work required. Same-shard constraint                                |
+| Option                            | Overview                                                          | Pros                                                                               | Cons                                                                               |
+| --------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| A. 2-phase search                 | Phase 1 collects packageIds, Phase 2 uses ids+filter+aggs         | No index changes needed                                                            | Scoring, highlights, and pagination consistency cannot be achieved                 |
+| B. Denormalize into packages      | Embed resource names into package documents                       | Single query for search (up to resource names)                                     | Requires package re-indexing on resource update. Content remains in separate index |
+| **C. Parent-child consolidation** | Consolidate 3 document types into a single index using join field | Fundamentally resolves all issues. Search, aggs, highlights, pagination in 1 query | Re-indexing work required. Same-shard constraint                                   |
 
 ## Decision: Option C — Parent-child index consolidation
 
@@ -77,11 +77,16 @@ resource-level operations (deleteContent, getContentChunks, etc.) use term filte
         {
           "has_child": {
             "type": "resource",
-            "query": { "multi_match": { "query": "Tokyo Tourism", "fields": ["name", "description"] } }
+            "query": {
+              "multi_match": { "query": "Tokyo Tourism", "fields": ["name", "description"] }
+            }
           }
         },
         {
-          "has_child": { "type": "content", "query": { "match": { "extractedText": "Tokyo Tourism" } } }
+          "has_child": {
+            "type": "content",
+            "query": { "match": { "extractedText": "Tokyo Tourism" } }
+          }
         }
       ],
       "minimum_should_match": 1,

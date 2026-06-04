@@ -20,10 +20,8 @@ export class NetworkConstruct extends Construct {
   readonly webSecurityGroup: ec2.ISecurityGroup
   readonly workerSecurityGroup: ec2.ISecurityGroup
 
-  constructor(scope: Construct, id: string, props: NetworkProps) {
+  constructor(scope: Construct, id: string, _props: NetworkProps) {
     super(scope, id)
-
-    const { config } = props
 
     // ECS tasks run in public subnets (assignPublicIp: true) — no NAT needed.
     // Private isolated subnets are for RDS / OpenSearch only (no internet access).
@@ -43,29 +41,17 @@ export class NetworkConstruct extends Construct {
 
     // --- Security Groups ---
 
-    // ALB (internet-facing)
-    // All SG rules managed here; listener uses open=false to prevent CDK auto-rules.
-    // With custom domain (HTTPS): allow 443 + 80 (HTTP→HTTPS redirect).
-    // Without custom domain: allow 80 only (dev/test).
-    const albPorts = config.domainName ? [443, 80] : [80]
+    // ALB (internet-facing, behind CloudFront)
+    // CloudFront terminates TLS; ALB receives HTTP on port 80.
+    // ALB listener rule enforces Origin Verify header (ADR-027).
+    // IP restriction is handled by CloudFront Function.
     this.albSecurityGroup = new ec2.SecurityGroup(this, 'AlbSg', {
       vpc: this.vpc,
-      description: 'ALB for web service',
+      description: 'ALB for web service (behind CloudFront)',
       allowAllOutbound: true,
     })
-    if (config.allowedIpRanges && config.allowedIpRanges.length > 0) {
-      for (const cidr of config.allowedIpRanges) {
-        const peer = cidr.includes(':') ? ec2.Peer.ipv6(cidr) : ec2.Peer.ipv4(cidr)
-        for (const port of albPorts) {
-          this.albSecurityGroup.addIngressRule(peer, ec2.Port.tcp(port), 'Allowed IP')
-        }
-      }
-    } else {
-      for (const port of albPorts) {
-        this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(port), 'Public')
-        this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv6(), ec2.Port.tcp(port), 'Public IPv6')
-      }
-    }
+    this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'HTTP')
+    this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv6(), ec2.Port.tcp(80), 'HTTP IPv6')
 
     // Web (ECS Fargate tasks — ALB traffic only)
     this.webSecurityGroup = new ec2.SecurityGroup(this, 'WebSg', {

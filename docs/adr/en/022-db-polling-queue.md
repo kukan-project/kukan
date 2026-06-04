@@ -67,16 +67,16 @@ while (running) {
 
 ### SQS Feature Replacements
 
-| SQS Feature                          | DB Alternative                                        | Method                            |
-| ------------------------------------ | ----------------------------------------------------- | --------------------------------- |
-| Message delivery                     | SELECT rows with `status='queued'`                    | Polling                           |
-| Exclusive consumption (1 msg = 1 Worker) | `FOR UPDATE SKIP LOCKED`                          | PostgreSQL standard               |
-| Visibility timeout                   | `status='processing'` + elapsed time check on `updated` | Existing mechanism              |
-| Delayed delivery                     | `WHERE created + delay < NOW()`                       | SQL condition                     |
-| DLQ                                  | `status='error'` + retry count                        | Already implemented in `resource_pipeline` |
-| Load distribution across Workers     | `SKIP LOCKED`                                         | Automatic distribution            |
-| Message persistence                  | The DB itself                                         | Inherent                          |
-| Backpressure                         | Worker fetches when idle                              | Pull-based (same as SQS)          |
+| SQS Feature                              | DB Alternative                                          | Method                                     |
+| ---------------------------------------- | ------------------------------------------------------- | ------------------------------------------ |
+| Message delivery                         | SELECT rows with `status='queued'`                      | Polling                                    |
+| Exclusive consumption (1 msg = 1 Worker) | `FOR UPDATE SKIP LOCKED`                                | PostgreSQL standard                        |
+| Visibility timeout                       | `status='processing'` + elapsed time check on `updated` | Existing mechanism                         |
+| Delayed delivery                         | `WHERE created + delay < NOW()`                         | SQL condition                              |
+| DLQ                                      | `status='error'` + retry count                          | Already implemented in `resource_pipeline` |
+| Load distribution across Workers         | `SKIP LOCKED`                                           | Automatic distribution                     |
+| Message persistence                      | The DB itself                                           | Inherent                                   |
+| Backpressure                             | Worker fetches when idle                                | Pull-based (same as SQS)                   |
 
 ### Connection Pool
 

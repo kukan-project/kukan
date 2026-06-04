@@ -23,10 +23,10 @@ There are 7 major design decisions.
 
 ### Options
 
-| Option | Configuration                                                                  | Pros                                                        | Cons                                                                                    |
-| ------ | ------------------------------------------------------------------------------ | ----------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| A      | Add `extractedText` field to nested resources in `kukan-packages`              | Queries complete within a single index                      | Document size bloat (100KB × number of resources), metadata search performance degradation |
-| B      | **Create a separate index `kukan-resources`**                                  | No impact on metadata search, independent lifecycle management | Requires `msearch` across 2 indexes + app-layer merging                                 |
+| Option | Configuration                                                     | Pros                                                           | Cons                                                                                       |
+| ------ | ----------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| A      | Add `extractedText` field to nested resources in `kukan-packages` | Queries complete within a single index                         | Document size bloat (100KB × number of resources), metadata search performance degradation |
+| B      | **Create a separate index `kukan-resources`**                     | No impact on metadata search, independent lifecycle management | Requires `msearch` across 2 indexes + app-layer merging                                    |
 
 ### Decision: Option B — Separate index `kukan-resources`
 
@@ -42,10 +42,10 @@ By using the `msearch` API to send 2 queries in 1 round trip, latency increase i
 
 ### Options
 
-| Option | Configuration                                             | Pros                                                                              | Cons                                                                       |
-| ------ | --------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| A      | Create a `resource_content` table in the DB               | Fast re-indexing (SELECT only), can be used for PostgreSQL full-text search        | DB size increases (text + GIN index = 5–7× original size)                  |
-| B      | **Do not store in DB. Pipeline → direct OpenSearch ingestion** | No DB size increase, simpler implementation                                   | Re-indexing requires re-download from S3 and re-parsing                    |
+| Option | Configuration                                                  | Pros                                                                        | Cons                                                      |
+| ------ | -------------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------- |
+| A      | Create a `resource_content` table in the DB                    | Fast re-indexing (SELECT only), can be used for PostgreSQL full-text search | DB size increases (text + GIN index = 5–7× original size) |
+| B      | **Do not store in DB. Pipeline → direct OpenSearch ingestion** | No DB size increase, simpler implementation                                 | Re-indexing requires re-download from S3 and re-parsing   |
 
 ### Decision: Option B — Do not store content text in DB
 
@@ -61,10 +61,10 @@ Truncation information (whether indexed, original size, truncated size) is recor
 
 ### Options
 
-| Option | Configuration                                                                        | Pros                                       | Cons                                                                                       |
-| ------ | ------------------------------------------------------------------------------------ | ------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| A      | `resource_content` table + `gin_trgm_ops` GIN index for ILIKE search                | Content search available without OpenSearch | DB size bloat (100KB × N resources × GIN 3–5×), performance issues beyond 10K resources     |
-| B      | **No content search in PostgreSQL**                                                  | No DB size increase, no `postgres.ts` changes | Air-gapped users cannot use content search                                                 |
+| Option | Configuration                                                        | Pros                                          | Cons                                                                                    |
+| ------ | -------------------------------------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------- |
+| A      | `resource_content` table + `gin_trgm_ops` GIN index for ILIKE search | Content search available without OpenSearch   | DB size bloat (100KB × N resources × GIN 3–5×), performance issues beyond 10K resources |
+| B      | **No content search in PostgreSQL**                                  | No DB size increase, no `postgres.ts` changes | Air-gapped users cannot use content search                                              |
 
 ### Decision: Option B — No content search in PostgreSQL
 
@@ -82,12 +82,12 @@ unnecessarily inflating DB size in small-scale environments.
 
 Practical constraints on OpenSearch document size:
 
-| Size    | Assessment                                              |
-| ------- | ------------------------------------------------------- |
-| ~10 KB  | Ideal. Typical search document                          |
-| ~100 KB | Good. Long article level                                |
-| ~500 KB | Acceptable but impacts indexing speed and memory        |
-| ~1 MB   | Near upper limit. Increased GC pressure                 |
+| Size    | Assessment                                       |
+| ------- | ------------------------------------------------ |
+| ~10 KB  | Ideal. Typical search document                   |
+| ~100 KB | Good. Long article level                         |
+| ~500 KB | Acceptable but impacts indexing speed and memory |
+| ~1 MB   | Near upper limit. Increased GC pressure          |
 
 100KB of Japanese text ≈ approximately 30,000–50,000 characters ≈ 40–60 A4 pages.
 For CSV, this sufficiently covers thousands of rows of headers + data.
@@ -125,15 +125,15 @@ Initially a 100KB limit with truncation, but migrated to chunk splitting and str
 
 ## Target Formats
 
-| Format         | Extraction Method                      | contentType |
-| -------------- | -------------------------------------- | ----------- |
-| CSV / TSV      | UTF-8 conversion → header + row data   | `tabular`   |
-| TXT / MD       | UTF-8 conversion → plain text          | `text`      |
-| HTML / HTM     | UTF-8 conversion → tag removal         | `text`      |
-| JSON / GeoJSON | As-is                                  | `text`      |
-| XML            | UTF-8 conversion                       | `text`      |
-| ZIP            | Manifest file name listing             | `manifest`  |
-| PDF / Office   | Not supported (future)                 | —           |
+| Format         | Extraction Method                    | contentType |
+| -------------- | ------------------------------------ | ----------- |
+| CSV / TSV      | UTF-8 conversion → header + row data | `tabular`   |
+| TXT / MD       | UTF-8 conversion → plain text        | `text`      |
+| HTML / HTM     | UTF-8 conversion → tag removal       | `text`      |
+| JSON / GeoJSON | As-is                                | `text`      |
+| XML            | UTF-8 conversion                     | `text`      |
+| ZIP            | Manifest file name listing           | `manifest`  |
+| PDF / Office   | Not supported (future)               | —           |
 
 ---
 
@@ -141,10 +141,10 @@ Initially a 100KB limit with truncation, but migrated to chunk splitting and str
 
 ### Options
 
-| Option | Configuration                                                                                           | Pros                                                                          | Cons                                                                                       |
-| ------ | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| A      | Keep resource metadata in `kukan-packages` nested, store only content in `kukan-resources`              | No changes to existing `kukan-packages` structure                             | Resource search logic split across 2 locations (metadata in nested, content in separate index) |
-| B      | **Consolidate resource metadata and content into `kukan-resources`**                                    | Single responsibility: "resource search = `kukan-resources`". Simpler mapping | Structural change required to remove nested resources from `kukan-packages`                |
+| Option | Configuration                                                                              | Pros                                                                          | Cons                                                                                           |
+| ------ | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| A      | Keep resource metadata in `kukan-packages` nested, store only content in `kukan-resources` | No changes to existing `kukan-packages` structure                             | Resource search logic split across 2 locations (metadata in nested, content in separate index) |
+| B      | **Consolidate resource metadata and content into `kukan-resources`**                       | Single responsibility: "resource search = `kukan-resources`". Simpler mapping | Structural change required to remove nested resources from `kukan-packages`                    |
 
 ### Decision: Option B — Consolidate resource metadata into `kukan-resources`
 
@@ -194,10 +194,10 @@ Cannot handle the case of rebuilding only metadata without content reprocessing.
 
 ### Options
 
-| Option | Configuration                                                            | Pros                                                              | Cons                                                          |
-| ------ | ------------------------------------------------------------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------- |
-| A      | Upsert (no full delete)                                                  | Content is preserved                                              | Orphan documents may remain. Partial update is complex        |
-| B      | **Separate content into `kukan-contents` (3-index configuration)**       | Metadata rebuild doesn't affect content. Clear separation of concerns | msearch increases to 3 queries (but still 1 round trip)      |
+| Option | Configuration                                                      | Pros                                                                  | Cons                                                    |
+| ------ | ------------------------------------------------------------------ | --------------------------------------------------------------------- | ------------------------------------------------------- |
+| A      | Upsert (no full delete)                                            | Content is preserved                                                  | Orphan documents may remain. Partial update is complex  |
+| B      | **Separate content into `kukan-contents` (3-index configuration)** | Metadata rebuild doesn't affect content. Clear separation of concerns | msearch increases to 3 queries (but still 1 round trip) |
 
 ### Decision: Option B — 3-index configuration
 
@@ -209,12 +209,12 @@ kukan-contents  → Extracted text (extractedText, contentType)
 
 Each index has an independent lifecycle:
 
-| Operation          | packages         | resources        | contents                      |
-| ------------------ | ---------------- | ---------------- | ----------------------------- |
-| Metadata rebuild   | Delete all → re-index | Delete all → re-index | **Not touched**          |
-| Content reprocess  | —                | —                | Delete all → re-index via Pipeline |
-| Normal CUD         | upsert           | upsert           | —                             |
-| Pipeline complete  | —                | —                | upsert                        |
+| Operation         | packages              | resources             | contents                           |
+| ----------------- | --------------------- | --------------------- | ---------------------------------- |
+| Metadata rebuild  | Delete all → re-index | Delete all → re-index | **Not touched**                    |
+| Content reprocess | —                     | —                     | Delete all → re-index via Pipeline |
+| Normal CUD        | upsert                | upsert                | —                                  |
+| Pipeline complete | —                     | —                     | upsert                             |
 
 For future extensions (chunk splitting, embeddings), only the internal structure of `kukan-contents`
 needs to change — `kukan-packages` / `kukan-resources` are not affected.
@@ -232,10 +232,10 @@ Support for content search of large documents such as PDFs is also desired.
 
 **Keyword search (BM25)** and **Embedding (kNN)** have different optimal chunk sizes.
 
-| Use Case                 | Optimal Size             | Reason                                                                          |
-| ------------------------ | ------------------------ | ------------------------------------------------------------------------------- |
-| BM25 keyword search      | ~100 KB                  | Longer text provides more match opportunities                                   |
-| Embedding vector search  | ~500 tokens (~1.5 KB)    | Model input limit (Titan v2: 8,192 tokens). Too large dilutes meaning           |
+| Use Case                | Optimal Size          | Reason                                                                |
+| ----------------------- | --------------------- | --------------------------------------------------------------------- |
+| BM25 keyword search     | ~100 KB               | Longer text provides more match opportunities                         |
+| Embedding vector search | ~500 tokens (~1.5 KB) | Model input limit (Titan v2: 8,192 tokens). Too large dilutes meaning |
 
 The single-document approach (Option B) has a practical limit of ~100KB due to highlight performance degradation.
 Cannot handle PDFs (hundreds of pages, several MB of text).

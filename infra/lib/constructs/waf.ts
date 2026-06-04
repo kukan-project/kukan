@@ -1,8 +1,9 @@
 /**
  * KUKAN WAF Construct
- * REGIONAL-scope WAF WebACL for ALB with AWS managed rule groups.
+ * WAF WebACL with AWS managed rule groups (CLOUDFRONT scope).
+ * Deployed in us-east-1 via KukanGlobalStack.
  *
- * IP restriction is handled by ALB Security Group (see network.ts).
+ * IP restriction is handled by CloudFront Function (see cf-functions/viewer-request.js).
  */
 
 import * as cdk from 'aws-cdk-lib'
@@ -36,9 +37,10 @@ export class WafConstruct extends Construct {
   constructor(scope: Construct, id: string) {
     super(scope, id)
 
+    // CLOUDFRONT scope — must be deployed in us-east-1 (KukanGlobalStack)
     this.webAcl = new wafv2.CfnWebACL(this, 'WebAcl', {
       defaultAction: { allow: {} },
-      scope: 'REGIONAL',
+      scope: 'CLOUDFRONT',
       visibilityConfig: {
         sampledRequestsEnabled: true,
         cloudWatchMetricsEnabled: true,

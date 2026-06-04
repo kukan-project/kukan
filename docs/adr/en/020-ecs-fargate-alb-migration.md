@@ -17,25 +17,25 @@ AWS announced the transition of App Runner to maintenance mode in April 2026.
 
 ### Options Considered
 
-| Option | Web                            | Migration Cost | Standby Cost (small) | Notes                                                                |
-| ------ | ------------------------------ | -------------- | -------------------- | -------------------------------------------------------------------- |
-| A      | ECS Express Mode               | Low            | ~$29/month           | Express Mode with auto-managed ALB                                   |
-| B      | Standard ECS Fargate + ALB     | Medium         | ~$29/month           | Adopted. Self-managed ALB, TG, Listener                              |
+| Option | Web                            | Migration Cost | Standby Cost (small) | Notes                                                                             |
+| ------ | ------------------------------ | -------------- | -------------------- | --------------------------------------------------------------------------------- |
+| A      | ECS Express Mode               | Low            | ~$29/month           | Express Mode with auto-managed ALB                                                |
+| B      | Standard ECS Fargate + ALB     | Medium         | ~$29/month           | Adopted. Self-managed ALB, TG, Listener                                           |
 | C      | Lambda + CloudFront (OpenNext) | High           | ~$0/month            | Fundamental architecture change. Incompatible with single-origin design (ADR-012) |
-| D      | Continue with App Runner       | None           | ~$3/month            | No new features, future deprecation risk                             |
+| D      | Continue with App Runner       | None           | ~$3/month            | No new features, future deprecation risk                                          |
 
 ### Why Express Mode was adopted then changed to Standard
 
 The initial revision adopted Express Mode (Option A) and deployed it,
 but the following constraints were discovered during operation, leading to a change to Standard Fargate + ALB (Option B).
 
-| Constraint                                            | Impact                                                    | Notes                                                                |
-| ----------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------- |
-| Express Mode manages the ALB's default certificate    | Certificate changes via `modifyListener` are overwritten  | SNI additional certificates work around this but are cumbersome      |
-| Express Mode manages the ALB's SG                     | Cannot use SG for IP restrictions; WAF becomes mandatory  | WAF ~$9/month always incurred                                        |
-| Cannot disable default endpoint (`*.ecs.*.on.aws`)    | Default endpoint persists even with custom domain setup   | `modifyRule` host header restriction workaround needed               |
-| L1 constructs only (CfnExpressGatewayService)         | Cannot use CDK's L2 helpers or type safety                | —                                                                    |
-| Managed resource reconciliation                       | SDK-modified settings may be silently reverted            | Confirmed with certificate settings                                  |
+| Constraint                                         | Impact                                                   | Notes                                                           |
+| -------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------- |
+| Express Mode manages the ALB's default certificate | Certificate changes via `modifyListener` are overwritten | SNI additional certificates work around this but are cumbersome |
+| Express Mode manages the ALB's SG                  | Cannot use SG for IP restrictions; WAF becomes mandatory | WAF ~$9/month always incurred                                   |
+| Cannot disable default endpoint (`*.ecs.*.on.aws`) | Default endpoint persists even with custom domain setup  | `modifyRule` host header restriction workaround needed          |
+| L1 constructs only (CfnExpressGatewayService)      | Cannot use CDK's L2 helpers or type safety               | —                                                               |
+| Managed resource reconciliation                    | SDK-modified settings may be silently reverted           | Confirmed with certificate settings                             |
 
 **Conclusion**: Express Mode's "simple deployment" benefit does not outweigh the cost of
 workarounds for custom domain + IP restrictions. Standard Fargate + ALB is superior in
@@ -73,29 +73,29 @@ The ADR-018 decision is maintained as-is.
 
 ## Cost Impact
 
-| Scale                          | App Runner | Fargate + ALB | Fargate + ALB + WAF |
-| ------------------------------ | ---------- | ------------- | ------------------- |
-| small (0.25 vCPU / 0.5 GB)    | ~$3/month  | ~$27/month    | ~$36/month          |
-| medium (0.5 vCPU / 1 GB)      | ~$7/month  | ~$38/month    | ~$47/month          |
-| large (1 vCPU / 2 GB × 2)     | ~$145/month | ~$108/month  | ~$117/month         |
+| Scale                      | App Runner  | Fargate + ALB | Fargate + ALB + WAF |
+| -------------------------- | ----------- | ------------- | ------------------- |
+| small (0.25 vCPU / 0.5 GB) | ~$3/month   | ~$27/month    | ~$36/month          |
+| medium (0.5 vCPU / 1 GB)   | ~$7/month   | ~$38/month    | ~$47/month          |
+| large (1 vCPU / 2 GB × 2)  | ~$145/month | ~$108/month   | ~$117/month         |
 
-* Estimates for Tokyo region with minimum instance count for the Web service. No NAT needed (Public subnet configuration).
-* Worker is small at 0.25 vCPU / 1 GB (memory requirements for PDF/Office text extraction).
-For IP restriction only, ALB SG is sufficient and WAF is unnecessary (middle column).
-When managed rules (SQLi/XSS protection) are needed, WAF is added (right column).
+- Estimates for Tokyo region with minimum instance count for the Web service. No NAT needed (Public subnet configuration).
+- Worker is small at 0.25 vCPU / 1 GB (memory requirements for PDF/Office text extraction).
+  For IP restriction only, ALB SG is sufficient and WAF is unnecessary (middle column).
+  When managed rules (SQLi/XSS protection) are needed, WAF is added (right column).
 
 ### CloudFront Removal
 
 During the App Runner era, CloudFront was effectively mandatory (WAF could not be attached, custom domain constraints).
 With Fargate + ALB, the ALB serves as the front, and all functions previously provided by CloudFront can be replaced by the ALB.
 
-| Function                    | App Runner era                     | Fargate + ALB                                    |
-| --------------------------- | ---------------------------------- | ------------------------------------------------ |
-| SSL/TLS + custom domain     | Required via CloudFront            | Direct via ALB + ACM + Route53                   |
-| WAF                         | Cannot attach directly to App Runner | Can attach WAF directly to ALB (optional)       |
-| IP restriction              | Implemented via CloudFront Function | Via ALB SG (free)                               |
-| DDoS (Shield Standard)      | Auto-applied to CloudFront         | Also auto-applied to ALB                         |
-| Static asset caching        | CDN edge caching                   | Browser caching only (see below)                 |
+| Function                | App Runner era                       | Fargate + ALB                             |
+| ----------------------- | ------------------------------------ | ----------------------------------------- |
+| SSL/TLS + custom domain | Required via CloudFront              | Direct via ALB + ACM + Route53            |
+| WAF                     | Cannot attach directly to App Runner | Can attach WAF directly to ALB (optional) |
+| IP restriction          | Implemented via CloudFront Function  | Via ALB SG (free)                         |
+| DDoS (Shield Standard)  | Auto-applied to CloudFront           | Also auto-applied to ALB                  |
+| Static asset caching    | CDN edge caching                     | Browser caching only (see below)          |
 
 **Static asset caching**: ALB itself has no caching functionality, but this is not a problem.
 Next.js static assets (`/_next/static/*`) use content-hashed filenames with
