@@ -267,7 +267,7 @@ pnpm db:create-user --email user@example.com --name taro --password <password>
 - Worker ヘルスチェック: `apps/worker/src/index.ts`
 - Web ヘルスチェック: `apps/web/src/app/api/health/route.ts`
 - SQS アダプター: `packages/adapters/queue/src/sqs.ts`
-- ADR: `docs/adr/020-ecs-fargate-alb-migration.md`
+- ADR: `docs/adr/jp/020-ecs-fargate-alb-migration.md`
 
 ## オンプレミス Docker Compose デプロイ
 
@@ -356,7 +356,7 @@ curl http://localhost/api/health
 インターネット公開環境向けのアクセス統計機能。GA4 を計測基盤とし、KUKAN 自体には計測ロジックを持たない。
 LGWAN 等の閉域網では `brandConfig.gaMeasurementId` 未設定（デフォルト）により自動的に無効化される。
 
-設計判断の詳細: `docs/adr/024-ga4-access-analytics.md`
+設計判断の詳細: `docs/adr/jp/024-ga4-access-analytics.md`
 
 ### 4a: gtag.js 条件埋め込み
 
@@ -435,6 +435,6 @@ GA4 Data API からデータを取得し、管理画面（sysadmin 限定）に�
 
 ### 関連ファイル（アクセス統計）
 
-- ADR: `docs/adr/024-ga4-access-analytics.md`
+- ADR: `docs/adr/jp/024-ga4-access-analytics.md`
 - ダウンロードボタン: `apps/web/src/components/download-button.tsx`
 - ブランド設定: `apps/web/src/brand/brand-config.ts`（ADR-023）

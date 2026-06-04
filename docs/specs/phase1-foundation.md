@@ -598,7 +598,7 @@ volumes:
   miniodata:
 ```
 
-**Note**: Phase 1 の検索は PostgreSQL ILIKE フォールバック（pg_trgm GIN インデックスで高速化）。Phase 3 で OpenSearch を追加。詳細は `docs/adr/009-opensearch-ilike-fallback.md` を参照。
+**Note**: Phase 1 の検索は PostgreSQL ILIKE フォールバック（pg_trgm GIN インデックスで高速化）。Phase 3 で OpenSearch を追加。詳細は `docs/adr/jp/009-opensearch-ilike-fallback.md` を参照。
 
 ---
 

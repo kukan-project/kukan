@@ -57,6 +57,8 @@ KUKAN/
 ├── docs/
 │   ├── design-v4.md        # 設計書（全体像、参照用）
 │   ├── adr/                # Architecture Decision Records
+│   │   ├── jp/             # 日本語（正本）
+│   │   └── en/             # English（機械翻訳・参考）
 │   └── specs/              # Phase別 実装仕様書
 ├── Dockerfile              # マルチターゲット Docker ビルド（web / worker）
 ├── .dockerignore
@@ -172,37 +174,37 @@ pnpm format        # Prettier フォーマット
 
 ## 設計判断
 
-実装中に「なぜこの技術を選んだのか」迷ったら `docs/adr/` を参照:
+実装中に「なぜこの技術を選んだのか」迷ったら `docs/adr/jp/` を参照（英語版: `docs/adr/en/`）:
 
-- ORM選定 → `docs/adr/001-drizzle-orm.md`
-- キュー方式 → `docs/adr/002-sqs-over-bullmq.md`
-- 認証方式 → `docs/adr/003-better-auth.md`
-- キャッシュ方式 → `docs/adr/004-lru-cache-no-adapter.md`
-- アダプター設計 → `docs/adr/005-four-adapters-only.md`
-- 品質監視 → `docs/adr/006-quality-monitor-core.md`
-- Data Editor → `docs/adr/007-data-editor-addon.md`
-- モノレポ → `docs/adr/008-turborepo-monorepo.md`
-- 日本語全文検索 → `docs/adr/009-opensearch-ilike-fallback.md`
-- テーマ戦略 → `docs/adr/010-shadcn-ui-theming-strategy.md`
-- バリデーション統一 → `docs/adr/011-unified-validation-system.md`
-- API ライブラリ化・単一オリジン → `docs/adr/012-api-as-library-single-origin.md`
-- 検索と DB フィルタリングの分離 → `docs/adr/013-search-vs-db-filtering.md`
-- プレビュー Parquet 形式 → `docs/adr/014-parquet-preview-format.md`
-- DuckDB-WASM データエクスプローラー → `docs/adr/016-duckdb-wasm-data-explorer.md`
-- 統一 preview-url エンドポイント → `docs/adr/015-unified-preview-url.md`（置換済み → ADR-017）
-- サーバー経由ダウンロード・プレビュー URL → `docs/adr/017-server-proxied-download.md`
-- Web=App Runner, Worker=Fargate → `docs/adr/018-app-runner-plus-fargate.md`（置換済み → ADR-020）
-- Web=ECS Fargate+ALB, Worker=Fargate → `docs/adr/020-ecs-fargate-alb-migration.md`
-- ロギング戦略 → `docs/adr/019-logging-strategy.md`
-- リソースコンテンツ全文検索 → `docs/adr/021-resource-content-indexing.md`
-- DB ポーリングによる SQS 代替（提案） → `docs/adr/022-db-polling-queue.md`
-- ブランドオーバーライドレイヤー → `docs/adr/023-brand-override-layer.md`
-- GA4 アクセス統計 → `docs/adr/024-ga4-access-analytics.md`
-- OpenSearch parent-child 統合 → `docs/adr/025-opensearch-parent-child-index.md`
-- API Cache-Control 戦略 → `docs/adr/026-api-cache-control.md`
-- CloudFront 再導入 → `docs/adr/027-cloudfront-reintroduction.md`
+- ORM選定 → `docs/adr/jp/001-drizzle-orm.md`
+- キュー方式 → `docs/adr/jp/002-sqs-over-bullmq.md`
+- 認証方式 → `docs/adr/jp/003-better-auth.md`
+- キャッシュ方式 → `docs/adr/jp/004-lru-cache-no-adapter.md`
+- アダプター設計 → `docs/adr/jp/005-four-adapters-only.md`
+- 品質監視 → `docs/adr/jp/006-quality-monitor-core.md`
+- Data Editor → `docs/adr/jp/007-data-editor-addon.md`
+- モノレポ → `docs/adr/jp/008-turborepo-monorepo.md`
+- 日本語全文検索 → `docs/adr/jp/009-opensearch-ilike-fallback.md`
+- テーマ戦略 → `docs/adr/jp/010-shadcn-ui-theming-strategy.md`
+- バリデーション統一 → `docs/adr/jp/011-unified-validation-system.md`
+- API ライブラリ化・単一オリジン → `docs/adr/jp/012-api-as-library-single-origin.md`
+- 検索と DB フィルタリングの分離 → `docs/adr/jp/013-search-vs-db-filtering.md`
+- プレビュー Parquet 形式 → `docs/adr/jp/014-parquet-preview-format.md`
+- DuckDB-WASM データエクスプローラー → `docs/adr/jp/016-duckdb-wasm-data-explorer.md`
+- 統一 preview-url エンドポイント → `docs/adr/jp/015-unified-preview-url.md`（置換済み → ADR-017）
+- サーバー経由ダウンロード・プレビュー URL → `docs/adr/jp/017-server-proxied-download.md`
+- Web=App Runner, Worker=Fargate → `docs/adr/jp/018-app-runner-plus-fargate.md`（置換済み → ADR-020）
+- Web=ECS Fargate+ALB, Worker=Fargate → `docs/adr/jp/020-ecs-fargate-alb-migration.md`
+- ロギング戦略 → `docs/adr/jp/019-logging-strategy.md`
+- リソースコンテンツ全文検索 → `docs/adr/jp/021-resource-content-indexing.md`
+- DB ポーリングによる SQS 代替（提案） → `docs/adr/jp/022-db-polling-queue.md`
+- ブランドオーバーライドレイヤー → `docs/adr/jp/023-brand-override-layer.md`
+- GA4 アクセス統計 → `docs/adr/jp/024-ga4-access-analytics.md`
+- OpenSearch parent-child 統合 → `docs/adr/jp/025-opensearch-parent-child-index.md`
+- API Cache-Control 戦略 → `docs/adr/jp/026-api-cache-control.md`
+- CloudFront 再導入 → `docs/adr/jp/027-cloudfront-reintroduction.md`
 
-新しい設計判断が必要になったら、同じフォーマットでADRを追加する。
+新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
 旧ADRのステータスを「置換済み」に更新する。
 詳細の補足や誤記修正は既存ADRを直接編集してよい。

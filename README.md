@@ -262,7 +262,7 @@ docker compose logs -f web worker
 
 - [Design Document / 設計書](docs/design-v4.md)
 - [AWS Deployment Spec / デプロイ仕様](docs/specs/phase4-deploy.md)
-- [ADR (Architecture Decision Records / 設計判断記録)](docs/adr/)
+- ADR (Architecture Decision Records / 設計判断記録): [日本語 (正本)](docs/adr/jp/) | [English](docs/adr/en/)
 
 ## License / ライセンス
 

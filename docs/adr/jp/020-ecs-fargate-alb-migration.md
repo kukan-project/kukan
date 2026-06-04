@@ -133,7 +133,7 @@ Next.js の静的アセット (`/_next/static/*`) はコンテンツハッシュ
 
 ## 関連
 
-- ADR-018（置換元）: `docs/adr/018-app-runner-plus-fargate.md`
-- ADR-012（単一オリジン設計）: `docs/adr/012-api-as-library-single-origin.md`
+- ADR-018（置換元）: `docs/adr/jp/018-app-runner-plus-fargate.md`
+- ADR-012（単一オリジン設計）: `docs/adr/jp/012-api-as-library-single-origin.md`
 - CDK 実装: `infra/lib/constructs/web-service.ts`
 - AWS 公式: [App Runner availability change](https://docs.aws.amazon.com/apprunner/latest/dg/apprunner-availability-change.html)

@@ -86,5 +86,5 @@ publicCache(maxAge = 60, swr = 300)
 
 ## 関連
 
-- ADR-027（CloudFront 再導入）: `docs/adr/027-cloudfront-reintroduction.md`
+- ADR-027（CloudFront 再導入）: `docs/adr/jp/027-cloudfront-reintroduction.md`
 - 実装: `packages/api/src/middleware/cache-control.ts`
