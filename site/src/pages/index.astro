@@ -22,6 +22,7 @@ const t = {
     ctaTitle: 'さっそく始めてみましょう',
     ctaDesc: '詳細なセットアップ手順はドキュメントをご覧ください。',
     ctaButton: 'ドキュメントへ',
+    ctaNote: '開発の背景についてはこちら',
     switchLang: 'English',
     features: [
       {
@@ -86,6 +87,7 @@ const t = {
     ctaTitle: 'Get Started',
     ctaDesc: 'Check the documentation for detailed setup instructions.',
     ctaButton: 'Go to Docs',
+    ctaNote: 'Read about the story behind this project (Japanese)',
     switchLang: '日本語',
     features: [
       {
@@ -253,6 +255,9 @@ const techStack = [
         <h2 class="section-title" data-i18n="ctaTitle">{t.en.ctaTitle}</h2>
         <p class="cta-desc" data-i18n="ctaDesc">{t.en.ctaDesc}</p>
         <a href={`${base}en/`} class="btn-primary btn-lg" data-i18n="ctaButton" id="cta-link">{t.en.ctaButton}</a>
+        <p class="cta-note">
+          <a href="https://note.com/masagon73/n/ncfb409f3b4a9" target="_blank" rel="noopener noreferrer" data-i18n="ctaNote">{t.en.ctaNote}</a>
+        </p>
       </div>
     </section>
 
@@ -562,6 +567,20 @@ const techStack = [
         font-size: 1.0625rem;
         color: #64748b;
         margin-bottom: 2rem;
+      }
+      .cta-note {
+        margin-top: 1.5rem;
+        font-size: 0.875rem;
+      }
+      .cta-note a {
+        color: #64748b;
+        text-decoration: none;
+        border-bottom: 1px solid #cbd5e1;
+        transition: all 0.2s;
+      }
+      .cta-note a:hover {
+        color: var(--brand);
+        border-color: var(--brand);
       }
 
       /* Footer */
