@@ -158,6 +158,40 @@ describe('Packages API Routes', () => {
       expect(res.status).toBe(400)
     })
 
+    it('should create package with groups and return them in detail', async () => {
+      // Create groups first
+      await app.request('/api/v1/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'grp-create-a', title: 'Group A' }),
+      })
+      await app.request('/api/v1/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'grp-create-b', title: 'Group B' }),
+      })
+
+      const res = await createPackage({
+        name: 'pkg-with-groups',
+        groups: [{ name: 'grp-create-a' }, { name: 'grp-create-b' }],
+      })
+      expect(res.status).toBe(201)
+
+      // Verify groups are returned in detail endpoint
+      const detailRes = await app.request('/api/v1/packages/pkg-with-groups')
+      const detail = await detailRes.json()
+      const groupNames = detail.groups.map((g: { name: string }) => g.name).sort()
+      expect(groupNames).toEqual(['grp-create-a', 'grp-create-b'])
+    })
+
+    it('should reject non-existent group with 404', async () => {
+      const res = await createPackage({
+        name: 'pkg-bad-group',
+        groups: [{ name: 'no-such-group' }],
+      })
+      expect(res.status).toBe(404)
+    })
+
     it('should reject duplicate name with 400', async () => {
       await createPackage({ name: 'duplicate-pkg' })
 
@@ -211,6 +245,48 @@ describe('Packages API Routes', () => {
 
       const body = await res.json()
       expect(body.title).toBe('Updated')
+    })
+
+    it('should update groups on package', async () => {
+      // Create groups
+      await app.request('/api/v1/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'grp-upd-a', title: 'A' }),
+      })
+      await app.request('/api/v1/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'grp-upd-b', title: 'B' }),
+      })
+      await app.request('/api/v1/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'grp-upd-c', title: 'C' }),
+      })
+
+      await createPackage({
+        name: 'grp-update-test',
+        groups: [{ name: 'grp-upd-a' }, { name: 'grp-upd-b' }],
+      })
+      const orgId = await ensureTestOrg()
+
+      // Update: replace groups
+      const res = await app.request('/api/v1/packages/grp-update-test', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'grp-update-test',
+          ownerOrg: orgId,
+          groups: [{ name: 'grp-upd-b' }, { name: 'grp-upd-c' }],
+        }),
+      })
+      expect(res.status).toBe(200)
+
+      const detailRes = await app.request('/api/v1/packages/grp-update-test')
+      const detail = await detailRes.json()
+      const groupNames = detail.groups.map((g: { name: string }) => g.name).sort()
+      expect(groupNames).toEqual(['grp-upd-b', 'grp-upd-c'])
     })
 
     it('should clear omitted optional fields (PUT semantics)', async () => {

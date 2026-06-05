@@ -357,33 +357,11 @@ export class PackageService {
         })
         .returning()
 
-      // Handle tags
       if (input.tags && input.tags.length > 0) {
-        for (const tagInput of input.tags) {
-          // Find or create tag
-          let [existingTag] = await tx
-            .select()
-            .from(tag)
-            .where(and(eq(tag.name, tagInput.name), sql`${tag.vocabularyId} IS NULL`))
-            .limit(1)
-
-          if (!existingTag) {
-            const [newTag] = await tx
-              .insert(tag)
-              .values({
-                name: tagInput.name,
-                vocabularyId: null,
-              })
-              .returning()
-            existingTag = newTag
-          }
-
-          // Link tag to package
-          await tx.insert(packageTag).values({
-            packageId: pkg.id,
-            tagId: existingTag.id,
-          })
-        }
+        await this.linkTags(tx, pkg.id, input.tags)
+      }
+      if (input.groups && input.groups.length > 0) {
+        await this.linkGroups(tx, pkg.id, input.groups)
       }
 
       return pkg
@@ -443,35 +421,13 @@ export class PackageService {
         .where(eq(packageTable.id, existing.id))
         .returning()
 
-      // Handle tags update
       if (input.tags) {
-        // Remove existing tags
         await tx.delete(packageTag).where(eq(packageTag.packageId, existing.id))
-
-        // Add new tags
-        for (const tagInput of input.tags) {
-          let [existingTag] = await tx
-            .select()
-            .from(tag)
-            .where(and(eq(tag.name, tagInput.name), sql`${tag.vocabularyId} IS NULL`))
-            .limit(1)
-
-          if (!existingTag) {
-            const [newTag] = await tx
-              .insert(tag)
-              .values({
-                name: tagInput.name,
-                vocabularyId: null,
-              })
-              .returning()
-            existingTag = newTag
-          }
-
-          await tx.insert(packageTag).values({
-            packageId: existing.id,
-            tagId: existingTag.id,
-          })
-        }
+        await this.linkTags(tx, existing.id, input.tags)
+      }
+      if (input.groups) {
+        await tx.delete(packageGroup).where(eq(packageGroup.packageId, existing.id))
+        await this.linkGroups(tx, existing.id, input.groups)
       }
 
       return updated
@@ -508,6 +464,52 @@ export class PackageService {
         .returning()
       return purged!
     })
+  }
+
+  /** Find-or-create tags by name and link them to a package. */
+  private async linkTags(
+    tx: Parameters<Parameters<Database['transaction']>[0]>[0],
+    packageId: string,
+    tags: { name: string }[]
+  ) {
+    for (const tagInput of tags) {
+      let [existingTag] = await tx
+        .select()
+        .from(tag)
+        .where(and(eq(tag.name, tagInput.name), sql`${tag.vocabularyId} IS NULL`))
+        .limit(1)
+
+      if (!existingTag) {
+        const [newTag] = await tx
+          .insert(tag)
+          .values({ name: tagInput.name, vocabularyId: null })
+          .returning()
+        existingTag = newTag
+      }
+
+      await tx.insert(packageTag).values({ packageId, tagId: existingTag.id })
+    }
+  }
+
+  /** Look up active groups by name and link them to a package. Throws if any group is missing. */
+  private async linkGroups(
+    tx: Parameters<Parameters<Database['transaction']>[0]>[0],
+    packageId: string,
+    groups: { name: string }[]
+  ) {
+    for (const groupInput of groups) {
+      const [existingGroup] = await tx
+        .select({ id: group.id })
+        .from(group)
+        .where(and(eq(group.name, groupInput.name), eq(group.state, 'active')))
+        .limit(1)
+
+      if (!existingGroup) {
+        throw new NotFoundError('Group', groupInput.name)
+      }
+
+      await tx.insert(packageGroup).values({ packageId, groupId: existingGroup.id })
+    }
   }
 
   /** Restore a soft-deleted package back to active state. */

@@ -27,6 +27,7 @@ export const createPackageSchema = z.object({
   type: z.string().max(100).default('dataset'),
   extras: z.record(z.string(), z.unknown()).default({}),
   tags: z.array(z.object({ name: z.string() })).default([]),
+  groups: z.array(z.object({ name: z.string() })).default([]),
   resources: z
     .array(
       z.object({
