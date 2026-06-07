@@ -32,12 +32,12 @@ ADR-020 で CloudFront を廃止し、ALB が前面に立つ構成を採用し�
 
 ### ADR-020 で挙げた CloudFront のデメリットへの対応
 
-| ADR-020 のデメリット                          | 本 ADR での対応                                                                   |
-| --------------------------------------------- | --------------------------------------------------------------------------------- |
-| us-east-1 の ACM 証明書でクロスリージョン依存 | CDK `crossRegionReferences` で ARN を連携。2 スタック構成を受け入れる             |
-| CloudFront → ALB データ転送の二重課金         | AWS 内部転送は無料。CloudFront の転送単価は EC2→Internet より安い                 |
-| WAF 二重コスト                                | WAF を CloudFront 側に一本化（ALB の WAF を廃止）                                 |
-| リクエスト経路 3 段で障害切り分け困難         | CloudFront アクセスログ + ALB ログの 2 箇所になるが、Origin Verify で経路を明確化 |
+| ADR-020 のデメリット                          | 本 ADR での対応                                                                |
+| --------------------------------------------- | ------------------------------------------------------------------------------ |
+| us-east-1 の ACM 証明書でクロスリージョン依存 | CDK `crossRegionReferences` で ARN を連携。2 スタック構成を受け入れる          |
+| CloudFront → ALB データ転送の二重課金         | AWS 内部転送は無料。CloudFront の転送単価は EC2→Internet より安い              |
+| WAF 二重コスト                                | WAF を CloudFront 側に一本化（ALB の WAF を廃止）                              |
+| リクエスト経路 3 段で障害切り分け困難         | CloudFront アクセスログ + ALB ログの 2 箇所になるが、VPC origin で経路を明確化 |
 
 ## 決定
 
@@ -46,7 +46,7 @@ ADR-020 で CloudFront を廃止し、ALB が前面に立つ構成を採用し�
 ### アーキテクチャ
 
 ```
-User → CloudFront (WAF + Cache) → ALB → ECS Fargate (Next.js + Hono)
+User → CloudFront (WAF + Cache) → [VPC Origin] → ALB (internal) → ECS Fargate (Next.js + Hono)
 ```
 
 ### キャッシュ戦略: セッション Cookie によるバイパス
@@ -119,8 +119,8 @@ WAF を ALB（REGIONAL）から CloudFront（CLOUDFRONT スコープ）に移行
 | IP レピュテーション | キャッシュヒット時に効かない            | 全リクエストに効く            |
 | コスト              | ~$9/月                                  | ~$9/月（二重にならない）      |
 
-ALB の WAF は廃止する。ALB への直接アクセスは Origin Verify で防止するため、
-ALB 側の WAF は不要。
+ALB の WAF は廃止する。ALB は internal（VPC 内部）のため、
+インターネットから直接アクセスできない。
 
 ### IP 制限
 
@@ -134,18 +134,17 @@ CF Function コードに埋め込み、`event.viewer.ip` で CIDR マッチン�
 許可リスト外の IP からのリクエストには 403 を返す。
 WAF の IP セットルールは使用しない（CF Function で実現することで、WAF なしでも
 IP 制限が可能 = `enableWaf: false` で ~$9/月を節約可能）。
-ALB SG の IP 制限ルールは廃止し、Origin Verify による CloudFront 経由のみ許可に変更する。
 
-### Origin Verify（ALB 直アクセス防止）
+### ALB 直アクセス防止（VPC Origin）
 
-CloudFront がオリジンにリクエストする際、カスタムヘッダー
-`X-Origin-Verify: <secret>` を付与する。
+CloudFront VPC Origin を使用し、CloudFront が VPC 内の internal ALB に直接接続する。
 
-- Secret は Secrets Manager で自動生成（CDK が管理）
-- **ALB リスナールール** でヘッダーを検証（デフォルトアクション: 403、ヘッダー一致時のみ転送）
-- ALB ヘルスチェックはリスナールールをバイパスするため影響なし
-- アプリケーションコードの変更は不要（ミドルウェアではなくインフラ層で制御）
-- オンプレ / ローカルでは CloudFront を使わないため Origin Verify も不要
+- ALB は `internetFacing: false`（パブリック IP を持たない）
+- CloudFront が VPC 内に ENI を作成し、プライベートネットワーク経由で ALB にアクセス
+- ALB の SG は CloudFront マネージドプレフィックスリスト（`com.amazonaws.global.cloudfront.origin-facing`）からの port 80 のみ許可
+- Origin Verify ヘッダーや Secrets Manager シークレットは不要（ネットワークレベルで隔離）
+- オンプレ / ローカルでは CloudFront を使わないため影響なし
+- ALB のパブリック IPv4 が不要になり、**~$7.5/月のコスト削減**
 
 ### CDK スタック構成
 
@@ -162,21 +161,19 @@ KukanStack (ap-northeast-1)
 ├── Queue (SQS)
 ├── Search (OpenSearch)
 ├── ECS Cluster
-├── Origin Verify Secret (Secrets Manager)  ← ALB + CloudFront で共有
-├── WebService (Fargate + ALB)
-│   └── ALB Listener Rule (X-Origin-Verify ヘッダー検証)
+├── WebService (Fargate + internal ALB)
 ├── WorkerService (Fargate)
 ├── CDN (CloudFront Distribution)
+│   ├── VPC Origin → internal ALB
 │   ├── CloudFront Functions (IP 制限 + Cookie bypass)
-│   ├── Cache Policy / Origin Request Policy
-│   └── カスタムオリジンヘッダー (X-Origin-Verify)
+│   └── Cache Policy / Origin Request Policy
 └── Route53 A (Alias) → CloudFront
 ```
 
 ### オンプレ版への影響
 
 なし。CloudFront は AWS 固有のインフラ。
-Origin Verify は ALB リスナールールで実施するため、アプリケーションコードに変更はなく、
+VPC Origin はインフラ層の変更のみであり、アプリケーションコードに変更はなく、
 オンプレ / Docker Compose 環境に影響しない。
 
 ## コスト影響
@@ -184,12 +181,15 @@ Origin Verify は ALB リスナールールで実施するため、アプリケ�
 | 項目                  | 変更前        | 変更後               | 差額                          |
 | --------------------- | ------------- | -------------------- | ----------------------------- |
 | ALB 固定費            | ~$18/月       | ~$18/月              | ±$0                           |
+| ALB パブリック IPv4   | ~$7.5/月      | $0（internal ALB）   | **-$7.5**                     |
 | WAF                   | ~$9/月（ALB） | ~$9/月（CloudFront） | ±$0                           |
 | CloudFront リクエスト | —             | ~$1–3/月             | +$1–3                         |
 | CloudFront データ転送 | —             | $0.085/GB            | EC2 直接 ($0.114/GB) より安い |
-| **合計**              | —             | —                    | **+$1–3/月**（小規模時）      |
+| Origin Verify Secret  | ~$0.4/月      | $0（不要）           | **-$0.4**                     |
+| **合計**              | —             | —                    | **-$5–7/月**（小規模時）      |
 
-データ転送量が多い場合は CloudFront の方が安くなる（$0.085 vs $0.114/GB）。
+VPC Origin により ALB のパブリック IPv4 が不要になり、Origin Verify Secret も廃止できる。
+データ転送量が多い場合は CloudFront の方がさらに安くなる（$0.085 vs $0.114/GB）。
 
 ## 移行手順
 
@@ -197,11 +197,10 @@ Origin Verify は ALB リスナールールで実施するため、アプリケ�
 
 1. ADR 承認
 2. `infra/lib/global-stack.ts` 作成（us-east-1: ACM 証明書 + WAF WebACL）
-3. `infra/lib/constructs/cdn.ts` 作成（CloudFront Distribution, Origin Verify Secret）
+3. `infra/lib/constructs/cdn.ts` 作成（CloudFront Distribution + VPC Origin）
 4. `infra/lib/cf-functions/viewer-request.js` 作成（IP 制限 + Cookie bypass）
 5. `infra/lib/constructs/network.ts` 更新
-   - ALB SG の IP 制限ルールを廃止（IP 制限は CF Function に移行）
-   - ALB SG は port 80 のみ許可（CloudFront → ALB は HTTP）
+   - ALB SG: CloudFront マネージドプレフィックスリストから port 80 のみ許可
 6. `infra/lib/kukan-stack.ts` 更新
    - 地域 ACM 証明書を廃止（CloudFront が TLS 終端）
    - CDN コンストラクト追加
@@ -250,9 +249,8 @@ npx cdk deploy KukanStack
 curl -sI https://<domain> | grep x-cache
 # → X-Cache: Hit from cloudfront
 
-# Origin Verify 確認（ALB 直アクセスがブロックされること）
-curl -sI http://<ALB DNS>
-# → 403 Forbidden
+# ALB は internal のためインターネットから直接アクセス不可
+# （DNS 解決がプライベート IP を返すため、VPC 外から接続できない）
 
 # ログイン時にバイパスされることを確認
 # API エンドポイントの正常動作

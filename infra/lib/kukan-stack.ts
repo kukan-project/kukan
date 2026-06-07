@@ -3,8 +3,8 @@
  * Orchestrates all infrastructure constructs.
  *
  * CloudFront is always deployed as the front-facing layer (ADR-027).
- * TLS termination, WAF, and caching are handled at CloudFront;
- * ALB receives HTTP traffic only.
+ * CloudFront connects to the internal ALB via VPC origin — no public IPs on ALB.
+ * TLS termination, WAF, and caching are handled at CloudFront.
  */
 
 import * as cdk from 'aws-cdk-lib'
@@ -51,11 +51,6 @@ export class KukanStack extends cdk.Stack {
       generateSecretString: { excludePunctuation: true, passwordLength: 64 },
     })
 
-    // --- Origin Verify Secret (shared between ALB listener rule and CloudFront) ---
-    const originVerifySecret = new secretsmanager.Secret(this, 'OriginVerifySecret', {
-      generateSecretString: { excludePunctuation: true, passwordLength: 32 },
-    })
-
     // --- Storage (S3) ---
     const storage = new StorageConstruct(this, 'Storage', { config })
 
@@ -78,9 +73,8 @@ export class KukanStack extends cdk.Stack {
       clusterName: 'kukan',
     })
 
-    // --- Web Service (ECS Fargate + ALB, HTTP only) ---
-    // CloudFront terminates TLS; ALB does not need an ACM certificate.
-    // Origin Verify is enforced at the ALB listener rule level (ADR-027).
+    // --- Web Service (ECS Fargate + internal ALB) ---
+    // CloudFront connects to ALB via VPC origin — no public IPs on ALB.
     const webService = new WebServiceConstruct(this, 'WebService', {
       config,
       cluster,
@@ -91,7 +85,6 @@ export class KukanStack extends cdk.Stack {
       bucket: storage.bucket,
       queue: queue.queue,
       searchDomainEndpoint: search?.domainEndpoint,
-      originVerifyHeaderValue: originVerifySecret.secretValue.unsafeUnwrap(),
     })
 
     // --- Worker Service (ECS Fargate) ---
@@ -106,11 +99,10 @@ export class KukanStack extends cdk.Stack {
       searchDomainEndpoint: search?.domainEndpoint,
     })
 
-    // --- CDN (CloudFront) ---
+    // --- CDN (CloudFront with VPC origin) ---
     const cdn = new CdnConstruct(this, 'CDN', {
       config,
-      albDnsName: webService.loadBalancerDnsName,
-      originVerifySecret,
+      alb: webService.loadBalancer,
       certificateArn: props.globalCertificateArn,
       webAclArn: props.globalWebAclArn,
     })
@@ -142,7 +134,7 @@ export class KukanStack extends cdk.Stack {
       description: 'CloudFront Distribution Domain Name',
     })
     new cdk.CfnOutput(this, 'AlbDnsName', {
-      value: webService.loadBalancerDnsName,
+      value: webService.loadBalancer.loadBalancerDnsName,
       description: 'ALB DNS Name (internal, behind CloudFront)',
     })
     new cdk.CfnOutput(this, 'BucketName', {

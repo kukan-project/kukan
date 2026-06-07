@@ -493,7 +493,7 @@ Web / Worker ともに ECS Fargate で運用する。Web は ALB 経由でリク
 ┌───────────────────────────────────────────────────────────┐
 │ AWS                                                        │
 │                                                            │
-│  Route53 → CloudFront (WAF + Cache) → ALB (HTTP)             │
+│  Route53 → CloudFront (WAF + Cache) → [VPC Origin] → ALB (internal) │
 │               │                                            │
 │  ┌────────────▼──────────────────────────────────────┐    │
 │  │ VPC                                                │    │
@@ -613,48 +613,54 @@ Workerが落ちていてもメッセージはキューに残り、復帰後に�
 ### 4.4 コスト概算
 
 CDK デプロイプロファイル（`infra/lib/config.ts`）に基づく東京リージョンでの月額概算。
-ECS タスクは Public サブネット構成（NAT Gateway 不要）、CloudFront 不要（ALB が前面）。
+ECS タスクは Public サブネット構成（NAT Gateway 不要）、CloudFront → VPC Origin → internal ALB。
 
 **small — 小規模（最小コスト）**
 
-| 構成要素                                  | 月額概算                     |
-| ----------------------------------------- | ---------------------------- |
-| ECS Fargate "web" (0.25vCPU/0.5GB × 1)    | ~$10                         |
-| ECS Fargate "worker" (0.25vCPU/0.5GB × 1) | ~$10                         |
-| ALB                                       | ~$18                         |
-| RDS db.t4g.micro (Single-AZ)              | ~$13                         |
-| SQS                                       | ~$0（月100万リクエスト無料） |
-| S3                                        | ~$3                          |
-| **合計（OpenSearch なし）**               | **~$54/月**                  |
-| + OpenSearch t3.small.search × 1 (10GB)   | + ~$26                       |
-| **合計（OpenSearch あり）**               | **~$80/月**                  |
+※ 詳細は `docs/specs/phase4-deploy.md` のコスト試算セクションを参照。
+※ ap-northeast-1（東京）リージョン基準。税別。
+
+| 構成要素                                | 月額概算     |
+| --------------------------------------- | ------------ |
+| ECS Fargate "web" (0.25vCPU/0.5GB × 1)  | ~$11         |
+| ECS Fargate "worker" (0.25vCPU/1GB × 1) | ~$13         |
+| ALB (internal)                          | ~$18         |
+| RDS db.t4g.micro + 20 GB                | ~$22         |
+| CloudFront (VPC origin + 転送)          | ~$2          |
+| パブリック IPv4 (ECS タスク × 2)        | ~$8          |
+| S3 + SQS + Secrets + ECR + CW 等        | ~$7          |
+| **合計（OpenSearch なし、税別）**       | **~$77/月**  |
+| + OpenSearch t3.small.search × 1 (10GB) | + ~$43       |
+| **合計（OpenSearch あり、税別）**       | **~$120/月** |
 
 **medium — 中規模（標準推奨）**
 
 | 構成要素                                    | 月額概算     |
 | ------------------------------------------- | ------------ |
-| ECS Fargate "web" (0.5vCPU/1GB × 1)         | ~$19         |
-| ECS Fargate "worker" (0.5vCPU/1GB × 1)      | ~$19         |
-| ALB                                         | ~$18         |
-| Aurora Serverless v2 (0.5–2 ACU, Single-AZ) | ~$53         |
-| SQS                                         | ~$0          |
-| S3                                          | ~$3          |
-| OpenSearch m6g.large.search × 1 (50GB)      | ~$120        |
-| **合計**                                    | **~$232/月** |
+| ECS Fargate "web" (0.5vCPU/1GB × 1)         | ~$23         |
+| ECS Fargate "worker" (0.5vCPU/1GB × 1)      | ~$23         |
+| ALB (internal)                              | ~$18         |
+| Aurora Serverless v2 (0.5–2 ACU, Single-AZ) | ~$57         |
+| OpenSearch m6g.large.search × 1 (50GB)      | ~$127        |
+| CloudFront (VPC origin + 転送)              | ~$3          |
+| パブリック IPv4 (ECS タスク × 2)            | ~$8          |
+| S3 + SQS + Secrets + ECR + CW 等            | ~$7          |
+| **合計（税別）**                            | **~$266/月** |
 
 **large — 大規模**
 
-| 構成要素                                     | 月額概算     |
-| -------------------------------------------- | ------------ |
-| ECS Fargate "web" (1vCPU/2GB × 2)            | ~$76         |
-| ECS Fargate "worker" (1vCPU/2GB × 2)         | ~$76         |
-| ALB                                          | ~$18         |
-| Aurora Serverless v2 (2–8 ACU, Multi-AZ)     | ~$260        |
-| SQS                                          | ~$0          |
-| S3                                           | ~$5          |
-| OpenSearch m6g.xlarge.search × 2 (100GB, AZ) | ~$480        |
-| WAF (optional)                               | ~$9          |
-| **合計**                                     | **~$924/月** |
+| 構成要素                                     | 月額概算       |
+| -------------------------------------------- | -------------- |
+| ECS Fargate "web" (1vCPU/2GB × 2)            | ~$90           |
+| ECS Fargate "worker" (1vCPU/2GB × 2)         | ~$90           |
+| ALB (internal)                               | ~$18           |
+| Aurora Serverless v2 (2–8 ACU, Multi-AZ)     | ~$444          |
+| OpenSearch m6g.xlarge.search × 2 (200GB, AZ) | ~$510          |
+| CloudFront (VPC origin + 転送)               | ~$5            |
+| パブリック IPv4 (ECS タスク × 4)             | ~$15           |
+| WAF (optional)                               | ~$9            |
+| S3 + SQS + Secrets + ECR + CW 等             | ~$10           |
+| **合計（税別）**                             | **~$1,191/月** |
 
 ※ Fargate 料金: 東京リージョン vCPU $0.05056/h, メモリ $0.00553/h
 ※ ALB 固定料金 $0.0243/h ≒ $18/月（LCU 従量分は低トラフィック時ほぼゼロ）

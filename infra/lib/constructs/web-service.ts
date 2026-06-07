@@ -27,16 +27,11 @@ export interface WebServiceProps {
   bucket: s3.IBucket
   queue: sqs.IQueue
   searchDomainEndpoint?: string
-  /**
-   * Origin Verify header value for ALB listener rule (ADR-027).
-   * When set, ALB rejects requests without a matching X-Origin-Verify header.
-   */
-  originVerifyHeaderValue?: string
 }
 
 export class WebServiceConstruct extends Construct {
-  /** ALB DNS name — used for CloudFront origin / Route53. */
-  readonly loadBalancerDnsName: string
+  /** Internal ALB — used as CloudFront VPC origin. */
+  readonly loadBalancer: elbv2.IApplicationLoadBalancer
   private readonly webContainer: ecs.ContainerDefinition
 
   /** Add an environment variable to the web container after construction. */
@@ -57,7 +52,6 @@ export class WebServiceConstruct extends Construct {
       bucket,
       queue,
       searchDomainEndpoint,
-      originVerifyHeaderValue,
     } = props
 
     // Docker image (built and pushed automatically by CDK)
@@ -145,27 +139,19 @@ export class WebServiceConstruct extends Construct {
       circuitBreaker: { enable: true, rollback: true },
     })
 
-    // ALB (internet-facing, public subnets)
+    // ALB (internal, private subnet — CloudFront connects via VPC origin)
     const alb = new elbv2.ApplicationLoadBalancer(this, 'Alb', {
       vpc: cluster.vpc,
-      internetFacing: true,
+      internetFacing: false,
       securityGroup: albSecurityGroup,
-      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
     })
 
     // HTTP Listener (open: false — SG rules managed by NetworkConstruct)
-    // When Origin Verify is set, default action is 403; only CloudFront traffic
-    // with the correct header is forwarded. ALB health checks bypass listener rules.
     const listener = alb.addListener('HttpListener', {
       port: 80,
       protocol: elbv2.ApplicationProtocol.HTTP,
       open: false,
-      ...(originVerifyHeaderValue && {
-        defaultAction: elbv2.ListenerAction.fixedResponse(403, {
-          contentType: 'text/plain',
-          messageBody: 'Direct access is not allowed',
-        }),
-      }),
     })
 
     const targetGroup = listener.addTargets('WebTarget', {
@@ -179,12 +165,6 @@ export class WebServiceConstruct extends Construct {
         healthyThresholdCount: 2,
         unhealthyThresholdCount: 3,
       },
-      ...(originVerifyHeaderValue && {
-        conditions: [
-          elbv2.ListenerCondition.httpHeader('X-Origin-Verify', [originVerifyHeaderValue]),
-        ],
-        priority: 1,
-      }),
     })
 
     // Auto Scaling
@@ -199,7 +179,7 @@ export class WebServiceConstruct extends Construct {
       })
     }
 
-    this.loadBalancerDnsName = alb.loadBalancerDnsName
+    this.loadBalancer = alb
 
     cdk.Tags.of(this).add('kukan:component', 'web-service')
   }

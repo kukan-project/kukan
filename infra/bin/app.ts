@@ -14,6 +14,11 @@ import { KukanStack } from '../lib/kukan-stack.js'
 
 const app = new cdk.App()
 const account = process.env.CDK_DEFAULT_ACCOUNT
+if (!account) {
+  throw new Error(
+    'CDK_DEFAULT_ACCOUNT is not set. Run "aws sso login" or configure AWS credentials.'
+  )
+}
 const region = (app.node.tryGetContext('region') ?? 'ap-northeast-1') as string
 
 // --- Determine whether GlobalStack is needed ---

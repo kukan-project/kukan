@@ -1,7 +1,7 @@
 /**
  * KUKAN CDN Construct
- * CloudFront distribution with cookie-based cache bypass,
- * optional IP restriction (via CF Function), Origin Verify secret,
+ * CloudFront distribution with VPC origin (internal ALB),
+ * cookie-based cache bypass, optional IP restriction (via CF Function),
  * and WAF integration.
  */
 
@@ -12,7 +12,7 @@ import * as cdk from 'aws-cdk-lib'
 import * as acm from 'aws-cdk-lib/aws-certificatemanager'
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront'
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins'
-import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
+import type * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2'
 import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
 
@@ -20,10 +20,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 
 export interface CdnProps {
   config: KukanConfig
-  /** ALB DNS name used as CloudFront origin. */
-  albDnsName: string
-  /** Origin Verify secret (shared with ALB listener rule). */
-  originVerifySecret: secretsmanager.ISecret
+  /** Internal ALB used as CloudFront VPC origin. */
+  alb: elbv2.IApplicationLoadBalancer
   /** ACM certificate ARN in us-east-1 for custom domain (from KukanGlobalStack). */
   certificateArn?: string
   /** WAF WebACL ARN in us-east-1 (from KukanGlobalStack). */
@@ -49,7 +47,7 @@ export class CdnConstruct extends Construct {
   constructor(scope: Construct, id: string, props: CdnProps) {
     super(scope, id)
 
-    const { config, albDnsName, originVerifySecret, certificateArn, webAclArn } = props
+    const { config, alb, certificateArn, webAclArn } = props
 
     // --- CloudFront Function: IP restriction + cookie-based cache bypass ---
     const viewerRequestFn = new cloudfront.Function(this, 'ViewerRequestFn', {
@@ -58,13 +56,10 @@ export class CdnConstruct extends Construct {
       runtime: cloudfront.FunctionRuntime.JS_2_0,
     })
 
-    // --- ALB Origin (HTTP only — CloudFront terminates TLS) ---
-    const albOrigin = new origins.HttpOrigin(albDnsName, {
+    // --- ALB VPC Origin (CloudFront connects to internal ALB via VPC) ---
+    const albOrigin = origins.VpcOrigin.withApplicationLoadBalancer(alb, {
       protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
       httpPort: 80,
-      customHeaders: {
-        'X-Origin-Verify': originVerifySecret.secretValue.unsafeUnwrap(),
-      },
     })
 
     // --- Cache Policy: HTML pages (TTL 60–300s, bypass via header) ---

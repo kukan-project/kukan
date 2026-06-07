@@ -41,17 +41,23 @@ export class NetworkConstruct extends Construct {
 
     // --- Security Groups ---
 
-    // ALB (internet-facing, behind CloudFront)
-    // CloudFront terminates TLS; ALB receives HTTP on port 80.
-    // ALB listener rule enforces Origin Verify header (ADR-027).
-    // IP restriction is handled by CloudFront Function.
+    // ALB (internal — CloudFront connects via VPC origin)
+    // CloudFront VPC origin requires the ALB SG to allow traffic from the
+    // CloudFront managed prefix list (com.amazonaws.global.cloudfront.origin-facing).
+    // Using the prefix list avoids chicken-and-egg issues with the CloudFront-managed SG.
     this.albSecurityGroup = new ec2.SecurityGroup(this, 'AlbSg', {
       vpc: this.vpc,
-      description: 'ALB for web service (behind CloudFront)',
+      description: 'Internal ALB for web service (CloudFront VPC origin)',
       allowAllOutbound: true,
     })
-    this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'HTTP')
-    this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv6(), ec2.Port.tcp(80), 'HTTP IPv6')
+    const cfPrefixList = ec2.PrefixList.fromLookup(this, 'CfPrefixList', {
+      prefixListName: 'com.amazonaws.global.cloudfront.origin-facing',
+    })
+    this.albSecurityGroup.addIngressRule(
+      ec2.Peer.prefixList(cfPrefixList.prefixListId),
+      ec2.Port.tcp(80),
+      'CloudFront VPC origin (managed prefix list)'
+    )
 
     // Web (ECS Fargate tasks — ALB traffic only)
     this.webSecurityGroup = new ec2.SecurityGroup(this, 'WebSg', {

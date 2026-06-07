@@ -8,14 +8,14 @@ OSS 公開時にユーザーが `cdk deploy` で自環境を構築できるこ�
 ## アーキテクチャ
 
 ```
-Route53 ─→ CloudFront (WAF + Cache) ─→ ALB (HTTP) ─→ ECS Fargate "web" (:3000)
-                                         │
+Route53 ─→ CloudFront (WAF + Cache) ─→ [VPC Origin] ─→ ALB (HTTP) ─→ ECS Fargate "web" (:3000)
+
                               ┌─── Public Subnets ────┐
-                              │  ALB                   │
                               │  ECS Fargate "web"     │
                               │  ECS Fargate "worker"  │
                               └────────────────────────┘
                               ┌─── Isolated Subnets ──┐
+                              │  ALB (internal)        │
                               │  Aurora/RDS PostgreSQL │
                               │  OpenSearch 3.x        │
                               └────────────────────────┘
@@ -40,14 +40,15 @@ SQS ← API enqueue → Worker consume (ロングポーリング)
 
 ```
 VPC (10.0.0.0/16)
-├── Public Subnet A (AZ-a)  ← ALB / ECS Fargate (web, worker)
-├── Public Subnet B (AZ-c)  ← ALB / ECS Fargate (web, worker)
-├── Isolated Subnet A (AZ-a) ← RDS / OpenSearch
-└── Isolated Subnet B (AZ-c) ← RDS (multi-AZ)
+├── Public Subnet A (AZ-a)  ← ECS Fargate (web, worker)
+├── Public Subnet B (AZ-c)  ← ECS Fargate (web, worker)
+├── Isolated Subnet A (AZ-a) ← ALB (internal) / RDS / OpenSearch
+└── Isolated Subnet B (AZ-c) ← ALB (internal) / RDS (multi-AZ)
 ```
 
 - ECS タスクは Public サブネットで `assignPublicIp: true`（NAT 不要）
-- DB / OpenSearch は Isolated サブネット（インターネットアクセスなし）
+- ALB / DB / OpenSearch は Isolated サブネット（インターネットアクセスなし）
+- CloudFront VPC Origin が ALB に直接接続（パブリック IP 不要）
 - S3 Gateway VPC Endpoint（無料）で S3 トラフィックを最適化
 
 ## Worker ヘルスチェック
@@ -72,35 +73,63 @@ CDK の `dbEngine` パラメータ（`rds` | `aurora`）で切替。
 
 ## コスト試算
 
-### Small（デモ / PoC）: ~$64/月
+### Small（デモ / PoC）: ~$120/月
 
-| サービス           | スペック            | 月額 USD |
-| ------------------ | ------------------- | -------- |
-| ECS Fargate Web    | 0.25 vCPU / 0.5 GB  | ~$9      |
-| ALB                | 常時稼働            | ~$18     |
-| ECS Fargate Worker | 0.25 vCPU / 1 GB    | ~$13     |
-| RDS PostgreSQL     | db.t4g.micro        | ~$15     |
-| OpenSearch         | t3.small.search × 1 | ~$27     |
-| S3 + SQS           | 最小                | ~$2      |
-| Secrets Manager    | 2 secrets           | ~$1      |
+※ ap-northeast-1（東京）リージョン基準。税別。
 
-OpenSearch なし（SEARCH_TYPE=postgres）: ~$37/月
+| サービス            | スペック             | 月額 USD |
+| ------------------- | -------------------- | -------- |
+| ECS Fargate Web     | 0.25 vCPU / 0.5 GB   | ~$9      |
+| ECS Fargate Worker  | 0.25 vCPU / 1 GB     | ~$13     |
+| ALB                 | 常時稼働（internal） | ~$18     |
+| RDS PostgreSQL      | db.t4g.micro + 20 GB | ~$22     |
+| OpenSearch          | t3.small.search × 1  | ~$43     |
+| CloudFront          | VPC origin + 転送    | ~$2      |
+| パブリック IPv4     | ECS タスク × 2       | ~$8      |
+| S3 + SQS            | 最小                 | ~$2      |
+| Secrets Manager     | 1 secret             | ~$1      |
+| ECR + CloudWatch 等 | 最小                 | ~$2      |
+
+OpenSearch なし（SEARCH_TYPE=postgres）: ~$77/月
 WAF 追加（enableWaf=true）: +~$9/月
-CloudFront: +~$1–3/月（リクエスト + データ転送）
 IP 制限は CloudFront Function で対応（追加コストなし）
+消費税（日本リージョン 10%）: 別途加算
 
-### Medium（単一自治体）: ~$250/月
+### Medium（単一自治体）: ~$266/月
 
-### Large（都道府県 / 国レベル）: ~$1,000/月
+| サービス                         | スペック                    | 月額 USD |
+| -------------------------------- | --------------------------- | -------- |
+| ECS Fargate Web                  | 0.5 vCPU / 1 GB × 1         | ~$23     |
+| ECS Fargate Worker               | 0.5 vCPU / 1 GB × 1         | ~$23     |
+| ALB                              | 常時稼働（internal）        | ~$18     |
+| Aurora Serverless v2             | 0.5–2 ACU, Single-AZ        | ~$57     |
+| OpenSearch                       | m6g.large.search × 1 (50GB) | ~$127    |
+| CloudFront                       | VPC origin + 転送           | ~$3      |
+| パブリック IPv4                  | ECS タスク × 2              | ~$8      |
+| S3 + SQS + Secrets + ECR + CW 等 | —                           | ~$7      |
+
+### Large（都道府県 / 国レベル）: ~$1,191/月
+
+| サービス                         | スペック                          | 月額 USD |
+| -------------------------------- | --------------------------------- | -------- |
+| ECS Fargate Web                  | 1 vCPU / 2 GB × 2                 | ~$90     |
+| ECS Fargate Worker               | 1 vCPU / 2 GB × 2                 | ~$90     |
+| ALB                              | 常時稼働（internal）              | ~$18     |
+| Aurora Serverless v2             | 2–8 ACU, Multi-AZ (Writer+Reader) | ~$444    |
+| OpenSearch                       | m6g.xlarge.search × 2 (200GB)     | ~$510    |
+| CloudFront                       | VPC origin + 転送                 | ~$5      |
+| パブリック IPv4                  | ECS タスク × 4                    | ~$15     |
+| WAF（オプション）                | マネージドルール                  | ~$9      |
+| S3 + SQS + Secrets + ECR + CW 等 | —                                 | ~$10     |
 
 ## CDK スタック構成
 
 2スタック構成。CloudFront 用のグローバルリソース（ACM 証明書・WAF WebACL）は us-east-1 にデプロイ。
 
-| スタック          | リージョン     | 用途                                    |
-| ----------------- | -------------- | --------------------------------------- |
-| KukanGlobalStack  | us-east-1      | ACM 証明書 + WAF WebACL（CloudFront 用）|
-| KukanStack        | ap-northeast-1 | VPC, ECS, RDS, CloudFront 等            |
+| スタック         | リージョン     | 用途                                     |
+| ---------------- | -------------- | ---------------------------------------- |
+| KukanGlobalStack | us-east-1      | ACM 証明書 + WAF WebACL（CloudFront 用） |
+| KukanStack       | ap-northeast-1 | VPC, ECS, RDS, CloudFront 等             |
 
 KukanGlobalStack はドメイン名指定時または WAF 有効時に自動作成される。
 
@@ -194,7 +223,7 @@ npx cdk deploy --all -c enableWaf=false
 `allowedIpRanges` 設定時、CloudFront Function（Viewer Request）で IP アドレスを制限（ADR-027）。
 IPv4 CIDR と IPv6 プレフィックスの両方に対応。追加コストなし。
 
-- ALB: Origin Verify ヘッダーで CloudFront 経由のみ許可（リスナールール）
+- ALB: internal（CloudFront VPC Origin 経由のみ、マネージドプレフィックスリストで制限）
 - Web タスク SG: ALB からの 3000 番ポートのみ許可（直接アクセス不可）
 - Worker タスク SG: インバウンドなし
 
@@ -332,7 +361,7 @@ Client ─→ Caddy (:80/:443) ─→ web (:3000)
 - **ポート公開**: インフラサービス（postgres:5432, minio:9000 等）はホストに公開される。本番環境ではファイアウォールでアクセスを制限するか、compose.yml の `ports:` を `expose:` に変更する。
 - **パスワード管理**: `.env.prod` は `.gitignore` 対象。デフォルトパスワードから必ず変更すること。
 - **DB SSL**: `POSTGRES_SSLMODE=require` で SSL 接続を有効化。AWS（RDS/Aurora PG16+）は SSL 必須のため CDK で自動設定。オンプレは postgres:16-alpine が SSL 非対応のためデフォルト `disable`。
-- **ORIGIN_VERIFY_SECRET**: オンプレミスでは不要（CloudFront を経由しないため）。未設定時は middleware がスキップする。
+- **ALB 直アクセス防止**: AWS では CloudFront VPC Origin により ALB は internal（パブリック IP なし）。オンプレミスでは Caddy がリバースプロキシとして前面に立つ。
 
 ### デプロイ手順
 

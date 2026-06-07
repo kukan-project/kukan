@@ -33,12 +33,12 @@ as operations progressed, the need for **page caching** emerged.
 
 ### Addressing CloudFront Drawbacks Cited in ADR-020
 
-| ADR-020 drawback                                     | Addressed in this ADR                                                                   |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| us-east-1 ACM certificate cross-region dependency    | ARN linked via CDK `crossRegionReferences`. 2-stack configuration is accepted           |
-| CloudFront → ALB data transfer double billing        | AWS internal transfer is free. CloudFront transfer rate is cheaper than EC2→Internet    |
-| Double WAF cost                                      | WAF consolidated to CloudFront side (ALB WAF removed)                                   |
-| 3-stage request path makes troubleshooting difficult | 2 log sources (CloudFront access logs + ALB logs), but Origin Verify clarifies the path |
+| ADR-020 drawback                                     | Addressed in this ADR                                                                |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| us-east-1 ACM certificate cross-region dependency    | ARN linked via CDK `crossRegionReferences`. 2-stack configuration is accepted        |
+| CloudFront → ALB data transfer double billing        | AWS internal transfer is free. CloudFront transfer rate is cheaper than EC2→Internet |
+| Double WAF cost                                      | WAF consolidated to CloudFront side (ALB WAF removed)                                |
+| 3-stage request path makes troubleshooting difficult | 2 log sources (CloudFront access logs + ALB logs), but VPC origin clarifies the path |
 
 ## Decision
 
@@ -47,7 +47,7 @@ as operations progressed, the need for **page caching** emerged.
 ### Architecture
 
 ```
-User → CloudFront (WAF + Cache) → ALB → ECS Fargate (Next.js + Hono)
+User → CloudFront (WAF + Cache) → [VPC Origin] → ALB (internal) → ECS Fargate (Next.js + Hono)
 ```
 
 ### Cache Strategy: Session Cookie-Based Bypass
@@ -120,8 +120,8 @@ WAF is migrated from ALB (REGIONAL) to CloudFront (CLOUDFRONT scope).
 | IP reputation | Ineffective on cache hits              | Effective on all requests    |
 | Cost          | ~$9/month                              | ~$9/month (not doubled)      |
 
-ALB WAF is removed. Direct access to the ALB is prevented by Origin Verify,
-making ALB-side WAF unnecessary.
+ALB WAF is removed. The ALB is internal (within VPC), so it is not directly
+accessible from the internet.
 
 ### IP Restriction
 
@@ -134,18 +134,17 @@ at synth time, performing CIDR matching (IPv4/IPv6) against `event.viewer.ip`.
 Requests from IPs outside the allowlist receive a 403 response.
 WAF IP set rules are not used — implementing this in the CF Function allows IP restriction
 without WAF (`enableWaf: false` saves ~$9/month).
-ALB SG IP restriction rules are removed, replaced by CloudFront-only access via Origin Verify.
 
-### Origin Verify (Preventing Direct ALB Access)
+### Preventing Direct ALB Access (VPC Origin)
 
-When CloudFront sends requests to the origin, it includes a custom header
-`X-Origin-Verify: <secret>`.
+CloudFront VPC Origin is used to connect CloudFront directly to the internal ALB within the VPC.
 
-- Secret is auto-generated in Secrets Manager (managed by CDK)
-- **ALB listener rule** validates the header (default action: 403, forwards only when header matches)
-- ALB health checks bypass listener rules and are not affected
-- No application code changes required (enforced at infrastructure level)
-- On-premises / local environments do not use CloudFront, so Origin Verify is not needed
+- ALB is `internetFacing: false` (no public IPs)
+- CloudFront creates ENIs in the VPC and accesses the ALB via private network
+- ALB SG allows port 80 only from the CloudFront managed prefix list (`com.amazonaws.global.cloudfront.origin-facing`)
+- No Origin Verify header or Secrets Manager secret required (network-level isolation)
+- On-premises / local environments do not use CloudFront, so no impact
+- Eliminates ALB public IPv4 addresses, saving **~$7.5/month**
 
 ### CDK Stack Configuration
 
@@ -162,21 +161,19 @@ KukanStack (ap-northeast-1)
 ├── Queue (SQS)
 ├── Search (OpenSearch)
 ├── ECS Cluster
-├── Origin Verify Secret (Secrets Manager)  ← Shared by ALB + CloudFront
-├── WebService (Fargate + ALB)
-│   └── ALB Listener Rule (X-Origin-Verify header validation)
+├── WebService (Fargate + internal ALB)
 ├── WorkerService (Fargate)
 ├── CDN (CloudFront Distribution)
+│   ├── VPC Origin → internal ALB
 │   ├── CloudFront Functions (IP restriction + cookie bypass)
-│   ├── Cache Policy / Origin Request Policy
-│   └── Custom origin header (X-Origin-Verify)
+│   └── Cache Policy / Origin Request Policy
 └── Route53 A (Alias) → CloudFront
 ```
 
 ### Impact on On-Premises Version
 
 None. CloudFront is AWS-specific infrastructure.
-Origin Verify is enforced at the ALB listener rule level, requiring no application code changes.
+VPC Origin is purely an infrastructure concern, requiring no application code changes.
 On-premises / Docker Compose environments are not affected.
 
 ## Cost Impact
@@ -184,12 +181,15 @@ On-premises / Docker Compose environments are not affected.
 | Item                     | Before          | After                  | Difference                          |
 | ------------------------ | --------------- | ---------------------- | ----------------------------------- |
 | ALB fixed cost           | ~$18/month      | ~$18/month             | ±$0                                 |
+| ALB public IPv4          | ~$7.5/month     | $0 (internal ALB)      | **-$7.5**                           |
 | WAF                      | ~$9/month (ALB) | ~$9/month (CloudFront) | ±$0                                 |
 | CloudFront requests      | —               | ~$1–3/month            | +$1–3                               |
 | CloudFront data transfer | —               | $0.085/GB              | Cheaper than EC2 direct ($0.114/GB) |
-| **Total**                | —               | —                      | **+$1–3/month** (at small scale)    |
+| Origin Verify Secret     | ~$0.4/month     | $0 (not needed)        | **-$0.4**                           |
+| **Total**                | —               | —                      | **-$5–7/month** (at small scale)    |
 
-For higher data transfer volumes, CloudFront is cheaper ($0.085 vs $0.114/GB).
+VPC Origin eliminates the need for ALB public IPv4 and the Origin Verify Secret.
+For higher data transfer volumes, CloudFront is even cheaper ($0.085 vs $0.114/GB).
 
 ## Migration Steps
 
@@ -197,14 +197,14 @@ For higher data transfer volumes, CloudFront is cheaper ($0.085 vs $0.114/GB).
 
 1. ADR approval
 2. Create `infra/lib/global-stack.ts` (us-east-1: ACM certificate + WAF WebACL)
-3. Create `infra/lib/constructs/cdn.ts` (CloudFront Distribution, Origin Verify Secret)
+3. Create `infra/lib/constructs/cdn.ts` (CloudFront Distribution with VPC Origin)
 4. Create `infra/lib/cf-functions/viewer-request.js` (IP restriction + cookie bypass)
 5. Update `infra/lib/constructs/network.ts`
-   - Remove ALB SG IP restriction rules (IP restriction moved to CF Function)
-   - ALB SG allows port 80 only (CloudFront → ALB uses HTTP)
+   - Remove ALB SG internet-facing ingress rules (ALB is internal)
 6. Update `infra/lib/kukan-stack.ts`
    - Remove regional ACM certificate (CloudFront terminates TLS)
-   - Add CDN construct
+   - Remove Origin Verify Secret (replaced by VPC origin)
+   - Add CDN construct with VPC origin
    - Change Route53 record from CNAME → ALB to A (Alias) → CloudFront
    - Remove ALB WAF Association (WAF migrated to CloudFront side)
 7. Update `infra/bin/app.ts` (KukanGlobalStack + crossRegionReferences)
@@ -249,9 +249,8 @@ This step is only needed for a one-time migration from the old configuration. No
 curl -sI https://<domain> | grep x-cache
 # → X-Cache: Hit from cloudfront
 
-# Confirm Origin Verify blocks direct ALB access
-curl -sI http://<ALB DNS>
-# → 403 Forbidden
+# ALB is internal so not directly accessible from the internet
+# (DNS resolves to private IPs, unreachable from outside the VPC)
 
 # Confirm bypass when logged in
 # Verify API endpoint functionality
