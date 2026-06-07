@@ -198,7 +198,8 @@ async function indexTextStream(
   const stream = await ctx.storage.download(storageKey)
   const encoding = extractResult?.encoding ?? 'UTF8'
   const isHtml = format === 'html' || format === 'htm'
-  const isUtf8 = encoding === 'UTF8' || encoding === 'ASCII' || encoding === 'UNKNOWN'
+  const enc = encoding.toLowerCase()
+  const isUtf8 = enc === 'utf8' || enc === 'utf-8' || enc === 'ascii' || enc === 'unknown'
 
   // Non-UTF-8: buffer entire file and convert (stateful encodings need full context)
   let lines: AsyncIterable<string> | Iterable<string>

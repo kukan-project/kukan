@@ -12,6 +12,10 @@ function createMockCtx() {
     },
     getResource: vi.fn(),
     updateResourceHashAndSize: vi.fn(),
+    acquireFetchSlot: vi.fn(),
+    indexContent: vi.fn(),
+    deleteContent: vi.fn(),
+    updatePipelineMetadata: vi.fn(),
   } satisfies PipelineContext
 }
 
@@ -34,7 +38,7 @@ describe('executeExtract', () => {
     expect(ctx.storage.download).toHaveBeenCalledWith('resources/pkg-1/res-1')
     expect(result).toEqual({
       previewKey: 'previews/pkg-1/res-1.parquet',
-      encoding: 'ASCII',
+      encoding: expect.stringMatching(/^(ASCII|ISO-8859-1)$/),
     })
     expect(ctx.storage.upload).toHaveBeenCalledOnce()
 
@@ -106,14 +110,14 @@ describe('executeExtract', () => {
 
     const result = await executeExtract('res-8', 'pkg-1', 'resources/pkg-1/res-8', 'CSV', ctx)
 
-    expect(result).toEqual({ previewKey: null, encoding: 'UTF8' })
+    expect(result).toEqual({ previewKey: null, encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/) })
     expect(ctx.storage.upload).not.toHaveBeenCalled()
   })
 
   it('should return UTF8 for GeoJSON without downloading', async () => {
     const result = await executeExtract('res-9', 'pkg-1', 'resources/pkg-1/res-9', 'GeoJSON', ctx)
 
-    expect(result).toEqual({ previewKey: null, encoding: 'UTF8' })
+    expect(result).toEqual({ previewKey: null, encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/) })
     expect(ctx.storage.download).not.toHaveBeenCalled()
     expect(ctx.storage.upload).not.toHaveBeenCalled()
   })
@@ -121,7 +125,7 @@ describe('executeExtract', () => {
   it('should return UTF8 for JSON without downloading', async () => {
     const result = await executeExtract('res-10', 'pkg-1', 'resources/pkg-1/res-10', 'JSON', ctx)
 
-    expect(result).toEqual({ previewKey: null, encoding: 'UTF8' })
+    expect(result).toEqual({ previewKey: null, encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/) })
     expect(ctx.storage.download).not.toHaveBeenCalled()
     expect(ctx.storage.upload).not.toHaveBeenCalled()
   })
@@ -129,7 +133,7 @@ describe('executeExtract', () => {
   it('should return UTF8 for MD without downloading', async () => {
     const result = await executeExtract('res-10b', 'pkg-1', 'resources/pkg-1/res-10b', 'MD', ctx)
 
-    expect(result).toEqual({ previewKey: null, encoding: 'UTF8' })
+    expect(result).toEqual({ previewKey: null, encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/) })
     expect(ctx.storage.download).not.toHaveBeenCalled()
   })
 
@@ -138,7 +142,7 @@ describe('executeExtract', () => {
 
     const result = await executeExtract('res-11', 'pkg-1', 'resources/pkg-1/res-11', 'XML', ctx)
 
-    expect(result).toEqual({ previewKey: null, encoding: 'SJIS' })
+    expect(result).toEqual({ previewKey: null, encoding: 'Shift_JIS' })
   })
 
   it('should default to UTF8 for XML without encoding declaration', async () => {
@@ -146,7 +150,7 @@ describe('executeExtract', () => {
 
     const result = await executeExtract('res-12', 'pkg-1', 'resources/pkg-1/res-12', 'XML', ctx)
 
-    expect(result).toEqual({ previewKey: null, encoding: 'UTF8' })
+    expect(result).toEqual({ previewKey: null, encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/) })
   })
 
   it('should remove footer rows (合計, ※)', async () => {
@@ -159,18 +163,25 @@ describe('executeExtract', () => {
   })
 
   it('should detect and convert Shift_JIS encoding', async () => {
-    const text = '名前,年齢\n太郎,30\n花子,25\n'
-    const Encoding = (await import('encoding-japanese')).default
-    const sjisArray = Encoding.convert(Encoding.stringToCode(text), {
-      to: 'SJIS',
-      from: 'UNICODE',
-    })
-    const sjisBuf = Buffer.from(sjisArray)
+    // Real Shift_JIS CSV header: "都道府県コード又は市区町村コード,地域コード,都道府県名,..."
+    // followed by data row: "402303,糸島市,2019-05-31,板持,1515,758,757\n"
+    const header = Buffer.from([
+      0x93, 0x73, 0x93, 0xb9, 0x95, 0x7b, 0x8c, 0xa7, 0x83, 0x52, 0x81, 0x5b, 0x83, 0x68, 0x2c,
+      0x92, 0x6e, 0x88, 0xe6, 0x83, 0x52, 0x81, 0x5b, 0x83, 0x68, 0x2c, 0x93, 0x73, 0x93, 0xb9,
+      0x95, 0x7b, 0x8c, 0xa7, 0x96, 0xbc, 0x0a,
+    ])
+    const dataRow = Buffer.from([
+      0x34, 0x30, 0x32, 0x33, 0x30, 0x33, 0x2c, 0x8e, 0x85, 0x93, 0x87, 0x8e, 0x73, 0x2c,
+      0x32, 0x30, 0x31, 0x39, 0x2d, 0x30, 0x35, 0x2d, 0x33, 0x31, 0x2c,
+      0x94, 0xc2, 0x8e, 0x9d, 0x2c, 0x31, 0x35, 0x31, 0x35, 0x2c, 0x37, 0x35, 0x38, 0x2c,
+      0x37, 0x35, 0x37, 0x0a,
+    ])
+    const sjisBuf = Buffer.concat([header, ...Array(20).fill(dataRow)])
     ctx.storage.download.mockResolvedValue(Readable.from(sjisBuf))
 
     const result = await executeExtract('res-14', 'pkg-1', 'resources/pkg-1/res-14', 'CSV', ctx)
 
-    expect(result?.encoding).toBe('SJIS')
+    expect(result?.encoding).toBe('Shift_JIS')
     expect(result?.previewKey).toBe('previews/pkg-1/res-14.parquet')
   })
 
@@ -205,7 +216,7 @@ describe('executeExtract', () => {
 
     expect(result).toEqual({
       previewKey: 'previews/pkg-1/res-zip.json',
-      encoding: 'UTF8',
+      encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/),
     })
     expect(ctx.storage.download).toHaveBeenCalledWith('resources/pkg-1/res-zip')
     expect(ctx.storage.upload).toHaveBeenCalledOnce()

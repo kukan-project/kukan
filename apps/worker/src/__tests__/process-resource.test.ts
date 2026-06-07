@@ -97,6 +97,7 @@ describe('processResource', () => {
       contentOriginalSize: 5000,
       contentIndexedSize: 5000,
       contentTruncated: false,
+      contentChunks: 1,
     })
 
     await processResource('res-1', ctx, db, queue)
@@ -193,7 +194,7 @@ describe('processResource', () => {
     expect(queue.enqueue).toHaveBeenCalledWith(
       'resource-pipeline',
       { resourceId: 'res-1' },
-      { delaySeconds: 2 }
+      { delaySeconds: 6 }
     )
     // Extract should NOT run
     expect(executeExtract).not.toHaveBeenCalled()

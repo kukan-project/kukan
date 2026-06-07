@@ -1,17 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+/// <reference types="node" />
+import { describe, it, expect } from 'vitest'
 import { Readable } from 'node:stream'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 
-vi.mock('encoding-japanese', () => ({
-  default: {
-    detect: vi.fn(),
-    convert: vi.fn(),
-    codeToString: vi.fn(),
-  },
-}))
-
-import Encoding from 'encoding-japanese'
 import {
   detectEncoding,
   bufferToUtf8,
@@ -21,95 +13,53 @@ import {
   streamUtf8Lines,
 } from '../pipeline/node-utils'
 
-const mockEncoding = vi.mocked(Encoding)
-
 describe('detectEncoding', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
-  it('should return UTF8 for json format', () => {
+  it('should return UTF-8 for json format without calling chardet', () => {
     const buf = Buffer.from('{"key":"value"}')
-    expect(detectEncoding('json', buf)).toBe('UTF8')
-    expect(mockEncoding.detect).not.toHaveBeenCalled()
+    expect(detectEncoding('json', buf)).toBe('UTF-8')
   })
 
-  it('should return UTF8 for md format', () => {
+  it('should return UTF-8 for md format', () => {
     const buf = Buffer.from('# Hello')
-    expect(detectEncoding('md', buf)).toBe('UTF8')
+    expect(detectEncoding('md', buf)).toBe('UTF-8')
   })
 
-  it('should return UTF8 for geojson format', () => {
+  it('should return UTF-8 for geojson format', () => {
     const buf = Buffer.from('{"type":"FeatureCollection"}')
-    expect(detectEncoding('geojson', buf)).toBe('UTF8')
-  })
-
-  it('should call Encoding.detect for csv format', () => {
-    mockEncoding.detect.mockReturnValue('SJIS')
-    const buf = Buffer.from('name,age')
-    expect(detectEncoding('csv', buf)).toBe('SJIS')
-    expect(mockEncoding.detect).toHaveBeenCalledWith(buf)
-  })
-
-  it('should call Encoding.detect for txt format', () => {
-    mockEncoding.detect.mockReturnValue('EUCJP')
-    const buf = Buffer.from('hello')
-    expect(detectEncoding('txt', buf)).toBe('EUCJP')
-    expect(mockEncoding.detect).toHaveBeenCalledWith(buf)
-  })
-
-  it('should call Encoding.detect for html format', () => {
-    mockEncoding.detect.mockReturnValue('UTF8')
-    const buf = Buffer.from('<html></html>')
-    expect(detectEncoding('html', buf)).toBe('UTF8')
-    expect(mockEncoding.detect).toHaveBeenCalledWith(buf)
-  })
-
-  it('should fall back to UTF8 when Encoding.detect returns false', () => {
-    mockEncoding.detect.mockReturnValue(false)
-    const buf = Buffer.from('binary')
-    expect(detectEncoding('csv', buf)).toBe('UTF8')
+    expect(detectEncoding('geojson', buf)).toBe('UTF-8')
   })
 
   it('should parse XML encoding declaration', () => {
     const buf = Buffer.from('<?xml version="1.0" encoding="Shift_JIS"?><root/>')
-    expect(detectEncoding('xml', buf)).toBe('SJIS')
+    expect(detectEncoding('xml', buf)).toBe('Shift_JIS')
   })
 
-  it('should default to UTF8 when no XML encoding declaration', () => {
+  it('should default to UTF-8 when no XML encoding declaration', () => {
     const buf = Buffer.from('<root><item>hello</item></root>')
-    expect(detectEncoding('xml', buf)).toBe('UTF8')
+    expect(detectEncoding('xml', buf)).toBe('UTF-8')
   })
 })
 
 describe('bufferToUtf8', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
-  it('should return UTF-8 string for UTF8 encoding', () => {
+  it('should return UTF-8 string for UTF-8 encoding', () => {
     const buf = Buffer.from('hello world')
-    expect(bufferToUtf8(buf, 'UTF8')).toBe('hello world')
-    expect(mockEncoding.convert).not.toHaveBeenCalled()
+    expect(bufferToUtf8(buf, 'UTF-8')).toBe('hello world')
   })
 
   it('should return UTF-8 string for ASCII encoding', () => {
     const buf = Buffer.from('ascii text')
     expect(bufferToUtf8(buf, 'ASCII')).toBe('ascii text')
-    expect(mockEncoding.convert).not.toHaveBeenCalled()
   })
 
-  it('should convert non-UTF8 encoding via Encoding.convert', () => {
+  it('should convert Shift_JIS via TextDecoder', () => {
+    // "こん" in Shift_JIS = 0x82B1 0x82F1
     const buf = Buffer.from([0x82, 0xb1, 0x82, 0xf1])
-    const convertedArray = [12371, 12435]
-    mockEncoding.convert.mockReturnValue(convertedArray)
-    mockEncoding.codeToString.mockReturnValue('converted-text')
+    expect(bufferToUtf8(buf, 'Shift_JIS')).toBe('こん')
+  })
 
-    const result = bufferToUtf8(buf, 'SJIS')
-
-    expect(mockEncoding.convert).toHaveBeenCalledWith(buf, { to: 'UNICODE', from: 'SJIS' })
-    expect(mockEncoding.codeToString).toHaveBeenCalledWith(convertedArray)
-    expect(result).toBe('converted-text')
+  it('should handle legacy SJIS name', () => {
+    const buf = Buffer.from([0x82, 0xb1, 0x82, 0xf1])
+    expect(bufferToUtf8(buf, 'SJIS')).toBe('こん')
   })
 })
 

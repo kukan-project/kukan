@@ -101,21 +101,38 @@ export function isTextFormat(format: string | null): boolean {
 }
 
 /**
- * Map encoding-japanese encoding names to WHATWG charset labels.
+ * Normalize encoding name to WHATWG charset label.
+ * Accepts IANA names from chardet (e.g. "Shift_JIS", "UTF-8") and
+ * legacy encoding-japanese names (e.g. "SJIS", "UTF8") for backward
+ * compatibility with existing pipeline data.
  * @see https://encoding.spec.whatwg.org/#names-and-labels
  */
 const ENCODING_TO_CHARSET: Record<string, string> = {
+  // Legacy encoding-japanese names
   UTF8: 'utf-8',
   ASCII: 'utf-8',
   SJIS: 'shift_jis',
   EUCJP: 'euc-jp',
   JIS: 'iso-2022-jp',
   UNICODE: 'utf-8',
+  UNKNOWN: 'utf-8',
 }
 
-/** Convert encoding-japanese name to WHATWG charset label (defaults to utf-8) */
+/** Convert encoding name to WHATWG charset label (defaults to utf-8).
+ *  Unknown or invalid encoding names are rejected and fall back to utf-8. */
 export function toCharset(encoding: string): string {
-  return ENCODING_TO_CHARSET[encoding] ?? 'utf-8'
+  const legacy = ENCODING_TO_CHARSET[encoding]
+  if (legacy) return legacy
+  const lower = encoding.toLowerCase()
+  if (lower === 'ascii') return 'utf-8'
+  if (!lower) return 'utf-8'
+  // Validate against WHATWG encoding labels via TextDecoder
+  try {
+    new TextDecoder(lower)
+    return lower
+  } catch {
+    return 'utf-8'
+  }
 }
 
 /** Maximum upload file size (100 MB) — shared between client and server */

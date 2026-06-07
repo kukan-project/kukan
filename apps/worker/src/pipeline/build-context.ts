@@ -8,7 +8,7 @@ import { resource, resourcePipeline } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter, ContentDoc } from '@kukan/search-adapter'
 import type { PipelineContext, ResourceForPipeline } from './types'
-import { FETCH_RATE_LIMIT_INTERVAL_MS } from '@/config'
+import { FETCH_RATE_LIMIT_INTERVAL_S } from '@/config'
 
 export function buildPipelineContext(
   db: Database,
@@ -53,7 +53,7 @@ export function buildPipelineContext(
         VALUES (${fqdn}, NOW())
         ON CONFLICT (fqdn) DO UPDATE
           SET last_fetched_at = NOW()
-          WHERE fetch_rate_limit.last_fetched_at < NOW() - ${`${FETCH_RATE_LIMIT_INTERVAL_MS} milliseconds`}::interval
+          WHERE fetch_rate_limit.last_fetched_at < NOW() - ${`${FETCH_RATE_LIMIT_INTERVAL_S} seconds`}::interval
         RETURNING fqdn
       `)
       return result.rows.length > 0

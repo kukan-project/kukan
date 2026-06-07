@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { Readable, pipeline } from 'node:stream'
 import { promisify } from 'node:util'
-import Encoding from 'encoding-japanese'
+import chardet from 'chardet'
 
 const pipelineAsync = promisify(pipeline)
 
@@ -16,58 +16,63 @@ const pipelineAsync = promisify(pipeline)
 // Encoding detection
 // ---------------------------------------------------------------------------
 
-/** Formats that need encoding-japanese auto-detection */
 const AUTO_DETECT_FORMATS = new Set(['csv', 'tsv', 'txt', 'text', 'html', 'htm'])
 
 /**
  * Detect encoding based on format-specific rules.
- * - CSV/TSV/TXT/HTML/HTM: encoding-japanese auto-detection
+ * - CSV/TSV/TXT/HTML/HTM: chardet auto-detection (Mozilla universal charset detector)
  * - XML: parse <?xml encoding="..."> declaration, default UTF-8
  * - JSON/GeoJSON/MD: UTF-8 fixed (by spec)
+ *
+ * chardet returns encoding names in IANA format (e.g. "Shift_JIS", "UTF-8").
+ * bufferToUtf8() uses TextDecoder which accepts IANA names directly.
  *
  * @param format - lowercase format string
  */
 export function detectEncoding(format: string, buffer: Buffer): string {
   if (AUTO_DETECT_FORMATS.has(format)) {
-    const detected = Encoding.detect(buffer)
-    return typeof detected === 'string' ? detected : 'UTF8'
+    const detected = chardet.detect(buffer)
+    return detected ?? 'UTF-8'
   }
   if (format === 'xml') {
     return parseXmlDeclaredEncoding(buffer)
   }
-  return 'UTF8'
+  return 'UTF-8'
 }
 
 /**
  * Parse encoding from XML declaration (<?xml ... encoding="..." ?>).
- * Returns encoding-japanese compatible name, or 'UTF8' if no declaration.
+ * Returns IANA encoding name, or 'UTF-8' if no declaration.
  */
 function parseXmlDeclaredEncoding(buffer: Buffer): string {
   const head = buffer.subarray(0, 200).toString('ascii')
   const match = head.match(/<\?xml[^?]*encoding=["']([^"']+)["']/)
-  if (!match) return 'UTF8'
-  return xmlEncodingToDetectName(match[1])
+  return match ? match[1] : 'UTF-8'
 }
 
-/** Map XML encoding declaration values to encoding-japanese names */
-const XML_ENCODING_MAP: Record<string, string> = {
-  'utf-8': 'UTF8',
-  shift_jis: 'SJIS',
-  'euc-jp': 'EUCJP',
-  'iso-2022-jp': 'JIS',
+/** Map legacy encoding-japanese names to IANA names for TextDecoder */
+const LEGACY_ENCODING_MAP: Record<string, string> = {
+  utf8: 'utf-8',
+  sjis: 'shift_jis',
+  eucjp: 'euc-jp',
+  jis: 'iso-2022-jp',
+  unicode: 'utf-8',
+  unknown: 'utf-8',
 }
 
-function xmlEncodingToDetectName(declared: string): string {
-  return XML_ENCODING_MAP[declared.toLowerCase()] ?? 'UTF8'
-}
-
-/** Convert buffer to UTF-8 string using detected encoding */
+/** Convert buffer to UTF-8 string using detected encoding.
+ *  Uses Node.js TextDecoder which supports IANA encoding names
+ *  (Shift_JIS, EUC-JP, EUC-KR, Big5, GB18030, ISO-8859-*, Windows-125*, etc.).
+ *  Also accepts legacy encoding-japanese names (SJIS, EUCJP, JIS) for
+ *  backward compatibility with existing pipeline data. */
 export function bufferToUtf8(buf: Buffer, encoding: string): string {
-  if (encoding !== 'UTF8' && encoding !== 'ASCII' && encoding !== 'UNKNOWN') {
-    const converted = Encoding.convert(buf, { to: 'UNICODE', from: encoding as Encoding.Encoding })
-    return Encoding.codeToString(converted)
+  const lower = encoding.toLowerCase()
+  const iana = LEGACY_ENCODING_MAP[lower] ?? lower
+  if (iana === 'utf-8' || iana === 'ascii') {
+    return buf.toString('utf-8')
   }
-  return buf.toString('utf-8')
+  const decoder = new TextDecoder(iana)
+  return decoder.decode(buf)
 }
 
 /** Collect a Readable stream into a single Buffer, optionally capped at maxBytes */

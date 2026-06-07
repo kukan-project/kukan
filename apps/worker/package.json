@@ -22,10 +22,10 @@
     "@kukan/shared": "workspace:*",
     "@kukan/storage-adapter": "workspace:*",
     "@opensearch-project/opensearch": "^3.6.0",
+    "chardet": "^2.1.1",
     "croner": "^10.0.1",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
-    "encoding-japanese": "^2.2.0",
     "hono": "^4.12.23",
     "hyparquet-writer": "^0.15.6",
     "officeparser": "^7.1.0",
@@ -37,7 +37,6 @@
     "yauzl": "^3.3.1"
   },
   "devDependencies": {
-    "@types/encoding-japanese": "^2.2.1",
     "@types/node": "^24.12.2",
     "@types/papaparse": "^5.5.2",
     "@types/pg": "^8.20.0",

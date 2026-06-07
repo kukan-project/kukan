@@ -194,9 +194,20 @@ describe('toCharset', () => {
     expect(toCharset('UNICODE')).toBe('utf-8')
   })
 
-  it('should default to utf-8 for unknown encodings', () => {
+  it('should pass through valid IANA names from chardet', () => {
+    expect(toCharset('Shift_JIS')).toBe('shift_jis')
+    expect(toCharset('EUC-JP')).toBe('euc-jp')
+    expect(toCharset('ISO-8859-1')).toBe('iso-8859-1')
+    expect(toCharset('windows-1252')).toBe('windows-1252')
+    expect(toCharset('Big5')).toBe('big5')
+    expect(toCharset('EUC-KR')).toBe('euc-kr')
+  })
+
+  it('should default to utf-8 for unknown or invalid encodings', () => {
     expect(toCharset('UNKNOWN')).toBe('utf-8')
     expect(toCharset('')).toBe('utf-8')
+    expect(toCharset('foo')).toBe('utf-8')
+    expect(toCharset('not-a-real-encoding')).toBe('utf-8')
   })
 })
 

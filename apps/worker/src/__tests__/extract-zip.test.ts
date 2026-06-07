@@ -186,12 +186,12 @@ describe('extractZipManifest', () => {
   })
 
   it('should decode Shift_JIS file names when UTF-8 flag is not set', async () => {
-    const Encoding = (await import('encoding-japanese')).default
-    const sjisBytes = Encoding.convert(Encoding.stringToCode('テスト.txt'), {
-      to: 'SJIS',
-      from: 'UNICODE',
-    })
-    const buffer = createRawZip(Buffer.from(sjisBytes), 0)
+    // "テスト.txt" in Shift_JIS
+    const sjisBytes = Buffer.from([
+      0x83, 0x65, 0x83, 0x58, 0x83, 0x67, // テスト
+      0x2e, 0x74, 0x78, 0x74, // .txt
+    ])
+    const buffer = createRawZip(sjisBytes, 0)
 
     const manifest = await extractZipManifest(buffer)
 
