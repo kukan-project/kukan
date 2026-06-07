@@ -95,17 +95,21 @@ IP 制限は CloudFront Function で対応（追加コストなし）
 
 ## CDK スタック構成
 
-単一スタック構成。全リソースを ap-northeast-1 にデプロイ。
+2スタック構成。CloudFront 用のグローバルリソース（ACM 証明書・WAF WebACL）は us-east-1 にデプロイ。
 
-| スタック   | リージョン     | 用途       |
-| ---------- | -------------- | ---------- |
-| KukanStack | ap-northeast-1 | 全リソース |
+| スタック          | リージョン     | 用途                                    |
+| ----------------- | -------------- | --------------------------------------- |
+| KukanGlobalStack  | us-east-1      | ACM 証明書 + WAF WebACL（CloudFront 用）|
+| KukanStack        | ap-northeast-1 | VPC, ECS, RDS, CloudFront 等            |
+
+KukanGlobalStack はドメイン名指定時または WAF 有効時に自動作成される。
 
 ```
 infra/
 ├── bin/app.ts                        # エントリポイント
 ├── lib/
 │   ├── kukan-stack.ts                # メインスタック
+│   ├── global-stack.ts               # グローバルスタック（us-east-1）
 │   ├── config.ts                     # スケール別設定
 │   └── constructs/
 │       ├── network.ts                # VPC, SG, S3 Endpoint
@@ -123,7 +127,7 @@ infra/
 
 ### CDK コンテキストパラメータ
 
-全パラメータは `config.ts` にデフォルト値があり、`npx cdk deploy` のみで動作する。
+全パラメータは `config.ts` にデフォルト値があり、`npx cdk deploy --all --all` のみで動作する。
 環境固有の値（ドメイン名等）を永続化したい場合は `infra/cdk.context.json` に記述する。
 `cdk.context.json` は `.gitignore` 対象のため、環境ごとに安全に管理できる。
 
@@ -171,16 +175,16 @@ infra/
 
 ```bash
 # 最小構成（WAF 自動有効、カスタムドメインなし）
-npx cdk deploy
+npx cdk deploy --all
 
 # IP 制限あり（CloudFront Function で制御、WAF 自動無効）
-npx cdk deploy -c allowedIpRanges='["203.0.113.0/24"]'
+npx cdk deploy --all -c allowedIpRanges='["203.0.113.0/24"]'
 
 # IP 制限 + WAF 二重防御
-npx cdk deploy -c allowedIpRanges='["203.0.113.0/24"]' -c enableWaf=true
+npx cdk deploy --all -c allowedIpRanges='["203.0.113.0/24"]' -c enableWaf=true
 
 # WAF 明示的に無効化
-npx cdk deploy -c enableWaf=false
+npx cdk deploy --all -c enableWaf=false
 ```
 
 ## セキュリティ
@@ -249,7 +253,7 @@ aws sso login
 cd infra && npx cdk bootstrap
 
 # 3. CDK デプロイ（Docker ビルド + ECR プッシュ + 全リソース作成）
-npx cdk deploy
+npx cdk deploy --all
 
 # 4. 初期ユーザー作成（初回のみ）
 # sysadmin ユーザーを作成（DB 接続情報は環境変数から取得）

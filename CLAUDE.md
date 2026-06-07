@@ -276,6 +276,6 @@ pnpm typecheck                  # TypeScript 型チェック
 
 ```bash
 cd infra
-npx cdk deploy                  # KukanStack デプロイ
-npx cdk diff                    # デプロイ前の差分確認
+npx cdk deploy --all            # 全スタックデプロイ（Global + Main）
+npx cdk diff --all              # デプロイ前の差分確認
 ```

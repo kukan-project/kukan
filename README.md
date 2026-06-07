@@ -134,7 +134,7 @@ pnpm db:migrate   # Run migrations / マイグレーション実行
 cd infra && npx cdk bootstrap
 
 # 3. Deploy (Docker build + ECR push + all resources / 全リソース作成)
-npx cdk deploy
+npx cdk deploy --all
 ```
 
 Deploys a `small` configuration by default:
@@ -180,7 +180,7 @@ Store environment-specific values in `infra/cdk.context.json` (gitignored):
 Or override temporarily via CLI / CLI で一時オーバーライド:
 
 ```bash
-npx cdk deploy -c scale=medium -c enableWaf=true
+npx cdk deploy --all -c scale=medium -c enableWaf=true
 ```
 
 See [docs/specs/phase4-deploy.md](docs/specs/phase4-deploy.md) for full details.
