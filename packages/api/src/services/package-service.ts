@@ -3,7 +3,7 @@
  * Business logic for package (dataset) management
  */
 
-import { eq, and, sql, getTableColumns, inArray, desc } from 'drizzle-orm'
+import { eq, and, or, sql, getTableColumns, inArray, desc } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import {
@@ -220,16 +220,21 @@ export class PackageService {
     state: 'active' | 'deleted' = 'active',
     opts?: { tx?: Pick<Database, 'select'>; forUpdate?: boolean }
   ) {
-    const qb = (opts?.tx ?? this.db)
+    const base = (opts?.tx ?? this.db)
       .select()
       .from(packageTable)
       .where(
         and(
-          isUuid(nameOrId) ? eq(packageTable.id, nameOrId) : eq(packageTable.name, nameOrId),
+          isUuid(nameOrId)
+            ? or(eq(packageTable.id, nameOrId), eq(packageTable.name, nameOrId))
+            : eq(packageTable.name, nameOrId),
           eq(packageTable.state, state)
         )
       )
-      .limit(1)
+    // When both id and name match different rows, prefer the id match (CKAN compat)
+    const qb = isUuid(nameOrId)
+      ? base.orderBy(sql`CASE WHEN ${packageTable.id} = ${nameOrId} THEN 0 ELSE 1 END`).limit(1)
+      : base.limit(1)
 
     const [result] = opts?.forUpdate ? await qb.for('update') : await qb
 

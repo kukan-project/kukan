@@ -55,16 +55,22 @@ export class OrganizationService {
   }
 
   async getByNameOrId(nameOrId: string, state: 'active' | 'deleted' = 'active') {
-    const [result] = await this.db
+    const base = this.db
       .select()
       .from(organization)
       .where(
         and(
-          isUuid(nameOrId) ? eq(organization.id, nameOrId) : eq(organization.name, nameOrId),
+          isUuid(nameOrId)
+            ? or(eq(organization.id, nameOrId), eq(organization.name, nameOrId))
+            : eq(organization.name, nameOrId),
           eq(organization.state, state)
         )
       )
-      .limit(1)
+    const [result] = isUuid(nameOrId)
+      ? await base
+          .orderBy(sql`CASE WHEN ${organization.id} = ${nameOrId} THEN 0 ELSE 1 END`)
+          .limit(1)
+      : await base.limit(1)
 
     if (!result) {
       throw new NotFoundError('Organization', nameOrId)

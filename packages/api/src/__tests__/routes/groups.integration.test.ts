@@ -75,6 +75,21 @@ describe('Groups API Routes', () => {
       const res = await app.request('/api/v1/groups/no-such')
       expect(res.status).toBe(404)
     })
+
+    it('should return group by UUID-shaped name (CKAN uuid slugs)', async () => {
+      const uuidName = 'aaaaaaaa-4444-5555-6666-eeeeeeeeeeee'
+      await app.request('/api/v1/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: uuidName, title: 'UUID Group' }),
+      })
+
+      const res = await app.request(`/api/v1/groups/${uuidName}`)
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.name).toBe(uuidName)
+    })
   })
 
   describe('PUT /api/v1/groups/:nameOrId', () => {

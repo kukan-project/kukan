@@ -111,6 +111,21 @@ describe('Organizations API Routes', () => {
       const res = await app.request('/api/v1/organizations/no-such')
       expect(res.status).toBe(404)
     })
+
+    it('should return organization by UUID-shaped name (CKAN uuid slugs)', async () => {
+      const uuidName = 'aaaaaaaa-1111-2222-3333-eeeeeeeeeeee'
+      await app.request('/api/v1/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: uuidName, title: 'UUID Org' }),
+      })
+
+      const res = await app.request(`/api/v1/organizations/${uuidName}`)
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.name).toBe(uuidName)
+    })
   })
 
   describe('PUT /api/v1/organizations/:nameOrId', () => {

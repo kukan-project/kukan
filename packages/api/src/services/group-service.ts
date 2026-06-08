@@ -55,16 +55,22 @@ export class GroupService {
   }
 
   async getByNameOrId(nameOrId: string, state: 'active' | 'deleted' = 'active') {
-    const [result] = await this.db
+    const base = this.db
       .select()
       .from(group)
       .where(
         and(
-          isUuid(nameOrId) ? eq(group.id, nameOrId) : eq(group.name, nameOrId),
+          isUuid(nameOrId)
+            ? or(eq(group.id, nameOrId), eq(group.name, nameOrId))
+            : eq(group.name, nameOrId),
           eq(group.state, state)
         )
       )
-      .limit(1)
+    const [result] = isUuid(nameOrId)
+      ? await base
+          .orderBy(sql`CASE WHEN ${group.id} = ${nameOrId} THEN 0 ELSE 1 END`)
+          .limit(1)
+      : await base.limit(1)
 
     if (!result) {
       throw new NotFoundError('Group', nameOrId)

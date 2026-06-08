@@ -229,6 +229,37 @@ describe('Packages API Routes', () => {
       const res = await app.request('/api/v1/packages/does-not-exist')
       expect(res.status).toBe(404)
     })
+
+    it('should return package by UUID-shaped name (CKAN uuid slugs)', async () => {
+      const uuidShapedName = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+      await createPackage({ name: uuidShapedName, title: 'UUID-named Package' })
+
+      const res = await app.request(`/api/v1/packages/${uuidShapedName}`)
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.name).toBe(uuidShapedName)
+      expect(body.title).toBe('UUID-named Package')
+    })
+
+    it('should prefer id over name when same UUID exists in both (CKAN compat)', async () => {
+      const sharedUuid = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff'
+      await createPackage({ name: sharedUuid, title: 'Name Match' })
+      const idMatchRes = await createPackage({ name: 'id-match-pkg', title: 'ID Match' })
+      const idMatchBody = await idMatchRes.json()
+
+      // Overwrite the id to the shared UUID (simulate CKAN import)
+      await db.execute(
+        sql`UPDATE package SET id = ${sharedUuid} WHERE id = ${idMatchBody.id}`
+      )
+
+      const res = await app.request(`/api/v1/packages/${sharedUuid}`)
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.id).toBe(sharedUuid)
+      expect(body.title).toBe('ID Match')
+    })
   })
 
   describe('PUT /api/v1/packages/:nameOrId', () => {
