@@ -10,6 +10,10 @@ import { PostgresSearchAdapter, OpenSearchAdapter } from '@kukan/search-adapter'
 import { SQSQueueAdapter } from '@kukan/queue-adapter'
 import { NoOpAIAdapter } from '@kukan/ai-adapter'
 
+const globalForSearch = globalThis as unknown as {
+  __kukanOpenSearchAdapter?: OpenSearchAdapter
+}
+
 export async function createAdapters(env: Env, db: Database, logger: Logger) {
   // Storage adapter (S3: AWS S3 or MinIO, determined by S3_ENDPOINT)
   const storage = new S3StorageAdapter({
@@ -37,12 +41,20 @@ export async function createAdapters(env: Env, db: Database, logger: Logger) {
   if (env.SEARCH_TYPE === 'postgres') {
     search = dbSearch
   } else if (env.SEARCH_TYPE === 'opensearch') {
-    const osAdapter = new OpenSearchAdapter({
-      endpoint: env.OPENSEARCH_URL,
-      replicas: env.OPENSEARCH_REPLICAS,
-      logger: logger.child({ component: 'opensearch' }),
-      // Auto-recovery (empty index detection) is handled by the Worker periodic check
-    })
+    // Reuse the adapter across HMR in development to prevent OpenSearch
+    // connection leaks (mirrors the db pool singleton in @kukan/db).
+    let osAdapter = globalForSearch.__kukanOpenSearchAdapter
+    if (!osAdapter) {
+      osAdapter = new OpenSearchAdapter({
+        endpoint: env.OPENSEARCH_URL,
+        replicas: env.OPENSEARCH_REPLICAS,
+        logger: logger.child({ component: 'opensearch' }),
+        // Auto-recovery (empty index detection) is handled by the Worker periodic check
+      })
+      if (process.env.NODE_ENV !== 'production') {
+        globalForSearch.__kukanOpenSearchAdapter = osAdapter
+      }
+    }
     search = osAdapter
   } else {
     throw new Error(`Unknown search type: ${env.SEARCH_TYPE}`)

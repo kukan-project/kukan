@@ -78,6 +78,9 @@ export class OpenSearchAdapter implements SearchAdapter {
       ...(config.auth && {
         auth: { username: config.auth.username, password: config.auth.password },
       }),
+      // Reuse TCP connections instead of opening a new socket per request,
+      // bounding socket count to avoid ephemeral-port exhaustion under load.
+      agent: { keepAlive: true, keepAliveMsecs: 30_000, maxSockets: 50, maxFreeSockets: 10 },
       // Reduce recovery time after transient connection failures (e.g. during deploy).
       // 'optimistic' skips ping check and sends real requests to revive dead nodes faster.
       maxRetries: 3,
