@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
+import { Readable } from 'stream'
 import { resource as resourceTable, resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import { createTestApp, mockSearch } from '../test-helpers/test-app'
 import {
@@ -14,6 +15,22 @@ import {
 const db = getTestDb()
 const app = createTestApp(db)
 const unauthApp = createTestApp(db, { user: null })
+/** App with a mock storage that returns content (for preview tests) */
+const storageWithContent = {
+  upload: async () => {},
+  download: async () => Readable.from(Buffer.from('fake-image-content')),
+  downloadRange: async () => {
+    const err = new Error('The specified key does not exist.')
+    err.name = 'NoSuchKey'
+    throw err
+  },
+  delete: async () => {},
+  deleteByPrefix: async () => 0,
+  getSignedUrl: async () => 'file:///test',
+  getSignedUploadUrl: async () => 'https://minio.test/upload?signed=true',
+}
+const appWithStorage = createTestApp(db, { storage: storageWithContent })
+
 /** Non-sysadmin user with no org membership */
 const outsiderApp = createTestApp(db, {
   user: {
@@ -176,6 +193,55 @@ describe('Resources API Routes', () => {
       const resource = await createResource(pkg.id)
 
       const res = await outsiderApp.request(`/api/v1/resources/${resource.id}/preview`)
+      expect(res.status).toBe(404)
+    })
+  })
+
+  describe('GET /api/v1/resources/:id/preview — image formats', () => {
+    it('should serve image preview directly without pipeline record', async () => {
+      const pkg = await createPackage('img-preview-pkg')
+      const resource = await createResource(pkg.id, { format: 'PNG' })
+
+      const res = await appWithStorage.request(`/api/v1/resources/${resource.id}/preview`)
+      expect(res.status).toBe(200)
+      expect(res.headers.get('Content-Type')).toBe('image/png')
+    })
+
+    it('should include X-Content-Type-Options: nosniff for all image previews', async () => {
+      const pkg = await createPackage('img-nosniff-pkg')
+      const resource = await createResource(pkg.id, { format: 'JPEG' })
+
+      const res = await appWithStorage.request(`/api/v1/resources/${resource.id}/preview`)
+      expect(res.status).toBe(200)
+      expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff')
+    })
+
+    it('should include CSP header for SVG to prevent stored XSS', async () => {
+      const pkg = await createPackage('svg-csp-pkg')
+      const resource = await createResource(pkg.id, { format: 'SVG' })
+
+      const res = await appWithStorage.request(`/api/v1/resources/${resource.id}/preview`)
+      expect(res.status).toBe(200)
+      expect(res.headers.get('Content-Type')).toBe('image/svg+xml')
+      expect(res.headers.get('Content-Security-Policy')).toBe(
+        "default-src 'none'; style-src 'unsafe-inline'"
+      )
+    })
+
+    it('should not include CSP header for non-SVG images', async () => {
+      const pkg = await createPackage('png-no-csp-pkg')
+      const resource = await createResource(pkg.id, { format: 'PNG' })
+
+      const res = await appWithStorage.request(`/api/v1/resources/${resource.id}/preview`)
+      expect(res.status).toBe(200)
+      expect(res.headers.get('Content-Security-Policy')).toBeNull()
+    })
+
+    it('should return 404 for non-previewable format without pipeline record', async () => {
+      const pkg = await createPackage('rdf-no-preview-pkg')
+      const resource = await createResource(pkg.id, { format: 'RDF' })
+
+      const res = await appWithStorage.request(`/api/v1/resources/${resource.id}/preview`)
       expect(res.status).toBe(404)
     })
   })

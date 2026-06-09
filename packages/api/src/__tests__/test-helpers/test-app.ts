@@ -106,6 +106,8 @@ const defaultTestUser = {
 
 interface TestAppOverrides {
   search?: SearchAdapter
+  /** Override the storage adapter (e.g. to return actual file content in preview tests). */
+  storage?: typeof mockStorage
   /** Override the authenticated user. Pass `null` for unauthenticated. */
   user?: {
     id: string
@@ -132,7 +134,7 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
     c.set('db', db)
     c.set('search', overrides?.search ?? mockSearch)
     c.set('dbSearch', new PostgresSearchAdapter(db))
-    c.set('storage', mockStorage)
+    c.set('storage', overrides?.storage ?? mockStorage)
     c.set('queue', mockQueue)
     c.set('ai', mockAi)
     c.set('auth', overrides?.auth ?? mockAuth)

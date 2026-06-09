@@ -26,6 +26,15 @@ const FORMAT_MAP: Record<string, string> = {
   html: 'HTML',
   htm: 'HTML',
   rdf: 'RDF',
+  png: 'PNG',
+  jpg: 'JPEG',
+  jpeg: 'JPEG',
+  gif: 'GIF',
+  webp: 'WebP',
+  svg: 'SVG',
+  bmp: 'BMP',
+  tif: 'TIFF',
+  tiff: 'TIFF',
 }
 
 /** Extension (lowercase) → MIME type */
@@ -51,6 +60,15 @@ const MIME_MAP: Record<string, string> = {
   html: 'text/html',
   htm: 'text/html',
   rdf: 'application/rdf+xml',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+  bmp: 'image/bmp',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
 }
 
 function getExtension(filename: string): string | undefined {
@@ -184,6 +202,14 @@ export function isPdfFormat(format: string | null): boolean {
 export function isGeoJsonFormat(format: string | null): boolean {
   if (!format) return false
   return format.toLowerCase() === 'geojson'
+}
+
+const IMAGE_FORMATS = new Set(['png', 'jpeg', 'jpg', 'gif', 'webp', 'svg', 'bmp', 'tif', 'tiff'])
+
+/** Check if a format is an image */
+export function isImageFormat(format: string | null): boolean {
+  if (!format) return false
+  return IMAGE_FORMATS.has(format.toLowerCase())
 }
 
 /** Check if a format is a ZIP archive */

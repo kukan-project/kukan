@@ -11,6 +11,7 @@ import {
   isDocumentFormat,
   isGeoJsonFormat,
   isZipFormat,
+  isImageFormat,
   toCharset,
   getStorageKey,
   getPreviewKey,
@@ -333,5 +334,37 @@ describe('isZipFormat', () => {
 
   it('should return false for null', () => {
     expect(isZipFormat(null)).toBe(false)
+  })
+})
+
+describe('isImageFormat', () => {
+  it('should return true for all supported image formats', () => {
+    expect(isImageFormat('png')).toBe(true)
+    expect(isImageFormat('jpg')).toBe(true)
+    expect(isImageFormat('jpeg')).toBe(true)
+    expect(isImageFormat('gif')).toBe(true)
+    expect(isImageFormat('webp')).toBe(true)
+    expect(isImageFormat('svg')).toBe(true)
+    expect(isImageFormat('bmp')).toBe(true)
+    expect(isImageFormat('tif')).toBe(true)
+    expect(isImageFormat('tiff')).toBe(true)
+  })
+
+  it('should be case-insensitive', () => {
+    expect(isImageFormat('PNG')).toBe(true)
+    expect(isImageFormat('JPEG')).toBe(true)
+    expect(isImageFormat('Svg')).toBe(true)
+    expect(isImageFormat('TIFF')).toBe(true)
+  })
+
+  it('should return false for non-image formats', () => {
+    expect(isImageFormat('pdf')).toBe(false)
+    expect(isImageFormat('csv')).toBe(false)
+    expect(isImageFormat('html')).toBe(false)
+    expect(isImageFormat('zip')).toBe(false)
+  })
+
+  it('should return false for null', () => {
+    expect(isImageFormat(null)).toBe(false)
   })
 })

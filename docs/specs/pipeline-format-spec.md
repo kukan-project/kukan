@@ -93,22 +93,23 @@ Storage のリソースデータを読み取り、エンコーディング検出
 
 ### フォーマット別処理マトリクス
 
-| フォーマット | isTextFormat | エンコーディング検出                                      |  プレビュー生成   | 成果物     |
-| ------------ | :----------: | --------------------------------------------------------- | :---------------: | ---------- |
-| **CSV**      |     Yes      | `Encoding.detect()` 自動検出                              |      Parquet      | `.parquet` |
-| **TSV**      |     Yes      | `Encoding.detect()` 自動検出                              |      Parquet      | `.parquet` |
-| **TXT**      |     Yes      | `Encoding.detect()` 自動検出                              |       なし        | —          |
-| **HTML/HTM** |     Yes      | `Encoding.detect()` 自動検出                              |       なし        | —          |
-| **XML**      |     Yes      | `<?xml encoding>` 宣言パース（先頭 200B）、fallback UTF-8 |       なし        | —          |
-| **JSON**     |     Yes      | UTF-8 固定（RFC 8259）                                    |       なし        | —          |
-| **GeoJSON**  |     Yes      | UTF-8 固定（RFC 7946）                                    |       なし        | —          |
-| **MD**       |     Yes      | UTF-8 固定                                                |       なし        | —          |
-| **ZIP**      |  No (独自)   | —                                                         | JSON マニフェスト | `.json`    |
-| **PDF**      |      No      | —                                                         | なし（スキップ）  | —          |
-| **XLSX/XLS** |      No      | —                                                         | なし（スキップ）  | —          |
-| **DOC/DOCX** |      No      | —                                                         | なし（スキップ）  | —          |
-| **PPT/PPTX** |      No      | —                                                         | なし（スキップ）  | —          |
-| **RDF**      |      No      | —                                                         | なし（スキップ）  | —          |
+| フォーマット                                   | isTextFormat | エンコーディング検出                                      |  プレビュー生成   | 成果物     |
+| ---------------------------------------------- | :----------: | --------------------------------------------------------- | :---------------: | ---------- |
+| **CSV**                                        |     Yes      | `Encoding.detect()` 自動検出                              |      Parquet      | `.parquet` |
+| **TSV**                                        |     Yes      | `Encoding.detect()` 自動検出                              |      Parquet      | `.parquet` |
+| **TXT**                                        |     Yes      | `Encoding.detect()` 自動検出                              |       なし        | —          |
+| **HTML/HTM**                                   |     Yes      | `Encoding.detect()` 自動検出                              |       なし        | —          |
+| **XML**                                        |     Yes      | `<?xml encoding>` 宣言パース（先頭 200B）、fallback UTF-8 |       なし        | —          |
+| **JSON**                                       |     Yes      | UTF-8 固定（RFC 8259）                                    |       なし        | —          |
+| **GeoJSON**                                    |     Yes      | UTF-8 固定（RFC 7946）                                    |       なし        | —          |
+| **MD**                                         |     Yes      | UTF-8 固定                                                |       なし        | —          |
+| **ZIP**                                        |  No (独自)   | —                                                         | JSON マニフェスト | `.json`    |
+| **PDF**                                        |      No      | —                                                         | なし（スキップ）  | —          |
+| **XLSX/XLS**                                   |      No      | —                                                         | なし（スキップ）  | —          |
+| **DOC/DOCX**                                   |      No      | —                                                         | なし（スキップ）  | —          |
+| **PPT/PPTX**                                   |      No      | —                                                         | なし（スキップ）  | —          |
+| **RDF**                                        |      No      | —                                                         | なし（スキップ）  | —          |
+| **PNG / JPEG / GIF / WebP / SVG / BMP / TIFF** |      No      | —                                                         | なし（スキップ）  | —          |
 
 ### フォーマット別詳細
 
@@ -166,20 +167,21 @@ Storage のリソースデータを読み取り、エンコーディング検出
 API エンドポイント `/api/v1/resources/:id/preview` がサーバープロキシとして機能する。
 `resolvePreviewTarget()` がフォーマットに応じてストレージキーを解決:
 
-- **PDF / Office（XLSX, XLS, DOC, DOCX, PPT, PPTX）** → リソース本体（`resources/{packageId}/{resourceId}`）
+- **PDF / Office（XLSX, XLS, DOC, DOCX, PPT, PPTX）/ 画像（PNG, JPEG, GIF, WebP, SVG, BMP, TIFF）** → リソース本体（`resources/{packageId}/{resourceId}`）
 - **その他** → パイプライン生成物（`previewKey` from `resource_pipeline`）
 
 ### フォーマット別 UI マッピング
 
-| フォーマット                             | コンポーネント                                       | データソース                    | 表示方式                            |
-| ---------------------------------------- | ---------------------------------------------------- | ------------------------------- | ----------------------------------- |
-| **CSV / TSV**                            | `TablePreview` → `ParquetPreview` + `RawTextPreview` | `/preview`（Parquet）+ `/text`  | テーブル / テキスト切り替え         |
-| **PDF**                                  | `PdfPreview`                                         | `/preview`（リソース本体）      | iframe                              |
-| **GeoJSON**                              | `GeoJsonPreview`                                     | `/text`                         | Leaflet 地図 + テキスト切り替え     |
-| **ZIP**                                  | `ZipPreview`                                         | `/preview`（JSON マニフェスト） | ツリー形式ファイル一覧              |
-| **JSON / XML / HTML / TXT / MD**         | `TextOnlyPreview` → `RawTextPreview`                 | `/text`                         | pre タグ（テキストのみ）            |
-| **XLSX / XLS / DOC / DOCX / PPT / PPTX** | `OfficeOnlinePreview`                                | Office Online Viewer（外部）    | iframe（10MB 制限、localhost 不可） |
-| **RDF**                                  | `PreviewNotAvailable`                                | —                               | 「プレビュー非対応」表示            |
+| フォーマット                                   | コンポーネント                                       | データソース                    | 表示方式                            |
+| ---------------------------------------------- | ---------------------------------------------------- | ------------------------------- | ----------------------------------- |
+| **CSV / TSV**                                  | `TablePreview` → `ParquetPreview` + `RawTextPreview` | `/preview`（Parquet）+ `/text`  | テーブル / テキスト切り替え         |
+| **PDF**                                        | `PdfPreview`                                         | `/preview`（リソース本体）      | iframe                              |
+| **GeoJSON**                                    | `GeoJsonPreview`                                     | `/text`                         | Leaflet 地図 + テキスト切り替え     |
+| **ZIP**                                        | `ZipPreview`                                         | `/preview`（JSON マニフェスト） | ツリー形式ファイル一覧              |
+| **JSON / XML / HTML / TXT / MD**               | `TextOnlyPreview` → `RawTextPreview`                 | `/text`                         | pre タグ（テキストのみ）            |
+| **XLSX / XLS / DOC / DOCX / PPT / PPTX**       | `OfficeOnlinePreview`                                | Office Online Viewer（外部）    | iframe（10MB 制限、localhost 不可） |
+| **PNG / JPEG / GIF / WebP / SVG / BMP / TIFF** | `ImagePreview`                                       | `/preview`（リソース本体）      | img タグ（SVG は CSP 付与）         |
+| **RDF**                                        | `PreviewNotAvailable`                                | —                               | 「プレビュー非対応」表示            |
 
 ### ParquetPreview の状態
 

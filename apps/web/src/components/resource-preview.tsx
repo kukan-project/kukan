@@ -11,11 +11,13 @@ import {
   isOfficeFormat,
   isPdfFormat,
   isGeoJsonFormat,
+  isImageFormat,
 } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
 import { ParquetPreview } from './parquet-preview'
 import { GeoJsonPreview } from './geojson-preview'
 import { ZipPreview } from './zip-preview'
+import { ImagePreview } from './image-preview'
 
 const DataExplorer = dynamic(
   () => import('./data-explorer/data-explorer').then((m) => ({ default: m.DataExplorer })),
@@ -73,6 +75,7 @@ function useAnalysisMode() {
 export function ResourcePreview({ resourceId, format, url, size }: ResourcePreviewProps) {
   const f = format ?? null
 
+  if (isImageFormat(f)) return <ImagePreview resourceId={resourceId} />
   if (isPdfFormat(f)) return <PdfPreview resourceId={resourceId} />
   if (isCsvFormat(f)) return <TablePreview key={resourceId} resourceId={resourceId} />
   if (isGeoJsonFormat(f)) return <GeoJsonPreview resourceId={resourceId} />
@@ -343,7 +346,7 @@ function PreviewNotAvailable() {
   )
 }
 
-function PreviewSkeleton() {
+export function PreviewSkeleton() {
   return (
     <Card>
       <CardContent className="space-y-3 p-4">
@@ -357,7 +360,7 @@ function PreviewSkeleton() {
   )
 }
 
-function PreviewError() {
+export function PreviewError() {
   const t = useTranslations('resource')
   return (
     <Card>

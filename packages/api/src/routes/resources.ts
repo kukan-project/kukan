@@ -22,6 +22,7 @@ import {
   detectContentType,
   toCharset,
   isOfficeFormat,
+  isImageFormat,
   isPdfFormat,
   MAX_UPLOAD_SIZE,
 } from '@kukan/shared'
@@ -57,7 +58,11 @@ async function resolvePreviewTarget(
   db: Database,
   resource: { id: string; packageId: string; format: string | null }
 ): Promise<{ storageKey: string; contentType: string } | null> {
-  if (isPdfFormat(resource.format) || isOfficeFormat(resource.format)) {
+  if (
+    isPdfFormat(resource.format) ||
+    isOfficeFormat(resource.format) ||
+    isImageFormat(resource.format)
+  ) {
     return {
       storageKey: getStorageKey(resource.packageId, resource.id),
       contentType: getMimeType(resource.format!)!,
@@ -201,6 +206,7 @@ resourcesRouter.get('/:id/download', async (c) => {
   const headers: Record<string, string> = {
     'Content-Type': contentType,
     'Content-Disposition': `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`,
+    'X-Content-Type-Options': 'nosniff',
     'Cache-Control': 'private, max-age=0',
   }
 
@@ -226,6 +232,17 @@ resourcesRouter.get('/:id/preview', async (c) => {
   }
   const { storageKey, contentType } = target
 
+  // Security headers for user-uploaded content served inline:
+  // - nosniff: prevent MIME-sniffing (e.g. HTML disguised as .png)
+  // - CSP: block script execution in SVG opened directly in browser tab
+  //   (<img> tags ignore CSP on sub-resource loads, so preview rendering is unaffected)
+  const securityHeaders: Record<string, string> = {
+    'X-Content-Type-Options': 'nosniff',
+    ...(contentType === 'image/svg+xml' && {
+      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
+    }),
+  }
+
   // Handle Range request for Parquet pagination
   const rangeHeader = c.req.header('range')
 
@@ -248,6 +265,7 @@ resourcesRouter.get('/:id/preview', async (c) => {
     return new Response(Readable.toWeb(result.stream) as ReadableStream, {
       status: 206,
       headers: {
+        ...securityHeaders,
         'Content-Type': contentType,
         'Content-Range': `bytes ${result.start}-${result.end}/${result.totalSize}`,
         'Content-Length': String(result.end - result.start + 1),
@@ -267,6 +285,7 @@ resourcesRouter.get('/:id/preview', async (c) => {
 
   return new Response(Readable.toWeb(nodeStream) as ReadableStream, {
     headers: {
+      ...securityHeaders,
       'Content-Type': contentType,
       'Accept-Ranges': 'bytes',
       'Cache-Control': 'private, max-age=300',

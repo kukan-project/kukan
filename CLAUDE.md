@@ -224,22 +224,23 @@ Index ステップでリソースコンテンツのテキスト抽出・OpenSear
 メタデータの検索インデックス更新は API ルートハンドラーで CUD 操作時に実行。
 Extract のみフォーマット別処理を行う。
 
-| フォーマット | isTextFormat | エンコーディング検出                         | Parquet 生成 |    プレビュー表示     |
-| ------------ | :----------: | -------------------------------------------- | :----------: | :-------------------: |
-| CSV          |     Yes      | `Encoding.detect()`                          |     Yes      | テーブル+テキスト切替 |
-| TSV          |     Yes      | `Encoding.detect()`                          |     Yes      | テーブル+テキスト切替 |
-| TXT          |     Yes      | `Encoding.detect()`                          |      -       |       テキスト        |
-| HTML/HTM     |     Yes      | `Encoding.detect()`                          |      -       |       テキスト        |
-| XML          |     Yes      | `<?xml encoding>` 宣言パース、fallback UTF-8 |      -       |       テキスト        |
-| JSON         |     Yes      | UTF-8 固定（RFC 8259）                       |      -       |       テキスト        |
-| GeoJSON      |     Yes      | UTF-8 固定（RFC 7946）                       |      -       |   地図+テキスト切替   |
-| MD           |     Yes      | UTF-8 固定                                   |      -       |       テキスト        |
-| RDF          |      No      | スキップ                                     |      -       |        非対応         |
-| PDF          |      No      | スキップ                                     |      -       |    iframe（本体）     |
-| XLSX/XLS     |      No      | スキップ                                     |      -       | Office Online Viewer  |
-| DOC/DOCX     |      No      | スキップ                                     |      -       | Office Online Viewer  |
-| PPT/PPTX     |      No      | スキップ                                     |      -       | Office Online Viewer  |
-| ZIP          |      No      | JSONマニフェスト生成（yauzl）                |      -       |     ファイル一覧      |
+| フォーマット                   | isTextFormat | エンコーディング検出                         | Parquet 生成 |    プレビュー表示     |
+| ------------------------------ | :----------: | -------------------------------------------- | :----------: | :-------------------: |
+| CSV                            |     Yes      | `Encoding.detect()`                          |     Yes      | テーブル+テキスト切替 |
+| TSV                            |     Yes      | `Encoding.detect()`                          |     Yes      | テーブル+テキスト切替 |
+| TXT                            |     Yes      | `Encoding.detect()`                          |      -       |       テキスト        |
+| HTML/HTM                       |     Yes      | `Encoding.detect()`                          |      -       |       テキスト        |
+| XML                            |     Yes      | `<?xml encoding>` 宣言パース、fallback UTF-8 |      -       |       テキスト        |
+| JSON                           |     Yes      | UTF-8 固定（RFC 8259）                       |      -       |       テキスト        |
+| GeoJSON                        |     Yes      | UTF-8 固定（RFC 7946）                       |      -       |   地図+テキスト切替   |
+| MD                             |     Yes      | UTF-8 固定                                   |      -       |       テキスト        |
+| RDF                            |      No      | スキップ                                     |      -       |        非対応         |
+| PDF                            |      No      | スキップ                                     |      -       |    iframe（本体）     |
+| XLSX/XLS                       |      No      | スキップ                                     |      -       | Office Online Viewer  |
+| DOC/DOCX                       |      No      | スキップ                                     |      -       | Office Online Viewer  |
+| PPT/PPTX                       |      No      | スキップ                                     |      -       | Office Online Viewer  |
+| ZIP                            |      No      | JSONマニフェスト生成（yauzl）                |      -       |     ファイル一覧      |
+| PNG/JPEG/GIF/WebP/SVG/BMP/TIFF |      No      | スキップ                                     |      -       |      img（本体）      |
 
 **サイズ制限:**
 
@@ -251,11 +252,12 @@ Extract のみフォーマット別処理を行う。
 
 **関連ファイル:**
 
-- フォーマット判定: `packages/shared/src/formats.ts`（`isTextFormat`, `isCsvFormat`, `isZipFormat`, `isOfficeFormat`）
+- フォーマット判定: `packages/shared/src/formats.ts`（`isTextFormat`, `isCsvFormat`, `isZipFormat`, `isOfficeFormat`, `isImageFormat`）
 - エンコーディング検出: `apps/worker/src/pipeline/node-utils.ts`（`detectEncoding`）
 - Extract ステップ: `apps/worker/src/pipeline/steps/extract.ts`
 - フロントエンド プレビュー: `apps/web/src/components/resource-preview.tsx`
 - GeoJSON 地図プレビュー: `apps/web/src/components/geojson-preview.tsx`, `geojson-map.tsx`（Leaflet + OSM/国土地理院切替）
+- 画像プレビュー: `apps/web/src/components/image-preview.tsx`
 
 ## よく使うコマンド（セットアップ後）
 
