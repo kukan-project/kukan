@@ -249,9 +249,7 @@ describe('Packages API Routes', () => {
       const idMatchBody = await idMatchRes.json()
 
       // Overwrite the id to the shared UUID (simulate CKAN import)
-      await db.execute(
-        sql`UPDATE package SET id = ${sharedUuid} WHERE id = ${idMatchBody.id}`
-      )
+      await db.execute(sql`UPDATE package SET id = ${sharedUuid} WHERE id = ${idMatchBody.id}`)
 
       const res = await app.request(`/api/v1/packages/${sharedUuid}`)
       expect(res.status).toBe(200)

@@ -67,9 +67,7 @@ export class GroupService {
         )
       )
     const [result] = isUuid(nameOrId)
-      ? await base
-          .orderBy(sql`CASE WHEN ${group.id} = ${nameOrId} THEN 0 ELSE 1 END`)
-          .limit(1)
+      ? await base.orderBy(sql`CASE WHEN ${group.id} = ${nameOrId} THEN 0 ELSE 1 END`).limit(1)
       : await base.limit(1)
 
     if (!result) {
