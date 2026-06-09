@@ -10,6 +10,7 @@ import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import type { Env, Logger } from '@kukan/shared'
 import type { Auth } from './auth/auth'
+import type { AnalyticsService } from './services/analytics-service'
 
 export interface AppContext {
   db: Database
@@ -23,6 +24,8 @@ export interface AppContext {
   env: Env
   logger: Logger
   requestId: string
+  /** GA4 analytics service (null when GA4 env vars not set) */
+  analytics: AnalyticsService | null
   // Better Auth session will be added by middleware
   user?: {
     id: string
@@ -46,6 +49,8 @@ declare module 'hono' {
     env: Env
     logger: Logger
     requestId: string
+    /** GA4 analytics service (null when GA4 env vars not set) */
+    analytics: AnalyticsService | null
     user?: {
       id: string
       email: string

@@ -27,6 +27,8 @@ export interface KukanConfig {
   hostedZoneName?: string
   /** S3 bucket name for resource files. Default: 'kukan-resources'. */
   bucketName: string
+  /** Enable GA4 analytics dashboard (creates Secrets Manager secrets for GA4_PROPERTY_ID, GA4_CLIENT_EMAIL, GA4_PRIVATE_KEY) */
+  enableGa4DataApi: boolean
 
   // --- Computed from scale ---
   web: {
@@ -79,6 +81,7 @@ const SCALE_DEFAULTS: Record<
     | 'hostedZoneId'
     | 'hostedZoneName'
     | 'bucketName'
+    | 'enableGa4DataApi'
   >
 > = {
   small: {
@@ -137,6 +140,7 @@ export function loadConfig(scope: Construct): KukanConfig {
   const hostedZoneId = scope.node.tryGetContext('hostedZoneId') as string | undefined
   const hostedZoneName = scope.node.tryGetContext('hostedZoneName') as string | undefined
   const bucketName = (scope.node.tryGetContext('bucketName') ?? 'kukan-resources') as string
+  const enableGa4DataApi = (scope.node.tryGetContext('enableGa4DataApi') as boolean) ?? false
 
   const defaults = SCALE_DEFAULTS[scale]
 
@@ -157,6 +161,7 @@ export function loadConfig(scope: Construct): KukanConfig {
     hostedZoneId,
     hostedZoneName,
     bucketName,
+    enableGa4DataApi,
     ...defaults,
     db,
   }

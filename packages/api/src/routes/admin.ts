@@ -635,3 +635,63 @@ adminRouter.post('/users/:userId/purge', async (c) => {
   await service.purge(userId, currentUser.id)
   return c.json({ success: true })
 })
+
+// ---------------------------------------------------------------------------
+// Analytics (GA4 Data API)
+// ---------------------------------------------------------------------------
+
+const ANALYTICS_NOT_CONFIGURED = {
+  type: 'about:blank',
+  title: 'Not Configured',
+  status: 404,
+  detail:
+    'GA4 analytics is not configured. Set GA4_PROPERTY_ID and GA4_CLIENT_EMAIL and GA4_PRIVATE_KEY environment variables.',
+} as const
+
+/** Parse date range + pagination for analytics endpoints */
+function parseAnalyticsQuery(c: { req: { query: (k: string) => string | undefined } }) {
+  const { offset, limit } = parsePaginatedQuery(c)
+  const startDate = c.req.query('startDate') ?? '30daysAgo'
+  const endDate = c.req.query('endDate') ?? 'today'
+  return { offset, limit, startDate, endDate }
+}
+
+// GET /api/v1/admin/analytics/dataset-views
+adminRouter.get('/analytics/dataset-views', async (c) => {
+  const analytics = c.get('analytics')
+  if (!analytics) return c.json(ANALYTICS_NOT_CONFIGURED, 404)
+
+  const { startDate, endDate, offset, limit } = parseAnalyticsQuery(c)
+  const result = await analytics.getDatasetViews(startDate, endDate, offset, limit)
+  return c.json({ ...result, offset, limit })
+})
+
+// GET /api/v1/admin/analytics/resource-views
+adminRouter.get('/analytics/resource-views', async (c) => {
+  const analytics = c.get('analytics')
+  if (!analytics) return c.json(ANALYTICS_NOT_CONFIGURED, 404)
+
+  const { startDate, endDate, offset, limit } = parseAnalyticsQuery(c)
+  const result = await analytics.getResourceViews(startDate, endDate, offset, limit)
+  return c.json({ ...result, offset, limit })
+})
+
+// GET /api/v1/admin/analytics/downloads
+adminRouter.get('/analytics/downloads', async (c) => {
+  const analytics = c.get('analytics')
+  if (!analytics) return c.json(ANALYTICS_NOT_CONFIGURED, 404)
+
+  const { startDate, endDate, offset, limit } = parseAnalyticsQuery(c)
+  const result = await analytics.getDownloads(startDate, endDate, offset, limit)
+  return c.json({ ...result, offset, limit })
+})
+
+// GET /api/v1/admin/analytics/search-terms
+adminRouter.get('/analytics/search-terms', async (c) => {
+  const analytics = c.get('analytics')
+  if (!analytics) return c.json(ANALYTICS_NOT_CONFIGURED, 404)
+
+  const { startDate, endDate, offset, limit } = parseAnalyticsQuery(c)
+  const result = await analytics.getSearchTerms(startDate, endDate, offset, limit)
+  return c.json({ ...result, offset, limit })
+})

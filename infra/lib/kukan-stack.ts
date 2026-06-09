@@ -73,6 +73,29 @@ export class KukanStack extends cdk.Stack {
       clusterName: 'kukan',
     })
 
+    // --- GA4 Analytics (optional) ---
+    // After deploy, set the values via:
+    //   aws secretsmanager put-secret-value --secret-id kukan/ga4-property-id --secret-string "123456789"
+    //   aws secretsmanager put-secret-value --secret-id kukan/ga4-client-email --secret-string "sa@project.iam.gserviceaccount.com"
+    //   aws secretsmanager put-secret-value --secret-id kukan/ga4-private-key --secret-string "$(cat key.pem)"
+    let ga4PropertyIdSecret: secretsmanager.ISecret | undefined
+    let ga4ClientEmailSecret: secretsmanager.ISecret | undefined
+    let ga4PrivateKeySecret: secretsmanager.ISecret | undefined
+    if (config.enableGa4DataApi) {
+      ga4PropertyIdSecret = new secretsmanager.Secret(this, 'Ga4PropertyIdSecret', {
+        secretName: 'kukan/ga4-property-id',
+        description: 'GA4 property ID (numeric)',
+      })
+      ga4ClientEmailSecret = new secretsmanager.Secret(this, 'Ga4ClientEmailSecret', {
+        secretName: 'kukan/ga4-client-email',
+        description: 'GA4 service account email',
+      })
+      ga4PrivateKeySecret = new secretsmanager.Secret(this, 'Ga4PrivateKeySecret', {
+        secretName: 'kukan/ga4-private-key',
+        description: 'GA4 service account private key',
+      })
+    }
+
     // --- Web Service (ECS Fargate + internal ALB) ---
     // CloudFront connects to ALB via VPC origin — no public IPs on ALB.
     const webService = new WebServiceConstruct(this, 'WebService', {
@@ -85,6 +108,9 @@ export class KukanStack extends cdk.Stack {
       bucket: storage.bucket,
       queue: queue.queue,
       searchDomainEndpoint: search?.domainEndpoint,
+      ga4PropertyIdSecret,
+      ga4ClientEmailSecret,
+      ga4PrivateKeySecret,
     })
 
     // --- Worker Service (ECS Fargate) ---

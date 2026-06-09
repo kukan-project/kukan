@@ -50,6 +50,7 @@
       "@swc/core",
       "esbuild",
       "prisma",
+      "protobufjs",
       "sharp"
     ],
     "patchedDependencies": {}

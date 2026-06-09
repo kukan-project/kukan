@@ -16,7 +16,7 @@ This feature is designed for internet-facing deployments. In closed networks (LG
 | File downloads | Custom event on download button click |
 | Site search keywords | Automatic (Enhanced Measurement detects `?q=` parameter) |
 
-Analytics data can be viewed in the GA4 console. A built-in analytics dashboard in the KUKAN admin panel is planned for a future release.
+Analytics data can be viewed in the GA4 console. With GA4 Data API configured, you can also view analytics in the KUKAN admin dashboard.
 
 ## Step 1: Create a GA4 Property
 
@@ -70,24 +70,22 @@ KUKAN sends a `file_download` custom event with additional parameters. To use th
 
 This step is optional but recommended for detailed download analysis.
 
-## Step 5: Set Up the Admin Dashboard (Future)
+## Step 5: Set Up the Admin Dashboard
 
-The KUKAN admin panel will include a built-in analytics dashboard that fetches data from the GA4 Data API. This requires a Google Cloud service account:
+The KUKAN admin dashboard shows dataset view counts, download counts, and search keyword rankings fetched from the GA4 Data API. This requires a Google Cloud service account:
 
-1. Create a GCP project (or use an existing one)
-2. Enable the **Google Analytics Data API**
-3. Create a **Service Account** and download the JSON key
-4. In GA4 Admin > **Property Access Management**, add the service account email with **Viewer** role
-5. Set the following environment variables in your deployment:
+1. Create a **Service Account** in a GCP project (new or existing)
+2. Enable the **Google Analytics Data API** in the GCP project
+3. In GA4 Admin > **Property Access Management**, add the service account email with **Viewer** role
+4. Set the following environment variables in your deployment:
 
 | Variable | Value |
 |---|---|
 | `GA4_PROPERTY_ID` | Your GA4 property ID (numeric, found in Admin > Property Settings) |
-| `GA4_CREDENTIALS_JSON` | The full JSON key content (as a string) |
+| `GA4_CLIENT_EMAIL` | Service account email address |
+| `GA4_PRIVATE_KEY` | Service account private key (PEM format, from the JSON key's `private_key` field) |
 
-:::note
-The admin dashboard is under development. Steps 1-4 above are sufficient to start collecting data. You can view reports in the GA4 console in the meantime.
-:::
+On AWS, add `enableGa4DataApi=true` to the CDK context and store the values in Secrets Manager.
 
 ## Verifying the Setup
 

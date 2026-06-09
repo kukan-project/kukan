@@ -9,6 +9,7 @@ import { Hono } from 'hono'
 import type { Database } from '@kukan/db'
 import { NoOpAIAdapter } from '@kukan/ai-adapter'
 import { PostgresSearchAdapter, type SearchAdapter } from '@kukan/search-adapter'
+import type { AnalyticsService } from '../../services/analytics-service'
 import { errorHandler } from '../../middleware/error-handler'
 import { createLogger, type Env } from '@kukan/shared'
 import type { Auth } from '../../auth/auth'
@@ -115,6 +116,8 @@ interface TestAppOverrides {
   } | null
   /** Override the auth instance (for testing admin user creation). */
   auth?: Auth
+  /** Override the analytics service. Pass `null` to simulate unconfigured GA4. */
+  analytics?: AnalyticsService | null
 }
 
 export function createTestApp(db: Database, overrides?: TestAppOverrides) {
@@ -135,6 +138,7 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
     c.set('auth', overrides?.auth ?? mockAuth)
     c.set('env', testEnv)
     c.set('logger', testLogger)
+    c.set('analytics', overrides?.analytics ?? null)
     c.set('requestId', 'test-request-id')
     if (testUser) c.set('user', { displayName: null, ...testUser })
     await next()

@@ -21,6 +21,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@google-analytics/data": "^6.1.0",
     "@hono/node-server": "^2.0.4",
     "@hono/zod-validator": "^0.8.0",
     "@kukan/ai-adapter": "workspace:*",
@@ -33,8 +34,8 @@
     "better-auth": "1.6.9",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
-    "kysely": "^0.29.0",
     "hono": "^4.12.23",
+    "kysely": "^0.29.0",
     "pg": "^8.21.0",
     "zod": "4.4.3"
   },

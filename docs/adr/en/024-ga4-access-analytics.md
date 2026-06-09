@@ -116,12 +116,13 @@ Using GA4's `file_download` event name ensures data appears in GA4's standard re
 
 **Authentication:**
 
-Authenticate with the GA4 Data API using a GCP service account JSON key.
+Authenticate with the GA4 Data API using GCP service account credentials.
 
-| Environment Variable   | Purpose                           | When Unset                      |
-| ---------------------- | --------------------------------- | ------------------------------- |
-| `GA4_PROPERTY_ID`      | GA4 property ID (numeric)         | Show setup instructions on page |
-| `GA4_CREDENTIALS_JSON` | Service account JSON key (string) | Same                            |
+| Environment Variable | Purpose                           | When Unset                      |
+| -------------------- | --------------------------------- | ------------------------------- |
+| `GA4_PROPERTY_ID`    | GA4 property ID (numeric)         | Show setup instructions on page |
+| `GA4_CLIENT_EMAIL`   | Service account email address     | Same                            |
+| `GA4_PRIVATE_KEY`    | Service account private key (PEM) | Same                            |
 
 **Statistics Items:**
 
@@ -150,7 +151,7 @@ Authenticate with the GA4 Data API using a GCP service account JSON key.
 **Behavior when unconfigured:**
 
 - Statistics menu always appears in the admin navigation
-- When `GA4_PROPERTY_ID` / `GA4_CREDENTIALS_JSON` are unset, setup instructions are displayed on the page
+- When `GA4_PROPERTY_ID` / `GA4_CLIENT_EMAIL` / `GA4_PRIVATE_KEY` are unset, setup instructions are displayed on the page
 - No errors in LGWAN environments — only the setup instructions are shown
 
 ### Target Users

@@ -27,6 +27,12 @@ export interface WebServiceProps {
   bucket: s3.IBucket
   queue: sqs.IQueue
   searchDomainEndpoint?: string
+  /** Secrets Manager secret containing GA4 property ID (numeric) */
+  ga4PropertyIdSecret?: secretsmanager.ISecret
+  /** Secrets Manager secret containing GA4 service account email */
+  ga4ClientEmailSecret?: secretsmanager.ISecret
+  /** Secrets Manager secret containing GA4 service account private key */
+  ga4PrivateKeySecret?: secretsmanager.ISecret
 }
 
 export class WebServiceConstruct extends Construct {
@@ -52,6 +58,9 @@ export class WebServiceConstruct extends Construct {
       bucket,
       queue,
       searchDomainEndpoint,
+      ga4PropertyIdSecret,
+      ga4ClientEmailSecret,
+      ga4PrivateKeySecret,
     } = props
 
     // Docker image (built and pushed automatically by CDK)
@@ -94,11 +103,19 @@ export class WebServiceConstruct extends Construct {
     if (config.domainName) {
       environment.BETTER_AUTH_URL = `https://${config.domainName}`
     }
-
     // Secrets injected into the container
     const containerSecrets: Record<string, ecs.Secret> = {
       ...database.buildPostgresSecrets(),
       BETTER_AUTH_SECRET: ecs.Secret.fromSecretsManager(authSecret),
+    }
+    if (ga4PropertyIdSecret) {
+      containerSecrets.GA4_PROPERTY_ID = ecs.Secret.fromSecretsManager(ga4PropertyIdSecret)
+    }
+    if (ga4ClientEmailSecret) {
+      containerSecrets.GA4_CLIENT_EMAIL = ecs.Secret.fromSecretsManager(ga4ClientEmailSecret)
+    }
+    if (ga4PrivateKeySecret) {
+      containerSecrets.GA4_PRIVATE_KEY = ecs.Secret.fromSecretsManager(ga4PrivateKeySecret)
     }
 
     // Container

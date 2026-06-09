@@ -61,11 +61,15 @@ export const envSchema = z.object({
   REGISTRATION_ENABLED: booleanString.default(false),
   BETTER_AUTH_SECRET: z.string().min(32),
   BETTER_AUTH_URL: z
-    .string()
     .url()
     .default(
       process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'
     ),
+
+  // GA4 Analytics (optional — dashboard disabled when not set)
+  GA4_PROPERTY_ID: z.string().optional(),
+  GA4_CLIENT_EMAIL: z.string().optional(),
+  GA4_PRIVATE_KEY: z.string().optional(),
 })
 
 export type Env = z.infer<typeof envSchema> & {

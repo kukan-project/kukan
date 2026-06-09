@@ -9,6 +9,7 @@ import { requestId } from 'hono/request-id'
 import { createLogger, loadEnv } from '@kukan/shared'
 import { createDb } from '@kukan/db'
 import { createAdapters } from './adapters'
+import { AnalyticsService } from './services/analytics-service'
 import { createAuth } from './auth/auth'
 import { optionalAuth } from './middleware/auth'
 import { cacheControl, publicCache, noCache } from './middleware/cache-control'
@@ -36,6 +37,12 @@ export async function createApp() {
   const baseLogger = createLogger({ name: 'api', level: env.LOG_LEVEL })
   const adapters = await createAdapters(env, db, baseLogger)
 
+  // GA4 Analytics (optional — null when env vars not set)
+  const analytics =
+    env.GA4_PROPERTY_ID && env.GA4_CLIENT_EMAIL && env.GA4_PRIVATE_KEY
+      ? new AnalyticsService(env.GA4_PROPERTY_ID, env.GA4_CLIENT_EMAIL, env.GA4_PRIVATE_KEY)
+      : null
+
   // CORS — enabled when TRUSTED_ORIGINS is set (standalone / cross-origin access)
   const trustedOrigins = process.env.TRUSTED_ORIGINS?.split(',').filter(Boolean)
   if (trustedOrigins?.length) {
@@ -61,6 +68,7 @@ export async function createApp() {
     c.set('ai', adapters.ai)
     c.set('auth', auth)
     c.set('env', env)
+    c.set('analytics', analytics)
     c.set('logger', baseLogger.child({ requestId: c.get('requestId') }))
     await next()
   })
