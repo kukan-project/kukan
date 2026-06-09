@@ -400,6 +400,7 @@
     "previewNotAvailable": "このフォーマットのプレビューには対応していません",
     "previewNoData": "プレビューデータがありません",
     "previewError": "プレビューの読み込みに失敗しました",
+    "previewJsonTooLarge": "ファイルサイズが大きいため JSON プレビューを表示できません。ダウンロードしてご確認ください。",
     "previewEmpty": "プレビューするデータがありません",
     "previewRowCount": "{total} 行中 {shown} 行を表示",
     "previewTruncatedNote": "省略あり",

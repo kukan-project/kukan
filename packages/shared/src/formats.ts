@@ -109,6 +109,14 @@ export function isCsvFormat(format?: string | null, mimetype?: string | null): b
   return f === 'csv' || f === 'tsv' || (!!m && CSV_MIMES.has(m))
 }
 
+const JSON_FORMATS = new Set(['json', 'geojson'])
+
+/** Check if a format is JSON-based (JSON or GeoJSON) */
+export function isJsonFormat(format: string | null): boolean {
+  if (!format) return false
+  return JSON_FORMATS.has(format.toLowerCase())
+}
+
 const TEXT_FORMATS = new Set(['txt', 'text', 'json', 'geojson', 'xml', 'html', 'htm', 'md'])
 
 /** Check if a format is text-based (CSV/TSV or plain text variants) */

@@ -1,17 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { Card, CardContent, Skeleton, Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
+import { highlightJson } from './json-preview'
 
 const GeoJsonMap = dynamic(() => import('./geojson-map'), {
   ssr: false,
   loading: () => <MapSkeleton />,
 })
 
-type PreviewSource = 'map' | 'raw'
+type PreviewSource = 'map' | 'json'
 
 interface GeoJsonPreviewProps {
   resourceId: string
@@ -21,23 +22,24 @@ export function GeoJsonPreview({ resourceId }: GeoJsonPreviewProps) {
   const t = useTranslations('resource')
   const [source, setSource] = useState<PreviewSource>('map')
   const [geoJson, setGeoJson] = useState<GeoJSON.GeoJsonObject | null>(null)
-  const [rawText, setRawText] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(false)
+  const [error, setError] = useState<'generic' | 'too-large' | null>(null)
 
   useEffect(() => {
     let cancelled = false
     async function load() {
       try {
-        const res = await clientFetch(`/api/v1/resources/${encodeURIComponent(resourceId)}/text`)
-        if (!res.ok) throw new Error()
-        const text = await res.text()
+        const res = await clientFetch(`/api/v1/resources/${encodeURIComponent(resourceId)}/json`)
+        if (!res.ok) {
+          if (!cancelled) setError(res.status === 413 ? 'too-large' : 'generic')
+          return
+        }
+        const parsed = await res.json()
         if (!cancelled) {
-          setRawText(text)
-          setGeoJson(JSON.parse(text) as GeoJSON.GeoJsonObject)
+          setGeoJson(parsed as GeoJSON.GeoJsonObject)
         }
       } catch {
-        if (!cancelled) setError(true)
+        if (!cancelled) setError('generic')
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -48,12 +50,17 @@ export function GeoJsonPreview({ resourceId }: GeoJsonPreviewProps) {
     }
   }, [resourceId])
 
+  const jsonNodes = useMemo(
+    () => (source === 'json' && geoJson ? highlightJson(JSON.stringify(geoJson, null, 2)) : null),
+    [source, geoJson]
+  )
+
   if (loading) return <MapSkeleton />
   if (error || !geoJson) {
     return (
       <Card>
         <CardContent className="py-8 text-center text-sm text-muted-foreground">
-          {t('previewError')}
+          {t(error === 'too-large' ? 'previewJsonTooLarge' : 'previewError')}
         </CardContent>
       </Card>
     )
@@ -61,7 +68,7 @@ export function GeoJsonPreview({ resourceId }: GeoJsonPreviewProps) {
 
   const sources: { key: PreviewSource; label: string }[] = [
     { key: 'map', label: t('previewSourceMap') },
-    { key: 'raw', label: t('previewSourceText') },
+    { key: 'json', label: 'JSON' },
   ]
 
   return (
@@ -79,10 +86,10 @@ export function GeoJsonPreview({ resourceId }: GeoJsonPreviewProps) {
         ))}
       </div>
       {source === 'map' && <GeoJsonMap data={geoJson} />}
-      {source === 'raw' && rawText && (
+      {source === 'json' && jsonNodes && (
         <div className="overflow-hidden rounded-lg border">
           <div className="max-h-[600px] overflow-auto bg-muted/20 p-4">
-            <pre className="whitespace-pre text-xs">{rawText}</pre>
+            <pre className="whitespace-pre text-xs leading-relaxed">{jsonNodes}</pre>
           </div>
         </div>
       )}

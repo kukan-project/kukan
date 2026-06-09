@@ -29,7 +29,8 @@ const storageWithContent = {
   getSignedUrl: async () => 'file:///test',
   getSignedUploadUrl: async () => 'https://minio.test/upload?signed=true',
 }
-const appWithStorage = createTestApp(db, { storage: storageWithContent })
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const appWithStorage = createTestApp(db, { storage: storageWithContent as any })
 
 /** Non-sysadmin user with no org membership */
 const outsiderApp = createTestApp(db, {
@@ -176,6 +177,112 @@ describe('Resources API Routes', () => {
 
       const res = await outsiderApp.request(`/api/v1/resources/${resource.id}/text`)
       expect(res.status).toBe(404)
+    })
+  })
+
+  describe('GET /api/v1/resources/:id/json', () => {
+    const jsonContent = '{\n  "name": "test",\n  "value": 42\n}'
+    const jsonContentBuf = Buffer.from(jsonContent)
+    const jsonStorage = {
+      ...storageWithContent,
+      downloadRange: async () => ({
+        stream: Readable.from([jsonContentBuf]),
+        totalSize: jsonContentBuf.length,
+        start: 0,
+        end: jsonContentBuf.length - 1,
+      }),
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const appWithJson = createTestApp(db, { storage: jsonStorage as any })
+
+    it('should return 404 for private package resource when unauthenticated', async () => {
+      const pkg = await createPackage('private-json-pkg', { private: true })
+      const resource = await createResource(pkg.id)
+
+      const res = await unauthApp.request(`/api/v1/resources/${resource.id}/json`)
+      expect(res.status).toBe(404)
+    })
+
+    it('should return 404 for private package resource when user is not org member', async () => {
+      const pkg = await createPackage('private-json-pkg2', { private: true })
+      const resource = await createResource(pkg.id)
+
+      const res = await outsiderApp.request(`/api/v1/resources/${resource.id}/json`)
+      expect(res.status).toBe(404)
+    })
+
+    it('should return minified JSON with correct Content-Type', async () => {
+      const pkg = await createPackage('json-serve-pkg')
+      const resource = await createResource(pkg.id, { format: 'JSON' })
+
+      const res = await appWithJson.request(`/api/v1/resources/${resource.id}/json`)
+      expect(res.status).toBe(200)
+      expect(res.headers.get('Content-Type')).toBe('application/json')
+
+      const text = await res.text()
+      expect(text).toBe('{"name":"test","value":42}')
+    })
+
+    it('should return application/geo+json for GeoJSON format', async () => {
+      const pkg = await createPackage('geojson-ct-pkg')
+      const resource = await createResource(pkg.id, { format: 'GeoJSON' })
+
+      const res = await appWithJson.request(`/api/v1/resources/${resource.id}/json`)
+      expect(res.status).toBe(200)
+      expect(res.headers.get('Content-Type')).toBe('application/geo+json')
+    })
+
+    it('should return 413 when resource.size exceeds limit', async () => {
+      const pkg = await createPackage('json-toolarge-pkg')
+      const resource = await createResource(pkg.id, { format: 'JSON' })
+
+      // Set size > JSON_PREVIEW_LIMIT (10 MB) directly in DB
+      await db
+        .update(resourceTable)
+        .set({ size: 11 * 1024 * 1024 })
+        .where(eq(resourceTable.id, resource.id))
+
+      const res = await appWithJson.request(`/api/v1/resources/${resource.id}/json`)
+      expect(res.status).toBe(413)
+
+      const body = await res.json()
+      expect(body.title).toBe('Payload Too Large')
+    })
+
+    it('should return 413 via storage totalSize when resource.size is null', async () => {
+      const largeTotalSize = 11 * 1024 * 1024
+      const largeStorage = {
+        ...storageWithContent,
+        downloadRange: async () => ({
+          stream: Readable.from([Buffer.from('{}')]),
+          totalSize: largeTotalSize,
+          start: 0,
+          end: 0,
+        }),
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const appWithLarge = createTestApp(db, { storage: largeStorage as any })
+
+      const pkg = await createPackage('json-large-null-size-pkg')
+      // resource.size is null (default from createResource)
+      const resource = await createResource(pkg.id, { format: 'JSON' })
+
+      const res = await appWithLarge.request(`/api/v1/resources/${resource.id}/json`)
+      expect(res.status).toBe(413)
+
+      const body = await res.json()
+      expect(body.title).toBe('Payload Too Large')
+    })
+
+    it('should return 415 for non-JSON format', async () => {
+      const pkg = await createPackage('json-nonjson-pkg')
+      const resource = await createResource(pkg.id, { format: 'CSV' })
+
+      const res = await appWithJson.request(`/api/v1/resources/${resource.id}/json`)
+      expect(res.status).toBe(415)
+
+      const body = await res.json()
+      expect(body.title).toBe('Unsupported Media Type')
     })
   })
 

@@ -7,6 +7,7 @@ import dynamic from 'next/dynamic'
 import {
   isCsvFormat,
   isTextFormat,
+  isJsonFormat,
   isZipFormat,
   isOfficeFormat,
   isPdfFormat,
@@ -16,6 +17,7 @@ import {
 import { clientFetch } from '@/lib/client-api'
 import { ParquetPreview } from './parquet-preview'
 import { GeoJsonPreview } from './geojson-preview'
+import { JsonPreview } from './json-preview'
 import { ZipPreview } from './zip-preview'
 import { ImagePreview } from './image-preview'
 
@@ -79,6 +81,7 @@ export function ResourcePreview({ resourceId, format, url, size }: ResourcePrevi
   if (isPdfFormat(f)) return <PdfPreview resourceId={resourceId} />
   if (isCsvFormat(f)) return <TablePreview key={resourceId} resourceId={resourceId} />
   if (isGeoJsonFormat(f)) return <GeoJsonPreview resourceId={resourceId} />
+  if (isJsonFormat(f)) return <JsonPreview resourceId={resourceId} />
   if (isZipFormat(f)) return <ZipPreview resourceId={resourceId} />
   if (isOfficeFormat(f))
     return <OfficeOnlinePreview resourceId={resourceId} url={url} size={size} />

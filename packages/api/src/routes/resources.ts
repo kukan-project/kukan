@@ -24,9 +24,11 @@ import {
   isOfficeFormat,
   isImageFormat,
   isPdfFormat,
+  isJsonFormat,
   MAX_UPLOAD_SIZE,
 } from '@kukan/shared'
-import { TEXT_PREVIEW_LIMIT, DEFAULT_RANGE_CHUNK } from '../config'
+import { TEXT_PREVIEW_LIMIT, JSON_PREVIEW_LIMIT, DEFAULT_RANGE_CHUNK } from '../config'
+import { JsonMinifyStream } from '../streams/json-minify-stream'
 import { checkOrgRole, resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
 import { indexPackageMetadata, indexResourceMetadata } from '../services/search-index'
 import { Readable } from 'stream'
@@ -167,6 +169,68 @@ resourcesRouter.get('/:id/text', async (c) => {
       'Content-Type': `text/plain; charset=${charset}`,
       'X-Detected-Encoding': encoding,
       'X-Truncated': String(isTruncated),
+      'Cache-Control': 'private, max-age=300',
+    },
+  })
+})
+
+// GET /api/v1/resources/:id/json - Serve minified JSON/GeoJSON.
+// Returns 413 if file exceeds limit (truncated JSON is unparseable).
+resourcesRouter.get('/:id/json', async (c) => {
+  const id = c.req.param('id')
+  const db = c.get('db')
+  const user = c.get('user')
+  const resource = await new ResourceService(db).getByIdWithAccessCheck(id, user)
+
+  if (!isJsonFormat(resource.format)) {
+    return c.json(
+      {
+        type: 'about:blank',
+        title: 'Unsupported Media Type',
+        status: 415,
+        detail: `Format "${resource.format ?? 'unknown'}" is not a JSON format`,
+      },
+      415
+    )
+  }
+
+  const jsonTooLarge = () =>
+    c.json(
+      {
+        type: 'about:blank',
+        title: 'Payload Too Large',
+        status: 413,
+        detail: `JSON file exceeds preview limit (${JSON_PREVIEW_LIMIT} bytes)`,
+      },
+      413
+    )
+
+  // Fast reject by DB size (avoids storage round-trip)
+  if (resource.size != null && resource.size > JSON_PREVIEW_LIMIT) {
+    return jsonTooLarge()
+  }
+
+  const storage = c.get('storage')
+  const storageKey = getStorageKey(resource.packageId, resource.id)
+
+  // Single storage call: fetch up to limit bytes and check actual size
+  let rangeResult
+  try {
+    rangeResult = await storage.downloadRange(storageKey, 0, JSON_PREVIEW_LIMIT - 1)
+  } catch (err) {
+    throwIfNotFound(err, id)
+  }
+  if (rangeResult.totalSize > JSON_PREVIEW_LIMIT) {
+    rangeResult.stream.destroy()
+    return jsonTooLarge()
+  }
+
+  const contentType = getMimeType(resource.format!) || 'application/json'
+  const minified = rangeResult.stream.pipe(new JsonMinifyStream())
+
+  return new Response(Readable.toWeb(minified) as ReadableStream, {
+    headers: {
+      'Content-Type': contentType,
       'Cache-Control': 'private, max-age=300',
     },
   })

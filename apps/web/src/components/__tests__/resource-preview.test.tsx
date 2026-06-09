@@ -20,6 +20,14 @@ vi.mock('../geojson-preview', () => ({
   ),
 }))
 
+// Mock JsonPreview to avoid fetch dependency in tests
+vi.mock('../json-preview', () => ({
+  JsonPreview: ({ resourceId }: { resourceId: string }) => (
+    <div data-testid="json-preview">JSON preview for {resourceId}</div>
+  ),
+  highlightJson: () => [],
+}))
+
 import { clientFetch } from '@/lib/client-api'
 
 const mockClientFetch = vi.mocked(clientFetch)
@@ -42,21 +50,9 @@ describe('ResourcePreview', () => {
   })
 
   describe('Text format preview', () => {
-    it('should show raw text preview for JSON format', async () => {
-      mockClientFetch.mockResolvedValueOnce({
-        ok: true,
-        headers: new Headers({
-          'Content-Type': 'text/plain; charset=utf-8',
-          'X-Detected-Encoding': 'UTF8',
-        }),
-        arrayBuffer: async () => new TextEncoder().encode('{"key":"value"}').buffer,
-      } as Response)
-
+    it('should route JSON to JsonPreview component', () => {
       render(<ResourcePreview resourceId="r1" format="JSON" />)
-
-      await waitFor(() => {
-        expect(screen.getByText('{"key":"value"}')).toBeInTheDocument()
-      })
+      expect(screen.getByTestId('json-preview')).toBeInTheDocument()
     })
 
     it('should show raw text preview for XML format', async () => {

@@ -400,6 +400,7 @@
     "previewNotAvailable": "Preview is not available for this format",
     "previewNoData": "Preview data is not available",
     "previewError": "Failed to load preview",
+    "previewJsonTooLarge": "File is too large for JSON preview. Please download the file to view it.",
     "previewEmpty": "No data to preview",
     "previewRowCount": "{shown} of {total} rows",
     "previewTruncatedNote": "truncated",
