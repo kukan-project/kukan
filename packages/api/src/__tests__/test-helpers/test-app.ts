@@ -65,6 +65,7 @@ const mockStorage = {
   deleteByPrefix: async () => 0,
   getSignedUrl: async () => 'file:///test',
   getSignedUploadUrl: async () => 'https://minio.test/upload?signed=true',
+  head: async () => ({ size: 1024 }),
 }
 
 const mockQueue = {

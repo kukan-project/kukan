@@ -28,7 +28,7 @@ import {
   streamToTempFile,
   cleanupTempFile,
 } from '../node-utils'
-import { MAX_CONTENT_CHUNK_SIZE } from '@/config'
+import { MAX_CONTENT_CHUNK_SIZE, MAX_FETCH_SIZE } from '@/config'
 
 export interface IndexContentResult {
   contentIndexed: boolean
@@ -201,12 +201,14 @@ async function indexTextStream(
   const enc = encoding.toLowerCase()
   const isUtf8 = enc === 'utf8' || enc === 'utf-8' || enc === 'ascii' || enc === 'unknown'
 
-  // Non-UTF-8: buffer entire file and convert (stateful encodings need full context)
+  // Non-UTF-8: buffer file and convert (stateful encodings need full context).
+  // Cap the buffer at the max legitimate file size so an oversize object can't
+  // OOM the worker; a truncated tail is acceptable degradation for indexing.
   let lines: AsyncIterable<string> | Iterable<string>
   if (isUtf8) {
     lines = streamUtf8Lines(stream)
   } else {
-    const buf = await streamToBuffer(stream)
+    const buf = await streamToBuffer(stream, MAX_FETCH_SIZE)
     const text = bufferToUtf8(buf, encoding)
     lines = text.split('\n')
   }

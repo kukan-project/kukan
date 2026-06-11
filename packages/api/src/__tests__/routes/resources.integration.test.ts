@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { Readable } from 'stream'
 import { resource as resourceTable, resourcePipeline, resourcePipelineStep } from '@kukan/db'
+import { MAX_UPLOAD_SIZE } from '@kukan/shared'
 import { createTestApp, mockSearch } from '../test-helpers/test-app'
 import {
   getTestDb,
@@ -28,6 +29,7 @@ const storageWithContent = {
   deleteByPrefix: async () => 0,
   getSignedUrl: async () => 'file:///test',
   getSignedUploadUrl: async () => 'https://minio.test/upload?signed=true',
+  head: async () => ({ size: 1024 }),
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const appWithStorage = createTestApp(db, { storage: storageWithContent as any })
@@ -760,7 +762,7 @@ describe('Resources API Routes', () => {
       expect(body.job_id).toBeDefined()
     })
 
-    it('should update size and hash metadata', async () => {
+    it('should record the actual stored size (from storage head) and the client hash', async () => {
       const pkg = await createPackage('complete-meta-pkg')
       const resource = await createResource(pkg.id)
 
@@ -773,13 +775,38 @@ describe('Resources API Routes', () => {
       await app.request(`/api/v1/resources/${resource.id}/upload-complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        // Client claims 4096, but the server records the real object size (mock head → 1024).
         body: JSON.stringify({ size: 4096, hash: 'sha256:def' }),
       })
 
       const getRes = await app.request(`/api/v1/resources/${resource.id}`)
       const body = await getRes.json()
-      expect(body.size).toBe(4096)
+      expect(body.size).toBe(1024)
       expect(body.hash).toBe('sha256:def')
+    })
+
+    it('should reject an upload whose stored size exceeds the limit', async () => {
+      const oversizeStorage = {
+        ...storageWithContent,
+        head: async () => ({ size: MAX_UPLOAD_SIZE + 1 }),
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const oversizeApp = createTestApp(db, { storage: oversizeStorage as any })
+      const pkg = await createPackage('complete-oversize-pkg')
+      const resource = await createResource(pkg.id)
+
+      await oversizeApp.request(`/api/v1/resources/${resource.id}/upload-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: 'big.csv', contentType: 'text/csv' }),
+      })
+
+      const res = await oversizeApp.request(`/api/v1/resources/${resource.id}/upload-complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ size: 10 }),
+      })
+      expect(res.status).toBe(400)
     })
 
     it('should reject if resource is not an upload', async () => {

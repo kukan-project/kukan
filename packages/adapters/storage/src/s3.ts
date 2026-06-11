@@ -7,6 +7,7 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   DeleteObjectCommand,
   ListObjectsV2Command,
   DeleteObjectsCommand,
@@ -97,6 +98,20 @@ export class S3StorageAdapter implements StorageAdapter {
         Key: key,
       })
     )
+  }
+
+  async head(key: string): Promise<{ size: number } | null> {
+    try {
+      const response = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: key })
+      )
+      return { size: response.ContentLength ?? 0 }
+    } catch (err) {
+      if (err instanceof Error && (err.name === 'NotFound' || err.name === 'NoSuchKey')) {
+        return null
+      }
+      throw err
+    }
   }
 
   async downloadRange(

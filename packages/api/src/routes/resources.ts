@@ -474,9 +474,28 @@ resourcesRouter.post(
       throw new ValidationError('Resource is not an uploaded file')
     }
 
-    if (input.size || input.hash) {
-      await resourceService.updateAfterUpload(id, input)
+    // The presigned PUT URL does not bind a content length, so verify the
+    // actually-stored object size server-side instead of trusting the client.
+    // Reject (and remove) anything over the limit before enqueueing the
+    // pipeline, so an oversize object can't drive worker memory exhaustion.
+    const storage = c.get('storage')
+    const storageKey = getStorageKey(existing.packageId, existing.id)
+    const head = await storage.head(storageKey)
+    if (!head) {
+      throw new ValidationError('Uploaded object not found in storage')
     }
+    if (head.size > MAX_UPLOAD_SIZE) {
+      await storage.delete(storageKey)
+      throw new ValidationError(
+        `Uploaded file exceeds the maximum size of ${MAX_UPLOAD_SIZE} bytes`
+      )
+    }
+
+    // Record the actual stored size (not the client-reported value).
+    await resourceService.updateAfterUpload(id, {
+      size: head.size,
+      ...(input.hash && { hash: input.hash }),
+    })
 
     return c.json(await enqueuePipeline(c, id), 200)
   }

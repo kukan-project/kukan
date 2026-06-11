@@ -39,6 +39,12 @@ export interface StorageAdapter {
   delete(key: string): Promise<void>
 
   /**
+   * Get object metadata (byte size) without downloading the body.
+   * Returns null if the object does not exist.
+   */
+  head(key: string): Promise<{ size: number } | null>
+
+  /**
    * Get a presigned URL for temporary read access
    */
   getSignedUrl(key: string, options?: SignedUrlOptions): Promise<string>
