@@ -2,6 +2,7 @@ import { getTranslations } from 'next-intl/server'
 import { resolveLicenseLabel } from '@kukan/shared'
 import { DateTime } from '@/components/date-time'
 import { KeyValueTable, extrasToRows } from '@/components/key-value-table'
+import { safeExternalHref } from '@/lib/safe-url'
 
 interface MetadataPackage {
   maintainer?: string | null
@@ -37,16 +38,23 @@ export async function DatasetMetadata({ pkg }: { pkg: MetadataPackage }) {
             { label: t('updated'), value: <DateTime value={pkg.updated} /> },
             {
               label: t('sourceUrl'),
-              value: pkg.url ? (
-                <a
-                  href={pkg.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="break-all text-primary underline-offset-4 hover:underline"
-                >
-                  {pkg.url}
-                </a>
-              ) : null,
+              value: (() => {
+                if (!pkg.url) return null
+                const href = safeExternalHref(pkg.url)
+                // Unsafe scheme (e.g. javascript:) — show the URL as plain text, not a link.
+                return href ? (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="break-all text-primary underline-offset-4 hover:underline"
+                  >
+                    {pkg.url}
+                  </a>
+                ) : (
+                  <span className="break-all">{pkg.url}</span>
+                )
+              })(),
             },
             ...extrasToRows(pkg.extras),
           ]}

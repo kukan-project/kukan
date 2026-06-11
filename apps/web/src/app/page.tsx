@@ -4,6 +4,7 @@ import { Badge, Button, Card, CardContent, Input, Separator } from '@kukan/ui'
 import type { PaginatedResult } from '@kukan/shared'
 import { overrides } from '@/brand'
 import { serverFetch } from '@/lib/server-api'
+import { safeExternalHref } from '@/lib/safe-url'
 import { DatasetCard, type DatasetCardItem } from '@/components/dataset-card'
 import { CompactDate } from '@/components/date-time'
 
@@ -111,28 +112,31 @@ export default async function HomePage() {
           <Separator className="w-full max-w-2xl" />
           <section className="flex w-full max-w-2xl flex-col gap-3">
             <h2 className="text-xl font-semibold">{t('home.announcements')}</h2>
-            {announcements.map((a) => (
-              <div key={a.id} className="flex items-baseline gap-3 text-sm">
-                <span className="shrink-0 text-muted-foreground">
-                  <CompactDate value={a.publishedAt} />
-                </span>
-                <Badge variant="outline" className="shrink-0">
-                  {t(`announcement.category_${a.category}`)}
-                </Badge>
-                {a.link ? (
-                  <a
-                    href={a.link}
-                    className="hover:underline"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {a.title}
-                  </a>
-                ) : (
-                  <span>{a.title}</span>
-                )}
-              </div>
-            ))}
+            {announcements.map((a) => {
+              const href = safeExternalHref(a.link)
+              return (
+                <div key={a.id} className="flex items-baseline gap-3 text-sm">
+                  <span className="shrink-0 text-muted-foreground">
+                    <CompactDate value={a.publishedAt} />
+                  </span>
+                  <Badge variant="outline" className="shrink-0">
+                    {t(`announcement.category_${a.category}`)}
+                  </Badge>
+                  {href ? (
+                    <a
+                      href={href}
+                      className="hover:underline"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {a.title}
+                    </a>
+                  ) : (
+                    <span>{a.title}</span>
+                  )}
+                </div>
+              )
+            })}
           </section>
         </>
       )}

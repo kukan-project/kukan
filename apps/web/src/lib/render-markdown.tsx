@@ -1,4 +1,5 @@
 import React from 'react'
+import { safeExternalHref } from './safe-url'
 
 /**
  * Lightweight markdown renderer for dataset notes.
@@ -42,17 +43,23 @@ function parseInline(text: string): React.ReactNode[] {
     if (match[1] && match[2]) {
       // Link: [text](url) — recursively parse inner text for **bold** etc.
       const innerNodes = parseInline(match[1])
-      nodes.push(
-        <a
-          key={key}
-          href={match[2]}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-primary underline-offset-4 hover:underline"
-        >
-          {innerNodes}
-        </a>
-      )
+      const href = safeExternalHref(match[2])
+      if (href) {
+        nodes.push(
+          <a
+            key={key}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline-offset-4 hover:underline"
+          >
+            {innerNodes}
+          </a>
+        )
+      } else {
+        // Unsafe scheme (e.g. javascript:) — render the link text as plain text.
+        nodes.push(<React.Fragment key={key}>{innerNodes}</React.Fragment>)
+      }
     } else if (match[3]) {
       // Inline code: `code`
       nodes.push(
