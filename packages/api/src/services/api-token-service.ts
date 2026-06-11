@@ -108,6 +108,7 @@ export class ApiTokenService {
         displayName: user.displayName,
         role: user.role,
         state: user.state,
+        banned: user.banned,
       })
       .from(apiToken)
       .innerJoin(user, eq(apiToken.userId, user.id))
@@ -120,6 +121,16 @@ export class ApiTokenService {
 
     // Block deleted/inactive users
     if (result.state !== 'active') {
+      return null
+    }
+
+    // Block banned users (Better Auth admin plugin). Better Auth enforces bans
+    // only on the session path (signIn.before hook), so without this check a
+    // banned user keeps full access through any pre-existing API token. Fail
+    // closed on the flag rather than honoring banExpires here: the ban_expires
+    // column is an integer with an ambiguous unit, and Better Auth's session
+    // path clears `banned` when a temporary ban lapses.
+    if (result.banned) {
       return null
     }
 

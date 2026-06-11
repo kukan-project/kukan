@@ -213,6 +213,28 @@ describe('ApiTokenService', () => {
       expect(result).toBeNull()
     })
 
+    it('should return null when user is banned', async () => {
+      const { db, addResult } = createMockDb()
+      addResult([
+        {
+          tokenId: 'tok-1',
+          userId: 'user-1',
+          expiresAt: null,
+          email: 'banned@example.com',
+          name: 'Banned User',
+          displayName: null,
+          role: 'user',
+          state: 'active',
+          banned: true,
+        },
+      ])
+
+      const service = new ApiTokenService(db)
+      const result = await service.validate('kukan_sometoken')
+
+      expect(result).toBeNull()
+    })
+
     it('should set sysadmin flag based on user role', async () => {
       const { db, addResult } = createMockDb()
       addResult([
