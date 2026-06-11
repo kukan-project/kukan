@@ -16,7 +16,7 @@ import type {
   ResourceDoc,
   ContentDoc,
 } from './adapter'
-import { MAX_MATCHED_RESOURCES_PER_PACKAGE } from './adapter'
+import { MAX_MATCHED_RESOURCES_PER_PACKAGE, type SearchFilters } from './adapter'
 import { escapeLike } from '@kukan/shared'
 import {
   type Database,
@@ -395,8 +395,10 @@ export class PostgresSearchAdapter implements SearchAdapter {
   }
   async fetchContentHighlights(
     _chunkDocIds: string[],
-    _queryText: string
+    _queryText: string,
+    _filters?: SearchFilters
   ): Promise<Record<string, string>> {
+    // PostgreSQL fallback produces no content highlights.
     return {}
   }
 

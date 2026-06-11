@@ -221,8 +221,15 @@ export interface SearchAdapter {
 
   /** Fetch content highlights for specific chunk document IDs.
    *  Returns a map of chunkDocId → highlighted snippet.
-   *  Used for lazy-loading snippets after initial search results are displayed. */
-  fetchContentHighlights(chunkDocIds: string[], queryText: string): Promise<Record<string, string>>
+   *  Used for lazy-loading snippets after initial search results are displayed.
+   *  `filters` MUST carry the caller's visibility scope (excludePrivate /
+   *  allowPrivateOrgIds) so chunks from private datasets the caller cannot see
+   *  are not returned — the chunk IDs are caller-supplied and guessable. */
+  fetchContentHighlights(
+    chunkDocIds: string[],
+    queryText: string,
+    filters?: SearchFilters
+  ): Promise<Record<string, string>>
 }
 
 export interface BrowseResult {

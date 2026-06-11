@@ -181,8 +181,17 @@ packagesRouter.post(
   ),
   async (c) => {
     const { q, chunks } = c.req.valid('json')
+    const db = c.get('db')
+    const user = c.get('user')
     const search = c.get('search')
-    const result = await search.fetchContentHighlights(chunks, q)
+
+    // Apply the same visibility scope as search/list so callers cannot pull
+    // highlights for chunks of private datasets they cannot see (chunk IDs are
+    // deterministic — `<resourceId>_chunk_<n>` — and therefore guessable).
+    const userOrgIds = await resolveUserOrgIds(db, user)
+    const filters: SearchFilters = buildVisibilityFilters(user, userOrgIds)
+
+    const result = await search.fetchContentHighlights(chunks, q, filters)
     return c.json(result)
   }
 )

@@ -731,7 +731,8 @@ export class OpenSearchAdapter implements SearchAdapter {
    *  Returns a map of chunkDocId → sanitized highlight snippet. */
   async fetchContentHighlights(
     chunkDocIds: string[],
-    queryText: string
+    queryText: string,
+    filters?: SearchFilters
   ): Promise<Record<string, string>> {
     if (chunkDocIds.length === 0) return {}
     await this.ensureIndex()
@@ -744,7 +745,18 @@ export class OpenSearchAdapter implements SearchAdapter {
           query: {
             bool: {
               must: { match: { extractedText: { query: queryText, operator: 'and' } } },
-              filter: [{ ids: { values: chunkDocIds } }, { term: { join_field: 'content' } }],
+              filter: [
+                { ids: { values: chunkDocIds } },
+                { term: { join_field: 'content' } },
+                // Enforce the caller's visibility: only return chunks whose parent
+                // package passes the same private/owner_org filter as search().
+                {
+                  has_parent: {
+                    parent_type: 'package',
+                    query: { bool: { filter: this.buildFilterClauses(filters) } },
+                  },
+                },
+              ],
             },
           },
           _source: false,

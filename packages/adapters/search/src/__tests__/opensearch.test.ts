@@ -1044,6 +1044,25 @@ describe('OpenSearchAdapter', () => {
       )
       expect(result).toEqual({ 'chunk-1': '<mark>found</mark>' })
     })
+
+    it('should enforce caller visibility via has_parent on the parent package', async () => {
+      mockClient.search.mockResolvedValueOnce({ body: { hits: { hits: [] } } })
+
+      await adapter.fetchContentHighlights(['chunk-1'], 'secret', {
+        excludePrivate: true,
+        allowPrivateOrgIds: ['org-1'],
+      })
+
+      const callArgs = mockClient.search.mock.calls[0][0]
+      const filter = callArgs.body.query.bool.filter
+      const hasParent = filter.find((f: Record<string, unknown>) => 'has_parent' in f)
+      expect(hasParent).toBeDefined()
+      expect(hasParent.has_parent.parent_type).toBe('package')
+      // The parent query must carry the private/owner_org visibility clause.
+      const parentFilter = hasParent.has_parent.query.bool.filter
+      expect(JSON.stringify(parentFilter)).toContain('owner_org_id')
+      expect(JSON.stringify(parentFilter)).toContain('private')
+    })
   })
 
   describe('search content + resource overlap', () => {
