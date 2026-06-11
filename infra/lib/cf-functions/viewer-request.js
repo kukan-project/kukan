@@ -22,12 +22,18 @@ function handler(event) {
   }
 
   // --- Cookie-based cache bypass ---
+  // Any authenticated request must bypass the edge cache so personalized SSR
+  // HTML is never stored and served to other users. Match the Better Auth
+  // session cookie by its `session_token` suffix rather than exact names, so a
+  // configured cookiePrefix or a Better Auth cookie-name change cannot silently
+  // disable the bypass and leak logged-in HTML (e.g. `__Secure-better-auth.session_token`,
+  // `better-auth.session_token`, or any `<prefix>.session_token`).
   var req = event.request
-  if (
-    req.cookies['__Secure-better-auth.session_token'] ||
-    req.cookies['better-auth.session_token']
-  ) {
-    req.headers['x-cache-bypass'] = { value: '' + Date.now() }
+  for (var name in req.cookies) {
+    if (name.indexOf('session_token') !== -1) {
+      req.headers['x-cache-bypass'] = { value: '' + Date.now() }
+      break
+    }
   }
   return req
 }
