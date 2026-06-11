@@ -127,16 +127,26 @@ export class OrganizationService {
     return updated
   }
 
+  /** Soft-delete an organization. Rejects if active packages are still linked. */
   async delete(nameOrId: string) {
     const existing = await this.getByNameOrId(nameOrId)
 
-    await this.db
-      .update(organization)
-      .set({
-        state: 'deleted',
-        updated: new Date(),
-      })
-      .where(eq(organization.id, existing.id))
+    await this.db.transaction(async (tx) => {
+      const [linkedPkg] = await tx
+        .select({ id: packageTable.id })
+        .from(packageTable)
+        .where(and(eq(packageTable.ownerOrg, existing.id), eq(packageTable.state, 'active')))
+        .limit(1)
+
+      if (linkedPkg) {
+        throw new ConflictError('Organization has active packages. Delete or reassign them first.')
+      }
+
+      await tx
+        .update(organization)
+        .set({ state: 'deleted', updated: new Date() })
+        .where(eq(organization.id, existing.id))
+    })
 
     return { success: true }
   }

@@ -70,13 +70,22 @@ describe('OrganizationService', () => {
   })
 
   describe('delete', () => {
-    it('should soft delete the organization', async () => {
+    it('should soft delete the organization when no active packages are linked', async () => {
       const org = createOrganizationFixture()
       mock.addResult([org]) // getByNameOrId
-      mock.addResult(undefined as never) // update (no returning)
+      mock.addResult([]) // linked active package check → none
+      mock.addResult([]) // update
 
       const result = await service.delete('test-org')
       expect(result).toEqual({ success: true })
+    })
+
+    it('should reject deletion when active packages are still linked', async () => {
+      const org = createOrganizationFixture()
+      mock.addResult([org]) // getByNameOrId
+      mock.addResult([{ id: 'pkg-1' }]) // linked active package check → found
+
+      await expect(service.delete('test-org')).rejects.toThrow('active packages')
     })
   })
 
