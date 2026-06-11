@@ -1,6 +1,8 @@
 import { cookies, headers } from 'next/headers'
 import { getRequestConfig } from 'next-intl/server'
 
+import { deepMerge, type Messages } from './deep-merge'
+
 const SUPPORTED_LOCALES = ['ja', 'en'] as const
 type SupportedLocale = (typeof SUPPORTED_LOCALES)[number]
 const DEFAULT_LOCALE: SupportedLocale = 'en'
@@ -40,8 +42,14 @@ export default getRequestConfig(async () => {
     }
   }
 
+  const defaultMessages: Messages = (await import(`../../messages/${locale}.json`)).default
+  const brandMessages: Messages = (await import(`../brand/messages/${locale}.json`)).default
+  const messages = Object.keys(brandMessages).length > 0
+    ? deepMerge(defaultMessages, brandMessages)
+    : defaultMessages
+
   return {
     locale,
-    messages: (await import(`../../messages/${locale}.json`)).default,
+    messages,
   }
 })
