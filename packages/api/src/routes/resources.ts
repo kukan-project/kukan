@@ -492,10 +492,8 @@ resourcesRouter.post(
     }
 
     // Record the actual stored size (not the client-reported value).
-    await resourceService.updateAfterUpload(id, {
-      size: head.size,
-      ...(input.hash && { hash: input.hash }),
-    })
+    // updateAfterUpload ignores an undefined hash, so no need to guard it here.
+    await resourceService.updateAfterUpload(id, { size: head.size, hash: input.hash })
 
     return c.json(await enqueuePipeline(c, id), 200)
   }

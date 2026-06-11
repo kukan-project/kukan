@@ -75,18 +75,22 @@ export function bufferToUtf8(buf: Buffer, encoding: string): string {
   return decoder.decode(buf)
 }
 
-/** Collect a Readable stream into a single Buffer, optionally capped at maxBytes */
+/** Collect a Readable stream into a single Buffer, optionally capped at maxBytes.
+ *  When capped, the chunk that crosses the cap IS included, so the returned
+ *  buffer is >= maxBytes exactly when the source was truncated — callers can
+ *  detect truncation by length. (Bounded overshoot of one chunk; never the
+ *  whole oversize object.) */
 export async function streamToBuffer(stream: Readable, maxBytes?: number): Promise<Buffer> {
   const chunks: Buffer[] = []
   let totalSize = 0
   for await (const chunk of stream) {
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    chunks.push(buf)
     totalSize += buf.length
-    if (maxBytes && totalSize > maxBytes) {
+    if (maxBytes && totalSize >= maxBytes) {
       stream.destroy()
       break
     }
-    chunks.push(buf)
   }
   return Buffer.concat(chunks)
 }

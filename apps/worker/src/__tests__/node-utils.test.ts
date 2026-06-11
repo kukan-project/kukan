@@ -70,11 +70,20 @@ describe('streamToBuffer', () => {
     expect(result.toString()).toBe('hello world')
   })
 
-  it('should cap at maxBytes', async () => {
+  it('should cap at maxBytes and include the cap-crossing chunk so truncation is detectable', async () => {
     const stream = Readable.from([Buffer.from('hello '), Buffer.from('world')])
     const result = await streamToBuffer(stream, 5)
-    // First chunk (6 bytes "hello ") exceeds 5-byte limit, stream destroyed after it
-    expect(result.length).toBeLessThanOrEqual(6)
+    // First chunk (6 bytes "hello ") crosses the 5-byte cap; it is included and
+    // the stream is then destroyed, so length >= maxBytes signals truncation.
+    expect(result.length).toBeGreaterThanOrEqual(5)
+    expect(result.toString()).toBe('hello ')
+  })
+
+  it('should return the whole stream when under maxBytes (no truncation)', async () => {
+    const stream = Readable.from([Buffer.from('ab'), Buffer.from('cd')])
+    const result = await streamToBuffer(stream, 100)
+    expect(result.toString()).toBe('abcd')
+    expect(result.length).toBeLessThan(100)
   })
 
   it('should handle empty stream', async () => {

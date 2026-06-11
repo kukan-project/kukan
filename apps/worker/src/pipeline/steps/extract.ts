@@ -87,13 +87,15 @@ export async function executeExtract(
   }
 
   // CSV/TSV: need full buffer for Parquet generation (if within size limit).
-  // Read at most one byte past the limit so an oversize (potentially multi-GB)
-  // object is never fully buffered into memory — that would OOM the worker.
+  // Cap at limit+1 so an oversize (potentially multi-GB) object is never fully
+  // buffered — that would OOM the worker. streamToBuffer includes the
+  // cap-crossing chunk, so length > limit reliably means the source was
+  // oversize (and the buffer is truncated).
   const stream = await ctx.storage.download(storageKey)
   const fileBuffer = await streamToBuffer(stream, MAX_PARQUET_SOURCE_SIZE + 1)
   const encoding = detectEncoding(fmt, fileBuffer)
 
-  // Skip Parquet generation for large CSV/TSV (the buffer above was truncated)
+  // Skip Parquet generation for large CSV/TSV (buffer above is truncated)
   if (fileBuffer.length > MAX_PARQUET_SOURCE_SIZE) {
     return { previewKey: null, encoding }
   }

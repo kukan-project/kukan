@@ -107,7 +107,14 @@ export class S3StorageAdapter implements StorageAdapter {
       )
       return { size: response.ContentLength ?? 0 }
     } catch (err) {
-      if (err instanceof Error && (err.name === 'NotFound' || err.name === 'NoSuchKey')) {
+      // S3 sets name 'NotFound', GetObject-style backends 'NoSuchKey'; some
+      // S3-compatible servers (MinIO) only set the 404 status — treat all as
+      // "object missing" rather than a hard error.
+      const status = (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode
+      if (
+        status === 404 ||
+        (err instanceof Error && (err.name === 'NotFound' || err.name === 'NoSuchKey'))
+      ) {
         return null
       }
       throw err
