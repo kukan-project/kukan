@@ -24,13 +24,15 @@ function handler(event) {
   // --- Cookie-based cache bypass ---
   // Any authenticated request must bypass the edge cache so personalized SSR
   // HTML is never stored and served to other users. Match the Better Auth
-  // session cookie by its `session_token` suffix rather than exact names, so a
-  // configured cookiePrefix or a Better Auth cookie-name change cannot silently
-  // disable the bypass and leak logged-in HTML (e.g. `__Secure-better-auth.session_token`,
-  // `better-auth.session_token`, or any `<prefix>.session_token`).
+  // session cookie by the `.session_token` suffix (covers `better-auth.session_token`,
+  // `__Secure-better-auth.session_token`, and any configured `<prefix>.session_token`)
+  // rather than a substring — a substring match would let any client inject the
+  // bypass with a cookie like `xsession_tokenx` and force cache misses.
+  // `slice` (not `endsWith`) for CloudFront Functions runtime compatibility.
   var req = event.request
+  var SUFFIX = '.session_token'
   for (var name in req.cookies) {
-    if (name.indexOf('session_token') !== -1) {
+    if (name === 'session_token' || name.slice(-SUFFIX.length) === SUFFIX) {
       req.headers['x-cache-bypass'] = { value: '' + Date.now() }
       break
     }
