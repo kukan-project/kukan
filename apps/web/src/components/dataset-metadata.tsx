@@ -18,6 +18,9 @@ interface MetadataPackage {
 export async function DatasetMetadata({ pkg }: { pkg: MetadataPackage }) {
   const [t, tl] = await Promise.all([getTranslations('dataset'), getTranslations('license')])
 
+  // undefined when absent or an unsafe scheme (e.g. javascript:) — shown as plain text instead.
+  const sourceHref = pkg.url ? safeExternalHref(pkg.url) : undefined
+
   return (
     <details className="group">
       <summary className="cursor-pointer text-sm font-medium text-muted-foreground list-none flex items-center gap-2 [&::-webkit-details-marker]:hidden">
@@ -38,23 +41,18 @@ export async function DatasetMetadata({ pkg }: { pkg: MetadataPackage }) {
             { label: t('updated'), value: <DateTime value={pkg.updated} /> },
             {
               label: t('sourceUrl'),
-              value: (() => {
-                if (!pkg.url) return null
-                const href = safeExternalHref(pkg.url)
-                // Unsafe scheme (e.g. javascript:) — show the URL as plain text, not a link.
-                return href ? (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="break-all text-primary underline-offset-4 hover:underline"
-                  >
-                    {pkg.url}
-                  </a>
-                ) : (
-                  <span className="break-all">{pkg.url}</span>
-                )
-              })(),
+              value: !pkg.url ? null : sourceHref ? (
+                <a
+                  href={sourceHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="break-all text-primary underline-offset-4 hover:underline"
+                >
+                  {pkg.url}
+                </a>
+              ) : (
+                <span className="break-all">{pkg.url}</span>
+              ),
             },
             ...extrasToRows(pkg.extras),
           ]}

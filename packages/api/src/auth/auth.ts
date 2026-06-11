@@ -30,6 +30,9 @@ export function createAuth(db: Database) {
       enabled: true,
     },
     plugins: [
+      // Used for its schema fields (role/banned) and defaultRole only. The
+      // plugin's HTTP endpoints under /api/auth/admin/* are blocked in app.ts —
+      // keep the two in sync if this plugin config changes.
       admin({
         defaultRole: 'user',
         adminRoles: ['sysadmin'],

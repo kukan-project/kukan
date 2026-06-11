@@ -127,20 +127,33 @@ export class OrganizationService {
     return updated
   }
 
+  /** Throws ConflictError if packages are still linked to the organization. */
+  private async assertNoLinkedPackages(
+    tx: Parameters<Parameters<Database['transaction']>[0]>[0],
+    orgId: string,
+    { activeOnly, message }: { activeOnly: boolean; message: string }
+  ) {
+    const conditions = [eq(packageTable.ownerOrg, orgId)]
+    if (activeOnly) conditions.push(eq(packageTable.state, 'active'))
+
+    const [linkedPkg] = await tx
+      .select({ id: packageTable.id })
+      .from(packageTable)
+      .where(and(...conditions))
+      .limit(1)
+
+    if (linkedPkg) throw new ConflictError(message)
+  }
+
   /** Soft-delete an organization. Rejects if active packages are still linked. */
   async delete(nameOrId: string) {
     const existing = await this.getByNameOrId(nameOrId)
 
     await this.db.transaction(async (tx) => {
-      const [linkedPkg] = await tx
-        .select({ id: packageTable.id })
-        .from(packageTable)
-        .where(and(eq(packageTable.ownerOrg, existing.id), eq(packageTable.state, 'active')))
-        .limit(1)
-
-      if (linkedPkg) {
-        throw new ConflictError('Organization has active packages. Delete or reassign them first.')
-      }
+      await this.assertNoLinkedPackages(tx, existing.id, {
+        activeOnly: true,
+        message: 'Organization has active packages. Delete or reassign them first.',
+      })
 
       await tx
         .update(organization)
@@ -154,15 +167,10 @@ export class OrganizationService {
   /** Hard-delete a soft-deleted organization. Rejects if packages are linked. */
   async purge(id: string) {
     await this.db.transaction(async (tx) => {
-      const [linkedPkg] = await tx
-        .select({ id: packageTable.id })
-        .from(packageTable)
-        .where(eq(packageTable.ownerOrg, id))
-        .limit(1)
-
-      if (linkedPkg) {
-        throw new ConflictError('Organization has linked packages. Purge or reassign them first.')
-      }
+      await this.assertNoLinkedPackages(tx, id, {
+        activeOnly: false,
+        message: 'Organization has linked packages. Purge or reassign them first.',
+      })
 
       await tx.delete(organization).where(eq(organization.id, id))
     })
