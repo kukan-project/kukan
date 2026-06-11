@@ -47,6 +47,9 @@ apps/web/
         ├── index.ts        ← Barrel export
         ├── theme.css       ← Tier 1: CSS variable overrides
         ├── brand-config.ts ← Text, metadata, navigation items, etc.
+        ├── messages/       ← i18n message overrides
+        │   ├── ja.json    ← Japanese (override keys only)
+        │   └── en.json    ← English (override keys only)
         ├── pages/          ← Static pages (terms of use, etc.)
         │   ├── index.ts   ← Page registration map
         │   └── terms.tsx   (sample, delete if unnecessary)
@@ -210,6 +213,31 @@ Fork-side example:
 }
 ```
 
+### i18n Message Overrides
+
+Specify only the keys to override in `brand/messages/{locale}.json`. `src/i18n/request.ts` deep-merges brand-side messages over the default messages (`messages/{locale}.json`). When the brand-side file is an empty object `{}`, the merge is skipped and behavior is identical to the default.
+
+Main default:
+
+```json
+{}
+```
+
+Fork-side example (`brand/messages/ja.json`):
+
+```json
+{
+  "home": {
+    "title": "XX City Open Data Catalog",
+    "description": "A portal to search and utilize XX City's open data"
+  }
+}
+```
+
+- Only specified keys are overridden; unspecified keys retain their defaults
+- Nested objects are merged recursively (sibling keys are preserved)
+- Distinction between `brandConfig` and i18n messages: use `brandConfig` for language-independent values (metadata, OGP, etc.) and i18n messages for UI display text
+
 ### Conflict Avoidance Mechanism
 
 | File                           | Main-side change frequency       | Fork-side changes | Conflict Risk                                 |
@@ -219,6 +247,7 @@ Fork-side example:
 | `brand/theme.css`              | Does not change                  | **Modifies**      | **Very low**                                  |
 | `brand/overrides/index.ts`     | Does not change (empty object)   | **Modifies**      | **Very low**                                  |
 | `brand/overrides/*.tsx`        | Does not exist                   | **Newly added**   | **None**                                      |
+| `brand/messages/*.json`        | Does not change (empty object)   | **Modifies**      | **Very low**                                  |
 | `brand/pages/index.ts`         | Sample only                      | **Modifies**      | **Very low**                                  |
 | `brand/pages/*.tsx`            | Sample only                      | **Adds/removes**  | **Very low**                                  |
 | `public/brand/*`               | Defaults only                    | **Replaces**      | **Very low**                                  |

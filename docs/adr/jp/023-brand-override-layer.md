@@ -45,6 +45,9 @@ apps/web/
         ├── index.ts        ← バレルエクスポート
         ├── theme.css       ← Tier 1: CSS 変数の上書き
         ├── brand-config.ts ← テキスト・メタデータ・ナビ項目等
+        ├── messages/       ← i18n メッセージオーバーライド
+        │   ├── ja.json    ← 日本語（上書きキーのみ記述）
+        │   └── en.json    ← English（上書きキーのみ記述）
         ├── pages/          ← 静的ページ（利用規約等）
         │   ├── index.ts   ← ページ登録マップ
         │   └── terms.tsx   （サンプル、不要なら削除）
@@ -208,6 +211,31 @@ export const metadata: Metadata = {
 }
 ```
 
+### i18n メッセージオーバーライド
+
+`brand/messages/{locale}.json` に上書きしたいキーだけを記述する。`src/i18n/request.ts` がデフォルトメッセージ（`messages/{locale}.json`）とブランド側メッセージをディープマージする。ブランド側ファイルが空オブジェクト `{}` の場合はマージ処理をスキップし、既存動作と同一になる。
+
+本体のデフォルト:
+
+```json
+{}
+```
+
+フォーク側の例（`brand/messages/ja.json`）:
+
+```json
+{
+  "home": {
+    "title": "○○市オープンデータカタログ",
+    "description": "○○市のオープンデータを検索・活用できるポータル"
+  }
+}
+```
+
+- 記述したキーのみ上書きされ、記述しなかったキーはデフォルトが維持される
+- ネストされたオブジェクトは再帰的にマージされる（兄弟キーは保持）
+- `brandConfig.siteName` 等の言語非依存設定と i18n メッセージの使い分け: メタデータ・OGP 等の言語切替が不要な値は `brandConfig` に、UI 表示テキストは i18n メッセージに配置する
+
 ### コンフリクト回避の仕組み
 
 | ファイル                       | 本体側の変更頻度                 | フォーク側の変更 | コンフリクトリスク         |
@@ -217,6 +245,7 @@ export const metadata: Metadata = {
 | `brand/theme.css`              | 変更しない                       | **変更する**     | **極低**                   |
 | `brand/overrides/index.ts`     | 変更しない（空オブジェクト）     | **変更する**     | **極低**                   |
 | `brand/overrides/*.tsx`        | 存在しない                       | **新規追加**     | **なし**                   |
+| `brand/messages/*.json`        | 変更しない（空オブジェクト）     | **変更する**     | **極低**                   |
 | `brand/pages/index.ts`         | サンプルのみ                     | **変更する**     | **極低**                   |
 | `brand/pages/*.tsx`            | サンプルのみ                     | **追加/削除**    | **極低**                   |
 | `public/brand/*`               | デフォルトのみ                   | **差し替え**     | **極低**                   |

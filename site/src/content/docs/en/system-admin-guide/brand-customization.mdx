@@ -94,6 +94,41 @@ logo: { type: 'default' }
 logo: { type: 'image', src: '/brand/logo.svg', width: 160, height: 40, alt: 'City of Example' }
 ```
 
+## i18n Message Overrides
+
+You can override UI translation text for your organization. Specify only the keys you want to change in `brand/messages/{locale}.json`.
+
+```json
+// apps/web/src/brand/messages/ja.json
+{
+  "home": {
+    "title": "○○市オープンデータカタログ",
+    "description": "○○市のオープンデータを検索・活用できるポータル"
+  }
+}
+```
+
+```json
+// apps/web/src/brand/messages/en.json
+{
+  "home": {
+    "title": "City of Example Open Data Catalog",
+    "description": "A portal to search and utilize open data from the City of Example"
+  }
+}
+```
+
+- Only specified keys are overridden; all others use the defaults from `apps/web/messages/{locale}.json`
+- Nested objects are merged recursively — you don't need to repeat sibling keys
+- See `apps/web/messages/en.json` for the full list of available keys
+
+### Choosing Between `brandConfig` and Messages
+
+| Use case | Where to configure |
+|---|---|
+| Metadata, OGP, etc. (language-independent) | `brand-config.ts` |
+| UI display text (per-language) | `brand/messages/{locale}.json` |
+
 ## Tier 3: Component Replacement
 
 To change the structure of the Header or Footer, create custom components and register them as overrides.
@@ -264,6 +299,7 @@ When the upstream adds new fields to `src/types/brand.ts`, you may need to add t
 |---|---|---|
 | Change colors | Write CSS variables in `brand/theme.css` | 5 min |
 | Change site name and text | Edit `brand/brand-config.ts` | 30 min |
+| Override UI translation text | Add override keys to `brand/messages/{locale}.json` | 10 min |
 | Replace logo | Place file in `public/brand/` + edit config | 10 min |
 | Change header/footer structure | Create components in `brand/overrides/` | A few hours |
 | Replace the top page | Create component in `brand/overrides/` | A few hours |

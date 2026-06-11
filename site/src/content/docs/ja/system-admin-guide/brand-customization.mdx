@@ -94,6 +94,41 @@ logo: { type: 'default' }
 logo: { type: 'image', src: '/brand/logo.svg', width: 160, height: 40, alt: '○○市' }
 ```
 
+## i18n メッセージの上書き
+
+UI に表示される翻訳テキストを組織ごとに変更できます。`brand/messages/{locale}.json` に上書きしたいキーだけを記述してください。
+
+```json
+// apps/web/src/brand/messages/ja.json
+{
+  "home": {
+    "title": "○○市オープンデータカタログ",
+    "description": "○○市のオープンデータを検索・活用できるポータル"
+  }
+}
+```
+
+```json
+// apps/web/src/brand/messages/en.json
+{
+  "home": {
+    "title": "City of Example Open Data Catalog",
+    "description": "A portal to search and utilize open data from the City of Example"
+  }
+}
+```
+
+- 記述したキーのみ上書きされ、それ以外はデフォルト（`apps/web/messages/{locale}.json`）が使われます
+- ネストされたオブジェクトは再帰的にマージされるため、兄弟キーを再記述する必要はありません
+- 利用可能なキーの一覧は `apps/web/messages/ja.json` を参照してください
+
+### `brandConfig` との使い分け
+
+| 用途 | 設定場所 |
+|---|---|
+| メタデータ・OGP 等（言語切替不要） | `brand-config.ts` |
+| UI 表示テキスト（言語ごとに変更） | `brand/messages/{locale}.json` |
+
 ## Tier 3: コンポーネント差し替え
 
 Header や Footer の構造自体を変更したい場合は、カスタムコンポーネントを作成して差し替えます。
@@ -264,6 +299,7 @@ git merge upstream/main
 |---|---|---|
 | 配色を変えたい | `brand/theme.css` に CSS 変数を記述 | 5 分 |
 | サイト名・テキストを変えたい | `brand/brand-config.ts` を編集 | 30 分 |
+| UI の翻訳テキストを変えたい | `brand/messages/{locale}.json` に上書きキーを記述 | 10 分 |
 | ロゴを差し替えたい | `public/brand/` にファイルを配置 + config 編集 | 10 分 |
 | ヘッダー/フッターの構造を変えたい | `brand/overrides/` にコンポーネント作成 | 数時間 |
 | トップページを差し替えたい | `brand/overrides/` にコンポーネント作成 | 数時間 |
