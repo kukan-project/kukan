@@ -103,6 +103,25 @@ export async function createApp() {
         403
       )
     }
+    // Disable the Better Auth admin-plugin HTTP endpoints (impersonate-user,
+    // ban-user, set-role, set-user-password, list-users, remove-user, ...).
+    // KUKAN manages users, roles, and account lifecycle through its own
+    // /api/v1/admin API; these endpoints are unused and would otherwise let a
+    // compromised sysadmin session impersonate any user or reset passwords with
+    // no audit trail. The admin plugin stays configured for its schema fields
+    // (role/banned) and defaultRole — only the routes are blocked. Respond 404
+    // so the surface is not advertised.
+    if (c.req.path.startsWith('/api/auth/admin/')) {
+      return c.json(
+        {
+          type: 'about:blank',
+          title: 'NOT_FOUND',
+          status: 404,
+          detail: 'The requested resource was not found',
+        },
+        404
+      )
+    }
     return auth.handler(c.req.raw)
   })
 
