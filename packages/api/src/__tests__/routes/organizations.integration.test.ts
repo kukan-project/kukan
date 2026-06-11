@@ -311,8 +311,7 @@ describe('Organizations API Routes', () => {
       expect(res.status).toBe(404)
     })
 
-    it('should reject purge when organization has packages', async () => {
-      // Create org and soft-delete
+    it('should reject purge when organization has (soft-deleted) packages', async () => {
       const orgRes = await app.request('/api/v1/organizations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -327,10 +326,33 @@ describe('Organizations API Routes', () => {
         body: JSON.stringify({ name: 'org-linked-pkg', title: 'Linked', ownerOrg: org.id }),
       })
 
-      // Soft-delete org
+      // Soft-delete the package first: delete() rejects orgs with ACTIVE packages,
+      // so the org can only be soft-deleted once its packages are inactive.
+      await app.request('/api/v1/packages/org-linked-pkg', { method: 'DELETE' })
+
+      // Soft-delete org (now allowed: no active packages)
       await app.request('/api/v1/organizations/pkg-purge-org', { method: 'DELETE' })
 
+      // Purge still rejected: a soft-deleted package is linked (purge checks any state).
       const res = await app.request('/api/v1/organizations/pkg-purge-org/purge', { method: 'POST' })
+      expect(res.status).toBe(409)
+    })
+
+    it('should reject soft-delete when organization has active packages', async () => {
+      const orgRes = await app.request('/api/v1/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'active-pkg-del-org', title: 'Has Active Packages' }),
+      })
+      const org = await orgRes.json()
+
+      await app.request('/api/v1/packages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'active-linked-pkg', title: 'Active', ownerOrg: org.id }),
+      })
+
+      const res = await app.request('/api/v1/organizations/active-pkg-del-org', { method: 'DELETE' })
       expect(res.status).toBe(409)
     })
 
