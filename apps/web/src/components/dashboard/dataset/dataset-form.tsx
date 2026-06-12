@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -16,6 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
   Switch,
+  badgeVariants,
+  cn,
 } from '@kukan/ui'
 import { z } from 'zod'
 import { useTranslations } from 'next-intl'
@@ -31,6 +33,12 @@ interface Organization {
   id: string
   name: string
   title?: string
+}
+
+interface GroupOption {
+  id: string
+  name: string
+  title?: string | null
 }
 
 interface DatasetFormProps {
@@ -50,6 +58,25 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
   const [tagsInput, setTagsInput] = useState(
     defaultValues?.tags?.map((t) => t.name).join(', ') ?? ''
   )
+  const [groupOptions, setGroupOptions] = useState<GroupOption[]>([])
+  const [selectedGroups, setSelectedGroups] = useState<string[]>(
+    defaultValues?.groups?.map((g) => g.name) ?? []
+  )
+
+  useEffect(() => {
+    clientFetch('/api/v1/groups?limit=100').then(async (res) => {
+      if (res.ok) {
+        const data = await res.json()
+        setGroupOptions(data.items)
+      }
+    })
+  }, [])
+
+  const toggleGroup = useCallback((name: string) => {
+    setSelectedGroups((names) =>
+      names.includes(name) ? names.filter((n) => n !== name) : [...names, name]
+    )
+  }, [])
   const nextExtrasId = useRef(0)
   const [extrasRows, setExtrasRows] = useState<{ id: number; key: string; value: string }[]>(() => {
     const extras = (defaultValues?.extras ?? {}) as Record<string, unknown>
@@ -115,7 +142,9 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
     setExtrasError(null)
     const extras = Object.fromEntries(filledRows.map((r) => [r.key.trim(), r.value]))
 
-    const body = { ...values, tags, extras }
+    const groups = selectedGroups.map((name) => ({ name }))
+
+    const body = { ...values, tags, groups, extras }
 
     const url = mode === 'create' ? '/api/v1/packages' : `/api/v1/packages/${nameOrId}`
     const method = mode === 'create' ? 'POST' : 'PUT'
@@ -212,6 +241,36 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
           onChange={(e) => setTagsInput(e.target.value)}
         />
         <p className="text-xs text-muted-foreground">{t('tagsHelp')}</p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>{t('categories')}</Label>
+        {groupOptions.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{t('noCategoriesAvailable')}</p>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-2">
+              {groupOptions.map((g) => {
+                const selected = selectedGroups.includes(g.name)
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => toggleGroup(g.name)}
+                    className={cn(
+                      badgeVariants({ variant: selected ? 'default' : 'outline' }),
+                      'cursor-pointer'
+                    )}
+                  >
+                    {g.title || g.name}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">{t('categoriesHelp')}</p>
+          </>
+        )}
       </div>
 
       <div className="flex flex-col gap-2">

@@ -43,6 +43,7 @@ interface PackageDetail {
   type?: string | null
   extras?: Record<string, unknown> | null
   tags?: { id: string; name: string }[]
+  groups?: { id: string; name: string; title?: string | null }[]
   resources?: Resource[]
   organization?: { id: string; name: string; title?: string | null } | null
 }
@@ -65,6 +66,7 @@ function toFormDefaults(pkg: PackageDetail) {
     type: pkg.type ?? 'dataset',
     extras: (pkg.extras as Record<string, unknown>) ?? {},
     tags: pkg.tags?.map((t) => ({ name: t.name })) ?? [],
+    groups: pkg.groups?.map((g) => ({ name: g.name })) ?? [],
   }
 }
 
