@@ -90,6 +90,23 @@ describe('publicCache', () => {
     expect(res.headers.get('Cache-Control')).not.toContain('private')
   })
 
+  it('should skip caching for authenticated requests', async () => {
+    const app = createApp()
+    app.get(
+      '/test',
+      async (c, next) => {
+        c.set('user', { id: 'u1' })
+        await next()
+      },
+      publicCache(),
+      (c) => c.json({ ok: true })
+    )
+
+    const res = await app.request('/test')
+    // Authenticated → falls through to the default instead of a public cache.
+    expect(res.headers.get('Cache-Control')).toBe('private, no-cache')
+  })
+
   it('should not apply public cache on error responses', async () => {
     const app = createApp()
     app.get('/test', publicCache(), (c) => c.json({ error: 'not found' }, 404))

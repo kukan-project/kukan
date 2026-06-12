@@ -38,11 +38,12 @@ Responses that already have `Cache-Control` set by route handlers
 
 ### Public Route Middleware (`publicCache()`)
 
-Applied to fully public GET routes where results do not vary by authentication.
+Applied to fully public GET routes (the response data itself does not vary by authentication).
 
 ```
 publicCache(maxAge = 60, swr = 300)
-→ public, max-age={maxAge}, stale-while-revalidate={swr}
+→ Anonymous: public, max-age={maxAge}, stale-while-revalidate={swr}
+→ Authenticated: no header set; falls through to the default (private, no-cache)
 ```
 
 - `public` — Allow caching by CDN / proxy
@@ -52,17 +53,38 @@ publicCache(maxAge = 60, swr = 300)
 Not applied to error responses (status 400 or above).
 This prevents temporary DB errors or other failure responses from being cached by CDNs.
 
+#### Authenticated requests are not cached (auth-aware)
+
+When `c.get('user')` is present (i.e. authenticated), `publicCache()` **skips** setting
+the `public` header and lets the default middleware's `private, no-cache` take effect.
+
+The data itself does not vary by authentication, but a signed-in user's own
+create/delete/restore actions could appear stale for up to `max-age` seconds in
+**their own browser's private cache**. Note that `public, max-age=60` is honored not
+only by CDNs but also by the browser's local cache.
+
+This aligns the **two cache layers**:
+
+- **CloudFront (shared cache)**: injects `x-cache-bypass` for requests carrying a
+  `.session_token` cookie, bypassing the edge cache (ADR-027 / `viewer-request.js`).
+- **Origin `Cache-Control` (browser private cache)**: this ADR's `publicCache()` skips
+  auth-aware, requiring authenticated users to revalidate every time.
+
+In local development / on-premises (no CloudFront), there is no edge bypass, so this
+origin-side auth-aware skip is the only layer guaranteeing immediate freshness for
+authenticated users.
+
 ### Route Classification
 
-| Category                                                       | Cache-Control                                        | Application Method                     |
-| -------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------- |
-| GET where results vary by auth (packages, announcements, etc.) | `private, no-cache`                                  | Default (no change needed)             |
-| Auth-required GET (users/me, admin, etc.)                      | `private, no-cache`                                  | Default (no change needed)             |
-| Writes (POST/PUT/DELETE)                                       | `private, no-store`                                  | Default (no change needed)             |
-| Fully public GET (organizations, groups, tags, etc.)           | `public, max-age=60, stale-while-revalidate=300`     | Apply `publicCache()`                  |
-| Static public data (license_list)                              | `public, max-age=3600, stale-while-revalidate=86400` | Apply `publicCache(3600, 86400)`       |
-| File streams (download, preview, text)                         | `private, max-age=0` / `private, max-age=300`        | Keep existing                          |
-| Health check                                                   | `no-cache`                                           | Individual setting (no sensitive data) |
+| Category                                                       | Cache-Control                                                                          | Application Method                     |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------- |
+| GET where results vary by auth (packages, announcements, etc.) | `private, no-cache`                                                                    | Default (no change needed)             |
+| Auth-required GET (users/me, admin, etc.)                      | `private, no-cache`                                                                    | Default (no change needed)             |
+| Writes (POST/PUT/DELETE)                                       | `private, no-store`                                                                    | Default (no change needed)             |
+| Fully public GET (organizations, groups, tags, etc.)           | Anon: `public, max-age=60, stale-while-revalidate=300` / Auth: `private, no-cache`     | Apply `publicCache()`                  |
+| Static public data (license_list)                              | Anon: `public, max-age=3600, stale-while-revalidate=86400` / Auth: `private, no-cache` | Apply `publicCache(3600, 86400)`       |
+| File streams (download, preview, text)                         | `private, max-age=0` / `private, max-age=300`                                          | Keep existing                          |
+| Health check                                                   | `no-cache`                                                                             | Individual setting (no sensitive data) |
 
 ### publicCache() Applied Routes
 
@@ -85,6 +107,9 @@ This prevents temporary DB errors or other failure responses from being cached b
 - Changed: Above route files (`publicCache()` applied)
 - On-premises: Caddy has no caching functionality, so this functions as browser cache control
 - CloudFront: Functions defensively as origin headers (see ADR-027)
+- The auth-aware skip in `publicCache()` means authenticated users never receive `public`.
+  Dashboard create/delete/restore actions reflect immediately (resolving staleness from
+  the browser's private cache), while anonymous caching efficiency and SEO are preserved.
 
 ## Related
 

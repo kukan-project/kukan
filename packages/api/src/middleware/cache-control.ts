@@ -6,7 +6,10 @@
  *   Others    → private, no-store
  *
  * publicCache(): opt-in middleware for fully public GET routes.
- *   → public, max-age={maxAge}, stale-while-revalidate={swr}
+ *   Anonymous  → public, max-age={maxAge}, stale-while-revalidate={swr}
+ *   Authenticated → falls through to the default (private, no-cache) so a
+ *     signed-in user's own mutations reflect immediately instead of being
+ *     served a stale shared-cache copy.
  *
  * noCache(): opt-in middleware for non-sensitive endpoints (e.g. health check).
  *   → no-cache
@@ -38,6 +41,10 @@ export function publicCache(maxAge = 60, swr = 300): MiddlewareHandler {
   const value = `public, max-age=${maxAge}, stale-while-revalidate=${swr}`
   return async (c, next) => {
     await next()
+    // Skip authenticated requests: a signed-in user (e.g. the dashboard) must see
+    // their own mutations immediately, so let them fall through to the default
+    // `private, no-cache` instead of a cacheable shared response.
+    if (c.get('user')) return
     // Only cache successful responses — avoid caching transient errors (500, 404, etc.)
     if (c.res.status < 400) {
       c.header('Cache-Control', value)
