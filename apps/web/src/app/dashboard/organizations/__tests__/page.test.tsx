@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import OrganizationsManagePage from '../page'
 
@@ -7,15 +7,17 @@ vi.mock('@/lib/client-api', () => ({
   clientFetch: vi.fn(),
 }))
 
-// Mock useUser — sysadmin by default
+// Mock useUser — sysadmin by default, mutable per test
+const mockUser = vi.hoisted(() => ({
+  id: 'u1',
+  name: 'Admin',
+  email: 'admin@test.com',
+  displayName: null as string | null,
+  sysadmin: true,
+}))
+
 vi.mock('@/components/dashboard/user-provider', () => ({
-  useUser: () => ({
-    id: 'u1',
-    name: 'Admin',
-    email: 'admin@test.com',
-    displayName: null,
-    sysadmin: true,
-  }),
+  useUser: () => mockUser,
 }))
 
 function mockFetchResponse(data: unknown) {
@@ -23,13 +25,20 @@ function mockFetchResponse(data: unknown) {
 }
 
 const sampleOrgs = [
-  { id: 'o1', name: 'tokyo', title: 'Tokyo Metropolitan', datasetCount: 24 },
-  { id: 'o2', name: 'osaka', title: 'Osaka City', datasetCount: 12 },
+  {
+    id: 'o1',
+    name: 'tokyo',
+    title: 'Tokyo Metropolitan',
+    datasetCount: 24,
+    deletedDatasetCount: 3,
+  },
+  { id: 'o2', name: 'osaka', title: 'Osaka City', datasetCount: 12, deletedDatasetCount: 0 },
 ]
 
 describe('OrganizationsManagePage', () => {
   beforeEach(() => {
     vi.mocked(clientFetch).mockReset()
+    mockUser.sysadmin = true
   })
 
   it('should display organizations in table', async () => {
@@ -40,10 +49,58 @@ describe('OrganizationsManagePage', () => {
       expect(screen.getByText('tokyo')).toBeInTheDocument()
     })
     expect(screen.getByText('Tokyo Metropolitan')).toBeInTheDocument()
-    expect(screen.getByText('24')).toBeInTheDocument()
+    // tokyo: 24 active + 3 deleted = 27 total, with deleted suffix
+    expect(screen.getByText('27')).toBeInTheDocument()
+    expect(screen.getByText('(3 deleted)')).toBeInTheDocument()
     expect(screen.getByText('osaka')).toBeInTheDocument()
     expect(screen.getByText('Osaka City')).toBeInTheDocument()
+    // osaka: 12 active + 0 deleted = 12 total, suffix still shown as 0
     expect(screen.getByText('12')).toBeInTheDocument()
+    expect(screen.getByText('(0 deleted)')).toBeInTheDocument()
+  })
+
+  it('should show stat cards for public and deleted', async () => {
+    vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: sampleOrgs, total: 2 }))
+    render(<OrganizationsManagePage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Public')).toBeInTheDocument()
+    })
+    expect(screen.getByText('Deleted')).toBeInTheDocument()
+  })
+
+  it('should not show deleted card for non-sysadmin', async () => {
+    mockUser.sysadmin = false
+    vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: sampleOrgs, total: 2 }))
+    render(<OrganizationsManagePage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Public')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('Deleted')).not.toBeInTheDocument()
+    expect(screen.queryByText('New')).not.toBeInTheDocument()
+  })
+
+  it('should switch to deleted list when deleted card is clicked', async () => {
+    vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: sampleOrgs, total: 2 }))
+    render(<OrganizationsManagePage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Deleted')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('Deleted'))
+
+    await waitFor(() => {
+      const editLinks = screen.getAllByText('Edit')
+      const editLink = editLinks[0].closest('a')
+      expect(editLink).toHaveAttribute('href', '/dashboard/organizations/tokyo/edit?state=deleted')
+    })
+    expect(
+      vi
+        .mocked(clientFetch)
+        .mock.calls.some(([url]) => String(url).includes('state=deleted&limit=20'))
+    ).toBe(true)
   })
 
   it('should show empty state when no organizations', async () => {

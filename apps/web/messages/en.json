@@ -159,7 +159,21 @@
     "editOrg": "Edit Organization",
     "titlePlaceholder": "Organization display name",
     "descriptionPlaceholder": "Organization description",
-    "orgMembers": "Organization Members: {name}"
+    "orgMembers": "Organization Members: {name}",
+    "deleteOrg": "Delete Organization",
+    "deleteOrgConfirm": "Move this organization to the trash (soft delete).",
+    "deleteOrgError": "Could not delete the organization. Make sure it has no active datasets (delete or reassign them first).",
+    "deleteOrgBlocked": "This organization still has {count} active dataset(s). Delete or reassign them before deleting the organization.",
+    "restoreOrg": "Restore Organization",
+    "restoreOrgConfirm": "Restore this organization back to active.",
+    "dangerZone": "Danger Zone",
+    "purgeOrg": "Purge Organization",
+    "purgeOrgConfirm": "Permanently erase this organization and all of its trashed (deleted) datasets, including their files. This cannot be undone.",
+    "tabPublic": "Public",
+    "tabDeleted": "Deleted",
+    "noDeletedOrganizations": "No deleted organizations",
+    "manageTitle": "Organization Management",
+    "deletedDatasetCount": "({count} deleted)"
   },
   "category": {
     "title": "Categories",
@@ -266,7 +280,6 @@
       "backendSetupStep2": "Enable the Google Analytics Data API in the GCP project",
       "backendSetupStep3": "Grant the service account 'Viewer' access in GA4 Property Access Management",
       "backendSetupStep4": "Set environment variables: GA4_PROPERTY_ID, GA4_CLIENT_EMAIL, GA4_PRIVATE_KEY (on AWS, add enableGa4DataApi=true to CDK context and store values in Secrets Manager)",
-
       "tabDatasetViews": "Dataset Views",
       "tabResourceViews": "Resource Views",
       "tabDownloads": "Downloads",

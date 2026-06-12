@@ -159,7 +159,21 @@
     "editOrg": "組織を編集",
     "titlePlaceholder": "組織の表示名",
     "descriptionPlaceholder": "組織の説明",
-    "orgMembers": "組織メンバー: {name}"
+    "orgMembers": "組織メンバー: {name}",
+    "deleteOrg": "組織を削除",
+    "deleteOrgConfirm": "この組織をゴミ箱に移動します（論理削除）。",
+    "deleteOrgError": "組織を削除できませんでした。アクティブなデータセットが無いか確認してください（先に削除または移管が必要です）。",
+    "deleteOrgBlocked": "この組織にはアクティブなデータセットが {count} 件あります。先に削除または移管してください。",
+    "restoreOrg": "組織を復元",
+    "restoreOrgConfirm": "この組織をアクティブに復元します。",
+    "dangerZone": "危険な操作",
+    "purgeOrg": "組織を完全削除",
+    "purgeOrgConfirm": "この組織と、ゴミ箱内（削除済み）の全データセットをファイルごと完全に消去します。元に戻せません。",
+    "tabPublic": "公開",
+    "tabDeleted": "削除済",
+    "noDeletedOrganizations": "削除済みの組織はありません",
+    "manageTitle": "組織管理",
+    "deletedDatasetCount": "（削除済 {count}）"
   },
   "category": {
     "title": "カテゴリー",
@@ -266,7 +280,6 @@
       "backendSetupStep2": "GCP プロジェクトで Google Analytics Data API を有効化",
       "backendSetupStep3": "GA4 のプロパティのアクセス管理でサービスアカウントに「閲覧者」権限を付与",
       "backendSetupStep4": "環境変数を設定: GA4_PROPERTY_ID、GA4_CLIENT_EMAIL、GA4_PRIVATE_KEY（AWS の場合は CDK コンテキストに enableGa4DataApi=true を追加し、Secrets Manager に登録）",
-
       "tabDatasetViews": "データセット閲覧数",
       "tabResourceViews": "リソース閲覧数",
       "tabDownloads": "ダウンロード数",

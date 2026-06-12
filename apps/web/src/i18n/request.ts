@@ -44,9 +44,10 @@ export default getRequestConfig(async () => {
 
   const defaultMessages: Messages = (await import(`../../messages/${locale}.json`)).default
   const brandMessages: Messages = (await import(`../brand/messages/${locale}.json`)).default
-  const messages = Object.keys(brandMessages).length > 0
-    ? deepMerge(defaultMessages, brandMessages)
-    : defaultMessages
+  const messages =
+    Object.keys(brandMessages).length > 0
+      ? deepMerge(defaultMessages, brandMessages)
+      : defaultMessages
 
   return {
     locale,
