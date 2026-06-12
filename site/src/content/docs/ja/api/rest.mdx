@@ -86,7 +86,7 @@ curl "https://your-kukan-site/api/v1/packages?q=人口&organization[]=stat-burea
 | PUT | `/organizations/{nameOrId}` | 組織更新（全フィールド置換） | 組織 admin |
 | DELETE | `/organizations/{nameOrId}` | 組織論理削除 | 組織 admin |
 | POST | `/organizations/{nameOrId}/restore` | 論理削除済みを復元 | sysadmin |
-| POST | `/organizations/{nameOrId}/purge` | 論理削除済みを完全削除 | sysadmin |
+| POST | `/organizations/{nameOrId}/purge` | 論理削除済みを完全削除（SQS 経由、非同期） | sysadmin |
 | GET | `/organizations/{nameOrId}/members` | メンバー一覧 | 組織 member |
 | POST | `/organizations/{nameOrId}/members` | メンバー追加・ロール変更 | 組織 admin |
 | DELETE | `/organizations/{nameOrId}/members/{userId}` | メンバー削除 | 組織 admin |

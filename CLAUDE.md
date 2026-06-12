@@ -203,6 +203,7 @@ pnpm format        # Prettier フォーマット
 - OpenSearch parent-child 統合 → `docs/adr/jp/025-opensearch-parent-child-index.md`
 - API Cache-Control 戦略 → `docs/adr/jp/026-api-cache-control.md`
 - CloudFront 再導入 → `docs/adr/jp/027-cloudfront-reintroduction.md`
+- 組織パージの非同期化と durable claim → `docs/adr/jp/028-org-purge-async-claim.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、

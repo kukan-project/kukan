@@ -86,7 +86,7 @@ curl "https://your-kukan-site/api/v1/packages?q=population&organization[]=stat-b
 | PUT | `/organizations/{nameOrId}` | Update organization (full replacement) | Org admin |
 | DELETE | `/organizations/{nameOrId}` | Soft-delete organization | Org admin |
 | POST | `/organizations/{nameOrId}/restore` | Restore soft-deleted organization | sysadmin |
-| POST | `/organizations/{nameOrId}/purge` | Permanently delete soft-deleted organization | sysadmin |
+| POST | `/organizations/{nameOrId}/purge` | Permanently delete soft-deleted organization (async via SQS) | sysadmin |
 | GET | `/organizations/{nameOrId}/members` | List members | Org member |
 | POST | `/organizations/{nameOrId}/members` | Add member / change role | Org admin |
 | DELETE | `/organizations/{nameOrId}/members/{userId}` | Remove member | Org admin |

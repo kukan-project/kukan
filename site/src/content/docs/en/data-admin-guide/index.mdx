@@ -62,6 +62,14 @@ Organization admins can add, remove, and change member roles.
 
 Deleted datasets are visible to organization members in the dashboard "Deleted" tab. Only admins can restore or permanently purge them.
 
+### Deleting, restoring, and purging an organization
+
+The organization management page toggles between "Public" and "Deleted" cards (only site admins can view the "Deleted" set).
+
+- **Delete (soft delete)**: Moves the organization to the trash. It must have **no active datasets** — delete or reassign them to another organization first (the delete button stays disabled while any remain).
+- **Restore**: Brings a "Deleted" organization back to active (site admins only).
+- **Purge (permanent delete)**: **Permanently erases** the organization and all of its trashed datasets, including their files (irreversible, site admins only). It runs asynchronously as a background job, so the organization may still appear in the list until the job finishes.
+
 ## Categories (Groups)
 
 Categories classify datasets across organizations.
