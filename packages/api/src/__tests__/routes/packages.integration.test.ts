@@ -677,6 +677,20 @@ describe('Packages API Routes', () => {
       expect(res.status).toBe(404) // getByNameOrId with state='deleted' throws NotFound
     })
 
+    it('should reject restore when the owner org is not active (purge claim race)', async () => {
+      const orgId = await ensureTestOrg()
+      await createPackage({ name: 'org-purging-restore-pkg' })
+      await app.request('/api/v1/packages/org-purging-restore-pkg', { method: 'DELETE' })
+
+      // Simulate the org being claimed by an in-flight purge (deleted -> purging).
+      await db.execute(sql`UPDATE organization SET state = 'purging' WHERE id = ${orgId}`)
+
+      const res = await app.request('/api/v1/packages/org-purging-restore-pkg/restore', {
+        method: 'POST',
+      })
+      expect(res.status).toBe(409)
+    })
+
     it('should return 404 for non-existent package', async () => {
       const res = await app.request('/api/v1/packages/non-existent/restore', { method: 'POST' })
       expect(res.status).toBe(404)

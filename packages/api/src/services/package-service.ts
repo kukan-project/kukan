@@ -16,7 +16,7 @@ import {
   group,
   packageGroup,
 } from '@kukan/db'
-import { NotFoundError, ValidationError, isUuid } from '@kukan/shared'
+import { NotFoundError, ValidationError, ConflictError, isUuid } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult, FacetCounts } from '@kukan/shared'
 import type { SearchFacets, MatchedResource } from '@kukan/search-adapter'
 import type { CreatePackageInput, UpdatePackageInput } from '@kukan/shared'
@@ -328,15 +328,11 @@ export class PackageService {
 
       // Validate ownerOrg if provided
       if (input.ownerOrg) {
-        const orgExists = await tx
-          .select({ id: organization.id })
-          .from(organization)
-          .where(and(eq(organization.id, input.ownerOrg), eq(organization.state, 'active')))
-          .limit(1)
-
-        if (orgExists.length === 0) {
-          throw new NotFoundError('Organization', input.ownerOrg)
-        }
+        await this.assertOwnerOrgActive(
+          tx,
+          input.ownerOrg,
+          new NotFoundError('Organization', input.ownerOrg)
+        )
       }
 
       // Create package
@@ -393,15 +389,11 @@ export class PackageService {
 
       // Validate ownerOrg if being changed
       if (input.ownerOrg && input.ownerOrg !== existing.ownerOrg) {
-        const orgExists = await tx
-          .select({ id: organization.id })
-          .from(organization)
-          .where(and(eq(organization.id, input.ownerOrg), eq(organization.state, 'active')))
-          .limit(1)
-
-        if (orgExists.length === 0) {
-          throw new NotFoundError('Organization', input.ownerOrg)
-        }
+        await this.assertOwnerOrgActive(
+          tx,
+          input.ownerOrg,
+          new NotFoundError('Organization', input.ownerOrg)
+        )
       }
 
       const [updated] = await tx
@@ -517,11 +509,39 @@ export class PackageService {
     }
   }
 
+  /**
+   * A package's owner org must be active. Throws the caller-supplied error when it
+   * isn't — used by create/update (org being set must exist & be active) and
+   * restore (can't resurrect a package under a deleted/purging org). Accepts db or tx.
+   */
+  private async assertOwnerOrgActive(
+    db: Pick<Database, 'select'>,
+    ownerOrgId: string,
+    error: Error
+  ): Promise<void> {
+    const [activeOrg] = await db
+      .select({ id: organization.id })
+      .from(organization)
+      .where(and(eq(organization.id, ownerOrgId), eq(organization.state, 'active')))
+      .limit(1)
+    if (!activeOrg) throw error
+  }
+
   /** Restore a soft-deleted package back to active state. */
   async restore(nameOrId: string, authorize?: PackageAuthorize) {
     return await this.db.transaction(async (tx) => {
       const existing = await this.getByNameOrId(nameOrId, 'deleted', { tx, forUpdate: true })
       if (authorize) await authorize(existing)
+
+      // Closes a purge race: restoring a package under a 'purging' org would let the
+      // in-flight org purge delete the just-restored package and wipe its files.
+      if (existing.ownerOrg) {
+        await this.assertOwnerOrgActive(
+          tx,
+          existing.ownerOrg,
+          new ConflictError('Cannot restore a package whose organization is not active')
+        )
+      }
 
       const [restored] = await tx
         .update(packageTable)

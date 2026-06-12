@@ -29,15 +29,24 @@ organizationsRouter.get(
       offset: z.coerce.number().min(0).optional(),
       limit: z.coerce.number().min(1).max(100).optional(),
       q: z.string().optional(),
+      state: z.enum(['active', 'deleted']).optional(),
     })
   ),
   async (c) => {
     const db = c.get('db')
+    const user = c.get('user')
     const service = new OrganizationService(db)
     const params = c.req.valid('query')
 
-    const result = await service.list(params)
-    return c.json(result)
+    // Listing soft-deleted orgs (the trash view) is sysadmin-only and uncached.
+    if (params.state === 'deleted') {
+      if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can list deleted organizations')
+      return c.json(await service.list(params))
+    }
+
+    // publicCache() middleware caches this for anonymous callers only; signed-in
+    // dashboard users fall through to `private, no-cache` for immediate freshness.
+    return c.json(await service.list({ ...params, state: 'active' }))
   }
 )
 
@@ -56,14 +65,29 @@ organizationsRouter.post('/', zValidator('json', createOrganizationSchema), asyn
 })
 
 // GET /api/v1/organizations/:nameOrId - Get organization by name or ID
-organizationsRouter.get('/:nameOrId', publicCache(), async (c) => {
-  const db = c.get('db')
-  const service = new OrganizationService(db)
-  const nameOrId = c.req.param('nameOrId')
+organizationsRouter.get(
+  '/:nameOrId',
+  publicCache(),
+  zValidator('query', z.object({ state: z.enum(['active', 'deleted']).optional() })),
+  async (c) => {
+    const db = c.get('db')
+    const user = c.get('user')
+    const nameOrId = c.req.param('nameOrId')
+    const service = new OrganizationService(db)
 
-  const organization = await service.getByNameOrId(nameOrId)
-  return c.json(organization)
-})
+    // Soft-deleted orgs are sysadmin-only and must not be cached.
+    if (c.req.valid('query').state === 'deleted') {
+      if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view deleted organizations')
+      return c.json(await service.getByNameOrId(nameOrId, 'deleted'))
+    }
+
+    const organization = await service.getByNameOrId(nameOrId)
+    const datasetCount = await service.countActivePackages(organization.id)
+    // publicCache() caches for anonymous only; authenticated dashboard reads stay
+    // fresh so the delete gate reflects the current active dataset count.
+    return c.json({ ...organization, datasetCount })
+  }
+)
 
 // PUT /api/v1/organizations/:nameOrId - Update organization (sysadmin or org admin)
 organizationsRouter.put('/:nameOrId', zValidator('json', updateOrganizationSchema), async (c) => {
@@ -97,6 +121,7 @@ organizationsRouter.delete('/:nameOrId', async (c) => {
 })
 
 // POST /api/v1/organizations/:nameOrId/purge - Permanently delete a soft-deleted organization (sysadmin only)
+// Enqueues an async purge job; the org stays soft-deleted until the worker erases it.
 organizationsRouter.post('/:nameOrId/purge', async (c) => {
   const user = c.get('user')
   if (!user) throw new UnauthorizedError()
@@ -107,7 +132,7 @@ organizationsRouter.post('/:nameOrId/purge', async (c) => {
   const nameOrId = c.req.param('nameOrId')
   const existing = await service.getByNameOrId(nameOrId, 'deleted')
 
-  await service.purge(existing.id)
+  await service.requestPurge(existing.id, { queue: c.get('queue') })
   return c.json({ success: true })
 })
 

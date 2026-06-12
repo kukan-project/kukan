@@ -6,12 +6,22 @@
 import { serve } from '@hono/node-server'
 import { config } from 'dotenv'
 import { Hono } from 'hono'
-import { loadEnv, createLogger, PIPELINE_JOB_TYPE, REINDEX_JOB_TYPE } from '@kukan/shared'
+import {
+  loadEnv,
+  createLogger,
+  PIPELINE_JOB_TYPE,
+  REINDEX_JOB_TYPE,
+  PURGE_ORG_JOB_TYPE,
+  pipelineJobSchema,
+  reindexJobSchema,
+  purgeOrgJobSchema,
+} from '@kukan/shared'
 import { eq, sql } from 'drizzle-orm'
 import { packageTable } from '@kukan/db'
 import type { Job } from '@kukan/queue-adapter'
 import { rebuildMetadataIndex } from '@kukan/api/services/search-index'
 import { PipelineService } from '@kukan/api/services/pipeline-service'
+import { OrganizationService } from '@kukan/api/services/organization-service'
 import { createDb, runMigrations } from '@kukan/db'
 import { SQSQueueAdapter } from '@kukan/queue-adapter'
 import { S3StorageAdapter } from '@kukan/storage-adapter'
@@ -121,19 +131,41 @@ const search =
       })
     : undefined
 
+// Validate a job payload against its schema; logs and returns null on mismatch so
+// the handler can bail without ever trusting an unvalidated SQS message body.
+function parseJobPayload<T>(
+  job: Job,
+  schema: {
+    safeParse(
+      data: unknown
+    ): { success: true; data: T } | { success: false; error: { message: string } }
+  }
+): T | null {
+  const parsed = schema.safeParse(job.data ?? {})
+  if (parsed.success) return parsed.data
+  log.error({ jobId: job.id, type: job.type, err: parsed.error.message }, 'Invalid job payload')
+  return null
+}
+
 // --- SQS polling ---
 const ctx = buildPipelineContext(db, storage, search)
 await queue.process({
+  // Pipeline (data-plane): process one resource.
   [PIPELINE_JOB_TYPE]: async (job: Job) => {
-    const { resourceId } = job.data as { resourceId: string }
+    const data = parseJobPayload(job, pipelineJobSchema)
+    if (!data) return
+    const { resourceId } = data
     log.info({ jobId: job.id, type: job.type, resourceId }, 'Processing job')
     const start = performance.now()
     await processResource(resourceId, ctx, db, queue)
     const elapsed = Math.round(performance.now() - start)
     log.info({ jobId: job.id, type: job.type, resourceId, elapsed }, 'Completed job')
   },
+  // Maintenance (control-plane): rebuild the search index.
   [REINDEX_JOB_TYPE]: async (job: Job) => {
-    const { includeContent } = (job.data ?? {}) as { includeContent?: boolean }
+    const data = parseJobPayload(job, reindexJobSchema)
+    if (!data) return
+    const { includeContent } = data
     log.info({ jobId: job.id, type: job.type, includeContent }, 'Reindex metadata job started')
     const start = performance.now()
     if (search) {
@@ -153,6 +185,25 @@ await queue.process({
     } else {
       log.warn({ jobId: job.id, type: job.type }, 'Reindex skipped — OpenSearch not configured')
     }
+  },
+  // Maintenance (control-plane): erase a soft-deleted org. Runs the destructive
+  // work in the worker (retried on failure) — see OrganizationService.purgeDeletedOrg.
+  [PURGE_ORG_JOB_TYPE]: async (job: Job) => {
+    const data = parseJobPayload(job, purgeOrgJobSchema)
+    if (!data) return
+    const { organizationId } = data
+    log.info({ jobId: job.id, type: job.type, organizationId }, 'Purge organization job started')
+    const start = performance.now()
+    const orgService = new OrganizationService(db)
+    const { purged, packageCount } = await orgService.purgeDeletedOrg(organizationId, {
+      search,
+      storage,
+    })
+    const elapsed = Math.round(performance.now() - start)
+    log.info(
+      { jobId: job.id, type: job.type, organizationId, purged, packageCount, elapsed },
+      purged ? 'Purge organization job completed' : 'Purge organization job skipped (not deleted)'
+    )
   },
 })
 

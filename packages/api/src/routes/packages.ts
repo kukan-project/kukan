@@ -26,6 +26,7 @@ import {
   type MembershipRole,
 } from '../auth/permissions'
 import { indexPackageMetadata, indexResourceMetadata } from '../services/search-index'
+import { purgePackageExternals } from '../services/package-cleanup'
 import type { AppContext } from '../context'
 import type { Database } from '@kukan/db'
 import type { PackageAuthorize } from '../services/package-service'
@@ -275,7 +276,8 @@ packagesRouter.post('/:nameOrId/purge', async (c) => {
 
   const pkg = await service.purge(nameOrId, makePackageAuthorize(db, user, 'admin'))
 
-  await c.get('search').deletePackage(pkg.id)
+  // Remove the package's search docs AND storage objects (raw files + previews).
+  await purgePackageExternals(pkg.id, c.get('search'), c.get('storage'))
   return c.json(pkg)
 })
 

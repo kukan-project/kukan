@@ -1,6 +1,18 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
-import { createTestApp } from '../test-helpers/test-app'
+import { eq } from 'drizzle-orm'
+import { packageTable, organization as orgTable } from '@kukan/db'
+import { createTestApp, mockSearch } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
+import { OrganizationService } from '../../services/organization-service'
+
+// Simulates the worker draining the purge-organization job the route enqueues.
+const mockStorage = { deleteByPrefix: async () => 0 } as never
+function runOrgPurgeWorker(orgId: string) {
+  return new OrganizationService(db).purgeDeletedOrg(orgId, {
+    search: mockSearch,
+    storage: mockStorage,
+  })
+}
 
 const db = getTestDb()
 const app = createTestApp(db)
@@ -311,7 +323,7 @@ describe('Organizations API Routes', () => {
       expect(res.status).toBe(404)
     })
 
-    it('should reject purge when organization has (soft-deleted) packages', async () => {
+    it('should cascade-purge soft-deleted packages when purging the organization', async () => {
       const orgRes = await app.request('/api/v1/organizations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -333,8 +345,48 @@ describe('Organizations API Routes', () => {
       // Soft-delete org (now allowed: no active packages)
       await app.request('/api/v1/organizations/pkg-purge-org', { method: 'DELETE' })
 
-      // Purge still rejected: a soft-deleted package is linked (purge checks any state).
+      // The purge route only enqueues; the org stays soft-deleted until the worker runs.
       const res = await app.request('/api/v1/organizations/pkg-purge-org/purge', { method: 'POST' })
+      expect(res.status).toBe(200)
+
+      // Still present (pending worker).
+      expect(
+        await db.select({ id: orgTable.id }).from(orgTable).where(eq(orgTable.id, org.id))
+      ).toHaveLength(1)
+
+      // Drain the job: now the package and org are permanently gone.
+      const workerResult = await runOrgPurgeWorker(org.id)
+      expect(workerResult).toEqual({ purged: true, packageCount: 1 })
+
+      const pkgRows = await db
+        .select({ id: packageTable.id })
+        .from(packageTable)
+        .where(eq(packageTable.name, 'org-linked-pkg'))
+      expect(pkgRows).toHaveLength(0)
+      expect(
+        await db.select({ id: orgTable.id }).from(orgTable).where(eq(orgTable.id, org.id))
+      ).toHaveLength(0)
+    })
+
+    it('should reject purge when organization still has an active package', async () => {
+      const orgRes = await app.request('/api/v1/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'active-purge-block-org', title: 'Active Blocks' }),
+      })
+      const org = await orgRes.json()
+      await app.request('/api/v1/packages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'still-active-pkg', title: 'Active', ownerOrg: org.id }),
+      })
+      // Force the org into 'deleted' state directly (delete() would reject it),
+      // to reach purge's own active-package precondition check.
+      await db.update(orgTable).set({ state: 'deleted' }).where(eq(orgTable.id, org.id))
+
+      const res = await app.request('/api/v1/organizations/active-purge-block-org/purge', {
+        method: 'POST',
+      })
       expect(res.status).toBe(409)
     })
 
@@ -352,24 +404,127 @@ describe('Organizations API Routes', () => {
         body: JSON.stringify({ name: 'active-linked-pkg', title: 'Active', ownerOrg: org.id }),
       })
 
-      const res = await app.request('/api/v1/organizations/active-pkg-del-org', { method: 'DELETE' })
+      const res = await app.request('/api/v1/organizations/active-pkg-del-org', {
+        method: 'DELETE',
+      })
       expect(res.status).toBe(409)
     })
 
-    it('should purge a soft-deleted organization', async () => {
-      await app.request('/api/v1/organizations', {
+    it('should purge a soft-deleted organization (after the worker drains the job)', async () => {
+      const orgRes = await app.request('/api/v1/organizations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'purge-org', title: 'To Purge' }),
       })
+      const org = await orgRes.json()
       await app.request('/api/v1/organizations/purge-org', { method: 'DELETE' })
 
       const res = await app.request('/api/v1/organizations/purge-org/purge', { method: 'POST' })
       expect(res.status).toBe(200)
 
-      // Verify it's gone
-      const getRes = await app.request('/api/v1/organizations/purge-org')
-      expect(getRes.status).toBe(404)
+      // Route only enqueues — the org row still exists (soft-deleted) until the worker runs.
+      expect(
+        await db.select({ id: orgTable.id }).from(orgTable).where(eq(orgTable.id, org.id))
+      ).toHaveLength(1)
+
+      await runOrgPurgeWorker(org.id)
+
+      // Now permanently gone.
+      expect(
+        await db.select({ id: orgTable.id }).from(orgTable).where(eq(orgTable.id, org.id))
+      ).toHaveLength(0)
+    })
+
+    it('worker purge is a no-op when the org was restored before the job ran', async () => {
+      const orgRes = await app.request('/api/v1/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'restore-race-org', title: 'Restored' }),
+      })
+      const org = await orgRes.json()
+      await app.request('/api/v1/organizations/restore-race-org', { method: 'DELETE' })
+      await app.request('/api/v1/organizations/restore-race-org/purge', { method: 'POST' })
+      // Restore before the worker drains the enqueued purge job.
+      await app.request('/api/v1/organizations/restore-race-org/restore', { method: 'POST' })
+
+      const workerResult = await runOrgPurgeWorker(org.id)
+      expect(workerResult).toEqual({ purged: false, packageCount: 0 })
+
+      // The restored (active) org survives.
+      const rows = await db
+        .select({ state: orgTable.state })
+        .from(orgTable)
+        .where(eq(orgTable.id, org.id))
+      expect(rows[0]?.state).toBe('active')
+    })
+
+    it('leaves the org purging (not deleted) when external cleanup fails', async () => {
+      const orgRes = await app.request('/api/v1/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'cleanup-fail-org', title: 'Cleanup Fails' }),
+      })
+      const org = await orgRes.json()
+      await app.request('/api/v1/packages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'cleanup-fail-pkg', title: 'Linked', ownerOrg: org.id }),
+      })
+      await app.request('/api/v1/packages/cleanup-fail-pkg', { method: 'DELETE' })
+      await app.request('/api/v1/organizations/cleanup-fail-org', { method: 'DELETE' })
+
+      // External cleanup throws → the worker must NOT delete any DB rows.
+      const failingSearch = {
+        ...mockSearch,
+        deletePackage: async () => {
+          throw new Error('search down')
+        },
+      }
+      await expect(
+        new OrganizationService(db).purgeDeletedOrg(org.id, {
+          search: failingSearch,
+          storage: mockStorage,
+        })
+      ).rejects.toThrow('search down')
+
+      // Org stays claimed ('purging', not deleted) and the package survives — safe to retry.
+      const orgRow = await db
+        .select({ state: orgTable.state })
+        .from(orgTable)
+        .where(eq(orgTable.id, org.id))
+      expect(orgRow[0]?.state).toBe('purging')
+      expect(
+        await db
+          .select({ id: packageTable.id })
+          .from(packageTable)
+          .where(eq(packageTable.ownerOrg, org.id))
+      ).toHaveLength(1)
+    })
+
+    it('blocks restore once the org is claimed for purge, and the purge still completes', async () => {
+      const orgRes = await app.request('/api/v1/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'claimed-org', title: 'Claimed' }),
+      })
+      const org = await orgRes.json()
+      await app.request('/api/v1/organizations/claimed-org', { method: 'DELETE' })
+
+      // Simulate the worker having claimed the org mid-purge (deleted -> purging).
+      await db.update(orgTable).set({ state: 'purging' }).where(eq(orgTable.id, org.id))
+
+      // Restore must be refused while purging — its external files may already be gone.
+      const restoreRes = await app.request('/api/v1/organizations/claimed-org/restore', {
+        method: 'POST',
+      })
+      expect(restoreRes.status).toBe(404)
+
+      // The purge resumes from 'purging' (idempotent re-claim) and finishes.
+      const workerResult = await runOrgPurgeWorker(org.id)
+      expect(workerResult.purged).toBe(true)
+      expect(
+        await db.select({ id: orgTable.id }).from(orgTable).where(eq(orgTable.id, org.id))
+      ).toHaveLength(0)
     })
   })
 

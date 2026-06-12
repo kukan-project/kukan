@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { OrganizationService } from '../../services/organization-service'
 import { createMockDb } from '../test-helpers/mock-db'
 import { createOrganizationFixture } from '../test-helpers/fixtures'
@@ -43,7 +43,7 @@ describe('OrganizationService', () => {
   describe('create', () => {
     it('should throw ValidationError if name already exists', async () => {
       mock.addResult([createOrganizationFixture()])
-      await expect(service.create({ name: 'duplicate' })).rejects.toThrow(
+      await expect(service.create({ name: 'duplicate', extras: {} })).rejects.toThrow(
         'Organization name already exists'
       )
     })
@@ -53,7 +53,7 @@ describe('OrganizationService', () => {
       mock.addResult([]) // name check
       mock.addResult([created]) // insert returning
 
-      const result = await service.create({ name: 'new-org' })
+      const result = await service.create({ name: 'new-org', extras: {} })
       expect(result.name).toBe('new-org')
     })
   })
@@ -64,7 +64,11 @@ describe('OrganizationService', () => {
       mock.addResult([org]) // getByNameOrId
       mock.addResult([{ ...org, title: 'Updated' }]) // update returning
 
-      const result = await service.update('test-org', { title: 'Updated' })
+      const result = await service.update('test-org', {
+        name: 'test-org',
+        title: 'Updated',
+        extras: {},
+      })
       expect(result.title).toBe('Updated')
     })
   })
@@ -86,6 +90,67 @@ describe('OrganizationService', () => {
       mock.addResult([{ id: 'pkg-1' }]) // linked active package check → found
 
       await expect(service.delete('test-org')).rejects.toThrow('active packages')
+    })
+  })
+
+  describe('requestPurge', () => {
+    it('enqueues a purge-organization job once the precondition passes', async () => {
+      mock.addResult([]) // active-package precondition check → none
+      const queue = { enqueue: vi.fn().mockResolvedValue('job-1') }
+
+      await service.requestPurge('org-1', { queue: queue as never })
+
+      expect(queue.enqueue).toHaveBeenCalledWith('purge-organization', { organizationId: 'org-1' })
+    })
+
+    it('rejects without enqueueing when active packages remain', async () => {
+      mock.addResult([{ id: 'active-pkg' }]) // active-package precondition check → found
+      const queue = { enqueue: vi.fn() }
+
+      await expect(service.requestPurge('org-1', { queue: queue as never })).rejects.toThrow(
+        'active packages'
+      )
+      expect(queue.enqueue).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('purgeDeletedOrg', () => {
+    it('cleans externals then deletes packages + org', async () => {
+      mock.addResult([{ id: 'org-1' }]) // org still soft-deleted
+      mock.addResult([{ id: 'pkg-1' }, { id: 'pkg-2' }]) // package ids
+      mock.addResult([]) // delete packages (tx)
+      mock.addResult([]) // delete org (tx)
+      const search = { deletePackage: vi.fn().mockResolvedValue(undefined) }
+      const storage = { deleteByPrefix: vi.fn().mockResolvedValue(0) }
+
+      const result = await service.purgeDeletedOrg('org-1', {
+        search: search as never,
+        storage: storage as never,
+      })
+
+      expect(result).toEqual({ purged: true, packageCount: 2 })
+      expect(search.deletePackage).toHaveBeenCalledTimes(2)
+    })
+
+    it('skips when the org is no longer soft-deleted (restored or already purged)', async () => {
+      mock.addResult([]) // claim → no row (active/gone)
+      const storage = { deleteByPrefix: vi.fn() }
+
+      const result = await service.purgeDeletedOrg('org-1', { storage: storage as never })
+
+      expect(result).toEqual({ purged: false, packageCount: 0 })
+      expect(storage.deleteByPrefix).not.toHaveBeenCalled()
+    })
+
+    it('throws (and does not reach the DB delete) when external cleanup fails', async () => {
+      mock.addResult([{ id: 'org-1' }]) // claim → purging
+      mock.addResult([{ id: 'pkg-1' }]) // package ids
+      const search = { deletePackage: vi.fn().mockRejectedValue(new Error('opensearch down')) }
+      const storage = { deleteByPrefix: vi.fn().mockResolvedValue(0) }
+
+      await expect(
+        service.purgeDeletedOrg('org-1', { search: search as never, storage: storage as never })
+      ).rejects.toThrow('opensearch down')
     })
   })
 
