@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation'
 import { Settings2 } from 'lucide-react'
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@kukan/ui'
 import { useTranslations, useLocale } from 'next-intl'
+import { isCsvFormat } from '@kukan/shared'
 import { PipelineStatusDetail } from './pipeline-status-detail'
 import { ResourcePreview } from './resource-preview'
+import { ResourceFields } from './resource-fields'
 import { formatDateTime } from './date-time'
 import { useFetch } from '@/hooks/use-fetch'
 import type { PipelineStatusData } from '@/hooks/use-pipeline-status'
@@ -86,6 +88,13 @@ export function ResourcePipelinePreview({
         url={url}
         size={size}
       />
+      {/* Field (column) list shares the preview's remount key so it refreshes
+          in lockstep when the pipeline (re)generates the Parquet preview. */}
+      {isCsvFormat(format) && (
+        <div className="mt-6">
+          <ResourceFields key={`fields-${resourceId}-${previewKey}`} resourceId={resourceId} />
+        </div>
+      )}
     </section>
   )
 }
