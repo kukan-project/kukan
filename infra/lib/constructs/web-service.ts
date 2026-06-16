@@ -14,7 +14,6 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
 import * as sqs from 'aws-cdk-lib/aws-sqs'
 import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
-import { DOCKER_ASSET_EXCLUDES } from '../docker-excludes.js'
 import type { DatabaseConstruct } from './database.js'
 
 export interface WebServiceProps {
@@ -63,14 +62,18 @@ export class WebServiceConstruct extends Construct {
       ga4PrivateKeySecret,
     } = props
 
-    // Docker image (built and pushed automatically by CDK)
-    // exclude mirrors .dockerignore so CDK asset hash ignores non-app files
+    // Docker image (built and pushed automatically by CDK).
+    // CDK auto-loads the build context's .dockerignore into the asset-hash
+    // exclude list, so it is the single source of truth. IgnoreMode.DOCKER makes
+    // those patterns match like Docker (incl. nested node_modules); without it
+    // the default GLOB mode misses nested node_modules and the hash churns on
+    // every install, producing spurious image diffs.
     const imageAsset = new assets.DockerImageAsset(this, 'WebImage', {
       directory: '../',
       file: 'Dockerfile',
       target: 'web',
       platform: assets.Platform.LINUX_AMD64,
-      exclude: DOCKER_ASSET_EXCLUDES,
+      ignoreMode: cdk.IgnoreMode.DOCKER,
     })
 
     // Task Definition
