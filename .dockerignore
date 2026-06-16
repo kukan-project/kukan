@@ -9,8 +9,8 @@
 .vscode
 .claude
 **/.turbo
-.astro
-coverage
+**/.astro
+**/coverage
 *.log
 docker
 infra
