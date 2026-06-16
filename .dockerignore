@@ -1,6 +1,6 @@
-node_modules
-.next
-dist
+**/node_modules
+**/.next
+**/dist
 .env
 .env.*
 !.env.example
@@ -8,7 +8,7 @@ dist
 .github
 .vscode
 .claude
-.turbo
+**/.turbo
 .astro
 coverage
 *.log
