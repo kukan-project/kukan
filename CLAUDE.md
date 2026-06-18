@@ -204,7 +204,7 @@ pnpm format        # Prettier フォーマット
 - API Cache-Control 戦略 → `docs/adr/jp/026-api-cache-control.md`
 - CloudFront 再導入 → `docs/adr/jp/027-cloudfront-reintroduction.md`
 - 組織パージの非同期化と durable claim → `docs/adr/jp/028-org-purge-async-claim.md`
-- CSV/TSV プレビュー Parquet の列型自動推定 → `docs/adr/jp/029-csv-type-inference.md`（提案、ADR-014/016 拡張）
+- CSV/TSV プレビュー Parquet の列型自動推定 → `docs/adr/jp/029-csv-type-inference.md`（ADR-014/016 拡張）
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、

@@ -4,9 +4,9 @@
 
 ## Status
 
-**Proposed**
+**Accepted**
 
-A design that extends phase 2 of ADR-016 ("DuckDB-WASM Data Explorer") and the "column type: all STRING" decision of ADR-014 ("Parquet preview format"). It will be updated to "Accepted" once implementation begins.
+A design that extends phase 2 of ADR-016 ("DuckDB-WASM Data Explorer") and the "column type: all STRING" decision of ADR-014 ("Parquet preview format"). Integer, float, and boolean inference is implemented in the Extract step.
 
 ## Context
 
