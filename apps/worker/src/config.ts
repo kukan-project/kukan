@@ -17,6 +17,13 @@ export const PARQUET_ROW_GROUP_SIZE = 5_000
 /** Maximum number of columns allowed in CSV/TSV preview */
 export const MAX_CSV_COLUMNS = 500
 
+/**
+ * Literals recognized as booleans during CSV/TSV column type inference (ADR-029),
+ * matched case-insensitively. Kept strict to avoid colliding with integers (0/1)
+ * or locale variants (yes/no, はい/いいえ); extend here if that changes.
+ */
+export const BOOLEAN_LITERALS = new Set(['true', 'false'])
+
 /** Byte sample size for encoding detection (64 KB) */
 export const ENCODING_SAMPLE_SIZE = 64 * 1024
 

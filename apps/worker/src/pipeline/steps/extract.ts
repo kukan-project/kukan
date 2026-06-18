@@ -13,6 +13,7 @@ import {
 } from '../node-utils'
 import { getPreviewKey, isCsvFormat, isTextFormat, isZipFormat } from '@kukan/shared'
 import { parquetWriteBuffer } from 'hyparquet-writer'
+import { inferColumnType, parquetTypeFor, convertCell } from '../type-inference'
 import Papa from 'papaparse'
 import { extractZipManifest } from './extract-zip'
 import type { PipelineContext } from '../types'
@@ -119,11 +120,17 @@ export async function executeExtract(
 
   const dataRows = removeFooterRows(titleSkipped.slice(1))
 
-  const columnData = headers.map((header, colIndex) => ({
-    name: header || `column_${colIndex}`,
-    data: dataRows.map((row) => row[colIndex] ?? ''),
-    type: 'STRING' as const,
-  }))
+  // Infer each column's type (ADR-029) and convert cells accordingly.
+  // Empty cells become null for typed columns; STRING columns keep ''.
+  const columnData = headers.map((header, colIndex) => {
+    const rawValues = dataRows.map((row) => row[colIndex] ?? '')
+    const inferred = inferColumnType(rawValues)
+    return {
+      name: header || `column_${colIndex}`,
+      type: parquetTypeFor(inferred),
+      data: rawValues.map((v) => convertCell(inferred, v)),
+    }
+  })
 
   const parquetBuf = parquetWriteBuffer({ columnData, rowGroupSize: PARQUET_ROW_GROUP_SIZE })
 
@@ -140,6 +147,11 @@ export async function executeExtract(
   return { previewKey, encoding }
 }
 
+/** Count the cells in a row that are not blank (after trimming). */
+function nonEmptyCount(row: string[]): number {
+  return row.reduce((n, cell) => (cell.trim() !== '' ? n + 1 : n), 0)
+}
+
 /**
  * Skip title rows at the top of the data.
  * A title row has only one non-empty cell AND the data has multiple columns.
@@ -154,8 +166,7 @@ function skipTitleRows(rows: string[][]): string[][] {
 
   let start = 0
   for (let i = 0; i < rows.length; i++) {
-    const nonEmpty = rows[i].filter((cell) => cell.trim() !== '')
-    if (nonEmpty.length <= 1) {
+    if (nonEmptyCount(rows[i]) <= 1) {
       start = i + 1
     } else {
       break
@@ -166,13 +177,23 @@ function skipTitleRows(rows: string[][]): string[][] {
 
 /**
  * Remove footer rows from the bottom of the data.
- * Footer rows start with known prefixes (e.g. 合計, 注, ※).
+ * A footer row either starts with a known prefix (e.g. 合計, 注, ※) or — for
+ * multi-column data only — is nearly empty (≤1 non-empty cell, mirroring
+ * title-row skipping). The "nearly empty" rule is gated to multi-column CSVs:
+ * in a single-column CSV every value row has exactly one non-empty cell and
+ * must never be treated as a footer. A multi-column row whose leading (category)
+ * column is blank but that still carries data elsewhere is kept — many Japanese
+ * government CSVs leave that column blank on data rows, and treating those as
+ * footers would strip the entire table.
  */
 function removeFooterRows(rows: string[][]): string[][] {
+  const multiColumn = rows.length > 0 && Math.max(...rows.map((r) => r.length)) > 1
   let end = rows.length
   for (let i = rows.length - 1; i >= 0; i--) {
-    const firstCell = rows[i][0]?.trim().toLowerCase() ?? ''
-    if (firstCell === '' || FOOTER_PREFIXES.some((p) => firstCell.startsWith(p))) {
+    const row = rows[i]
+    const firstCell = row[0]?.trim().toLowerCase() ?? ''
+    const nearlyEmpty = multiColumn && nonEmptyCount(row) <= 1
+    if (nearlyEmpty || FOOTER_PREFIXES.some((p) => firstCell.startsWith(p))) {
       end = i
     } else {
       break
