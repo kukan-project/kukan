@@ -65,9 +65,12 @@ const STATUS_BADGE_VARIANTS: Record<
  */
 export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDetailProps) {
   const t = useTranslations('resource')
+  // Do NOT set initialActive here: merely opening the status view must not be
+  // treated as an in-flight reprocess, or onSettled would fire immediately on an
+  // already-complete pipeline (triggering a refresh that closes the dialog).
+  // A real reprocess goes through refetch(), which arms onSettled itself.
   const { status, steps, error, refetch } = usePipelineStatus({
     resourceId,
-    initialActive: true,
     onSettled,
   })
   const [reprocessing, setReprocessing] = useState(false)

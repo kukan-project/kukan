@@ -91,6 +91,31 @@ describe('usePipelineStatus', () => {
     })
   })
 
+  describe('onSettled', () => {
+    it('does not fire onSettled on mount when already terminal (default initialActive=false)', async () => {
+      mockClientFetch.mockResolvedValue(
+        jsonResponse({ id: 'r1', pipeline_status: 'complete', steps: [] })
+      )
+      const onSettled = vi.fn()
+      const { result } = renderHook(() => usePipelineStatus({ resourceId: 'r1', onSettled }))
+
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      // Regression: viewing a finished pipeline's status must NOT fire onSettled
+      // (which would refresh the page and close the status dialog).
+      expect(onSettled).not.toHaveBeenCalled()
+    })
+
+    it('fires onSettled on mount when initialActive is set (post-reprocess scenario)', async () => {
+      mockClientFetch.mockResolvedValue(
+        jsonResponse({ id: 'r1', pipeline_status: 'complete', steps: [] })
+      )
+      const onSettled = vi.fn()
+      renderHook(() => usePipelineStatus({ resourceId: 'r1', initialActive: true, onSettled }))
+
+      await waitFor(() => expect(onSettled).toHaveBeenCalledWith('complete'))
+    })
+  })
+
   describe('polling with fake timers', () => {
     beforeEach(() => {
       vi.useFakeTimers()
