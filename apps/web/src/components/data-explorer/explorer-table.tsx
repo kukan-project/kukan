@@ -1,7 +1,7 @@
 'use client'
 
 import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
-import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@kukan/ui'
+import { TableHeader, TableBody, TableHead, TableRow, TableCell } from '@kukan/ui'
 import { ColumnFilter } from './column-filter'
 import type { ColumnFilter as ColumnFilterType, SortState } from '@/hooks/use-duckdb'
 
@@ -47,7 +47,9 @@ export function ExplorerTable({
 
   return (
     <div className="max-h-[600px] overflow-auto rounded-lg border">
-      <Table className="w-max text-sm">
+      {/* Raw <table> (not the @kukan/ui Table, which wraps in its own overflow-x-auto
+          div) so a single container scrolls both axes — matching ParquetPreview. */}
+      <table className="w-max text-sm">
         <TableHeader className="sticky top-0 z-10 bg-muted">
           <TableRow>
             {columns.map((col) => (
@@ -92,7 +94,7 @@ export function ExplorerTable({
             </TableRow>
           )}
         </TableBody>
-      </Table>
+      </table>
     </div>
   )
 }
