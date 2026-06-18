@@ -40,43 +40,43 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
       <Card className="transition-colors hover:bg-accent/50">
         <CardHeader>
           <div className="flex items-start justify-between gap-2">
-            <div>
-              <CardTitle className="text-lg">
-                <Link
-                  href={datasetHref}
-                  className={`after:absolute after:inset-0 after:content-[''] ${HIGHLIGHT_MARK}`}
-                  {...(pkg.highlightedTitle
-                    ? { dangerouslySetInnerHTML: { __html: pkg.highlightedTitle } }
-                    : { children: pkg.title || pkg.name })}
-                />
-              </CardTitle>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {typeof pkg.resourceCount === 'number' && (
-                <span className="text-xs text-muted-foreground">
-                  {t('resourceCount', { count: pkg.resourceCount })}
-                </span>
-              )}
-              <FormatBadges formats={pkg.formats} />
-            </div>
+            <CardTitle className="min-w-0 flex-1 text-lg">
+              <Link
+                href={datasetHref}
+                className={`after:absolute after:inset-0 after:content-[''] ${HIGHLIGHT_MARK}`}
+                {...(pkg.highlightedTitle
+                  ? { dangerouslySetInnerHTML: { __html: pkg.highlightedTitle } }
+                  : { children: pkg.title || pkg.name })}
+              />
+            </CardTitle>
+            {(pkg.updated || pkg.created) && (
+              <span className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
+                <Calendar className="h-3 w-3" />
+                {pkg.updated && (
+                  <span>
+                    {t('updatedShort')}: <CompactDate value={pkg.updated} />
+                  </span>
+                )}
+                {pkg.created && (
+                  <span>
+                    {t('createdShort')}: <CompactDate value={pkg.created} />
+                  </span>
+                )}
+              </span>
+            )}
           </div>
-          {(pkg.title || pkg.updated || pkg.created) && (
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              {pkg.title ? <span className="font-mono">{pkg.name}</span> : <span />}
-              {(pkg.updated || pkg.created) && (
-                <span className="flex shrink-0 items-center gap-3">
-                  <Calendar className="h-3 w-3" />
-                  {pkg.updated && (
-                    <span>
-                      {t('updatedShort')}: <CompactDate value={pkg.updated} />
+          {(pkg.title || typeof pkg.resourceCount === 'number' || pkg.formats) && (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              {pkg.title && <span className="font-mono">{pkg.name}</span>}
+              {(typeof pkg.resourceCount === 'number' || pkg.formats) && (
+                <div className="ml-auto flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+                  {typeof pkg.resourceCount === 'number' && (
+                    <span className="shrink-0">
+                      {t('resourceCount', { count: pkg.resourceCount })}
                     </span>
                   )}
-                  {pkg.created && (
-                    <span>
-                      {t('createdShort')}: <CompactDate value={pkg.created} />
-                    </span>
-                  )}
-                </span>
+                  <FormatBadges formats={pkg.formats} />
+                </div>
               )}
             </div>
           )}

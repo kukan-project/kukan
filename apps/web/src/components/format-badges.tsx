@@ -6,7 +6,7 @@ export function FormatBadges({ formats }: { formats: string | undefined }) {
   if (list.length === 0) return null
 
   return (
-    <div className="flex shrink-0 gap-1">
+    <div className="flex flex-wrap gap-1">
       {list.map((f) => (
         <FormatBadge key={f} format={f} />
       ))}

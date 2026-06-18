@@ -57,6 +57,22 @@ describe('DatasetCard', () => {
     expect(screen.getByText('All 5 resources')).toBeInTheDocument()
   })
 
+  it('should render updated and created dates', () => {
+    render(
+      <DatasetCard
+        pkg={{ ...basePkg, updated: '2026-06-18T00:00:00Z', created: '2026-01-02T00:00:00Z' }}
+      />
+    )
+    expect(screen.getByText(/Modified/)).toBeInTheDocument()
+    expect(screen.getByText(/Created/)).toBeInTheDocument()
+  })
+
+  it('should render the machine name alongside the title', () => {
+    render(<DatasetCard pkg={basePkg} />)
+    // title is the link label; the slug (pkg.name) is shown as a separate mono span
+    expect(screen.getByText('test-dataset')).toBeInTheDocument()
+  })
+
   it('should render groups', () => {
     render(<DatasetCard pkg={{ ...basePkg, groups: 'env:Environment,health:Health' }} />)
     expect(screen.getByText('Environment')).toBeInTheDocument()

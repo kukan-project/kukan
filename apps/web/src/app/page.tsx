@@ -74,7 +74,7 @@ export default async function HomePage() {
         <Button type="submit">{t('common.search')}</Button>
       </form>
 
-      <div className="grid w-full max-w-2xl grid-cols-4 gap-4">
+      <div className="grid w-full max-w-4xl grid-cols-4 gap-4">
         <Link href="/dataset">
           <Card className="transition-colors hover:bg-accent/50">
             <CardContent className="flex flex-col items-center py-6">
@@ -109,8 +109,8 @@ export default async function HomePage() {
 
       {announcements.length > 0 && (
         <>
-          <Separator className="w-full max-w-2xl" />
-          <section className="flex w-full max-w-2xl flex-col gap-3">
+          <Separator className="w-full max-w-4xl" />
+          <section className="flex w-full max-w-4xl flex-col gap-3">
             <h2 className="text-xl font-semibold">{t('home.announcements')}</h2>
             {announcements.map((a) => {
               const href = safeExternalHref(a.link)
@@ -143,8 +143,8 @@ export default async function HomePage() {
 
       {latestDatasets.length > 0 && (
         <>
-          <Separator className="w-full max-w-2xl" />
-          <section className="flex w-full max-w-2xl flex-col gap-4">
+          <Separator className="w-full max-w-4xl" />
+          <section className="flex w-full max-w-4xl flex-col gap-4">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold">{t('home.latestDatasets')}</h2>
               <Button asChild variant="outline" size="sm">
