@@ -1,16 +1,44 @@
 #!/usr/bin/env node
 /**
- * KUKAN CDK App — Entry Point
- * Deploy: npx cdk deploy --all -c scale=small
+ * KUKAN CDK App — Entry Point (ADR-030 / ADR-031)
  *
- * Two stacks:
- *   KukanGlobalStack (us-east-1) — ACM cert + WAF WebACL for CloudFront
- *   KukanStack (ap-northeast-1)  — VPC, ECS, RDS, CloudFront, etc.
+ * Two modes:
+ *   - Pipeline (default):  npx cdk deploy KukanPipeline
+ *       Deploys the CDK Pipelines stack; pushes auto-deploy each environment as a Stage.
+ *   - Standalone (local):  npx cdk deploy -c env=dev --all
+ *       Deploys one environment's Stage directly (for bootstrap / local iteration).
+ *
+ * Environments are defined in config/environments.ts (forks commit theirs; upstream
+ * does not — it falls back to config/environments.example.ts on a fresh checkout).
  */
 
+import { existsSync } from 'node:fs'
 import * as cdk from 'aws-cdk-lib'
-import { KukanGlobalStack } from '../lib/global-stack.js'
-import { KukanStack } from '../lib/kukan-stack.js'
+import { DEFAULT_REGION, resolveEnv, type EnvironmentConfig } from '../lib/config.js'
+import { pascal } from '../lib/naming.js'
+import { KukanStage } from '../lib/kukan-stage.js'
+import { KukanPipelineStack } from '../lib/pipeline-stack.js'
+import * as exampleEnvs from '../config/environments.example.js'
+
+interface EnvModule {
+  environments: Record<string, EnvironmentConfig>
+  connectionArn: string
+}
+
+/** Prefer config/environments.ts (committed by forks); fall back to the example when absent. */
+async function loadEnvironments(): Promise<EnvModule> {
+  // Check the real file's existence directly so we can distinguish "file absent"
+  // (→ example) from "file present but broken" (→ throw). A catch on
+  // ERR_MODULE_NOT_FOUND cannot tell them apart: a bad import *inside* a real
+  // environments.ts raises the same code and would silently fall back to the example.
+  if (!existsSync(new URL('../config/environments.ts', import.meta.url))) {
+    return exampleEnvs as EnvModule
+  }
+  // Present — import it and let any error (syntax, missing export, broken import)
+  // propagate. Non-literal path so TypeScript does not require the file at compile time.
+  const localPath = '../config/environments.js'
+  return (await import(localPath)) as EnvModule
+}
 
 const app = new cdk.App()
 const account = process.env.CDK_DEFAULT_ACCOUNT
@@ -19,34 +47,28 @@ if (!account) {
     'CDK_DEFAULT_ACCOUNT is not set. Run "aws sso login" or configure AWS credentials.'
   )
 }
-const region = (app.node.tryGetContext('region') ?? 'ap-northeast-1') as string
 
-// --- Determine whether GlobalStack is needed ---
-// Mirror enableWaf default from config.ts: OFF when allowedIpRanges is set (saves ~$9/month).
-const domainName = app.node.tryGetContext('domainName') as string | undefined
-const allowedIpRanges = app.node.tryGetContext('allowedIpRanges') as string[] | undefined
-const enableWafExplicit = app.node.tryGetContext('enableWaf') as boolean | undefined
-const enableWaf = enableWafExplicit ?? !allowedIpRanges
+const { environments, connectionArn } = await loadEnvironments()
 
-const needsGlobalStack = !!domainName || enableWaf
-
-// --- Global Stack (us-east-1) ---
-let globalStack: KukanGlobalStack | undefined
-if (needsGlobalStack) {
-  globalStack = new KukanGlobalStack(app, 'KukanGlobalStack', {
-    env: { account, region: 'us-east-1' },
-    crossRegionReferences: true,
+const standaloneEnv = app.node.tryGetContext('env') as string | undefined
+if (standaloneEnv) {
+  // --- Standalone mode: deploy one environment's Stage directly ---
+  const config = environments[standaloneEnv]
+  if (!config) {
+    throw new Error(
+      `Unknown environment "${standaloneEnv}". Defined: ${Object.keys(environments).join(', ')}`
+    )
+  }
+  new KukanStage(app, pascal(standaloneEnv), {
+    env: resolveEnv(config, account),
+    config,
   })
-}
-
-// --- Main Stack ---
-const mainStack = new KukanStack(app, 'KukanStack', {
-  env: { account, region },
-  crossRegionReferences: true,
-  globalCertificateArn: globalStack?.certificateArn,
-  globalWebAclArn: globalStack?.webAclArn,
-})
-
-if (globalStack) {
-  mainStack.addDependency(globalStack)
+} else {
+  // --- Pipeline mode (default): deploy CDK Pipelines ---
+  new KukanPipelineStack(app, 'KukanPipeline', {
+    env: { account, region: DEFAULT_REGION },
+    crossRegionReferences: true,
+    environments,
+    connectionArn,
+  })
 }

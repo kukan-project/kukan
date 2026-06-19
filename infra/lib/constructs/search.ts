@@ -10,6 +10,7 @@ import * as iam from 'aws-cdk-lib/aws-iam'
 import * as opensearch from 'aws-cdk-lib/aws-opensearchservice'
 import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
+import { resourceName } from '../naming.js'
 
 export interface SearchProps {
   config: KukanConfig
@@ -40,8 +41,9 @@ export class SearchConstruct extends Construct {
       }),
     })
 
+    const domainName = resourceName(this, 'search')
     this.domain = new opensearch.Domain(this, 'Domain', {
-      domainName: 'kukan-search',
+      domainName,
       version: opensearch.EngineVersion.openSearch('3.5'),
       vpc,
       vpcSubnets: [
@@ -74,7 +76,7 @@ export class SearchConstruct extends Construct {
           effect: iam.Effect.ALLOW,
           principals: [new iam.AnyPrincipal()],
           actions: ['es:ESHttp*'],
-          resources: [`arn:aws:es:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:domain/kukan-search/*`],
+          resources: [`arn:aws:es:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:domain/${domainName}/*`],
         }),
       ],
       removalPolicy: cdk.RemovalPolicy.DESTROY,

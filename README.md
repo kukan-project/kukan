@@ -124,21 +124,31 @@ pnpm db:migrate   # Run migrations / マイグレーション実行
 - AWS CLI configured / AWS CLI 設定済み
 - Docker (CDK builds images automatically / CDK が自動ビルド)
 
-### Deploy / デプロイ手順
+Two deploy modes / デプロイは2モード:
+
+- **Standalone** — `npx cdk deploy -c env=<name> --all` (manual, per-environment / 手動・環境単位)
+- **Pipeline** — push-triggered CDK Pipelines (see below / 下記参照)
+
+### Standalone deploy / Standalone デプロイ手順
 
 ```bash
 # 1. Ensure AWS credentials are configured / AWS 認証情報を設定
 # (e.g. aws configure, aws sso login, or environment variables)
 
-# 2. CDK Bootstrap (first time only / 初回のみ)
-cd infra && npx cdk bootstrap
+# 2. Define your environments (first time only / 初回のみ環境を定義)
+cp infra/config/environments.example.ts infra/config/environments.ts
+# Edit environments.ts / environments.ts を編集
 
-# 3. Deploy (Docker build + ECR push + all resources / 全リソース作成)
-npx cdk deploy --all
+# 3. CDK Bootstrap (per account/region, first time only / 初回のみ)
+#    Custom domain/WAF envs also need us-east-1 (GlobalStack) / 独自ドメイン/WAF は us-east-1 も
+cd infra && npx cdk bootstrap aws://<account-id>/ap-northeast-1 aws://<account-id>/us-east-1
+
+# 4. Deploy a named environment (Docker build + ECR push + all resources)
+npx cdk deploy -c env=dev --all
 ```
 
-Deploys a `small` configuration by default:
-パラメータなしで `small` 規模のデフォルト構成がデプロイされる:
+A `dev` environment in the example uses a `small` configuration:
+example の `dev` は `small` 規模:
 
 | Component | Service                                |
 | --------- | -------------------------------------- |
@@ -148,43 +158,83 @@ Deploys a `small` configuration by default:
 | Search    | OpenSearch t3.small.search             |
 | WAF       | 3 managed rule groups (optional)       |
 
-### CDK parameters / CDK パラメータ一覧
+### Environment config / 環境設定
 
-| Parameter          | Type                           | Default            | Description                                                        |
-| ------------------ | ------------------------------ | ------------------ | ------------------------------------------------------------------ |
-| `scale`            | `small` \| `medium` \| `large` | `small`            | Resource sizing preset                                             |
-| `dbEngine`         | `rds` \| `aurora`              | Scale-dependent    | DB engine (`small`=RDS, `medium`+=Aurora)                          |
-| `enableOpenSearch` | boolean                        | `true`             | `false` → PostgreSQL full-text fallback                            |
-| `enableWaf`        | boolean                        | `!allowedIpRanges` | WAF on CloudFront (~$9/mo). Auto-enabled when no `allowedIpRanges` |
-| `domainName`       | string                         | —                  | Custom domain (CloudFront default domain when unset)               |
-| `hostedZoneId`     | string                         | —                  | Route53 Hosted Zone ID (required with `domainName`)                |
-| `hostedZoneName`   | string                         | —                  | Route53 Hosted Zone name (required with `domainName`)              |
-| `allowedIpRanges`  | string[]                       | —                  | IP allowlist via CloudFront Function (CIDR, IPv4+IPv6)             |
-| `bucketName`       | string                         | `kukan-resources`  | S3 bucket name                                                     |
+Environments (dev / prd, etc.) are defined in `infra/config/environments.ts` (copy from
+`environments.example.ts`; forks commit it, upstream does not). Each entry is an `EnvironmentConfig`:
+環境は `infra/config/environments.ts`（example をコピー。フォークがコミット、upstream はコミットしない）で定義。各エントリのフィールド:
 
-### Environment-specific settings / 環境固有の設定
+| Field               | Type                           | Default               | Description                                                  |
+| ------------------- | ------------------------------ | --------------------- | ------------------------------------------------------------ |
+| `account`           | string                         | `CDK_DEFAULT_ACCOUNT` | Target account (set → separate-account operation)            |
+| `region`            | string                         | `ap-northeast-1`      | Target region                                                |
+| `scale`             | `small` \| `medium` \| `large` | `small`               | Resource sizing preset                                       |
+| `dbEngine`          | `rds` \| `aurora`              | Scale-dependent       | DB engine                                                    |
+| `enableOpenSearch`  | boolean                        | `true`                | `false` → PostgreSQL full-text fallback                      |
+| `enableWaf`         | boolean                        | `!allowedIpRanges`    | WAF on CloudFront (~$9/mo)                                   |
+| `allowedIpRanges`   | string[]                       | —                     | IP allowlist via CloudFront Function (CIDR, IPv4+IPv6)       |
+| `domainName`        | string                         | —                     | Custom domain (CloudFront default domain when unset)         |
+| `hostedZoneId/Name` | string                         | —                     | Route53 Hosted Zone (required with `domainName`)             |
+| `certificateArn`    | string                         | —                     | Pre-created us-east-1 ACM cert ARN (for pipeline mode)       |
+| `webAclArn`         | string                         | —                     | Pre-created us-east-1 WAF WebACL ARN (for pipeline mode)     |
+| `bucketName`        | string                         | auto                  | S3 bucket name (auto-generated, globally unique, when unset) |
+| `enableGa4DataApi`  | boolean                        | `false`               | GA4 analytics dashboard                                      |
+| `githubRepo`        | string                         | —                     | CodeConnections source repo (`owner/repo`)                   |
+| `deployBranch`      | string                         | `main`                | Branch that deploys this env (pipeline mode)                 |
+| `overrides`         | deep-partial                   | —                     | Fine-grained overrides of the scale preset                   |
 
-Store environment-specific values in `infra/cdk.context.json` (gitignored):
-環境固有値は `infra/cdk.context.json`（gitignore 対象）に記述:
-
-```jsonc
-// infra/cdk.context.json
-{
-  "domainName": "demo.example.com",
-  "hostedZoneId": "Z0123456789",
-  "hostedZoneName": "example.com",
-  "allowedIpRanges": ["203.0.113.0/24"],
-}
-```
-
-Or override temporarily via CLI / CLI で一時オーバーライド:
+Precedence: CLI `-c` > env entry > scale defaults. Override ad hoc:
+優先順位: `-c` > env エントリ > スケール既定。一時上書き:
 
 ```bash
-npx cdk deploy --all -c scale=medium -c enableWaf=true
+npx cdk deploy -c env=dev -c scale=medium --all
 ```
 
 See [docs/specs/phase4-deploy.md](docs/specs/phase4-deploy.md) for full details.
 詳細は上記リンクを参照。
+
+### CI/CD (CDK Pipelines + CodeConnections) / 自動デプロイ
+
+Deployment is automated with CDK Pipelines (AWS CodePipeline), triggered by branch pushes via a CodeConnections (GitHub App) source. The pipeline self-mutates and deploys each environment as a CDK Stage.
+デプロイは CDK Pipelines（AWS CodePipeline）で自動化し、CodeConnections（GitHub App）ソース経由でブランチ push を起点に起動します。パイプラインは自己変異し、各環境を CDK Stage としてデプロイします。
+
+```bash
+# 1. Prepare your environment definitions (first time only) / 環境定義を用意（初回のみ）
+cp infra/config/environments.example.ts infra/config/environments.ts
+# Edit environments.ts (githubRepo / deployBranch / scale / domain, etc.) / environments.ts を編集
+
+# 2. Create a CodeConnections connection in the AWS console (approve the GitHub App),
+#    set its ARN as connectionArn in environments.ts
+#    AWS コンソールで CodeConnections 接続を作成し、ARN を environments.ts の connectionArn に設定
+
+# 3. Bootstrap first (prerequisite for cdk deploy; include us-east-1 for the GlobalStack)
+#    先に bootstrap（cdk deploy の前提。GlobalStack 用に us-east-1 も含める）
+cd infra && npx cdk bootstrap aws://<account-id>/ap-northeast-1 aws://<account-id>/us-east-1
+
+# 4. For custom domain / WAF only: create the us-east-1 cert/WAF once (standalone), then
+#    set certificateArn / webAclArn in environments.ts (CDK Pipelines can't do cross-region)
+#    独自ドメイン/WAF を使う場合のみ: us-east-1 の cert/WAF を一度 standalone で作成し ARN を設定
+npx cdk deploy -c env=prd Prd/KukanGlobalStack
+
+# 5. Commit environments.ts + cdk.context.json so CodeBuild synth is hermetic (forks commit; upstream does not)
+#    cdk synth resolves context lookups (AZs, CloudFront prefix list) into cdk.context.json
+npx cdk synth >/dev/null
+git add infra/config/environments.ts infra/cdk.context.json && git commit -m "chore: env config"
+
+# 6. Deploy the pipeline stack once / 初回のみパイプラインスタックを手動デプロイ
+npx cdk deploy KukanPipeline
+
+# 7. After that, pushes to each env's deployBranch deploy automatically (self-mutating)
+#    以降は各 env の deployBranch への push で自動デプロイ（自己変異）
+```
+
+> [!IMPORTANT]
+> CDK Pipelines is incompatible with cross-region references, so a custom domain / WAF
+> (us-east-1) requires supplying `certificateArn` / `webAclArn` (step 2). Otherwise set `enableWaf: false`.
+> CDK Pipelines は cross-region 参照と非互換のため、独自ドメイン/WAF（us-east-1）は手順2で ARN を供給するか `enableWaf: false` にしてください。
+
+Design: [ADR-030 (CDK Pipelines)](docs/adr/jp/030-cdk-pipelines-deploy.md) / [ADR-031 (multi-env Stage)](docs/adr/jp/031-multi-environment-deploy.md).
+詳細・設計判断は ADR-030 / ADR-031 を参照。
 
 ## On-Premise Deployment / オンプレミスデプロイ
 

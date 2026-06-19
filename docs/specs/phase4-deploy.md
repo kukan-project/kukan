@@ -135,11 +135,16 @@ KukanGlobalStack はドメイン名指定時または WAF 有効時に自動作�
 
 ```
 infra/
-├── bin/app.ts                        # エントリポイント
+├── bin/app.ts                        # エントリポイント（standalone / pipeline 分岐）
+├── config/
+│   ├── environments.example.ts       # 環境定義テンプレート（commit）
+│   └── environments.ts               # 環境定義（フォークがコミット。example をコピーして編集）
 ├── lib/
+│   ├── kukan-stage.ts                # KukanStage（Global+Main を内包、env 境界）
+│   ├── pipeline-stack.ts             # CDK Pipelines（CodeConnections、env ごと）
 │   ├── kukan-stack.ts                # メインスタック
 │   ├── global-stack.ts               # グローバルスタック（us-east-1）
-│   ├── config.ts                     # スケール別設定
+│   ├── config.ts                     # 設定解決（EnvironmentConfig / loadConfig）
 │   └── constructs/
 │       ├── network.ts                # VPC, SG, S3 Endpoint
 │       ├── database.ts               # RDS / Aurora + Secrets Manager
@@ -154,38 +159,64 @@ infra/
 └── tsconfig.json
 ```
 
-### CDK コンテキストパラメータ
+### 環境設定（environments.ts）
 
-全パラメータは `config.ts` にデフォルト値があり、`npx cdk deploy --all --all` のみで動作する。
-環境固有の値（ドメイン名等）を永続化したい場合は `infra/cdk.context.json` に記述する。
-`cdk.context.json` は `.gitignore` 対象のため、環境ごとに安全に管理できる。
+環境（dev / prd 等）は `infra/config/environments.ts` で定義する（ADR-031）。
+`environments.example.ts` をコピーして編集する。`environments.ts` は **gitignore せず、フォークがコミットする**（upstream はコミットしない）。これにより CodeBuild の synth が checkout の中身だけで完結する（ADR-031）。
+デプロイ時は `-c env=<name>` でどの環境かを選ぶ。同一アカウント・別アカウントのどちらも
+このファイルの記述だけで切り替わる（`account` 省略＝同一、指定＝別アカウント）。
 
-| パラメータ         | 型                             | デフォルト                                         | 説明                                                         |
-| ------------------ | ------------------------------ | -------------------------------------------------- | ------------------------------------------------------------ |
-| `scale`            | `small` \| `medium` \| `large` | `small`                                            | デプロイ規模（リソースサイズを一括制御）                     |
-| `dbEngine`         | `rds` \| `aurora`              | スケール依存（small=`rds`, medium/large=`aurora`） | DB エンジン                                                  |
-| `enableOpenSearch` | boolean                        | `true`                                             | `false` → PostgreSQL 全文検索フォールバック                  |
-| `enableWaf`        | boolean                        | `!allowedIpRanges`                                 | WAF on CloudFront（マネージドルール、~$9/月追加）            |
-| `domainName`       | string                         | なし                                               | カスタムドメイン（未設定時は CloudFront デフォルトドメイン） |
-| `hostedZoneId`     | string                         | なし                                               | Route53 Hosted Zone ID（`domainName` 設定時に必要）          |
-| `hostedZoneName`   | string                         | なし                                               | Route53 Hosted Zone 名（`domainName` 設定時に必要）          |
-| `allowedIpRanges`  | string[]                       | なし                                               | IP 制限（CloudFront Function、IPv4 CIDR + IPv6 対応）        |
-| `bucketName`       | string                         | `kukan-resources`                                  | S3 バケット名                                                |
+```bash
+cp infra/config/environments.example.ts infra/config/environments.ts
+# environments.ts を編集
+```
 
-パラメータの指定方法（優先度順）:
+各 env のフィールド（すべて任意。未設定はスケール既定／組込み既定にフォールバック）:
 
-1. CLI `-c` フラグ（一時的なオーバーライド）
-2. `infra/cdk.context.json`（環境固有、gitignore 対象）
-3. `config.ts` のデフォルト値
+| フィールド         | 型                             | デフォルト            | 説明                                                                |
+| ------------------ | ------------------------------ | --------------------- | ------------------------------------------------------------------- |
+| `account`          | string                         | `CDK_DEFAULT_ACCOUNT` | 対象アカウント。指定で別アカウント運用                              |
+| `region`           | string                         | `ap-northeast-1`      | 対象リージョン                                                      |
+| `scale`            | `small` \| `medium` \| `large` | `small`               | デプロイ規模（リソースサイズを一括制御）                            |
+| `dbEngine`         | `rds` \| `aurora`              | スケール依存          | DB エンジン                                                         |
+| `enableOpenSearch` | boolean                        | `true`                | `false` → PostgreSQL 全文検索フォールバック                         |
+| `enableWaf`        | boolean                        | `!allowedIpRanges`    | WAF on CloudFront（マネージドルール、~$9/月追加）                   |
+| `allowedIpRanges`  | string[]                       | なし                  | IP 制限（CloudFront Function、IPv4 CIDR + IPv6 対応）               |
+| `domainName`       | string                         | なし                  | カスタムドメイン（未設定時は CloudFront デフォルトドメイン）        |
+| `hostedZoneId`     | string                         | なし                  | Route53 Hosted Zone ID（`domainName` 設定時に必要）                 |
+| `hostedZoneName`   | string                         | なし                  | Route53 Hosted Zone 名（`domainName` 設定時に必要）                 |
+| `certificateArn`   | string                         | なし                  | 事前作成した us-east-1 ACM 証明書 ARN（pipeline モード用、ADR-030） |
+| `webAclArn`        | string                         | なし                  | 事前作成した us-east-1 WAF WebACL ARN（同上）                       |
+| `bucketName`       | string                         | 自動命名              | S3 バケット名（未設定でグローバル一意な自動命名、ADR-031）          |
+| `enableGa4DataApi` | boolean                        | `false`               | GA4 アクセス統計ダッシュボード                                      |
+| `githubRepo`       | string                         | なし                  | CodeConnections ソースリポジトリ（`owner/repo`、ADR-030）           |
+| `deployBranch`     | string                         | `main`                | この env を pipeline でデプロイするブランチ                         |
+| `overrides`        | deep-partial                   | なし                  | スケール preset の個別パラメータ上書き（後述）                      |
 
-```jsonc
-// infra/cdk.context.json の例
-{
-  "domainName": "demo.example.com",
-  "hostedZoneId": "Z0123456789",
-  "hostedZoneName": "example.com",
-  "allowedIpRanges": ["203.0.113.0/24", "2001:db8::/32"],
-}
+優先順位: CLI `-c` フラグ > `environments.ts` の env エントリ > スケール既定（`config.ts`）> 組込み既定。
+
+```ts
+// infra/config/environments.ts の例
+export const connectionArn = 'arn:aws:codeconnections:ap-northeast-1:...:connection/...'
+
+export const environments = {
+  dev: {
+    scale: 'small',
+    enableWaf: false,
+    githubRepo: 'kukan-project/demo.kukan.dev',
+    deployBranch: 'develop',
+  },
+  prd: {
+    scale: 'large',
+    githubRepo: 'kukan-project/demo.kukan.dev',
+    deployBranch: 'main',
+    domainName: 'demo.example.com',
+    hostedZoneId: 'Z0123456789',
+    hostedZoneName: 'example.com',
+    allowedIpRanges: ['203.0.113.0/24', '2001:db8::/32'],
+    certificateArn: 'arn:aws:acm:us-east-1:...:certificate/...', // pipeline 用に一度作成（後述）
+  },
+} satisfies Record<string, EnvironmentConfig>
 ```
 
 #### スケール別デフォルト値
@@ -200,20 +231,28 @@ infra/
 | OpenSearch              | t3.small × 1, 10 GB | m6g.large × 1, 50 GB | m6g.xlarge × 2, 100 GB, multi-AZ |
 | DB Pool (web / worker)  | 5 / 3               | 10 / 5               | 20 / 10                          |
 
-#### 使用例
+#### overrides（preset の個別上書き）
+
+`scale` で大枠を選び、個別パラメータだけ env エントリで微調整できる（ADR-031）。
+
+```ts
+prd: {
+  scale: 'large',
+  overrides: { web: { maxSize: 20 }, opensearch: { instanceCount: 3, indexReplicas: 2 } },
+}
+```
+
+#### 使用例（standalone デプロイ）
 
 ```bash
-# 最小構成（WAF 自動有効、カスタムドメインなし）
-npx cdk deploy --all
+# dev 環境をデプロイ
+npx cdk deploy -c env=dev --all
 
-# IP 制限あり（CloudFront Function で制御、WAF 自動無効）
-npx cdk deploy --all -c allowedIpRanges='["203.0.113.0/24"]'
+# prd 環境をデプロイ
+npx cdk deploy -c env=prd --all
 
-# IP 制限 + WAF 二重防御
-npx cdk deploy --all -c allowedIpRanges='["203.0.113.0/24"]' -c enableWaf=true
-
-# WAF 明示的に無効化
-npx cdk deploy --all -c enableWaf=false
+# 一時的に scale を上書き（env エントリより優先）
+npx cdk deploy -c env=dev -c scale=medium --all
 ```
 
 ## セキュリティ
@@ -232,6 +271,11 @@ IPv4 CIDR と IPv6 プレフィックスの両方に対応。追加コストな�
 WAF は `allowedIpRanges` の有無で自動制御される（ADR-027）。
 IP 制限は CloudFront Function で行うため、WAF はマネージドルール（SQLi/XSS 保護等）が必要な場合のみ有効化。
 WAF は CLOUDFRONT スコープで us-east-1（KukanGlobalStack）にデプロイされる。
+
+> [!NOTE]
+> pipeline モードでは us-east-1 リソース（WAF / ACM 証明書）を作成できない（CDK Pipelines は
+> cross-region 参照と非互換、ADR-030）。WAF を使う env は一度 standalone で作成し、`webAclArn` を
+> `environments.ts` に設定する。WAF が不要なら `enableWaf: false`。詳細は後述の CI/CD 節を参照。
 
 | `allowedIpRanges` | `enableWaf` 指定 | WAF 動作                               |
 | ----------------- | ---------------- | -------------------------------------- |
@@ -271,39 +315,163 @@ Worker 起動時にマイグレーションを自動実行:
 
 ## デプロイ手順
 
-Docker イメージのビルド・ECR プッシュは CDK が `DockerImageAsset` で自動実行するため、
-手動での `docker build` / `docker push` は不要。
+デプロイには2つのモードがある。Docker イメージのビルド・ECR プッシュは CDK が
+`DockerImageAsset` で自動実行するため、手動の `docker build` / `docker push` は不要。
+
+| モード            | コマンド                             | 用途                                         |
+| ----------------- | ------------------------------------ | -------------------------------------------- |
+| **A. Standalone** | `npx cdk deploy -c env=<name> --all` | 初回セットアップ・ローカルからの手動デプロイ |
+| **B. Pipeline**   | push（CDK Pipelines が自動実行）     | 継続的デプロイ（ADR-030）                    |
+
+スタック名は env でプレフィックスされる（例 `Dev/KukanStack` → CloudFormation スタック名 `Dev-KukanStack`）。
+
+### A. Standalone デプロイ（手動・環境単位）
 
 ```bash
-# 1. AWS SSO ログイン
+# 1. AWS ログイン
 aws sso login
 
-# 2. CDK Bootstrap（初回のみ）
-cd infra && npx cdk bootstrap
+# 2. 環境定義を用意（初回のみ）
+cp infra/config/environments.example.ts infra/config/environments.ts
+# environments.ts を編集（scale, domain, allowedIpRanges 等）
 
-# 3. CDK デプロイ（Docker ビルド + ECR プッシュ + 全リソース作成）
-npx cdk deploy --all
+# 3. CDK Bootstrap（アカウント/リージョンごとに初回のみ）
+#    カスタムドメイン/WAF を使う env は GlobalStack が us-east-1 のため us-east-1 も bootstrap する
+cd infra && npx cdk bootstrap aws://<account-id>/ap-northeast-1 aws://<account-id>/us-east-1
 
-# 4. 初期ユーザー作成（初回のみ）
-# sysadmin ユーザーを作成（DB 接続情報は環境変数から取得）
+# 4. デプロイ（env を指定。Docker ビルド + ECR プッシュ + 全リソース作成）
+npx cdk deploy -c env=dev --all
+
+# 5. 初期ユーザー作成（初回のみ。DB 接続情報は環境変数から取得）
 pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
 # 一般ユーザーも作成可能（--role 省略でデフォルト 'user'）
 pnpm db:create-user --email user@example.com --name taro --password <password>
 
-# 5. 確認
-# - ALB ドメイン（またはカスタムドメイン）でアクセス
-# - データセット作成 → ファイルアップロード → パイプライン完了
-# - 検索動作確認
+# 6. 確認
+# - CloudFront ドメイン（またはカスタムドメイン）でアクセス
+# - データセット作成 → ファイルアップロード → パイプライン完了 → 検索動作確認
 ```
+
+カスタムドメイン/WAF を使う env では、us-east-1 の global stack（ACM 証明書 / WAF）も
+同時に作成される（standalone は cross-region 参照に対応）。
+
+## CI/CD 自動デプロイ（CDK Pipelines + CodeConnections）
+
+### B. Pipeline デプロイ
+
+`deployBranch` への push を起点に、CDK Pipelines（AWS CodePipeline + CodeBuild）が
+自動デプロイする（ADR-030）。CodeConnections（GitHub App）をソースに起動し、パイプラインは
+自己変異（定義変更時に自身を更新）し、各環境を CDK Stage（ADR-031）としてデプロイする。
+
+- パイプライン定義: `infra/lib/pipeline-stack.ts`（env ごとに1パイプライン）
+- 環境境界: `infra/lib/kukan-stage.ts`（`KukanStage` が Global+Main を内包）
+- 環境定義: `infra/config/environments.ts`
+- 認証: CodeConnections（長期トークン不要）
+
+### CodeConnections 接続の作成（コンソール操作）
+
+GitHub App の認可はブラウザでの操作が必須のため、AWS コンソールから作成する
+（CLI/CDK で作成しても `PENDING` 状態になり、結局ブラウザでの認可が必要）。
+接続はアカウント単位で一度だけ作れば、複数パイプラインで使い回せる。
+
+1. AWS コンソールで **CodeBuild** を開く → 左メニュー下部の **Settings → Connections**
+   （「Settings → Connections」は CodeBuild / CodePipeline 等「Developer Tools」共通の設定。Developer Tools のトップは見つけにくいので CodeBuild 経由が分かりやすい）
+2. **Create connection** をクリック
+3. プロバイダで **GitHub** を選択 → 接続名（例 `kukan-github`。AWS 側の識別ラベルで GitHub には表示されない）を入力 → **Connect to GitHub**
+4. **Install a new app** をクリック → GitHub 側で **AWS Connector for GitHub** を対象 org/リポジトリにインストール・認可
+5. AWS に戻り **Connect** → 接続ステータスが **Available** になる
+6. 接続の詳細ページで **ARN をコピー**（`arn:aws:codeconnections:<region>:<account>:connection/...`）
+7. その ARN を `infra/config/environments.ts` の **トップレベル `connectionArn`**（env エントリ内ではなく、全 env 共通の export）に設定
+
+> [!NOTE]
+> 旧名称は「AWS CodeStar Connections」。コンソールやドキュメントで両表記が混在する場合がある（同じ機能）。
+
+#### 接続の使い回し（スコープ）
+
+接続は**作成した IAM ユーザー個人ではなく、アカウント（＋リージョン）のリソース**であり、
+GitHub App の認可も接続単位（IAM ユーザー単位ではない）。再利用範囲は以下のとおり。
+
+| 範囲                                             | 使い回し | 補足                                                                        |
+| ------------------------------------------------ | :------: | --------------------------------------------------------------------------- |
+| 同一アカウント内の別 IAM ユーザー/ロール         |    ✅    | `codeconnections:UseConnection` 権限があれば誰でも利用可                    |
+| 同一アカウント内の複数パイプライン（dev/prd 等） |    ✅    | 同じ `connectionArn` を使い回す                                             |
+| 別の AWS アカウント                              |    ❌    | 接続はアカウント専有。リソース共有（RAM）非対応。アカウントごとに作成が必要 |
+
+重要: 接続を使うのは**パイプライン（source アクション）**であり、**パイプラインが動くアカウントにだけ**
+接続があればよい。デプロイ先（Stage）が別アカウントでも、そこへは cross-account ロールで配るため
+デプロイ先アカウントに接続は不要。本構成（`KukanPipelineStack` を1アカウントに置き、env ごとに
+パイプラインを作る）では、**接続は1つ**作って `connectionArn` を全 env で共有すれば足りる
+（パイプライン自体を各アカウントに分割する場合のみ、アカウントごとに接続が必要）。
+
+### セットアップ手順（初回のみ手動）
+
+```bash
+# 1. 環境定義を用意（初回のみ）
+cp infra/config/environments.example.ts infra/config/environments.ts
+#    environments.ts を編集（env ごとに githubRepo / deployBranch / scale / domain 等。
+#    connectionArn は手順2で取得した値を設定）
+
+# 2. CodeConnections 接続を作成（上記「コンソール操作」を参照）
+#    → Connection ARN を environments.ts の connectionArn に設定
+#    ※ GitHub App 承認はコンソール/ブラウザでの一度きりの手動操作（IaC 化不可）
+
+# 3. Bootstrap（cdk deploy の前提。各アカウント・各リージョンで初回のみ）
+#    GlobalStack は us-east-1 のため us-east-1 も必須。ap-northeast-1 と併せて bootstrap する
+cd infra && npx cdk bootstrap aws://<account-id>/ap-northeast-1 aws://<account-id>/us-east-1
+#    クロスアカウント運用時は、パイプラインアカウントを信頼する形でデプロイ先アカウントも bootstrap
+
+# 4. カスタムドメイン/WAF を使う env は、us-east-1 の cert/WAF を一度だけ standalone で作成
+npx cdk deploy -c env=prd Prd/KukanGlobalStack
+#    出力された ACM 証明書 ARN / WAF WebACL ARN を
+#    environments.ts の certificateArn / webAclArn に設定
+#    （CDK Pipelines は cross-region 参照と非互換のため ARN を文字列で渡す）
+
+# 5. environments.ts と cdk.context.json をコミット（フォークがコミット。CodeBuild の synth が読む）
+#    cdk synth で context lookup（AZ・CloudFront プレフィックスリスト）を解決して cdk.context.json を生成
+npx cdk synth >/dev/null
+git add infra/config/environments.ts infra/cdk.context.json && git commit -m "chore: env config"
+
+# 6. パイプラインスタックを初回手動デプロイ
+npx cdk deploy KukanPipeline
+
+# 7. 以降は対象ブランチへの push で自動デプロイ（パイプライン定義の変更も自己変異で反映）
+```
+
+承認ゲート（例: prd は `ManualApprovalStep` で手動承認、dev は自動）はパイプライン定義で設定する。
+
+> [!IMPORTANT]
+> **CDK Pipelines は cross-region 参照と非互換。** カスタムドメイン/WAF（us-east-1）を使う env は、
+> 手順4で cert/WAF を一度作成し、ARN を `certificateArn` / `webAclArn` に設定すること。
+> 未設定のまま us-east-1 リソースが必要な env を pipeline に含めると、synth が
+> 「`KukanGlobalStack` を standalone で作成して ARN を設定せよ」という明示エラーで停止する。
+> WAF が不要なら `enableWaf: false`。
+
+> [!NOTE]
+> **synth に必要なファイル**（CodeBuild が git ソースから synth するため）。どちらも gitignore せず、
+> upstream はコミットしない（フォークがコミット）:
+>
+> - **`environments.ts`（env 定義）= pipeline synth に必須**。フォークが必ずコミットする（upstream は
+>   `environments.example.ts` のみ）。connection ARN / account ID が載るが秘密情報ではない
+>   （`BETTER_AUTH_SECRET` 等は CDK 生成の Secrets）。
+> - **`cdk.context.json`（AZ・CloudFront プレフィックスリストの lookup キャッシュ、`PrefixList.fromLookup`）
+>   = 再現性のためフォークがコミット推奨**。未コミットでも synth ロールの lookup ロール
+>   （`cdk-*-lookup-role-*`、`sts:AssumeRole`）でライブ解決されるが、その分非決定的。
+>
+> 秘匿したいフォークのみ、これらを gitignore して別途供給する運用も可。
+
+> [!IMPORTANT]
+> CodeConnections の GitHub App 承認はコンソールでの一度きりの手動操作で、完全な IaC 化はできない（Connection ARN のみコードで参照）。
 
 ## 関連ファイル
 
 - CDK: `infra/` ディレクトリ全体
+- 環境定義: `infra/config/environments.ts`（フォークがコミット）, `infra/config/environments.example.ts`
+- CI/CD: `infra/lib/pipeline-stack.ts`, `infra/lib/kukan-stage.ts`
 - Dockerfile: `Dockerfile`, `.dockerignore`
 - Worker ヘルスチェック: `apps/worker/src/index.ts`
 - Web ヘルスチェック: `apps/web/src/app/api/health/route.ts`
 - SQS アダプター: `packages/adapters/queue/src/sqs.ts`
-- ADR: `docs/adr/jp/020-ecs-fargate-alb-migration.md`
+- ADR: `docs/adr/jp/020-ecs-fargate-alb-migration.md`, `docs/adr/jp/030-cdk-pipelines-deploy.md`, `docs/adr/jp/031-multi-environment-deploy.md`
 
 ## オンプレミス Docker Compose デプロイ
 

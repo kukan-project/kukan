@@ -11,6 +11,7 @@ import * as rds from 'aws-cdk-lib/aws-rds'
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
 import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
+import { envPrefix } from '../naming.js'
 
 export interface DatabaseProps {
   config: KukanConfig
@@ -30,6 +31,7 @@ export class DatabaseConstruct extends Construct {
 
     if (config.db.engine === 'aurora') {
       const cluster = new rds.DatabaseCluster(this, 'AuroraCluster', {
+        clusterIdentifier: envPrefix(this),
         engine: rds.DatabaseClusterEngine.auroraPostgres({
           version: rds.AuroraPostgresEngineVersion.VER_16_6,
         }),
@@ -49,6 +51,7 @@ export class DatabaseConstruct extends Construct {
       this.port = cluster.clusterEndpoint.port
     } else {
       const instance = new rds.DatabaseInstance(this, 'RdsInstance', {
+        instanceIdentifier: envPrefix(this),
         engine: rds.DatabaseInstanceEngine.postgres({
           version: rds.PostgresEngineVersion.VER_16,
         }),

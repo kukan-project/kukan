@@ -13,7 +13,8 @@ import * as route53 from 'aws-cdk-lib/aws-route53'
 import * as route53Targets from 'aws-cdk-lib/aws-route53-targets'
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
 import type { Construct } from 'constructs'
-import { loadConfig } from './config.js'
+import { loadConfig, type EnvironmentConfig } from './config.js'
+import { envPrefix } from './naming.js'
 import { NetworkConstruct } from './constructs/network.js'
 import { DatabaseConstruct } from './constructs/database.js'
 import { StorageConstruct } from './constructs/storage.js'
@@ -24,6 +25,8 @@ import { WorkerServiceConstruct } from './constructs/worker-service.js'
 import { CdnConstruct } from './constructs/cdn.js'
 
 export interface KukanStackProps extends cdk.StackProps {
+  /** Environment definition for this stack (ADR-031). */
+  envConfig?: EnvironmentConfig
   /** CloudFront viewer certificate ARN from KukanGlobalStack (us-east-1). */
   globalCertificateArn?: string
   /** WAF WebACL ARN from KukanGlobalStack (us-east-1). */
@@ -34,7 +37,7 @@ export class KukanStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: KukanStackProps = {}) {
     super(scope, id, props)
 
-    const config = loadConfig(this)
+    const config = loadConfig(this, props.envConfig)
 
     // --- Network ---
     const network = new NetworkConstruct(this, 'Network', { config })
@@ -68,9 +71,10 @@ export class KukanStack extends cdk.Stack {
     }
 
     // --- ECS Cluster (shared by Web + Worker) ---
+    // Env-prefixed name for readability + multi-environment uniqueness (ADR-031).
     const cluster = new ecs.Cluster(this, 'Cluster', {
       vpc: network.vpc,
-      clusterName: 'kukan',
+      clusterName: envPrefix(this),
     })
 
     // --- GA4 Analytics (optional) ---

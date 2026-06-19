@@ -14,6 +14,7 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
 import * as sqs from 'aws-cdk-lib/aws-sqs'
 import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
+import { resourceName } from '../naming.js'
 import type { DatabaseConstruct } from './database.js'
 
 export interface WorkerServiceProps {
@@ -118,7 +119,7 @@ export class WorkerServiceConstruct extends Construct {
     // Fargate Service
     this.service = new ecs.FargateService(this, 'Service', {
       cluster,
-      serviceName: 'kukan-worker',
+      serviceName: resourceName(this, 'worker'),
       taskDefinition: taskDef,
       desiredCount: config.worker.minTasks,
       securityGroups: [workerSecurityGroup],

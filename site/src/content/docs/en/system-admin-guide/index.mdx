@@ -11,11 +11,15 @@ KUKAN supports two deployment methods.
 
 ### AWS Deployment
 
-Deploy with AWS CDK using an ECS Fargate + ALB architecture.
+Deploy with AWS CDK using an ECS Fargate + ALB architecture. Environments (dev / prd, etc.)
+are defined in `infra/config/environments.ts` and selected with `-c env=<name>`.
 
 ```bash
-cd infra
-npx cdk deploy --all
+cp infra/config/environments.example.ts infra/config/environments.ts
+# Edit environments.ts
+# bootstrap is a prerequisite for deploy; custom domain/WAF also need us-east-1 (GlobalStack)
+cd infra && npx cdk bootstrap aws://<account-id>/ap-northeast-1 aws://<account-id>/us-east-1
+npx cdk deploy -c env=dev --all      # deploy a named environment
 ```
 
 Key AWS resources:
@@ -26,6 +30,44 @@ Key AWS resources:
 - **S3** — File storage
 - **SQS** — Pipeline queue
 - **OpenSearch** — Full-text search engine
+
+#### CI/CD (CDK Pipelines + CodeConnections)
+
+Deployment is automated with CDK Pipelines (AWS CodePipeline). Using a CodeConnections (GitHub App) source, it is triggered by branch pushes and deploys each environment as a CDK Stage.
+
+A one-time manual setup is required.
+
+1. Prepare your environment definitions (`cp infra/config/environments.example.ts infra/config/environments.ts`, then edit `environments.ts`)
+2. Create a CodeConnections connection in the AWS console and set its ARN as the top-level `connectionArn` export in `environments.ts` (shared by all envs)
+   - Open **CodeBuild** → **Settings → Connections → Create connection** in the left nav (a shared "Developer Tools" setting; reaching it via CodeBuild is easiest) → select **GitHub** → name it (e.g. `kukan-github`, an AWS-side label) → **Connect to GitHub** → install/authorize the **AWS Connector for GitHub** app on your org/repos → once status is **Available**, copy the ARN
+   - The GitHub App authorization requires a browser action (creating via CLI/CDK leaves it `PENDING` until authorized in the browser)
+3. `cdk bootstrap` (prerequisite for deploy; per account/region, include us-east-1 for the GlobalStack)
+4. For a custom domain / WAF only: create the us-east-1 certificate/WAF once via standalone (`npx cdk deploy -c env=prd Prd/KukanGlobalStack`) and set `certificateArn`/`webAclArn`
+5. Commit `environments.ts` and `cdk.context.json` so CodeBuild synth is hermetic (forks commit these; upstream does not)
+6. Deploy the pipeline stack once (`npx cdk deploy KukanPipeline`)
+7. After that, pushes to each env's `deployBranch` deploy automatically (the pipeline self-mutates)
+
+Structure of `environments.ts` (`connectionArn` is top-level; per-env settings go inside `environments`):
+
+```ts
+// infra/config/environments.ts
+export const connectionArn = 'arn:aws:codeconnections:...:connection/...' // ARN from step 2 (shared by all envs)
+
+export const environments = {
+  dev: { scale: 'small', githubRepo: 'owner/repo', deployBranch: 'develop' },
+  prd: { scale: 'large', githubRepo: 'owner/repo', deployBranch: 'main' },
+}
+```
+
+:::caution
+The CodeConnections GitHub App approval is a one-time manual console action (it cannot be expressed as IaC). Also, CDK Pipelines is incompatible with cross-region references, so a custom domain / WAF (us-east-1) requires supplying the ARNs in step 4, or set `enableWaf: false`. For prd, we recommend configuring an approval gate.
+:::
+
+:::note
+The pipeline's synth runs in CodeBuild. To make context lookups (AZs, CloudFront prefix list) deterministic, forks commit `infra/cdk.context.json` (not gitignored; upstream does not commit it — when absent, context resolves via the synth role's lookup-role permission).
+:::
+
+For details and design rationale, see `docs/specs/phase4-deploy.md` and ADR-030 (`docs/adr/en/030-cdk-pipelines-deploy.md`) / ADR-031 (`docs/adr/en/031-multi-environment-deploy.md`) in the repository.
 
 ### Docker Compose (On-Premises)
 
@@ -39,11 +81,11 @@ docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 
 On-premises deployments use the following alternative services:
 
-| AWS Service | On-Premises Alternative |
-|-------------|------------------------|
-| S3 | MinIO |
-| SQS | ElasticMQ |
-| OpenSearch | PostgreSQL full-text search |
+| AWS Service | On-Premises Alternative     |
+| ----------- | --------------------------- |
+| S3          | MinIO                       |
+| SQS         | ElasticMQ                   |
+| OpenSearch  | PostgreSQL full-text search |
 
 ## Initial setup
 
@@ -54,12 +96,12 @@ Without a sysadmin, no system administration operations are possible.
 pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
 ```
 
-| Option | Description | Required |
-|--------|-------------|----------|
-| `--email` | Email address | Yes |
-| `--name` | Username (lowercase alphanumeric, hyphens, underscores, periods) | Yes |
-| `--password` | Password (8+ characters) | Yes |
-| `--role` | `user` or `sysadmin` (default: `user`) | No |
+| Option       | Description                                                      | Required |
+| ------------ | ---------------------------------------------------------------- | -------- |
+| `--email`    | Email address                                                    | Yes      |
+| `--name`     | Username (lowercase alphanumeric, hyphens, underscores, periods) | Yes      |
+| `--password` | Password (8+ characters)                                         | Yes      |
+| `--role`     | `user` or `sysadmin` (default: `user`)                           | No       |
 
 When `REGISTRATION_ENABLED=false` (self-registration disabled), use this command to create regular users as well.
 
@@ -98,20 +140,20 @@ KUKAN automatically monitors the health of external URL resources.
 
 Key environment variables are listed below. See `.env.example` for the full list.
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `POSTGRES_HOST` | PostgreSQL host | `localhost` |
-| `POSTGRES_PORT` | PostgreSQL port | `5432` |
-| `POSTGRES_DB` | Database name | `kukan` |
-| `POSTGRES_USER` | Database user | `kukan` |
-| `POSTGRES_PASSWORD` | Database password | `kukan` |
-| `S3_BUCKET` | S3 bucket name | `kukan-dev` |
-| `S3_ENDPOINT` | S3 endpoint (MinIO: `http://localhost:9000`, AWS: omit) | - |
-| `SEARCH_TYPE` | Search engine (`opensearch` / `postgres`) | `opensearch` |
-| `OPENSEARCH_URL` | OpenSearch endpoint | `http://localhost:9200` |
-| `SQS_QUEUE_URL` | SQS queue URL | - |
-| `SQS_ENDPOINT` | SQS endpoint (ElasticMQ: `http://localhost:9324`, AWS: omit) | - |
-| `BETTER_AUTH_SECRET` | Auth session secret (32+ characters) | - |
-| `BETTER_AUTH_URL` | Public URL | `http://localhost:3000` |
-| `REGISTRATION_ENABLED` | Enable/disable user self-registration | `true` |
-| `LOG_LEVEL` | Log level (`trace`–`fatal`) | `info` |
+| Variable               | Description                                                  | Default                 |
+| ---------------------- | ------------------------------------------------------------ | ----------------------- |
+| `POSTGRES_HOST`        | PostgreSQL host                                              | `localhost`             |
+| `POSTGRES_PORT`        | PostgreSQL port                                              | `5432`                  |
+| `POSTGRES_DB`          | Database name                                                | `kukan`                 |
+| `POSTGRES_USER`        | Database user                                                | `kukan`                 |
+| `POSTGRES_PASSWORD`    | Database password                                            | `kukan`                 |
+| `S3_BUCKET`            | S3 bucket name                                               | `kukan-dev`             |
+| `S3_ENDPOINT`          | S3 endpoint (MinIO: `http://localhost:9000`, AWS: omit)      | -                       |
+| `SEARCH_TYPE`          | Search engine (`opensearch` / `postgres`)                    | `opensearch`            |
+| `OPENSEARCH_URL`       | OpenSearch endpoint                                          | `http://localhost:9200` |
+| `SQS_QUEUE_URL`        | SQS queue URL                                                | -                       |
+| `SQS_ENDPOINT`         | SQS endpoint (ElasticMQ: `http://localhost:9324`, AWS: omit) | -                       |
+| `BETTER_AUTH_SECRET`   | Auth session secret (32+ characters)                         | -                       |
+| `BETTER_AUTH_URL`      | Public URL                                                   | `http://localhost:3000` |
+| `REGISTRATION_ENABLED` | Enable/disable user self-registration                        | `true`                  |
+| `LOG_LEVEL`            | Log level (`trace`–`fatal`)                                  | `info`                  |

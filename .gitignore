@@ -56,7 +56,9 @@ Thumbs.db
 
 # CDK
 cdk.out/
-cdk.context.json
+# Note: config/environments.ts and cdk.context.json are NOT ignored — forks commit both so
+# CodeBuild synth is hermetic. Upstream commits neither (it ships environments.example.ts as
+# the fallback; context resolves via the lookup role when cdk.context.json is absent). ADR-031.
 
 # Database
 *.db

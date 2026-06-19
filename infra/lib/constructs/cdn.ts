@@ -15,6 +15,7 @@ import * as origins from 'aws-cdk-lib/aws-cloudfront-origins'
 import type * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2'
 import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
+import { resourceName } from '../naming.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -50,8 +51,9 @@ export class CdnConstruct extends Construct {
     const { config, alb, certificateArn, webAclArn } = props
 
     // --- CloudFront Function: IP restriction + cookie-based cache bypass ---
+    // Env-prefixed name for readability + multi-environment uniqueness (ADR-031).
     const viewerRequestFn = new cloudfront.Function(this, 'ViewerRequestFn', {
-      functionName: 'kukan-viewer-request',
+      functionName: resourceName(this, 'viewer-request'),
       code: cloudfront.FunctionCode.fromInline(loadViewerRequestCode(config.allowedIpRanges)),
       runtime: cloudfront.FunctionRuntime.JS_2_0,
     })
@@ -64,7 +66,7 @@ export class CdnConstruct extends Construct {
 
     // --- Cache Policy: HTML pages (TTL 60–300s, bypass via header) ---
     const htmlCachePolicy = new cloudfront.CachePolicy(this, 'HtmlCachePolicy', {
-      cachePolicyName: 'kukan-html',
+      cachePolicyName: resourceName(this, 'html'),
       defaultTtl: cdk.Duration.seconds(60),
       minTtl: cdk.Duration.seconds(60),
       maxTtl: cdk.Duration.seconds(300),

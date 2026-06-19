@@ -11,11 +11,15 @@ KUKAN は2つのデプロイ方式に対応しています。
 
 ### AWS デプロイ
 
-AWS CDK を使って ECS Fargate + ALB 構成でデプロイします。
+AWS CDK を使って ECS Fargate + ALB 構成でデプロイします。環境（dev / prd 等）は
+`infra/config/environments.ts` で定義し、`-c env=<name>` で選択します。
 
 ```bash
-cd infra
-npx cdk deploy --all
+cp infra/config/environments.example.ts infra/config/environments.ts
+# environments.ts を編集
+# bootstrap は deploy の前提。独自ドメイン/WAF は us-east-1（GlobalStack）も必要
+cd infra && npx cdk bootstrap aws://<account-id>/ap-northeast-1 aws://<account-id>/us-east-1
+npx cdk deploy -c env=dev --all      # env を指定してデプロイ
 ```
 
 主要な AWS リソース:
@@ -26,6 +30,44 @@ npx cdk deploy --all
 - **S3** — ファイルストレージ
 - **SQS** — パイプラインキュー
 - **OpenSearch** — 全文検索エンジン
+
+#### CI/CD 自動デプロイ（CDK Pipelines + CodeConnections）
+
+デプロイは CDK Pipelines（AWS CodePipeline）で自動化します。CodeConnections（GitHub App）をソースに、ブランチ push を起点に起動し、各環境を CDK Stage としてデプロイします。
+
+初回のみ手動セットアップが必要です。
+
+1. 環境定義を用意（`cp infra/config/environments.example.ts infra/config/environments.ts` → `environments.ts` を編集）
+2. AWS コンソールで CodeConnections 接続を作成し、Connection ARN を `environments.ts` のトップレベル `connectionArn`（全 env 共通の export）に設定
+   - **CodeBuild** を開く → 左メニュー下部の **Settings → Connections → Create connection**（「Developer Tools」共通設定。CodeBuild 経由が分かりやすい）→ **GitHub** を選択 → 接続名（例 `kukan-github`、AWS 側の識別ラベル）を入力 → **Connect to GitHub** → **AWS Connector for GitHub** アプリを org/リポジトリにインストール・認可 → ステータスが **Available** になったら ARN をコピー
+   - GitHub App の認可はブラウザ操作が必須（CLI/CDK で作成しても `PENDING` になり結局ブラウザ認可が必要）
+3. `cdk bootstrap`（deploy の前提。各アカウント・リージョン。GlobalStack 用に us-east-1 も含める）
+4. 独自ドメイン/WAF を使う場合のみ: us-east-1 の証明書/WAF を一度 standalone で作成（`npx cdk deploy -c env=prd Prd/KukanGlobalStack`）し、ARN を `certificateArn`/`webAclArn` に設定
+5. `environments.ts` と `cdk.context.json` をコミット（CodeBuild の synth が checkout だけで完結するように。フォークがコミット、upstream はコミットしない）
+6. パイプラインスタックを初回デプロイ（`npx cdk deploy KukanPipeline`）
+7. 以降は各 env の `deployBranch` への push で自動デプロイ（パイプラインも自己変異で更新）
+
+`environments.ts` の構造（`connectionArn` はトップレベル、env 個別設定は `environments` の中）:
+
+```ts
+// infra/config/environments.ts
+export const connectionArn = 'arn:aws:codeconnections:...:connection/...' // 手順2の ARN（全 env 共通）
+
+export const environments = {
+  dev: { scale: 'small', githubRepo: 'owner/repo', deployBranch: 'develop' },
+  prd: { scale: 'large', githubRepo: 'owner/repo', deployBranch: 'main' },
+}
+```
+
+:::caution
+CodeConnections の GitHub App 承認は、コンソールでの一度きりの手動操作です（IaC 化できません）。また CDK Pipelines は cross-region 参照と非互換のため、独自ドメイン/WAF（us-east-1）は手順4で ARN を供給するか `enableWaf: false` にしてください。prd には承認ゲート（手動承認）の設定を推奨します。
+:::
+
+:::note
+パイプラインの synth は CodeBuild 上で実行されます。context lookup（AZ・CloudFront プレフィックスリスト）を決定的にするため、フォークでは `infra/cdk.context.json` をコミットしてください（gitignore せず。upstream はコミットしない＝未コミットでも synth ロールの lookup ロール権限で解決されます）。
+:::
+
+詳細・設計判断はリポジトリの `docs/specs/phase4-deploy.md` および ADR-030（`docs/adr/jp/030-cdk-pipelines-deploy.md`）/ ADR-031（`docs/adr/jp/031-multi-environment-deploy.md`）を参照してください。
 
 ### Docker Compose（オンプレミス）
 
@@ -39,11 +81,11 @@ docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 
 オンプレミス構成では以下の代替サービスを使用します。
 
-| AWS サービス | オンプレミス代替 |
-|-------------|----------------|
-| S3 | MinIO |
-| SQS | ElasticMQ |
-| OpenSearch | PostgreSQL 全文検索 |
+| AWS サービス | オンプレミス代替    |
+| ------------ | ------------------- |
+| S3           | MinIO               |
+| SQS          | ElasticMQ           |
+| OpenSearch   | PostgreSQL 全文検索 |
 
 ## 初期セットアップ
 
@@ -54,12 +96,12 @@ sysadmin が存在しないとシステム管理操作ができません。
 pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
 ```
 
-| オプション | 説明 | 必須 |
-|-----------|------|------|
-| `--email` | メールアドレス | Yes |
-| `--name` | ユーザー名（小文字英数字、ハイフン、アンダースコア、ピリオド） | Yes |
-| `--password` | パスワード（8文字以上） | Yes |
-| `--role` | `user` または `sysadmin`（デフォルト: `user`） | No |
+| オプション   | 説明                                                           | 必須 |
+| ------------ | -------------------------------------------------------------- | ---- |
+| `--email`    | メールアドレス                                                 | Yes  |
+| `--name`     | ユーザー名（小文字英数字、ハイフン、アンダースコア、ピリオド） | Yes  |
+| `--password` | パスワード（8文字以上）                                        | Yes  |
+| `--role`     | `user` または `sysadmin`（デフォルト: `user`）                 | No   |
 
 `REGISTRATION_ENABLED=false`（自己登録無効）の環境では、一般ユーザーもこのコマンドで作成します。
 
@@ -98,20 +140,20 @@ pnpm db:create-user --email user@example.com --name taro --password <password>
 
 主要な環境変数の一覧です。詳細は `.env.example` を参照してください。
 
-| 変数名 | 説明 | デフォルト |
-|--------|------|-----------|
-| `POSTGRES_HOST` | PostgreSQL ホスト | `localhost` |
-| `POSTGRES_PORT` | PostgreSQL ポート | `5432` |
-| `POSTGRES_DB` | データベース名 | `kukan` |
-| `POSTGRES_USER` | データベースユーザー | `kukan` |
-| `POSTGRES_PASSWORD` | データベースパスワード | `kukan` |
-| `S3_BUCKET` | S3 バケット名 | `kukan-dev` |
-| `S3_ENDPOINT` | S3 エンドポイント（MinIO: `http://localhost:9000`、AWS: 省略） | - |
-| `SEARCH_TYPE` | 検索エンジン（`opensearch` / `postgres`） | `opensearch` |
-| `OPENSEARCH_URL` | OpenSearch エンドポイント | `http://localhost:9200` |
-| `SQS_QUEUE_URL` | SQS キュー URL | - |
-| `SQS_ENDPOINT` | SQS エンドポイント（ElasticMQ: `http://localhost:9324`、AWS: 省略） | - |
-| `BETTER_AUTH_SECRET` | 認証セッション秘密鍵（32 文字以上） | - |
-| `BETTER_AUTH_URL` | 公開 URL | `http://localhost:3000` |
-| `REGISTRATION_ENABLED` | ユーザー自己登録の有効/無効 | `true` |
-| `LOG_LEVEL` | ログレベル（`trace`〜`fatal`） | `info` |
+| 変数名                 | 説明                                                                | デフォルト              |
+| ---------------------- | ------------------------------------------------------------------- | ----------------------- |
+| `POSTGRES_HOST`        | PostgreSQL ホスト                                                   | `localhost`             |
+| `POSTGRES_PORT`        | PostgreSQL ポート                                                   | `5432`                  |
+| `POSTGRES_DB`          | データベース名                                                      | `kukan`                 |
+| `POSTGRES_USER`        | データベースユーザー                                                | `kukan`                 |
+| `POSTGRES_PASSWORD`    | データベースパスワード                                              | `kukan`                 |
+| `S3_BUCKET`            | S3 バケット名                                                       | `kukan-dev`             |
+| `S3_ENDPOINT`          | S3 エンドポイント（MinIO: `http://localhost:9000`、AWS: 省略）      | -                       |
+| `SEARCH_TYPE`          | 検索エンジン（`opensearch` / `postgres`）                           | `opensearch`            |
+| `OPENSEARCH_URL`       | OpenSearch エンドポイント                                           | `http://localhost:9200` |
+| `SQS_QUEUE_URL`        | SQS キュー URL                                                      | -                       |
+| `SQS_ENDPOINT`         | SQS エンドポイント（ElasticMQ: `http://localhost:9324`、AWS: 省略） | -                       |
+| `BETTER_AUTH_SECRET`   | 認証セッション秘密鍵（32 文字以上）                                 | -                       |
+| `BETTER_AUTH_URL`      | 公開 URL                                                            | `http://localhost:3000` |
+| `REGISTRATION_ENABLED` | ユーザー自己登録の有効/無効                                         | `true`                  |
+| `LOG_LEVEL`            | ログレベル（`trace`〜`fatal`）                                      | `info`                  |

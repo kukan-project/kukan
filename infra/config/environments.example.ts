@@ -1,0 +1,84 @@
+/**
+ * KUKAN environment definitions (EXAMPLE / committed template — ADR-031).
+ *
+ * Copy this file to `environments.ts` and edit it for your fork:
+ *
+ *   cp infra/config/environments.example.ts infra/config/environments.ts
+ *
+ * Forks commit their `environments.ts`; upstream does not — this example is the
+ * fallback. On a fresh upstream checkout: `pnpm typecheck` works unconditionally;
+ * `cdk synth` additionally needs AWS credentials (to resolve context lookups) or a
+ * committed `cdk.context.json`.
+ *
+ * Same-account vs separate-account is chosen purely here:
+ *   - omit `account`            → CDK_DEFAULT_ACCOUNT (same-account operation)
+ *   - set `account` per env     → separate-account operation
+ *
+ * Custom domain / WAF in PIPELINE mode (ADR-030):
+ *   CDK Pipelines is incompatible with cross-region references, so the us-east-1
+ *   ACM certificate and WAF WebACL cannot be created inside the pipeline. Create them
+ *   once via a standalone deploy, then paste their ARNs here:
+ *     npx cdk deploy -c env=prd Prd/KukanGlobalStack
+ *   and set `certificateArn` / `webAclArn` below. WAF defaults ON (secure by default,
+ *   ADR-027); set `enableWaf: false` or supply `webAclArn` to use pipeline mode.
+ */
+
+import type { EnvironmentConfig } from '../lib/config.js'
+
+/**
+ * CodeConnections connection ARN (ADR-030).
+ * Create the connection once in the AWS console (approve the GitHub App "AWS Connector")
+ * and paste its ARN here.
+ */
+export const connectionArn =
+  'arn:aws:codeconnections:ap-northeast-1:000000000000:connection/REPLACE_ME'
+
+export const environments = {
+  // `dev` below documents every available field (optional ones commented out).
+  dev: {
+    // --- Target AWS environment ---
+    // account: '000000000000', // omit → CDK_DEFAULT_ACCOUNT (same-account); set → separate-account
+    // region: 'ap-northeast-1', // omit → ap-northeast-1
+
+    // --- Sizing ---
+    scale: 'small', // 'small' | 'medium' | 'large'
+    // dbEngine: 'rds', // omit → scale default (small=rds, medium/large=aurora)
+    // enableOpenSearch: true, // false → PostgreSQL full-text fallback
+    // overrides: { web: { maxSize: 5 }, opensearch: { instanceCount: 2, indexReplicas: 1 } },
+
+    // --- Security ---
+    enableWaf: false, // omit → ON unless allowedIpRanges is set (ADR-027)
+    // allowedIpRanges: ['203.0.113.0/24', '2001:db8::/32'],
+
+    // --- Custom domain (for pipeline mode, also supply the us-east-1 ARNs below) ---
+    // domainName: 'dev.example.com',
+    // hostedZoneId: 'Z0123456789',
+    // hostedZoneName: 'example.com',
+    // certificateArn: 'arn:aws:acm:us-east-1:000000000000:certificate/...',
+    // webAclArn: 'arn:aws:wafv2:us-east-1:000000000000:global/webacl/...',
+
+    // --- Misc ---
+    // bucketName: 'my-resource-bucket', // omit → CDK auto-naming (globally unique)
+    // enableGa4DataApi: false,
+
+    // --- CI/CD (pipeline mode) ---
+    githubRepo: 'kukan-project/your-repo', // CodeConnections source repo (owner/repo)
+    deployBranch: 'develop', // branch that deploys this env
+  },
+
+  // `prd` shows a typical production env with a custom domain + IP allowlist.
+  prd: {
+    // account: '000000000000',
+    scale: 'large',
+    enableWaf: false,
+    githubRepo: 'kukan-project/your-repo',
+    deployBranch: 'main',
+    // domainName: 'catalog.example.com',
+    // hostedZoneId: 'Z0123456789',
+    // hostedZoneName: 'example.com',
+    // allowedIpRanges: ['203.0.113.0/24'], // WAF auto-off when set (SG/CF Function protects)
+    // certificateArn: 'arn:aws:acm:us-east-1:000000000000:certificate/...', // pipeline: create once
+    // webAclArn: 'arn:aws:wafv2:us-east-1:000000000000:global/webacl/...',
+    // overrides: { web: { maxSize: 20 }, opensearch: { instanceCount: 3, indexReplicas: 2 } },
+  },
+} satisfies Record<string, EnvironmentConfig>

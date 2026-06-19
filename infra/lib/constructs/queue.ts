@@ -6,6 +6,7 @@
 import * as cdk from 'aws-cdk-lib'
 import * as sqs from 'aws-cdk-lib/aws-sqs'
 import { Construct } from 'constructs'
+import { resourceName } from '../naming.js'
 
 export class QueueConstruct extends Construct {
   readonly queue: sqs.Queue
@@ -14,13 +15,14 @@ export class QueueConstruct extends Construct {
   constructor(scope: Construct, id: string) {
     super(scope, id)
 
+    // Env-prefixed names for readability + multi-environment uniqueness (ADR-031).
     this.dlq = new sqs.Queue(this, 'PipelineDlq', {
-      queueName: 'kukan-pipeline-dlq',
+      queueName: resourceName(this, 'pipeline-dlq'),
       retentionPeriod: cdk.Duration.days(14),
     })
 
     this.queue = new sqs.Queue(this, 'PipelineQueue', {
-      queueName: 'kukan-pipeline',
+      queueName: resourceName(this, 'pipeline'),
       visibilityTimeout: cdk.Duration.minutes(10),
       receiveMessageWaitTime: cdk.Duration.seconds(20),
       deadLetterQueue: {

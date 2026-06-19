@@ -14,6 +14,7 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
 import * as sqs from 'aws-cdk-lib/aws-sqs'
 import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
+import { resourceName } from '../naming.js'
 import type { DatabaseConstruct } from './database.js'
 
 export interface WebServiceProps {
@@ -148,7 +149,7 @@ export class WebServiceConstruct extends Construct {
     // Fargate Service
     const service = new ecs.FargateService(this, 'Service', {
       cluster,
-      serviceName: 'kukan-web',
+      serviceName: resourceName(this, 'web'),
       taskDefinition: taskDef,
       desiredCount: config.web.minSize,
       securityGroups: [webSecurityGroup],

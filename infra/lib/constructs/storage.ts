@@ -21,6 +21,7 @@ export class StorageConstruct extends Construct {
 
     const { config } = props
 
+    // bucketName undefined → CDK auto-naming (globally unique). ADR-031.
     this.bucket = new s3.Bucket(this, 'ResourceBucket', {
       bucketName: config.bucketName,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
