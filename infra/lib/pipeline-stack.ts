@@ -41,7 +41,7 @@ export class KukanPipelineStack extends cdk.Stack {
       }
 
       const branch = config.deployBranch ?? 'main'
-      const { account: targetAccount, region } = resolveEnv(config, pipelineAccount)
+      const { account: targetAccount, region } = resolveEnv(config)
 
       const pipeline = new CodePipeline(this, `Pipeline${pascal(name)}`, {
         pipelineName: `kukan-${name}`,

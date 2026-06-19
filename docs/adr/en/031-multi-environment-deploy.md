@@ -47,7 +47,7 @@ export class KukanStage extends cdk.Stage {
 ```ts
 // infra/config/environments.ts (edited & committed by the fork; upstream does not commit it)
 export interface EnvironmentConfig {
-  account?: string // omit → CDK_DEFAULT_ACCOUNT; set → separate-account operation
+  account: string // required: target account ID (misdeployment guard — CDK rejects a mismatch)
   region?: string // omit → ap-northeast-1
   scale?: Scale
   dbEngine?: DbEngine
@@ -67,8 +67,13 @@ export interface EnvironmentConfig {
 }
 
 export const environments = {
-  dev: { scale: 'small', deployBranch: 'develop' },
-  prd: { scale: 'large', deployBranch: 'main', domainName: 'catalog.example.com' },
+  dev: { account: '000000000000', scale: 'small', deployBranch: 'develop' },
+  prd: {
+    account: '000000000000',
+    scale: 'large',
+    deployBranch: 'main',
+    domainName: 'catalog.example.com',
+  },
 } satisfies Record<string, EnvironmentConfig>
 ```
 
@@ -76,10 +81,10 @@ export const environments = {
 
 ### Supporting both same-account and separate-account
 
-| Mode             | `account` setting         | Collision avoidance                                                                                                                       |
-| ---------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Separate account | a distinct ID per env     | Separated by account; set via the Stage `env`                                                                                             |
-| Same account     | omit in each env (= same) | Stage name separates stack names, logical IDs, and auto-named resources. **Explicit physical names still need env suffixing** (see below) |
+| Mode             | `account` setting       | Collision avoidance                                                                                                                       |
+| ---------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Separate account | a distinct ID per env   | Separated by account; set via the Stage `env`                                                                                             |
+| Same account     | the same ID in each env | Stage name separates stack names, logical IDs, and auto-named resources. **Explicit physical names still need env suffixing** (see below) |
 
 ### Handling fixed physical names
 

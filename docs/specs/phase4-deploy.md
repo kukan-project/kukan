@@ -175,25 +175,25 @@ cp infra/config/environments.example.ts infra/config/environments.ts
 
 各 env のフィールド（すべて任意。未設定はスケール既定／組込み既定にフォールバック）:
 
-| フィールド         | 型                             | デフォルト            | 説明                                                                |
-| ------------------ | ------------------------------ | --------------------- | ------------------------------------------------------------------- |
-| `account`          | string                         | `CDK_DEFAULT_ACCOUNT` | 対象アカウント。指定で別アカウント運用                              |
-| `region`           | string                         | `ap-northeast-1`      | 対象リージョン                                                      |
-| `scale`            | `small` \| `medium` \| `large` | `small`               | デプロイ規模（リソースサイズを一括制御）                            |
-| `dbEngine`         | `rds` \| `aurora`              | スケール依存          | DB エンジン                                                         |
-| `enableOpenSearch` | boolean                        | `true`                | `false` → PostgreSQL 全文検索フォールバック                         |
-| `enableWaf`        | boolean                        | `!allowedIpRanges`    | WAF on CloudFront（マネージドルール、~$9/月追加）                   |
-| `allowedIpRanges`  | string[]                       | なし                  | IP 制限（CloudFront Function、IPv4 CIDR + IPv6 対応）               |
-| `domainName`       | string                         | なし                  | カスタムドメイン（未設定時は CloudFront デフォルトドメイン）        |
-| `hostedZoneId`     | string                         | なし                  | Route53 Hosted Zone ID（`domainName` 設定時に必要）                 |
-| `hostedZoneName`   | string                         | なし                  | Route53 Hosted Zone 名（`domainName` 設定時に必要）                 |
-| `certificateArn`   | string                         | なし                  | 事前作成した us-east-1 ACM 証明書 ARN（pipeline モード用、ADR-030） |
-| `webAclArn`        | string                         | なし                  | 事前作成した us-east-1 WAF WebACL ARN（同上）                       |
-| `bucketName`       | string                         | 自動命名              | S3 バケット名（未設定でグローバル一意な自動命名、ADR-031）          |
-| `enableGa4DataApi` | boolean                        | `false`               | GA4 アクセス統計ダッシュボード                                      |
-| `githubRepo`       | string                         | なし                  | CodeConnections ソースリポジトリ（`owner/repo`、ADR-030）           |
-| `deployBranch`     | string                         | `main`                | この env を pipeline でデプロイするブランチ                         |
-| `overrides`        | deep-partial                   | なし                  | スケール preset の個別パラメータ上書き（後述）                      |
+| フィールド         | 型                             | デフォルト         | 説明                                                                                       |
+| ------------------ | ------------------------------ | ------------------ | ------------------------------------------------------------------------------------------ |
+| `account`          | string                         | **必須**           | 対象アカウント ID。誤デプロイ防止のため必須（認証情報のアカウントと不一致なら CDK が拒否） |
+| `region`           | string                         | `ap-northeast-1`   | 対象リージョン                                                                             |
+| `scale`            | `small` \| `medium` \| `large` | `small`            | デプロイ規模（リソースサイズを一括制御）                                                   |
+| `dbEngine`         | `rds` \| `aurora`              | スケール依存       | DB エンジン                                                                                |
+| `enableOpenSearch` | boolean                        | `true`             | `false` → PostgreSQL 全文検索フォールバック                                                |
+| `enableWaf`        | boolean                        | `!allowedIpRanges` | WAF on CloudFront（マネージドルール、~$9/月追加）                                          |
+| `allowedIpRanges`  | string[]                       | なし               | IP 制限（CloudFront Function、IPv4 CIDR + IPv6 対応）                                      |
+| `domainName`       | string                         | なし               | カスタムドメイン（未設定時は CloudFront デフォルトドメイン）                               |
+| `hostedZoneId`     | string                         | なし               | Route53 Hosted Zone ID（`domainName` 設定時に必要）                                        |
+| `hostedZoneName`   | string                         | なし               | Route53 Hosted Zone 名（`domainName` 設定時に必要）                                        |
+| `certificateArn`   | string                         | なし               | 事前作成した us-east-1 ACM 証明書 ARN（pipeline モード用、ADR-030）                        |
+| `webAclArn`        | string                         | なし               | 事前作成した us-east-1 WAF WebACL ARN（同上）                                              |
+| `bucketName`       | string                         | 自動命名           | S3 バケット名（未設定でグローバル一意な自動命名、ADR-031）                                 |
+| `enableGa4DataApi` | boolean                        | `false`            | GA4 アクセス統計ダッシュボード                                                             |
+| `githubRepo`       | string                         | なし               | CodeConnections ソースリポジトリ（`owner/repo`、ADR-030）                                  |
+| `deployBranch`     | string                         | `main`             | この env を pipeline でデプロイするブランチ                                                |
+| `overrides`        | deep-partial                   | なし               | スケール preset の個別パラメータ上書き（後述）                                             |
 
 優先順位: CLI `-c` フラグ > `environments.ts` の env エントリ > スケール既定（`config.ts`）> 組込み既定。
 

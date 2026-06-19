@@ -58,11 +58,16 @@ export type DeepPartial<T> = {
 
 /**
  * One entry per environment in `config/environments.ts` (ADR-031).
- * Every field is optional; unset values fall back to scale defaults / built-in defaults.
+ * Only `account` is required (misdeployment guard); other fields fall back to
+ * scale defaults / built-in defaults.
  */
 export interface EnvironmentConfig {
-  /** Target AWS account. Omit → CDK_DEFAULT_ACCOUNT. Set → separate-account operation. */
-  account?: string
+  /**
+   * Target AWS account ID. **Required** — pinning it makes CDK refuse to deploy when the
+   * active credentials are for a different account, preventing accidental deploys to the
+   * wrong account. Set it equal to your login account for same-account operation.
+   */
+  account: string
   /** Target region. Omit → ap-northeast-1. */
   region?: string
   scale?: Scale
@@ -93,15 +98,20 @@ export interface EnvironmentConfig {
   overrides?: DeepPartial<ScaleComputed>
 }
 
-/** Resolve the AWS environment (account/region) for an environment definition. */
-export function resolveEnv(
-  env: EnvironmentConfig,
-  fallbackAccount: string | undefined = process.env.CDK_DEFAULT_ACCOUNT
-): { account?: string; region: string } {
-  return {
-    account: env.account ?? fallbackAccount,
-    region: env.region ?? DEFAULT_REGION,
+/**
+ * Resolve the AWS environment (account/region) for an environment definition.
+ * `account` is mandatory — the explicit account makes CDK reject deploys whose
+ * active credentials target a different account (misdeployment guard, ADR-031).
+ * Enforced at runtime too because tsx strips types without type-checking.
+ */
+export function resolveEnv(env: EnvironmentConfig): { account: string; region: string } {
+  if (!env.account) {
+    throw new Error(
+      'EnvironmentConfig.account is required — set the target AWS account ID in ' +
+        'config/environments.ts to prevent accidental deploys to the wrong account.'
+    )
   }
+  return { account: env.account, region: env.region ?? DEFAULT_REGION }
 }
 
 /** WAF default: ON unless an IP allowlist is set (ADR-027). */
@@ -194,7 +204,7 @@ function deepMerge<T>(base: T, override: DeepPartial<T> | undefined): T {
  * Resolve the effective configuration.
  * Precedence: CLI `-c` context > environment entry > scale defaults > built-in defaults.
  */
-export function loadConfig(scope: Construct, env: EnvironmentConfig = {}): KukanConfig {
+export function loadConfig(scope: Construct, env: Partial<EnvironmentConfig> = {}): KukanConfig {
   const ctx = <T>(key: string): T | undefined => scope.node.tryGetContext(key) as T | undefined
 
   const scale = ctx<Scale>('scale') ?? env.scale ?? 'small'

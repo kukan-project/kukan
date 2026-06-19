@@ -45,7 +45,7 @@ export class KukanStage extends cdk.Stage {
 ```ts
 // infra/config/environments.ts（フォークが編集・コミット。upstream はコミットしない）
 export interface EnvironmentConfig {
-  account?: string // 省略 → CDK_DEFAULT_ACCOUNT。指定 → 別アカウント運用
+  account: string // 必須。対象アカウント ID（誤デプロイ防止。CDK が認証情報との不一致を拒否）
   region?: string // 省略 → ap-northeast-1
   scale?: Scale
   dbEngine?: DbEngine
@@ -65,8 +65,13 @@ export interface EnvironmentConfig {
 }
 
 export const environments = {
-  dev: { scale: 'small', deployBranch: 'develop' },
-  prd: { scale: 'large', deployBranch: 'main', domainName: 'catalog.example.com' },
+  dev: { account: '000000000000', scale: 'small', deployBranch: 'develop' },
+  prd: {
+    account: '000000000000',
+    scale: 'large',
+    deployBranch: 'main',
+    domainName: 'catalog.example.com',
+  },
 } satisfies Record<string, EnvironmentConfig>
 ```
 
@@ -76,8 +81,8 @@ export const environments = {
 
 | モード         | `account` の指定        | 衝突回避                                                                                                       |
 | -------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------- |
-| 別アカウント   | 各 env で別 ID          | アカウントで分離。Stage の `env` で指定                                                                        |
-| 同一アカウント | 各 env で省略（＝同一） | Stage 名でスタック名・論理 ID・自動命名リソースを分離。**明示的物理名は別途 env サフィックス化が必要**（下記） |
+| 別アカウント   | 各 env で別の ID を指定 | アカウントで分離。Stage の `env` で指定                                                                        |
+| 同一アカウント | 各 env で同じ ID を指定 | Stage 名でスタック名・論理 ID・自動命名リソースを分離。**明示的物理名は別途 env サフィックス化が必要**（下記） |
 
 ### 固定の物理名の扱い
 

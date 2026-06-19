@@ -41,7 +41,8 @@ export const environments = {
   // `dev` below documents every available field (optional ones commented out).
   dev: {
     // --- Target AWS environment ---
-    // account: '000000000000', // omit → CDK_DEFAULT_ACCOUNT (same-account); set → separate-account
+    account: '000000000000', // REQUIRED: target AWS account ID (misdeployment guard — CDK
+    //                          refuses to deploy if your credentials are for another account)
     // region: 'ap-northeast-1', // omit → ap-northeast-1
 
     // --- Sizing ---
@@ -72,7 +73,7 @@ export const environments = {
 
   // `prd` shows a typical production env with a custom domain + IP allowlist.
   prd: {
-    // account: '000000000000',
+    account: '000000000000', // REQUIRED: target AWS account ID (misdeployment guard)
     scale: 'large',
     enableWaf: false,
     githubRepo: 'kukan-project/your-repo',

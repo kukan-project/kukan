@@ -65,8 +65,14 @@ KUKAN は **CloudFront（WAF + キャッシュ）→ 内部 ALB → ECS Fargate*
 export const connectionArn = 'arn:aws:codeconnections:...:connection/...' // 手順2の ARN（全 env 共通）
 
 export const environments = {
-  dev: { scale: 'small', githubRepo: 'owner/repo', deployBranch: 'develop' },
-  prd: { scale: 'large', githubRepo: 'owner/repo', deployBranch: 'main' },
+  // account は必須（誤デプロイ防止）。同一アカウントなら全 env に同じ ID を指定
+  dev: {
+    account: '000000000000',
+    scale: 'small',
+    githubRepo: 'owner/repo',
+    deployBranch: 'develop',
+  },
+  prd: { account: '000000000000', scale: 'large', githubRepo: 'owner/repo', deployBranch: 'main' },
 }
 ```
 

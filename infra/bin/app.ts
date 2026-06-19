@@ -60,7 +60,7 @@ if (standaloneEnv) {
     )
   }
   new KukanStage(app, pascal(standaloneEnv), {
-    env: resolveEnv(config, account),
+    env: resolveEnv(config),
     config,
   })
 } else {

@@ -66,8 +66,14 @@ Structure of `environments.ts` (`connectionArn` is top-level; per-env settings g
 export const connectionArn = 'arn:aws:codeconnections:...:connection/...' // ARN from step 2 (shared by all envs)
 
 export const environments = {
-  dev: { scale: 'small', githubRepo: 'owner/repo', deployBranch: 'develop' },
-  prd: { scale: 'large', githubRepo: 'owner/repo', deployBranch: 'main' },
+  // account is required (misdeployment guard); use the same ID across envs for same-account
+  dev: {
+    account: '000000000000',
+    scale: 'small',
+    githubRepo: 'owner/repo',
+    deployBranch: 'develop',
+  },
+  prd: { account: '000000000000', scale: 'large', githubRepo: 'owner/repo', deployBranch: 'main' },
 }
 ```
 

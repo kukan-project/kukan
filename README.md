@@ -164,24 +164,24 @@ Environments (dev / prd, etc.) are defined in `infra/config/environments.ts` (co
 `environments.example.ts`; forks commit it, upstream does not). Each entry is an `EnvironmentConfig`:
 環境は `infra/config/environments.ts`（example をコピー。フォークがコミット、upstream はコミットしない）で定義。各エントリのフィールド:
 
-| Field               | Type                           | Default               | Description                                                  |
-| ------------------- | ------------------------------ | --------------------- | ------------------------------------------------------------ |
-| `account`           | string                         | `CDK_DEFAULT_ACCOUNT` | Target account (set → separate-account operation)            |
-| `region`            | string                         | `ap-northeast-1`      | Target region                                                |
-| `scale`             | `small` \| `medium` \| `large` | `small`               | Resource sizing preset                                       |
-| `dbEngine`          | `rds` \| `aurora`              | Scale-dependent       | DB engine                                                    |
-| `enableOpenSearch`  | boolean                        | `true`                | `false` → PostgreSQL full-text fallback                      |
-| `enableWaf`         | boolean                        | `!allowedIpRanges`    | WAF on CloudFront (~$9/mo)                                   |
-| `allowedIpRanges`   | string[]                       | —                     | IP allowlist via CloudFront Function (CIDR, IPv4+IPv6)       |
-| `domainName`        | string                         | —                     | Custom domain (CloudFront default domain when unset)         |
-| `hostedZoneId/Name` | string                         | —                     | Route53 Hosted Zone (required with `domainName`)             |
-| `certificateArn`    | string                         | —                     | Pre-created us-east-1 ACM cert ARN (for pipeline mode)       |
-| `webAclArn`         | string                         | —                     | Pre-created us-east-1 WAF WebACL ARN (for pipeline mode)     |
-| `bucketName`        | string                         | auto                  | S3 bucket name (auto-generated, globally unique, when unset) |
-| `enableGa4DataApi`  | boolean                        | `false`               | GA4 analytics dashboard                                      |
-| `githubRepo`        | string                         | —                     | CodeConnections source repo (`owner/repo`)                   |
-| `deployBranch`      | string                         | `main`                | Branch that deploys this env (pipeline mode)                 |
-| `overrides`         | deep-partial                   | —                     | Fine-grained overrides of the scale preset                   |
+| Field               | Type                           | Default            | Description                                                                                      |
+| ------------------- | ------------------------------ | ------------------ | ------------------------------------------------------------------------------------------------ |
+| `account`           | string                         | **required**       | Target account ID (misdeployment guard: CDK refuses if your credentials are for another account) |
+| `region`            | string                         | `ap-northeast-1`   | Target region                                                                                    |
+| `scale`             | `small` \| `medium` \| `large` | `small`            | Resource sizing preset                                                                           |
+| `dbEngine`          | `rds` \| `aurora`              | Scale-dependent    | DB engine                                                                                        |
+| `enableOpenSearch`  | boolean                        | `true`             | `false` → PostgreSQL full-text fallback                                                          |
+| `enableWaf`         | boolean                        | `!allowedIpRanges` | WAF on CloudFront (~$9/mo)                                                                       |
+| `allowedIpRanges`   | string[]                       | —                  | IP allowlist via CloudFront Function (CIDR, IPv4+IPv6)                                           |
+| `domainName`        | string                         | —                  | Custom domain (CloudFront default domain when unset)                                             |
+| `hostedZoneId/Name` | string                         | —                  | Route53 Hosted Zone (required with `domainName`)                                                 |
+| `certificateArn`    | string                         | —                  | Pre-created us-east-1 ACM cert ARN (for pipeline mode)                                           |
+| `webAclArn`         | string                         | —                  | Pre-created us-east-1 WAF WebACL ARN (for pipeline mode)                                         |
+| `bucketName`        | string                         | auto               | S3 bucket name (auto-generated, globally unique, when unset)                                     |
+| `enableGa4DataApi`  | boolean                        | `false`            | GA4 analytics dashboard                                                                          |
+| `githubRepo`        | string                         | —                  | CodeConnections source repo (`owner/repo`)                                                       |
+| `deployBranch`      | string                         | `main`             | Branch that deploys this env (pipeline mode)                                                     |
+| `overrides`         | deep-partial                   | —                  | Fine-grained overrides of the scale preset                                                       |
 
 Precedence: CLI `-c` > env entry > scale defaults. Override ad hoc:
 優先順位: `-c` > env エントリ > スケール既定。一時上書き:
