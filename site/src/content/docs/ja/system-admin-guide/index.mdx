@@ -7,43 +7,54 @@ sidebar:
 
 ## デプロイ方法
 
-KUKAN は2つのデプロイ方式に対応しています。
+KUKAN は2つのデプロイ方式に対応しています。手軽な Docker Compose（オンプレミス・閉域網向け）、
+本番のクラウド向け AWS の順で説明します。
+
+### Docker Compose（オンプレミス）
+
+Docker Compose を使ったオンプレミス・閉域網デプロイに対応しています。
+
+```bash
+cp .env.prod.example .env.prod
+# .env.prod を編集
+docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
+```
+
+オンプレミス構成では以下の代替サービスを使用します。
+
+| AWS サービス | オンプレミス代替    |
+| ------------ | ------------------- |
+| S3           | MinIO               |
+| SQS          | ElasticMQ           |
+| OpenSearch   | PostgreSQL 全文検索 |
 
 ### AWS デプロイ
 
-AWS CDK を使って ECS Fargate + ALB 構成でデプロイします。環境（dev / prd 等）は
-`infra/config/environments.ts` で定義し、`-c env=<name>` で選択します。
+KUKAN は **CloudFront（WAF + キャッシュ）→ 内部 ALB → ECS Fargate** 構成で AWS にデプロイします（ADR-027）。
+デプロイは **CDK Pipelines（AWS CodePipeline）で自動化**され、CodeConnections（GitHub App）をソースに、
+対象ブランチへの push を起点に各環境（dev / prd 等）を CDK Stage としてデプロイします。
 
-```bash
-cp infra/config/environments.example.ts infra/config/environments.ts
-# environments.ts を編集
-# bootstrap は deploy の前提。独自ドメイン/WAF は us-east-1（GlobalStack）も必要
-cd infra && npx cdk bootstrap aws://<account-id>/ap-northeast-1 aws://<account-id>/us-east-1
-npx cdk deploy -c env=dev --all      # env を指定してデプロイ
-```
+環境は `infra/config/environments.ts` で定義します（`environments.example.ts` を**コピーして作成**）。
 
 主要な AWS リソース:
 
+- **CloudFront** — CDN・WAF・TLS 終端（最前面、ADR-027）
+- **ALB（internal）** — ロードバランサー（CloudFront VPC Origin 経由でのみ到達）
 - **ECS Fargate** — Web アプリケーション + Pipeline Worker
-- **ALB** — ロードバランサー
-- **Aurora Serverless v2** — PostgreSQL データベース
+- **Aurora Serverless v2 / RDS** — PostgreSQL データベース
 - **S3** — ファイルストレージ
 - **SQS** — パイプラインキュー
 - **OpenSearch** — 全文検索エンジン
 
-#### CI/CD 自動デプロイ（CDK Pipelines + CodeConnections）
+#### セットアップ（初回のみ手動。以降は push で自動デプロイ）
 
-デプロイは CDK Pipelines（AWS CodePipeline）で自動化します。CodeConnections（GitHub App）をソースに、ブランチ push を起点に起動し、各環境を CDK Stage としてデプロイします。
-
-初回のみ手動セットアップが必要です。
-
-1. 環境定義を用意（`cp infra/config/environments.example.ts infra/config/environments.ts` → `environments.ts` を編集）
+1. 環境定義を用意（`cp infra/config/environments.example.ts infra/config/environments.ts` → `environments.ts` を編集）。**各エントリが1環境＝1パイプライン**として作られるため、単一環境なら不要なエントリ（例: `dev`）を削除する
 2. AWS コンソールで CodeConnections 接続を作成し、Connection ARN を `environments.ts` のトップレベル `connectionArn`（全 env 共通の export）に設定
-   - **CodeBuild** を開く → 左メニュー下部の **Settings → Connections → Create connection**（「Developer Tools」共通設定。CodeBuild 経由が分かりやすい）→ **GitHub** を選択 → 接続名（例 `kukan-github`、AWS 側の識別ラベル）を入力 → **Connect to GitHub** → **AWS Connector for GitHub** アプリを org/リポジトリにインストール・認可 → ステータスが **Available** になったら ARN をコピー
+   - **CodeBuild** を開く → 左メニュー下部の **Settings → Connections → Create connection**（「Developer Tools」共通設定。CodeBuild 経由が分かりやすい）→ **GitHub** を選択 → 接続名（例 `kukan-github`、AWS 側の識別ラベル）を入力 → **Connect to GitHub** → **AWS Connector for GitHub** アプリをインストール・認可（**Only select repositories** を選び、デプロイ対象のリポジトリのみに絞る。最小権限）→ ステータスが **Available** になったら ARN をコピー
    - GitHub App の認可はブラウザ操作が必須（CLI/CDK で作成しても `PENDING` になり結局ブラウザ認可が必要）
 3. `cdk bootstrap`（deploy の前提。各アカウント・リージョン。GlobalStack 用に us-east-1 も含める）
 4. 独自ドメイン/WAF を使う場合のみ: us-east-1 の証明書/WAF を一度 standalone で作成（`npx cdk deploy -c env=prd Prd/KukanGlobalStack`）し、ARN を `certificateArn`/`webAclArn` に設定
-5. `environments.ts` と `cdk.context.json` をコミット（CodeBuild の synth が checkout だけで完結するように。フォークがコミット、upstream はコミットしない）
+5. `environments.ts` と `cdk.context.json` をコミット（CodeBuild の synth が checkout から読み込む）
 6. パイプラインスタックを初回デプロイ（`npx cdk deploy KukanPipeline`）
 7. 以降は各 env の `deployBranch` への push で自動デプロイ（パイプラインも自己変異で更新）
 
@@ -64,28 +75,10 @@ CodeConnections の GitHub App 承認は、コンソールでの一度きりの�
 :::
 
 :::note
-パイプラインの synth は CodeBuild 上で実行されます。context lookup（AZ・CloudFront プレフィックスリスト）を決定的にするため、フォークでは `infra/cdk.context.json` をコミットしてください（gitignore せず。upstream はコミットしない＝未コミットでも synth ロールの lookup ロール権限で解決されます）。
+パイプラインの synth は CodeBuild 上で実行されます。context lookup（AZ・CloudFront プレフィックスリスト）を決定的にするため、`infra/cdk.context.json` をコミットしてください（未コミットでも synth ロールの lookup ロール権限で解決されますが非決定的）。
 :::
 
 詳細・設計判断はリポジトリの `docs/specs/phase4-deploy.md` および ADR-030（`docs/adr/jp/030-cdk-pipelines-deploy.md`）/ ADR-031（`docs/adr/jp/031-multi-environment-deploy.md`）を参照してください。
-
-### Docker Compose（オンプレミス）
-
-Docker Compose を使ったオンプレミス・閉域網デプロイに対応しています。
-
-```bash
-cp .env.prod.example .env.prod
-# .env.prod を編集
-docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
-```
-
-オンプレミス構成では以下の代替サービスを使用します。
-
-| AWS サービス | オンプレミス代替    |
-| ------------ | ------------------- |
-| S3           | MinIO               |
-| SQS          | ElasticMQ           |
-| OpenSearch   | PostgreSQL 全文検索 |
 
 ## 初期セットアップ
 

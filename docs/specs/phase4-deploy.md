@@ -163,6 +163,8 @@ infra/
 
 環境（dev / prd 等）は `infra/config/environments.ts` で定義する（ADR-031）。
 `environments.example.ts` をコピーして編集する。`environments.ts` は **gitignore せず、フォークがコミットする**（upstream はコミットしない）。これにより CodeBuild の synth が checkout の中身だけで完結する（ADR-031）。
+
+**各エントリ = 1 環境**。pipeline モードでは env ごとに 1 パイプラインが作られ、それぞれの `deployBranch` でデプロイされる。example は dev / prd の 2 つを定義しているため、**単一環境で運用する場合は不要なエントリ（例: `dev`）を削除する**（残すと 2 環境分デプロイされる）。なお `environments.ts` から env を削除しても、既にデプロイ済みのスタックは自動削除されない（手動で `cdk destroy` が必要）。
 デプロイ時は `-c env=<name>` でどの環境かを選ぶ。同一アカウント・別アカウントのどちらも
 このファイルの記述だけで切り替わる（`account` 省略＝同一、指定＝別アカウント）。
 
@@ -378,7 +380,9 @@ GitHub App の認可はブラウザでの操作が必須のため、AWS コン�
    （「Settings → Connections」は CodeBuild / CodePipeline 等「Developer Tools」共通の設定。Developer Tools のトップは見つけにくいので CodeBuild 経由が分かりやすい）
 2. **Create connection** をクリック
 3. プロバイダで **GitHub** を選択 → 接続名（例 `kukan-github`。AWS 側の識別ラベルで GitHub には表示されない）を入力 → **Connect to GitHub**
-4. **Install a new app** をクリック → GitHub 側で **AWS Connector for GitHub** を対象 org/リポジトリにインストール・認可
+4. **Install a new app** をクリック → GitHub 側で **AWS Connector for GitHub** をインストール・認可。
+   このとき **「Only select repositories」を選び、デプロイ対象のリポジトリのみ**に絞る
+   （`All repositories` は付与しすぎ。最小権限の原則）
 5. AWS に戻り **Connect** → 接続ステータスが **Available** になる
 6. 接続の詳細ページで **ARN をコピー**（`arn:aws:codeconnections:<region>:<account>:connection/...`）
 7. その ARN を `infra/config/environments.ts` の **トップレベル `connectionArn`**（env エントリ内ではなく、全 env 共通の export）に設定

@@ -33,6 +33,10 @@ import type { EnvironmentConfig } from '../lib/config.js'
 export const connectionArn =
   'arn:aws:codeconnections:ap-northeast-1:000000000000:connection/REPLACE_ME'
 
+// IMPORTANT: every entry here becomes its own environment — in pipeline mode each one
+// gets its own CodePipeline and is deployed (on its `deployBranch`). Keep only the
+// environments you actually want. For a single environment, delete the others (e.g.
+// remove `dev` and keep only `prd`).
 export const environments = {
   // `dev` below documents every available field (optional ones commented out).
   dev: {

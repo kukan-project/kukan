@@ -7,43 +7,55 @@ sidebar:
 
 ## Deployment
 
-KUKAN supports two deployment methods.
+KUKAN supports two deployment methods, described below in order: the simpler Docker Compose
+(on-premises / isolated networks) first, then AWS (cloud / production).
+
+### Docker Compose (On-Premises)
+
+Deploy on-premises or in isolated networks using Docker Compose.
+
+```bash
+cp .env.prod.example .env.prod
+# Edit .env.prod
+docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
+```
+
+On-premises deployments use the following alternative services:
+
+| AWS Service | On-Premises Alternative     |
+| ----------- | --------------------------- |
+| S3          | MinIO                       |
+| SQS         | ElasticMQ                   |
+| OpenSearch  | PostgreSQL full-text search |
 
 ### AWS Deployment
 
-Deploy with AWS CDK using an ECS Fargate + ALB architecture. Environments (dev / prd, etc.)
-are defined in `infra/config/environments.ts` and selected with `-c env=<name>`.
+KUKAN deploys on AWS as **CloudFront (WAF + cache) → internal ALB → ECS Fargate** (ADR-027).
+Deployment is **automated with CDK Pipelines (AWS CodePipeline)**: using a CodeConnections
+(GitHub App) source, a push to the target branch deploys each environment (dev / prd, etc.)
+as a CDK Stage.
 
-```bash
-cp infra/config/environments.example.ts infra/config/environments.ts
-# Edit environments.ts
-# bootstrap is a prerequisite for deploy; custom domain/WAF also need us-east-1 (GlobalStack)
-cd infra && npx cdk bootstrap aws://<account-id>/ap-northeast-1 aws://<account-id>/us-east-1
-npx cdk deploy -c env=dev --all      # deploy a named environment
-```
+Environments are defined in `infra/config/environments.ts` (**copied from** `environments.example.ts`).
 
 Key AWS resources:
 
+- **CloudFront** — CDN, WAF, TLS termination (the front layer, ADR-027)
+- **ALB (internal)** — load balancer (reachable only via the CloudFront VPC origin)
 - **ECS Fargate** — Web application + Pipeline Worker
-- **ALB** — Load balancer
-- **Aurora Serverless v2** — PostgreSQL database
+- **Aurora Serverless v2 / RDS** — PostgreSQL database
 - **S3** — File storage
 - **SQS** — Pipeline queue
 - **OpenSearch** — Full-text search engine
 
-#### CI/CD (CDK Pipelines + CodeConnections)
+#### Setup (one-time manual; after that, pushes deploy automatically)
 
-Deployment is automated with CDK Pipelines (AWS CodePipeline). Using a CodeConnections (GitHub App) source, it is triggered by branch pushes and deploys each environment as a CDK Stage.
-
-A one-time manual setup is required.
-
-1. Prepare your environment definitions (`cp infra/config/environments.example.ts infra/config/environments.ts`, then edit `environments.ts`)
+1. Prepare your environment definitions (`cp infra/config/environments.example.ts infra/config/environments.ts`, then edit `environments.ts`). **Each entry becomes one environment = one pipeline**, so delete the ones you don't need (e.g. remove `dev` for a single environment)
 2. Create a CodeConnections connection in the AWS console and set its ARN as the top-level `connectionArn` export in `environments.ts` (shared by all envs)
-   - Open **CodeBuild** → **Settings → Connections → Create connection** in the left nav (a shared "Developer Tools" setting; reaching it via CodeBuild is easiest) → select **GitHub** → name it (e.g. `kukan-github`, an AWS-side label) → **Connect to GitHub** → install/authorize the **AWS Connector for GitHub** app on your org/repos → once status is **Available**, copy the ARN
+   - Open **CodeBuild** → **Settings → Connections → Create connection** in the left nav (a shared "Developer Tools" setting; reaching it via CodeBuild is easiest) → select **GitHub** → name it (e.g. `kukan-github`, an AWS-side label) → **Connect to GitHub** → install/authorize the **AWS Connector for GitHub** app (choose **Only select repositories** and grant just the repo you deploy from — least privilege) → once status is **Available**, copy the ARN
    - The GitHub App authorization requires a browser action (creating via CLI/CDK leaves it `PENDING` until authorized in the browser)
 3. `cdk bootstrap` (prerequisite for deploy; per account/region, include us-east-1 for the GlobalStack)
 4. For a custom domain / WAF only: create the us-east-1 certificate/WAF once via standalone (`npx cdk deploy -c env=prd Prd/KukanGlobalStack`) and set `certificateArn`/`webAclArn`
-5. Commit `environments.ts` and `cdk.context.json` so CodeBuild synth is hermetic (forks commit these; upstream does not)
+5. Commit `environments.ts` and `cdk.context.json` so the CodeBuild synth reads them from the checkout
 6. Deploy the pipeline stack once (`npx cdk deploy KukanPipeline`)
 7. After that, pushes to each env's `deployBranch` deploy automatically (the pipeline self-mutates)
 
@@ -64,28 +76,10 @@ The CodeConnections GitHub App approval is a one-time manual console action (it 
 :::
 
 :::note
-The pipeline's synth runs in CodeBuild. To make context lookups (AZs, CloudFront prefix list) deterministic, forks commit `infra/cdk.context.json` (not gitignored; upstream does not commit it — when absent, context resolves via the synth role's lookup-role permission).
+The pipeline's synth runs in CodeBuild. To make context lookups (AZs, CloudFront prefix list) deterministic, commit `infra/cdk.context.json` (when absent it still resolves via the synth role's lookup-role permission, but non-deterministically).
 :::
 
 For details and design rationale, see `docs/specs/phase4-deploy.md` and ADR-030 (`docs/adr/en/030-cdk-pipelines-deploy.md`) / ADR-031 (`docs/adr/en/031-multi-environment-deploy.md`) in the repository.
-
-### Docker Compose (On-Premises)
-
-Deploy on-premises or in isolated networks using Docker Compose.
-
-```bash
-cp .env.prod.example .env.prod
-# Edit .env.prod
-docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
-```
-
-On-premises deployments use the following alternative services:
-
-| AWS Service | On-Premises Alternative     |
-| ----------- | --------------------------- |
-| S3          | MinIO                       |
-| SQS         | ElasticMQ                   |
-| OpenSearch  | PostgreSQL full-text search |
 
 ## Initial setup
 
