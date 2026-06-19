@@ -29,7 +29,7 @@ CKANの後継として設計されたTypeScriptフルスタックのデータカ
 | AI             | Bedrock / OpenAI / Ollama / NoOp                      |
 | テスト         | Vitest + Playwright                                   |
 | バリデーション | Zod                                                   |
-| デプロイ       | ECS Fargate + ALB / Docker Compose                    |
+| デプロイ       | CloudFront + ALB + ECS Fargate / Docker Compose       |
 | IaC            | AWS CDK (TypeScript)                                  |
 
 ## モノレポ構成
@@ -280,8 +280,12 @@ pnpm typecheck                  # TypeScript 型チェック
 
 ### AWS デプロイ
 
+環境は `infra/config/environments.ts` で定義（`environments.example.ts` をコピー）。
+通常は CDK Pipelines（push 起点）でデプロイ。手動（standalone）の場合は `-c env=<name>` で環境を選ぶ（ADR-030 / ADR-031、`docs/specs/phase4-deploy.md`）。
+
 ```bash
 cd infra
-npx cdk deploy --all            # 全スタックデプロイ（Global + Main）
-npx cdk diff --all              # デプロイ前の差分確認
+npx cdk deploy -c env=dev --all   # standalone: 指定環境を直接デプロイ
+npx cdk diff   -c env=dev --all   # デプロイ前の差分確認
+npx cdk deploy KukanPipeline      # pipeline: パイプラインスタックを初回デプロイ
 ```

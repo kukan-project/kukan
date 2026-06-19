@@ -327,6 +327,21 @@ Worker 起動時にマイグレーションを自動実行:
 
 スタック名は env でプレフィックスされる（例 `Dev/KukanStack` → CloudFormation スタック名 `Dev-KukanStack`）。
 
+> [!IMPORTANT]
+> **2つのモードは同じ CloudFormation スタックを対象にする**（どちらも `KukanStage` 経由で
+> `Prd-KukanStack` 等を生成）。よって衝突はしないが、**pipeline が source of truth**（git の
+> コミット内容をデプロイ）であることに注意:
+>
+> - standalone は**手元の作業ツリー**をデプロイするため、未コミットの変更は**次の push で pipeline
+>   が git の状態に巻き戻す**。standalone での変更は必ず commit/push して git と一致させる
+> - pipeline 実行中に同じスタックを standalone で叩くと CloudFormation が `UPDATE_IN_PROGRESS`
+>   で弾く（**同時実行しない**）
+> - ローカルの `cdk.context.json` がコミット済みと異なると synth 結果が変わりリソースが揺り戻る
+>   （churn）。ローカルでもコミット済み context を使う
+>
+> standalone は **初回 bootstrap / us-east-1 の cert・WAF 作成 / 緊急ホットフィックス**に限定し、
+> 恒久的な変更手段にしない。
+
 ### A. Standalone デプロイ（手動・環境単位）
 
 ```bash

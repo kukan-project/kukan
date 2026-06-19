@@ -120,6 +120,7 @@ env エントリ（`scale` + `overrides`）　＞　スケール既定（`config
 - **フォークの repo に connection ARN / account ID が載る**: 秘密情報ではないが、public フォークでは公開される。気にする場合は gitignore + 別供給の例外運用
 - **同一アカウントは blast radius を共有**: 厳格な分離が必要なら別アカウントを選ぶ
 - **明示的物理名の棚卸し**: 同一アカウント多環境には固定名の除去/サフィックス化が必要
+- **standalone と pipeline は同一スタックを対象**: `KukanStage` を両モードで共有するため CFN スタック名（`<Env>-KukanStack`）が一致し衝突はしない。ただし **pipeline は git を source of truth** とするため、standalone での手元変更は次の push で巻き戻る。standalone は bootstrap / cert・WAF 作成 / 緊急対応に限定し、恒久的変更は commit/push で pipeline に追従させる（同時実行は CFN が `UPDATE_IN_PROGRESS` で拒否）
 
 ## 影響（実装時の変更点）
 

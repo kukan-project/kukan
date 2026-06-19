@@ -122,6 +122,7 @@ env entry (`scale` + `overrides`) > scale defaults (`config.ts`) > built-in defa
 - **Connection ARN / account ID land in the fork's repo**: not secrets, but exposed in a public fork. If that matters, gitignore them and supply separately
 - **Same account shares blast radius**: choose separate accounts if strict isolation is required
 - **Inventory of explicit physical names**: same-account multi-env requires removing/suffixing fixed names
+- **Standalone and pipeline target the same stack**: both modes share `KukanStage`, so the CFN stack name (`<Env>-KukanStack`) matches and there is no collision. But **the pipeline is the source of truth** (it deploys committed git state), so a local standalone change is reverted on the next push. Limit standalone to bootstrap / cert-WAF creation / emergencies, and commit/push permanent changes so the pipeline stays in sync (concurrent runs are rejected by CloudFormation with `UPDATE_IN_PROGRESS`)
 
 ## Consequences (changes at implementation time)
 
