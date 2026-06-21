@@ -1,0 +1,37 @@
+name: CI
+
+# Lint, typecheck, format check, and unit tests run on every pull request.
+
+on:
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Format check
+        # The root `format` script runs `prettier --write`; use --check in CI.
+        run: pnpm exec prettier --check "**/*.{ts,tsx,js,jsx,json,md,astro}"
+
+      - name: Test (unit only)
+        # `test:unit` runs every project except `api-integration`, whose globalSetup
+        # connects to Postgres. To run integration tests, provide a database via
+        # `services:` and run `test:integration` as a separate job.
+        run: pnpm test:unit

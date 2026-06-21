@@ -84,8 +84,11 @@ KUKAN/
 
 ### Git コミットメッセージ
 
-- **All commit messages must be in English** (subject and body)
-- Follow Conventional Commits format: `feat:`, `fix:`, `chore:`, `docs:`, etc.
+- **PR titles must be in English and follow [Conventional Commits](https://www.conventionalcommits.org/)**
+  — enforced by the `pr-guard` workflow (the PR title becomes the squash commit
+  subject). Allowed types (`@commitlint/config-conventional`): `feat`, `fix`,
+  `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
+- Commit messages: follow Conventional Commits format where practical.
 
 ### コミット前チェック
 

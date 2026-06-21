@@ -1,3 +1,6 @@
 pnpm-lock.yaml
 apps/web/next-env.d.ts
 site/src/pages/index.astro
+
+# Vendored third-party assets (DuckDB-WASM minified workers) — not formatted.
+apps/web/public/duckdb/

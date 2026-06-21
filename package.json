@@ -17,7 +17,7 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "test": "vitest run",
-    "test:unit": "vitest run --exclude '**/*.integration.test.ts'",
+    "test:unit": "vitest run --project='!api-integration'",
     "test:integration": "vitest run --include '**/*.integration.test.ts'",
     "test:watch": "vitest",
     "test:e2e": "playwright test",

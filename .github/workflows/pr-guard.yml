@@ -1,0 +1,40 @@
+name: PR guard (English)
+
+# The PR title becomes the published commit subject, so enforce that it is in
+# English and follows Conventional Commits. Commit messages are not published,
+# so they are not checked here.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+jobs:
+  check-english:
+    runs-on: ubuntu-latest
+    steps:
+      - name: PR title must be English
+        # PR title is untrusted input — pass via env and quote it (command-injection safety).
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          # Hiragana / Katakana / CJK symbols / Kanji / full- and half-width forms.
+          # Punctuation such as — and → is NOT matched.
+          cjk='[\x{3000}-\x{30FF}\x{31F0}-\x{31FF}\x{4E00}-\x{9FFF}\x{FF00}-\x{FFEF}]'
+          if printf '%s' "$PR_TITLE" | grep -qP "$cjk"; then
+            echo "::error::PR title must be English (it becomes the commit subject): $PR_TITLE"
+            exit 1
+          fi
+          echo "PR title is English. OK."
+
+      - name: PR title must follow Conventional Commits
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          # Types follow @commitlint/config-conventional (the de-facto standard set).
+          types='feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert'
+          if printf '%s' "$PR_TITLE" | grep -qE "^(${types})(\(.+\))?!?: .+"; then
+            echo "PR title follows Conventional Commits. OK."
+          else
+            echo "::error::PR title must follow Conventional Commits, e.g. 'feat(api): ...': $PR_TITLE"
+            exit 1
+          fi
