@@ -210,6 +210,7 @@ pnpm format        # Prettier フォーマット
 - CSV/TSV プレビュー Parquet の列型自動推定 → `docs/adr/jp/029-csv-type-inference.md`（ADR-014/016 拡張）
 - CDK Pipelines + CodeConnections による自動デプロイ（提案） → `docs/adr/jp/030-cdk-pipelines-deploy.md`
 - マルチ環境（dev/prd）デプロイ設計（CDK Stage、提案） → `docs/adr/jp/031-multi-environment-deploy.md`
+- MCP データクエリ基盤（スキーマ永続化 + サーバーサイド DuckDB、提案） → `docs/adr/jp/032-mcp-data-query.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
