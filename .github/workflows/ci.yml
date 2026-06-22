@@ -1,6 +1,12 @@
 name: CI
 
 # Lint, typecheck, format check, and unit tests run on every pull request.
+#
+# `quality` is a REQUIRED status check (see the branch ruleset), so the job must
+# always run and report a status — using `paths-ignore` would leave the required
+# check pending forever and block the PR. Instead the job always runs but skips
+# the code-only steps (lint / typecheck / unit tests) for docs-only PRs. The
+# format check still runs because `prettier --check` also covers Markdown.
 
 on:
   pull_request:
@@ -10,6 +16,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # need history to diff against the PR base
+
+      - name: Detect non-docs changes
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # A PR is "docs-only" when every changed file is Markdown or under docs/.
+          # Those still need the format check (prettier covers .md) but not the
+          # code-only steps. merge-base keeps the diff correct if base advanced.
+          base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
+          files=$(git diff --name-only "$base" "$HEAD_SHA")
+          echo "Changed files:"
+          echo "$files"
+          if printf '%s\n' "$files" | grep -qvE '(\.md$|^docs/)'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "Code changes detected — running full quality suite."
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "Docs-only change — running format check only."
+          fi
 
       - uses: pnpm/action-setup@v6
 
@@ -21,17 +50,21 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Lint
+        if: steps.changes.outputs.code == 'true'
         run: pnpm lint
 
       - name: Typecheck
+        if: steps.changes.outputs.code == 'true'
         run: pnpm typecheck
 
       - name: Format check
         # The root `format` script runs `prettier --write`; use --check in CI.
+        # Runs on every PR — prettier also covers Markdown (docs/ADRs).
         run: pnpm exec prettier --check "**/*.{ts,tsx,js,jsx,json,md,astro}"
 
       - name: Test (unit only)
         # `test:unit` runs every project except `api-integration`, whose globalSetup
         # connects to Postgres. To run integration tests, provide a database via
         # `services:` and run `test:integration` as a separate job.
+        if: steps.changes.outputs.code == 'true'
         run: pnpm test:unit
