@@ -122,18 +122,34 @@ WAF を ALB（REGIONAL）から CloudFront（CLOUDFRONT スコープ）に移行
 ALB の WAF は廃止する。ALB は internal（VPC 内部）のため、
 インターネットから直接アクセスできない。
 
-### IP 制限
+### アクセス制限（IP 許可リスト + Basic 認証）
 
 CloudFront が前段に立つため、ALB に到達するリクエストの送信元 IP は
 すべて CloudFront の IP になる。**ALB の Security Group ではクライアント IP を
 判別できない**。
 
-IP 制限は **CloudFront Function（Viewer Request）** で実施する。
-`allowedIpRanges` が設定されている場合、CDK が synth 時に IP リストを
-CF Function コードに埋め込み、`event.viewer.ip` で CIDR マッチング（IPv4/IPv6 対応）を行う。
-許可リスト外の IP からのリクエストには 403 を返す。
+アクセス制限は **CloudFront Function（Viewer Request）** で実施する。
+2 種類の門番をサポートし、**OR で結合**する（どちらか一方を満たせば通過）:
+
+- **IP 許可リスト**: `allowedIpRanges` が設定されている場合、CDK が synth 時に IP リストを
+  CF Function コードに埋め込み、`event.viewer.ip` で CIDR マッチング（IPv4/IPv6 対応）を行う。
+- **Basic 認証**: `basicAuth: { username, password }` が設定されている場合、CDK が synth 時に
+  `base64("user:pass")` を CF Function に埋め込み、`Authorization` ヘッダーと照合する
+  （CloudFront Functions に `btoa`/`Buffer` が無いため synth 時にエンコード）。
+
+両方設定した場合、社内 IP からはパスワード不要で通過し、社外（固定 IP を持たない協力者）は
+Basic 認証で通過できる。固定 IP を持たない相手に限定公開したいケースを想定。
+
+弾く際のステータスコードは、Basic 認証が設定されていれば `401`（`WWW-Authenticate: Basic`
+付きでブラウザに認証ダイアログを促す）、IP 許可リストのみなら `403`。
+
 WAF の IP セットルールは使用しない（CF Function で実現することで、WAF なしでも
-IP 制限が可能 = `enableWaf: false` で ~$9/月を節約可能）。
+アクセス制限が可能 = `allowedIpRanges` か `basicAuth` のどちらかが設定されていれば
+`enableWaf` は既定で OFF になり ~$9/月を節約可能）。
+
+**注意**: Basic 認証の資格情報は CF Function のソース（コンソール/API から閲覧可能）に
+base64 で埋め込まれるため、これは「軽い目隠し」用途（ステージング保護等）に留める。
+機密データの保護にはアプリ本来の認証（Better Auth）や WAF を併用すること。
 
 ### ALB 直アクセス防止（VPC Origin）
 
@@ -165,7 +181,7 @@ KukanStack (ap-northeast-1)
 ├── WorkerService (Fargate)
 ├── CDN (CloudFront Distribution)
 │   ├── VPC Origin → internal ALB
-│   ├── CloudFront Functions (IP 制限 + Cookie bypass)
+│   ├── CloudFront Functions (アクセス制限: IP/Basic + Cookie bypass)
 │   └── Cache Policy / Origin Request Policy
 └── Route53 A (Alias) → CloudFront
 ```
@@ -198,7 +214,7 @@ VPC Origin により ALB のパブリック IPv4 が不要になり、Origin Ver
 1. ADR 承認
 2. `infra/lib/global-stack.ts` 作成（us-east-1: ACM 証明書 + WAF WebACL）
 3. `infra/lib/constructs/cdn.ts` 作成（CloudFront Distribution + VPC Origin）
-4. `infra/lib/cf-functions/viewer-request.js` 作成（IP 制限 + Cookie bypass）
+4. `infra/lib/cf-functions/viewer-request.js` 作成（アクセス制限: IP/Basic + Cookie bypass）
 5. `infra/lib/constructs/network.ts` 更新
    - ALB SG: CloudFront マネージドプレフィックスリストから port 80 のみ許可
 6. `infra/lib/kukan-stack.ts` 更新

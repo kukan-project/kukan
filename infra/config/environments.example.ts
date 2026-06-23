@@ -52,8 +52,10 @@ export const environments = {
     // overrides: { web: { maxSize: 5 }, opensearch: { instanceCount: 2, indexReplicas: 1 } },
 
     // --- Security ---
-    enableWaf: false, // omit → ON unless allowedIpRanges is set (ADR-027)
+    enableWaf: false, // omit → ON unless allowedIpRanges or basicAuth is set (ADR-027)
     // allowedIpRanges: ['203.0.113.0/24', '2001:db8::/32'],
+    // Basic auth gate, OR-combined with allowedIpRanges (light gate only — ADR-027):
+    // basicAuth: { username: 'preview', password: 'change-me' },
 
     // --- Custom domain (for pipeline mode, also supply the us-east-1 ARNs below) ---
     // domainName: 'dev.example.com',

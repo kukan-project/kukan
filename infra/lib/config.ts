@@ -75,6 +75,11 @@ export interface EnvironmentConfig {
   enableOpenSearch?: boolean
   enableWaf?: boolean
   allowedIpRanges?: string[]
+  /**
+   * Basic auth edge gate (CF Function), OR-combined with `allowedIpRanges`. Light gate
+   * only — credentials are embedded (base64) in the readable CF Function source (ADR-027).
+   */
+  basicAuth?: { username: string; password: string }
   domainName?: string
   hostedZoneId?: string
   hostedZoneName?: string
@@ -114,9 +119,9 @@ export function resolveEnv(env: EnvironmentConfig): { account: string; region: s
   return { account: env.account, region: env.region ?? DEFAULT_REGION }
 }
 
-/** WAF default: ON unless an IP allowlist is set (ADR-027). */
+/** WAF default: ON unless an IP allowlist or Basic auth edge gate is set (ADR-027). */
 export function resolveEnableWaf(env: EnvironmentConfig): boolean {
-  return env.enableWaf ?? !env.allowedIpRanges
+  return env.enableWaf ?? !(env.allowedIpRanges || env.basicAuth)
 }
 
 /**
@@ -134,6 +139,7 @@ export interface KukanConfig extends ScaleComputed {
   enableOpenSearch: boolean
   enableWaf: boolean
   allowedIpRanges?: string[]
+  basicAuth?: { username: string; password: string }
   domainName?: string
   hostedZoneId?: string
   hostedZoneName?: string
@@ -213,10 +219,13 @@ export function loadConfig(scope: Construct, env: Partial<EnvironmentConfig> = {
   const dbEngine = ctx<DbEngine>('dbEngine') ?? env.dbEngine ?? base.db.engine
   const enableOpenSearch = ctx<boolean>('enableOpenSearch') ?? env.enableOpenSearch ?? true
   const allowedIpRanges = ctx<string[]>('allowedIpRanges') ?? env.allowedIpRanges
-  // WAF provides managed rules on CloudFront scope (ADR-027). IP restriction is handled by
-  // a CloudFront Function, so WAF defaults OFF when allowedIpRanges is set (saves ~$9/month).
+  // env-only (no ctx): a credential must not live in committed cdk.json / shell history.
+  const basicAuth = env.basicAuth
+  // WAF provides managed rules on CloudFront scope (ADR-027). The edge gate (IP allowlist
+  // and/or Basic auth) is handled by a CloudFront Function, so WAF defaults OFF when either
+  // is set (saves ~$9/month).
   const enableWafExplicit = ctx<boolean>('enableWaf') ?? env.enableWaf
-  const enableWaf = enableWafExplicit ?? !allowedIpRanges
+  const enableWaf = enableWafExplicit ?? !(allowedIpRanges || basicAuth)
   const domainName = ctx<string>('domainName') ?? env.domainName
   const hostedZoneId = ctx<string>('hostedZoneId') ?? env.hostedZoneId
   const hostedZoneName = ctx<string>('hostedZoneName') ?? env.hostedZoneName
@@ -250,6 +259,7 @@ export function loadConfig(scope: Construct, env: Partial<EnvironmentConfig> = {
     enableOpenSearch,
     enableWaf,
     allowedIpRanges,
+    basicAuth,
     domainName,
     hostedZoneId,
     hostedZoneName,

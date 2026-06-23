@@ -16,6 +16,14 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'infra',
+          root: './infra',
+          include: ['lib/**/__tests__/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
+      {
+        test: {
           name: 'adapter-search',
           root: './packages/adapters/search',
           include: ['src/__tests__/**/*.test.ts'],

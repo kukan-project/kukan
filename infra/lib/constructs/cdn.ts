@@ -1,23 +1,19 @@
 /**
  * KUKAN CDN Construct
  * CloudFront distribution with VPC origin (internal ALB),
- * cookie-based cache bypass, optional IP restriction (via CF Function),
- * and WAF integration.
+ * cookie-based cache bypass, optional edge gate (IP allowlist and/or Basic auth,
+ * via CF Function), and WAF integration.
  */
 
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import * as cdk from 'aws-cdk-lib'
 import * as acm from 'aws-cdk-lib/aws-certificatemanager'
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront'
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins'
 import type * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2'
 import { Construct } from 'constructs'
+import { loadViewerRequestCode } from '../cf-functions/inject.js'
 import type { KukanConfig } from '../config.js'
 import { resourceName } from '../naming.js'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
 
 export interface CdnProps {
   config: KukanConfig
@@ -27,18 +23,6 @@ export interface CdnProps {
   certificateArn?: string
   /** WAF WebACL ARN in us-east-1 (from KukanGlobalStack). */
   webAclArn?: string
-}
-
-/**
- * Load the CF Function source from cf-functions/viewer-request.js
- * and inject allowedIpRanges at synth time.
- */
-function loadViewerRequestCode(allowedIpRanges?: string[]): string {
-  const src = readFileSync(join(__dirname, '../cf-functions/viewer-request.js'), 'utf-8')
-  if (allowedIpRanges && allowedIpRanges.length > 0) {
-    return src.replace('var ALLOWED = []', `var ALLOWED = ${JSON.stringify(allowedIpRanges)}`)
-  }
-  return src
 }
 
 export class CdnConstruct extends Construct {
@@ -54,7 +38,9 @@ export class CdnConstruct extends Construct {
     // Env-prefixed name for readability + multi-environment uniqueness (ADR-031).
     const viewerRequestFn = new cloudfront.Function(this, 'ViewerRequestFn', {
       functionName: resourceName(this, 'viewer-request'),
-      code: cloudfront.FunctionCode.fromInline(loadViewerRequestCode(config.allowedIpRanges)),
+      code: cloudfront.FunctionCode.fromInline(
+        loadViewerRequestCode(config.allowedIpRanges, config.basicAuth)
+      ),
       runtime: cloudfront.FunctionRuntime.JS_2_0,
     })
 

@@ -1,24 +1,42 @@
 /* eslint-disable */
 // CloudFront Function — Viewer Request
-// 1. IP restriction: block requests not from allowedIpRanges (when configured).
+// 1. Access control: pass when source IP is in ALLOWED *or* Basic auth matches.
 // 2. Cache bypass: inject unique header when session cookie is present.
 //
-// ALLOWED is injected by CDK at synth time (see constructs/cdn.ts).
-// When empty, IP restriction is skipped.
+// ALLOWED (IP ranges) and BASIC_AUTH (the full expected `Basic <base64>` header) are
+// injected by CDK at synth time (see constructs/cdn.ts). Both empty → access control skipped.
 var ALLOWED = []
+var BASIC_AUTH = ''
 
 function handler(event) {
-  // --- IP restriction ---
-  if (ALLOWED.length) {
-    var ip = event.viewer.ip
-    var ok = false
-    for (var i = 0; i < ALLOWED.length; i++) {
-      if (cidr(ip, ALLOWED[i])) {
-        ok = true
-        break
+  // --- Access control: IP allowlist OR Basic auth ---
+  if (ALLOWED.length || BASIC_AUTH) {
+    var passIp = false
+    if (ALLOWED.length) {
+      var ip = event.viewer.ip
+      for (var i = 0; i < ALLOWED.length; i++) {
+        if (cidr(ip, ALLOWED[i])) {
+          passIp = true
+          break
+        }
       }
     }
-    if (!ok) return { statusCode: 403, statusDescription: 'Forbidden' }
+    var passAuth = false
+    if (BASIC_AUTH) {
+      var h = event.request.headers.authorization
+      if (h && h.value === BASIC_AUTH) passAuth = true
+    }
+    if (!passIp && !passAuth) {
+      // 401 (not 403) when Basic auth is configured so the browser prompts for credentials.
+      if (BASIC_AUTH) {
+        return {
+          statusCode: 401,
+          statusDescription: 'Unauthorized',
+          headers: { 'www-authenticate': { value: 'Basic realm="KUKAN"' } },
+        }
+      }
+      return { statusCode: 403, statusDescription: 'Forbidden' }
+    }
   }
 
   // --- Cookie-based cache bypass ---

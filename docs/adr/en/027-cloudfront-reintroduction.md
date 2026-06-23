@@ -123,17 +123,36 @@ WAF is migrated from ALB (REGIONAL) to CloudFront (CLOUDFRONT scope).
 ALB WAF is removed. The ALB is internal (within VPC), so it is not directly
 accessible from the internet.
 
-### IP Restriction
+### Access Control (IP allowlist + Basic auth)
 
 With CloudFront in front, the source IP of all requests reaching the ALB is
 a CloudFront IP. **ALB Security Group cannot distinguish client IPs**.
 
-IP restriction is implemented via **CloudFront Function (Viewer Request)**.
-When `allowedIpRanges` is configured, CDK embeds the IP list into the CF Function code
-at synth time, performing CIDR matching (IPv4/IPv6) against `event.viewer.ip`.
-Requests from IPs outside the allowlist receive a 403 response.
-WAF IP set rules are not used — implementing this in the CF Function allows IP restriction
-without WAF (`enableWaf: false` saves ~$9/month).
+Access control is implemented via **CloudFront Function (Viewer Request)**.
+It supports two gates, **OR-combined** (a request passes if either is satisfied):
+
+- **IP allowlist**: when `allowedIpRanges` is configured, CDK embeds the IP list into
+  the CF Function code at synth time, performing CIDR matching (IPv4/IPv6) against
+  `event.viewer.ip`.
+- **Basic auth**: when `basicAuth: { username, password }` is configured, CDK embeds
+  `base64("user:pass")` into the CF Function at synth time and compares it against the
+  `Authorization` header (encoded at synth time because CloudFront Functions have no
+  `btoa`/`Buffer` at runtime).
+
+When both are set, requests from office IPs pass without a password, while external
+collaborators with no fixed IP pass via Basic auth — intended for sharing a restricted
+site with users who lack a stable IP.
+
+The reject status code is `401` (with `WWW-Authenticate: Basic`, so the browser prompts
+for credentials) when Basic auth is configured, or `403` when only the IP allowlist is set.
+
+WAF IP set rules are not used — implementing this in the CF Function allows access control
+without WAF (`enableWaf` defaults OFF when either `allowedIpRanges` or `basicAuth` is set,
+saving ~$9/month).
+
+**Note**: Basic auth credentials are embedded (base64) in the CF Function source, which is
+readable via the console/API, so this is a light gate (e.g. staging protection) only. Pair
+it with real app auth (Better Auth) or WAF for sensitive data.
 
 ### Preventing Direct ALB Access (VPC Origin)
 
@@ -165,7 +184,7 @@ KukanStack (ap-northeast-1)
 ├── WorkerService (Fargate)
 ├── CDN (CloudFront Distribution)
 │   ├── VPC Origin → internal ALB
-│   ├── CloudFront Functions (IP restriction + cookie bypass)
+│   ├── CloudFront Functions (access control: IP/Basic + cookie bypass)
 │   └── Cache Policy / Origin Request Policy
 └── Route53 A (Alias) → CloudFront
 ```
@@ -198,7 +217,7 @@ For higher data transfer volumes, CloudFront is even cheaper ($0.085 vs $0.114/G
 1. ADR approval
 2. Create `infra/lib/global-stack.ts` (us-east-1: ACM certificate + WAF WebACL)
 3. Create `infra/lib/constructs/cdn.ts` (CloudFront Distribution with VPC Origin)
-4. Create `infra/lib/cf-functions/viewer-request.js` (IP restriction + cookie bypass)
+4. Create `infra/lib/cf-functions/viewer-request.js` (access control: IP/Basic + cookie bypass)
 5. Update `infra/lib/constructs/network.ts`
    - Remove ALB SG internet-facing ingress rules (ALB is internal)
 6. Update `infra/lib/kukan-stack.ts`
