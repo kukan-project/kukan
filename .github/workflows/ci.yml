@@ -49,6 +49,10 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Format check
+        # No `if:` guard — prettier covers Markdown, so this runs on docs-only PRs too.
+        run: pnpm exec prettier --check "**/*.{ts,tsx,js,jsx,json,md,astro}"
+
       - name: Lint
         if: steps.changes.outputs.code == 'true'
         run: pnpm lint
@@ -56,11 +60,6 @@ jobs:
       - name: Typecheck
         if: steps.changes.outputs.code == 'true'
         run: pnpm typecheck
-
-      - name: Format check
-        # The root `format` script runs `prettier --write`; use --check in CI.
-        # Runs on every PR — prettier also covers Markdown (docs/ADRs).
-        run: pnpm exec prettier --check "**/*.{ts,tsx,js,jsx,json,md,astro}"
 
       - name: Test (unit only)
         # `test:unit` runs every project except `api-integration`, whose globalSetup
