@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { sql } from 'drizzle-orm'
-import { createTestApp } from '../test-helpers/test-app'
+import { createTestApp, mockSearch } from '../test-helpers/test-app'
 import {
   getTestDb,
   cleanDatabase,
@@ -10,6 +10,7 @@ import {
   ensureOutsiderUser,
 } from '../test-helpers/test-db'
 import { PostgresSearchAdapter } from '@kukan/search-adapter'
+import { ServiceUnavailableError } from '@kukan/shared'
 import { packageGroup } from '@kukan/db'
 
 const db = getTestDb()
@@ -880,6 +881,42 @@ describe('Packages API Routes', () => {
         method: 'DELETE',
       })
       expect(res.status).toBe(403)
+    })
+  })
+
+  // The search adapter classifies a backend outage (timeout / circuit breaker / node
+  // down) as ServiceUnavailableError; the route propagates it as a 503 Problem Details
+  // rather than a 500 the client would render as "no results". Unexpected errors stay 500.
+  describe('GET /api/v1/packages — search backend failure', () => {
+    const unavailableApp = createTestApp(db, {
+      search: {
+        ...mockSearch,
+        search: async () => {
+          throw new ServiceUnavailableError('Search is temporarily unavailable')
+        },
+      },
+    })
+    const buggyApp = createTestApp(db, {
+      search: {
+        ...mockSearch,
+        search: async () => {
+          throw new Error('unexpected parsing bug')
+        },
+      },
+    })
+
+    it('should return 503 Problem Details when the backend is unavailable', async () => {
+      const res = await unavailableApp.request('/api/v1/packages?q=anything')
+      expect(res.status).toBe(503)
+
+      const body = await res.json()
+      expect(body.title).toBe('SERVICE_UNAVAILABLE')
+      expect(body.status).toBe(503)
+    })
+
+    it('should not mask an unexpected search error as 503 (stays 500)', async () => {
+      const res = await buggyApp.request('/api/v1/packages?q=anything')
+      expect(res.status).toBe(500)
     })
   })
 })

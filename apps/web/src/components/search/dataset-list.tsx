@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import type { PaginatedResult, FacetCounts } from '@kukan/shared'
-import { Separator } from '@kukan/ui'
+import { Button, Separator } from '@kukan/ui'
 import { clientFetch } from '@/lib/client-api'
 import { DatasetCard, type DatasetCardItem } from '@/components/dataset-card'
 import { DatasetFilters } from '@/components/search/dataset-filters'
@@ -52,6 +52,10 @@ export function DatasetList({ initialData }: Props) {
 
   const [data, setData] = useState<DatasetData | null>(isInitialSsr ? initialData : null)
   const [loading, setLoading] = useState(!isInitialSsr)
+  // Distinguish a backend failure (e.g. search 503) from a genuine empty result set.
+  const [error, setError] = useState(false)
+  // Bumped by the retry button to re-run the fetch effect.
+  const [reloadKey, setReloadKey] = useState(0)
 
   const filterParams: Record<string, string | string[] | undefined> = {
     organization: currentOrgs.length ? currentOrgs : undefined,
@@ -75,6 +79,7 @@ export function DatasetList({ initialData }: Props) {
     abortRef.current = controller
 
     setLoading(true)
+    setError(false)
 
     // Build query string directly from searchParams to avoid stale closures
     const query = new URLSearchParams(searchParams.toString())
@@ -83,25 +88,30 @@ export function DatasetList({ initialData }: Props) {
 
     clientFetch(`/api/v1/packages?${query}`, { signal: controller.signal })
       .then(async (res) => {
-        if (!controller.signal.aborted && res.ok) {
-          const result: DatasetData = await res.json()
-          setData(result)
+        if (controller.signal.aborted) return
+        if (!res.ok) {
+          // Backend failure (e.g. search 503) — surface as an error, not "no results".
+          setError(true)
+          return
+        }
+        const result: DatasetData = await res.json()
+        setData(result)
 
-          // Lazy-load content highlights after rendering search results
-          if (query.get('q')) {
-            fetchSnippets(result, query.get('q')!, controller.signal)
-          }
+        // Lazy-load content highlights after rendering search results
+        if (query.get('q')) {
+          fetchSnippets(result, query.get('q')!, controller.signal)
         }
       })
       .catch(() => {
-        // Aborted or network error
+        // Network error (ignore aborts — those fire a new request)
+        if (!controller.signal.aborted) setError(true)
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)
       })
 
     return () => controller.abort()
-  }, [paramsKey, isInitialSsr, searchParams])
+  }, [paramsKey, isInitialSsr, searchParams, reloadKey])
 
   /** Fetch content snippets for matched resources and merge into state */
   function fetchSnippets(result: DatasetData, queryText: string, signal: AbortSignal) {
@@ -159,7 +169,8 @@ export function DatasetList({ initialData }: Props) {
       })
   }
 
-  const facets = data?.facets ?? emptyFacets
+  // On error the previous search's data is stale — show empty facets/count/pagination.
+  const facets = error ? emptyFacets : (data?.facets ?? emptyFacets)
 
   return (
     <div className="flex flex-col gap-6">
@@ -167,7 +178,7 @@ export function DatasetList({ initialData }: Props) {
         <h1 className="text-2xl font-bold tracking-tight">{t('dataset.title')}</h1>
         <div className="flex items-center gap-4">
           <p className="text-sm text-muted-foreground">
-            {loading ? '\u00A0' : t('common.count', { count: data?.total ?? 0 })}
+            {loading || error ? '\u00A0' : t('common.count', { count: data?.total ?? 0 })}
           </p>
           <DatasetSort />
         </div>
@@ -199,6 +210,13 @@ export function DatasetList({ initialData }: Props) {
                 <div key={i} className="h-32 animate-pulse rounded-lg border bg-muted/30" />
               ))}
             </div>
+          ) : error ? (
+            <div className="flex flex-col items-center gap-4 py-12 text-center">
+              <p className="text-muted-foreground">{t('dataset.searchError')}</p>
+              <Button variant="outline" onClick={() => setReloadKey((k) => k + 1)}>
+                {t('common.retry')}
+              </Button>
+            </div>
           ) : !data || data.items.length === 0 ? (
             <p className="py-12 text-center text-muted-foreground">
               {q ? t('dataset.noMatchingDatasets', { query: q }) : t('dataset.noDatasets')}
@@ -211,7 +229,7 @@ export function DatasetList({ initialData }: Props) {
             </div>
           )}
 
-          {data && data.total > 0 && (
+          {!error && data && data.total > 0 && (
             <div className="mt-6">
               <PaginationNav
                 basePath="/dataset"

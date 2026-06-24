@@ -95,6 +95,7 @@
     "title": "Datasets",
     "noDatasets": "No datasets",
     "noMatchingDatasets": "No datasets matching \"{query}\"",
+    "searchError": "Search is temporarily unavailable. Please try again in a moment.",
     "searchPlaceholder": "Search datasets...",
     "breadcrumb": "Datasets",
     "resources": "Resources",

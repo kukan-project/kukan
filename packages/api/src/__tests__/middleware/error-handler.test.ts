@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { Hono } from 'hono'
-import { KukanError, NotFoundError, ValidationError, createLogger } from '@kukan/shared'
+import {
+  KukanError,
+  NotFoundError,
+  ValidationError,
+  ServiceUnavailableError,
+  createLogger,
+} from '@kukan/shared'
 import { errorHandler } from '../../middleware/error-handler'
 
 function createTestApp(thrower: () => never) {
@@ -57,6 +63,19 @@ describe('errorHandler', () => {
     const body = await res.json()
     expect(body.title).toBe('VALIDATION_ERROR')
     expect(body.details).toEqual({ name: 'bad' })
+  })
+
+  it('should convert ServiceUnavailableError to 503 RFC 7807', async () => {
+    const app = createTestApp(() => {
+      throw new ServiceUnavailableError('Search is temporarily unavailable')
+    })
+
+    const res = await app.request('/test')
+    expect(res.status).toBe(503)
+
+    const body = await res.json()
+    expect(body.title).toBe('SERVICE_UNAVAILABLE')
+    expect(body.detail).toBe('Search is temporarily unavailable')
   })
 
   it('should convert unknown errors to 500 RFC 7807', async () => {

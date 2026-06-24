@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { errors as osErrors } from '@opensearch-project/opensearch'
 import { OpenSearchAdapter } from '../opensearch'
 
-// Mock the OpenSearch client
-vi.mock('@opensearch-project/opensearch', () => {
+// Mock only the OpenSearch client; keep the real `errors` export so error-type
+// classification (instanceof checks) behaves identically to production.
+vi.mock('@opensearch-project/opensearch', async (importActual) => {
+  const actual = (await importActual()) as typeof import('@opensearch-project/opensearch')
   const mockClient = {
     indices: {
       exists: vi.fn(),
@@ -23,6 +26,7 @@ vi.mock('@opensearch-project/opensearch', () => {
     },
   }
   return {
+    ...actual,
     Client: vi.fn(function () {
       return mockClient
     }),
@@ -279,6 +283,52 @@ describe('OpenSearchAdapter', () => {
         expect.arrayContaining([{ term: { join_field: 'package' } }])
       )
       expect(callArgs.body.query.bool.must).toEqual([{ match_all: {} }])
+    })
+
+    describe('backend availability mapping', () => {
+      // Minimal ApiResponse meta for constructing OpenSearch client errors.
+      const meta = (statusCode: number) =>
+        ({
+          body: {},
+          statusCode,
+          headers: {},
+          warnings: null,
+          meta: {},
+        }) as unknown as ConstructorParameters<typeof osErrors.ResponseError>[0]
+
+      it('maps an OpenSearch timeout to ServiceUnavailableError (503)', async () => {
+        mockClient.search.mockRejectedValue(new osErrors.TimeoutError('timed out', meta(0)))
+        await expect(adapter.search({ q: 'x' })).rejects.toMatchObject({
+          status: 503,
+          code: 'SERVICE_UNAVAILABLE',
+        })
+      })
+
+      it('maps a 429 circuit-breaker response to ServiceUnavailableError (503)', async () => {
+        mockClient.search.mockRejectedValue(new osErrors.ResponseError(meta(429)))
+        await expect(adapter.search({ q: 'x' })).rejects.toMatchObject({ status: 503 })
+      })
+
+      it('does NOT mask a 4xx bad-query response (propagates as-is)', async () => {
+        const badQuery = new osErrors.ResponseError(meta(400))
+        mockClient.search.mockRejectedValue(badQuery)
+        await expect(adapter.search({ q: 'x' })).rejects.toBe(badQuery)
+      })
+
+      it('does NOT mask an unexpected error such as a parsing bug', async () => {
+        const bug = new TypeError('cannot read property of undefined')
+        mockClient.search.mockRejectedValue(bug)
+        await expect(adapter.search({ q: 'x' })).rejects.toBe(bug)
+      })
+
+      it('maps a connection failure during ensureIndex() to 503', async () => {
+        // A down cluster throws at indices.exists() (the first call), before client.search().
+        mockClient.indices.exists.mockRejectedValue(
+          new osErrors.ConnectionError('connection refused', meta(0))
+        )
+        await expect(adapter.search({ q: 'x' })).rejects.toMatchObject({ status: 503 })
+        expect(mockClient.search).not.toHaveBeenCalled()
+      })
     })
 
     it('should merge content matches into matchedResources via inner_hits', async () => {

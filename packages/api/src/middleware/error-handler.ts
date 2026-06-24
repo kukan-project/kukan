@@ -18,7 +18,7 @@ export const errorHandler: ErrorHandler = (err, c) => {
         detail: err.message,
         ...(err.details && { details: err.details }),
       },
-      err.status as 400 | 401 | 403 | 404 | 409 | 422 | 500
+      err.status as 400 | 401 | 403 | 404 | 409 | 422 | 500 | 503
     )
   }
 

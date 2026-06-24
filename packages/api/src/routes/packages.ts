@@ -123,7 +123,9 @@ packagesRouter.get(
       state: effectiveState,
     }
 
-    // Dashboard (my_org=true) uses PostgreSQL adapter for DB consistency
+    // Dashboard (my_org=true) uses PostgreSQL adapter for DB consistency.
+    // A search-backend outage surfaces as ServiceUnavailableError (503) from the
+    // OpenSearch adapter; DB errors propagate as 500. See SearchAdapter for the mapping.
     const search = my_org ? c.get('dbSearch') : c.get('search')
     const searchResult = await search.search({
       q: rest.q ?? '',

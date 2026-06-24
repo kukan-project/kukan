@@ -9,8 +9,8 @@
  * Searching with `q` fires an msearch across both indices and merges results.
  */
 
-import { Client } from '@opensearch-project/opensearch'
-import { createLogger, type Logger } from '@kukan/shared'
+import { Client, errors as osErrors } from '@opensearch-project/opensearch'
+import { createLogger, ServiceUnavailableError, type Logger } from '@kukan/shared'
 import type {
   SearchAdapter,
   SearchQuery,
@@ -45,6 +45,27 @@ const CONTENT_HIGHLIGHT = {
 /** Check if an error is an OpenSearch 404 (not found) */
 function isNotFoundError(err: unknown): boolean {
   return Boolean(err && typeof err === 'object' && 'statusCode' in err && err.statusCode === 404)
+}
+
+/**
+ * Whether an error means the OpenSearch backend is unreachable or overloaded
+ * (timeout, lost connection, 5xx, or 429 circuit breaker) rather than a bad request.
+ * Used to map only these to a 503 — a 4xx (e.g. a malformed query) or any non-client
+ * error (e.g. a response-parsing bug) must propagate as 500 so it stays visible.
+ */
+function isBackendUnavailable(err: unknown): boolean {
+  if (
+    err instanceof osErrors.TimeoutError ||
+    err instanceof osErrors.ConnectionError ||
+    err instanceof osErrors.NoLivingConnectionsError
+  ) {
+    return true
+  }
+  if (err instanceof osErrors.ResponseError) {
+    const status = err.statusCode ?? 0
+    return status >= 500 || status === 429
+  }
+  return false
 }
 
 /** Sanitize OpenSearch highlight output: allow only bare <mark> and </mark> tags */
@@ -463,8 +484,25 @@ export class OpenSearchAdapter implements SearchAdapter {
     }
   }
 
+  /**
+   * Map an OpenSearch backend outage (timeout / connection / 5xx / 429) to a 503;
+   * re-throw anything else (bad query, parsing bug) so it still surfaces as a 500.
+   */
+  private mapBackendError(err: unknown): never {
+    if (isBackendUnavailable(err)) {
+      this.log.error({ err }, 'search backend unavailable')
+      throw new ServiceUnavailableError('Search is temporarily unavailable')
+    }
+    throw err
+  }
+
   async search(query: SearchQuery): Promise<SearchResult> {
-    await this.ensureIndex()
+    // ensureIndex() hits the cluster first, so a down node throws here (not at search()).
+    try {
+      await this.ensureIndex()
+    } catch (err) {
+      this.mapBackendError(err)
+    }
 
     const offset = query.offset ?? 0
     const limit = query.limit ?? 20
@@ -570,20 +608,25 @@ export class OpenSearchAdapter implements SearchAdapter {
       ...(highlight && { highlight }),
     }
 
-    const t0 = Date.now()
-    const response = await this.client.search({ index: this.searchIndex, body })
-    const elapsed = Date.now() - t0
+    try {
+      const t0 = Date.now()
+      const response = await this.client.search({ index: this.searchIndex, body })
+      const elapsed = Date.now() - t0
 
-    const result = this.parseSearchResponse(response, query, offset, limit)
+      const result = this.parseSearchResponse(response, query, offset, limit)
 
-    // For content-only matches, fetch resource metadata (name, format) via mget
-    if (hasQuery) {
-      await this.enrichContentMatchMetadata(result)
+      // For content-only matches, fetch resource metadata (name, format) via mget
+      if (hasQuery) {
+        await this.enrichContentMatchMetadata(result)
+      }
+
+      this.log.info({ msg: 'search', q: query.q, took: elapsed, total: result.total })
+
+      return result
+    } catch (err) {
+      // Backend down/overloaded → 503; bad queries and parsing bugs propagate as 500.
+      this.mapBackendError(err)
     }
-
-    this.log.info({ msg: 'search', q: query.q, took: elapsed, total: result.total })
-
-    return result
   }
 
   /** Parse search response with inner_hits into SearchResult */

@@ -95,6 +95,7 @@
     "title": "データセット",
     "noDatasets": "データセットがありません",
     "noMatchingDatasets": "「{query}」に一致するデータセットはありません",
+    "searchError": "検索が一時的に利用できません。しばらくしてから再試行してください。",
     "searchPlaceholder": "データセットを検索...",
     "breadcrumb": "データセット一覧",
     "resources": "リソース一覧",

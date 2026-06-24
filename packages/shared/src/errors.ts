@@ -44,3 +44,9 @@ export class ConflictError extends KukanError {
     super(message, 'CONFLICT', 409)
   }
 }
+
+export class ServiceUnavailableError extends KukanError {
+  constructor(message = 'Service temporarily unavailable') {
+    super(message, 'SERVICE_UNAVAILABLE', 503)
+  }
+}

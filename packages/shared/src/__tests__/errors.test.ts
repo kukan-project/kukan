@@ -6,6 +6,7 @@ import {
   UnauthorizedError,
   ForbiddenError,
   ConflictError,
+  ServiceUnavailableError,
 } from '../errors'
 
 describe('KukanError', () => {
@@ -107,5 +108,24 @@ describe('ConflictError', () => {
   it('should accept custom message', () => {
     const error = new ConflictError('Resource already exists')
     expect(error.message).toBe('Resource already exists')
+  })
+})
+
+describe('ServiceUnavailableError', () => {
+  it('should have default message', () => {
+    const error = new ServiceUnavailableError()
+    expect(error.message).toBe('Service temporarily unavailable')
+    expect(error.code).toBe('SERVICE_UNAVAILABLE')
+    expect(error.status).toBe(503)
+  })
+
+  it('should accept custom message', () => {
+    const error = new ServiceUnavailableError('Search is temporarily unavailable')
+    expect(error.message).toBe('Search is temporarily unavailable')
+  })
+
+  it('should be an instance of KukanError', () => {
+    const error = new ServiceUnavailableError()
+    expect(error).toBeInstanceOf(KukanError)
   })
 })
