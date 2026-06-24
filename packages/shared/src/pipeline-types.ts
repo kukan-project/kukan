@@ -11,6 +11,52 @@ export type PipelineStepName = 'fetch' | 'extract' | 'index'
 /** Content type for indexed resource text */
 export type ContentType = 'tabular' | 'text' | 'manifest' | 'document'
 
+// ── Resource (column) schema (ADR-032) ──
+// The column schema inferred while generating the preview Parquet (ADR-029) is
+// persisted to resource_pipeline.metadata.schema so it can be surfaced before
+// the data is downloaded (e.g. the get_resource_schema MCP tool). Column types
+// mirror the inferred types from the Extract step.
+
+/** Inferred column type (same set as the Extract step's type inference, ADR-029). */
+export const RESOURCE_COLUMN_TYPES = ['integer', 'float', 'boolean', 'string'] as const
+export type ResourceColumnType = (typeof RESOURCE_COLUMN_TYPES)[number]
+
+/**
+ * Min/max bounds for a numeric column. Present iff the column `type` is
+ * `integer` or `float` (such columns always have at least one non-null value),
+ * and absent for `boolean`/`string` — so presence is fully determined by
+ * `type`. Integer bounds are decimal strings (INT64 can exceed JS Number's safe
+ * range, so a string preserves exact digits); float bounds are numbers. `min`
+ * and `max` are therefore always the same type within a column — the paired
+ * union below rejects a mixed `{ min: string, max: number }`.
+ */
+export const columnStatsSchema = z.union([
+  z.object({ min: z.string(), max: z.string() }),
+  z.object({ min: z.number(), max: z.number() }),
+])
+export type ColumnStats = z.infer<typeof columnStatsSchema>
+
+export const resourceColumnSchema = z.object({
+  /** Column name (header, or `column_{index}` when the header is blank). */
+  name: z.string(),
+  /** Inferred semantic type. */
+  type: z.enum(RESOURCE_COLUMN_TYPES),
+  /** Whether the column has any missing (empty) values. */
+  nullable: z.boolean(),
+  /** Number of missing (empty) values in the column. */
+  nullCount: z.number().int().nonnegative(),
+  /** Min/max bounds for numeric columns (omitted for boolean/string/all-null). */
+  stats: columnStatsSchema.optional(),
+})
+export type ResourceColumn = z.infer<typeof resourceColumnSchema>
+
+export const resourceSchemaSchema = z.object({
+  columns: z.array(resourceColumnSchema),
+  /** Number of data rows (excluding the header). */
+  rowCount: z.number().int().nonnegative(),
+})
+export type ResourceSchema = z.infer<typeof resourceSchemaSchema>
+
 // ── Queue job types ──
 // Each job carries a validated payload (schemas below) so the worker never trusts
 // an unvalidated queue message body.

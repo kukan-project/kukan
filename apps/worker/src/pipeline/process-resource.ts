@@ -76,10 +76,19 @@ export async function processResource(
       )
       if (extractResult === null) {
         await tracker.skipStep(extractStepId)
+        // No preview/schema applies to this format (non-text, e.g. PDF/image).
+        // Clear any stale values a previous run left behind — e.g. a resource
+        // that was a CSV (with a schema + Parquet preview) and was then replaced
+        // with a PDF must not keep reporting the old schema as queryable.
+        // (A transient extract failure throws instead and is caught below, where
+        // the previous preview is intentionally preserved.)
+        await tracker.updateExtractResult(pipeline.id, null, {})
       } else {
         await tracker.completeStep(extractStepId)
         await tracker.updateExtractResult(pipeline.id, extractResult.previewKey, {
           encoding: extractResult.encoding,
+          // Persist the column schema (ADR-032) when one was generated (CSV/TSV).
+          ...(extractResult.schema ? { schema: extractResult.schema } : {}),
         })
       }
     } catch (err) {

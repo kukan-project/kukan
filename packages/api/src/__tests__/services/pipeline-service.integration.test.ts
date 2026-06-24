@@ -219,4 +219,51 @@ describe('PipelineService', () => {
       expect(status!.previewKey).toBe('previews/pkg-1/res-1.parquet')
     })
   })
+
+  describe('getSchema (ADR-032)', () => {
+    const validSchema = {
+      rowCount: 2,
+      columns: [
+        { name: 'id', type: 'integer', nullable: false, nullCount: 0 },
+        { name: 'name', type: 'string', nullable: true, nullCount: 1 },
+      ],
+    }
+
+    it('returns null when no pipeline exists', async () => {
+      const service = new PipelineService(db)
+      expect(await service.getSchema(testResId)).toBeNull()
+    })
+
+    it('returns null when metadata has no schema', async () => {
+      const service = new PipelineService(db, createMockQueue())
+      await service.enqueue(testResId)
+      await db.execute(sql`
+        UPDATE resource_pipeline SET metadata = '{"encoding":"UTF-8"}'::jsonb
+        WHERE resource_id = ${testResId}
+      `)
+      expect(await service.getSchema(testResId)).toBeNull()
+    })
+
+    it('returns the parsed schema when present', async () => {
+      const service = new PipelineService(db, createMockQueue())
+      await service.enqueue(testResId)
+      await db.execute(sql`
+        UPDATE resource_pipeline
+        SET metadata = ${JSON.stringify({ encoding: 'UTF-8', schema: validSchema })}::jsonb
+        WHERE resource_id = ${testResId}
+      `)
+      expect(await service.getSchema(testResId)).toEqual(validSchema)
+    })
+
+    it('returns null when the stored schema is malformed', async () => {
+      const service = new PipelineService(db, createMockQueue())
+      await service.enqueue(testResId)
+      await db.execute(sql`
+        UPDATE resource_pipeline
+        SET metadata = '{"schema":{"columns":"not-an-array"}}'::jsonb
+        WHERE resource_id = ${testResId}
+      `)
+      expect(await service.getSchema(testResId)).toBeNull()
+    })
+  })
 })

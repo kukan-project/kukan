@@ -121,6 +121,36 @@ describe('processResource', () => {
     )
   })
 
+  it('should persist the column schema into metadata when extract returns one (ADR-032)', async () => {
+    const schema = {
+      rowCount: 2,
+      columns: [
+        { name: 'id', type: 'integer' as const, nullable: false, nullCount: 0 },
+        { name: 'name', type: 'string' as const, nullable: true, nullCount: 1 },
+      ],
+    }
+    vi.mocked(executeFetch).mockResolvedValue({
+      storageKey: 'resources/pkg-1/res-1',
+      format: 'CSV',
+      packageId: 'pkg-1',
+      status: 'fetched',
+    })
+    vi.mocked(executeExtract).mockResolvedValue({
+      previewKey: 'previews/pkg-1/res-1.parquet',
+      encoding: 'UTF8',
+      schema,
+    })
+    vi.mocked(executeIndexContent).mockResolvedValue(null)
+
+    await processResource('res-1', ctx, db, queue)
+
+    expect(mockTracker.updateExtractResult).toHaveBeenCalledWith(
+      'pipeline-1',
+      'previews/pkg-1/res-1.parquet',
+      { encoding: 'UTF8', schema }
+    )
+  })
+
   it('should skip fetch step when upload already has hash', async () => {
     vi.mocked(executeFetch).mockResolvedValue({
       storageKey: 'resources/pkg-1/res-1',
@@ -151,9 +181,28 @@ describe('processResource', () => {
 
     expect(mockTracker.skipStep).toHaveBeenCalledWith('step-1') // extract skipped
     expect(mockTracker.skipStep).toHaveBeenCalledWith('step-2') // index skipped
-    expect(mockTracker.updateExtractResult).not.toHaveBeenCalled()
+    // Clears any stale preview/schema from a previous run (e.g. CSV → PDF replace).
+    expect(mockTracker.updateExtractResult).toHaveBeenCalledWith('pipeline-1', null, {})
     expect(mockTracker.startStep).toHaveBeenCalledTimes(3)
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
+  })
+
+  it('does NOT clear preview/schema when extract throws (transient failure)', async () => {
+    // A thrown extract is a transient failure — the previous preview/schema must
+    // be preserved (unlike a null return, which means "no preview applies").
+    vi.mocked(executeFetch).mockResolvedValue({
+      storageKey: 'resources/pkg-1/res-1',
+      format: 'CSV',
+      packageId: 'pkg-1',
+      status: 'fetched',
+    })
+    vi.mocked(executeExtract).mockRejectedValue(new Error('Parse error'))
+    vi.mocked(executeIndexContent).mockResolvedValue(null)
+
+    await processResource('res-1', ctx, db, queue)
+
+    expect(mockTracker.failStep).toHaveBeenCalled()
+    expect(mockTracker.updateExtractResult).not.toHaveBeenCalled()
   })
 
   it('should complete even if extract fails', async () => {

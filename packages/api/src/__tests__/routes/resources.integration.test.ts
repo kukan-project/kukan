@@ -913,6 +913,60 @@ describe('Resources API Routes', () => {
     })
   })
 
+  describe('GET /api/v1/resources/:id/schema (ADR-032)', () => {
+    const schema = {
+      rowCount: 2,
+      columns: [
+        { name: 'id', type: 'integer', nullable: false, nullCount: 0 },
+        { name: 'name', type: 'string', nullable: true, nullCount: 1 },
+      ],
+    }
+
+    it('returns queryable=false when no schema is stored', async () => {
+      const pkg = await createPackage('schema-none-pkg')
+      const resource = await createResource(pkg.id, { name: 'no-schema.csv' })
+
+      const res = await app.request(`/api/v1/resources/${resource.id}/schema`)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ id: resource.id, queryable: false, schema: null })
+    })
+
+    it('returns the stored schema with queryable=true', async () => {
+      const pkg = await createPackage('schema-pkg')
+      const resource = await createResource(pkg.id, { name: 'with-schema.csv' })
+      // A pipeline row already exists (created when the resource was enqueued),
+      // so upsert the schema into its metadata.
+      await db
+        .insert(resourcePipeline)
+        .values({ resourceId: resource.id, status: 'complete', metadata: { schema } })
+        .onConflictDoUpdate({
+          target: resourcePipeline.resourceId,
+          set: { status: 'complete', metadata: { schema } },
+        })
+
+      const res = await app.request(`/api/v1/resources/${resource.id}/schema`)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ id: resource.id, queryable: true, schema })
+    })
+
+    it('denies access to a private resource for unauthenticated users', async () => {
+      const pkg = await createPackage('schema-private-pkg', { private: true })
+      const resource = await createResource(pkg.id, { name: 'secret.csv' })
+      // A pipeline row already exists (created when the resource was enqueued),
+      // so upsert the schema into its metadata.
+      await db
+        .insert(resourcePipeline)
+        .values({ resourceId: resource.id, status: 'complete', metadata: { schema } })
+        .onConflictDoUpdate({
+          target: resourcePipeline.resourceId,
+          set: { status: 'complete', metadata: { schema } },
+        })
+
+      const res = await unauthApp.request(`/api/v1/resources/${resource.id}/schema`)
+      expect(res.status).toBe(404)
+    })
+  })
+
   describe('GET /api/v1/resources/:id/download', () => {
     it('should redirect to external URL for non-upload resource', async () => {
       const pkg = await createPackage('dl-ext-pkg')

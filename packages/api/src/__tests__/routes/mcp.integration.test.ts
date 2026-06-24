@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
+import { sql } from 'drizzle-orm'
 import { createTestApp } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import { PostgresSearchAdapter } from '@kukan/search-adapter'
@@ -114,6 +115,7 @@ describe('MCP Server', () => {
       expect(toolNames).toContain('search_datasets')
       expect(toolNames).toContain('get_dataset')
       expect(toolNames).toContain('get_resource')
+      expect(toolNames).toContain('get_resource_schema')
       expect(toolNames).toContain('list_organizations')
       expect(toolNames).toContain('list_groups')
       expect(toolNames).toContain('list_tags')
@@ -223,6 +225,64 @@ describe('MCP Server', () => {
       expect(errorText).not.toContain('secret.csv')
       expect(errorText).not.toContain(pkg.id)
       expect(errorText).not.toContain('example.com/secret')
+    })
+  })
+
+  describe('get_resource_schema', () => {
+    it('reports not queryable when no schema is stored', async () => {
+      const app = mcpApp()
+      const pkg = await createPackage(app, { name: 'ds-noschema', title: 'No Schema' })
+      const resource = await createResource(app, pkg.id, {
+        name: 'image.png',
+        format: 'PNG',
+        url: 'http://example.com/image.png',
+      })
+
+      const result = await mcpToolCall(app, 'get_resource_schema', { id: resource.id })
+      const text = result.result.content[0].text as string
+
+      expect(text).toContain('not queryable')
+    })
+
+    it('returns columns and types when a schema is stored', async () => {
+      const app = mcpApp()
+      const pkg = await createPackage(app, { name: 'ds-schema', title: 'With Schema' })
+      const resource = await createResource(app, pkg.id, {
+        name: 'data.csv',
+        format: 'CSV',
+        url: 'http://example.com/data.csv',
+      })
+
+      const schema = {
+        rowCount: 3,
+        columns: [
+          {
+            name: 'id',
+            type: 'integer',
+            nullable: false,
+            nullCount: 0,
+            stats: { min: '1', max: '3' },
+          },
+          { name: 'name', type: 'string', nullable: true, nullCount: 1 },
+        ],
+      }
+      // A pipeline row already exists (created when the resource was enqueued),
+      // so upsert the schema into its metadata.
+      const metadataJson = JSON.stringify({ schema })
+      await db.execute(sql`
+        INSERT INTO resource_pipeline (resource_id, status, metadata)
+        VALUES (${resource.id}, 'complete', ${metadataJson}::jsonb)
+        ON CONFLICT (resource_id)
+        DO UPDATE SET status = 'complete', metadata = ${metadataJson}::jsonb
+      `)
+
+      const result = await mcpToolCall(app, 'get_resource_schema', { id: resource.id })
+      const text = result.result.content[0].text as string
+
+      expect(text).toContain('queryable')
+      expect(text).toContain('Rows: 3')
+      expect(text).toContain('id: integer, range 1..3')
+      expect(text).toContain('name: string (nullable)')
     })
   })
 

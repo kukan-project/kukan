@@ -103,6 +103,38 @@ describe('executeExtract — column typing (ADR-029)', () => {
     expect(byName.category.data).toEqual(['A', '', ''])
   })
 
+  it('returns the persisted column schema (ADR-032)', async () => {
+    ctx.storage.download.mockResolvedValue(
+      Readable.from(
+        Buffer.from('id,price,name\n' + '1,1.5,Alice\n' + '2,,Bob\n' + '3,3.25,Carol\n')
+      )
+    )
+
+    const result = await executeExtract('r', 'p', 'resources/p/r', 'CSV', ctx)
+
+    expect(result?.previewKey).toBeTruthy()
+    expect(result?.schema).toEqual({
+      rowCount: 3,
+      columns: [
+        {
+          name: 'id',
+          type: 'integer',
+          nullable: false,
+          nullCount: 0,
+          stats: { min: '1', max: '3' },
+        },
+        {
+          name: 'price',
+          type: 'float',
+          nullable: true,
+          nullCount: 1,
+          stats: { min: 1.5, max: 3.25 },
+        },
+        { name: 'name', type: 'string', nullable: false, nullCount: 0 },
+      ],
+    })
+  })
+
   it('keeps all rows of a single-column CSV (footer rule is multi-column only)', async () => {
     // Every value row has exactly one non-empty cell; the "nearly empty" footer
     // rule must not apply to single-column CSVs (regression: 0-row preview).

@@ -8,6 +8,7 @@
  */
 
 import { BOOLEAN_LITERALS } from '@/config'
+import type { ColumnStats, ResourceColumn, ResourceSchema } from '@kukan/shared'
 
 /** Inferred semantic column type. */
 export type InferredType = 'integer' | 'float' | 'boolean' | 'string'
@@ -106,6 +107,75 @@ export function inferColumnType(values: string[]): InferredType {
 /** Map an inferred type to the hyparquet-writer basic type. */
 export function parquetTypeFor(type: InferredType): WriterType {
   return WRITER_TYPE[type]
+}
+
+/** A single Parquet column ready for hyparquet-writer. */
+export interface ParquetColumn {
+  name: string
+  type: WriterType
+  data: CellValue[]
+}
+
+export interface BuiltColumns {
+  /** Persisted resource schema (ADR-032). */
+  schema: ResourceSchema
+  /** Typed columns for the Parquet writer (ADR-029). */
+  columnData: ParquetColumn[]
+}
+
+/**
+ * Single pass over parsed CSV/TSV rows producing BOTH the persisted resource
+ * schema (ADR-032) and the typed Parquet `columnData` (ADR-029). Each column's
+ * values are read once and its type inferred once, so the stored schema and the
+ * written data can never diverge. Column names fall back to `column_{index}`
+ * for blank headers.
+ */
+export function buildColumns(headers: string[], dataRows: string[][]): BuiltColumns {
+  const columns: ResourceColumn[] = []
+  const columnData: ParquetColumn[] = []
+  headers.forEach((header, colIndex) => {
+    const rawValues = dataRows.map((row) => row[colIndex] ?? '')
+    const inferred = inferColumnType(rawValues)
+    const numeric = inferred === 'integer' || inferred === 'float'
+
+    // Single pass over the column: convert each cell, count missing values, and
+    // track numeric min/max together. A manual loop is intentional —
+    // Math.min(...col) would overflow the call stack on large columns and has
+    // no bigint form, and reduce/filter would allocate intermediates.
+    const data: CellValue[] = new Array(rawValues.length)
+    let nullCount = 0
+    let min: bigint | number | undefined
+    let max: bigint | number | undefined
+    for (let i = 0; i < rawValues.length; i++) {
+      if (rawValues[i] === '') nullCount++
+      const cell = convertCell(inferred, rawValues[i])
+      data[i] = cell
+      if (numeric && cell !== null) {
+        const n = cell as bigint | number
+        if (min === undefined || n < min) min = n
+        if (max === undefined || n > max) max = n
+      }
+    }
+
+    // Integer bounds as decimal strings (INT64 may exceed Number's safe range).
+    const stats: ColumnStats | undefined =
+      min === undefined
+        ? undefined
+        : inferred === 'integer'
+          ? { min: String(min), max: String(max) }
+          : { min: min as number, max: max as number }
+
+    const name = header || `column_${colIndex}`
+    columns.push({
+      name,
+      type: inferred,
+      nullable: nullCount > 0,
+      nullCount,
+      ...(stats && { stats }),
+    })
+    columnData.push({ name, type: parquetTypeFor(inferred), data })
+  })
+  return { schema: { columns, rowCount: dataRows.length }, columnData }
 }
 
 /**

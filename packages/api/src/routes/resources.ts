@@ -388,6 +388,20 @@ resourcesRouter.get('/:id/pipeline-status', async (c) => {
   })
 })
 
+// GET /api/v1/resources/:id/schema - Column schema for a tabular resource (ADR-032)
+// Lets clients (and the MCP get_resource_schema tool) discover field names/types
+// before downloading the data. `queryable` is false when no schema exists
+// (non-tabular format, oversize CSV, or not yet processed).
+resourcesRouter.get('/:id/schema', async (c) => {
+  const id = c.req.param('id')
+  const db = c.get('db')
+  const user = c.get('user')
+  // Same visibility check as preview/download — the schema reveals the data's shape.
+  await new ResourceService(db).getByIdWithAccessCheck(id, user)
+  const schema = await new PipelineService(db).getSchema(id)
+  return c.json({ id, queryable: schema !== null, schema })
+})
+
 // --- Upload flow: upload-url → upload → upload-complete ---
 
 // POST /api/v1/resources/:id/upload-url - Get presigned upload URL (new upload or replacement)

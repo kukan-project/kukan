@@ -12,8 +12,9 @@ import {
   bufferToUtf8,
 } from '../node-utils'
 import { getPreviewKey, isCsvFormat, isTextFormat, isZipFormat } from '@kukan/shared'
+import type { ResourceSchema } from '@kukan/shared'
 import { parquetWriteBuffer } from 'hyparquet-writer'
-import { inferColumnType, parquetTypeFor, convertCell } from '../type-inference'
+import { buildColumns } from '../type-inference'
 import Papa from 'papaparse'
 import { extractZipManifest } from './extract-zip'
 import type { PipelineContext } from '../types'
@@ -29,6 +30,8 @@ const FIXED_UTF8_FORMATS = new Set(['json', 'geojson', 'md'])
 export interface ExtractResult {
   previewKey: string | null
   encoding: string
+  /** Column schema (CSV/TSV only, when a Parquet preview was generated). */
+  schema?: ResourceSchema | null
 }
 
 /**
@@ -120,17 +123,11 @@ export async function executeExtract(
 
   const dataRows = removeFooterRows(titleSkipped.slice(1))
 
-  // Infer each column's type (ADR-029) and convert cells accordingly.
-  // Empty cells become null for typed columns; STRING columns keep ''.
-  const columnData = headers.map((header, colIndex) => {
-    const rawValues = dataRows.map((row) => row[colIndex] ?? '')
-    const inferred = inferColumnType(rawValues)
-    return {
-      name: header || `column_${colIndex}`,
-      type: parquetTypeFor(inferred),
-      data: rawValues.map((v) => convertCell(inferred, v)),
-    }
-  })
+  // Infer each column's type (ADR-029) once, producing both the persisted
+  // schema (ADR-032) and the typed Parquet columnData in a single pass so they
+  // can never diverge. Empty cells become null for typed columns; STRING
+  // columns keep ''.
+  const { schema, columnData } = buildColumns(headers, dataRows)
 
   const parquetBuf = parquetWriteBuffer({ columnData, rowGroupSize: PARQUET_ROW_GROUP_SIZE })
 
@@ -144,7 +141,7 @@ export async function executeExtract(
     contentType: 'application/vnd.apache.parquet',
   })
 
-  return { previewKey, encoding }
+  return { previewKey, encoding, schema }
 }
 
 /** Count the cells in a row that are not blank (after trimming). */

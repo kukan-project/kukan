@@ -76,9 +76,13 @@ preview directly** rather than loading data into dedicated tables.
 ### Part A — Persist the column schema
 
 1. In the Extract step (`apps/worker/src/pipeline/steps/extract.ts`), while generating the Parquet,
-   assemble each column's `{ name, type, nullable, nullCount }` plus `rowCount` and store it in
-   `resource_pipeline.metadata.schema`. `type` reuses the ADR-029 inferred types
-   (`integer` / `float` / `boolean` / `string`).
+   assemble each column's `{ name, type, nullable, nullCount, stats? }` plus `rowCount` and store it
+   in `resource_pipeline.metadata.schema`. `type` reuses the ADR-029 inferred types
+   (`integer` / `float` / `boolean` / `string`). `stats` holds min/max for numeric columns
+   (`integer` / `float`, only when there is at least one non-null value), computed in the same pass as
+   cell conversion (no extra scan). Integer bounds are decimal strings (INT64 can exceed JS Number's safe range); float
+   bounds are numbers. Distinct/sum/avg are out of scope for Parquet statistics and are left to Part B
+   queries.
 2. Applies only to **formats that produce a Parquet** (CSV/TSV, ≤50MB). Everything else (PDF, images,
    oversize CSV) has no `schema` (`null`).
 3. Exposure:

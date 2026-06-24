@@ -6,8 +6,8 @@
 import { eq, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, resourcePipeline, resourcePipelineStep } from '@kukan/db'
-import { ValidationError, PIPELINE_JOB_TYPE } from '@kukan/shared'
-import type { PipelineStatus } from '@kukan/shared'
+import { ValidationError, PIPELINE_JOB_TYPE, resourceSchemaSchema } from '@kukan/shared'
+import type { PipelineStatus, ResourceSchema } from '@kukan/shared'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 
 export class PipelineService {
@@ -107,5 +107,24 @@ export class PipelineService {
       .orderBy(resourcePipelineStep.startedAt)
 
     return { ...pipeline, steps }
+  }
+
+  /**
+   * Get the persisted column schema for a resource (ADR-032), or null when the
+   * resource has no tabular schema (non-tabular format, oversize CSV, or not yet
+   * processed). The schema is stored in resource_pipeline.metadata.schema by the
+   * Extract step; it is validated here so a malformed value yields null rather
+   * than leaking unverified data.
+   */
+  async getSchema(resourceId: string): Promise<ResourceSchema | null> {
+    const [row] = await this.db
+      .select({ metadata: resourcePipeline.metadata })
+      .from(resourcePipeline)
+      .where(eq(resourcePipeline.resourceId, resourceId))
+      .limit(1)
+
+    if (!row?.metadata) return null
+    const parsed = resourceSchemaSchema.safeParse(row.metadata.schema)
+    return parsed.success ? parsed.data : null
   }
 }

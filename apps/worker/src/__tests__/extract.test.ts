@@ -39,6 +39,19 @@ describe('executeExtract', () => {
     expect(result).toEqual({
       previewKey: 'previews/pkg-1/res-1.parquet',
       encoding: expect.stringMatching(/^(ASCII|ISO-8859-1)$/),
+      schema: {
+        rowCount: 2,
+        columns: [
+          { name: 'name', type: 'string', nullable: false, nullCount: 0 },
+          {
+            name: 'age',
+            type: 'integer',
+            nullable: false,
+            nullCount: 0,
+            stats: { min: '25', max: '30' },
+          },
+        ],
+      },
     })
     expect(ctx.storage.upload).toHaveBeenCalledOnce()
 

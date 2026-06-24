@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { inferColumnType, convertCell, parquetTypeFor } from '../pipeline/type-inference'
+import {
+  inferColumnType,
+  convertCell,
+  parquetTypeFor,
+  buildColumns,
+} from '../pipeline/type-inference'
 
 describe('inferColumnType', () => {
   it('infers integer for plain integer columns', () => {
@@ -86,5 +91,80 @@ describe('parquetTypeFor', () => {
     expect(parquetTypeFor('float')).toBe('DOUBLE')
     expect(parquetTypeFor('boolean')).toBe('BOOLEAN')
     expect(parquetTypeFor('string')).toBe('STRING')
+  })
+})
+
+describe('buildColumns — schema (ADR-032)', () => {
+  it('infers column types, counts missing cells, and records the row count', () => {
+    const { schema } = buildColumns(
+      ['id', 'price', 'flag', 'name'],
+      [
+        ['1', '1.5', 'true', 'Alice'],
+        ['2', '', 'false', 'Bob'],
+        ['3', '3.25', 'true', ''],
+      ]
+    )
+
+    expect(schema.rowCount).toBe(3)
+    expect(schema.columns).toEqual([
+      { name: 'id', type: 'integer', nullable: false, nullCount: 0, stats: { min: '1', max: '3' } },
+      {
+        name: 'price',
+        type: 'float',
+        nullable: true,
+        nullCount: 1,
+        stats: { min: 1.5, max: 3.25 },
+      },
+      { name: 'flag', type: 'boolean', nullable: false, nullCount: 0 },
+      { name: 'name', type: 'string', nullable: true, nullCount: 1 },
+    ])
+  })
+
+  it('computes numeric min/max stats (integer as string, float as number) and omits non-numeric', () => {
+    const { schema } = buildColumns(
+      ['n', 'f', 's'],
+      [
+        ['-5', '2.5', 'x'],
+        ['10', '', 'y'],
+        ['3', '-1.0', 'z'],
+      ]
+    )
+    const byName = Object.fromEntries(schema.columns.map((c) => [c.name, c]))
+    expect(byName.n.stats).toEqual({ min: '-5', max: '10' })
+    expect(byName.f.stats).toEqual({ min: -1, max: 2.5 })
+    expect(byName.s.stats).toBeUndefined()
+  })
+
+  it('omits stats for a numeric column with no non-null values', () => {
+    const { schema } = buildColumns(['empty'], [[''], ['']])
+    // all-empty → inferred as string, so no stats regardless
+    expect(schema.columns[0].stats).toBeUndefined()
+  })
+
+  it('derives Parquet columnData from the same pass as the schema', () => {
+    const { columnData } = buildColumns(
+      ['id', 'price'],
+      [
+        ['1', '1.5'],
+        ['2', ''],
+      ]
+    )
+    expect(columnData).toEqual([
+      { name: 'id', type: 'INT64', data: [1n, 2n] },
+      { name: 'price', type: 'DOUBLE', data: [1.5, null] },
+    ])
+  })
+
+  it('falls back to column_{index} for blank headers', () => {
+    const { schema } = buildColumns(['', 'b'], [['x', 'y']])
+    expect(schema.columns.map((c) => c.name)).toEqual(['column_0', 'b'])
+  })
+
+  it('treats missing trailing cells as empty (null) values', () => {
+    // Second row is short — the missing cell counts as a missing value.
+    const { schema } = buildColumns(['a', 'b'], [['1', '2'], ['3']])
+    const b = schema.columns.find((c) => c.name === 'b')!
+    expect(b.nullCount).toBe(1)
+    expect(b.nullable).toBe(true)
   })
 })
