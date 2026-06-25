@@ -6,13 +6,16 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Database } from '@kukan/db'
 import type { SearchAdapter } from '@kukan/search-adapter'
+import type { StorageAdapter } from '@kukan/storage-adapter'
 import { registerDatasetTools } from './tools/datasets'
 import { registerResourceTools } from './tools/resources'
 import { registerCatalogTools } from './tools/catalog'
+import { registerQueryTools } from './tools/query'
 
 interface McpContext {
   db: Database
   search: SearchAdapter
+  storage: StorageAdapter
   user?: { id: string; sysadmin: boolean }
 }
 
@@ -25,6 +28,7 @@ export function createMcpServer(ctx: McpContext): McpServer {
   registerDatasetTools(server, { db: ctx.db, search: ctx.search, user: ctx.user })
   registerResourceTools(server, { db: ctx.db, user: ctx.user })
   registerCatalogTools(server, { db: ctx.db })
+  registerQueryTools(server, { db: ctx.db, storage: ctx.storage, user: ctx.user })
 
   return server
 }

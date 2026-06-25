@@ -4,6 +4,8 @@ import {
   KukanError,
   NotFoundError,
   ValidationError,
+  RequestTimeoutError,
+  TooManyRequestsError,
   ServiceUnavailableError,
   createLogger,
 } from '@kukan/shared'
@@ -63,6 +65,30 @@ describe('errorHandler', () => {
     const body = await res.json()
     expect(body.title).toBe('VALIDATION_ERROR')
     expect(body.details).toEqual({ name: 'bad' })
+  })
+
+  it('should convert RequestTimeoutError to 408 RFC 7807', async () => {
+    const app = createTestApp(() => {
+      throw new RequestTimeoutError('Query exceeded the time limit')
+    })
+
+    const res = await app.request('/test')
+    expect(res.status).toBe(408)
+
+    const body = await res.json()
+    expect(body.title).toBe('REQUEST_TIMEOUT')
+  })
+
+  it('should convert TooManyRequestsError to 429 RFC 7807', async () => {
+    const app = createTestApp(() => {
+      throw new TooManyRequestsError('Too many concurrent queries')
+    })
+
+    const res = await app.request('/test')
+    expect(res.status).toBe(429)
+
+    const body = await res.json()
+    expect(body.title).toBe('TOO_MANY_REQUESTS')
   })
 
   it('should convert ServiceUnavailableError to 503 RFC 7807', async () => {

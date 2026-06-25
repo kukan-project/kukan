@@ -6,6 +6,8 @@ import {
   UnauthorizedError,
   ForbiddenError,
   ConflictError,
+  RequestTimeoutError,
+  TooManyRequestsError,
   ServiceUnavailableError,
 } from '../errors'
 
@@ -108,6 +110,32 @@ describe('ConflictError', () => {
   it('should accept custom message', () => {
     const error = new ConflictError('Resource already exists')
     expect(error.message).toBe('Resource already exists')
+  })
+})
+
+describe('RequestTimeoutError', () => {
+  it('should have default message', () => {
+    const error = new RequestTimeoutError()
+    expect(error.message).toBe('Request timed out')
+    expect(error.code).toBe('REQUEST_TIMEOUT')
+    expect(error.status).toBe(408)
+  })
+
+  it('should be an instance of KukanError', () => {
+    expect(new RequestTimeoutError()).toBeInstanceOf(KukanError)
+  })
+})
+
+describe('TooManyRequestsError', () => {
+  it('should have default message', () => {
+    const error = new TooManyRequestsError()
+    expect(error.message).toBe('Too many requests')
+    expect(error.code).toBe('TOO_MANY_REQUESTS')
+    expect(error.status).toBe(429)
+  })
+
+  it('should be an instance of KukanError', () => {
+    expect(new TooManyRequestsError()).toBeInstanceOf(KukanError)
   })
 })
 

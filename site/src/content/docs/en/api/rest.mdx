@@ -69,12 +69,91 @@ curl "https://your-kukan-site/api/v1/packages?q=population&organization[]=stat-b
 | GET | `/resources/{id}/download` | Download file (302 redirect for external URLs) | Public |
 | GET | `/resources/{id}/preview` | Server-proxied preview (Range supported) | Public |
 | GET | `/resources/{id}/pipeline-status` | Pipeline job status | Public |
+| GET | `/resources/{id}/schema` | Column schema (names, types, row count, numeric stats). CSV/TSV only | Public |
+| POST | `/resources/{id}/query` | Server-side DuckDB query (SELECT only). CSV/TSV only | Public |
 | POST | `/resources/{id}/upload-url` | Issue presigned upload URL | Org editor |
 | POST | `/resources/{id}/upload` | Server-proxied upload | Org editor |
 | POST | `/resources/{id}/upload-complete` | Notify completion, enqueue pipeline | Org editor |
 | POST | `/resources/{id}/run-pipeline` | Manually trigger pipeline | Org editor |
 | PUT | `/resources/{id}` | Update resource (full replacement; extras is system-managed) | Org editor |
 | DELETE | `/resources/{id}` | Delete resource | Org editor |
+
+### Schema and data query
+
+CSV/TSV resources (with a pipeline-generated preview Parquet, ≤50 MB) support **column schema
+retrieval** and **read-only SQL queries**. The MCP `get_resource_schema` / `query_resource`
+tools offer the same capability for AI agents.
+
+**Get schema** — `GET /resources/{id}/schema`:
+
+```json
+{
+  "id": "…",
+  "queryable": true,
+  "schema": {
+    "rowCount": 1688,
+    "columns": [
+      { "name": "prefecture", "type": "string", "nullable": true, "nullCount": 3 },
+      {
+        "name": "weight_limit",
+        "type": "integer",
+        "nullable": false,
+        "nullCount": 0,
+        "stats": { "min": "600", "max": "1350" }
+      }
+    ]
+  }
+}
+```
+
+Resources that cannot be queried (unsupported format, not yet processed) return
+`queryable: false`, `schema: null`. `type` is one of `integer` / `float` / `boolean` / `string`;
+`stats` is present only for numeric columns, and integer min/max are decimal strings.
+
+**Query data** — `POST /resources/{id}/query`:
+
+```bash
+curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
+  -H 'Content-Type: application/json' \
+  -d '{"sql": "SELECT prefecture AS city, count(*) AS n FROM data GROUP BY 1 ORDER BY n DESC LIMIT 3"}'
+```
+
+```json
+{
+  "id": "…",
+  "columns": ["city", "n"],
+  "rows": [
+    { "city": "Adachi", "n": "117" },
+    { "city": "Edogawa", "n": "110" },
+    { "city": "Ota", "n": "86" }
+  ],
+  "rowCount": 3,
+  "truncated": false,
+  "elapsedMs": 31
+}
+```
+
+Query rules:
+
+- The data is exposed as a table named `data`. Double-quote column names that contain spaces or non-ASCII characters.
+- A single `SELECT` / `WITH` statement only. Writes and DDL (`INSERT` / `UPDATE` / `DELETE` / `CREATE` / `DROP` / `ATTACH` / `COPY` / `PRAGMA`, …) are rejected.
+- Runs in a throwaway in-memory DuckDB instance; all external access (files, URLs, extension loading) is disabled.
+
+Limits and errors:
+
+| Item | Value |
+|------|-------|
+| Max rows | 10,000 (`truncated: true` when exceeded) |
+| Max result size | 5 MB |
+| Execution timeout | 15 s (`408`) |
+| Concurrency | 1 (`429` when exceeded) |
+
+| Error | Condition |
+|-------|-----------|
+| `400` | Invalid SQL / non-SELECT / over length / non-queryable resource |
+| `404` | Resource not found / private without access |
+| `408` | Execution timeout |
+| `429` | Concurrent query limit |
 
 ## Organizations
 

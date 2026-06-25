@@ -45,6 +45,18 @@ export class ConflictError extends KukanError {
   }
 }
 
+export class RequestTimeoutError extends KukanError {
+  constructor(message = 'Request timed out') {
+    super(message, 'REQUEST_TIMEOUT', 408)
+  }
+}
+
+export class TooManyRequestsError extends KukanError {
+  constructor(message = 'Too many requests') {
+    super(message, 'TOO_MANY_REQUESTS', 429)
+  }
+}
+
 export class ServiceUnavailableError extends KukanError {
   constructor(message = 'Service temporarily unavailable') {
     super(message, 'SERVICE_UNAVAILABLE', 503)

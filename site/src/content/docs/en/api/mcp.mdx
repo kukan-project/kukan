@@ -59,6 +59,8 @@ All tools are read-only. Access to private datasets is controlled based on the a
 | `search_datasets` | Search datasets by keyword. Supports organization and tag filters |
 | `get_dataset` | Get detailed dataset information including resource list |
 | `get_resource` | Get resource (file) metadata and URL |
+| `get_resource_schema` | Get a resource's column schema (names, types, row count, stats). CSV/TSV only |
+| `query_resource` | Run a read-only SQL query (SELECT only) over a resource's data. CSV/TSV only |
 | `list_organizations` | List organizations |
 | `list_groups` | List groups (categories) |
 | `list_tags` | List tags |
@@ -92,6 +94,32 @@ Get resource metadata. Returns the download URL for uploaded files.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `id` | string | Yes | Resource UUID |
+
+### get_resource_schema
+
+Get a resource's column schema (names, types, nullability, row count, and min/max for
+numeric columns). Only CSV/TSV resources with a generated preview are queryable. The output
+names the query table `data` and includes an example query, so the agent can write SQL after
+inspecting the schema.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | Yes | Resource UUID |
+
+### query_resource
+
+Run a read-only SQL query (`SELECT` / `WITH` only) over a resource's data and return the
+result as a Markdown table. The data is exposed as a table named `data`. Use
+`get_resource_schema` first to learn the column names and types.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | Yes | Resource UUID |
+| `sql` | string | Yes | A single SELECT/WITH statement over the `data` table |
+
+Runs in a throwaway in-memory DuckDB instance with external access disabled and row/byte/time
+limits. Double-quote column names that contain non-ASCII characters. See the REST
+`/resources/{id}/query` endpoint for limits and error details.
 
 ### list_organizations
 

@@ -6,9 +6,11 @@
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { zValidator } from '@hono/zod-validator'
+import { z } from 'zod'
 import { ResourceService } from '../services/resource-service'
 import { PipelineService } from '../services/pipeline-service'
 import { PackageService } from '../services/package-service'
+import { QueryService } from '../services/query-service'
 import {
   updateResourceSchema,
   uploadUrlSchema,
@@ -27,7 +29,12 @@ import {
   isJsonFormat,
   MAX_UPLOAD_SIZE,
 } from '@kukan/shared'
-import { TEXT_PREVIEW_LIMIT, JSON_PREVIEW_LIMIT, DEFAULT_RANGE_CHUNK } from '../config'
+import {
+  TEXT_PREVIEW_LIMIT,
+  JSON_PREVIEW_LIMIT,
+  DEFAULT_RANGE_CHUNK,
+  QUERY_MAX_SQL_LENGTH,
+} from '../config'
 import { JsonMinifyStream } from '../streams/json-minify-stream'
 import { checkOrgRole, resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
 import { indexPackageMetadata, indexResourceMetadata } from '../services/search-index'
@@ -401,6 +408,21 @@ resourcesRouter.get('/:id/schema', async (c) => {
   const schema = await new PipelineService(db).getSchema(id)
   return c.json({ id, queryable: schema !== null, schema })
 })
+
+// POST /api/v1/resources/:id/query - Run a read-only SQL query over the resource's
+// preview Parquet (ADR-032 Part B). The data is exposed as a table named `data`.
+// Visibility, "queryable" checks, sandboxing, and limits live in QueryService.
+resourcesRouter.post(
+  '/:id/query',
+  zValidator('json', z.object({ sql: z.string().min(1).max(QUERY_MAX_SQL_LENGTH) })),
+  async (c) => {
+    const id = c.req.param('id')
+    const { sql } = c.req.valid('json')
+    const service = new QueryService(c.get('db'), c.get('storage'), c.get('logger'))
+    const result = await service.query(id, sql, c.get('user'))
+    return c.json({ id, ...result })
+  }
+)
 
 // --- Upload flow: upload-url → upload → upload-complete ---
 

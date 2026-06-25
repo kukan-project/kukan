@@ -14,9 +14,10 @@ export const mcpRouter = new Hono<{ Variables: AppContext }>()
 mcpRouter.post('/', async (c) => {
   const db = c.get('db')
   const search = c.get('search')
+  const storage = c.get('storage')
   const user = c.get('user')
 
-  const server = createMcpServer({ db, search, user })
+  const server = createMcpServer({ db, search, storage, user })
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined, // Stateless mode

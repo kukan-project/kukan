@@ -76,6 +76,7 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
         }
       }
 
+      const firstCol = schema.columns[0]?.name ?? 'column'
       const text = [
         `Resource ${id} is queryable.`,
         `Rows: ${schema.rowCount}`,
@@ -84,6 +85,12 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
           const range = col.stats ? `, range ${col.stats.min}..${col.stats.max}` : ''
           return `  - ${col.name}: ${col.type}${col.nullable ? ' (nullable)' : ''}${range}`
         }),
+        '',
+        'To query the data, call query_resource with DuckDB SQL over a table named `data`.',
+        'Only a single read-only SELECT/WITH statement is allowed. Double-quote column',
+        'names that contain spaces or non-ASCII characters. Use aggregations or LIMIT —',
+        'large result sets are truncated.',
+        `Example: SELECT "${firstCol}", count(*) AS n FROM data GROUP BY "${firstCol}" ORDER BY n DESC LIMIT 20`,
       ].join('\n')
 
       return { content: [{ type: 'text' as const, text }] }

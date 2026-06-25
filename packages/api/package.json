@@ -23,6 +23,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@duckdb/node-api": "1.5.4-r.1",
     "@google-analytics/data": "^6.1.0",
     "@hono/node-server": "^2.0.4",
     "@hono/zod-validator": "^0.8.0",

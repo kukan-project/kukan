@@ -2280,23 +2280,36 @@ CREATE TABLE editor_catalog_link (
 
 ## 12. MCP サーバー
 
+Streamable HTTP（ステートレス）トランスポートで `POST /api/mcp` を公開する。現状は
+**ツールのみ**を提供し、MCP リソース（URI）は未実装。実装済みと当初構想（未実装）を区別して示す。
+
 ```typescript
 const mcpServer = new MCPServer({
   tools: [
-    { name: 'search_datasets', description: 'データセットを検索' },
-    { name: 'get_resource_data', description: 'リソースデータを取得' },
-    { name: 'get_dataset_summary', description: 'AI要約と統計を取得' },
-    { name: 'search_across_data', description: '横断検索' },
-    { name: 'get_quality_report', description: '品質レポートを取得' },
-    { name: 'check_broken_links', description: 'リンク切れ状況を確認' },
-    { name: 'list_editor_tables', description: 'Data Editorテーブル一覧を取得' },
-    { name: 'get_editor_table_data', description: 'Data Editorテーブルのデータを取得' },
+    // --- 実装済み（カタログ探索 + データクエリ） ---
+    { name: 'search_datasets', description: 'データセットを検索（組織・タグでフィルタ）' },
+    { name: 'get_dataset', description: 'データセット詳細（リソース一覧含む）を取得' },
+    { name: 'get_resource', description: 'リソースのメタデータと URL を取得' },
+    { name: 'get_resource_schema', description: 'リソースの列スキーマを取得（ADR-032 Part A）' },
+    { name: 'query_resource', description: 'リソースに読み取り専用 SQL を実行（ADR-032 Part B）' },
+    { name: 'list_organizations', description: '組織一覧を取得' },
+    { name: 'list_groups', description: 'グループ（カテゴリ）一覧を取得' },
+    { name: 'list_tags', description: 'タグ一覧を取得' },
+
+    // --- 未実装（当初構想・将来） ---
+    // { name: 'get_dataset_summary', description: 'AI要約と統計を取得' },          // Phase 5+（AI）
+    // { name: 'search_across_data', description: 'リソース横断のデータ検索' },
+    // { name: 'get_quality_report', description: '品質レポートを取得' },           // Quality Monitor（Phase 4+）
+    // { name: 'check_broken_links', description: 'リンク切れ状況を確認' },          // Quality Monitor
+    // { name: 'list_editor_tables', description: 'Data Editor テーブル一覧を取得' },   // Data Editor（Phase 7+）
+    // { name: 'get_editor_table_data', description: 'Data Editor テーブルのデータを取得' }, // Data Editor
   ],
-  resources: [
-    { uri: 'dataset://{id}', description: 'データセットメタデータ' },
-    { uri: 'resource://{id}/data', description: 'リソースデータ内容' },
-    { uri: 'editor://{tableId}', description: 'Data Editorテーブルデータ' },
-  ],
+  // --- 未実装（当初構想・将来）: MCP リソース（URI）。現状はツールのみ ---
+  // resources: [
+  //   { uri: 'dataset://{id}', description: 'データセットメタデータ' },
+  //   { uri: 'resource://{id}/data', description: 'リソースデータ内容' },
+  //   { uri: 'editor://{tableId}', description: 'Data Editor テーブルデータ' },
+  // ],
 })
 ```
 

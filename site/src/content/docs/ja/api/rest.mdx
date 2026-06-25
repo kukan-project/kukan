@@ -69,12 +69,90 @@ curl "https://your-kukan-site/api/v1/packages?q=人口&organization[]=stat-burea
 | GET | `/resources/{id}/download` | ファイルダウンロード（外部 URL は 302 リダイレクト） | 公開 |
 | GET | `/resources/{id}/preview` | サーバー経由プレビュー（Range 対応） | 公開 |
 | GET | `/resources/{id}/pipeline-status` | パイプライン処理状態 | 公開 |
+| GET | `/resources/{id}/schema` | 列スキーマ（列名・型・行数・数値統計）。CSV/TSV のみ | 公開 |
+| POST | `/resources/{id}/query` | サーバーサイド DuckDB クエリ（SELECT 限定）。CSV/TSV のみ | 公開 |
 | POST | `/resources/{id}/upload-url` | プリサインドアップロード URL 発行 | 組織 editor |
 | POST | `/resources/{id}/upload` | サーバー経由アップロード | 組織 editor |
 | POST | `/resources/{id}/upload-complete` | アップロード完了通知・パイプライン投入 | 組織 editor |
 | POST | `/resources/{id}/run-pipeline` | パイプライン手動実行 | 組織 editor |
 | PUT | `/resources/{id}` | リソース更新（全フィールド置換、extras はシステム管理） | 組織 editor |
 | DELETE | `/resources/{id}` | リソース削除 | 組織 editor |
+
+### スキーマとデータクエリ
+
+CSV/TSV リソース（パイプラインでプレビュー Parquet を生成済み・≤50MB）は、**列スキーマの取得**と
+**読み取り専用 SQL クエリ**ができます。AI エージェント向けには MCP の `get_resource_schema` /
+`query_resource` ツールも同等の機能を提供します。
+
+**スキーマ取得** — `GET /resources/{id}/schema`:
+
+```json
+{
+  "id": "…",
+  "queryable": true,
+  "schema": {
+    "rowCount": 1688,
+    "columns": [
+      { "name": "市区町村（発生地）", "type": "string", "nullable": true, "nullCount": 3 },
+      {
+        "name": "重量制限",
+        "type": "integer",
+        "nullable": false,
+        "nullCount": 0,
+        "stats": { "min": "600", "max": "1350" }
+      }
+    ]
+  }
+}
+```
+
+クエリ不可のリソース（非対応フォーマット・未処理）は `queryable: false`, `schema: null` を返します。
+`type` は `integer` / `float` / `boolean` / `string`。`stats` は数値列のみで、整数の min/max は十進文字列です。
+
+**データクエリ** — `POST /resources/{id}/query`:
+
+```bash
+curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
+  -H 'Content-Type: application/json' \
+  -d '{"sql": "SELECT \"市区町村（発生地）\" AS city, count(*) AS n FROM data GROUP BY 1 ORDER BY n DESC LIMIT 3"}'
+```
+
+```json
+{
+  "id": "…",
+  "columns": ["city", "n"],
+  "rows": [
+    { "city": "足立区", "n": "117" },
+    { "city": "江戸川区", "n": "110" },
+    { "city": "大田区", "n": "86" }
+  ],
+  "rowCount": 3,
+  "truncated": false,
+  "elapsedMs": 31
+}
+```
+
+クエリのルール:
+
+- データは `data` という名前のテーブルとして参照します。列名に空白や非 ASCII を含む場合は二重引用符で囲みます。
+- 単一の `SELECT` / `WITH` 文のみ。`INSERT` / `UPDATE` / `DELETE` / `CREATE` / `DROP` / `ATTACH` / `COPY` / `PRAGMA` 等の書き込み・DDL は拒否されます。
+- 使い捨ての in-memory DuckDB 上で実行され、ファイル・URL・拡張ロード等の外部アクセスは全面的に禁止されます。
+
+制限とエラー:
+
+| 項目 | 値 |
+|------|------|
+| 最大行数 | 10,000（超過時は `truncated: true`） |
+| 最大結果サイズ | 5 MB |
+| 実行タイムアウト | 15 秒（`408`） |
+| 同時実行 | 1（超過時 `429`） |
+
+| エラー | 状況 |
+|------|------|
+| `400` | SQL 不正・非 SELECT・長さ超過・クエリ不可リソース |
+| `404` | リソース不存在 / 非公開で権限なし |
+| `408` | 実行タイムアウト |
+| `429` | 同時クエリ上限 |
 
 ## 組織 (organizations)
 

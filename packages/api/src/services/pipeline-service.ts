@@ -116,6 +116,13 @@ export class PipelineService {
    * Extract step; it is validated here so a malformed value yields null rather
    * than leaking unverified data.
    */
+  /** Validate `metadata.schema`, returning null when absent or malformed. */
+  private parseSchema(metadata: unknown): ResourceSchema | null {
+    const schema = (metadata as { schema?: unknown } | null | undefined)?.schema
+    const parsed = resourceSchemaSchema.safeParse(schema)
+    return parsed.success ? parsed.data : null
+  }
+
   async getSchema(resourceId: string): Promise<ResourceSchema | null> {
     const [row] = await this.db
       .select({ metadata: resourcePipeline.metadata })
@@ -123,8 +130,26 @@ export class PipelineService {
       .where(eq(resourcePipeline.resourceId, resourceId))
       .limit(1)
 
-    if (!row?.metadata) return null
-    const parsed = resourceSchemaSchema.safeParse(row.metadata.schema)
-    return parsed.success ? parsed.data : null
+    return this.parseSchema(row?.metadata)
+  }
+
+  /**
+   * Resolve the inputs needed to run a server-side query (ADR-032 Part B) in a
+   * single read: the preview Parquet storage key and the validated column schema.
+   * Returns null when the resource has no pipeline row; `previewKey`/`schema` are
+   * individually null when the resource is not queryable (non-tabular, oversize,
+   * or not yet processed).
+   */
+  async getQueryTarget(
+    resourceId: string
+  ): Promise<{ previewKey: string | null; schema: ResourceSchema | null } | null> {
+    const [row] = await this.db
+      .select({ previewKey: resourcePipeline.previewKey, metadata: resourcePipeline.metadata })
+      .from(resourcePipeline)
+      .where(eq(resourcePipeline.resourceId, resourceId))
+      .limit(1)
+
+    if (!row) return null
+    return { previewKey: row.previewKey, schema: this.parseSchema(row.metadata) }
   }
 }

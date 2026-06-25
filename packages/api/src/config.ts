@@ -10,3 +10,32 @@ export const JSON_PREVIEW_LIMIT = 10 * 1024 * 1024
 
 /** Default Range chunk size for preview endpoint (1 MB) */
 export const DEFAULT_RANGE_CHUNK = 1024 * 1024
+
+// --- Server-side DuckDB query sandbox (ADR-032 Part B) ---
+
+/** Maximum rows returned by a single query (excess is truncated). */
+export const QUERY_MAX_ROWS = 10_000
+
+/** Maximum serialized result size before rows are dropped (5 MB). */
+export const QUERY_MAX_BYTES = 5 * 1024 * 1024
+
+/** Wall-clock timeout per query; the DuckDB connection is interrupted on expiry (ms). */
+export const QUERY_TIMEOUT_MS = 15_000
+
+// NOTE: total DuckDB memory peak ≈ QUERY_MEMORY_LIMIT_MB × QUERY_MAX_CONCURRENT. These
+// conservative defaults cap the peak at ~256 MB so the web container does not OOM even on
+// the small scale (512 MB). Each query still gets a full 256 MB so legitimate aggregations
+// succeed; concurrency is serialized to 1 instead. TODO: scale these with the deployment
+// size (env-injected from CDK) so medium/large can run more concurrent queries.
+
+/** Per-query DuckDB memory limit (bounds materialization + working memory). */
+export const QUERY_MEMORY_LIMIT_MB = 256
+
+/** Per-query DuckDB thread count. */
+export const QUERY_THREADS = 2
+
+/** Maximum concurrent queries; excess is rejected with 429. */
+export const QUERY_MAX_CONCURRENT = 1
+
+/** Maximum length of a user-supplied SQL string. */
+export const QUERY_MAX_SQL_LENGTH = 10_000

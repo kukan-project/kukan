@@ -1,0 +1,116 @@
+/**
+ * KUKAN Query Service (ADR-032 Part B)
+ *
+ * Runs a read-only SQL query against a resource's preview Parquet. Access, limits, and
+ * temp-file cleanup live here so the route and MCP tool stay thin.
+ */
+
+import { createWriteStream } from 'node:fs'
+import { unlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { pipeline } from 'node:stream/promises'
+import { ValidationError, TooManyRequestsError, createLogger, type Logger } from '@kukan/shared'
+import type { Database } from '@kukan/db'
+import type { StorageAdapter } from '@kukan/storage-adapter'
+import { ResourceService } from './resource-service'
+import { PipelineService } from './pipeline-service'
+import type { AuthUser } from '../auth/permissions'
+import { runSandboxedQuery } from './query/duckdb-sandbox'
+import { assertReadOnlySql } from './query/sql-guard'
+import { Semaphore } from './query/semaphore'
+import {
+  QUERY_MAX_ROWS,
+  QUERY_MAX_BYTES,
+  QUERY_TIMEOUT_MS,
+  QUERY_MEMORY_LIMIT_MB,
+  QUERY_THREADS,
+  QUERY_MAX_CONCURRENT,
+  QUERY_MAX_SQL_LENGTH,
+} from '../config'
+
+export interface QueryResult {
+  columns: string[]
+  rows: Record<string, unknown>[]
+  rowCount: number
+  truncated: boolean
+  elapsedMs: number
+}
+
+// Module-level: shared across requests to bound total concurrent DuckDB memory.
+const semaphore = new Semaphore(QUERY_MAX_CONCURRENT)
+
+export class QueryService {
+  private readonly log: Logger
+
+  constructor(
+    private readonly db: Database,
+    private readonly storage: StorageAdapter,
+    logger?: Logger
+  ) {
+    this.log = logger ?? createLogger({ name: 'api' })
+  }
+
+  /**
+   * Execute `sql` against the resource's preview Parquet (queryable as table `data`).
+   * Throws NotFoundError (visibility), ValidationError (not queryable / bad SQL /
+   * timeout), or TooManyRequestsError (concurrency).
+   */
+  async query(resourceId: string, sql: string, user?: AuthUser): Promise<QueryResult> {
+    // Validate the SQL before any expensive work (download + DuckDB materialize). The REST
+    // route bounds length via zValidator, but the MCP tool does not — enforce both here.
+    if (sql.length > QUERY_MAX_SQL_LENGTH) {
+      throw new ValidationError(`SQL query exceeds the maximum length of ${QUERY_MAX_SQL_LENGTH}`)
+    }
+    assertReadOnlySql(sql)
+
+    // Visibility check (private resources require org membership — ADR-017).
+    await new ResourceService(this.db).getByIdWithAccessCheck(resourceId, user)
+
+    // Resolve the preview Parquet + validated schema in one read.
+    const target = await new PipelineService(this.db).getQueryTarget(resourceId)
+    if (!target?.previewKey || !target.schema) {
+      throw new ValidationError(
+        'Resource is not queryable: no tabular preview is available (only processed CSV/TSV resources can be queried)'
+      )
+    }
+
+    // Bound concurrency to keep total DuckDB memory within the container.
+    if (!semaphore.tryAcquire()) {
+      throw new TooManyRequestsError('Too many concurrent queries; please retry shortly')
+    }
+
+    const tmpPath = join(tmpdir(), `kukan-query-${randomUUID()}.parquet`)
+    const startedAt = Date.now()
+    try {
+      const source = await this.storage.download(target.previewKey)
+      await pipeline(source, createWriteStream(tmpPath))
+
+      const result = await runSandboxedQuery(tmpPath, sql, {
+        maxRows: QUERY_MAX_ROWS,
+        maxBytes: QUERY_MAX_BYTES,
+        timeoutMs: QUERY_TIMEOUT_MS,
+        memoryLimitMb: QUERY_MEMORY_LIMIT_MB,
+        threads: QUERY_THREADS,
+      })
+
+      const elapsedMs = Date.now() - startedAt
+      this.log.info(
+        {
+          component: 'query',
+          resourceId,
+          sql,
+          elapsedMs,
+          rowCount: result.rowCount,
+          truncated: result.truncated,
+        },
+        'resource query'
+      )
+      return { ...result, elapsedMs }
+    } finally {
+      semaphore.release()
+      await unlink(tmpPath).catch(() => {})
+    }
+  }
+}

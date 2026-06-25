@@ -59,6 +59,8 @@ curl -X POST https://your-kukan-site/api/mcp \
 | `search_datasets` | キーワードでデータセットを検索。組織・タグでのフィルタリング対応 |
 | `get_dataset` | データセットの詳細情報を取得（リソース一覧含む） |
 | `get_resource` | リソース（ファイル）のメタデータと URL を取得 |
+| `get_resource_schema` | リソースの列スキーマ（列名・型・行数・統計）を取得。CSV/TSV のみ |
+| `query_resource` | リソースのデータに読み取り専用 SQL（SELECT 限定）を実行。CSV/TSV のみ |
 | `list_organizations` | 組織の一覧を取得 |
 | `list_groups` | グループ（カテゴリ）の一覧を取得 |
 | `list_tags` | タグの一覧を取得 |
@@ -92,6 +94,30 @@ curl -X POST https://your-kukan-site/api/mcp \
 | パラメータ | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
 | `id` | string | Yes | リソース UUID |
+
+### get_resource_schema
+
+リソースの列スキーマ（列名・型・null 許容・行数、数値列の min/max）を取得します。CSV/TSV で
+プレビュー生成済みのリソースのみクエリ可能です。出力にはクエリ用テーブル名 `data` とクエリ例が
+含まれ、エージェントはこれを見てから SQL を書けます。
+
+| パラメータ | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| `id` | string | Yes | リソース UUID |
+
+### query_resource
+
+リソースのデータに対して読み取り専用 SQL（`SELECT` / `WITH` のみ）を実行し、結果を Markdown
+テーブルで返します。データは `data` というテーブルとして参照します。`get_resource_schema` で列名・型を
+確認してから利用してください。
+
+| パラメータ | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| `id` | string | Yes | リソース UUID |
+| `sql` | string | Yes | 単一の SELECT/WITH 文（`data` テーブルを対象） |
+
+使い捨ての in-memory DuckDB 上で実行され、外部アクセス禁止・行数/バイト/時間の上限付きです。列名に
+非 ASCII を含む場合は二重引用符で囲みます。制限・エラーの詳細は REST の `/resources/{id}/query` を参照。
 
 ### list_organizations
 

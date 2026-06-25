@@ -23,6 +23,9 @@ const nextConfig: NextConfig = {
     '@kukan/search-adapter',
     '@kukan/queue-adapter',
     '@kukan/ai-adapter',
+    // Native addon for server-side DuckDB queries (ADR-032 Part B): must stay external
+    // so its prebuilt .node binary is required at runtime rather than bundled.
+    '@duckdb/node-api',
     'pino',
     'pino-pretty',
   ],
