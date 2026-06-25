@@ -35,11 +35,12 @@ COPY --from=build /app/apps/web/.next/standalone ./
 COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build /app/apps/web/public ./apps/web/public
 # DuckDB native bindings for server-side resource queries (ADR-032 Part B).
-# Next.js standalone omits platform-specific .node addons, so copy them explicitly.
-COPY --from=deps /app/node_modules/.pnpm/@duckdb+node-bindings-linux-x64-musl*/node_modules/@duckdb/ ./node_modules/@duckdb/
+# Next.js standalone traces the .node addon but not libduckdb.so (a dynamic dependency).
+# Copy it to a dedicated directory and point LD_LIBRARY_PATH there.
+COPY --from=deps /app/node_modules/.pnpm/@duckdb+node-bindings-linux-x64-musl@*/node_modules/@duckdb/node-bindings-linux-x64-musl/libduckdb.so /app/duckdb-lib/
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup && chown -R appuser:appgroup /app
 USER appuser
-ENV NODE_ENV=production PORT=3000
+ENV NODE_ENV=production PORT=3000 LD_LIBRARY_PATH=/app/duckdb-lib
 EXPOSE 3000
 # Override HOSTNAME so Next.js standalone server binds to 0.0.0.0 (not the container IP).
 # The container runtime sets HOSTNAME to the container's IP, causing Next.js to bind only
