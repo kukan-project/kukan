@@ -12,8 +12,7 @@
  * interrupts the connection (DuckDB has no statement_timeout).
  */
 
-import { DuckDBInstance } from '@duckdb/node-api'
-import { ValidationError, RequestTimeoutError } from '@kukan/shared'
+import { ValidationError, RequestTimeoutError, ServiceUnavailableError } from '@kukan/shared'
 import { assertReadOnlySql } from './sql-guard'
 
 export interface SandboxLimits {
@@ -58,7 +57,11 @@ export async function runSandboxedQuery(
   userSql: string,
   limits: SandboxLimits
 ): Promise<SandboxResult> {
-  const instance = await DuckDBInstance.create(':memory:')
+  const duckdb = await import('@duckdb/node-api').catch(() => null)
+  if (!duckdb) {
+    throw new ServiceUnavailableError('DuckDB native library is not available in this environment')
+  }
+  const instance = await duckdb.DuckDBInstance.create(':memory:')
   const conn = await instance.connect()
   let timer: NodeJS.Timeout | undefined
   let timedOut = false

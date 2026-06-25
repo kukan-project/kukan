@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { DuckDBInstance } from '@duckdb/node-api'
 import { unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { runSandboxedQuery, type SandboxLimits } from '../../../services/query/duckdb-sandbox'
-import { ValidationError, RequestTimeoutError } from '@kukan/shared'
+import { ValidationError, RequestTimeoutError, ServiceUnavailableError } from '@kukan/shared'
 
 const LIMITS: SandboxLimits = {
   maxRows: 10,
@@ -140,5 +140,14 @@ describe('runSandboxedQuery', () => {
     await expect(
       runSandboxedQuery(fixture, 'SELECT nonexistent_col FROM data', LIMITS)
     ).rejects.toThrow(ValidationError)
+  })
+
+  it('throws ServiceUnavailableError when DuckDB native library is missing', async () => {
+    vi.doMock('@duckdb/node-api', () => {
+      throw new Error('Cannot find module')
+    })
+    const { runSandboxedQuery: run } = await import('../../../services/query/duckdb-sandbox')
+    await expect(run(fixture, 'SELECT 1', LIMITS)).rejects.toThrow(ServiceUnavailableError)
+    vi.doUnmock('@duckdb/node-api')
   })
 })

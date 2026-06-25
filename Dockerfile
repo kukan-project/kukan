@@ -34,6 +34,9 @@ WORKDIR /app
 COPY --from=build /app/apps/web/.next/standalone ./
 COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build /app/apps/web/public ./apps/web/public
+# DuckDB native bindings for server-side resource queries (ADR-032 Part B).
+# Next.js standalone omits platform-specific .node addons, so copy them explicitly.
+COPY --from=deps /app/node_modules/.pnpm/@duckdb+node-bindings-linux-x64-musl*/node_modules/@duckdb/ ./node_modules/@duckdb/
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup && chown -R appuser:appgroup /app
 USER appuser
 ENV NODE_ENV=production PORT=3000
