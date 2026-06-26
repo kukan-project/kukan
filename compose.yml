@@ -72,26 +72,28 @@ services:
     environment:
       <<: *minio-credentials
       S3_BUCKET: ${S3_BUCKET:-kukan-dev}
-      CORS_ORIGIN: ${BETTER_AUTH_URL:-http://localhost:3000}
     entrypoint:
       - /bin/sh
       - -c
       - |
         mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
         mc mb --ignore-existing "local/$$S3_BUCKET"
-        printf '<CORSConfiguration><CORSRule><AllowedOrigin>%s</AllowedOrigin><AllowedMethod>PUT</AllowedMethod><AllowedHeader>*</AllowedHeader><ExposeHeader>ETag</ExposeHeader><MaxAgeSeconds>3600</MaxAgeSeconds></CORSRule></CORSConfiguration>' "$$CORS_ORIGIN" > /tmp/cors.xml
-        mc cors set "local/$$S3_BUCKET" /tmp/cors.xml
 
   elasticmq:
     image: softwaremill/elasticmq-native:1.7.1
     container_name: kukan-elasticmq
     ports:
       - '127.0.0.1:9324:9324'
-      - '127.0.0.1:9325:9325'
     volumes:
       - ./docker/elasticmq.conf:/opt/elasticmq.conf
     healthcheck:
-      test: ['CMD-SHELL', 'wget -qO- http://localhost:9325 || exit 1']
+      # Probe the SQS REST API on 9324 (the only port elasticmq.conf serves);
+      # ListQueues returns HTTP 200 so wget exits 0 once the queue is ready.
+      test:
+        [
+          'CMD-SHELL',
+          "wget -qO- 'http://localhost:9324/?Action=ListQueues&Version=2012-11-05' || exit 1",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
