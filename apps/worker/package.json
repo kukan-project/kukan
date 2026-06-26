@@ -26,14 +26,14 @@
     "croner": "^10.0.1",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.12.23",
+    "hono": "^4.12.25",
     "hyparquet-writer": "^0.15.6",
     "officeparser": "^7.1.0",
     "p-limit": "^7.3.0",
     "papaparse": "^5.5.3",
     "pg": "^8.21.0",
     "pino": "^10.3.1",
-    "undici": "^8.3.0",
+    "undici": "^8.5.0",
     "yauzl": "^3.3.1"
   },
   "devDependencies": {

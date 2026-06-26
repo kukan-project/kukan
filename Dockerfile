@@ -38,7 +38,10 @@ COPY --from=build /app/apps/web/public ./apps/web/public
 # Next.js standalone traces the .node addon but not libduckdb.so (a dynamic dependency).
 # Copy it to a dedicated directory and point LD_LIBRARY_PATH there.
 COPY --from=deps /app/node_modules/.pnpm/@duckdb+node-bindings-linux-x64-musl@*/node_modules/@duckdb/node-bindings-linux-x64-musl/libduckdb.so /app/duckdb-lib/
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup && chown -R appuser:appgroup /app
+# Remove the bundled npm CLI: runtime uses pnpm via corepack, never npm, and npm's
+# bundled undici carries CVE-2026-12151. Dropping it clears the finding and trims surface.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
+  && addgroup -S appgroup && adduser -S appuser -G appgroup && chown -R appuser:appgroup /app
 USER appuser
 ENV NODE_ENV=production PORT=3000 LD_LIBRARY_PATH=/app/duckdb-lib
 EXPOSE 3000
@@ -47,15 +50,26 @@ EXPOSE 3000
 # to that IP. The App Runner health check uses localhost, so it would fail without this.
 CMD ["/bin/sh", "-c", "HOSTNAME=0.0.0.0 node apps/web/server.js"]
 
+# ---- Worker production dependencies (prod-only, isolated node_modules) ----
+# `pnpm deploy --prod` resolves just the worker's production dependencies into a
+# self-contained node_modules, excluding devDependencies. --no-optional drops
+# better-auth's optional `vitest` peer, which otherwise drags vite/esbuild/jsdom
+# (and dozens of CVEs) into the runtime image even in prod mode. --legacy is
+# required for deploy with inject-workspace-packages disabled.
+FROM build AS worker-deps
+RUN pnpm --filter @kukan/worker deploy --prod --no-optional --legacy /app/worker-deploy
+
 # ---- Worker (tsup bundle — workspace packages are bundled, npm deps are external) ----
 FROM base AS worker
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/worker/node_modules ./apps/worker/node_modules
+COPY --from=worker-deps /app/worker-deploy/node_modules ./node_modules
 COPY --from=build /app/apps/worker/dist ./apps/worker/dist
 COPY --from=build /app/apps/worker/package.json ./apps/worker/
 COPY --from=build /app/packages/db/drizzle ./apps/worker/drizzle
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup && chown -R appuser:appgroup /app
+# Remove the bundled npm CLI: runtime uses pnpm via corepack, never npm, and npm's
+# bundled undici carries CVE-2026-12151. Dropping it clears the finding and trims surface.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
+  && addgroup -S appgroup && adduser -S appuser -G appgroup && chown -R appuser:appgroup /app
 USER appuser
 ENV NODE_ENV=production HEALTH_PORT=8080
 EXPOSE 8080
