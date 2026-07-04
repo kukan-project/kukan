@@ -211,6 +211,8 @@ pnpm format        # Prettier フォーマット
 - CDK Pipelines + CodeConnections による自動デプロイ（提案） → `docs/adr/jp/030-cdk-pipelines-deploy.md`
 - マルチ環境（dev/prd）デプロイ設計（CDK Stage、提案） → `docs/adr/jp/031-multi-environment-deploy.md`
 - MCP データクエリ基盤（スキーマ永続化 + サーバーサイド DuckDB） → `docs/adr/jp/032-mcp-data-query.md`
+- 外部 SQL データソース（スナップショット/ライブ proxy 両論 + connector 拡張、提案） → `docs/adr/jp/033-external-sql-data-source.md`
+- メタデータのベクトル検索（セマンティック検索・AI 向け発見、提案） → `docs/adr/jp/034-metadata-vector-search.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
@@ -220,6 +222,7 @@ pnpm format        # Prettier フォーマット
 ## 現在のフェーズ
 
 **Phase 4: AWS デプロイ & CDK 基盤**（実装仕様書: `docs/specs/phase4-deploy.md`）
+**Phase 5a: メタデータベクトル検索**（Phase 4 と依存なし・並行実装、実装仕様書: `docs/specs/phase5-vector-search.md`）
 
 - Phase 1: Foundation ✅ 完了
 - Phase 2: フロントエンド ✅ 完了（実装仕様書: `docs/specs/phase2-frontend.md`）

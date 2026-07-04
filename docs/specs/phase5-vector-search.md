@@ -1,0 +1,258 @@
+# Phase 5a: メタデータベクトル検索（セマンティック検索）— 実装仕様書
+
+> **目標**: package メタデータを埋め込みベクトル化し、BM25 とのハイブリッド検索を
+> Web 検索 UI・MCP/API の両方で動かす。AI なし環境（NoOp）では BM25 のみへ自動 degrade する。
+> 設計判断は ADR-034 を正とする。
+
+## 1. 前提
+
+- Phase 1〜3 完成済み（CRUD + 検索 + パイプライン + Worker + Queue）
+- Phase 4（AWS デプロイ & CDK）は進行中だが、本フェーズと実装上の依存はなく**並行実装可**
+- ADR-034 合意済み: 環境別分離（AWS=Bedrock / オンプレ=Ollama / NoOp=degrade）、
+  ベクトルストアは pgvector 一本化、融合はサービス層 RRF
+- `AIAdapter.embed()` はインターフェース定義のみ（bedrock / ollama とも **スタブ**、
+  `packages/adapters/ai/src/`）→ 本フェーズで実装
+- メタデータの BM25 インデックス更新は API ルート同期実行（`services/search-index.ts`）→ 変更しない
+
+### 確定事項（グリル結果）
+
+| 論点        | 決定                                                                              |
+| ----------- | --------------------------------------------------------------------------------- |
+| 着手順序    | 仕様書先行（本書）。Phase 4 と依存がないため並行で実装に着手                      |
+| v1 露出範囲 | Web 検索 UI + MCP/API の両方                                                      |
+| モデル確定  | 暫定モデルで実装先行。ゴールデンセット評価は実データ投入後                        |
+| 既定動作    | ハイブリッドは**デフォルト ON**。クエリパラメータ `semantic=false` で BM25 のみに |
+
+### 暫定モデル
+
+| 環境          | モデル                      | 次元 | 備考                               |
+| ------------- | --------------------------- | :--: | ---------------------------------- |
+| AWS           | Bedrock Titan Embeddings v2 | 1024 | Matryoshka 対応（512 へ縮小余地）  |
+| 開発/オンプレ | Ollama bge-m3               | 1024 | MIT、8192 トークン、CPU 推論で実用 |
+
+評価後の差し替えは「全件再埋め込み（rebuild）」で対応する前提（ADR-034 決定 5）。
+
+## 2. 技術スタック（Phase 5a 追加分）
+
+| カテゴリ            | 技術                     | 備考                                                           |
+| ------------------- | ------------------------ | -------------------------------------------------------------- |
+| ベクトル拡張        | pgvector                 | Aurora: `CREATE EXTENSION vector` / ローカル: イメージ差し替え |
+| PostgreSQL イメージ | `pgvector/pgvector:pg16` | alpine → Debian 変更。既存環境は dump/restore or REINDEX       |
+| ローカル埋め込み    | `ollama/ollama`          | compose profiles: `ai`。モデルはボリューム永続化               |
+| ORM 型              | drizzle-orm `vector` 型  | 次元指定なし列（モデル変更時に DDL 不要）                      |
+
+## 3. アーキテクチャ概要
+
+### 書き込みフロー（文書側・非同期）
+
+```
+[API] package CUD
+  ├─ BM25 インデックス更新（既存・同期のまま）
+  └─ embed ジョブ投入（QueueAdapter、AIAdapter が embed 可能な場合のみ）
+        │
+[Worker] embed-package ジョブ
+  1. package 取得 → 埋め込み対象テキスト生成（title + notes + tags + リソース name/description）
+  2. コンテンツハッシュ比較 → 変化なしならスキップ
+  3. AIAdapter.embed(text, { type: 'document' })
+  4. UPDATE package SET embedding, embedding_model, embedding_hash
+```
+
+### 検索フロー（クエリ側・同期）
+
+```
+[API] GET /api/v1/search?q=...&semantic=(true)
+  ├─ 並列実行
+  │   ├─ BM25: SearchAdapter.search()（既存。facets / total / highlights はこちらが正）
+  │   └─ ベクトル: embed(q, {type:'query'})（lru-cache）→ pgvector top-k（可視性フィルタ適用）
+  ├─ サービス層 RRF 融合（k=60、上位から limit 件）
+  └─ レスポンス（ベクトル由来ヒットは matchSource: 'semantic'）
+```
+
+- `semantic=false`、NoOp 環境、クエリ埋め込み失敗時は BM25 のみ（既存挙動と完全一致）
+- ページネーションはハイブリッド時 RRF 結果リストに対して行う。`total` は BM25 側の値を維持し、
+  ベクトル追加ヒットぶんの厳密性は求めない（実装時に UI 表記を整理）
+
+## 4. Step 1: AIAdapter 拡張と実装
+
+### 4.1 インターフェース拡張（`packages/adapters/ai/src/adapter.ts`）
+
+```typescript
+export interface EmbedOptions {
+  /** 'query' | 'document' — e5 系プレフィックス等をアダプター内で吸収 */
+  type?: 'query' | 'document'
+}
+
+export interface EmbeddingInfo {
+  model: string // 例: 'amazon.titan-embed-text-v2:0', 'bge-m3'
+  dimensions: number // 例: 1024
+}
+
+export interface AIAdapter {
+  complete(prompt: string, options?: CompleteOptions): Promise<string>
+  embed(text: string, options?: EmbedOptions): Promise<number[]>
+  embedBatch(texts: string[], options?: EmbedOptions): Promise<number[][]>
+  /** 埋め込み不可（NoOp 等）なら null — capability 判定に使う */
+  getEmbeddingInfo(): EmbeddingInfo | null
+}
+```
+
+### 4.2 実装
+
+- **bedrock.ts**: Titan v2（`InvokeModel`）。`dimensions: 1024` を明示指定。
+  `embedBatch` は並列呼び出し（Titan にバッチ API はないため p-limit で同時数制御）
+- **ollama.ts**: `POST /api/embed`（バッチ対応あり）。モデル名は env で指定（既定 `bge-m3`）
+- **noop.ts**: `getEmbeddingInfo()` → `null`、`embed()` は throw
+- **openai.ts**: `text-embedding-3-small` で同様に実装（開発時の代替経路）
+
+### 4.3 環境変数（`packages/shared/env.ts`）
+
+| 変数                 | 既定値   | 用途                                      |
+| -------------------- | -------- | ----------------------------------------- |
+| `AI_EMBEDDING_MODEL` | 実装既定 | アダプター毎の埋め込みモデル名上書き      |
+| `SEARCH_HYBRID`      | `true`   | ハイブリッド検索の有効/無効（緊急停止用） |
+
+## 5. Step 2: DB スキーマ + インフラ
+
+### 5.1 マイグレーション（`packages/db`）
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+
+ALTER TABLE package
+  ADD COLUMN embedding vector,            -- 次元指定なし（モデル差し替え時 DDL 不要）
+  ADD COLUMN embedding_model text,        -- 生成時のモデル名（不一致検出用）
+  ADD COLUMN embedding_hash text;         -- 対象テキストの SHA-256（再埋め込みスキップ）
+```
+
+- HNSW / IVFFlat インデックスは**張らない**（v1 は exact search。ADR-034 §2）
+- 検索時は `embedding_model = <現行モデル>` の行のみ対象（モデル移行中の混在を防ぐ）
+
+### 5.2 compose.yml
+
+- `postgres` イメージを `pgvector/pgvector:pg16` へ変更。
+  **開発環境はボリューム再作成を推奨**（alpine → Debian の collation 差。ADR-034 影響）
+- Ollama サービス追加（開発・オンプレ共通構成、dev/prod パリティ）:
+
+```yaml
+ollama:
+  image: ollama/ollama
+  profiles: [ai]
+  ports:
+    - '127.0.0.1:11434:11434'
+  volumes:
+    - ollama-models:/root/.ollama # 閉域はこのボリュームを事前配送
+```
+
+- 初回セットアップ: `docker compose --profile ai up -d && docker compose exec ollama ollama pull bge-m3`
+
+### 5.3 AWS（infra/）
+
+- Aurora へのマイグレーションで `CREATE EXTENSION` が流れる（追加 CDK 変更なし）
+- Bedrock `InvokeModel`（Titan v2）の IAM 許可を web / worker タスクロールに追加
+
+## 6. Step 3: 埋め込み生成パイプライン
+
+### 6.1 キュージョブ
+
+- 新ジョブタイプ `embed-package`（payload: `{ packageId }`）
+- 投入箇所: `services/search-index.ts` の package インデックス更新（`indexPackageMetadata()`）
+  **および** リソースインデックス更新（`indexResourceMetadata()`）に追記 — リソース CUD 時も
+  親 package を再埋め込みする（埋め込みテキストにリソースメタデータを含むため）
+  （AIAdapter の `getEmbeddingInfo() !== null` かつ `SEARCH_HYBRID` 有効時のみ投入）
+- package 削除時は行ごと消えるため追加処理不要
+
+### 6.2 Worker ハンドラ（`apps/worker`）
+
+1. package 取得（deleted なら終了）
+2. 対象テキスト生成（active リソースのメタデータを連結、トークン上限で切り詰め）:
+   `title + '\n' + notes + '\n' + tags.join(' ') + '\n' + resources.map(r => r.name + ' ' + (r.description ?? '')).join('\n')`
+3. SHA-256 を `embedding_hash` と比較 → 一致かつ `embedding_model` 一致ならスキップ
+4. `embed(text, { type: 'document' })` → `UPDATE package SET embedding, embedding_model, embedding_hash`
+5. 失敗時は既存のリトライ機構に乗せる（埋め込み欠損は検索品質低下のみで機能欠損にならない）
+
+### 6.3 バルク再埋め込み
+
+- 既存の検索インデックス rebuild フローに `--embeddings` 相当を追加:
+  全 active package を `embedBatch` で処理（レート制御付き）
+- モデル差し替え手順: env 変更 → rebuild 実行（`embedding_model` 不一致行が全て再生成される）
+
+## 7. Step 4: ハイブリッド検索
+
+### 7.1 ベクトル検索（`packages/adapters/search` の PG 実装に追加）
+
+```typescript
+/** pgvector cosine distance による top-k。SearchFilters の可視性 WHERE を必ず適用 */
+searchByVector(vector: number[], model: string, filters: SearchFilters, k: number): Promise<VectorHit[]>
+```
+
+- `ORDER BY embedding <=> $vector LIMIT k`（k=50）
+- 類似度しきい値（cosine similarity < 0.3 程度は除外、評価で調整）— kNN が
+  無関係な結果まで k 件埋めるのを防ぐ
+- OpenSearch アダプターには実装しない（ベクトルは PG 一本化。ADR-034 方式 P）
+
+### 7.2 RRF 融合（サービス層・全環境共通）
+
+```
+score(doc) = Σ 1 / (60 + rank_i(doc))   // BM25 順位 + ベクトル順位
+```
+
+- BM25 top-50 + ベクトル top-50 → RRF → offset/limit 適用
+- facets / total / matchedResources / highlights は BM25 結果から引き継ぐ
+- ベクトルのみでヒットした doc は `matchSource: 'semantic'`、ハイライトなし
+- `q` が空（ブラウズ）のときはベクトル検索を実行しない（既存挙動のまま）
+
+### 7.3 クエリ埋め込みキャッシュ
+
+- `packages/shared` の lru-cache ユーティリティ（ADR-004）
+- キー: `${model}:${normalizedQuery}`、TTL 1h / max 1000 件
+
+### 7.4 API
+
+- `GET /api/v1/search` に `semantic` パラメータ追加（既定 `true`）
+- degrade 条件（いずれかで BM25 のみ）: `semantic=false` / `SEARCH_HYBRID=false` /
+  `getEmbeddingInfo() === null` / クエリ埋め込み失敗（error ログのみ、検索は成功させる）
+- MCP のデータセット検索ツールは同じサービスを通るため追加実装なし
+
+## 8. Step 5: Web UI（`apps/web`）
+
+- 検索結果ページ: 変更最小。ベクトル由来ヒット（`matchSource: 'semantic'`）は
+  ハイライトなしのため title/notes をプレーン表示 + 「関連」バッジ表示
+- i18n: バッジ文言（ja/en）
+- 検索設定 UI（セマンティック ON/OFF トグル）は v1 では作らない（URL パラメータのみ）
+
+## 9. Step 6: ゴールデンセット評価
+
+- `docs/eval/golden-queries.yaml`: 20〜50 問（類義語 / 自然文 / **完全一致** を必ず混在）。
+  作成は実データ投入後に人手で行う
+- `scripts/eval-search.ts`: 検索 API を叩き Recall@10 / nDCG@10 を出力。
+  `semantic=true/false` の比較モード付き
+- **出荷条件**: 完全一致クエリで `semantic=false` 比の劣化なし（ADR-034 決定 8）。
+  劣化があれば RRF 重み・しきい値を調整、解消しない場合はデフォルト OFF に切り替えて出荷
+
+## 10. テスト戦略
+
+| 種別     | 対象                                                                                        |
+| -------- | ------------------------------------------------------------------------------------------- |
+| ユニット | RRF 融合ロジック、埋め込み対象テキスト生成 + ハッシュ、EmbedOptions 分岐                    |
+| ユニット | アダプター: noop の capability、ollama/bedrock はモック HTTP                                |
+| 統合     | pgvector クエリ（可視性フィルタ含む）、embed-package ジョブ、rebuild                        |
+| E2E      | Ollama profile 起動下でハイブリッド検索 → 類義語ヒット確認、`semantic=false` で既存挙動一致 |
+
+## 11. 実装順序
+
+1. **Step 1**: AIAdapter 拡張 + 実装（bedrock / ollama / openai / noop）
+2. **Step 2**: マイグレーション + compose.yml（pgvector イメージ、Ollama profile）
+3. **Step 3**: embed-package ジョブ + rebuild 拡張
+4. **Step 4**: ベクトル検索 + RRF + API パラメータ
+5. **Step 5**: Web UI（バッジ・プレーン表示）
+6. **Step 6**: 評価スクリプト（ゴールデンセット本体は実データ後）
+
+Step 1〜3 と Step 4 は独立性が高く、Step 3 完了前でも Step 4 は着手可能
+（埋め込み済み行が少ないだけで動作する）。
+
+## 12. スコープ外（後続）
+
+- リソースコンテンツ（PDF 等）の埋め込み → ADR-034 残課題 5（ベクトルストア再評価込み）
+- 関連データセット推薦（「似ているデータセット」）→ ADR-034 残課題 6
+- ADR-032 Part B（`query_resource`）→ Issue #7（本フェーズとは独立）
+- 埋め込みモデルの最終確定 → ゴールデンセット評価後
