@@ -25,7 +25,7 @@ import {
   type AuthUser,
   type MembershipRole,
 } from '../auth/permissions'
-import { indexPackageMetadata, indexResourceMetadata } from '../services/search-index'
+import { syncPackageMetadata, indexResourceMetadata } from '../services/search-index'
 import { purgePackageExternals } from '../services/package-cleanup'
 import type { AppContext } from '../context'
 import type { Database } from '@kukan/db'
@@ -210,7 +210,7 @@ packagesRouter.post('/', zValidator('json', createPackageSchema), async (c) => {
 
   const service = new PackageService(db)
   const pkg = await service.create(input, user.id)
-  await indexPackageMetadata(db, c.get('search'), pkg.id)
+  await syncPackageMetadata(db, c.var, pkg.id)
   return c.json(pkg, 201)
 })
 
@@ -248,7 +248,7 @@ packagesRouter.put('/:nameOrId', zValidator('json', updatePackageSchema), async 
     }
   })
 
-  await indexPackageMetadata(db, c.get('search'), pkg.id)
+  await syncPackageMetadata(db, c.var, pkg.id)
   return c.json(pkg)
 })
 
@@ -294,7 +294,7 @@ packagesRouter.post('/:nameOrId/restore', async (c) => {
 
   const pkg = await service.restore(nameOrId, makePackageAuthorize(db, user, 'admin'))
 
-  await indexPackageMetadata(db, c.get('search'), pkg.id)
+  await syncPackageMetadata(db, c.var, pkg.id)
   return c.json(pkg)
 })
 
@@ -378,7 +378,7 @@ packagesRouter.post(
 
     await Promise.all([
       enqueuePromise,
-      indexPackageMetadata(db, c.get('search'), pkg.id),
+      syncPackageMetadata(db, c.var, pkg.id),
       indexResourceMetadata(db, c.get('search'), resource.id),
     ])
     return c.json(resource, 201)

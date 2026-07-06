@@ -246,6 +246,10 @@ deployment (Option D), run the same set against both the AWS and on-prem models.
    of search integration).
 7. **Model delivery procedure for closed networks**: settle on pre-distributed volume vs
    model-bundled image, and fold it into the installation guide.
+8. **Hybrid search shutdown from the admin UI**: an operational switch letting sysadmins
+   disable vector search across the board on quality degradation or cost anomalies.
+   Provider outages are out of scope — they auto-degrade via query-embedding timeout +
+   BM25 fallback (an env-based kill switch was considered and rejected).
 
 ## Related ADRs
 

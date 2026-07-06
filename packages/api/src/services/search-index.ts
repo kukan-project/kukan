@@ -17,7 +17,57 @@ import {
   tag,
 } from '@kukan/db'
 import type { SearchAdapter, DatasetDoc, ResourceDoc } from '@kukan/search-adapter'
-import type { Logger } from '@kukan/shared'
+import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { AIAdapter } from '@kukan/ai-adapter'
+import { EMBED_JOB_TYPE, type Logger } from '@kukan/shared'
+
+/** The adapters every package-metadata sync needs — a structural subset of the
+ *  route context vars, so routes can pass `c.var` directly. */
+export interface PackageSyncDeps {
+  search: SearchAdapter
+  queue: QueueAdapter
+  ai: AIAdapter
+  logger: Logger
+}
+
+/**
+ * Sync one package after a metadata change: upsert its search doc and
+ * (re)enqueue its embedding. Always use this from routes (rather than calling
+ * indexPackageMetadata directly) so a new call site cannot forget the embed
+ * half of the pair.
+ */
+export async function syncPackageMetadata(
+  db: Database,
+  deps: PackageSyncDeps,
+  packageId: string
+): Promise<void> {
+  await Promise.all([
+    indexPackageMetadata(db, deps.search, packageId),
+    enqueuePackageEmbed(deps.queue, deps.ai, packageId, deps.logger),
+  ])
+}
+
+/**
+ * Enqueue embedding (re)generation for a package whose metadata (or whose
+ * resources' metadata) changed. No-op when embedding is unavailable (NoOp
+ * adapter). Deliberately not gated on any search-side toggle — disabling hybrid
+ * search only stops reading vectors at query time; writes continue so vectors
+ * stay fresh. Enqueue failures are logged but never fail the request —
+ * embeddings are eventually consistent (ADR-034).
+ */
+export async function enqueuePackageEmbed(
+  queue: QueueAdapter,
+  ai: AIAdapter,
+  packageId: string,
+  logger: Logger
+): Promise<void> {
+  if (!ai.getEmbeddingInfo()) return
+  try {
+    await queue.enqueue(EMBED_JOB_TYPE, { packageId })
+  } catch (err) {
+    logger.error({ err, packageId }, 'Failed to enqueue embed-package job')
+  }
+}
 
 /**
  * Build a DatasetDoc from DB and upsert it into the search index (kukan-packages).

@@ -1,7 +1,30 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createMockDb } from '../test-helpers/mock-db'
-import { indexPackageMetadata } from '../../services/search-index'
+import {
+  indexPackageMetadata,
+  enqueuePackageEmbed,
+  syncPackageMetadata,
+} from '../../services/search-index'
+import { EMBED_JOB_TYPE, type Logger } from '@kukan/shared'
 import type { SearchAdapter, DatasetDoc } from '@kukan/search-adapter'
+import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { AIAdapter } from '@kukan/ai-adapter'
+
+const EMBED_PACKAGE_ID = '00000000-0000-4000-8000-000000000001'
+
+function makeQueue() {
+  return { enqueue: vi.fn().mockResolvedValue('job-1') } as unknown as QueueAdapter
+}
+
+function makeAI(embeddingAvailable: boolean) {
+  return {
+    getEmbeddingInfo: () => (embeddingAvailable ? { model: 'test-model', dimensions: 4 } : null),
+  } as unknown as AIAdapter
+}
+
+function makeLogger() {
+  return { error: vi.fn() } as unknown as Logger
+}
 
 function createMockSearch() {
   const indexed: DatasetDoc[] = []
@@ -18,6 +41,15 @@ function createMockSearch() {
     bulkIndexResources: vi.fn(),
     deleteResource: vi.fn(),
     deleteAllResources: vi.fn(),
+    indexContent: vi.fn(),
+    deleteContent: vi.fn(),
+    deleteAllContents: vi.fn(),
+    getIndexStats: vi.fn(),
+    getDocument: vi.fn(),
+    browseDocuments: vi.fn(),
+    getContentChunks: vi.fn(),
+    browseContentsByResource: vi.fn(),
+    fetchContentHighlights: vi.fn(),
   }
   return { adapter, indexed }
 }
@@ -180,5 +212,47 @@ describe('indexPackageMetadata', () => {
     await indexPackageMetadata(db, adapter, 'pkg-4')
 
     expect(indexed[0].formats).toEqual([])
+  })
+})
+
+describe('enqueuePackageEmbed', () => {
+  it('enqueues an embed-package job when embedding is available', async () => {
+    const queue = makeQueue()
+    await enqueuePackageEmbed(queue, makeAI(true), EMBED_PACKAGE_ID, makeLogger())
+    expect(queue.enqueue).toHaveBeenCalledWith(EMBED_JOB_TYPE, { packageId: EMBED_PACKAGE_ID })
+  })
+
+  it('does nothing when embedding is unavailable (NoOp)', async () => {
+    const queue = makeQueue()
+    await enqueuePackageEmbed(queue, makeAI(false), EMBED_PACKAGE_ID, makeLogger())
+    expect(queue.enqueue).not.toHaveBeenCalled()
+  })
+
+  it('swallows enqueue failures (logs, never throws)', async () => {
+    const queue = {
+      enqueue: vi.fn().mockRejectedValue(new Error('queue down')),
+    } as unknown as QueueAdapter
+    const logger = makeLogger()
+    await expect(
+      enqueuePackageEmbed(queue, makeAI(true), EMBED_PACKAGE_ID, logger)
+    ).resolves.toBeUndefined()
+    expect(logger.error).toHaveBeenCalled()
+  })
+})
+
+describe('syncPackageMetadata', () => {
+  it('enqueues the embed job alongside the index update', async () => {
+    const { db, addResult } = createMockDb()
+    addResult([]) // package select: not found — the index half returns early
+    const { adapter } = createMockSearch()
+    const queue = makeQueue()
+
+    await syncPackageMetadata(
+      db,
+      { search: adapter, queue, ai: makeAI(true), logger: makeLogger() },
+      EMBED_PACKAGE_ID
+    )
+
+    expect(queue.enqueue).toHaveBeenCalledWith(EMBED_JOB_TYPE, { packageId: EMBED_PACKAGE_ID })
   })
 })

@@ -171,6 +171,9 @@ importers:
       '@hono/node-server':
         specifier: ^2.0.4
         version: 2.0.4(hono@4.12.27)
+      '@kukan/ai-adapter':
+        specifier: workspace:*
+        version: link:../../packages/adapters/ai
       '@kukan/api':
         specifier: workspace:*
         version: link:../../packages/api

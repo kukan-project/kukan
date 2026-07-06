@@ -108,10 +108,13 @@ export interface AIAdapter {
 
 ### 4.3 環境変数（`packages/shared/env.ts`）
 
-| 変数                 | 既定値   | 用途                                      |
-| -------------------- | -------- | ----------------------------------------- |
-| `AI_EMBEDDING_MODEL` | 実装既定 | アダプター毎の埋め込みモデル名上書き      |
-| `SEARCH_HYBRID`      | `true`   | ハイブリッド検索の有効/無効（緊急停止用） |
+| 変数                 | 既定値   | 用途                                 |
+| -------------------- | -------- | ------------------------------------ |
+| `AI_EMBEDDING_MODEL` | 実装既定 | アダプター毎の埋め込みモデル名上書き |
+
+> 運用側の停止スイッチ（env `SEARCH_HYBRID`）は一度導入を検討したが**廃止**した。
+> プロバイダ障害はタイムアウト + BM25 フォールバックで自動 degrade し（§7.4）、
+> 品質・コスト起因の停止は**管理画面からの操作**として設計する（ADR-034 残課題 8、後続）。
 
 ## 5. Step 2: DB スキーマ + インフラ
 
@@ -160,7 +163,9 @@ ollama:
 - 投入箇所: `services/search-index.ts` の package インデックス更新（`indexPackageMetadata()`）
   **および** リソースインデックス更新（`indexResourceMetadata()`）に追記 — リソース CUD 時も
   親 package を再埋め込みする（埋め込みテキストにリソースメタデータを含むため）
-  （AIAdapter の `getEmbeddingInfo() !== null` かつ `SEARCH_HYBRID` 有効時のみ投入）
+- 投入条件は **capability（`getEmbeddingInfo() !== null`）のみ**。`SEARCH_HYBRID` では
+  ゲートしない — このフラグは検索時にベクトルを「読む」ことだけを止める緊急停止スイッチで、
+  一時停止中も書き込みは継続し、再有効化時にベクトルが陳腐化していないことを保証する
 - package 削除時は行ごと消えるため追加処理不要
 
 ### 6.2 Worker ハンドラ（`apps/worker`）
@@ -211,8 +216,9 @@ score(doc) = Σ 1 / (60 + rank_i(doc))   // BM25 順位 + ベクトル順位
 ### 7.4 API
 
 - `GET /api/v1/search` に `semantic` パラメータ追加（既定 `true`）
-- degrade 条件（いずれかで BM25 のみ）: `semantic=false` / `SEARCH_HYBRID=false` /
-  `getEmbeddingInfo() === null` / クエリ埋め込み失敗（error ログのみ、検索は成功させる）
+- degrade 条件（いずれかで BM25 のみ）: `semantic=false` / `getEmbeddingInfo() === null` /
+  クエリ埋め込みの失敗・**タイムアウト**（error ログのみ、検索は成功させる。タイムアウトは
+  短め（目安 2s）に設定し、プロバイダ障害時に全検索が高遅延化することを防ぐ）
 - MCP のデータセット検索ツールは同じサービスを通るため追加実装なし
 
 ## 8. Step 5: Web UI（`apps/web`）
@@ -256,5 +262,6 @@ Step 1〜3 と Step 4 は独立性が高く、Step 3 完了前でも Step 4 は�
 
 - リソースコンテンツ（PDF 等）の埋め込み → ADR-034 残課題 5（ベクトルストア再評価込み）
 - 関連データセット推薦（「似ているデータセット」）→ ADR-034 残課題 6
+- 管理画面からのハイブリッド検索停止（品質・コスト起因の運用停止）→ ADR-034 残課題 8
 - ADR-032 Part B（`query_resource`）→ Issue #7（本フェーズとは独立）
 - 埋め込みモデルの最終確定 → ゴールデンセット評価後

@@ -70,11 +70,15 @@ export const REINDEX_JOB_TYPE = 'reindex-metadata' as const
 /** Maintenance: permanently erase a soft-deleted organization (externals then DB rows). */
 export const PURGE_ORG_JOB_TYPE = 'purge-organization' as const
 
+/** Semantic search: (re)generate the embedding vector for one package (ADR-034). */
+export const EMBED_JOB_TYPE = 'embed-package' as const
+
 // ── Job payload schemas (the worker validates against these before acting) ──
 
 export const pipelineJobSchema = z.object({ resourceId: z.uuid() })
 export const reindexJobSchema = z.object({ includeContent: z.boolean().optional() })
 export const purgeOrgJobSchema = z.object({ organizationId: z.uuid() })
+export const embedJobSchema = z.object({ packageId: z.uuid() })
 
 /** A single file/directory entry in a ZIP manifest */
 export interface ZipEntry {

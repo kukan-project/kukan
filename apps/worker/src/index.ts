@@ -12,9 +12,11 @@ import {
   PIPELINE_JOB_TYPE,
   REINDEX_JOB_TYPE,
   PURGE_ORG_JOB_TYPE,
+  EMBED_JOB_TYPE,
   pipelineJobSchema,
   reindexJobSchema,
   purgeOrgJobSchema,
+  embedJobSchema,
 } from '@kukan/shared'
 import { eq, sql } from 'drizzle-orm'
 import { packageTable } from '@kukan/db'
@@ -22,6 +24,7 @@ import type { Job } from '@kukan/queue-adapter'
 import { rebuildMetadataIndex } from '@kukan/api/services/search-index'
 import { PipelineService } from '@kukan/api/services/pipeline-service'
 import { OrganizationService } from '@kukan/api/services/organization-service'
+import { createAIAdapter } from '@kukan/api/adapters'
 import { createDb, runMigrations } from '@kukan/db'
 import { SQSQueueAdapter } from '@kukan/queue-adapter'
 import { S3StorageAdapter } from '@kukan/storage-adapter'
@@ -29,6 +32,7 @@ import { OpenSearchAdapter } from '@kukan/search-adapter'
 import { processResource } from './pipeline/process-resource'
 import { buildPipelineContext } from './pipeline/build-context'
 import { startHealthCheckScheduler } from './health-check/scheduler'
+import { embedPackage, enqueueAllPackageEmbeds } from './embed/embed-package'
 
 // Skip dotenv in production (env vars injected by container/ECS)
 if (process.env.NODE_ENV !== 'production') {
@@ -131,6 +135,10 @@ const search =
       })
     : undefined
 
+// --- AI adapter (embedding; NoOp when AI_TYPE=none) ---
+const ai = createAIAdapter(env)
+const embeddingEnabled = ai.getEmbeddingInfo() !== null
+
 // Validate a job payload against its schema; logs and returns null on mismatch so
 // the handler can bail without ever trusting an unvalidated SQS message body.
 function parseJobPayload<T>(
@@ -185,6 +193,22 @@ await queue.process({
     } else {
       log.warn({ jobId: job.id, type: job.type }, 'Reindex skipped — OpenSearch not configured')
     }
+    // Re-enqueue embeddings for all packages regardless of search backend —
+    // the per-package hash check skips unchanged ones cheaply.
+    if (embeddingEnabled) {
+      const { enqueued, failed } = await enqueueAllPackageEmbeds(db, queue, log)
+      log.info({ jobId: job.id, type: job.type, enqueued, failed }, 'Embed jobs enqueued')
+    }
+  },
+  // Semantic search: (re)generate the embedding vector for one package.
+  [EMBED_JOB_TYPE]: async (job: Job) => {
+    const data = parseJobPayload(job, embedJobSchema)
+    if (!data) return
+    const { packageId } = data
+    const start = performance.now()
+    const result = await embedPackage(packageId, db, ai, log)
+    const elapsed = Math.round(performance.now() - start)
+    log.info({ jobId: job.id, type: job.type, packageId, result, elapsed }, 'Embed job finished')
   },
   // Maintenance (control-plane): erase a soft-deleted org. Runs the destructive
   // work in the worker (retried on failure) — see OrganizationService.purgeDeletedOrg.

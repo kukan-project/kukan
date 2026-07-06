@@ -38,6 +38,12 @@ export const FETCH_RATE_LIMIT_REQUEUE_DELAY_S = 6
 /** Maximum text size per chunk for content indexing (500 KB) */
 export const MAX_CONTENT_CHUNK_SIZE = 500 * 1024
 
+// ── Semantic Search Embedding (ADR-034) ──
+
+/** Maximum characters of the embedding source text — conservative bound for the
+ *  8K-token input limit of the provisional models (Titan v2 / bge-m3) */
+export const MAX_EMBED_TEXT_LENGTH = 8_000
+
 // ── Health Check ──
 
 /** Number of resources to check per cron tick */

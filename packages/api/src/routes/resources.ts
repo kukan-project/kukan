@@ -37,7 +37,7 @@ import {
 } from '../config'
 import { JsonMinifyStream } from '../streams/json-minify-stream'
 import { checkOrgRole, resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
-import { indexPackageMetadata, indexResourceMetadata } from '../services/search-index'
+import { syncPackageMetadata, indexResourceMetadata } from '../services/search-index'
 import { Readable } from 'stream'
 import type { Database } from '@kukan/db'
 import type { SearchFilters } from '@kukan/search-adapter'
@@ -573,7 +573,7 @@ resourcesRouter.put('/:id', zValidator('json', updateResourceSchema), async (c) 
       : Promise.resolve()
   await Promise.all([
     enqueuePromise,
-    indexPackageMetadata(db, c.get('search'), res.packageId),
+    syncPackageMetadata(db, c.var, res.packageId),
     indexResourceMetadata(db, c.get('search'), id),
   ])
   return c.json(res)
@@ -592,7 +592,7 @@ resourcesRouter.delete('/:id', async (c) => {
 
   const res = await resourceService.delete(id)
   await Promise.all([
-    indexPackageMetadata(db, search, res.packageId),
+    syncPackageMetadata(db, c.var, res.packageId),
     search.deleteResource(id),
     search.deleteContent(id),
   ])

@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.0.4",
+    "@kukan/ai-adapter": "workspace:*",
     "@kukan/api": "workspace:*",
     "@kukan/db": "workspace:*",
     "@kukan/queue-adapter": "workspace:*",
