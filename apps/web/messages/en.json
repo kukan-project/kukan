@@ -65,7 +65,7 @@
   "home": {
     "title": "KUKAN",
     "description": "Data catalog for everyone — A platform for searching and utilizing data",
-    "searchPlaceholder": "Search datasets...",
+    "searchPlaceholder": "Search by keyword or question...",
     "latestDatasets": "Latest Datasets",
     "announcements": "Announcements"
   },
@@ -81,6 +81,7 @@
     "filterByLicense": "Filter by license",
     "clear": "Clear",
     "semanticToggle": "Include related results",
+    "exampleQueries": "Try:",
     "sort": {
       "label": "Sort by",
       "relevance": "Relevance",
@@ -97,7 +98,7 @@
     "noDatasets": "No datasets",
     "noMatchingDatasets": "No datasets matching \"{query}\"",
     "searchError": "Search is temporarily unavailable. Please try again in a moment.",
-    "searchPlaceholder": "Search datasets...",
+    "searchPlaceholder": "Search by keyword or question...",
     "breadcrumb": "Datasets",
     "resources": "Resources",
     "additionalInfo": "Metadata",

@@ -65,7 +65,7 @@
   "home": {
     "title": "KUKAN",
     "description": "みんなが使えるデータカタログ — データを検索・活用するためのプラットフォーム",
-    "searchPlaceholder": "データセットを検索...",
+    "searchPlaceholder": "キーワードや質問文で検索...",
     "latestDatasets": "最新データセット",
     "announcements": "お知らせ"
   },
@@ -81,6 +81,7 @@
     "filterByLicense": "ライセンスで絞り込み",
     "clear": "クリア",
     "semanticToggle": "意味の近い結果を含める",
+    "exampleQueries": "検索例:",
     "sort": {
       "label": "並べ替え",
       "relevance": "関連度順",
@@ -97,7 +98,7 @@
     "noDatasets": "データセットがありません",
     "noMatchingDatasets": "「{query}」に一致するデータセットはありません",
     "searchError": "検索が一時的に利用できません。しばらくしてから再試行してください。",
-    "searchPlaceholder": "データセットを検索...",
+    "searchPlaceholder": "キーワードや質問文で検索...",
     "breadcrumb": "データセット一覧",
     "resources": "リソース一覧",
     "additionalInfo": "メタデータ一覧",

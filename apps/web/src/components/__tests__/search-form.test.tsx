@@ -5,7 +5,7 @@ import { SearchForm } from '../search-form'
 describe('SearchForm', () => {
   it('should render input with default placeholder', () => {
     render(<SearchForm action="/dataset" />)
-    expect(screen.getByPlaceholderText('Search datasets...')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Search by keyword or question...')).toBeInTheDocument()
   })
 
   it('should set default value', () => {

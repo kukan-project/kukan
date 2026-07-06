@@ -70,7 +70,7 @@ describe('HomePage', () => {
     const jsx = await HomePage()
     render(jsx)
 
-    expect(screen.getByPlaceholderText('Search datasets...')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Search by keyword or question...')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument()
   })
 

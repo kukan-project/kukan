@@ -5,7 +5,7 @@ export interface BrandPage {
   metadata?: Metadata
 }
 
-/** フォーク側でページを追加する場合はここに登録 */
+/** Forks register additional pages here */
 export const pages: Record<string, () => Promise<BrandPage>> = {
   terms: () => import('./terms'),
 }

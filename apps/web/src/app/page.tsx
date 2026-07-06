@@ -6,6 +6,7 @@ import { overrides } from '@/brand'
 import { serverFetch } from '@/lib/server-api'
 import { safeExternalHref } from '@/lib/safe-url'
 import { DatasetCard, type DatasetCardItem } from '@/components/dataset-card'
+import { ExampleQueries } from '@/components/search/example-queries'
 import { CompactDate } from '@/components/date-time'
 
 export default async function HomePage() {
@@ -73,6 +74,7 @@ export default async function HomePage() {
         <Input name="q" type="search" placeholder={t('home.searchPlaceholder')} />
         <Button type="submit">{t('common.search')}</Button>
       </form>
+      <ExampleQueries className="max-w-lg justify-center" />
 
       <div className="grid w-full max-w-4xl grid-cols-4 gap-4">
         <Link href="/dataset">

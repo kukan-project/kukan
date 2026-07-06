@@ -10,7 +10,7 @@ export type LogoConfig =
   | { type: 'default' }
   | { type: 'image'; src: string; width: number; height: number; alt: string }
 
-/** ブランド設定の型定義 */
+/** Brand configuration */
 export interface BrandConfig {
   siteName: string
   siteDescription: string
@@ -23,9 +23,11 @@ export interface BrandConfig {
   faviconPath: string
   /** GA4 Measurement ID (e.g. 'G-XXXXXXXXXX'). null = GA4 disabled. */
   gaMeasurementId?: string | null
+  /** Example search queries shown as chips, tailored to the deployment's data. Empty = hidden. */
+  searchExampleQueries: string[]
 }
 
-/** コンポーネントオーバーライドのスロット定義 */
+/** Component override slots */
 export interface BrandOverrides {
   Header?: ComponentType
   Footer?: ComponentType

@@ -9,6 +9,7 @@ import { clientFetch } from '@/lib/client-api'
 import { DatasetCard, type DatasetCardItem } from '@/components/dataset-card'
 import { DatasetFilters } from '@/components/search/dataset-filters'
 import { DatasetSort } from '@/components/search/dataset-sort'
+import { ExampleQueries } from '@/components/search/example-queries'
 import { SemanticToggle } from '@/components/search/semantic-toggle'
 import { PaginationNav } from '@/components/pagination-nav'
 import { SearchForm } from '@/components/search-form'
@@ -192,6 +193,7 @@ export function DatasetList({ initialData }: Props) {
       </div>
 
       <SearchForm action="/dataset" defaultValue={q} hiddenParams={filterParams} />
+      {!q && <ExampleQueries />}
 
       <Separator />
 
