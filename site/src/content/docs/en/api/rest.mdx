@@ -38,7 +38,8 @@ To preserve existing values, GET the current data, apply your changes, and send 
 
 | Parameter | Description |
 |-----------|-------------|
-| `q` | Keyword search |
+| `q` | Search query (keywords or natural language; hybrid search) |
+| `semantic` | `false` limits results to keyword matches only (default: `true`) |
 | `offset` / `limit` | Pagination (max 100) |
 | `organization[]` | Filter by organization |
 | `groups[]` | Filter by category |
@@ -193,14 +194,6 @@ Member roles are one of `admin` / `editor` / `member`.
 |--------|------|-------------|------|
 | GET | `/tags` | List tags | Public |
 | GET | `/tags/{id}` | Tag details | Public |
-
-## Search
-
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| GET | `/search` | Full-text search (`q` required) | Public |
-
-Query parameters: `q`, `offset`, `limit` (1-100), `organization[]`, `tags[]`, `sort_by`, `sort_order`
 
 ## Users
 

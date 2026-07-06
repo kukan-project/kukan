@@ -7,7 +7,19 @@ sidebar:
 
 ## Searching datasets
 
-Use the search bar on the top page to search by keyword.
+Use the search bar on the top page to search. Besides keywords, you can also
+type questions or natural sentences like "Where are the evacuation shelters?" —
+semantically related datasets are found in addition to keyword matches.
+
+### Semantic search
+
+Datasets whose meaning is close to your query appear in the results even when
+no keyword matches, marked with a "Semantic match" badge. Turning off the
+"Include related results" toggle on the search results page limits results to
+keyword matches only.
+
+Note: semantic search may be disabled depending on the site's configuration
+(embedding model setup). In that case search works by keyword only.
 
 ### Filtering
 
@@ -54,5 +66,5 @@ KUKAN provides a REST API for programmatic data access.
 curl https://your-kukan-site/api/v1/packages
 
 # Search datasets
-curl https://your-kukan-site/api/v1/search?q=population
+curl https://your-kukan-site/api/v1/packages?q=population
 ```

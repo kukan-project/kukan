@@ -25,14 +25,14 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          # A PR is "docs-only" when every changed file is Markdown or under docs/.
-          # Those still need the format check (prettier covers .md) but not the
+          # A PR is "docs-only" when every changed file is Markdown/MDX or under docs/.
+          # Those still need the format check (prettier covers .md/.mdx) but not the
           # code-only steps. merge-base keeps the diff correct if base advanced.
           base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
           files=$(git diff --name-only "$base" "$HEAD_SHA")
           echo "Changed files:"
           echo "$files"
-          if printf '%s\n' "$files" | grep -qvE '(\.md$|^docs/)'; then
+          if printf '%s\n' "$files" | grep -qvE '(\.mdx?$|^docs/)'; then
             echo "code=true" >> "$GITHUB_OUTPUT"
             echo "Code changes detected — running full quality suite."
           else

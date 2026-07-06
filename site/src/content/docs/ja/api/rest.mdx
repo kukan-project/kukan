@@ -38,7 +38,8 @@ PUT エンドポイントは全フィールド置換です。リクエストに�
 
 | パラメータ | 説明 |
 |----------|------|
-| `q` | キーワード検索 |
+| `q` | 検索クエリ（キーワードまたは自然文。ハイブリッド検索） |
+| `semantic` | `false` でキーワード一致のみ（デフォルト: `true`） |
 | `offset` / `limit` | ページネーション（最大 100） |
 | `organization[]` | 組織で絞り込み |
 | `groups[]` | カテゴリーで絞り込み |
@@ -192,14 +193,6 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
 |--------|------|------|------|
 | GET | `/tags` | タグ一覧 | 公開 |
 | GET | `/tags/{id}` | タグ詳細 | 公開 |
-
-## 検索 (search)
-
-| Method | Path | 説明 | 認証 |
-|--------|------|------|------|
-| GET | `/search` | 全文検索（`q` 必須） | 公開 |
-
-クエリパラメータ: `q`, `offset`, `limit`（1-100）, `organization[]`, `tags[]`, `sort_by`, `sort_order`
 
 ## ユーザー (users)
 
