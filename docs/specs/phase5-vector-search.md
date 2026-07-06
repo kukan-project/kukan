@@ -243,10 +243,11 @@ score(doc) = Σ 1 / (60 + rank_i(doc))   // BM25 順位 + ベクトル順位
 
 ## 9. Step 6: ゴールデンセット評価
 
-- `docs/eval/golden-queries.yaml`: 20〜50 問（類義語 / 自然文 / **完全一致** を必ず混在）。
-  作成は実データ投入後に人手で行う
-- `scripts/eval-search.ts`: 検索 API を叩き Recall@10 / nDCG@10 を出力。
-  `semantic=true/false` の比較モード付き
+- `packages/api/scripts/golden-queries.yaml`: 20〜50 問（類義語 / 自然文 / **完全一致** を
+  必ず混在）。作成は実データ投入後に人手で行う。デプロイ環境固有のためコミットせず、
+  同ディレクトリの `golden-queries.example.yaml`（記入ガイド付き）からコピーして作成
+- `packages/api/scripts/eval-search.ts`（`pnpm eval:search`）: 検索 API を叩き
+  Recall@10 / nDCG@10 を semantic ON/OFF で比較出力。完全一致クエリの劣化検知で exit 1
 - **出荷条件**: 完全一致クエリで `semantic=false` 比の劣化なし（ADR-034 決定 8）。
   劣化があれば RRF 重み・しきい値を調整、解消しない場合はデフォルト OFF に切り替えて出荷
 

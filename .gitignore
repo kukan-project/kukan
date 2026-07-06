@@ -68,6 +68,9 @@ cdk.out/
 # Sample seed data (local only)
 seed-sample-*
 
+# Search-quality golden set (deployment-specific — copy from golden-queries.example.yaml)
+packages/api/scripts/golden-queries.yaml
+
 # Temporary files
 tmp/
 temp/
