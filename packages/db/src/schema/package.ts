@@ -3,9 +3,33 @@
  * CKAN-compatible dataset/package table
  */
 
-import { pgTable, uuid, varchar, text, boolean, jsonb, timestamp, index } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  uuid,
+  varchar,
+  text,
+  boolean,
+  jsonb,
+  timestamp,
+  index,
+  customType,
+} from 'drizzle-orm/pg-core'
 import { organization } from './organization'
 import { user } from './user'
+
+/** pgvector column without a fixed dimension so the embedding model can change
+ *  without DDL — consistency is enforced via embedding_model at query time (ADR-034) */
+const vector = customType<{ data: number[]; driverData: string }>({
+  dataType() {
+    return 'vector'
+  },
+  toDriver(value: number[]): string {
+    return JSON.stringify(value)
+  },
+  fromDriver(value: string): number[] {
+    return JSON.parse(value) as number[]
+  },
+})
 
 export const packageTable = pgTable(
   'package',
@@ -32,6 +56,12 @@ export const packageTable = pgTable(
     qualityScore: text('quality_score'), // Phase 4: change to FLOAT
     aiSummary: text('ai_summary'),
     aiTags: text('ai_tags'),
+
+    // Semantic search embedding (Phase 5a, ADR-034). No HNSW/IVFFlat index —
+    // v1 uses exact search at package-metadata scale.
+    embedding: vector('embedding'),
+    embeddingModel: text('embedding_model'),
+    embeddingHash: text('embedding_hash'),
 
     created: timestamp('created', { withTimezone: true }).defaultNow().notNull(),
     updated: timestamp('updated', { withTimezone: true }).defaultNow().notNull(),

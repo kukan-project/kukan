@@ -30,7 +30,10 @@ services:
   # ===== Infrastructure (always started) =====
 
   postgres:
-    image: postgres:16-alpine
+    # pgvector-bundled image (Debian-based). Migrating an existing alpine pgdata
+    # volume changes the collation implementation — recreate the volume in dev,
+    # or pg_dump/restore (or REINDEX) in production. See ADR-034.
+    image: pgvector/pgvector:pg16
     container_name: kukan-postgres
     ports:
       - '127.0.0.1:5432:5432'
@@ -132,6 +135,18 @@ services:
 
   # ===== Production stack (--profile prod) =====
 
+  ollama:
+    # Embedding model server (ADR-034). Same configuration for dev and on-prem;
+    # closed networks pre-distribute the ollama-models volume instead of `ollama pull`.
+    # Setup: docker compose --profile ai up -d && docker compose exec ollama ollama pull bge-m3
+    image: ollama/ollama:latest
+    container_name: kukan-ollama
+    profiles: [ai]
+    ports:
+      - '127.0.0.1:11434:11434'
+    volumes:
+      - ollama-models:/root/.ollama
+
   web:
     profiles: [prod]
     build:
@@ -209,5 +224,6 @@ volumes:
   pgdata:
   miniodata:
   opensearch-data:
+  ollama-models:
   caddy-data:
   caddy-config:
