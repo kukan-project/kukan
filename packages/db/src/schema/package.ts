@@ -17,8 +17,9 @@ import {
 import { organization } from './organization'
 import { user } from './user'
 
-/** pgvector column without a fixed dimension so the embedding model can change
- *  without DDL — consistency is enforced via embedding_model at query time (ADR-034) */
+/** pgvector column without a fixed dimension so the embedding model or its
+ *  dimension can change without DDL — consistency is enforced via the
+ *  embedding_model key (model@dimension) at query time (ADR-034) */
 const vector = customType<{ data: number[]; driverData: string }>({
   dataType() {
     return 'vector'
@@ -60,6 +61,8 @@ export const packageTable = pgTable(
     // Semantic search embedding (Phase 5a, ADR-034). No HNSW/IVFFlat index —
     // v1 uses exact search at package-metadata scale.
     embedding: vector('embedding'),
+    // Vector-space key (model@dimension, see embeddingKey) — search filters on
+    // this so vectors from other models/dimensions are never compared.
     embeddingModel: text('embedding_model'),
     embeddingHash: text('embedding_hash'),
 

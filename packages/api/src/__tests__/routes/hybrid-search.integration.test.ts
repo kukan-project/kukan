@@ -45,12 +45,14 @@ beforeEach(async () => {
   // Keyword-only hit: title contains "Wi-Fi", embedding orthogonal (below the threshold)
   await createPackage('keyword-hit', 'Wi-Fi設置場所')
 
+  // embedding_model is the vector-space key (model@dimension) — must match the
+  // stub's getEmbeddingInfo() → 'test-model@3'
   await db.execute(sql`
-    UPDATE package SET embedding = '[1,0,0]', embedding_model = 'test-model'
+    UPDATE package SET embedding = '[1,0,0]', embedding_model = 'test-model@3'
     WHERE name = 'wireless-lan'
   `)
   await db.execute(sql`
-    UPDATE package SET embedding = '[0,0,1]', embedding_model = 'test-model'
+    UPDATE package SET embedding = '[0,0,1]', embedding_model = 'test-model@3'
     WHERE name = 'keyword-hit'
   `)
 })
@@ -101,5 +103,15 @@ describe('GET /api/v1/packages — hybrid search wiring', () => {
     // 1 keyword hit + 1 semantic-only hit, both owned by hybrid-org
     const org = body.facets.organizations.find((o) => o.name === 'hybrid-org')
     expect(org?.count).toBe(2)
+  })
+
+  it('ignores vectors stored under a different model/dimension key', async () => {
+    // Simulate a dimension change: the stored vector predates the current key
+    await db.execute(sql`
+      UPDATE package SET embedding_model = 'test-model' WHERE name = 'wireless-lan'
+    `)
+    const { items } = await search('q=Wi-Fi')
+    // The semantic-only hit drops out; no dimension-mismatch error
+    expect(items.map((i) => i.name)).toEqual(['keyword-hit'])
   })
 })

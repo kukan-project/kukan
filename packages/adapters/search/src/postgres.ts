@@ -417,7 +417,7 @@ export class PostgresSearchAdapter implements SearchAdapter {
 
   async searchByVector(
     vector: number[],
-    model: string,
+    modelKey: string,
     filters: SearchFilters,
     k: number
   ): Promise<VectorHit[]> {
@@ -427,13 +427,13 @@ export class PostgresSearchAdapter implements SearchAdapter {
     // Cut below the similarity floor — kNN otherwise pads top-k with noise
     const maxDistance = 1 - this.vectorMinSimilarity
 
-    // The CASE guard makes `<=>` evaluate only on rows of the requested model —
-    // a bare AND leaves the planner free to compute the distance on other rows
-    // first, which errors when a model migration leaves vectors of different
-    // dimensions side by side. The expression appears once (ORDER BY references
-    // the output alias) so the ~KB-sized vector parameter is bound and the
-    // distance computed a single time per row.
-    const distance = sql<number>`CASE WHEN ${packageTable.embeddingModel} = ${model}
+    // The CASE guard makes `<=>` evaluate only on rows of the requested vector
+    // space — a bare AND leaves the planner free to compute the distance on
+    // other rows first, which errors when a model/dimension migration leaves
+    // vectors of different dimensions side by side. The expression appears once
+    // (ORDER BY references the output alias) so the ~KB-sized vector parameter
+    // is bound and the distance computed a single time per row.
+    const distance = sql<number>`CASE WHEN ${packageTable.embeddingModel} = ${modelKey}
       THEN ${packageTable.embedding} <=> ${vectorParam}::vector END`
 
     const rows = await this.db
@@ -443,7 +443,7 @@ export class PostgresSearchAdapter implements SearchAdapter {
         and(
           ...conditions,
           sql`${packageTable.embedding} IS NOT NULL`,
-          eq(packageTable.embeddingModel, model)
+          eq(packageTable.embeddingModel, modelKey)
         )
       )
       .orderBy(sql`"distance"`)

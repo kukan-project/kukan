@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { packageTable, resource, packageTag, tag } from '@kukan/db'
-import type { AIAdapter } from '@kukan/ai-adapter'
+import { type AIAdapter, embeddingKey } from '@kukan/ai-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import { EMBED_JOB_TYPE, type Logger } from '@kukan/shared'
 import { MAX_EMBED_TEXT_LENGTH } from '../config'
@@ -34,7 +34,7 @@ export function buildEmbeddingText(source: EmbedSource): string {
 export type EmbedPackageResult = 'embedded' | 'skipped' | 'cleared' | 'not-found'
 
 /**
- * Embed one package. Skips when the source text and model are unchanged
+ * Embed one package. Skips when the source text and model key are unchanged
  * (embedding_hash comparison); clears the vector when there is nothing to embed.
  */
 export async function embedPackage(
@@ -61,16 +61,20 @@ export async function embedPackage(
     .limit(1)
   if (!pkg) return 'not-found'
 
+  // Stable ordering — the hash is computed over the joined text, so an
+  // unspecified row order would re-embed unchanged packages on every reindex
   const [tags, resources] = await Promise.all([
     db
       .select({ name: tag.name })
       .from(packageTag)
       .innerJoin(tag, eq(packageTag.tagId, tag.id))
-      .where(eq(packageTag.packageId, packageId)),
+      .where(eq(packageTag.packageId, packageId))
+      .orderBy(tag.name),
     db
       .select({ name: resource.name, description: resource.description })
       .from(resource)
-      .where(and(eq(resource.packageId, packageId), eq(resource.state, 'active'))),
+      .where(and(eq(resource.packageId, packageId), eq(resource.state, 'active')))
+      .orderBy(resource.position, resource.created, resource.id),
   ])
 
   const text = buildEmbeddingText({
@@ -88,13 +92,14 @@ export async function embedPackage(
     return 'cleared'
   }
 
+  const key = embeddingKey(info)
   const hash = createHash('sha256').update(text).digest('hex')
-  if (pkg.embeddingHash === hash && pkg.embeddingModel === info.model) return 'skipped'
+  if (pkg.embeddingHash === hash && pkg.embeddingModel === key) return 'skipped'
 
   const embedding = await ai.embed(text, { type: 'document' })
   await db
     .update(packageTable)
-    .set({ embedding, embeddingModel: info.model, embeddingHash: hash })
+    .set({ embedding, embeddingModel: key, embeddingHash: hash })
     .where(eq(packageTable.id, packageId))
   return 'embedded'
 }

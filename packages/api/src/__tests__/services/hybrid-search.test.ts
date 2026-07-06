@@ -27,10 +27,10 @@ function makeDbSearch(hits: Array<{ id: string; similarity: number }>) {
   } as unknown as SearchAdapter
 }
 
-function makeAI(opts?: { available?: boolean; failEmbed?: boolean }) {
+function makeAI(opts?: { available?: boolean; failEmbed?: boolean; dimensions?: number }) {
   return {
     getEmbeddingInfo: () =>
-      opts?.available === false ? null : { model: 'test-model', dimensions: 3 },
+      opts?.available === false ? null : { model: 'test-model', dimensions: opts?.dimensions ?? 3 },
     embed: opts?.failEmbed
       ? vi.fn().mockRejectedValue(new Error('embed down'))
       : vi.fn().mockResolvedValue([1, 0, 0]),
@@ -174,6 +174,29 @@ describe('hybridSearch — fusion', () => {
     expect(result.total).toBe(10)
     // BM25 leg is fetched with the full fusion window, not the requested page
     expect(d.search.search).toHaveBeenCalledWith(expect.objectContaining({ offset: 0, limit: 50 }))
+    // The vector leg filters by the full vector-space key, not the bare model name
+    expect(d.dbSearch.searchByVector).toHaveBeenCalledWith(
+      [1, 0, 0],
+      'test-model@3',
+      expect.anything(),
+      50
+    )
+  })
+
+  it('namespaces the query-embedding cache by dimension', async () => {
+    const dims3 = makeAI({ dimensions: 3 })
+    const dims4 = makeAI({ dimensions: 4 })
+    const legs = () => ({
+      search: makeSearch(bm25Result(['a'])),
+      dbSearch: makeDbSearch([{ id: 'a', similarity: 0.9 }]),
+    })
+
+    await hybridSearch(deps({ ...legs(), ai: dims3 }), { q: 'q-cache-dims' })
+    await hybridSearch(deps({ ...legs(), ai: dims4 }), { q: 'q-cache-dims' })
+
+    // A dimension change must not reuse the other dimension's cached vector
+    expect(dims3.embed).toHaveBeenCalledTimes(1)
+    expect(dims4.embed).toHaveBeenCalledTimes(1)
   })
 
   it('applies offset/limit to the fused list and grows total when needed', async () => {

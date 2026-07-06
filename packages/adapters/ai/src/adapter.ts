@@ -43,3 +43,13 @@ export interface EmbeddingInfo {
   model: string
   dimensions: number
 }
+
+/**
+ * Identity of a vector space: the same string implies vectors are directly
+ * comparable. Includes the dimension because a Matryoshka model (e.g. Titan v2)
+ * can change dimensions under the same model name, and mixing dimensions in one
+ * pgvector column breaks the distance operator. (ADR-034)
+ */
+export function embeddingKey(info: EmbeddingInfo): string {
+  return `${info.model}@${info.dimensions}`
+}

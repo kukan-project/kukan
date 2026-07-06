@@ -87,6 +87,10 @@ export interface EmbeddingInfo {
   dimensions: number // 例: 1024
 }
 
+/** ベクトル空間キー「モデル名@次元数」— 保存(embedding_model)・検索・キャッシュの比較単位。
+ *  Matryoshka モデルは同名のまま次元を変えられるため、次元をキーに含める */
+export function embeddingKey(info: EmbeddingInfo): string // → 'bge-m3@1024'
+
 export interface AIAdapter {
   complete(prompt: string, options?: CompleteOptions): Promise<string>
   embed(text: string, options?: EmbedOptions): Promise<number[]>
@@ -125,12 +129,14 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 ALTER TABLE package
   ADD COLUMN embedding vector,            -- 次元指定なし（モデル差し替え時 DDL 不要）
-  ADD COLUMN embedding_model text,        -- 生成時のモデル名（不一致検出用）
+  ADD COLUMN embedding_model text,        -- ベクトル空間キー「モデル名@次元数」（embeddingKey()、不一致検出用）
   ADD COLUMN embedding_hash text;         -- 対象テキストの SHA-256（再埋め込みスキップ）
 ```
 
 - HNSW / IVFFlat インデックスは**張らない**（v1 は exact search。ADR-034 §2）
-- 検索時は `embedding_model = <現行モデル>` の行のみ対象（モデル移行中の混在を防ぐ）
+- 検索時は `embedding_model = <現行キー>` の行のみ対象。キーは「モデル名@次元数」で、
+  Matryoshka モデル（Titan v2 等）が同名のまま次元を変えても別空間として扱われ、
+  移行中の混在で pgvector が次元不一致エラーを起こさない
 
 ### 5.2 compose.yml
 
@@ -181,15 +187,17 @@ ollama:
 
 - 既存の検索インデックス rebuild フローに `--embeddings` 相当を追加:
   全 active package を `embedBatch` で処理（レート制御付き）
-- モデル差し替え手順: env 変更 → rebuild 実行（`embedding_model` 不一致行が全て再生成される）
+- モデル・次元の差し替え手順: env 変更（`AI_EMBEDDING_MODEL` / `AI_EMBEDDING_DIMENSIONS`）→
+  rebuild 実行（`embedding_model` のキー不一致行が全て再生成される）
 
 ## 7. Step 4: ハイブリッド検索
 
 ### 7.1 ベクトル検索（`packages/adapters/search` の PG 実装に追加）
 
 ```typescript
-/** pgvector cosine distance による top-k。SearchFilters の可視性 WHERE を必ず適用 */
-searchByVector(vector: number[], model: string, filters: SearchFilters, k: number): Promise<VectorHit[]>
+/** pgvector cosine distance による top-k。SearchFilters の可視性 WHERE を必ず適用。
+ *  modelKey は embeddingKey() のベクトル空間キー「モデル名@次元数」（裸のモデル名ではない） */
+searchByVector(vector: number[], modelKey: string, filters: SearchFilters, k: number): Promise<VectorHit[]>
 ```
 
 - `ORDER BY embedding <=> $vector LIMIT k`（k=50）

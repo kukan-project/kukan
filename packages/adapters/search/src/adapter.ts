@@ -243,11 +243,13 @@ export interface SearchAdapter {
 
   /** Vector similarity search over package embeddings (pgvector, ADR-034).
    *  PostgreSQL-only — vectors live in the package table regardless of the
-   *  BM25 backend, so callers use the dbSearch adapter. `filters` MUST carry
-   *  the caller's visibility scope. Absent on backends without vector support. */
+   *  BM25 backend, so callers use the dbSearch adapter. `modelKey` is the
+   *  vector-space key from embeddingKey() (model@dimensions), NOT the bare
+   *  model name. `filters` MUST carry the caller's visibility scope. Absent on
+   *  backends without vector support. */
   searchByVector?(
     vector: number[],
-    model: string,
+    modelKey: string,
     filters: SearchFilters,
     k: number
   ): Promise<VectorHit[]>

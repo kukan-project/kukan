@@ -17,7 +17,7 @@ import type {
   DatasetDoc,
   VectorHit,
 } from '@kukan/search-adapter'
-import type { AIAdapter } from '@kukan/ai-adapter'
+import { type AIAdapter, embeddingKey } from '@kukan/ai-adapter'
 import { createCache, type Logger } from '@kukan/shared'
 import {
   FUSION_WINDOW,
@@ -52,11 +52,11 @@ const queryEmbedCache = createCache({
  *  failure so the caller degrades to keyword-only search. */
 async function embedQuery(
   ai: AIAdapter,
-  model: string,
+  modelKey: string,
   text: string,
   logger: Logger
 ): Promise<number[] | null> {
-  const key = `${model}:${text}`
+  const key = `${modelKey}:${text}`
   const cached = queryEmbedCache.get(key) as number[] | undefined
   if (cached) return cached
 
@@ -173,12 +173,15 @@ export async function hybridSearch(
     return search.search(searchQuery)
   }
 
+  // Also namespaces the query-embedding cache — a dimension change must not
+  // serve vectors cached under the old dimension.
+  const key = embeddingKey(info)
   const bm25Promise = search.search({ ...searchQuery, offset: 0, limit: FUSION_WINDOW })
   const vectorPromise: Promise<VectorHit[]> = (async () => {
-    const vector = await embedQuery(ai, info.model, q, logger)
+    const vector = await embedQuery(ai, key, q, logger)
     if (!vector) return []
     try {
-      return await searchByVector(vector, info.model, query.filters ?? {}, FUSION_WINDOW)
+      return await searchByVector(vector, key, query.filters ?? {}, FUSION_WINDOW)
     } catch (err) {
       logger.error({ err }, 'Vector search failed — degrading to keyword-only search')
       return []
