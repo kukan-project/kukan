@@ -456,6 +456,10 @@ export class PostgresSearchAdapter implements SearchAdapter {
       .map((row) => ({ id: row.id, similarity: 1 - row.distance }))
   }
 
+  async facetsForIds(ids: string[]): Promise<SearchFacets> {
+    return this.computeFacets(inArray(packageTable.id, ids))
+  }
+
   async sumResourceCount(query?: ResourceCountQuery): Promise<number> {
     const conditions = this.buildConditions({ q: query?.q ?? '', filters: query?.filters })
 

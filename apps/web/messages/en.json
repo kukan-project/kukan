@@ -80,6 +80,7 @@
     "filterByFormat": "Filter by format",
     "filterByLicense": "Filter by license",
     "clear": "Clear",
+    "semanticToggle": "Include related results",
     "sort": {
       "label": "Sort by",
       "relevance": "Relevance",
@@ -146,6 +147,7 @@
     "matchedResources": "Matched resources",
     "contentMatch": "Content match",
     "contentMatchNote": "(up to 3 matches)",
+    "semanticMatch": "Semantic match",
     "loadingSnippet": "Loading…",
     "tabPublic": "Public",
     "tabPrivate": "Private",

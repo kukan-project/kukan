@@ -91,4 +91,15 @@ describe('GET /api/v1/packages — hybrid search wiring', () => {
     const { items } = await search('q=Wi-Fi&my_org=true')
     expect(items.map((i) => i.name)).toEqual(['keyword-hit'])
   })
+
+  it('counts semantic-only hits in facets', async () => {
+    const res = await app.request('/api/v1/packages?q=Wi-Fi&include_facets=true')
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as {
+      facets: { organizations: Array<{ name: string; count: number }> }
+    }
+    // 1 keyword hit + 1 semantic-only hit, both owned by hybrid-org
+    const org = body.facets.organizations.find((o) => o.name === 'hybrid-org')
+    expect(org?.count).toBe(2)
+  })
 })

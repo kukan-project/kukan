@@ -128,6 +128,17 @@ describe('PostgresSearchAdapter.searchByVector', () => {
     expect(await adapter.searchByVector([1, 0, 0], MODEL, {}, 10)).toHaveLength(1)
   })
 
+  it('facetsForIds aggregates facets for the given package set', async () => {
+    const orgId = await insertOrg('facet-org')
+    const p1 = await insertPackage({ name: 'facet-p1', ownerOrg: orgId })
+    const p2 = await insertPackage({ name: 'facet-p2', ownerOrg: orgId })
+    await insertPackage({ name: 'facet-outside', ownerOrg: orgId })
+
+    const facets = await adapter.facetsForIds([p1, p2])
+
+    expect(facets.organizations).toEqual([{ name: 'facet-org', count: 2 }])
+  })
+
   it('tolerates vectors of different dimensions from another model (mid-migration)', async () => {
     const current = await insertPackage({ name: 'current-model', embedding: [1, 0, 0] })
     await insertPackage({

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
-import { Building2, Calendar, FileText, FolderOpen, Search, Tag } from 'lucide-react'
+import { Building2, Calendar, FileText, FolderOpen, Search, Sparkles, Tag } from 'lucide-react'
 import { Badge, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
 import { FormatBadge } from './format-badge'
 import { FormatBadges } from './format-badges'
@@ -30,6 +30,7 @@ export interface DatasetCardItem {
   matchedResources?: MatchedResource[]
   highlightedTitle?: string
   highlightedNotes?: string
+  matchSource?: 'semantic'
 }
 
 export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
@@ -49,6 +50,15 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                   : { children: pkg.title || pkg.name })}
               />
             </CardTitle>
+            {pkg.matchSource === 'semantic' && (
+              <Badge
+                variant="outline"
+                className="shrink-0 gap-1 border-primary/30 text-xs font-normal text-primary"
+              >
+                <Sparkles className="h-3 w-3" />
+                {t('semanticMatch')}
+              </Badge>
+            )}
             {(pkg.updated || pkg.created) && (
               <span className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
                 <Calendar className="h-3 w-3" />

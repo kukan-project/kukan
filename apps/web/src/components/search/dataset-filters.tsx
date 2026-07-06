@@ -6,18 +6,16 @@ import { resolveLicenseLabel, type FacetCounts, type FacetItem } from '@kukan/sh
 import { buildQuery } from '@/lib/query'
 
 interface DatasetFiltersProps {
-  query: string
-  currentOrgs: string[]
-  currentGroups: string[]
-  currentTags: string[]
-  currentFormats: string[]
-  currentLicenses: string[]
+  /** Params every facet link must carry — built once in dataset-list.tsx */
+  baseParams: FilterParams
   facets: FacetCounts
-  sortBy?: string
-  sortOrder?: string
 }
 
 type FilterParams = Record<string, string | string[] | undefined>
+
+function toArray(value: string | string[] | undefined): string[] {
+  return value === undefined ? [] : Array.isArray(value) ? value : [value]
+}
 
 function buildDatasetUrl(params: FilterParams) {
   return `/dataset?${buildQuery(params)}`
@@ -112,30 +110,16 @@ function FilterList({
   )
 }
 
-export function DatasetFilters({
-  query,
-  currentOrgs,
-  currentGroups,
-  currentTags,
-  currentFormats,
-  currentLicenses,
-  facets,
-  sortBy,
-  sortOrder,
-}: DatasetFiltersProps) {
+export function DatasetFilters({ baseParams, facets }: DatasetFiltersProps) {
   const t = useTranslations('search')
   const tl = useTranslations('license')
 
-  const baseParams: FilterParams = {
-    q: query || undefined,
-    organization: currentOrgs.length ? currentOrgs : undefined,
-    groups: currentGroups.length ? currentGroups : undefined,
-    tags: currentTags.length ? currentTags : undefined,
-    res_format: currentFormats.length ? currentFormats : undefined,
-    license_id: currentLicenses.length ? currentLicenses : undefined,
-    ...(sortBy && { sort_by: sortBy }),
-    ...(sortOrder && { sort_order: sortOrder }),
-  }
+  // Active selections derive from baseParams — one representation of URL state
+  const currentOrgs = toArray(baseParams.organization)
+  const currentGroups = toArray(baseParams.groups)
+  const currentTags = toArray(baseParams.tags)
+  const currentFormats = toArray(baseParams.res_format)
+  const currentLicenses = toArray(baseParams.license_id)
 
   return (
     <div className="flex flex-col gap-4">

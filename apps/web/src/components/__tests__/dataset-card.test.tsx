@@ -95,6 +95,16 @@ describe('DatasetCard', () => {
     expect(link).toHaveAttribute('href', '/dataset/test-dataset/resource/r1')
   })
 
+  it('should render a semantic badge for vector-only hits', () => {
+    render(<DatasetCard pkg={{ ...basePkg, matchSource: 'semantic' }} />)
+    expect(screen.getByText('Semantic match')).toBeInTheDocument()
+  })
+
+  it('should not render a semantic badge for keyword hits', () => {
+    render(<DatasetCard pkg={basePkg} />)
+    expect(screen.queryByText('Semantic match')).not.toBeInTheDocument()
+  })
+
   it('should show loading spinner when content match has no snippets yet', () => {
     render(
       <DatasetCard

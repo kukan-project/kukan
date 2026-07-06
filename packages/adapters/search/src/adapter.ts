@@ -251,6 +251,10 @@ export interface SearchAdapter {
     filters: SearchFilters,
     k: number
   ): Promise<VectorHit[]>
+
+  /** Facet counts for an explicit set of package IDs — used to merge vector-only
+   *  hits into the BM25 facets (hybrid search). PostgreSQL-only, like searchByVector. */
+  facetsForIds?(ids: string[]): Promise<SearchFacets>
 }
 
 export interface BrowseResult {

@@ -29,17 +29,21 @@ export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext
     'search_datasets',
     {
       description:
-        'Search datasets in the data catalog by keyword. Returns matching datasets with title, description, organization, and available formats.',
+        'Search datasets in the data catalog by keyword. Returns matching datasets with title, description, organization, and available formats. Results may include semantically related datasets beyond exact keyword matches.',
       inputSchema: {
         q: z.string().describe('Search query keywords'),
         organization: z.string().optional().describe('Filter by organization name (slug)'),
         tags: z.array(z.string()).optional().describe('Filter by tag names'),
         offset: z.number().min(0).default(0).describe('Number of results to skip (for pagination)'),
         limit: z.number().min(1).max(50).default(10).describe('Maximum number of results'),
+        semantic: z
+          .boolean()
+          .default(true)
+          .describe('Set false for exact keyword matching only (no semantically related results)'),
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ q, organization, tags, offset, limit }) => {
+    async ({ q, organization, tags, offset, limit, semantic }) => {
       const userOrgIds = await resolveUserOrgIds(db, user)
       const visibility = buildVisibilityFilters(user, userOrgIds)
 
@@ -47,6 +51,7 @@ export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext
         q,
         offset,
         limit,
+        semantic,
         filters: {
           ...(organization && { organizations: [organization] }),
           ...(tags?.length && { tags }),

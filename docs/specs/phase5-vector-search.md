@@ -62,7 +62,7 @@
 ```
 [API] GET /api/v1/search?q=...&semantic=(true)
   ├─ 並列実行
-  │   ├─ BM25: SearchAdapter.search()（既存。facets / total / highlights はこちらが正）
+  │   ├─ BM25: SearchAdapter.search()（既存。highlights / matchedResources はこちらが正）
   │   └─ ベクトル: embed(q, {type:'query'})（lru-cache）→ pgvector top-k（可視性フィルタ適用）
   ├─ サービス層 RRF 融合（k=60、上位から limit 件）
   └─ レスポンス（ベクトル由来ヒットは matchSource: 'semantic'）
@@ -206,7 +206,10 @@ score(doc) = Σ 1 / (60 + rank_i(doc))   // BM25 順位 + ベクトル順位
 ```
 
 - BM25 top-50 + ベクトル top-50 → RRF → offset/limit 適用
-- facets / total / matchedResources / highlights は BM25 結果から引き継ぐ
+- matchedResources / highlights は BM25 結果から引き継ぐ
+- facets は BM25 集計にウィンドウ内のベクトル専用ヒット分を加算（`facetsForIds`）、
+  total は max(BM25 total, 融合件数) — どちらもベクトル側の寄与は FUSION_WINDOW
+  までという同じ近似を持つ
 - ベクトルのみでヒットした doc は `matchSource: 'semantic'`、ハイライトなし
 - `q` が空（ブラウズ）のときはベクトル検索を実行しない（既存挙動のまま）
 

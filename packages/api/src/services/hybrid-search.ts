@@ -12,6 +12,8 @@ import type {
   SearchAdapter,
   SearchQuery,
   SearchResult,
+  SearchFacets,
+  SearchFacetBucket,
   DatasetDoc,
   VectorHit,
 } from '@kukan/search-adapter'
@@ -109,6 +111,25 @@ async function fetchSemanticDocs(db: Database, ids: string[]): Promise<Map<strin
   )
 }
 
+/** Sum facet buckets by name so counts cover BM25 matches + vector-only hits */
+export function mergeFacets(base: SearchFacets | undefined, add: SearchFacets): SearchFacets {
+  if (!base) return add
+  const mergeBuckets = (a: SearchFacetBucket[], b: SearchFacetBucket[]): SearchFacetBucket[] => {
+    const counts = new Map(a.map((bucket) => [bucket.name, bucket.count]))
+    for (const bucket of b) counts.set(bucket.name, (counts.get(bucket.name) ?? 0) + bucket.count)
+    return [...counts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((x, y) => y.count - x.count)
+  }
+  return {
+    organizations: mergeBuckets(base.organizations, add.organizations),
+    groups: mergeBuckets(base.groups, add.groups),
+    tags: mergeBuckets(base.tags, add.tags),
+    formats: mergeBuckets(base.formats, add.formats),
+    licenses: mergeBuckets(base.licenses, add.licenses),
+  }
+}
+
 /** score(doc) = Σ over result lists of 1 / (RRF_K + rank), rank starting at 1 */
 export function fuseRrf(bm25Ids: string[], vectorIds: string[]): string[] {
   const scores = new Map<string, number>()
@@ -170,14 +191,25 @@ export async function hybridSearch(
     bm25.items.map((item) => item.id),
     vectorHits.map((hit) => hit.id)
   )
+  const windowSemanticIds = fusedIds.filter((id) => !bm25ById.has(id))
 
   // Enrich only the requested page — semantic docs outside it would be discarded
   const pageIds = fusedIds.slice(offset, offset + limit)
-  const semanticOnlyIds = pageIds.filter((id) => !bm25ById.has(id))
-  const semanticDocs =
-    semanticOnlyIds.length > 0
-      ? await fetchSemanticDocs(db, semanticOnlyIds)
-      : new Map<string, DatasetDoc>()
+  const pageSemanticIds = pageIds.filter((id) => !bm25ById.has(id))
+
+  const [semanticDocs, vectorFacets] = await Promise.all([
+    pageSemanticIds.length > 0
+      ? fetchSemanticDocs(db, pageSemanticIds)
+      : new Map<string, DatasetDoc>(),
+    // Facet counts from the BM25 leg alone would contradict the visible list
+    // (zero everywhere when only vector hits exist) — count the vector-only
+    // window hits too. The vector leg already applied the same visibility
+    // filters. Window-limited, the same asymmetry as `total`.
+    query.facets && windowSemanticIds.length > 0 && dbSearch.facetsForIds
+      ? dbSearch.facetsForIds(windowSemanticIds)
+      : undefined,
+  ])
+  const facets = vectorFacets ? mergeFacets(bm25.facets, vectorFacets) : bm25.facets
 
   const items = pageIds
     .map((id) => bm25ById.get(id) ?? semanticDocs.get(id))
@@ -190,6 +222,6 @@ export async function hybridSearch(
     total: Math.max(bm25.total, fusedIds.length),
     offset,
     limit,
-    facets: bm25.facets,
+    facets,
   }
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createMockDb } from '../test-helpers/mock-db'
-import { hybridSearch, fuseRrf } from '../../services/hybrid-search'
-import type { SearchAdapter, SearchResult, DatasetDoc } from '@kukan/search-adapter'
+import { hybridSearch, fuseRrf, mergeFacets } from '../../services/hybrid-search'
+import type { SearchAdapter, SearchResult, SearchFacets, DatasetDoc } from '@kukan/search-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import type { Logger } from '@kukan/shared'
 import type { Database } from '@kukan/db'
@@ -48,6 +48,43 @@ function deps(over: Partial<Parameters<typeof hybridSearch>[0]> = {}) {
     ...over,
   }
 }
+
+const emptyFacets: SearchFacets = {
+  organizations: [],
+  groups: [],
+  tags: [],
+  formats: [],
+  licenses: [],
+}
+
+describe('mergeFacets', () => {
+  it('sums buckets by name and sorts by count', () => {
+    const merged = mergeFacets(
+      {
+        ...emptyFacets,
+        organizations: [{ name: 'org-a', count: 1 }],
+        tags: [{ name: 'stats', count: 2 }],
+      },
+      {
+        ...emptyFacets,
+        organizations: [
+          { name: 'org-a', count: 1 },
+          { name: 'org-b', count: 3 },
+        ],
+      }
+    )
+    expect(merged.organizations).toEqual([
+      { name: 'org-b', count: 3 },
+      { name: 'org-a', count: 2 },
+    ])
+    expect(merged.tags).toEqual([{ name: 'stats', count: 2 }])
+  })
+
+  it('returns the addition when the base is undefined', () => {
+    const add = { ...emptyFacets, tags: [{ name: 't', count: 1 }] }
+    expect(mergeFacets(undefined, add)).toBe(add)
+  })
+})
 
 describe('fuseRrf', () => {
   it('ranks a doc found by both lists above single-list docs', () => {
@@ -156,6 +193,50 @@ describe('hybridSearch — fusion', () => {
     expect(result.limit).toBe(1)
     // 2 BM25 + 1 semantic-only → fused count exceeds the BM25 total
     expect(result.total).toBe(3)
+  })
+
+  it('merges vector-only hit facets into the BM25 facets when requested', async () => {
+    const { db, addResult } = createMockDb()
+    addResult([{ id: 'c', name: 'pkg-c', title: null, notes: null, organization: null }])
+    const bm25 = bm25Result(['a'], 1)
+    bm25.facets = { ...emptyFacets, organizations: [{ name: 'org-a', count: 1 }] }
+    const facetsForIds = vi
+      .fn()
+      .mockResolvedValue({ ...emptyFacets, organizations: [{ name: 'org-c', count: 1 }] })
+    const d = deps({
+      db: db as unknown as Database,
+      search: makeSearch(bm25),
+      dbSearch: {
+        searchByVector: vi.fn().mockResolvedValue([{ id: 'c', similarity: 0.9 }]),
+        facetsForIds,
+      } as unknown as SearchAdapter,
+    })
+
+    const result = await hybridSearch(d, { q: 'q-facet-merge', facets: true, limit: 20 })
+
+    expect(facetsForIds).toHaveBeenCalledWith(['c'])
+    expect(result.facets?.organizations).toEqual([
+      { name: 'org-a', count: 1 },
+      { name: 'org-c', count: 1 },
+    ])
+  })
+
+  it('skips the facet fetch when facets are not requested', async () => {
+    const { db, addResult } = createMockDb()
+    addResult([{ id: 'c', name: 'pkg-c', title: null, notes: null, organization: null }])
+    const facetsForIds = vi.fn()
+    const d = deps({
+      db: db as unknown as Database,
+      search: makeSearch(bm25Result(['a'], 1)),
+      dbSearch: {
+        searchByVector: vi.fn().mockResolvedValue([{ id: 'c', similarity: 0.9 }]),
+        facetsForIds,
+      } as unknown as SearchAdapter,
+    })
+
+    await hybridSearch(d, { q: 'q-no-facets', limit: 20 })
+
+    expect(facetsForIds).not.toHaveBeenCalled()
   })
 
   it('caches the query embedding across calls', async () => {

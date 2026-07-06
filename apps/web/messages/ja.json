@@ -80,6 +80,7 @@
     "filterByFormat": "フォーマットで絞り込み",
     "filterByLicense": "ライセンスで絞り込み",
     "clear": "クリア",
+    "semanticToggle": "意味の近い結果を含める",
     "sort": {
       "label": "並べ替え",
       "relevance": "関連度順",
@@ -146,6 +147,7 @@
     "matchedResources": "一致したリソース",
     "contentMatch": "データ内容に一致",
     "contentMatchNote": "（最大3箇所表示）",
+    "semanticMatch": "意味的に関連",
     "loadingSnippet": "読み込み中…",
     "tabPublic": "公開",
     "tabPrivate": "非公開",

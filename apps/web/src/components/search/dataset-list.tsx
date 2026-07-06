@@ -9,6 +9,7 @@ import { clientFetch } from '@/lib/client-api'
 import { DatasetCard, type DatasetCardItem } from '@/components/dataset-card'
 import { DatasetFilters } from '@/components/search/dataset-filters'
 import { DatasetSort } from '@/components/search/dataset-sort'
+import { SemanticToggle } from '@/components/search/semantic-toggle'
 import { PaginationNav } from '@/components/pagination-nav'
 import { SearchForm } from '@/components/search-form'
 
@@ -57,6 +58,8 @@ export function DatasetList({ initialData }: Props) {
   // Bumped by the retry button to re-run the fetch effect.
   const [reloadKey, setReloadKey] = useState(0)
 
+  // Single source of truth for params carried across search navigation
+  // (search form, pagination, facet links) — add new carried params here only
   const filterParams: Record<string, string | string[] | undefined> = {
     organization: currentOrgs.length ? currentOrgs : undefined,
     groups: currentGroups.length ? currentGroups : undefined,
@@ -65,7 +68,10 @@ export function DatasetList({ initialData }: Props) {
     license_id: currentLicenses.length ? currentLicenses : undefined,
     sort_by: sortBy,
     sort_order: sortOrder,
+    semantic: searchParams.get('semantic') ?? undefined,
   }
+  // q included — the search form is the only consumer that must exclude it
+  const carriedParams = { q: q || undefined, ...filterParams }
 
   // Abort controller to cancel stale requests on rapid param changes
   const abortRef = useRef<AbortController | null>(null)
@@ -180,6 +186,7 @@ export function DatasetList({ initialData }: Props) {
           <p className="text-sm text-muted-foreground">
             {loading || error ? '\u00A0' : t('common.count', { count: data?.total ?? 0 })}
           </p>
+          <SemanticToggle />
           <DatasetSort />
         </div>
       </div>
@@ -190,17 +197,7 @@ export function DatasetList({ initialData }: Props) {
 
       <div className="flex flex-col gap-6 md:flex-row">
         <aside className="w-full shrink-0 md:w-64">
-          <DatasetFilters
-            query={q}
-            currentOrgs={currentOrgs}
-            currentGroups={currentGroups}
-            currentTags={currentTags}
-            currentFormats={currentFormats}
-            currentLicenses={currentLicenses}
-            facets={facets}
-            sortBy={sortBy}
-            sortOrder={sortOrder}
-          />
+          <DatasetFilters baseParams={carriedParams} facets={facets} />
         </aside>
 
         <div className="min-w-0 flex-1">
@@ -233,7 +230,7 @@ export function DatasetList({ initialData }: Props) {
             <div className="mt-6">
               <PaginationNav
                 basePath="/dataset"
-                params={{ q: q || undefined, ...filterParams }}
+                params={carriedParams}
                 offset={offset}
                 limit={limit}
                 total={data.total}
