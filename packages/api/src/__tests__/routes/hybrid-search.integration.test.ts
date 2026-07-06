@@ -105,6 +105,22 @@ describe('GET /api/v1/packages — hybrid search wiring', () => {
     expect(org?.count).toBe(2)
   })
 
+  it('never exposes embedding storage columns in list or detail responses', async () => {
+    const list = await search('q=Wi-Fi')
+    for (const item of list.items) {
+      expect(item).not.toHaveProperty('embedding')
+      expect(item).not.toHaveProperty('embeddingModel')
+      expect(item).not.toHaveProperty('embeddingHash')
+    }
+
+    const detailRes = await app.request('/api/v1/packages/wireless-lan')
+    expect(detailRes.status).toBe(200)
+    const detail = (await detailRes.json()) as Record<string, unknown>
+    expect(detail).not.toHaveProperty('embedding')
+    expect(detail).not.toHaveProperty('embeddingModel')
+    expect(detail).not.toHaveProperty('embeddingHash')
+  })
+
   it('ignores vectors stored under a different model/dimension key', async () => {
     // Simulate a dimension change: the stored vector predates the current key
     await db.execute(sql`

@@ -22,7 +22,19 @@ import type { SearchFacets, MatchedResource } from '@kukan/search-adapter'
 import type { CreatePackageInput, UpdatePackageInput } from '@kukan/shared'
 import { hasOrgMembership, type AuthUser } from '../auth/permissions'
 
-type PackageRow = typeof packageTable.$inferSelect
+// Public column set — the embedding storage columns are internal (and the
+// vector is ~KB per row), so no package row this service returns includes them
+const {
+  embedding: _embedding,
+  embeddingModel: _embeddingModel,
+  embeddingHash: _embeddingHash,
+  ...packageColumns
+} = getTableColumns(packageTable)
+
+type PackageRow = Omit<
+  typeof packageTable.$inferSelect,
+  'embedding' | 'embeddingModel' | 'embeddingHash'
+>
 export type PackageAuthorize = (pkg: PackageRow) => Promise<void>
 
 export interface PackageFilterParams {
@@ -74,7 +86,7 @@ export class PackageService {
     const where = and(...conditions)
 
     const selectFields = {
-      ...getTableColumns(packageTable),
+      ...packageColumns,
       total: sql<number>`COUNT(*) OVER()::int`.as('total'),
       formats:
         sql<string>`(SELECT COALESCE(string_agg(DISTINCT UPPER("resource"."format"), ',' ORDER BY UPPER("resource"."format")), '') FROM "resource" WHERE "resource"."package_id" = "package"."id" AND "resource"."state" = 'active')`.as(
@@ -225,7 +237,7 @@ export class PackageService {
     opts?: { tx?: Pick<Database, 'select'>; forUpdate?: boolean }
   ) {
     const base = (opts?.tx ?? this.db)
-      .select()
+      .select(packageColumns)
       .from(packageTable)
       .where(
         and(
@@ -360,7 +372,7 @@ export class PackageService {
           creatorUserId,
           state: 'active',
         })
-        .returning()
+        .returning(packageColumns)
 
       if (input.tags && input.tags.length > 0) {
         await this.linkTags(tx, pkg.id, input.tags)
@@ -420,7 +432,7 @@ export class PackageService {
           updated: sql`NOW()`,
         })
         .where(eq(packageTable.id, existing.id))
-        .returning()
+        .returning(packageColumns)
 
       if (input.tags) {
         await tx.delete(packageTag).where(eq(packageTag.packageId, existing.id))
@@ -447,7 +459,7 @@ export class PackageService {
           updated: sql`NOW()`,
         })
         .where(eq(packageTable.id, existing.id))
-        .returning()
+        .returning(packageColumns)
 
       return deleted!
     })
@@ -462,7 +474,7 @@ export class PackageService {
       const [purged] = await tx
         .delete(packageTable)
         .where(eq(packageTable.id, existing.id))
-        .returning()
+        .returning(packageColumns)
       return purged!
     })
   }
@@ -554,7 +566,7 @@ export class PackageService {
           updated: sql`NOW()`,
         })
         .where(eq(packageTable.id, existing.id))
-        .returning()
+        .returning(packageColumns)
 
       return restored!
     })
