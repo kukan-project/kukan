@@ -111,7 +111,10 @@ services:
     environment:
       - discovery.type=single-node
       - DISABLE_SECURITY_PLUGIN=true
-      - OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}
+      # Heap default 2g: an OpenSearch 3.x node idles at ~430MB heap (plugins
+      # included, index data lives off-heap), so 512m sat at the 95% circuit
+      # breaker and failed searches under load. Override via OPENSEARCH_JAVA_OPTS.
+      - OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS:--Xms2g -Xmx2g}
     ports:
       - '127.0.0.1:9200:9200'
     volumes:
