@@ -34,6 +34,8 @@ export interface PackageFilterParams {
   searchMatchedResources?: Record<string, MatchedResource[]>
   /** Highlighted fields from SearchAdapter, keyed by package ID */
   searchHighlights?: Record<string, { highlightedTitle?: string; highlightedNotes?: string }>
+  /** Package IDs that matched via vector search only (ADR-034) */
+  searchSemanticIds?: string[]
   /** Package state filter (default: 'active') */
   state?: 'active' | 'deleted'
 }
@@ -108,6 +110,7 @@ export class PackageService {
     if (hasSearchResults) {
       // Preserve SearchAdapter score order
       const rowById = new Map(rows.map((r) => [r.id, r]))
+      const semanticIds = new Set(params.searchSemanticIds)
       const items = params
         .searchMatchIds!.map((id) => rowById.get(id))
         .filter((r): r is NonNullable<typeof r> => r != null)
@@ -117,6 +120,7 @@ export class PackageService {
             matchedResources: params.searchMatchedResources[row.id],
           }),
           ...(params.searchHighlights?.[row.id] && params.searchHighlights[row.id]),
+          ...(semanticIds.has(row.id) && { matchSource: 'semantic' as const }),
         }))
 
       return {

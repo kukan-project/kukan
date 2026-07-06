@@ -7,7 +7,7 @@
 import { vi } from 'vitest'
 import { Hono } from 'hono'
 import type { Database } from '@kukan/db'
-import { NoOpAIAdapter } from '@kukan/ai-adapter'
+import { NoOpAIAdapter, type AIAdapter } from '@kukan/ai-adapter'
 import { PostgresSearchAdapter, type SearchAdapter } from '@kukan/search-adapter'
 import type { AnalyticsService } from '../../services/analytics-service'
 import { errorHandler } from '../../middleware/error-handler'
@@ -107,6 +107,8 @@ const defaultTestUser = {
 
 interface TestAppOverrides {
   search?: SearchAdapter
+  /** Override the AI adapter (e.g. an embedding-capable stub for hybrid-search tests). */
+  ai?: AIAdapter
   /** Override the storage adapter (e.g. to return actual file content in preview tests). */
   storage?: typeof mockStorage
   /** Override the authenticated user. Pass `null` for unauthenticated. */
@@ -137,7 +139,7 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
     c.set('dbSearch', new PostgresSearchAdapter(db))
     c.set('storage', overrides?.storage ?? mockStorage)
     c.set('queue', mockQueue)
-    c.set('ai', mockAi)
+    c.set('ai', overrides?.ai ?? mockAi)
     c.set('auth', overrides?.auth ?? mockAuth)
     c.set('env', testEnv)
     c.set('logger', testLogger)

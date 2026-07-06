@@ -143,7 +143,7 @@ ollama:
   image: ollama/ollama
   profiles: [ai]
   ports:
-    - '127.0.0.1:11434:11434'
+    - '127.0.0.1:${OLLAMA_PORT:-11435}:11434' # 11435: ネイティブ Ollama との衝突回避
   volumes:
     - ollama-models:/root/.ollama # 閉域はこのボリュームを事前配送
 ```
@@ -193,8 +193,10 @@ searchByVector(vector: number[], model: string, filters: SearchFilters, k: numbe
 ```
 
 - `ORDER BY embedding <=> $vector LIMIT k`（k=50）
-- 類似度しきい値（cosine similarity < 0.3 程度は除外、評価で調整）— kNN が
-  無関係な結果まで k 件埋めるのを防ぐ
+- 類似度しきい値: cosine similarity **既定 0.45** 未満を除外 — kNN が無関係な結果まで
+  k 件埋めるのを防ぐ。実データ + bge-m3 の計測で関連ヒットは 0.47〜0.62、無関係の
+  テールは 0.38〜0.45 に分布。モデル依存のため `SEARCH_VECTOR_MIN_SIMILARITY` で
+  環境ごとに調整可（最終値はゴールデンセット評価で確定）
 - OpenSearch アダプターには実装しない（ベクトルは PG 一本化。ADR-034 方式 P）
 
 ### 7.2 RRF 融合（サービス層・全環境共通）

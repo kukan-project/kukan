@@ -139,6 +139,8 @@ ckanCompatRouter.get('/package_search', async (c) => {
   // Resolve user's org memberships for visibility
   const userOrgIds = await resolveUserOrgIds(db, user)
 
+  // Deliberately keyword-only (no hybrid fusion) — CKAN compat keeps CKAN's
+  // predictable search semantics.
   const searchAdapter = c.get('search')
   const result = await searchAdapter.search({
     q,

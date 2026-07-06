@@ -6,17 +6,24 @@ import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Database } from '@kukan/db'
 import type { SearchAdapter } from '@kukan/search-adapter'
+import type { AIAdapter } from '@kukan/ai-adapter'
+import type { Logger } from '@kukan/shared'
 import { PackageService } from '../../services/package-service'
+import { hybridSearch } from '../../services/hybrid-search'
 import { resolveUserOrgIds, buildVisibilityFilters, type AuthUser } from '../../auth/permissions'
 
 interface DatasetToolsContext {
   db: Database
   search: SearchAdapter
+  /** PostgreSQL adapter carrying the vectors (hybrid search, ADR-034) */
+  dbSearch: SearchAdapter
+  ai: AIAdapter
+  logger: Logger
   user?: AuthUser
 }
 
 export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext) {
-  const { db, search, user } = ctx
+  const { db, user } = ctx
 
   server.registerTool(
     'search_datasets',
@@ -36,7 +43,7 @@ export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext
       const userOrgIds = await resolveUserOrgIds(db, user)
       const visibility = buildVisibilityFilters(user, userOrgIds)
 
-      const result = await search.search({
+      const result = await hybridSearch(ctx, {
         q,
         offset,
         limit,

@@ -23,6 +23,7 @@ x-app-environment: &app-environment
   SQS_ACCESS_KEY: ${SQS_ACCESS_KEY:-x}
   SQS_SECRET_KEY: ${SQS_SECRET_KEY:-x}
   AI_TYPE: ${AI_TYPE:-none}
+  OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
   BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost}
   BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
 
@@ -139,11 +140,13 @@ services:
     # Embedding model server (ADR-034). Same configuration for dev and on-prem;
     # closed networks pre-distribute the ollama-models volume instead of `ollama pull`.
     # Setup: docker compose --profile ai up -d && docker compose exec ollama ollama pull bge-m3
+    # Host port defaults to 11435 (not 11434) so a natively installed Ollama
+    # doesn't collide; in-network services still use http://ollama:11434.
     image: ollama/ollama:latest
     container_name: kukan-ollama
     profiles: [ai]
     ports:
-      - '127.0.0.1:11434:11434'
+      - '127.0.0.1:${OLLAMA_PORT:-11435}:11434'
     volumes:
       - ollama-models:/root/.ollama
 

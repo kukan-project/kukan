@@ -40,6 +40,9 @@ export const envSchema = z.object({
   SEARCH_TYPE: z.enum(['opensearch', 'postgres']).default('opensearch'),
   OPENSEARCH_URL: z.string().default('http://localhost:9200'),
   OPENSEARCH_REPLICAS: z.coerce.number().int().min(0).default(0),
+  // Minimum cosine similarity for vector-search hits (model-dependent;
+  // default measured on bge-m3 — see PostgresSearchAdapter)
+  SEARCH_VECTOR_MIN_SIMILARITY: z.coerce.number().min(-1).max(1).optional(),
 
   // Queue (SQS-compatible: AWS SQS or ElasticMQ, determined by SQS_ENDPOINT)
   SQS_QUEUE_URL: z.string(),
@@ -61,7 +64,9 @@ export const envSchema = z.object({
   BEDROCK_REGION: z.string().default('ap-northeast-1'),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
-  OLLAMA_URL: z.string().default('http://localhost:11434'),
+  // Default matches the compose-mapped host port (11435 — avoids colliding
+  // with a natively installed Ollama). Native install: set to :11434.
+  OLLAMA_URL: z.string().default('http://localhost:11435'),
 
   // Auth
   REGISTRATION_ENABLED: booleanString.default(false),

@@ -26,6 +26,7 @@ import {
   type MembershipRole,
 } from '../auth/permissions'
 import { syncPackageMetadata, indexResourceMetadata } from '../services/search-index'
+import { hybridSearch } from '../services/hybrid-search'
 import { purgePackageExternals } from '../services/package-cleanup'
 import type { AppContext } from '../context'
 import type { Database } from '@kukan/db'
@@ -86,6 +87,11 @@ packagesRouter.get(
         .transform((val) => val === 'true'),
       sort_by: z.enum(['updated', 'created', 'name']).optional(),
       sort_order: z.enum(['asc', 'desc']).optional(),
+      // semantic=false disables the vector leg of hybrid search (default: on)
+      semantic: z
+        .string()
+        .optional()
+        .transform((val) => val !== 'false'),
     })
   ),
   async (c) => {
@@ -127,15 +133,20 @@ packagesRouter.get(
     // A search-backend outage surfaces as ServiceUnavailableError (503) from the
     // OpenSearch adapter; DB errors propagate as 500. See SearchAdapter for the mapping.
     const search = my_org ? c.get('dbSearch') : c.get('search')
-    const searchResult = await search.search({
-      q: rest.q ?? '',
-      offset: rest.offset,
-      limit: rest.limit,
-      filters,
-      facets: include_facets,
-      sortBy: sort_by,
-      sortOrder: sort_order,
-    })
+    const searchResult = await hybridSearch(
+      { ...c.var, search },
+      {
+        q: rest.q ?? '',
+        offset: rest.offset,
+        limit: rest.limit,
+        filters,
+        facets: include_facets,
+        sortBy: sort_by,
+        sortOrder: sort_order,
+        // Dashboard filtering (my_org) must stay deterministic — no fusion there
+        semantic: rest.semantic && !my_org,
+      }
+    )
 
     // Build matchedResources + highlights lookup from search results
     const searchMatchedResources: Record<string, MatchedResource[]> = {}
@@ -161,6 +172,9 @@ packagesRouter.get(
       searchTotal: searchResult.total,
       searchMatchedResources,
       searchHighlights,
+      searchSemanticIds: searchResult.items
+        .filter((i) => i.matchSource === 'semantic')
+        .map((i) => i.id),
       state: effectiveState,
     })
 

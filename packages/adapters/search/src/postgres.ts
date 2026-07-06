@@ -15,6 +15,7 @@ import type {
   MatchedResource,
   ResourceDoc,
   ContentDoc,
+  VectorHit,
 } from './adapter'
 import { MAX_MATCHED_RESOURCES_PER_PACKAGE, type SearchFilters } from './adapter'
 import { escapeLike } from '@kukan/shared'
@@ -31,11 +32,23 @@ import {
 import { ilike, eq, and, or, sql, inArray, asc, desc } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 
+/** Default minimum cosine similarity for vector hits. Measured on bge-m3 with
+ *  real catalog data: relevant hits sit at ~0.47–0.62, unrelated tail at
+ *  ~0.38–0.45. Model-dependent — override via SEARCH_VECTOR_MIN_SIMILARITY and
+ *  settle with golden-set evaluation (ADR-034). */
+const DEFAULT_VECTOR_MIN_SIMILARITY = 0.45
+
+export interface PostgresSearchAdapterOptions {
+  vectorMinSimilarity?: number
+}
+
 export class PostgresSearchAdapter implements SearchAdapter {
   private db: Database
+  private vectorMinSimilarity: number
 
-  constructor(db: Database) {
+  constructor(db: Database, options?: PostgresSearchAdapterOptions) {
     this.db = db
+    this.vectorMinSimilarity = options?.vectorMinSimilarity ?? DEFAULT_VECTOR_MIN_SIMILARITY
   }
 
   async indexPackage(_doc: DatasetDoc): Promise<void> {
@@ -400,6 +413,47 @@ export class PostgresSearchAdapter implements SearchAdapter {
   ): Promise<Record<string, string>> {
     // PostgreSQL fallback produces no content highlights.
     return {}
+  }
+
+  async searchByVector(
+    vector: number[],
+    model: string,
+    filters: SearchFilters,
+    k: number
+  ): Promise<VectorHit[]> {
+    // Reuse the keyword-search filter builder (q: '' skips the ILIKE branch)
+    const conditions = this.buildConditions({ q: '', filters })
+    const vectorParam = JSON.stringify(vector)
+    // Cut below the similarity floor — kNN otherwise pads top-k with noise
+    const maxDistance = 1 - this.vectorMinSimilarity
+
+    // The CASE guard makes `<=>` evaluate only on rows of the requested model —
+    // a bare AND leaves the planner free to compute the distance on other rows
+    // first, which errors when a model migration leaves vectors of different
+    // dimensions side by side. The expression appears once (ORDER BY references
+    // the output alias) so the ~KB-sized vector parameter is bound and the
+    // distance computed a single time per row.
+    const distance = sql<number>`CASE WHEN ${packageTable.embeddingModel} = ${model}
+      THEN ${packageTable.embedding} <=> ${vectorParam}::vector END`
+
+    const rows = await this.db
+      .select({ id: packageTable.id, distance: distance.as('distance') })
+      .from(packageTable)
+      .where(
+        and(
+          ...conditions,
+          sql`${packageTable.embedding} IS NOT NULL`,
+          eq(packageTable.embeddingModel, model)
+        )
+      )
+      .orderBy(sql`"distance"`)
+      .limit(k)
+
+    // Rows are distance-ascending, so thresholding the k results here is
+    // exactly equivalent to a WHERE-clause cut.
+    return rows
+      .filter((row) => row.distance <= maxDistance)
+      .map((row) => ({ id: row.id, similarity: 1 - row.distance }))
   }
 
   async sumResourceCount(query?: ResourceCountQuery): Promise<number> {

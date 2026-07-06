@@ -77,7 +77,17 @@ export interface DatasetDoc {
   highlightedTitle?: string
   /** Highlighted notes (HTML with <mark> tags) — populated by search only */
   highlightedNotes?: string
+  /** 'semantic' when the hit came from vector search only (no keyword match) */
+  matchSource?: 'semantic'
   [key: string]: unknown
+}
+
+/** A vector-search hit (pgvector cosine similarity, ADR-034) */
+export interface VectorHit {
+  /** Package UUID */
+  id: string
+  /** Cosine similarity in [−1, 1] (1 = identical direction) */
+  similarity: number
 }
 
 export interface SearchFilters {
@@ -230,6 +240,17 @@ export interface SearchAdapter {
     queryText: string,
     filters?: SearchFilters
   ): Promise<Record<string, string>>
+
+  /** Vector similarity search over package embeddings (pgvector, ADR-034).
+   *  PostgreSQL-only — vectors live in the package table regardless of the
+   *  BM25 backend, so callers use the dbSearch adapter. `filters` MUST carry
+   *  the caller's visibility scope. Absent on backends without vector support. */
+  searchByVector?(
+    vector: number[],
+    model: string,
+    filters: SearchFilters,
+    k: number
+  ): Promise<VectorHit[]>
 }
 
 export interface BrowseResult {

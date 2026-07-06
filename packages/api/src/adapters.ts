@@ -71,8 +71,10 @@ export async function createAdapters(env: Env, db: Database, logger: Logger) {
   })
 
   // Search adapter
-  // dbSearch: always PostgreSQL for dashboard (consistent with DB)
-  const dbSearch = new PostgresSearchAdapter(db)
+  // dbSearch: always PostgreSQL for dashboard (consistent with DB) and vectors (ADR-034)
+  const dbSearch = new PostgresSearchAdapter(db, {
+    vectorMinSimilarity: env.SEARCH_VECTOR_MIN_SIMILARITY,
+  })
   let search
   if (env.SEARCH_TYPE === 'postgres') {
     search = dbSearch

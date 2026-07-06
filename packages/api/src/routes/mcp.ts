@@ -12,12 +12,8 @@ export const mcpRouter = new Hono<{ Variables: AppContext }>()
 
 // POST /api/mcp — JSON-RPC requests (initialize, tools/list, tools/call)
 mcpRouter.post('/', async (c) => {
-  const db = c.get('db')
-  const search = c.get('search')
-  const storage = c.get('storage')
-  const user = c.get('user')
-
-  const server = createMcpServer({ db, search, storage, user })
+  // AppContext is a structural superset of McpContext
+  const server = createMcpServer(c.var)
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined, // Stateless mode
