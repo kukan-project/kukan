@@ -127,6 +127,62 @@ describe('errorHandler', () => {
     expect(body).not.toHaveProperty('details')
   })
 
+  it('should map a KukanError thrown by another module instance (instanceof fails)', async () => {
+    // Simulates a dev-server module-generation split: same shape, different class
+    class ForeignKukanError extends Error {
+      constructor(
+        message: string,
+        public readonly code: string,
+        public readonly status: number
+      ) {
+        super(message)
+        this.name = 'KukanError'
+      }
+    }
+    const app = createTestApp(() => {
+      throw new ForeignKukanError('Search is temporarily unavailable', 'SERVICE_UNAVAILABLE', 503)
+    })
+
+    const res = await app.request('/test')
+    expect(res.status).toBe(503)
+
+    const body = await res.json()
+    expect(body.title).toBe('SERVICE_UNAVAILABLE')
+  })
+
+  it('should not map shape-alike third-party errors without the KukanError name', async () => {
+    class LibraryError extends Error {
+      code = 'ECONNRESET'
+      status = 503
+    }
+    const app = createTestApp(() => {
+      throw new LibraryError('internal detail that must not leak')
+    })
+
+    const res = await app.request('/test')
+    expect(res.status).toBe(500)
+
+    const body = await res.json()
+    expect(body.detail).toBe('An unexpected error occurred')
+  })
+
+  it('should not map shape-alike errors with unknown status codes', async () => {
+    class OddError extends Error {
+      code = 'SOMETHING'
+      status = 418
+      constructor(message: string) {
+        super(message)
+        this.name = 'KukanError'
+      }
+    }
+    const app = createTestApp(() => {
+      throw new OddError('teapot')
+    })
+
+    const res = await app.request('/test')
+    expect(res.status).toBe(500)
+  })
+
   it('should use fallback logger when context logger is not set', async () => {
     // Error handler should not crash when c.get('logger') is undefined
     // (e.g. error thrown before context middleware runs)
