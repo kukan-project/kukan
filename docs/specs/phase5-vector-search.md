@@ -102,7 +102,9 @@ export interface AIAdapter {
   `embedBatch` は並列呼び出し（Titan にバッチ API はないため p-limit で同時数制御）
 - **ollama.ts**: `POST /api/embed`（バッチ対応あり）。モデル名は env で指定（既定 `bge-m3`）
 - **noop.ts**: `getEmbeddingInfo()` → `null`、`embed()` は throw
-- **openai.ts**: `text-embedding-3-small` で同様に実装（開発時の代替経路）
+- **openai.ts**: `text-embedding-3-small` で同様に実装。位置づけは **OpenAI 互換
+  エンドポイント用コネクタ**（vLLM / HuggingFace TEI 等のセルフホスト推論サーバーに
+  `baseUrl` 差し替えで接続する用途）。公式サポートは Bedrock / Ollama の2系統
 
 ### 4.3 環境変数（`packages/shared/env.ts`）
 

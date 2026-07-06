@@ -22,4 +22,17 @@ describe('NoOpAIAdapter', () => {
       expect(result).toEqual([])
     })
   })
+
+  describe('embedBatch', () => {
+    it('should return empty arrays per text', async () => {
+      const result = await adapter.embedBatch(['a', 'b'])
+      expect(result).toEqual([[], []])
+    })
+  })
+
+  describe('getEmbeddingInfo', () => {
+    it('should return null (embedding unavailable)', () => {
+      expect(adapter.getEmbeddingInfo()).toBeNull()
+    })
+  })
 })

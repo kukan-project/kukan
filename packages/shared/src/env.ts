@@ -56,6 +56,12 @@ export const envSchema = z.object({
 
   // AI
   AI_TYPE: z.enum(['bedrock', 'openai', 'ollama', 'none']).default('none'),
+  AI_EMBEDDING_MODEL: z.string().optional(), // adapter defaults: Titan v2 / bge-m3 / text-embedding-3-small
+  AI_EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().optional(),
+  BEDROCK_REGION: z.string().default('ap-northeast-1'),
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_BASE_URL: z.string().optional(),
+  OLLAMA_URL: z.string().default('http://localhost:11434'),
 
   // Auth
   REGISTRATION_ENABLED: booleanString.default(false),

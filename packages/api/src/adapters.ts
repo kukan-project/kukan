@@ -8,7 +8,7 @@ import type { Database } from '@kukan/db'
 import { S3StorageAdapter } from '@kukan/storage-adapter'
 import { PostgresSearchAdapter, OpenSearchAdapter } from '@kukan/search-adapter'
 import { SQSQueueAdapter } from '@kukan/queue-adapter'
-import { NoOpAIAdapter } from '@kukan/ai-adapter'
+import { NoOpAIAdapter, BedrockAIAdapter, OpenAIAdapter, OllamaAdapter } from '@kukan/ai-adapter'
 
 const globalForSearch = globalThis as unknown as {
   __kukanOpenSearchAdapter?: OpenSearchAdapter
@@ -64,9 +64,28 @@ export async function createAdapters(env: Env, db: Database, logger: Logger) {
   let ai
   if (env.AI_TYPE === 'none') {
     ai = new NoOpAIAdapter()
+  } else if (env.AI_TYPE === 'bedrock') {
+    ai = new BedrockAIAdapter({
+      region: env.BEDROCK_REGION,
+      embeddingModel: env.AI_EMBEDDING_MODEL,
+      embeddingDimensions: env.AI_EMBEDDING_DIMENSIONS,
+    })
+  } else if (env.AI_TYPE === 'openai') {
+    if (!env.OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY is required when AI_TYPE=openai')
+    }
+    ai = new OpenAIAdapter({
+      apiKey: env.OPENAI_API_KEY,
+      baseUrl: env.OPENAI_BASE_URL,
+      embeddingModel: env.AI_EMBEDDING_MODEL,
+      embeddingDimensions: env.AI_EMBEDDING_DIMENSIONS,
+    })
   } else {
-    // Bedrock/OpenAI/Ollama - Phase 5
-    throw new Error(`AI type ${env.AI_TYPE} not implemented yet (Phase 5)`)
+    ai = new OllamaAdapter({
+      baseUrl: env.OLLAMA_URL,
+      embeddingModel: env.AI_EMBEDDING_MODEL,
+      embeddingDimensions: env.AI_EMBEDDING_DIMENSIONS,
+    })
   }
 
   return { storage, search, dbSearch, queue, ai }
