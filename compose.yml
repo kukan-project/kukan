@@ -148,6 +148,11 @@ services:
     image: ollama/ollama:latest
     container_name: kukan-ollama
     profiles: [ai]
+    environment:
+      # Keep models loaded. The default (5m) unloads the embedding model on
+      # idle, so the first search afterwards exceeds the 2s embed timeout and
+      # silently degrades to keyword-only.
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:--1}
     ports:
       - '127.0.0.1:${OLLAMA_PORT:-11435}:11434'
     volumes:

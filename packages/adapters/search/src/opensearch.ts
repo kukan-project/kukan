@@ -120,11 +120,50 @@ export class OpenSearchAdapter implements SearchAdapter {
 
   private static readonly KUROMOJI_ANALYSIS = {
     analysis: {
+      filter: {
+        // Request boilerplate in question-form queries ("〜が欲しい", "〜を教えて").
+        // Listed as kuromoji_baseform output. Applied query-side only (metadata
+        // fields' search_analyzer) so these terms never become required matches
+        // under operator:'and', while indexed documents keep their full text.
+        ja_request_words: {
+          type: 'stop' as const,
+          stopwords: [
+            '欲しい',
+            'ほしい',
+            '教える',
+            'くださる',
+            'ください',
+            '下さい',
+            '知る',
+            '分かる',
+            'わかる',
+            '調べる',
+            '探す',
+            '見る',
+            'お願い',
+            '願う',
+            'もらう',
+            'いただく',
+            '頂く',
+          ],
+        },
+      },
       analyzer: {
         kuromoji_analyzer: {
           type: 'custom' as const,
           tokenizer: 'kuromoji_tokenizer',
           filter: ['kuromoji_baseform', 'kuromoji_part_of_speech', 'lowercase'],
+        },
+        kuromoji_query_analyzer: {
+          type: 'custom' as const,
+          tokenizer: 'kuromoji_tokenizer',
+          filter: [
+            'kuromoji_baseform',
+            'kuromoji_part_of_speech',
+            'lowercase',
+            'ja_stop',
+            'ja_request_words',
+          ],
         },
       },
     },
@@ -180,14 +219,20 @@ export class OpenSearchAdapter implements SearchAdapter {
               name: {
                 type: 'text',
                 analyzer: 'kuromoji_analyzer',
+                search_analyzer: 'kuromoji_query_analyzer',
                 fields: { keyword: { type: 'keyword' } },
               },
               title: {
                 type: 'text',
                 analyzer: 'kuromoji_analyzer',
+                search_analyzer: 'kuromoji_query_analyzer',
                 fields: { keyword: { type: 'keyword' } },
               },
-              notes: { type: 'text', analyzer: 'kuromoji_analyzer' },
+              notes: {
+                type: 'text',
+                analyzer: 'kuromoji_analyzer',
+                search_analyzer: 'kuromoji_query_analyzer',
+              },
               tags: { type: 'keyword' },
               organization: { type: 'keyword' },
               license_id: { type: 'keyword' },
@@ -200,7 +245,11 @@ export class OpenSearchAdapter implements SearchAdapter {
               updated: { type: 'date' },
               // --- Resource fields ---
               packageId: { type: 'keyword' },
-              description: { type: 'text', analyzer: 'kuromoji_analyzer' },
+              description: {
+                type: 'text',
+                analyzer: 'kuromoji_analyzer',
+                search_analyzer: 'kuromoji_query_analyzer',
+              },
               format: { type: 'keyword' },
               // --- Content fields ---
               resourceId: { type: 'keyword' },

@@ -106,6 +106,22 @@ describe('OpenSearchAdapter', () => {
       expect(props.name.fields.keyword.type).toBe('keyword')
     })
 
+    it('should apply the query-side stopword analyzer to metadata fields only', async () => {
+      await adapter.ensureIndex()
+
+      const createCall = mockClient.indices.create.mock.calls[0][0]
+      const analysis = createCall.body.settings.analysis
+      expect(analysis.analyzer.kuromoji_query_analyzer.filter).toContain('ja_request_words')
+      expect(analysis.filter.ja_request_words.stopwords).toContain('欲しい')
+
+      const props = createCall.body.mappings.properties
+      for (const field of ['name', 'title', 'notes', 'description']) {
+        expect(props[field].search_analyzer).toBe('kuromoji_query_analyzer')
+      }
+      // Content keeps the index-time analyzer so literal text remains searchable
+      expect(props.extractedText.search_analyzer).toBeUndefined()
+    })
+
     it('should skip creation when index already exists', async () => {
       mockClient.indices.exists.mockResolvedValue({ body: true })
 
