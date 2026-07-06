@@ -147,7 +147,7 @@ export function fuseRrf(bm25Ids: string[], vectorIds: string[]): string[] {
  * Falls back to plain keyword search when any of these hold:
  * - semantic=false, empty query, or an explicit sort (relevance-only feature)
  * - no embedding capability (NoOp) or no vector support on the DB adapter
- * - the requested page lies beyond the fusion window
+ * - the requested page starts beyond the fused list (keyword-order paging)
  * - query embedding or vector search fails (never fails the request)
  */
 export async function hybridSearch(
@@ -168,7 +168,8 @@ export async function hybridSearch(
     query.sortBy !== undefined ||
     info === null ||
     searchByVector === undefined ||
-    offset + limit > FUSION_WINDOW
+    // The fused list holds at most FUSION_WINDOW ids per leg
+    offset >= FUSION_WINDOW * 2
   ) {
     return search.search(searchQuery)
   }
@@ -195,6 +196,13 @@ export async function hybridSearch(
     vectorHits.map((hit) => hit.id)
   )
   const windowSemanticIds = fusedIds.filter((id) => !bm25ById.has(id))
+
+  // A page past the fused list but within the keyword total must keep paging in
+  // keyword order — reporting total=max(bm25, fused) on earlier pages and then
+  // shrinking it here would strand the pagination on an empty page.
+  if (offset >= fusedIds.length && bm25.total > offset) {
+    return search.search(searchQuery)
+  }
 
   // Enrich only the requested page — semantic docs outside it would be discarded
   const pageIds = fusedIds.slice(offset, offset + limit)

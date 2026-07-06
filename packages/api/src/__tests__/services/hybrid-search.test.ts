@@ -124,11 +124,13 @@ describe('hybridSearch — degrade paths (BM25 passthrough)', () => {
     expect(d.dbSearch.searchByVector).not.toHaveBeenCalled()
   })
 
-  it('passes through beyond the fusion window', async () => {
+  it('passes through when the page starts beyond any possible fused list', async () => {
     const d = deps()
-    await hybridSearch(d, { q: 'q-deep-page', offset: 40, limit: 20 })
+    await hybridSearch(d, { q: 'q-deep-page', offset: 100, limit: 20 })
     expect(d.dbSearch.searchByVector).not.toHaveBeenCalled()
-    expect(d.search.search).toHaveBeenCalledWith(expect.objectContaining({ offset: 40, limit: 20 }))
+    expect(d.search.search).toHaveBeenCalledWith(
+      expect.objectContaining({ offset: 100, limit: 20 })
+    )
   })
 
   it('degrades to BM25 when query embedding fails (request still succeeds)', async () => {
@@ -216,6 +218,45 @@ describe('hybridSearch — fusion', () => {
     expect(result.limit).toBe(1)
     // 2 BM25 + 1 semantic-only → fused count exceeds the BM25 total
     expect(result.total).toBe(3)
+  })
+
+  it('serves fused pages past the old fusion-window boundary (total stays consistent)', async () => {
+    // Regression: total=52 (2 BM25 + 50 semantic) once promised page 3, but
+    // offset 40 degraded to keyword-only (total 2) and returned a dead page.
+    const { db, addResult } = createMockDb()
+    const vectorIds = Array.from({ length: 50 }, (_, i) => `v${i}`)
+    // fused = [a, v0, b, v1, ...] → page [40, 60) is v38..v49, all semantic-only
+    addResult(
+      vectorIds
+        .slice(38)
+        .map((id) => ({ id, name: `pkg-${id}`, title: null, notes: null, organization: null }))
+    )
+    const d = deps({
+      db: db as unknown as Database,
+      search: makeSearch(bm25Result(['a', 'b'], 2)),
+      dbSearch: makeDbSearch(vectorIds.map((id, i) => ({ id, similarity: 0.9 - i * 0.001 }))),
+    })
+
+    const result = await hybridSearch(d, { q: 'q-deep-fused', offset: 40, limit: 20 })
+
+    expect(result.total).toBe(52)
+    expect(result.items).toHaveLength(12)
+    expect(result.items.every((i) => i.matchSource === 'semantic')).toBe(true)
+  })
+
+  it('falls back to keyword paging when the page starts beyond the fused list', async () => {
+    const d = deps({
+      search: makeSearch(bm25Result(['a', 'b'], 200)),
+      dbSearch: makeDbSearch([{ id: 'b', similarity: 0.9 }]),
+    })
+
+    const result = await hybridSearch(d, { q: 'q-past-fused', offset: 10, limit: 10 })
+
+    // Fused list is only 2 ids but keyword matches continue — page in keyword order
+    expect(d.search.search).toHaveBeenLastCalledWith(
+      expect.objectContaining({ offset: 10, limit: 10 })
+    )
+    expect(result.total).toBe(200)
   })
 
   it('merges vector-only hit facets into the BM25 facets when requested', async () => {

@@ -43,8 +43,8 @@ export const QUERY_MAX_SQL_LENGTH = 10_000
 // --- Hybrid (BM25 + vector) search (ADR-034) ---
 
 /** Top-k window fetched from each side (BM25 / vector) before RRF fusion.
- *  Hybrid ranking only affects the first FUSION_WINDOW ranks; deeper pages
- *  fall back to plain keyword search. */
+ *  Hybrid ranking only affects the fused list (at most 2×FUSION_WINDOW ids);
+ *  pages starting beyond it fall back to plain keyword search. */
 export const FUSION_WINDOW = 50
 
 /** RRF constant: score(doc) = Σ 1 / (RRF_K + rank). 60 is the standard value. */
