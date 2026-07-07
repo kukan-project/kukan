@@ -3,6 +3,24 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.1] - 2026-07-07
+
+Documentation-only patch release. No code changes.
+
+**Documentation**
+
+- The `.env` examples no longer suggest an OpenSearch heap below the compose default of 2g — copying the old values could reintroduce the circuit-breaker failures fixed in 0.7.0 (#41).
+- Release notes in CHANGELOG.md are no longer hard-wrapped, fixing forced mid-sentence line breaks in GitHub Releases (#40).
+- The landing page feature cards now describe the implemented semantic search and MCP SQL queries, with all cards aligned to a uniform length (#42).
+
+---
+
+**ドキュメント**
+
+- `.env` の example が compose デフォルト（2g）を下回る OpenSearch ヒープ値を提案しないように修正。旧値をコピーすると 0.7.0 で修正したサーキットブレーカー問題が再発するため（#41）。
+- CHANGELOG.md の折り返しを解除し、GitHub Release 本文で文の途中に強制改行が入る問題を修正（#40）。
+- ランディングページの機能カードを、実装済みのセマンティック検索・MCP 経由 SQL クエリを反映した内容に更新し、全カードの分量を統一（#42）。
+
 ## [0.7.0] - 2026-07-07
 
 The first tagged release of KUKAN. Earlier trial deployments tracked the `main` branch; from this release on, use release tags (`vX.Y.Z`) and check this file before upgrading.
