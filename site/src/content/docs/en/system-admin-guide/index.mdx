@@ -13,10 +13,22 @@ KUKAN supports two deployment methods, described below in order: the simpler Doc
 ### Docker Compose (On-Premises)
 
 Deploy on-premises or in isolated networks using Docker Compose.
+For production use, we recommend the latest [release](https://github.com/kukan-project/kukan/releases) (`vX.Y.Z` tag).
 
 ```bash
+git checkout vX.Y.Z   # latest release
 cp .env.prod.example .env.prod
 # Edit .env.prod
+docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
+```
+
+#### Updating
+
+Check the [release notes](https://github.com/kukan-project/kukan/releases) for breaking changes and migration steps before upgrading.
+
+```bash
+git fetch --tags
+git checkout vX.Y.Z   # the new release
 docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 ```
 

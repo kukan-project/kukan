@@ -2,19 +2,25 @@
 
 **Knowledge Unified Katalog And Network**
 
+[![GitHub Release](https://img.shields.io/github/v/release/kukan-project/kukan)](https://github.com/kukan-project/kukan/releases)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+
 > [!WARNING]
-> **Beta (April 2026)** — KUKAN is under active development. APIs, schemas, and configurations may change without notice.
+> **Beta (July 2026)** — KUKAN is under active development. APIs, schemas, and configurations may change without notice.
 >
-> **ベータ版（2026年4月）** — KUKAN は開発中です。API、スキーマ、設定は予告なく変更される場合があります。
+> **ベータ版（2026年7月）** — KUKAN は開発中です。API、スキーマ、設定は予告なく変更される場合があります。
 
 > [!NOTE]
-> **No versioning yet** — KUKAN does not follow semantic versioning at this time. Always use the `main` branch for
-> trial deployments. After pulling updates, a search index rebuild (`POST /api/v1/admin/reindex-metadata`) may be required
-> due to mapping or schema changes.
+> **Versioning** — KUKAN follows [Semantic Versioning](https://semver.org/) (`vX.Y.Z` tags; `1.0.0` is reserved
+> for GA). Use the latest [release](https://github.com/kukan-project/kukan/releases) for trial deployments, and check
+> the [CHANGELOG](CHANGELOG.md) for breaking changes before upgrading. After upgrading, a search index rebuild
+> (`POST /api/v1/admin/reindex-metadata`) may be required due to mapping or schema changes.
 >
-> **バージョニング未実施** — 現時点でセマンティックバージョニングは行っていません。試用の際は `main` ブランチを
-> ご利用ください。更新後、マッピングやスキーマの変更により検索インデックスの再構築
-> （`POST /api/v1/admin/reindex-metadata`）が必要になる場合があります。
+> **バージョニング** — KUKAN は[セマンティックバージョニング](https://semver.org/lang/ja/)に従います（`vX.Y.Z`
+> タグ。`1.0.0` は正式リリース時に付与）。試用の際は最新の[リリース](https://github.com/kukan-project/kukan/releases)を
+> ご利用ください。アップグレード前に [CHANGELOG](CHANGELOG.md) で破壊的変更を確認してください。更新後、
+> マッピングやスキーマの変更により検索インデックスの再構築（`POST /api/v1/admin/reindex-metadata`）が
+> 必要になる場合があります。
 
 A modern, full-stack TypeScript alternative to CKAN.
 みんなが使えるデータカタログ — CKANモダンクローン。
@@ -297,8 +303,12 @@ Edit `docker/Caddyfile`. See the file for examples including:
 
 ### Update / アップデート
 
+Check the [release notes](https://github.com/kukan-project/kukan/releases) for breaking changes and migration steps before upgrading.
+アップグレード前にリリースノートで破壊的変更と移行手順を確認してください。
+
 ```bash
-git pull
+git fetch --tags
+git checkout vX.Y.Z   # latest release / 最新リリース
 docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 ```
 

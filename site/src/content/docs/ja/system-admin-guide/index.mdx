@@ -13,10 +13,22 @@ KUKAN は2つのデプロイ方式に対応しています。手軽な Docker Co
 ### Docker Compose（オンプレミス）
 
 Docker Compose を使ったオンプレミス・閉域網デプロイに対応しています。
+本番運用では最新の[リリース](https://github.com/kukan-project/kukan/releases)（`vX.Y.Z` タグ）の利用を推奨します。
 
 ```bash
+git checkout vX.Y.Z   # 最新リリース
 cp .env.prod.example .env.prod
 # .env.prod を編集
+docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
+```
+
+#### アップデート
+
+アップグレード前に[リリースノート](https://github.com/kukan-project/kukan/releases)で破壊的変更と移行手順を確認してください。
+
+```bash
+git fetch --tags
+git checkout vX.Y.Z   # 新しいリリース
 docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 ```
 

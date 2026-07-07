@@ -213,6 +213,7 @@ pnpm format        # Prettier フォーマット
 - MCP データクエリ基盤（スキーマ永続化 + サーバーサイド DuckDB） → `docs/adr/jp/032-mcp-data-query.md`
 - 外部 SQL データソース（スナップショット/ライブ proxy 両論 + connector 拡張、提案） → `docs/adr/jp/033-external-sql-data-source.md`
 - メタデータのベクトル検索（セマンティック検索・AI 向け発見、提案） → `docs/adr/jp/034-metadata-vector-search.md`
+- セマンティックバージョニングとリリースノート → `docs/adr/jp/035-semver-release-notes.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
