@@ -6,7 +6,9 @@ name: CI
 # always run and report a status — using `paths-ignore` would leave the required
 # check pending forever and block the PR. Instead the job always runs but skips
 # the code-only steps (lint / typecheck / unit tests) for docs-only PRs. The
-# format check still runs because `prettier --check` also covers Markdown.
+# format check still runs because `prettier --check` also covers Markdown and
+# Astro. `.astro` files count as docs: @kukan/site has no lint/typecheck/test
+# scripts, so the code-only steps never look at them anyway.
 
 on:
   pull_request:
@@ -25,14 +27,15 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          # A PR is "docs-only" when every changed file is Markdown/MDX or under docs/.
-          # Those still need the format check (prettier covers .md/.mdx) but not the
-          # code-only steps. merge-base keeps the diff correct if base advanced.
+          # A PR is "docs-only" when every changed file is Markdown/MDX/Astro or
+          # under docs/. Those still need the format check (prettier covers
+          # .md/.mdx/.astro) but not the code-only steps, which don't process
+          # .astro at all. merge-base keeps the diff correct if base advanced.
           base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
           files=$(git diff --name-only "$base" "$HEAD_SHA")
           echo "Changed files:"
           echo "$files"
-          if printf '%s\n' "$files" | grep -qvE '(\.mdx?$|^docs/)'; then
+          if printf '%s\n' "$files" | grep -qvE '(\.mdx?$|\.astro$|^docs/)'; then
             echo "code=true" >> "$GITHUB_OUTPUT"
             echo "Code changes detected — running full quality suite."
           else
