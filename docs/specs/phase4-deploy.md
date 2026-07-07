@@ -191,6 +191,7 @@ cp infra/config/environments.example.ts infra/config/environments.ts
 | `webAclArn`        | string                         | なし               | 事前作成した us-east-1 WAF WebACL ARN（同上）                                              |
 | `bucketName`       | string                         | 自動命名           | S3 バケット名（未設定でグローバル一意な自動命名、ADR-031）                                 |
 | `enableGa4DataApi` | boolean                        | `false`            | GA4 アクセス統計ダッシュボード                                                             |
+| `bedrock`          | object \| `false`              | 有効（Titan v2）   | Bedrock 埋め込みによるセマンティック検索（ADR-034）。`false` で無効化                      |
 | `githubRepo`       | string                         | なし               | CodeConnections ソースリポジトリ（`owner/repo`、ADR-030）                                  |
 | `deployBranch`     | string                         | `main`             | この env を pipeline でデプロイするブランチ                                                |
 | `overrides`        | deep-partial                   | なし               | スケール preset の個別パラメータ上書き（後述）                                             |

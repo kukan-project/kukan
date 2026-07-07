@@ -159,7 +159,16 @@ ollama:
 ### 5.3 AWS（infra/）
 
 - Aurora へのマイグレーションで `CREATE EXTENSION` が流れる（追加 CDK 変更なし）
-- Bedrock `InvokeModel`（Titan v2）の IAM 許可を web / worker タスクロールに追加
+- Bedrock 埋め込みは**デフォルト有効**（`EnvironmentConfig.bedrock: false` でオプトアウト）—
+  web / worker 両タスクに `AI_TYPE=bedrock` 等の環境変数を注入し、`bedrock:InvokeModel` を
+  対象モデルの foundation-model ARN に限定して許可（モデル ID は CDK 側で解決し env と IAM で共有）
+- Bedrock のモデルアクセス事前設定は不要（モデルアクセスページは廃止済み — サーバーレス
+  基盤モデルは初回呼び出しで自動有効化され、アクセス制御は IAM に一本化）
+- しきい値 `SEARCH_VECTOR_MIN_SIMILARITY` は CDK が **0.15** を注入する（demo の
+  ゴールデンセット39クエリで実測 — Titan v2 は日本語ペアのコサイン類似度が bge-m3 より
+  大幅に低い分布のため、bge-m3 実測のアプリ既定 0.45 では関連ヒットの大半が失われる。
+  0.15 は上限性能の 97% を維持しつつ正解なしクエリの擬似ヒットを 1 件に抑える）。
+  `bedrock.vectorMinSimilarity` で環境ごとに上書き可、モデル変更時は要再測定
 
 ## 6. Step 3: 埋め込み生成パイプライン
 

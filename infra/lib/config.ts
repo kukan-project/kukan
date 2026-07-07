@@ -12,6 +12,28 @@ export type DbEngine = 'rds' | 'aurora'
 /** Default region when an environment does not specify one. */
 export const DEFAULT_REGION = 'ap-northeast-1'
 
+/** Matches the bedrock adapter's default (packages/adapters/ai). Resolved here so
+ *  the container env and the IAM model scope always agree. */
+export const DEFAULT_BEDROCK_EMBEDDING_MODEL = 'amazon.titan-embed-text-v2:0'
+
+/** Titan v2 similarity floor. The app default (0.45) is measured on bge-m3; Titan v2
+ *  produces much lower cosine values for Japanese pairs — golden-set measurement on
+ *  demo (2026-07-07): 0.15 keeps 97% of the recall ceiling while no-answer queries
+ *  drop from ~50 pseudo-hits to 1. Re-measure when changing embeddingModel. */
+export const DEFAULT_BEDROCK_MIN_SIMILARITY = 0.15
+
+/** Bedrock embedding for semantic search (ADR-034). Presence enables it. */
+export interface BedrockConfig {
+  /** Bedrock API region. Omit → the deployment region. */
+  region?: string
+  /** Embedding model ID. Omit → Titan Text Embeddings v2. */
+  embeddingModel?: string
+  /** Embedding dimensions. Omit → adapter default (1024). */
+  embeddingDimensions?: number
+  /** Cosine similarity floor for vector hits (model-dependent). Omit → Titan v2 default. */
+  vectorMinSimilarity?: number
+}
+
 /** Sections computed from `scale`. These are overridable per environment via `overrides`. */
 export interface ScaleComputed {
   web: {
@@ -95,6 +117,13 @@ export interface EnvironmentConfig {
   /** S3 bucket name. Omit → CDK auto-naming (globally unique). */
   bucketName?: string
   enableGa4DataApi?: boolean
+  /**
+   * Bedrock embedding for semantic search (ADR-034). Omit → enabled with Titan v2
+   * defaults; `false` → AI disabled (AI_TYPE=none). No console setup needed —
+   * serverless foundation models auto-enable on first invocation; the task-role
+   * IAM policy added here is the only access gate.
+   */
+  bedrock?: BedrockConfig | false
   /** CodeConnections source repository in "owner/repo" form (ADR-030). */
   githubRepo?: string
   /** Branch that deploys this environment (ADR-030). */
@@ -146,6 +175,8 @@ export interface KukanConfig extends ScaleComputed {
   /** undefined → CDK auto-naming (globally unique). */
   bucketName?: string
   enableGa4DataApi: boolean
+  /** undefined → AI disabled. Model and similarity floor are resolved (never undefined here). */
+  bedrock?: BedrockConfig & { embeddingModel: string; vectorMinSimilarity: number }
 }
 
 const SCALE_DEFAULTS: Record<Scale, ScaleComputed> = {
@@ -232,6 +263,17 @@ export function loadConfig(scope: Construct, env: Partial<EnvironmentConfig> = {
   // undefined → CDK auto-naming (globally unique). ADR-031.
   const bucketName = ctx<string>('bucketName') ?? env.bucketName
   const enableGa4DataApi = ctx<boolean>('enableGa4DataApi') ?? env.enableGa4DataApi ?? false
+  // env-only (no ctx): structured value, awkward to pass via -c. Default ON —
+  // hybrid search is the flagship behaviour and Titan v2 costs are usage-based.
+  const bedrockEnv = env.bedrock ?? {}
+  const bedrock =
+    bedrockEnv === false
+      ? undefined
+      : {
+          ...bedrockEnv,
+          embeddingModel: bedrockEnv.embeddingModel ?? DEFAULT_BEDROCK_EMBEDDING_MODEL,
+          vectorMinSimilarity: bedrockEnv.vectorMinSimilarity ?? DEFAULT_BEDROCK_MIN_SIMILARITY,
+        }
 
   // Apply per-env overrides on top of the scale preset.
   const computed = deepMerge<ScaleComputed>(base, env.overrides)
@@ -265,6 +307,7 @@ export function loadConfig(scope: Construct, env: Partial<EnvironmentConfig> = {
     hostedZoneName,
     bucketName,
     enableGa4DataApi,
+    bedrock,
     ...computed,
     db,
   }

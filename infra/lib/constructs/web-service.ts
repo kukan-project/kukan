@@ -15,6 +15,7 @@ import * as sqs from 'aws-cdk-lib/aws-sqs'
 import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
 import { resourceName } from '../naming.js'
+import { configureBedrockEmbedding } from './ai.js'
 import type { DatabaseConstruct } from './database.js'
 
 export interface WebServiceProps {
@@ -92,7 +93,6 @@ export class WebServiceConstruct extends Construct {
     const environment: Record<string, string> = {
       NODE_ENV: 'production',
       ...database.buildPostgresEnvironment(),
-      AI_TYPE: 'none',
       S3_BUCKET: bucket.bucketName,
       S3_REGION: cdk.Aws.REGION,
       SQS_REGION: cdk.Aws.REGION,
@@ -100,6 +100,7 @@ export class WebServiceConstruct extends Construct {
       SEARCH_TYPE: searchDomainEndpoint ? 'opensearch' : 'postgres',
       WEB_DB_POOL_MAX: String(config.dbPool.webMax),
     }
+    configureBedrockEmbedding(config, taskDef, environment)
     if (searchDomainEndpoint) {
       environment.OPENSEARCH_URL = `https://${searchDomainEndpoint}`
       environment.OPENSEARCH_REPLICAS = String(config.opensearch.indexReplicas)

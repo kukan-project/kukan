@@ -67,6 +67,10 @@ export const environments = {
     // --- Misc ---
     // bucketName: 'my-resource-bucket', // omit → CDK auto-naming (globally unique)
     // enableGa4DataApi: false,
+    // Semantic search via Bedrock embeddings (ADR-034). Default ON (Titan v2,
+    // similarity floor 0.15, auto-enabled on first invocation — no console setup).
+    // bedrock: false, // opt out (AI_TYPE=none)
+    // bedrock: { embeddingModel: 'amazon.titan-embed-text-v2:0', vectorMinSimilarity: 0.15 }, // tune
 
     // --- CI/CD (pipeline mode) ---
     githubRepo: 'kukan-project/your-repo', // CodeConnections source repo (owner/repo)
