@@ -67,10 +67,21 @@ export const environments = {
     // --- Misc ---
     // bucketName: 'my-resource-bucket', // omit → CDK auto-naming (globally unique)
     // enableGa4DataApi: false,
-    // Semantic search via Bedrock embeddings (ADR-034). Default ON (Titan v2,
-    // similarity floor 0.15, auto-enabled on first invocation — no console setup).
+    // Semantic search via Bedrock embeddings (ADR-034). Default ON — Titan v2,
+    // auto-enabled on first invocation, no console setup. Similarity floors are
+    // measured per model and applied by the app automatically (Titan v2 0.15 /
+    // Cohere v4 0.3 — see ADR-034 "Evaluation Results").
     // bedrock: false, // opt out (AI_TYPE=none)
-    // bedrock: { embeddingModel: 'amazon.titan-embed-text-v2:0', vectorMinSimilarity: 0.15 }, // tune
+    // bedrock: { vectorMinSimilarity: 0.2 }, // override the model's measured floor
+    //
+    // Stronger Japanese retrieval (measured nDCG 75 vs Titan 70, question-form
+    // queries +5-12pt): Cohere Embed v4. Marketplace model — BEFORE deploying, an
+    // admin must invoke it once to subscribe the account, then allow a few minutes
+    // to propagate; reindex afterwards to re-embed:
+    //   aws bedrock-runtime invoke-model --region ap-northeast-1 \
+    //     --model-id cohere.embed-v4:0 --content-type application/json \
+    //     --body '{"texts":["test"],"input_type":"search_document"}' /dev/stdout
+    // bedrock: { embeddingModel: 'cohere.embed-v4:0' },
 
     // --- CI/CD (pipeline mode) ---
     githubRepo: 'kukan-project/your-repo', // CodeConnections source repo (owner/repo)

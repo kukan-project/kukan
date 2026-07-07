@@ -40,8 +40,9 @@ export const envSchema = z.object({
   SEARCH_TYPE: z.enum(['opensearch', 'postgres']).default('opensearch'),
   OPENSEARCH_URL: z.string().default('http://localhost:9200'),
   OPENSEARCH_REPLICAS: z.coerce.number().int().min(0).default(0),
-  // Minimum cosine similarity for vector-search hits (model-dependent;
-  // default measured on bge-m3 — see PostgresSearchAdapter)
+  // Minimum cosine similarity for vector-search hits. Omit → the embedding
+  // model's measured recommendation (EmbeddingInfo.recommendedMinSimilarity),
+  // falling back to 0.45 for unmeasured models
   SEARCH_VECTOR_MIN_SIMILARITY: z.coerce.number().min(-1).max(1).optional(),
 
   // Queue (SQS-compatible: AWS SQS or ElasticMQ, determined by SQS_ENDPOINT)

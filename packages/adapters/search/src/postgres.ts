@@ -32,10 +32,10 @@ import {
 import { ilike, eq, and, or, sql, inArray, asc, desc } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 
-/** Default minimum cosine similarity for vector hits. Measured on bge-m3 with
- *  real catalog data: relevant hits sit at ~0.47–0.62, unrelated tail at
- *  ~0.38–0.45. Model-dependent — override via SEARCH_VECTOR_MIN_SIMILARITY and
- *  settle with golden-set evaluation (ADR-034). */
+/** Last-resort similarity floor for models without a measured recommendation.
+ *  Callers should prefer SEARCH_VECTOR_MIN_SIMILARITY (explicit override) and
+ *  then EmbeddingInfo.recommendedMinSimilarity (per-model measurements live with
+ *  the AI adapters); settle new models with golden-set evaluation (ADR-034). */
 const DEFAULT_VECTOR_MIN_SIMILARITY = 0.45
 
 export interface PostgresSearchAdapterOptions {

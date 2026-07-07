@@ -2,9 +2,9 @@
 
 ## Status
 
-**Proposed** — The direction (split model deployment, unifying the vector store on
-pgvector, hybrid with BM25, NoOp fallback) is agreed. Final embedding model selection and
-fusion parameters will be settled through golden-set evaluation.
+**Accepted** — All decisions implemented (Phase 5a). Embedding model selection and
+similarity floors were settled through golden-set evaluation (see "Evaluation Results"
+below, 2026-07-07).
 
 ## Context
 
@@ -229,13 +229,55 @@ deployment (Option D), run the same set against both the AWS and on-prem models.
 - **Operations**: the embedding-model change procedure (re-embedding) and golden-set
   maintenance become new operational items.
 
+## Evaluation Results (2026-07-07)
+
+Recall@10 / nDCG@10 measured with per-deployment golden sets (39 queries each = 13
+exact / synonym / natural, plus 3 no-answer queries as a noise probe). Numbers read
+"keyword-only → hybrid". Golden sets themselves are deployment-specific and are not
+committed (see `golden-queries.example.yaml`).
+
+### On-prem (local real data, 166 packages, bge-m3 @ 0.45)
+
+| type             | R@10                        | nDCG          |
+| ---------------- | --------------------------- | ------------- |
+| exact            | 100% → 100% (no regression) | 100% → 100%   |
+| synonym          | 0% → 96%                    | 0% → 79%      |
+| natural          | 15% → 90%                   | 15% → 66%     |
+| **overall nDCG** |                             | **38% → 82%** |
+
+### AWS (demo, nationwide municipal data, 181 packages — model shootout)
+
+|                                  | **Cohere Embed v4 @ 0.3 (recommended)**                   | Titan v2 @ 0.15 (default) |
+| -------------------------------- | --------------------------------------------------------- | ------------------------- |
+| synonym R@10                     | **74%**                                                   | 72%                       |
+| natural R@10                     | **71%**                                                   | 66%                       |
+| exact R@10                       | 85% (no regression)                                       | 85%                       |
+| overall nDCG                     | **75%**                                                   | 70%                       |
+| Pseudo-hits on no-answer queries | 0–1                                                       | 1                         |
+| Setup friction                   | Marketplace subscription (one admin invoke + propagation) | none (auto-enabled)       |
+| Price / 1M tokens                | $0.10                                                     | $0.02                     |
+
+- **Similarity floors are not transferable between models** — Japanese pairs distribute
+  very differently (bge-m3 relevant pairs at 0.47–0.62 vs Titan v2 at 0.05–0.25 and
+  Cohere v4 at 0.15–0.4). Sweeps picked the point keeping 97–99% of the recall ceiling
+  while silencing no-answer queries: bge-m3 = 0.45, Titan v2 = 0.15, Cohere v4 = 0.3.
+  The measured floors live inside the AI adapters
+  (`EmbeddingInfo.recommendedMinSimilarity`), overridable via env.
+- **Conclusion**: on-prem = bge-m3 (confirmed). AWS default = Titan v2 (zero friction);
+  opt in to Cohere Embed v4 when quality matters (+5–12pt, especially question-form
+  queries). Re-measure with the golden set whenever the model changes.
+- Cohere v3 and multilingual-e5 were disqualified before the shootout by their 512-token
+  input limit (the concatenated text needs ~8K); Cohere v4 (128K) removed that constraint.
+
 ## Open Issues
 
-1. **Final model selection**: AWS = Titan v2 vs Cohere multilingual v3; on-prem = bge-m3 vs
-   multilingual-e5. Settled by golden-set evaluation.
-2. **Golden set creation**: build 20–50 questions in an environment with real data
-   (estimated half a day to a day).
-3. **Fusion parameters**: RRF's k value, BM25/vector weighting, vector-side top-k.
+1. ~~**Final model selection**~~ → **Resolved** (see "Evaluation Results": on-prem =
+   bge-m3; AWS = Titan v2 default / Cohere Embed v4 recommended opt-in).
+2. ~~**Golden set creation**~~ → **Resolved** (39 questions local + 39 on demo;
+   established as a per-deployment, non-committed practice).
+3. **Fusion parameters**: similarity floors resolved (see Evaluation Results). RRF's k
+   (=60) and leg weighting remain at defaults — weighted RRF for question-form queries
+   where the keyword leg turns noisy is a future tuning candidate.
 4. **UI treatment**: how to present the lack of highlighting for vector hits; extension of
    `matchSource`.
 5. **PDF content embedding** (later phase): chunk design, scale, and cost estimation.

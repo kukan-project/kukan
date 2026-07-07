@@ -16,12 +16,6 @@ export const DEFAULT_REGION = 'ap-northeast-1'
  *  the container env and the IAM model scope always agree. */
 export const DEFAULT_BEDROCK_EMBEDDING_MODEL = 'amazon.titan-embed-text-v2:0'
 
-/** Titan v2 similarity floor. The app default (0.45) is measured on bge-m3; Titan v2
- *  produces much lower cosine values for Japanese pairs — golden-set measurement on
- *  demo (2026-07-07): 0.15 keeps 97% of the recall ceiling while no-answer queries
- *  drop from ~50 pseudo-hits to 1. Re-measure when changing embeddingModel. */
-export const DEFAULT_BEDROCK_MIN_SIMILARITY = 0.15
-
 /** Bedrock embedding for semantic search (ADR-034). Presence enables it. */
 export interface BedrockConfig {
   /** Bedrock API region. Omit → the deployment region. */
@@ -30,7 +24,8 @@ export interface BedrockConfig {
   embeddingModel?: string
   /** Embedding dimensions. Omit → adapter default (1024). */
   embeddingDimensions?: number
-  /** Cosine similarity floor for vector hits (model-dependent). Omit → Titan v2 default. */
+  /** Cosine similarity floor override. Omit → the model's golden-set-measured
+   *  recommendation, held by the AI adapter (Titan 0.15 / Cohere 0.3). */
   vectorMinSimilarity?: number
 }
 
@@ -175,8 +170,8 @@ export interface KukanConfig extends ScaleComputed {
   /** undefined → CDK auto-naming (globally unique). */
   bucketName?: string
   enableGa4DataApi: boolean
-  /** undefined → AI disabled. Model and similarity floor are resolved (never undefined here). */
-  bedrock?: BedrockConfig & { embeddingModel: string; vectorMinSimilarity: number }
+  /** undefined → AI disabled. `embeddingModel` is resolved (never undefined here). */
+  bedrock?: BedrockConfig & { embeddingModel: string }
 }
 
 const SCALE_DEFAULTS: Record<Scale, ScaleComputed> = {
@@ -272,7 +267,6 @@ export function loadConfig(scope: Construct, env: Partial<EnvironmentConfig> = {
       : {
           ...bedrockEnv,
           embeddingModel: bedrockEnv.embeddingModel ?? DEFAULT_BEDROCK_EMBEDDING_MODEL,
-          vectorMinSimilarity: bedrockEnv.vectorMinSimilarity ?? DEFAULT_BEDROCK_MIN_SIMILARITY,
         }
 
   // Apply per-env overrides on top of the scale preset.

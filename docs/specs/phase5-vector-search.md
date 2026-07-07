@@ -103,7 +103,10 @@ export interface AIAdapter {
 ### 4.2 実装
 
 - **bedrock.ts**: Titan v2（`InvokeModel`）。`dimensions: 1024` を明示指定。
-  `embedBatch` は並列呼び出し（Titan にバッチ API はないため p-limit で同時数制御）
+  `embedBatch` は並列呼び出し（Titan にバッチ API はないため p-limit で同時数制御）。
+  モデル ID が `cohere.embed*` の場合は Cohere 形式（`texts` 配列 + `input_type` の
+  query/document 非対称、最大96件/回の真のバッチ）に切り替わる — Cohere Embed v4
+  （128K トークン、東京リージョン対応）を Titan の挑戦者として評価可能にするため
 - **ollama.ts**: `POST /api/embed`（バッチ対応あり）。モデル名は env で指定（既定 `bge-m3`）
 - **noop.ts**: `getEmbeddingInfo()` → `null`、`embed()` は throw
 - **openai.ts**: `text-embedding-3-small` で同様に実装。位置づけは **OpenAI 互換
@@ -164,11 +167,19 @@ ollama:
   対象モデルの foundation-model ARN に限定して許可（モデル ID は CDK 側で解決し env と IAM で共有）
 - Bedrock のモデルアクセス事前設定は不要（モデルアクセスページは廃止済み — サーバーレス
   基盤モデルは初回呼び出しで自動有効化され、アクセス制御は IAM に一本化）
-- しきい値 `SEARCH_VECTOR_MIN_SIMILARITY` は CDK が **0.15** を注入する（demo の
-  ゴールデンセット39クエリで実測 — Titan v2 は日本語ペアのコサイン類似度が bge-m3 より
-  大幅に低い分布のため、bge-m3 実測のアプリ既定 0.45 では関連ヒットの大半が失われる。
-  0.15 は上限性能の 97% を維持しつつ正解なしクエリの擬似ヒットを 1 件に抑える）。
-  `bedrock.vectorMinSimilarity` で環境ごとに上書き可、モデル変更時は要再測定
+- しきい値の既定は**各 AI アダプターが内部に持つ**（`EmbeddingInfo.recommendedMinSimilarity`。
+  demo のゴールデンセット39クエリで実測、2026-07-07。モデルごとに日本語ペアの
+  コサイン類似度分布が大きく異なるため、単一の既定値は流用不可）:
+  - Titan v2 → **0.15**（上限性能の 97% を維持、正解なしクエリの擬似ヒット1件）
+  - Cohere Embed v4 → **0.3**（上限の 99%、擬似ヒット 0〜1件）
+  - bge-m3（Ollama）→ **0.45**（実データ実測: 関連 0.47〜0.62 / ノイズ 0.38〜0.45）
+  - 解決順序: env `SEARCH_VECTOR_MIN_SIMILARITY`（CDK では `bedrock.vectorMinSimilarity`）>
+    アダプター推奨値 > フォールバック 0.45。CDK を使わないデプロイ（compose / オンプレ）でも
+    モデルを選ぶだけで適正しきい値が効く。モデル変更時は要再測定
+- **モデル選定の実測結果**: Cohere Embed v4（nDCG 75）> Titan v2（nDCG 70）、
+  特に質問文で +12pt。ただし Cohere は **AWS Marketplace モデル**のため、初回のみ
+  管理者権限での invoke 1回（+数分の伝播待ち）でアカウント購読の有効化が必要 —
+  デフォルトは摩擦ゼロの Titan とし、Cohere は environments.ts でのオプトイン
 
 ## 6. Step 3: 埋め込み生成パイプライン
 

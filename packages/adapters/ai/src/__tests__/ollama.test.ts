@@ -85,6 +85,10 @@ describe('OllamaAdapter', () => {
 
   it('exposes embedding info as capability', () => {
     const adapter = new OllamaAdapter({ baseUrl: 'http://localhost:11434' })
-    expect(adapter.getEmbeddingInfo()).toEqual({ model: 'bge-m3', dimensions: 1024 })
+    expect(adapter.getEmbeddingInfo()).toEqual({
+      model: 'bge-m3',
+      dimensions: 1024,
+      recommendedMinSimilarity: 0.45,
+    })
   })
 })

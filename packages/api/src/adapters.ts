@@ -70,10 +70,16 @@ export async function createAdapters(env: Env, db: Database, logger: Logger) {
     logger: logger.child({ component: 'sqs' }),
   })
 
+  // AI adapter (created before search — its model knows the similarity floor)
+  const ai = createAIAdapter(env)
+
   // Search adapter
-  // dbSearch: always PostgreSQL for dashboard (consistent with DB) and vectors (ADR-034)
+  // dbSearch: always PostgreSQL for dashboard (consistent with DB) and vectors (ADR-034).
+  // Floor precedence: explicit env > the embedding model's measured recommendation
+  // > the adapter's built-in default.
   const dbSearch = new PostgresSearchAdapter(db, {
-    vectorMinSimilarity: env.SEARCH_VECTOR_MIN_SIMILARITY,
+    vectorMinSimilarity:
+      env.SEARCH_VECTOR_MIN_SIMILARITY ?? ai.getEmbeddingInfo()?.recommendedMinSimilarity,
   })
   let search
   if (env.SEARCH_TYPE === 'postgres') {
@@ -97,9 +103,6 @@ export async function createAdapters(env: Env, db: Database, logger: Logger) {
   } else {
     throw new Error(`Unknown search type: ${env.SEARCH_TYPE}`)
   }
-
-  // AI adapter
-  const ai = createAIAdapter(env)
 
   return { storage, search, dbSearch, queue, ai }
 }

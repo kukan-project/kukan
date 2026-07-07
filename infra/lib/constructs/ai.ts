@@ -28,8 +28,10 @@ export function configureBedrockEmbedding(
   environment.AI_TYPE = 'bedrock'
   environment.BEDROCK_REGION = bedrockRegion
   environment.AI_EMBEDDING_MODEL = embeddingModel
-  // Always injected — the app default (0.45) is measured on bge-m3, not Titan
-  environment.SEARCH_VECTOR_MIN_SIMILARITY = String(vectorMinSimilarity)
+  // Omitted → the model's measured recommendation, held by the AI adapter
+  if (vectorMinSimilarity != null) {
+    environment.SEARCH_VECTOR_MIN_SIMILARITY = String(vectorMinSimilarity)
+  }
   if (embeddingDimensions != null) {
     environment.AI_EMBEDDING_DIMENSIONS = String(embeddingDimensions)
   }

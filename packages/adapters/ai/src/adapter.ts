@@ -42,6 +42,12 @@ export interface EmbeddingInfo {
   /** Model identifier stored alongside vectors to detect mismatches (ADR-034) */
   model: string
   dimensions: number
+  /**
+   * Golden-set-measured cosine similarity floor for this model (Japanese pairs
+   * distribute very differently per model). undefined = unmeasured; consumers
+   * fall back to their own default. Overridable via SEARCH_VECTOR_MIN_SIMILARITY.
+   */
+  recommendedMinSimilarity?: number
 }
 
 /**

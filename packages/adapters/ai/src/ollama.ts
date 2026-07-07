@@ -53,7 +53,12 @@ export class OllamaAdapter implements AIAdapter {
   }
 
   getEmbeddingInfo(): EmbeddingInfo {
-    return { model: this.embeddingModel, dimensions: this.embeddingDimensions }
+    // bge-m3 floor measured on real data: relevant pairs 0.47-0.62, noise 0.38-0.45
+    return {
+      model: this.embeddingModel,
+      dimensions: this.embeddingDimensions,
+      recommendedMinSimilarity: this.embeddingModel.startsWith('bge-m3') ? 0.45 : undefined,
+    }
   }
 
   /** e5-family models require asymmetric prefixes; bge-m3 and others need none */

@@ -19,6 +19,15 @@ const DEFAULT_EMBEDDING_MODEL = 'amazon.titan-embed-text-v2:0'
 const DEFAULT_EMBEDDING_DIMENSIONS = 1024
 /** Titan has no batch embedding API — cap concurrent InvokeModel calls instead */
 const EMBED_CONCURRENCY = 8
+/** Cohere embeds up to 96 texts per InvokeModel call */
+const COHERE_BATCH_SIZE = 96
+/** Golden-set-measured similarity floors (demo, 2026-07-07). Keyed on the measured
+ *  model versions — an unmeasured model (e.g. cohere.embed-multilingual-v3) stays
+ *  undefined so the consumer default applies. */
+const MEASURED_MIN_SIMILARITY: ReadonlyArray<[prefix: string, floor: number]> = [
+  ['cohere.embed-v4', 0.3],
+  ['amazon.titan-embed-text-v2', 0.15],
+]
 
 export class BedrockAIAdapter implements AIAdapter {
   private client: BedrockRuntimeClient
@@ -41,25 +50,63 @@ export class BedrockAIAdapter implements AIAdapter {
     throw new Error('BedrockAIAdapter.complete not implemented yet (Phase 5)')
   }
 
-  async embed(text: string, _options?: EmbedOptions): Promise<number[]> {
-    const command = new InvokeModelCommand({
-      modelId: this.embeddingModel,
-      contentType: 'application/json',
-      accept: 'application/json',
-      body: JSON.stringify({
-        inputText: text,
-        dimensions: this.embeddingDimensions,
-        normalize: true,
-      }),
+  private get isCohere(): boolean {
+    return this.embeddingModel.startsWith('cohere.embed')
+  }
+
+  private async invokeJson<T>(body: unknown): Promise<T> {
+    const response = await this.client.send(
+      new InvokeModelCommand({
+        modelId: this.embeddingModel,
+        contentType: 'application/json',
+        accept: 'application/json',
+        body: JSON.stringify(body),
+      })
+    )
+    return JSON.parse(new TextDecoder().decode(response.body)) as T
+  }
+
+  /** Cohere embed request (e.g. cohere.embed-v4) — real batch API, asymmetric input_type */
+  private async invokeCohere(texts: string[], options?: EmbedOptions): Promise<number[][]> {
+    const payload = await this.invokeJson<{ embeddings: number[][] | { float?: number[][] } }>({
+      texts,
+      input_type: options?.type === 'query' ? 'search_query' : 'search_document',
+      output_dimension: this.embeddingDimensions,
+      truncate: 'RIGHT',
     })
-    const response = await this.client.send(command)
-    const payload = JSON.parse(new TextDecoder().decode(response.body)) as {
-      embedding: number[]
+    // Bedrock returns embeddings_by_type even without embedding_types (contrary
+    // to its docs, which promise a flat array) — accept both shapes and fail
+    // loudly otherwise instead of an opaque destructuring TypeError in callers.
+    const embeddings = Array.isArray(payload.embeddings)
+      ? payload.embeddings
+      : payload.embeddings?.float
+    if (!embeddings) {
+      throw new Error(`Unexpected Cohere embed response shape: ${Object.keys(payload).join(', ')}`)
     }
+    return embeddings
+  }
+
+  async embed(text: string, options?: EmbedOptions): Promise<number[]> {
+    if (this.isCohere) {
+      const [embedding] = await this.invokeCohere([text], options)
+      return embedding
+    }
+    const payload = await this.invokeJson<{ embedding: number[] }>({
+      inputText: text,
+      dimensions: this.embeddingDimensions,
+      normalize: true,
+    })
     return payload.embedding
   }
 
   async embedBatch(texts: string[], options?: EmbedOptions): Promise<number[][]> {
+    if (this.isCohere) {
+      const results: number[][] = []
+      for (let i = 0; i < texts.length; i += COHERE_BATCH_SIZE) {
+        results.push(...(await this.invokeCohere(texts.slice(i, i + COHERE_BATCH_SIZE), options)))
+      }
+      return results
+    }
     const results: number[][] = new Array(texts.length)
     for (let i = 0; i < texts.length; i += EMBED_CONCURRENCY) {
       const chunk = texts.slice(i, i + EMBED_CONCURRENCY)
@@ -72,6 +119,12 @@ export class BedrockAIAdapter implements AIAdapter {
   }
 
   getEmbeddingInfo(): EmbeddingInfo {
-    return { model: this.embeddingModel, dimensions: this.embeddingDimensions }
+    return {
+      model: this.embeddingModel,
+      dimensions: this.embeddingDimensions,
+      recommendedMinSimilarity: MEASURED_MIN_SIMILARITY.find(([prefix]) =>
+        this.embeddingModel.startsWith(prefix)
+      )?.[1],
+    }
   }
 }
