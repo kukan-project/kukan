@@ -3,6 +3,50 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.2] - 2026-07-08
+
+**Breaking Changes**
+
+- **`brandConfig.searchExampleQueries` was removed** (#44). The example-query chips under the search box are now managed at runtime from the admin UI instead of the fork-side brand config. When upgrading a fork that sets this field: delete the `searchExampleQueries` line from `apps/web/src/brand/brand-config.ts` (the build fails until it is removed), then re-enter the queries in **Dashboard → Site Management → Example Search Queries**. Values are not migrated automatically.
+
+**Upgrade Notes**
+
+- Run database migrations after upgrading — this release adds a `system_setting` table (additive only; no changes to existing tables).
+- `docker compose up` now starts the Ollama container as part of the default stack (it previously required `--profile ai`). With `AI_TYPE=ollama`, a one-shot `ollama-init` container downloads the embedding model (~1.2 GB) automatically on first start; it skips the registry entirely when the model volume is pre-distributed (closed networks). With other `AI_TYPE` values it exits immediately without downloading anything.
+
+**Highlights**
+
+- Sysadmins can now tune search behavior from the admin UI without a redeploy. A new **Site Management** page section controls three runtime settings: a semantic-search on/off switch, a similarity-threshold adjustment, and the example-query chips. Changes propagate to all instances within 30 seconds and every change is recorded in the audit log (#44).
+
+**Features**
+
+- DB-backed runtime settings foundation: a registry of settings (key + validation schema + default) backed by a `system_setting` table, exposed through a generic sysadmin API (`GET /api/v1/admin/settings`, `PUT /api/v1/admin/settings/:key`). Adding a future setting requires no new endpoint (#44).
+- Semantic search kill switch: turning it off degrades all searches to keyword-only, skips query embedding entirely (no provider cost), and hides the semantic affordances in the search UI — the "include related results" toggle and the natural-language search placeholder. The same UI adjustments apply automatically on deployments without an embedding provider (`AI_TYPE=none`) (#44).
+- Similarity-threshold adjustment: the vector-search similarity floor can be shifted ±4 notches of 0.025 around the model's measured baseline. The offset is stored relative to the baseline, so it remains meaningful when the embedding model changes; a golden-set sweep on bge-m3 measured overall nDCG@10 improving from 82% to 85% at −2 notches (#44).
+- Example-query chips are now editable from the admin UI, so operators can keep them aligned with the catalog's actual content (#44).
+
+---
+
+**破壊的変更**
+
+- **`brandConfig.searchExampleQueries` を削除**（#44）。検索ボックス下のクエリ例チップは、フォーク側ブランド設定ではなく管理画面からランタイムに管理する方式に変更。このフィールドを設定しているフォークをアップグレードする場合: `apps/web/src/brand/brand-config.ts` から `searchExampleQueries` 行を削除し（削除するまでビルドが失敗します）、**ダッシュボード → サイト管理 → 検索例クエリ** に値を入れ直してください。値の自動移行は行われません。
+
+**アップグレード時の注意**
+
+- アップグレード後にデータベースマイグレーションを実行してください — 本リリースで `system_setting` テーブルが追加されます（追加のみ。既存テーブルへの変更はありません）。
+- `docker compose up` がデフォルトスタックの一部として Ollama コンテナを起動するようになりました（従来は `--profile ai` が必要）。`AI_TYPE=ollama` の場合、ワンショットの `ollama-init` コンテナが初回起動時に埋め込みモデル（約1.2GB）を自動ダウンロードします。モデルボリュームを事前配布している閉域網ではレジストリに接続せずスキップします。その他の `AI_TYPE` では何もダウンロードせず即終了します。
+
+**ハイライト**
+
+- 再デプロイなしで検索の挙動を管理画面から調整できるようになりました。**サイト管理**ページに、意味検索のオン/オフ・類似度しきい値の調整・検索例クエリの3つのランタイム設定が追加されています。変更は30秒以内に全インスタンスへ伝播し、すべての変更が監査ログに記録されます（#44）。
+
+**機能**
+
+- DB バックエンドのランタイム設定基盤: 設定のレジストリ（キー + 検証スキーマ + 既定値）を `system_setting` テーブルで永続化し、汎用の sysadmin API（`GET /api/v1/admin/settings`、`PUT /api/v1/admin/settings/:key`）で公開。今後の設定追加にエンドポイントの追加は不要です（#44）。
+- 意味検索のキルスイッチ: オフにするとすべての検索がキーワード検索のみに退避し、クエリ埋め込み自体をスキップ（プロバイダ課金なし）。検索 UI の「意味の近い結果を含める」トグルと自然文プレースホルダーも非表示になります。埋め込みプロバイダのないデプロイ（`AI_TYPE=none`）でも同じ UI 調整が自動で適用されます（#44）。
+- 類似度しきい値の調整: ベクトル検索の類似度下限を、モデル実測の基準値から ±4目盛り（1目盛り 0.025）で調整可能。オフセットとして保存されるためモデル変更後も意味が保たれます。bge-m3 のゴールデンセット評価では −2目盛りで overall nDCG@10 が 82% → 85% に改善（#44）。
+- 検索例クエリを管理画面から編集可能に。カタログの実データに合わせて運用中に育てられます（#44）。
+
 ## [0.7.1] - 2026-07-07
 
 Documentation-only patch release. No code changes.
