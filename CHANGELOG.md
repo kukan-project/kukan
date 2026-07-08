@@ -3,6 +3,20 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.3] - 2026-07-08
+
+Documentation-only patch release. No code changes.
+
+**Documentation**
+
+- The `environments.ts` sample in the system administrator guide (English / Japanese) now uses a consistent multi-line format for every environment entry — the `prd` entry was previously collapsed onto a single line (#46).
+
+---
+
+**ドキュメント**
+
+- システム管理者ガイド（日英）の `environments.ts` サンプルで、1行に潰れていた `prd` エントリを他のエントリと同じ複数行フォーマットに統一（#46）。
+
 ## [0.7.2] - 2026-07-08
 
 **Breaking Changes**
