@@ -25,7 +25,13 @@ import {
   QUERY_EMBED_TIMEOUT_MS,
   QUERY_EMBED_CACHE_MAX,
   QUERY_EMBED_CACHE_TTL_MS,
+  VECTOR_SIMILARITY_STEP,
 } from '../config'
+import {
+  VECTOR_SIMILARITY_NOTCHES_KEY,
+  SEMANTIC_SEARCH_ENABLED_KEY,
+  type SystemSettingService,
+} from './system-setting'
 
 export interface HybridSearchDeps {
   db: Database
@@ -35,6 +41,8 @@ export interface HybridSearchDeps {
   dbSearch: SearchAdapter
   ai: AIAdapter
   logger: Logger
+  /** Runtime similarity-floor adjustment (ADR-036); absent means no adjustment */
+  settings?: SystemSettingService
 }
 
 export type HybridSearchQuery = SearchQuery & {
@@ -174,6 +182,20 @@ export async function hybridSearch(
     return search.search(searchQuery)
   }
 
+  // Admin runtime settings (ADR-036) — read after the cheap synchronous
+  // degrades. The kill switch also skips the query embedding and its cost.
+  let similarityOffset: number | undefined
+  if (deps.settings) {
+    const [semanticEnabled, notches] = await Promise.all([
+      deps.settings.getSetting(SEMANTIC_SEARCH_ENABLED_KEY),
+      deps.settings.getSetting(VECTOR_SIMILARITY_NOTCHES_KEY),
+    ])
+    if (!semanticEnabled) {
+      return search.search(searchQuery)
+    }
+    similarityOffset = notches * VECTOR_SIMILARITY_STEP || undefined
+  }
+
   // Also namespaces the query-embedding cache — a dimension change must not
   // serve vectors cached under the old dimension.
   const key = embeddingKey(info)
@@ -182,7 +204,7 @@ export async function hybridSearch(
     const vector = await embedQuery(ai, key, q, logger)
     if (!vector) return []
     try {
-      return await searchByVector(vector, key, query.filters ?? {}, FUSION_WINDOW)
+      return await searchByVector(vector, key, query.filters ?? {}, FUSION_WINDOW, similarityOffset)
     } catch (err) {
       logger.error({ err }, 'Vector search failed — degrading to keyword-only search')
       return []

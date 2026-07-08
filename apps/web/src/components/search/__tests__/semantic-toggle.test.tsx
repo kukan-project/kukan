@@ -22,25 +22,37 @@ beforeEach(() => {
 
 describe('SemanticToggle', () => {
   it('should render nothing while browsing (no query)', () => {
-    const { container } = render(<SemanticToggle />)
+    const { container } = render(<SemanticToggle semanticEnabled={true} />)
     expect(container).toBeEmptyDOMElement()
   })
 
   it('should render an enabled switch for keyword queries', () => {
     mockSearchParams.mockReturnValue(new URLSearchParams('q=test'))
-    render(<SemanticToggle />)
+    render(<SemanticToggle semanticEnabled={true} />)
     expect(screen.getByRole('switch')).toBeChecked()
+  })
+
+  it('should render nothing when semantic search is disabled site-wide', () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('q=test'))
+    const { container } = render(<SemanticToggle semanticEnabled={false} />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('should keep the toggle visible while settings are still loading', () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('q=test'))
+    render(<SemanticToggle semanticEnabled={null} />)
+    expect(screen.getByRole('switch')).toBeInTheDocument()
   })
 
   it('should reflect semantic=false as unchecked', () => {
     mockSearchParams.mockReturnValue(new URLSearchParams('q=test&semantic=false'))
-    render(<SemanticToggle />)
+    render(<SemanticToggle semanticEnabled={true} />)
     expect(screen.getByRole('switch')).not.toBeChecked()
   })
 
   it('should set semantic=false and reset offset when turned off', () => {
     mockSearchParams.mockReturnValue(new URLSearchParams('q=test&offset=20'))
-    render(<SemanticToggle />)
+    render(<SemanticToggle semanticEnabled={true} />)
     fireEvent.click(screen.getByRole('switch'))
 
     expect(mockPush).toHaveBeenCalledTimes(1)
@@ -51,7 +63,7 @@ describe('SemanticToggle', () => {
 
   it('should drop the semantic param when turned back on', () => {
     mockSearchParams.mockReturnValue(new URLSearchParams('q=test&semantic=false'))
-    render(<SemanticToggle />)
+    render(<SemanticToggle semanticEnabled={true} />)
     fireEvent.click(screen.getByRole('switch'))
 
     const url = new URL(mockPush.mock.calls[0][0], 'http://localhost')

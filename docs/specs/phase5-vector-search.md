@@ -38,7 +38,7 @@
 | ------------------- | ------------------------ | -------------------------------------------------------------- |
 | ベクトル拡張        | pgvector                 | Aurora: `CREATE EXTENSION vector` / ローカル: イメージ差し替え |
 | PostgreSQL イメージ | `pgvector/pgvector:pg16` | alpine → Debian 変更。既存環境は dump/restore or REINDEX       |
-| ローカル埋め込み    | `ollama/ollama`          | compose profiles: `ai`。モデルはボリューム永続化               |
+| ローカル埋め込み    | `ollama/ollama`          | compose デフォルトスタックで起動。モデルはボリューム永続化     |
 | ORM 型              | drizzle-orm `vector` 型  | 次元指定なし列（モデル変更時に DDL 不要）                      |
 
 ## 3. アーキテクチャ概要
@@ -150,14 +150,14 @@ ALTER TABLE package
 ```yaml
 ollama:
   image: ollama/ollama
-  profiles: [ai]
   ports:
     - '127.0.0.1:${OLLAMA_PORT:-11435}:11434' # 11435: ネイティブ Ollama との衝突回避
   volumes:
     - ollama-models:/root/.ollama # 閉域はこのボリュームを事前配送
 ```
 
-- 初回セットアップ: `docker compose --profile ai up -d && docker compose exec ollama ollama pull bge-m3`
+- デフォルトスタックで起動（profile 不要）。モデルは `ollama-init`（ワンショットコンテナ）が
+  `AI_TYPE=ollama` のときだけ自動取得。取得済み・閉域（ボリューム事前配布）ではスキップ
 
 ### 5.3 AWS（infra/）
 
@@ -176,6 +176,10 @@ ollama:
   - 解決順序: env `SEARCH_VECTOR_MIN_SIMILARITY`（CDK では `bedrock.vectorMinSimilarity`）>
     アダプター推奨値 > フォールバック 0.45。CDK を使わないデプロイ（compose / オンプレ）でも
     モデルを選ぶだけで適正しきい値が効く。モデル変更時は要再測定
+  - この基準値に対し、管理画面（`/dashboard/admin/site`）から **±4目盛り（1目盛り 0.025）**
+    のオフセットを再デプロイなしで適用できる。セマンティック検索全体のオン/オフも
+    同画面から切替可能（オフ時はクエリ埋め込みごとスキップ）。いずれも `system_setting`
+    テーブル、反映は最大30秒（ADR-036）
 - **モデル選定の実測結果**: Cohere Embed v4（nDCG 75）> Titan v2（nDCG 70）、
   特に質問文で +12pt。ただし Cohere は **AWS Marketplace モデル**のため、初回のみ
   管理者権限での invoke 1回（+数分の伝播待ち）でアカウント購読の有効化が必要 —

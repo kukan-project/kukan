@@ -32,12 +32,16 @@ export default async function HomePage() {
     })
     .catch(() => {})
 
+  let semanticSearchEnabled = true
+  let exampleQueries: string[] = []
+
   try {
-    const [packagesRes, resourceCountRes, orgsRes, groupsRes] = await Promise.all([
+    const [packagesRes, resourceCountRes, orgsRes, groupsRes, settingsRes] = await Promise.all([
       serverFetch('/api/v1/packages?limit=5'),
       serverFetch('/api/v1/resources/count'),
       serverFetch('/api/v1/organizations?limit=1'),
       serverFetch('/api/v1/groups?limit=1'),
+      serverFetch('/api/v1/site/settings'),
     ])
 
     if (packagesRes.ok) {
@@ -57,6 +61,11 @@ export default async function HomePage() {
       const data: PaginatedResult<unknown> = await groupsRes.json()
       groupTotal = data.total
     }
+    if (settingsRes.ok) {
+      const data = await settingsRes.json()
+      semanticSearchEnabled = data.semanticSearchEnabled !== false
+      exampleQueries = data.searchExampleQueries ?? []
+    }
   } catch {
     // API unavailable (e.g. during build)
   }
@@ -71,10 +80,16 @@ export default async function HomePage() {
       </div>
 
       <form action="/dataset" method="GET" className="flex w-full max-w-lg gap-2">
-        <Input name="q" type="search" placeholder={t('home.searchPlaceholder')} />
+        <Input
+          name="q"
+          type="search"
+          placeholder={t(
+            semanticSearchEnabled ? 'home.searchPlaceholder' : 'home.searchPlaceholderKeyword'
+          )}
+        />
         <Button type="submit">{t('common.search')}</Button>
       </form>
-      <ExampleQueries className="max-w-lg justify-center" />
+      <ExampleQueries queries={exampleQueries} className="max-w-lg justify-center" />
 
       <div className="grid w-full max-w-4xl grid-cols-4 gap-4">
         <Link href="/dataset">

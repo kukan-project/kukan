@@ -5,6 +5,8 @@ import { useTranslations } from 'next-intl'
 import { AlertTriangle, Loader2, Trash2 } from 'lucide-react'
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from '@kukan/ui'
 import { PageHeader } from '@/components/dashboard/page-header'
+import { SearchExamplesCard } from '@/components/dashboard/search-examples-card'
+import { VectorSimilarityCard } from '@/components/dashboard/vector-similarity-card'
 import { clientFetch } from '@/lib/client-api'
 
 interface ResetResult {
@@ -49,6 +51,12 @@ export default function AdminSitePage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title={t('title')} />
+
+      {/* Example Query Chips */}
+      <SearchExamplesCard />
+
+      {/* Vector Search Settings */}
+      <VectorSimilarityCard />
 
       <Card>
         <CardHeader>

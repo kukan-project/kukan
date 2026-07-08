@@ -11,6 +11,7 @@ import type { AIAdapter } from '@kukan/ai-adapter'
 import type { Env, Logger } from '@kukan/shared'
 import type { Auth } from './auth/auth'
 import type { AnalyticsService } from './services/analytics-service'
+import type { SystemSettingService } from './services/system-setting'
 
 export interface AppContext {
   db: Database
@@ -26,6 +27,8 @@ export interface AppContext {
   requestId: string
   /** GA4 analytics service (null when GA4 env vars not set) */
   analytics: AnalyticsService | null
+  /** DB-backed runtime settings (ADR-036) */
+  settings: SystemSettingService
   // Better Auth session will be added by middleware
   user?: {
     id: string
@@ -51,6 +54,8 @@ declare module 'hono' {
     requestId: string
     /** GA4 analytics service (null when GA4 env vars not set) */
     analytics: AnalyticsService | null
+    /** DB-backed runtime settings (ADR-036) */
+    settings: SystemSettingService
     user?: {
       id: string
       email: string

@@ -2,12 +2,12 @@ import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { Sparkles } from 'lucide-react'
 import { Badge } from '@kukan/ui'
-import { brandConfig } from '@/brand'
 
-/** Chips for brandConfig.searchExampleQueries (empty = hidden, ADR-023) */
-export function ExampleQueries({ className }: { className?: string }) {
+/** Example-query chips, managed from the admin UI (ADR-036); empty = hidden.
+ *  Presentational — callers supply the queries (SSR on the top page, the
+ *  shared site-settings fetch on the search page). */
+export function ExampleQueries({ queries, className }: { queries: string[]; className?: string }) {
   const t = useTranslations('search')
-  const queries = brandConfig.searchExampleQueries
   if (queries.length === 0) return null
 
   return (

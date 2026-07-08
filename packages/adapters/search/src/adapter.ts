@@ -246,12 +246,15 @@ export interface SearchAdapter {
    *  BM25 backend, so callers use the dbSearch adapter. `modelKey` is the
    *  vector-space key from embeddingKey() (model@dimensions), NOT the bare
    *  model name. `filters` MUST carry the caller's visibility scope. Absent on
-   *  backends without vector support. */
+   *  backends without vector support. `minSimilarityOffset` shifts the
+   *  configured similarity floor per call (admin tuning, ADR-036); the
+   *  adjusted floor is clamped to [0, 1]. */
   searchByVector?(
     vector: number[],
     modelKey: string,
     filters: SearchFilters,
-    k: number
+    k: number,
+    minSimilarityOffset?: number
   ): Promise<VectorHit[]>
 
   /** Facet counts for an explicit set of package IDs — used to merge vector-only

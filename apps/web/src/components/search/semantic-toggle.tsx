@@ -5,15 +5,17 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Label, Switch } from '@kukan/ui'
 
-/** Hybrid-search toggle — semantic=false in the URL disables the vector leg (ADR-034) */
-export function SemanticToggle() {
+/** Hybrid-search toggle — semantic=false in the URL disables the vector leg (ADR-034).
+ *  `semanticEnabled` comes from the caller's site-settings fetch; an explicit
+ *  false (semantic search unavailable or switched off site-wide, ADR-036) hides it. */
+export function SemanticToggle({ semanticEnabled }: { semanticEnabled: boolean | null }) {
   const t = useTranslations('search')
   const router = useRouter()
   const searchParams = useSearchParams()
   const id = useId()
 
   const hasQuery = !!searchParams.get('q')?.trim()
-  if (!hasQuery) return null
+  if (!hasQuery || semanticEnabled === false) return null
 
   const enabled = searchParams.get('semantic') !== 'false'
 

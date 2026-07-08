@@ -3,7 +3,7 @@
  * /api/v1/admin endpoints (sysadmin only)
  */
 
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { eq, ne, and, inArray, isNull, ilike, or, sql, desc } from 'drizzle-orm'
@@ -16,7 +16,10 @@ import {
   tag,
   vocabulary,
   user,
+  auditLog,
 } from '@kukan/db'
+import { embeddingKey } from '@kukan/ai-adapter'
+import { DEFAULT_VECTOR_MIN_SIMILARITY } from '@kukan/search-adapter'
 import {
   ForbiddenError,
   UnauthorizedError,
@@ -29,6 +32,14 @@ import {
 } from '@kukan/shared'
 import { PipelineService } from '../services/pipeline-service'
 import { UserService } from '../services/user-service'
+import {
+  VECTOR_SIMILARITY_NOTCHES_KEY,
+  SEMANTIC_SEARCH_ENABLED_KEY,
+  SETTING_KEYS,
+  isSettingKey,
+  parseSettingValue,
+} from '../services/system-setting'
+import { VECTOR_SIMILARITY_STEP, VECTOR_SIMILARITY_MAX_NOTCHES } from '../config'
 import type { AppContext } from '../context'
 
 export const adminRouter = new Hono<{ Variables: AppContext }>()
@@ -173,6 +184,106 @@ adminRouter.get('/search/browse/:index', async (c) => {
     )
   return c.json(result)
 })
+
+// ---------------------------------------------------------------------------
+// Runtime System Settings (ADR-036)
+// Generic value API driven by the registry in services/system-setting.ts —
+// adding a setting needs no new route. Only the vector-search context GET is
+// bespoke (it fuses env + AI adapter + search capability).
+// ---------------------------------------------------------------------------
+
+/** Round away float artifacts from base + notches × step */
+const roundSimilarity = (value: number) => Math.round(value * 1000) / 1000
+
+async function buildVectorSearchSettings(c: Context<{ Variables: AppContext }>) {
+  const env = c.get('env')
+  const settings = c.get('settings')
+  const info = c.get('ai').getEmbeddingInfo()
+  const [notches, semanticEnabled] = await Promise.all([
+    settings.getSetting(VECTOR_SIMILARITY_NOTCHES_KEY),
+    settings.getSetting(SEMANTIC_SEARCH_ENABLED_KEY),
+  ])
+  const recommended = info?.recommendedMinSimilarity
+  // Mirrors the floor precedence baked into the adapter (see adapters.ts)
+  const base = env.SEARCH_VECTOR_MIN_SIMILARITY ?? recommended ?? DEFAULT_VECTOR_MIN_SIMILARITY
+  return {
+    enabled: info !== null && typeof c.get('dbSearch').searchByVector === 'function',
+    model: info ? embeddingKey(info) : null,
+    semanticEnabled,
+    baseMinSimilarity: base,
+    baseSource:
+      env.SEARCH_VECTOR_MIN_SIMILARITY != null
+        ? ('env' as const)
+        : recommended != null
+          ? ('model' as const)
+          : ('default' as const),
+    notches,
+    step: VECTOR_SIMILARITY_STEP,
+    maxNotches: VECTOR_SIMILARITY_MAX_NOTCHES,
+    effectiveMinSimilarity: roundSimilarity(
+      Math.min(1, Math.max(0, base + notches * VECTOR_SIMILARITY_STEP))
+    ),
+  }
+}
+
+async function auditSettingChange(
+  c: Context<{ Variables: AppContext }>,
+  key: string,
+  value: unknown,
+  write: { id: string; previous: unknown }
+) {
+  await c
+    .get('db')
+    .insert(auditLog)
+    .values({
+      entityType: 'system_setting',
+      entityId: write.id,
+      action: 'update',
+      userId: c.get('user')!.id,
+      changes: { key, value, previous: write.previous ?? null },
+    })
+}
+
+// GET /api/v1/admin/settings/vector-search — Vector-search context (read-only)
+adminRouter.get('/settings/vector-search', async (c) => {
+  return c.json(await buildVectorSearchSettings(c))
+})
+
+// GET /api/v1/admin/settings — Current value of every registered setting
+adminRouter.get('/settings', async (c) => {
+  const settings = c.get('settings')
+  const entries = await Promise.all(
+    SETTING_KEYS.map(async (key) => [key, await settings.getSetting(key)])
+  )
+  return c.json(Object.fromEntries(entries))
+})
+
+// PUT /api/v1/admin/settings/:key — Set one setting, validated by its registry schema
+adminRouter.put(
+  '/settings/:key',
+  zValidator('json', z.object({ value: z.unknown() })),
+  async (c) => {
+    const key = c.req.param('key')
+    if (!isSettingKey(key)) {
+      return c.json(
+        { type: 'about:blank', title: 'Not Found', status: 404, detail: `Unknown setting: ${key}` },
+        404
+      )
+    }
+
+    const parsed = parseSettingValue(key, c.req.valid('json').value)
+    if (!parsed.success) {
+      // Issue messages only — the raw ZodError JSON is unreadable in the admin UI
+      const detail = parsed.error.issues.map((issue) => issue.message).join('; ')
+      return c.json({ type: 'about:blank', title: 'Bad Request', status: 400, detail }, 400)
+    }
+
+    const write = await c.get('settings').setSetting(key, parsed.data)
+    await auditSettingChange(c, key, parsed.data, write)
+
+    return c.json({ key, value: parsed.data })
+  }
+)
 
 // POST /api/v1/admin/reindex-metadata — Enqueue metadata rebuild job to Worker
 adminRouter.post(

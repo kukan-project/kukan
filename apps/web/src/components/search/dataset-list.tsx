@@ -11,6 +11,7 @@ import { DatasetFilters } from '@/components/search/dataset-filters'
 import { DatasetSort } from '@/components/search/dataset-sort'
 import { ExampleQueries } from '@/components/search/example-queries'
 import { SemanticToggle } from '@/components/search/semantic-toggle'
+import { useSiteSettings } from '@/hooks/use-site-settings'
 import { PaginationNav } from '@/components/pagination-nav'
 import { SearchForm } from '@/components/search-form'
 
@@ -31,6 +32,7 @@ interface Props {
 
 export function DatasetList({ initialData }: Props) {
   const t = useTranslations()
+  const { semanticSearchEnabled, searchExampleQueries } = useSiteSettings()
   const searchParams = useSearchParams()
   const paramsKey = searchParams.toString()
 
@@ -187,13 +189,20 @@ export function DatasetList({ initialData }: Props) {
           <p className="text-sm text-muted-foreground">
             {loading || error ? '\u00A0' : t('common.count', { count: data?.total ?? 0 })}
           </p>
-          <SemanticToggle />
+          <SemanticToggle semanticEnabled={semanticSearchEnabled} />
           <DatasetSort />
         </div>
       </div>
 
-      <SearchForm action="/dataset" defaultValue={q} hiddenParams={filterParams} />
-      {!q && <ExampleQueries />}
+      <SearchForm
+        action="/dataset"
+        defaultValue={q}
+        hiddenParams={filterParams}
+        placeholder={
+          semanticSearchEnabled === false ? t('dataset.searchPlaceholderKeyword') : undefined
+        }
+      />
+      {!q && <ExampleQueries queries={searchExampleQueries ?? []} />}
 
       <Separator />
 

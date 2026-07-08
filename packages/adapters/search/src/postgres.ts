@@ -36,7 +36,7 @@ import type { SQL } from 'drizzle-orm'
  *  Callers should prefer SEARCH_VECTOR_MIN_SIMILARITY (explicit override) and
  *  then EmbeddingInfo.recommendedMinSimilarity (per-model measurements live with
  *  the AI adapters); settle new models with golden-set evaluation (ADR-034). */
-const DEFAULT_VECTOR_MIN_SIMILARITY = 0.45
+export const DEFAULT_VECTOR_MIN_SIMILARITY = 0.45
 
 export interface PostgresSearchAdapterOptions {
   vectorMinSimilarity?: number
@@ -419,13 +419,18 @@ export class PostgresSearchAdapter implements SearchAdapter {
     vector: number[],
     modelKey: string,
     filters: SearchFilters,
-    k: number
+    k: number,
+    minSimilarityOffset?: number
   ): Promise<VectorHit[]> {
     // Reuse the keyword-search filter builder (q: '' skips the ILIKE branch)
     const conditions = this.buildConditions({ q: '', filters })
     const vectorParam = JSON.stringify(vector)
-    // Cut below the similarity floor — kNN otherwise pads top-k with noise
-    const maxDistance = 1 - this.vectorMinSimilarity
+    // Cut below the similarity floor — kNN otherwise pads top-k with noise.
+    // A per-call offset (admin tuning, ADR-036) shifts the floor within [0, 1].
+    const floor = minSimilarityOffset
+      ? Math.min(1, Math.max(0, this.vectorMinSimilarity + minSimilarityOffset))
+      : this.vectorMinSimilarity
+    const maxDistance = 1 - floor
 
     // The CASE guard makes `<=>` evaluate only on rows of the requested vector
     // space — a bare AND leaves the planner free to compute the distance on

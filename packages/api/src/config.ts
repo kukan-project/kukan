@@ -57,3 +57,12 @@ export const QUERY_EMBED_TIMEOUT_MS = 2_000
 /** Query-embedding LRU cache size / TTL */
 export const QUERY_EMBED_CACHE_MAX = 1_000
 export const QUERY_EMBED_CACHE_TTL_MS = 60 * 60 * 1000
+
+/** Admin-adjustable similarity floor: ±MAX_NOTCHES notches of STEP around the
+ *  configured floor (ADR-036). Narrow by design (±0.10 total) — per-model
+ *  floors already sit at 97–99% of peak retrieval (ADR-034). */
+export const VECTOR_SIMILARITY_STEP = 0.025
+export const VECTOR_SIMILARITY_MAX_NOTCHES = 4
+
+/** System-setting read cache TTL — other instances converge within this window */
+export const SYSTEM_SETTING_CACHE_TTL_MS = 30_000

@@ -34,3 +34,6 @@ export * from './activity'
 
 // Announcements
 export * from './announcement'
+
+// Runtime-adjustable settings
+export * from './system-setting'

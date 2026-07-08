@@ -1,6 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createMockDb } from '../test-helpers/mock-db'
 import { hybridSearch, fuseRrf, mergeFacets } from '../../services/hybrid-search'
+import {
+  VECTOR_SIMILARITY_NOTCHES_KEY,
+  SEMANTIC_SEARCH_ENABLED_KEY,
+  type SettingKey,
+  type SystemSettingService,
+} from '../../services/system-setting'
 import type { SearchAdapter, SearchResult, SearchFacets, DatasetDoc } from '@kukan/search-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import type { Logger } from '@kukan/shared'
@@ -35,6 +41,16 @@ function makeAI(opts?: { available?: boolean; failEmbed?: boolean; dimensions?: 
       ? vi.fn().mockRejectedValue(new Error('embed down'))
       : vi.fn().mockResolvedValue([1, 0, 0]),
   } as unknown as AIAdapter
+}
+
+function makeSettings(over?: { notches?: number; semanticEnabled?: boolean }) {
+  const values: Record<SettingKey, unknown> = {
+    [VECTOR_SIMILARITY_NOTCHES_KEY]: over?.notches ?? 0,
+    [SEMANTIC_SEARCH_ENABLED_KEY]: over?.semanticEnabled ?? true,
+  }
+  return {
+    getSetting: vi.fn(async (key: SettingKey) => values[key]),
+  } as unknown as SystemSettingService
 }
 
 function deps(over: Partial<Parameters<typeof hybridSearch>[0]> = {}) {
@@ -181,7 +197,8 @@ describe('hybridSearch — fusion', () => {
       [1, 0, 0],
       'test-model@3',
       expect.anything(),
-      50
+      50,
+      undefined
     )
   })
 
@@ -301,6 +318,59 @@ describe('hybridSearch — fusion', () => {
     await hybridSearch(d, { q: 'q-no-facets', limit: 20 })
 
     expect(facetsForIds).not.toHaveBeenCalled()
+  })
+
+  it('passes the notch offset from settings to the vector leg', async () => {
+    const d = deps({
+      search: makeSearch(bm25Result(['a'])),
+      dbSearch: makeDbSearch([{ id: 'a', similarity: 0.9 }]),
+      settings: makeSettings({ notches: -2 }),
+    })
+
+    await hybridSearch(d, { q: 'q-notch-offset' })
+
+    expect(d.dbSearch.searchByVector).toHaveBeenCalledWith(
+      [1, 0, 0],
+      'test-model@3',
+      expect.anything(),
+      50,
+      -2 * 0.025
+    )
+  })
+
+  it('passes no offset when notches is 0 or settings are absent', async () => {
+    for (const over of [{ settings: makeSettings() }, {}]) {
+      const d = deps({
+        search: makeSearch(bm25Result(['a'])),
+        dbSearch: makeDbSearch([{ id: 'a', similarity: 0.9 }]),
+        ...over,
+      })
+
+      await hybridSearch(d, { q: 'q-notch-zero' })
+
+      expect(d.dbSearch.searchByVector).toHaveBeenCalledWith(
+        [1, 0, 0],
+        'test-model@3',
+        expect.anything(),
+        50,
+        undefined
+      )
+    }
+  })
+
+  it('degrades to keyword-only when semantic search is disabled at runtime', async () => {
+    const d = deps({
+      search: makeSearch(bm25Result(['a', 'b'])),
+      dbSearch: makeDbSearch([{ id: 'c', similarity: 0.9 }]),
+      settings: makeSettings({ semanticEnabled: false }),
+    })
+
+    const result = await hybridSearch(d, { q: 'q-kill-switch' })
+
+    expect(result.items.map((i) => i.id)).toEqual(['a', 'b'])
+    expect(d.dbSearch.searchByVector).not.toHaveBeenCalled()
+    // The query embedding (and its provider cost) is skipped entirely
+    expect(d.ai.embed).not.toHaveBeenCalled()
   })
 
   it('caches the query embedding across calls', async () => {

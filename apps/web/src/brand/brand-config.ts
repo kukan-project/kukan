@@ -15,6 +15,4 @@ export const brandConfig: BrandConfig = {
   faviconPath: '/favicon.ico',
 
   gaMeasurementId: null,
-
-  searchExampleQueries: [],
 }

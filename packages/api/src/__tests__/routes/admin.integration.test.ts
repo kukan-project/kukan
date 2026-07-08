@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm'
 import { createTestApp } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import type { SearchAdapter } from '@kukan/search-adapter'
+import type { AIAdapter } from '@kukan/ai-adapter'
 
 const db = getTestDb()
 
@@ -95,6 +96,163 @@ describe('Admin API Routes', () => {
 
       const body = await res.json()
       expect(body.detail).toBe('OpenSearch not enabled')
+    })
+  })
+
+  describe('/api/v1/admin/settings/vector-search', () => {
+    const SETTINGS_PATH = '/api/v1/admin/settings/vector-search'
+    const embedAi = {
+      getEmbeddingInfo: () => ({
+        model: 'stub-model',
+        dimensions: 3,
+        recommendedMinSimilarity: 0.3,
+      }),
+      embed: async () => [1, 0, 0],
+    } as unknown as AIAdapter
+
+    it('should reject unauthenticated and non-sysadmin requests', async () => {
+      expect((await unauthApp.request(SETTINGS_PATH)).status).toBe(401)
+      expect((await nonAdminApp.request(SETTINGS_PATH)).status).toBe(403)
+    })
+
+    it('should report disabled state without embedding support', async () => {
+      const res = await app.request(SETTINGS_PATH)
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.enabled).toBe(false)
+      expect(body.model).toBeNull()
+      expect(body.baseSource).toBe('default')
+      expect(body.baseMinSimilarity).toBe(0.45)
+      expect(body.notches).toBe(0)
+      expect(body.semanticEnabled).toBe(true)
+    })
+
+    it('should report the model recommendation as the base', async () => {
+      const embedApp = createTestApp(db, { search: mockSearch, ai: embedAi })
+      const res = await embedApp.request(SETTINGS_PATH)
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body).toMatchObject({
+        enabled: true,
+        model: 'stub-model@3',
+        semanticEnabled: true,
+        baseSource: 'model',
+        baseMinSimilarity: 0.3,
+        notches: 0,
+        step: 0.025,
+        maxNotches: 4,
+        effectiveMinSimilarity: 0.3,
+      })
+    })
+
+    it('should apply generic writes to the effective value and audit them', async () => {
+      const embedApp = createTestApp(db, { search: mockSearch, ai: embedAi })
+      const put = (key: string, value: unknown) =>
+        embedApp.request(`/api/v1/admin/settings/${key}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ value }),
+        })
+
+      let res = await put('vector-similarity-notches', -4)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ key: 'vector-similarity-notches', value: -4 })
+
+      res = await put('semantic-search-enabled', false)
+      expect(res.status).toBe(200)
+
+      // The context endpoint reflects both writes
+      const context = await (await embedApp.request(SETTINGS_PATH)).json()
+      expect(context.notches).toBe(-4)
+      expect(context.effectiveMinSimilarity).toBe(0.2)
+      expect(context.semanticEnabled).toBe(false)
+
+      const audit = await db.execute(
+        sql`SELECT action, changes FROM audit_log WHERE entity_type = 'system_setting' ORDER BY id`
+      )
+      expect(audit.rows).toHaveLength(2)
+      expect(audit.rows[0]).toMatchObject({
+        action: 'update',
+        changes: { key: 'vector-similarity-notches', value: -4, previous: null },
+      })
+      expect(audit.rows[1]).toMatchObject({
+        changes: { key: 'semantic-search-enabled', value: false, previous: null },
+      })
+
+      // Upsert records the previous value
+      await put('vector-similarity-notches', 2)
+      const upsertAudit = await db.execute(
+        sql`SELECT changes FROM audit_log WHERE entity_type = 'system_setting' ORDER BY id`
+      )
+      expect((upsertAudit.rows[2] as { changes: { previous: number } }).changes.previous).toBe(-4)
+    })
+  })
+
+  describe('/api/v1/admin/settings (generic)', () => {
+    const put = (key: string, value: unknown) =>
+      app.request(`/api/v1/admin/settings/${key}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value }),
+      })
+
+    it('should list every registered setting with its current value', async () => {
+      const res = await app.request('/api/v1/admin/settings')
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({
+        'vector-similarity-notches': 0,
+        'semantic-search-enabled': true,
+        'search-example-queries': [],
+      })
+    })
+
+    it('should persist example queries (trimmed) and audit the change', async () => {
+      let res = await put('search-example-queries', ['避難所の場所', ' 無料Wi-Fi '])
+      expect(res.status).toBe(200)
+      expect((await res.json()).value).toEqual(['避難所の場所', '無料Wi-Fi'])
+
+      const audit = await db.execute(
+        sql`SELECT changes FROM audit_log WHERE entity_type = 'system_setting'`
+      )
+      expect(audit.rows).toHaveLength(1)
+      expect(audit.rows[0]).toMatchObject({
+        changes: { key: 'search-example-queries', previous: null },
+      })
+
+      // An empty list hides the chips again
+      res = await put('search-example-queries', [])
+      expect((await res.json()).value).toEqual([])
+    })
+
+    it('should reject values that fail the registry schema', async () => {
+      const eleven = Array.from({ length: 11 }, (_, i) => `q${i}`)
+      for (const [key, value] of [
+        ['search-example-queries', eleven],
+        ['search-example-queries', ['x'.repeat(101)]],
+        ['search-example-queries', ['']],
+        ['search-example-queries', 'not-an-array'],
+        ['search-example-queries', null],
+        ['vector-similarity-notches', 5],
+        ['vector-similarity-notches', 0.5],
+        ['semantic-search-enabled', 'yes'],
+      ] as Array<[string, unknown]>) {
+        const res = await put(key, value)
+        expect(res.status).toBe(400)
+      }
+    })
+
+    it('should return 404 for unknown setting keys', async () => {
+      for (const key of ['nope', 'vector-search']) {
+        const res = await put(key, 1)
+        expect(res.status).toBe(404)
+      }
+    })
+
+    it('should reject unauthenticated and non-sysadmin requests', async () => {
+      expect((await unauthApp.request('/api/v1/admin/settings')).status).toBe(401)
+      expect((await nonAdminApp.request('/api/v1/admin/settings')).status).toBe(403)
     })
   })
 

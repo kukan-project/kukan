@@ -11,8 +11,9 @@ import { createDb } from '@kukan/db'
 import { createAdapters } from './adapters'
 import { AnalyticsService } from './services/analytics-service'
 import { createAuth } from './auth/auth'
+import { SystemSettingService } from './services/system-setting'
 import { optionalAuth } from './middleware/auth'
-import { cacheControl, publicCache, noCache } from './middleware/cache-control'
+import { cacheControl, noCache } from './middleware/cache-control'
 import { errorHandler } from './middleware/error-handler'
 import { logger } from './middleware/logger'
 import type { AppContext } from './context'
@@ -43,6 +44,9 @@ export async function createApp() {
       ? new AnalyticsService(env.GA4_PROPERTY_ID, env.GA4_CLIENT_EMAIL, env.GA4_PRIVATE_KEY)
       : null
 
+  // Runtime settings (shared instance so the read cache spans requests)
+  const settings = new SystemSettingService(db)
+
   // CORS — enabled when TRUSTED_ORIGINS is set (standalone / cross-origin access)
   const trustedOrigins = process.env.TRUSTED_ORIGINS?.split(',').filter(Boolean)
   if (trustedOrigins?.length) {
@@ -69,6 +73,7 @@ export async function createApp() {
     c.set('auth', auth)
     c.set('env', env)
     c.set('analytics', analytics)
+    c.set('settings', settings)
     c.set('logger', baseLogger.child({ requestId: c.get('requestId') }))
     await next()
   })
@@ -81,11 +86,6 @@ export async function createApp() {
   // Health check
   app.get('/api/health', noCache(), (c) => {
     return c.json({ status: 'ok', timestamp: new Date().toISOString() })
-  })
-
-  // Public site settings (unauthenticated)
-  app.get('/api/v1/site/settings', publicCache(), (c) => {
-    return c.json({ registrationEnabled: env.REGISTRATION_ENABLED })
   })
 
   // Better Auth endpoints - handle all /api/auth/** routes
@@ -141,6 +141,7 @@ export async function createApp() {
   const { apiTokensRouter } = await import('./routes/api-tokens')
   const { adminRouter } = await import('./routes/admin')
   const { announcementsRouter } = await import('./routes/announcements')
+  const { siteRouter } = await import('./routes/site')
 
   apiV1.route('/organizations', organizationsRouter)
   apiV1.route('/packages', packagesRouter)
@@ -151,6 +152,7 @@ export async function createApp() {
   apiV1.route('/api-tokens', apiTokensRouter)
   apiV1.route('/admin', adminRouter)
   apiV1.route('/announcements', announcementsRouter)
+  apiV1.route('/site', siteRouter)
 
   app.route('/api/v1', apiV1)
 

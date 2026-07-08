@@ -10,6 +10,7 @@ import type { Database } from '@kukan/db'
 import { NoOpAIAdapter, type AIAdapter } from '@kukan/ai-adapter'
 import { PostgresSearchAdapter, type SearchAdapter } from '@kukan/search-adapter'
 import type { AnalyticsService } from '../../services/analytics-service'
+import { SystemSettingService } from '../../services/system-setting'
 import { errorHandler } from '../../middleware/error-handler'
 import { createLogger, type Env } from '@kukan/shared'
 import type { Auth } from '../../auth/auth'
@@ -24,6 +25,7 @@ import { usersRouter } from '../../routes/users'
 import { apiTokensRouter } from '../../routes/api-tokens'
 import { ckanCompatRouter } from '../../routes/ckan-compat'
 import { announcementsRouter } from '../../routes/announcements'
+import { siteRouter } from '../../routes/site'
 import { mcpRouter } from '../../routes/mcp'
 
 // Minimal mock adapters (search/storage are no-ops for route tests)
@@ -132,6 +134,9 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
 
   const testLogger = createLogger({ name: 'test', level: 'silent' })
 
+  // Fresh instance per app so the read cache never leaks across test files
+  const settings = new SystemSettingService(db)
+
   // Inject context
   app.use('*', async (c, next) => {
     c.set('db', db)
@@ -144,6 +149,7 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
     c.set('env', testEnv)
     c.set('logger', testLogger)
     c.set('analytics', overrides?.analytics ?? null)
+    c.set('settings', settings)
     c.set('requestId', 'test-request-id')
     if (testUser) c.set('user', { displayName: null, ...testUser })
     await next()
@@ -167,6 +173,7 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
   apiV1.route('/users', usersRouter)
   apiV1.route('/api-tokens', apiTokensRouter)
   apiV1.route('/announcements', announcementsRouter)
+  apiV1.route('/site', siteRouter)
   app.route('/api/v1', apiV1)
 
   // MCP server

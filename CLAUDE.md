@@ -214,6 +214,7 @@ pnpm format        # Prettier フォーマット
 - 外部 SQL データソース（スナップショット/ライブ proxy 両論 + connector 拡張、提案） → `docs/adr/jp/033-external-sql-data-source.md`
 - メタデータのベクトル検索（セマンティック検索・AI 向け発見、提案） → `docs/adr/jp/034-metadata-vector-search.md`
 - セマンティックバージョニングとリリースノート → `docs/adr/jp/035-semver-release-notes.md`
+- DB バックエンドのランタイムシステム設定（初適用: ベクトルしきい値の目盛り調整） → `docs/adr/jp/036-runtime-system-settings.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、

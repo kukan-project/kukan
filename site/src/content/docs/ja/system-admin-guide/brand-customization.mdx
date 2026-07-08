@@ -65,8 +65,6 @@ export const brandConfig: BrandConfig = {
 
   ogImage: '/brand/og-image.png',
   faviconPath: '/brand/favicon.ico',
-
-  searchExampleQueries: ['避難所の場所が知りたい', '子育て支援に関する統計'],
 }
 ```
 
@@ -83,7 +81,8 @@ export const brandConfig: BrandConfig = {
 | `footerLinks` | フッターのリンク一覧 |
 | `ogImage` | OGP 画像のパス（`public/` 配下のパス） |
 | `faviconPath` | ファビコンのパス |
-| `searchExampleQueries` | 検索例チップ（トップページと検索ページに表示）。空配列で非表示（デフォルト）。登録データで実際にヒットする自然文クエリを設定する |
+
+検索例チップ（検索ボックス下のクエリ例）はブランド設定ではなく、**管理画面のサイト管理**（`/dashboard/admin/site`）から設定します。
 
 ### ロゴの設定
 

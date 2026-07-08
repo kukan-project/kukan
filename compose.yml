@@ -137,17 +137,14 @@ services:
       opensearch:
         condition: service_healthy
 
-  # ===== Production stack (--profile prod) =====
-
   ollama:
     # Embedding model server (ADR-034). Same configuration for dev and on-prem;
-    # closed networks pre-distribute the ollama-models volume instead of `ollama pull`.
-    # Setup: docker compose --profile ai up -d && docker compose exec ollama ollama pull bge-m3
+    # the model is pulled automatically by ollama-init when AI_TYPE=ollama, and
+    # closed networks pre-distribute the ollama-models volume instead.
     # Host port defaults to 11435 (not 11434) so a natively installed Ollama
     # doesn't collide; in-network services still use http://ollama:11434.
     image: ollama/ollama:latest
     container_name: kukan-ollama
-    profiles: [ai]
     environment:
       # Keep models loaded. The default (5m) unloads the embedding model on
       # idle, so the first search afterwards exceeds the 2s embed timeout and
@@ -157,6 +154,31 @@ services:
       - '127.0.0.1:${OLLAMA_PORT:-11435}:11434'
     volumes:
       - ollama-models:/root/.ollama
+
+  ollama-init:
+    # One-shot embedding-model fetch so semantic search works out of the box.
+    # No-ops unless AI_TYPE=ollama (no surprise 1.2GB download), and skips the
+    # registry entirely when the model is already in the volume (closed
+    # networks pre-distribute it).
+    image: ollama/ollama:latest
+    container_name: kukan-ollama-init
+    depends_on:
+      ollama:
+        condition: service_started
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      AI_TYPE: ${AI_TYPE:-none}
+      EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-bge-m3}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        [ "$$AI_TYPE" = "ollama" ] || { echo "AI_TYPE=$$AI_TYPE — skipping model pull"; exit 0; }
+        for i in $$(seq 30); do ollama list >/dev/null 2>&1 && break; sleep 1; done
+        ollama show "$$EMBEDDING_MODEL" >/dev/null 2>&1 && { echo "$$EMBEDDING_MODEL already present"; exit 0; }
+        ollama pull "$$EMBEDDING_MODEL"
+
+  # ===== Production stack (--profile prod) =====
 
   web:
     profiles: [prod]

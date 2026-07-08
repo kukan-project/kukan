@@ -23,8 +23,6 @@ export interface BrandConfig {
   faviconPath: string
   /** GA4 Measurement ID (e.g. 'G-XXXXXXXXXX'). null = GA4 disabled. */
   gaMeasurementId?: string | null
-  /** Example search queries shown as chips, tailored to the deployment's data. Empty = hidden. */
-  searchExampleQueries: string[]
 }
 
 /** Component override slots */
