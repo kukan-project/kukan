@@ -3,6 +3,46 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.5] - 2026-07-10
+
+**Breaking Changes**
+
+- The `REGISTRATION_ENABLED` environment variable has been removed. Self-registration is now a runtime setting managed from the admin dashboard (Site Management → User Self-Registration) and defaults to **disabled**. Deployments that ran with `REGISTRATION_ENABLED=true` must re-enable self-registration once from the admin dashboard after upgrading; no redeploy is needed for future changes (#51).
+
+**Highlights**
+
+- Setting up a fresh KUKAN no longer requires CLI or database access. While no users exist, self-registration is open and **the first registered user automatically becomes a system administrator** — deploy, open the sign-up page, and you are done. On internet-facing deployments, register the first user promptly after deploying; `pnpm db:create-user` remains available for headless setup and lockout recovery (#51).
+- Self-registration can now be toggled at runtime from the admin dashboard, taking effect within about a minute — no redeploy, useful for opening registration temporarily or closing it immediately when needed (#51).
+
+**Features**
+
+- The first-user promotion is safe under concurrency and mid-setup crashes: it is decided by a one-shot claim backed by a database unique constraint, so exactly one sysadmin is created no matter how many sign-ups race for it. A first attempt that dies mid-creation self-heals after 60 seconds, and sign-ups arriving while a claim is in flight receive a retryable 409. The promotion is recorded in the audit log (#51).
+- Creating a user from the admin dashboard now accepts a display name, matching the edit dialog — no more create-then-edit round trip (#51).
+
+**Improvements**
+
+- The admin site-management cards now behave consistently: every card's save button stays disabled until there is an actual change (#51).
+
+---
+
+**破壊的変更**
+
+- 環境変数 `REGISTRATION_ENABLED` を廃止しました。自己登録の可否は管理画面（サイト管理 → ユーザー自己登録）のランタイム設定になり、既定は**無効**です。`REGISTRATION_ENABLED=true` で運用していた環境は、アップグレード後に管理画面で一度自己登録を有効化し直してください。以後の切り替えに再デプロイは不要です（#51）。
+
+**ハイライト**
+
+- 新規インストールのセットアップに CLI や DB アクセスが不要になりました。ユーザーが1人も存在しない間は自己登録が開放され、**最初に登録したユーザーが自動的にシステム管理者になります** — デプロイしてサインアップページを開くだけで初期設定が完了します。インターネット公開デプロイではデプロイ後すみやかに初回ユーザーを登録してください。`pnpm db:create-user` はヘッドレス初期化・ロックアウト回復用として引き続き利用できます（#51）。
+- 自己登録の可否を管理画面からランタイムで切り替えられるようになりました（反映は約1分以内）。再デプロイ不要のため、期間限定の登録開放や問題発生時の即時クローズが容易になります（#51）。
+
+**機能**
+
+- 初回ユーザーの sysadmin 昇格は、同時アクセスやセットアップ途中のクラッシュに対して安全です。昇格はデータベースの一意制約に基づく one-shot claim で決定されるため、何件のサインアップが競合しても sysadmin はちょうど1人だけ作成されます。初回登録が途中で失敗した場合は60秒後に自動回復し、claim 進行中のサインアップにはリトライ可能な 409 を返します。昇格は監査ログに記録されます（#51）。
+- 管理画面のユーザー作成ダイアログで表示名を入力できるようになりました。編集ダイアログと同等になり、「作成してから編集で表示名を付ける」手間がなくなります（#51）。
+
+**改善**
+
+- 管理画面のサイト管理カードの挙動を統一し、すべてのカードで変更がない間は保存ボタンが非アクティブになるようにしました（#51）。
+
 ## [0.7.4] - 2026-07-10
 
 **Upgrade Notes**
