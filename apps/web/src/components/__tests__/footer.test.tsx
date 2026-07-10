@@ -1,6 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { Footer } from '../layout/footer'
+
+// Pin the brand layer to KUKAN defaults so fork customizations don't break body tests (ADR-023)
+vi.mock('@/brand', () => import('@/__tests__/brand-defaults'))
 
 describe('Footer', () => {
   it('should render KUKAN text', () => {

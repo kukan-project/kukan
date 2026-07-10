@@ -3,6 +3,9 @@ import { render, screen } from '@testing-library/react'
 import { serverFetch } from '@/lib/server-api'
 import HomePage from '../page'
 
+// Pin the brand layer to KUKAN defaults so fork customizations don't break body tests (ADR-023)
+vi.mock('@/brand', () => import('@/__tests__/brand-defaults'))
+
 vi.mock('@/lib/server-api', () => ({
   serverFetch: vi.fn(),
 }))

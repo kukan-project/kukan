@@ -295,6 +295,27 @@ git merge upstream/main
 
 本体側が `src/types/brand.ts` に型を追加した場合、`brand-config.ts` で新しいフィールドの追加が必要になることがあります。TypeScript の型エラーとして検出されるので、エラーメッセージに従って対応してください。
 
+## テスト
+
+本体のユニットテストはブランド非依存に設計されており、テスト内では `src/brand/` の内容が KUKAN デフォルト値に固定されます。**ブランドをどうカスタマイズしても本体のテスト（CI）はそのまま通ります**。
+
+- **本体のテストファイルは変更しないでください**。カスタマイズによって本体のテストが失敗する場合は、フォーク側で修正せず、本体リポジトリへ issue / PR で報告してください
+- **カスタムコンポーネント自体のテストは `apps/web/src/brand/__tests__/` に配置します**。`*.test.ts` / `*.test.tsx` は自動的に検出され、`pnpm test` で実行されます。テストを書くかどうかはフォーク側の裁量です
+
+```tsx
+// apps/web/src/brand/__tests__/header.test.tsx
+import { describe, it, expect } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { Header } from '../overrides/header'
+
+describe('Custom Header', () => {
+  it('should render the organization logo', async () => {
+    render(await Header())
+    expect(screen.getByAltText('○○市')).toBeInTheDocument()
+  })
+})
+```
+
 ## まとめ: カスタマイズの段階
 
 | やりたいこと | 方法 | 所要時間の目安 |

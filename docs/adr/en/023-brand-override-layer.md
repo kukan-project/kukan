@@ -4,7 +4,7 @@
 
 ## Status
 
-Accepted (2026-05-16)
+Accepted (2026-05-16, testing strategy added 2026-07-10)
 
 ## Context
 
@@ -304,6 +304,22 @@ Tier 3 (plugin system) maintains ADR-010's policy as-is.
 3. **Main side does not modify default value files in `src/brand/`** (adding types to `src/types/brand.ts` is permitted)
 4. **When a new override slot is needed**, add a key to `BrandOverrides` type in the main repository and incorporate the override check in the corresponding component
 5. **Fork side regularly rebases/merges the main branch** (since `src/brand/` is isolated, conflicts should not occur in principle)
+6. **Fork side does not modify main-repo test files** (the "Testing Strategy" below keeps main tests brand-independent, so no changes should be needed. If a fork customization breaks a main test, report it as a main-side bug via issue / PR)
+
+## Testing Strategy
+
+When a fork customizes the brand, main-repo unit tests that render slot components (`Header` / `Footer` / `HomePage`) end up rendering the custom implementation, breaking expectations against the KUKAN default text and structure. To prevent this, **main-repo tests are brand-independent (pinned to KUKAN defaults)**.
+
+1. **Main tests must not import the real `@/brand`**. Tests that render brand-consuming components mock it and pin it to the KUKAN defaults:
+
+   ```typescript
+   vi.mock('@/brand', () => import('@/__tests__/brand-defaults'))
+   ```
+
+2. **`src/__tests__/brand-defaults.ts` is maintained by the main repo**. It is an intentional copy of the KUKAN defaults and does not import from `src/brand/brand-config.ts` (which forks rewrite). When a required field is added to `BrandConfig`, the main side updates this file as well.
+3. **The slot mechanism itself is tested by the main repo** (`brand-slots.test.tsx`). With dummy overrides registered, it verifies only that "the custom component takes precedence" and does not depend on any fork's implementation.
+4. **Tests for fork-specific components live in `src/brand/__tests__/`**. They are auto-discovered by the vitest include pattern (`src/**/__tests__/**/*.test.{ts,tsx}`), so no config change is needed. Whether and what to test is at the fork's discretion.
+5. **i18n is already brand-independent**. The test `setup.ts` reads the default `messages/en.json` directly, so overrides in `brand/messages/` do not affect tests.
 
 ## Type Change Policy
 

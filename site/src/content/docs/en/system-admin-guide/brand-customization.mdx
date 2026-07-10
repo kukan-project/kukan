@@ -296,6 +296,27 @@ As long as your changes are limited to `src/brand/` and `public/brand/`, merge c
 
 When the upstream adds new fields to `src/types/brand.ts`, you may need to add them to your `brand-config.ts`. TypeScript will report type errors — follow the error messages to add the missing fields.
 
+## Testing
+
+The upstream unit tests are designed to be brand-independent: inside tests, the contents of `src/brand/` are pinned to the KUKAN defaults. **No matter how you customize the brand, the upstream tests (CI) will keep passing.**
+
+- **Do not modify upstream test files.** If a customization breaks an upstream test, report it to the upstream repository via an issue / PR instead of patching it in your fork
+- **Place tests for your custom components in `apps/web/src/brand/__tests__/`.** Files named `*.test.ts` / `*.test.tsx` are discovered automatically and run with `pnpm test`. Whether to write tests is up to your fork
+
+```tsx
+// apps/web/src/brand/__tests__/header.test.tsx
+import { describe, it, expect } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { Header } from '../overrides/header'
+
+describe('Custom Header', () => {
+  it('should render the organization logo', async () => {
+    render(await Header())
+    expect(screen.getByAltText('City logo')).toBeInTheDocument()
+  })
+})
+```
+
 ## Summary
 
 | Goal | Method | Estimated time |
