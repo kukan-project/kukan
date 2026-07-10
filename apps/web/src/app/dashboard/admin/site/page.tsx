@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl'
 import { AlertTriangle, Loader2, Trash2 } from 'lucide-react'
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from '@kukan/ui'
 import { PageHeader } from '@/components/dashboard/page-header'
+import { RegistrationCard } from '@/components/dashboard/registration-card'
 import { SearchExamplesCard } from '@/components/dashboard/search-examples-card'
 import { VectorSimilarityCard } from '@/components/dashboard/vector-similarity-card'
 import { clientFetch } from '@/lib/client-api'
@@ -57,6 +58,9 @@ export default function AdminSitePage() {
 
       {/* Vector Search Settings */}
       <VectorSimilarityCard />
+
+      {/* Self-Registration */}
+      <RegistrationCard />
 
       <Card>
         <CardHeader>

@@ -5,6 +5,7 @@
 
 import { Hono } from 'hono'
 import { publicCache } from '../middleware/cache-control'
+import { isRegistrationAllowed } from '../services/bootstrap'
 import { SEMANTIC_SEARCH_ENABLED_KEY, SEARCH_EXAMPLE_QUERIES_KEY } from '../services/system-setting'
 import type { AppContext } from '../context'
 
@@ -13,7 +14,9 @@ export const siteRouter = new Hono<{ Variables: AppContext }>()
 // GET /api/v1/site/settings — Public site settings for the frontend
 siteRouter.get('/settings', publicCache(), async (c) => {
   const settings = c.get('settings')
-  const [semanticSetting, searchExampleQueries] = await Promise.all([
+  const [registrationEnabled, semanticSetting, searchExampleQueries] = await Promise.all([
+    // Effective value: forced on while the user table is empty (ADR-038)
+    isRegistrationAllowed(c.get('db'), settings),
     settings.getSetting(SEMANTIC_SEARCH_ENABLED_KEY),
     settings.getSetting(SEARCH_EXAMPLE_QUERIES_KEY),
   ])
@@ -24,7 +27,7 @@ siteRouter.get('/settings', publicCache(), async (c) => {
     typeof c.get('dbSearch').searchByVector === 'function' &&
     semanticSetting
   return c.json({
-    registrationEnabled: c.get('env').REGISTRATION_ENABLED,
+    registrationEnabled,
     semanticSearchEnabled,
     searchExampleQueries,
   })

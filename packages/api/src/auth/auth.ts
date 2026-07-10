@@ -2,13 +2,20 @@
  * KUKAN Better Auth Configuration
  */
 
+import { sql } from 'drizzle-orm'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
+import { APIError } from 'better-auth/api'
 import { admin } from 'better-auth/plugins'
 import { adminAc } from 'better-auth/plugins/admin/access'
 import type { Database } from '@kukan/db'
+import { auditLog } from '@kukan/db'
+import { claimBootstrapPromotion } from '../services/bootstrap'
 
 export function createAuth(db: Database) {
+  // Links the before-hook promotion decision to the after-hook audit write.
+  // Safe as a closure flag: bootstrap promotes at most one user per process.
+  let bootstrapPromotion = false
   return betterAuth({
     database: drizzleAdapter(db, {
       provider: 'pg',
@@ -16,6 +23,46 @@ export function createAuth(db: Database) {
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: false,
+    },
+    databaseHooks: {
+      user: {
+        create: {
+          // First sign-up on an empty user table becomes sysadmin (ADR-038);
+          // the claim's unique key makes this race-safe under concurrent
+          // sign-ups. The admin plugin's before hook merges with priority to
+          // incoming data, so this wins regardless of hook execution order.
+          before: async (userData) => {
+            const claim = await claimBootstrapPromotion(db)
+            if (claim === 'claimed') {
+              bootstrapPromotion = true
+              return { data: { ...userData, role: 'sysadmin' } }
+            }
+            // While a fresh claim is in flight, creating this user would end
+            // bootstrap without a sysadmin if the claim holder died mid-creation.
+            // Reject; the claim completes or goes stale within a minute.
+            if (claim === 'in-progress') {
+              throw new APIError('CONFLICT', {
+                message: 'Initial setup is in progress. Please retry in a minute.',
+              })
+            }
+            return undefined
+          },
+          after: async (createdUser) => {
+            // The role check keeps a concurrent non-promoted creation from
+            // consuming the flag before the promoted user's hook runs
+            if (!bootstrapPromotion || createdUser.role !== 'sysadmin') return
+            bootstrapPromotion = false
+            // entityId is uuid; Better Auth user IDs are text, so store in changes instead
+            await db.insert(auditLog).values({
+              entityType: 'user',
+              entityId: sql`gen_random_uuid()`,
+              action: 'create',
+              userId: createdUser.id,
+              changes: { userId: createdUser.id, role: 'sysadmin', bootstrap: true },
+            })
+          },
+        },
+      },
     },
     session: {
       expiresIn: 60 * 60 * 24 * 7,

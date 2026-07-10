@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
+import { sql } from 'drizzle-orm'
 import { createTestApp, mockSearch } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
+import { resetBootstrapCache } from '../../services/bootstrap'
 import type { AIAdapter } from '@kukan/ai-adapter'
 
 const db = getTestDb()
@@ -58,6 +60,31 @@ describe('GET /api/v1/site/settings', () => {
 
     const res = await app.request('/api/v1/site/settings')
     expect((await res.json()).searchExampleQueries).toEqual(['避難所の場所'])
+  })
+
+  it('should reflect the registration-enabled runtime setting', async () => {
+    const app = createTestApp(db)
+
+    let res = await app.request('/api/v1/site/settings')
+    expect((await res.json()).registrationEnabled).toBe(false)
+
+    const put = await app.request('/api/v1/admin/settings/registration-enabled', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: true }),
+    })
+    expect(put.status).toBe(200)
+
+    res = await app.request('/api/v1/site/settings')
+    expect((await res.json()).registrationEnabled).toBe(true)
+  })
+
+  it('should force registration on while no users exist (bootstrap, ADR-038)', async () => {
+    await db.execute(sql`TRUNCATE TABLE "user" CASCADE`)
+    resetBootstrapCache()
+
+    const res = await createTestApp(db, { user: null }).request('/api/v1/site/settings')
+    expect((await res.json()).registrationEnabled).toBe(true)
   })
 
   it('should cache publicly for anonymous requests only', async () => {

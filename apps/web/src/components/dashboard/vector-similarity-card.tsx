@@ -163,7 +163,7 @@ export function VectorSimilarityCard() {
           <span className="text-sm text-muted-foreground">
             {t('vectorEffective', { value: valueAt(settings.notches) })}
           </span>
-          {saved && <span className="text-sm text-muted-foreground">{t('vectorSaved')}</span>}
+          {saved && <span className="text-sm text-muted-foreground">{t('saved')}</span>}
         </div>
       </CardContent>
     </Card>

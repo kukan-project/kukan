@@ -49,24 +49,22 @@ cp .env.example .env
 pnpm db:migrate
 ```
 
-### 6. 初期ユーザー作成
-
-最初の sysadmin（システム管理者）ユーザーを作成します。
-
-```bash
-pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
-```
-
-一般ユーザーも作成できます（`--role` 省略時はデフォルトで `user`）。
-
-```bash
-pnpm db:create-user --email user@example.com --name taro --password <password>
-```
-
-### 7. 開発サーバー起動
+### 6. 開発サーバー起動
 
 ```bash
 pnpm dev
 ```
 
 `http://localhost:3000` でアクセスできます。
+
+### 7. 初期ユーザー登録
+
+`http://localhost:3000/auth/sign-up` を開いて最初のユーザーを登録します。
+ユーザーが1人も存在しない間は自己登録が有効で、**最初に登録したユーザーは
+自動的に sysadmin（システム管理者）になります**。
+
+CLI で作成することもできます（`--role` 省略時はデフォルトで `user`）。
+
+```bash
+pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
+```

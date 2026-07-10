@@ -267,6 +267,9 @@
     },
     "adminSite": {
       "title": "サイト管理",
+      "registrationTitle": "ユーザー自己登録",
+      "registrationDescription": "サインアップページからの新規ユーザー登録を許可するかどうかです。オフの間はシステム管理者がユーザー管理画面から作成します。反映まで最大1分かかります。",
+      "registrationLabel": "自己登録を許可する",
       "vectorTitle": "意味検索",
       "vectorDescription": "キーワードが一致しなくても、意味の近いデータセットを検索結果に含める機能です。しきい値は結果に含める「意味の近さ」の下限で、緩めるとヒットが増える代わりにノイズも増え、厳しくすると精度重視になり取りこぼしが増えます。変更の反映まで最大30秒かかります。",
       "vectorSemanticEnabled": "意味の近い結果を検索に含める（オフにするとキーワード一致のみになります）",
@@ -279,7 +282,7 @@
       "vectorLooser": "緩め",
       "vectorStricter": "厳しめ",
       "vectorEffective": "現在の実効値: {value}",
-      "vectorSaved": "保存しました",
+      "saved": "保存しました",
       "exampleQueriesTitle": "検索例クエリ",
       "exampleQueriesDescription": "検索ボックスの下に表示するクエリ例です。1行に1件、最大{max}件（各100文字まで）。空にして保存するとクエリ例は非表示になります。反映まで最大1分かかります。",
       "exampleQueriesPlaceholder": "避難所の場所\n無料Wi-Fiが使える場所",

@@ -61,6 +61,7 @@ const createUserSchema = z.object({
   name: userNameSchema,
   email: z.string().email().max(200),
   password: z.string().min(8),
+  displayName: z.string().max(200).optional(),
   role: userRoleSchema,
 })
 
@@ -132,7 +133,7 @@ export default function AdminUsersPage() {
     const res = await clientFetch('/api/v1/admin/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(values),
+      body: JSON.stringify({ ...values, displayName: values.displayName || undefined }),
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
@@ -423,6 +424,14 @@ export default function AdminUsersPage() {
                 aria-invalid={!!errors.name}
               />
               {errors.name && <p className="text-sm text-destructive">{t('fieldNameError')}</p>}
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="create-displayName">{t('fieldDisplayName')}</Label>
+              <Input
+                id="create-displayName"
+                placeholder={t('fieldDisplayNamePlaceholder')}
+                {...register('displayName')}
+              />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="create-email">{t('fieldEmail')}</Label>

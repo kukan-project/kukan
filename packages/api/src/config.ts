@@ -66,3 +66,7 @@ export const VECTOR_SIMILARITY_MAX_NOTCHES = 4
 
 /** System-setting read cache TTL — other instances converge within this window */
 export const SYSTEM_SETTING_CACHE_TTL_MS = 30_000
+
+/** Bootstrap sysadmin claim older than this with the user table still empty is
+ *  a failed first sign-up's leftover and may be re-claimed (ADR-038) */
+export const BOOTSTRAP_CLAIM_STALE_MS = 60_000

@@ -361,10 +361,11 @@ cd infra && npx cdk bootstrap aws://<account-id>/ap-northeast-1 aws://<account-i
 # 4. デプロイ（env を指定。Docker ビルド + ECR プッシュ + 全リソース作成）
 npx cdk deploy -c env=dev --all
 
-# 5. 初期ユーザー作成（初回のみ。DB 接続情報は環境変数から取得）
-pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
-# 一般ユーザーも作成可能（--role 省略でデフォルト 'user'）
-pnpm db:create-user --email user@example.com --name taro --password <password>
+# 5. 初期ユーザー登録（初回のみ）
+#    ブラウザでサインアップページを開いて登録する。ユーザーが1人もいない間は
+#    自己登録が有効で、最初の登録者が自動的に sysadmin になる（ADR-038）。
+#    ヘッドレスで作成する場合は CLI も使える（DB 接続情報は環境変数から取得）:
+#      pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
 
 # 6. 確認
 # - CloudFront ドメイン（またはカスタムドメイン）でアクセス
@@ -562,8 +563,10 @@ cp .env.prod.example .env.prod
 # 2. ビルド＆起動
 docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 
-# 3. 初期ユーザー作成（初回のみ）
-pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
+# 3. 初期ユーザー登録（初回のみ）
+#    ブラウザでサインアップページを開いて登録する。ユーザーが1人もいない間は
+#    自己登録が有効で、最初の登録者が自動的に sysadmin になる（ADR-038）。
+#    ヘッドレスで作成する場合: pnpm db:create-user --email ... --role sysadmin
 
 # 4. 動作確認
 curl http://localhost/api/health

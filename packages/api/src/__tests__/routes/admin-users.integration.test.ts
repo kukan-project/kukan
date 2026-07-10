@@ -252,6 +252,23 @@ describe('Admin Users API', () => {
       })
     })
 
+    it('should pass displayName through as extra data', async () => {
+      await app.request('/api/v1/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...validBody, displayName: '新規 太郎' }),
+      })
+
+      expect(mockCreateUser).toHaveBeenCalledWith({
+        body: {
+          name: 'new-user',
+          email: 'new@example.com',
+          password: 'password123',
+          data: { displayName: '新規 太郎' },
+        },
+      })
+    })
+
     it('should pass sysadmin role when specified', async () => {
       await app.request('/api/v1/admin/users', {
         method: 'POST',

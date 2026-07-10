@@ -15,6 +15,7 @@ export function SearchExamplesCard() {
 
   const [loaded, setLoaded] = useState(false)
   const [text, setText] = useState('')
+  const [original, setOriginal] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -24,7 +25,9 @@ export function SearchExamplesCard() {
         const res = await clientFetch('/api/v1/admin/settings')
         if (res.ok) {
           const data: Record<string, unknown> = await res.json()
-          setText(((data[SETTING_KEY] as string[]) ?? []).join('\n'))
+          const value = ((data[SETTING_KEY] as string[]) ?? []).join('\n')
+          setText(value)
+          setOriginal(value)
           setLoaded(true)
         }
       } catch {
@@ -39,6 +42,7 @@ export function SearchExamplesCard() {
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
+  const dirty = parsed.join('\n') !== original
 
   async function save() {
     setSaving(true)
@@ -51,7 +55,9 @@ export function SearchExamplesCard() {
       })
       if (res.ok) {
         const data: { value: string[] } = await res.json()
-        setText(data.value.join('\n'))
+        const value = data.value.join('\n')
+        setText(value)
+        setOriginal(value)
         setSaved(true)
       }
     } finally {
@@ -79,7 +85,7 @@ export function SearchExamplesCard() {
           className="max-w-lg font-normal"
         />
         <div className="flex flex-wrap items-center gap-4">
-          <Button onClick={save} disabled={saving || parsed.length > MAX_QUERIES}>
+          <Button onClick={save} disabled={saving || !dirty || parsed.length > MAX_QUERIES}>
             {tc('save')}
           </Button>
           {parsed.length > MAX_QUERIES && (
@@ -87,7 +93,7 @@ export function SearchExamplesCard() {
               {t('exampleQueriesTooMany', { max: MAX_QUERIES })}
             </span>
           )}
-          {saved && <span className="text-sm text-muted-foreground">{t('vectorSaved')}</span>}
+          {saved && <span className="text-sm text-muted-foreground">{t('saved')}</span>}
         </div>
       </CardContent>
     </Card>

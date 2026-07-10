@@ -11,6 +11,7 @@ import { createDb } from '@kukan/db'
 import { createAdapters } from './adapters'
 import { AnalyticsService } from './services/analytics-service'
 import { createAuth } from './auth/auth'
+import { isRegistrationAllowed } from './services/bootstrap'
 import { SystemSettingService } from './services/system-setting'
 import { optionalAuth } from './middleware/auth'
 import { cacheControl, noCache } from './middleware/cache-control'
@@ -90,18 +91,21 @@ export async function createApp() {
 
   // Better Auth endpoints - handle all /api/auth/** routes
   // Must be registered BEFORE optionalAuth to avoid body stream consumption
-  app.on(['GET', 'POST'], '/api/auth/*', (c) => {
-    // Block self-registration when disabled
-    if (!env.REGISTRATION_ENABLED && c.req.path.endsWith('/sign-up/email')) {
-      return c.json(
-        {
-          type: 'about:blank',
-          title: 'FORBIDDEN',
-          status: 403,
-          detail: 'Self-registration is disabled',
-        },
-        403
-      )
+  app.on(['GET', 'POST'], '/api/auth/*', async (c) => {
+    // Block self-registration when disabled — forced on while the user table
+    // is empty so the first sign-up can bootstrap the instance (ADR-038)
+    if (c.req.path.endsWith('/sign-up/email')) {
+      if (!(await isRegistrationAllowed(db, settings))) {
+        return c.json(
+          {
+            type: 'about:blank',
+            title: 'FORBIDDEN',
+            status: 403,
+            detail: 'Self-registration is disabled',
+          },
+          403
+        )
+      }
     }
     // Disable the Better Auth admin-plugin HTTP endpoints (impersonate-user,
     // ban-user, set-role, set-user-password, list-users, remove-user, ...).

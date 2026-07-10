@@ -14,6 +14,7 @@ import { SYSTEM_SETTING_CACHE_TTL_MS, VECTOR_SIMILARITY_MAX_NOTCHES } from '../c
 export const VECTOR_SIMILARITY_NOTCHES_KEY = 'vector-similarity-notches'
 export const SEMANTIC_SEARCH_ENABLED_KEY = 'semantic-search-enabled'
 export const SEARCH_EXAMPLE_QUERIES_KEY = 'search-example-queries'
+export const REGISTRATION_ENABLED_KEY = 'registration-enabled'
 
 /** Registry of runtime settings — adding a setting means adding an entry here */
 const SETTING_DEFINITIONS = {
@@ -32,6 +33,11 @@ const SETTING_DEFINITIONS = {
   [SEARCH_EXAMPLE_QUERIES_KEY]: {
     schema: z.array(z.string().trim().min(1).max(100)).max(10),
     default: [] as string[],
+  },
+  // Self-registration; overridden to allowed while the user table is empty (ADR-038)
+  [REGISTRATION_ENABLED_KEY]: {
+    schema: z.boolean(),
+    default: false,
   },
 } as const
 

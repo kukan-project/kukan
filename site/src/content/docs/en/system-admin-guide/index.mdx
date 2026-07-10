@@ -119,8 +119,18 @@ For details and design rationale, see `docs/specs/phase4-deploy.md` and ADR-030 
 
 ## Initial setup
 
-After deployment, you must create the first sysadmin user via CLI.
-Without a sysadmin, no system administration operations are possible.
+While no users exist yet, self-registration is forced on and **the first
+registered user automatically becomes a sysadmin**. After deploying, open
+the sign-up page in a browser and register the first user.
+
+:::caution
+Until the first registration completes, anyone who can reach the URL can
+become a sysadmin. For internet-facing deployments, register the first
+user promptly after deploying.
+:::
+
+For headless initialization, or to recover when no sysadmin is left, use
+the CLI.
 
 ```bash
 pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
@@ -132,12 +142,6 @@ pnpm db:create-user --email admin@example.com --name admin --password <password>
 | `--name`     | Username (lowercase alphanumeric, hyphens, underscores, periods) | Yes      |
 | `--password` | Password (8+ characters)                                         | Yes      |
 | `--role`     | `user` or `sysadmin` (default: `user`)                           | No       |
-
-When `REGISTRATION_ENABLED=false` (self-registration disabled), use this command to create regular users as well.
-
-```bash
-pnpm db:create-user --email user@example.com --name taro --password <password>
-```
 
 ## User management
 
@@ -156,7 +160,11 @@ System administrators (sysadmin) can manage users from the admin dashboard.
 
 ### Self-registration control
 
-Control new user self-registration via the `REGISTRATION_ENABLED` environment variable (default: enabled).
+Toggle new user self-registration from the admin dashboard (Site
+Management → User Self-Registration; default: disabled). While disabled,
+system administrators create users from the admin dashboard. While no
+users exist, self-registration is enabled regardless of the setting so the
+instance can be bootstrapped.
 
 ## Health checks
 
@@ -185,5 +193,4 @@ Key environment variables are listed below. See `.env.example` for the full list
 | `SQS_ENDPOINT`         | SQS endpoint (ElasticMQ: `http://localhost:9324`, AWS: omit) | -                       |
 | `BETTER_AUTH_SECRET`   | Auth session secret (32+ characters)                         | -                       |
 | `BETTER_AUTH_URL`      | Public URL                                                   | `http://localhost:3000` |
-| `REGISTRATION_ENABLED` | Enable/disable user self-registration                        | `true`                  |
 | `LOG_LEVEL`            | Log level (`trace`–`fatal`)                                  | `info`                  |

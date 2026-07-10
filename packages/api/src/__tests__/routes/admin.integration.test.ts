@@ -205,6 +205,7 @@ describe('Admin API Routes', () => {
         'vector-similarity-notches': 0,
         'semantic-search-enabled': true,
         'search-example-queries': [],
+        'registration-enabled': false,
       })
     })
 

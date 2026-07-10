@@ -581,6 +581,7 @@ adminRouter.post(
       name: userNameSchema,
       email: z.email().max(200),
       password: z.string().min(8),
+      displayName: z.string().max(200).optional(),
       role: userRoleSchema.default('user'),
     })
   ),
@@ -594,6 +595,8 @@ adminRouter.post(
         email: body.email,
         password: body.password,
         ...(body.role === 'sysadmin' && { role: 'sysadmin' as const }),
+        // Extra columns flow through Better Auth's `data` passthrough
+        ...(body.displayName && { data: { displayName: body.displayName } }),
       },
     })
 

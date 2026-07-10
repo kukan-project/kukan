@@ -70,7 +70,6 @@ export const envSchema = z.object({
   OLLAMA_URL: z.string().default('http://localhost:11435'),
 
   // Auth
-  REGISTRATION_ENABLED: booleanString.default(false),
   BETTER_AUTH_SECRET: z.string().min(32),
   BETTER_AUTH_URL: z
     .url()

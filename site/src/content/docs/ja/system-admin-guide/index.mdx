@@ -118,8 +118,18 @@ CodeConnections の GitHub App 承認は、コンソールでの一度きりの�
 
 ## 初期セットアップ
 
-デプロイ後、最初に sysadmin ユーザーを CLI で作成する必要があります。
-sysadmin が存在しないとシステム管理操作ができません。
+ユーザーが1人も存在しない間は自己登録が強制的に有効になり、**最初に登録した
+ユーザーが自動的に sysadmin になります**。デプロイ後、ブラウザでサインアップ
+ページを開いて初回ユーザーを登録してください。
+
+:::caution
+最初の登録が完了するまでは、URL に到達できた人が誰でも sysadmin になれます。
+インターネットに公開するデプロイでは、デプロイ後すみやかに初回ユーザーを
+登録してください。
+:::
+
+ブラウザを使わずに初期化する場合や、sysadmin が全員いなくなった場合の回復には
+CLI を使います。
 
 ```bash
 pnpm db:create-user --email admin@example.com --name admin --password <password> --role sysadmin
@@ -131,12 +141,6 @@ pnpm db:create-user --email admin@example.com --name admin --password <password>
 | `--name`     | ユーザー名（小文字英数字、ハイフン、アンダースコア、ピリオド） | Yes  |
 | `--password` | パスワード（8文字以上）                                        | Yes  |
 | `--role`     | `user` または `sysadmin`（デフォルト: `user`）                 | No   |
-
-`REGISTRATION_ENABLED=false`（自己登録無効）の環境では、一般ユーザーもこのコマンドで作成します。
-
-```bash
-pnpm db:create-user --email user@example.com --name taro --password <password>
-```
 
 ## ユーザー管理
 
@@ -155,7 +159,10 @@ pnpm db:create-user --email user@example.com --name taro --password <password>
 
 ### 自己登録制御
 
-環境変数 `REGISTRATION_ENABLED` で新規ユーザーの自己登録を制御します（デフォルト: 有効）。
+新規ユーザーの自己登録は管理画面（サイト管理 → ユーザー自己登録）で
+切り替えます（デフォルト: 無効）。無効の間はシステム管理者が管理画面から
+ユーザーを作成します。ユーザーが1人も存在しない間は、初期セットアップの
+ため設定に関係なく自己登録が有効になります。
 
 ## ヘルスチェック
 
@@ -184,5 +191,4 @@ pnpm db:create-user --email user@example.com --name taro --password <password>
 | `SQS_ENDPOINT`         | SQS エンドポイント（ElasticMQ: `http://localhost:9324`、AWS: 省略） | -                       |
 | `BETTER_AUTH_SECRET`   | 認証セッション秘密鍵（32 文字以上）                                 | -                       |
 | `BETTER_AUTH_URL`      | 公開 URL                                                            | `http://localhost:3000` |
-| `REGISTRATION_ENABLED` | ユーザー自己登録の有効/無効                                         | `true`                  |
 | `LOG_LEVEL`            | ログレベル（`trace`〜`fatal`）                                      | `info`                  |

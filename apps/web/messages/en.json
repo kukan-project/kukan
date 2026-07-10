@@ -267,6 +267,9 @@
     },
     "adminSite": {
       "title": "Site Management",
+      "registrationTitle": "User Self-Registration",
+      "registrationDescription": "Whether new users can sign up from the sign-up page. While off, system administrators create users from the user management screen. Changes take effect within a minute.",
+      "registrationLabel": "Allow self-registration",
       "vectorTitle": "Semantic Search",
       "vectorDescription": "Includes datasets whose meaning is close to the query even without keyword matches. The threshold is the minimum closeness for inclusion: looser returns more hits with more noise; stricter favors precision but may miss related datasets. Changes take effect within 30 seconds.",
       "vectorSemanticEnabled": "Include semantically related results (when off, searches are keyword-only)",
@@ -279,7 +282,7 @@
       "vectorLooser": "Looser",
       "vectorStricter": "Stricter",
       "vectorEffective": "Current effective value: {value}",
-      "vectorSaved": "Saved",
+      "saved": "Saved",
       "exampleQueriesTitle": "Example Search Queries",
       "exampleQueriesDescription": "Example queries shown under the search box. One per line, up to {max} entries (100 characters each). Save an empty list to hide the chips. Changes take effect within a minute.",
       "exampleQueriesPlaceholder": "evacuation shelters\nfree wifi locations",
