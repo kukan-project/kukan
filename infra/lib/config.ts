@@ -66,6 +66,18 @@ export interface ScaleComputed {
     webMax: number
     workerMax: number
   }
+  backup: {
+    /** S3 versioning (delete/overwrite protection; required for AWS Backup on S3). ADR-037. */
+    s3Versioning: boolean
+    /** Days to keep noncurrent object versions (bounds versioning storage cost). */
+    s3NoncurrentVersionExpirationDays: number
+    /** RDS/Aurora automated backup retention = PITR window, days (1–35). */
+    dbBackupRetentionDays: number
+    /** AWS Backup plan (isolated vault, daily/monthly snapshots). false = disabled.
+     *  The vault (kukan-<env>-backup) is RETAINed on disable; delete it manually
+     *  once empty before re-enabling (ADR-037). */
+    awsBackup: false | { dailyRetentionDays: number; monthlyRetentionMonths: number }
+  }
 }
 
 /** Recursive partial — used for `overrides` (fine-grained tuning on top of a scale preset). */
@@ -187,6 +199,12 @@ const SCALE_DEFAULTS: Record<Scale, ScaleComputed> = {
       indexReplicas: 0,
     },
     dbPool: { webMax: 5, workerMax: 3 },
+    backup: {
+      s3Versioning: false,
+      s3NoncurrentVersionExpirationDays: 30,
+      dbBackupRetentionDays: 7,
+      awsBackup: false,
+    },
   },
   medium: {
     web: { cpu: 512, memory: 1024, minSize: 1, maxSize: 5 },
@@ -200,6 +218,12 @@ const SCALE_DEFAULTS: Record<Scale, ScaleComputed> = {
       indexReplicas: 0,
     },
     dbPool: { webMax: 10, workerMax: 5 },
+    backup: {
+      s3Versioning: true,
+      s3NoncurrentVersionExpirationDays: 30,
+      dbBackupRetentionDays: 14,
+      awsBackup: false,
+    },
   },
   large: {
     web: { cpu: 1024, memory: 2048, minSize: 2, maxSize: 10 },
@@ -213,6 +237,12 @@ const SCALE_DEFAULTS: Record<Scale, ScaleComputed> = {
       indexReplicas: 1,
     },
     dbPool: { webMax: 20, workerMax: 10 },
+    backup: {
+      s3Versioning: true,
+      s3NoncurrentVersionExpirationDays: 30,
+      dbBackupRetentionDays: 35,
+      awsBackup: { dailyRetentionDays: 35, monthlyRetentionMonths: 12 },
+    },
   },
 }
 
@@ -287,6 +317,19 @@ export function loadConfig(scope: Construct, env: Partial<EnvironmentConfig> = {
   }
   if (db.engine === 'aurora' && db.minAcu != null && db.maxAcu != null && db.minAcu > db.maxAcu) {
     throw new Error(`db.minAcu (${db.minAcu}) must be <= db.maxAcu (${db.maxAcu})`)
+  }
+  const { backup } = computed
+  if (backup.dbBackupRetentionDays < 1 || backup.dbBackupRetentionDays > 35) {
+    throw new Error(
+      `backup.dbBackupRetentionDays (${backup.dbBackupRetentionDays}) must be 1–35 (RDS/Aurora limit)`
+    )
+  }
+  // AWS Backup for S3 depends on bucket versioning — reject instead of silently forcing it on.
+  if (backup.awsBackup && !backup.s3Versioning) {
+    throw new Error('backup.awsBackup requires backup.s3Versioning: true (ADR-037)')
+  }
+  if (backup.awsBackup && backup.awsBackup.dailyRetentionDays < 1) {
+    throw new Error('backup.awsBackup.dailyRetentionDays must be >= 1')
   }
 
   return {

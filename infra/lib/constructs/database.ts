@@ -23,6 +23,8 @@ export class DatabaseConstruct extends Construct {
   readonly secret: secretsmanager.ISecret
   readonly endpoint: string
   readonly port: number
+  /** Cluster/instance ARN — AWS Backup selection target (ADR-037). */
+  readonly dbArn: string
 
   constructor(scope: Construct, id: string, props: DatabaseProps) {
     super(scope, id)
@@ -43,12 +45,14 @@ export class DatabaseConstruct extends Construct {
         vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
         securityGroups: [dbSecurityGroup],
         defaultDatabaseName: 'kukan',
+        backup: { retention: cdk.Duration.days(config.backup.dbBackupRetentionDays) },
         removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
         storageEncrypted: true,
       })
       this.secret = cluster.secret!
       this.endpoint = cluster.clusterEndpoint.hostname
       this.port = cluster.clusterEndpoint.port
+      this.dbArn = cluster.clusterArn
     } else {
       const instance = new rds.DatabaseInstance(this, 'RdsInstance', {
         instanceIdentifier: envPrefix(this),
@@ -63,12 +67,14 @@ export class DatabaseConstruct extends Construct {
         multiAz: config.db.multiAz,
         allocatedStorage: 20,
         maxAllocatedStorage: 100,
+        backupRetention: cdk.Duration.days(config.backup.dbBackupRetentionDays),
         storageEncrypted: true,
         removalPolicy: cdk.RemovalPolicy.SNAPSHOT,
       })
       this.secret = instance.secret!
       this.endpoint = instance.instanceEndpoint.hostname
       this.port = instance.instanceEndpoint.port
+      this.dbArn = instance.instanceArn
     }
 
     cdk.Tags.of(this).add('kukan:component', 'database')

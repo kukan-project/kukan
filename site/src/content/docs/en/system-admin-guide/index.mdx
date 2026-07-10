@@ -58,6 +58,19 @@ Key AWS resources:
 - **S3** — File storage
 - **SQS** — Pipeline queue
 - **OpenSearch** — Full-text search engine
+- **AWS Backup** — Isolated backups (enabled on the large scale etc., ADR-037)
+
+#### Backups and data protection
+
+Data-protection settings are integrated into the `scale` presets (ADR-037):
+
+| Setting                                           | small | medium | large                    |
+| ------------------------------------------------- | :---: | :----: | :----------------------- |
+| S3 versioning (accidental delete/overwrite guard) |   —   |   ✓    | ✓                        |
+| DB automated backup retention (point-in-time)     |  7d   |  14d   | 35d                      |
+| AWS Backup (isolated custody, long-term)          |   —   |   —    | daily 35d + monthly 12mo |
+
+Uploaded files are stored in S3 and automatically replicated across multiple availability zones in the region (11-nines design durability). With versioning enabled, accidental deletes and overwrites are also recoverable. AWS Backup keeps copies of S3 and the database in an isolated Backup Vault, covering incidents that take out the resource itself and generations beyond 35 days. Tune per environment via `overrides.backup` in `environments.ts` (enabling `awsBackup` requires `s3Versioning: true`).
 
 #### Setup (one-time manual; after that, pushes deploy automatically)
 

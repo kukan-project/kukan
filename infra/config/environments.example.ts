@@ -49,7 +49,20 @@ export const environments = {
     scale: 'small', // 'small' | 'medium' | 'large'
     // dbEngine: 'rds', // omit → scale default (small=rds, medium/large=aurora)
     // enableOpenSearch: true, // false → PostgreSQL full-text fallback
-    // overrides: { web: { maxSize: 5 }, opensearch: { instanceCount: 2, indexReplicas: 1 } },
+
+    // --- Fine-tuning (one `overrides` object, deep-merged onto the scale preset) ---
+    // overrides: {
+    //   // Scaling
+    //   web: { maxSize: 5 },
+    //   opensearch: { instanceCount: 2, indexReplicas: 1 },
+    //   // Backup (ADR-037). Presets: small = 7-day DB retention only; medium adds
+    //   // S3 versioning + 14 days; large = 35 days + AWS Backup (daily 35d + monthly 12mo)
+    //   backup: {
+    //     s3Versioning: true, // required when awsBackup is set
+    //     dbBackupRetentionDays: 35, // PITR window, days (1–35)
+    //     awsBackup: { dailyRetentionDays: 35, monthlyRetentionMonths: 12 }, // isolated vault
+    //   },
+    // },
 
     // --- Security ---
     enableWaf: false, // omit → ON unless allowedIpRanges or basicAuth is set (ADR-027)

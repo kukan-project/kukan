@@ -215,6 +215,7 @@ pnpm format        # Prettier フォーマット
 - メタデータのベクトル検索（セマンティック検索・AI 向け発見、提案） → `docs/adr/jp/034-metadata-vector-search.md`
 - セマンティックバージョニングとリリースノート → `docs/adr/jp/035-semver-release-notes.md`
 - DB バックエンドのランタイムシステム設定（初適用: ベクトルしきい値の目盛り調整） → `docs/adr/jp/036-runtime-system-settings.md`
+- スケール連動バックアップ戦略（S3 バージョニング + AWS Backup + DB 保持期間） → `docs/adr/jp/037-backup-strategy.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
@@ -295,7 +296,9 @@ pnpm typecheck                  # TypeScript 型チェック
 
 ```bash
 cd infra
-npx cdk deploy -c env=dev --all   # standalone: 指定環境を直接デプロイ
-npx cdk diff   -c env=dev --all   # デプロイ前の差分確認
-npx cdk deploy KukanPipeline      # pipeline: パイプラインスタックを初回デプロイ
+npx cdk deploy -c env=dev --all               # standalone: 指定環境を直接デプロイ
+npx cdk diff   -c env=dev 'Dev/KukanStack'    # standalone 管理環境の差分確認（diff は --all 不可）
+npx cdk diff   'KukanPipeline/Dev/KukanStack' # pipeline 管理環境の差分確認（-c env を付けない。
+                                              # standalone 合成だと論理 ID が変わり偽の差分が大量に出る）
+npx cdk deploy KukanPipeline                  # pipeline: パイプラインスタックを初回デプロイ
 ```

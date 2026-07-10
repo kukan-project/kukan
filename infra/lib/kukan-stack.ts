@@ -23,6 +23,7 @@ import { SearchConstruct } from './constructs/search.js'
 import { WebServiceConstruct } from './constructs/web-service.js'
 import { WorkerServiceConstruct } from './constructs/worker-service.js'
 import { CdnConstruct } from './constructs/cdn.js'
+import { BackupConstruct } from './constructs/backup.js'
 
 export interface KukanStackProps extends cdk.StackProps {
   /** Environment definition for this stack (ADR-031). */
@@ -56,6 +57,15 @@ export class KukanStack extends cdk.Stack {
 
     // --- Storage (S3) ---
     const storage = new StorageConstruct(this, 'Storage', { config })
+
+    // --- Backup (AWS Backup vault + plan, ADR-037) ---
+    if (config.backup.awsBackup) {
+      new BackupConstruct(this, 'Backup', {
+        config,
+        bucket: storage.bucket,
+        dbArn: database.dbArn,
+      })
+    }
 
     // --- Queue (SQS) ---
     const queue = new QueueConstruct(this, 'Queue')

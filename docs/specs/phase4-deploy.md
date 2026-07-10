@@ -224,15 +224,16 @@ export const environments = {
 
 #### スケール別デフォルト値
 
-| パラメータ              | small               | medium               | large                            |
-| ----------------------- | ------------------- | -------------------- | -------------------------------- |
-| Web vCPU / Memory       | 0.25 / 512 MB       | 0.5 / 1 GB           | 1 / 2 GB                         |
-| Web min / max instances | 1 / 2               | 1 / 5                | 2 / 10                           |
-| Worker vCPU / Memory    | 0.25 / 1 GB         | 0.5 / 1 GB           | 1 / 2 GB                         |
-| Worker min / max tasks  | 1 / 2               | 1 / 2                | 2 / 5                            |
-| DB                      | RDS db.t4g.micro    | Aurora 0.5-2 ACU     | Aurora 2-8 ACU, multi-AZ         |
-| OpenSearch              | t3.small × 1, 10 GB | m6g.large × 1, 50 GB | m6g.xlarge × 2, 100 GB, multi-AZ |
-| DB Pool (web / worker)  | 5 / 3               | 10 / 5               | 20 / 10                          |
+| パラメータ              | small               | medium                            | large                                             |
+| ----------------------- | ------------------- | --------------------------------- | ------------------------------------------------- |
+| Web vCPU / Memory       | 0.25 / 512 MB       | 0.5 / 1 GB                        | 1 / 2 GB                                          |
+| Web min / max instances | 1 / 2               | 1 / 5                             | 2 / 10                                            |
+| Worker vCPU / Memory    | 0.25 / 1 GB         | 0.5 / 1 GB                        | 1 / 2 GB                                          |
+| Worker min / max tasks  | 1 / 2               | 1 / 2                             | 2 / 5                                             |
+| DB                      | RDS db.t4g.micro    | Aurora 0.5-2 ACU                  | Aurora 2-8 ACU, multi-AZ                          |
+| OpenSearch              | t3.small × 1, 10 GB | m6g.large × 1, 50 GB              | m6g.xlarge × 2, 100 GB, multi-AZ                  |
+| DB Pool (web / worker)  | 5 / 3               | 10 / 5                            | 20 / 10                                           |
+| バックアップ（ADR-037） | DB 保持 7日         | + S3 バージョニング、DB 保持 14日 | DB 保持 35日 + AWS Backup（日次35日・月次12ヶ月） |
 
 #### overrides（preset の個別上書き）
 
