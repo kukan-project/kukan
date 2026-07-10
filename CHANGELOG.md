@@ -3,6 +3,48 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.4] - 2026-07-10
+
+**Upgrade Notes**
+
+- Existing AWS deployments: the next `cdk deploy` applies the new backup defaults for your `scale`. `medium` turns on S3 versioning and extends the database backup window to 14 days; `large` additionally creates an AWS Backup vault with daily and monthly snapshots. Both add storage/backup cost. To keep the previous behavior, pin the values via `overrides.backup` (e.g. `{ s3Versioning: false, dbBackupRetentionDays: 1, awsBackup: false }`). `small` deployments only see the database backup window grow from the CDK default of 1 day to 7 days.
+- Forks that edited upstream test files to work around brand-related test failures will hit merge conflicts in those files when pulling this release. Resolve them by taking the upstream version as-is — upstream tests are now pinned to the KUKAN default brand and pass regardless of your customizations. Move any fork-specific assertions to `apps/web/src/brand/__tests__/` instead (see the new Testing section of the brand customization guide).
+
+**Highlights**
+
+- AWS deployments now get a scale-driven backup strategy out of the box (ADR-037). Database point-in-time recovery windows, S3 object versioning, and — on `large` — an isolated AWS Backup vault with daily and monthly snapshots are all derived from the existing `scale` setting, with per-value fine-tuning available through `overrides.backup` (#48).
+- Friendlier fork operations: upstream unit tests are now pinned to the KUKAN default brand, so customizing `src/brand/` no longer breaks upstream CI in forks (#49).
+
+**Features**
+
+- Scale presets now include backup defaults: `small` keeps 7 days of database point-in-time recovery; `medium` adds S3 versioning (delete/overwrite protection) and a 14-day database window; `large` extends the window to 35 days and adds an AWS Backup plan — daily snapshots kept 35 days and monthly snapshots kept 12 months — in an isolated vault (#48).
+- Noncurrent S3 object versions expire after 30 days by default, bounding the storage cost of versioning. Invalid combinations are rejected at synth time, such as enabling AWS Backup without S3 versioning or a database retention outside the 1–35 day RDS/Aurora limit (#48).
+
+**Improvements**
+
+- Upstream unit tests mock the brand layer to the KUKAN defaults, and a new slot test verifies that `Header` / `Footer` / `TopPage` overrides take precedence over the default components. Forks place tests for their custom components in `apps/web/src/brand/__tests__/` (discovered automatically); the testing strategy is documented in ADR-023 and the brand customization guide (#49).
+
+---
+
+**アップグレード時の注意**
+
+- 既存の AWS デプロイでは、次回の `cdk deploy` で `scale` に応じた新しいバックアップデフォルトが適用されます。`medium` は S3 バージョニングが有効になり DB バックアップ保持が 14 日に、`large` はさらに日次・月次スナップショットを保存する AWS Backup ボールトが作成されます。いずれもストレージ・バックアップ費用が増加します。従来の挙動を維持したい場合は `overrides.backup` で明示的に固定してください（例: `{ s3Versioning: false, dbBackupRetentionDays: 1, awsBackup: false }`）。`small` は DB バックアップ保持が CDK デフォルトの 1 日から 7 日に延びるのみです。
+- ブランド起因のテスト失敗を回避するために本体のテストファイルを書き換えていたフォークでは、本リリースの取り込み時に該当ファイルがコンフリクトします。本体側の内容をそのまま採用して解決してください — 本体テストは KUKAN デフォルトブランドに固定されたため、カスタマイズ内容に関係なくパスするようになります。フォーク独自のアサーションは `apps/web/src/brand/__tests__/` に移してください（ブランドカスタマイズガイドに新設した「テスト」節を参照）。
+
+**ハイライト**
+
+- AWS デプロイに、スケール連動のバックアップ戦略が標準搭載されました（ADR-037）。データベースのポイントインタイムリカバリ期間、S3 オブジェクトバージョニング、`large` では隔離ボールトへの日次・月次スナップショット（AWS Backup）が、既存の `scale` 設定から自動的に導出されます。各値は `overrides.backup` で個別調整できます（#48）。
+- フォーク運用がより安全に: 本体のユニットテストが KUKAN デフォルトブランドに固定されるようになり、`src/brand/` をカスタマイズしてもフォークの CI で本体テストが壊れなくなりました（#49）。
+
+**機能**
+
+- スケールプリセットにバックアップデフォルトを追加: `small` は DB のポイントインタイムリカバリ 7 日、`medium` は S3 バージョニング（削除・上書き保護）+ DB 14 日、`large` は DB 35 日 + AWS Backup プラン（日次スナップショット 35 日保持・月次 12 ヶ月保持）を隔離ボールトに保存（#48）。
+- S3 の非カレントバージョンはデフォルト 30 日で失効し、バージョニングのストレージコストを抑制。S3 バージョニングなしでの AWS Backup 有効化や、RDS/Aurora の上限（1〜35 日）を外れた DB 保持日数などの不正な組み合わせは synth 時にエラーになります（#48）。
+
+**改善**
+
+- 本体のユニットテストがブランドレイヤーを KUKAN デフォルトにモックするようになり、`Header` / `Footer` / `TopPage` のオーバーライドがデフォルトより優先されることを検証するスロットテストを追加。フォーク独自コンポーネントのテストは `apps/web/src/brand/__tests__/` に置けば自動検出されます。テスト戦略は ADR-023 とブランドカスタマイズガイドに記載（#49）。
+
 ## [0.7.3] - 2026-07-08
 
 Documentation-only patch release. No code changes.
