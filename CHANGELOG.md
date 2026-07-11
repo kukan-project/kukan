@@ -3,6 +3,18 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.6] - 2026-07-11
+
+**Bug Fixes**
+
+- Tags no longer linger after they are removed. Free tags are created on demand when added to a dataset, but the tag itself was never cleaned up once the last dataset stopped using it, so it stayed in the search filters forever as an unselectable zero-count entry. Unreferenced free tags are now deleted in the same transaction whenever tag links are removed — on dataset update, dataset purge, and organization purge. Controlled-vocabulary tags are not affected (#54).
+
+---
+
+**バグ修正**
+
+- 外したタグが残り続ける問題を修正しました。自由タグはデータセットに付けたときに自動作成されますが、最後のデータセットから外されてもタグ自体は削除されず、検索フィルターに選択不能な「0件」表示のまま永久に残っていました。タグの紐付けが減る操作（データセット更新・データセット完全削除・組織完全削除）と同一トランザクション内で、どこからも参照されなくなった自由タグを削除するようになりました。統制語彙タグは対象外です（#54）。
+
 ## [0.7.5] - 2026-07-10
 
 **Breaking Changes**
