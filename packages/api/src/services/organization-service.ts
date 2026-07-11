@@ -24,6 +24,7 @@ import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { purgePackageExternals } from './package-cleanup'
+import { deleteOrphanFreeTags } from './tag-service'
 
 /** Concurrency cap for per-package external cleanup during an org purge — keeps
  *  OpenSearch/S3 from being hammered while still finishing a large org promptly. */
@@ -256,6 +257,7 @@ export class OrganizationService {
     await this.db.transaction(async (tx) => {
       if (packageIds.length > 0) {
         await tx.delete(packageTable).where(eq(packageTable.ownerOrg, id))
+        await deleteOrphanFreeTags(tx)
       }
       await tx.delete(organization).where(eq(organization.id, id))
     })

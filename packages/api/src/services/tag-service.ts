@@ -3,11 +3,33 @@
  * Business logic for tag management
  */
 
-import { eq, ilike, sql } from 'drizzle-orm'
+import { and, eq, ilike, isNull, notExists, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { tag, packageTag } from '@kukan/db'
 import { escapeLike } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult } from '@kukan/shared'
+
+type DbOrTx = Database | Parameters<Parameters<Database['transaction']>[0]>[0]
+
+/**
+ * Delete free tags (no vocabulary) that are no longer linked to any package.
+ * Free tags are created on demand when linked to a package, so unlinked ones
+ * are garbage. Vocabulary tags are managed explicitly and never collected.
+ * Call inside the same transaction as the operation that removes tag links.
+ */
+export async function deleteOrphanFreeTags(db: DbOrTx): Promise<void> {
+  await db.delete(tag).where(
+    and(
+      isNull(tag.vocabularyId),
+      notExists(
+        db
+          .select({ one: sql`1` })
+          .from(packageTag)
+          .where(eq(packageTag.tagId, tag.id))
+      )
+    )
+  )
+}
 
 export class TagService {
   constructor(private db: Database) {}

@@ -21,6 +21,7 @@ import type { PaginationParams, PaginatedResult, FacetCounts } from '@kukan/shar
 import type { SearchFacets, MatchedResource } from '@kukan/search-adapter'
 import type { CreatePackageInput, UpdatePackageInput } from '@kukan/shared'
 import { hasOrgMembership, type AuthUser } from '../auth/permissions'
+import { deleteOrphanFreeTags } from './tag-service'
 
 // Public column set — the embedding storage columns are internal (and the
 // vector is ~KB per row), so no package row this service returns includes them
@@ -437,6 +438,7 @@ export class PackageService {
       if (input.tags) {
         await tx.delete(packageTag).where(eq(packageTag.packageId, existing.id))
         await this.linkTags(tx, existing.id, input.tags)
+        await deleteOrphanFreeTags(tx)
       }
       if (input.groups) {
         await tx.delete(packageGroup).where(eq(packageGroup.packageId, existing.id))
@@ -475,6 +477,7 @@ export class PackageService {
         .delete(packageTable)
         .where(eq(packageTable.id, existing.id))
         .returning(packageColumns)
+      await deleteOrphanFreeTags(tx)
       return purged!
     })
   }
