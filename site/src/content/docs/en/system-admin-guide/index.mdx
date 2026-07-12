@@ -166,6 +166,27 @@ system administrators create users from the admin dashboard. While no
 users exist, self-registration is enabled regardless of the setting so the
 instance can be bootstrapped.
 
+## Site settings (runtime)
+
+Some settings can be **changed from the admin dashboard without redeploying** (Site Management → `/dashboard/admin/site`, system administrators only). Changes are stored in the database, recorded in the audit log, and take up to about 30 seconds to take effect.
+
+| Setting | Description |
+|---------|-------------|
+| Search example chips | Example queries shown under the search box |
+| Semantic search & similarity threshold | Whether to include semantically related results in search, and the minimum "closeness" required. Loosening it yields more hits but more noise; tightening favors precision (requires a configuration where an embedding model is available) |
+| AI metadata suggestions | Feature toggle (kill switch), generation model ID (blank = provider default), and a connection test |
+| User self-registration | See "[Self-registration control](#self-registration-control)" above |
+
+### AI and embedding model selection
+
+Semantic search (embeddings) and AI metadata suggestions use the provider chosen by `AI_TYPE`.
+
+- **AWS**: Bedrock (`AI_TYPE=bedrock`)
+- **On-premises / development**: Ollama (`AI_TYPE=ollama`) or OpenAI-compatible (`AI_TYPE=openai`)
+- **Disabled**: `AI_TYPE=none` (NoOp) — semantic search falls back to keyword search, and AI suggestions are unavailable
+
+The generation/embedding model ID can be switched from the admin dashboard above without redeploying. To run Ollama on a GPU, see the [Getting Started guide](/en/getting-started/).
+
 ## Health checks
 
 KUKAN automatically monitors the health of external URL resources.

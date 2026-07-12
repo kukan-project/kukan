@@ -63,6 +63,21 @@ Uploaded files are automatically processed through the pipeline:
 - CSV/TSV to Parquet conversion (for table preview)
 - ZIP file manifest generation
 
+## AI metadata suggestions
+
+Once you add resources and their pipeline processing completes, the **"Let AI suggest metadata"** button on the edit page can propose a title, notes, tags, and per-resource names and descriptions (only when AI is enabled for the site — see the [System Administrator Guide](/en/system-admin-guide/#site-settings-runtime)).
+
+- **Prerequisite**: at least one resource whose pipeline has completed. Otherwise the button is disabled and prompts you to upload resources.
+- **How to use**:
+  1. Click "Let AI suggest metadata" on the edit page (generation can take from tens of seconds to a few minutes).
+  2. In the dialog, compare the current values with the AI proposals, grouped into "Dataset" and "Resource" sections.
+  3. Turn on the adoption toggle for each field you want to adopt (**all toggles start off** — overwriting existing values is opt-in).
+  4. Optionally edit an adopted proposal inline before applying.
+  5. Click "Adopt".
+- **How adoptions apply**: title, notes, and tags are applied to the edit form and **committed when you save the dataset**; resource names and descriptions are **saved immediately** on adoption.
+- **What suggestions are based on**: CSV/TSV use the columns and the first rows of content; PDF, Excel, and similar files use the filename and format. The generated text follows your display language.
+- Suggestions are never persisted (only adopted values are saved as ordinary updates). A per-user rate limit prevents overuse.
+
 ## Organization management
 
 Organizations are the ownership unit for datasets.
