@@ -26,9 +26,17 @@ import {
   badgeVariants,
   cn,
 } from '@kukan/ui'
+import { Sparkles } from 'lucide-react'
 import { z } from 'zod'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
+import { updateResource } from '@/lib/update-resource'
+import { parseTags } from '@/lib/parse-tags'
+import {
+  MetadataSuggestDialog,
+  type SuggestResourceInfo,
+  type SuggestSelection,
+} from './metadata-suggest-dialog'
 
 /** Form-level schema: licenseId is required in the UI */
 const datasetFormSchema = createPackageSchema.extend({
@@ -75,6 +83,16 @@ interface DatasetFormProps {
   onSaved?: () => void
   /** Called after "Save & Publish" successfully published the draft */
   onPublished?: () => void
+  /** AI metadata suggestions (ADR-040); absent = feature hidden */
+  suggest?: {
+    /** Site capability (null while loading — button hidden until known) */
+    enabled: boolean | null
+    resources: SuggestResourceInfo[]
+    /** Increment to open the dialog from outside (pipeline-complete nudge) */
+    openSignal?: number
+    /** Called after adopted resource descriptions were saved */
+    onResourcesUpdated?: () => void
+  }
 }
 
 export function DatasetForm({
@@ -85,6 +103,7 @@ export function DatasetForm({
   isDraft,
   onSaved,
   onPublished,
+  suggest,
 }: DatasetFormProps) {
   // Creation always starts as a draft (ADR-039)
   const isDraftMode = mode === 'create' || !!isDraft
@@ -151,6 +170,7 @@ export function DatasetForm({
     control,
     reset,
     watch,
+    setValue,
     formState: { errors, isSubmitting, isDirty },
   } = useForm<DatasetFormInput>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -166,6 +186,39 @@ export function DatasetForm({
   })
 
   const isDraftEdit = mode === 'edit' && isDraftMode
+
+  // --- AI metadata suggestions (ADR-040) ---
+  const [suggestOpen, setSuggestOpen] = useState(false)
+  const showSuggest = mode === 'edit' && !!nameOrId && suggest?.enabled === true
+  const hasCompleteResource = suggest?.resources.some((r) => r.pipelineStatus === 'complete')
+
+  // The pipeline-complete nudge (edit page) opens the dialog via a counter prop
+  const openSignal = suggest?.openSignal
+  useEffect(() => {
+    if (openSignal) setSuggestOpen(true)
+  }, [openSignal])
+
+  const applySuggestion = (selection: SuggestSelection) => {
+    if (selection.title !== undefined) setValue('title', selection.title, { shouldDirty: true })
+    if (selection.notes !== undefined) setValue('notes', selection.notes, { shouldDirty: true })
+    if (selection.tags) setTagsInput(selection.tags.join(', '))
+    if (selection.resources?.length) {
+      // Adopting a resource name/description is an ordinary resource update,
+      // saved immediately (the form has no state for resources). Each resource
+      // is independent, so fan out rather than serialize the round-trips.
+      void (async () => {
+        await Promise.all(
+          selection.resources!.map((item) =>
+            updateResource(item.id, {
+              ...(item.name !== undefined && { name: item.name }),
+              ...(item.description !== undefined && { description: item.description }),
+            })
+          )
+        )
+        suggest?.onResourcesUpdated?.()
+      })()
+    }
+  }
 
   // Tags/groups/extras live outside RHF, so isDirty alone misses them: keep a
   // baseline snapshot (refreshed on save) and compare
@@ -212,11 +265,7 @@ export function DatasetForm({
       })
 
     // Parse comma-separated tags
-    const tags = tagsInput
-      .split(/[,、]/)
-      .map((t) => t.trim())
-      .filter(Boolean)
-      .map((name) => ({ name }))
+    const tags = parseTags(tagsInput).map((name) => ({ name }))
 
     // Build extras from key-value rows (skip empty keys)
     const filledRows = extrasRows.filter((r) => r.key.trim())
@@ -313,6 +362,38 @@ export function DatasetForm({
     <form onSubmit={handleSubmit((values) => onSubmit(values))} className="flex flex-col gap-6">
       {error && (
         <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+      )}
+
+      {showSuggest && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setSuggestOpen(true)}
+            disabled={!hasCompleteResource}
+          >
+            <Sparkles className="mr-1 size-4" />
+            {t('aiSuggestButton')}
+          </Button>
+          {!hasCompleteResource && (
+            <span className="text-xs text-muted-foreground">{t('aiSuggestNeedResources')}</span>
+          )}
+        </div>
+      )}
+
+      {showSuggest && nameOrId && (
+        <MetadataSuggestDialog
+          nameOrId={nameOrId}
+          open={suggestOpen}
+          onOpenChange={setSuggestOpen}
+          current={{
+            title: watch('title') ?? '',
+            notes: watch('notes') ?? '',
+            tags: parseTags(tagsInput),
+            resources: suggest?.resources ?? [],
+          }}
+          onApply={applySuggestion}
+        />
       )}
 
       <div className="flex flex-col gap-2">

@@ -38,6 +38,8 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { clientFetch } from '@/lib/client-api'
+import { updateResource } from '@/lib/update-resource'
+import { FormatBadge } from '@/components/format-badge'
 import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
 import { PipelineStatusBadge } from './pipeline-status-badge'
 import { FileUploadZone } from './file-upload-zone'
@@ -68,6 +70,8 @@ interface ResourceListProps {
   packageId: string
   resources: Resource[]
   onUpdated: () => void
+  /** Fires when a resource's pipeline finishes (AI-suggest nudge, ADR-040) */
+  onPipelineComplete?: () => void
 }
 
 function SortableResourceRow({
@@ -76,12 +80,14 @@ function SortableResourceRow({
   isActionsDisabled,
   onEdit,
   onDelete,
+  onPipelineComplete,
 }: {
   resource: Resource
   isDragDisabled: boolean
   isActionsDisabled: boolean
   onEdit: (r: Resource) => void
   onDelete: (id: string) => void
+  onPipelineComplete?: () => void
 }) {
   const t = useTranslations('resource')
   const tc = useTranslations('common')
@@ -111,7 +117,7 @@ function SortableResourceRow({
         </button>
       </TableCell>
       <TableCell>{r.name || '-'}</TableCell>
-      <TableCell>{r.format ? <Badge variant="secondary">{r.format}</Badge> : '-'}</TableCell>
+      <TableCell>{r.format ? <FormatBadge format={r.format} /> : '-'}</TableCell>
       <TableCell className="whitespace-nowrap">
         {r.urlType === 'upload' ? (
           <Badge variant="outline">{t('sourceUpload')}</Badge>
@@ -123,7 +129,11 @@ function SortableResourceRow({
       </TableCell>
       <TableCell>
         {r.pipelineStatus && (
-          <PipelineStatusBadge resourceId={r.id} initialStatus={r.pipelineStatus} />
+          <PipelineStatusBadge
+            resourceId={r.id}
+            initialStatus={r.pipelineStatus}
+            onComplete={onPipelineComplete}
+          />
         )}
       </TableCell>
       <TableCell>
@@ -145,7 +155,12 @@ function SortableResourceRow({
   )
 }
 
-export function ResourceList({ packageId, resources, onUpdated }: ResourceListProps) {
+export function ResourceList({
+  packageId,
+  resources,
+  onUpdated,
+  onPipelineComplete,
+}: ResourceListProps) {
   const t = useTranslations('resource')
   const tc = useTranslations('common')
 
@@ -301,29 +316,16 @@ export function ResourceList({ packageId, resources, onUpdated }: ResourceListPr
     setSaving(true)
     setFormError(null)
     try {
-      // Fetch current resource to preserve non-editable fields (mimetype, size, hash, etc.)
-      const currentRes = await clientFetch(`/api/v1/resources/${editId}`)
-      if (!currentRes.ok) {
-        setFormError(t('failedToUpdate'))
-        return
-      }
-      const current = await currentRes.json()
-
-      const body = {
-        ...current,
-        // Overwrite with form state (urlType reflects user's tab choice, not existing value)
+      // Overwrite with form state (urlType reflects the user's tab choice); on
+      // the upload tab the existing url is kept by omitting it from the patch
+      const patch: Record<string, unknown> = {
         name: formState.name || undefined,
-        url: formState.urlType === 'upload' ? current.url : formState.url || undefined,
         urlType: formState.urlType ?? undefined,
         format: formState.format || undefined,
         description: formState.description || undefined,
       }
-      const res = await clientFetch(`/api/v1/resources/${editId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      if (!res.ok) {
+      if (formState.urlType !== 'upload') patch.url = formState.url || undefined
+      if (!(await updateResource(editId, patch))) {
         setFormError(t('failedToUpdate'))
         return
       }
@@ -587,6 +589,7 @@ export function ResourceList({ packageId, resources, onUpdated }: ResourceListPr
                       isActionsDisabled={isDirty || savingOrder}
                       onEdit={startEdit}
                       onDelete={setDeleteId}
+                      onPipelineComplete={onPipelineComplete}
                     />
                     {activeFormId === r.id && (
                       <TableRow>

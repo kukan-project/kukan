@@ -31,11 +31,27 @@ pnpm install
 
 ### 3. インフラ起動
 
-PostgreSQL、MinIO、ElasticMQ、OpenSearch を Docker Compose で起動します。
+PostgreSQL、MinIO、ElasticMQ、OpenSearch、Ollama を Docker Compose で起動します。
 
 ```bash
 docker compose up -d
 ```
+
+:::note[Ollama の GPU アクセラレーション（任意）]
+同梱の `ollama` サービス（ベクトル検索・AI メタデータ提案に使用）は既定で **CPU 実行**です。GPU を使う場合:
+
+- **NVIDIA GPU（Linux / Windows WSL2）**: [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) を導入し、git-ignore されたサンプル override をコピーしてコンテナを再作成します。
+
+  ```bash
+  cp compose.override.gpu.sample.yml compose.override.yml
+  docker compose up -d --force-recreate ollama
+  docker compose exec ollama ollama ps   # PROCESSOR が "100% GPU" になる
+  ```
+
+  `docker compose` は `compose.override.yml` を自動マージします。削除すれば CPU に戻ります。
+
+- **macOS**: Docker Desktop は Apple GPU をコンテナに渡せないため、コンテナ内 `ollama` は CPU のみです。Metal で高速化するには [Ollama をネイティブ実行](https://ollama.com/download)し、`.env` の `OLLAMA_URL=http://localhost:11434` でネイティブ側を参照します。
+  :::
 
 ### 4. 環境変数
 

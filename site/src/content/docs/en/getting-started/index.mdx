@@ -31,11 +31,27 @@ pnpm install
 
 ### 3. Start infrastructure
 
-Start PostgreSQL, MinIO, ElasticMQ, and OpenSearch with Docker Compose.
+Start PostgreSQL, MinIO, ElasticMQ, OpenSearch, and Ollama with Docker Compose.
 
 ```bash
 docker compose up -d
 ```
+
+:::note[Ollama GPU acceleration (optional)]
+The bundled `ollama` service (used for vector search and AI metadata suggestions) runs on **CPU by default**. To use a GPU:
+
+- **NVIDIA GPU (Linux / Windows WSL2)**: install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), then copy the git-ignored sample override and recreate the container.
+
+  ```bash
+  cp compose.override.gpu.sample.yml compose.override.yml
+  docker compose up -d --force-recreate ollama
+  docker compose exec ollama ollama ps   # PROCESSOR should read "100% GPU"
+  ```
+
+  `docker compose` auto-merges `compose.override.yml`; delete it to fall back to CPU.
+
+- **macOS**: Docker Desktop cannot pass the Apple GPU into Linux containers, so the containerized `ollama` stays CPU-only. For Metal GPU acceleration, run [Ollama natively](https://ollama.com/download) and point KUKAN at it with `OLLAMA_URL=http://localhost:11434` in `.env`.
+  :::
 
 ### 4. Environment variables
 

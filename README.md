@@ -48,13 +48,41 @@ pnpm install
 docker compose up -d
 ```
 
-| Service               | Port                  | Description             |
-| --------------------- | --------------------- | ----------------------- |
-| PostgreSQL 16         | 5432                  | Database                |
-| MinIO                 | 9000 / 9001 (Console) | S3-compatible storage   |
-| ElasticMQ             | 9324                  | SQS-compatible queue    |
-| OpenSearch 3          | 9200                  | Full-text search engine |
-| OpenSearch Dashboards | 5601                  | Search management UI    |
+| Service               | Port                  | Description                             |
+| --------------------- | --------------------- | --------------------------------------- |
+| PostgreSQL 16         | 5432                  | Database                                |
+| MinIO                 | 9000 / 9001 (Console) | S3-compatible storage                   |
+| ElasticMQ             | 9324                  | SQS-compatible queue                    |
+| OpenSearch 3          | 9200                  | Full-text search engine                 |
+| OpenSearch Dashboards | 5601                  | Search management UI                    |
+| Ollama                | 11435                 | Local LLM (embeddings + AI suggestions) |
+
+#### Ollama GPU acceleration (optional) / Ollama GPU アクセラレーション（任意）
+
+The bundled `ollama` service runs on **CPU by default**. To use a GPU:
+
+同梱の `ollama` サービスは既定で **CPU 実行**。GPU を使う場合:
+
+- **Linux / Windows (WSL2) with an NVIDIA GPU** — install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), then copy the git-ignored sample override and recreate the container:
+  NVIDIA GPU の Linux / Windows (WSL2) — NVIDIA Container Toolkit を入れ、git-ignore されたサンプル override をコピーしてコンテナを再作成:
+
+  ```bash
+  cp compose.override.gpu.sample.yml compose.override.yml
+  docker compose up -d --force-recreate ollama
+  docker compose exec ollama ollama ps   # PROCESSOR should read "100% GPU"
+  ```
+
+  `docker compose` auto-merges `compose.override.yml`; delete it to fall back to CPU.
+  `docker compose` は `compose.override.yml` を自動マージする。削除すれば CPU に戻る。
+
+- **macOS** — Docker Desktop cannot pass the Apple GPU into Linux containers, so the containerized `ollama` stays CPU-only. For Metal GPU acceleration, run [Ollama natively](https://ollama.com/download) and point KUKAN at it instead:
+  macOS — Docker Desktop は Apple GPU をコンテナに渡せず、コンテナ内 `ollama` は CPU のみ。Metal で高速化するには Ollama をネイティブ実行し、KUKAN からそれを参照:
+
+  ```bash
+  brew install ollama && ollama serve        # native, uses the Metal GPU (:11434)
+  # .env — point at the native instance instead of the compose service (:11435)
+  OLLAMA_URL=http://localhost:11434
+  ```
 
 ### 3. Environment variables / 環境変数
 

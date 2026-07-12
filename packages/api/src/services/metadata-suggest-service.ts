@@ -206,13 +206,18 @@ export class MetadataSuggestService {
       pipelines.get(r.id)?.status === 'complete' &&
       (isCsvFormat(r.format, r.mimetype) || isTextFormat(r.format))
 
-    // Content-eligible resources first so their extracted material keeps a slot
-    // when a package has more resources than the cap; the rest still get a slot
-    // (name + description) but no content. Sort is stable → order preserved.
-    const slotted = [...pkg.resources]
-      .sort((a, b) => Number(isEligible(b)) - Number(isEligible(a)))
-      .slice(0, SUGGEST_MAX_RESOURCES)
-    const describedIds = new Set(slotted.map((r) => r.id))
+    // Pick which resources get a slot by eligibility (content-eligible first so
+    // their extracted material keeps a slot when a package exceeds the cap),
+    // then restore the package's natural order so the response matches the
+    // resource list the caller shows. Resources beyond the cap still appear as
+    // name/format context.
+    const describedIds = new Set(
+      [...pkg.resources]
+        .sort((a, b) => Number(isEligible(b)) - Number(isEligible(a)))
+        .slice(0, SUGGEST_MAX_RESOURCES)
+        .map((r) => r.id)
+    )
+    const slotted = pkg.resources.filter((r) => describedIds.has(r.id))
 
     const described: ResourceMaterial[] = []
     for (const resource of slotted) {

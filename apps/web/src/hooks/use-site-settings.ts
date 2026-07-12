@@ -5,6 +5,8 @@ interface SiteSettings {
   semanticSearchEnabled: boolean
   /** Example-query chips managed in the admin UI; empty = hidden */
   searchExampleQueries: string[]
+  /** AI metadata suggestions are available (ADR-040) */
+  metadataSuggestEnabled: boolean
 }
 
 export function useSiteSettings() {
@@ -16,6 +18,8 @@ export function useSiteSettings() {
     semanticSearchEnabled: error ? true : (data?.semanticSearchEnabled ?? null),
     // null while loading/on error — consumers render nothing until known
     searchExampleQueries: data?.searchExampleQueries ?? null,
+    // Conservative on error: the button triggers paid LLM calls, so hide it
+    metadataSuggestEnabled: error ? false : (data?.metadataSuggestEnabled ?? null),
     loading,
   }
 }

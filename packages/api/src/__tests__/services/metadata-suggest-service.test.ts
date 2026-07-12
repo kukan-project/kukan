@@ -325,7 +325,7 @@ describe('MetadataSuggestService', () => {
     )
 
     const sent = sentContent(complete)
-    // All three get a slot; the eligible one is sorted first and carries content
+    // All three get a slot; only the content-eligible one carries content
     expect(sent.resources).toHaveLength(3)
     expect(sent.resources[0].index).toBe(0)
     expect(sent.resources[0].textHead).toBe('本文')
@@ -337,6 +337,36 @@ describe('MetadataSuggestService', () => {
     expect(result.usedResources).toEqual(['r1'])
     expect(result.skippedResources).toEqual(['r2', 'r3'])
     expect(result.suggestion.resources).toHaveLength(3)
+  })
+
+  it('keeps package order even when a later resource is the content-eligible one', async () => {
+    const { db, addResult } = createMockDb()
+    // r1 is a PDF (not eligible); r2 is complete text (eligible) — eligibility
+    // decides which get a slot, but the output must stay in package order
+    addResult([pipe('r1'), pipe('r2')])
+    addResult(TAG_ROWS)
+    const { ai, complete } = makeAi(
+      llmJson({
+        resourceSuggestions: {
+          '0': { name: 'r1の名前', description: 'r1の説明' },
+          '1': { name: 'r2の名前', description: 'r2の説明' },
+        },
+      })
+    )
+    const service = new MetadataSuggestService(db, makeStorage('本文').storage, ai, silentLogger)
+
+    const result = await service.suggest(
+      pkgDetail([resourceRow('r1', { format: 'pdf' }), resourceRow('r2')]),
+      { id: 'u1' } as never,
+      OPTS
+    )
+
+    // r1 (PDF) stays at index 0; r2 (eligible) at index 1 with its content
+    const sent = sentContent(complete)
+    expect(sent.resources.map((r: { index: number }) => r.index)).toEqual([0, 1])
+    expect(sent.resources[0].textHead).toBeUndefined()
+    expect(sent.resources[1].textHead).toBe('本文')
+    expect(result.suggestion.resources.map((r) => r.id)).toEqual(['r1', 'r2'])
   })
 
   it('degrades to metadata when reading content fails', async () => {

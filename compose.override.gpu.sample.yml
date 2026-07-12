@@ -1,0 +1,18 @@
+# GPU override sample: give Ollama the host GPU (needs the NVIDIA Container
+# Toolkit). Enable it per machine by copying this file to compose.override.yml,
+# which `docker compose` auto-merges:
+#
+#   cp compose.override.gpu.sample.yml compose.override.yml
+#   docker compose up -d --force-recreate ollama
+#
+# compose.override.yml is git-ignored, so GPU stays a local, per-machine choice
+# and a GPU-less host's `docker compose up` never fails on the missing driver.
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

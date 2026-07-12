@@ -75,3 +75,6 @@ packages/api/scripts/golden-queries.yaml
 tmp/
 temp/
 *.tmp
+
+# Local Docker Compose overrides (e.g. GPU passthrough for Ollama)
+compose.override.yml

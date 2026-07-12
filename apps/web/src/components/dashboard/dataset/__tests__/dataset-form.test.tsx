@@ -12,6 +12,27 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, replace: vi.fn(), back: vi.fn() }),
 }))
 
+// The dialog's own behavior is covered in metadata-suggest-dialog.test.tsx —
+// here a stub applies a fixed selection so the form-side wiring is observable
+vi.mock('../metadata-suggest-dialog', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../metadata-suggest-dialog')>()),
+  MetadataSuggestDialog: ({
+    open,
+    onApply,
+  }: {
+    open: boolean
+    onApply: (selection: unknown) => void
+  }) =>
+    open ? (
+      <button
+        type="button"
+        onClick={() => onApply({ title: 'AI タイトル', tags: ['防災', '人口'] })}
+      >
+        MockApplySuggestion
+      </button>
+    ) : null,
+}))
+
 const mockClientFetch = vi.mocked(clientFetch)
 
 function jsonResponse(data: unknown, ok = true) {
@@ -472,6 +493,67 @@ describe('DatasetForm (draft flows)', () => {
       expect(init!.method).toBe('PUT')
       expect(saveButton).toBeDisabled()
       expect(push).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('AI metadata suggestions (ADR-040)', () => {
+    const editProps = {
+      mode: 'edit' as const,
+      nameOrId: 'pkg-1',
+      defaultValues: { name: 'pkg', ownerOrg: organizations[0].id, licenseId: 'cc-by' },
+      organizations,
+    }
+
+    it('hides the button without the capability or the suggest prop', () => {
+      setupMocks(jsonResponse({}))
+      const { rerender } = render(<DatasetForm {...editProps} />)
+      expect(
+        screen.queryByRole('button', { name: /Suggest metadata with AI/ })
+      ).not.toBeInTheDocument()
+
+      rerender(<DatasetForm {...editProps} suggest={{ enabled: false, resources: [] }} />)
+      expect(
+        screen.queryByRole('button', { name: /Suggest metadata with AI/ })
+      ).not.toBeInTheDocument()
+    })
+
+    it('disables the button with a hint until a resource pipeline completed', () => {
+      setupMocks(jsonResponse({}))
+      render(
+        <DatasetForm
+          {...editProps}
+          suggest={{
+            enabled: true,
+            resources: [{ id: 'r1', name: 'data.csv', pipelineStatus: 'processing' }],
+          }}
+        />
+      )
+
+      expect(screen.getByRole('button', { name: /Suggest metadata with AI/ })).toBeDisabled()
+      expect(screen.getByText(/Upload a resource and the AI can suggest/)).toBeInTheDocument()
+    })
+
+    it('opens the dialog and applies the selection into the form fields', async () => {
+      setupMocks(jsonResponse({}))
+      render(
+        <DatasetForm
+          {...editProps}
+          suggest={{
+            enabled: true,
+            resources: [{ id: 'r1', name: 'data.csv', pipelineStatus: 'complete' }],
+          }}
+        />
+      )
+
+      const button = screen.getByRole('button', { name: /Suggest metadata with AI/ })
+      expect(button).toBeEnabled()
+      fireEvent.click(button)
+      fireEvent.click(await screen.findByRole('button', { name: 'MockApplySuggestion' }))
+
+      expect(screen.getByLabelText('Title')).toHaveValue('AI タイトル')
+      expect(screen.getByLabelText('Tags')).toHaveValue('防災, 人口')
+      // Adopted values mark the form dirty so Save enables
+      expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
     })
   })
 })

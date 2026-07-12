@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed**
+**Accepted**
 
 ## Context
 
@@ -62,11 +62,18 @@ assembled on demand from the DB and storage originals, then discarded.**
 
 ### 2. Generation targets and response format
 
-- `title` / `notes` / `tags` / per-resource `description` are generated in
-  **a single LLM call** (better for both cost and latency)
+- `title` / `notes` / `tags` / per-resource `name` and `description` are
+  generated in **a single LLM call** (better for both cost and latency)
 - The response is JSON validated with Zod (one retry on parse failure)
 - The UI adopts per field, so there is no need to split generation
-  granularity
+  granularity. Overwriting existing metadata should be deliberate, so **every
+  adoption toggle defaults to OFF (opt-in)**. An adopted field can also be
+  edited inline before applying (tags use the same comma-separated form as the
+  edit form)
+- Resources are addressed by a 0-based index rather than their UUID, and the
+  response is an object with a required key per index. Small local models
+  (4-8B) can mangle a 36-char UUID inside a large prompt and drop the whole
+  array, so the grammar forces one suggestion per resource
 
 ### 3. Generation material — no dependency on the search index
 
@@ -90,8 +97,12 @@ assembled on demand from the DB and storage originals, then discarded.**
   characters truncated at the end of a range read are dropped (same handling
   as the existing trailing removal of the UTF-8 replacement character
   U+FFFD)
-- Resources with incomplete pipelines or failed fetches are excluded from
-  the material; generation proceeds from metadata only
+- Every resource gets a name + description slot regardless of format, so
+  non-tabular files (PDF, Excel, images) also get a suggested name, and the
+  description is inferred from the filename/format when no content is
+  available. Content (column schema, sample rows, head text) is attached only
+  to content-eligible resources (pipeline complete + CSV/TSV or text), which
+  are prioritized for the slots
 - ZIP manifests are out of scope for v1 (the central directory sits at the
   end of the file and cannot be obtained from a head read)
 

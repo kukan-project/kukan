@@ -7,6 +7,8 @@ import { usePipelineStatus, type PipelineStatus } from '@/hooks/use-pipeline-sta
 interface PipelineStatusBadgeProps {
   resourceId: string
   initialStatus?: PipelineStatus | null
+  /** Fires when polling observes the pipeline finishing successfully */
+  onComplete?: () => void
 }
 
 const STATUS_CONFIG: Record<
@@ -29,13 +31,20 @@ export const STATUS_KEYS: Record<PipelineStatus, string> = {
   error: 'pipelineError',
 }
 
-export function PipelineStatusBadge({ resourceId, initialStatus }: PipelineStatusBadgeProps) {
+export function PipelineStatusBadge({
+  resourceId,
+  initialStatus,
+  onComplete,
+}: PipelineStatusBadgeProps) {
   const t = useTranslations('resource')
   const shouldPoll = initialStatus === 'queued' || initialStatus === 'processing'
   const { status } = usePipelineStatus({
     resourceId,
     enabled: shouldPoll,
     initialStatus,
+    onSettled: (settled) => {
+      if (settled === 'complete') onComplete?.()
+    },
   })
 
   if (!status) return null

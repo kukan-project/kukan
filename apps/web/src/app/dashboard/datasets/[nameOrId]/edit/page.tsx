@@ -6,8 +6,11 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Badge, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { isDraftPlaceholderName, type PackageState } from '@kukan/shared'
+import { Sparkles } from 'lucide-react'
 import { clientFetch } from '@/lib/client-api'
 import { useFetch } from '@/hooks/use-fetch'
+import type { PipelineStatus } from '@/hooks/use-pipeline-status'
+import { useSiteSettings } from '@/hooks/use-site-settings'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { DatasetForm } from '@/components/dashboard/dataset/dataset-form'
 import { PublishSyncBanner } from '@/components/dashboard/dataset/publish-sync-banner'
@@ -28,6 +31,7 @@ interface Resource {
   urlType?: string | null
   format?: string | null
   description?: string | null
+  pipelineStatus?: PipelineStatus | null
 }
 
 interface PackageDetail {
@@ -92,6 +96,12 @@ export default function EditDatasetPage() {
   const [deleting, setDeleting] = useState(false)
   const [syncWarning, setSyncWarning] = useState(false)
   const [published, setPublished] = useState(false)
+
+  // AI metadata suggestions (ADR-040): capability flag, pipeline-complete
+  // nudge, and a counter that opens the dialog inside DatasetForm
+  const { metadataSuggestEnabled } = useSiteSettings()
+  const [suggestNudge, setSuggestNudge] = useState(false)
+  const [suggestOpenSignal, setSuggestOpenSignal] = useState(0)
 
   const fetchData = useCallback(async () => {
     const stateQuery =
@@ -222,6 +232,29 @@ export default function EditDatasetPage() {
 
       {syncWarning && <PublishSyncBanner nameOrId={nameOrId} onPublished={handlePublished} />}
 
+      {suggestNudge && metadataSuggestEnabled === true && !isDeleted && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+          <span className="flex items-center gap-2">
+            <Sparkles className="size-4 text-primary" />
+            {t('aiSuggestNudge')}
+          </span>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                setSuggestNudge(false)
+                setSuggestOpenSignal((n) => n + 1)
+              }}
+            >
+              {t('aiSuggestNudgeButton')}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setSuggestNudge(false)}>
+              {tc('cancel')}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {isDeleted ? (
         <>
           <Card className="opacity-70">
@@ -317,6 +350,12 @@ export default function EditDatasetPage() {
                 // so the publish-time remount doesn't restore stale defaults
                 onSaved={isDraft ? fetchData : undefined}
                 onPublished={isDraft ? handlePublished : undefined}
+                suggest={{
+                  enabled: metadataSuggestEnabled,
+                  resources: pkg.resources ?? [],
+                  openSignal: suggestOpenSignal,
+                  onResourcesUpdated: fetchData,
+                }}
               />
             </CardContent>
           </Card>
@@ -330,6 +369,12 @@ export default function EditDatasetPage() {
                 packageId={pkg.id}
                 resources={pkg.resources ?? []}
                 onUpdated={fetchData}
+                onPipelineComplete={() => {
+                  // Refresh pipelineStatus (enables the suggest button) and
+                  // invite the user — no LLM call happens until they click
+                  fetchData()
+                  setSuggestNudge(true)
+                }}
               />
             </CardContent>
           </Card>

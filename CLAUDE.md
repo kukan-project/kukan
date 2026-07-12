@@ -219,7 +219,7 @@ pnpm format        # Prettier フォーマット
 - スケール連動バックアップ戦略（S3 バージョニング + AWS Backup + DB 保持期間） → `docs/adr/jp/037-backup-strategy.md`
 - 初回ユーザーブートストラップとランタイム登録制御（初回登録者=sysadmin、`REGISTRATION_ENABLED` 廃止） → `docs/adr/jp/038-first-user-bootstrap.md`
 - データセット下書き状態（draft、作成と公開の分離） → `docs/adr/jp/039-package-draft-state.md`
-- AI メタデータ提案（提案型・オンデマンド生成、提案） → `docs/adr/jp/040-ai-metadata-suggest.md`
+- AI メタデータ提案（提案型・オンデマンド生成） → `docs/adr/jp/040-ai-metadata-suggest.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
