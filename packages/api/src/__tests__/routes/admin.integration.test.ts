@@ -190,6 +190,119 @@ describe('Admin API Routes', () => {
     })
   })
 
+  describe('/api/v1/admin/settings/ai-suggest', () => {
+    const AI_SUGGEST_PATH = '/api/v1/admin/settings/ai-suggest'
+    const completionAi = (complete: () => Promise<string>) =>
+      ({
+        getCompletionInfo: () => ({ provider: 'ollama', defaultModel: 'gemma4:e4b' }),
+        complete,
+      }) as unknown as AIAdapter
+
+    it('should reject unauthenticated and non-sysadmin requests', async () => {
+      expect((await unauthApp.request(AI_SUGGEST_PATH)).status).toBe(401)
+      expect((await nonAdminApp.request(AI_SUGGEST_PATH)).status).toBe(403)
+      const post = { method: 'POST' }
+      expect((await unauthApp.request(`${AI_SUGGEST_PATH}/test`, post)).status).toBe(401)
+      expect((await nonAdminApp.request(`${AI_SUGGEST_PATH}/test`, post)).status).toBe(403)
+    })
+
+    it('should report disabled state without completion support', async () => {
+      const res = await app.request(AI_SUGGEST_PATH)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({
+        enabled: false,
+        provider: null,
+        defaultModel: null,
+        model: '',
+        effectiveModel: null,
+        suggestEnabled: true,
+      })
+    })
+
+    it('should resolve the effective model from setting > provider default', async () => {
+      const aiApp = createTestApp(db, {
+        search: mockSearch,
+        ai: completionAi(async () => '{}'),
+      })
+
+      let body = await (await aiApp.request(AI_SUGGEST_PATH)).json()
+      expect(body).toEqual({
+        enabled: true,
+        provider: 'ollama',
+        defaultModel: 'gemma4:e4b',
+        model: '',
+        effectiveModel: 'gemma4:e4b',
+        suggestEnabled: true,
+      })
+
+      const res = await aiApp.request('/api/v1/admin/settings/ai-suggest-model', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: 'qwen3:8b' }),
+      })
+      expect(res.status).toBe(200)
+
+      body = await (await aiApp.request(AI_SUGGEST_PATH)).json()
+      expect(body.model).toBe('qwen3:8b')
+      expect(body.effectiveModel).toBe('qwen3:8b')
+    })
+
+    it('should reflect the kill switch in the context', async () => {
+      const aiApp = createTestApp(db, { search: mockSearch, ai: completionAi(async () => '{}') })
+
+      const res = await aiApp.request('/api/v1/admin/settings/ai-suggest-enabled', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: false }),
+      })
+      expect(res.status).toBe(200)
+
+      const body = await (await aiApp.request(AI_SUGGEST_PATH)).json()
+      // Capability stays true — the switch disables the feature, not the adapter
+      expect(body.enabled).toBe(true)
+      expect(body.suggestEnabled).toBe(false)
+    })
+
+    it('POST /test should return 400 when completion is unavailable', async () => {
+      const res = await app.request(`${AI_SUGGEST_PATH}/test`, { method: 'POST' })
+      expect(res.status).toBe(400)
+    })
+
+    it('POST /test should report success with model and latency', async () => {
+      const complete = vi.fn().mockResolvedValue('{"ok":true}')
+      const aiApp = createTestApp(db, { search: mockSearch, ai: completionAi(complete) })
+
+      const res = await aiApp.request(`${AI_SUGGEST_PATH}/test`, { method: 'POST' })
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.ok).toBe(true)
+      expect(body.model).toBe('gemma4:e4b')
+      expect(typeof body.latencyMs).toBe('number')
+      // Effective model, JSON forcing, and a bounded timeout all reach the adapter
+      const options = complete.mock.calls[0][1]
+      expect(options).toMatchObject({ model: 'gemma4:e4b' })
+      expect(options.jsonSchema?.schema).toMatchObject({ type: 'object' })
+      expect(options.timeoutMs).toBeGreaterThan(0)
+    })
+
+    it('POST /test should surface failures as ok:false with the message', async () => {
+      const aiApp = createTestApp(db, {
+        search: mockSearch,
+        ai: completionAi(async () => {
+          throw new Error('Ollama chat failed: 404 model not found')
+        }),
+      })
+
+      const res = await aiApp.request(`${AI_SUGGEST_PATH}/test`, { method: 'POST' })
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.ok).toBe(false)
+      expect(body.error).toContain('model not found')
+    })
+  })
+
   describe('/api/v1/admin/settings (generic)', () => {
     const put = (key: string, value: unknown) =>
       app.request(`/api/v1/admin/settings/${key}`, {
@@ -206,6 +319,8 @@ describe('Admin API Routes', () => {
         'semantic-search-enabled': true,
         'search-example-queries': [],
         'registration-enabled': false,
+        'ai-suggest-model': '',
+        'ai-suggest-enabled': true,
       })
     })
 

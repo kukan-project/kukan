@@ -156,10 +156,13 @@ services:
       - ollama-models:/root/.ollama
 
   ollama-init:
-    # One-shot embedding-model fetch so semantic search works out of the box.
-    # No-ops unless AI_TYPE=ollama (no surprise 1.2GB download), and skips the
-    # registry entirely when the model is already in the volume (closed
-    # networks pre-distribute it).
+    # One-shot model fetch so semantic search and AI suggestions work out of
+    # the box (embedding model + generation model, ADR-034 / ADR-040).
+    # No-ops unless AI_TYPE=ollama (no surprise multi-GB download), and skips
+    # the registry entirely when a model is already in the volume (closed
+    # networks pre-distribute it). SUGGEST_MODEL matches the adapter's built-in
+    # default on purpose — the effective model is a runtime setting (admin UI),
+    # so switching models means pulling there, not another env knob (ADR-040).
     image: ollama/ollama:latest
     container_name: kukan-ollama-init
     depends_on:
@@ -169,14 +172,17 @@ services:
       OLLAMA_HOST: http://ollama:11434
       AI_TYPE: ${AI_TYPE:-none}
       EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-bge-m3}
+      SUGGEST_MODEL: gemma4:e4b
     entrypoint:
       - /bin/sh
       - -c
       - |
         [ "$$AI_TYPE" = "ollama" ] || { echo "AI_TYPE=$$AI_TYPE — skipping model pull"; exit 0; }
         for i in $$(seq 30); do ollama list >/dev/null 2>&1 && break; sleep 1; done
-        ollama show "$$EMBEDDING_MODEL" >/dev/null 2>&1 && { echo "$$EMBEDDING_MODEL already present"; exit 0; }
-        ollama pull "$$EMBEDDING_MODEL"
+        for model in "$$EMBEDDING_MODEL" "$$SUGGEST_MODEL"; do
+          ollama show "$$model" >/dev/null 2>&1 && { echo "$$model already present"; continue; }
+          ollama pull "$$model"
+        done
 
   # ===== Production stack (--profile prod) =====
 

@@ -35,11 +35,17 @@ import { UserService } from '../services/user-service'
 import {
   VECTOR_SIMILARITY_NOTCHES_KEY,
   SEMANTIC_SEARCH_ENABLED_KEY,
+  AI_SUGGEST_MODEL_KEY,
+  AI_SUGGEST_ENABLED_KEY,
   SETTING_KEYS,
   isSettingKey,
   parseSettingValue,
 } from '../services/system-setting'
-import { VECTOR_SIMILARITY_STEP, VECTOR_SIMILARITY_MAX_NOTCHES } from '../config'
+import {
+  VECTOR_SIMILARITY_STEP,
+  VECTOR_SIMILARITY_MAX_NOTCHES,
+  AI_SUGGEST_TEST_TIMEOUT_MS,
+} from '../config'
 import type { AppContext } from '../context'
 
 export const adminRouter = new Hono<{ Variables: AppContext }>()
@@ -191,8 +197,8 @@ adminRouter.get('/search/browse/:index', async (c) => {
 // ---------------------------------------------------------------------------
 // Runtime System Settings (ADR-036)
 // Generic value API driven by the registry in services/system-setting.ts —
-// adding a setting needs no new route. Only the vector-search context GET is
-// bespoke (it fuses env + AI adapter + search capability).
+// adding a setting needs no new route. Only the context GETs (vector-search /
+// ai-suggest) are bespoke: they fuse adapter capabilities with settings.
 // ---------------------------------------------------------------------------
 
 /** Round away float artifacts from base + notches × step */
@@ -250,6 +256,72 @@ async function auditSettingChange(
 // GET /api/v1/admin/settings/vector-search — Vector-search context (read-only)
 adminRouter.get('/settings/vector-search', async (c) => {
   return c.json(await buildVectorSearchSettings(c))
+})
+
+async function buildAiSuggestSettings(c: Context<{ Variables: AppContext }>) {
+  const settings = c.get('settings')
+  const info = c.get('ai').getCompletionInfo()
+  const [model, suggestEnabled] = await Promise.all([
+    settings.getSetting(AI_SUGGEST_MODEL_KEY),
+    settings.getSetting(AI_SUGGEST_ENABLED_KEY),
+  ])
+  return {
+    enabled: info !== null,
+    provider: info?.provider ?? null,
+    defaultModel: info?.defaultModel ?? null,
+    model,
+    effectiveModel: info ? model || info.defaultModel : null,
+    suggestEnabled,
+  }
+}
+
+// GET /api/v1/admin/settings/ai-suggest — AI-suggest context (read-only)
+adminRouter.get('/settings/ai-suggest', async (c) => {
+  return c.json(await buildAiSuggestSettings(c))
+})
+
+// POST /api/v1/admin/settings/ai-suggest/test — Try one tiny completion so an
+// unpulled / unentitled model ID surfaces here instead of on first user click.
+// Failures are 200 + ok:false so the admin UI can render the message inline.
+adminRouter.post('/settings/ai-suggest/test', async (c) => {
+  const context = await buildAiSuggestSettings(c)
+  if (!context.enabled || !context.effectiveModel) {
+    return c.json(
+      {
+        type: 'about:blank',
+        title: 'Not Available',
+        status: 400,
+        detail: 'AI completion is not available (AI_TYPE=none)',
+      },
+      400
+    )
+  }
+
+  const startedAt = Date.now()
+  try {
+    await c.get('ai').complete('Reply with {"ok": true}.', {
+      model: context.effectiveModel,
+      maxTokens: 100,
+      timeoutMs: AI_SUGGEST_TEST_TIMEOUT_MS,
+      jsonSchema: {
+        name: 'connection_test',
+        schema: {
+          type: 'object',
+          properties: { ok: { type: 'boolean' } },
+          required: ['ok'],
+          additionalProperties: false,
+        },
+      },
+    })
+    return c.json({ ok: true, model: context.effectiveModel, latencyMs: Date.now() - startedAt })
+  } catch (error) {
+    return c.json({
+      ok: false,
+      model: context.effectiveModel,
+      latencyMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
 })
 
 // GET /api/v1/admin/settings — Current value of every registered setting

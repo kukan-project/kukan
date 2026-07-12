@@ -4,6 +4,8 @@ import {
   SystemSettingService,
   VECTOR_SIMILARITY_NOTCHES_KEY,
   SEMANTIC_SEARCH_ENABLED_KEY,
+  AI_SUGGEST_MODEL_KEY,
+  AI_SUGGEST_ENABLED_KEY,
 } from '../../services/system-setting'
 
 describe('SystemSettingService', () => {
@@ -60,6 +62,28 @@ describe('SystemSettingService', () => {
 
     await expect(service.setSetting(VECTOR_SIMILARITY_NOTCHES_KEY, 5)).rejects.toThrow()
     await expect(service.setSetting(VECTOR_SIMILARITY_NOTCHES_KEY, 0.5)).rejects.toThrow()
+  })
+
+  it('ai-suggest settings default to empty model + enabled', async () => {
+    const { db, addResult } = createMockDb()
+    addResult([]) // ai-suggest-model miss
+    addResult([]) // ai-suggest-enabled miss
+    const service = new SystemSettingService(db)
+
+    expect(await service.getSetting(AI_SUGGEST_MODEL_KEY)).toBe('')
+    expect(await service.getSetting(AI_SUGGEST_ENABLED_KEY)).toBe(true)
+  })
+
+  it('ai-suggest-model trims whitespace and rejects over-long values', async () => {
+    const { db, addResult } = createMockDb()
+    addResult([]) // previous read inside setSetting
+    addResult([{ id: 'row-id' }])
+    const service = new SystemSettingService(db)
+
+    await service.setSetting(AI_SUGGEST_MODEL_KEY, '  gemma4:e4b  ')
+    expect(await service.getSetting(AI_SUGGEST_MODEL_KEY)).toBe('gemma4:e4b')
+
+    await expect(service.setSetting(AI_SUGGEST_MODEL_KEY, 'x'.repeat(201))).rejects.toThrow()
   })
 
   it('clearCache() forces the next read back to the DB', async () => {

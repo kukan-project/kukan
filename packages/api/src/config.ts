@@ -70,3 +70,7 @@ export const SYSTEM_SETTING_CACHE_TTL_MS = 30_000
 /** Bootstrap sysadmin claim older than this with the user table still empty is
  *  a failed first sign-up's leftover and may be re-claimed (ADR-038) */
 export const BOOTSTRAP_CLAIM_STALE_MS = 60_000
+
+/** Admin connection test for the AI suggest model. Generous because CPU-only
+ *  Ollama can take tens of seconds even for a tiny prompt (ADR-040) */
+export const AI_SUGGEST_TEST_TIMEOUT_MS = 60_000

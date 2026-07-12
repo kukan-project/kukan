@@ -15,6 +15,8 @@ export const VECTOR_SIMILARITY_NOTCHES_KEY = 'vector-similarity-notches'
 export const SEMANTIC_SEARCH_ENABLED_KEY = 'semantic-search-enabled'
 export const SEARCH_EXAMPLE_QUERIES_KEY = 'search-example-queries'
 export const REGISTRATION_ENABLED_KEY = 'registration-enabled'
+export const AI_SUGGEST_MODEL_KEY = 'ai-suggest-model'
+export const AI_SUGGEST_ENABLED_KEY = 'ai-suggest-enabled'
 
 /** Registry of runtime settings — adding a setting means adding an entry here */
 const SETTING_DEFINITIONS = {
@@ -38,6 +40,18 @@ const SETTING_DEFINITIONS = {
   [REGISTRATION_ENABLED_KEY]: {
     schema: z.boolean(),
     default: false,
+  },
+  // Generation model for AI metadata suggestions; '' = provider default (ADR-040).
+  // Runtime-switchable because suggestions are never persisted, unlike the
+  // embedding model which is pinned to stored vectors.
+  [AI_SUGGEST_MODEL_KEY]: {
+    schema: z.string().trim().max(200),
+    default: '',
+  },
+  // Kill switch for AI metadata suggestions
+  [AI_SUGGEST_ENABLED_KEY]: {
+    schema: z.boolean(),
+    default: true,
   },
 } as const
 

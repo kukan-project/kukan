@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { AlertTriangle, Loader2, Trash2 } from 'lucide-react'
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from '@kukan/ui'
+import { AiSuggestCard } from '@/components/dashboard/ai-suggest-card'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { RegistrationCard } from '@/components/dashboard/registration-card'
 import { SearchExamplesCard } from '@/components/dashboard/search-examples-card'
@@ -58,6 +59,9 @@ export default function AdminSitePage() {
 
       {/* Vector Search Settings */}
       <VectorSimilarityCard />
+
+      {/* AI Metadata Suggestions */}
+      <AiSuggestCard />
 
       {/* Self-Registration */}
       <RegistrationCard />
