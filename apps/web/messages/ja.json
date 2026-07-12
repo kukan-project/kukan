@@ -333,6 +333,7 @@
       "aiSuggestEnabled": "AI 提案を有効にする",
       "aiSuggestModelLabel": "モデル ID",
       "aiSuggestModelHint": "空欄の場合はプロバイダの既定モデルを使用します。",
+      "aiSuggestModelDefaultOption": "プロバイダ既定（{model}）",
       "aiSuggestTest": "接続テスト",
       "aiSuggestTesting": "テスト中…",
       "aiSuggestTestOk": "接続 OK: {model}（{latency}ms）",

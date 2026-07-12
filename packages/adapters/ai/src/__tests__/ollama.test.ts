@@ -35,6 +35,34 @@ describe('OllamaAdapter', () => {
     expect(body).toEqual({ model: 'bge-m3', input: ['こんにちは'] })
   })
 
+  it('lists completion models from /api/tags, excluding embedding models', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          models: [
+            { name: 'gemma4:e4b' },
+            { name: 'qwen3:8b' },
+            { name: 'bge-m3:latest' },
+            { name: 'nomic-embed-text' },
+          ],
+        }),
+    })
+    const adapter = new OllamaAdapter({ baseUrl: 'http://localhost:11434' })
+
+    const models = await adapter.listCompletionModels()
+
+    expect(mockFetch.mock.calls[0][0]).toBe('http://localhost:11434/api/tags')
+    expect(models).toEqual(['gemma4:e4b', 'qwen3:8b'])
+  })
+
+  it('returns [] when /api/tags is unavailable', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, text: () => Promise.resolve('') })
+    const adapter = new OllamaAdapter({ baseUrl: 'http://localhost:11434' })
+
+    expect(await adapter.listCompletionModels()).toEqual([])
+  })
+
   it('embedBatch sends all texts in one request', async () => {
     mockFetch.mockResolvedValueOnce(
       embedResponse([

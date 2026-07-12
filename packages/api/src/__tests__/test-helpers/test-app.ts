@@ -84,6 +84,7 @@ export function mockCompletionAi(complete: AIAdapter['complete'] = async () => '
   return {
     getEmbeddingInfo: () => null,
     getCompletionInfo: () => ({ provider: 'ollama', defaultModel: 'gemma4:e4b' }),
+    listCompletionModels: async () => ['gemma4:e4b', 'qwen3:8b'],
     complete,
   } as unknown as AIAdapter
 }

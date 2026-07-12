@@ -211,6 +211,7 @@ describe('Admin API Routes', () => {
         model: '',
         effectiveModel: null,
         suggestEnabled: true,
+        availableModels: [],
       })
     })
 
@@ -228,6 +229,7 @@ describe('Admin API Routes', () => {
         model: '',
         effectiveModel: 'gemma4:e4b',
         suggestEnabled: true,
+        availableModels: ['gemma4:e4b', 'qwen3:8b'],
       })
 
       const res = await aiApp.request('/api/v1/admin/settings/ai-suggest-model', {
@@ -256,6 +258,20 @@ describe('Admin API Routes', () => {
       // Capability stays true — the switch disables the feature, not the adapter
       expect(body.enabled).toBe(true)
       expect(body.suggestEnabled).toBe(false)
+    })
+
+    it('falls back to an empty model list when enumeration fails', async () => {
+      const ai = {
+        ...mockCompletionAi(),
+        listCompletionModels: async () => {
+          throw new Error('provider unreachable')
+        },
+      }
+      const aiApp = createTestApp(db, { search: mockSearch, ai })
+
+      const res = await aiApp.request(AI_SUGGEST_PATH)
+      expect(res.status).toBe(200)
+      expect((await res.json()).availableModels).toEqual([])
     })
 
     it('POST /test should return 400 when completion is unavailable', async () => {

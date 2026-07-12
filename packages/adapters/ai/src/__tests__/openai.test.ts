@@ -4,11 +4,13 @@ import { OpenAIAdapter } from '../openai'
 // Mock openai SDK
 const mockCreate = vi.fn()
 const mockChatCreate = vi.fn()
+const mockModelsList = vi.fn()
 vi.mock('openai', () => ({
   default: vi.fn().mockImplementation(function () {
     return {
       embeddings: { create: mockCreate },
       chat: { completions: { create: mockChatCreate } },
+      models: { list: mockModelsList },
     }
   }),
 }))
@@ -17,6 +19,29 @@ describe('OpenAIAdapter', () => {
   beforeEach(() => {
     mockCreate.mockReset()
     mockChatCreate.mockReset()
+    mockModelsList.mockReset()
+  })
+
+  it('lists chat models, excluding embedding/audio/image endpoints', async () => {
+    mockModelsList.mockResolvedValueOnce({
+      data: [
+        { id: 'gpt-4o-mini' },
+        { id: 'o3-mini' },
+        { id: 'text-embedding-3-small' },
+        { id: 'whisper-1' },
+        { id: 'dall-e-3' },
+      ],
+    })
+    const adapter = new OpenAIAdapter({ apiKey: 'sk-test' })
+
+    expect(await adapter.listCompletionModels()).toEqual(['gpt-4o-mini', 'o3-mini'])
+  })
+
+  it('returns [] when the models list cannot be fetched', async () => {
+    mockModelsList.mockRejectedValueOnce(new Error('401'))
+    const adapter = new OpenAIAdapter({ apiKey: 'sk-test' })
+
+    expect(await adapter.listCompletionModels()).toEqual([])
   })
 
   it('embeds via embeddings API with text-embedding-3-small by default', async () => {

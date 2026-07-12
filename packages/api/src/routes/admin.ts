@@ -260,10 +260,13 @@ adminRouter.get('/settings/vector-search', async (c) => {
 
 async function buildAiSuggestSettings(c: Context<{ Variables: AppContext }>) {
   const settings = c.get('settings')
-  const info = c.get('ai').getCompletionInfo()
-  const [model, suggestEnabled] = await Promise.all([
+  const ai = c.get('ai')
+  const info = ai.getCompletionInfo()
+  const [model, suggestEnabled, availableModels] = await Promise.all([
     settings.getSetting(AI_SUGGEST_MODEL_KEY),
     settings.getSetting(AI_SUGGEST_ENABLED_KEY),
+    // Best-effort model list for the picker; empty falls back to free-text
+    info ? ai.listCompletionModels().catch(() => []) : Promise.resolve([]),
   ])
   return {
     enabled: info !== null,
@@ -272,6 +275,7 @@ async function buildAiSuggestSettings(c: Context<{ Variables: AppContext }>) {
     model,
     effectiveModel: info ? model || info.defaultModel : null,
     suggestEnabled,
+    availableModels,
   }
 }
 

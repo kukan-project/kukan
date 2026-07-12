@@ -16,6 +16,13 @@ export interface AIAdapter {
   getCompletionInfo(): CompletionInfo | null
 
   /**
+   * Candidate completion model IDs to offer in the UI (best-effort). Empty
+   * when the provider can't be enumerated or generation is unavailable — the
+   * caller then falls back to free-text model entry.
+   */
+  listCompletionModels(): Promise<string[]>
+
+  /**
    * Generate an embedding vector for a single text
    */
   embed(text: string, options?: EmbedOptions): Promise<number[]>

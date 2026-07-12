@@ -65,6 +65,25 @@ export class OpenAIAdapter implements AIAdapter {
     return { provider: 'openai', defaultModel: DEFAULT_COMPLETION_MODEL }
   }
 
+  async listCompletionModels(): Promise<string[]> {
+    try {
+      // Fail fast like the Ollama path; the SDK otherwise waits ~10min × retries
+      const response = await this.client.models.list({
+        signal: AbortSignal.timeout(5000),
+        maxRetries: 0,
+      })
+      // Keep chat-capable models; drop non-text endpoints. Works for the
+      // official API (gpt*/o*) and compatible servers (their served models).
+      const exclude = /embed|whisper|tts|audio|dall-e|moderation|image|realtime|transcribe/i
+      return response.data
+        .map((model) => model.id)
+        .filter((id) => !exclude.test(id))
+        .sort()
+    } catch {
+      return []
+    }
+  }
+
   async embed(text: string, options?: EmbedOptions): Promise<number[]> {
     const [embedding] = await this.embedBatch([text], options)
     return embedding

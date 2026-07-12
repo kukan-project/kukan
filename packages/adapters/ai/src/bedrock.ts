@@ -105,6 +105,14 @@ export class BedrockAIAdapter implements AIAdapter {
     return { provider: 'bedrock', defaultModel: DEFAULT_COMPLETION_MODEL }
   }
 
+  async listCompletionModels(): Promise<string[]> {
+    // Reliable enumeration needs the control-plane ListInferenceProfiles API
+    // (a separate @aws-sdk/client-bedrock client) to return region-valid,
+    // invokable profile IDs like the jp./us. defaults. Until that is added,
+    // return empty so the UI keeps free-text model entry for Bedrock.
+    return []
+  }
+
   private get isCohere(): boolean {
     return this.embeddingModel.startsWith('cohere.embed')
   }

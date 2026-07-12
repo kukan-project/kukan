@@ -63,6 +63,22 @@ export class OllamaAdapter implements AIAdapter {
     return { provider: 'ollama', defaultModel: DEFAULT_COMPLETION_MODEL }
   }
 
+  async listCompletionModels(): Promise<string[]> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/tags`, {
+        signal: AbortSignal.timeout(5000),
+      })
+      if (!response.ok) return []
+      const payload = (await response.json()) as { models?: { name: string }[] }
+      // /api/tags lists all pulled models; drop the embedding ones by name
+      const isEmbedding = (name: string) =>
+        name === this.embeddingModel || /embed|^bge-|minilm/i.test(name)
+      return (payload.models ?? []).map((m) => m.name).filter((name) => !isEmbedding(name))
+    } catch {
+      return []
+    }
+  }
+
   async embed(text: string, options?: EmbedOptions): Promise<number[]> {
     const [embedding] = await this.embedBatch([text], options)
     return embedding

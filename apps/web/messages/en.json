@@ -333,6 +333,7 @@
       "aiSuggestEnabled": "Enable AI suggestions",
       "aiSuggestModelLabel": "Model ID",
       "aiSuggestModelHint": "Leave blank to use the provider's default model.",
+      "aiSuggestModelDefaultOption": "Provider default ({model})",
       "aiSuggestTest": "Test connection",
       "aiSuggestTesting": "Testing…",
       "aiSuggestTestOk": "Connected: {model} ({latency}ms)",

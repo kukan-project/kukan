@@ -140,6 +140,11 @@ describe('BedrockAIAdapter', () => {
     })
   })
 
+  it('lists no completion models (free-text fallback until ListInferenceProfiles)', async () => {
+    const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
+    expect(await adapter.listCompletionModels()).toEqual([])
+  })
+
   describe('complete', () => {
     function converseResponse(text: string) {
       return {

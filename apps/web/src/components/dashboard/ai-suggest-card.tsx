@@ -12,6 +12,11 @@ import {
   CardTitle,
   Input,
   Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Switch,
 } from '@kukan/ui'
 import { clientFetch } from '@/lib/client-api'
@@ -23,7 +28,13 @@ interface AiSuggestSettings {
   model: string
   effectiveModel: string | null
   suggestEnabled: boolean
+  /** Candidate models for the picker; empty → free-text entry */
+  availableModels: string[]
 }
+
+/** Radix Select forbids an empty-string item value, so the "provider default"
+ *  (stored as "") option uses this sentinel. */
+const DEFAULT_MODEL_VALUE = '__default__'
 
 type TestResult = { ok: true; model: string; latencyMs: number } | { ok: false; error?: string }
 
@@ -64,6 +75,12 @@ export function AiSuggestCard() {
 
   const dirty =
     selectedModel.trim() !== settings.model || selectedEnabled !== settings.suggestEnabled
+
+  // Keep an already-set model selectable even if the provider didn't list it
+  const modelOptions =
+    selectedModel && !settings.availableModels.includes(selectedModel)
+      ? [selectedModel, ...settings.availableModels]
+      : settings.availableModels
 
   async function handleSave() {
     if (!settings) return
@@ -152,16 +169,40 @@ export function AiSuggestCard() {
 
         <div className="flex flex-col gap-2">
           <Label htmlFor={modelId}>{t('aiSuggestModelLabel')}</Label>
-          <Input
-            id={modelId}
-            value={selectedModel}
-            onChange={(e) => {
-              setSelectedModel(e.target.value)
-              setSaved(false)
-            }}
-            placeholder={settings.defaultModel ?? ''}
-            className="max-w-md font-mono text-sm"
-          />
+          {settings.availableModels.length > 0 ? (
+            <Select
+              value={selectedModel || DEFAULT_MODEL_VALUE}
+              onValueChange={(value) => {
+                setSelectedModel(value === DEFAULT_MODEL_VALUE ? '' : value)
+                setSaved(false)
+              }}
+            >
+              <SelectTrigger id={modelId} className="max-w-md font-mono text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={DEFAULT_MODEL_VALUE}>
+                  {t('aiSuggestModelDefaultOption', { model: settings.defaultModel ?? '' })}
+                </SelectItem>
+                {modelOptions.map((model) => (
+                  <SelectItem key={model} value={model} className="font-mono">
+                    {model}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              id={modelId}
+              value={selectedModel}
+              onChange={(e) => {
+                setSelectedModel(e.target.value)
+                setSaved(false)
+              }}
+              placeholder={settings.defaultModel ?? ''}
+              className="max-w-md font-mono text-sm"
+            />
+          )}
           <p className="text-xs text-muted-foreground">{t('aiSuggestModelHint')}</p>
         </div>
 

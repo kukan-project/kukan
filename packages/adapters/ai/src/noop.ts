@@ -15,6 +15,10 @@ export class NoOpAIAdapter implements AIAdapter {
     return null
   }
 
+  async listCompletionModels(): Promise<string[]> {
+    return []
+  }
+
   async embed(_text: string, _options?: EmbedOptions): Promise<number[]> {
     return []
   }
