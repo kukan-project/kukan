@@ -3,17 +3,19 @@
  * Ollama local LLM implementation (Phase 5)
  */
 
-import { AIAdapter, CompleteOptions, EmbedOptions, EmbeddingInfo } from './adapter'
+import { AIAdapter, CompleteOptions, CompletionInfo, EmbedOptions, EmbeddingInfo } from './adapter'
 
 export interface OllamaConfig {
   baseUrl: string
-  model?: string
   embeddingModel?: string
   embeddingDimensions?: number
 }
 
 const DEFAULT_EMBEDDING_MODEL = 'bge-m3'
 const DEFAULT_EMBEDDING_DIMENSIONS = 1024
+/** Multilingual and CPU-efficient effective-4B model (ADR-040) */
+const DEFAULT_COMPLETION_MODEL = 'gemma4:e4b'
+const DEFAULT_COMPLETION_MAX_TOKENS = 2048
 
 export class OllamaAdapter implements AIAdapter {
   private baseUrl: string
@@ -26,8 +28,36 @@ export class OllamaAdapter implements AIAdapter {
     this.embeddingDimensions = config.embeddingDimensions ?? DEFAULT_EMBEDDING_DIMENSIONS
   }
 
-  async complete(_prompt: string, _options?: CompleteOptions): Promise<string> {
-    throw new Error('OllamaAdapter.complete not implemented yet (Phase 5)')
+  async complete(prompt: string, options?: CompleteOptions): Promise<string> {
+    const response = await fetch(`${this.baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: options?.model || DEFAULT_COMPLETION_MODEL,
+        messages: [
+          ...(options?.system ? [{ role: 'system', content: options.system }] : []),
+          { role: 'user', content: prompt },
+        ],
+        stream: false,
+        // JSON.stringify drops undefined keys, so absent options never hit the wire
+        format: options?.jsonSchema?.schema,
+        options: {
+          num_predict: options?.maxTokens ?? DEFAULT_COMPLETION_MAX_TOKENS,
+          temperature: options?.temperature,
+        },
+      }),
+      ...(options?.timeoutMs && { signal: AbortSignal.timeout(options.timeoutMs) }),
+    })
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '')
+      throw new Error(`Ollama chat failed: ${response.status} ${detail}`)
+    }
+    const payload = (await response.json()) as { message?: { content?: string } }
+    return payload.message?.content?.trim() ?? ''
+  }
+
+  getCompletionInfo(): CompletionInfo {
+    return { provider: 'ollama', defaultModel: DEFAULT_COMPLETION_MODEL }
   }
 
   async embed(text: string, options?: EmbedOptions): Promise<number[]> {

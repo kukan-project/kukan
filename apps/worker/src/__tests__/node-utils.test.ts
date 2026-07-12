@@ -5,63 +5,13 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 
 import {
-  detectEncoding,
-  bufferToUtf8,
   streamToBuffer,
   streamToTempFile,
   cleanupTempFile,
   streamUtf8Lines,
 } from '../pipeline/node-utils'
 
-describe('detectEncoding', () => {
-  it('should return UTF-8 for json format without calling chardet', () => {
-    const buf = Buffer.from('{"key":"value"}')
-    expect(detectEncoding('json', buf)).toBe('UTF-8')
-  })
-
-  it('should return UTF-8 for md format', () => {
-    const buf = Buffer.from('# Hello')
-    expect(detectEncoding('md', buf)).toBe('UTF-8')
-  })
-
-  it('should return UTF-8 for geojson format', () => {
-    const buf = Buffer.from('{"type":"FeatureCollection"}')
-    expect(detectEncoding('geojson', buf)).toBe('UTF-8')
-  })
-
-  it('should parse XML encoding declaration', () => {
-    const buf = Buffer.from('<?xml version="1.0" encoding="Shift_JIS"?><root/>')
-    expect(detectEncoding('xml', buf)).toBe('Shift_JIS')
-  })
-
-  it('should default to UTF-8 when no XML encoding declaration', () => {
-    const buf = Buffer.from('<root><item>hello</item></root>')
-    expect(detectEncoding('xml', buf)).toBe('UTF-8')
-  })
-})
-
-describe('bufferToUtf8', () => {
-  it('should return UTF-8 string for UTF-8 encoding', () => {
-    const buf = Buffer.from('hello world')
-    expect(bufferToUtf8(buf, 'UTF-8')).toBe('hello world')
-  })
-
-  it('should return UTF-8 string for ASCII encoding', () => {
-    const buf = Buffer.from('ascii text')
-    expect(bufferToUtf8(buf, 'ASCII')).toBe('ascii text')
-  })
-
-  it('should convert Shift_JIS via TextDecoder', () => {
-    // "こん" in Shift_JIS = 0x82B1 0x82F1
-    const buf = Buffer.from([0x82, 0xb1, 0x82, 0xf1])
-    expect(bufferToUtf8(buf, 'Shift_JIS')).toBe('こん')
-  })
-
-  it('should handle legacy SJIS name', () => {
-    const buf = Buffer.from([0x82, 0xb1, 0x82, 0xf1])
-    expect(bufferToUtf8(buf, 'SJIS')).toBe('こん')
-  })
-})
+// detectEncoding / bufferToUtf8 tests live in packages/shared (encoding-node.test.ts)
 
 describe('streamToBuffer', () => {
   it('should collect stream chunks into a single Buffer', async () => {

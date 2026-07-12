@@ -91,4 +91,78 @@ describe('OllamaAdapter', () => {
       recommendedMinSimilarity: 0.45,
     })
   })
+
+  describe('complete', () => {
+    function chatResponse(content: string) {
+      return {
+        ok: true,
+        json: () => Promise.resolve({ message: { role: 'assistant', content } }),
+      }
+    }
+
+    it('completes via /api/chat with gemma4:e4b by default', async () => {
+      mockFetch.mockResolvedValueOnce(chatResponse('こんにちは'))
+      const adapter = new OllamaAdapter({ baseUrl: 'http://localhost:11434' })
+
+      const result = await adapter.complete('挨拶して', { system: 'あなたは司書です' })
+
+      expect(result).toBe('こんにちは')
+      expect(mockFetch.mock.calls[0][0]).toBe('http://localhost:11434/api/chat')
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+      expect(body.model).toBe('gemma4:e4b')
+      expect(body.stream).toBe(false)
+      expect(body.messages).toEqual([
+        { role: 'system', content: 'あなたは司書です' },
+        { role: 'user', content: '挨拶して' },
+      ])
+      expect(body.options.num_predict).toBe(2048)
+      expect(body.format).toBeUndefined()
+    })
+
+    it('passes the JSON schema as structured outputs format', async () => {
+      mockFetch.mockResolvedValueOnce(chatResponse('{"title":"テスト"}'))
+      const adapter = new OllamaAdapter({ baseUrl: 'http://localhost:11434' })
+      const schema = { type: 'object', properties: { title: { type: 'string' } } }
+
+      const result = await adapter.complete('生成して', {
+        jsonSchema: { name: 'suggest', schema },
+        model: 'qwen3:8b',
+        maxTokens: 500,
+      })
+
+      expect(JSON.parse(result)).toEqual({ title: 'テスト' })
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+      expect(body.format).toEqual(schema)
+      expect(body.model).toBe('qwen3:8b')
+      expect(body.options.num_predict).toBe(500)
+    })
+
+    it('sets an abort signal when timeoutMs is given', async () => {
+      mockFetch.mockResolvedValueOnce(chatResponse('ok'))
+      const adapter = new OllamaAdapter({ baseUrl: 'http://localhost:11434' })
+
+      await adapter.complete('x', { timeoutMs: 120_000 })
+
+      expect(mockFetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal)
+    })
+
+    it('throws with status detail on HTTP error', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        text: () => Promise.resolve('model not found'),
+      })
+      const adapter = new OllamaAdapter({ baseUrl: 'http://localhost:11434' })
+
+      await expect(adapter.complete('x')).rejects.toThrow('Ollama chat failed: 404 model not found')
+    })
+  })
+
+  it('exposes completion info as capability', () => {
+    const adapter = new OllamaAdapter({ baseUrl: 'http://localhost:11434' })
+    expect(adapter.getCompletionInfo()).toEqual({
+      provider: 'ollama',
+      defaultModel: 'gemma4:e4b',
+    })
+  })
 })

@@ -8,11 +8,10 @@
  */
 
 import OpenAI from 'openai'
-import { AIAdapter, CompleteOptions, EmbedOptions, EmbeddingInfo } from './adapter'
+import { AIAdapter, CompleteOptions, CompletionInfo, EmbedOptions, EmbeddingInfo } from './adapter'
 
 export interface OpenAIConfig {
   apiKey: string
-  model?: string
   baseUrl?: string
   embeddingModel?: string
   embeddingDimensions?: number
@@ -20,6 +19,10 @@ export interface OpenAIConfig {
 
 const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small'
 const DEFAULT_EMBEDDING_DIMENSIONS = 1536
+/** Only meaningful for the official API; compatible endpoints (vLLM etc.)
+ *  serve their own models, so operators override the model instead. */
+const DEFAULT_COMPLETION_MODEL = 'gpt-4o-mini'
+const DEFAULT_COMPLETION_MAX_TOKENS = 2048
 
 export class OpenAIAdapter implements AIAdapter {
   private client: OpenAI
@@ -32,8 +35,34 @@ export class OpenAIAdapter implements AIAdapter {
     this.embeddingDimensions = config.embeddingDimensions ?? DEFAULT_EMBEDDING_DIMENSIONS
   }
 
-  async complete(_prompt: string, _options?: CompleteOptions): Promise<string> {
-    throw new Error('OpenAIAdapter.complete not implemented yet (Phase 5)')
+  async complete(prompt: string, options?: CompleteOptions): Promise<string> {
+    const response = await this.client.chat.completions.create(
+      {
+        model: options?.model || DEFAULT_COMPLETION_MODEL,
+        messages: [
+          ...(options?.system ? [{ role: 'system' as const, content: options.system }] : []),
+          { role: 'user' as const, content: prompt },
+        ],
+        max_tokens: options?.maxTokens ?? DEFAULT_COMPLETION_MAX_TOKENS,
+        temperature: options?.temperature,
+        ...(options?.jsonSchema && {
+          response_format: {
+            type: 'json_schema' as const,
+            json_schema: {
+              name: options.jsonSchema.name,
+              schema: options.jsonSchema.schema,
+              strict: true,
+            },
+          },
+        }),
+      },
+      options?.timeoutMs ? { signal: AbortSignal.timeout(options.timeoutMs) } : {}
+    )
+    return response.choices[0]?.message?.content?.trim() ?? ''
+  }
+
+  getCompletionInfo(): CompletionInfo {
+    return { provider: 'openai', defaultModel: DEFAULT_COMPLETION_MODEL }
   }
 
   async embed(text: string, options?: EmbedOptions): Promise<number[]> {

@@ -271,7 +271,7 @@ Extract のみフォーマット別処理を行う。
 **関連ファイル:**
 
 - フォーマット判定: `packages/shared/src/formats.ts`（`isTextFormat`, `isCsvFormat`, `isZipFormat`, `isOfficeFormat`, `isImageFormat`）
-- エンコーディング検出: `apps/worker/src/pipeline/node-utils.ts`（`detectEncoding`）
+- エンコーディング検出: `packages/shared/src/encoding-node.ts`（`detectEncoding`）
 - Extract ステップ: `apps/worker/src/pipeline/steps/extract.ts`
 - フロントエンド プレビュー: `apps/web/src/components/resource-preview.tsx`
 - GeoJSON 地図プレビュー: `apps/web/src/components/geojson-preview.tsx`, `geojson-map.tsx`（Leaflet + OSM/国土地理院切替）

@@ -3,12 +3,17 @@
  * AWS Bedrock implementation (Phase 5)
  */
 
-import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime'
-import { AIAdapter, CompleteOptions, EmbedOptions, EmbeddingInfo } from './adapter'
+import {
+  BedrockRuntimeClient,
+  InvokeModelCommand,
+  ConverseCommand,
+  type ConverseCommandInput,
+  type ToolInputSchema,
+} from '@aws-sdk/client-bedrock-runtime'
+import { AIAdapter, CompleteOptions, CompletionInfo, EmbedOptions, EmbeddingInfo } from './adapter'
 
 export interface BedrockConfig {
   region: string
-  modelId?: string
   embeddingModel?: string
   embeddingDimensions?: number
   accessKeyId?: string
@@ -17,6 +22,9 @@ export interface BedrockConfig {
 
 const DEFAULT_EMBEDDING_MODEL = 'amazon.titan-embed-text-v2:0'
 const DEFAULT_EMBEDDING_DIMENSIONS = 1024
+/** The jp. cross-region profile keeps inference within Tokyo/Osaka (ADR-040) */
+const DEFAULT_COMPLETION_MODEL = 'jp.anthropic.claude-haiku-4-5-20251001-v1:0'
+const DEFAULT_COMPLETION_MAX_TOKENS = 2048
 /** Titan has no batch embedding API — cap concurrent InvokeModel calls instead */
 const EMBED_CONCURRENCY = 8
 /** Cohere embeds up to 96 texts per InvokeModel call */
@@ -46,8 +54,55 @@ export class BedrockAIAdapter implements AIAdapter {
     this.embeddingDimensions = config.embeddingDimensions ?? DEFAULT_EMBEDDING_DIMENSIONS
   }
 
-  async complete(_prompt: string, _options?: CompleteOptions): Promise<string> {
-    throw new Error('BedrockAIAdapter.complete not implemented yet (Phase 5)')
+  async complete(prompt: string, options?: CompleteOptions): Promise<string> {
+    const input: ConverseCommandInput = {
+      modelId: options?.model || DEFAULT_COMPLETION_MODEL,
+      messages: [{ role: 'user', content: [{ text: prompt }] }],
+      inferenceConfig: {
+        maxTokens: options?.maxTokens ?? DEFAULT_COMPLETION_MAX_TOKENS,
+        temperature: options?.temperature,
+      },
+      ...(options?.system && { system: [{ text: options.system }] }),
+    }
+    if (options?.jsonSchema) {
+      // Forced tool use is the Converse-native way to guarantee JSON output
+      input.toolConfig = {
+        tools: [
+          {
+            toolSpec: {
+              name: options.jsonSchema.name,
+              // json is Smithy DocumentType, which the SDK does not re-export
+              inputSchema: {
+                json: options.jsonSchema.schema as ToolInputSchema.JsonMember['json'],
+              },
+            },
+          },
+        ],
+        toolChoice: { tool: { name: options.jsonSchema.name } },
+      }
+    }
+    const response = await this.client.send(
+      new ConverseCommand(input),
+      options?.timeoutMs ? { abortSignal: AbortSignal.timeout(options.timeoutMs) } : {}
+    )
+    const blocks = response.output?.message?.content ?? []
+    if (options?.jsonSchema) {
+      const toolUse = blocks.find((block) => block.toolUse)?.toolUse
+      if (!toolUse?.input) {
+        throw new Error(
+          `Bedrock Converse returned no tool use for forced JSON output (stopReason: ${response.stopReason})`
+        )
+      }
+      return JSON.stringify(toolUse.input)
+    }
+    return blocks
+      .map((block) => block.text ?? '')
+      .join('')
+      .trim()
+  }
+
+  getCompletionInfo(): CompletionInfo {
+    return { provider: 'bedrock', defaultModel: DEFAULT_COMPLETION_MODEL }
   }
 
   private get isCohere(): boolean {

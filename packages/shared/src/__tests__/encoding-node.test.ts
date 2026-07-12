@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import { describe, it, expect } from 'vitest'
-import { detectEncoding, bufferToUtf8 } from '../pipeline/node-utils'
+import { detectEncoding, bufferToUtf8, stripTrailingReplacementChar } from '../encoding-node'
 
 describe('detectEncoding', () => {
   // --- Auto-detect formats (CSV/TSV/TXT/HTML) ---
@@ -273,5 +273,23 @@ describe('bufferToUtf8', () => {
     // "café" in Windows-1252: é = 0xE9
     const buf = Buffer.from([0x63, 0x61, 0x66, 0xe9])
     expect(bufferToUtf8(buf, 'windows-1252')).toBe('café')
+  })
+})
+
+describe('stripTrailingReplacementChar', () => {
+  it('removes a trailing U+FFFD left by byte-boundary truncation', () => {
+    // "日本" (6 bytes UTF-8) cut at 5 bytes -> "日" + U+FFFD
+    const cut = Buffer.from('日本').subarray(0, 5).toString('utf-8')
+    expect(cut.endsWith('\uFFFD')).toBe(true)
+    expect(stripTrailingReplacementChar(cut)).toBe('日')
+  })
+
+  it('keeps text without a trailing replacement char unchanged', () => {
+    expect(stripTrailingReplacementChar('日本')).toBe('日本')
+    expect(stripTrailingReplacementChar('')).toBe('')
+  })
+
+  it('removes only the trailing occurrence', () => {
+    expect(stripTrailingReplacementChar('a\uFFFDb\uFFFD')).toBe('a\uFFFDb')
   })
 })

@@ -10,6 +10,9 @@ vi.mock('@aws-sdk/client-bedrock-runtime', () => ({
   InvokeModelCommand: vi.fn().mockImplementation(function (input: unknown) {
     return { input, _type: 'InvokeModel' }
   }),
+  ConverseCommand: vi.fn().mockImplementation(function (input: unknown) {
+    return { input, _type: 'Converse' }
+  }),
 }))
 
 function invokeResponse(embedding: number[]) {
@@ -134,6 +137,91 @@ describe('BedrockAIAdapter', () => {
       model: 'amazon.titan-embed-text-v2:0',
       dimensions: 1024,
       recommendedMinSimilarity: 0.15,
+    })
+  })
+
+  describe('complete', () => {
+    function converseResponse(text: string) {
+      return {
+        output: { message: { content: [{ text }] } },
+        stopReason: 'end_turn',
+      }
+    }
+
+    it('completes via Converse with the jp. Haiku profile by default', async () => {
+      mockSend.mockResolvedValueOnce(converseResponse('こんにちは'))
+      const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
+
+      const result = await adapter.complete('挨拶して', { system: 'あなたは司書です' })
+
+      expect(result).toBe('こんにちは')
+      const command = mockSend.mock.calls[0][0]
+      expect(command._type).toBe('Converse')
+      expect(command.input.modelId).toBe('jp.anthropic.claude-haiku-4-5-20251001-v1:0')
+      expect(command.input.messages).toEqual([{ role: 'user', content: [{ text: '挨拶して' }] }])
+      expect(command.input.system).toEqual([{ text: 'あなたは司書です' }])
+      expect(command.input.inferenceConfig.maxTokens).toBe(2048)
+    })
+
+    it('respects options.model and maxTokens overrides, omitting system', async () => {
+      mockSend.mockResolvedValueOnce(converseResponse('ok'))
+      const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
+
+      await adapter.complete('x', { model: 'apac.amazon.nova-lite-v1:0', maxTokens: 500 })
+
+      const command = mockSend.mock.calls[0][0]
+      expect(command.input.modelId).toBe('apac.amazon.nova-lite-v1:0')
+      expect(command.input.inferenceConfig.maxTokens).toBe(500)
+      expect(command.input.system).toBeUndefined()
+    })
+
+    it('passes an abort signal when timeoutMs is given', async () => {
+      mockSend.mockResolvedValueOnce(converseResponse('ok'))
+      const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
+
+      await adapter.complete('x', { timeoutMs: 60_000 })
+
+      const sendOptions = mockSend.mock.calls[0][1]
+      expect(sendOptions.abortSignal).toBeInstanceOf(AbortSignal)
+    })
+
+    it('forces JSON via tool use when jsonSchema is set', async () => {
+      mockSend.mockResolvedValueOnce({
+        output: {
+          message: { content: [{ toolUse: { name: 'suggest', input: { title: 'テスト' } } }] },
+        },
+        stopReason: 'tool_use',
+      })
+      const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
+      const schema = { type: 'object', properties: { title: { type: 'string' } } }
+
+      const result = await adapter.complete('生成して', {
+        jsonSchema: { name: 'suggest', schema },
+      })
+
+      expect(JSON.parse(result)).toEqual({ title: 'テスト' })
+      const command = mockSend.mock.calls[0][0]
+      expect(command.input.toolConfig).toEqual({
+        tools: [{ toolSpec: { name: 'suggest', inputSchema: { json: schema } } }],
+        toolChoice: { tool: { name: 'suggest' } },
+      })
+    })
+
+    it('throws when forced JSON returns no tool use', async () => {
+      mockSend.mockResolvedValueOnce(converseResponse('sorry'))
+      const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
+
+      await expect(
+        adapter.complete('x', { jsonSchema: { name: 'suggest', schema: {} } })
+      ).rejects.toThrow('no tool use')
+    })
+  })
+
+  it('exposes completion info as capability', () => {
+    const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
+    expect(adapter.getCompletionInfo()).toEqual({
+      provider: 'bedrock',
+      defaultModel: 'jp.anthropic.claude-haiku-4-5-20251001-v1:0',
     })
   })
 })

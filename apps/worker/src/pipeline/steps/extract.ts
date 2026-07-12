@@ -4,13 +4,8 @@
  * Non-text formats return null (skip).
  */
 
-import {
-  streamToBuffer,
-  streamToTempFile,
-  cleanupTempFile,
-  detectEncoding,
-  bufferToUtf8,
-} from '../node-utils'
+import { streamToBuffer, streamToTempFile, cleanupTempFile } from '../node-utils'
+import { detectEncoding, bufferToUtf8 } from '@kukan/shared/encoding-node'
 import { getPreviewKey, isCsvFormat, isTextFormat, isZipFormat } from '@kukan/shared'
 import type { ResourceSchema } from '@kukan/shared'
 import { parquetWriteBuffer } from 'hyparquet-writer'

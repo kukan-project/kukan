@@ -3,15 +3,20 @@ import { OpenAIAdapter } from '../openai'
 
 // Mock openai SDK
 const mockCreate = vi.fn()
+const mockChatCreate = vi.fn()
 vi.mock('openai', () => ({
   default: vi.fn().mockImplementation(function () {
-    return { embeddings: { create: mockCreate } }
+    return {
+      embeddings: { create: mockCreate },
+      chat: { completions: { create: mockChatCreate } },
+    }
   }),
 }))
 
 describe('OpenAIAdapter', () => {
   beforeEach(() => {
     mockCreate.mockReset()
+    mockChatCreate.mockReset()
   })
 
   it('embeds via embeddings API with text-embedding-3-small by default', async () => {
@@ -57,6 +62,69 @@ describe('OpenAIAdapter', () => {
     expect(adapter.getEmbeddingInfo()).toEqual({
       model: 'text-embedding-3-large',
       dimensions: 1024,
+    })
+  })
+
+  describe('complete', () => {
+    function chatResponse(content: string) {
+      return { choices: [{ message: { role: 'assistant', content } }] }
+    }
+
+    it('completes via chat.completions with the default model', async () => {
+      mockChatCreate.mockResolvedValueOnce(chatResponse('こんにちは'))
+      const adapter = new OpenAIAdapter({ apiKey: 'sk-test' })
+
+      const result = await adapter.complete('挨拶して', { system: 'あなたは司書です' })
+
+      expect(result).toBe('こんにちは')
+      const [request] = mockChatCreate.mock.calls[0]
+      expect(request.model).toBe('gpt-4o-mini')
+      expect(request.messages).toEqual([
+        { role: 'system', content: 'あなたは司書です' },
+        { role: 'user', content: '挨拶して' },
+      ])
+      expect(request.max_tokens).toBe(2048)
+      expect(request.response_format).toBeUndefined()
+    })
+
+    it('forces JSON via json_schema response_format', async () => {
+      mockChatCreate.mockResolvedValueOnce(chatResponse('{"title":"テスト"}'))
+      const adapter = new OpenAIAdapter({ apiKey: 'sk-test' })
+      const schema = { type: 'object', properties: { title: { type: 'string' } } }
+
+      const result = await adapter.complete('生成して', {
+        jsonSchema: { name: 'suggest', schema },
+        model: 'my-vllm-model',
+        maxTokens: 500,
+      })
+
+      expect(JSON.parse(result)).toEqual({ title: 'テスト' })
+      const [request, options] = mockChatCreate.mock.calls[0]
+      expect(request.model).toBe('my-vllm-model')
+      expect(request.max_tokens).toBe(500)
+      expect(request.response_format).toEqual({
+        type: 'json_schema',
+        json_schema: { name: 'suggest', schema, strict: true },
+      })
+      expect(options).toEqual({})
+    })
+
+    it('passes an abort signal when timeoutMs is given', async () => {
+      mockChatCreate.mockResolvedValueOnce(chatResponse('ok'))
+      const adapter = new OpenAIAdapter({ apiKey: 'sk-test' })
+
+      await adapter.complete('x', { timeoutMs: 60_000 })
+
+      const [, options] = mockChatCreate.mock.calls[0]
+      expect(options.signal).toBeInstanceOf(AbortSignal)
+    })
+  })
+
+  it('exposes completion info as capability', () => {
+    const adapter = new OpenAIAdapter({ apiKey: 'sk-test' })
+    expect(adapter.getCompletionInfo()).toEqual({
+      provider: 'openai',
+      defaultModel: 'gpt-4o-mini',
     })
   })
 })

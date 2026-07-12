@@ -10,6 +10,12 @@ export interface AIAdapter {
   complete(prompt: string, options?: CompleteOptions): Promise<string>
 
   /**
+   * Completion model metadata, or null when text generation is unavailable
+   * (NoOp). Callers use this as the capability flag before calling complete().
+   */
+  getCompletionInfo(): CompletionInfo | null
+
+  /**
    * Generate an embedding vector for a single text
    */
   embed(text: string, options?: EmbedOptions): Promise<number[]>
@@ -30,6 +36,19 @@ export interface CompleteOptions {
   maxTokens?: number
   temperature?: number
   model?: string
+  system?: string
+  timeoutMs?: number
+  /** Forces JSON output matching the schema via the provider's native
+   *  mechanism. Returns a JSON string; validation is the caller's job.
+   *  Write schemas within OpenAI's strict subset (all properties required,
+   *  additionalProperties: false) — the OpenAI adapter enables strict mode. */
+  jsonSchema?: { name: string; schema: Record<string, unknown> }
+}
+
+export interface CompletionInfo {
+  provider: 'bedrock' | 'openai' | 'ollama'
+  /** Used when the caller does not pass options.model */
+  defaultModel: string
 }
 
 export interface EmbedOptions {

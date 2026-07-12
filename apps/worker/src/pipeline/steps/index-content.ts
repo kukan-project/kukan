@@ -21,13 +21,8 @@ import { OfficeParser } from 'officeparser'
 import type { ContentDoc } from '@kukan/search-adapter'
 import type { PipelineContext } from '../types'
 import type { ExtractResult } from './extract'
-import {
-  streamToBuffer,
-  streamUtf8Lines,
-  bufferToUtf8,
-  streamToTempFile,
-  cleanupTempFile,
-} from '../node-utils'
+import { streamToBuffer, streamUtf8Lines, streamToTempFile, cleanupTempFile } from '../node-utils'
+import { bufferToUtf8, stripTrailingReplacementChar } from '@kukan/shared/encoding-node'
 import { MAX_CONTENT_CHUNK_SIZE, MAX_FETCH_SIZE } from '@/config'
 
 export interface IndexContentResult {
@@ -359,5 +354,5 @@ function truncateToByteLimit(text: string, maxBytes: number): string {
   const buf = Buffer.from(text, 'utf-8')
   if (buf.length <= maxBytes) return text
   const sliced = buf.subarray(0, maxBytes)
-  return sliced.toString('utf-8').replace(/\uFFFD$/, '')
+  return stripTrailingReplacementChar(sliced.toString('utf-8'))
 }

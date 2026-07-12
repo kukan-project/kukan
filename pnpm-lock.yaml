@@ -195,9 +195,6 @@ importers:
       '@opensearch-project/opensearch':
         specifier: ^3.6.0
         version: 3.6.0
-      chardet:
-        specifier: ^2.1.1
-        version: 2.1.1
       croner:
         specifier: ^10.0.1
         version: 10.0.1
@@ -455,6 +452,9 @@ importers:
 
   packages/shared:
     dependencies:
+      chardet:
+        specifier: ^2.1.1
+        version: 2.1.1
       lru-cache:
         specifier: ~11.3.6
         version: 11.3.6
