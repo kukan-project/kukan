@@ -79,6 +79,15 @@ export const mockQueue: QueueAdapter = {
 }
 const mockAi = new NoOpAIAdapter()
 
+/** Completion-capable AI stub for AI-suggest tests (ADR-040) */
+export function mockCompletionAi(complete: AIAdapter['complete'] = async () => '{}') {
+  return {
+    getEmbeddingInfo: () => null,
+    getCompletionInfo: () => ({ provider: 'ollama', defaultModel: 'gemma4:e4b' }),
+    complete,
+  } as unknown as AIAdapter
+}
+
 const mockAuth = {
   api: {
     createUser: vi

@@ -74,3 +74,41 @@ export const BOOTSTRAP_CLAIM_STALE_MS = 60_000
 /** Admin connection test for the AI suggest model. Generous because CPU-only
  *  Ollama can take tens of seconds even for a tiny prompt (ADR-040) */
 export const AI_SUGGEST_TEST_TIMEOUT_MS = 60_000
+
+// --- AI metadata suggestions (ADR-040) ---
+
+/** Head bytes read from the storage original per text resource (discarded after use) */
+export const SUGGEST_TEXT_HEAD_BYTES = 16_384
+
+/** Sample rows read from the preview Parquet per CSV/TSV resource */
+export const SUGGEST_SAMPLE_ROWS = 5
+
+/** Per-cell clamp for sample rows — LIMIT bounds rows, not huge text cells */
+export const SUGGEST_SAMPLE_CELL_CHARS = 200
+
+/** Columns shown to the LLM per resource. Wide tables (80+ columns) bloat the
+ *  prompt and overwhelm small models without improving the description */
+export const SUGGEST_MAX_COLUMNS = 20
+
+/** Resources given a name + description slot (content-eligible first; the rest
+ *  beyond this cap are name/format context only) */
+export const SUGGEST_MAX_RESOURCES = 10
+
+/** Serialized prompt-material budget; content is trimmed largest-first to
+ *  fit, metadata is never dropped */
+export const SUGGEST_MAX_PROMPT_BYTES = 64_000
+
+/** Existing tags (by usage) offered to the LLM as candidates */
+export const SUGGEST_TAG_CANDIDATES = 30
+
+/** Output-token ceiling. Generous because Japanese is token-heavy: a title +
+ *  a paragraph of notes + a description per resource can exceed a tighter cap,
+ *  and hitting it truncates the JSON mid-object (ADR-040) */
+export const SUGGEST_MAX_TOKENS = 4_000
+
+/** Whole-request LLM timeout — CPU-only Ollama can take minutes (ADR-040) */
+export const SUGGEST_TIMEOUT_MS = 120_000
+
+/** Per-user fixed-window rate limit (LLM cost cap) */
+export const SUGGEST_RATE_LIMIT = 20
+export const SUGGEST_RATE_WINDOW_MS = 60 * 60 * 1000

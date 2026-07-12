@@ -41,6 +41,9 @@ export class OllamaAdapter implements AIAdapter {
         stream: false,
         // JSON.stringify drops undefined keys, so absent options never hit the wire
         format: options?.jsonSchema?.schema,
+        // Reasoning models (qwen3 etc.) otherwise spend the token budget on
+        // thinking and can truncate the JSON; non-reasoning models ignore this
+        think: false,
         options: {
           num_predict: options?.maxTokens ?? DEFAULT_COMPLETION_MAX_TOKENS,
           temperature: options?.temperature,

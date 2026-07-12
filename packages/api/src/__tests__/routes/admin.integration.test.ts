@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { sql } from 'drizzle-orm'
-import { createTestApp } from '../test-helpers/test-app'
+import { createTestApp, mockCompletionAi } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
@@ -192,11 +192,6 @@ describe('Admin API Routes', () => {
 
   describe('/api/v1/admin/settings/ai-suggest', () => {
     const AI_SUGGEST_PATH = '/api/v1/admin/settings/ai-suggest'
-    const completionAi = (complete: () => Promise<string>) =>
-      ({
-        getCompletionInfo: () => ({ provider: 'ollama', defaultModel: 'gemma4:e4b' }),
-        complete,
-      }) as unknown as AIAdapter
 
     it('should reject unauthenticated and non-sysadmin requests', async () => {
       expect((await unauthApp.request(AI_SUGGEST_PATH)).status).toBe(401)
@@ -222,7 +217,7 @@ describe('Admin API Routes', () => {
     it('should resolve the effective model from setting > provider default', async () => {
       const aiApp = createTestApp(db, {
         search: mockSearch,
-        ai: completionAi(async () => '{}'),
+        ai: mockCompletionAi(),
       })
 
       let body = await (await aiApp.request(AI_SUGGEST_PATH)).json()
@@ -248,7 +243,7 @@ describe('Admin API Routes', () => {
     })
 
     it('should reflect the kill switch in the context', async () => {
-      const aiApp = createTestApp(db, { search: mockSearch, ai: completionAi(async () => '{}') })
+      const aiApp = createTestApp(db, { search: mockSearch, ai: mockCompletionAi() })
 
       const res = await aiApp.request('/api/v1/admin/settings/ai-suggest-enabled', {
         method: 'PUT',
@@ -270,7 +265,7 @@ describe('Admin API Routes', () => {
 
     it('POST /test should report success with model and latency', async () => {
       const complete = vi.fn().mockResolvedValue('{"ok":true}')
-      const aiApp = createTestApp(db, { search: mockSearch, ai: completionAi(complete) })
+      const aiApp = createTestApp(db, { search: mockSearch, ai: mockCompletionAi(complete) })
 
       const res = await aiApp.request(`${AI_SUGGEST_PATH}/test`, { method: 'POST' })
       expect(res.status).toBe(200)
@@ -289,7 +284,7 @@ describe('Admin API Routes', () => {
     it('POST /test should surface failures as ok:false with the message', async () => {
       const aiApp = createTestApp(db, {
         search: mockSearch,
-        ai: completionAi(async () => {
+        ai: mockCompletionAi(async () => {
           throw new Error('Ollama chat failed: 404 model not found')
         }),
       })

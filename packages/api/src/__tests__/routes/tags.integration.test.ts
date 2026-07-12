@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { createTestApp } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
+import { TagService } from '../../services/tag-service'
 
 const db = getTestDb()
 const app = createTestApp(db)
@@ -68,6 +69,18 @@ describe('Tags API Routes', () => {
       const body = await res.json()
       expect(body.total).toBe(1)
       expect(body.items[0].name).toBe('population')
+    })
+  })
+
+  describe('TagService.list orderBy packageCount (ADR-040 tag candidates)', () => {
+    it('should order tags by usage, most-used first', async () => {
+      await createPackageWithTags('order-pkg-1', ['人気タグ', 'ふつうタグ'])
+      await createPackageWithTags('order-pkg-2', ['人気タグ', 'ふつうタグ'])
+      await createPackageWithTags('order-pkg-3', ['人気タグ', 'レアタグ'])
+
+      const { items } = await new TagService(db).list({ limit: 10, orderBy: 'packageCount' })
+      expect(items.map((t) => t.name)).toEqual(['人気タグ', 'ふつうタグ', 'レアタグ'])
+      expect(items[0].packageCount).toBe(3)
     })
   })
 

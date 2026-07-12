@@ -10,6 +10,17 @@ import { ValidationError, PIPELINE_JOB_TYPE, resourceSchemaSchema } from '@kukan
 import type { PipelineStatus, ResourceSchema } from '@kukan/shared'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 
+/**
+ * Validate `resource_pipeline.metadata.schema` (persisted by the Extract step,
+ * ADR-032), returning null when absent or malformed so unverified data never
+ * leaks to callers.
+ */
+export function parseResourceSchema(metadata: unknown): ResourceSchema | null {
+  const schema = (metadata as { schema?: unknown } | null | undefined)?.schema
+  const parsed = resourceSchemaSchema.safeParse(schema)
+  return parsed.success ? parsed.data : null
+}
+
 export class PipelineService {
   constructor(
     private db: Database,
@@ -112,20 +123,6 @@ export class PipelineService {
     return { ...pipeline, steps }
   }
 
-  /**
-   * Get the persisted column schema for a resource (ADR-032), or null when the
-   * resource has no tabular schema (non-tabular format, oversize CSV, or not yet
-   * processed). The schema is stored in resource_pipeline.metadata.schema by the
-   * Extract step; it is validated here so a malformed value yields null rather
-   * than leaking unverified data.
-   */
-  /** Validate `metadata.schema`, returning null when absent or malformed. */
-  private parseSchema(metadata: unknown): ResourceSchema | null {
-    const schema = (metadata as { schema?: unknown } | null | undefined)?.schema
-    const parsed = resourceSchemaSchema.safeParse(schema)
-    return parsed.success ? parsed.data : null
-  }
-
   async getSchema(resourceId: string): Promise<ResourceSchema | null> {
     const [row] = await this.db
       .select({ metadata: resourcePipeline.metadata })
@@ -133,7 +130,7 @@ export class PipelineService {
       .where(eq(resourcePipeline.resourceId, resourceId))
       .limit(1)
 
-    return this.parseSchema(row?.metadata)
+    return parseResourceSchema(row?.metadata)
   }
 
   /**
@@ -153,6 +150,6 @@ export class PipelineService {
       .limit(1)
 
     if (!row) return null
-    return { previewKey: row.previewKey, schema: this.parseSchema(row.metadata) }
+    return { previewKey: row.previewKey, schema: parseResourceSchema(row.metadata) }
   }
 }

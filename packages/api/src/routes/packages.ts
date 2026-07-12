@@ -15,8 +15,10 @@ import {
   updatePackageSchema,
   createResourceBodySchema,
   reorderResourcesSchema,
+  suggestMetadataRequestSchema,
   UnauthorizedError,
   ValidationError,
+  ServiceUnavailableError,
   PACKAGE_STATES,
 } from '@kukan/shared'
 import type { MatchedResource, SearchFilters } from '@kukan/search-adapter'
@@ -34,6 +36,9 @@ import {
 } from '../services/search-index'
 import { hybridSearch } from '../services/hybrid-search'
 import { purgePackageExternals } from '../services/package-cleanup'
+import { MetadataSuggestService } from '../services/metadata-suggest-service'
+import { suggestRateLimiter } from '../services/suggest/rate-limit'
+import { getSuggestAvailability } from '../services/suggest/availability'
 import type { AppContext } from '../context'
 import type { Database } from '@kukan/db'
 import type { PackageAuthorize } from '../services/package-service'
@@ -388,6 +393,46 @@ packagesRouter.post('/:nameOrId/publish', async (c) => {
   ])
   return c.json(pkg)
 })
+
+// POST /api/v1/packages/:nameOrId/suggest-metadata - AI metadata suggestions (ADR-040)
+// Synchronous and stateless: nothing is persisted; adopting a suggested value
+// happens through the ordinary PUT. Same permission as updating the package.
+packagesRouter.post(
+  '/:nameOrId/suggest-metadata',
+  zValidator('json', suggestMetadataRequestSchema),
+  async (c) => {
+    const user = c.get('user')
+    if (!user) throw new UnauthorizedError()
+
+    const availability = await getSuggestAvailability(c.get('ai'), c.get('settings'))
+    if (!availability) {
+      throw new ServiceUnavailableError('AI suggestions are not available')
+    }
+
+    const db = c.get('db')
+    const service = new PackageService(db)
+    const pkg = await service.getDetailByNameOrId(c.req.param('nameOrId'), user, [
+      'active',
+      'draft',
+    ])
+    await makePackageAuthorize(db, user, 'editor')(pkg)
+
+    // After authorization so denied requests never consume quota
+    suggestRateLimiter.check(user.id)
+
+    const suggestService = new MetadataSuggestService(
+      db,
+      c.get('storage'),
+      c.get('ai'),
+      c.get('logger')
+    )
+    const result = await suggestService.suggest(pkg, user, {
+      locale: c.req.valid('json').locale,
+      ...availability,
+    })
+    return c.json(result)
+  }
+)
 
 // POST /api/v1/packages/:nameOrId/purge - Permanently delete a soft-deleted package (org admin+)
 packagesRouter.post('/:nameOrId/purge', async (c) => {

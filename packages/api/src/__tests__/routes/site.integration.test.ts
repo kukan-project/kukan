@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { sql } from 'drizzle-orm'
-import { createTestApp, mockSearch } from '../test-helpers/test-app'
+import { createTestApp, mockSearch, mockCompletionAi } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import { resetBootstrapCache } from '../../services/bootstrap'
 import type { AIAdapter } from '@kukan/ai-adapter'
@@ -9,6 +9,7 @@ const db = getTestDb()
 
 const embedAi = {
   getEmbeddingInfo: () => ({ model: 'stub-model', dimensions: 3 }),
+  getCompletionInfo: () => null,
   embed: async () => [1, 0, 0],
 } as unknown as AIAdapter
 
@@ -60,6 +61,28 @@ describe('GET /api/v1/site/settings', () => {
 
     const res = await app.request('/api/v1/site/settings')
     expect((await res.json()).searchExampleQueries).toEqual(['避難所の場所'])
+  })
+
+  it('should report metadata suggestions off without completion support', async () => {
+    const res = await createTestApp(db, { user: null }).request('/api/v1/site/settings')
+    expect((await res.json()).metadataSuggestEnabled).toBe(false)
+  })
+
+  it('should report metadata suggestions on with completion support and reflect the kill switch', async () => {
+    const app = createTestApp(db, { search: mockSearch, ai: mockCompletionAi() })
+
+    let res = await app.request('/api/v1/site/settings')
+    expect((await res.json()).metadataSuggestEnabled).toBe(true)
+
+    const put = await app.request('/api/v1/admin/settings/ai-suggest-enabled', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: false }),
+    })
+    expect(put.status).toBe(200)
+
+    res = await app.request('/api/v1/site/settings')
+    expect((await res.json()).metadataSuggestEnabled).toBe(false)
   })
 
   it('should reflect the registration-enabled runtime setting', async () => {

@@ -34,12 +34,12 @@ export async function deleteOrphanFreeTags(db: DbOrTx): Promise<void> {
 export class TagService {
   constructor(private db: Database) {}
 
-  async list(params: PaginationParams & { q?: string }) {
-    const { offset = 0, limit = 100, q } = params
+  async list(params: PaginationParams & { q?: string; orderBy?: 'packageCount' }) {
+    const { offset = 0, limit = 100, q, orderBy } = params
 
     const where = q ? ilike(tag.name, `%${escapeLike(q)}%`) : undefined
 
-    const rows = await this.db
+    let query = this.db
       .select({
         id: tag.id,
         name: tag.name,
@@ -51,8 +51,14 @@ export class TagService {
       .leftJoin(packageTag, eq(tag.id, packageTag.tagId))
       .where(where)
       .groupBy(tag.id, tag.name, tag.vocabularyId)
-      .limit(limit)
-      .offset(offset)
+      .$dynamic()
+
+    // Most-used first — tag candidates for AI suggestions (ADR-040)
+    if (orderBy === 'packageCount') {
+      query = query.orderBy(sql`package_count desc`, tag.name)
+    }
+
+    const rows = await query.limit(limit).offset(offset)
 
     const total = rows[0]?.total ?? 0
     const items = rows.map(({ total: _, ...rest }) => rest)

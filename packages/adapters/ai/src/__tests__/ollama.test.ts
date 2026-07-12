@@ -117,6 +117,8 @@ describe('OllamaAdapter', () => {
       ])
       expect(body.options.num_predict).toBe(2048)
       expect(body.format).toBeUndefined()
+      // Reasoning is disabled so thinking models don't burn the token budget
+      expect(body.think).toBe(false)
     })
 
     it('passes the JSON schema as structured outputs format', async () => {
