@@ -13,7 +13,11 @@ vi.mock('next/navigation', () => ({
 }))
 
 // The dialog's own behavior is covered in metadata-suggest-dialog.test.tsx —
-// here a stub applies a fixed selection so the form-side wiring is observable
+// here a stub applies a selection so the form-side wiring is observable. The
+// selection is mutable so a test can inject resource adoptions.
+const applyState = vi.hoisted(() => ({
+  selection: { title: 'AI タイトル', tags: ['防災', '人口'] } as unknown,
+}))
 vi.mock('../metadata-suggest-dialog', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../metadata-suggest-dialog')>()),
   MetadataSuggestDialog: ({
@@ -24,10 +28,7 @@ vi.mock('../metadata-suggest-dialog', async (importOriginal) => ({
     onApply: (selection: unknown) => void
   }) =>
     open ? (
-      <button
-        type="button"
-        onClick={() => onApply({ title: 'AI タイトル', tags: ['防災', '人口'] })}
-      >
+      <button type="button" onClick={() => onApply(applyState.selection)}>
         MockApplySuggestion
       </button>
     ) : null,
@@ -59,6 +60,7 @@ describe('DatasetForm (draft flows)', () => {
   beforeEach(() => {
     mockClientFetch.mockReset()
     push.mockReset()
+    applyState.selection = { title: 'AI タイトル', tags: ['防災', '人口'] }
   })
 
   describe('create mode', () => {
@@ -554,6 +556,31 @@ describe('DatasetForm (draft flows)', () => {
       expect(screen.getByLabelText('Tags')).toHaveValue('防災, 人口')
       // Adopted values mark the form dirty so Save enables
       expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    })
+
+    it('surfaces a failure when adopting a resource suggestion does not save', async () => {
+      applyState.selection = { resources: [{ id: 'r1', description: 'AI 説明' }] }
+      // Resource GET succeeds, its PUT fails → updateResource returns false
+      mockClientFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+        if (path.includes('/api/v1/groups')) return jsonResponse({ items: [] })
+        if (path.includes('/api/v1/resources/') && init?.method === 'PUT')
+          return jsonResponse({}, false)
+        return jsonResponse({ id: 'r1' })
+      })
+      render(
+        <DatasetForm
+          {...editProps}
+          suggest={{
+            enabled: true,
+            resources: [{ id: 'r1', name: 'data.csv', pipelineStatus: 'complete' }],
+          }}
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: /Suggest metadata with AI/ }))
+      fireEvent.click(await screen.findByRole('button', { name: 'MockApplySuggestion' }))
+
+      expect(await screen.findByText(/Failed to update 1 resource/)).toBeInTheDocument()
     })
   })
 })

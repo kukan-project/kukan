@@ -181,6 +181,8 @@
     "retryDeleteConfirm": "The previous deletion did not complete. Retrying will permanently delete this draft and all its resources.",
     "aiSuggestButton": "Suggest metadata with AI",
     "aiSuggestNeedResources": "Upload a resource and the AI can suggest metadata",
+    "aiSuggestApplyingResources": "Applying resource suggestions…",
+    "aiSuggestResourceApplyFailed": "Failed to update {count} resource(s). Please try again later.",
     "aiSuggestNudge": "Resource processing finished. Want the AI to suggest metadata?",
     "aiSuggestNudgeButton": "Generate suggestions",
     "aiSuggestDialogTitle": "AI Metadata Suggestions",

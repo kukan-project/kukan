@@ -303,7 +303,7 @@ adminRouter.post('/settings/ai-suggest/test', async (c) => {
 
   const startedAt = Date.now()
   try {
-    await c.get('ai').complete('Reply with {"ok": true}.', {
+    const raw = await c.get('ai').complete('Reply with {"ok": true}.', {
       model: context.effectiveModel,
       maxTokens: 100,
       timeoutMs: AI_SUGGEST_TEST_TIMEOUT_MS,
@@ -317,6 +317,20 @@ adminRouter.post('/settings/ai-suggest/test', async (c) => {
         },
       },
     })
+    // The completion resolving is not enough: an endpoint that ignores the JSON
+    // schema returns prose/empty/malformed output that the real suggestion flow
+    // would reject with a 503. Verify it actually produced the expected JSON.
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      throw new Error(
+        'The model did not return valid JSON — the endpoint may be ignoring the JSON schema (structured output).'
+      )
+    }
+    if ((parsed as { ok?: unknown } | null)?.ok !== true) {
+      throw new Error('The model response did not match the expected JSON ({"ok": true}).')
+    }
     return c.json({ ok: true, model: context.effectiveModel, latencyMs: Date.now() - startedAt })
   } catch (error) {
     return c.json({

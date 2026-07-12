@@ -5,7 +5,7 @@
 
 import { and, eq, ilike, isNull, notExists, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { tag, packageTag } from '@kukan/db'
+import { tag, packageTag, packageTable } from '@kukan/db'
 import { escapeLike } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult } from '@kukan/shared'
 
@@ -44,13 +44,26 @@ export class TagService {
         id: tag.id,
         name: tag.name,
         vocabularyId: tag.vocabularyId,
-        packageCount: sql<number>`COUNT(DISTINCT ${packageTag.packageId})::int`.as('package_count'),
+        // Count usage by published (active) packages only — the active-only
+        // join means draft/deleted links contribute a NULL and are not counted
+        packageCount: sql<number>`COUNT(DISTINCT ${packageTable.id})::int`.as('package_count'),
         total: sql<number>`COUNT(*) OVER()::int`.as('total'),
       })
       .from(tag)
+      // Left-join so tags with no active package still appear when they are
+      // controlled vocabulary; the active-state predicate lives in the ON clause
+      // so it filters counted rows, not the tag itself.
       .leftJoin(packageTag, eq(tag.id, packageTag.tagId))
+      .leftJoin(
+        packageTable,
+        and(eq(packageTag.packageId, packageTable.id), eq(packageTable.state, 'active'))
+      )
       .where(where)
       .groupBy(tag.id, tag.name, tag.vocabularyId)
+      // Free tags surface only when used by an active package (drafts must not
+      // leak); vocabulary tags are managed explicitly and always kept (tag_list
+      // contract, and never GC'd — see deleteOrphanFreeTags).
+      .having(sql`${tag.vocabularyId} IS NOT NULL OR COUNT(DISTINCT ${packageTable.id}) > 0`)
       .$dynamic()
 
     // Most-used first — tag candidates for AI suggestions (ADR-040)
@@ -72,12 +85,19 @@ export class TagService {
         id: tag.id,
         name: tag.name,
         vocabularyId: tag.vocabularyId,
-        packageCount: sql<number>`COUNT(DISTINCT ${packageTag.packageId})::int`.as('package_count'),
+        packageCount: sql<number>`COUNT(DISTINCT ${packageTable.id})::int`.as('package_count'),
       })
       .from(tag)
+      // Same visibility rule as list(): count active usage, hide draft-only free
+      // tags, but always keep controlled-vocabulary tags
       .leftJoin(packageTag, eq(tag.id, packageTag.tagId))
+      .leftJoin(
+        packageTable,
+        and(eq(packageTag.packageId, packageTable.id), eq(packageTable.state, 'active'))
+      )
       .where(eq(tag.id, id))
       .groupBy(tag.id, tag.name, tag.vocabularyId)
+      .having(sql`${tag.vocabularyId} IS NOT NULL OR COUNT(DISTINCT ${packageTable.id}) > 0`)
       .limit(1)
 
     return result || null

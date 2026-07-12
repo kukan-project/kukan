@@ -189,6 +189,11 @@ export function DatasetForm({
 
   // --- AI metadata suggestions (ADR-040) ---
   const [suggestOpen, setSuggestOpen] = useState(false)
+  // Counter, not a boolean: overlapping applies must all finish before the
+  // save/publish block lifts (a boolean would clear on the first one's finally)
+  const [applyingCount, setApplyingCount] = useState(0)
+  const applyingResources = applyingCount > 0
+  const [resourceApplyError, setResourceApplyError] = useState<string | null>(null)
   const showSuggest = mode === 'edit' && !!nameOrId && suggest?.enabled === true
   const hasCompleteResource = suggest?.resources.some((r) => r.pipelineStatus === 'complete')
 
@@ -204,18 +209,32 @@ export function DatasetForm({
     if (selection.tags) setTagsInput(selection.tags.join(', '))
     if (selection.resources?.length) {
       // Adopting a resource name/description is an ordinary resource update,
-      // saved immediately (the form has no state for resources). Each resource
-      // is independent, so fan out rather than serialize the round-trips.
+      // saved immediately (the form has no state for resources). Block save /
+      // publish while it runs (a concurrent publish could race the writes), and
+      // surface any failure instead of silently closing as if it succeeded.
+      setResourceApplyError(null)
+      setApplyingCount((n) => n + 1)
       void (async () => {
-        await Promise.all(
-          selection.resources!.map((item) =>
-            updateResource(item.id, {
-              ...(item.name !== undefined && { name: item.name }),
-              ...(item.description !== undefined && { description: item.description }),
-            })
+        try {
+          const results = await Promise.all(
+            selection.resources!.map((item) =>
+              updateResource(item.id, {
+                ...(item.name !== undefined && { name: item.name }),
+                ...(item.description !== undefined && { description: item.description }),
+              })
+            )
           )
-        )
-        suggest?.onResourcesUpdated?.()
+          const failed = results.filter((ok) => !ok).length
+          if (failed > 0)
+            setResourceApplyError(t('aiSuggestResourceApplyFailed', { count: failed }))
+        } catch {
+          setResourceApplyError(
+            t('aiSuggestResourceApplyFailed', { count: selection.resources!.length })
+          )
+        } finally {
+          setApplyingCount((n) => n - 1)
+          suggest?.onResourcesUpdated?.()
+        }
       })()
     }
   }
@@ -370,7 +389,7 @@ export function DatasetForm({
             type="button"
             variant="outline"
             onClick={() => setSuggestOpen(true)}
-            disabled={!hasCompleteResource}
+            disabled={!hasCompleteResource || applyingResources}
           >
             <Sparkles className="mr-1 size-4" />
             {t('aiSuggestButton')}
@@ -378,6 +397,15 @@ export function DatasetForm({
           {!hasCompleteResource && (
             <span className="text-xs text-muted-foreground">{t('aiSuggestNeedResources')}</span>
           )}
+          {applyingResources && (
+            <span className="text-xs text-muted-foreground">{t('aiSuggestApplyingResources')}</span>
+          )}
+        </div>
+      )}
+
+      {resourceApplyError && (
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {resourceApplyError}
         </div>
       )}
 
@@ -633,14 +661,14 @@ export function DatasetForm({
               type="submit"
               variant="outline"
               className="flex-1"
-              disabled={isSubmitting || !hasChanges}
+              disabled={isSubmitting || !hasChanges || applyingResources}
             >
               {isSubmitting && !publishIntent ? tc('saving') : t('saveDraft')}
             </Button>
             <Button
               type="button"
               className="flex-1"
-              disabled={isSubmitting || publishBlockers.length > 0}
+              disabled={isSubmitting || publishBlockers.length > 0 || applyingResources}
               onClick={handleSubmit((values) => onSubmit(values, true))}
             >
               {isSubmitting && publishIntent ? t('publishing') : t('saveAndPublish')}
@@ -650,7 +678,10 @@ export function DatasetForm({
       ) : (
         // Create Draft stays enabled on a pristine form: the file-first flow
         // creates an empty draft and moves on to adding resources (ADR-039)
-        <Button type="submit" disabled={isSubmitting || (mode === 'edit' && !hasChanges)}>
+        <Button
+          type="submit"
+          disabled={isSubmitting || (mode === 'edit' && !hasChanges) || applyingResources}
+        >
           {isSubmitting
             ? mode === 'create'
               ? tc('creating')

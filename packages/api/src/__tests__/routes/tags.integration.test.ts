@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
+import { eq } from 'drizzle-orm'
+import { tag, vocabulary } from '@kukan/db'
 import { createTestApp } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import { TagService } from '../../services/tag-service'
@@ -69,6 +71,53 @@ describe('Tags API Routes', () => {
       const body = await res.json()
       expect(body.total).toBe(1)
       expect(body.items[0].name).toBe('population')
+    })
+
+    it('should not leak draft-only tags to the public list, candidates, or detail', async () => {
+      const orgId = await ensureTestOrg()
+      // An active package's tag is public; a draft-only tag must not be
+      await createPackageWithTags('active-pkg', ['public-tag'])
+      const draftRes = await app.request('/api/v1/packages/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ownerOrg: orgId, tags: [{ name: 'draft-only-tag' }] }),
+      })
+      expect(draftRes.status).toBe(201)
+
+      // Public /tags and the AI candidate list exclude the draft-only tag
+      const names = (await (await app.request('/api/v1/tags')).json()).items.map(
+        (t: { name: string }) => t.name
+      )
+      expect(names).toContain('public-tag')
+      expect(names).not.toContain('draft-only-tag')
+
+      const { items } = await new TagService(db).list({ limit: 10, orderBy: 'packageCount' })
+      expect(items.map((t) => t.name)).not.toContain('draft-only-tag')
+
+      // Detail lookup 404s for a tag with no active package
+      const [draftTag] = await db.select().from(tag).where(eq(tag.name, 'draft-only-tag'))
+      expect(draftTag).toBeDefined()
+      const detail = await app.request(`/api/v1/tags/${draftTag.id}`)
+      expect(detail.status).toBe(404)
+    })
+
+    it('keeps unused controlled-vocabulary tags visible', async () => {
+      // Vocabulary tags are managed explicitly (never GC'd) and part of the
+      // tag_list contract, so they stay listed even with no active package
+      const [vocab] = await db.insert(vocabulary).values({ name: 'themes' }).returning()
+      const [vTag] = await db
+        .insert(tag)
+        .values({ name: 'controlled-term', vocabularyId: vocab.id })
+        .returning()
+
+      const found = (await (await app.request('/api/v1/tags')).json()).items.find(
+        (t: { name: string }) => t.name === 'controlled-term'
+      )
+      expect(found).toBeDefined()
+      expect(found.packageCount).toBe(0)
+
+      const detail = await app.request(`/api/v1/tags/${vTag.id}`)
+      expect(detail.status).toBe(200)
     })
   })
 

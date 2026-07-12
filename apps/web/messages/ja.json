@@ -181,6 +181,8 @@
     "retryDeleteConfirm": "前回の削除が完了していません。再試行するとこの下書きとそのすべてのリソースは完全に削除されます。",
     "aiSuggestButton": "AI にメタデータを提案させる",
     "aiSuggestNeedResources": "リソースをアップロードすると AI がメタデータを提案できます",
+    "aiSuggestApplyingResources": "リソースの提案を適用しています…",
+    "aiSuggestResourceApplyFailed": "{count} 件のリソースの更新に失敗しました。時間をおいて再度お試しください。",
     "aiSuggestNudge": "リソースの処理が完了しました。AI にメタデータを提案させますか？",
     "aiSuggestNudgeButton": "提案を生成",
     "aiSuggestDialogTitle": "AI メタデータ提案",

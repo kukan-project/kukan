@@ -297,6 +297,20 @@ describe('Admin API Routes', () => {
       expect(options.timeoutMs).toBeGreaterThan(0)
     })
 
+    it('POST /test rejects a resolving-but-invalid response (schema ignored)', async () => {
+      // An endpoint that ignores structured output returns prose, not JSON
+      const aiApp = createTestApp(db, {
+        search: mockSearch,
+        ai: mockCompletionAi(async () => 'Sure, ok!'),
+      })
+
+      const res = await aiApp.request(`${AI_SUGGEST_PATH}/test`, { method: 'POST' })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.ok).toBe(false)
+      expect(body.error).toMatch(/JSON|schema/i)
+    })
+
     it('POST /test should surface failures as ok:false with the message', async () => {
       const aiApp = createTestApp(db, {
         search: mockSearch,
