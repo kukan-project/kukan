@@ -3,6 +3,38 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-07-13
+
+**Highlights**
+
+- **AI metadata suggestions.** From the dataset edit page you can now ask an AI to draft a title, notes, tags, and a name and description for each resource, then adopt any field individually — every toggle is opt-in and each proposal can be edited inline before you apply it. Suggestions use the actual file contents for CSV/TSV and the filename for other formats, run on Bedrock, Ollama, or any OpenAI-compatible endpoint, and the generation model is switchable at runtime from the admin dashboard.
+- **File-first draft datasets.** Datasets are now created as drafts: create the draft, upload and process resources, review previews, then publish. Drafts stay in your dashboard and never appear in search results or public listings until you publish them.
+
+**Features**
+
+- feat: AI metadata suggestions — on the edit page, generate a title, notes, tags, and per-resource name/description in one call, adopt them per field (all opt-in) with inline editing, and never persist a suggestion until it is adopted. Backed by a new `AIAdapter.complete()` across Bedrock / Ollama / OpenAI-compatible providers, with a per-user rate limit, an admin on/off kill switch, a connection test, and a runtime-switchable model chosen from a dropdown of the provider's available models (ADR-040) (#60, #62, #64, #65, #67).
+- feat: file-first draft dataset creation — create a dataset as a draft, add and process resources with previews, then publish; drafts are dashboard-only and excluded from search and listings until published (ADR-039) (#58).
+
+**Bug Fixes**
+
+- fix: tags saved on a private draft no longer leak to the public tag list, the CKAN `tag_list` API, or the AI suggestion candidates — tags are counted over published datasets only, while controlled-vocabulary tags remain listed regardless of use. Adopting an AI resource suggestion now surfaces update failures instead of silently closing as if it succeeded, and the AI connection test verifies the model actually returns valid JSON rather than passing on any response (#68).
+
+---
+
+**ハイライト**
+
+- **AI メタデータ提案。** データセットの編集画面から、タイトル・説明・タグ、および各リソースの名前・説明を AI に下書きさせ、フィールド単位で採用できるようになりました。採用トグルはすべてオプトインで、各提案は適用前にその場で編集できます。提案は CSV/TSV では実際のファイル内容を、その他の形式ではファイル名を材料にし、Bedrock・Ollama・OpenAI 互換エンドポイントで動作します。生成モデルは管理画面から再デプロイなしで切り替えられます。
+- **ファイルファーストの下書きデータセット。** データセットは下書きとして作成するようになりました。下書きを作成 → リソースをアップロード・処理 → プレビュー確認 → 公開、という流れです。下書きは公開するまでダッシュボードにのみ表示され、検索結果や公開一覧には一切現れません。
+
+**機能**
+
+- feat: AI メタデータ提案 — 編集画面でタイトル・説明・タグ・各リソースの名前/説明を 1 回の呼び出しで生成し、フィールド単位（すべてオプトイン）でインライン編集しながら採用。提案は採用するまで永続化しません。Bedrock / Ollama / OpenAI 互換に対応する新しい `AIAdapter.complete()` を基盤に、ユーザー単位のレート制限・管理者のキルスイッチ・接続テスト・プロバイダの利用可能モデルから選ぶランタイム切替を備えます（ADR-040）（#60, #62, #64, #65, #67）。
+- feat: ファイルファーストの下書き作成 — データセットを下書きとして作成し、プレビュー付きでリソースを追加・処理してから公開します。下書きは公開するまでダッシュボード限定で、検索・一覧から除外されます（ADR-039）（#58）。
+
+**バグ修正**
+
+- fix: 非公開の下書きに付けたタグが公開タグ一覧・CKAN `tag_list` API・AI 提案候補に漏洩する問題を修正しました。タグは公開済みデータセットのみで集計されるようになり、統制語彙タグは利用有無にかかわらず一覧に残ります。AI のリソース提案の採用は、失敗を隠して成功したかのように閉じるのではなくエラーを表示するようになり、AI 接続テストはどんな応答でも成功とせず、モデルが実際に有効な JSON を返すことを検証するようになりました（#68）。
+
 ## [0.7.6] - 2026-07-11
 
 **Bug Fixes**
