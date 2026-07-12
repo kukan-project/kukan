@@ -911,6 +911,23 @@ describe('Resources API Routes', () => {
       expect(JSON.stringify(outsiderBody)).not.toContain('kukan-prod')
       expect(JSON.stringify(outsiderBody)).not.toContain('10.0.1.42')
     })
+
+    it('should return 404 for a draft resource to anonymous users (ADR-039)', async () => {
+      const draftRes = await app.request('/api/v1/packages/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const draft = await draftRes.json()
+      const resource = await createResource(draft.id)
+
+      const anon = await unauthApp.request(`/api/v1/resources/${resource.id}/pipeline-status`)
+      expect(anon.status).toBe(404)
+
+      // The creator still sees the status
+      const mine = await app.request(`/api/v1/resources/${resource.id}/pipeline-status`)
+      expect(mine.status).toBe(200)
+    })
   })
 
   describe('GET /api/v1/resources/:id/schema (ADR-032)', () => {

@@ -146,7 +146,8 @@ pnpm format        # Prettier フォーマット
 ### データベース
 
 - すべてのテーブルに `id` (UUID), `created` (TIMESTAMPTZ), `updated` (TIMESTAMPTZ)
-- 論理削除は使わない（`state` カラムで `active` / `deleted` を管理）
+- 論理削除は使わない（`state` カラムで管理: package は `draft` / `active` / `deleted`、organization / group は `active` / `deleted`。
+  package と organization は purge 遷移中に一時値 `purging` を取る — ADR-028 / ADR-039）
 - マイグレーションは Drizzle Kit で管理
 
 ### テスト

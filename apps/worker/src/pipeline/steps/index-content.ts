@@ -54,6 +54,11 @@ export async function executeIndexContent(
 ): Promise<IndexContentResult | null> {
   const normalizedFormat = format?.toLowerCase() ?? null
 
+  // Draft packages stay out of the content index until publish (ADR-039);
+  // deleted/purging packages must not be re-indexed either
+  const pkgState = await ctx.getPackageState(packageId)
+  if (pkgState !== 'active') return null
+
   const contentType = getContentType(normalizedFormat)
   if (!contentType) {
     // Clean up any previously indexed content (e.g. format changed to non-indexable)

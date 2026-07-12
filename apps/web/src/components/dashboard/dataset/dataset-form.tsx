@@ -4,7 +4,14 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { createPackageSchema, LICENSES, resolveLicenseLabel } from '@kukan/shared'
+import {
+  createPackageSchema,
+  draftPublishBlockers,
+  isDraftPlaceholderName,
+  LICENSES,
+  resolveLicenseLabel,
+  type DraftPublishBlocker,
+} from '@kukan/shared'
 import {
   Button,
   Input,
@@ -27,7 +34,23 @@ import { clientFetch } from '@/lib/client-api'
 const datasetFormSchema = createPackageSchema.extend({
   licenseId: z.string().min(1),
 })
-type DatasetFormInput = z.infer<typeof datasetFormSchema>
+
+/** Draft form schema: name/ownerOrg/licenseId may stay unset until publish (ADR-039) */
+const draftFormSchema = datasetFormSchema.extend({
+  name: z.union([createPackageSchema.shape.name, z.literal('')]).optional(),
+  ownerOrg: z.union([z.uuid(), z.literal('')]).optional(),
+  licenseId: z.string().optional(),
+})
+type DatasetFormInput = z.infer<typeof draftFormSchema>
+
+/**
+ * Normalized snapshots of the fields managed outside React Hook Form, used to
+ * detect changes the same way the submit payload is built (empty extras keys
+ * are ignored, group order is irrelevant).
+ */
+const snapshotGroups = (names: string[]) => [...names].sort().join('\n')
+const snapshotExtras = (rows: { key: string; value: string }[]) =>
+  JSON.stringify(rows.filter((r) => r.key.trim()).map((r) => [r.key.trim(), r.value]))
 
 interface Organization {
   id: string
@@ -46,15 +69,34 @@ interface DatasetFormProps {
   defaultValues?: Partial<DatasetFormInput>
   nameOrId?: string
   organizations: Organization[]
+  /** Edit target is a draft package (ADR-039): partial PUT, relaxed validation */
+  isDraft?: boolean
+  /** Called after a successful update instead of navigating to the list */
+  onSaved?: () => void
+  /** Called after "Save & Publish" successfully published the draft */
+  onPublished?: () => void
 }
 
-export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: DatasetFormProps) {
+export function DatasetForm({
+  mode,
+  defaultValues,
+  nameOrId,
+  organizations,
+  isDraft,
+  onSaved,
+  onPublished,
+}: DatasetFormProps) {
+  // Creation always starts as a draft (ADR-039)
+  const isDraftMode = mode === 'create' || !!isDraft
   const router = useRouter()
   const t = useTranslations('dataset')
   const tl = useTranslations('license')
   const tc = useTranslations('common')
   const [error, setError] = useState<string | null>(null)
   const [extrasError, setExtrasError] = useState<string | null>(null)
+  const [publishError, setPublishError] = useState<string | null>(null)
+  // Which footer button is in flight, for the loading labels
+  const [publishIntent, setPublishIntent] = useState(false)
   const [tagsInput, setTagsInput] = useState(
     defaultValues?.tags?.map((t) => t.name).join(', ') ?? ''
   )
@@ -62,6 +104,10 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
   const [selectedGroups, setSelectedGroups] = useState<string[]>(
     defaultValues?.groups?.map((g) => g.name) ?? []
   )
+  // Whether the server holds a real (non-placeholder) name: clearing it must
+  // send an explicit `name: null` to reset the draft to a fresh placeholder,
+  // while an already-blank placeholder name is simply omitted (ADR-039)
+  const serverHasRealName = useRef(!!defaultValues?.name)
 
   useEffect(() => {
     clientFetch('/api/v1/groups?limit=100').then(async (res) => {
@@ -103,10 +149,12 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
     register,
     handleSubmit,
     control,
-    formState: { errors, isSubmitting },
+    reset,
+    watch,
+    formState: { errors, isSubmitting, isDirty },
   } = useForm<DatasetFormInput>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(datasetFormSchema) as any,
+    resolver: zodResolver(isDraftMode ? draftFormSchema : datasetFormSchema) as any,
     defaultValues: {
       private: false,
       type: 'dataset',
@@ -117,8 +165,51 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
     },
   })
 
-  const onSubmit = async (values: DatasetFormInput) => {
+  const isDraftEdit = mode === 'edit' && isDraftMode
+
+  // Tags/groups/extras live outside RHF, so isDirty alone misses them: keep a
+  // baseline snapshot (refreshed on save) and compare
+  const [baseline, setBaseline] = useState(() => ({
+    tags: tagsInput,
+    groups: snapshotGroups(selectedGroups),
+    extras: snapshotExtras(extrasRows),
+  }))
+  const hasChanges =
+    isDirty ||
+    tagsInput !== baseline.tags ||
+    snapshotGroups(selectedGroups) !== baseline.groups ||
+    snapshotExtras(extrasRows) !== baseline.extras
+
+  // Live publish preconditions (ADR-039): judge on the current form values so
+  // "Save & Publish" enables without a save round-trip. A blank name field
+  // means the server keeps (or regenerates) the placeholder, so substitute a
+  // placeholder-shaped name to surface the name blocker.
+  const [liveName, liveOwnerOrg, liveLicenseId] = watch(['name', 'ownerOrg', 'licenseId'])
+  const publishBlockers = isDraftEdit
+    ? draftPublishBlockers({
+        name: liveName || 'untitled-00000000',
+        ownerOrg: liveOwnerOrg || null,
+        licenseId: liveLicenseId || null,
+      })
+    : []
+  const blockerMessages: Record<DraftPublishBlocker, string> = {
+    name: t('publishRequiresName'),
+    org: t('publishRequiresOrg'),
+    license: t('publishRequiresLicense'),
+  }
+
+  const onSubmit = async (values: DatasetFormInput, publishAfter = false) => {
     setError(null)
+    setPublishError(null)
+    setPublishIntent(publishAfter)
+
+    // Saved values become the new pristine state
+    const refreshBaseline = () =>
+      setBaseline({
+        tags: tagsInput,
+        groups: snapshotGroups(selectedGroups),
+        extras: snapshotExtras(extrasRows),
+      })
 
     // Parse comma-separated tags
     const tags = tagsInput
@@ -144,9 +235,20 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
 
     const groups = selectedGroups.map((name) => ({ name }))
 
-    const body = { ...values, tags, groups, extras }
+    const body: Record<string, unknown> = { ...values, tags, groups, extras }
+    if (isDraftMode) {
+      // Unset name/ownerOrg stay server-managed (placeholder / null) — omit
+      // rather than send '' (draft PUT is partial: absent keys are untouched).
+      // Exception: clearing a previously set real name sends `name: null` so
+      // the server regenerates the placeholder (ADR-039)
+      if (!values.name) {
+        if (mode === 'edit' && serverHasRealName.current) body.name = null
+        else delete body.name
+      }
+      if (!values.ownerOrg) delete body.ownerOrg
+    }
 
-    const url = mode === 'create' ? '/api/v1/packages' : `/api/v1/packages/${nameOrId}`
+    const url = mode === 'create' ? '/api/v1/packages/drafts' : `/api/v1/packages/${nameOrId}`
     const method = mode === 'create' ? 'POST' : 'PUT'
 
     const res = await clientFetch(url, {
@@ -161,25 +263,71 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
       return
     }
 
-    router.push('/dashboard/datasets')
+    if (mode === 'create') {
+      // Continue as a draft: add resources, then publish from the edit page
+      const created = await res.json()
+      router.push(`/dashboard/datasets/${created.id}/edit?state=draft`)
+      return
+    }
+
+    if (isDraftMode) {
+      // Re-show the server-side name/ownerOrg to match the publish
+      // preconditions: an omitted blank field keeps its previous value, an
+      // explicit `name: null` came back as a fresh placeholder (shown blank)
+      const saved = await res.json()
+      serverHasRealName.current = !isDraftPlaceholderName(saved.name)
+      reset({
+        ...values,
+        name: isDraftPlaceholderName(saved.name) ? '' : saved.name,
+        ownerOrg: saved.ownerOrg ?? '',
+      })
+      refreshBaseline()
+
+      if (publishAfter) {
+        const pubRes = await clientFetch(`/api/v1/packages/${nameOrId}/publish`, {
+          method: 'POST',
+        })
+        if (!pubRes.ok) {
+          // The save itself landed — say so, and keep the draft editable
+          const data = await pubRes.json().catch(() => ({}))
+          setPublishError(t('savedButPublishFailed', { detail: data.detail || t('publishFailed') }))
+          onSaved?.()
+          return
+        }
+        onPublished?.()
+        return
+      }
+    }
+
+    if (!isDraftMode) {
+      // Back to pristine: the Save button disables until the next change
+      reset(values)
+      refreshBaseline()
+    }
+
+    if (onSaved) onSaved()
+    else router.push('/dashboard/datasets')
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-6">
+    <form onSubmit={handleSubmit((values) => onSubmit(values))} className="flex flex-col gap-6">
       {error && (
         <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
       )}
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="name">{tc('nameRequired')}</Label>
+        <Label htmlFor="name">{isDraftMode ? tc('urlIdentifier') : tc('nameRequired')}</Label>
         <Input
           id="name"
           placeholder="my-dataset"
           {...register('name')}
           aria-invalid={!!errors.name}
-          disabled={mode === 'edit'}
+          disabled={!isDraftMode}
         />
-        <p className="text-xs text-muted-foreground">{tc('nameHelp')}</p>
+        <p className="text-xs text-muted-foreground">
+          {tc('nameHelp')}
+          {isDraftMode && ` ${t('draftNameHelp')}`}
+        </p>
         {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
       </div>
 
@@ -199,7 +347,7 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="ownerOrg">{t('orgRequired')}</Label>
+        <Label htmlFor="ownerOrg">{isDraftMode ? tc('organization') : t('orgRequired')}</Label>
         <Controller
           name="ownerOrg"
           control={control}
@@ -274,7 +422,7 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label>{t('licenseRequired')}</Label>
+        <Label>{isDraftMode ? tc('license') : t('licenseRequired')}</Label>
         <Controller
           name="licenseId"
           control={control}
@@ -385,15 +533,52 @@ export function DatasetForm({ mode, defaultValues, nameOrId, organizations }: Da
         {extrasError && <p className="text-sm text-destructive">{extrasError}</p>}
       </div>
 
-      <Button type="submit" disabled={isSubmitting}>
-        {isSubmitting
-          ? mode === 'create'
-            ? tc('creating')
-            : tc('updating')
-          : mode === 'create'
-            ? tc('create')
-            : tc('update')}
-      </Button>
+      {isDraftEdit ? (
+        <div className="flex flex-col gap-3">
+          {publishBlockers.length > 0 && (
+            <ul className="list-inside list-disc text-sm text-amber-700 dark:text-amber-400">
+              {publishBlockers.map((b) => (
+                <li key={b}>{blockerMessages[b]}</li>
+              ))}
+            </ul>
+          )}
+          {publishError && (
+            <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+              {publishError}
+            </p>
+          )}
+          <div className="flex gap-3">
+            <Button
+              type="submit"
+              variant="outline"
+              className="flex-1"
+              disabled={isSubmitting || !hasChanges}
+            >
+              {isSubmitting && !publishIntent ? tc('saving') : t('saveDraft')}
+            </Button>
+            <Button
+              type="button"
+              className="flex-1"
+              disabled={isSubmitting || publishBlockers.length > 0}
+              onClick={handleSubmit((values) => onSubmit(values, true))}
+            >
+              {isSubmitting && publishIntent ? t('publishing') : t('saveAndPublish')}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        // Create Draft stays enabled on a pristine form: the file-first flow
+        // creates an empty draft and moves on to adding resources (ADR-039)
+        <Button type="submit" disabled={isSubmitting || (mode === 'edit' && !hasChanges)}>
+          {isSubmitting
+            ? mode === 'create'
+              ? tc('creating')
+              : tc('saving')
+            : mode === 'create'
+              ? t('createDraft')
+              : tc('save')}
+        </Button>
+      )}
     </form>
   )
 }

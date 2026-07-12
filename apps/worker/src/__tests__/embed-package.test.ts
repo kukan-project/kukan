@@ -82,7 +82,7 @@ describe('embedPackage — re-embed decision', () => {
   const currentHash = createHash('sha256').update(pkgText).digest('hex')
 
   function pkgRow(embeddingModel: string | null, embeddingHash: string | null) {
-    return { title: pkgText, notes: null, embeddingModel, embeddingHash }
+    return { state: 'active', title: pkgText, notes: null, embeddingModel, embeddingHash }
   }
 
   it('re-embeds when the stored key lacks the dimension (legacy model-only value)', async () => {
@@ -118,5 +118,15 @@ describe('embedPackage — re-embed decision', () => {
     expect(resourceOrder[0]).toBe(resource.position)
     expect(resourceOrder[1]).toBe(resource.created)
     expect(resourceOrder[2]).toBe(resource.id)
+  })
+
+  it('skips draft packages without embedding (ADR-039)', async () => {
+    const embed = vi.fn()
+    const { db } = mockDb([[{ ...pkgRow(null, null), state: 'draft' }]])
+
+    const result = await embedPackage('pkg-1', db, makeAi(embed), log)
+
+    expect(result).toBe('skipped')
+    expect(embed).not.toHaveBeenCalled()
   })
 })

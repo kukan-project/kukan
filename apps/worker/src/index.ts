@@ -31,7 +31,8 @@ import { S3StorageAdapter } from '@kukan/storage-adapter'
 import { OpenSearchAdapter } from '@kukan/search-adapter'
 import { processResource } from './pipeline/process-resource'
 import { buildPipelineContext } from './pipeline/build-context'
-import { startHealthCheckScheduler } from './health-check/scheduler'
+import { startCronJob } from './cron/start-cron-job'
+import { checkBatch } from './cron/health-check/check-batch'
 import { embedPackage, enqueueAllPackageEmbeds } from './embed/embed-package'
 
 // Skip dotenv in production (env vars injected by container/ECS)
@@ -114,13 +115,17 @@ ready = true
 let healthCheckJob: { stop: () => void } | null = null
 
 if (env.HEALTH_CHECK_ENABLED) {
-  healthCheckJob = startHealthCheckScheduler({
-    db,
-    queue,
+  const hcLog = log.child({ component: 'health-check' })
+  const stalenessHours = env.HEALTH_CHECK_STALENESS_HOURS
+  const fullFetchIntervalHours = env.HEALTH_CHECK_FULL_FETCH_INTERVAL_HOURS
+  healthCheckJob = startCronJob({
+    name: 'Health check',
     cronExpression: env.HEALTH_CHECK_CRON,
-    stalenessHours: env.HEALTH_CHECK_STALENESS_HOURS,
-    fullFetchIntervalHours: env.HEALTH_CHECK_FULL_FETCH_INTERVAL_HOURS,
-    log: log.child({ component: 'health-check' }),
+    log: hcLog,
+    meta: { stalenessHours, fullFetchIntervalHours },
+    run: async () => {
+      await checkBatch(db, queue, stalenessHours, fullFetchIntervalHours, hcLog)
+    },
   })
 }
 

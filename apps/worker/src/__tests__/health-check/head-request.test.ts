@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { executeHeadCheck } from '../../health-check/head-request'
-import type { ResourceForHealthCheck } from '../../health-check/types'
+import { executeHeadCheck } from '../../cron/health-check/head-request'
+import type { ResourceForHealthCheck } from '../../cron/health-check/types'
 
 // Mock safeFetch to use globalThis.fetch directly (SSRF logic tested separately)
 vi.mock('@/safe-fetch', () => ({

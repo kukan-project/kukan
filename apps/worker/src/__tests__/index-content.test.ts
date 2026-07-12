@@ -33,6 +33,7 @@ function createMockCtx(overrides?: Partial<PipelineContext>): PipelineContext {
       format: 'CSV',
       hash: null,
     }),
+    getPackageState: vi.fn().mockResolvedValue('active'),
     updateResourceHashAndSize: vi.fn(),
     acquireFetchSlot: vi.fn(),
     indexContent: vi.fn(),
@@ -48,6 +49,32 @@ const defaultExtractResult: ExtractResult = {
 }
 
 describe('executeIndexContent', () => {
+  describe('draft package skip (ADR-039)', () => {
+    it('should skip indexing when the package is a draft', async () => {
+      const ctx = createMockCtx({
+        getPackageState: vi.fn().mockResolvedValue('draft'),
+      })
+
+      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'CSV', null, ctx)
+
+      expect(result).toBeNull()
+      expect(ctx.storage.download).not.toHaveBeenCalled()
+      expect(ctx.indexContent).not.toHaveBeenCalled()
+      expect(ctx.deleteContent).not.toHaveBeenCalled()
+    })
+
+    it('should skip indexing when the package no longer exists', async () => {
+      const ctx = createMockCtx({
+        getPackageState: vi.fn().mockResolvedValue(null),
+      })
+
+      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'CSV', null, ctx)
+
+      expect(result).toBeNull()
+      expect(ctx.indexContent).not.toHaveBeenCalled()
+    })
+  })
+
   describe('format classification', () => {
     it('should classify PDF as document', async () => {
       const ctx = createMockCtx()

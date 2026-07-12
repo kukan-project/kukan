@@ -17,6 +17,7 @@ Auth column legend:
 :::note[PUT Semantics]
 PUT endpoints perform full-resource replacement. Fields not included in the request body will be cleared to `null` (or their default value).
 To preserve existing values, GET the current data, apply your changes, and send the full object.
+As an exception, **PUT on a dataset in draft state is a partial update** (see "Drafts" below).
 :::
 
 ## Datasets (packages)
@@ -25,9 +26,11 @@ To preserve existing values, GET the current data, apply your changes, and send 
 |--------|------|-------------|------|
 | GET | `/packages` | List datasets (with search and filters) | Public |
 | POST | `/packages` | Create dataset (include `resources` array to create resources simultaneously) | Org editor |
+| POST | `/packages/drafts` | Create draft dataset (every field optional) | Auth |
 | GET | `/packages/{nameOrId}` | Get dataset details | Public |
-| PUT | `/packages/{nameOrId}` | Update dataset (full replacement; `resources` not included) | Org editor |
-| DELETE | `/packages/{nameOrId}` | Soft-delete dataset | Org editor |
+| PUT | `/packages/{nameOrId}` | Update dataset (active: full replacement / draft: partial update; `resources` not included) | Org editor |
+| DELETE | `/packages/{nameOrId}` | Delete dataset (active: soft delete / draft: immediate permanent delete) | Org editor |
+| POST | `/packages/{nameOrId}/publish` | Publish a draft (`draft` → `active`) | Org editor |
 | POST | `/packages/{nameOrId}/restore` | Restore soft-deleted dataset | sysadmin |
 | POST | `/packages/{nameOrId}/purge` | Permanently delete soft-deleted dataset | Org admin |
 | GET | `/packages/{id}/resources` | List resources | Public |
@@ -46,7 +49,7 @@ To preserve existing values, GET the current data, apply your changes, and send 
 | `tags[]` | Filter by tag |
 | `res_format[]` | Filter by resource format (e.g., `CSV`) |
 | `license_id[]` | Filter by license |
-| `state` | `active` / `deleted` |
+| `state` | `active` / `deleted` / `draft` (`draft` requires auth; see below) |
 | `my_org` | Limit to user's organizations |
 | `private` | Include private datasets |
 | `sort_by` | `updated` / `created` / `name` |
@@ -58,6 +61,58 @@ To preserve existing values, GET the current data, apply your changes, and send 
 ```bash
 curl "https://your-kukan-site/api/v1/packages?q=population&organization[]=stat-bureau&limit=10"
 ```
+
+### Drafts
+
+Datasets can be created as drafts and published once the publish requirements are met.
+Drafts never appear in search or listings (including the CKAN-compatible API) until published.
+
+**Create** — `POST /packages/drafts` (auth required):
+
+Every field is optional. When `name` is omitted, a placeholder of the form
+`untitled-xxxxxxxx` is auto-generated (a draft cannot be published with the placeholder).
+Specifying `ownerOrg` at creation requires editor rights in that organization.
+
+```bash
+curl -X POST https://your-kukan-site/api/v1/packages/drafts \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"title": "Work-in-progress dataset"}'
+```
+
+**Publish** — `POST /packages/{nameOrId}/publish`:
+
+One-way `draft` → `active` transition (there is no way back to draft after publishing).
+Returns `400` unless all three of the following are set:
+
+- `name` set explicitly (the auto-generated placeholder is not accepted)
+- `ownerOrg` set
+- `licenseId` set
+
+Permission is the same as dataset update, and editor rights in the `ownerOrg` organization
+are re-verified at publish time. Re-publishing an already `active` package is allowed and
+re-runs the publish-time search index sync (idempotent — the retry entry point after a
+failed sync).
+
+**List** — `GET /packages?state=draft` (auth required):
+
+Returns only drafts created by the caller plus drafts of organizations where the caller is
+editor or above. Supported filters: `q` / `name` / `organization[]` / `private` /
+`sort_by` / `sort_order` / `offset` / `limit`. Specifying `tags[]` / `groups[]` /
+`res_format[]` / `license_id[]` / `creator_user_id` / `my_org` / `include_facets`
+returns `400`. Rows whose deletion failed partway (deletion incomplete) are included in
+the listing.
+
+**Get, update, delete**:
+
+- Fetch details with `GET /packages/{id}?state=draft` (auth and draft access required)
+- `PUT` on a draft is a **partial update**: only the keys present in the request are
+  applied, and an explicit `null` clears that field. `name: null` regenerates the
+  placeholder (back to "unnamed") and `ownerOrg: null` clears the organization (both
+  block publishing again). `PUT` on an `active` package remains full replacement
+- `DELETE` on a draft skips the trash and **permanently deletes it immediately**
+  (irreversible). If a deletion fails partway, re-running the same `DELETE` completes
+  the permanent deletion
 
 ## Resources
 

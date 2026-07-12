@@ -21,6 +21,17 @@ export interface PaginatedResult<T> {
 }
 
 /**
+ * Package lifecycle states exposed by the API (ADR-039). The transient
+ * `purging` claim state is deliberately excluded.
+ */
+export const PACKAGE_STATES = ['draft', 'active', 'deleted'] as const
+
+export type PackageState = (typeof PACKAGE_STATES)[number]
+
+/** Every state a package row can hold in the DB, including the transient GC claim. */
+export type PackageDbState = PackageState | 'purging'
+
+/**
  * Facet count item for filter sidebar
  */
 export interface FacetItem {

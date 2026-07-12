@@ -15,7 +15,6 @@ import {
   updateResourceSchema,
   uploadUrlSchema,
   uploadCompleteSchema,
-  ForbiddenError,
   UnauthorizedError,
   NotFoundError,
   ValidationError,
@@ -36,7 +35,12 @@ import {
   QUERY_MAX_SQL_LENGTH,
 } from '../config'
 import { JsonMinifyStream } from '../streams/json-minify-stream'
-import { checkOrgRole, resolveUserOrgIds, buildVisibilityFilters } from '../auth/permissions'
+import {
+  makePackageAuthorize,
+  resolveUserOrgIds,
+  buildVisibilityFilters,
+  type AuthUser,
+} from '../auth/permissions'
 import { syncPackageMetadata, indexResourceMetadata } from '../services/search-index'
 import { Readable } from 'stream'
 import type { Database } from '@kukan/db'
@@ -83,20 +87,16 @@ async function resolvePreviewTarget(
   return { storageKey: status.previewKey, contentType: detectContentType(status.previewKey) }
 }
 
-/** Verify resource ownership and check org editor role */
+/** Verify resource ownership and check org editor role (or draft access, ADR-039) */
 async function checkResourcePermission(
-  db: Parameters<typeof checkOrgRole>[0],
-  user: Parameters<typeof checkOrgRole>[1],
+  db: Database,
+  user: AuthUser,
   resourceService: ResourceService,
   resourceId: string
 ) {
   const existing = await resourceService.getById(resourceId)
-  const pkg = await new PackageService(db).getByNameOrId(existing.packageId)
-  if (pkg.ownerOrg) {
-    await checkOrgRole(db, user, pkg.ownerOrg, 'editor')
-  } else if (!user.sysadmin) {
-    throw new ForbiddenError('Only sysadmin can modify resources without an organization')
-  }
+  const pkg = await new PackageService(db).getByNameOrId(existing.packageId, ['active', 'draft'])
+  await makePackageAuthorize(db, user, 'editor')(pkg)
   return existing
 }
 
@@ -364,10 +364,14 @@ resourcesRouter.get('/:id/preview', async (c) => {
   })
 })
 
-// GET /api/v1/resources/:id/pipeline-status - Check pipeline progress (public)
+// GET /api/v1/resources/:id/pipeline-status - Check pipeline progress
 resourcesRouter.get('/:id/pipeline-status', async (c) => {
   const id = c.req.param('id')
-  const pipelineService = new PipelineService(c.get('db'))
+  const db = c.get('db')
+  const user = c.get('user')
+  // Same visibility check as download/preview/schema — draft/private resources stay hidden
+  await new ResourceService(db).getByIdWithAccessCheck(id, user)
+  const pipelineService = new PipelineService(db)
   const status = await pipelineService.getStatus(id)
 
   if (!status) {
@@ -375,7 +379,6 @@ resourcesRouter.get('/:id/pipeline-status', async (c) => {
   }
 
   // Only expose raw error details to sysadmin; others get a generic message
-  const user = c.get('user')
   const sanitizeError = (err: string | null) =>
     !err ? null : user?.sysadmin ? err : 'Processing failed'
 

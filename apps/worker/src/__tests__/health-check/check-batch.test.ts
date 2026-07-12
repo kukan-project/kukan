@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { checkBatch } from '../../health-check/check-batch'
-import * as headRequest from '../../health-check/head-request'
-import type { HeadCheckResult } from '../../health-check/types'
+import { checkBatch } from '../../cron/health-check/check-batch'
+import * as headRequest from '../../cron/health-check/head-request'
+import type { HeadCheckResult } from '../../cron/health-check/types'
 
 // Mock executeHeadCheck
-vi.mock('../../health-check/head-request', () => ({
+vi.mock('../../cron/health-check/head-request', () => ({
   executeHeadCheck: vi.fn(),
 }))
 

@@ -98,10 +98,13 @@ adminRouter.get('/search/stats', async (c) => {
       .select({ count: sql<number>`count(*)::int` })
       .from(packageTable)
       .where(eq(packageTable.state, 'active')),
+    // Resources under draft packages are excluded to match what the search
+    // index holds (ADR-039)
     db
       .select({ count: sql<number>`count(*)::int` })
       .from(resource)
-      .where(eq(resource.state, 'active')),
+      .innerJoin(packageTable, eq(resource.packageId, packageTable.id))
+      .where(and(eq(resource.state, 'active'), eq(packageTable.state, 'active'))),
   ])
 
   return c.json({

@@ -3,6 +3,14 @@ import { createElement } from 'react'
 import { vi } from 'vitest'
 import messages from '../../messages/en.json'
 
+// jsdom lacks ResizeObserver, required by Radix primitives (e.g. Switch)
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+globalThis.ResizeObserver = globalThis.ResizeObserver ?? ResizeObserverStub
+
 // Mock next/link
 vi.mock('next/link', () => ({
   default: ({

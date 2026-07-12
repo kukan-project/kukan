@@ -17,6 +17,7 @@ sidebar:
 :::note[PUT セマンティクス]
 PUT エンドポイントは全フィールド置換です。リクエストに含めないフィールドは `null`（またはデフォルト値）にクリアされます。
 既存値を保持するには、現在のデータを GET で取得し、変更を加えた全体を送信してください。
+例外として、**下書き（draft）状態のデータセットへの PUT は部分更新**です（後述の「下書き（draft）」参照）。
 :::
 
 ## データセット (packages)
@@ -25,9 +26,11 @@ PUT エンドポイントは全フィールド置換です。リクエストに�
 |--------|------|------|------|
 | GET | `/packages` | データセット一覧（検索・絞り込み対応） | 公開 |
 | POST | `/packages` | データセット作成（`resources` 配列でリソース同時作成可） | 組織 editor |
+| POST | `/packages/drafts` | 下書き作成（全フィールド任意） | 認証 |
 | GET | `/packages/{nameOrId}` | データセット詳細 | 公開 |
-| PUT | `/packages/{nameOrId}` | データセット更新（全フィールド置換、`resources` は対象外） | 組織 editor |
-| DELETE | `/packages/{nameOrId}` | データセット論理削除 | 組織 editor |
+| PUT | `/packages/{nameOrId}` | データセット更新（active は全置換 / draft は部分更新、`resources` は対象外） | 組織 editor |
+| DELETE | `/packages/{nameOrId}` | データセット削除（active は論理削除 / draft は即時完全削除） | 組織 editor |
+| POST | `/packages/{nameOrId}/publish` | 下書きを公開（`draft` → `active`） | 組織 editor |
 | POST | `/packages/{nameOrId}/restore` | 論理削除済みを復元 | sysadmin |
 | POST | `/packages/{nameOrId}/purge` | 論理削除済みを完全削除 | 組織 admin |
 | GET | `/packages/{id}/resources` | リソース一覧 | 公開 |
@@ -46,7 +49,7 @@ PUT エンドポイントは全フィールド置換です。リクエストに�
 | `tags[]` | タグで絞り込み |
 | `res_format[]` | リソース形式で絞り込み（例: `CSV`） |
 | `license_id[]` | ライセンスで絞り込み |
-| `state` | `active` / `deleted` |
+| `state` | `active` / `deleted` / `draft`（`draft` は要認証・後述） |
 | `my_org` | 自分の所属組織に限定 |
 | `private` | 非公開データを含む |
 | `sort_by` | `updated` / `created` / `name` |
@@ -58,6 +61,55 @@ PUT エンドポイントは全フィールド置換です。リクエストに�
 ```bash
 curl "https://your-kukan-site/api/v1/packages?q=人口&organization[]=stat-bureau&limit=10"
 ```
+
+### 下書き（draft）
+
+データセットは下書きとして作成し、公開条件を満たしてから公開できます。
+下書きは公開されるまで検索・一覧（CKAN 互換 API 含む）に一切現れません。
+
+**作成** — `POST /packages/drafts`（要認証）:
+
+全フィールド任意です。`name` を省略すると `untitled-xxxxxxxx` 形式のプレースホルダーが
+自動生成されます（プレースホルダーのままでは公開できません）。作成時に `ownerOrg` を
+指定する場合は、その組織の editor 権限が必要です。
+
+```bash
+curl -X POST https://your-kukan-site/api/v1/packages/drafts \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"title": "作業中のデータセット"}'
+```
+
+**公開** — `POST /packages/{nameOrId}/publish`:
+
+`draft` → `active` の一方向遷移です（公開後に下書きへ戻す操作はありません）。
+以下の 3 つが未設定の場合は `400` を返します。
+
+- `name` が明示的に設定済み（自動生成プレースホルダーのままは不可）
+- `ownerOrg` が設定済み
+- `licenseId` が設定済み
+
+権限はデータセット更新権限と同一で、`ownerOrg` の組織の editor 権限が公開時点で
+再検証されます。公開済み（`active`）への再実行は許可され、公開時の検索インデックス
+同期を再実行します（同期が失敗した場合のリトライ入口として冪等）。
+
+**一覧** — `GET /packages?state=draft`（要認証）:
+
+自分が作成した下書きと、所属組織（editor 以上）の下書きのみが返ります。
+対応フィルタは `q` / `name` / `organization[]` / `private` / `sort_by` / `sort_order` /
+`offset` / `limit`。`tags[]` / `groups[]` / `res_format[]` / `license_id[]` /
+`creator_user_id` / `my_org` / `include_facets` を指定すると `400` になります。
+削除が途中で失敗した行（削除未完了）も一覧に含まれます。
+
+**取得・更新・削除**:
+
+- 詳細取得は `GET /packages/{id}?state=draft`（要認証・下書きの閲覧権限が必要）
+- draft への `PUT` は**部分更新**です。リクエストに含めたキーのみ適用され、明示的な
+  `null` はそのフィールドをクリアします。`name: null` はプレースホルダーを再生成して
+  「名前未設定」に戻し、`ownerOrg: null` は組織をクリアします（いずれも公開が再び
+  ブロックされます）。`active` への `PUT` は従来どおり全置換です
+- draft への `DELETE` はゴミ箱を経由せず**即時完全削除**します（復元不可）。削除が
+  途中で失敗した場合は、同じ `DELETE` の再実行が完全削除を完了します
 
 ## リソース (resources)
 

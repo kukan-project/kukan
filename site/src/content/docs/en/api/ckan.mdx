@@ -106,4 +106,5 @@ curl "https://your-kukan-site/api/3/action/package_show?id=population-stats-2024
 
 - Read-only (GET only). CKAN write endpoints are not provided
 - Use the REST API (`/api/v1/*`) to create or edit datasets
+- Datasets in draft state do not appear in the CKAN-compatible API (`package_show` returns 404); they become available once published
 - Not all CKAN fields are reproduced. Check the actual responses for specifics

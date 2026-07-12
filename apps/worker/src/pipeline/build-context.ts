@@ -4,9 +4,10 @@
 
 import { eq, and, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { resource, resourcePipeline } from '@kukan/db'
+import { resource, resourcePipeline, packageTable } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter, ContentDoc } from '@kukan/search-adapter'
+import type { PackageDbState } from '@kukan/shared'
 import type { PipelineContext, ResourceForPipeline } from './types'
 import { FETCH_RATE_LIMIT_INTERVAL_S } from '@/config'
 
@@ -35,6 +36,17 @@ export function buildPipelineContext(
         .limit(1)
 
       return res ?? null
+    },
+
+    async getPackageState(packageId: string): Promise<PackageDbState | null> {
+      const [pkg] = await db
+        .select({ state: packageTable.state })
+        .from(packageTable)
+        .where(eq(packageTable.id, packageId))
+        .limit(1)
+
+      // The state column is an unconstrained varchar; the app only writes these values
+      return (pkg?.state as PackageDbState | undefined) ?? null
     },
 
     async updateResourceHashAndSize(

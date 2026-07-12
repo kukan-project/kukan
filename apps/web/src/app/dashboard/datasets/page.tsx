@@ -21,11 +21,13 @@ import {
 } from '@kukan/ui'
 import { Building2, FolderOpen, Tag } from 'lucide-react'
 import { useTranslations } from 'next-intl'
+import type { PackageDbState } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
 import { parseGroups } from '@/lib/parse-groups'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { StatCard } from '@/components/dashboard/stat-card'
+import { DraftsTable } from '@/components/dashboard/dataset/drafts-table'
 import { FormatBadges } from '@/components/format-badges'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
@@ -35,6 +37,8 @@ interface PkgItem {
   name: string
   title?: string | null
   private: boolean
+  state?: PackageDbState
+  updated?: string
   formats?: string
   orgName?: string | null
   orgTitle?: string | null
@@ -50,7 +54,7 @@ interface OptionItem {
 
 const ALL = '__all__'
 
-type CategoryFilter = 'public' | 'private' | 'deleted'
+type CategoryFilter = 'public' | 'private' | 'drafts' | 'deleted'
 
 export default function DatasetsManagePage() {
   const t = useTranslations('dataset')
@@ -75,6 +79,8 @@ export default function DatasetsManagePage() {
         calls.push({ key: 'public', url: '/api/v1/packages?my_org=true&private=false&limit=1' })
       if (active !== 'private')
         calls.push({ key: 'private', url: '/api/v1/packages?my_org=true&private=true&limit=1' })
+      if (active !== 'drafts')
+        calls.push({ key: 'drafts', url: '/api/v1/packages?state=draft&limit=1' })
       if (active !== 'deleted')
         calls.push({
           key: 'deleted',
@@ -122,14 +128,19 @@ export default function DatasetsManagePage() {
 
   // Build dynamic URL
   const filterUrl = useMemo(() => {
-    const params = new URLSearchParams({ my_org: 'true' })
+    // Drafts use the direct-DB listing (state=draft, no my_org) which rejects
+    // search-index-backed filters like groups (ADR-039)
+    const isDrafts = activeCategory === 'drafts'
+    const params = new URLSearchParams(isDrafts ? { state: 'draft' } : { my_org: 'true' })
     if (debouncedName) params.set('name', debouncedName)
     if (debouncedKeyword) params.set('q', debouncedKeyword)
     if (orgFilter) params.set('organization', orgFilter)
-    if (groupFilter) params.set('groups', groupFilter)
-    if (activeCategory === 'public') params.set('private', 'false')
-    else if (activeCategory === 'private') params.set('private', 'true')
-    else if (activeCategory === 'deleted') params.set('state', 'deleted')
+    if (!isDrafts) {
+      if (groupFilter) params.set('groups', groupFilter)
+      if (activeCategory === 'public') params.set('private', 'false')
+      else if (activeCategory === 'private') params.set('private', 'true')
+      else if (activeCategory === 'deleted') params.set('state', 'deleted')
+    }
     return `/api/v1/packages?${params}`
   }, [debouncedName, debouncedKeyword, orgFilter, groupFilter, activeCategory])
 
@@ -139,6 +150,7 @@ export default function DatasetsManagePage() {
   const stats: Record<CategoryFilter, number | undefined> = {
     public: activeCategory === 'public' ? pagination.total : inactiveStats.public,
     private: activeCategory === 'private' ? pagination.total : inactiveStats.private,
+    drafts: activeCategory === 'drafts' ? pagination.total : inactiveStats.drafts,
     deleted: activeCategory === 'deleted' ? pagination.total : inactiveStats.deleted,
   }
 
@@ -155,7 +167,7 @@ export default function DatasetsManagePage() {
       </PageHeader>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label={t('tabPublic')}
           value={stats.public}
@@ -167,6 +179,12 @@ export default function DatasetsManagePage() {
           value={stats.private}
           active={activeCategory === 'private'}
           onClick={() => setActiveCategory('private')}
+        />
+        <StatCard
+          label={t('tabDrafts')}
+          value={stats.drafts}
+          active={activeCategory === 'drafts'}
+          onClick={() => setActiveCategory('drafts')}
         />
         <StatCard
           label={t('tabDeleted')}
@@ -195,22 +213,25 @@ export default function DatasetsManagePage() {
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-col gap-1">
-          <Label className="text-xs text-muted-foreground">{tc('categories')}</Label>
-          <Select value={groupFilter || ALL} onValueChange={handleSelect(setGroupFilter)}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>{tc('showAll')}</SelectItem>
-              {groups.map((g) => (
-                <SelectItem key={g.id} value={g.name}>
-                  {g.title || g.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {/* Group filter is not supported by the draft listing (ADR-039) */}
+        {activeCategory !== 'drafts' && (
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs text-muted-foreground">{tc('categories')}</Label>
+            <Select value={groupFilter || ALL} onValueChange={handleSelect(setGroupFilter)}>
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>{tc('showAll')}</SelectItem>
+                {groups.map((g) => (
+                  <SelectItem key={g.id} value={g.name}>
+                    {g.title || g.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <Label className="text-xs text-muted-foreground">{tc('urlIdentifier')}</Label>
           <Input
@@ -240,6 +261,11 @@ export default function DatasetsManagePage() {
         </div>
       ) : items.length === 0 ? (
         <p className="py-12 text-center text-muted-foreground">{t('noDatasets')}</p>
+      ) : activeCategory === 'drafts' ? (
+        <>
+          <DraftsTable items={items} onDeleted={() => pagination.fetchPage(0)} />
+          <PaginationControls {...pagination} onPageChange={pagination.fetchPage} />
+        </>
       ) : (
         <>
           <Table>

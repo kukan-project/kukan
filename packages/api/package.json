@@ -12,7 +12,6 @@
     "./adapters": "./dist/adapters.js",
     "./services/search-index": "./dist/services/search-index.js",
     "./services/pipeline-service": "./dist/services/pipeline-service.js",
-    "./services/package-cleanup": "./dist/services/package-cleanup.js",
     "./services/organization-service": "./dist/services/organization-service.js"
   },
   "scripts": {

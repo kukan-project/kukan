@@ -159,6 +159,150 @@ describe('DatasetsManagePage', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
   })
 
+  describe('drafts tab', () => {
+    const draftItems = [
+      {
+        id: 'd1',
+        name: 'untitled-0123abcd',
+        title: null,
+        private: false,
+        updated: '2026-07-01T00:00:00Z',
+      },
+      {
+        id: 'd2',
+        name: 'my-draft',
+        title: 'My Draft',
+        private: false,
+        updated: '2026-07-02T00:00:00Z',
+      },
+      // A draft whose deletion crashed mid-flight (ADR-039)
+      {
+        id: 'd3',
+        name: 'stuck-draft',
+        title: 'Stuck Draft',
+        private: false,
+        updated: '2026-07-03T00:00:00Z',
+        state: 'purging',
+      },
+    ]
+
+    function setupDraftMocks() {
+      vi.mocked(clientFetch).mockImplementation(async (path: string, init?: RequestInit) => {
+        if (path.includes('/api/v1/organizations')) return mockFetchResponse({ items: [] })
+        if (path.includes('/api/v1/groups')) return mockFetchResponse({ items: [] })
+        if (init?.method === 'DELETE') return mockFetchResponse({})
+        if (path.includes('state=draft'))
+          return mockFetchResponse({ items: draftItems, total: draftItems.length })
+        return mockFetchResponse({ items: sampleItems, total: sampleItems.length })
+      })
+    }
+
+    async function openDraftsTab() {
+      render(<DatasetsManagePage />)
+      await waitFor(() => {
+        expect(screen.getByText('Drafts')).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByText('Drafts'))
+      await waitFor(() => {
+        expect(screen.getByText('My Draft')).toBeInTheDocument()
+      })
+    }
+
+    it('should list drafts with untitled fallback and hidden placeholder name', async () => {
+      setupDraftMocks()
+      await openDraftsTab()
+
+      expect(screen.getByText('Untitled')).toBeInTheDocument()
+      expect(screen.queryByText('untitled-0123abcd')).not.toBeInTheDocument()
+      expect(screen.getByText('my-draft')).toBeInTheDocument()
+    })
+
+    it('should not send unsupported filters to the draft listing', async () => {
+      setupDraftMocks()
+      await openDraftsTab()
+
+      const draftCalls = vi
+        .mocked(clientFetch)
+        .mock.calls.map((c) => c[0] as string)
+        .filter((u) => u.includes('state=draft'))
+      expect(draftCalls.length).toBeGreaterThan(0)
+      for (const url of draftCalls) {
+        expect(url).not.toContain('my_org')
+        expect(url).not.toContain('groups')
+      }
+    })
+
+    it('should link the edit button to the draft edit page by ID', async () => {
+      setupDraftMocks()
+      await openDraftsTab()
+
+      const editLinks = screen.getAllByText('Edit')
+      expect(editLinks[0].closest('a')).toHaveAttribute(
+        'href',
+        '/dashboard/datasets/d1/edit?state=draft'
+      )
+    })
+
+    it('should flag purging drafts and hide their edit link', async () => {
+      setupDraftMocks()
+      await openDraftsTab()
+
+      expect(screen.getByText('Deletion incomplete')).toBeInTheDocument()
+      expect(screen.getByText('Retry Delete')).toBeInTheDocument()
+      // Only the two intact drafts have edit links
+      const editLinks = screen.getAllByText('Edit')
+      expect(editLinks).toHaveLength(2)
+      for (const link of editLinks) {
+        expect(link.closest('a')).not.toHaveAttribute(
+          'href',
+          '/dashboard/datasets/d3/edit?state=draft'
+        )
+      }
+    })
+
+    it('should retry deletion of a purging draft with a dedicated confirmation', async () => {
+      setupDraftMocks()
+      await openDraftsTab()
+
+      fireEvent.click(screen.getByText('Retry Delete'))
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            'The previous deletion did not complete. Retrying will permanently delete this draft and all its resources.'
+          )
+        ).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Purge Dataset' }))
+
+      await waitFor(() => {
+        expect(vi.mocked(clientFetch)).toHaveBeenCalledWith('/api/v1/packages/d3', {
+          method: 'DELETE',
+        })
+      })
+    })
+
+    it('should delete a draft after confirmation', async () => {
+      setupDraftMocks()
+      await openDraftsTab()
+
+      fireEvent.click(screen.getAllByText('Delete')[1])
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            'This draft and all its resources will be permanently deleted. This cannot be undone.'
+          )
+        ).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Purge Dataset' }))
+
+      await waitFor(() => {
+        expect(vi.mocked(clientFetch)).toHaveBeenCalledWith('/api/v1/packages/d2', {
+          method: 'DELETE',
+        })
+      })
+    })
+  })
+
   describe('filter debounce', () => {
     beforeEach(() => {
       vi.useFakeTimers({ shouldAdvanceTime: true })

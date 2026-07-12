@@ -3,12 +3,15 @@
  * Business logic for resource management
  */
 
-import { eq, and, sql } from 'drizzle-orm'
+import { eq, and, sql, inArray } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, packageTable } from '@kukan/db'
 import { NotFoundError, ValidationError, normalizeFormat, detectFormat } from '@kukan/shared'
-import type { CreateResourceInput, UpdateResourceInput } from '@kukan/shared'
-import { hasOrgMembership, type AuthUser } from '../auth/permissions'
+import type { CreateResourceInput, UpdateResourceInput, PackageDbState } from '@kukan/shared'
+import { hasOrgMembership, hasDraftAccess, type AuthUser } from '../auth/permissions'
+
+// Package states whose resources are reachable — drafts hold resources before publish (ADR-039)
+const RESOURCE_PARENT_STATES: PackageDbState[] = ['active', 'draft']
 
 export class ResourceService {
   constructor(private db: Database) {}
@@ -22,7 +25,9 @@ export class ResourceService {
     const [pkg] = await this.db
       .select({ id: packageTable.id })
       .from(packageTable)
-      .where(and(eq(packageTable.id, packageId), eq(packageTable.state, 'active')))
+      .where(
+        and(eq(packageTable.id, packageId), inArray(packageTable.state, RESOURCE_PARENT_STATES))
+      )
       .limit(1)
 
     if (!pkg) {
@@ -63,18 +68,33 @@ export class ResourceService {
     const [row] = await this.db
       .select({
         resource,
+        pkgState: packageTable.state,
         pkgPrivate: packageTable.private,
         pkgOwnerOrg: packageTable.ownerOrg,
+        pkgCreatorUserId: packageTable.creatorUserId,
       })
       .from(resource)
       .innerJoin(packageTable, eq(packageTable.id, resource.packageId))
       .where(
-        and(eq(resource.id, id), eq(resource.state, 'active'), eq(packageTable.state, 'active'))
+        and(
+          eq(resource.id, id),
+          eq(resource.state, 'active'),
+          inArray(packageTable.state, RESOURCE_PARENT_STATES)
+        )
       )
       .limit(1)
 
     if (!row) {
       throw new NotFoundError('Resource', id)
+    }
+
+    // Draft resources (incl. download/preview, ADR-017/039): draft editors only
+    if (row.pkgState === 'draft') {
+      const pkg = { creatorUserId: row.pkgCreatorUserId, ownerOrg: row.pkgOwnerOrg }
+      if (!(await hasDraftAccess(this.db, pkg, viewer))) {
+        throw new NotFoundError('Resource', id)
+      }
+      return row.resource
     }
 
     if (row.pkgPrivate && !(await hasOrgMembership(this.db, row.pkgOwnerOrg, viewer))) {
@@ -85,15 +105,18 @@ export class ResourceService {
   }
 
   /**
-   * Get distinct non-empty formats across all active resources
+   * Get distinct non-empty formats across all active resources.
+   * Joins the parent package so draft-only formats never leak (ADR-039).
    */
   async getDistinctFormats(): Promise<string[]> {
     const rows = await this.db
       .selectDistinct({ format: resource.format })
       .from(resource)
+      .innerJoin(packageTable, eq(packageTable.id, resource.packageId))
       .where(
         and(
           eq(resource.state, 'active'),
+          eq(packageTable.state, 'active'),
           sql`${resource.format} IS NOT NULL AND ${resource.format} != ''`
         )
       )
@@ -112,7 +135,12 @@ export class ResourceService {
       const [pkg] = await tx
         .select({ id: packageTable.id })
         .from(packageTable)
-        .where(and(eq(packageTable.id, input.packageId), eq(packageTable.state, 'active')))
+        .where(
+          and(
+            eq(packageTable.id, input.packageId),
+            inArray(packageTable.state, RESOURCE_PARENT_STATES)
+          )
+        )
         .limit(1)
 
       if (!pkg) {

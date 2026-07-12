@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vitest'
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { sql } from 'drizzle-orm'
-import { createTestApp, mockSearch } from '../test-helpers/test-app'
+import { createTestApp, mockSearch, mockQueue } from '../test-helpers/test-app'
 import {
   getTestDb,
   cleanDatabase,
@@ -917,6 +917,504 @@ describe('Packages API Routes', () => {
     it('should not mask an unexpected search error as 503 (stays 500)', async () => {
       const res = await buggyApp.request('/api/v1/packages?q=anything')
       expect(res.status).toBe(500)
+    })
+  })
+
+  describe('Draft packages (ADR-039)', () => {
+    const json = (data: Record<string, unknown>) => ({
+      method: 'POST' as const,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+
+    async function createDraft(data: Record<string, unknown> = {}, requestApp: typeof app = app) {
+      const res = await requestApp.request('/api/v1/packages/drafts', json(data))
+      expect(res.status).toBe(201)
+      return res.json()
+    }
+
+    it('should create a draft with a placeholder name from an empty body', async () => {
+      const draft = await createDraft()
+      expect(draft.state).toBe('draft')
+      expect(draft.name).toMatch(/^untitled-[0-9a-f]{8}$/)
+      expect(draft.ownerOrg).toBeNull()
+    })
+
+    it('should keep drafts out of the public list and default GET', async () => {
+      const draft = await createDraft({ name: 'hidden-draft' })
+
+      const list = await app.request('/api/v1/packages')
+      expect((await list.json()).total).toBe(0)
+
+      const show = await app.request(`/api/v1/packages/${draft.id}`)
+      expect(show.status).toBe(404)
+
+      // CKAN compat show goes through the same active-only path
+      const ckan = await app.request(`/api/3/action/package_show?id=${draft.id}`)
+      expect(ckan.status).toBe(404)
+    })
+
+    it('should show a draft to its creator via state=draft', async () => {
+      const draft = await createDraft({}, outsiderApp)
+
+      const show = await outsiderApp.request(`/api/v1/packages/${draft.id}?state=draft`)
+      expect(show.status).toBe(200)
+      expect((await show.json()).state).toBe('draft')
+    })
+
+    it('should hide a draft from non-creators without org access', async () => {
+      // Created by the sysadmin test user; the outsider has no membership
+      const draft = await createDraft()
+
+      const show = await outsiderApp.request(`/api/v1/packages/${draft.id}?state=draft`)
+      expect(show.status).toBe(404)
+
+      const publish = await outsiderApp.request(`/api/v1/packages/${draft.id}/publish`, {
+        method: 'POST',
+      })
+      expect(publish.status).toBe(403)
+
+      const del = await outsiderApp.request(`/api/v1/packages/${draft.id}`, {
+        method: 'DELETE',
+      })
+      expect(del.status).toBe(403)
+    })
+
+    it('should list only accessible drafts with state=draft', async () => {
+      await createDraft({ name: 'admin-draft' })
+      const outsiderDraft = await createDraft({}, outsiderApp)
+
+      const res = await outsiderApp.request('/api/v1/packages?state=draft')
+      const body = await res.json()
+      expect(body.total).toBe(1)
+      expect(body.items[0].id).toBe(outsiderDraft.id)
+
+      // Sysadmin sees every draft
+      const adminRes = await app.request('/api/v1/packages?state=draft')
+      expect((await adminRes.json()).total).toBe(2)
+    })
+
+    it('should reject publishing without a real name, ownerOrg or license', async () => {
+      const draft = await createDraft()
+
+      let res = await app.request(`/api/v1/packages/${draft.id}/publish`, { method: 'POST' })
+      expect(res.status).toBe(400)
+      expect((await res.json()).detail).toContain('name')
+
+      // Real name, still no ownerOrg
+      await app.request(`/api/v1/packages/${draft.id}`, {
+        ...json({ name: 'named-draft' }),
+        method: 'PUT',
+      })
+      res = await app.request(`/api/v1/packages/${draft.id}/publish`, { method: 'POST' })
+      expect(res.status).toBe(400)
+      expect((await res.json()).detail).toContain('organization')
+
+      // Name and ownerOrg set, still no license
+      const orgId = await ensureTestOrg()
+      await app.request(`/api/v1/packages/${draft.id}`, {
+        ...json({ ownerOrg: orgId }),
+        method: 'PUT',
+      })
+      res = await app.request(`/api/v1/packages/${draft.id}/publish`, { method: 'POST' })
+      expect(res.status).toBe(400)
+      expect((await res.json()).detail).toContain('license')
+    })
+
+    it('should publish a complete draft and make it publicly visible', async () => {
+      const orgId = await ensureTestOrg()
+      const draft = await createDraft({ name: 'ready-draft', ownerOrg: orgId, licenseId: 'cc-by' })
+
+      const res = await app.request(`/api/v1/packages/${draft.id}/publish`, { method: 'POST' })
+      expect(res.status).toBe(200)
+      expect((await res.json()).state).toBe('active')
+
+      const show = await app.request(`/api/v1/packages/ready-draft`)
+      expect(show.status).toBe(200)
+    })
+
+    it('should reject publish by a creator who lost editor rights in ownerOrg', async () => {
+      const orgId = await ensureTestOrg()
+      await app.request(
+        `/api/v1/organizations/${orgId}/members`,
+        json({ user_id: OUTSIDER_USER_ID, role: 'editor' })
+      )
+      const draft = await createDraft(
+        { name: 'orphaned-creator-draft', ownerOrg: orgId },
+        outsiderApp
+      )
+
+      // The creator is removed from the org after ownerOrg was set
+      await db.execute(
+        sql`DELETE FROM user_org_membership
+            WHERE user_id = ${OUTSIDER_USER_ID} AND organization_id = ${orgId}`
+      )
+
+      const res = await outsiderApp.request(`/api/v1/packages/${draft.id}/publish`, {
+        method: 'POST',
+      })
+      expect(res.status).toBe(403)
+    })
+
+    it('should allow publish by an editor of ownerOrg', async () => {
+      const orgId = await ensureTestOrg()
+      await app.request(
+        `/api/v1/organizations/${orgId}/members`,
+        json({ user_id: OUTSIDER_USER_ID, role: 'editor' })
+      )
+      const draft = await createDraft(
+        { name: 'editor-publish-draft', ownerOrg: orgId, licenseId: 'cc-by' },
+        outsiderApp
+      )
+
+      const res = await outsiderApp.request(`/api/v1/packages/${draft.id}/publish`, {
+        method: 'POST',
+      })
+      expect(res.status).toBe(200)
+      expect((await res.json()).state).toBe('active')
+    })
+
+    it('should allow re-publishing an active package and re-run the sync (idempotent)', async () => {
+      const orgId = await ensureTestOrg()
+      const draft = await createDraft({
+        name: 'republish-draft',
+        ownerOrg: orgId,
+        licenseId: 'cc-by',
+      })
+
+      const first = await app.request(`/api/v1/packages/${draft.id}/publish`, { method: 'POST' })
+      expect(first.status).toBe(200)
+
+      // A second publish is the retry entry point for a failed publish-time sync
+      const indexSpy = vi.spyOn(search, 'indexPackage')
+      try {
+        const again = await app.request(`/api/v1/packages/${draft.id}/publish`, {
+          method: 'POST',
+        })
+        expect(again.status).toBe(200)
+        expect((await again.json()).state).toBe('active')
+        expect(indexSpy).toHaveBeenCalledWith(expect.objectContaining({ id: draft.id }))
+      } finally {
+        indexSpy.mockRestore()
+      }
+    })
+
+    it('should fail publish when the pipeline enqueue fails, and allow a retry', async () => {
+      const orgId = await ensureTestOrg()
+      const draft = await createDraft({
+        name: 'enqueue-fail-draft',
+        ownerOrg: orgId,
+        licenseId: 'cc-by',
+      })
+      const resourceRes = await createResource(draft.id, {
+        url: 'https://example.com/data.csv',
+        format: 'CSV',
+        name: 'linked data',
+      })
+      expect(resourceRes.status).toBe(201)
+
+      // Queue outage: publish must not report success while the content
+      // indexing job was never enqueued
+      const enqueueMock = vi.mocked(mockQueue.enqueue)
+      enqueueMock.mockRejectedValueOnce(new Error('queue unavailable'))
+      const failed = await app.request(`/api/v1/packages/${draft.id}/publish`, { method: 'POST' })
+      expect(failed.status).toBe(500)
+
+      // The transition itself committed — the same request is the retry path
+      const callsAfterFailure = enqueueMock.mock.calls.length
+      const retried = await app.request(`/api/v1/packages/${draft.id}/publish`, { method: 'POST' })
+      expect(retried.status).toBe(200)
+      expect((await retried.json()).state).toBe('active')
+      expect(enqueueMock.mock.calls.length).toBeGreaterThan(callsAfterFailure)
+    })
+
+    it('should return 404 when publishing a deleted or purging package', async () => {
+      const pkgRes = await createPackage({ name: 'publish-deleted-pkg' })
+      const pkg = await pkgRes.json()
+      await app.request(`/api/v1/packages/${pkg.id}`, { method: 'DELETE' })
+
+      const deleted = await app.request(`/api/v1/packages/${pkg.id}/publish`, { method: 'POST' })
+      expect(deleted.status).toBe(404)
+
+      await db.execute(sql`UPDATE package SET state = 'purging' WHERE id = ${pkg.id}`)
+      const purging = await app.request(`/api/v1/packages/${pkg.id}/publish`, { method: 'POST' })
+      expect(purging.status).toBe(404)
+    })
+
+    it('should update a draft without name/ownerOrg but require them for active packages', async () => {
+      const draft = await createDraft()
+      const res = await app.request(`/api/v1/packages/${draft.id}`, {
+        ...json({ title: 'WIP title' }),
+        method: 'PUT',
+      })
+      expect(res.status).toBe(200)
+      expect((await res.json()).title).toBe('WIP title')
+
+      const pkgRes = await createPackage({ name: 'strict-pkg' })
+      const pkg = await pkgRes.json()
+      const bad = await app.request(`/api/v1/packages/${pkg.id}`, {
+        ...json({ title: 'no name' }),
+        method: 'PUT',
+      })
+      expect(bad.status).toBe(400)
+    })
+
+    it('should apply a partial PUT to a draft without wiping unspecified fields', async () => {
+      const orgId = await ensureTestOrg()
+      const draft = await createDraft({
+        name: 'partial-put-draft',
+        ownerOrg: orgId,
+        notes: 'keep these notes',
+        private: true,
+        extras: { source: 'survey' },
+        tags: [{ name: 'draft-tag' }],
+      })
+
+      const res = await app.request(`/api/v1/packages/${draft.id}`, {
+        ...json({ title: 'WIP title only' }),
+        method: 'PUT',
+      })
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.title).toBe('WIP title only')
+      expect(body.notes).toBe('keep these notes')
+      expect(body.private).toBe(true)
+      expect(body.extras).toEqual({ source: 'survey' })
+      expect(body.name).toBe('partial-put-draft')
+      expect(body.ownerOrg).toBe(orgId)
+
+      const detail = await app.request(`/api/v1/packages/${draft.id}?state=draft`)
+      const detailBody = await detail.json()
+      expect(detailBody.tags.map((t: { name: string }) => t.name)).toEqual(['draft-tag'])
+
+      // Explicit null still clears a field on a draft
+      const clear = await app.request(`/api/v1/packages/${draft.id}`, {
+        ...json({ notes: null }),
+        method: 'PUT',
+      })
+      expect(clear.status).toBe(200)
+      expect((await clear.json()).notes).toBeNull()
+    })
+
+    it('should reset a draft name to a fresh placeholder via name: null and re-block publish', async () => {
+      const orgId = await ensureTestOrg()
+      const draft = await createDraft({
+        name: 'reset-name-draft',
+        ownerOrg: orgId,
+        licenseId: 'cc-by',
+      })
+
+      const res = await app.request(`/api/v1/packages/${draft.id}`, {
+        ...json({ name: null }),
+        method: 'PUT',
+      })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.name).toMatch(/^untitled-[0-9a-f]{8}$/)
+      expect(body.name).not.toBe('reset-name-draft')
+
+      // Back to "unnamed": the publish gate blocks the draft again
+      const publish = await app.request(`/api/v1/packages/${draft.id}/publish`, { method: 'POST' })
+      expect(publish.status).toBe(400)
+
+      // Active packages reject an explicit null name
+      const pkgRes = await createPackage({ name: 'null-name-active-pkg' })
+      const pkg = await pkgRes.json()
+      const bad = await app.request(`/api/v1/packages/${pkg.id}`, {
+        ...json({ name: null, ownerOrg: pkg.ownerOrg }),
+        method: 'PUT',
+      })
+      expect(bad.status).toBe(400)
+    })
+
+    it('should apply q, organization, and sort filters to the draft listing', async () => {
+      const orgId = await ensureTestOrg()
+      await createDraft({ name: 'draft-population', title: 'Population Draft' })
+      await createDraft({ name: 'draft-weather', ownerOrg: orgId })
+
+      const byQ = await app.request('/api/v1/packages?state=draft&q=population')
+      const qBody = await byQ.json()
+      expect(qBody.total).toBe(1)
+      expect(qBody.items[0].name).toBe('draft-population')
+
+      const byOrg = await app.request('/api/v1/packages?state=draft&organization=test-org-pkg')
+      const orgBody = await byOrg.json()
+      expect(orgBody.total).toBe(1)
+      expect(orgBody.items[0].name).toBe('draft-weather')
+
+      const ascRes = await app.request('/api/v1/packages?state=draft&sort_by=name&sort_order=asc')
+      expect((await ascRes.json()).items.map((i: { name: string }) => i.name)).toEqual([
+        'draft-population',
+        'draft-weather',
+      ])
+      const descRes = await app.request('/api/v1/packages?state=draft&sort_by=name&sort_order=desc')
+      expect((await descRes.json()).items.map((i: { name: string }) => i.name)).toEqual([
+        'draft-weather',
+        'draft-population',
+      ])
+    })
+
+    it('should reject unsupported filters on the draft listing', async () => {
+      const res = await app.request('/api/v1/packages?state=draft&tags=env&my_org=true')
+      expect(res.status).toBe(400)
+      const detail = (await res.json()).detail
+      expect(detail).toContain('tags')
+      expect(detail).toContain('my_org')
+    })
+
+    it('should clear ownerOrg on a draft with explicit null but reject it for active packages', async () => {
+      const orgId = await ensureTestOrg()
+      const draft = await createDraft({ name: 'clear-org-draft', ownerOrg: orgId })
+
+      const res = await app.request(`/api/v1/packages/${draft.id}`, {
+        ...json({ ownerOrg: null }),
+        method: 'PUT',
+      })
+      expect(res.status).toBe(200)
+      expect((await res.json()).ownerOrg).toBeNull()
+
+      const pkgRes = await createPackage({ name: 'active-null-org-pkg' })
+      const pkg = await pkgRes.json()
+      const bad = await app.request(`/api/v1/packages/${pkg.id}`, {
+        ...json({ name: 'active-null-org-pkg', ownerOrg: null }),
+        method: 'PUT',
+      })
+      expect(bad.status).toBe(400)
+    })
+
+    it('should keep full-replacement PUT semantics for active packages', async () => {
+      await createPackage({
+        name: 'active-replace-pkg',
+        title: 'Original',
+        private: true,
+        extras: { a: 1 },
+        tags: [{ name: 'old-tag' }],
+      })
+      const orgId = await ensureTestOrg()
+
+      const res = await app.request('/api/v1/packages/active-replace-pkg', {
+        ...json({ name: 'active-replace-pkg', ownerOrg: orgId }),
+        method: 'PUT',
+      })
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.title).toBeNull()
+      expect(body.private).toBe(false)
+      expect(body.extras).toEqual({})
+
+      const detail = await app.request('/api/v1/packages/active-replace-pkg')
+      expect((await detail.json()).tags).toEqual([])
+    })
+
+    it('should not leak draft-only tags and formats into public aggregates', async () => {
+      const pkgRes = await createPackage({
+        name: 'facet-active-pkg',
+        tags: [{ name: 'public-tag' }],
+      })
+      const pkg = await pkgRes.json()
+      await createResource(pkg.id, { name: 'a.csv', format: 'CSV' })
+
+      const orgId = await ensureTestOrg()
+      const draft = await createDraft({
+        name: 'facet-draft-pkg',
+        ownerOrg: orgId,
+        tags: [{ name: 'draft-only-tag' }],
+      })
+      await createResource(draft.id, { name: 'd.pdf', format: 'PDF' })
+
+      const formatsRes = await app.request('/api/v1/resources/formats')
+      const formats = await formatsRes.json()
+      expect(formats).toContain('CSV')
+      expect(formats).not.toContain('PDF')
+
+      const listRes = await app.request('/api/v1/packages?include_facets=true')
+      const facets = (await listRes.json()).facets
+      const tagNames = facets.tags.map((t: { name: string }) => t.name)
+      expect(tagNames).toContain('public-tag')
+      expect(tagNames).not.toContain('draft-only-tag')
+      const formatNames = facets.formats.map((f: { name: string }) => f.name)
+      expect(formatNames).toContain('CSV')
+      expect(formatNames).not.toContain('PDF')
+    })
+
+    it('should accept resources on a draft and restrict their visibility', async () => {
+      const draft = await createDraft({}, outsiderApp)
+      const resRes = await outsiderApp.request(
+        `/api/v1/packages/${draft.id}/resources`,
+        json({ name: 'draft-file.csv', format: 'CSV' })
+      )
+      expect(resRes.status).toBe(201)
+      const resource = await resRes.json()
+
+      // Creator can list and read
+      const list = await outsiderApp.request(`/api/v1/packages/${draft.id}/resources`)
+      expect(list.status).toBe(200)
+      expect(await list.json()).toHaveLength(1)
+
+      const mine = await outsiderApp.request(`/api/v1/resources/${resource.id}`)
+      expect(mine.status).toBe(200)
+
+      // Anonymous viewers get 404
+      const anonApp = createTestApp(db, { search, user: null })
+      const anon = await anonApp.request(`/api/v1/resources/${resource.id}`)
+      expect(anon.status).toBe(404)
+    })
+
+    it('should not count draft packages in group dataset counts', async () => {
+      await app.request('/api/v1/groups', json({ name: 'draft-grp', title: 'Draft Group' }))
+      await createDraft({ groups: [{ name: 'draft-grp' }] })
+
+      const res = await app.request('/api/v1/groups')
+      const body = await res.json()
+      const grp = body.items.find((g: { name: string }) => g.name === 'draft-grp')
+      expect(grp.datasetCount).toBe(0)
+    })
+
+    it('should hard-delete a draft on DELETE (no trash)', async () => {
+      const draft = await createDraft({ name: 'delete-me' })
+
+      const del = await app.request(`/api/v1/packages/${draft.id}`, { method: 'DELETE' })
+      expect(del.status).toBe(200)
+
+      // Gone entirely — not in the trash either
+      const showDeleted = await app.request(`/api/v1/packages/${draft.id}?state=deleted`)
+      expect(showDeleted.status).toBe(404)
+      const showDraft = await app.request(`/api/v1/packages/${draft.id}?state=draft`)
+      expect(showDraft.status).toBe(404)
+    })
+
+    it('should surface purging rows in the draft listing for delete retry', async () => {
+      // Crashed purge of the outsider's draft (row left 'purging')
+      const stuck = await createDraft({ name: 'stuck-purge' }, outsiderApp)
+      await db.execute(sql`UPDATE package SET state = 'purging' WHERE id = ${stuck.id}`)
+      // A purging row of another creator must stay invisible
+      const adminStuck = await createDraft({ name: 'admin-stuck-purge' })
+      await db.execute(sql`UPDATE package SET state = 'purging' WHERE id = ${adminStuck.id}`)
+
+      const res = await outsiderApp.request('/api/v1/packages?state=draft')
+      const body = await res.json()
+      expect(body.total).toBe(1)
+      expect(body.items[0].id).toBe(stuck.id)
+      expect(body.items[0].state).toBe('purging')
+
+      // The edit path stays closed — the ?state=draft detail is draft-only
+      const detail = await outsiderApp.request(`/api/v1/packages/${stuck.id}?state=draft`)
+      expect(detail.status).toBe(404)
+    })
+
+    it('should finish purging a crashed draft purge on DELETE re-run', async () => {
+      const draft = await createDraft({ name: 'crashed-purge' })
+
+      // Simulate a purge that crashed after the claim (row left 'purging')
+      await db.execute(sql`UPDATE package SET state = 'purging' WHERE id = ${draft.id}`)
+
+      const del = await app.request(`/api/v1/packages/${draft.id}`, { method: 'DELETE' })
+      expect(del.status).toBe(200)
+
+      const rows = await db.execute(sql`SELECT state FROM package WHERE id = ${draft.id}`)
+      expect(rows.rows).toHaveLength(0)
     })
   })
 })

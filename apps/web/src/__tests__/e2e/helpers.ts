@@ -27,6 +27,20 @@ export async function cleanupE2eData(request: APIRequestContext) {
   // Best-effort cleanup of active e2e data via API.
   // Deleted data that is not listed by the API is handled by individual afterAll hooks.
 
+  // Drafts: DELETE hard-deletes immediately (ADR-039). Placeholder-named
+  // drafts are matched by their E2E title instead of the e2e- name prefix.
+  const draftRes = await request.get('/api/v1/packages?state=draft&limit=100')
+  if (draftRes.ok()) {
+    const { items } = await draftRes.json()
+    for (const pkg of items) {
+      const name = typeof pkg.name === 'string' ? pkg.name : ''
+      const title = typeof pkg.title === 'string' ? pkg.title : ''
+      if (name.startsWith('e2e-') || title.startsWith('E2E Draft')) {
+        await request.delete(`/api/v1/packages/${pkg.id}`).catch(() => {})
+      }
+    }
+  }
+
   // Packages: purge deleted, then soft-delete active and purge
   for (const state of ['deleted', 'active'] as const) {
     const url = `/api/v1/packages?my_org=true&state=${state}&limit=100`

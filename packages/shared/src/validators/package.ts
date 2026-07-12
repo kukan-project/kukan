@@ -41,7 +41,66 @@ export const createPackageSchema = z.object({
     .default([]),
 })
 
-/** PUT: same as create minus resources (update doesn't accept inline resources) */
-export const updatePackageSchema = createPackageSchema.omit({ resources: true })
+/**
+ * PUT: same as create minus resources. No `.default()` — the service must see
+ * which keys were sent (drafts get partial updates, active packages keep
+ * full-replacement semantics; ADR-039). `ownerOrg: null` clears a draft's org.
+ * `name: null` on a draft regenerates the placeholder (back to "unnamed").
+ */
+export const updatePackageSchema = createPackageSchema
+  .omit({
+    resources: true,
+    private: true,
+    type: true,
+    extras: true,
+    tags: true,
+    groups: true,
+    name: true,
+    ownerOrg: true,
+  })
+  .extend({
+    name: createPackageSchema.shape.name.nullable().optional(),
+    ownerOrg: z.uuid().nullable().optional(),
+    private: z.boolean().optional(),
+    type: z.string().max(100).optional(),
+    extras: z.record(z.string(), z.unknown()).optional(),
+    tags: z.array(z.object({ name: z.string() })).optional(),
+    groups: z.array(z.object({ name: z.string() })).optional(),
+  })
+
+/**
+ * Draft creation (POST /packages/drafts): every field is optional — name gets a
+ * placeholder and ownerOrg stays unset until publish (ADR-039).
+ */
+export const createDraftPackageSchema = updatePackageSchema
+
+/** Placeholder name auto-assigned to drafts; publishing requires replacing it (ADR-039) */
+export const DRAFT_NAME_PLACEHOLDER_RE = /^untitled-[0-9a-f]{8}$/
+
+/** True when the name is still the auto-generated draft placeholder (ADR-039) */
+export function isDraftPlaceholderName(name: string): boolean {
+  return DRAFT_NAME_PLACEHOLDER_RE.test(name)
+}
+
+export type DraftPublishBlocker = 'name' | 'org' | 'license'
+
+/**
+ * Publish preconditions for a draft (ADR-039): a real name (not the
+ * placeholder), an owner organization and a license. Single source of truth
+ * for the server-side publish validation and the publish button UI.
+ */
+export function draftPublishBlockers(pkg: {
+  name: string
+  ownerOrg?: string | null
+  licenseId?: string | null
+}): DraftPublishBlocker[] {
+  const blockers: DraftPublishBlocker[] = []
+  if (isDraftPlaceholderName(pkg.name)) blockers.push('name')
+  if (!pkg.ownerOrg) blockers.push('org')
+  if (!pkg.licenseId) blockers.push('license')
+  return blockers
+}
+
 export type CreatePackageInput = z.infer<typeof createPackageSchema>
 export type UpdatePackageInput = z.infer<typeof updatePackageSchema>
+export type CreateDraftPackageInput = z.infer<typeof createDraftPackageSchema>

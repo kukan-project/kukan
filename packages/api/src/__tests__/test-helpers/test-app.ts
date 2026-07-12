@@ -9,6 +9,7 @@ import { Hono } from 'hono'
 import type { Database } from '@kukan/db'
 import { NoOpAIAdapter, type AIAdapter } from '@kukan/ai-adapter'
 import { PostgresSearchAdapter, type SearchAdapter } from '@kukan/search-adapter'
+import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { AnalyticsService } from '../../services/analytics-service'
 import { SystemSettingService } from '../../services/system-setting'
 import { errorHandler } from '../../middleware/error-handler'
@@ -70,7 +71,7 @@ const mockStorage = {
   head: async () => ({ size: 1024 }),
 }
 
-const mockQueue = {
+export const mockQueue: QueueAdapter = {
   enqueue: vi.fn().mockResolvedValue('mock-job-id'),
   getStats: vi.fn().mockResolvedValue({ pending: 0, inFlight: 0, delayed: 0 }),
   process: vi.fn().mockResolvedValue(undefined),

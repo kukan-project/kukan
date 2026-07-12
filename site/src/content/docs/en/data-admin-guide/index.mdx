@@ -7,14 +7,18 @@ sidebar:
 
 ## Creating a dataset
 
+Datasets start as a **draft** and are published once their resources and metadata are ready.
+Drafts never appear in search results or dataset listings until published.
+
 1. Log in to the dashboard
-2. Click "Create Dataset"
-3. Fill in the required information
+2. Click "Create Draft" — the name (URL identifier), organization, and license can be set later
+3. Add resources on the edit page (file upload / external URL) — the pipeline runs while the dataset is still a draft, so you can check previews before publishing
+4. Finalize the metadata and click "Save & Publish"
 
 ### Basic information
 
-| Field | Description | Required |
-|-------|-------------|:--------:|
+| Field | Description | Required to publish |
+|-------|-------------|:-------------------:|
 | Name (URL slug) | Alphanumeric, hyphens, underscores, periods | Yes |
 | Title | Display title | - |
 | Description | Detailed description of the dataset | - |
@@ -22,10 +26,23 @@ sidebar:
 | License | Data license | Yes |
 | Public / Private | Private datasets are only visible to organization members | - |
 
+Fields marked "Required to publish" may stay unset while the dataset is a draft, but all three
+must be set before it can be published. While the name is blank, an auto-generated identifier is
+used as a placeholder (the dataset cannot be published with it).
+
 ### Tags
 
 Add tags to classify your dataset.
 Choose from existing tags or create new ones.
+
+### Managing and deleting drafts
+
+Drafts are managed in the dashboard "Drafts" tab. They can be edited by their creator and site
+admins, plus the editors of the owning organization once one is set.
+
+Deleting a draft skips the trash and **permanently deletes** it together with its resource files
+(it cannot be restored). If the deletion fails partway, the draft stays in the list marked
+"Deletion incomplete", and "Retry Delete" completes the permanent deletion.
 
 ## Managing resources
 

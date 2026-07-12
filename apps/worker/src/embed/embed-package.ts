@@ -51,15 +51,18 @@ export async function embedPackage(
 
   const [pkg] = await db
     .select({
+      state: packageTable.state,
       title: packageTable.title,
       notes: packageTable.notes,
       embeddingModel: packageTable.embeddingModel,
       embeddingHash: packageTable.embeddingHash,
     })
     .from(packageTable)
-    .where(and(eq(packageTable.id, packageId), eq(packageTable.state, 'active')))
+    .where(eq(packageTable.id, packageId))
     .limit(1)
   if (!pkg) return 'not-found'
+  // Drafts are embedded at publish (ADR-039); deleted packages never
+  if (pkg.state !== 'active') return 'skipped'
 
   // Stable ordering — the hash is computed over the joined text, so an
   // unspecified row order would re-embed unchanged packages on every reindex

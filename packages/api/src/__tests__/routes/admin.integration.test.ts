@@ -273,6 +273,28 @@ describe('Admin API Routes', () => {
       const res = await nonAdminApp.request('/api/v1/admin/search/stats')
       expect(res.status).toBe(403)
     })
+
+    it('should not count draft packages or their resources in DB counts (ADR-039)', async () => {
+      const orgId = await ensureOrg('stats-org')
+      const activePkg = await db.execute(sql`
+        INSERT INTO package (name, owner_org, state) VALUES ('stats-active', ${orgId}, 'active')
+        RETURNING id
+      `)
+      const draftPkg = await db.execute(sql`
+        INSERT INTO package (name, owner_org, state) VALUES ('stats-draft', ${orgId}, 'draft')
+        RETURNING id
+      `)
+      await db.execute(sql`
+        INSERT INTO resource (package_id, name, state)
+        VALUES (${(activePkg.rows[0] as { id: string }).id}, 'active-res', 'active'),
+               (${(draftPkg.rows[0] as { id: string }).id}, 'draft-res', 'active')
+      `)
+
+      const res = await app.request('/api/v1/admin/search/stats')
+      const body = await res.json()
+      expect(body.db.packages).toBe(1)
+      expect(body.db.resources).toBe(1)
+    })
   })
 
   describe('POST /api/v1/admin/users/:userId/restore', () => {

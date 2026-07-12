@@ -143,6 +143,26 @@ describe('PipelineService', () => {
       expect(queue.enqueue).toHaveBeenCalledOnce()
     })
 
+    it('should skip resources under draft packages (ADR-039)', async () => {
+      const draftPkg = await db.execute(sql`
+        INSERT INTO package (name, owner_org, creator_user_id, state)
+        VALUES ('draft-pkg', ${testOrgId}, '00000000-0000-0000-0000-000000000001', 'draft')
+        RETURNING id
+      `)
+      const draftPkgId = (draftPkg.rows[0] as { id: string }).id
+      await db.execute(sql`
+        INSERT INTO resource (package_id, name, format, state)
+        VALUES (${draftPkgId}, 'draft-resource', 'CSV', 'active')
+      `)
+
+      const queue = createMockQueue()
+      const service = new PipelineService(db, queue)
+
+      const result = await service.enqueueAll()
+      expect(result).toEqual({ enqueued: 1, failed: 0 })
+      expect(queue.enqueue).toHaveBeenCalledOnce()
+    })
+
     it('should return 0 when no active resources exist', async () => {
       await db.execute(sql`UPDATE resource SET state = 'deleted'`)
 

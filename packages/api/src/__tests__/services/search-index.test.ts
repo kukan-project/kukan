@@ -241,9 +241,26 @@ describe('enqueuePackageEmbed', () => {
 })
 
 describe('syncPackageMetadata', () => {
-  it('enqueues the embed job alongside the index update', async () => {
+  it('enqueues the embed job after indexing an active package', async () => {
     const { db, addResult } = createMockDb()
-    addResult([]) // package select: not found — the index half returns early
+    // Same query sequence as indexPackageMetadata: package, org, resources, groups, tags
+    addResult([
+      {
+        id: EMBED_PACKAGE_ID,
+        name: 'test-dataset',
+        title: null,
+        notes: null,
+        ownerOrg: null,
+        private: false,
+        creatorUserId: null,
+        licenseId: null,
+        created: now,
+        updated: now,
+      },
+    ])
+    addResult([])
+    addResult([])
+    addResult([])
     const { adapter } = createMockSearch()
     const queue = makeQueue()
 
@@ -253,6 +270,23 @@ describe('syncPackageMetadata', () => {
       EMBED_PACKAGE_ID
     )
 
+    expect(adapter.indexPackage).toHaveBeenCalledOnce()
     expect(queue.enqueue).toHaveBeenCalledWith(EMBED_JOB_TYPE, { packageId: EMBED_PACKAGE_ID })
+  })
+
+  it('skips the embed job when the package is not indexed (draft/deleted, ADR-039)', async () => {
+    const { db, addResult } = createMockDb()
+    addResult([]) // package select: not active — nothing indexed
+    const { adapter } = createMockSearch()
+    const queue = makeQueue()
+
+    await syncPackageMetadata(
+      db,
+      { search: adapter, queue, ai: makeAI(true), logger: makeLogger() },
+      EMBED_PACKAGE_ID
+    )
+
+    expect(adapter.indexPackage).not.toHaveBeenCalled()
+    expect(queue.enqueue).not.toHaveBeenCalled()
   })
 })

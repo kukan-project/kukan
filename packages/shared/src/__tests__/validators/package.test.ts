@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { createPackageSchema, updatePackageSchema } from '../../validators/package'
+import {
+  createPackageSchema,
+  updatePackageSchema,
+  createDraftPackageSchema,
+  DRAFT_NAME_PLACEHOLDER_RE,
+} from '../../validators/package'
 
 const TEST_ORG_ID = '550e8400-e29b-41d4-a716-446655440000'
 
@@ -133,8 +138,13 @@ describe('createPackageSchema', () => {
 })
 
 describe('updatePackageSchema', () => {
-  it('should require name and ownerOrg', () => {
-    expect(updatePackageSchema.safeParse({}).success).toBe(false)
+  it('should allow omitted name and ownerOrg (draft update, ADR-039)', () => {
+    expect(updatePackageSchema.safeParse({ title: 'WIP' }).success).toBe(true)
+  })
+
+  it('should validate name and ownerOrg when provided', () => {
+    expect(updatePackageSchema.safeParse({ name: 'A' }).success).toBe(false)
+    expect(updatePackageSchema.safeParse({ name: 'A', ownerOrg: 'not-uuid' }).success).toBe(false)
     expect(
       updatePackageSchema.safeParse({
         name: 'test-pkg',
@@ -143,9 +153,12 @@ describe('updatePackageSchema', () => {
     ).toBe(true)
   })
 
-  it('should validate provided fields', () => {
-    const result = updatePackageSchema.safeParse({ name: 'A', ownerOrg: 'not-uuid' })
-    expect(result.success).toBe(false)
+  it('should accept explicit null ownerOrg (draft org clear, ADR-039)', () => {
+    const result = updatePackageSchema.safeParse({ ownerOrg: null })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.ownerOrg).toBeNull()
+    }
   })
 
   it('should accept null for nullable fields (PUT with API response)', () => {
@@ -159,5 +172,44 @@ describe('updatePackageSchema', () => {
       authorEmail: null,
     })
     expect(result.success).toBe(true)
+  })
+
+  it('should not inject create defaults for omitted keys (draft partial update, ADR-039)', () => {
+    const result = updatePackageSchema.safeParse({ title: 'WIP' })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.private).toBeUndefined()
+      expect(result.data.type).toBeUndefined()
+      expect(result.data.extras).toBeUndefined()
+      expect(result.data.tags).toBeUndefined()
+      expect(result.data.groups).toBeUndefined()
+    }
+  })
+})
+
+describe('createDraftPackageSchema (ADR-039)', () => {
+  it('should accept an empty body', () => {
+    expect(createDraftPackageSchema.safeParse({}).success).toBe(true)
+  })
+
+  it('should validate provided fields', () => {
+    expect(createDraftPackageSchema.safeParse({ name: 'MyDataset' }).success).toBe(false)
+    expect(createDraftPackageSchema.safeParse({ ownerOrg: 'not-uuid' }).success).toBe(false)
+    expect(
+      createDraftPackageSchema.safeParse({
+        name: 'my-draft',
+        ownerOrg: '550e8400-e29b-41d4-a716-446655440000',
+      }).success
+    ).toBe(true)
+  })
+})
+
+describe('DRAFT_NAME_PLACEHOLDER_RE', () => {
+  it('should match generated placeholder names only', () => {
+    expect(DRAFT_NAME_PLACEHOLDER_RE.test('untitled-ab12cd34')).toBe(true)
+    expect(DRAFT_NAME_PLACEHOLDER_RE.test('untitled-')).toBe(false)
+    expect(DRAFT_NAME_PLACEHOLDER_RE.test('untitled-xyz')).toBe(false)
+    expect(DRAFT_NAME_PLACEHOLDER_RE.test('my-untitled-ab12cd34')).toBe(false)
+    expect(DRAFT_NAME_PLACEHOLDER_RE.test('untitled-ab12cd34-x')).toBe(false)
   })
 })

@@ -34,17 +34,18 @@ export interface PackageSyncDeps {
  * Sync one package after a metadata change: upsert its search doc and
  * (re)enqueue its embedding. Always use this from routes (rather than calling
  * indexPackageMetadata directly) so a new call site cannot forget the embed
- * half of the pair.
+ * half of the pair. Non-active packages (drafts, ADR-039) are skipped entirely,
+ * so callers can invoke unconditionally.
  */
 export async function syncPackageMetadata(
   db: Database,
   deps: PackageSyncDeps,
   packageId: string
 ): Promise<void> {
-  await Promise.all([
-    indexPackageMetadata(db, deps.search, packageId),
-    enqueuePackageEmbed(deps.queue, deps.ai, packageId, deps.logger),
-  ])
+  const indexed = await indexPackageMetadata(db, deps.search, packageId)
+  if (indexed) {
+    await enqueuePackageEmbed(deps.queue, deps.ai, packageId, deps.logger)
+  }
 }
 
 /**
@@ -72,12 +73,13 @@ export async function enqueuePackageEmbed(
 /**
  * Build a DatasetDoc from DB and upsert it into the search index (kukan-packages).
  * Does NOT include resource-level data — use indexResourceMetadata() for that.
+ * Returns false when the package is not active (nothing indexed).
  */
 export async function indexPackageMetadata(
   db: Database,
   search: SearchAdapter,
   packageId: string
-): Promise<void> {
+): Promise<boolean> {
   const [pkg] = await db
     .select({
       id: packageTable.id,
@@ -95,7 +97,7 @@ export async function indexPackageMetadata(
     .where(and(eq(packageTable.id, packageId), eq(packageTable.state, 'active')))
     .limit(1)
 
-  if (!pkg) return
+  if (!pkg) return false
 
   const [resources, orgRow, groups, tags] = await Promise.all([
     // Only fetch format for the formats facet
@@ -145,6 +147,37 @@ export async function indexPackageMetadata(
   }
 
   await search.indexPackage(doc)
+  return true
+}
+
+/** Minimal resource fields needed to build a ResourceDoc. */
+interface ResourceRowForDoc {
+  id: string
+  packageId: string
+  name: string | null
+  description: string | null
+  format: string | null
+}
+
+function buildResourceDoc(row: ResourceRowForDoc): ResourceDoc {
+  return {
+    id: row.id,
+    packageId: row.packageId,
+    name: row.name ?? undefined,
+    description: row.description ?? undefined,
+    format: row.format ?? undefined,
+  }
+}
+
+/**
+ * Index a resource's metadata from an already-fetched row (no re-SELECT).
+ * The caller guarantees the resource is active and its package indexable.
+ */
+export async function indexResourceDocFromRow(
+  search: SearchAdapter,
+  row: ResourceRowForDoc
+): Promise<void> {
+  await search.indexResource(buildResourceDoc(row))
 }
 
 /**
@@ -156,6 +189,7 @@ export async function indexResourceMetadata(
   search: SearchAdapter,
   resourceId: string
 ): Promise<void> {
+  // Parent package must be active — draft resources are indexed at publish (ADR-039)
   const [res] = await db
     .select({
       id: resource.id,
@@ -165,20 +199,19 @@ export async function indexResourceMetadata(
       format: resource.format,
     })
     .from(resource)
-    .where(and(eq(resource.id, resourceId), eq(resource.state, 'active')))
+    .innerJoin(packageTable, eq(packageTable.id, resource.packageId))
+    .where(
+      and(
+        eq(resource.id, resourceId),
+        eq(resource.state, 'active'),
+        eq(packageTable.state, 'active')
+      )
+    )
     .limit(1)
 
   if (!res) return
 
-  const doc: ResourceDoc = {
-    id: res.id,
-    packageId: res.packageId,
-    name: res.name ?? undefined,
-    description: res.description ?? undefined,
-    format: res.format ?? undefined,
-  }
-
-  await search.indexResource(doc)
+  await search.indexResource(buildResourceDoc(res))
 }
 
 // ------------------------------------------------------------------
@@ -322,13 +355,7 @@ export async function rebuildMetadataIndex(
       }
     })
 
-    const resourceDocs: ResourceDoc[] = allResources.map((r) => ({
-      id: r.id,
-      packageId: r.packageId,
-      name: r.name ?? undefined,
-      description: r.description ?? undefined,
-      format: r.format ?? undefined,
-    }))
+    const resourceDocs: ResourceDoc[] = allResources.map(buildResourceDoc)
 
     if (packageDocs.length > 0) {
       await search.bulkIndexPackages(packageDocs)

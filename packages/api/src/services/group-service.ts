@@ -38,8 +38,9 @@ export class GroupService {
       .select({
         ...getTableColumns(group),
         total: sql<number>`COUNT(*) OVER()::int`.as('total'),
+        // Active packages only — draft/deleted links must not inflate the count (ADR-039)
         datasetCount:
-          sql<number>`(SELECT COUNT(*)::int FROM "package_group" WHERE "package_group"."group_id" = "group"."id")`.as(
+          sql<number>`(SELECT COUNT(*)::int FROM "package_group" JOIN "package" ON "package"."id" = "package_group"."package_id" AND "package"."state" = 'active' WHERE "package_group"."group_id" = "group"."id")`.as(
             'dataset_count'
           ),
       })

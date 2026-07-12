@@ -11,21 +11,27 @@ import { ResourceService } from '../services/resource-service'
 import { PipelineService } from '../services/pipeline-service'
 import {
   createPackageSchema,
+  createDraftPackageSchema,
   updatePackageSchema,
   createResourceBodySchema,
   reorderResourcesSchema,
-  ForbiddenError,
   UnauthorizedError,
+  ValidationError,
+  PACKAGE_STATES,
 } from '@kukan/shared'
 import type { MatchedResource, SearchFilters } from '@kukan/search-adapter'
 import {
   checkOrgRole,
+  makePackageAuthorize,
   resolveUserOrgIds,
   buildVisibilityFilters,
   type AuthUser,
-  type MembershipRole,
 } from '../auth/permissions'
-import { syncPackageMetadata, indexResourceMetadata } from '../services/search-index'
+import {
+  syncPackageMetadata,
+  indexResourceMetadata,
+  indexResourceDocFromRow,
+} from '../services/search-index'
 import { hybridSearch } from '../services/hybrid-search'
 import { purgePackageExternals } from '../services/package-cleanup'
 import type { AppContext } from '../context'
@@ -34,21 +40,22 @@ import type { PackageAuthorize } from '../services/package-service'
 
 export const packagesRouter = new Hono<{ Variables: AppContext }>()
 
-function makePackageAuthorize(
-  db: Database,
-  user: AuthUser,
-  role: MembershipRole
-): PackageAuthorize {
+/**
+ * Publish authorization (ADR-039): draft access alone is not enough — when the
+ * draft has an ownerOrg, editor rights in that org are re-verified at publish
+ * time, so a creator who left the org cannot publish in its name.
+ */
+function makePublishAuthorize(db: Database, user: AuthUser): PackageAuthorize {
+  const base = makePackageAuthorize(db, user, 'editor')
   return async (existing) => {
-    if (existing.ownerOrg) {
-      await checkOrgRole(db, user, existing.ownerOrg, role)
-    } else if (!user.sysadmin) {
-      throw new ForbiddenError('Only sysadmin can modify packages without an organization')
+    await base(existing)
+    if (existing.state === 'draft' && existing.ownerOrg) {
+      await checkOrgRole(db, user, existing.ownerOrg, 'editor')
     }
   }
 }
 
-const stateParam = z.enum(['active', 'deleted']).optional()
+const stateParam = z.enum(PACKAGE_STATES).optional()
 
 // Repeated query param: normalizes string | string[] → string[] | undefined
 const repeatedParam = z
@@ -100,6 +107,48 @@ packagesRouter.get(
     const db = c.get('db')
     const service = new PackageService(db)
     const user = c.get('user')
+
+    // state=draft: dashboard-only DB listing — drafts are never in the search
+    // index, and visibility is creator/editor-org based (ADR-039)
+    if (state === 'draft') {
+      if (!user) throw new UnauthorizedError()
+      // Search-index-backed filters are not implemented on this direct-DB
+      // path — reject them rather than silently ignore
+      const unsupported = Object.entries({
+        tags: tags?.length,
+        groups: rest.groups?.length,
+        res_format: res_format?.length,
+        license_id: rest.license_id?.length,
+        creator_user_id: rest.creator_user_id,
+        my_org,
+        include_facets,
+      })
+        .filter(([, used]) => used)
+        .map(([key]) => key)
+      if (unsupported.length > 0) {
+        throw new ValidationError(
+          `Filters not supported with state=draft: ${unsupported.join(', ')}`
+        )
+      }
+      const editorOrgIds = await resolveUserOrgIds(db, user, 'editor')
+      // 'purging' rows (a draft purge that crashed mid-flight) are included so
+      // the dashboard can offer the DELETE retry that completes the purge
+      const result = await service.list({
+        offset: rest.offset,
+        limit: rest.limit,
+        q: rest.q,
+        name: rest.name,
+        organizations: rest.organization,
+        isPrivate: rest.private,
+        sortBy: sort_by,
+        sortOrder: sort_order,
+        state: ['draft', 'purging'],
+        ...(editorOrgIds !== undefined && {
+          draftAccess: { userId: user.id, editorOrgIds },
+        }),
+      })
+      return c.json(result)
+    }
 
     // state=deleted is only allowed when my_org=true AND user is authenticated
     const effectiveState = state === 'deleted' && my_org && user ? 'deleted' : 'active'
@@ -228,6 +277,24 @@ packagesRouter.post('/', zValidator('json', createPackageSchema), async (c) => {
   return c.json(pkg, 201)
 })
 
+// POST /api/v1/packages/drafts - Create draft package (any authenticated user, ADR-039)
+packagesRouter.post('/drafts', zValidator('json', createDraftPackageSchema), async (c) => {
+  const user = c.get('user')
+  if (!user) throw new UnauthorizedError()
+
+  const input = c.req.valid('json')
+  const db = c.get('db')
+  // Attaching an org at creation still requires editor rights in that org
+  if (input.ownerOrg) {
+    await checkOrgRole(db, user, input.ownerOrg, 'editor')
+  }
+
+  const service = new PackageService(db)
+  const pkg = await service.createDraft(input, user.id)
+  // No search sync — drafts stay out of the index until publish
+  return c.json(pkg, 201)
+})
+
 // GET /api/v1/packages/:nameOrId - Get package by name or ID
 packagesRouter.get(
   '/:nameOrId',
@@ -235,16 +302,16 @@ packagesRouter.get(
   async (c) => {
     const nameOrId = c.req.param('nameOrId')
     const user = c.get('user')
-    // state=deleted requires authenticated user
+    // state=deleted / state=draft require an authenticated user
     const reqState = c.req.valid('query').state
-    const effectiveState = reqState === 'deleted' && user ? 'deleted' : 'active'
+    const effectiveState = reqState && reqState !== 'active' && user ? reqState : 'active'
     const service = new PackageService(c.get('db'))
     const pkg = await service.getDetailByNameOrId(nameOrId, user, effectiveState)
     return c.json(pkg)
   }
 )
 
-// PUT /api/v1/packages/:nameOrId - Update package (org editor+)
+// PUT /api/v1/packages/:nameOrId - Update package (org editor+ / draft editors)
 packagesRouter.put('/:nameOrId', zValidator('json', updatePackageSchema), async (c) => {
   const user = c.get('user')
   if (!user) throw new UnauthorizedError()
@@ -262,11 +329,14 @@ packagesRouter.put('/:nameOrId', zValidator('json', updatePackageSchema), async 
     }
   })
 
+  // syncPackageMetadata skips drafts — they stay out of the index until publish (ADR-039)
   await syncPackageMetadata(db, c.var, pkg.id)
   return c.json(pkg)
 })
 
-// DELETE /api/v1/packages/:nameOrId - Delete package (org editor+)
+// DELETE /api/v1/packages/:nameOrId - Delete package (org editor+ / draft editors)
+// Drafts skip the trash and are hard-deleted immediately (ADR-039). 'purging'
+// rows (a draft purge that crashed mid-flight) are recovered the same way.
 packagesRouter.delete('/:nameOrId', async (c) => {
   const user = c.get('user')
   if (!user) throw new UnauthorizedError()
@@ -275,9 +345,47 @@ packagesRouter.delete('/:nameOrId', async (c) => {
   const nameOrId = c.req.param('nameOrId')
   const service = new PackageService(db)
 
+  const existing = await service.getByNameOrId(nameOrId, ['active', 'draft', 'purging'])
+  if (existing.state === 'draft' || existing.state === 'purging') {
+    const purged = await service.purgeDraft(
+      existing.id,
+      { search: c.get('search'), storage: c.get('storage') },
+      makePackageAuthorize(db, user, 'editor')
+    )
+    return c.json(purged)
+  }
+
   const pkg = await service.delete(nameOrId, makePackageAuthorize(db, user, 'editor'))
 
   await c.get('search').deletePackage(pkg.id)
+  return c.json(pkg)
+})
+
+// POST /api/v1/packages/:nameOrId/publish - Publish a draft (draft editors, ADR-039)
+// Idempotent: re-publishing an active package re-runs the sync below, so a
+// failed publish-time search sync can be retried with the same request
+packagesRouter.post('/:nameOrId/publish', async (c) => {
+  const user = c.get('user')
+  if (!user) throw new UnauthorizedError()
+
+  const db = c.get('db')
+  const nameOrId = c.req.param('nameOrId')
+  const service = new PackageService(db)
+
+  const pkg = await service.publish(nameOrId, makePublishAuthorize(db, user))
+
+  // Now-visible package: index metadata + enqueue embedding, index each
+  // resource's metadata, and re-run pipelines for content indexing (the Index
+  // step skipped these resources while the package was a draft).
+  // Failures propagate as 500: the package is already active and publish is
+  // idempotent, so re-running the same request retries the whole sync
+  const resources = await new ResourceService(db).listByPackage(pkg.id)
+  const pipelineService = new PipelineService(db, c.get('queue'))
+  await Promise.all([
+    syncPackageMetadata(db, c.var, pkg.id),
+    ...resources.map((r) => indexResourceDocFromRow(c.get('search'), r)),
+    ...resources.filter((r) => r.url).map((r) => pipelineService.enqueue(r.id)),
+  ])
   return c.json(pkg)
 })
 
@@ -324,12 +432,8 @@ packagesRouter.put(
     const packageId = c.req.param('packageId')
 
     const packageService = new PackageService(db)
-    const pkg = await packageService.getByNameOrId(packageId)
-    if (pkg.ownerOrg) {
-      await checkOrgRole(db, user, pkg.ownerOrg, 'editor')
-    } else if (!user.sysadmin) {
-      throw new ForbiddenError('Only sysadmin can modify packages without an organization')
-    }
+    const pkg = await packageService.getByNameOrId(packageId, ['active', 'draft'])
+    await makePackageAuthorize(db, user, 'editor')(pkg)
 
     const { resourceIds } = c.req.valid('json')
     const resourceService = new ResourceService(db)
@@ -344,8 +448,11 @@ packagesRouter.get('/:packageId/resources', async (c) => {
   const packageId = c.req.param('packageId')
   const user = c.get('user')
   const packageService = new PackageService(c.get('db'))
-  // Resolve name or ID to UUID, with private visibility check
-  const pkg = await packageService.getByNameOrIdWithAccessCheck(packageId, user)
+  // Resolve name or ID to UUID, with private/draft visibility check
+  const pkg = await packageService.getByNameOrIdWithAccessCheck(packageId, user, [
+    'active',
+    'draft',
+  ])
 
   const resourceService = new ResourceService(c.get('db'))
   const resources = await resourceService.listByPackage(pkg.id)
@@ -365,12 +472,8 @@ packagesRouter.post(
     const input = c.req.valid('json')
 
     const packageService = new PackageService(db)
-    const pkg = await packageService.getByNameOrId(packageId)
-    if (pkg.ownerOrg) {
-      await checkOrgRole(db, user, pkg.ownerOrg, 'editor')
-    } else if (!user.sysadmin) {
-      throw new ForbiddenError('Only sysadmin can modify packages without an organization')
-    }
+    const pkg = await packageService.getByNameOrId(packageId, ['active', 'draft'])
+    await makePackageAuthorize(db, user, 'editor')(pkg)
 
     const resourceService = new ResourceService(db)
     const resource = await resourceService.create({
@@ -390,6 +493,7 @@ packagesRouter.post(
           })
         : Promise.resolve()
 
+    // Both sync helpers skip drafts — metadata/resources are indexed at publish (ADR-039)
     await Promise.all([
       enqueuePromise,
       syncPackageMetadata(db, c.var, pkg.id),

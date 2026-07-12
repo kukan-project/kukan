@@ -5,6 +5,7 @@
 
 import type { Readable } from 'node:stream'
 import type { ContentDoc } from '@kukan/search-adapter'
+import type { PackageDbState } from '@kukan/shared'
 
 /** Minimal resource data needed by pipeline steps */
 export interface ResourceForPipeline {
@@ -25,6 +26,8 @@ export interface PipelineContext {
   }
   /** Get an active resource by ID */
   getResource(id: string): Promise<ResourceForPipeline | null>
+  /** Get a package's state (null when the package doesn't exist) */
+  getPackageState(packageId: string): Promise<PackageDbState | null>
   /** Update resource hash, size, and lastModified (without touching updated) */
   updateResourceHashAndSize(id: string, meta: { hash: string; size: number }): Promise<void>
   /**

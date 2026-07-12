@@ -78,7 +78,10 @@ datasets as drafts, and make publication an explicit state transition.**
   link-breakage risk. **Publishing with the placeholder still in place is not
   allowed** (publish-time validation requires an explicit name, preventing
   datasets with random URLs from going public). Placeholders are random and
-  therefore never squat meaningful slugs
+  therefore never squat meaningful slugs. A previously set `name` can be
+  reset by sending an explicit `null` to the update API, which regenerates
+  a fresh placeholder and returns the draft to the "unnamed" state (the
+  publish gate blocks it again)
 - `ownerOrg` is nullable in the DB (it is required only by the creation API's
   validation), so drafts **may leave it unset**. Draft edit permission is
   granted to the `creatorUserId` (the creator) and sysadmins, and — once
@@ -92,6 +95,10 @@ datasets as drafts, and make publication an explicit state transition.**
   Preview generation and column-schema persistence (ADR-029 / ADR-032) also
   run as usual, so preview checks and AI metadata suggestions (follow-up ADR)
   have their material before publication
+- A `PUT` to a draft is a **partial update**: only the keys present in the
+  request are applied (an explicit `null` still clears a field), so a
+  partial save cannot wipe a draft's tags or extras. A `PUT` to an active
+  package keeps the full-replacement semantics as before
 
 ### 2. Visibility
 
@@ -100,7 +107,7 @@ datasets as drafts, and make publication an explicit state transition.**
 - Direct DB queries are invisible via the default `state = 'active'` filter
   (existing implementation, unchanged)
 - The dashboard shows drafts to their creator (and, once `ownerOrg` is set,
-  to members of that organization) as "drafts"
+  to that organization's editors — editor role or higher) as "drafts"
 - **The worker's Index step (ADR-021) must check the package state and skip
   content indexing for drafts** (it currently does not look at state and
   needs fixing). Embeddings (ADR-034) are also not generated for drafts
@@ -109,11 +116,20 @@ datasets as drafts, and make publication an explicit state transition.**
 
 - Add `POST /api/v1/packages/{id}/publish`. Only `draft` → `active` is
   allowed (same shape as the transition guards in ADR-028). Permission is
-  identical to package update permission
+  identical to package update permission; in addition, when `ownerOrg` is
+  set, editor rights in that organization are re-verified at publish time
+  (a creator who has left the organization cannot publish in its name)
+- Publish-time validation: in addition to `name` (no placeholder, §1) and
+  `ownerOrg`, **`licenseId` must be set** (400 if missing). The web form has
+  always required a license, so the invariant "datasets published through the
+  UI always carry a license" is preserved on the draft publication path
 - Synchronization performed at publication:
   1. Index the metadata into the search index
   2. Index the content of all active resources
   3. Enqueue the embedding job
+- Re-publishing an already-published package is **allowed and re-runs the
+  synchronization above (idempotent)**: if the publish-time search sync
+  fails, re-issuing the same publish request serves as the retry
 - The transition is **one-way**. There is no operation to revert a published
   dataset to draft (unpublishing is the domain of the `private` flag;
   revision management for editing published datasets is out of scope — CKAN
@@ -126,27 +142,25 @@ datasets as drafts, and make publication an explicit state transition.**
   without passing through the trash (`deleted`)** (reusing the existing purge
   CASCADE — DB / storage / pipeline-record cleanup; drafts are not
   restorable)
-- Abandoned drafts are **purged automatically by a periodic worker job**. A
-  daily job is added to the existing croner scheduler (same shape as the
-  health check) that CASCADE-deletes drafts whose last activity (the greater
-  of `package.updated` and the max of child `resource.updated`) exceeds the
-  retention period. CKAN accumulates drafts indefinitely, and abandoned-draft
-  buildup is a known operational problem — uploaded files (up to 100 MB × N)
-  would otherwise linger in storage, so this is enabled by default
-- The retention period is a runtime system setting `draft-retention-days`
-  (an application of ADR-036; default 30 days, `0` disables it — deployments
-  where deletion is unacceptable, e.g. closed networks, can turn it off from
-  the admin screen)
-- Deletion atomically re-verifies the state with
-  `UPDATE ... WHERE state = 'draft' AND <stale condition> RETURNING` before
-  destructive work (same shape as the durable claim in ADR-028; a draft
-  published moments earlier is never deleted by a race) and is recorded in
-  the `audit_log`
-- The drafts list shows the last-updated time and the scheduled deletion
-  date, so users can anticipate the GC
-- A draft occupies its name slug (same behavior as CKAN; accepted — the
-  placeholder name is random, and user-chosen names are not squatted
-  indefinitely thanks to the GC)
+- **No automatic deletion (GC).** A TTL-based GC (a daily worker job with a
+  `DRAFT_RETENTION_DAYS` retention period) was implemented and evaluated,
+  but the product decision was that the anxiety of work-in-progress data
+  disappearing automatically outweighs the benefit (storage savings), so it
+  was removed. Abandoned drafts remain visible in the dashboard's drafts tab
+  and are cleaned up by manual deletion; this will be revisited if storage
+  growth becomes a problem
+- Deletion atomically transitions the state with a **durable claim**
+  (`UPDATE ... SET state='purging' WHERE state IN ('draft','purging') RETURNING`)
+  before destructive work (applying the ADR-028 scheme to
+  packages as well: a draft published moments earlier is never deleted by a
+  race). If external-resource cleanup crashes partway and leaves the row
+  `purging`, **re-running the DELETE re-claims it and completes the purge**.
+  A row left `purging` stays visible in the drafts list flagged as
+  "deletion incomplete" (not editable), so the user can retry the deletion
+  from the list to recover it. As a result, package `state` also takes
+  `purging` as a transient in-transition value
+- A draft occupies its name slug until it is manually deleted (same behavior
+  as CKAN; accepted — the placeholder name is random)
 
 ### Audit items (verify during implementation)
 
@@ -180,5 +194,3 @@ datasets as drafts, and make publication an explicit state transition.**
 - ADR-028: Async organization purge with durable claim (precedent for a third
   state and transition guards)
 - ADR-034: Metadata vector search (embedding enqueue at publication)
-- ADR-036: Runtime system settings backed by the DB (`draft-retention-days`
-  is an application of it)

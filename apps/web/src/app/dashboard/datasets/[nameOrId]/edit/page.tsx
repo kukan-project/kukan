@@ -1,12 +1,16 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
+import { Badge, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
+import { isDraftPlaceholderName, type PackageState } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
+import { useFetch } from '@/hooks/use-fetch'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { DatasetForm } from '@/components/dashboard/dataset/dataset-form'
+import { PublishSyncBanner } from '@/components/dashboard/dataset/publish-sync-banner'
 import { ResourceList } from '@/components/dashboard/dataset/resource-list'
 import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
 import { Button } from '@kukan/ui'
@@ -40,6 +44,7 @@ interface PackageDetail {
   maintainerEmail?: string | null
   ownerOrg?: string | null
   private: boolean
+  state: PackageState
   type?: string | null
   extras?: Record<string, unknown> | null
   tags?: { id: string; name: string }[]
@@ -51,7 +56,8 @@ interface PackageDetail {
 /** API response → form defaults */
 function toFormDefaults(pkg: PackageDetail) {
   return {
-    name: pkg.name,
+    // Never expose the auto-generated draft placeholder name (ADR-039)
+    name: isDraftPlaceholderName(pkg.name) ? '' : pkg.name,
     title: pkg.title ?? undefined,
     notes: pkg.notes ?? undefined,
     url: pkg.url ?? undefined,
@@ -77,33 +83,57 @@ export default function EditDatasetPage() {
   const t = useTranslations('dataset')
   const tc = useTranslations('common')
   const nameOrId = params.nameOrId as string
-  const isDeleted = searchParams.get('state') === 'deleted'
+  const stateParam = searchParams.get('state')
+  const isDeleted = stateParam === 'deleted'
 
   const [pkg, setPkg] = useState<PackageDetail | null>(null)
-  const [organizations, setOrganizations] = useState<Organization[]>([])
   const [loading, setLoading] = useState(true)
   const [showDelete, setShowDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [syncWarning, setSyncWarning] = useState(false)
+  const [published, setPublished] = useState(false)
 
   const fetchData = useCallback(async () => {
-    const pkgUrl = isDeleted
-      ? `/api/v1/packages/${nameOrId}?state=deleted`
-      : `/api/v1/packages/${nameOrId}`
-    const [pkgRes, orgRes] = await Promise.all([
-      clientFetch(pkgUrl),
-      clientFetch('/api/v1/users/me/organizations'),
-    ])
-    if (pkgRes.ok) setPkg(await pkgRes.json())
-    if (orgRes.ok) {
-      const data = await orgRes.json()
-      setOrganizations(data.items)
+    const stateQuery =
+      stateParam === 'deleted' || stateParam === 'draft' ? `?state=${stateParam}` : ''
+    const pkgRes = await clientFetch(`/api/v1/packages/${nameOrId}${stateQuery}`)
+    if (pkgRes.ok) {
+      setPkg(await pkgRes.json())
+    } else if (!stateQuery) {
+      // A draft opened without ?state=draft 404s on the active path — retry as draft
+      const draftRes = await clientFetch(`/api/v1/packages/${nameOrId}?state=draft`)
+      if (draftRes.ok) setPkg(await draftRes.json())
+    } else if (stateParam === 'draft') {
+      // ?state=draft but the package is already active: publish committed but the
+      // follow-up search sync may have failed — offer the idempotent re-publish
+      const activeRes = await clientFetch(`/api/v1/packages/${nameOrId}`)
+      if (activeRes.ok) {
+        setPkg(await activeRes.json())
+        setSyncWarning(true)
+        router.replace(`/dashboard/datasets/${nameOrId}/edit`)
+      }
     }
     setLoading(false)
-  }, [nameOrId, isDeleted])
+  }, [nameOrId, stateParam, router])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // The org options never change with the package — fetch once on mount
+  const { data: orgData } = useFetch<{ items: Organization[] }>('/api/v1/users/me/organizations')
+  const organizations = orgData?.items ?? []
+
+  const isDraft = pkg?.state === 'draft'
+
+  const handlePublished = useCallback(() => {
+    // A successful publish always lands on 'active'
+    setPkg((prev) => (prev ? { ...prev, state: 'active' } : prev))
+    setSyncWarning(false)
+    setPublished(true)
+    // Now active: drop ?state=draft so the refetch hits the active path
+    router.replace(`/dashboard/datasets/${nameOrId}/edit`)
+  }, [nameOrId, router])
 
   async function handleDelete() {
     setDeleting(true)
@@ -151,9 +181,46 @@ export default function EditDatasetPage() {
     )
   }
 
+  // Delete section wording/styling (deleted > draft > active precedence)
+  const deleteConfirmText = isDraft ? t('deleteDraftConfirm') : t('deleteDatasetConfirm')
+  const deleteUi = isDeleted
+    ? {
+        cardClass: 'border-destructive/30',
+        titleClass: 'text-destructive',
+        title: t('dangerZone'),
+        description: null,
+        buttonVariant: 'destructive' as const,
+        buttonLabel: t('purgeDataset'),
+        dialogDescription: t('purgeDatasetConfirm'),
+        confirmLabel: t('purgeDataset'),
+      }
+    : {
+        cardClass: 'border-amber-300/50 dark:border-amber-500/30',
+        titleClass: 'text-amber-700 dark:text-amber-400',
+        title: isDraft ? t('deleteDraft') : t('deleteDataset'),
+        description: deleteConfirmText,
+        buttonVariant: 'outline' as const,
+        buttonLabel: isDraft ? t('deleteDraft') : t('deleteDataset'),
+        dialogDescription: deleteConfirmText,
+        confirmLabel: isDraft ? t('purgeDataset') : undefined,
+      }
+
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={t('editDataset')} />
+      <PageHeader title={t('editDataset')}>
+        {isDraft && <Badge variant="secondary">{t('draftBadge')}</Badge>}
+      </PageHeader>
+
+      {published && (
+        <div className="rounded-md border border-green-300/50 bg-green-500/10 p-3 text-sm dark:border-green-500/30">
+          {t('publishSuccess')}{' '}
+          <Link href={`/dataset/${pkg.name}`} className="font-medium underline">
+            {t('viewPublished')}
+          </Link>
+        </div>
+      )}
+
+      {syncWarning && <PublishSyncBanner nameOrId={nameOrId} onPublished={handlePublished} />}
 
       {isDeleted ? (
         <>
@@ -240,10 +307,16 @@ export default function EditDatasetPage() {
             </CardHeader>
             <CardContent>
               <DatasetForm
+                key={pkg.state}
                 mode="edit"
                 nameOrId={nameOrId}
                 defaultValues={toFormDefaults(pkg)}
                 organizations={organizations}
+                isDraft={isDraft}
+                // Full refetch (not the PUT response) keeps tags/groups fresh
+                // so the publish-time remount doesn't restore stale defaults
+                onSaved={isDraft ? fetchData : undefined}
+                onPublished={isDraft ? handlePublished : undefined}
               />
             </CardContent>
           </Card>
@@ -277,27 +350,16 @@ export default function EditDatasetPage() {
         </Card>
       )}
 
-      <Card
-        className={
-          isDeleted ? 'border-destructive/30' : 'border-amber-300/50 dark:border-amber-500/30'
-        }
-      >
+      <Card className={deleteUi.cardClass}>
         <CardHeader>
-          <CardTitle
-            className={isDeleted ? 'text-destructive' : 'text-amber-700 dark:text-amber-400'}
-          >
-            {isDeleted ? t('dangerZone') : t('deleteDataset')}
-          </CardTitle>
+          <CardTitle className={deleteUi.titleClass}>{deleteUi.title}</CardTitle>
         </CardHeader>
         <CardContent>
-          {!isDeleted && (
-            <p className="mb-3 text-sm text-muted-foreground">{t('deleteDatasetConfirm')}</p>
+          {deleteUi.description && (
+            <p className="mb-3 text-sm text-muted-foreground">{deleteUi.description}</p>
           )}
-          <Button
-            variant={isDeleted ? 'destructive' : 'outline'}
-            onClick={() => setShowDelete(true)}
-          >
-            {isDeleted ? t('purgeDataset') : t('deleteDataset')}
+          <Button variant={deleteUi.buttonVariant} onClick={() => setShowDelete(true)}>
+            {deleteUi.buttonLabel}
           </Button>
         </CardContent>
       </Card>
@@ -305,11 +367,11 @@ export default function EditDatasetPage() {
       <DeleteConfirmDialog
         open={showDelete}
         onOpenChange={setShowDelete}
-        title={isDeleted ? t('purgeDataset') : t('deleteDataset')}
-        description={isDeleted ? t('purgeDatasetConfirm') : t('deleteDatasetConfirm')}
+        title={deleteUi.buttonLabel}
+        description={deleteUi.dialogDescription}
         onConfirm={handleDelete}
         isDeleting={deleting}
-        confirmLabel={isDeleted ? t('purgeDataset') : undefined}
+        confirmLabel={deleteUi.confirmLabel}
       />
     </div>
   )

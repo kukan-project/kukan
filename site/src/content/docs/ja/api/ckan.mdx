@@ -106,4 +106,5 @@ curl "https://your-kukan-site/api/3/action/package_show?id=population-stats-2024
 
 - 読み取り専用（GET のみ）。書き込み系の CKAN エンドポイントは提供しません
 - データセットの作成・編集は REST API (`/api/v1/*`) を利用してください
+- 下書き（draft）状態のデータセットは CKAN 互換 API には現れません（`package_show` も 404）。公開後に取得できます
 - CKAN の全フィールドを再現しているわけではありません。詳細は実際のレスポンスをご確認ください
