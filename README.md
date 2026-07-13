@@ -160,7 +160,7 @@ pnpm db:migrate   # Run migrations / マイグレーション実行
 
 Two deploy modes / デプロイは2モード:
 
-- **Standalone** — `npx cdk deploy -c env=<name> --all` (manual, per-environment / 手動・環境単位)
+- **Standalone** — `npx cdk deploy -c env=<name> '<Name>/**'` (manual, per-environment / 手動・環境単位)
 - **Pipeline** — push-triggered CDK Pipelines (see below / 下記参照)
 
 ### Standalone deploy / Standalone デプロイ手順
@@ -178,7 +178,12 @@ cp infra/config/environments.example.ts infra/config/environments.ts
 cd infra && npx cdk bootstrap aws://<account-id>/ap-northeast-1 aws://<account-id>/us-east-1
 
 # 4. Deploy a named environment (Docker build + ECR push + all resources)
-npx cdk deploy -c env=dev --all
+#    The stacks are nested in a Stage (e.g. Dev/KukanStack), so select the
+#    Stage with a glob — `--all` only matches top-level stacks and finds none.
+#    スタックは Stage 配下（例: Dev/KukanStack）にネストされるため Stage を
+#    glob で指定する（--all はトップレベルのみ対象で何も見つからない）。
+#    <Name> = pascal-cased env name (dev → Dev) / <Name> は env 名の PascalCase
+npx cdk deploy -c env=dev 'Dev/**'
 ```
 
 A `dev` environment in the example uses a `small` configuration:
@@ -221,7 +226,7 @@ Precedence: CLI `-c` > env entry > scale defaults. Override ad hoc:
 優先順位: `-c` > env エントリ > スケール既定。一時上書き:
 
 ```bash
-npx cdk deploy -c env=dev -c scale=medium --all
+npx cdk deploy -c env=dev -c scale=medium 'Dev/**'
 ```
 
 See [docs/specs/phase4-deploy.md](docs/specs/phase4-deploy.md) for full details.
@@ -260,6 +265,12 @@ npx cdk deploy KukanPipeline
 
 # 7. After that, pushes to each env's deployBranch deploy automatically (self-mutating)
 #    以降は各 env の deployBranch への push で自動デプロイ（自己変異）
+
+# To deploy/diff a pipeline-managed env manually (hotfix), use its qualified path
+# WITHOUT -c env — the -c env synthesis path differs and would change physical names,
+# forcing resource replacement. / pipeline 管理環境を手動操作する場合は pipeline 修飾パスで
+# 指定し -c env は付けない（-c env 合成だと物理名が変わり置換が発生する）。
+npx cdk deploy 'KukanPipeline/Prd/KukanStack'
 ```
 
 > [!IMPORTANT]

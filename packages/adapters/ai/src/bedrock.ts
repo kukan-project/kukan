@@ -18,6 +18,8 @@ export interface BedrockConfig {
   embeddingDimensions?: number
   accessKeyId?: string
   secretAccessKey?: string
+  /** IAM-granted completion models, offered as the picker options. Omit → default only */
+  completionModels?: string[]
 }
 
 const DEFAULT_EMBEDDING_MODEL = 'amazon.titan-embed-text-v2:0'
@@ -41,6 +43,7 @@ export class BedrockAIAdapter implements AIAdapter {
   private client: BedrockRuntimeClient
   private embeddingModel: string
   private embeddingDimensions: number
+  private completionModels: string[]
 
   constructor(config: BedrockConfig) {
     this.client = new BedrockRuntimeClient({
@@ -52,11 +55,16 @@ export class BedrockAIAdapter implements AIAdapter {
     })
     this.embeddingModel = config.embeddingModel ?? DEFAULT_EMBEDDING_MODEL
     this.embeddingDimensions = config.embeddingDimensions ?? DEFAULT_EMBEDDING_DIMENSIONS
+    this.completionModels = config.completionModels?.length
+      ? config.completionModels
+      : [DEFAULT_COMPLETION_MODEL]
   }
 
   async complete(prompt: string, options?: CompleteOptions): Promise<string> {
     const input: ConverseCommandInput = {
-      modelId: options?.model || DEFAULT_COMPLETION_MODEL,
+      // Default to the first granted model so an unset request never lands on a
+      // model outside completionModels (which IAM would reject)
+      modelId: options?.model || this.completionModels[0],
       messages: [{ role: 'user', content: [{ text: prompt }] }],
       inferenceConfig: {
         maxTokens: options?.maxTokens ?? DEFAULT_COMPLETION_MAX_TOKENS,
@@ -102,15 +110,18 @@ export class BedrockAIAdapter implements AIAdapter {
   }
 
   getCompletionInfo(): CompletionInfo {
-    return { provider: 'bedrock', defaultModel: DEFAULT_COMPLETION_MODEL }
+    // The allow-list = the IAM-granted models; the default is its first entry, so
+    // both are always invokable
+    return {
+      provider: 'bedrock',
+      defaultModel: this.completionModels[0],
+      allowlist: this.completionModels,
+    }
   }
 
   async listCompletionModels(): Promise<string[]> {
-    // Reliable enumeration needs the control-plane ListInferenceProfiles API
-    // (a separate @aws-sdk/client-bedrock client) to return region-valid,
-    // invokable profile IDs like the jp./us. defaults. Until that is added,
-    // return empty so the UI keeps free-text model entry for Bedrock.
-    return []
+    // The IAM policy grants exactly these, so every option is invokable
+    return this.completionModels
   }
 
   private get isCohere(): boolean {

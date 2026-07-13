@@ -16,6 +16,27 @@ export const DEFAULT_REGION = 'ap-northeast-1'
  *  the container env and the IAM model scope always agree. */
 export const DEFAULT_BEDROCK_EMBEDDING_MODEL = 'amazon.titan-embed-text-v2:0'
 
+/** Matches the bedrock adapter's default completion model (a jp. cross-region
+ *  inference profile). The IAM grant and the model-picker options derive from it. */
+export const DEFAULT_BEDROCK_COMPLETION_MODEL = 'jp.anthropic.claude-haiku-4-5-20251001-v1:0'
+
+/** Resolve completionModels with a fail-fast guard, normalized to match runtime.
+ *  The adapter trims+dedupes these IDs before invoking (adapters.ts), so the IAM
+ *  scope must too — otherwise a stray-whitespace ID grants one ARN while the call
+ *  uses another, failing with IAM denial. An empty list or blank entry grants no
+ *  IAM yet the adapter still falls back to a model, so reject it at synth instead.
+ *  Omit → default. */
+function resolveCompletionModels(models: string[] | undefined): string[] {
+  if (models === undefined) return [DEFAULT_BEDROCK_COMPLETION_MODEL]
+  const normalized = [...new Set(models.map((m) => m.trim()))]
+  if (normalized.length === 0 || normalized.some((m) => !m)) {
+    throw new Error(
+      'bedrock.completionModels must be a non-empty list of model IDs (omit it to use the default)'
+    )
+  }
+  return normalized
+}
+
 /** Bedrock embedding for semantic search (ADR-034). Presence enables it. */
 export interface BedrockConfig {
   /** Bedrock API region. Omit → the deployment region. */
@@ -27,6 +48,9 @@ export interface BedrockConfig {
   /** Cosine similarity floor override. Omit → the model's golden-set-measured
    *  recommendation, held by the AI adapter (Titan 0.15 / Cohere 0.3). */
   vectorMinSimilarity?: number
+  /** Completion models the task role may invoke (ADR-040); also the admin
+   *  model-picker options. Omit → the default Haiku profile. Changing needs redeploy. */
+  completionModels?: string[]
 }
 
 /** Sections computed from `scale`. These are overridable per environment via `overrides`. */
@@ -182,8 +206,9 @@ export interface KukanConfig extends ScaleComputed {
   /** undefined → CDK auto-naming (globally unique). */
   bucketName?: string
   enableGa4DataApi: boolean
-  /** undefined → AI disabled. `embeddingModel` is resolved (never undefined here). */
-  bedrock?: BedrockConfig & { embeddingModel: string }
+  /** undefined → AI disabled. `embeddingModel` / `completionModels` are resolved
+   *  (never undefined here). */
+  bedrock?: BedrockConfig & { embeddingModel: string; completionModels: string[] }
 }
 
 const SCALE_DEFAULTS: Record<Scale, ScaleComputed> = {
@@ -297,6 +322,7 @@ export function loadConfig(scope: Construct, env: Partial<EnvironmentConfig> = {
       : {
           ...bedrockEnv,
           embeddingModel: bedrockEnv.embeddingModel ?? DEFAULT_BEDROCK_EMBEDDING_MODEL,
+          completionModels: resolveCompletionModels(bedrockEnv.completionModels),
         }
 
   // Apply per-env overrides on top of the scale preset.

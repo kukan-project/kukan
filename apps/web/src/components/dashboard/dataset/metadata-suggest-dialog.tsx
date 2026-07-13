@@ -227,7 +227,12 @@ export function MetadataSuggestDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+      {/* Block outside-click dismissal so an in-progress review isn't lost by a
+          stray click; Esc, the close button, and Cancel still dismiss. */}
+      <DialogContent
+        className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>{t('aiSuggestDialogTitle')}</DialogTitle>
           <DialogDescription>{t('aiSuggestDialogDescription')}</DialogDescription>

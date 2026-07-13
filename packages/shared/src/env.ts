@@ -63,6 +63,7 @@ export const envSchema = z.object({
   AI_EMBEDDING_MODEL: z.string().optional(), // adapter defaults: Titan v2 / bge-m3 / text-embedding-3-small
   AI_EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().optional(),
   BEDROCK_REGION: z.string().default('ap-northeast-1'),
+  BEDROCK_COMPLETION_MODELS: z.string().optional(), // comma-separated; the IAM-granted model picker options
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
   // Default matches the compose-mapped host port (11435 — avoids colliding

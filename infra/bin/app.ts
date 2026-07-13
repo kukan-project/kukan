@@ -5,8 +5,13 @@
  * Two modes:
  *   - Pipeline (default):  npx cdk deploy KukanPipeline
  *       Deploys the CDK Pipelines stack; pushes auto-deploy each environment as a Stage.
- *   - Standalone (local):  npx cdk deploy -c env=dev --all
+ *       Manual ops on a pipeline-managed env use its qualified path WITHOUT -c env
+ *       (e.g. `npx cdk deploy 'KukanPipeline/Dev/KukanStack'`); the -c env synthesis
+ *       path differs, changing physical names and forcing resource replacement.
+ *   - Standalone (local):  npx cdk deploy -c env=dev 'Dev/**'
  *       Deploys one environment's Stage directly (for bootstrap / local iteration).
+ *       Select the Stage with a glob — stacks nest under it (Dev/KukanStack), so
+ *       `--all` (top-level only) finds nothing.
  *
  * Environments are defined in config/environments.ts (forks commit theirs; upstream
  * does not — it falls back to config/environments.example.ts on a fresh checkout).

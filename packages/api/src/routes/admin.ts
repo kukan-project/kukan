@@ -46,6 +46,8 @@ import {
   VECTOR_SIMILARITY_MAX_NOTCHES,
   AI_SUGGEST_TEST_TIMEOUT_MS,
 } from '../config'
+import { classifyCompletionError } from '../services/suggest/diagnose'
+import { resolveEffectiveModel } from '../services/suggest/availability'
 import type { AppContext } from '../context'
 
 export const adminRouter = new Hono<{ Variables: AppContext }>()
@@ -273,7 +275,7 @@ async function buildAiSuggestSettings(c: Context<{ Variables: AppContext }>) {
     provider: info?.provider ?? null,
     defaultModel: info?.defaultModel ?? null,
     model,
-    effectiveModel: info ? model || info.defaultModel : null,
+    effectiveModel: info ? resolveEffectiveModel(info, model) : null,
     suggestEnabled,
     availableModels,
   }
@@ -333,11 +335,14 @@ adminRouter.post('/settings/ai-suggest/test', async (c) => {
     }
     return c.json({ ok: true, model: context.effectiveModel, latencyMs: Date.now() - startedAt })
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
     return c.json({
       ok: false,
       model: context.effectiveModel,
       latencyMs: Date.now() - startedAt,
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
+      // Actionable setup hint for known provider errors (null → raw message only)
+      code: classifyCompletionError(context.provider, message),
     })
   }
 })

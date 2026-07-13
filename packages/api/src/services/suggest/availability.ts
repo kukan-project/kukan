@@ -5,7 +5,7 @@
  * can never disagree.
  */
 
-import type { AIAdapter } from '@kukan/ai-adapter'
+import type { AIAdapter, CompletionInfo } from '@kukan/ai-adapter'
 import {
   AI_SUGGEST_ENABLED_KEY,
   AI_SUGGEST_MODEL_KEY,
@@ -18,6 +18,17 @@ export interface SuggestAvailability {
   model: string
 }
 
+/**
+ * The model a request should use: the saved setting when it is allowed (or the
+ * provider takes any model), otherwise the provider default. Keeps a stale saved
+ * model — e.g. one dropped from the Bedrock allow-list — from being invoked and
+ * failing with an IAM error.
+ */
+export function resolveEffectiveModel(info: CompletionInfo, savedModel: string): string {
+  if (savedModel && (!info.allowlist || info.allowlist.includes(savedModel))) return savedModel
+  return info.defaultModel
+}
+
 /** null when the adapter cannot generate or the kill switch is off */
 export async function getSuggestAvailability(
   ai: AIAdapter,
@@ -25,6 +36,6 @@ export async function getSuggestAvailability(
 ): Promise<SuggestAvailability | null> {
   const info = ai.getCompletionInfo()
   if (!info || !(await settings.getSetting(AI_SUGGEST_ENABLED_KEY))) return null
-  const model = (await settings.getSetting(AI_SUGGEST_MODEL_KEY)) || info.defaultModel
+  const model = resolveEffectiveModel(info, await settings.getSetting(AI_SUGGEST_MODEL_KEY))
   return { provider: info.provider, model }
 }

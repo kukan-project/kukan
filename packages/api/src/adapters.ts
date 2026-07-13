@@ -30,6 +30,9 @@ export function createAIAdapter(env: Env): AIAdapter {
       region: env.BEDROCK_REGION,
       embeddingModel: env.AI_EMBEDDING_MODEL,
       embeddingDimensions: env.AI_EMBEDDING_DIMENSIONS,
+      completionModels: env.BEDROCK_COMPLETION_MODELS?.split(',')
+        .map((m) => m.trim())
+        .filter(Boolean),
     })
   }
   if (env.AI_TYPE === 'openai') {

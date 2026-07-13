@@ -168,12 +168,12 @@ pnpm db:create-user --email admin@example.com --name admin --password <password>
 
 一部の設定は**再デプロイなしに管理画面から変更**できます（サイト管理 → `/dashboard/admin/site`、システム管理者のみ）。変更は DB に保存されて監査ログに残り、反映まで最大 30 秒ほどかかります。
 
-| 設定 | 内容 |
-|------|------|
-| 検索例チップ | 検索ボックス下に表示するクエリ例 |
+| 設定                               | 内容                                                                                                                                                                                 |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 検索例チップ                       | 検索ボックス下に表示するクエリ例                                                                                                                                                     |
 | セマンティック検索・類似度しきい値 | 意味の近い結果を検索に含めるかどうかと、含める「意味の近さ」の下限。緩めるとヒットが増える代わりにノイズも増え、厳しくすると精度重視になります（要: 埋め込みモデルが利用可能な構成） |
-| AI メタデータ提案 | 機能の有効化（キルスイッチ）、生成モデル ID（空欄はプロバイダ既定）、接続テスト |
-| ユーザー自己登録 | 上記「[自己登録制御](#自己登録制御)」を参照 |
+| AI メタデータ提案                  | 機能の有効化（キルスイッチ）、生成モデル ID（空欄はプロバイダ既定）、接続テスト                                                                                                      |
+| ユーザー自己登録                   | 上記「[自己登録制御](#自己登録制御)」を参照                                                                                                                                          |
 
 ### AI・埋め込みモデルの選択
 
@@ -183,7 +183,19 @@ pnpm db:create-user --email admin@example.com --name admin --password <password>
 - **オンプレミス / 開発**: Ollama（`AI_TYPE=ollama`）または OpenAI 互換（`AI_TYPE=openai`）
 - **無効**: `AI_TYPE=none`（NoOp）— セマンティック検索はキーワード検索にフォールバックし、AI 提案は利用不可になります
 
-生成・埋め込みモデル ID は上記の管理画面から再デプロイなしで切り替えられます。Ollama を GPU で動かす手順は[開発環境セットアップ](/ja/getting-started/)を参照してください。
+生成・埋め込みモデルは管理画面から再デプロイなしで切り替えられます。ただし **Bedrock** の AI 提案モデルの候補は、`environments.ts` の `bedrock.completionModels`（IAM で `InvokeModel` を許可したモデル）に限られます。候補を増やす場合はそこに追加して再デプロイしてください（Ollama / OpenAI 互換は利用可能なモデルを自動列挙します）。Ollama を GPU で動かす手順は[開発環境セットアップ](/ja/getting-started/)を参照してください。
+
+#### AI 提案が動かないとき（Bedrock）
+
+サイト管理の **接続テスト**を押すと、実際の生成と同じ経路（構造化出力）で 1 回だけ試行し、失敗時はエラーと対処のヒントを表示します。Bedrock 特有の典型的な原因と対処:
+
+| 症状（接続テストのエラー）                       | 原因                                       | 対処                                                                                                                                                                                                                                                      |
+| ------------------------------------------------ | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `not authorized to perform: bedrock:InvokeModel` | タスクロールに当該モデルの IAM 権限がない  | `environments.ts` の `bedrock.completionModels` に追加して再デプロイ                                                                                                                                                                                      |
+| `use case details have not been submitted`       | Anthropic の利用ユースケースフォーム未提出 | Bedrock コンソールで Anthropic の「利用ユースケース詳細」フォームを提出（アカウントに一度・約15分で有効化）                                                                                                                                               |
+| `aws-marketplace:Subscribe` 系の AccessDenied    | モデルが AWS Marketplace 未サブスクライブ  | Bedrock コンソールの **Model access** でモデルを有効化（サブスクライブ）。組織で SCP により制限されている場合は、**管理アカウント**側で `aws-marketplace:Subscribe` / `ViewSubscriptions` の許可が必要（AdministratorAccess でも SCP は上書きできません） |
+
+これらはいずれも**アプリ外（AWS 側）の設定**で、コンソールでの一度きりの作業です。Claude 等の Anthropic モデルはフォーム提出と Marketplace サブスクライブの両方が必要になる点に注意してください（Amazon Titan / Nova は不要）。
 
 ## ヘルスチェック
 
@@ -197,19 +209,19 @@ pnpm db:create-user --email admin@example.com --name admin --password <password>
 
 主要な環境変数の一覧です。詳細は `.env.example` を参照してください。
 
-| 変数名                 | 説明                                                                | デフォルト              |
-| ---------------------- | ------------------------------------------------------------------- | ----------------------- |
-| `POSTGRES_HOST`        | PostgreSQL ホスト                                                   | `localhost`             |
-| `POSTGRES_PORT`        | PostgreSQL ポート                                                   | `5432`                  |
-| `POSTGRES_DB`          | データベース名                                                      | `kukan`                 |
-| `POSTGRES_USER`        | データベースユーザー                                                | `kukan`                 |
-| `POSTGRES_PASSWORD`    | データベースパスワード                                              | `kukan`                 |
-| `S3_BUCKET`            | S3 バケット名                                                       | `kukan-dev`             |
-| `S3_ENDPOINT`          | S3 エンドポイント（MinIO: `http://localhost:9000`、AWS: 省略）      | -                       |
-| `SEARCH_TYPE`          | 検索エンジン（`opensearch` / `postgres`）                           | `opensearch`            |
-| `OPENSEARCH_URL`       | OpenSearch エンドポイント                                           | `http://localhost:9200` |
-| `SQS_QUEUE_URL`        | SQS キュー URL                                                      | -                       |
-| `SQS_ENDPOINT`         | SQS エンドポイント（ElasticMQ: `http://localhost:9324`、AWS: 省略） | -                       |
-| `BETTER_AUTH_SECRET`   | 認証セッション秘密鍵（32 文字以上）                                 | -                       |
-| `BETTER_AUTH_URL`      | 公開 URL                                                            | `http://localhost:3000` |
-| `LOG_LEVEL`            | ログレベル（`trace`〜`fatal`）                                      | `info`                  |
+| 変数名               | 説明                                                                | デフォルト              |
+| -------------------- | ------------------------------------------------------------------- | ----------------------- |
+| `POSTGRES_HOST`      | PostgreSQL ホスト                                                   | `localhost`             |
+| `POSTGRES_PORT`      | PostgreSQL ポート                                                   | `5432`                  |
+| `POSTGRES_DB`        | データベース名                                                      | `kukan`                 |
+| `POSTGRES_USER`      | データベースユーザー                                                | `kukan`                 |
+| `POSTGRES_PASSWORD`  | データベースパスワード                                              | `kukan`                 |
+| `S3_BUCKET`          | S3 バケット名                                                       | `kukan-dev`             |
+| `S3_ENDPOINT`        | S3 エンドポイント（MinIO: `http://localhost:9000`、AWS: 省略）      | -                       |
+| `SEARCH_TYPE`        | 検索エンジン（`opensearch` / `postgres`）                           | `opensearch`            |
+| `OPENSEARCH_URL`     | OpenSearch エンドポイント                                           | `http://localhost:9200` |
+| `SQS_QUEUE_URL`      | SQS キュー URL                                                      | -                       |
+| `SQS_ENDPOINT`       | SQS エンドポイント（ElasticMQ: `http://localhost:9324`、AWS: 省略） | -                       |
+| `BETTER_AUTH_SECRET` | 認証セッション秘密鍵（32 文字以上）                                 | -                       |
+| `BETTER_AUTH_URL`    | 公開 URL                                                            | `http://localhost:3000` |
+| `LOG_LEVEL`          | ログレベル（`trace`〜`fatal`）                                      | `info`                  |

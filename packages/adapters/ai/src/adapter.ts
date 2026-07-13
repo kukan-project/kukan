@@ -56,6 +56,10 @@ export interface CompletionInfo {
   provider: 'bedrock' | 'openai' | 'ollama'
   /** Used when the caller does not pass options.model */
   defaultModel: string
+  /** Authoritative model allow-list (e.g. Bedrock IAM grants). Omit when the
+   *  provider accepts any model (Ollama/OpenAI free-text); callers use it to
+   *  reject a stale saved model that would fail at invocation. */
+  allowlist?: string[]
 }
 
 export interface EmbedOptions {

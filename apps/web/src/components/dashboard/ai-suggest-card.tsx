@@ -36,7 +36,21 @@ interface AiSuggestSettings {
  *  (stored as "") option uses this sentinel. */
 const DEFAULT_MODEL_VALUE = '__default__'
 
-type TestResult = { ok: true; model: string; latencyMs: number } | { ok: false; error?: string }
+type TestResult =
+  | { ok: true; model: string; latencyMs: number }
+  | { ok: false; error?: string; code?: string }
+
+/** Maps a server diagnose code (see services/suggest/diagnose.ts) to the i18n
+ *  key of an actionable setup instruction. Unmapped codes show the raw error. */
+const HINT_KEYS: Record<string, string> = {
+  'bedrock-iam': 'aiSuggestHintBedrockIam',
+  'bedrock-use-case': 'aiSuggestHintBedrockUseCase',
+  'bedrock-marketplace': 'aiSuggestHintBedrockMarketplace',
+  'ollama-unreachable': 'aiSuggestHintOllamaUnreachable',
+  'ollama-model-missing': 'aiSuggestHintOllamaModelMissing',
+  'openai-auth': 'aiSuggestHintOpenaiAuth',
+  'openai-model-missing': 'aiSuggestHintOpenaiModelMissing',
+}
 
 /** AI metadata-suggestion runtime settings: on/off + generation model ID with a
  *  connection test (ADR-040). Renders nothing when the AI adapter cannot
@@ -177,7 +191,7 @@ export function AiSuggestCard() {
                 setSaved(false)
               }}
             >
-              <SelectTrigger id={modelId} className="max-w-md font-mono text-sm">
+              <SelectTrigger id={modelId} className="max-w-2xl font-mono text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -200,7 +214,7 @@ export function AiSuggestCard() {
                 setSaved(false)
               }}
               placeholder={settings.defaultModel ?? ''}
-              className="max-w-md font-mono text-sm"
+              className="max-w-2xl font-mono text-sm"
             />
           )}
           <p className="text-xs text-muted-foreground">{t('aiSuggestModelHint')}</p>
@@ -234,6 +248,9 @@ export function AiSuggestCard() {
           ) : (
             <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
               {t('aiSuggestTestFailed')}
+              {testResult.code && HINT_KEYS[testResult.code] && (
+                <span className="mt-1 block font-normal">{t(HINT_KEYS[testResult.code])}</span>
+              )}
               {testResult.error && (
                 <span className="mt-1 block font-mono text-xs">{testResult.error}</span>
               )}

@@ -249,14 +249,15 @@ prd: {
 #### 使用例（standalone デプロイ）
 
 ```bash
-# dev 環境をデプロイ
-npx cdk deploy -c env=dev --all
+# dev 環境をデプロイ（スタックは Stage 配下にネストするため Stage を glob 指定。
+# --all はトップレベルのみ対象で Stage 内スタックを拾えない）
+npx cdk deploy -c env=dev 'Dev/**'
 
 # prd 環境をデプロイ
-npx cdk deploy -c env=prd --all
+npx cdk deploy -c env=prd 'Prd/**'
 
 # 一時的に scale を上書き（env エントリより優先）
-npx cdk deploy -c env=dev -c scale=medium --all
+npx cdk deploy -c env=dev -c scale=medium 'Dev/**'
 ```
 
 ## セキュリティ
@@ -322,27 +323,31 @@ Worker 起動時にマイグレーションを自動実行:
 デプロイには2つのモードがある。Docker イメージのビルド・ECR プッシュは CDK が
 `DockerImageAsset` で自動実行するため、手動の `docker build` / `docker push` は不要。
 
-| モード            | コマンド                             | 用途                                         |
-| ----------------- | ------------------------------------ | -------------------------------------------- |
-| **A. Standalone** | `npx cdk deploy -c env=<name> --all` | 初回セットアップ・ローカルからの手動デプロイ |
-| **B. Pipeline**   | push（CDK Pipelines が自動実行）     | 継続的デプロイ（ADR-030）                    |
+| モード            | コマンド                                   | 用途                                         |
+| ----------------- | ------------------------------------------ | -------------------------------------------- |
+| **A. Standalone** | `npx cdk deploy -c env=<name> '<Name>/**'` | 初回セットアップ・ローカルからの手動デプロイ |
+| **B. Pipeline**   | push（CDK Pipelines が自動実行）           | 継続的デプロイ（ADR-030）                    |
 
 スタック名は env でプレフィックスされる（例 `Dev/KukanStack` → CloudFormation スタック名 `Dev-KukanStack`）。
 
 > [!IMPORTANT]
-> **2つのモードは同じ CloudFormation スタックを対象にする**（どちらも `KukanStage` 経由で
-> `Prd-KukanStack` 等を生成）。よって衝突はしないが、**pipeline が source of truth**（git の
-> コミット内容をデプロイ）であることに注意:
+> **2つのモードは同じ CloudFormation スタック名を対象にするが、合成パスが異なる**。standalone は
+> Stage を App 直下（`Dev/KukanStack/...`）に、pipeline は `KukanPipeline` 配下（`KukanPipeline/Dev/KukanStack/...`）に
+> 置くため、**パスから生成される物理リソース名が変わる**。論理 ID はスタック内相対なので一致するが、
+> 物理名が replacement-required なリソース（例: Application Auto Scaling の ScalingPolicy）は
+> **置換**され、ECS サービス名が固定のため同一メトリクスに新旧2ポリシーが並び
+> `Only one TargetTrackingScaling policy ...`（400）で失敗する。よって:
 >
-> - standalone は**手元の作業ツリー**をデプロイするため、未コミットの変更は**次の push で pipeline
->   が git の状態に巻き戻す**。standalone での変更は必ず commit/push して git と一致させる
-> - pipeline 実行中に同じスタックを standalone で叩くと CloudFormation が `UPDATE_IN_PROGRESS`
->   で弾く（**同時実行しない**）
+> - **pipeline 管理の環境を手動操作する場合は pipeline 修飾パスで指定し `-c env` を付けない**
+>   （`npx cdk deploy 'KukanPipeline/Dev/KukanStack'`）。`-c env` の standalone 合成で叩かない
+> - **pipeline が source of truth**（git のコミット内容をデプロイ）。standalone は手元の作業ツリーを
+>   デプロイするため、未コミットの変更は次の push で pipeline が git 状態に巻き戻す
+> - pipeline 実行中に同じスタックを手動で叩くと CloudFormation が `UPDATE_IN_PROGRESS` で弾く（**同時実行しない**）
 > - ローカルの `cdk.context.json` がコミット済みと異なると synth 結果が変わりリソースが揺り戻る
 >   （churn）。ローカルでもコミット済み context を使う
 >
-> standalone は **初回 bootstrap / us-east-1 の cert・WAF 作成 / 緊急ホットフィックス**に限定し、
-> 恒久的な変更手段にしない。
+> `-c env` の standalone は **pipeline を使わない環境 / 初回 bootstrap / us-east-1 の cert・WAF 作成**に
+> 限定する。pipeline 管理環境の緊急ホットフィックスは上記の pipeline 修飾パスで行う。
 
 ### A. Standalone デプロイ（手動・環境単位）
 
@@ -359,7 +364,8 @@ cp infra/config/environments.example.ts infra/config/environments.ts
 cd infra && npx cdk bootstrap aws://<account-id>/ap-northeast-1 aws://<account-id>/us-east-1
 
 # 4. デプロイ（env を指定。Docker ビルド + ECR プッシュ + 全リソース作成）
-npx cdk deploy -c env=dev --all
+#    Stage 配下にネストするため Stage を glob 指定（--all は Stage 内スタックを拾えない）
+npx cdk deploy -c env=dev 'Dev/**'
 
 # 5. 初期ユーザー登録（初回のみ）
 #    ブラウザでサインアップページを開いて登録する。ユーザーが1人もいない間は

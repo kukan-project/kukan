@@ -140,9 +140,22 @@ describe('BedrockAIAdapter', () => {
     })
   })
 
-  it('lists no completion models (free-text fallback until ListInferenceProfiles)', async () => {
+  it('lists the built-in completion model by default', async () => {
     const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
-    expect(await adapter.listCompletionModels()).toEqual([])
+    expect(await adapter.listCompletionModels()).toEqual([
+      'jp.anthropic.claude-haiku-4-5-20251001-v1:0',
+    ])
+  })
+
+  it('lists the configured completion models (the IAM-granted allow-list)', async () => {
+    const adapter = new BedrockAIAdapter({
+      region: 'ap-northeast-1',
+      completionModels: ['us.amazon.nova-lite-v1:0', 'jp.anthropic.claude-haiku-4-5-20251001-v1:0'],
+    })
+    expect(await adapter.listCompletionModels()).toEqual([
+      'us.amazon.nova-lite-v1:0',
+      'jp.anthropic.claude-haiku-4-5-20251001-v1:0',
+    ])
   })
 
   describe('complete', () => {
@@ -227,6 +240,7 @@ describe('BedrockAIAdapter', () => {
     expect(adapter.getCompletionInfo()).toEqual({
       provider: 'bedrock',
       defaultModel: 'jp.anthropic.claude-haiku-4-5-20251001-v1:0',
+      allowlist: ['jp.anthropic.claude-haiku-4-5-20251001-v1:0'],
     })
   })
 })

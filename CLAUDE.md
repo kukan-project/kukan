@@ -296,13 +296,20 @@ pnpm typecheck                  # TypeScript 型チェック
 ### AWS デプロイ
 
 環境は `infra/config/environments.ts` で定義（`environments.example.ts` をコピー）。
-通常は CDK Pipelines（push 起点）でデプロイ。手動（standalone）の場合は `-c env=<name>` で環境を選ぶ（ADR-030 / ADR-031、`docs/specs/phase4-deploy.md`）。
+通常は CDK Pipelines（push 起点）でデプロイ。合成パスが standalone と pipeline で異なり
+物理リソース名が変わるため、**その環境を作った側の合成方法で手動操作する**（ADR-030 / ADR-031、`docs/specs/phase4-deploy.md`）。
 
 ```bash
 cd infra
-npx cdk deploy -c env=dev --all               # standalone: 指定環境を直接デプロイ
-npx cdk diff   -c env=dev 'Dev/KukanStack'    # standalone 管理環境の差分確認（diff は --all 不可）
-npx cdk diff   'KukanPipeline/Dev/KukanStack' # pipeline 管理環境の差分確認（-c env を付けない。
-                                              # standalone 合成だと論理 ID が変わり偽の差分が大量に出る）
-npx cdk deploy KukanPipeline                  # pipeline: パイプラインスタックを初回デプロイ
+# standalone 管理の環境（pipeline を使わない環境）: -c env で環境を選ぶ
+npx cdk deploy -c env=dev 'Dev/**'            # 指定環境を直接デプロイ（Stage 配下を glob 指定。
+                                              # --all はトップレベルのみ対象で Stage 内スタックを拾えない）
+npx cdk diff   -c env=dev 'Dev/KukanStack'    # 差分確認（diff は --all 不可）
+
+# pipeline 管理の環境を手動操作する場合: pipeline 修飾パスで指定し、-c env は付けない
+# standalone 合成（-c env）だと物理名が変わり、置換や偽差分が発生する（例: scaling policy が
+# 同一メトリクスで再作成衝突し「Only one TargetTrackingScaling policy ...」400）。
+npx cdk deploy 'KukanPipeline/Dev/KukanStack' # 手動デプロイ（-c env なし）
+npx cdk diff   'KukanPipeline/Dev/KukanStack' # 差分確認（-c env なし）
+npx cdk deploy KukanPipeline                  # パイプラインスタック自体の初回デプロイ
 ```

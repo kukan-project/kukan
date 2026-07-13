@@ -197,10 +197,16 @@ export function DatasetForm({
   const showSuggest = mode === 'edit' && !!nameOrId && suggest?.enabled === true
   const hasCompleteResource = suggest?.resources.some((r) => r.pipelineStatus === 'complete')
 
-  // The pipeline-complete nudge (edit page) opens the dialog via a counter prop
+  // The pipeline-complete nudge (edit page) opens the dialog via a counter prop.
+  // Open only when the counter changes after mount — not for the value present at
+  // mount, or publishing (which remounts this form via key) would reopen a stale one.
   const openSignal = suggest?.openSignal
+  const lastOpenSignal = useRef(openSignal)
   useEffect(() => {
-    if (openSignal) setSuggestOpen(true)
+    if (openSignal !== lastOpenSignal.current) {
+      lastOpenSignal.current = openSignal
+      if (openSignal) setSuggestOpen(true)
+    }
   }, [openSignal])
 
   const applySuggestion = (selection: SuggestSelection) => {
