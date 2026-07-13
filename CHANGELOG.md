@@ -3,6 +3,40 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.1] - 2026-07-13
+
+**Highlights**
+
+- **AI metadata suggestions are ready to run on AWS Bedrock.** The web service's task role is now granted `bedrock:InvokeModel` on exactly the completion models you list in your deployment config, and that same list becomes the model choices in the admin dashboard — so every option in the picker is guaranteed to be invokable. Cross-region inference profiles (`jp.`, `us.`, `eu.`, `apac.`, `global.`, and more) are handled automatically, and the `jp.` profiles keep inference inside Japan.
+- **When the connection test fails, the admin dashboard now tells you what to fix** — a missing IAM grant, an unsubmitted Bedrock use-case form, or a missing AWS Marketplace subscription — instead of showing only a raw provider error. The system administrator guide gains a matching Bedrock troubleshooting table.
+
+**Improvements**
+
+- The admin AI settings are reorganized under a "Generative AI models" card, with metadata suggestions as one labeled section, so future AI uses of a completion model can pick their own model alongside it. The provider is shown once for the whole card (#71).
+- The AI suggestion dialog no longer closes when you click outside it, and no longer reopens after you publish a draft, so an in-progress review is not lost by accident (Esc, the close button, and Cancel still work). The model selector was widened so long inference-profile IDs no longer wrap (#70).
+- The generation model is chosen from your deployment's model list, with the first entry acting as the default; a saved model that is later removed from the list falls back to the default instead of failing at invocation (#70).
+
+**Notes**
+
+- No database migration. To roll this out on AWS, redeploy so the task role picks up the new IAM grant; the dashboard connection test then passes and the model dropdown is populated (ADR-040) (#70).
+
+---
+
+**ハイライト**
+
+- **AI メタデータ提案が AWS Bedrock で動かせるようになりました。** web サービスのタスクロールに、デプロイ設定で列挙した生成モデルちょうどに対する `bedrock:InvokeModel` が付与され、その同じリストが管理画面のモデル選択肢になります。したがってドロップダウンのどの選択肢も必ず呼び出せます。クロスリージョン推論プロファイル（`jp.`・`us.`・`eu.`・`apac.`・`global.` ほか）は自動的に扱われ、`jp.` プロファイルは推論を国内に留めます。
+- **接続テストが失敗したとき、管理画面が対処すべき内容を提示するようになりました** — IAM 未付与・Bedrock 利用ユースケースフォーム未提出・AWS Marketplace 未サブスクを、生のプロバイダエラーだけでなく判別して表示します。システム管理者ガイドにも Bedrock のトラブルシュート表を追加しました。
+
+**改善**
+
+- 管理画面の AI 設定を「生成AI利用モデル」カードに再構成し、メタデータ提案を見出し付きの1セクションにまとめました。今後、生成モデルを使う別の用途を並べて（用途ごとにモデルを選んで）追加できます。プロバイダはカードで一度だけ表示します（#71）。
+- AI 提案ダイアログが枠外クリックで閉じなくなり、下書きの公開後に再度開くこともなくなりました。作業中のレビューを誤操作で失いません（Esc・閉じるボタン・キャンセルは従来どおり）。長い推論プロファイル ID が折り返さないようモデルセレクタの幅を広げました（#70）。
+- 生成モデルはデプロイのモデルリストから選び、先頭の要素が既定として使われます。後からリストで外したモデルが保存されていても、呼び出し時に失敗せず既定へフォールバックします（#70）。
+
+**メモ**
+
+- データベースマイグレーションはありません。AWS へ反映するには、タスクロールが新しい IAM 付与を取り込むよう再デプロイしてください。その後、管理画面の接続テストが通り、モデルドロップダウンに候補が表示されます（ADR-040）（#70）。
+
 ## [0.8.0] - 2026-07-13
 
 **Highlights**
