@@ -3,6 +3,42 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.3] - 2026-07-14
+
+**Breaking Changes**
+
+- The `BEDROCK_COMPLETION_MODELS` environment variable has been renamed to `AI_COMPLETION_MODELS`. AWS deployments pick this up automatically on redeploy (CDK injects the variable together with the matching IAM grants); only deployments that set the variable by hand need to rename it (#75).
+- The admin model picker for Ollama and OpenAI-compatible providers no longer enumerates the models available on the server. The options now come from the `AI_COMPLETION_MODELS` allow-list (comma-separated; the first entry is the provider default). If you previously switched between several pulled models, list them in `AI_COMPLETION_MODELS`; when unset, only the built-in default is offered (Ollama: gemma4:e4b / OpenAI-compatible: gpt-4o-mini) (#75).
+
+**Highlights**
+
+- **One allow-list now drives the completion-model choices on every provider.** `AI_COMPLETION_MODELS` is the list of models the deployment has approved for use: it becomes the admin picker options as-is, with the first entry as the default. Models merely available on the server are not offered — being pulled is not the same as being approved. On Bedrock the task role is granted `bedrock:InvokeModel` on exactly this list, and with Docker Compose `ollama-init` pulls every listed model at startup, so every picker option is actually runnable (#75).
+- **The default Bedrock generation model is now Amazon Nova Lite** (`jp.amazon.nova-2-lite-v1:0`), applying ADR-040's rule of adopting the cheapest model that meets the quality bar. Claude models remain available by listing them in the deployment config, and the `jp.` inference profile keeps inference within Japan (#75).
+
+**Improvements**
+
+- A saved generation model that has been dropped from the allow-list now falls back to the provider default on every provider, not just Bedrock (#75).
+- `cdk synth` now works from a clean checkout: the CDK app builds the shared workspace package it depends on before synthesizing (#75).
+- Empty values injected by Docker Compose for optional AI variables (`${VAR:-}`) are treated as unset instead of empty model names (#75).
+
+---
+
+**破壊的変更**
+
+- 環境変数 `BEDROCK_COMPLETION_MODELS` を `AI_COMPLETION_MODELS` に改名しました。AWS デプロイは再デプロイで自動的に追従します（CDK が IAM 付与とあわせてこの変数を注入します）。手動でこの変数を設定しているデプロイのみ改名が必要です（#75）。
+- Ollama / OpenAI 互換プロバイダの管理画面モデルピッカーが、サーバー上の利用可能モデルを列挙しなくなりました。選択肢は `AI_COMPLETION_MODELS` の許可リスト（カンマ区切り・先頭が既定）から決まります。複数の pull 済みモデルを切り替えて使っていた場合は `AI_COMPLETION_MODELS` に列挙してください。未設定時は組み込み既定（Ollama: gemma4:e4b / OpenAI 互換: gpt-4o-mini）のみが候補になります（#75）。
+
+**ハイライト**
+
+- **1つの許可リストが全プロバイダの生成モデル選択を決めるようになりました。** `AI_COMPLETION_MODELS` は「このデプロイで利用を承認したモデルのリスト」で、そのまま管理画面ピッカーの選択肢になり、先頭エントリが既定です。サーバー上で利用可能なだけのモデルは候補に出ません — pull されていることと利用が承認されていることは別だからです。Bedrock ではタスクロールにこのリストちょうどの `bedrock:InvokeModel` が付与され、Docker Compose では `ollama-init` が列挙された全モデルを起動時に pull するため、ピッカーのどの選択肢も必ず実行できます（#75）。
+- **Bedrock の既定生成モデルが Amazon Nova Lite**（`jp.amazon.nova-2-lite-v1:0`）になりました。ADR-040 の「品質基準を満たすモデルのうち最も低コストのものを採用する」ルールの適用です。Claude 系はデプロイ設定に列挙すれば引き続き利用でき、`jp.` 推論プロファイルにより推論は国内に留まります（#75）。
+
+**改善**
+
+- 許可リストから外れた保存済みの生成モデルが、Bedrock だけでなく全プロバイダでプロバイダ既定にフォールバックするようになりました（#75）。
+- クリーンな checkout から `cdk synth` が動くようになりました。CDK アプリが依存する共有ワークスペースパッケージを synth 前に自動ビルドします（#75）。
+- Docker Compose が optional な AI 変数に注入する空値（`${VAR:-}`）を、空のモデル名ではなく未設定として扱うようになりました（#75）。
+
 ## [0.8.2] - 2026-07-14
 
 **Documentation**
