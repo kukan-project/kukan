@@ -22,9 +22,13 @@ describe('resolveEffectiveModel', () => {
     expect(resolveEffectiveModel(bedrock, '')).toBe('m-default')
   })
 
-  it('accepts any saved model when the provider has no allow-list (Ollama/OpenAI)', () => {
-    const ollama: CompletionInfo = { provider: 'ollama', defaultModel: 'gemma4:e4b' }
-    expect(resolveEffectiveModel(ollama, 'custom-model')).toBe('custom-model')
+  it('applies the same allow-list rule to Ollama/OpenAI (approved models only)', () => {
+    const ollama: CompletionInfo = {
+      provider: 'ollama',
+      defaultModel: 'gemma4:e4b',
+      allowlist: ['gemma4:e4b'],
+    }
+    expect(resolveEffectiveModel(ollama, 'unapproved-model')).toBe('gemma4:e4b')
     expect(resolveEffectiveModel(ollama, '')).toBe('gemma4:e4b')
   })
 })

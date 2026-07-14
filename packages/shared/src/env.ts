@@ -10,6 +10,9 @@ const booleanString = z.preprocess(
   z.enum(['true', 'false', '1', '0']).transform((v) => v === 'true' || v === '1')
 )
 
+/** Optional value where '' means unset — compose `${VAR:-}` injects empty strings */
+const emptyAsUndefined = (v: unknown) => (v === '' ? undefined : v)
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
@@ -60,10 +63,13 @@ export const envSchema = z.object({
 
   // AI
   AI_TYPE: z.enum(['bedrock', 'openai', 'ollama', 'none']).default('none'),
-  AI_EMBEDDING_MODEL: z.string().optional(), // adapter defaults: Titan v2 / bge-m3 / text-embedding-3-small
-  AI_EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().optional(),
+  AI_EMBEDDING_MODEL: z.preprocess(emptyAsUndefined, z.string().optional()), // adapter defaults: Titan v2 / bge-m3 / text-embedding-3-small
+  AI_EMBEDDING_DIMENSIONS: z.preprocess(
+    emptyAsUndefined,
+    z.coerce.number().int().positive().optional()
+  ),
+  AI_COMPLETION_MODELS: z.preprocess(emptyAsUndefined, z.string().optional()), // comma-separated allow-list = picker options, first = default; omit → built-in default
   BEDROCK_REGION: z.string().default('ap-northeast-1'),
-  BEDROCK_COMPLETION_MODELS: z.string().optional(), // comma-separated; the IAM-granted model picker options
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
   // Default matches the compose-mapped host port (11435 — avoids colliding

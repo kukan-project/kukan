@@ -5,6 +5,9 @@
  */
 
 import type { Construct } from 'constructs'
+// Resolves to dist/ — the cdk.json app command builds @kukan/shared first so
+// synth works on a clean checkout (the pipeline runs no workspace build)
+import { DEFAULT_BEDROCK_COMPLETION_MODEL } from '@kukan/shared/ai'
 
 export type Scale = 'small' | 'medium' | 'large'
 export type DbEngine = 'rds' | 'aurora'
@@ -15,10 +18,6 @@ export const DEFAULT_REGION = 'ap-northeast-1'
 /** Matches the bedrock adapter's default (packages/adapters/ai). Resolved here so
  *  the container env and the IAM model scope always agree. */
 export const DEFAULT_BEDROCK_EMBEDDING_MODEL = 'amazon.titan-embed-text-v2:0'
-
-/** Matches the bedrock adapter's default completion model (a jp. cross-region
- *  inference profile). The IAM grant and the model-picker options derive from it. */
-export const DEFAULT_BEDROCK_COMPLETION_MODEL = 'jp.anthropic.claude-haiku-4-5-20251001-v1:0'
 
 /** Resolve completionModels with a fail-fast guard, normalized to match runtime.
  *  The adapter trims+dedupes these IDs before invoking (adapters.ts), so the IAM
@@ -49,7 +48,7 @@ export interface BedrockConfig {
    *  recommendation, held by the AI adapter (Titan 0.15 / Cohere 0.3). */
   vectorMinSimilarity?: number
   /** Completion models the task role may invoke (ADR-040); also the admin
-   *  model-picker options. Omit → the default Haiku profile. Changing needs redeploy. */
+   *  model-picker options. Omit → the default Nova Lite profile. Changing needs redeploy. */
   completionModels?: string[]
 }
 

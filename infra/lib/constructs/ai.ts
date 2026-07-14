@@ -72,7 +72,7 @@ export function configureBedrockCompletion(
   const bedrockRegion = region ?? cdk.Aws.REGION
   const partition = cdk.Aws.PARTITION
 
-  environment.BEDROCK_COMPLETION_MODELS = completionModels.join(',')
+  environment.AI_COMPLETION_MODELS = completionModels.join(',')
 
   const profileArns: string[] = [] // inference profiles, invoked directly
   const profiledModels: string[] = [] // their underlying foundation models

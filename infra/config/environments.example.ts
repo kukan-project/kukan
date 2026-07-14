@@ -81,9 +81,10 @@ export const environments = {
     // bucketName: 'my-resource-bucket', // omit → CDK auto-naming (globally unique)
     // enableGa4DataApi: false,
     // --- AI (Bedrock: semantic search ADR-034 + metadata suggestions ADR-040) ---
-    // Presence enables it. Amazon models (Titan v2 embedding, Nova) work on first
-    // invocation, but Anthropic models (the default Haiku completion) need a one-time
-    // per-account step: submit the Anthropic use-case form in the Bedrock console.
+    // Presence enables it. Amazon models (Titan v2 embedding, the default Nova Lite
+    // completion) work on first invocation; Anthropic models (Claude, only if you add
+    // them to completionModels) need a one-time per-account step: submit the Anthropic
+    // use-case form in the Bedrock console.
     // (The Model access page is retired — serverless models auto-enable on first
     // invoke; Marketplace models like Cohere need the one-time invoke below.)
     // `bedrock: false` opts out (AI_TYPE=none).
@@ -100,8 +101,8 @@ export const environments = {
     //   // AI-suggestion completion models (ADR-040): the task role is granted InvokeModel
     //   // on exactly these and they become the admin model-picker options. The first
     //   // entry is the provider default (a Nova-only list is fine). Omit → the default
-    //   // jp. Haiku profile only. Use region-appropriate profiles (jp.* stays in Japan):
-    //   completionModels: ['jp.anthropic.claude-haiku-4-5-20251001-v1:0', 'jp.amazon.nova-2-lite-v1:0'],
+    //   // jp. Nova Lite profile only. Use region-appropriate profiles (jp.* stays in Japan):
+    //   completionModels: ['jp.amazon.nova-2-lite-v1:0', 'jp.anthropic.claude-haiku-4-5-20251001-v1:0'],
     // },
 
     // --- CI/CD (pipeline mode) ---

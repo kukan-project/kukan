@@ -10,7 +10,15 @@ import {
   type ConverseCommandInput,
   type ToolInputSchema,
 } from '@aws-sdk/client-bedrock-runtime'
-import { AIAdapter, CompleteOptions, CompletionInfo, EmbedOptions, EmbeddingInfo } from './adapter'
+import { DEFAULT_BEDROCK_COMPLETION_MODEL } from '@kukan/shared/ai'
+import {
+  AIAdapter,
+  CompleteOptions,
+  CompletionInfo,
+  EmbedOptions,
+  EmbeddingInfo,
+  resolveCompletionModels,
+} from './adapter'
 
 export interface BedrockConfig {
   region: string
@@ -24,8 +32,6 @@ export interface BedrockConfig {
 
 const DEFAULT_EMBEDDING_MODEL = 'amazon.titan-embed-text-v2:0'
 const DEFAULT_EMBEDDING_DIMENSIONS = 1024
-/** The jp. cross-region profile keeps inference within Tokyo/Osaka (ADR-040) */
-const DEFAULT_COMPLETION_MODEL = 'jp.anthropic.claude-haiku-4-5-20251001-v1:0'
 const DEFAULT_COMPLETION_MAX_TOKENS = 2048
 /** Titan has no batch embedding API — cap concurrent InvokeModel calls instead */
 const EMBED_CONCURRENCY = 8
@@ -44,6 +50,7 @@ export class BedrockAIAdapter implements AIAdapter {
   private embeddingModel: string
   private embeddingDimensions: number
   private completionModels: string[]
+  private defaultCompletionModel: string
 
   constructor(config: BedrockConfig) {
     this.client = new BedrockRuntimeClient({
@@ -55,16 +62,17 @@ export class BedrockAIAdapter implements AIAdapter {
     })
     this.embeddingModel = config.embeddingModel ?? DEFAULT_EMBEDDING_MODEL
     this.embeddingDimensions = config.embeddingDimensions ?? DEFAULT_EMBEDDING_DIMENSIONS
-    this.completionModels = config.completionModels?.length
-      ? config.completionModels
-      : [DEFAULT_COMPLETION_MODEL]
+    this.completionModels = resolveCompletionModels(
+      config.completionModels,
+      DEFAULT_BEDROCK_COMPLETION_MODEL
+    )
+    // First granted entry, so the default never lands outside the IAM grants
+    this.defaultCompletionModel = this.completionModels[0]
   }
 
   async complete(prompt: string, options?: CompleteOptions): Promise<string> {
     const input: ConverseCommandInput = {
-      // Default to the first granted model so an unset request never lands on a
-      // model outside completionModels (which IAM would reject)
-      modelId: options?.model || this.completionModels[0],
+      modelId: options?.model || this.defaultCompletionModel,
       messages: [{ role: 'user', content: [{ text: prompt }] }],
       inferenceConfig: {
         maxTokens: options?.maxTokens ?? DEFAULT_COMPLETION_MAX_TOKENS,
@@ -114,7 +122,7 @@ export class BedrockAIAdapter implements AIAdapter {
     // both are always invokable
     return {
       provider: 'bedrock',
-      defaultModel: this.completionModels[0],
+      defaultModel: this.defaultCompletionModel,
       allowlist: this.completionModels,
     }
   }

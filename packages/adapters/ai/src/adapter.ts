@@ -56,10 +56,17 @@ export interface CompletionInfo {
   provider: 'bedrock' | 'openai' | 'ollama'
   /** Used when the caller does not pass options.model */
   defaultModel: string
-  /** Authoritative model allow-list (e.g. Bedrock IAM grants). Omit when the
-   *  provider accepts any model (Ollama/OpenAI free-text); callers use it to
-   *  reject a stale saved model that would fail at invocation. */
-  allowlist?: string[]
+  /** Deployment-approved models (AI_COMPLETION_MODELS; on Bedrock = the IAM
+   *  grants) — also the picker options. Callers reject stale saved models with it. */
+  allowlist: string[]
+}
+
+/** Resolve the configured allow-list; the first entry is the default model */
+export function resolveCompletionModels(
+  configured: string[] | undefined,
+  builtInDefault: string
+): string[] {
+  return configured?.length ? configured : [builtInDefault]
 }
 
 export interface EmbedOptions {

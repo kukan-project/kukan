@@ -3,17 +3,29 @@
  * Ollama local LLM implementation (Phase 5)
  */
 
-import { AIAdapter, CompleteOptions, CompletionInfo, EmbedOptions, EmbeddingInfo } from './adapter'
+import {
+  AIAdapter,
+  CompleteOptions,
+  CompletionInfo,
+  EmbedOptions,
+  EmbeddingInfo,
+  resolveCompletionModels,
+} from './adapter'
 
 export interface OllamaConfig {
   baseUrl: string
   embeddingModel?: string
   embeddingDimensions?: number
+  /** Approved models (AI_COMPLETION_MODELS): picker options + allow-list,
+   *  first = default. Omit → the built-in default only */
+  completionModels?: string[]
 }
 
+/** Keep in sync with the compose.yml ollama-init EMBEDDING_MODEL fallback */
 const DEFAULT_EMBEDDING_MODEL = 'bge-m3'
 const DEFAULT_EMBEDDING_DIMENSIONS = 1024
-/** Multilingual and CPU-efficient effective-4B model (ADR-040) */
+/** Multilingual and CPU-efficient effective-4B model (ADR-040).
+ *  Keep in sync with the compose.yml ollama-init COMPLETION_MODELS fallback. */
 const DEFAULT_COMPLETION_MODEL = 'gemma4:e4b'
 const DEFAULT_COMPLETION_MAX_TOKENS = 2048
 
@@ -21,11 +33,18 @@ export class OllamaAdapter implements AIAdapter {
   private baseUrl: string
   private embeddingModel: string
   private embeddingDimensions: number
+  private completionModels: string[]
+  private defaultCompletionModel: string
 
   constructor(config: OllamaConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, '')
     this.embeddingModel = config.embeddingModel ?? DEFAULT_EMBEDDING_MODEL
     this.embeddingDimensions = config.embeddingDimensions ?? DEFAULT_EMBEDDING_DIMENSIONS
+    this.completionModels = resolveCompletionModels(
+      config.completionModels,
+      DEFAULT_COMPLETION_MODEL
+    )
+    this.defaultCompletionModel = this.completionModels[0]
   }
 
   async complete(prompt: string, options?: CompleteOptions): Promise<string> {
@@ -33,7 +52,7 @@ export class OllamaAdapter implements AIAdapter {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: options?.model || DEFAULT_COMPLETION_MODEL,
+        model: options?.model || this.defaultCompletionModel,
         messages: [
           ...(options?.system ? [{ role: 'system', content: options.system }] : []),
           { role: 'user', content: prompt },
@@ -60,23 +79,16 @@ export class OllamaAdapter implements AIAdapter {
   }
 
   getCompletionInfo(): CompletionInfo {
-    return { provider: 'ollama', defaultModel: DEFAULT_COMPLETION_MODEL }
+    return {
+      provider: 'ollama',
+      defaultModel: this.defaultCompletionModel,
+      allowlist: this.completionModels,
+    }
   }
 
   async listCompletionModels(): Promise<string[]> {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/tags`, {
-        signal: AbortSignal.timeout(5000),
-      })
-      if (!response.ok) return []
-      const payload = (await response.json()) as { models?: { name: string }[] }
-      // /api/tags lists all pulled models; drop the embedding ones by name
-      const isEmbedding = (name: string) =>
-        name === this.embeddingModel || /embed|^bge-|minilm/i.test(name)
-      return (payload.models ?? []).map((m) => m.name).filter((name) => !isEmbedding(name))
-    } catch {
-      return []
-    }
+    // The allow-list is authoritative — pulled does not mean approved
+    return this.completionModels
   }
 
   async embed(text: string, options?: EmbedOptions): Promise<number[]> {

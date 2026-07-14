@@ -35,32 +35,11 @@ describe('OllamaAdapter', () => {
     expect(body).toEqual({ model: 'bge-m3', input: ['こんにちは'] })
   })
 
-  it('lists completion models from /api/tags, excluding embedding models', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          models: [
-            { name: 'gemma4:e4b' },
-            { name: 'qwen3:8b' },
-            { name: 'bge-m3:latest' },
-            { name: 'nomic-embed-text' },
-          ],
-        }),
-    })
+  it('lists only the approved models — pulled models are never enumerated', async () => {
     const adapter = new OllamaAdapter({ baseUrl: 'http://localhost:11434' })
 
-    const models = await adapter.listCompletionModels()
-
-    expect(mockFetch.mock.calls[0][0]).toBe('http://localhost:11434/api/tags')
-    expect(models).toEqual(['gemma4:e4b', 'qwen3:8b'])
-  })
-
-  it('returns [] when /api/tags is unavailable', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false, text: () => Promise.resolve('') })
-    const adapter = new OllamaAdapter({ baseUrl: 'http://localhost:11434' })
-
-    expect(await adapter.listCompletionModels()).toEqual([])
+    expect(await adapter.listCompletionModels()).toEqual(['gemma4:e4b'])
+    expect(mockFetch).not.toHaveBeenCalled()
   })
 
   it('embedBatch sends all texts in one request', async () => {
@@ -193,6 +172,21 @@ describe('OllamaAdapter', () => {
     expect(adapter.getCompletionInfo()).toEqual({
       provider: 'ollama',
       defaultModel: 'gemma4:e4b',
+      allowlist: ['gemma4:e4b'],
     })
+  })
+
+  it('uses the configured completion models as allow-list and default (AI_COMPLETION_MODELS)', async () => {
+    const adapter = new OllamaAdapter({
+      baseUrl: 'http://localhost:11434',
+      completionModels: ['qwen3:8b', 'gemma4:e4b'],
+    })
+    expect(adapter.getCompletionInfo()).toEqual({
+      provider: 'ollama',
+      defaultModel: 'qwen3:8b',
+      allowlist: ['qwen3:8b', 'gemma4:e4b'],
+    })
+    // The allow-list replaces server enumeration — pulled does not mean approved
+    expect(await adapter.listCompletionModels()).toEqual(['qwen3:8b', 'gemma4:e4b'])
   })
 })

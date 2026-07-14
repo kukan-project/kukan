@@ -19,13 +19,12 @@ export interface SuggestAvailability {
 }
 
 /**
- * The model a request should use: the saved setting when it is allowed (or the
- * provider takes any model), otherwise the provider default. Keeps a stale saved
- * model — e.g. one dropped from the Bedrock allow-list — from being invoked and
- * failing with an IAM error.
+ * The model a request should use: the saved setting when it is still allowed,
+ * otherwise the provider default. Keeps a stale saved model — e.g. one dropped
+ * from AI_COMPLETION_MODELS on a redeploy — from being invoked and failing.
  */
 export function resolveEffectiveModel(info: CompletionInfo, savedModel: string): string {
-  if (savedModel && (!info.allowlist || info.allowlist.includes(savedModel))) return savedModel
+  if (savedModel && info.allowlist.includes(savedModel)) return savedModel
   return info.defaultModel
 }
 

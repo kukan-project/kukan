@@ -22,26 +22,11 @@ describe('OpenAIAdapter', () => {
     mockModelsList.mockReset()
   })
 
-  it('lists chat models, excluding embedding/audio/image endpoints', async () => {
-    mockModelsList.mockResolvedValueOnce({
-      data: [
-        { id: 'gpt-4o-mini' },
-        { id: 'o3-mini' },
-        { id: 'text-embedding-3-small' },
-        { id: 'whisper-1' },
-        { id: 'dall-e-3' },
-      ],
-    })
+  it('lists only the approved models — served models are never enumerated', async () => {
     const adapter = new OpenAIAdapter({ apiKey: 'sk-test' })
 
-    expect(await adapter.listCompletionModels()).toEqual(['gpt-4o-mini', 'o3-mini'])
-  })
-
-  it('returns [] when the models list cannot be fetched', async () => {
-    mockModelsList.mockRejectedValueOnce(new Error('401'))
-    const adapter = new OpenAIAdapter({ apiKey: 'sk-test' })
-
-    expect(await adapter.listCompletionModels()).toEqual([])
+    expect(await adapter.listCompletionModels()).toEqual(['gpt-4o-mini'])
+    expect(mockModelsList).not.toHaveBeenCalled()
   })
 
   it('embeds via embeddings API with text-embedding-3-small by default', async () => {
@@ -150,6 +135,21 @@ describe('OpenAIAdapter', () => {
     expect(adapter.getCompletionInfo()).toEqual({
       provider: 'openai',
       defaultModel: 'gpt-4o-mini',
+      allowlist: ['gpt-4o-mini'],
     })
+  })
+
+  it('uses the configured completion models as allow-list and default (AI_COMPLETION_MODELS)', async () => {
+    const adapter = new OpenAIAdapter({
+      apiKey: 'sk-test',
+      completionModels: ['llama-3.3-70b', 'qwen3:8b'],
+    })
+    expect(adapter.getCompletionInfo()).toEqual({
+      provider: 'openai',
+      defaultModel: 'llama-3.3-70b',
+      allowlist: ['llama-3.3-70b', 'qwen3:8b'],
+    })
+    // The allow-list replaces server enumeration — served does not mean approved
+    expect(await adapter.listCompletionModels()).toEqual(['llama-3.3-70b', 'qwen3:8b'])
   })
 })

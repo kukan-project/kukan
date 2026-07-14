@@ -23,6 +23,11 @@ x-app-environment: &app-environment
   SQS_ACCESS_KEY: ${SQS_ACCESS_KEY:-x}
   SQS_SECRET_KEY: ${SQS_SECRET_KEY:-x}
   AI_TYPE: ${AI_TYPE:-none}
+  # Empty = adapter defaults (env.ts treats '' as unset). ollama-init pulls the
+  # same vars, so the pulled models stay in sync with what the app uses.
+  AI_EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-}
+  AI_EMBEDDING_DIMENSIONS: ${AI_EMBEDDING_DIMENSIONS:-}
+  AI_COMPLETION_MODELS: ${AI_COMPLETION_MODELS:-}
   OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
   BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost}
   BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
@@ -160,9 +165,11 @@ services:
     # the box (embedding model + generation model, ADR-034 / ADR-040).
     # No-ops unless AI_TYPE=ollama (no surprise multi-GB download), and skips
     # the registry entirely when a model is already in the volume (closed
-    # networks pre-distribute it). SUGGEST_MODEL matches the adapter's built-in
-    # default on purpose — the effective model is a runtime setting (admin UI),
-    # so switching models means pulling there, not another env knob (ADR-040).
+    # networks pre-distribute it). The models track the same env vars the app
+    # reads (fallbacks = the adapter built-in defaults), so what gets pulled is
+    # what the app uses. AI_COMPLETION_MODELS is the deployment's approved model
+    # list (= the admin picker); every entry is pulled here so each option is
+    # actually runnable. The first entry is the default.
     image: ollama/ollama:latest
     container_name: kukan-ollama-init
     depends_on:
@@ -172,14 +179,14 @@ services:
       OLLAMA_HOST: http://ollama:11434
       AI_TYPE: ${AI_TYPE:-none}
       EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-bge-m3}
-      SUGGEST_MODEL: gemma4:e4b
+      COMPLETION_MODELS: ${AI_COMPLETION_MODELS:-gemma4:e4b}
     entrypoint:
       - /bin/sh
       - -c
       - |
         [ "$$AI_TYPE" = "ollama" ] || { echo "AI_TYPE=$$AI_TYPE — skipping model pull"; exit 0; }
         for i in $$(seq 30); do ollama list >/dev/null 2>&1 && break; sleep 1; done
-        for model in "$$EMBEDDING_MODEL" "$$SUGGEST_MODEL"; do
+        for model in "$$EMBEDDING_MODEL" $$(echo "$$COMPLETION_MODELS" | tr ',' ' '); do
           ollama show "$$model" >/dev/null 2>&1 && { echo "$$model already present"; continue; }
           ollama pull "$$model"
         done

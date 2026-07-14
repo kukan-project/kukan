@@ -4,6 +4,7 @@
  */
 
 import type { Env, Logger } from '@kukan/shared'
+import { parseCompletionModels } from '@kukan/shared/ai'
 import type { Database } from '@kukan/db'
 import { S3StorageAdapter } from '@kukan/storage-adapter'
 import { PostgresSearchAdapter, OpenSearchAdapter } from '@kukan/search-adapter'
@@ -25,14 +26,13 @@ export function createAIAdapter(env: Env): AIAdapter {
   if (env.AI_TYPE === 'none') {
     return new NoOpAIAdapter()
   }
+  const completionModels = parseCompletionModels(env.AI_COMPLETION_MODELS)
   if (env.AI_TYPE === 'bedrock') {
     return new BedrockAIAdapter({
       region: env.BEDROCK_REGION,
       embeddingModel: env.AI_EMBEDDING_MODEL,
       embeddingDimensions: env.AI_EMBEDDING_DIMENSIONS,
-      completionModels: env.BEDROCK_COMPLETION_MODELS?.split(',')
-        .map((m) => m.trim())
-        .filter(Boolean),
+      completionModels,
     })
   }
   if (env.AI_TYPE === 'openai') {
@@ -44,12 +44,14 @@ export function createAIAdapter(env: Env): AIAdapter {
       baseUrl: env.OPENAI_BASE_URL,
       embeddingModel: env.AI_EMBEDDING_MODEL,
       embeddingDimensions: env.AI_EMBEDDING_DIMENSIONS,
+      completionModels,
     })
   }
   return new OllamaAdapter({
     baseUrl: env.OLLAMA_URL,
     embeddingModel: env.AI_EMBEDDING_MODEL,
     embeddingDimensions: env.AI_EMBEDDING_DIMENSIONS,
+    completionModels,
   })
 }
 

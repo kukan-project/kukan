@@ -183,7 +183,7 @@ pnpm db:create-user --email admin@example.com --name admin --password <password>
 - **オンプレミス / 開発**: Ollama（`AI_TYPE=ollama`）または OpenAI 互換（`AI_TYPE=openai`）
 - **無効**: `AI_TYPE=none`（NoOp）— セマンティック検索はキーワード検索にフォールバックし、AI 提案は利用不可になります
 
-生成・埋め込みモデルは管理画面から再デプロイなしで切り替えられます。ただし **Bedrock** の AI 提案モデルの候補は、`environments.ts` の `bedrock.completionModels`（IAM で `InvokeModel` を許可したモデル）に限られます。候補を増やす場合はそこに追加して再デプロイしてください（Ollama / OpenAI 互換は利用可能なモデルを自動列挙します）。Ollama を GPU で動かす手順は[開発環境セットアップ](/ja/getting-started/)を参照してください。
+生成・埋め込みモデルは管理画面から再デプロイなしで切り替えられます。候補モデルは `AI_COMPLETION_MODELS` 環境変数（カンマ区切り）で指定します。これは**このデプロイで利用を許可するモデルのリスト**で、全プロバイダ共通に管理画面ピッカーの選択肢となり、先頭エントリが既定（「プロバイダ既定」）になります。サーバー側で利用可能でも、リストに無いモデルは候補に現れません。**Bedrock** では CDK が `environments.ts` の `bedrock.completionModels`（IAM で `InvokeModel` を許可したモデル）からこの変数を注入するため、候補を増やす場合はそこに追加して再デプロイしてください。**Ollama** では Docker Compose の `ollama-init` が列挙された全モデルを起動時に pull するため、リストのモデルは自動で利用可能になります。未設定時は組み込み既定モデルのみが候補になります（Ollama: gemma4:e4b / OpenAI 互換: gpt-4o-mini）。Ollama を GPU で動かす手順は[開発環境セットアップ](/ja/getting-started/)を参照してください。
 
 #### AI 提案が動かないとき（Bedrock）
 

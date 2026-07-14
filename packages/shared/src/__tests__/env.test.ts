@@ -102,6 +102,34 @@ describe('envSchema', () => {
     expect(result.success).toBe(false)
   })
 
+  it('should treat empty AI model vars as unset (compose ${VAR:-} injects empty strings)', () => {
+    const result = envSchema.safeParse({
+      SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
+      BETTER_AUTH_SECRET: 'a'.repeat(32),
+      AI_EMBEDDING_MODEL: '',
+      AI_EMBEDDING_DIMENSIONS: '',
+      AI_COMPLETION_MODELS: '',
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.AI_EMBEDDING_MODEL).toBeUndefined()
+    expect(result.data.AI_EMBEDDING_DIMENSIONS).toBeUndefined()
+    expect(result.data.AI_COMPLETION_MODELS).toBeUndefined()
+  })
+
+  it('should pass through non-empty AI model vars', () => {
+    const result = envSchema.safeParse({
+      SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
+      BETTER_AUTH_SECRET: 'a'.repeat(32),
+      AI_COMPLETION_MODELS: 'qwen3:8b,gemma4:e4b',
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.AI_COMPLETION_MODELS).toBe('qwen3:8b,gemma4:e4b')
+  })
+
   it('should validate OPENSEARCH_REPLICAS constraints', () => {
     const valid = envSchema.safeParse({
       SQS_QUEUE_URL: 'http://localhost:9324/queue/test',

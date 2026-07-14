@@ -259,6 +259,9 @@ importers:
 
   infra:
     dependencies:
+      '@kukan/shared':
+        specifier: workspace:*
+        version: link:../packages/shared
       aws-cdk-lib:
         specifier: ^2.257.0
         version: 2.257.0(constructs@10.6.0)

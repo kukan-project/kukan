@@ -8,19 +8,29 @@
  */
 
 import OpenAI from 'openai'
-import { AIAdapter, CompleteOptions, CompletionInfo, EmbedOptions, EmbeddingInfo } from './adapter'
+import {
+  AIAdapter,
+  CompleteOptions,
+  CompletionInfo,
+  EmbedOptions,
+  EmbeddingInfo,
+  resolveCompletionModels,
+} from './adapter'
 
 export interface OpenAIConfig {
   apiKey: string
   baseUrl?: string
   embeddingModel?: string
   embeddingDimensions?: number
+  /** Approved models (AI_COMPLETION_MODELS): picker options + allow-list,
+   *  first = default. Omit → the built-in default only */
+  completionModels?: string[]
 }
 
 const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small'
 const DEFAULT_EMBEDDING_DIMENSIONS = 1536
 /** Only meaningful for the official API; compatible endpoints (vLLM etc.)
- *  serve their own models, so operators override the model instead. */
+ *  serve their own models, so operators set AI_COMPLETION_MODELS instead. */
 const DEFAULT_COMPLETION_MODEL = 'gpt-4o-mini'
 const DEFAULT_COMPLETION_MAX_TOKENS = 2048
 
@@ -28,17 +38,24 @@ export class OpenAIAdapter implements AIAdapter {
   private client: OpenAI
   private embeddingModel: string
   private embeddingDimensions: number
+  private completionModels: string[]
+  private defaultCompletionModel: string
 
   constructor(config: OpenAIConfig) {
     this.client = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseUrl })
     this.embeddingModel = config.embeddingModel ?? DEFAULT_EMBEDDING_MODEL
     this.embeddingDimensions = config.embeddingDimensions ?? DEFAULT_EMBEDDING_DIMENSIONS
+    this.completionModels = resolveCompletionModels(
+      config.completionModels,
+      DEFAULT_COMPLETION_MODEL
+    )
+    this.defaultCompletionModel = this.completionModels[0]
   }
 
   async complete(prompt: string, options?: CompleteOptions): Promise<string> {
     const response = await this.client.chat.completions.create(
       {
-        model: options?.model || DEFAULT_COMPLETION_MODEL,
+        model: options?.model || this.defaultCompletionModel,
         messages: [
           ...(options?.system ? [{ role: 'system' as const, content: options.system }] : []),
           { role: 'user' as const, content: prompt },
@@ -62,26 +79,16 @@ export class OpenAIAdapter implements AIAdapter {
   }
 
   getCompletionInfo(): CompletionInfo {
-    return { provider: 'openai', defaultModel: DEFAULT_COMPLETION_MODEL }
+    return {
+      provider: 'openai',
+      defaultModel: this.defaultCompletionModel,
+      allowlist: this.completionModels,
+    }
   }
 
   async listCompletionModels(): Promise<string[]> {
-    try {
-      // Fail fast like the Ollama path; the SDK otherwise waits ~10min × retries
-      const response = await this.client.models.list({
-        signal: AbortSignal.timeout(5000),
-        maxRetries: 0,
-      })
-      // Keep chat-capable models; drop non-text endpoints. Works for the
-      // official API (gpt*/o*) and compatible servers (their served models).
-      const exclude = /embed|whisper|tts|audio|dall-e|moderation|image|realtime|transcribe/i
-      return response.data
-        .map((model) => model.id)
-        .filter((id) => !exclude.test(id))
-        .sort()
-    } catch {
-      return []
-    }
+    // The allow-list is authoritative — served does not mean approved
+    return this.completionModels
   }
 
   async embed(text: string, options?: EmbedOptions): Promise<number[]> {

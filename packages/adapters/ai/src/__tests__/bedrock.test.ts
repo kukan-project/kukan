@@ -142,9 +142,7 @@ describe('BedrockAIAdapter', () => {
 
   it('lists the built-in completion model by default', async () => {
     const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
-    expect(await adapter.listCompletionModels()).toEqual([
-      'jp.anthropic.claude-haiku-4-5-20251001-v1:0',
-    ])
+    expect(await adapter.listCompletionModels()).toEqual(['jp.amazon.nova-2-lite-v1:0'])
   })
 
   it('lists the configured completion models (the IAM-granted allow-list)', async () => {
@@ -166,7 +164,7 @@ describe('BedrockAIAdapter', () => {
       }
     }
 
-    it('completes via Converse with the jp. Haiku profile by default', async () => {
+    it('completes via Converse with the jp. Nova Lite profile by default', async () => {
       mockSend.mockResolvedValueOnce(converseResponse('こんにちは'))
       const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
 
@@ -175,7 +173,7 @@ describe('BedrockAIAdapter', () => {
       expect(result).toBe('こんにちは')
       const command = mockSend.mock.calls[0][0]
       expect(command._type).toBe('Converse')
-      expect(command.input.modelId).toBe('jp.anthropic.claude-haiku-4-5-20251001-v1:0')
+      expect(command.input.modelId).toBe('jp.amazon.nova-2-lite-v1:0')
       expect(command.input.messages).toEqual([{ role: 'user', content: [{ text: '挨拶して' }] }])
       expect(command.input.system).toEqual([{ text: 'あなたは司書です' }])
       expect(command.input.inferenceConfig.maxTokens).toBe(2048)
@@ -239,8 +237,8 @@ describe('BedrockAIAdapter', () => {
     const adapter = new BedrockAIAdapter({ region: 'ap-northeast-1' })
     expect(adapter.getCompletionInfo()).toEqual({
       provider: 'bedrock',
-      defaultModel: 'jp.anthropic.claude-haiku-4-5-20251001-v1:0',
-      allowlist: ['jp.anthropic.claude-haiku-4-5-20251001-v1:0'],
+      defaultModel: 'jp.amazon.nova-2-lite-v1:0',
+      allowlist: ['jp.amazon.nova-2-lite-v1:0'],
     })
   })
 })

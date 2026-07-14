@@ -110,12 +110,12 @@ assembled on demand from the DB and storage originals, then discarded.**
 
 Four implementations following the same deployment pattern as ADR-034.
 
-| Environment       | Implementation                                  |
-| ----------------- | ----------------------------------------------- |
-| AWS               | Bedrock Converse API (Claude Haiku class)       |
-| On-premises       | Ollama (Japanese-capable model)                 |
-| OpenAI-compatible | Chat Completions                                |
-| No AI             | NoOp — reports no capability; feature is hidden |
+| Environment       | Implementation                                        |
+| ----------------- | ----------------------------------------------------- |
+| AWS               | Bedrock Converse API (default Amazon Nova Lite class) |
+| On-premises       | Ollama (Japanese-capable model)                       |
+| OpenAI-compatible | Chat Completions                                      |
+| No AI             | NoOp — reports no capability; feature is hidden       |
 
 - Add the suggestion capability to `GET /api/v1/site` so the frontend hides
   the button entirely (same pattern as exposing vector-search support)
@@ -130,15 +130,27 @@ Four implementations following the same deployment pattern as ADR-034.
   — the generation model persists nothing, so switching is safe. The admin
   screen includes a connection test (a small trial prompt) so a
   not-yet-enabled or not-yet-pulled model ID is detected immediately
+- The **candidates** for the runtime setting come from the environment
+  variable `AI_COMPLETION_MODELS` (comma-separated, first entry = default),
+  unified across all providers (supplemented 2026-07-14). It is the
+  **allow-list of models the deployment has approved for use** and becomes
+  the admin picker options as-is. Models available on the server (pulled on
+  Ollama, served by an OpenAI-compatible endpoint) are not offered unless
+  listed — "available" and "approved" are separate judgements, so no server
+  enumeration is performed. Invocation outside the list is stopped by IAM on
+  Bedrock (CDK grants exactly the list) and by allow-list validation at
+  resolution time on the other providers. With Docker Compose, ollama-init
+  pulls the same list, so approved = runnable holds from startup
 - Model selection is finalized by measurement during implementation, and
   **prioritizes multilingual support** (Japanese is the primary target for
   now, but overseas deployments are in scope, so language-specific fine-tuned
-  models are not adopted). Default candidates: **Claude Haiku class on
-  Bedrock** (multilingual with good cost/latency; JSON output enforced via
-  Converse API tool use; the `jp.` cross-region inference profile keeps
+  models are not adopted). Default: **Amazon Nova Lite class on
+  Bedrock** (its measured quality met the bar, so the lower-cost Nova — with a
+  good multilingual/cost/latency balance — is the default; JSON output enforced
+  via Converse API tool use; the `jp.` cross-region inference profile keeps
   inference within the Tokyo/Osaka regions for domestic data-processing
-  requirements; the Amazon Nova Lite class is included in the evaluation as
-  the cost alternative) and **Gemma 4 class (E4B and up) on Ollama** (140+
+  requirements; the Claude Haiku class and above can be added to
+  completionModels to opt into higher quality) and **Gemma 4 class (E4B and up) on Ollama** (140+
   languages, Apache 2.0, CPU-efficient effective-parameter design; JSON
   enforced via structured outputs). Qwen3 instruct remains the alternative
   where Japanese quality matters most. Evaluate like ADR-034 with a small

@@ -15,6 +15,7 @@
     "clean": "rm -rf dist cdk.out"
   },
   "dependencies": {
+    "@kukan/shared": "workspace:*",
     "aws-cdk-lib": "^2.257.0",
     "constructs": "^10.6.0"
   },

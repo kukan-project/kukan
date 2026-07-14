@@ -83,7 +83,11 @@ const mockAi = new NoOpAIAdapter()
 export function mockCompletionAi(complete: AIAdapter['complete'] = async () => '{}') {
   return {
     getEmbeddingInfo: () => null,
-    getCompletionInfo: () => ({ provider: 'ollama', defaultModel: 'gemma4:e4b' }),
+    getCompletionInfo: () => ({
+      provider: 'ollama',
+      defaultModel: 'gemma4:e4b',
+      allowlist: ['gemma4:e4b', 'qwen3:8b'],
+    }),
     listCompletionModels: async () => ['gemma4:e4b', 'qwen3:8b'],
     complete,
   } as unknown as AIAdapter
