@@ -189,13 +189,32 @@ pnpm db:create-user --email admin@example.com --name admin --password <password>
 
 サイト管理の **接続テスト**を押すと、実際の生成と同じ経路（構造化出力）で 1 回だけ試行し、失敗時はエラーと対処のヒントを表示します。Bedrock 特有の典型的な原因と対処:
 
-| 症状（接続テストのエラー）                       | 原因                                       | 対処                                                                                                                                                                                                                                                      |
-| ------------------------------------------------ | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `not authorized to perform: bedrock:InvokeModel` | タスクロールに当該モデルの IAM 権限がない  | `environments.ts` の `bedrock.completionModels` に追加して再デプロイ                                                                                                                                                                                      |
-| `use case details have not been submitted`       | Anthropic の利用ユースケースフォーム未提出 | Bedrock コンソールで Anthropic の「利用ユースケース詳細」フォームを提出（アカウントに一度・約15分で有効化）                                                                                                                                               |
-| `aws-marketplace:Subscribe` 系の AccessDenied    | モデルが AWS Marketplace 未サブスクライブ  | Bedrock コンソールの **Model access** でモデルを有効化（サブスクライブ）。組織で SCP により制限されている場合は、**管理アカウント**側で `aws-marketplace:Subscribe` / `ViewSubscriptions` の許可が必要（AdministratorAccess でも SCP は上書きできません） |
+| 症状（接続テストのエラー）                       | 原因                                               | 対処                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------ | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `not authorized to perform: bedrock:InvokeModel` | タスクロールに当該モデルの IAM 権限がない          | `environments.ts` の `bedrock.completionModels` に追加して再デプロイ                                                                                                                                                                                                                                     |
+| `use case details have not been submitted`       | Anthropic の利用ユースケースフォーム未提出         | Bedrock コンソールで Anthropic の「利用ユースケース詳細」フォームを提出（アカウントに一度・約15分で有効化）                                                                                                                                                                                              |
+| `aws-marketplace:Subscribe` 系の AccessDenied    | Marketplace 提供モデルがアカウント未サブスクライブ | 下記「[Marketplace モデルの初回サブスクライブ](#marketplace-モデルの初回サブスクライブ)」の手順で一度 invoke して有効化。組織で SCP により制限されている場合は、**管理アカウント**側で `aws-marketplace:Subscribe` / `ViewSubscriptions` の許可が必要（AdministratorAccess でも SCP は上書きできません） |
 
-これらはいずれも**アプリ外（AWS 側）の設定**で、コンソールでの一度きりの作業です。Claude 等の Anthropic モデルはフォーム提出と Marketplace サブスクライブの両方が必要になる点に注意してください（Amazon Titan / Nova は不要）。
+これらはいずれも**アプリ外（AWS 側）の設定**で、コンソールでの一度きりの作業です。Claude 等の Anthropic モデルはフォーム提出と Marketplace サブスクライブの両方が必要になる点に注意してください（Amazon Titan / Nova はどちらも不要 — 初回呼び出しで自動有効化されます）。
+
+:::note
+かつての Bedrock **Model access（モデルアクセス）** ページは廃止されました。サーバーレス基盤モデルはアカウント内で初回に呼び出した時点で自動的に有効化されるため、手動で「有効化」する操作はもうありません。アクセス制御は IAM ポリシーと SCP に一本化されています。
+:::
+
+#### Marketplace モデルの初回サブスクライブ
+
+Cohere Embed v4 のような **AWS Marketplace 提供モデル**は自動有効化の対象外で、アカウント全体で使えるようにするには **AWS Marketplace 権限を持つユーザーが一度だけ呼び出す**必要があります。いずれかの方法で 1 回呼び出せば、以後はデプロイ済みのタスクロールからも利用できます（伝播に数分）。
+
+- **コンソール**: Bedrock → **モデルカタログ（Model catalog）** で対象モデルを開き、**プレイグラウンド（Playground）** で任意の入力を 1 回実行する。有効化済みの一覧は [AWS Marketplace の「Manage subscriptions」](https://console.aws.amazon.com/marketplace/home#/subscriptions)で確認できます。
+- **CLI**（同じことを 1 コマンドで）:
+
+  ```bash
+  aws bedrock-runtime invoke-model --region ap-northeast-1 \
+    --model-id cohere.embed-v4:0 --content-type application/json \
+    --body '{"texts":["test"],"input_type":"search_document"}' /dev/stdout
+  ```
+
+埋め込みモデルを切り替えた場合は、既存データに反映するためバルク再埋め込み（検索インデックスの rebuild）を実行してください。
 
 ## ヘルスチェック
 

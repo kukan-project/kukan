@@ -344,7 +344,7 @@
       "aiSuggestTestFailed": "接続テストに失敗しました。モデルが利用可能（pull・有効化済み）か確認してください。",
       "aiSuggestHintBedrockIam": "このモデルへの IAM 権限がありません。infra の environments.ts の bedrock.completionModels に追加して再デプロイしてください。",
       "aiSuggestHintBedrockUseCase": "Bedrock コンソールで Anthropic の「利用ユースケース詳細」フォームを提出してください（アカウントに一度・約15分で有効化）。",
-      "aiSuggestHintBedrockMarketplace": "Bedrock コンソールの Model access で対象モデルを有効化（サブスクライブ）してください。組織の SCP で制限されている場合は、管理アカウント側で aws-marketplace:Subscribe / ViewSubscriptions の許可が必要です。",
+      "aiSuggestHintBedrockMarketplace": "AWS Marketplace 提供モデルはアカウント未サブスクライブです。Marketplace 権限を持つユーザーが対象モデルを一度 invoke（Bedrock のモデルカタログ→プレイグラウンドで実行、または CLI の invoke-model）すればアカウント全体で有効化されます。組織の SCP で制限されている場合は、管理アカウント側で aws-marketplace:Subscribe / ViewSubscriptions の許可が必要です。",
       "aiSuggestHintOllamaUnreachable": "Ollama サーバーに接続できません。OLLAMA_URL とサーバーの起動状態を確認してください。",
       "aiSuggestHintOllamaModelMissing": "モデルが見つかりません。`ollama pull <モデル>` で取得してください。",
       "aiSuggestHintOpenaiAuth": "API キーが無効です。OPENAI_API_KEY を確認してください。",

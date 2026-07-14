@@ -191,13 +191,32 @@ The generation/embedding model can be switched from the admin dashboard above wi
 
 The **connection test** in Site Management runs one attempt through the same path as real generation (structured output) and, on failure, shows the error plus a fix hint. Common Bedrock-specific causes:
 
-| Symptom (connection-test error)                       | Cause                                             | Fix                                                                                                                                                                                                                                                     |
-| ----------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `not authorized to perform: bedrock:InvokeModel`      | The task role lacks IAM access to the model       | Add it to `bedrock.completionModels` in `environments.ts` and redeploy                                                                                                                                                                                  |
-| `use case details have not been submitted`            | The Anthropic use-case form hasn't been submitted | Submit the Anthropic "use case details" form in the Bedrock console (once per account; ~15 min to activate)                                                                                                                                             |
-| `AccessDenied` mentioning `aws-marketplace:Subscribe` | The model isn't subscribed on AWS Marketplace     | Enable (subscribe to) the model under **Model access** in the Bedrock console. If an organization SCP restricts it, grant `aws-marketplace:Subscribe` / `ViewSubscriptions` from the **management account** (an SCP overrides even AdministratorAccess) |
+| Symptom (connection-test error)                       | Cause                                                      | Fix                                                                                                                                                                                                                                                                                                                          |
+| ----------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `not authorized to perform: bedrock:InvokeModel`      | The task role lacks IAM access to the model                | Add it to `bedrock.completionModels` in `environments.ts` and redeploy                                                                                                                                                                                                                                                       |
+| `use case details have not been submitted`            | The Anthropic use-case form hasn't been submitted          | Submit the Anthropic "use case details" form in the Bedrock console (once per account; ~15 min to activate)                                                                                                                                                                                                                  |
+| `AccessDenied` mentioning `aws-marketplace:Subscribe` | A Marketplace-served model isn't subscribed on the account | Invoke the model once to enable it — see "[First-time subscription for Marketplace models](#first-time-subscription-for-marketplace-models)" below. If an organization SCP restricts it, grant `aws-marketplace:Subscribe` / `ViewSubscriptions` from the **management account** (an SCP overrides even AdministratorAccess) |
 
-All of these are **out-of-app AWS setup** — one-time console actions. Note that Anthropic models (Claude, etc.) require both the use-case form and a Marketplace subscription, whereas Amazon Titan / Nova need neither.
+All of these are **out-of-app AWS setup** — one-time console actions. Note that Anthropic models (Claude, etc.) require both the use-case form and a Marketplace subscription, whereas Amazon Titan / Nova need neither (both auto-enable on first invocation).
+
+:::note
+The former Bedrock **Model access** page has been retired. Serverless foundation models are enabled automatically the first time they are invoked in your account, so there is no longer a manual "enable" step. Access control is consolidated into IAM policies and SCPs.
+:::
+
+#### First-time subscription for Marketplace models
+
+**AWS Marketplace-served models** such as Cohere Embed v4 are not auto-enabled: to make one usable account-wide, a **user with AWS Marketplace permissions must invoke it once**. A single invocation via either method below enables it for the deployed task roles as well (propagation takes a few minutes).
+
+- **Console**: open the model from Bedrock → **Model catalog** and run any input once in the **Playground**. Enabled subscriptions are listed under [AWS Marketplace → "Manage subscriptions"](https://console.aws.amazon.com/marketplace/home#/subscriptions).
+- **CLI** (the same thing in one command):
+
+  ```bash
+  aws bedrock-runtime invoke-model --region ap-northeast-1 \
+    --model-id cohere.embed-v4:0 --content-type application/json \
+    --body '{"texts":["test"],"input_type":"search_document"}' /dev/stdout
+  ```
+
+If you switch the embedding model, run a bulk re-embed (search-index rebuild) to apply it to existing data.
 
 ## Health checks
 

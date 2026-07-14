@@ -344,7 +344,7 @@
       "aiSuggestTestFailed": "Connection test failed. Check that the model is available (pulled and enabled).",
       "aiSuggestHintBedrockIam": "The task role isn't granted this model. Add it to bedrock.completionModels in infra environments.ts and redeploy.",
       "aiSuggestHintBedrockUseCase": "Submit the Anthropic \"use case details\" form in the Bedrock console (once per account; takes about 15 minutes to activate).",
-      "aiSuggestHintBedrockMarketplace": "Enable (subscribe to) the model under Model access in the Bedrock console. If an organization SCP blocks it, grant aws-marketplace:Subscribe / ViewSubscriptions from the management account.",
+      "aiSuggestHintBedrockMarketplace": "This AWS Marketplace-served model isn't subscribed on the account. A user with Marketplace permissions must invoke it once (run it in the Bedrock model catalog playground, or call invoke-model via the CLI) to enable it account-wide. If an organization SCP blocks it, grant aws-marketplace:Subscribe / ViewSubscriptions from the management account.",
       "aiSuggestHintOllamaUnreachable": "Can't reach the Ollama server. Check OLLAMA_URL and that the server is running.",
       "aiSuggestHintOllamaModelMissing": "Model not found. Pull it with `ollama pull <model>`.",
       "aiSuggestHintOpenaiAuth": "Invalid API key. Check OPENAI_API_KEY.",

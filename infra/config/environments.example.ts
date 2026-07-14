@@ -83,8 +83,10 @@ export const environments = {
     // --- AI (Bedrock: semantic search ADR-034 + metadata suggestions ADR-040) ---
     // Presence enables it. Amazon models (Titan v2 embedding, Nova) work on first
     // invocation, but Anthropic models (the default Haiku completion) need a one-time
-    // per-account console step: submit the Anthropic use-case form and subscribe the
-    // model under Bedrock → Model access. `bedrock: false` opts out (AI_TYPE=none).
+    // per-account step: submit the Anthropic use-case form in the Bedrock console.
+    // (The Model access page is retired — serverless models auto-enable on first
+    // invoke; Marketplace models like Cohere need the one-time invoke below.)
+    // `bedrock: false` opts out (AI_TYPE=none).
     // One `bedrock` object with the fields you want to override:
     // bedrock: {
     //   vectorMinSimilarity: 0.2, // similarity floor override — omit → model default (Titan 0.15 / Cohere 0.3, ADR-034)
