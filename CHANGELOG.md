@@ -3,6 +3,18 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.2] - 2026-07-14
+
+**Documentation**
+
+- Updated the Bedrock model subscription guidance to match AWS's retired "Model access" console page. Serverless foundation models (Amazon Titan / Nova) now enable automatically on first invocation, and Marketplace-served models (such as Cohere Embed v4) are enabled account-wide when a user with AWS Marketplace permissions invokes them once. The system administrator guide's Bedrock troubleshooting table now points to a new step-by-step walkthrough for that one-time subscription — via the Bedrock model catalog playground or a single CLI `invoke-model` call — and the in-app connection-test hints were reworded to match (#73).
+
+---
+
+**ドキュメント**
+
+- AWS で「Model access（モデルアクセス）」コンソールページが廃止されたことに合わせ、Bedrock のモデルサブスクライブ手順を更新しました。サーバーレス基盤モデル（Amazon Titan / Nova）は初回呼び出しで自動的に有効化され、Marketplace 提供モデル（Cohere Embed v4 など）は AWS Marketplace 権限を持つユーザーが一度呼び出すとアカウント全体で有効化されます。システム管理者ガイドの Bedrock トラブルシュート表から、この初回サブスクライブの手順（Bedrock モデルカタログの Playground、または CLI の `invoke-model` 1 コマンド）への段階的な案内を新設し、アプリ内の接続テストのヒント文言もこれに合わせて更新しました（#73）。
+
 ## [0.8.1] - 2026-07-13
 
 **Highlights**
