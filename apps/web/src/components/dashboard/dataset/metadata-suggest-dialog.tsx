@@ -5,6 +5,8 @@ import { useLocale, useTranslations } from 'next-intl'
 import { Loader2 } from 'lucide-react'
 import type { SuggestMetadataResponse } from '@kukan/shared'
 import {
+  Alert,
+  AlertDescription,
   Badge,
   Button,
   Dialog,
@@ -246,7 +248,9 @@ export function MetadataSuggestDialog({
         )}
 
         {error && (
-          <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
 
         {result && (

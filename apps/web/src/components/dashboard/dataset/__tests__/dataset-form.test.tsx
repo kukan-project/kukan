@@ -137,7 +137,7 @@ describe('DatasetForm (draft flows)', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Create Draft' }))
 
       await waitFor(() => {
-        expect(screen.getByText('Package name already exists')).toBeInTheDocument()
+        expect(screen.getByRole('alert')).toHaveTextContent('Package name already exists')
       })
       expect(push).not.toHaveBeenCalled()
     })

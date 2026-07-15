@@ -3,7 +3,17 @@
 import { useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { AlertTriangle, Loader2, Trash2 } from 'lucide-react'
-import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from '@kukan/ui'
+import {
+  Alert,
+  AlertDescription,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Input,
+  Label,
+} from '@kukan/ui'
 import { AiSuggestCard } from '@/components/dashboard/ai-suggest-card'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { RegistrationCard } from '@/components/dashboard/registration-card'
@@ -71,10 +81,10 @@ export default function AdminSitePage() {
           <CardTitle className="text-base">{t('resetTitle')}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <div className="flex items-start gap-3 rounded-md border border-destructive bg-destructive/10 p-3">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
-            <p className="text-sm text-destructive">{t('warning')}</p>
-          </div>
+          <Alert variant="destructive">
+            <AlertTriangle />
+            <AlertDescription>{t('warning')}</AlertDescription>
+          </Alert>
           <div className="flex flex-col gap-2">
             <Label htmlFor="confirm-input">{t('confirmLabel')}</Label>
             <Input
@@ -106,7 +116,9 @@ export default function AdminSitePage() {
           </Button>
 
           {error && (
-            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
 
           {result && (

@@ -18,12 +18,12 @@ describe('PublishSyncBanner', () => {
     mockClientFetch.mockReset()
   })
 
-  it('should show the sync warning with a resync button', () => {
+  it('should show the sync warning as an alert with a resync button', () => {
     render(<PublishSyncBanner nameOrId="pkg-1" onPublished={vi.fn()} />)
 
-    expect(
-      screen.getByText('Publishing has completed. Syncing to search may have failed.')
-    ).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Publishing has completed. Syncing to search may have failed.'
+    )
     expect(screen.getByRole('button', { name: 'Retry sync' })).toBeInTheDocument()
   })
 
@@ -50,7 +50,7 @@ describe('PublishSyncBanner', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry sync' }))
 
     await waitFor(() => {
-      expect(screen.getByText('Search unavailable')).toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent('Search unavailable')
     })
     expect(onPublished).not.toHaveBeenCalled()
   })

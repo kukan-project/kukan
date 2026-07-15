@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Button } from '@kukan/ui'
+import { Alert, AlertDescription, Button } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 
@@ -38,12 +38,14 @@ export function PublishSyncBanner({ nameOrId, onPublished }: PublishSyncBannerPr
   }
 
   return (
-    <div className="rounded-md border border-amber-300/50 bg-amber-500/10 p-3 text-sm dark:border-amber-500/30">
-      <p>{t('publishSyncWarning')}</p>
-      {error && <p className="mt-2 text-destructive">{error}</p>}
-      <Button className="mt-3" size="sm" onClick={handleResync} disabled={publishing}>
-        {publishing ? t('publishing') : t('resyncSearch')}
-      </Button>
-    </div>
+    <Alert variant="warning">
+      <AlertDescription>
+        <p>{t('publishSyncWarning')}</p>
+        {error && <p className="text-destructive">{error}</p>}
+        <Button className="mt-2" size="sm" onClick={handleResync} disabled={publishing}>
+          {publishing ? t('publishing') : t('resyncSearch')}
+        </Button>
+      </AlertDescription>
+    </Alert>
   )
 }

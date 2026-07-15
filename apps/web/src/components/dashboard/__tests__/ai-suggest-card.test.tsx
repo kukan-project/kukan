@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import { AiSuggestCard } from '../ai-suggest-card'
 
@@ -37,5 +37,27 @@ describe('AiSuggestCard', () => {
 
     await waitFor(() => expect(screen.getByRole('textbox')).toBeInTheDocument())
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
+  it('announces a successful connection test as a polite status, not an alert', async () => {
+    mockClientFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (init?.method === 'POST')
+        return {
+          ok: true,
+          json: async () => ({ ok: true, model: 'gemma4:e4b', latencyMs: 123 }),
+        } as Response
+      return settingsResponse([])
+    })
+    render(<AiSuggestCard />)
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Test connection' })).toBeEnabled()
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent('Connected: gemma4:e4b (123ms)')
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })

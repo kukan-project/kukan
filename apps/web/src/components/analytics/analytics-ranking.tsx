@@ -3,7 +3,17 @@
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { AlertTriangle } from 'lucide-react'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Skeleton } from '@kukan/ui'
+import {
+  Alert,
+  AlertDescription,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Skeleton,
+} from '@kukan/ui'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 
 export interface RankingItem {
@@ -51,10 +61,10 @@ export function AnalyticsRanking({
 
   if (error) {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-        <AlertTriangle className="h-4 w-4 shrink-0" />
-        {error.message}
-      </div>
+      <Alert variant="destructive">
+        <AlertTriangle />
+        <AlertDescription>{error.message}</AlertDescription>
+      </Alert>
     )
   }
 

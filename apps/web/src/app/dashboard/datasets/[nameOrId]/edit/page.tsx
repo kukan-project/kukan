@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { Badge, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
+import { Alert, AlertDescription, Badge, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { isDraftPlaceholderName, type PackageState } from '@kukan/shared'
 import { Sparkles } from 'lucide-react'
@@ -222,12 +222,16 @@ export default function EditDatasetPage() {
       </PageHeader>
 
       {published && (
-        <div className="rounded-md border border-green-300/50 bg-green-500/10 p-3 text-sm dark:border-green-500/30">
-          {t('publishSuccess')}{' '}
-          <Link href={`/dataset/${pkg.name}`} className="font-medium underline">
-            {t('viewPublished')}
-          </Link>
-        </div>
+        <Alert variant="success" role="status">
+          <AlertDescription>
+            <p>
+              {t('publishSuccess')}{' '}
+              <Link href={`/dataset/${pkg.name}`} className="font-medium underline">
+                {t('viewPublished')}
+              </Link>
+            </p>
+          </AlertDescription>
+        </Alert>
       )}
 
       {syncWarning && <PublishSyncBanner nameOrId={nameOrId} onPublished={handlePublished} />}

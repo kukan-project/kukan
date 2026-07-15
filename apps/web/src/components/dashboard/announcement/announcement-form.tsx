@@ -10,6 +10,8 @@ import {
   type CreateAnnouncementInput,
 } from '@kukan/shared'
 import {
+  Alert,
+  AlertDescription,
   Button,
   Input,
   Label,
@@ -100,7 +102,9 @@ export function AnnouncementForm({ mode = 'create', defaultValues, id }: Announc
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
       {error && (
-        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
       <div className="flex flex-col gap-2">
         <Label htmlFor="title">{t('title')}</Label>

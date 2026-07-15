@@ -8,6 +8,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Pencil, Trash2, RotateCcw, XCircle } from 'lucide-react'
 import {
+  Alert,
+  AlertDescription,
   Badge,
   Button,
   Input,
@@ -411,9 +413,9 @@ export default function AdminUsersPage() {
           </DialogHeader>
           <form onSubmit={handleSubmit(onCreateUser)} className="flex flex-col gap-4">
             {createError && (
-              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                {createError}
-              </div>
+              <Alert variant="destructive">
+                <AlertDescription>{createError}</AlertDescription>
+              </Alert>
             )}
             <div className="flex flex-col gap-2">
               <Label htmlFor="create-name">{t('fieldName')}</Label>
@@ -486,9 +488,9 @@ export default function AdminUsersPage() {
           </DialogHeader>
           <form onSubmit={editForm.handleSubmit(onEditUser)} className="flex flex-col gap-4">
             {editError && (
-              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                {editError}
-              </div>
+              <Alert variant="destructive">
+                <AlertDescription>{editError}</AlertDescription>
+              </Alert>
             )}
             <div className="flex flex-col gap-2">
               <Label htmlFor="edit-name">{t('fieldName')}</Label>

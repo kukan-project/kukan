@@ -4,6 +4,8 @@ import { useEffect, useId, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Loader2, PlugZap } from 'lucide-react'
 import {
+  Alert,
+  AlertDescription,
   Badge,
   Button,
   Card,
@@ -258,19 +260,23 @@ export function AiSuggestCard() {
 
           {testResult &&
             (testResult.ok ? (
-              <div className="rounded-md border p-3 text-sm text-muted-foreground">
-                {t('aiSuggestTestOk', { model: testResult.model, latency: testResult.latencyMs })}
-              </div>
+              <Alert role="status">
+                <AlertDescription>
+                  {t('aiSuggestTestOk', { model: testResult.model, latency: testResult.latencyMs })}
+                </AlertDescription>
+              </Alert>
             ) : (
-              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                {t('aiSuggestTestFailed')}
-                {testResult.code && HINT_KEYS[testResult.code] && (
-                  <span className="mt-1 block font-normal">{t(HINT_KEYS[testResult.code])}</span>
-                )}
-                {testResult.error && (
-                  <span className="mt-1 block font-mono text-xs">{testResult.error}</span>
-                )}
-              </div>
+              <Alert variant="destructive">
+                <AlertDescription>
+                  {t('aiSuggestTestFailed')}
+                  {testResult.code && HINT_KEYS[testResult.code] && (
+                    <span className="block font-normal">{t(HINT_KEYS[testResult.code])}</span>
+                  )}
+                  {testResult.error && (
+                    <span className="block font-mono text-xs">{testResult.error}</span>
+                  )}
+                </AlertDescription>
+              </Alert>
             ))}
         </section>
       </CardContent>

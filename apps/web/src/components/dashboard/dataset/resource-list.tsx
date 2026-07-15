@@ -2,6 +2,8 @@
 
 import { Fragment, useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import {
+  Alert,
+  AlertDescription,
   Button,
   Table,
   TableBody,
@@ -539,9 +541,9 @@ export function ResourceList({
     return (
       <>
         {formError && (
-          <div className="mb-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-            {formError}
-          </div>
+          <Alert variant="destructive" className="mb-4">
+            <AlertDescription>{formError}</AlertDescription>
+          </Alert>
         )}
         <div className="flex flex-col gap-4">
           <ResourceFormFields
@@ -652,9 +654,9 @@ export function ResourceList({
   return (
     <div className="flex flex-col gap-4" {...dropHandlers}>
       {reorderError && (
-        <div className="mb-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-          {reorderError}
-        </div>
+        <Alert variant="destructive" className="mb-2">
+          <AlertDescription>{reorderError}</AlertDescription>
+        </Alert>
       )}
       {isDirty && (
         <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">

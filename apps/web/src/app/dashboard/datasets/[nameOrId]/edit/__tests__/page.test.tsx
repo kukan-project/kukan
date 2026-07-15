@@ -202,7 +202,7 @@ describe('EditDatasetPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'MockPublish' }))
 
       await waitFor(() => {
-        expect(screen.getByText('Dataset published.')).toBeInTheDocument()
+        expect(screen.getByRole('status')).toHaveTextContent('Dataset published.')
       })
       expect(screen.getByRole('link', { name: 'View public page' })).toHaveAttribute(
         'href',
@@ -255,7 +255,7 @@ describe('EditDatasetPage', () => {
         })
       })
       await waitFor(() => {
-        expect(screen.getByText('Dataset published.')).toBeInTheDocument()
+        expect(screen.getByRole('status')).toHaveTextContent('Dataset published.')
       })
       expect(
         screen.queryByText('Publishing has completed. Syncing to search may have failed.')

@@ -13,6 +13,8 @@ import {
   type DraftPublishBlocker,
 } from '@kukan/shared'
 import {
+  Alert,
+  AlertDescription,
   Button,
   Input,
   Label,
@@ -407,7 +409,9 @@ export function DatasetForm({
   return (
     <form onSubmit={handleSubmit((values) => onSubmit(values))} className="flex flex-col gap-6">
       {error && (
-        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {showSuggest && (
@@ -431,9 +435,9 @@ export function DatasetForm({
       )}
 
       {resourceApplyError && (
-        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-          {resourceApplyError}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>{resourceApplyError}</AlertDescription>
+        </Alert>
       )}
 
       {showSuggest && nameOrId && (
@@ -679,9 +683,9 @@ export function DatasetForm({
             </ul>
           )}
           {publishError && (
-            <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-              {publishError}
-            </p>
+            <Alert variant="destructive">
+              <AlertDescription>{publishError}</AlertDescription>
+            </Alert>
           )}
           <div className="flex gap-3">
             <Button

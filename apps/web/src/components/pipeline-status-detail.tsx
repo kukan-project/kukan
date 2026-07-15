@@ -1,6 +1,6 @@
 'use client'
 
-import { Badge, Button } from '@kukan/ui'
+import { Alert, AlertDescription, Badge, Button } from '@kukan/ui'
 import { RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslations } from 'next-intl'
@@ -126,7 +126,9 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
       )}
 
       {error && (
-        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {steps.length > 0 && (

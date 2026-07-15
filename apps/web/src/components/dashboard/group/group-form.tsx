@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { createGroupSchema, type CreateGroupInput } from '@kukan/shared'
-import { Button, Input, Label, Textarea } from '@kukan/ui'
+import { Alert, AlertDescription, Button, Input, Label, Textarea } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 
@@ -55,7 +55,9 @@ export function GroupForm({ mode = 'create', defaultValues, nameOrId }: GroupFor
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
       {error && (
-        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
       <div className="flex flex-col gap-2">
         <Label htmlFor="name">{tc('nameRequired')}</Label>
