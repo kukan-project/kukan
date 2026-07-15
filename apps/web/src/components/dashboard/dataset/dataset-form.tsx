@@ -706,7 +706,7 @@ export function DatasetForm({
       {isDraftEdit ? (
         <div className="flex flex-col gap-3">
           {publishBlockers.length > 0 && (
-            <ul className="list-inside list-disc text-sm text-amber-700 dark:text-amber-400">
+            <ul className="list-inside list-disc text-sm text-warning-tint-foreground">
               {publishBlockers.map((b) => (
                 <li key={b}>{blockerMessages[b]}</li>
               ))}

@@ -2,7 +2,15 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { Button, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
+import {
+  Alert,
+  AlertDescription,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 import { PageHeader } from '@/components/dashboard/page-header'
@@ -166,15 +174,9 @@ export default function EditOrganizationPage() {
 
       {/* Purge is sysadmin-only; soft-delete is available to org admins on the active page. */}
       {(!isDeleted || user.sysadmin) && (
-        <Card
-          className={
-            isDeleted ? 'border-destructive/30' : 'border-amber-300/50 dark:border-amber-500/30'
-          }
-        >
+        <Card className={isDeleted ? 'border-destructive/30' : 'border-warning/40'}>
           <CardHeader>
-            <CardTitle
-              className={isDeleted ? 'text-destructive' : 'text-amber-700 dark:text-amber-400'}
-            >
+            <CardTitle className={isDeleted ? 'text-destructive' : 'text-warning-tint-foreground'}>
               {isDeleted ? t('dangerZone') : t('deleteOrg')}
             </CardTitle>
           </CardHeader>
@@ -189,7 +191,11 @@ export default function EditOrganizationPage() {
                 {t('deleteOrgBlocked', { count: org.datasetCount })}
               </p>
             )}
-            {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
+            {error && (
+              <Alert variant="destructive" className="mb-3">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
             <Button
               variant={isDeleted ? 'destructive' : 'outline'}
               onClick={() => setShowDelete(true)}

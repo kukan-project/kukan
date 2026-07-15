@@ -12,7 +12,7 @@ import type { MatchedResource } from '@kukan/search-adapter'
 
 /** Tailwind classes for search term highlighting */
 const HIGHLIGHT_MARK =
-  '[&>mark]:rounded-sm [&>mark]:bg-yellow-200/60 [&>mark]:px-0.5 dark:[&>mark]:bg-yellow-500/30 [&>mark+mark]:pl-0 [&>mark+mark]:rounded-l-none [&>mark:has(+mark)]:pr-0 [&>mark:has(+mark)]:rounded-r-none'
+  '[&>mark]:rounded-sm [&>mark]:bg-highlight/60 [&>mark]:px-0.5 [&>mark+mark]:pl-0 [&>mark+mark]:rounded-l-none [&>mark:has(+mark)]:pr-0 [&>mark:has(+mark)]:rounded-r-none'
 
 export interface DatasetCardItem {
   id: string

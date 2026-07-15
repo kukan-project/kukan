@@ -205,8 +205,8 @@ export default function EditDatasetPage() {
         confirmLabel: t('purgeDataset'),
       }
     : {
-        cardClass: 'border-amber-300/50 dark:border-amber-500/30',
-        titleClass: 'text-amber-700 dark:text-amber-400',
+        cardClass: 'border-warning/40',
+        titleClass: 'text-warning-tint-foreground',
         title: isDraft ? t('deleteDraft') : t('deleteDataset'),
         description: deleteConfirmText,
         buttonVariant: 'outline' as const,

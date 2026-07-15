@@ -21,6 +21,12 @@
   --destructive-foreground: 0 0% 100%;
   --success: 142 71% 45%;
   --warning: 38 92% 50%;
+  /* Readable text on success/warning tinted (/10-/15) surfaces. Deliberately
+     not named *-foreground: no solid success/warning fills exist, and these
+     are too dark to pair with one. */
+  --success-tint-foreground: 143 64% 24%;
+  --warning-tint-foreground: 26 82% 31%;
+  --highlight: 53 98% 77%;
   --border: 214 32% 91%;
   --input: 214 32% 91%;
   --ring: 214 81% 54%;
@@ -51,6 +57,9 @@
   --color-destructive-foreground: hsl(var(--destructive-foreground));
   --color-success: hsl(var(--success));
   --color-warning: hsl(var(--warning));
+  --color-success-tint-foreground: hsl(var(--success-tint-foreground));
+  --color-warning-tint-foreground: hsl(var(--warning-tint-foreground));
+  --color-highlight: hsl(var(--highlight));
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));

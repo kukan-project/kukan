@@ -1,2 +1,22 @@
 /* Brand theme overrides */
 /* Forks place CSS variable overrides here */
+/*
+ * Rules (see the "Appearance Customization" guide on the docs site):
+ * - Redeclare the raw tokens; never touch the --color-* mappings in globals.css.
+ * - Values are bare HSL triplets ("214 81% 54%"), no hsl() wrapper, no alpha.
+ * - Update paired tokens together and keep 4.5:1 contrast.
+ *   --success-tint-foreground / --warning-tint-foreground are dark text
+ *   colors for the /10-/15 tinted surfaces, not for solid fills.
+ * - Tokens are light-theme only; do not add dark: variants.
+ *
+ * :root {
+ *   --primary: 214 81% 54%;
+ *   --primary-foreground: 0 0% 100%;
+ *   --success: 142 71% 45%;
+ *   --success-tint-foreground: 143 64% 24%;
+ *   --warning: 38 92% 50%;
+ *   --warning-tint-foreground: 26 82% 31%;
+ *   --highlight: 53 98% 77%;
+ *   --kukan-header-height: 64px;
+ * }
+ */

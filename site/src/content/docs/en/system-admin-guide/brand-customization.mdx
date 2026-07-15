@@ -35,9 +35,31 @@ Write CSS variables in `brand/theme.css` to change colors and sizes across the e
 
 ### Available CSS Variables
 
-You can override shadcn/ui standard variables (`--primary`, `--secondary`, `--muted`, `--destructive`, etc.) and KUKAN-specific variables (prefixed with `--kukan-*`).
+You can override shadcn/ui standard variables and KUKAN-specific variables (prefixed with `--kukan-*`). See `apps/web/src/app/globals.css` for the full list.
 
-See `apps/web/src/app/globals.css` for the full list of variables.
+| Variable | Purpose |
+|---|---|
+| `--background` / `--foreground` | Page background and base text |
+| `--primary` / `--primary-foreground` | Main color and text on it |
+| `--secondary` / `--muted` / `--accent` (each with `-foreground`) | Supporting colors |
+| `--destructive` / `--destructive-foreground` | Errors and deletion (solid fill and text on it) |
+| `--success` / `--warning` | Success / warning state colors (borders, tinted backgrounds, icons) |
+| `--success-tint-foreground` / `--warning-tint-foreground` | Text color **on the tinted (/10–/15)** success / warning surfaces; not for solid fills |
+| `--highlight` | Search keyword highlighting |
+| `--border` / `--input` / `--ring` | Borders, input outlines, focus rings |
+| `--radius` | Base border radius |
+| `--kukan-*` | Layout values such as header height |
+
+### Rules for Overriding
+
+Follow these rules to swap colors safely:
+
+1. **Override raw tokens only** — redeclare variables like `--primary` as-is. Never touch the `--color-*` mappings in `globals.css` (they wire tokens into Tailwind and are managed upstream).
+2. **Keep the bare HSL triplet format** — write `--primary: 142 64% 32%;` with no commas and no `hsl()` wrapper. Hex values or `hsl(...)`-wrapped values will not work.
+3. **Do not bake in opacity** — transparency is applied at usage sites (e.g. `bg-success/10`). Tokens must hold fully opaque base colors.
+4. **Update paired tokens together and check contrast** — when changing `--primary`, also update `--primary-foreground` and keep a contrast ratio of at least 4.5:1 (WCAG AA). When changing `--success` / `--warning`, set the matching `-tint-foreground` to a **dark shade of the same hue** and verify at least 4.5:1 on the `/15` tinted surface (unlike `-foreground` tokens, these are not meant for solid fills).
+5. **Do not introduce `dark:` classes** — KUKAN's theme tokens are light-only. Adding `dark:` in override components breaks the display only for users whose OS prefers dark mode.
+6. **Avoid raw palette colors in override components too** — use semantic classes like `text-success` instead of `text-green-600`, so a future recoloring only takes edits to `theme.css`.
 
 ## Tier 2: Text and Metadata
 

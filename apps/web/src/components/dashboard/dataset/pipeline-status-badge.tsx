@@ -19,7 +19,7 @@ const STATUS_CONFIG: Record<
   processing: { variant: 'default', className: 'animate-pulse' },
   complete: {
     variant: 'secondary',
-    className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+    className: 'bg-success/15 text-success-tint-foreground',
   },
   error: { variant: 'destructive' },
 }

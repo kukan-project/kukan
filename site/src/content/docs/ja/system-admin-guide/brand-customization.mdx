@@ -35,9 +35,31 @@ KUKAN をフォークして自組織向けにカスタマイズする際のガ�
 
 ### 利用可能な CSS 変数
 
-shadcn/ui 標準の変数（`--primary`, `--secondary`, `--muted`, `--destructive` 等）と、KUKAN 固有の変数（`--kukan-*` プレフィックス）が利用できます。
+shadcn/ui 標準の変数と KUKAN 固有の変数（`--kukan-*` プレフィックス）が利用できます。全一覧は `apps/web/src/app/globals.css` を参照してください。
 
-変数の一覧は `apps/web/src/app/globals.css` を参照してください。
+| 変数 | 用途 |
+|---|---|
+| `--background` / `--foreground` | ページ背景・基本テキスト |
+| `--primary` / `--primary-foreground` | メインカラー・その上のテキスト |
+| `--secondary` / `--muted` / `--accent`（各 `-foreground` 付き） | 補助色 |
+| `--destructive` / `--destructive-foreground` | エラー・削除系（ベタ塗り背景と、その上のテキスト） |
+| `--success` / `--warning` | 成功・警告の状態色（ボーダー・淡色背景・アイコン） |
+| `--success-tint-foreground` / `--warning-tint-foreground` | 成功・警告の**淡色（/10〜/15）背景上**のテキスト色。ベタ塗り用ではありません |
+| `--highlight` | 検索キーワードのハイライト |
+| `--border` / `--input` / `--ring` | 境界線・入力枠・フォーカスリング |
+| `--radius` | 角丸の基準値 |
+| `--kukan-*` | ヘッダー高さ等のレイアウト値 |
+
+### 上書き時のルール
+
+配色を安全に差し替えるため、以下を守ってください。
+
+1. **生トークンのみを上書きする** — `--primary` 等をそのまま再宣言します。`globals.css` の `--color-*`（Tailwind 連携用マッピング）は本体管理のため変更しないでください。
+2. **HSL の裸トリプレット形式を維持する** — `--primary: 142 64% 32%;` のようにカンマなし・`hsl()` なしで記述します。hex 値や `hsl(...)` で包んだ値は動作しません。
+3. **不透明度を焼き込まない** — 透過は使用側のユーティリティ（`bg-success/10` 等）で掛かります。トークンには不透明度 100% のベース色だけを入れてください。
+4. **ペアはセットで更新し、コントラストを確認する** — `--primary` を変えたら `--primary-foreground` も更新し、コントラスト比 4.5:1 以上（WCAG AA）を確保します。`--success` / `--warning` を変えた場合、対応する `-tint-foreground` は**同系統の濃色**にし、`/15` の淡色背景上で 4.5:1 以上を確認します（`-foreground` と異なりベタ塗り背景用ではない点に注意）。
+5. **`dark:` クラスを持ち込まない** — KUKAN のテーマトークンはライト専用です。override コンポーネントに `dark:` を書くと、OS がダーク設定のユーザーだけ表示が崩れます。
+6. **override コンポーネントでも生パレット色を書かない** — `text-green-600` ではなく `text-success` のようにセマンティッククラスを使うと、後からの配色変更が `theme.css` 1 ファイルで済みます。
 
 ## Tier 2: テキスト・メタデータの変更
 

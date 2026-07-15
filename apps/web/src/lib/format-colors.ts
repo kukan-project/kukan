@@ -1,3 +1,5 @@
+// Data-type identity colors, intentionally raw palette values rather than
+// theme tokens: they distinguish formats and don't follow brand overrides.
 const FORMAT_COLORS: Record<string, string> = {
   // Tabular data — green
   csv: 'bg-green-600 text-white',
