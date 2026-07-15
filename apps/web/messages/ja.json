@@ -127,6 +127,8 @@
     "restoreDatasetConfirm": "このデータセットを復活して、再び公開します。",
     "dangerZone": "危険な操作",
     "createDataset": "データセットを作成",
+    "dropZoneHint": "ファイルをドラッグ＆ドロップ、またはクリックして選択すると、下書きを作成してリソースを追加します",
+    "dropCreateFailed": "下書きの作成に失敗しました",
     "visibility": "公開状態",
     "titlePlaceholder": "データセットの表示名",
     "descriptionPlaceholder": "データセットの説明",

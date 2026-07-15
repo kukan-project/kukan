@@ -15,6 +15,7 @@ import {
 import { useLocale, useTranslations } from 'next-intl'
 import { isDraftPlaceholderName, type PackageDbState } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
+import { draftEditPath } from '@/lib/paths'
 import { formatDateTimeCompact } from '@/components/date-time'
 import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
 
@@ -104,9 +105,7 @@ export function DraftsTable({ items, onDeleted }: DraftsTableProps) {
                   {/* Purging rows are mid-deletion — no edit, only the delete retry */}
                   {!isPurging && (
                     <Button variant="ghost" size="sm" asChild>
-                      <Link href={`/dashboard/datasets/${pkg.id}/edit?state=draft`}>
-                        {tc('edit')}
-                      </Link>
+                      <Link href={draftEditPath(pkg.id)}>{tc('edit')}</Link>
                     </Button>
                   )}
                   <Button

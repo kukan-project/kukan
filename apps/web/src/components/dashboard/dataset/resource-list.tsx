@@ -39,10 +39,13 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { clientFetch } from '@/lib/client-api'
+import { takePendingDropFiles } from '@/lib/pending-drop-files'
 import { updateResource } from '@/lib/update-resource'
+import { useFileDrop } from '@/hooks/use-file-drop'
 import { FormatBadge } from '@/components/format-badge'
 import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
 import { PipelineStatusBadge } from './pipeline-status-badge'
+import { DropFilesZone, dropZoneClass } from './drop-files-zone'
 import { FileUploadZone } from './file-upload-zone'
 import { ResourceFormFields } from './resource-form-fields'
 import type { PipelineStatus } from '@/hooks/use-pipeline-status'
@@ -73,14 +76,6 @@ interface DropUpload {
   file: File
   resourceId: string | null
   error: string | null
-}
-
-/** Shared dashed drop-target frame; highlighted while a file drag is over it */
-function dropZoneClass(active: boolean) {
-  return cn(
-    'flex cursor-pointer flex-col items-center rounded-lg border-2 border-dashed transition-colors',
-    active ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'
-  )
 }
 
 interface ResourceListProps {
@@ -199,8 +194,6 @@ export function ResourceList({
 
   // Drop-to-create: files dropped anywhere on the list become resources
   const [dropUploads, setDropUploads] = useState<DropUpload[]>([])
-  const [dropActive, setDropActive] = useState(false)
-  const dragDepth = useRef(0)
   // Serializes resource-creation POSTs (see startDropUpload)
   const createChain = useRef<Promise<unknown>>(Promise.resolve())
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -213,6 +206,12 @@ export function ResourceList({
       if (refetchTimer.current) clearTimeout(refetchTimer.current)
     }
   }, [])
+
+  // Files dropped on the new-dataset page ride along to this draft's edit
+  // page — consume the stash once on mount (see lib/pending-drop-files.ts)
+  useEffect(() => {
+    for (const file of takePendingDropFiles(packageId)) startDropUpload(file)
+  }, [packageId])
 
   // Staged order — committed via Save button
   const [items, setItems] = useState<Resource[]>(resources)
@@ -355,6 +354,13 @@ export function ResourceList({
   // Dropping while a form is open or a reorder is pending would be ambiguous
   const dropEnabled = !isFormOpen && !isDirty && !savingOrder
 
+  const { active: dropActive, handlers: dropHandlers } = useFileDrop({
+    disabled: !dropEnabled,
+    onFiles: (files) => {
+      for (const file of files) startDropUpload(file)
+    },
+  })
+
   async function startDropUpload(file: File) {
     const key = crypto.randomUUID()
     const error =
@@ -392,44 +398,6 @@ export function ResourceList({
       refetchTimer.current = null
       onUpdated()
     }, 200)
-  }
-
-  // File drags always suppress the browser default (navigating to the dropped
-  // file, losing any in-progress edits); only the create side honors dropEnabled
-  function handleZoneDragEnter(e: React.DragEvent) {
-    if (!e.dataTransfer.types.includes('Files')) return
-    e.preventDefault()
-    if (!dropEnabled) return
-    dragDepth.current += 1
-    // Only the outermost entry updates state — inner boundary crossings would
-    // re-render the whole list on every element the drag passes over
-    if (dragDepth.current === 1) setDropActive(true)
-  }
-
-  function handleZoneDragOver(e: React.DragEvent) {
-    if (!e.dataTransfer.types.includes('Files')) return
-    e.preventDefault()
-  }
-
-  function handleZoneDragLeave() {
-    if (dragDepth.current > 0) dragDepth.current -= 1
-    if (dragDepth.current === 0) setDropActive(false)
-  }
-
-  function handleZoneDrop(e: React.DragEvent) {
-    dragDepth.current = 0
-    setDropActive(false)
-    // An inner drop zone (e.g. FileUploadZone) already claimed this drop
-    if (e.defaultPrevented) return
-    if (e.dataTransfer.files.length === 0) return
-    e.preventDefault()
-    if (!dropEnabled) return
-    for (const file of Array.from(e.dataTransfer.files)) startDropUpload(file)
-  }
-
-  function handleDropInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-    for (const file of Array.from(e.target.files ?? [])) startDropUpload(file)
-    e.target.value = ''
   }
 
   // --- Save (edit) ---
@@ -682,13 +650,7 @@ export function ResourceList({
   }
 
   return (
-    <div
-      className="flex flex-col gap-4"
-      onDragEnter={handleZoneDragEnter}
-      onDragOver={handleZoneDragOver}
-      onDragLeave={handleZoneDragLeave}
-      onDrop={handleZoneDrop}
-    >
+    <div className="flex flex-col gap-4" {...dropHandlers}>
       {reorderError && (
         <div className="mb-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
           {reorderError}
@@ -788,11 +750,13 @@ export function ResourceList({
       ))}
 
       {dropEnabled && (
-        <label className={cn(dropZoneClass(dropActive), 'gap-2 p-4 focus-within:border-primary')}>
-          <Upload className="size-5 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">{t('dropHint')}</span>
-          <input type="file" multiple className="sr-only" onChange={handleDropInputChange} />
-        </label>
+        <DropFilesZone
+          hint={t('dropHint')}
+          active={dropActive}
+          onFiles={(files) => {
+            for (const file of files) startDropUpload(file)
+          }}
+        />
       )}
 
       {!creating && !editId && (

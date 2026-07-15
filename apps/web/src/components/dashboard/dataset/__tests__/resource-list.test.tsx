@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
+import { stashPendingDropFiles } from '@/lib/pending-drop-files'
 import { MAX_UPLOAD_SIZE } from '@kukan/shared'
+import { dropFiles } from '@/__tests__/drag-drop'
 import { ResourceList } from '../resource-list'
 
 vi.mock('@/lib/client-api', () => ({
@@ -31,11 +33,6 @@ const mockClientFetch = vi.mocked(clientFetch)
 
 function jsonResponse(data: unknown, ok = true) {
   return { ok, json: async () => data } as Response
-}
-
-/** Returns false when the default action was prevented (as fireEvent does) */
-function dropFiles(target: Element, files: File[]) {
-  return fireEvent.drop(target, { dataTransfer: { files, types: ['Files'] } })
 }
 
 describe('ResourceList drop-to-create', () => {
@@ -87,6 +84,19 @@ describe('ResourceList drop-to-create', () => {
     })
     // The existing resource row is still there
     expect(screen.getByText('existing.csv')).toBeInTheDocument()
+  })
+
+  it('should start uploads for files stashed from the new-dataset page', async () => {
+    mockClientFetch.mockResolvedValue(jsonResponse({ id: 'res1' }))
+    stashPendingDropFiles('pkg1', [new File(['a'], 'stashed.csv', { type: 'text/csv' })])
+
+    render(<ResourceList {...baseProps} />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('file-upload-zone')).toHaveTextContent('res1')
+    })
+    const body = JSON.parse(mockClientFetch.mock.calls[0][1]!.body as string)
+    expect(body.name).toBe('stashed.csv')
   })
 
   it('should create one resource per dropped file', async () => {

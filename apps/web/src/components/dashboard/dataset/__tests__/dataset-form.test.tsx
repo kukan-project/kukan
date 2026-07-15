@@ -108,6 +108,28 @@ describe('DatasetForm (draft flows)', () => {
       expect(body.name).toBe('my-dataset')
     })
 
+    it('should keep reporting busy after successful creation until unmount', async () => {
+      setupMocks(jsonResponse({ id: 'draft-1' }))
+      const onBusyChange = vi.fn()
+      render(
+        <DatasetForm mode="create" organizations={organizations} onBusyChange={onBusyChange} />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Create Draft' }))
+      await waitFor(() => {
+        expect(push).toHaveBeenCalled()
+      })
+
+      // isSubmitting drops back to false once the submit resolves, but the
+      // navigation is still in flight — the busy report must never re-enable
+      // the owner's competing actions (e.g. the drop zone on the new page)
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      expect(onBusyChange).toHaveBeenCalledWith(true)
+      expect(onBusyChange.mock.calls.at(-1)?.[0]).toBe(true)
+      // The submit button also stays disabled through the navigation
+      expect(screen.getByRole('button', { name: 'Create Draft' })).toBeDisabled()
+    })
+
     it('should show the error detail when creation fails', async () => {
       setupMocks(jsonResponse({ detail: 'Package name already exists' }, false))
       render(<DatasetForm mode="create" organizations={organizations} />)

@@ -127,6 +127,8 @@
     "restoreDatasetConfirm": "This dataset will be restored and made visible again.",
     "dangerZone": "Danger Zone",
     "createDataset": "Create Dataset",
+    "dropZoneHint": "Drag and drop files here, or click to select — a draft is created and the files are added as resources",
+    "dropCreateFailed": "Failed to create draft",
     "visibility": "Visibility",
     "titlePlaceholder": "Dataset display name",
     "descriptionPlaceholder": "Dataset description",

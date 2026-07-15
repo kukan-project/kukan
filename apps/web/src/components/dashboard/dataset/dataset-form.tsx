@@ -30,6 +30,7 @@ import { Sparkles } from 'lucide-react'
 import { z } from 'zod'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
+import { draftEditPath } from '@/lib/paths'
 import { updateResource } from '@/lib/update-resource'
 import { parseTags } from '@/lib/parse-tags'
 import {
@@ -83,6 +84,10 @@ interface DatasetFormProps {
   onSaved?: () => void
   /** Called after "Save & Publish" successfully published the draft */
   onPublished?: () => void
+  /** Blocks submission from outside (e.g. while the page's drop-create runs) */
+  disabled?: boolean
+  /** Reports the form's own in-flight submission for page-level exclusion */
+  onBusyChange?: (busy: boolean) => void
   /** AI metadata suggestions (ADR-040); absent = feature hidden */
   suggest?: {
     /** Site capability (null while loading — button hidden until known) */
@@ -103,6 +108,8 @@ export function DatasetForm({
   isDraft,
   onSaved,
   onPublished,
+  disabled,
+  onBusyChange,
   suggest,
 }: DatasetFormProps) {
   // Creation always starts as a draft (ADR-039)
@@ -186,6 +193,15 @@ export function DatasetForm({
   })
 
   const isDraftEdit = mode === 'edit' && isDraftMode
+
+  // Set on successful submit right before router.push and never cleared — the
+  // page unmounts. isSubmitting alone would drop back to false while the
+  // navigation is still in flight, re-enabling the owner's competing actions
+  const [navigating, setNavigating] = useState(false)
+
+  useEffect(() => {
+    onBusyChange?.(isSubmitting || navigating)
+  }, [isSubmitting, navigating, onBusyChange])
 
   // --- AI metadata suggestions (ADR-040) ---
   const [suggestOpen, setSuggestOpen] = useState(false)
@@ -340,7 +356,8 @@ export function DatasetForm({
     if (mode === 'create') {
       // Continue as a draft: add resources, then publish from the edit page
       const created = await res.json()
-      router.push(`/dashboard/datasets/${created.id}/edit?state=draft`)
+      setNavigating(true)
+      router.push(draftEditPath(created.id))
       return
     }
 
@@ -379,8 +396,12 @@ export function DatasetForm({
       refreshBaseline()
     }
 
-    if (onSaved) onSaved()
-    else router.push('/dashboard/datasets')
+    if (onSaved) {
+      onSaved()
+    } else {
+      setNavigating(true)
+      router.push('/dashboard/datasets')
+    }
   }
 
   return (
@@ -667,14 +688,20 @@ export function DatasetForm({
               type="submit"
               variant="outline"
               className="flex-1"
-              disabled={isSubmitting || !hasChanges || applyingResources}
+              disabled={disabled || isSubmitting || navigating || !hasChanges || applyingResources}
             >
               {isSubmitting && !publishIntent ? tc('saving') : t('saveDraft')}
             </Button>
             <Button
               type="button"
               className="flex-1"
-              disabled={isSubmitting || publishBlockers.length > 0 || applyingResources}
+              disabled={
+                disabled ||
+                isSubmitting ||
+                navigating ||
+                publishBlockers.length > 0 ||
+                applyingResources
+              }
               onClick={handleSubmit((values) => onSubmit(values, true))}
             >
               {isSubmitting && publishIntent ? t('publishing') : t('saveAndPublish')}
@@ -686,7 +713,13 @@ export function DatasetForm({
         // creates an empty draft and moves on to adding resources (ADR-039)
         <Button
           type="submit"
-          disabled={isSubmitting || (mode === 'edit' && !hasChanges) || applyingResources}
+          disabled={
+            disabled ||
+            isSubmitting ||
+            navigating ||
+            (mode === 'edit' && !hasChanges) ||
+            applyingResources
+          }
         >
           {isSubmitting
             ? mode === 'create'
