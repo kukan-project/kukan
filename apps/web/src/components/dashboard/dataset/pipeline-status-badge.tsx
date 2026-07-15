@@ -47,10 +47,16 @@ export function PipelineStatusBadge({
     },
   })
 
-  if (!status) return null
+  // When a parent refetch flips initialStatus to a terminal state, polling is
+  // disabled before the hook's last-polled data catches up — the prop is the
+  // fresher source then, so prefer it (a bulk upload otherwise leaves badges
+  // stuck on queued/processing until a reload)
+  const displayStatus = shouldPoll ? status : (initialStatus ?? null)
 
-  const config = STATUS_CONFIG[status]
-  const label = t(STATUS_KEYS[status])
+  if (!displayStatus) return null
+
+  const config = STATUS_CONFIG[displayStatus]
+  const label = t(STATUS_KEYS[displayStatus])
 
   return (
     <Badge variant={config.variant} className={config.className}>

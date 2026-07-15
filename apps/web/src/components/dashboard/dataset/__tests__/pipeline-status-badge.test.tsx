@@ -68,4 +68,25 @@ describe('PipelineStatusBadge', () => {
       expect(screen.getByText('Complete')).toBeInTheDocument()
     })
   })
+
+  it('should show the prop status when a parent refetch settles before polling does', async () => {
+    // Bulk-upload regression: the parent list refetches and passes a terminal
+    // initialStatus while the poller still holds queued/processing — polling
+    // gets disabled and the badge must not stay stuck on the stale poll data
+    mockClientFetch.mockResolvedValue(
+      jsonResponse({
+        id: 'r1',
+        pipeline_status: 'processing',
+        steps: [],
+      })
+    )
+
+    const { rerender } = render(<PipelineStatusBadge resourceId="r1" initialStatus="queued" />)
+    await waitFor(() => {
+      expect(screen.getByText('Processing')).toBeInTheDocument()
+    })
+
+    rerender(<PipelineStatusBadge resourceId="r1" initialStatus="complete" />)
+    expect(screen.getByText('Complete')).toBeInTheDocument()
+  })
 })
