@@ -3,6 +3,48 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.5] - 2026-07-15
+
+**Highlights**
+
+- **AI metadata suggestions now read PDF and Office documents and ZIP archives.** The pipeline persists the head of the text it already extracts from documents (PDF / DOCX / XLSX / PPTX / ODT / ODP / ODS / RTF) as a small storage artifact, and the suggestion API uses it — together with ZIP file listings — as generation material, with no extra download or parsing at suggestion time. This also works while a dataset is still a draft, where suggestions matter most: drafts now produce the artifact during editing, while their content continues to stay out of the search index until publish (ADR-040) (#89).
+- **Suggestions describe each resource first, then summarize the dataset.** The model now writes each resource's name and description independently from that resource's own material, and only then writes the dataset title, description, and tags as an integration of those descriptions — so a single file no longer dominates a dataset that mixes resources of different natures. Guardrails for small local models were added as well: the opening lines of a document (usually its own title) outweigh recurring body themes, and proper nouns that appear nowhere in the material are not invented (#91).
+
+**Features**
+
+- feat: add PDF/Office/ZIP content materials to AI metadata suggestions (ADR-040) (#89)
+- feat(api): generate resource suggestions before dataset metadata (ADR-040) (#91)
+
+**Bug Fixes**
+
+- fix(web): pipeline status badges no longer stick on "queued" / "processing" when bulk-uploaded resources finish processing between polls — the badge now trusts the fresher status delivered by the list refresh (#90)
+
+**Documentation**
+
+- docs(adr): promote PDF/Office/ZIP content materials to ADR-040 implementation (#88)
+- docs: spotlight AI metadata suggestions on the landing page (#92)
+
+---
+
+**ハイライト**
+
+- **AI メタデータ提案が PDF・Office 文書・ZIP アーカイブの内容を読めるようになりました。** パイプラインが文書（PDF / DOCX / XLSX / PPTX / ODT / ODP / ODS / RTF）から抽出済みのテキストの先頭を小さな成果物として Storage に保存し、提案 API はそれと ZIP のファイル一覧を生成素材として使います。提案時の追加ダウンロードやパースはありません。提案が最も活きる下書き編集中のデータセットでも成果物が生成されます（下書きの内容が公開まで検索に出ない挙動は従来どおりです）（ADR-040）（#89）。
+- **提案は「各リソースを先に記述してからデータセットを統合する」順で生成されます。** 各リソースの名前・説明をそのリソース自身の素材から独立に記述した後で、データセットのタイトル・説明・タグをその統合として書くため、性質の異なるリソースが混在するデータセットで 1 つのファイルの内容が全体を支配しなくなりました。小型ローカルモデル向けのガードレールも追加しています: 文書の冒頭行（多くは文書自身のタイトル）を本文の頻出テーマより重視し、素材のどこにも現れない固有名詞を発明しません（#91）。
+
+**機能**
+
+- feat: AI メタデータ提案に PDF/Office/ZIP のコンテンツ素材を追加（ADR-040）（#89）
+- feat(api): リソースの提案をデータセットのメタデータより先に生成（ADR-040）（#91）
+
+**バグ修正**
+
+- fix(web): 一括アップロード時にパイプラインステータスが「待機中」「処理中」のまま固まることがある問題を修正しました。ポーリングの合間に処理が完了した場合でも、リスト再取得が持つ新しいステータスが表示されます（#90）
+
+**ドキュメント**
+
+- docs(adr): PDF/Office/ZIP コンテンツ素材対応を ADR-040 の実装に格上げ（#88）
+- docs: ランディングページで AI メタデータ提案を紹介（#92）
+
 ## [0.8.4] - 2026-07-15
 
 **Highlights**
