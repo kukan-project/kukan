@@ -462,13 +462,18 @@ export function DatasetForm({
           placeholder="my-dataset"
           {...register('name')}
           aria-invalid={!!errors.name}
+          aria-describedby={errors.name ? 'name-help name-error' : 'name-help'}
           disabled={!isDraftMode}
         />
-        <p className="text-xs text-muted-foreground">
+        <p id="name-help" className="text-xs text-muted-foreground">
           {tc('nameHelp')}
           {isDraftMode && ` ${t('draftNameHelp')}`}
         </p>
-        {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
+        {errors.name && (
+          <p id="name-error" className="text-sm text-destructive">
+            {errors.name.message}
+          </p>
+        )}
       </div>
 
       <div className="flex flex-col gap-2">
@@ -493,7 +498,10 @@ export function DatasetForm({
           control={control}
           render={({ field }) => (
             <Select value={field.value ?? ''} onValueChange={field.onChange}>
-              <SelectTrigger aria-invalid={!!errors.ownerOrg}>
+              <SelectTrigger
+                aria-invalid={!!errors.ownerOrg}
+                aria-describedby={errors.ownerOrg ? 'ownerOrg-error' : undefined}
+              >
                 <SelectValue placeholder={t('orgSelect')} />
               </SelectTrigger>
               <SelectContent>
@@ -506,7 +514,11 @@ export function DatasetForm({
             </Select>
           )}
         />
-        {errors.ownerOrg && <p className="text-sm text-destructive">{tc('required')}</p>}
+        {errors.ownerOrg && (
+          <p id="ownerOrg-error" className="text-sm text-destructive">
+            {tc('required')}
+          </p>
+        )}
       </div>
 
       <div className="flex items-center gap-3">
@@ -568,7 +580,10 @@ export function DatasetForm({
           control={control}
           render={({ field }) => (
             <Select value={field.value ?? ''} onValueChange={field.onChange}>
-              <SelectTrigger aria-invalid={!!errors.licenseId}>
+              <SelectTrigger
+                aria-invalid={!!errors.licenseId}
+                aria-describedby={errors.licenseId ? 'licenseId-error' : undefined}
+              >
                 <SelectValue placeholder={t('licenseSelect')} />
               </SelectTrigger>
               <SelectContent>
@@ -581,7 +596,11 @@ export function DatasetForm({
             </Select>
           )}
         />
-        {errors.licenseId && <p className="text-sm text-destructive">{tc('required')}</p>}
+        {errors.licenseId && (
+          <p id="licenseId-error" className="text-sm text-destructive">
+            {tc('required')}
+          </p>
+        )}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -596,9 +615,12 @@ export function DatasetForm({
             type="email"
             {...register('authorEmail')}
             aria-invalid={!!errors.authorEmail}
+            aria-describedby={errors.authorEmail ? 'authorEmail-error' : undefined}
           />
           {errors.authorEmail && (
-            <p className="text-sm text-destructive">{errors.authorEmail.message}</p>
+            <p id="authorEmail-error" className="text-sm text-destructive">
+              {errors.authorEmail.message}
+            </p>
           )}
         </div>
       </div>
@@ -615,9 +637,12 @@ export function DatasetForm({
             type="email"
             {...register('maintainerEmail')}
             aria-invalid={!!errors.maintainerEmail}
+            aria-describedby={errors.maintainerEmail ? 'maintainerEmail-error' : undefined}
           />
           {errors.maintainerEmail && (
-            <p className="text-sm text-destructive">{errors.maintainerEmail.message}</p>
+            <p id="maintainerEmail-error" className="text-sm text-destructive">
+              {errors.maintainerEmail.message}
+            </p>
           )}
         </div>
       </div>
@@ -631,8 +656,13 @@ export function DatasetForm({
             placeholder="https://example.com"
             {...register('url')}
             aria-invalid={!!errors.url}
+            aria-describedby={errors.url ? 'url-error' : undefined}
           />
-          {errors.url && <p className="text-sm text-destructive">{errors.url.message}</p>}
+          {errors.url && (
+            <p id="url-error" className="text-sm text-destructive">
+              {errors.url.message}
+            </p>
+          )}
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="version">{t('version')}</Label>

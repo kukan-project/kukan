@@ -424,8 +424,13 @@ export default function AdminUsersPage() {
                 placeholder={t('fieldNamePlaceholder')}
                 {...register('name')}
                 aria-invalid={!!errors.name}
+                aria-describedby={errors.name ? 'create-name-error' : undefined}
               />
-              {errors.name && <p className="text-sm text-destructive">{t('fieldNameError')}</p>}
+              {errors.name && (
+                <p id="create-name-error" className="text-sm text-destructive">
+                  {t('fieldNameError')}
+                </p>
+              )}
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="create-displayName">{t('fieldDisplayName')}</Label>
@@ -443,8 +448,13 @@ export default function AdminUsersPage() {
                 placeholder="user@example.com"
                 {...register('email')}
                 aria-invalid={!!errors.email}
+                aria-describedby={errors.email ? 'create-email-error' : undefined}
               />
-              {errors.email && <p className="text-sm text-destructive">{t('fieldEmailError')}</p>}
+              {errors.email && (
+                <p id="create-email-error" className="text-sm text-destructive">
+                  {t('fieldEmailError')}
+                </p>
+              )}
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="create-password">{t('fieldPassword')}</Label>
@@ -453,9 +463,12 @@ export default function AdminUsersPage() {
                 type="password"
                 {...register('password')}
                 aria-invalid={!!errors.password}
+                aria-describedby={errors.password ? 'create-password-error' : undefined}
               />
               {errors.password && (
-                <p className="text-sm text-destructive">{t('fieldPasswordError')}</p>
+                <p id="create-password-error" className="text-sm text-destructive">
+                  {t('fieldPasswordError')}
+                </p>
               )}
             </div>
             <div className="flex flex-col gap-2">
@@ -499,9 +512,12 @@ export default function AdminUsersPage() {
                 placeholder={t('fieldNamePlaceholder')}
                 {...editForm.register('name')}
                 aria-invalid={!!editForm.formState.errors.name}
+                aria-describedby={editForm.formState.errors.name ? 'edit-name-error' : undefined}
               />
               {editForm.formState.errors.name && (
-                <p className="text-sm text-destructive">{t('fieldNameError')}</p>
+                <p id="edit-name-error" className="text-sm text-destructive">
+                  {t('fieldNameError')}
+                </p>
               )}
             </div>
             <div className="flex flex-col gap-2">

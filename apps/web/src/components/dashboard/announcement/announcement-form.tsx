@@ -113,8 +113,13 @@ export function AnnouncementForm({ mode = 'create', defaultValues, id }: Announc
           placeholder={t('titlePlaceholder')}
           {...register('title')}
           aria-invalid={!!errors.title}
+          aria-describedby={errors.title ? 'title-error' : undefined}
         />
-        {errors.title && <p className="text-sm text-destructive">{errors.title.message}</p>}
+        {errors.title && (
+          <p id="title-error" className="text-sm text-destructive">
+            {errors.title.message}
+          </p>
+        )}
       </div>
       <div className="flex flex-col gap-2">
         <Label htmlFor="category">{t('category')}</Label>
@@ -139,8 +144,13 @@ export function AnnouncementForm({ mode = 'create', defaultValues, id }: Announc
           placeholder={t('linkPlaceholder')}
           {...register('link')}
           aria-invalid={!!errors.link}
+          aria-describedby={errors.link ? 'link-error' : undefined}
         />
-        {errors.link && <p className="text-sm text-destructive">{errors.link.message}</p>}
+        {errors.link && (
+          <p id="link-error" className="text-sm text-destructive">
+            {errors.link.message}
+          </p>
+        )}
       </div>
       <div className="flex flex-col gap-2">
         <Label htmlFor="publishedAt">

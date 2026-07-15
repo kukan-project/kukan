@@ -111,8 +111,13 @@ export default function SignUpPage() {
                 autoComplete="username"
                 {...register('name')}
                 aria-invalid={!!errors.name}
+                aria-describedby={errors.name ? 'name-error' : undefined}
               />
-              {errors.name && <p className="text-sm text-destructive">{t('nameError')}</p>}
+              {errors.name && (
+                <p id="name-error" className="text-sm text-destructive">
+                  {t('nameError')}
+                </p>
+              )}
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="email">{t('email')}</Label>
@@ -123,8 +128,13 @@ export default function SignUpPage() {
                 autoComplete="email"
                 {...register('email')}
                 aria-invalid={!!errors.email}
+                aria-describedby={errors.email ? 'email-error' : undefined}
               />
-              {errors.email && <p className="text-sm text-destructive">{t('invalidEmail')}</p>}
+              {errors.email && (
+                <p id="email-error" className="text-sm text-destructive">
+                  {t('invalidEmail')}
+                </p>
+              )}
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="password">{t('password')}</Label>
@@ -134,9 +144,12 @@ export default function SignUpPage() {
                 autoComplete="new-password"
                 {...register('password')}
                 aria-invalid={!!errors.password}
+                aria-describedby={errors.password ? 'password-error' : undefined}
               />
               {errors.password && (
-                <p className="text-sm text-destructive">{t('passwordMinLength')}</p>
+                <p id="password-error" className="text-sm text-destructive">
+                  {t('passwordMinLength')}
+                </p>
               )}
             </div>
             <Button type="submit" className="w-full" disabled={isSubmitting}>

@@ -53,6 +53,10 @@ describe('OrganizationForm', () => {
     await waitFor(() => {
       expect(screen.getByText(/must be at least 2 characters/i)).toBeInTheDocument()
     })
+    // aria-describedby carries both the always-on help text and the error
+    expect(screen.getByLabelText(/URL Identifier/)).toHaveAccessibleDescription(
+      /must be at least 2 characters/i
+    )
   })
 
   it('should render name help text', () => {

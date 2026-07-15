@@ -40,6 +40,10 @@ describe('SignInPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Please enter a valid email address')).toBeInTheDocument()
     })
+    // The error message is wired to the input via aria-describedby
+    expect(screen.getByLabelText('Email')).toHaveAccessibleDescription(
+      'Please enter a valid email address'
+    )
   })
 
   it('should call signIn.email on valid submission', async () => {

@@ -66,10 +66,17 @@ export function GroupForm({ mode = 'create', defaultValues, nameOrId }: GroupFor
           placeholder="my-group"
           {...register('name')}
           aria-invalid={!!errors.name}
+          aria-describedby={errors.name ? 'name-help name-error' : 'name-help'}
           disabled={mode === 'edit'}
         />
-        <p className="text-xs text-muted-foreground">{tc('nameHelp')}</p>
-        {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
+        <p id="name-help" className="text-xs text-muted-foreground">
+          {tc('nameHelp')}
+        </p>
+        {errors.name && (
+          <p id="name-error" className="text-sm text-destructive">
+            {errors.name.message}
+          </p>
+        )}
       </div>
       <div className="flex flex-col gap-2">
         <Label htmlFor="title">{tc('title')}</Label>
@@ -92,8 +99,13 @@ export function GroupForm({ mode = 'create', defaultValues, nameOrId }: GroupFor
           placeholder="https://example.com/logo.png"
           {...register('imageUrl')}
           aria-invalid={!!errors.imageUrl}
+          aria-describedby={errors.imageUrl ? 'imageUrl-error' : undefined}
         />
-        {errors.imageUrl && <p className="text-sm text-destructive">{errors.imageUrl.message}</p>}
+        {errors.imageUrl && (
+          <p id="imageUrl-error" className="text-sm text-destructive">
+            {errors.imageUrl.message}
+          </p>
+        )}
       </div>
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? submitLabels.loading : submitLabels.idle}
