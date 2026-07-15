@@ -77,13 +77,15 @@ assembled on demand from the DB and storage originals, then discarded.**
 
 ### 3. Generation material — no dependency on the search index
 
-| Material                                  | Source                              | Formats    |
-| ----------------------------------------- | ----------------------------------- | ---------- |
-| Existing metadata (title, notes, tags, …) | DB                                  | all        |
-| Resource names, format, size              | DB                                  | all        |
-| Column schema (ADR-032)                   | `resource_pipeline.metadata.schema` | CSV / TSV  |
-| Sample rows (first few)                   | Parquet preview (storage)           | CSV / TSV  |
-| First N KB of text                        | Storage original (`downloadRange`)  | text-based |
+| Material                                    | Source                              | Formats      |
+| ------------------------------------------- | ----------------------------------- | ------------ |
+| Existing metadata (title, notes, tags, …)   | DB                                  | all          |
+| Resource names, format, size                | DB                                  | all          |
+| Column schema (ADR-032)                     | `resource_pipeline.metadata.schema` | CSV / TSV    |
+| Sample rows (first few)                     | Parquet preview (storage)           | CSV / TSV    |
+| First N KB of text                          | Storage original (`downloadRange`)  | text-based   |
+| Extracted text head (2026-07-15 addendum)   | Index step artifact (storage)       | PDF / Office |
+| Manifest path listing (2026-07-15 addendum) | Manifest JSON (storage)             | ZIP          |
 
 - Only the first N KB of text is extracted on demand, and it is **discarded
   after generation** (nothing new is persisted, no invalidation; always
@@ -102,9 +104,11 @@ assembled on demand from the DB and storage originals, then discarded.**
   description is inferred from the filename/format when no content is
   available. Content (column schema, sample rows, head text) is attached only
   to content-eligible resources (pipeline complete + CSV/TSV or text), which
-  are prioritized for the slots
+  are prioritized for the slots (PDF / Office and ZIP were added as content
+  formats in the 2026-07-15 addendum)
 - ZIP manifests are out of scope for v1 (the central directory sits at the
-  end of the file and cannot be obtained from a head read)
+  end of the file and cannot be obtained from a head read) — covered by the
+  2026-07-15 addendum
 
 ### 4. Implementing `AIAdapter.complete()`
 
@@ -211,6 +215,64 @@ tag GC), so the prompt constrains it.
   else is affected
 - LLM calls are manual-trigger only, so cost is bounded by rate limiting
 
+## Addendum: content material support for PDF / Office / ZIP (2026-07-15)
+
+The future extension "material support for ZIP manifests and Office
+formats" is promoted to the implementation, with PDF added.
+
+Underlying fact: the worker's Index step (ADR-021) already runs officeparser
+text extraction on every pipeline run regardless of the search engine, and
+on the PostgreSQL fallback the result is discarded because `indexContent()`
+is a no-op. Extraction therefore already happens in every environment, and
+persisting it costs practically nothing. The "borrow the pipeline's
+persisted artifacts" pattern (§3, as with Parquet previews) is extended to
+document formats and ZIP.
+
+1. **worker (Index step)**: for document formats (those supported by
+   officeparser — PDF / DOCX / XLSX / PPTX / ODT / ODP / ODS / RTF; legacy
+   DOC / XLS / PPT remain unsupported), save the first 64 KB of the
+   extracted text to storage as `previews/{packageId}/{resourceId}.txt`
+   (UTF-8), and record the key and size in `resource_pipeline.metadata`
+   (`textHeadKey` / `textHeadBytes`). The suggest side trusts only the DB
+   record when reading, avoiding existence-check round trips and stale
+   artifact reads
+2. **State gate restructuring**: the Index step used to be skipped entirely
+   unless the package was active (drafts stay out of the content index —
+   ADR-039). This changes so that extraction + artifact persistence run for
+   drafts too, and only the search engine indexing is gated on active. The
+   AI suggestion's primary arena is draft editing (entry ①), and having no
+   PDF/Office material until publish would defeat the purpose. Deleted /
+   purging packages still skip the whole step as before
+3. **api (material collection)**: for document formats, read the first
+   N KB of this artifact, in the same shape as the text formats'
+   `downloadRange`. For ZIP, read the path listing from the Extract step's
+   existing manifest JSON (`previewKey`), clamped by bytes and entry count
+   (no worker change for ZIP)
+
+Notes:
+
+- Persisting 64 KB while reading N KB (currently 16 KB) lets a future
+  increase of the suggest-side prompt budget take effect without
+  reprocessing already-stored resources
+- No encoding detection is needed: officeparser pulls characters out of the
+  format's internal structure (the XML inside DOCX/XLSX is UTF-8 by spec;
+  PDF font encoding maps are resolved by the parser), so the extraction
+  result is always a JS string. The artifact is written as UTF-8, and unlike
+  the text formats, the suggest side **decodes it as fixed UTF-8** without
+  consulting `metadata.encoding` / `detectEncoding` (same treatment as
+  JSON/GeoJSON). The 64 KB truncation drops multi-byte characters cut at
+  the boundary, as `truncateToByteLimit` already does
+- Materials still come from storage artifacts + the DB, preserving the
+  no-search-backend principle (§3) and OpenSearch / PostgreSQL parity. No
+  extra download or parsing happens at suggest time
+- The text body is not stored directly in `resource_pipeline.metadata`:
+  several API paths SELECT the whole metadata column (e.g. for the
+  encoding), so tens of KB per resource would bloat unrelated queries
+- Cleanup: when a format change makes a resource non-document, the metadata
+  keys are overwritten with null (a jsonb merge cannot remove keys). Stale
+  storage artifacts are handled like Parquet previews (same-key overwrite;
+  removed by `deleteByPrefix` on package purge)
+
 ## Future Extensions (out of scope for this ADR)
 
 - Separate-lane automatic generation (option B): pipeline generation into
@@ -219,7 +281,6 @@ tag GC), so the prompt constrains it.
 - Integration with quality monitoring (ADR-006, `qualityScore`): detect
   datasets with thin descriptions or missing tags and guide users to the AI
   suggestion in the edit form
-- Material support for ZIP manifests and Office formats
 
 ## Related
 

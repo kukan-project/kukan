@@ -73,13 +73,15 @@
 
 ### 3. 生成素材 — 検索インデックスに依存しない
 
-| 素材                                    | 取得元                              | 対象フォーマット |
-| --------------------------------------- | ----------------------------------- | ---------------- |
-| 既存メタデータ（title, notes, tags 等） | DB                                  | 全部             |
-| リソース名・format・サイズ              | DB                                  | 全部             |
-| 列スキーマ（ADR-032）                   | `resource_pipeline.metadata.schema` | CSV / TSV        |
-| サンプル行（先頭数行）                  | Parquet プレビュー（Storage）       | CSV / TSV        |
-| 先頭 N KB のテキスト                    | Storage 原本（`downloadRange`）     | テキスト系       |
+| 素材                                      | 取得元                              | 対象フォーマット |
+| ----------------------------------------- | ----------------------------------- | ---------------- |
+| 既存メタデータ（title, notes, tags 等）   | DB                                  | 全部             |
+| リソース名・format・サイズ                | DB                                  | 全部             |
+| 列スキーマ（ADR-032）                     | `resource_pipeline.metadata.schema` | CSV / TSV        |
+| サンプル行（先頭数行）                    | Parquet プレビュー（Storage）       | CSV / TSV        |
+| 先頭 N KB のテキスト                      | Storage 原本（`downloadRange`）     | テキスト系       |
+| 抽出テキスト先頭（2026-07-15 追記）       | Index ステップ成果物（Storage）     | PDF / Office 系  |
+| マニフェストのパス一覧（2026-07-15 追記） | マニフェスト JSON（Storage）        | ZIP              |
 
 - オンデマンド抽出するのはテキスト先頭 N KB のみで、**生成後は捨てる**
   （新たな保存・invalidation なし。常に現物と一致し、OpenSearch /
@@ -96,8 +98,9 @@
   場合ファイル名・フォーマットから推論する）。content（列スキーマ・サンプル行・
   先頭テキスト）は抽出可能なリソース（パイプライン完了 + CSV/TSV・テキスト系）に
   のみ付与し、content 抽出可能なものを優先してスロットに割り当てる
+  （PDF / Office 系・ZIP は 2026-07-15 追記で content 対象に加えた）
 - ZIP のマニフェスト（central directory がファイル末尾にあり先頭読みでは
-  取れない）は初版では扱わない
+  取れない）は初版では扱わない（2026-07-15 追記で対応）
 
 ### 4. `AIAdapter.complete()` の実装
 
@@ -193,13 +196,66 @@ ADR-034 と同じ配備パターンで4実装を提供する。
 - NoOp 環境（AI なし）では機能が現れないだけで、他機能に影響しない
 - LLM 呼び出しは手動トリガーのみのため、コストはレート制限で上限管理できる
 
+## 追記: PDF / Office / ZIP のコンテンツ素材対応（2026-07-15）
+
+将来の拡張としていた「ZIP マニフェスト・Office 系フォーマットの素材対応」を、
+PDF を加えて実装に格上げする。
+
+前提となる事実: worker の Index ステップ（ADR-021）は検索エンジンの有無に
+関わらず officeparser によるテキスト抽出を毎回実行しており、PostgreSQL
+フォールバックでは `indexContent()` が no-op のため結果を捨てている。
+つまり抽出は既に全環境で走っていて、永続化の追加コストは実質ゼロである。
+Parquet プレビューと同じ「パイプラインの永続成果物の借用」（§3）を
+document 系と ZIP に広げる。
+
+1. **worker（Index ステップ）**: document 系（officeparser が対応する
+   PDF / DOCX / XLSX / PPTX / ODT / ODP / ODS / RTF。レガシー
+   DOC / XLS / PPT は引き続き対象外）の抽出テキスト先頭 64KB を
+   `previews/{packageId}/{resourceId}.txt`（UTF-8）として Storage に保存し、
+   キーとサイズを `resource_pipeline.metadata`（`textHeadKey` /
+   `textHeadBytes`）に記録する。suggest 側は DB の記録だけを信頼して
+   読み、存在確認の往復や stale 成果物の誤読を避ける
+2. **state ゲートの再構成**: これまで Index ステップは package が active で
+   なければ丸ごとスキップしていた（draft をコンテンツ検索に出さない —
+   ADR-039）。これを、抽出 + 成果物保存は draft でも実行し、検索エンジンへの
+   投入だけを active でゲートする形に改める。AI 提案の主戦場は draft 編集
+   （入口①）であり、publish するまで PDF/Office の素材が無いのでは
+   本末転倒になるため。deleted / purging はこれまでどおりステップ全体を
+   スキップする
+3. **api（素材収集）**: document 系はこの成果物の先頭 N KB を、テキスト系の
+   `downloadRange` と同型に読む。ZIP は Extract ステップ既存のマニフェスト
+   JSON（`previewKey`）からパス一覧を読み、バイト数・エントリ数で
+   クランプして素材化する（ZIP は worker 側の変更なし）
+
+補足:
+
+- 保存 64KB > 読み出し N KB（現行 16KB）とするのは、suggest 側の
+  プロンプト予算を将来広げたとき、保存済みリソースの再処理なしに
+  追従できるようにするため
+- 文字コード判定は不要: officeparser はフォーマット内部構造から文字列を
+  取り出すため（DOCX/XLSX 内部 XML は仕様上 UTF-8、PDF はフォントの
+  エンコーディングマップをパーサーが解決）、抽出結果は常に JS 文字列で
+  ある。成果物は UTF-8 で書き、suggest 側もテキスト系と異なり
+  `metadata.encoding` / `detectEncoding` を参照せず **UTF-8 固定で
+  デコード**する（JSON/GeoJSON の扱いと同じ）。64KB 切り詰めは既存の
+  `truncateToByteLimit` と同様にマルチバイト文字の途中切断を除去する
+- 素材の取得元は Storage 成果物 + DB のままであり、検索基盤に依存しない
+  原則（§3）と OpenSearch / PostgreSQL の環境差なしは維持される。
+  suggest 時の追加ダウンロード・パースも発生しない
+- 成果物の本文を `resource_pipeline.metadata` に直接入れない理由:
+  metadata は encoding 参照などで複数の API パスが丸ごと SELECT しており、
+  リソースあたり数十 KB の膨張が無関係なクエリに波及するため
+- クリーンアップ: フォーマット変更で document 系でなくなった場合は
+  metadata のキーを null で上書きする（jsonb マージはキー削除が
+  できない）。Storage 上の旧成果物は Parquet プレビューと同じ扱い
+  （同名キーの上書き・package purge 時の `deleteByPrefix` で削除）
+
 ## 将来の拡張（本 ADR のスコープ外）
 
 - 別枠自動型（選択肢 B）: `aiSummary` / `aiTags` への自動生成と
   「AI 生成」表示。列はこの用途のために温存する
 - 品質監査（ADR-006, `qualityScore`）との連携: 説明が薄い・タグが無い
   データセットを検出し、編集画面の AI 提案へ誘導する導線
-- ZIP マニフェスト・Office 系フォーマットの素材対応
 
 ## 関連
 
