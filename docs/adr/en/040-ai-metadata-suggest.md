@@ -181,6 +181,20 @@ Four implementations following the same deployment pattern as ADR-034.
   seconds to minutes per suggestion, so the suggest endpoint's timeout —
   including the reverse proxy (Caddy etc.) — must be set generously (verify
   during implementation)
+- Note, however, that small local models (effective 4–8B class) are
+  **genuinely underpowered at the suggestion quality itself**. This is
+  separate from JSON compliance (guaranteed by the index-reference grammar
+  forcing in §2): the content quality tends to degrade — descriptions miss
+  the point, tags are off-target, and Japanese output is unstable in
+  multilingual models. Closed-network / CPU-only deployments should therefore
+  operate on the premise that "a suggestion is only a draft" and treat human
+  review (human-in-the-loop, option C) as a mandatory step. Where generation
+  quality matters, choose Bedrock (Nova Lite and up, or Claude Haiku class if
+  needed) or a larger Ollama model given sufficient VRAM (larger Gemma 4
+  sizes, Qwen3-class instruct). This is a scale limitation and improves by
+  switching to a larger model (the generation model is a runtime setting,
+  changeable without redeploy, and switching is safe because suggestions are
+  never persisted)
 
 ### 5. Tag governance
 
