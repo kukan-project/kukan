@@ -182,7 +182,7 @@ export function getStorageKey(packageId: string, resourceId: string): string {
 export function getPreviewKey(
   packageId: string,
   resourceId: string,
-  ext: 'parquet' | 'json' = 'parquet'
+  ext: 'parquet' | 'json' | 'txt' = 'parquet'
 ): string {
   return `${PREVIEW_PREFIX}${packageId}/${resourceId}.${ext}`
 }

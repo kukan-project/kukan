@@ -88,9 +88,9 @@ function sentContent(complete: ReturnType<typeof vi.fn>, call = 0) {
   return JSON.parse(complete.mock.calls[call][0])
 }
 
-/** Pipeline row for a completed resource with optional metadata */
-function pipe(id: string, metadata: unknown = {}) {
-  return { resourceId: id, status: 'complete', metadata }
+/** Pipeline row for a completed resource with optional metadata/previewKey */
+function pipe(id: string, metadata: unknown = {}, previewKey: string | null = null) {
+  return { resourceId: id, status: 'complete', previewKey, metadata }
 }
 
 describe('MetadataSuggestService', () => {
@@ -239,6 +239,142 @@ describe('MetadataSuggestService', () => {
     await service.suggest(pkgDetail([resourceRow('r1')]), { id: 'u1' } as never, OPTS)
 
     expect(sentContent(complete).resources[0].textHead).toBe('名前')
+  })
+
+  it('reads document text from the Index step artifact (ADR-040 addendum)', async () => {
+    const { db, addResult } = createMockDb()
+    addResult([pipe('r1', { textHeadKey: 'previews/pkg-1/r1.txt', textHeadBytes: 100 })])
+    addResult(TAG_ROWS)
+    const { ai, complete } = makeAi(llmJson())
+    const { storage, downloadRange } = makeStorage('PDFの抽出テキスト')
+    const service = new MetadataSuggestService(db, storage, ai, silentLogger)
+
+    const result = await service.suggest(
+      pkgDetail([resourceRow('r1', { format: 'pdf' })]),
+      { id: 'u1' } as never,
+      OPTS
+    )
+
+    // The artifact key from metadata, not the storage original — and no
+    // encoding detection (the worker wrote it as UTF-8)
+    expect(downloadRange).toHaveBeenCalledWith('previews/pkg-1/r1.txt', 0, 16_383)
+    expect(sentContent(complete).resources[0].textHead).toBe('PDFの抽出テキスト')
+    expect(result.usedResources).toEqual(['r1'])
+    expect(result.skippedResources).toEqual([])
+  })
+
+  it('keeps documents without a text-head artifact as metadata-only', async () => {
+    // Legacy formats (DOC/XLS/PPT) and documents whose extraction yielded no
+    // text have no artifact — the metadata slot still applies
+    const { db, addResult } = createMockDb()
+    addResult([pipe('r1')])
+    addResult(TAG_ROWS)
+    const { ai, complete } = makeAi(llmJson())
+    const { storage, downloadRange } = makeStorage()
+    const service = new MetadataSuggestService(db, storage, ai, silentLogger)
+
+    const result = await service.suggest(
+      pkgDetail([resourceRow('r1', { format: 'pdf' })]),
+      { id: 'u1' } as never,
+      OPTS
+    )
+
+    expect(downloadRange).not.toHaveBeenCalled()
+    expect(sentContent(complete).resources[0].textHead).toBeUndefined()
+    expect(result.usedResources).toEqual([])
+    expect(result.skippedResources).toEqual(['r1'])
+  })
+
+  it('lists ZIP manifest file paths (directories excluded, capped) with the true count', async () => {
+    const manifest = {
+      totalFiles: 60,
+      totalSize: 1,
+      totalCompressed: 1,
+      truncated: false,
+      entries: [
+        { path: 'data/', size: 0, compressedSize: 0, lastModified: '', isDirectory: true },
+        ...Array.from({ length: 60 }, (_, i) => ({
+          path: `data/file${i}.csv`,
+          size: 1,
+          compressedSize: 1,
+          lastModified: '',
+          isDirectory: false,
+        })),
+      ],
+    }
+    const { db, addResult } = createMockDb()
+    addResult([pipe('r1', {}, 'previews/pkg-1/r1.json')])
+    addResult(TAG_ROWS)
+    const { ai, complete } = makeAi(llmJson())
+    const download = vi.fn(async () => Readable.from([Buffer.from(JSON.stringify(manifest))]))
+    const service = new MetadataSuggestService(
+      db,
+      { download } as unknown as StorageAdapter,
+      ai,
+      silentLogger
+    )
+
+    const result = await service.suggest(
+      pkgDetail([resourceRow('r1', { format: 'zip' })]),
+      { id: 'u1' } as never,
+      OPTS
+    )
+
+    expect(download).toHaveBeenCalledWith('previews/pkg-1/r1.json')
+    const material = sentContent(complete).resources[0]
+    expect(material.files).toHaveLength(50)
+    expect(material.files[0]).toBe('data/file0.csv')
+    expect(material.files).not.toContain('data/')
+    expect(material.fileCount).toBe(60)
+    expect(result.usedResources).toEqual(['r1'])
+  })
+
+  it('degrades to metadata when the ZIP manifest exceeds the byte cap', async () => {
+    // Entry paths are attacker-controlled — a >5MB manifest must abort the
+    // read instead of buffering it wholesale
+    const { db, addResult } = createMockDb()
+    addResult([pipe('r1', {}, 'previews/pkg-1/r1.json')])
+    addResult(TAG_ROWS)
+    const { ai, complete } = makeAi(llmJson())
+    const download = vi.fn(async () =>
+      Readable.from(
+        (function* () {
+          for (let i = 0; i < 6; i++) yield Buffer.alloc(1024 * 1024, 'x')
+        })()
+      )
+    )
+    const service = new MetadataSuggestService(
+      db,
+      { download } as unknown as StorageAdapter,
+      ai,
+      silentLogger
+    )
+
+    const result = await service.suggest(
+      pkgDetail([resourceRow('r1', { format: 'zip' })]),
+      { id: 'u1' } as never,
+      OPTS
+    )
+
+    expect(sentContent(complete).resources[0].files).toBeUndefined()
+    expect(result.skippedResources).toEqual(['r1'])
+  })
+
+  it('keeps ZIPs without a manifest as metadata-only', async () => {
+    const { db, addResult } = createMockDb()
+    addResult([pipe('r1')])
+    addResult(TAG_ROWS)
+    const { ai, complete } = makeAi(llmJson())
+    const service = new MetadataSuggestService(db, makeStorage().storage, ai, silentLogger)
+
+    const result = await service.suggest(
+      pkgDetail([resourceRow('r1', { format: 'zip' })]),
+      { id: 'u1' } as never,
+      OPTS
+    )
+
+    expect(sentContent(complete).resources[0].files).toBeUndefined()
+    expect(result.skippedResources).toEqual(['r1'])
   })
 
   it('uses the persisted schema (column-capped) and sample rows for CSV resources', async () => {

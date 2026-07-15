@@ -77,8 +77,19 @@ export const AI_SUGGEST_TEST_TIMEOUT_MS = 60_000
 
 // --- AI metadata suggestions (ADR-040) ---
 
-/** Head bytes read from the storage original per text resource (discarded after use) */
+/** Head bytes read from the storage original per text resource, and from the
+ *  text-head artifact per document resource (discarded after use) */
 export const SUGGEST_TEXT_HEAD_BYTES = 16_384
+
+/** ZIP manifest paths listed as material (the archive's true file count is
+ *  reported alongside) */
+export const SUGGEST_ZIP_MANIFEST_ENTRIES = 50
+
+/** Abort-cap for reading the ZIP manifest into memory. Legitimate manifests
+ *  stay small (the worker caps them at 10k entries, ~1-2 MB), but paths are
+ *  attacker-controlled — an oversized manifest degrades to metadata-only
+ *  material instead of buffering unbounded JSON */
+export const SUGGEST_ZIP_MANIFEST_MAX_BYTES = 5 * 1024 * 1024
 
 /** Sample rows read from the preview Parquet per CSV/TSV resource */
 export const SUGGEST_SAMPLE_ROWS = 5

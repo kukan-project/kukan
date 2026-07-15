@@ -268,10 +268,13 @@ Notes:
 - The text body is not stored directly in `resource_pipeline.metadata`:
   several API paths SELECT the whole metadata column (e.g. for the
   encoding), so tens of KB per resource would bloat unrelated queries
-- Cleanup: when a format change makes a resource non-document, the metadata
-  keys are overwritten with null (a jsonb merge cannot remove keys). Stale
-  storage artifacts are handled like Parquet previews (same-key overwrite;
-  removed by `deleteByPrefix` on package purge)
+- Cleanup: stale metadata keys need no explicit handling — the Extract step
+  replaces the metadata wholesale on every success, so a run after a format
+  change naturally drops `textHeadKey` (on a transient Extract failure the
+  previous values remain, following the existing keep-the-previous-preview
+  design, and the next successful run resolves it). Stale storage artifacts
+  are handled like Parquet previews (same-key overwrite; removed by
+  `deleteByPrefix` on package purge)
 
 ## Future Extensions (out of scope for this ADR)
 

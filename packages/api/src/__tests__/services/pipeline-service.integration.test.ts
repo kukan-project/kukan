@@ -143,7 +143,9 @@ describe('PipelineService', () => {
       expect(queue.enqueue).toHaveBeenCalledOnce()
     })
 
-    it('should skip resources under draft packages (ADR-039)', async () => {
+    it('should include resources under draft packages (ADR-040 addendum)', async () => {
+      // Draft documents carry the text-head artifact a bulk reprocess must
+      // regenerate; the worker still keeps draft content out of the search index
       const draftPkg = await db.execute(sql`
         INSERT INTO package (name, owner_org, creator_user_id, state)
         VALUES ('draft-pkg', ${testOrgId}, '00000000-0000-0000-0000-000000000001', 'draft')
@@ -159,8 +161,8 @@ describe('PipelineService', () => {
       const service = new PipelineService(db, queue)
 
       const result = await service.enqueueAll()
-      expect(result).toEqual({ enqueued: 1, failed: 0 })
-      expect(queue.enqueue).toHaveBeenCalledOnce()
+      expect(result).toEqual({ enqueued: 2, failed: 0 })
+      expect(queue.enqueue).toHaveBeenCalledTimes(2)
     })
 
     it('should return 0 when no active resources exist', async () => {

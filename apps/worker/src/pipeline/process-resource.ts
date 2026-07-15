@@ -76,7 +76,9 @@ export async function processResource(
       )
       if (extractResult === null) {
         await tracker.skipStep(extractStepId)
-        // No preview/schema applies to this format (non-text, e.g. PDF/image).
+        // Extract produces no preview/schema for this format (non-text, e.g.
+        // PDF/image — the Index step may still persist a document text-head
+        // artifact, ADR-040).
         // Clear any stale values a previous run left behind — e.g. a resource
         // that was a CSV (with a schema + Parquet preview) and was then replaced
         // with a PDF must not keep reporting the old schema as queryable.

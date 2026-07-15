@@ -1,8 +1,9 @@
 /**
  * KUKAN Metadata Suggest Service (ADR-040)
  *
- * Builds throwaway prompt material from the DB and storage originals (never
- * the search index — its content leg is a no-op on the PostgreSQL fallback),
+ * Builds throwaway prompt material from the DB, storage originals and
+ * persisted pipeline artifacts (never the search index — its content leg is
+ * a no-op on the PostgreSQL fallback),
  * runs one LLM call that returns all fields at once, validates the JSON, and
  * post-processes it so the response honours the tag and resource contracts.
  * Suggestions are never persisted; adopting one is a normal package update.
@@ -20,11 +21,14 @@ import {
   getStorageKey,
   isCsvFormat,
   isTextFormat,
+  isDocumentFormat,
+  isZipFormat,
   createLogger,
   type Logger,
   type SuggestMetadataResponse,
   type MetadataSuggestion,
   type SuggestedTag,
+  type ZipManifest,
 } from '@kukan/shared'
 import {
   detectEncoding,
@@ -46,6 +50,8 @@ import {
 import type { AuthUser } from '../auth/permissions'
 import {
   SUGGEST_TEXT_HEAD_BYTES,
+  SUGGEST_ZIP_MANIFEST_ENTRIES,
+  SUGGEST_ZIP_MANIFEST_MAX_BYTES,
   SUGGEST_SAMPLE_ROWS,
   SUGGEST_SAMPLE_CELL_CHARS,
   SUGGEST_MAX_RESOURCES,
@@ -144,7 +150,10 @@ export class MetadataSuggestService {
     // used = described resources whose content actually loaded (matches
     // buildUserContent's truthy checks — an empty textHead is unused)
     const hasContent = (r: ResourceMaterial) =>
-      r.schema !== null || (r.sampleRows?.length ?? 0) > 0 || Boolean(r.textHead)
+      r.schema !== null ||
+      (r.sampleRows?.length ?? 0) > 0 ||
+      Boolean(r.textHead) ||
+      (r.fileList?.length ?? 0) > 0
     const usedResources = materials.described.filter(hasContent).map((r) => r.id)
     const used = new Set(usedResources)
     const skippedResources = pkg.resources.map((r) => r.id).filter((id) => !used.has(id))
@@ -175,8 +184,9 @@ export class MetadataSuggestService {
    * (resources beyond the cap, kept as lightweight name/format context for the
    * title/notes only). Every described resource gets a slot regardless of
    * format so the LLM can name it; content-eligible ones (pipeline complete +
-   * CSV/TSV or text) additionally carry a column schema + sample rows or head
-   * text and are ordered first so their material always keeps a slot.
+   * CSV/TSV, text, document with a text-head artifact, or ZIP with a manifest)
+   * additionally carry a column schema + sample rows, head text, or a file
+   * listing and are ordered first so their material always keeps a slot.
    */
   private async collectMaterials(
     pkg: SuggestPackageDetail,
@@ -190,6 +200,7 @@ export class MetadataSuggestService {
           .select({
             resourceId: resourcePipeline.resourceId,
             status: resourcePipeline.status,
+            previewKey: resourcePipeline.previewKey,
             metadata: resourcePipeline.metadata,
           })
           .from(resourcePipeline)
@@ -202,9 +213,19 @@ export class MetadataSuggestService {
       : []
     const pipelines = new Map(pipelineRows.map((row) => [row.resourceId, row]))
 
-    const isEligible = (r: SuggestPackageDetail['resources'][number]) =>
-      pipelines.get(r.id)?.status === 'complete' &&
-      (isCsvFormat(r.format, r.mimetype) || isTextFormat(r.format))
+    // Documents require the Index step's text-head artifact (ADR-040 addendum)
+    // and ZIPs their Extract-step manifest; requiring the pipeline record also
+    // guards against a key left over from a previous format
+    const contentKind = (r: SuggestPackageDetail['resources'][number]) => {
+      const pipeline = pipelines.get(r.id)
+      if (pipeline?.status !== 'complete') return null
+      if (isCsvFormat(r.format, r.mimetype)) return 'tabular'
+      if (isTextFormat(r.format)) return 'text'
+      if (isDocumentFormat(r.format) && textHeadKeyOf(pipeline.metadata)) return 'document'
+      if (isZipFormat(r.format) && pipeline.previewKey) return 'zip'
+      return null
+    }
+    const isEligible = (r: SuggestPackageDetail['resources'][number]) => contentKind(r) !== null
 
     // Pick which resources get a slot by eligibility (content-eligible first so
     // their extracted material keeps a slot when a package exceeds the cap),
@@ -230,19 +251,28 @@ export class MetadataSuggestService {
         schema: null,
         sampleRows: null,
         textHead: null,
+        fileList: null,
+        fileCount: null,
       }
 
-      if (isEligible(resource)) {
+      const kind = contentKind(resource)
+      if (kind) {
         const pipeline = pipelines.get(resource.id)!
         try {
-          if (isCsvFormat(resource.format, resource.mimetype)) {
+          if (kind === 'tabular') {
             material.schema = parseResourceSchema(pipeline.metadata)
             material.sampleRows = await this.readSampleRows(resource.id, user)
-          } else {
+          } else if (kind === 'text') {
             material.textHead = await this.readTextHead(pkg.id, resource.id, {
               format: resource.format ?? '',
               metadata: pipeline.metadata,
             })
+          } else if (kind === 'document') {
+            material.textHead = await this.readArtifactTextHead(textHeadKeyOf(pipeline.metadata)!)
+          } else {
+            const manifest = await this.readZipFileList(pipeline.previewKey!)
+            material.fileList = manifest.fileList
+            material.fileCount = manifest.fileCount
           }
         } catch (error) {
           // Material is best-effort: keep the resource's metadata in the prompt
@@ -270,7 +300,7 @@ export class MetadataSuggestService {
    * Serialize the prompt material, shrinking it until it fits
    * SUGGEST_MAX_PROMPT_BYTES. In order of increasing damage: trim described
    * content (largest piece first — textHead halved then dropped, sample rows,
-   * schema), drop lightweight `others` context, then shorten and finally drop
+   * file list, schema), drop lightweight `others` context, then shorten and finally drop
    * trailing described resources. With the column/count caps in place this
    * rarely does more than the first step (text-heavy datasets).
    */
@@ -279,6 +309,7 @@ export class MetadataSuggestService {
     const contentLength = (r: ResourceMaterial) =>
       (r.textHead?.length ?? 0) +
       (r.sampleRows?.length ? JSON.stringify(r.sampleRows).length : 0) +
+      (r.fileList?.length ? JSON.stringify(r.fileList).length : 0) +
       (r.schema ? JSON.stringify(r.schema.columns).length : 0)
 
     let trimmed = false
@@ -295,6 +326,9 @@ export class MetadataSuggestService {
         victim.textHead = null
       } else if (victim.sampleRows?.length) {
         victim.sampleRows = null
+      } else if (victim.fileList?.length) {
+        victim.fileList = null
+        victim.fileCount = null
       } else {
         victim.schema = null
       }
@@ -378,6 +412,30 @@ export class MetadataSuggestService {
         ? persisted
         : detectEncoding(source.format.toLowerCase(), buffer)
     return stripTrailingReplacementChar(bufferToUtf8(buffer, encoding))
+  }
+
+  /** Head of the Index step's text-head artifact (document formats) — the
+   *  worker wrote it as UTF-8, so no encoding detection (ADR-040 addendum) */
+  private async readArtifactTextHead(textHeadKey: string) {
+    const { stream } = await this.storage.downloadRange(textHeadKey, 0, SUGGEST_TEXT_HEAD_BYTES - 1)
+    const buffer = await readAll(stream)
+    return stripTrailingReplacementChar(buffer.toString('utf-8'))
+  }
+
+  /** File paths from the Extract step's ZIP manifest, capped by entry count.
+   *  The read is byte-capped: entry paths are attacker-controlled, so the
+   *  manifest can be made arbitrarily large despite the worker's entry cap */
+  private async readZipFileList(previewKey: string) {
+    const buffer = await readAll(
+      await this.storage.download(previewKey),
+      SUGGEST_ZIP_MANIFEST_MAX_BYTES
+    )
+    const manifest = JSON.parse(buffer.toString('utf-8')) as ZipManifest
+    const fileList = (manifest.entries ?? [])
+      .filter((entry) => !entry.isDirectory)
+      .slice(0, SUGGEST_ZIP_MANIFEST_ENTRIES)
+      .map((entry) => entry.path.slice(0, MAX_MATERIAL_NAME_CHARS))
+    return { fileList, fileCount: manifest.totalFiles ?? fileList.length }
   }
 
   /**
@@ -471,10 +529,22 @@ export class MetadataSuggestService {
   }
 }
 
-async function readAll(stream: Readable): Promise<Buffer> {
+/** `metadata.textHeadKey` persisted by the Index step (document formats, ADR-040) */
+function textHeadKeyOf(metadata: unknown): string | null {
+  const key = (metadata as { textHeadKey?: unknown } | null | undefined)?.textHeadKey
+  return typeof key === 'string' && key ? key : null
+}
+
+async function readAll(stream: Readable, maxBytes = Infinity): Promise<Buffer> {
   const chunks: Buffer[] = []
+  let total = 0
   for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    total += buf.length
+    if (total > maxBytes) {
+      throw new Error(`Stream exceeds ${maxBytes} bytes`)
+    }
+    chunks.push(buf)
   }
   return Buffer.concat(chunks)
 }

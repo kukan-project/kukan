@@ -3,7 +3,7 @@
  * Handles enqueue and status queries — Worker-side execution is separate.
  */
 
-import { eq, and, sql } from 'drizzle-orm'
+import { eq, and, inArray, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { packageTable, resource, resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import { ValidationError, PIPELINE_JOB_TYPE, resourceSchemaSchema } from '@kukan/shared'
@@ -76,15 +76,16 @@ export class PipelineService {
   /**
    * Enqueue pipeline processing for all active resources.
    * Individual enqueue failures are counted but do not stop the batch.
-   * Resources under draft packages are skipped — their content is never
-   * indexed and publish re-enqueues them (ADR-039).
+   * Draft packages are included: their document resources carry the text-head
+   * artifact a bulk reprocess must regenerate (ADR-040 addendum); the Index
+   * step still keeps draft content out of the search index (ADR-039).
    */
   async enqueueAll(): Promise<{ enqueued: number; failed: number }> {
     const resources = await this.db
       .select({ id: resource.id })
       .from(resource)
       .innerJoin(packageTable, eq(resource.packageId, packageTable.id))
-      .where(and(eq(resource.state, 'active'), eq(packageTable.state, 'active')))
+      .where(and(eq(resource.state, 'active'), inArray(packageTable.state, ['active', 'draft'])))
 
     const BATCH_SIZE = 100
     let enqueued = 0

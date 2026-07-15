@@ -38,6 +38,13 @@ export const FETCH_RATE_LIMIT_REQUEUE_DELAY_S = 6
 /** Maximum text size per chunk for content indexing (500 KB) */
 export const MAX_CONTENT_CHUNK_SIZE = 500 * 1024
 
+/**
+ * Bytes of extracted document text persisted to storage as AI-suggest material
+ * (ADR-040 addendum). Larger than the suggest-side read budget so a future
+ * budget increase doesn't require reprocessing stored resources.
+ */
+export const TEXT_HEAD_ARTIFACT_SIZE = 64 * 1024
+
 // ── Semantic Search Embedding (ADR-034) ──
 
 /** Maximum characters of the embedding source text — conservative bound for the

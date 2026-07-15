@@ -245,10 +245,12 @@ document 系と ZIP に広げる。
 - 成果物の本文を `resource_pipeline.metadata` に直接入れない理由:
   metadata は encoding 参照などで複数の API パスが丸ごと SELECT しており、
   リソースあたり数十 KB の膨張が無関係なクエリに波及するため
-- クリーンアップ: フォーマット変更で document 系でなくなった場合は
-  metadata のキーを null で上書きする（jsonb マージはキー削除が
-  できない）。Storage 上の旧成果物は Parquet プレビューと同じ扱い
-  （同名キーの上書き・package purge 時の `deleteByPrefix` で削除）
+- クリーンアップ: metadata の stale キーは明示的な処理を要しない —
+  Extract ステップが成功のたびに metadata を丸ごと置き換えるため、
+  フォーマット変更後の実行で `textHeadKey` は自然に消える（一時的な
+  Extract 失敗時は「前回プレビュー温存」の既存設計に従い前回値が残るが、
+  次の成功実行で解消される）。Storage 上の旧成果物は Parquet プレビューと
+  同じ扱い（同名キーの上書き・package purge 時の `deleteByPrefix` で削除）
 
 ## 将来の拡張（本 ADR のスコープ外）
 

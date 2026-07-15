@@ -5,6 +5,10 @@
  * Large texts are split into multiple chunks (up to MAX_CONTENT_CHUNKS × MAX_CONTENT_CHUNK_SIZE).
  * Also records content indexing metadata in resource_pipeline.metadata.
  *
+ * Document formats additionally persist the head of the extracted text to
+ * storage as AI-suggest material (ADR-040 addendum). Drafts run only that
+ * extraction + persistence — search indexing starts at publish (ADR-039).
+ *
  * Supported formats: CSV, TSV, TXT, MD, HTML, HTM, JSON, GeoJSON, XML, ZIP,
  *                    PDF, DOCX, XLSX, PPTX, ODT, ODP, ODS, RTF
  * Non-text formats (DOC, XLS, PPT, RDF, images) are skipped (contentIndexed: false).
@@ -15,6 +19,7 @@ import {
   isCsvFormat,
   isZipFormat,
   isDocumentFormat,
+  getPreviewKey,
   type ContentType,
 } from '@kukan/shared'
 import { OfficeParser } from 'officeparser'
@@ -23,7 +28,7 @@ import type { PipelineContext } from '../types'
 import type { ExtractResult } from './extract'
 import { streamToBuffer, streamUtf8Lines, streamToTempFile, cleanupTempFile } from '../node-utils'
 import { bufferToUtf8, stripTrailingReplacementChar } from '@kukan/shared/encoding-node'
-import { MAX_CONTENT_CHUNK_SIZE, MAX_FETCH_SIZE } from '@/config'
+import { MAX_CONTENT_CHUNK_SIZE, MAX_FETCH_SIZE, TEXT_HEAD_ARTIFACT_SIZE } from '@/config'
 
 export interface IndexContentResult {
   contentIndexed: boolean
@@ -32,6 +37,9 @@ export interface IndexContentResult {
   contentIndexedSize: number
   contentTruncated: boolean
   contentChunks: number
+  /** Storage key/size of the persisted text head — document formats only (ADR-040) */
+  textHeadKey?: string
+  textHeadBytes?: number
 }
 
 /**
@@ -49,12 +57,16 @@ export async function executeIndexContent(
 ): Promise<IndexContentResult | null> {
   const normalizedFormat = format?.toLowerCase() ?? null
 
-  // Draft packages stay out of the content index until publish (ADR-039);
-  // deleted/purging packages must not be re-indexed either
+  // Draft packages stay out of the content index until publish (ADR-039), but
+  // document formats still persist the text-head artifact so AI suggestions
+  // work during draft editing (ADR-040 addendum). Deleted/purging packages
+  // skip everything — they must not be re-indexed.
   const pkgState = await ctx.getPackageState(packageId)
-  if (pkgState !== 'active') return null
+  if (pkgState !== 'active' && pkgState !== 'draft') return null
 
   const contentType = getContentType(normalizedFormat)
+  if (pkgState === 'draft' && contentType !== 'document') return null
+
   if (!contentType) {
     // Clean up any previously indexed content (e.g. format changed to non-indexable)
     await ctx.deleteContent(resourceId)
@@ -69,7 +81,15 @@ export async function executeIndexContent(
   }
 
   if (contentType === 'document') {
-    return indexDocument(resourceId, packageId, storageKey, normalizedFormat!, contentType, ctx)
+    return indexDocument(
+      resourceId,
+      packageId,
+      storageKey,
+      normalizedFormat!,
+      contentType,
+      pkgState === 'active',
+      ctx
+    )
   }
 
   return indexTextStream(
@@ -122,13 +142,18 @@ async function indexManifest(
   }
 }
 
-/** Extract text from a binary document (PDF, etc.), chunk and index */
+/**
+ * Extract text from a binary document (PDF, etc.), persist the text head as
+ * AI-suggest material (ADR-040), then chunk and index. When `indexToSearch`
+ * is false (draft package) only the artifact is produced.
+ */
 async function indexDocument(
   resourceId: string,
   packageId: string,
   storageKey: string,
   format: string,
   contentType: ContentType,
+  indexToSearch: boolean,
   ctx: PipelineContext
 ): Promise<IndexContentResult> {
   const stream = await ctx.storage.download(storageKey)
@@ -146,33 +171,54 @@ async function indexDocument(
         contentChunks: 0,
       }
     }
+    const contentOriginalSize = Buffer.byteLength(text, 'utf-8')
 
-    await ctx.deleteContent(resourceId)
+    // officeparser output is already a JS string, so the artifact is plain
+    // UTF-8 — the suggest side reads it without encoding detection. Pre-slice
+    // by char count before the byte-limit cut: every UTF-16 code unit encodes
+    // to ≥1 UTF-8 byte, so this avoids buffering the full text to keep 64 KB
+    // (a char broken by the slice can only be the last one — the byte cut and
+    // trailing-U+FFFD strip clean it up).
+    const textHead = Buffer.from(
+      truncateToByteLimit(text.slice(0, TEXT_HEAD_ARTIFACT_SIZE), TEXT_HEAD_ARTIFACT_SIZE),
+      'utf-8'
+    )
+    const textHeadKey = getPreviewKey(packageId, resourceId, 'txt')
+    await ctx.storage.upload(textHeadKey, textHead, {
+      contentType: 'text/plain; charset=utf-8',
+    })
 
-    const chunks = splitIntoChunks(text, MAX_CONTENT_CHUNK_SIZE, Infinity)
+    let chunks: string[] = []
     let totalIndexedBytes = 0
 
-    for (let i = 0; i < chunks.length; i++) {
-      const chunkSize = Buffer.byteLength(chunks[i], 'utf-8')
-      const doc: ContentDoc = {
-        resourceId,
-        packageId,
-        extractedText: chunks[i],
-        contentType,
-        chunkIndex: i,
-        chunkSize,
+    if (indexToSearch) {
+      await ctx.deleteContent(resourceId)
+
+      chunks = splitIntoChunks(text, MAX_CONTENT_CHUNK_SIZE, Infinity)
+      for (let i = 0; i < chunks.length; i++) {
+        const chunkSize = Buffer.byteLength(chunks[i], 'utf-8')
+        const doc: ContentDoc = {
+          resourceId,
+          packageId,
+          extractedText: chunks[i],
+          contentType,
+          chunkIndex: i,
+          chunkSize,
+        }
+        await ctx.indexContent(doc)
+        totalIndexedBytes += chunkSize
       }
-      await ctx.indexContent(doc)
-      totalIndexedBytes += chunkSize
     }
 
     return {
       contentIndexed: chunks.length > 0,
       contentType,
-      contentOriginalSize: Buffer.byteLength(text, 'utf-8'),
+      contentOriginalSize,
       contentIndexedSize: totalIndexedBytes,
       contentTruncated: false,
       contentChunks: chunks.length,
+      textHeadKey,
+      textHeadBytes: textHead.length,
     }
   } finally {
     await cleanupTempFile(tempPath)

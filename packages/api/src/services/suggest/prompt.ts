@@ -78,8 +78,12 @@ export interface ResourceMaterial {
   schema: ResourceSchema | null
   /** First rows of the preview Parquet (CSV/TSV) */
   sampleRows: Record<string, unknown>[] | null
-  /** Head of the storage original, decoded to UTF-8 (text formats) */
+  /** Head of the storage original (text formats) or of the Index step's
+   *  text-head artifact (document formats), decoded to UTF-8 */
   textHead: string | null
+  /** ZIP manifest paths (capped) with the archive's true file count */
+  fileList: string[] | null
+  fileCount: number | null
 }
 
 export interface SuggestMaterials {
@@ -127,9 +131,9 @@ export function buildSystemPrompt(locale: 'ja' | 'en'): string {
     '    name (no “CSV”, “PDF”, “Excel”, “.xlsx”) — the format is a separate',
     '    field.',
     '  - description: one sentence about the resource. Base it on the file',
-    '    content when provided (columns, sample rows, or text); otherwise infer',
-    '    from its name and format. Never leave it empty — if nothing else fits,',
-    '    reuse the existing description or the name.',
+    '    content when provided (columns, sample rows, text, or a file listing);',
+    '    otherwise infer from its name and format. Never leave it empty — if',
+    '    nothing else fits, reuse the existing description or the name.',
   ].join('\n')
 }
 
@@ -166,6 +170,7 @@ export function buildUserContent(materials: SuggestMaterials): string {
               ),
             }),
           ...(r.textHead && { textHead: r.textHead }),
+          ...(r.fileList?.length && { files: r.fileList, fileCount: r.fileCount }),
         }
       }),
       ...(others.length && { otherResources: others }),

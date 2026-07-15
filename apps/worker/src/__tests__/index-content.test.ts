@@ -73,6 +73,22 @@ describe('executeIndexContent', () => {
       expect(result).toBeNull()
       expect(ctx.indexContent).not.toHaveBeenCalled()
     })
+
+    it.each(['deleted', 'purging'])(
+      'should skip everything for a %s package even for documents',
+      async (state) => {
+        const ctx = createMockCtx({
+          getPackageState: vi.fn().mockResolvedValue(state),
+        })
+
+        const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)
+
+        expect(result).toBeNull()
+        expect(ctx.storage.download).not.toHaveBeenCalled()
+        expect(ctx.storage.upload).not.toHaveBeenCalled()
+        expect(ctx.indexContent).not.toHaveBeenCalled()
+      }
+    )
   })
 
   describe('format classification', () => {
@@ -350,6 +366,87 @@ describe('executeIndexContent', () => {
 
       expect(result!.contentIndexed).toBe(false)
       expect(result!.contentChunks).toBe(0)
+    })
+  })
+
+  describe('text head artifact (ADR-040)', () => {
+    it('should persist the extracted text head to storage for documents', async () => {
+      const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('fake-pdf')))
+
+      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)
+
+      expect(ctx.storage.upload).toHaveBeenCalledWith(
+        'previews/pkg-1/res-1.txt',
+        expect.any(Buffer),
+        { contentType: 'text/plain; charset=utf-8' }
+      )
+      const uploaded = vi.mocked(ctx.storage.upload).mock.calls[0][1] as Buffer
+      expect(uploaded.toString('utf-8')).toContain('Extracted document text')
+      expect(result!.textHeadKey).toBe('previews/pkg-1/res-1.txt')
+      expect(result!.textHeadBytes).toBe(uploaded.length)
+    })
+
+    it('should truncate the artifact to the size limit without splitting characters', async () => {
+      // 40k × 3-byte chars = 120 KB > 64 KB limit
+      mockToText.mockReturnValueOnce('あ'.repeat(40_000))
+
+      const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('fake-pdf')))
+
+      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)
+
+      const uploaded = vi.mocked(ctx.storage.upload).mock.calls[0][1] as Buffer
+      expect(uploaded.length).toBeLessThanOrEqual(64 * 1024)
+      expect(uploaded.toString('utf-8')).not.toContain('�')
+      expect(result!.textHeadBytes).toBe(uploaded.length)
+    })
+
+    it('should not upload an artifact when the document has no text', async () => {
+      mockToText.mockReturnValueOnce('')
+
+      const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('fake-pdf')))
+
+      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)
+
+      expect(ctx.storage.upload).not.toHaveBeenCalled()
+      expect(result!.textHeadKey).toBeUndefined()
+    })
+
+    it('should not upload an artifact for text formats', async () => {
+      const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('hello')))
+
+      const result = await executeIndexContent(
+        'res-1',
+        'pkg-1',
+        'key',
+        'TXT',
+        defaultExtractResult,
+        ctx
+      )
+
+      expect(ctx.storage.upload).not.toHaveBeenCalled()
+      expect(result!.textHeadKey).toBeUndefined()
+    })
+
+    it('should persist the artifact for a draft package without indexing (ADR-040 addendum)', async () => {
+      const ctx = createMockCtx({
+        getPackageState: vi.fn().mockResolvedValue('draft'),
+      })
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('fake-pdf')))
+
+      const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)
+
+      expect(result).not.toBeNull()
+      expect(result!.textHeadKey).toBe('previews/pkg-1/res-1.txt')
+      expect(result!.contentIndexed).toBe(false)
+      expect(result!.contentChunks).toBe(0)
+      expect(result!.contentOriginalSize).toBeGreaterThan(0)
+      expect(ctx.storage.upload).toHaveBeenCalledTimes(1)
+      expect(ctx.indexContent).not.toHaveBeenCalled()
+      expect(ctx.deleteContent).not.toHaveBeenCalled()
     })
   })
 

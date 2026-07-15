@@ -381,7 +381,8 @@ packagesRouter.post('/:nameOrId/publish', async (c) => {
 
   // Now-visible package: index metadata + enqueue embedding, index each
   // resource's metadata, and re-run pipelines for content indexing (the Index
-  // step skipped these resources while the package was a draft).
+  // step skipped search indexing for these resources while the package was a
+  // draft — only document text-head artifacts were produced, ADR-040).
   // Failures propagate as 500: the package is already active and publish is
   // idempotent, so re-running the same request retries the whole sync
   const resources = await new ResourceService(db).listByPackage(pkg.id)
