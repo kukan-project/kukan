@@ -105,6 +105,44 @@ describe('useFileUpload', () => {
     expect(onComplete).toHaveBeenCalled()
   })
 
+  it('should still notify completion when unmounted while upload-complete is in flight', async () => {
+    const xhr = mockXHR()
+    const onComplete = vi.fn()
+
+    let resolveComplete!: (v: Response) => void
+    mockClientFetch
+      .mockResolvedValueOnce(jsonResponse({ upload_url: 'https://minio/upload' }))
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => (resolveComplete = resolve)))
+
+    const { result, unmount } = renderHook(() => useFileUpload({ resourceId: 'r1', onComplete }))
+
+    await act(async () => {
+      result.current.upload(createFile('data.csv'))
+      await vi.waitFor(() => {
+        expect(xhr.send).toHaveBeenCalled()
+      })
+    })
+
+    // Finish the PUT; the upload-complete POST is now pending
+    await act(async () => {
+      xhr._fireLoad()
+    })
+    await vi.waitFor(() => {
+      expect(mockClientFetch).toHaveBeenCalledTimes(2)
+    })
+
+    // Close the card while the server is still processing, then let it finish
+    unmount()
+    await act(async () => {
+      resolveComplete(jsonResponse({ pipeline_status: 'queued' }))
+    })
+
+    // The pipeline was enqueued server-side — the owner must still refetch
+    await vi.waitFor(() => {
+      expect(onComplete).toHaveBeenCalled()
+    })
+  })
+
   it('should handle upload-url request failure', async () => {
     mockClientFetch.mockResolvedValueOnce(jsonResponse({ detail: 'Unauthorized' }, false))
 

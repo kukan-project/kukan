@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { clientFetch } from '@/lib/client-api'
 import { detectFormat, detectContentType } from '@kukan/shared'
 import { MAX_UPLOAD_SIZE } from '@kukan/shared'
@@ -7,6 +7,11 @@ export type UploadStatus = 'idle' | 'requesting' | 'uploading' | 'completing' | 
 
 interface UseFileUploadOptions {
   resourceId: string
+  /**
+   * Fires once the server accepted the upload. May fire after unmount when
+   * the completion round-trip was already in flight — guard owner-side
+   * effects (timers, refetches) with the owner's own lifecycle.
+   */
   onComplete?: () => void
 }
 
@@ -33,6 +38,19 @@ export function useFileUpload({
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const xhrRef = useRef<XMLHttpRequest | null>(null)
+  const disposedRef = useRef(false)
+
+  // Stop the upload when the owning component unmounts — e.g. dismissing a
+  // drop-upload card must not leave a detached transfer that completes and
+  // enqueues the pipeline. Aborting the XHR only covers the PUT phase, so
+  // the flag is re-checked after every await in upload().
+  useEffect(() => {
+    disposedRef.current = false
+    return () => {
+      disposedRef.current = true
+      xhrRef.current?.abort()
+    }
+  }, [])
 
   const cancel = useCallback(() => {
     if (xhrRef.current) {
@@ -81,6 +99,7 @@ export function useFileUpload({
         }
 
         const { upload_url } = await urlRes.json()
+        if (disposedRef.current) return
 
         // Step 2: PUT file to presigned URL with progress tracking
         setStatus('uploading')
@@ -118,6 +137,8 @@ export function useFileUpload({
           xhr.send(file)
         })
 
+        if (disposedRef.current) return
+
         // Step 3: Notify upload complete
         setStatus('completing')
         const completeRes = await clientFetch(`/api/v1/resources/${resourceId}/upload-complete`, {
@@ -130,10 +151,19 @@ export function useFileUpload({
           throw new Error('Failed to complete upload')
         }
 
+        if (disposedRef.current) {
+          // Disposed while the completion round-trip was in flight: the
+          // pipeline is enqueued server-side, so the owner must still be
+          // notified to refresh — skip only the local state updates
+          onComplete?.()
+          return
+        }
+
         setStatus('done')
         setProgress(100)
         onComplete?.()
       } catch (err) {
+        if (disposedRef.current) return
         if (err instanceof Error && err.message === 'Upload cancelled') {
           return
         }

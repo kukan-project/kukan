@@ -110,6 +110,7 @@ describe('ResourceService', () => {
 
   describe('create', () => {
     it('should throw NotFoundError if package does not exist', async () => {
+      mock.addResult([]) // advisory lock
       mock.addResult([]) // package check
       await expect(
         service.create({ packageId: '550e8400-e29b-41d4-a716-446655440000', state: 'active' })
@@ -119,6 +120,7 @@ describe('ResourceService', () => {
     it('should create resource with auto-assigned position', async () => {
       const pkg = createPackageFixture()
       const created = createResourceFixture({ position: 0 })
+      mock.addResult([]) // advisory lock
       mock.addResult([pkg]) // package check
       mock.addResult([{ maxPosition: -1 }]) // max position query
       mock.addResult([created]) // insert returning

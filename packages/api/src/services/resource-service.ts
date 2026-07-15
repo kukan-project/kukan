@@ -126,11 +126,24 @@ export class ResourceService {
   }
 
   /**
+   * Serialize per-package position writes for the whole transaction:
+   * create()'s MAX + 1 assignment and reorder()'s in-place renumbering
+   * race under READ COMMITTED without it
+   */
+  private async lockResourcePositions(tx: Pick<Database, 'execute'>, packageId: string) {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${'resource_position:' + packageId}, 0))`
+    )
+  }
+
+  /**
    * Create a new resource
    * Automatically assigns position as max(position) + 1 within the package
    */
   async create(input: CreateResourceInput) {
     return await this.db.transaction(async (tx) => {
+      await this.lockResourcePositions(tx, input.packageId)
+
       // Verify package exists
       const [pkg] = await tx
         .select({ id: packageTable.id })
@@ -212,6 +225,8 @@ export class ResourceService {
    */
   async reorder(packageId: string, resourceIds: string[]) {
     return await this.db.transaction(async (tx) => {
+      await this.lockResourcePositions(tx, packageId)
+
       const existing = await tx
         .select({ id: resource.id })
         .from(resource)

@@ -16,10 +16,11 @@ import {
   TabsList,
   TabsTrigger,
   TabsContent,
+  cn,
 } from '@kukan/ui'
 import { Upload, X, Plus, GripVertical } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import { detectFormat } from '@kukan/shared'
+import { detectFormat, MAX_UPLOAD_SIZE } from '@kukan/shared'
 import {
   DndContext,
   closestCenter,
@@ -65,6 +66,22 @@ interface FormState {
 }
 
 const emptyForm: FormState = { name: '', url: '', urlType: null, format: '', description: '' }
+
+/** A file dropped on the list, being turned into a resource + upload */
+interface DropUpload {
+  key: string
+  file: File
+  resourceId: string | null
+  error: string | null
+}
+
+/** Shared dashed drop-target frame; highlighted while a file drag is over it */
+function dropZoneClass(active: boolean) {
+  return cn(
+    'flex cursor-pointer flex-col items-center rounded-lg border-2 border-dashed transition-colors',
+    active ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'
+  )
+}
 
 interface ResourceListProps {
   packageId: string
@@ -180,6 +197,23 @@ export function ResourceList({
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Drop-to-create: files dropped anywhere on the list become resources
+  const [dropUploads, setDropUploads] = useState<DropUpload[]>([])
+  const [dropActive, setDropActive] = useState(false)
+  const dragDepth = useRef(0)
+  // Serializes resource-creation POSTs (see startDropUpload)
+  const createChain = useRef<Promise<unknown>>(Promise.resolve())
+  const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      if (refetchTimer.current) clearTimeout(refetchTimer.current)
+    }
+  }, [])
+
   // Staged order — committed via Save button
   const [items, setItems] = useState<Resource[]>(resources)
   const [reorderError, setReorderError] = useState<string | null>(null)
@@ -199,7 +233,14 @@ export function ResourceList({
     [items, resources]
   )
 
-  const itemIds = useMemo(() => items.map((r) => r.id), [items])
+  // Resources still uploading are shown as cards below the table — hide their
+  // freshly-created rows so a mid-upload refetch doesn't show them twice
+  const visibleItems = useMemo(
+    () => items.filter((r) => !dropUploads.some((u) => u.resourceId === r.id)),
+    [items, dropUploads]
+  )
+
+  const itemIds = useMemo(() => visibleItems.map((r) => r.id), [visibleItems])
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
@@ -309,6 +350,88 @@ export function ResourceList({
     if (file) selectFile(file)
   }, [])
 
+  // --- Drop-to-create ---
+
+  // Dropping while a form is open or a reorder is pending would be ambiguous
+  const dropEnabled = !isFormOpen && !isDirty && !savingOrder
+
+  async function startDropUpload(file: File) {
+    const key = crypto.randomUUID()
+    const error =
+      file.size > MAX_UPLOAD_SIZE
+        ? t('fileTooLarge', { size: MAX_UPLOAD_SIZE / 1024 / 1024 })
+        : null
+    setDropUploads((list) => [...list, { key, file, resourceId: null, error }])
+    if (error) return
+
+    const body: Record<string, string> = { name: file.name, urlType: 'upload' }
+    const format = detectFormat(file.name)
+    if (format) body.format = format
+    try {
+      const resource = await enqueueCreate(body)
+      setDropUploads((list) =>
+        list.map((u) => (u.key === key ? { ...u, resourceId: resource.id } : u))
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t('failedToAdd')
+      setDropUploads((list) => list.map((u) => (u.key === key ? { ...u, error: message } : u)))
+    }
+  }
+
+  // Remove a card; when its resource was created, refetch so the row appears.
+  // Refetches are coalesced — parallel uploads can finish near-simultaneously.
+  function removeDropUpload(u: DropUpload) {
+    // A late completion can arrive after the whole list unmounted (the hook
+    // still notifies for in-flight completions) — don't re-register the
+    // refetch timer past cleanup
+    if (!mountedRef.current) return
+    setDropUploads((list) => list.filter((x) => x.key !== u.key))
+    if (!u.resourceId) return
+    if (refetchTimer.current) clearTimeout(refetchTimer.current)
+    refetchTimer.current = setTimeout(() => {
+      refetchTimer.current = null
+      onUpdated()
+    }, 200)
+  }
+
+  // File drags always suppress the browser default (navigating to the dropped
+  // file, losing any in-progress edits); only the create side honors dropEnabled
+  function handleZoneDragEnter(e: React.DragEvent) {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    if (!dropEnabled) return
+    dragDepth.current += 1
+    // Only the outermost entry updates state — inner boundary crossings would
+    // re-render the whole list on every element the drag passes over
+    if (dragDepth.current === 1) setDropActive(true)
+  }
+
+  function handleZoneDragOver(e: React.DragEvent) {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+  }
+
+  function handleZoneDragLeave() {
+    if (dragDepth.current > 0) dragDepth.current -= 1
+    if (dragDepth.current === 0) setDropActive(false)
+  }
+
+  function handleZoneDrop(e: React.DragEvent) {
+    dragDepth.current = 0
+    setDropActive(false)
+    // An inner drop zone (e.g. FileUploadZone) already claimed this drop
+    if (e.defaultPrevented) return
+    if (e.dataTransfer.files.length === 0) return
+    e.preventDefault()
+    if (!dropEnabled) return
+    for (const file of Array.from(e.dataTransfer.files)) startDropUpload(file)
+  }
+
+  function handleDropInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    for (const file of Array.from(e.target.files ?? [])) startDropUpload(file)
+    e.target.value = ''
+  }
+
   // --- Save (edit) ---
 
   async function handleSave() {
@@ -344,6 +467,35 @@ export function ResourceList({
 
   // --- Create ---
 
+  /** POST a new resource; throws with the server's problem detail on failure */
+  async function createResource(body: Record<string, string>): Promise<Resource> {
+    let res: Response
+    try {
+      res = await clientFetch(`/api/v1/packages/${packageId}/resources`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    } catch {
+      throw new Error(t('failedToAdd'))
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data.detail || t('failedToAdd'))
+    }
+    return res.json()
+  }
+
+  // All creations (drop and form) go through one queue so this tab's creates
+  // don't interleave and dropped files keep their drop order as positions.
+  // Cross-client position races are handled server-side (advisory lock in
+  // ResourceService.create()). Uploads themselves stay parallel.
+  function enqueueCreate(body: Record<string, string>): Promise<Resource> {
+    const run = createChain.current.then(() => createResource(body))
+    createChain.current = run.catch(() => undefined)
+    return run
+  }
+
   async function handleCreate() {
     setSaving(true)
     setFormError(null)
@@ -362,26 +514,15 @@ export function ResourceList({
       }
       if (!body.format) delete body.format
 
-      const res = await clientFetch(`/api/v1/packages/${packageId}/resources`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        setFormError(data.detail || t('failedToAdd'))
-        return
-      }
-
+      const resource = await enqueueCreate(body)
       if (formState.urlType === 'upload') {
-        const resource = await res.json()
         setUploadingResourceId(resource.id)
       } else {
         resetForm()
         onUpdated()
       }
-    } catch {
-      setFormError(t('failedToAdd'))
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : t('failedToAdd'))
     } finally {
       setSaving(false)
     }
@@ -478,11 +619,7 @@ export function ResourceList({
                   </div>
                 ) : (
                   <div
-                    className={`flex cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed p-6 transition-colors ${
-                      dragOver || pendingFile
-                        ? 'border-primary bg-primary/5'
-                        : 'border-muted-foreground/25'
-                    }`}
+                    className={cn(dropZoneClass(dragOver || !!pendingFile), 'gap-3 p-6')}
                     onDrop={handleFileDrop}
                     onDragOver={(e) => {
                       e.preventDefault()
@@ -545,7 +682,13 @@ export function ResourceList({
   }
 
   return (
-    <>
+    <div
+      className="flex flex-col gap-4"
+      onDragEnter={handleZoneDragEnter}
+      onDragOver={handleZoneDragOver}
+      onDragLeave={handleZoneDragLeave}
+      onDrop={handleZoneDrop}
+    >
       {reorderError && (
         <div className="mb-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
           {reorderError}
@@ -564,28 +707,31 @@ export function ResourceList({
           </div>
         </div>
       )}
-      {items.length === 0 && !creating ? (
+      {visibleItems.length === 0 && !creating && dropUploads.length === 0 && (
         <p className="py-4 text-center text-sm text-muted-foreground">{t('noResources')}</p>
-      ) : (
+      )}
+      {(visibleItems.length > 0 || creating) && (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-8" />
-                <TableHead>{tc('name')}</TableHead>
-                <TableHead>{tc('format')}</TableHead>
-                <TableHead>{t('source')}</TableHead>
-                <TableHead>{t('status')}</TableHead>
-                <TableHead className="w-[120px]">{tc('actions')}</TableHead>
-              </TableRow>
-            </TableHeader>
+            {visibleItems.length > 0 && (
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8" />
+                  <TableHead>{tc('name')}</TableHead>
+                  <TableHead>{tc('format')}</TableHead>
+                  <TableHead>{t('source')}</TableHead>
+                  <TableHead>{t('status')}</TableHead>
+                  <TableHead className="w-[120px]">{tc('actions')}</TableHead>
+                </TableRow>
+              </TableHeader>
+            )}
             <TableBody>
               <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
-                {items.map((r) => (
+                {visibleItems.map((r) => (
                   <Fragment key={r.id}>
                     <SortableResourceRow
                       resource={r}
-                      isDragDisabled={isFormOpen || savingOrder}
+                      isDragDisabled={isFormOpen || savingOrder || dropUploads.length > 0}
                       isActionsDisabled={isDirty || savingOrder}
                       onEdit={startEdit}
                       onDelete={setDeleteId}
@@ -613,6 +759,42 @@ export function ResourceList({
         </DndContext>
       )}
 
+      {dropUploads.map((u) => (
+        <div key={u.key} className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-4">
+          <div className="flex items-center justify-between gap-2">
+            <span className={cn('text-sm', u.error ? 'text-destructive' : 'text-muted-foreground')}>
+              {u.file.name}
+              {u.error ? `: ${u.error}` : !u.resourceId && ` — ${t('addingResource')}`}
+            </span>
+            {(u.error || u.resourceId) && (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => removeDropUpload(u)}
+                aria-label={tc('cancel')}
+              >
+                <X />
+              </Button>
+            )}
+          </div>
+          {!u.error && u.resourceId && (
+            <FileUploadZone
+              resourceId={u.resourceId}
+              initialFile={u.file}
+              onComplete={() => removeDropUpload(u)}
+            />
+          )}
+        </div>
+      ))}
+
+      {dropEnabled && (
+        <label className={cn(dropZoneClass(dropActive), 'gap-2 p-4 focus-within:border-primary')}>
+          <Upload className="size-5 text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">{t('dropHint')}</span>
+          <input type="file" multiple className="sr-only" onChange={handleDropInputChange} />
+        </label>
+      )}
+
       {!creating && !editId && (
         <Button variant="outline" size="sm" onClick={startCreate} disabled={isDirty || savingOrder}>
           <Plus className="mr-1 size-4" />
@@ -624,10 +806,12 @@ export function ResourceList({
         open={!!deleteId}
         onOpenChange={(open) => !open && setDeleteId(null)}
         title={t('deleteResource')}
-        description={t('deleteResourceConfirm')}
+        description={t('deleteResourceConfirm', {
+          name: items.find((r) => r.id === deleteId)?.name || t('unnamed'),
+        })}
         onConfirm={handleDelete}
         isDeleting={deleting}
       />
-    </>
+    </div>
   )
 }

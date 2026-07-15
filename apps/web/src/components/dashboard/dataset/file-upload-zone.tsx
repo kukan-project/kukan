@@ -10,6 +10,7 @@ import { PipelineStatusBadge } from './pipeline-status-badge'
 interface FileUploadZoneProps {
   resourceId: string
   initialFile?: File
+  /** May fire after unmount (see UseFileUploadOptions.onComplete) */
   onComplete?: () => void
 }
 
