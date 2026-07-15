@@ -74,6 +74,14 @@ assembled on demand from the DB and storage originals, then discarded.**
   response is an object with a required key per index. Small local models
   (4-8B) can mangle a 36-char UUID inside a large prompt and drop the whole
   array, so the grammar forces one suggestion per resource
+- Generation order is **resources first, then the dataset** (supplemented
+  2026-07-15). Generation is autoregressive, so the output schema's property
+  order is the model's thinking order: `resourceSuggestions` comes first,
+  prescribing "describe each resource independently from its own material,
+  then write title / notes / tags as an integration of those descriptions"
+  at the grammar level (grammar-enforced on OpenAI / Ollama, followed in
+  practice on Bedrock). This keeps a single resource's content from
+  dominating the description of a dataset whose resources differ in nature
 
 ### 3. Generation material — no dependency on the search index
 

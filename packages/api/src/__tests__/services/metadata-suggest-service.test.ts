@@ -165,6 +165,14 @@ describe('MetadataSuggestService', () => {
     expect(
       complete.mock.calls[0][1].jsonSchema.schema.properties.resourceSuggestions.required
     ).toEqual(['0', '1'])
+    // Resources generate before the dataset fields — schema key order is the
+    // autoregressive thinking order (describe each, then integrate)
+    expect(Object.keys(complete.mock.calls[0][1].jsonSchema.schema.properties)).toEqual([
+      'resourceSuggestions',
+      'title',
+      'notes',
+      'tags',
+    ])
     // index → id mapping in the response
     expect(result.suggestion.resources).toEqual([
       { id: 'r1', name: 'r1の名前', description: 'r1の説明' },

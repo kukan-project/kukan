@@ -39,6 +39,12 @@ export type SuggestLlmOutput = z.infer<typeof suggestLlmOutputSchema>
  * required key per index keeps it inside OpenAI's strict subset and makes the
  * grammar force a { name, description } per resource. Length/count limits are
  * applied in postProcess — the strict subset has no string/array constraints.
+ *
+ * Property order is deliberate: generation is autoregressive, so the schema's
+ * key order is the model's thinking order. Resources come first so each is
+ * described independently from its own material, and title/notes/tags are
+ * then written as an integration of those descriptions — not the other way
+ * around (grammar-enforced on OpenAI/Ollama, followed in practice on Bedrock).
  */
 export function buildLlmOutputJsonSchema(describedCount: number) {
   const perIndex = {
@@ -52,17 +58,17 @@ export function buildLlmOutputJsonSchema(describedCount: number) {
   return {
     type: 'object',
     properties: {
-      title: { type: 'string' },
-      notes: { type: 'string' },
-      tags: { type: 'array', items: { type: 'string' } },
       resourceSuggestions: {
         type: 'object',
         properties: suggestionProps,
         required: Object.keys(suggestionProps),
         additionalProperties: false,
       },
+      title: { type: 'string' },
+      notes: { type: 'string' },
+      tags: { type: 'array', items: { type: 'string' } },
     },
-    required: ['title', 'notes', 'tags', 'resourceSuggestions'],
+    required: ['resourceSuggestions', 'title', 'notes', 'tags'],
     additionalProperties: false,
   } as const
 }
@@ -112,28 +118,40 @@ export function buildSystemPrompt(locale: 'ja' | 'en'): string {
     '',
     `Write every generated value in ${OUTPUT_LANGUAGE[locale]}.`,
     '',
+    'Work in two passes: first describe each resource independently, then',
+    'write the dataset-level fields as an integration of those descriptions.',
+    'A dataset may hold resources of very different natures — never let one',
+    'resource’s content dominate the others.',
+    '',
     'Rules:',
     '- Respect existing metadata: where a field already has content, keep its',
     '  intent and wording as much as possible and only fill in what is missing.',
     '  Generate empty fields from the material.',
-    '- title: a concise human-readable dataset title (no file extensions,',
-    '  no codes, and no filler words like “dataset” / “データセット”).',
-    '- notes: a few sentences describing what the data contains, its coverage,',
-    '  and what it could be used for.',
-    '- tags: pick from the candidate list (ordered by site-wide usage) whenever',
-    '  a candidate fits; invent a new tag only when nothing fits, at most 2 new',
-    '  tags, and at most 5 tags in total.',
+    '- Ground every proper noun (place names, organization names, program',
+    '  names) in the material or the existing metadata; never introduce one',
+    '  that appears in neither.',
     '- resourceSuggestions: an object keyed by each resource’s index (a string).',
     '  For every resource in `resources`, provide { name, description } using',
-    '  its `index` as the key.',
+    '  its `index` as the key. Judge each resource only from its own material,',
+    '  independently of the other resources.',
     '  - name: a concise human-readable name. Keep a good existing name; improve',
     '    a raw filename or code. Do not put the file format or extension in the',
     '    name (no “CSV”, “PDF”, “Excel”, “.xlsx”) — the format is a separate',
-    '    field.',
+    '    field. When textHead is provided, its opening lines usually carry the',
+    '    document’s own title or heading — weight them over recurring themes',
+    '    deeper in the body.',
     '  - description: one sentence about the resource. Base it on the file',
     '    content when provided (columns, sample rows, text, or a file listing);',
     '    otherwise infer from its name and format. Never leave it empty — if',
     '    nothing else fits, reuse the existing description or the name.',
+    '- title: a concise human-readable dataset title summarizing the resources',
+    '  described above (no file extensions, no codes, and no filler words like',
+    '  “dataset” / “データセット”).',
+    '- notes: a few sentences integrating the resource descriptions: what the',
+    '  data contains, its coverage, and what it could be used for.',
+    '- tags: pick from the candidate list (ordered by site-wide usage) whenever',
+    '  a candidate fits; invent a new tag only when nothing fits, at most 2 new',
+    '  tags, and at most 5 tags in total.',
   ].join('\n')
 }
 
