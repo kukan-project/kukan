@@ -85,13 +85,10 @@ export function MobileNav({ user }: MobileNavProps) {
               </Link>
             )}
             <Separator className="my-2" />
-            <button
-              onClick={toggleLocale}
-              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-            >
-              <Globe className="size-4" />
+            <Button variant="ghost" onClick={toggleLocale} className="justify-start px-3">
+              <Globe />
               {locale === 'ja' ? 'English' : '日本語'}
-            </button>
+            </Button>
           </nav>
         </SheetContent>
       </Sheet>

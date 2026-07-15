@@ -35,12 +35,12 @@ describe('ResourcePipelinePreview', () => {
 
   it('should show pipeline settings button when canManage is true', () => {
     render(<ResourcePipelinePreview resourceId="r1" canManage />)
-    expect(screen.getByTitle('Processing Status')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Processing Status' })).toBeInTheDocument()
   })
 
   it('should not show pipeline settings button when canManage is false', () => {
     render(<ResourcePipelinePreview resourceId="r1" canManage={false} />)
-    expect(screen.queryByTitle('Processing Status')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Processing Status' })).not.toBeInTheDocument()
   })
 
   it('should show generated date when pipeline is complete', () => {

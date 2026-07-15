@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useLocale } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { Globe } from 'lucide-react'
 import {
   Button,
@@ -20,6 +20,7 @@ const locales = [
 export function LanguageSwitcher() {
   const locale = useLocale()
   const router = useRouter()
+  const t = useTranslations('common')
 
   const handleChange = (value: string) => {
     document.cookie = `NEXT_LOCALE=${value}; path=/; max-age=31536000; SameSite=Lax`
@@ -29,7 +30,7 @@ export function LanguageSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="size-8" aria-label="Language">
+        <Button variant="ghost" size="icon" className="size-8" aria-label={t('language')}>
           <Globe className="size-4" />
         </Button>
       </DropdownMenuTrigger>

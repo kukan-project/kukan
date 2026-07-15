@@ -3,7 +3,15 @@
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Settings2 } from 'lucide-react'
-import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@kukan/ui'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@kukan/ui'
 import { useTranslations, useLocale } from 'next-intl'
 import { isCsvFormat } from '@kukan/shared'
 import { PipelineStatusDetail } from './pipeline-status-detail'
@@ -68,13 +76,19 @@ export function ResourcePipelinePreview({
         {canManage && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button variant="ghost" size="icon" title={t('pipelineStatus')}>
+              <Button
+                variant="ghost"
+                size="icon"
+                title={t('pipelineStatus')}
+                aria-label={t('pipelineStatus')}
+              >
                 <Settings2 className="size-4" />
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-lg">
               <DialogHeader>
                 <DialogTitle>{t('pipelineStatus')}</DialogTitle>
+                <DialogDescription>{t('pipelineStatusDescription')}</DialogDescription>
               </DialogHeader>
               <PipelineStatusDetail resourceId={resourceId} onSettled={handleSettled} />
             </DialogContent>

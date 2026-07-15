@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
-import { ResourcePreview } from '../resource-preview'
+import { ResourcePreview, PreviewSkeleton } from '../resource-preview'
 
 vi.mock('@/lib/client-api', () => ({
   clientFetch: vi.fn(),
@@ -34,6 +34,13 @@ const mockClientFetch = vi.mocked(clientFetch)
 
 beforeEach(() => {
   mockClientFetch.mockReset()
+})
+
+describe('PreviewSkeleton', () => {
+  it('announces the loading state as a status region', () => {
+    render(<PreviewSkeleton />)
+    expect(screen.getByRole('status')).toHaveTextContent('Loading...')
+  })
 })
 
 describe('ResourcePreview', () => {

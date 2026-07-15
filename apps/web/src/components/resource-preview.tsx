@@ -350,9 +350,11 @@ function PreviewNotAvailable() {
 }
 
 export function PreviewSkeleton() {
+  const t = useTranslations('common')
   return (
-    <Card>
+    <Card role="status">
       <CardContent className="space-y-3 p-4">
+        <span className="sr-only">{t('loading')}</span>
         <Skeleton className="h-8 w-full" />
         <Skeleton className="h-6 w-full" />
         <Skeleton className="h-6 w-full" />
