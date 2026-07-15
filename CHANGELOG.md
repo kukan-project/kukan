@@ -3,6 +3,52 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.4] - 2026-07-15
+
+**Highlights**
+
+- **Create a dataset by just dropping files.** The new-dataset page now accepts drag & drop: dropping files immediately creates a draft and carries the files over to the edit page, where each one becomes a resource and uploads automatically — no form filling required before you have somewhere to put your data (ADR-039) (#78).
+- **Add resources by dropping files on the dataset edit page.** Files dropped anywhere on the resource list become resources and upload in parallel, keeping their drop order as the resource order. Oversized files (over the 100 MB upload limit) are reported per file without interrupting the rest, and the format is auto-detected from the file name (#77).
+- **An accessibility sweep across the web UI.** Error and success callouts are now announced to screen readers, form validation errors are read together with the field they belong to, and icon-only buttons have accessible names (#83, #84, #85).
+
+**Features**
+
+- feat(web): add drag-and-drop resource creation to dataset edit page (#77)
+- feat(web): create dataset drafts by dropping files on the new-dataset page (#78)
+
+**Accessibility**
+
+- Error callouts across the app now use one alert component: errors and urgent warnings are announced assertively (`role="alert"`), success and completion notes politely (`role="status"`), following WAI-ARIA guidance (#83).
+- Form validation messages are wired to their inputs with `aria-describedby`, so screen readers read the error together with the field — on sign-in, sign-up, dataset, organization, group, announcement, and admin user forms (#85).
+- Icon-only buttons (language switcher, pipeline-status dialog) received accessible names, the pipeline-status dialog gained a description, and the resource preview's loading state is announced while it loads (#84).
+
+**Improvements**
+
+- Status colors (success, warning, search highlight) are now semantic theme tokens instead of hardcoded palette values, so brand forks can retheme them from the brand override layer. The appearance customization guide and the `brand/theme.css` template document the new tokens (`--success-tint-foreground`, `--warning-tint-foreground`, `--highlight`) (#86).
+
+---
+
+**ハイライト**
+
+- **ファイルをドロップするだけでデータセットを作成できるようになりました。** データセット新規作成ページがドラッグ＆ドロップに対応し、ファイルを落とすと即座に下書きが作られ、そのまま編集ページに引き継がれて各ファイルがリソースとして自動アップロードされます。データの置き場所を作るためにフォーム入力を済ませる必要はもうありません（ADR-039）（#78）。
+- **データセット編集ページへのファイルドロップでリソースを追加できます。** リソース一覧のどこにドロップしてもファイルがリソースになり、並行アップロードされ、ドロップした順番がそのままリソースの並び順になります。上限（100 MB）を超えるファイルはファイル単位でエラー表示され、他のファイルの処理は中断されません。フォーマットはファイル名から自動判定されます（#77）。
+- **Web UI 全体のアクセシビリティ改善。** エラー・成功の通知がスクリーンリーダーに読み上げられ、フォームのバリデーションエラーは対象フィールドとともに読み上げられ、アイコンのみのボタンにアクセシブルな名前が付きました（#83、#84、#85）。
+
+**機能**
+
+- feat(web): データセット編集ページにドラッグ＆ドロップでのリソース作成を追加（#77）
+- feat(web): 新規作成ページへのファイルドロップでデータセット下書きを作成（#78）
+
+**アクセシビリティ**
+
+- アプリ全体のエラー表示を1つのアラートコンポーネントに統一しました。エラーや即時性のある警告は assertive（`role="alert"`）、成功・完了の通知は polite（`role="status"`）に読み上げられます（WAI-ARIA 準拠）（#83）。
+- フォームのバリデーションメッセージを `aria-describedby` で入力欄に紐付け、スクリーンリーダーがエラーをフィールドとともに読み上げるようにしました — サインイン・サインアップ・データセット・組織・カテゴリ・お知らせ・管理者ユーザーの各フォームが対象です（#85）。
+- アイコンのみのボタン（言語切替、パイプライン状態ダイアログ）にアクセシブルな名前を付け、パイプライン状態ダイアログに説明文を追加し、リソースプレビューの読み込み中状態が読み上げられるようにしました（#84）。
+
+**改善**
+
+- 状態色（成功・警告・検索ハイライト）をハードコードされたパレット値からセマンティックなテーマトークンに置き換え、ブランドフォークがブランドオーバーライドレイヤーから配色を変更できるようにしました。外観カスタマイズガイドと `brand/theme.css` テンプレートに新トークン（`--success-tint-foreground`・`--warning-tint-foreground`・`--highlight`）を記載しています（#86）。
+
 ## [0.8.3] - 2026-07-14
 
 **Breaking Changes**
