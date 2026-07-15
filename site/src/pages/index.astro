@@ -24,6 +24,12 @@ const t = {
     ctaButton: 'ドキュメントへ',
     ctaNote: '開発の背景についてはこちら',
     switchLang: 'English',
+    spotlight: {
+      title: 'AI メタデータ提案',
+      desc: 'アップロードしたファイルの中身を素材に、タイトル・説明・タグを AI がドラフト。CSV の列構成から PDF・Office 文書の本文まで読み取り、提案はフィールド単位で確認してから採用。記入の負担を大きく減らします。',
+      link: '詳しく見る',
+      hash: 'ai-によるメタデータ提案',
+    },
     features: [
       {
         icon: '⚡',
@@ -89,6 +95,12 @@ const t = {
     ctaButton: 'Go to Docs',
     ctaNote: 'Read about the story behind this project',
     switchLang: '日本語',
+    spotlight: {
+      title: 'AI Metadata Suggestions',
+      desc: 'AI drafts titles, descriptions, and tags from what is actually in your files — CSV columns and sample rows, even the text inside PDF and Office documents. Review and adopt field by field; nothing is overwritten automatically.',
+      link: 'Learn more',
+      hash: 'ai-metadata-suggestions',
+    },
     features: [
       {
         icon: '⚡',
@@ -222,6 +234,27 @@ const techStack = [
       </div>
     </section>
 
+    <section class="spotlight">
+      <div class="container">
+        <div class="spotlight-card">
+          <div class="spotlight-body">
+            <div class="spotlight-header">
+              <span class="spotlight-icon">✨</span>
+              <h2 class="spotlight-title" data-i18n="spotlight.title">{t.en.spotlight.title}</h2>
+              <span class="spotlight-badge">NEW</span>
+            </div>
+            <p class="spotlight-desc" data-i18n="spotlight.desc">{t.en.spotlight.desc}</p>
+          </div>
+          <a
+            href={`${base}en/data-admin-guide/#${t.en.spotlight.hash}`}
+            class="btn-outline spotlight-link"
+            data-i18n="spotlight.link"
+            id="spotlight-link">{t.en.spotlight.link}</a
+          >
+        </div>
+      </div>
+    </section>
+
     <section class="features">
       <div class="container">
         <h2 class="section-title" data-i18n="featuresTitle">{t.en.featuresTitle}</h2>
@@ -309,6 +342,9 @@ const techStack = [
           if (docsLink) docsLink.href = docsBase
           if (ctaLink) ctaLink.href = docsBase
           if (docsNav) docsNav.href = docsBase
+          var spotlightLink = document.getElementById('spotlight-link')
+          if (spotlightLink)
+            spotlightLink.href = docsBase + 'data-admin-guide/#' + tr.spotlight.hash
         }
 
         // Apply on load (for ja, since head script already ran; reinforce with full DOM)
@@ -478,6 +514,60 @@ const techStack = [
       .btn-lg {
         padding: 1rem 2.5rem;
         font-size: 1.125rem;
+      }
+
+      /* Spotlight */
+      .spotlight {
+        padding: 3rem 1rem 0;
+      }
+      .spotlight-card {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+        padding: 1.5rem 1.75rem;
+        border: 1px solid hsl(214 81% 84%);
+        border-radius: 0.75rem;
+        background: hsl(214 81% 97%);
+      }
+      .spotlight-body {
+        flex: 1;
+      }
+      .spotlight-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+      }
+      .spotlight-icon {
+        font-size: 1.375rem;
+      }
+      .spotlight-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--dark);
+      }
+      .spotlight-badge {
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        color: #fff;
+        background: var(--brand);
+        border-radius: 9999px;
+        padding: 0.125rem 0.5rem;
+      }
+      .spotlight-desc {
+        font-size: 0.9375rem;
+        color: #475569;
+        line-height: 1.65;
+      }
+      .spotlight-link {
+        white-space: nowrap;
+      }
+      @media (max-width: 767px) {
+        .spotlight-card {
+          flex-direction: column;
+          align-items: flex-start;
+        }
       }
 
       /* Features */
