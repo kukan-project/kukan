@@ -62,6 +62,11 @@ assembled on demand from the DB and storage originals, then discarded.**
 
 ### 2. Generation targets and response format
 
+> **Note: the "single LLM call generating everything", index references, and
+> generation-order grammar enforcement in this section are superseded by
+> "Addendum: per-resource parallel generation (2026-07-16)" below.**
+> The response format (field set, Zod validation, adoption UI) remains valid.
+
 - `title` / `notes` / `tags` / per-resource `name` and `description` are
   generated in **a single LLM call** (better for both cost and latency)
 - The response is JSON validated with Zod (one retry on parse failure)
@@ -297,6 +302,143 @@ Notes:
   design, and the next successful run resolves it). Stale storage artifacts
   are handled like Parquet previews (same-key overwrite; removed by
   `deleteByPrefix` on package purge)
+
+## Addendum: per-resource parallel generation (2026-07-16)
+
+Replace §2's "single LLM call generating everything" with a **two-phase
+scheme: one completion per resource run in parallel, plus one integration
+call**. The API surface (endpoint, response shape, non-persistence of
+suggestions) does not change.
+
+Limits of the single-call approach revealed by implementation and operation:
+
+1. **Structural breakdown on small local models**: effective 4–8B-class models
+   corrupt UUIDs inside large prompts and drop entire arrays, which forced the
+   index-reference + grammar-enforcement workaround (§2). Because the response
+   is one long JSON document, hitting `maxTokens` or any format drift destroys
+   the entire response
+2. **The resource cap is bound by output tokens**: every described resource
+   must carry name + description in the response JSON, so output grows
+   linearly with count; `SUGGEST_MAX_RESOURCES = 10` is effectively derived
+   backwards from `SUGGEST_MAX_TOKENS = 4,000`, the guard against mid-object
+   JSON truncation
+3. **Material dilution**: the 64KB prompt budget is shared across all
+   resources, so more resources means less material per resource
+4. **Collision with the practical envelope of small models**: the current
+   envelope sits right at the practical ceiling of effective 4–8B models
+   (roughly 10 independently-judged items, 1–2K tokens of structured JSON in
+   one pass); the measured hallucinations (which triggered the guardrails
+   above) occurred at this scale
+
+Alternatives were rejected: proportionally raising the constants (20 resources
+/ 8,000 tokens) doubles generation time and cost and further degrades small
+models; chunking into batches of 10 keeps the single-call weaknesses within
+each chunk and only treats the symptom.
+
+### Call structure
+
+```
+Phase 1 (parallel × N):
+  input:  only that resource's material (name / format / size / schema / sampleRows / textHead / fileList) + shared instructions
+  output: { name, description }   … ~100 tokens of real output
+
+Phase 2 (once):
+  input:  existing dataset metadata + the Phase 1 name / description list + tag candidates + group candidates
+  output: { title, notes, tags, groups, name }   … groups / name per "Additional generation targets" below
+```
+
+- "Judge each resource independently → describe the dataset as their
+  integration" (the 2026-07-15 generation-order addendum) is **physically
+  enforced by the call boundary**, with no need to rely on schema property
+  order. Index references also become unnecessary (each call's context
+  contains exactly one resource; the mapping is held on the application side)
+- Each call's response JSON is a trivial 2–3-key structure, so grammar
+  enforcement works reliably even on small models
+
+### Concurrency (per provider)
+
+| Provider          | Concurrency guide | Rationale                                                                                                                         |
+| ----------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Bedrock           | 4–8               | Serverless — no instance to saturate — but per-model RPM / TPM quotas apply. Retry `ThrottlingException` with exponential backoff |
+| OpenAI-compatible | 4–8               | Same backoff for 429 rate limits                                                                                                  |
+| Ollama            | 1–2               | CPU inference shares cores; concurrency does not raise total throughput. Also matches the `OLLAMA_NUM_PARALLEL` default           |
+
+Concrete values become constants at implementation time; promote to ADR-036
+runtime settings only if operational tuning becomes necessary. On CPU-only
+environments this is effectively sequential and total time matches the
+single-call approach — the goal is not speed but **shrinking each call's
+envelope for reliability and scalability**.
+
+### Partial failure — graceful degradation
+
+- Each resource call gets one retry on invalid JSON (as before). Resources
+  that still fail are excluded from the suggestion and Phase 2 proceeds with
+  the successes (in the proposal-style UI a missing resource simply shows its
+  current values — a natural degradation). Failures are logged at warn level
+  (to observe per-model failure rates)
+- If all resources fail, or Phase 2 fails, return `ServiceUnavailableError`
+  as before
+
+### Redefining budgets and caps
+
+- **Output**: tighten `maxTokens` per call (guide: Phase 1 = 500, Phase 2 =
+  2,000; keep at least the current safety margin against mid-object JSON
+  truncation)
+- **Input**: Phase 1 carries one resource's material only, so the existing
+  per-resource clamps suffice. The 64KB prompt budget and trim ladder shrink
+  to Phase 2 use or are removed
+- **`SUGGEST_MAX_RESOURCES` changes meaning**: from a model constraint
+  (derived from output tokens) to a cost / latency / review-UX cap. Keep 10
+  initially; raising it no longer requires re-engineering the envelope
+- **Timeouts**: replace the single 120-second all-or-nothing window with
+  short per-call timeouts (guide: 60 seconds). Estimate the whole request as
+  "per-call timeout × ⌈count ÷ concurrency⌉ + Phase 2"; verify the CPU-only
+  upper bound together with reverse-proxy settings at implementation time
+
+### Quality evaluation and known trade-offs
+
+- Using the §4 golden-set method, **compare single-call (previous) vs split
+  (this addendum) on the same datasets** before switching (Gemma 3n E4B /
+  Nova Lite; axes: JSON conformance rate, hallucination, content quality,
+  stylistic consistency)
+- **Stylistic inconsistency** from independent generation is the anticipated
+  drawback; contain it with shared instructions. Only if evaluation shows it
+  unacceptable, consider light normalization in Phase 2 (by default, resource
+  descriptions are returned as generated — the integration call must not
+  rewrite them)
+- The input-token overhead of repeating the instructions N + 1 times is minor
+  (input pricing is low; cost is dominated by output tokens, roughly the same
+  as before)
+- Progressive delivery (streaming per-resource suggestions to the UI as they
+  land) remains a future extension out of scope; the call split lays its
+  groundwork
+
+### Additional generation targets — category and URL identifier (dataset side)
+
+Add `groups` (categories) and `name` (URL identifier) to Phase 2's generation
+targets. The new response fields are backward-compatible (additive), but the
+adoption UI needs new rows for category and URL identifier.
+
+- **groups**: the same closed-list scheme as tag control (§5). Pass all site
+  groups (name + title — the same list as the form's category selector) as
+  candidates and instruct: "only clearly applicable ones, at most 3; never
+  invent a group absent from the candidates". The response is an array of
+  group names; values not in the candidate list are discarded server-side.
+  Group selection merely prefills an existing form field editors can already
+  set freely, so no new permission surface arises (and unlike tags there is
+  no new-item creation, making control simpler)
+- **name**: have the LLM generate an ASCII slug (`^[a-z0-9._-]+$`, 2–100
+  chars) from the suggested title. Romanizing / English-slugifying a Japanese
+  title is something LLMs do better than mechanical transliteration
+  libraries. The server normalizes (lowercase, strip invalid characters,
+  collapse hyphens), validates, checks uniqueness in the DB, and appends a
+  numeric suffix on conflict. If the normalized value still fails validation,
+  the field is omitted entirely (graceful degradation)
+- **`name` is suggested for drafts only**: changing a published dataset's URL
+  identifier breaks external links and citations, so entry point ② (editing a
+  published dataset) excludes `name` from generation targets. A draft's name
+  is an auto-generated placeholder (ADR-039), which is also where the
+  suggestion is most valuable
 
 ## Future Extensions (out of scope for this ADR)
 
