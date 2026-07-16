@@ -4,7 +4,7 @@
 
 ## Status
 
-Accepted (2026-05-16, testing strategy added 2026-07-10)
+Accepted (2026-05-16, testing strategy added 2026-07-10, token operation policy added 2026-07-16)
 
 ## Context
 
@@ -305,6 +305,55 @@ Tier 3 (plugin system) maintains ADR-010's policy as-is.
 4. **When a new override slot is needed**, add a key to `BrandOverrides` type in the main repository and incorporate the override check in the corresponding component
 5. **Fork side regularly rebases/merges the main branch** (since `src/brand/` is isolated, conflicts should not occur in principle)
 6. **Fork side does not modify main-repo test files** (the "Testing Strategy" below keeps main tests brand-independent, so no changes should be needed. If a fork customization breaks a main test, report it as a main-side bug via issue / PR)
+
+## Token Operation Policy
+
+Real-world fork operation surfaced the following feedback: (1) it is unclear which components and states consume each official token, so every override decision requires source-code investigation; (2) almost all official tokens are shared across multiple locations, so the range that can be freely overridden is effectively narrow; (3) designer-specified palettes include colors that do not fit any official token role, so designs cannot be fully reproduced within the official rules. In response, the following rules govern CSS variable (token) operation.
+
+### Namespace Reservation
+
+| Prefix                                   | Owner | Purpose                                                                       |
+| ---------------------------------------- | ----- | ----------------------------------------------------------------------------- |
+| shadcn standard names (`--primary` etc.) | Main  | Semantic tokens. Forks may only override values                               |
+| `--kukan-*`                              | Main  | KUKAN-specific layout values and alias tokens. Forks may only override values |
+| `--brand-*`                              | Fork  | Fork-specific custom tokens. **Main never defines or references `--brand-*`** |
+
+### Fork Custom Tokens (`--brand-*`)
+
+When a designer-specified palette does not fit official token roles (primary, accent, etc.), forks may freely add `--brand-*` tokens in `brand/theme.css`.
+
+- Use the same bare HSL triplet format as official tokens (so opacity modifiers like `/10` work at usage sites)
+- Consumable only within fork-owned components (`brand/overrides/` / `brand/pages/`); main components never reference them
+- `brand/theme.css` is a separate CSS unit from `globals.css`, so Tailwind's `@theme` cannot generate utility classes for it; the official convention is the arbitrary value syntax (`bg-[hsl(var(--brand-xxx))]`)
+
+### Alias Tokens (main side, added on demand)
+
+Overriding an official token alone cascades to unintended places (button hover, dropdown selection states, etc.). For the need to recolor a single component on a non-overridden main screen, the main side responds by adding component-scoped **alias tokens**.
+
+```css
+/* globals.css (main) */
+:root {
+  /* defaults reference official tokens */
+  --kukan-header-bg: var(--primary);
+}
+
+@theme inline {
+  /* generates the bg-kukan-header-bg utility class */
+  --color-kukan-header-bg: hsl(var(--kukan-header-bg));
+}
+```
+
+- Default values reference official tokens, so behavior does not change unless a fork overrides them
+- Defining the token in `:root` alone does not generate utility classes; add the paired `--color-*` mapping in `@theme inline` in `globals.css` (unlike `brand/theme.css`, `@theme` works in `globals.css`)
+- No upfront exhaustive definitions (YAGNI principle per ADR-010). They are added where demand arises, under fork operation rule 2 ("submit a PR to add a customization point")
+
+### Token Usage Documentation
+
+To reduce the cost of investigating whether an override is safe:
+
+1. **Override support ratings** — the token table in the appearance customization guide states "Recommended (intended for brand changes) / Caution (wide blast radius; representative usage locations and states listed) / Not recommended (semantic colors such as error/success)" (done)
+2. **Auto-generated usage reference** (follow-up) — Tailwind class names encode state information in variant prefixes (`hover:` / `focus-visible:` / `data-[state=...]:`), so a "token → component → state" listing can be machine-generated via grep. No hand-written exhaustive table will be maintained, as it would go stale
+3. **Visual verification page** (future consideration) — a gallery to visually verify theme changes across all components and states
 
 ## Testing Strategy
 

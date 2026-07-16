@@ -12,9 +12,9 @@ Changes can be applied incrementally — start with the simplest approach.
 
 Files you modify in a fork should be limited to these two locations:
 
-| Directory | Contents |
-|---|---|
-| `apps/web/src/brand/` | Config, CSS variables, component overrides |
+| Directory                | Contents                                        |
+| ------------------------ | ----------------------------------------------- |
+| `apps/web/src/brand/`    | Config, CSS variables, component overrides      |
 | `apps/web/public/brand/` | Logo, favicon, OG image, and other static files |
 
 Do not modify files outside these directories. Doing so will cause merge conflicts when pulling upstream updates.
@@ -26,9 +26,9 @@ Write CSS variables in `brand/theme.css` to change colors and sizes across the e
 ```css
 /* apps/web/src/brand/theme.css */
 :root {
-  --primary: 142 64% 32%;            /* Main color (HSL) */
-  --primary-foreground: 0 0% 100%;   /* Text color on main color */
-  --kukan-header-height: 72px;       /* Header height */
+  --primary: 142 64% 32%; /* Main color (HSL) */
+  --primary-foreground: 0 0% 100%; /* Text color on main color */
+  --kukan-header-height: 72px; /* Header height */
   --kukan-container-max-width: 1400px;
 }
 ```
@@ -37,18 +37,28 @@ Write CSS variables in `brand/theme.css` to change colors and sizes across the e
 
 You can override shadcn/ui standard variables and KUKAN-specific variables (prefixed with `--kukan-*`). See `apps/web/src/app/globals.css` for the full list.
 
-| Variable | Purpose |
-|---|---|
-| `--background` / `--foreground` | Page background and base text |
-| `--primary` / `--primary-foreground` | Main color and text on it |
-| `--secondary` / `--muted` / `--accent` (each with `-foreground`) | Supporting colors |
-| `--destructive` / `--destructive-foreground` | Errors and deletion (solid fill and text on it) |
-| `--success` / `--warning` | Success / warning state colors (borders, tinted backgrounds, icons) |
-| `--success-tint-foreground` / `--warning-tint-foreground` | Text color **on the tinted (/10–/15)** success / warning surfaces; not for solid fills |
-| `--highlight` | Search keyword highlighting |
-| `--border` / `--input` / `--ring` | Borders, input outlines, focus rings |
-| `--radius` | Base border radius |
-| `--kukan-*` | Layout values such as header height |
+Each variable carries an **override rating** to make the go/no-go decision easier:
+
+- **Recommended** — variables intended to be changed to match your brand
+- **Caution** — overridable, but shared across multiple components and states. Check the "Purpose and main usage" column and preserve the default light/dark relationship
+- **Not recommended** — variables that convey UI meaning (error, success, warning). Changing them for branding reasons is discouraged
+
+| Variable                                                  | Rating          | Purpose and main usage                                                                                                                               |
+| --------------------------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--primary` / `--primary-foreground`                      | Recommended     | Main brand color. Buttons (default), links, progress bars, text selection, checked states of checkboxes etc.                                         |
+| `--highlight`                                             | Recommended     | Search keyword highlighting (only affects search result display)                                                                                     |
+| `--radius`                                                | Recommended     | Base border radius (all components)                                                                                                                  |
+| `--kukan-*`                                               | Recommended     | Layout values such as header height, logo height, container width                                                                                    |
+| `--background` / `--foreground`                           | Caution         | Page background and base text. Affects the whole site                                                                                                |
+| `--card` / `--popover` (each with `-foreground`)          | Caution         | Backgrounds and text of cards and popups such as dropdowns and selects                                                                               |
+| `--secondary` / `--secondary-foreground`                  | Caution         | Backgrounds of secondary buttons and badges. Expected to stay light                                                                                  |
+| `--muted` / `--muted-foreground`                          | Caution         | Supplementary text (the most widely used variable on the site), placeholders, skeletons, tinted backgrounds. Expected to stay light                  |
+| `--accent` / `--accent-foreground`                        | Caution         | **Hover and selection color.** Hover of outline/ghost buttons, focused items in selects/dropdowns, dialog close buttons, etc. Expected to stay light |
+| `--border` / `--input`                                    | Caution         | Borders and input outlines across all components                                                                                                     |
+| `--ring`                                                  | Caution         | Focus ring. Directly affects keyboard-navigation visibility — keep sufficient contrast against backgrounds                                           |
+| `--destructive` / `--destructive-foreground`              | Not recommended | Semantic color for errors and deletion (destructive buttons, form errors, delete menu items). Solid fill and text on it                              |
+| `--success` / `--warning`                                 | Not recommended | Semantic colors for success / warning states (alerts, pipeline status, form warnings). Used for borders, tinted backgrounds, icons                   |
+| `--success-tint-foreground` / `--warning-tint-foreground` | Not recommended | Text color **on the tinted (/10–/15)** success / warning surfaces; not for solid fills                                                               |
 
 ### Rules for Overriding
 
@@ -60,6 +70,31 @@ Follow these rules to swap colors safely:
 4. **Update paired tokens together and check contrast** — when changing `--primary`, also update `--primary-foreground` and keep a contrast ratio of at least 4.5:1 (WCAG AA). When changing `--success` / `--warning`, set the matching `-tint-foreground` to a **dark shade of the same hue** and verify at least 4.5:1 on the `/15` tinted surface (unlike `-foreground` tokens, these are not meant for solid fills).
 5. **Do not introduce `dark:` classes** — KUKAN's theme tokens are light-only. Adding `dark:` in override components breaks the display only for users whose OS prefers dark mode.
 6. **Avoid raw palette colors in override components too** — use semantic classes like `text-success` instead of `text-green-600`, so a future recoloring only takes edits to `theme.css`.
+
+### Adding Custom Tokens (`--brand-*`)
+
+When a designer-specified palette includes colors that do not fit any official token role (primary, accent, etc.), you can add custom tokens with the `--brand-` prefix in `brand/theme.css`.
+
+```css
+/* apps/web/src/brand/theme.css */
+:root {
+  --brand-accent-green: 183 29% 87%;
+  --brand-link: 183 79% 28%;
+}
+```
+
+- **`--brand-*` is a fork-only namespace** — upstream never defines or references `--brand-*` tokens, so they cannot conflict with upstream updates. Conversely, `--kukan-*` is reserved for upstream; do not use it for custom tokens
+- **Use the same bare HSL triplet format as official tokens** (so opacity modifiers like `/10` work at usage sites)
+- **Custom tokens can only be consumed in fork-owned components** (`brand/overrides/` / `brand/pages/`). Upstream components never reference them
+- **No Tailwind utility classes are generated** — `theme.css` is a separate CSS unit from `globals.css`, so `@theme` cannot generate classes for it. Reference custom tokens with the arbitrary value syntax:
+
+```tsx
+<a className="text-[hsl(var(--brand-link))] bg-[hsl(var(--brand-accent-green))]">...</a>
+```
+
+### Changing Colors on Non-Overridden Screens
+
+If you want to recolor a single component on an upstream screen you have not overridden, overriding official tokens often has too wide a blast radius (see the table above). For this case, the upstream repository adds component-scoped **alias tokens** on demand (e.g. `--kukan-header-bg`, defaulting to `var(--primary)` so nothing changes unless a fork overrides it). Propose the addition via an issue on the upstream repository when you need one.
 
 ## Tier 2: Text and Metadata
 
@@ -87,23 +122,22 @@ export const brandConfig: BrandConfig = {
 
   ogImage: '/brand/og-image.png',
   faviconPath: '/brand/favicon.ico',
-
 }
 ```
 
 ### Field Reference
 
-| Field | Description |
-|---|---|
-| `siteName` | Site title (browser tab, header, etc.) |
-| `siteDescription` | meta description (for search engines) |
-| `copyright` | Footer copyright text (`© 2026` is prepended automatically) |
-| `copyrightUrl` | Link target for the site name in the footer (omit for no link) |
-| `logo` | Header logo configuration (see below) |
-| `headerNavExtra` | Additional navigation items for the header |
-| `footerLinks` | Footer link list |
-| `ogImage` | OGP image path (relative to `public/`) |
-| `faviconPath` | Favicon path |
+| Field             | Description                                                    |
+| ----------------- | -------------------------------------------------------------- |
+| `siteName`        | Site title (browser tab, header, etc.)                         |
+| `siteDescription` | meta description (for search engines)                          |
+| `copyright`       | Footer copyright text (`© 2026` is prepended automatically)    |
+| `copyrightUrl`    | Link target for the site name in the footer (omit for no link) |
+| `logo`            | Header logo configuration (see below)                          |
+| `headerNavExtra`  | Additional navigation items for the header                     |
+| `footerLinks`     | Footer link list                                               |
+| `ogImage`         | OGP image path (relative to `public/`)                         |
+| `faviconPath`     | Favicon path                                                   |
 
 The example-query chips under the search box are configured from the **admin Site Management page** (`/dashboard/admin/site`), not the brand config.
 
@@ -149,10 +183,10 @@ You can override UI translation text for your organization. Specify only the key
 
 ### Choosing Between `brandConfig` and Messages
 
-| Use case | Where to configure |
-|---|---|
-| Metadata, OGP, etc. (language-independent) | `brand-config.ts` |
-| UI display text (per-language) | `brand/messages/{locale}.json` |
+| Use case                                   | Where to configure             |
+| ------------------------------------------ | ------------------------------ |
+| Metadata, OGP, etc. (language-independent) | `brand-config.ts`              |
+| UI display text (per-language)             | `brand/messages/{locale}.json` |
 
 ## Tier 3: Component Replacement
 
@@ -203,10 +237,10 @@ That's all it takes to replace the Header.
 
 ### Available Slots
 
-| Slot | Replaces |
-|---|---|
-| `Header` | Entire site header |
-| `Footer` | Entire site footer |
+| Slot      | Replaces                    |
+| --------- | --------------------------- |
+| `Header`  | Entire site header          |
+| `Footer`  | Entire site footer          |
 | `TopPage` | Entire top page (home page) |
 
 ### Reusing Default Parts
@@ -267,7 +301,7 @@ export default function PrivacyPage() {
 ```typescript
 export const pages: Record<string, () => Promise<BrandPage>> = {
   terms: () => import('./terms'),
-  privacy: () => import('./privacy'),  // added
+  privacy: () => import('./privacy'), // added
 }
 ```
 
@@ -322,7 +356,7 @@ When the upstream adds new fields to `src/types/brand.ts`, you may need to add t
 
 The upstream unit tests are designed to be brand-independent: inside tests, the contents of `src/brand/` are pinned to the KUKAN defaults. **No matter how you customize the brand, the upstream tests (CI) will keep passing.**
 
-- **Do not modify upstream test files.** If a customization breaks an upstream test, report it to the upstream repository via an issue / PR instead of patching it in your fork
+- **Do not modify upstream test files.** If a customization breaks an upstream test, report it to the upstream repository via an issue instead of patching it in your fork
 - **Place tests for your custom components in `apps/web/src/brand/__tests__/`.** Files named `*.test.ts` / `*.test.tsx` are discovered automatically and run with `pnpm test`. Whether to write tests is up to your fork
 
 ```tsx
@@ -341,12 +375,13 @@ describe('Custom Header', () => {
 
 ## Summary
 
-| Goal | Method | Estimated time |
-|---|---|---|
-| Change colors | Write CSS variables in `brand/theme.css` | 5 min |
-| Change site name and text | Edit `brand/brand-config.ts` | 30 min |
-| Override UI translation text | Add override keys to `brand/messages/{locale}.json` | 10 min |
-| Replace logo | Place file in `public/brand/` + edit config | 10 min |
-| Change header/footer structure | Create components in `brand/overrides/` | A few hours |
-| Replace the top page | Create component in `brand/overrides/` | A few hours |
-| Add static pages | Create components in `brand/pages/` + register | 30 min |
+| Goal                                      | Method                                              | Estimated time |
+| ----------------------------------------- | --------------------------------------------------- | -------------- |
+| Change colors                             | Write CSS variables in `brand/theme.css`            | 5 min          |
+| Use custom colors outside official tokens | Define `--brand-*` tokens in `brand/theme.css`      | 5 min          |
+| Change site name and text                 | Edit `brand/brand-config.ts`                        | 30 min         |
+| Override UI translation text              | Add override keys to `brand/messages/{locale}.json` | 10 min         |
+| Replace logo                              | Place file in `public/brand/` + edit config         | 10 min         |
+| Change header/footer structure            | Create components in `brand/overrides/`             | A few hours    |
+| Replace the top page                      | Create component in `brand/overrides/`              | A few hours    |
+| Add static pages                          | Create components in `brand/pages/` + register      | 30 min         |
