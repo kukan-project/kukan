@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Alert, AlertDescription, Badge, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
@@ -96,34 +96,62 @@ export default function EditDatasetPage() {
   const [deleting, setDeleting] = useState(false)
   const [syncWarning, setSyncWarning] = useState(false)
   const [published, setPublished] = useState(false)
+  // Ref twin of `published` for stale fetchData closures (state would lag)
+  const publishedRef = useRef(false)
 
   // AI metadata suggestions (ADR-040): capability flag, pipeline-complete
   // nudge, and a counter that opens the dialog inside DatasetForm
   const { metadataSuggestEnabled } = useSiteSettings()
   const [suggestNudge, setSuggestNudge] = useState(false)
   const [suggestOpenSignal, setSuggestOpenSignal] = useState(0)
+  const [uploading, setUploading] = useState(false)
 
-  const fetchData = useCallback(async () => {
-    const stateQuery =
-      stateParam === 'deleted' || stateParam === 'draft' ? `?state=${stateParam}` : ''
-    const pkgRes = await clientFetch(`/api/v1/packages/${nameOrId}${stateQuery}`)
-    if (pkgRes.ok) {
-      setPkg(await pkgRes.json())
-    } else if (!stateQuery) {
-      // A draft opened without ?state=draft 404s on the active path — retry as draft
-      const draftRes = await clientFetch(`/api/v1/packages/${nameOrId}?state=draft`)
-      if (draftRes.ok) setPkg(await draftRes.json())
-    } else if (stateParam === 'draft') {
-      // ?state=draft but the package is already active: publish committed but the
-      // follow-up search sync may have failed — offer the idempotent re-publish
-      const activeRes = await clientFetch(`/api/v1/packages/${nameOrId}`)
-      if (activeRes.ok) {
-        setPkg(await activeRes.json())
-        setSyncWarning(true)
-        router.replace(`/dashboard/datasets/${nameOrId}/edit`)
+  // Concurrent refetches (upload completions, pipeline settles) can resolve
+  // out of order — apply monotonically so a slow stale response can't roll
+  // fresh pipeline statuses back
+  const fetchSeq = useRef(0)
+  const appliedSeq = useRef(0)
+  /** Refetch the package; false = this refresh failed (callers may retry) */
+  const fetchData = useCallback(async (): Promise<boolean> => {
+    const seq = ++fetchSeq.current
+    const apply = (data: PackageDetail) => {
+      if (seq > appliedSeq.current) {
+        appliedSeq.current = seq
+        setPkg(data)
       }
     }
-    setLoading(false)
+    try {
+      const stateQuery =
+        stateParam === 'deleted' || stateParam === 'draft' ? `?state=${stateParam}` : ''
+      const pkgRes = await clientFetch(`/api/v1/packages/${nameOrId}${stateQuery}`)
+      if (pkgRes.ok) {
+        apply(await pkgRes.json())
+      } else if (!stateQuery) {
+        // A draft opened without ?state=draft 404s on the active path — retry as draft
+        const draftRes = await clientFetch(`/api/v1/packages/${nameOrId}?state=draft`)
+        if (!draftRes.ok) return false
+        apply(await draftRes.json())
+      } else if (stateParam === 'draft') {
+        // ?state=draft but the package is already active: publish committed but the
+        // follow-up search sync may have failed — offer the idempotent re-publish.
+        // Not when this session already published: a pre-publish refetch firing
+        // late must not resurrect the warning
+        const activeRes = await clientFetch(`/api/v1/packages/${nameOrId}`)
+        if (!activeRes.ok) return false
+        apply(await activeRes.json())
+        if (!publishedRef.current) {
+          setSyncWarning(true)
+          router.replace(`/dashboard/datasets/${nameOrId}/edit`)
+        }
+      } else {
+        return false
+      }
+      return true
+    } catch {
+      return false
+    } finally {
+      setLoading(false)
+    }
   }, [nameOrId, stateParam, router])
 
   useEffect(() => {
@@ -136,11 +164,48 @@ export default function EditDatasetPage() {
 
   const isDraft = pkg?.state === 'draft'
 
+  // Offer suggestions only once every resource settled — a mid-upload
+  // resource has no pipeline status yet, so uploads must count as busy too
+  const resources = pkg?.resources ?? []
+  const resourcesBusy =
+    uploading ||
+    resources.some((r) => r.pipelineStatus === 'queued' || r.pipelineStatus === 'processing')
+  const hasCompleteResource = resources.some((r) => r.pipelineStatus === 'complete')
+
+  // Nudge only on a busy → idle transition, never on initial load — and only
+  // when something completed, matching the button's complete >= 1 condition
+  const wasBusyRef = useRef(false)
+  useEffect(() => {
+    if (resourcesBusy) {
+      wasBusyRef.current = true
+      // Retract a lingering invitation — it would miss the new resources
+      setSuggestNudge(false)
+      return
+    }
+    if (wasBusyRef.current) {
+      wasBusyRef.current = false
+      if (hasCompleteResource) setSuggestNudge(true)
+    }
+  }, [resourcesBusy, hasCompleteResource])
+
   const handlePublished = useCallback(() => {
-    // A successful publish always lands on 'active'
-    setPkg((prev) => (prev ? { ...prev, state: 'active' } : prev))
+    // A successful publish always lands on 'active', and re-enqueued the
+    // pipeline of every url resource before responding — mirror the queued
+    // statuses so the suggest gate closes until the badges see them settle
+    setPkg((prev) =>
+      prev
+        ? {
+            ...prev,
+            state: 'active',
+            resources: prev.resources?.map((r) =>
+              r.url ? { ...r, pipelineStatus: 'queued' as const } : r
+            ),
+          }
+        : prev
+    )
     setSyncWarning(false)
     setPublished(true)
+    publishedRef.current = true
     // Now active: drop ?state=draft so the refetch hits the active path
     router.replace(`/dashboard/datasets/${nameOrId}/edit`)
   }, [nameOrId, router])
@@ -357,6 +422,7 @@ export default function EditDatasetPage() {
                 suggest={{
                   enabled: metadataSuggestEnabled,
                   resources: pkg.resources ?? [],
+                  processing: resourcesBusy,
                   openSignal: suggestOpenSignal,
                   onResourcesUpdated: fetchData,
                 }}
@@ -373,12 +439,7 @@ export default function EditDatasetPage() {
                 packageId={pkg.id}
                 resources={pkg.resources ?? []}
                 onUpdated={fetchData}
-                onPipelineComplete={() => {
-                  // Refresh pipelineStatus (enables the suggest button) and
-                  // invite the user — no LLM call happens until they click
-                  fetchData()
-                  setSuggestNudge(true)
-                }}
+                onUploadingChange={setUploading}
               />
             </CardContent>
           </Card>

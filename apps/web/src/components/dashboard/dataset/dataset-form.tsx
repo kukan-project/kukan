@@ -95,6 +95,8 @@ interface DatasetFormProps {
     /** Site capability (null while loading — button hidden until known) */
     enabled: boolean | null
     resources: SuggestResourceInfo[]
+    /** Uploads or pipelines still running — keeps the button disabled */
+    processing?: boolean
     /** Increment to open the dialog from outside (pipeline-complete nudge) */
     openSignal?: number
     /** Called after adopted resource descriptions were saved */
@@ -214,6 +216,8 @@ export function DatasetForm({
   const [resourceApplyError, setResourceApplyError] = useState<string | null>(null)
   const showSuggest = mode === 'edit' && !!nameOrId && suggest?.enabled === true
   const hasCompleteResource = suggest?.resources.some((r) => r.pipelineStatus === 'complete')
+  // Wait for every upload/pipeline — an early suggestion would miss the rest
+  const suggestReady = !!hasCompleteResource && !suggest?.processing
 
   // The pipeline-complete nudge (edit page) opens the dialog via a counter prop.
   // Open only when the counter changes after mount — not for the value present at
@@ -420,13 +424,17 @@ export function DatasetForm({
             type="button"
             variant="outline"
             onClick={() => setSuggestOpen(true)}
-            disabled={!hasCompleteResource || applyingResources}
+            disabled={!suggestReady || applyingResources}
           >
             <Sparkles className="mr-1 size-4" />
             {t('aiSuggestButton')}
           </Button>
-          {!hasCompleteResource && (
-            <span className="text-xs text-muted-foreground">{t('aiSuggestNeedResources')}</span>
+          {suggest?.processing ? (
+            <span className="text-xs text-muted-foreground">{t('aiSuggestProcessing')}</span>
+          ) : (
+            !hasCompleteResource && (
+              <span className="text-xs text-muted-foreground">{t('aiSuggestNeedResources')}</span>
+            )
           )}
           {applyingResources && (
             <span className="text-xs text-muted-foreground">{t('aiSuggestApplyingResources')}</span>

@@ -7,8 +7,8 @@ import { usePipelineStatus, type PipelineStatus } from '@/hooks/use-pipeline-sta
 interface PipelineStatusBadgeProps {
   resourceId: string
   initialStatus?: PipelineStatus | null
-  /** Fires when polling observes the pipeline finishing successfully */
-  onComplete?: () => void
+  /** Fires when polling observes the pipeline settling (complete or error) */
+  onSettled?: (status: PipelineStatus) => void
 }
 
 const STATUS_CONFIG: Record<
@@ -34,7 +34,7 @@ export const STATUS_KEYS: Record<PipelineStatus, string> = {
 export function PipelineStatusBadge({
   resourceId,
   initialStatus,
-  onComplete,
+  onSettled,
 }: PipelineStatusBadgeProps) {
   const t = useTranslations('resource')
   const shouldPoll = initialStatus === 'queued' || initialStatus === 'processing'
@@ -42,9 +42,10 @@ export function PipelineStatusBadge({
     resourceId,
     enabled: shouldPoll,
     initialStatus,
-    onSettled: (settled) => {
-      if (settled === 'complete') onComplete?.()
-    },
+    // Polling only runs off a non-terminal snapshot, so even a first poll
+    // that is already terminal is a settling the owner must hear about
+    initialActive: true,
+    onSettled,
   })
 
   // When a parent refetch flips initialStatus to a terminal state, polling is

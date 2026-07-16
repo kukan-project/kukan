@@ -557,6 +557,23 @@ describe('DatasetForm (draft flows)', () => {
       expect(screen.getByText(/Upload a resource and the AI can suggest/)).toBeInTheDocument()
     })
 
+    it('disables the button while uploads or other pipelines are still running', () => {
+      setupMocks(jsonResponse({}))
+      render(
+        <DatasetForm
+          {...editProps}
+          suggest={{
+            enabled: true,
+            processing: true,
+            resources: [{ id: 'r1', name: 'data.csv', pipelineStatus: 'complete' }],
+          }}
+        />
+      )
+
+      expect(screen.getByRole('button', { name: /Suggest metadata with AI/ })).toBeDisabled()
+      expect(screen.getByText(/Processing resources/)).toBeInTheDocument()
+    })
+
     it('opens the dialog and applies the selection into the form fields', async () => {
       setupMocks(jsonResponse({}))
       render(

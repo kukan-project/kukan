@@ -116,7 +116,7 @@ describe('ResourceList drop-to-create', () => {
     expect(mockClientFetch).toHaveBeenCalledTimes(2)
   })
 
-  it('should remove the upload row and refetch when upload completes', async () => {
+  it('should remove the upload card once the post-completion refetch landed', async () => {
     const onUpdated = vi.fn()
     mockClientFetch.mockResolvedValue(jsonResponse({ id: 'res1' }))
     const { container } = render(<ResourceList {...baseProps} onUpdated={onUpdated} />)
@@ -126,10 +126,14 @@ describe('ResourceList drop-to-create', () => {
       expect(screen.getByTestId('file-upload-zone')).toBeInTheDocument()
     })
 
+    // The refetch is debounced to coalesce simultaneous completions; the card
+    // stays until it lands so the row appears with a fresh pipeline status
     fireEvent.click(screen.getByText('complete-upload'))
-    expect(screen.queryByTestId('file-upload-zone')).not.toBeInTheDocument()
-    // The refetch is debounced to coalesce simultaneous completions
+    expect(screen.getByTestId('file-upload-zone')).toBeInTheDocument()
     await waitFor(() => expect(onUpdated).toHaveBeenCalled())
+    await waitFor(() => {
+      expect(screen.queryByTestId('file-upload-zone')).not.toBeInTheDocument()
+    })
   })
 
   it('should serialize resource creation for concurrent drops', async () => {
@@ -301,6 +305,218 @@ describe('ResourceList drop-to-create', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 250))
     expect(onUpdated).not.toHaveBeenCalled()
+  })
+
+  it('should report uploading until the refetch after completion lands', async () => {
+    const onUploadingChange = vi.fn()
+    let resolveUpdate!: () => void
+    const onUpdated = vi.fn(() => new Promise<void>((resolve) => (resolveUpdate = resolve)))
+    mockClientFetch.mockResolvedValue(jsonResponse({ id: 'res1' }))
+    const { container } = render(
+      <ResourceList {...baseProps} onUpdated={onUpdated} onUploadingChange={onUploadingChange} />
+    )
+
+    dropFiles(container.firstElementChild!, [new File(['a'], 'a.csv', { type: 'text/csv' })])
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true))
+
+    // Upload done: the card is kept and uploading stays true until the
+    // refetch made the fresh pipeline status visible
+    fireEvent.click(screen.getByText('complete-upload'))
+    await waitFor(() => expect(onUpdated).toHaveBeenCalled())
+    expect(onUploadingChange).toHaveBeenLastCalledWith(true)
+    expect(screen.getByTestId('file-upload-zone')).toBeInTheDocument()
+
+    resolveUpdate()
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(false))
+    expect(screen.queryByTestId('file-upload-zone')).not.toBeInTheDocument()
+  })
+
+  it('should keep the busy gate up when the refetch fails', async () => {
+    const onUploadingChange = vi.fn()
+    let resolveUpdate!: (ok: boolean) => void
+    const onUpdated = vi.fn(() => new Promise<boolean>((resolve) => (resolveUpdate = resolve)))
+    mockClientFetch.mockResolvedValue(jsonResponse({ id: 'res1' }))
+    const { container } = render(
+      <ResourceList {...baseProps} onUpdated={onUpdated} onUploadingChange={onUploadingChange} />
+    )
+
+    dropFiles(container.firstElementChild!, [new File(['a'], 'a.csv', { type: 'text/csv' })])
+    await waitFor(() => expect(screen.getByTestId('file-upload-zone')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('complete-upload'))
+    await waitFor(() => expect(onUpdated).toHaveBeenCalled())
+
+    // A failed refresh must not clear the flag or the card — a retry runs later
+    resolveUpdate(false)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(onUploadingChange).toHaveBeenLastCalledWith(true)
+    expect(screen.getByTestId('file-upload-zone')).toBeInTheDocument()
+  })
+
+  it('should hold the busy gate after creating a url resource', async () => {
+    // The server enqueues the pipeline at creation for url resources
+    const onUploadingChange = vi.fn()
+    let resolveUpdate!: (ok: boolean) => void
+    const onUpdated = vi.fn(() => new Promise<boolean>((resolve) => (resolveUpdate = resolve)))
+    mockClientFetch.mockResolvedValue(
+      jsonResponse({ id: 'res1', url: 'https://example.com/a.csv', urlType: null })
+    )
+    render(
+      <ResourceList {...baseProps} onUpdated={onUpdated} onUploadingChange={onUploadingChange} />
+    )
+
+    fireEvent.click(screen.getByText('Add Resource'))
+    fireEvent.change(screen.getByLabelText('URL'), {
+      target: { value: 'https://example.com/a.csv' },
+    })
+    fireEvent.click(screen.getByText('Add Resource'))
+
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true))
+    await waitFor(() => expect(onUpdated).toHaveBeenCalled())
+    resolveUpdate(true)
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(false))
+  })
+
+  it('should close the gate before a url-resource create resolves and release it on failure', async () => {
+    const onUploadingChange = vi.fn()
+    let rejectCreate!: () => void
+    mockClientFetch.mockImplementation(
+      () =>
+        new Promise<Response>((_, reject) => (rejectCreate = () => reject(new Error('network'))))
+    )
+    render(<ResourceList {...baseProps} onUploadingChange={onUploadingChange} />)
+
+    fireEvent.click(screen.getByText('Add Resource'))
+    fireEvent.change(screen.getByLabelText('URL'), {
+      target: { value: 'https://example.com/a.csv' },
+    })
+    fireEvent.click(screen.getByText('Add Resource'))
+
+    // The request is still in flight — the gate must already be up
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true))
+
+    rejectCreate()
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(false))
+  })
+
+  it('should close the gate before a url-resource save resolves', async () => {
+    const onUploadingChange = vi.fn()
+    mockClientFetch.mockReturnValue(new Promise<Response>(() => {}))
+    render(
+      <ResourceList
+        {...baseProps}
+        resources={[
+          { id: 'r1', name: 'data.csv', url: 'https://example.com/a.csv', urlType: null },
+        ]}
+        onUploadingChange={onUploadingChange}
+      />
+    )
+
+    fireEvent.click(screen.getByText('Edit'))
+    fireEvent.click(screen.getByText('Save'))
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true))
+  })
+
+  it('should close the gate before an upload-resource create resolves', async () => {
+    const onUploadingChange = vi.fn()
+    mockClientFetch.mockReturnValue(new Promise<Response>(() => {}))
+    const { container } = render(
+      <ResourceList {...baseProps} onUploadingChange={onUploadingChange} />
+    )
+
+    fireEvent.click(screen.getByText('Add Resource'))
+    // Radix tabs select on mousedown
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Upload' }))
+    const input = container.querySelector('input[type="file"]:not([multiple])')!
+    fireEvent.change(input, {
+      target: { files: [new File(['a'], 'a.csv', { type: 'text/csv' })] },
+    })
+    fireEvent.click(screen.getByText('Add Resource'))
+
+    // The create request is still in flight — the gate must already be up
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true))
+  })
+
+  it('should close the gate before a file-replace save resolves', async () => {
+    const onUploadingChange = vi.fn()
+    mockClientFetch.mockReturnValue(new Promise<Response>(() => {}))
+    const { container } = render(
+      <ResourceList
+        {...baseProps}
+        resources={[{ id: 'r1', name: 'data.csv', urlType: 'upload', format: 'CSV' }]}
+        onUploadingChange={onUploadingChange}
+      />
+    )
+
+    fireEvent.click(screen.getByText('Edit'))
+    fireEvent.click(screen.getByText('Replace file'))
+    const input = container.querySelector('input[type="file"]:not([multiple])')!
+    fireEvent.change(input, {
+      target: { files: [new File(['a'], 'new.csv', { type: 'text/csv' })] },
+    })
+    fireEvent.click(screen.getByText('Save'))
+
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true))
+  })
+
+  it('should not clear the gate when the newest of overlapping refetches failed', async () => {
+    const onUploadingChange = vi.fn()
+    const resolvers: Array<(ok: boolean) => void> = []
+    const onUpdated = vi.fn(() => new Promise<boolean>((resolve) => resolvers.push(resolve)))
+    mockClientFetch
+      .mockResolvedValueOnce(jsonResponse({ id: 'res1' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'res2' }))
+    const { container } = render(
+      <ResourceList {...baseProps} onUpdated={onUpdated} onUploadingChange={onUploadingChange} />
+    )
+
+    dropFiles(container.firstElementChild!, [
+      new File(['a'], 'a.csv', { type: 'text/csv' }),
+      new File(['b'], 'b.csv', { type: 'text/csv' }),
+    ])
+    await waitFor(() => expect(screen.getAllByTestId('file-upload-zone')).toHaveLength(2))
+
+    fireEvent.click(screen.getAllByText('complete-upload')[0])
+    await waitFor(() => expect(onUpdated).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getAllByText('complete-upload')[1])
+    await waitFor(() => expect(onUpdated).toHaveBeenCalledTimes(2))
+
+    // The newer fetch failed — the older success must not clear the gate
+    resolvers[1](false)
+    resolvers[0](true)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(onUploadingChange).toHaveBeenLastCalledWith(true)
+  })
+
+  it('should keep reporting uploading while overlapping refetches are in flight', async () => {
+    const onUploadingChange = vi.fn()
+    const resolvers: Array<() => void> = []
+    const onUpdated = vi.fn(() => new Promise<void>((resolve) => resolvers.push(resolve)))
+    mockClientFetch
+      .mockResolvedValueOnce(jsonResponse({ id: 'res1' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'res2' }))
+    const { container } = render(
+      <ResourceList {...baseProps} onUpdated={onUpdated} onUploadingChange={onUploadingChange} />
+    )
+
+    dropFiles(container.firstElementChild!, [
+      new File(['a'], 'a.csv', { type: 'text/csv' }),
+      new File(['b'], 'b.csv', { type: 'text/csv' }),
+    ])
+    await waitFor(() => expect(screen.getAllByTestId('file-upload-zone')).toHaveLength(2))
+
+    // First refetch starts executing, then the second completion starts its own
+    fireEvent.click(screen.getAllByText('complete-upload')[0])
+    await waitFor(() => expect(onUpdated).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getAllByText('complete-upload')[1])
+    await waitFor(() => expect(onUpdated).toHaveBeenCalledTimes(2))
+
+    // The first finishing must not drop the flag while the second runs
+    resolvers[0]()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(onUploadingChange).toHaveBeenLastCalledWith(true)
+
+    resolvers[1]()
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(false))
   })
 
   it('should allow dismissing an in-progress upload card', async () => {

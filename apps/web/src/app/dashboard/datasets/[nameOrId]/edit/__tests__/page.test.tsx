@@ -22,10 +22,18 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/components/dashboard/dataset/dataset-form', () => ({
   // Publishing now happens inside the form ("Save & Publish") — surface the
-  // onPublished callback so the page-level flow can be exercised
-  DatasetForm: ({ onPublished }: { onPublished?: () => void }) => (
+  // onPublished callback so the page-level flow can be exercised, and the
+  // suggest.processing flag for the AI-suggest gating tests
+  DatasetForm: ({
+    onPublished,
+    suggest,
+  }: {
+    onPublished?: () => void
+    suggest?: { processing?: boolean }
+  }) => (
     <div data-testid="dataset-form">
       DatasetForm
+      {suggest && <span data-testid="suggest-processing">{String(suggest.processing)}</span>}
       {onPublished && (
         <button type="button" onClick={onPublished}>
           MockPublish
@@ -36,7 +44,26 @@ vi.mock('@/components/dashboard/dataset/dataset-form', () => ({
 }))
 
 vi.mock('@/components/dashboard/dataset/resource-list', () => ({
-  ResourceList: () => <div data-testid="resource-list">ResourceList</div>,
+  ResourceList: ({
+    onUpdated,
+    onUploadingChange,
+  }: {
+    onUpdated?: () => void
+    onUploadingChange?: (uploading: boolean) => void
+  }) => (
+    <div data-testid="resource-list">
+      ResourceList
+      <button type="button" onClick={() => onUpdated?.()}>
+        MockSettle
+      </button>
+      <button type="button" onClick={() => onUploadingChange?.(true)}>
+        MockUploadStart
+      </button>
+      <button type="button" onClick={() => onUploadingChange?.(false)}>
+        MockUploadEnd
+      </button>
+    </div>
+  ),
 }))
 
 vi.mock('@/components/dashboard/delete-confirm-dialog', () => ({
@@ -262,6 +289,34 @@ describe('EditDatasetPage', () => {
       ).not.toBeInTheDocument()
     })
 
+    it('should not resurrect the sync warning from a stale draft refetch after publish', async () => {
+      nav.search = 'state=draft'
+      let publishedNow = false
+      mockClientFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+        if (path.includes('/users/me/organizations')) return jsonResponse(sampleOrgs)
+        if (init?.method === 'POST') {
+          publishedNow = true
+          return jsonResponse({ ...sampleDraft, state: 'active' })
+        }
+        if (path.includes('state=draft'))
+          return publishedNow ? jsonResponse(null, false) : jsonResponse(sampleDraft)
+        return jsonResponse(samplePackage)
+      })
+      render(<EditDatasetPage />)
+      fireEvent.click(await screen.findByRole('button', { name: 'MockPublish' }))
+      await waitFor(() => {
+        expect(screen.getByRole('status')).toHaveTextContent('Dataset published.')
+      })
+
+      // A refetch scheduled before publish fires with the stale ?state=draft
+      // closure (the test router never updates the search params)
+      fireEvent.click(screen.getByText('MockSettle'))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(
+        screen.queryByText('Publishing has completed. Syncing to search may have failed.')
+      ).not.toBeInTheDocument()
+    })
+
     it('should show draft delete wording', async () => {
       mockDraftFetch(sampleDraft)
       render(<EditDatasetPage />)
@@ -274,6 +329,211 @@ describe('EditDatasetPage', () => {
           'This draft and all its resources will be permanently deleted. This cannot be undone.'
         )
       ).toBeInTheDocument()
+    })
+  })
+
+  describe('AI-suggest nudge gating (ADR-040)', () => {
+    const nudgeText = /Resource processing finished/
+
+    // Path-keyed mock: the package response is re-evaluated on every refetch
+    function mockPackageFetch(pkg: () => unknown) {
+      const counter = { pkg: 0 }
+      mockClientFetch.mockImplementation(async (path: string) => {
+        if (path.includes('/users/me/organizations')) return jsonResponse(sampleOrgs)
+        if (path.includes('/site/settings')) return jsonResponse({ metadataSuggestEnabled: true })
+        counter.pkg++
+        return jsonResponse(pkg())
+      })
+      return counter
+    }
+
+    it('should not nudge when the page loads with everything already settled', async () => {
+      mockPackageFetch(() => ({
+        ...samplePackage,
+        resources: [{ id: 'r1', name: 'r1', pipelineStatus: 'complete' }],
+      }))
+      render(<EditDatasetPage />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('suggest-processing')).toHaveTextContent('false')
+      })
+      expect(screen.queryByText(nudgeText)).not.toBeInTheDocument()
+    })
+
+    it('should nudge only after every pipeline settled', async () => {
+      let resources = [
+        { id: 'r1', name: 'r1', pipelineStatus: 'complete' },
+        { id: 'r2', name: 'r2', pipelineStatus: 'processing' },
+      ]
+      const counter = mockPackageFetch(() => ({ ...samplePackage, resources }))
+      render(<EditDatasetPage />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('suggest-processing')).toHaveTextContent('true')
+      })
+
+      // First pipeline settles while the second is still running — no nudge
+      fireEvent.click(screen.getByText('MockSettle'))
+      await waitFor(() => {
+        expect(counter.pkg).toBe(2)
+      })
+      expect(screen.queryByText(nudgeText)).not.toBeInTheDocument()
+
+      resources = [
+        { id: 'r1', name: 'r1', pipelineStatus: 'complete' },
+        { id: 'r2', name: 'r2', pipelineStatus: 'complete' },
+      ]
+      fireEvent.click(screen.getByText('MockSettle'))
+      await waitFor(() => {
+        expect(screen.getByText(nudgeText)).toBeInTheDocument()
+      })
+      expect(screen.getByTestId('suggest-processing')).toHaveTextContent('false')
+    })
+
+    it('should nudge when a settle ended in error but another resource completed', async () => {
+      let resources = [
+        { id: 'r1', name: 'r1', pipelineStatus: 'complete' },
+        { id: 'r2', name: 'r2', pipelineStatus: 'processing' },
+      ]
+      mockPackageFetch(() => ({ ...samplePackage, resources }))
+      render(<EditDatasetPage />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('suggest-processing')).toHaveTextContent('true')
+      })
+
+      resources = [
+        { id: 'r1', name: 'r1', pipelineStatus: 'complete' },
+        { id: 'r2', name: 'r2', pipelineStatus: 'error' },
+      ]
+      fireEvent.click(screen.getByText('MockSettle'))
+      await waitFor(() => {
+        expect(screen.getByText(nudgeText)).toBeInTheDocument()
+      })
+    })
+
+    it('should not nudge when processing settled with errors only', async () => {
+      // Without a complete resource the manual button stays disabled too, so
+      // an invitation would have no working entry point
+      let resources = [{ id: 'r1', name: 'r1', pipelineStatus: 'processing' }]
+      mockPackageFetch(() => ({ ...samplePackage, resources }))
+      render(<EditDatasetPage />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('suggest-processing')).toHaveTextContent('true')
+      })
+
+      resources = [{ id: 'r1', name: 'r1', pipelineStatus: 'error' }]
+      fireEvent.click(screen.getByText('MockSettle'))
+      await waitFor(() => {
+        expect(screen.getByTestId('suggest-processing')).toHaveTextContent('false')
+      })
+      expect(screen.queryByText(nudgeText)).not.toBeInTheDocument()
+    })
+
+    it('should ignore a stale refetch that resolves after a newer one', async () => {
+      const pkgWith = (status: string) => ({
+        ...samplePackage,
+        resources: [{ id: 'r1', name: 'r1', pipelineStatus: status }],
+      })
+      const pending: Array<(data: unknown) => void> = []
+      mockClientFetch.mockImplementation(async (path: string) => {
+        if (path.includes('/users/me/organizations')) return jsonResponse(sampleOrgs)
+        if (path.includes('/site/settings')) return jsonResponse({ metadataSuggestEnabled: true })
+        return new Promise<Response>((resolve) => {
+          pending.push((data) => resolve(jsonResponse(data)))
+        })
+      })
+      render(<EditDatasetPage />)
+      await waitFor(() => expect(pending).toHaveLength(1))
+      pending[0](pkgWith('processing'))
+      await waitFor(() => {
+        expect(screen.getByTestId('suggest-processing')).toHaveTextContent('true')
+      })
+
+      // Two overlapping refetches; the newer resolves first with a running
+      // pipeline, then the older tries to roll it back to complete
+      fireEvent.click(screen.getByText('MockSettle'))
+      fireEvent.click(screen.getByText('MockSettle'))
+      await waitFor(() => expect(pending).toHaveLength(3))
+      pending[2](pkgWith('queued'))
+      pending[1](pkgWith('complete'))
+
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(screen.getByTestId('suggest-processing')).toHaveTextContent('true')
+      expect(screen.queryByText(nudgeText)).not.toBeInTheDocument()
+    })
+
+    it('should close the gate after publish until the re-run pipelines settle', async () => {
+      // Publish re-enqueues every url resource's pipeline before responding
+      mockPackageFetch(() => ({
+        ...samplePackage,
+        state: 'draft',
+        resources: [
+          { id: 'r1', name: 'r1', url: 'https://example.com/a.csv', pipelineStatus: 'complete' },
+        ],
+      }))
+      render(<EditDatasetPage />)
+      await waitFor(() => {
+        expect(screen.getByTestId('suggest-processing')).toHaveTextContent('false')
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: 'MockPublish' }))
+      await waitFor(() => {
+        expect(screen.getByTestId('suggest-processing')).toHaveTextContent('true')
+      })
+    })
+
+    it('should retract a shown nudge when new work starts', async () => {
+      // A lingering invitation could otherwise open the dialog (via the
+      // open signal) and suggest without the resources still processing
+      mockPackageFetch(() => ({
+        ...samplePackage,
+        resources: [{ id: 'r1', name: 'r1', pipelineStatus: 'complete' }],
+      }))
+      render(<EditDatasetPage />)
+      await waitFor(() => {
+        expect(screen.getByTestId('resource-list')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('MockUploadStart'))
+      fireEvent.click(screen.getByText('MockUploadEnd'))
+      await waitFor(() => {
+        expect(screen.getByText(nudgeText)).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('MockUploadStart'))
+      await waitFor(() => {
+        expect(screen.queryByText(nudgeText)).not.toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('MockUploadEnd'))
+      await waitFor(() => {
+        expect(screen.getByText(nudgeText)).toBeInTheDocument()
+      })
+    })
+
+    it('should hold the nudge while an upload is still in flight', async () => {
+      mockPackageFetch(() => ({
+        ...samplePackage,
+        resources: [{ id: 'r1', name: 'r1', pipelineStatus: 'complete' }],
+      }))
+      render(<EditDatasetPage />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('suggest-processing')).toHaveTextContent('false')
+      })
+
+      fireEvent.click(screen.getByText('MockUploadStart'))
+      await waitFor(() => {
+        expect(screen.getByTestId('suggest-processing')).toHaveTextContent('true')
+      })
+      expect(screen.queryByText(nudgeText)).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByText('MockUploadEnd'))
+      await waitFor(() => {
+        expect(screen.getByText(nudgeText)).toBeInTheDocument()
+      })
     })
   })
 })

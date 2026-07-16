@@ -78,14 +78,18 @@ interface DropUpload {
   file: File
   resourceId: string | null
   error: string | null
+  /** Upload finished — kept until the refetch lands (see completeDropUpload) */
+  done?: boolean
 }
 
 interface ResourceListProps {
   packageId: string
   resources: Resource[]
-  onUpdated: () => void
-  /** Fires when a resource's pipeline finishes (AI-suggest nudge, ADR-040) */
-  onPipelineComplete?: () => void
+  /** Refetch the parent's package; return false when the refresh could not
+   *  be applied — the list then keeps its busy gate up and retries */
+  onUpdated: () => void | boolean | Promise<void | boolean>
+  /** Reports whether any file upload is still in flight (ADR-040) */
+  onUploadingChange?: (uploading: boolean) => void
 }
 
 function SortableResourceRow({
@@ -94,14 +98,14 @@ function SortableResourceRow({
   isActionsDisabled,
   onEdit,
   onDelete,
-  onPipelineComplete,
+  onPipelineSettled,
 }: {
   resource: Resource
   isDragDisabled: boolean
   isActionsDisabled: boolean
   onEdit: (r: Resource) => void
   onDelete: (id: string) => void
-  onPipelineComplete?: () => void
+  onPipelineSettled?: () => void
 }) {
   const t = useTranslations('resource')
   const tc = useTranslations('common')
@@ -146,7 +150,7 @@ function SortableResourceRow({
           <PipelineStatusBadge
             resourceId={r.id}
             initialStatus={r.pipelineStatus}
-            onComplete={onPipelineComplete}
+            onSettled={onPipelineSettled}
           />
         )}
       </TableCell>
@@ -173,7 +177,7 @@ export function ResourceList({
   packageId,
   resources,
   onUpdated,
-  onPipelineComplete,
+  onUploadingChange,
 }: ResourceListProps) {
   const t = useTranslations('resource')
   const tc = useTranslations('common')
@@ -214,6 +218,20 @@ export function ResourceList({
   useEffect(() => {
     for (const file of takePendingDropFiles(packageId)) startDropUpload(file)
   }, [packageId])
+
+  // Report in-flight uploads for the page-level AI-suggest gating (ADR-040);
+  // pipeline-starting mutations and the pending post-upload refetch count
+  // too (no gap from request to fresh statuses)
+  const [refetching, setRefetching] = useState(false)
+  const [pipelineOps, setPipelineOps] = useState(0)
+  const uploading =
+    uploadingResourceId !== null ||
+    dropUploads.some((u) => !u.error) ||
+    refetching ||
+    pipelineOps > 0
+  useEffect(() => {
+    onUploadingChange?.(uploading)
+  }, [uploading, onUploadingChange])
 
   // Staged order — committed via Save button
   const [items, setItems] = useState<Resource[]>(resources)
@@ -386,20 +404,63 @@ export function ResourceList({
     }
   }
 
-  // Remove a card; when its resource was created, refetch so the row appears.
-  // Refetches are coalesced — parallel uploads can finish near-simultaneously.
-  function removeDropUpload(u: DropUpload) {
+  // Refetch so finished uploads' rows and settled statuses appear, then drop
+  // the done cards. Coalesced — uploads and settles can arrive near-
+  // simultaneously; only the last of overlapping refetches may clear the
+  // flag and the cards, and a failed refresh keeps the gate up and retries.
+  const refetchesInFlight = useRef(0)
+  const refetchGen = useRef(0)
+  const newestRefetchOk = useRef(true)
+  function scheduleRefetch(delay = 200) {
+    setRefetching(true)
+    if (refetchTimer.current) clearTimeout(refetchTimer.current)
+    refetchTimer.current = setTimeout(async () => {
+      refetchTimer.current = null
+      const gen = ++refetchGen.current
+      refetchesInFlight.current++
+      let ok = false
+      try {
+        ok = (await onUpdated()) !== false
+      } catch {
+        ok = false
+      } finally {
+        refetchesInFlight.current--
+        // Only the newest run's outcome decides — an older run finishing
+        // last with a success must not mask a failed newer fetch
+        if (gen === refetchGen.current) newestRefetchOk.current = ok
+        if (
+          mountedRef.current &&
+          refetchesInFlight.current === 0 &&
+          refetchTimer.current === null
+        ) {
+          if (newestRefetchOk.current) {
+            setDropUploads((list) => list.filter((x) => !x.done))
+            setRefetching(false)
+          } else {
+            scheduleRefetch(2000)
+          }
+        }
+      }
+    }, delay)
+  }
+
+  // User dismissed a card — remove it right away; when its resource was
+  // already created, refetch so the row appears
+  function dismissDropUpload(u: DropUpload) {
+    if (!mountedRef.current) return
+    setDropUploads((list) => list.filter((x) => x.key !== u.key))
+    if (u.resourceId) scheduleRefetch()
+  }
+
+  // Upload finished — keep the card (marked done) until the refetch lands so
+  // the uploading flag doesn't drop before the queued status becomes visible
+  function completeDropUpload(u: DropUpload) {
     // A late completion can arrive after the whole list unmounted (the hook
     // still notifies for in-flight completions) — don't re-register the
     // refetch timer past cleanup
     if (!mountedRef.current) return
-    setDropUploads((list) => list.filter((x) => x.key !== u.key))
-    if (!u.resourceId) return
-    if (refetchTimer.current) clearTimeout(refetchTimer.current)
-    refetchTimer.current = setTimeout(() => {
-      refetchTimer.current = null
-      onUpdated()
-    }, 200)
+    setDropUploads((list) => list.map((x) => (x.key === u.key ? { ...x, done: true } : x)))
+    scheduleRefetch()
   }
 
   // --- Save (edit) ---
@@ -408,6 +469,12 @@ export function ResourceList({
     if (!editId) return
     setSaving(true)
     setFormError(null)
+    // Saving a url resource re-enqueues its pipeline server-side, and a
+    // pending replacement file leads to an upload — close the gate before
+    // the request goes out; on success scheduleRefetch / uploadingResourceId
+    // takes over in the same tick, so the gate never gaps
+    const startsPipeline = formState.urlType !== 'upload' || !!pendingFile
+    if (startsPipeline) setPipelineOps((n) => n + 1)
     try {
       // Overwrite with form state (urlType reflects the user's tab choice); on
       // the upload tab the existing url is kept by omitting it from the patch
@@ -427,10 +494,12 @@ export function ResourceList({
         return
       }
       resetForm()
-      onUpdated()
+      if (startsPipeline) scheduleRefetch()
+      else onUpdated()
     } catch {
       setFormError(t('failedToUpdate'))
     } finally {
+      if (startsPipeline) setPipelineOps((n) => n - 1)
       setSaving(false)
     }
   }
@@ -469,6 +538,11 @@ export function ResourceList({
   async function handleCreate() {
     setSaving(true)
     setFormError(null)
+    // Creating a resource with a url enqueues its pipeline server-side, and
+    // creating with a file leads to an upload — close the gate before the
+    // request goes out (see handleSave)
+    const startsPipeline = formState.urlType === 'upload' ? !!pendingFile : !!formState.url
+    if (startsPipeline) setPipelineOps((n) => n + 1)
     try {
       const body: Record<string, string> = {}
       if (formState.name) body.name = formState.name
@@ -489,18 +563,22 @@ export function ResourceList({
         setUploadingResourceId(resource.id)
       } else {
         resetForm()
-        onUpdated()
+        if (resource.url) scheduleRefetch()
+        else onUpdated()
       }
     } catch (err) {
       setFormError(err instanceof Error ? err.message : t('failedToAdd'))
     } finally {
+      if (startsPipeline) setPipelineOps((n) => n - 1)
       setSaving(false)
     }
   }
 
+  // scheduleRefetch raises the busy gate before resetForm drops the form's
+  // uploading state, so consumers never see an idle gap
   function handleUploadComplete() {
+    scheduleRefetch()
     resetForm()
-    onUpdated()
   }
 
   // --- Delete ---
@@ -699,7 +777,9 @@ export function ResourceList({
                       isActionsDisabled={isDirty || savingOrder}
                       onEdit={startEdit}
                       onDelete={setDeleteId}
-                      onPipelineComplete={onPipelineComplete}
+                      // A settle means the row's status (and maybe others)
+                      // changed — refresh through the retrying gate
+                      onPipelineSettled={() => scheduleRefetch()}
                     />
                     {activeFormId === r.id && (
                       <TableRow>
@@ -730,11 +810,11 @@ export function ResourceList({
               {u.file.name}
               {u.error ? `: ${u.error}` : !u.resourceId && ` — ${t('addingResource')}`}
             </span>
-            {(u.error || u.resourceId) && (
+            {(u.error || u.resourceId) && !u.done && (
               <Button
                 variant="ghost"
                 size="icon-xs"
-                onClick={() => removeDropUpload(u)}
+                onClick={() => dismissDropUpload(u)}
                 aria-label={tc('cancel')}
               >
                 <X />
@@ -745,7 +825,7 @@ export function ResourceList({
             <FileUploadZone
               resourceId={u.resourceId}
               initialFile={u.file}
-              onComplete={() => removeDropUpload(u)}
+              onComplete={() => completeDropUpload(u)}
             />
           )}
         </div>

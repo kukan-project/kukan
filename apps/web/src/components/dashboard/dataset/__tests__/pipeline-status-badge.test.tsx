@@ -69,6 +69,39 @@ describe('PipelineStatusBadge', () => {
     })
   })
 
+  it('should notify onSettled even when the first poll is already terminal', async () => {
+    // Otherwise the owner keeps gating on its stale queued/processing snapshot
+    mockClientFetch.mockResolvedValue(
+      jsonResponse({ id: 'r1', pipeline_status: 'complete', steps: [] })
+    )
+    const onSettled = vi.fn()
+    render(<PipelineStatusBadge resourceId="r1" initialStatus="queued" onSettled={onSettled} />)
+
+    await waitFor(() => expect(onSettled).toHaveBeenCalledWith('complete'))
+  })
+
+  it('should notify onSettled when polling reaches complete', async () => {
+    mockClientFetch
+      .mockResolvedValueOnce(jsonResponse({ id: 'r1', pipeline_status: 'processing', steps: [] }))
+      .mockResolvedValue(jsonResponse({ id: 'r1', pipeline_status: 'complete', steps: [] }))
+    const onSettled = vi.fn()
+    render(<PipelineStatusBadge resourceId="r1" initialStatus="queued" onSettled={onSettled} />)
+
+    await waitFor(() => expect(onSettled).toHaveBeenCalledWith('complete'), { timeout: 3000 })
+  })
+
+  it('should notify onSettled when polling reaches error', async () => {
+    // Errors must notify too — owners tracking outstanding work would
+    // otherwise wait forever on a failed pipeline
+    mockClientFetch
+      .mockResolvedValueOnce(jsonResponse({ id: 'r1', pipeline_status: 'processing', steps: [] }))
+      .mockResolvedValue(jsonResponse({ id: 'r1', pipeline_status: 'error', steps: [] }))
+    const onSettled = vi.fn()
+    render(<PipelineStatusBadge resourceId="r1" initialStatus="processing" onSettled={onSettled} />)
+
+    await waitFor(() => expect(onSettled).toHaveBeenCalledWith('error'), { timeout: 3000 })
+  })
+
   it('should show the prop status when a parent refetch settles before polling does', async () => {
     // Bulk-upload regression: the parent list refetches and passes a terminal
     // initialStatus while the poller still holds queued/processing — polling
