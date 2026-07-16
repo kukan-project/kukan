@@ -3,6 +3,46 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.6] - 2026-07-16
+
+**Highlights**
+
+- **AI metadata suggestions now wait until every resource finishes processing.** Previously the "Suggest metadata with AI" button and its nudge activated as soon as a single resource completed, so a suggestion could be generated while other resources were still uploading or being extracted — and silently leave them out. The button and nudge now activate only after all pipelines settle (including error endings). The gate closes before any request that starts a new pipeline is sent, and list-refresh and publish race conditions that could freeze the gate or roll statuses backwards were hardened away (#96).
+- **Brand customization now has a token operation policy.** The appearance customization guide rates every CSS token — Recommended / Caution / Not recommended — together with its main usage locations and states (e.g. `--accent` drives button hover and dropdown selection), so deciding whether an override is safe no longer requires reading the source. Forks also get an official `--brand-*` namespace for designer-specified colors that fit no official token role, and component-scoped alias tokens can be added on demand to recolor a single upstream component without side effects (ADR-023) (#97).
+
+**Features**
+
+- feat(web): gate AI metadata suggestions until all resource processing settles (#96)
+
+**Documentation**
+
+- docs: define brand token operation policy and add override ratings (ADR-023) (#97)
+- docs: note small local models are underpowered for AI metadata suggestion (#95)
+
+**Improvements**
+
+- ci: retry public mirror pushes on transient failures (#94)
+
+---
+
+**ハイライト**
+
+- **AI メタデータ提案が、すべてのリソース処理の完了を待つようになりました。** 従来は 1 件のリソースが完了した時点で「AI にメタデータを提案させる」ボタンとナッジが活性化し、他のリソースがまだアップロード・抽出中でも提案が生成でき、それらが提案から漏れてしまうことがありました。すべてのパイプラインが終了（エラー終了を含む）してから活性化するようになり、パイプラインを起動する操作はリクエスト送信前からゲートを閉じ、リスト再取得や公開操作との競合でゲートが固まる・ステータスが巻き戻る問題も解消しています（#96）。
+- **ブランドカスタマイズにトークン運用ポリシーが定義されました。** 外観カスタマイズガイドの CSS トークン表に上書き区分（推奨 / 注意 / 非推奨）と主な使用箇所・状態（例: `--accent` はボタンのホバーやドロップダウンの選択状態に波及）を明記し、上書き可否の判断にソースコードの調査が不要になりました。公式トークンの役割に当てはまらない独自色のためにフォーク専用の `--brand-*` 名前空間を新設し、本体画面の特定コンポーネントだけを安全に変えるためのエイリアストークンを需要ベースで追加する運用も定めています（ADR-023）（#97）。
+
+**機能**
+
+- feat(web): AI メタデータ提案の活性化をすべてのリソース処理の完了後に変更（#96）
+
+**ドキュメント**
+
+- docs: ブランドトークン運用ポリシーと上書き区分を定義（ADR-023）（#97）
+- docs: 小型ローカルモデルは AI メタデータ提案には性能不足である旨を記載（#95）
+
+**改善**
+
+- ci: 公開ミラーへの push を一時的な障害発生時にリトライ（#94）
+
 ## [0.8.5] - 2026-07-15
 
 **Highlights**
