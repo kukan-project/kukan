@@ -5,6 +5,7 @@
     "exclude": ["node_modules", "cdk.out", "dist", "**/*.js", "**/*.d.ts"]
   },
   "context": {
-    "@aws-cdk/customresources:installLatestAwsSdkDefault": false
+    "@aws-cdk/customresources:installLatestAwsSdkDefault": false,
+    "@aws-cdk/aws-codepipeline:defaultPipelineTypeToV2": true
   }
 }
