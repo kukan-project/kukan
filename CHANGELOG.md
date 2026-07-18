@@ -3,6 +3,44 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-07-18
+
+**Highlights**
+
+- **AI metadata suggestions are now generated per resource, in parallel.** Instead of one large LLM call that had to describe every file at once, each resource gets its own small completion and a final call integrates the results (ADR-040). This structurally removes the failure modes of small local models on large prompts, lets every file be judged with its full extracted material, raises the suggestion slots from 10 to 20 resources per dataset, and keeps the whole request inside a bounded time budget — a resource that fails or does not fit degrades to lightweight context instead of breaking the suggestion (#101).
+- **Suggestions now cover categories and the URL identifier.** The integration step picks dataset categories from the site's existing groups only (the most-used 100 as candidates, with their descriptions; a dataset without a category gets a best-match pick), and proposes a URL slug for drafts, normalized and uniqueness-checked server-side. Tag and category suggestions are additions-only — adopting can never remove an existing value — and adopted dataset fields are saved immediately without a separate save step. The per-user limit was raised from 20 to 60 suggestions per hour to support regenerating a few times and picking the best result (#101).
+
+**Features**
+
+- feat(api): per-resource parallel metadata suggestions with category and URL slug (ADR-040) (#101)
+
+**Improvements**
+
+- chore(infra): enable CodePipeline V2 pipeline type via CDK feature flag (#102)
+
+**Documentation**
+
+- docs(adr): switch metadata suggestions to per-resource parallel generation (ADR-040 addendum) (#100)
+
+---
+
+**ハイライト**
+
+- **AI メタデータ提案がリソース単位の並列生成になりました。** 全ファイルを 1 回の大きな LLM 呼び出しで記述する方式をやめ、リソースごとに小さな completion を並列実行し、最後に 1 回の統合呼び出しでデータセット全体をまとめます（ADR-040）。大きなプロンプトで起きていた小型ローカルモデルの破綻が構造的に解消され、各ファイルが自身の抽出素材をフルに使って記述されるようになり、提案対象は 1 データセットあたり 10 → 20 リソースに拡大しました。リクエスト全体は時間予算内に収まり、失敗・間に合わないリソースは提案を壊さず軽量コンテキストに降格します（#101）。
+- **カテゴリーと URL 識別子も提案対象になりました。** 統合ステップがサイトの既存グループ（使用数上位 100 件を説明付き候補として提示、カテゴリー未設定のデータセットには最適 1 件を要求）からカテゴリーを選び、下書きには正規化・一意性確認済みの URL スラッグを提案します。タグ・カテゴリーの提案は追加専用で、採用によって既存の値が削除されることはありません。採用したデータセット側フィールドは保存ボタンなしでその場で保存されます。「何度か生成させて良いものを選ぶ」使い方に合わせ、ユーザーあたりの利用上限を 20 → 60 回/時に緩和しました（#101）。
+
+**機能**
+
+- feat(api): リソース単位の並列メタデータ提案とカテゴリー・URL スラッグ対応（ADR-040）（#101）
+
+**改善**
+
+- chore(infra): CDK フィーチャーフラグで CodePipeline V2 パイプラインタイプを有効化（#102）
+
+**ドキュメント**
+
+- docs(adr): メタデータ提案をリソース単位並列生成へ切り替え（ADR-040 追記）（#100）
+
 ## [0.8.6] - 2026-07-16
 
 **Highlights**
