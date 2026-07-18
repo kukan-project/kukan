@@ -293,4 +293,31 @@ describe('Groups API Routes', () => {
       expect(getRes.status).toBe(200)
     })
   })
+
+  describe('GroupService.list ordering', () => {
+    it('orders by dataset count before applying the limit', async () => {
+      const json = (data: Record<string, unknown>) => ({
+        method: 'POST' as const,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      // 'aaa-group' sorts first by name but has no datasets; 'zzz-group' has one
+      await app.request('/api/v1/groups', json({ name: 'aaa-group', title: 'A' }))
+      await app.request('/api/v1/groups', json({ name: 'zzz-group', title: 'Z' }))
+      const orgRes = await app.request('/api/v1/organizations', json({ name: 'order-org' }))
+      const org = await orgRes.json()
+      await app.request(
+        '/api/v1/packages',
+        json({ name: 'order-pkg', ownerOrg: org.id, groups: [{ name: 'zzz-group' }] })
+      )
+
+      const { GroupService } = await import('../../services/group-service')
+      const { items } = await new GroupService(db).list({ limit: 1, orderBy: 'datasetCount' })
+
+      // Usage wins over name: the capped fetch keeps the most-used group
+      expect(items).toHaveLength(1)
+      expect(items[0].name).toBe('zzz-group')
+      expect(items[0].datasetCount).toBe(1)
+    })
+  })
 })

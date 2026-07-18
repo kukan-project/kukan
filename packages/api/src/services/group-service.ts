@@ -3,7 +3,7 @@
  * Business logic for group management
  */
 
-import { eq, ilike, and, or, sql, getTableColumns } from 'drizzle-orm'
+import { eq, ilike, and, or, sql, asc, desc, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { group, userGroupMembership, user } from '@kukan/db'
 import { NotFoundError, ValidationError, isUuid, escapeLike } from '@kukan/shared'
@@ -17,8 +17,8 @@ import type {
 export class GroupService {
   constructor(private db: Database) {}
 
-  async list(params: PaginationParams & { q?: string }) {
-    const { offset = 0, limit = 20, q } = params
+  async list(params: PaginationParams & { q?: string; orderBy?: 'datasetCount' }) {
+    const { offset = 0, limit = 20, q, orderBy } = params
 
     const conditions = [eq(group.state, 'active')]
 
@@ -34,18 +34,24 @@ export class GroupService {
 
     const where = and(...conditions)
 
+    // Active packages only — draft/deleted links must not inflate the count (ADR-039)
+    const datasetCount =
+      sql<number>`(SELECT COUNT(*)::int FROM "package_group" JOIN "package" ON "package"."id" = "package_group"."package_id" AND "package"."state" = 'active' WHERE "package_group"."group_id" = "group"."id")`.as(
+        'dataset_count'
+      )
+
+    // Ordered before LIMIT: by usage for the suggest candidates (a capped
+    // fetch keeps the most-used groups), by URL identifier as the default
+    // and the tiebreak
     const rows = await this.db
       .select({
         ...getTableColumns(group),
         total: sql<number>`COUNT(*) OVER()::int`.as('total'),
-        // Active packages only — draft/deleted links must not inflate the count (ADR-039)
-        datasetCount:
-          sql<number>`(SELECT COUNT(*)::int FROM "package_group" JOIN "package" ON "package"."id" = "package_group"."package_id" AND "package"."state" = 'active' WHERE "package_group"."group_id" = "group"."id")`.as(
-            'dataset_count'
-          ),
+        datasetCount,
       })
       .from(group)
       .where(where)
+      .orderBy(...(orderBy === 'datasetCount' ? [desc(datasetCount)] : []), asc(group.name))
       .limit(limit)
       .offset(offset)
 

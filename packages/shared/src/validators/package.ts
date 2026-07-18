@@ -4,13 +4,19 @@
 
 import { z } from 'zod'
 
+/** package.name (URL slug) contract — single source for the schema below and
+ *  for callers that generate names (e.g. AI slug suggestions) */
+export const PACKAGE_NAME_PATTERN = /^[a-z0-9._-]+$/
+export const PACKAGE_NAME_MIN_LENGTH = 2
+export const PACKAGE_NAME_MAX_LENGTH = 100
+
 export const createPackageSchema = z.object({
   name: z
     .string()
-    .min(2)
-    .max(100)
+    .min(PACKAGE_NAME_MIN_LENGTH)
+    .max(PACKAGE_NAME_MAX_LENGTH)
     .regex(
-      /^[a-z0-9._-]+$/,
+      PACKAGE_NAME_PATTERN,
       'Name must contain only lowercase letters, numbers, hyphens, underscores, and periods'
     ),
   title: z.string().nullish(),

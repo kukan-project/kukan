@@ -234,7 +234,24 @@ export function DatasetForm({
   const applySuggestion = (selection: SuggestSelection) => {
     if (selection.title !== undefined) setValue('title', selection.title, { shouldDirty: true })
     if (selection.notes !== undefined) setValue('notes', selection.notes, { shouldDirty: true })
-    if (selection.tags) setTagsInput(selection.tags.join(', '))
+    const nextTagsInput = selection.tags ? selection.tags.join(', ') : undefined
+    if (nextTagsInput !== undefined) setTagsInput(nextTagsInput)
+    if (selection.groups) setSelectedGroups(selection.groups)
+    if (selection.name !== undefined) setValue('name', selection.name, { shouldDirty: true })
+    // Adopting is the confirmation — save the dataset fields right away. On a
+    // validation failure nothing is sent; the adopted values stay in the form
+    // and the user saves manually after fixing the errors
+    const datasetAdopted =
+      selection.title !== undefined ||
+      selection.notes !== undefined ||
+      selection.tags !== undefined ||
+      selection.groups !== undefined ||
+      selection.name !== undefined
+    if (datasetAdopted) {
+      void handleSubmit((values) =>
+        onSubmit(values, false, { tagsInput: nextTagsInput, groups: selection.groups })
+      )()
+    }
     if (selection.resources?.length) {
       // Adopting a resource name/description is an ordinary resource update,
       // saved immediately (the form has no state for resources). Block save /
@@ -298,21 +315,30 @@ export function DatasetForm({
     license: t('publishRequiresLicense'),
   }
 
-  const onSubmit = async (values: DatasetFormInput, publishAfter = false) => {
+  /** `adopt` marks a save triggered by adopting AI suggestions: it carries the
+   *  just-set tags/groups (React state is still stale here) and keeps the user
+   *  on the page afterwards */
+  const onSubmit = async (
+    values: DatasetFormInput,
+    publishAfter = false,
+    adopt?: { tagsInput?: string; groups?: string[] }
+  ) => {
     setError(null)
     setPublishError(null)
     setPublishIntent(publishAfter)
+    const effectiveTagsInput = adopt?.tagsInput ?? tagsInput
+    const effectiveGroups = adopt?.groups ?? selectedGroups
 
     // Saved values become the new pristine state
     const refreshBaseline = () =>
       setBaseline({
-        tags: tagsInput,
-        groups: snapshotGroups(selectedGroups),
+        tags: effectiveTagsInput,
+        groups: snapshotGroups(effectiveGroups),
         extras: snapshotExtras(extrasRows),
       })
 
     // Parse comma-separated tags
-    const tags = parseTags(tagsInput).map((name) => ({ name }))
+    const tags = parseTags(effectiveTagsInput).map((name) => ({ name }))
 
     // Build extras from key-value rows (skip empty keys)
     const filledRows = extrasRows.filter((r) => r.key.trim())
@@ -329,7 +355,7 @@ export function DatasetForm({
     setExtrasError(null)
     const extras = Object.fromEntries(filledRows.map((r) => [r.key.trim(), r.value]))
 
-    const groups = selectedGroups.map((name) => ({ name }))
+    const groups = effectiveGroups.map((name) => ({ name }))
 
     const body: Record<string, unknown> = { ...values, tags, groups, extras }
     if (isDraftMode) {
@@ -404,7 +430,8 @@ export function DatasetForm({
 
     if (onSaved) {
       onSaved()
-    } else {
+    } else if (!adopt) {
+      // An adopt-save keeps the user editing; only an explicit save navigates
       setNavigating(true)
       router.push('/dashboard/datasets')
     }
@@ -457,8 +484,11 @@ export function DatasetForm({
             title: watch('title') ?? '',
             notes: watch('notes') ?? '',
             tags: parseTags(tagsInput),
+            groups: selectedGroups,
+            name: watch('name') ?? '',
             resources: suggest?.resources ?? [],
           }}
+          groupOptions={groupOptions}
           onApply={applySuggestion}
         />
       )}

@@ -388,8 +388,12 @@ envelope for reliability and scalability**.
   per-resource clamps suffice. The 64KB prompt budget and trim ladder shrink
   to Phase 2 use or are removed
 - **`SUGGEST_MAX_RESOURCES` changes meaning**: from a model constraint
-  (derived from output tokens) to a cost / latency / review-UX cap. Keep 10
-  initially; raising it no longer requires re-engineering the envelope
+  (derived from output tokens) to a cost / latency / review-UX cap. Since
+  raising it no longer requires re-engineering the envelope, the
+  implementation relaxes it from 10 to 20. Much larger values (e.g. 100) are
+  blocked by the synchronous endpoint's wall-time (especially the effectively
+  sequential CPU-only execution) and by integration-phase input growth —
+  consider them together with progressive delivery
 - **Timeouts**: replace the single 120-second all-or-nothing window with
   short per-call timeouts (guide: 60 seconds). Estimate the whole request as
   "per-call timeout × ⌈count ÷ concurrency⌉ + Phase 2"; verify the CPU-only
@@ -419,14 +423,26 @@ Add `groups` (categories) and `name` (URL identifier) to Phase 2's generation
 targets. The new response fields are backward-compatible (additive), but the
 adoption UI needs new rows for category and URL identifier.
 
-- **groups**: the same closed-list scheme as tag control (§5). Pass all site
-  groups (name + title — the same list as the form's category selector) as
+- **groups**: the same closed-list scheme as tag control (§5). Pass the **100
+  most-used groups** (ordered in SQL by dataset count descending, name
+  ascending as the tiebreak, before the limit; sites with more groups are
+  rare — raise the constant if needed) with name + title + description as
   candidates and instruct: "only clearly applicable ones, at most 3; never
   invent a group absent from the candidates". The response is an array of
   group names; values not in the candidate list are discarded server-side.
   Group selection merely prefills an existing form field editors can already
   set freely, so no new permission surface arises (and unlike tags there is
   no new-item creation, making control simpler)
+- **Tag and category suggestions are additions-only** (supplemented
+  2026-07-17). The current tags and memberships are always kept in the
+  response, and adopting a suggestion (including inline edits of the proposed
+  tag string) can never remove an existing value — removals stay a form-side
+  action. The count caps (5 tags, 3 categories) gate additions only and never
+  drop existing values. For a dataset with no category yet, the best-matching
+  single pick is requested (as long as candidates exist); an empty response
+  regenerates the integration once, and a still-empty result is accepted
+  without a category (best-effort — one missing pick must not discard the
+  whole suggestion)
 - **name**: have the LLM generate an ASCII slug (`^[a-z0-9._-]+$`, 2–100
   chars) from the suggested title. Romanizing / English-slugifying a Japanese
   title is something LLMs do better than mechanical transliteration

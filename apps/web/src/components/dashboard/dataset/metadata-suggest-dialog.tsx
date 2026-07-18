@@ -35,6 +35,10 @@ export interface SuggestSelection {
   title?: string
   notes?: string
   tags?: string[]
+  /** Full replacement of the category selection (group names) */
+  groups?: string[]
+  /** URL identifier (slug) — suggested for drafts only */
+  name?: string
   /** Per-resource updates; only the fields the user opted into are present */
   resources?: { id: string; name?: string; description?: string }[]
 }
@@ -47,8 +51,14 @@ interface MetadataSuggestDialogProps {
     title: string
     notes: string
     tags: string[]
+    /** Currently selected category names */
+    groups: string[]
+    /** Current URL identifier (empty for placeholder-named drafts) */
+    name: string
     resources: SuggestResourceInfo[]
   }
+  /** Site groups, for showing category titles instead of raw names */
+  groupOptions: { name: string; title?: string | null }[]
   /** Receives only the fields the user opted into; the caller persists them */
   onApply: (selection: SuggestSelection) => void
 }
@@ -67,6 +77,7 @@ function SuggestRow({
   multiline,
   proposedExtra,
   bordered = true,
+  unchanged: unchangedOverride,
 }: {
   label: string
   current: string
@@ -81,10 +92,12 @@ function SuggestRow({
   multiline?: boolean
   proposedExtra?: React.ReactNode
   bordered?: boolean
+  /** Overrides the string comparison when the display text is lossy */
+  unchanged?: boolean
 }) {
   const t = useTranslations('dataset')
   // The AI reviewed this field but proposed nothing new — adopting is a no-op
-  const unchanged = current === proposed
+  const unchanged = unchangedOverride ?? current === proposed
   const editable = checked && !unchanged && !!onProposedChange
   const display = edited ?? proposed
   return (
@@ -128,7 +141,9 @@ function SuggestRow({
               />
             )
           ) : (
-            <p className="whitespace-pre-wrap break-words">{display}</p>
+            <p className="whitespace-pre-wrap break-words">
+              {display || <span className="text-muted-foreground">{t('aiSuggestNoProposal')}</span>}
+            </p>
           )}
           {proposedExtra}
         </div>
@@ -142,6 +157,7 @@ export function MetadataSuggestDialog({
   open,
   onOpenChange,
   current,
+  groupOptions,
   onApply,
 }: MetadataSuggestDialogProps) {
   const t = useTranslations('dataset')
@@ -203,13 +219,29 @@ export function MetadataSuggestDialog({
   const valueOf = (key: string, llm: string) => (key in edits ? edits[key] : llm)
   // Tags are presented/edited as one comma-separated string (matching the form)
   const tagsJoined = result ? result.suggestion.tags.map((tag) => tag.name).join(', ') : ''
+  // Categories show their human-readable titles; order-insensitive comparison
+  const groupTitle = (name: string) => groupOptions.find((g) => g.name === name)?.title || name
+  const groupsDisplay = (names: string[]) => [...names].sort().map(groupTitle).join(', ')
+  // Tags and groups are additions-only — adopting (or editing the tags string)
+  // can never remove an existing value; removals stay a form-side action
+  const mergeWithCurrent = (current: string[], proposed: string[]) => [
+    ...current,
+    ...proposed.filter((v) => !current.includes(v)),
+  ]
+  const proposedGroups = result ? mergeWithCurrent(current.groups, result.suggestion.groups) : []
 
   function handleApply() {
     if (!result) return
     const selection: SuggestSelection = {}
     if (selected.title) selection.title = valueOf('title', result.suggestion.title)
     if (selected.notes) selection.notes = valueOf('notes', result.suggestion.notes)
-    if (selected.tags) selection.tags = parseTags(valueOf('tags', tagsJoined))
+    if (selected.tags) {
+      selection.tags = mergeWithCurrent(current.tags, parseTags(valueOf('tags', tagsJoined)))
+    }
+    if (selected.groups) selection.groups = proposedGroups
+    if (selected.name && result.suggestion.name) {
+      selection.name = valueOf('name', result.suggestion.name)
+    }
     const resources = result.suggestion.resources
       .map((r) => ({
         id: r.id,
@@ -277,6 +309,27 @@ export function MetadataSuggestDialog({
                 onCheckedChange={(checked) => setSelected((s) => ({ ...s, notes: checked }))}
                 onProposedChange={(v) => setEdit('notes', v)}
                 multiline
+              />
+              {result.suggestion.name && (
+                <SuggestRow
+                  label={tc('urlIdentifier')}
+                  current={current.name}
+                  proposed={result.suggestion.name}
+                  edited={edits.name}
+                  checked={!!selected.name}
+                  onCheckedChange={(checked) => setSelected((s) => ({ ...s, name: checked }))}
+                  onProposedChange={(v) => setEdit('name', v)}
+                />
+              )}
+              {/* Always rendered so "no category proposed" is visible. Change
+                  detection compares name sets — titles are not unique. */}
+              <SuggestRow
+                label={t('categories')}
+                current={groupsDisplay(current.groups)}
+                proposed={groupsDisplay(proposedGroups)}
+                unchanged={proposedGroups.length === current.groups.length}
+                checked={!!selected.groups}
+                onCheckedChange={(checked) => setSelected((s) => ({ ...s, groups: checked }))}
               />
               {result.suggestion.tags.length > 0 && (
                 <SuggestRow

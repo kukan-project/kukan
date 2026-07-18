@@ -76,6 +76,8 @@ export const BOOTSTRAP_CLAIM_STALE_MS = 60_000
 export const AI_SUGGEST_TEST_TIMEOUT_MS = 60_000
 
 // --- AI metadata suggestions (ADR-040) ---
+// How these limits interact (flow, time accounting, gotchas):
+// packages/api/src/services/suggest/README.md
 
 /** Head bytes read from the storage original per text resource, and from the
  *  text-head artifact per document resource (discarded after use) */
@@ -102,24 +104,72 @@ export const SUGGEST_SAMPLE_CELL_CHARS = 200
 export const SUGGEST_MAX_COLUMNS = 20
 
 /** Resources given a name + description slot (content-eligible first; the rest
- *  beyond this cap are name/format context only) */
-export const SUGGEST_MAX_RESOURCES = 10
+ *  beyond this cap are name/format context only). A cost / latency / review-UX
+ *  cap, not a model constraint — each resource gets its own completion
+ *  (ADR-040 parallel-generation addendum) */
+export const SUGGEST_MAX_RESOURCES = 20
 
-/** Serialized prompt-material budget; content is trimmed largest-first to
- *  fit, metadata is never dropped */
-export const SUGGEST_MAX_PROMPT_BYTES = 64_000
+/** Prompt-material budget per resource completion (one resource's material
+ *  plus instructions); content is trimmed largest-first to fit. Sized so a
+ *  full 16KB text-head read survives UTF-8 re-encoding growth (Shift_JIS
+ *  2-byte chars become 3 bytes) plus JSON escaping */
+export const SUGGEST_RESOURCE_PROMPT_BYTES = 32_000
+
+/** Prompt-material budget for the dataset integration completion. Its input
+ *  is generated descriptions plus candidates — sized for SUGGEST_MAX_RESOURCES
+ *  descriptions at their length clamps */
+export const SUGGEST_DATASET_PROMPT_BYTES = 32_000
 
 /** Existing tags (by usage) offered to the LLM as candidates */
 export const SUGGEST_TAG_CANDIDATES = 30
 
-/** Output-token ceiling. Generous because Japanese is token-heavy: a title +
- *  a paragraph of notes + a description per resource can exceed a tighter cap,
- *  and hitting it truncates the JSON mid-object (ADR-040) */
-export const SUGGEST_MAX_TOKENS = 4_000
+/** Existing groups offered as category candidates (closed list — the LLM must
+ *  not invent groups). A deliberate cap: sites with more groups than this are
+ *  rare; raise it if a deployment needs more. Candidates are usage-ordered so
+ *  the cap and the budget ladder drop the least-used first */
+export const SUGGEST_GROUP_CANDIDATES = 100
 
-/** Whole-request LLM timeout — CPU-only Ollama can take minutes (ADR-040) */
+/** Output-token ceilings per completion. Generous relative to the expected
+ *  output (a name + a few sentences, or title/notes/tags/groups/name):
+ *  hitting the cap truncates the JSON mid-object (ADR-040). Japanese is
+ *  token-heavy — a ~300-char description alone can run several hundred
+ *  tokens */
+export const SUGGEST_RESOURCE_MAX_TOKENS = 800
+export const SUGGEST_DATASET_MAX_TOKENS = 2_000
+
+/** Per-completion LLM timeout ceiling — CPU-only Ollama can take minutes even
+ *  for a single-resource prompt (ADR-040). The effective per-call timeout is
+ *  further bounded by the whole-request deadline below */
 export const SUGGEST_TIMEOUT_MS = 120_000
 
-/** Per-user fixed-window rate limit (LLM cost cap) */
-export const SUGGEST_RATE_LIMIT = 20
+/** Whole-request wall-time budget. Keeps the synchronous endpoint bounded
+ *  regardless of resource count: resource completions that would start past
+ *  the deadline degrade to name/format context instead. Known limitation:
+ *  CloudFront (default readTimeout 30s) / ALB (default idleTimeout 60s) give
+ *  up earlier, so a slow cloud generation can time out at the edge while
+ *  completing server-side — accepted until async delivery lands */
+export const SUGGEST_TOTAL_DEADLINE_MS = 110_000
+
+/** Wall-time reserved for the Phase 2 integration completion */
+export const SUGGEST_PHASE2_RESERVE_MS = 30_000
+
+/** Do not launch a resource completion with less budget than this */
+export const SUGGEST_MIN_CALL_MS = 5_000
+
+/** Concurrent resource completions per provider (ADR-040 parallel-generation
+ *  addendum). Cloud providers parallelize but have RPM/TPM quotas; CPU-bound
+ *  Ollama gains nothing from concurrency (matches OLLAMA_NUM_PARALLEL) */
+export function suggestConcurrency(provider: string): number {
+  return provider === 'ollama' ? 2 : 4
+}
+
+/** Backoff before retrying a throttled completion (Bedrock ThrottlingException
+ *  / HTTP 429); length = retry attempts */
+export const SUGGEST_THROTTLE_BACKOFF_MS = [500, 2_000]
+
+/** Per-user fixed-window rate limit (LLM cost cap). Counted per HTTP request
+ *  regardless of how many completions run inside. Sized for the intended
+ *  "regenerate a few times and pick the best" workflow across several
+ *  datasets an hour */
+export const SUGGEST_RATE_LIMIT = 60
 export const SUGGEST_RATE_WINDOW_MS = 60 * 60 * 1000

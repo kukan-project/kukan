@@ -574,7 +574,7 @@ describe('DatasetForm (draft flows)', () => {
       expect(screen.getByText(/Processing resources/)).toBeInTheDocument()
     })
 
-    it('opens the dialog and applies the selection into the form fields', async () => {
+    it('applies the selection into the form and saves it immediately', async () => {
       setupMocks(jsonResponse({}))
       render(
         <DatasetForm
@@ -593,8 +593,36 @@ describe('DatasetForm (draft flows)', () => {
 
       expect(screen.getByLabelText('Title')).toHaveValue('AI タイトル')
       expect(screen.getByLabelText('Tags')).toHaveValue('防災, 人口')
-      // Adopted values mark the form dirty so Save enables
-      expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+      // Adopting saves right away: the PUT carries the adopted values and the
+      // form returns to pristine without navigating away
+      await waitFor(() => expect(findSubmitCall()).toBeDefined())
+      const body = JSON.parse(findSubmitCall()![1]!.body as string)
+      expect(body.title).toBe('AI タイトル')
+      expect(body.tags).toEqual([{ name: '防災' }, { name: '人口' }])
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled())
+      expect(push).not.toHaveBeenCalled()
+    })
+
+    it('keeps adopted values in the form when validation blocks the save', async () => {
+      setupMocks(jsonResponse({}))
+      render(
+        <DatasetForm
+          {...editProps}
+          defaultValues={{ ...editProps.defaultValues, licenseId: '' }}
+          suggest={{
+            enabled: true,
+            resources: [{ id: 'r1', name: 'data.csv', pipelineStatus: 'complete' }],
+          }}
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: /Suggest metadata with AI/ }))
+      fireEvent.click(await screen.findByRole('button', { name: 'MockApplySuggestion' }))
+
+      // Invalid form (missing license) → nothing sent; the user fixes and saves
+      expect(screen.getByLabelText('Title')).toHaveValue('AI タイトル')
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
+      expect(findSubmitCall()).toBeUndefined()
     })
 
     it('surfaces a failure when adopting a resource suggestion does not save', async () => {

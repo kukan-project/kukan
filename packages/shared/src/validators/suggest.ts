@@ -21,6 +21,13 @@ export interface MetadataSuggestion {
   title: string
   notes: string
   tags: SuggestedTag[]
+  /** Suggested category memberships — names of existing groups only (the LLM
+   *  picks from a closed candidate list; it never creates groups) */
+  groups: string[]
+  /** Suggested URL identifier (slug), drafts only — changing a published
+   *  dataset's name would break external links. Omitted when the generated
+   *  slug cannot be normalized into a valid unique name */
+  name?: string
   /** Per-resource name and description proposals (adopted individually) */
   resources: { id: string; name: string; description: string }[]
 }

@@ -17,7 +17,7 @@ const VALID_OUTPUT = JSON.stringify({
   title: '提案タイトル',
   notes: '提案の説明文です。',
   tags: ['防災'],
-  resourceSuggestions: {},
+  groups: [],
 })
 
 const OUTSIDER_USER = {
@@ -120,8 +120,13 @@ describe('POST /api/v1/packages/:nameOrId/suggest-metadata', () => {
     expect(body.suggestion).toEqual({
       title: '提案タイトル',
       notes: '提案の説明文です。',
-      // 防災 is not among the site's tags, so it is marked new
-      tags: [{ name: '防災', isNew: true }],
+      // The package's own tag is kept; 防災 is not among the site's tags,
+      // so it is marked new
+      tags: [
+        { name: '既存タグ', isNew: false },
+        { name: '防災', isNew: true },
+      ],
+      groups: [],
       resources: [],
     })
     expect(body.generatedBy).toEqual({ provider: 'ollama', model: 'gemma4:e4b' })
