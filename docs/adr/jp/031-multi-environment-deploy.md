@@ -2,7 +2,7 @@
 
 ## ステータス
 
-**提案（Proposed）** — 方針を先に文書化。実装は段階的に行う。ADR-030（CDK Pipelines）と対で設計する。
+**承認済み（Accepted）** — 実装済み・稼働中（`infra/lib/kukan-stage.ts` / `config/environments.ts`）。ADR-030（CDK Pipelines）と対で設計する。サイト軸の追加は ADR-041 が拡張する。
 
 ## コンテキスト
 

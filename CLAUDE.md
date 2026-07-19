@@ -209,8 +209,8 @@ pnpm format        # Prettier フォーマット
 - CloudFront 再導入 → `docs/adr/jp/027-cloudfront-reintroduction.md`
 - 組織パージの非同期化と durable claim → `docs/adr/jp/028-org-purge-async-claim.md`
 - CSV/TSV プレビュー Parquet の列型自動推定 → `docs/adr/jp/029-csv-type-inference.md`（ADR-014/016 拡張）
-- CDK Pipelines + CodeConnections による自動デプロイ（提案） → `docs/adr/jp/030-cdk-pipelines-deploy.md`
-- マルチ環境（dev/prd）デプロイ設計（CDK Stage、提案） → `docs/adr/jp/031-multi-environment-deploy.md`
+- CDK Pipelines + CodeConnections による自動デプロイ → `docs/adr/jp/030-cdk-pipelines-deploy.md`
+- マルチ環境（dev/prd）デプロイ設計（CDK Stage） → `docs/adr/jp/031-multi-environment-deploy.md`
 - MCP データクエリ基盤（スキーマ永続化 + サーバーサイド DuckDB） → `docs/adr/jp/032-mcp-data-query.md`
 - 外部 SQL データソース（スナップショット/ライブ proxy 両論 + connector 拡張、提案） → `docs/adr/jp/033-external-sql-data-source.md`
 - メタデータのベクトル検索（セマンティック検索・AI 向け発見、提案） → `docs/adr/jp/034-metadata-vector-search.md`
@@ -220,7 +220,7 @@ pnpm format        # Prettier フォーマット
 - 初回ユーザーブートストラップとランタイム登録制御（初回登録者=sysadmin、`REGISTRATION_ENABLED` 廃止） → `docs/adr/jp/038-first-user-bootstrap.md`
 - データセット下書き状態（draft、作成と公開の分離） → `docs/adr/jp/039-package-draft-state.md`
 - AI メタデータ提案（提案型・オンデマンド生成） → `docs/adr/jp/040-ai-metadata-suggest.md`
-- マルチサイトデプロイ（共用インフラ + サイト単位の論理分離、ADR-031 拡張、提案） → `docs/adr/jp/041-multi-site-deploy.md`
+- マルチサイトデプロイ（共用インフラ + サイト単位の論理分離、ADR-031 拡張） → `docs/adr/jp/041-multi-site-deploy.md`
 - マルチブランドビルド（`KUKAN_BRAND` によるブランド選択、ADR-023 拡張、提案） → `docs/adr/jp/042-multi-brand-build.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。

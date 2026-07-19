@@ -2,7 +2,20 @@
 
 ## ステータス
 
-**提案（Proposed）** — ADR-031（マルチ環境デプロイ）を置換せず**拡張**する。環境軸（dev / prd）の内側にサイト軸を追加する。
+**承認済み（Accepted）** — 2026-07-19 実装（PR #106〜#109）。ADR-031（マルチ環境デプロイ）を置換せず**拡張**する。環境軸（dev / prd）の内側にサイト軸を追加する。
+
+実装時の確定事項（本文からの差分）:
+
+- 共有の箱に **Secrets Manager interface VPC endpoint** を追加（VPC に NAT が
+  ないため、サイト DB 作成 Lambda の唯一の到達経路。サイト数によらず env あたり 1 つ）
+- サイトドメインの ACM 証明書 ARN は **standalone / pipeline 両モードとも必須**
+  （GlobalStack はマルチサイト環境では自動作成しない）
+- `OPENSEARCH_INDEX_PREFIX` の値は `kukan-<env>-<site>`（インデックスは
+  `kukan-<env>-<site>-search`）
+- マルチサイト環境では **AWS Backup を使用不可**とした（共有クラスタがサイト数分
+  スナップショットされるため。サイト単位は pg_dump で補完 — ADR-037 の前提変更）
+- サイト DB/ロールは SiteStack 削除時も**残す**（Custom Resource の Delete は
+  no-op。失敗 create のロールバック削除からデータを守る）
 
 ## コンテキスト
 

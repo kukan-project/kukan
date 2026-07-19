@@ -4,7 +4,15 @@
 
 ## Status
 
-**Proposed** — This ADR **extends** ADR-031 (multi-environment deployment) rather than superseding it. It adds a site axis inside the environment axis (dev / prd).
+**Accepted** — Implemented 2026-07-19 (PR #106–#109). This ADR **extends** ADR-031 (multi-environment deployment) rather than superseding it. It adds a site axis inside the environment axis (dev / prd).
+
+Decisions fixed at implementation time (deltas from the body):
+
+- The shared boxes gained a **Secrets Manager interface VPC endpoint** (the VPC has no NAT, so it is the only path for the site-DB bootstrap Lambda; one per environment regardless of site count)
+- ACM certificate ARNs for site domains are **required in both standalone and pipeline modes** (multi-site environments never auto-create the GlobalStack)
+- `OPENSEARCH_INDEX_PREFIX` is `kukan-<env>-<site>` (index `kukan-<env>-<site>-search`)
+- **AWS Backup is rejected for multi-site environments** (the shared cluster would be snapshotted once per site; per-site pg_dump complements instead — a premise change to ADR-037)
+- The site database/role are **retained** on SiteStack deletion (the Custom Resource's Delete is a no-op, protecting data from rollback-deletes of a failed create)
 
 ## Context
 

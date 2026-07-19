@@ -260,6 +260,93 @@ npx cdk deploy -c env=prd 'Prd/**'
 npx cdk deploy -c env=dev -c scale=medium 'Dev/**'
 ```
 
+## マルチサイト構成（ADR-041）
+
+環境エントリに `sites: []` を宣言すると、その環境は SharedStack（共有の箱）+
+SiteStack × N（サイト別リソース）に分割される。**opt-in 専用**であり、
+`sites` の無い環境は従来の全部入り KukanStack を論理 ID 不変のまま合成し続ける
+（synth スナップショットテストが機械検証する。`infra/lib/__tests__/`）。
+
+```
+Dev (Stage)
+├─ KukanSharedStack        VPC/SG・Aurora/RDS・OpenSearch・ECS クラスタ・
+│                          Secrets Manager VPC endpoint・SSM パラメータ
+└─ KukanSiteStack<Site>×N  サイト DB+ロール（Custom Resource）・S3・SQS・
+                           web/worker サービス・CloudFront(+ドメイン)・Secrets
+```
+
+### 設定
+
+```ts
+prd: {
+  account: '...',
+  scale: 'medium',
+  githubRepo: '...', deployBranch: 'main',
+  sites: [
+    {
+      name: 'citya',            // ^[a-z][a-z0-9]{1,15}$（リソース名 kukan-<env>-<site>-* と DB 名 kukan_<site> に使用）
+      domainName: 'catalog.city-a.example.jp',
+      hostedZoneId: 'Z...', hostedZoneName: 'city-a.example.jp',
+      certificateArn: 'arn:aws:acm:us-east-1:...',   // サイトドメインには必須（下記）
+      webAclArn: 'arn:aws:wafv2:us-east-1:...',      // 複数サイトで共有可
+    },
+    { name: 'cityb', enableWaf: false },
+  ],
+},
+```
+
+- **証明書 / WAF**: マルチサイト環境は standalone / pipeline 両モードとも
+  GlobalStack を自動作成しない。サイトごとに us-east-1 の ACM 証明書 ARN を
+  用意する（コンソール、または一時的な standalone GlobalStack デプロイで作成
+  して ARN を貼る）。env レベルの domainName / certificateArn / webAclArn は
+  設定禁止（synth 時に validateSites が拒否）
+- **AWS Backup**: マルチサイト環境では使用不可（共有クラスタがサイト数分
+  スナップショットされるため）。scale `large` は
+  `overrides: { backup: { awsBackup: false } }` が必要。サイト単位の復元は
+  pg_dump の定期実行で補完する（ADR-037 の前提変更）
+- **サイト中心で書きたい場合**: `environments.ts` は素の TypeScript なので、
+  サイト台帳を先に定義して env エントリへ転置するヘルパーを書けばよい
+  （ネイティブ構造が env 外側なのは、共有の箱・AWS アカウント・パイプラインが
+  いずれも env 単位のため）
+
+### デプロイ挙動
+
+- 初回もデプロイ順は自動制御される: SharedStack → 先頭サイト（カナリア）→
+  残りサイト。SharedStack が書く SSM パラメータ（`/kukan/<env>/shared/*`:
+  vpc/sg/ecs/db/search）を SiteStack がデプロイ時に解決する（CFN Export 不使用
+  — 共有側の変更がサイト参照でロックされない）
+- サイト DB（`kukan_<site>` + 専用ロール）は SiteStack 内の Lambda Custom
+  Resource が冪等に作成する。マイグレーションは従来どおり各サイトのタスクが
+  起動時に自 DB へ実行
+- 本体コード変更 → 全サイトが順次ローリング。ブランドのみの変更（ADR-042）→
+  該当サイトのみ（イメージのコンテンツハッシュ管理による）
+
+### サイト削除時の残存リソース
+
+SiteStack を削除（`cdk destroy` / sites から除去）した場合:
+
+| リソース                                | 挙動                        | 手動パージ                                                      |
+| --------------------------------------- | --------------------------- | --------------------------------------------------------------- |
+| サイト DB + ロール                      | **残る**（CR は削除しない） | master で `DROP DATABASE kukan_<site>; DROP ROLE kukan_<site>;` |
+| S3 バケット                             | **残る**（RETAIN）          | 空にしてから削除                                                |
+| OpenSearch インデックス                 | **残る**（共有ドメイン内）  | `DELETE /kukan-<env>-<site>-search`                             |
+| SQS キュー / Secrets / ECS / CloudFront | 削除される                  | DLQ は削除前に内容確認                                          |
+
+### 既存シングルサイト環境の移行（ブルーグリーン）
+
+デプロイ済み環境に `sites` を追加してはならない（スタック分割 + 物理名変更で
+全リソース置換になる）。移行する場合は新環境を並行構築し、
+pg_dump / restore → S3 sync → 再インデックス → DNS 切替 → 旧環境破棄の順で行う。
+
+### 運用ノート
+
+- DB 接続数はサイト数 ×（`WEB_DB_POOL_MAX` × タスク数 + worker プール）で増える。
+  Aurora Serverless v2 の max_connections は maxACU 連動のため、サイト追加時に見直す
+- 共用 OpenSearch は medium（m6g.large.search）以上を前提とする（1 サイトの
+  再インデックスが全サイトの検索レイテンシに波及するため）
+- 非 AWS 環境（Docker Compose）は `docker/multi-site/` の opt-in テンプレートを
+  使う（手順は同ディレクトリの README）
+
 ## セキュリティ
 
 ### IP 制限（CloudFront Function）

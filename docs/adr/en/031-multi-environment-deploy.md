@@ -4,7 +4,7 @@
 
 ## Status
 
-**Proposed** — Documenting the direction first; implementation will be done incrementally. Designed together with ADR-030 (CDK Pipelines).
+**Accepted** — Implemented and in operation (`infra/lib/kukan-stage.ts` / `config/environments.ts`). Designed together with ADR-030 (CDK Pipelines). ADR-041 extends it with the site axis.
 
 ## Context
 

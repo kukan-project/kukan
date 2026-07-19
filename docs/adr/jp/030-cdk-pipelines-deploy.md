@@ -2,7 +2,7 @@
 
 ## ステータス
 
-**提案（Proposed）** — 方針を先に文書化。実装は段階的に行う。ADR-031（Stage ベースのマルチ環境）と対で設計する。
+**承認済み（Accepted）** — 実装済み・稼働中（`infra/lib/pipeline-stack.ts`、CodePipeline V2 化は PR #102）。ADR-031（Stage ベースのマルチ環境）と対で設計する。
 
 ## コンテキスト
 
