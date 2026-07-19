@@ -47,9 +47,23 @@ export interface SiteSurface {
   webSecurityGroup: ec2.ISecurityGroup
   workerSecurityGroup: ec2.ISecurityGroup
   db: DbAccess
-  /** Cluster/instance ARN — AWS Backup selection target (ADR-037). */
-  dbArn: string
+  /**
+   * Cluster/instance ARN — AWS Backup selection target (ADR-037). Required
+   * when `config.backup.awsBackup` is enabled; SiteStacks never pass it
+   * (validateSites rejects per-site AWS Backup, ADR-041).
+   */
+  dbArn?: string
   searchDomainEndpoint?: string
+  /** Per-site OPENSEARCH_INDEX_PREFIX (ADR-041). Unset → containers use the app default. */
+  searchIndexPrefix?: string
+  /** Per-site web image build args (KUKAN_BRAND, ADR-042). */
+  webImageBuildArgs?: Record<string, string>
+}
+
+/** Handles a SiteStack needs for cross-resource ordering after composition. */
+export interface SiteResources {
+  webService: WebServiceConstruct
+  workerService: WorkerServiceConstruct
 }
 
 /** Edge resources created in us-east-1 (KukanGlobalStack) or supplied as ARNs. */
@@ -92,7 +106,7 @@ export function composeSite(
   config: KukanConfig,
   surface: SiteSurface,
   edge: EdgeArns = {}
-): void {
+): SiteResources {
   // --- Auth Secret ---
   const authSecret = new secretsmanager.Secret(scope, 'AuthSecret', {
     generateSecretString: { excludePunctuation: true, passwordLength: 64 },
@@ -103,6 +117,9 @@ export function composeSite(
 
   // --- Backup (AWS Backup vault + plan, ADR-037) ---
   if (config.backup.awsBackup) {
+    if (!surface.dbArn) {
+      throw new Error('backup.awsBackup requires SiteSurface.dbArn (single-site only, ADR-041)')
+    }
     new BackupConstruct(scope, 'Backup', {
       config,
       bucket: storage.bucket,
@@ -146,13 +163,15 @@ export function composeSite(
     bucket: storage.bucket,
     queue: queue.queue,
     searchDomainEndpoint: surface.searchDomainEndpoint,
+    searchIndexPrefix: surface.searchIndexPrefix,
+    imageBuildArgs: surface.webImageBuildArgs,
     ga4PropertyIdSecret,
     ga4ClientEmailSecret,
     ga4PrivateKeySecret,
   })
 
   // --- Worker Service (ECS Fargate) ---
-  new WorkerServiceConstruct(scope, 'WorkerService', {
+  const workerService = new WorkerServiceConstruct(scope, 'WorkerService', {
     config,
     cluster: surface.cluster,
     workerSecurityGroup: surface.workerSecurityGroup,
@@ -161,6 +180,7 @@ export function composeSite(
     bucket: storage.bucket,
     queue: queue.queue,
     searchDomainEndpoint: surface.searchDomainEndpoint,
+    searchIndexPrefix: surface.searchIndexPrefix,
   })
 
   // --- CDN (CloudFront with VPC origin) ---
@@ -203,4 +223,6 @@ export function composeSite(
     value: storage.bucket.bucketName,
     description: 'S3 Bucket Name',
   })
+
+  return { webService, workerService }
 }

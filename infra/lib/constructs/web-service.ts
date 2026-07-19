@@ -28,6 +28,10 @@ export interface WebServiceProps {
   bucket: s3.IBucket
   queue: sqs.IQueue
   searchDomainEndpoint?: string
+  /** Per-site OPENSEARCH_INDEX_PREFIX (ADR-041). Unset → app default (`kukan`). */
+  searchIndexPrefix?: string
+  /** Docker build args for the web image (KUKAN_BRAND, ADR-042). */
+  imageBuildArgs?: Record<string, string>
   /** Secrets Manager secret containing GA4 property ID (numeric) */
   ga4PropertyIdSecret?: secretsmanager.ISecret
   /** Secrets Manager secret containing GA4 service account email */
@@ -76,6 +80,7 @@ export class WebServiceConstruct extends Construct {
       target: 'web',
       platform: assets.Platform.LINUX_AMD64,
       ignoreMode: cdk.IgnoreMode.DOCKER,
+      buildArgs: props.imageBuildArgs,
     })
 
     // Task Definition
@@ -105,6 +110,9 @@ export class WebServiceConstruct extends Construct {
     if (searchDomainEndpoint) {
       environment.OPENSEARCH_URL = `https://${searchDomainEndpoint}`
       environment.OPENSEARCH_REPLICAS = String(config.opensearch.indexReplicas)
+      if (props.searchIndexPrefix) {
+        environment.OPENSEARCH_INDEX_PREFIX = props.searchIndexPrefix
+      }
     }
     if (config.domainName) {
       environment.BETTER_AUTH_URL = `https://${config.domainName}`

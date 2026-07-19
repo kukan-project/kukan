@@ -27,6 +27,8 @@ export interface WorkerServiceProps {
   bucket: s3.IBucket
   queue: sqs.IQueue
   searchDomainEndpoint?: string
+  /** Per-site OPENSEARCH_INDEX_PREFIX (ADR-041). Unset → app default (`kukan`). */
+  searchIndexPrefix?: string
 }
 
 export class WorkerServiceConstruct extends Construct {
@@ -86,6 +88,9 @@ export class WorkerServiceConstruct extends Construct {
     if (searchDomainEndpoint) {
       environment.OPENSEARCH_URL = `https://${searchDomainEndpoint}`
       environment.OPENSEARCH_REPLICAS = String(config.opensearch.indexReplicas)
+      if (props.searchIndexPrefix) {
+        environment.OPENSEARCH_INDEX_PREFIX = props.searchIndexPrefix
+      }
     }
 
     // Container

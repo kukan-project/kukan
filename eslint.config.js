@@ -23,7 +23,8 @@ export default tseslint.config(
     },
   },
   {
-    files: ['**/scripts/**', '**/migrate.ts', '**/__tests__/**'],
+    // Lambda handlers: console IS the CloudWatch log sink
+    files: ['**/scripts/**', '**/migrate.ts', '**/__tests__/**', 'infra/lib/lambda/**'],
     rules: {
       'no-console': 'off',
     },

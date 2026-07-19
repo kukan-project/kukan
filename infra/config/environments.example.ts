@@ -124,5 +124,28 @@ export const environments = {
     // certificateArn: 'arn:aws:acm:us-east-1:000000000000:certificate/...', // pipeline: create once
     // webAclArn: 'arn:aws:wafv2:us-east-1:000000000000:global/webacl/...',
     // overrides: { web: { maxSize: 20 }, opensearch: { instanceCount: 3, indexReplicas: 2 } },
+
+    // --- Multi-site (ADR-041) ---
+    // Declaring `sites` splits this env into SharedStack (VPC, DB cluster,
+    // OpenSearch, ECS cluster) + one SiteStack per entry (site database+role,
+    // bucket, queue, web/worker services, CloudFront). Opt-in only: do NOT add
+    // `sites` to an already-deployed single-site env — migrate blue/green
+    // instead. Site domains need per-site us-east-1 cert ARNs (webAclArn may be
+    // shared); the env-level domain/cert fields must stay unset. With `sites`,
+    // scale `large` also needs `overrides: { backup: { awsBackup: false } }`
+    // (the shared cluster must not be snapshotted once per site).
+    // sites: [
+    //   {
+    //     name: 'citya', // ^[a-z][a-z0-9]{1,15}$ → kukan-prd-citya-*, DB kukan_citya
+    //     domainName: 'catalog.city-a.example.jp',
+    //     hostedZoneId: 'Z0123456789',
+    //     hostedZoneName: 'city-a.example.jp',
+    //     certificateArn: 'arn:aws:acm:us-east-1:000000000000:certificate/...',
+    //     webAclArn: 'arn:aws:wafv2:us-east-1:000000000000:global/webacl/...',
+    //     // brand: 'city-a', // requires the ADR-042 KUKAN_BRAND Dockerfile ARG
+    //     // overrides: { web: { maxSize: 10 } },
+    //   },
+    //   { name: 'cityb', enableWaf: false, basicAuth: { username: 'preview', password: '...' } },
+    // ],
   },
 } satisfies Record<string, EnvironmentConfig>

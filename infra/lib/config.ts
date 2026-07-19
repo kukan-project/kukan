@@ -160,6 +160,147 @@ export interface EnvironmentConfig {
   deployBranch?: string
   /** Fine-grained overrides of the scale preset. */
   overrides?: DeepPartial<ScaleComputed>
+  /**
+   * Sites hosted by this environment (ADR-041). Presence (non-empty) opts the
+   * environment into the SharedStack/SiteStack split; absence keeps the
+   * all-in-one KukanStack with unchanged logical IDs. Existing single-site
+   * environments migrate blue/green only — never by adding `sites` in place.
+   */
+  sites?: SiteConfig[]
+}
+
+/**
+ * One site inside a multi-site environment (ADR-041). Undeclared aspects
+ * (scale, dbEngine, enableOpenSearch, bedrock, …) are shared-box territory and
+ * always come from the environment entry.
+ */
+export interface SiteConfig {
+  /**
+   * Site key: lowercase alphanumeric, 2–16 chars, no hyphens (used in resource
+   * names `kukan-<env>-<site>-*` AND PostgreSQL identifiers `kukan_<site>`).
+   */
+  name: string
+  /**
+   * Web image brand (ADR-042): passed to the Docker build as `KUKAN_BRAND`.
+   * Leave unset until the Dockerfile consumes that ARG (ADR-042 implementation)
+   * — an unknown build arg fails the image build at asset publish time.
+   */
+  brand?: string
+  domainName?: string
+  hostedZoneId?: string
+  hostedZoneName?: string
+  /**
+   * Pre-created us-east-1 ACM certificate ARN. Required when `domainName` is
+   * set — multi-site environments never create the global stack themselves, in
+   * standalone mode too (one cert per site domain; create it via the console or
+   * a one-off standalone GlobalStack deploy, then paste the ARN).
+   */
+  certificateArn?: string
+  /** Pre-created us-east-1 WAF WebACL ARN. May be shared by several sites. */
+  webAclArn?: string
+  enableWaf?: boolean
+  allowedIpRanges?: string[]
+  basicAuth?: { username: string; password: string }
+  /** S3 bucket name. Omit → CDK auto-naming (globally unique). */
+  bucketName?: string
+  enableGa4DataApi?: boolean
+  /**
+   * Per-site sizing on top of the environment's scale preset. Only the
+   * site-owned sections — db/opensearch sizing belongs to the shared boxes,
+   * and AWS Backup plans are rejected per site (the shared cluster would be
+   * snapshotted once per site; use per-site pg_dump instead, ADR-041).
+   */
+  overrides?: DeepPartial<Pick<ScaleComputed, 'web' | 'worker' | 'dbPool' | 'backup'>>
+}
+
+const SITE_NAME_PATTERN = /^[a-z][a-z0-9]{1,15}$/
+
+/**
+ * Validate the `sites` list of a multi-site environment. Throws at synth with
+ * an actionable message — misconfiguration must never reach CloudFormation.
+ */
+export function validateSites(env: EnvironmentConfig): void {
+  const sites = env.sites ?? []
+  if (sites.length === 0) return
+  if (env.domainName || env.certificateArn || env.webAclArn) {
+    throw new Error(
+      'Multi-site environments declare domains/certificates per site — remove ' +
+        'domainName/certificateArn/webAclArn from the environment entry (ADR-041)'
+    )
+  }
+  const envBackup = deepMerge(SCALE_DEFAULTS[env.scale ?? 'small'], env.overrides).backup
+  if (envBackup.awsBackup) {
+    throw new Error(
+      'Multi-site environments must disable AWS Backup (the shared DB cluster ' +
+        'would be snapshotted once per site) — set overrides: { backup: ' +
+        '{ awsBackup: false } } on the environment and use per-site pg_dump ' +
+        'instead (ADR-041)'
+    )
+  }
+  const seen = new Set<string>()
+  for (const site of sites) {
+    if (!SITE_NAME_PATTERN.test(site.name)) {
+      throw new Error(
+        `Site name "${site.name}" must match ${SITE_NAME_PATTERN} — it is used in ` +
+          'resource names and PostgreSQL identifiers'
+      )
+    }
+    if (site.name === 'shared') {
+      throw new Error('Site name "shared" is reserved (ADR-041)')
+    }
+    if (seen.has(site.name)) {
+      throw new Error(`Duplicate site name "${site.name}"`)
+    }
+    seen.add(site.name)
+    if (site.domainName && !site.certificateArn) {
+      throw new Error(
+        `Site "${site.name}" sets domainName but no certificateArn. Multi-site ` +
+          'environments never create the us-east-1 global stack — create the ACM ' +
+          'certificate once (console, or a one-off standalone GlobalStack deploy) ' +
+          'and paste its ARN into the site entry (ADR-041)'
+      )
+    }
+    if (resolveEnableWaf(site) && !site.webAclArn) {
+      throw new Error(
+        `Site "${site.name}" resolves to enableWaf but has no webAclArn. Create ` +
+          'the us-east-1 WebACL once and paste its ARN (it may be shared across ' +
+          'sites), or set enableWaf: false (ADR-041)'
+      )
+    }
+    if (site.overrides?.backup && 'awsBackup' in site.overrides.backup) {
+      throw new Error(
+        `Site "${site.name}" must not override backup.awsBackup — the shared DB ` +
+          'cluster would be snapshotted once per site (ADR-041)'
+      )
+    }
+  }
+}
+
+/**
+ * Resolve one site's effective configuration: the site entry merged over its
+ * environment, run through the normal loadConfig (reusing all its validation).
+ */
+export function resolveSiteConfig(
+  scope: Construct,
+  env: EnvironmentConfig,
+  site: SiteConfig
+): KukanConfig {
+  const merged: EnvironmentConfig = {
+    ...env,
+    sites: undefined,
+    domainName: site.domainName,
+    hostedZoneId: site.hostedZoneId,
+    hostedZoneName: site.hostedZoneName,
+    certificateArn: site.certificateArn,
+    webAclArn: site.webAclArn,
+    enableWaf: site.enableWaf,
+    allowedIpRanges: site.allowedIpRanges,
+    basicAuth: site.basicAuth,
+    bucketName: site.bucketName,
+    enableGa4DataApi: site.enableGa4DataApi,
+    overrides: deepMerge(env.overrides ?? {}, site.overrides ?? {}),
+  }
+  return loadConfig(scope, merged)
 }
 
 /**
@@ -179,7 +320,9 @@ export function resolveEnv(env: EnvironmentConfig): { account: string; region: s
 }
 
 /** WAF default: ON unless an IP allowlist or Basic auth edge gate is set (ADR-027). */
-export function resolveEnableWaf(env: EnvironmentConfig): boolean {
+export function resolveEnableWaf(
+  env: Pick<EnvironmentConfig, 'enableWaf' | 'allowedIpRanges' | 'basicAuth'>
+): boolean {
   return env.enableWaf ?? !(env.allowedIpRanges || env.basicAuth)
 }
 
