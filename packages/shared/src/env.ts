@@ -43,6 +43,9 @@ export const envSchema = z.object({
   SEARCH_TYPE: z.enum(['opensearch', 'postgres']).default('opensearch'),
   OPENSEARCH_URL: z.string().default('http://localhost:9200'),
   OPENSEARCH_REPLICAS: z.coerce.number().int().min(0).default(0),
+  // Index name prefix (`<prefix>-search`). Per-site isolation on a shared
+  // OpenSearch domain (ADR-041)
+  OPENSEARCH_INDEX_PREFIX: z.string().default('kukan'),
   // Minimum cosine similarity for vector-search hits. Omit → the embedding
   // model's measured recommendation (EmbeddingInfo.recommendedMinSimilarity),
   // falling back to 0.45 for unmeasured models

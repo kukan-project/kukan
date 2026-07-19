@@ -96,6 +96,7 @@ export async function createAdapters(env: Env, db: Database, logger: Logger) {
     if (!osAdapter) {
       osAdapter = new OpenSearchAdapter({
         endpoint: env.OPENSEARCH_URL,
+        indexPrefix: env.OPENSEARCH_INDEX_PREFIX,
         replicas: env.OPENSEARCH_REPLICAS,
         logger: logger.child({ component: 'opensearch' }),
         // Auto-recovery (empty index detection) is handled by the Worker periodic check

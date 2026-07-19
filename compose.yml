@@ -18,6 +18,7 @@ x-app-environment: &app-environment
   S3_SECRET_KEY: ${S3_SECRET_KEY:-${MINIO_ROOT_PASSWORD:-minioadmin}}
   SEARCH_TYPE: ${SEARCH_TYPE:-opensearch}
   OPENSEARCH_URL: ${OPENSEARCH_URL:-http://opensearch:9200}
+  OPENSEARCH_INDEX_PREFIX: ${OPENSEARCH_INDEX_PREFIX:-kukan}
   SQS_ENDPOINT: ${SQS_ENDPOINT:-http://elasticmq:9324}
   SQS_QUEUE_URL: ${SQS_QUEUE_URL:-http://elasticmq:9324/000000000000/kukan-pipeline}
   SQS_ACCESS_KEY: ${SQS_ACCESS_KEY:-x}

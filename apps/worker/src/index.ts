@@ -135,6 +135,7 @@ const search =
   env.SEARCH_TYPE === 'opensearch'
     ? new OpenSearchAdapter({
         endpoint: env.OPENSEARCH_URL,
+        indexPrefix: env.OPENSEARCH_INDEX_PREFIX,
         replicas: env.OPENSEARCH_REPLICAS,
         logger: osLogger,
       })
