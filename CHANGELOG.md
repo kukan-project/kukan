@@ -3,6 +3,74 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] - 2026-07-19
+
+**Highlights**
+
+- **Multi-site deployment: run multiple data catalog sites on one shared infrastructure (ADR-041).** One operator can now host several sites — for example, data catalogs for multiple municipalities — while sharing the hourly-billed backbone (database cluster, OpenSearch domain, VPC, ECS cluster) and keeping everything that holds data isolated per site: each site gets its own PostgreSQL database with a dedicated role that cannot reach other sites' data, plus its own search index, S3 bucket, SQS queue, web/worker services, and CloudFront distribution with its own domain. Multi-site is strictly opt-in via a `sites` list in the environment definition; environments without it keep today's single-stack layout unchanged (#106, #107, #108).
+- **The multi-site configuration validates itself before anything reaches CloudFormation.** Site names, per-site certificate requirements, and the shared database's connection budget are checked at synth. The connection check uses the AWS-documented Aurora Serverless v2 limits (including the 2,000-connection cap that a 0/0.5 minimum ACU imposes and the 5,000 absolute ceiling), counts the extra connections of one site's rolling update, and its messages tell you which setting actually helps — including when none does and the sites should be split across clusters (#111, #113, #115).
+- **On-premises multi-site with Docker Compose.** Opt-in templates under `docker/multi-site/` build the same shared-boxes/per-site model with Compose: one shared stack (PostgreSQL / MinIO / ElasticMQ / OpenSearch / Ollama / Caddy) plus one web/worker pair per site, with a runbook covering setup, adding and purging sites, capacity planning, and the security boundary of the shared services (#109).
+- **A golden-set evaluation harness for AI metadata suggestions.** `pnpm eval:suggest` runs a golden dataset file against a live instance and reports per-field scores, latency, and hallucination canaries — built for comparing models, providers, and prompt changes side by side. The admin dashboard now also shows a quality caveat when suggestions run on a local model (#104, #105).
+
+**Features**
+
+- feat(api): add golden-set evaluation harness for AI metadata suggestions (#104)
+- feat(web): show a quality caveat when AI suggestions run on a local model (#105)
+- feat(search): wire OPENSEARCH_INDEX_PREFIX through to the OpenSearch adapter (ADR-041) (#107)
+- feat(infra): add multi-site SharedStack/SiteStack deployment (ADR-041) (#108)
+- feat(docker): add opt-in multi-site compose templates (ADR-041) (#109)
+- feat(infra): validate the shared-database connection budget at synth (ADR-041) (#111)
+
+**Bug Fixes**
+
+- fix(infra): reject site-scoped fields on multi-site environment entries (ADR-041) (#113)
+
+**Improvements**
+
+- refactor(infra): add synth snapshot guard and extract stack composition (ADR-041) (#106)
+- refactor: simplify the ADR-041 series and fix review findings (#115)
+
+**Documentation**
+
+- docs(adr): add ADR-041 multi-site deployment and ADR-042 multi-brand build (#61)
+- docs: mark ADR-041 as accepted and add multi-site deployment guide (#110)
+- docs(site): add multi-site operation guide (#112)
+- docs(site): add multi-site deployment spotlight to the landing page (#114)
+
+---
+
+**ハイライト**
+
+- **マルチサイトデプロイ: 1 つの共有インフラで複数のデータカタログサイトを運用できるようになりました(ADR-041)。** 複数自治体のデータカタログのように、1 つの運用主体が複数サイトをホストする際、時間課金される基盤(データベースクラスタ、OpenSearch ドメイン、VPC、ECS クラスタ)を共有しつつ、データを持つものはすべてサイト別に分離します — 各サイトは他サイトのデータへ到達できない専用ロール付きの PostgreSQL データベースを持ち、検索インデックス・S3 バケット・SQS キュー・web/worker サービス・独自ドメイン付き CloudFront もサイトごとに独立します。マルチサイトは環境定義の `sites` リストによる完全な opt-in で、`sites` の無い環境は従来の単一スタック構成がそのまま維持されます(#106, #107, #108)。
+- **マルチサイト設定は CloudFormation に到達する前に自己検証されます。** サイト名、サイトごとの証明書要件、共有データベースの接続数バジェットを synth 時に検査します。接続数の検査は AWS 公式ドキュメントの Aurora Serverless v2 上限(最小 0/0.5 ACU 時の 2,000 接続キャップ、絶対上限 5,000 を含む)に基づき、ローリング更新中の 1 サイト分の追加接続も計上します。エラーメッセージは「どの設定を変えれば実際に解決するか」— どの設定でも解決せずクラスタ分割が必要な場合を含めて — を案内します(#111, #113, #115)。
+- **Docker Compose によるオンプレミスのマルチサイト構成。** `docker/multi-site/` の opt-in テンプレートが同じ「箱共有・サイト別分離」モデルを Compose で構成します: 共有スタック(PostgreSQL / MinIO / ElasticMQ / OpenSearch / Ollama / Caddy)1 つ + サイトごとの web/worker ペア。セットアップ、サイトの追加・削除、キャパシティ計画、共有サービスのセキュリティ境界を手順書にまとめています(#109)。
+- **AI メタデータ提案のゴールデンセット評価ハーネス。** `pnpm eval:suggest` がゴールデンデータセットを稼働中のインスタンスに対して実行し、フィールド別スコア・レイテンシ・ハルシネーション検出をレポートします — モデル・プロバイダー・プロンプト変更の比較用です。あわせて、ローカルモデルで提案が動作している場合に管理画面へ品質注記を表示するようになりました(#104, #105)。
+
+**機能**
+
+- feat(api): AI メタデータ提案のゴールデンセット評価ハーネスを追加（#104）
+- feat(web): ローカルモデルで AI 提案が動作する場合に品質注記を表示（#105）
+- feat(search): `OPENSEARCH_INDEX_PREFIX` を OpenSearch アダプターへ配線（ADR-041）（#107）
+- feat(infra): マルチサイト SharedStack/SiteStack デプロイを追加（ADR-041）（#108）
+- feat(docker): opt-in のマルチサイト compose テンプレートを追加（ADR-041）（#109）
+- feat(infra): 共有データベースの接続数バジェットを synth 時に検証（ADR-041）（#111）
+
+**バグ修正**
+
+- fix(infra): マルチサイト環境の env エントリでサイトスコープのフィールドを拒否（ADR-041）（#113）
+
+**改善**
+
+- refactor(infra): synth スナップショットガードの追加とスタック合成の関数抽出（ADR-041）（#106）
+- refactor: ADR-041 シリーズの簡素化とレビュー指摘の修正（#115）
+
+**ドキュメント**
+
+- docs(adr): ADR-041 マルチサイトデプロイ・ADR-042 マルチブランドビルドを追加（#61）
+- docs: ADR-041 を承認済みへ変更しマルチサイトデプロイガイドを追加（#110）
+- docs(site): マルチサイト運用ガイドを追加（#112）
+- docs(site): LP にマルチサイトデプロイのスポットライトを追加（#114）
+
 ## [0.9.0] - 2026-07-18
 
 **Highlights**
