@@ -141,6 +141,7 @@ env entry (`scale` + `overrides`) > scale defaults (`config.ts`) > built-in defa
 
 ## Related
 
+- ADR-041 (Multi-site deployment): extends this ADR by adding a site axis inside the environment axis
 - ADR-030 (Automated deployment via CDK Pipelines): `docs/adr/en/030-cdk-pipelines-deploy.md`
 - ADR-020 (ECS Fargate + ALB): `docs/adr/en/020-ecs-fargate-alb-migration.md`
 - ADR-027 (CloudFront reintroduction / 2-stack setup): `docs/adr/en/027-cloudfront-reintroduction.md`

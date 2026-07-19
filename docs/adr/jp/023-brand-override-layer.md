@@ -444,5 +444,6 @@ const show = brandConfig.showBreadcrumb ?? true
 
 ## 関連 ADR
 
+- ADR-042: マルチブランドビルド（本 ADR の拡張。フォーク内に複数ブランドを持てる選択機構を追加）
 - ADR-010: shadcn/ui テーマ戦略（Tier 2 を本 ADR で置換）
 - ADR-008: Turborepo モノレポ

@@ -139,6 +139,7 @@ env エントリ（`scale` + `overrides`）　＞　スケール既定（`config
 
 ## 関連
 
+- ADR-041（マルチサイトデプロイ）: 本 ADR の環境軸の内側にサイト軸を追加する拡張
 - ADR-030（CDK Pipelines による自動デプロイ）: `docs/adr/jp/030-cdk-pipelines-deploy.md`
 - ADR-020（ECS Fargate + ALB）: `docs/adr/jp/020-ecs-fargate-alb-migration.md`
 - ADR-027（CloudFront 再導入・2 スタック構成）: `docs/adr/jp/027-cloudfront-reintroduction.md`

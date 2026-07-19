@@ -446,5 +446,6 @@ When breaking changes are necessary, release notes include instructions for fork
 
 ## Related ADRs
 
+- ADR-042: Multi-brand build (extends this ADR with a selection mechanism so a fork can hold multiple brands)
 - ADR-010: shadcn/ui theme strategy (Tier 2 superseded by this ADR)
 - ADR-008: Turborepo monorepo
