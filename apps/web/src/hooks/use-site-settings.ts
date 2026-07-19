@@ -7,6 +7,8 @@ interface SiteSettings {
   searchExampleQueries: string[]
   /** AI metadata suggestions are available (ADR-040) */
   metadataSuggestEnabled: boolean
+  /** Suggestions run on a local model — edit UIs show a quality caveat */
+  metadataSuggestLocalModel: boolean
 }
 
 export function useSiteSettings() {
@@ -20,6 +22,7 @@ export function useSiteSettings() {
     searchExampleQueries: data?.searchExampleQueries ?? null,
     // Conservative on error: the button triggers paid LLM calls, so hide it
     metadataSuggestEnabled: error ? false : (data?.metadataSuggestEnabled ?? null),
+    metadataSuggestLocalModel: data?.metadataSuggestLocalModel ?? false,
     loading,
   }
 }

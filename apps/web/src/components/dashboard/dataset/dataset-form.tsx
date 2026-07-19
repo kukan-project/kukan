@@ -94,6 +94,8 @@ interface DatasetFormProps {
   suggest?: {
     /** Site capability (null while loading — button hidden until known) */
     enabled: boolean | null
+    /** Local model in use — shows a quality caveat next to the button */
+    localModel?: boolean
     resources: SuggestResourceInfo[]
     /** Uploads or pipelines still running — keeps the button disabled */
     processing?: boolean
@@ -465,6 +467,11 @@ export function DatasetForm({
           )}
           {applyingResources && (
             <span className="text-xs text-muted-foreground">{t('aiSuggestApplyingResources')}</span>
+          )}
+          {suggest?.localModel && (
+            <span role="note" className="text-xs text-muted-foreground">
+              {t('aiSuggestLocalModelNote')}
+            </span>
           )}
         </div>
       )}

@@ -176,6 +176,13 @@ export function AiSuggestCard() {
             <p className="text-sm text-muted-foreground">{t('aiSuggestDescription')}</p>
           </div>
 
+          {/* Static caveat — role note, not a live region */}
+          {settings.provider === 'ollama' && (
+            <Alert variant="warning" role="note">
+              <AlertDescription>{t('aiSuggestOllamaQualityNote')}</AlertDescription>
+            </Alert>
+          )}
+
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className="text-muted-foreground">{t('aiSuggestEffectiveModel')}</span>
             <span className="font-mono text-xs">{settings.effectiveModel}</span>

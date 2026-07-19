@@ -541,6 +541,21 @@ describe('DatasetForm (draft flows)', () => {
       ).not.toBeInTheDocument()
     })
 
+    it('shows a quality note only when a local model backs suggestions', () => {
+      setupMocks(jsonResponse({}))
+      const suggestBase = {
+        enabled: true,
+        resources: [{ id: 'r1', name: 'data.csv', pipelineStatus: 'completed' }],
+      }
+      const { rerender } = render(
+        <DatasetForm {...editProps} suggest={{ ...suggestBase, localModel: true }} />
+      )
+      expect(screen.getByRole('note')).toHaveTextContent(/smaller models may produce/)
+
+      rerender(<DatasetForm {...editProps} suggest={{ ...suggestBase, localModel: false }} />)
+      expect(screen.queryByRole('note')).not.toBeInTheDocument()
+    })
+
     it('disables the button with a hint until a resource pipeline completed', () => {
       setupMocks(jsonResponse({}))
       render(

@@ -6,12 +6,12 @@ import { AiSuggestCard } from '../ai-suggest-card'
 vi.mock('@/lib/client-api', () => ({ clientFetch: vi.fn() }))
 const mockClientFetch = vi.mocked(clientFetch)
 
-const settingsResponse = (availableModels: string[]) =>
+const settingsResponse = (availableModels: string[], provider = 'ollama') =>
   ({
     ok: true,
     json: async () => ({
       enabled: true,
-      provider: 'ollama',
+      provider,
       defaultModel: 'gemma4:e4b',
       model: '',
       effectiveModel: 'gemma4:e4b',
@@ -37,6 +37,25 @@ describe('AiSuggestCard', () => {
 
     await waitFor(() => expect(screen.getByRole('textbox')).toBeInTheDocument())
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
+  it('shows a quality caveat for the ollama provider as a note, not a live region', async () => {
+    mockClientFetch.mockResolvedValue(settingsResponse([]))
+    render(<AiSuggestCard />)
+
+    await waitFor(() =>
+      expect(screen.getByRole('note')).toHaveTextContent(/Bedrock or OpenAI is recommended/)
+    )
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('hides the ollama quality caveat for cloud providers', async () => {
+    mockClientFetch.mockResolvedValue(settingsResponse([], 'bedrock'))
+    render(<AiSuggestCard />)
+
+    await waitFor(() => expect(screen.getByRole('textbox')).toBeInTheDocument())
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
   })
 
   it('announces a successful connection test as a polite status, not an alert', async () => {

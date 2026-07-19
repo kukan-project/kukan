@@ -37,5 +37,7 @@ siteRouter.get('/settings', publicCache(), async (c) => {
     semanticSearchEnabled,
     searchExampleQueries,
     metadataSuggestEnabled,
+    // Local models get a quality caveat in edit UIs (ADR-040 evaluation)
+    metadataSuggestLocalModel: suggestAvailability?.provider === 'ollama',
   })
 })

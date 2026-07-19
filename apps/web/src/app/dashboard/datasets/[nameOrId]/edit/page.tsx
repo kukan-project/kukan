@@ -101,7 +101,7 @@ export default function EditDatasetPage() {
 
   // AI metadata suggestions (ADR-040): capability flag, pipeline-complete
   // nudge, and a counter that opens the dialog inside DatasetForm
-  const { metadataSuggestEnabled } = useSiteSettings()
+  const { metadataSuggestEnabled, metadataSuggestLocalModel } = useSiteSettings()
   const [suggestNudge, setSuggestNudge] = useState(false)
   const [suggestOpenSignal, setSuggestOpenSignal] = useState(0)
   const [uploading, setUploading] = useState(false)
@@ -421,6 +421,7 @@ export default function EditDatasetPage() {
                 onPublished={isDraft ? handlePublished : undefined}
                 suggest={{
                   enabled: metadataSuggestEnabled,
+                  localModel: metadataSuggestLocalModel,
                   resources: pkg.resources ?? [],
                   processing: resourcesBusy,
                   openSignal: suggestOpenSignal,

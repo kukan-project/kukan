@@ -65,14 +65,18 @@ describe('GET /api/v1/site/settings', () => {
 
   it('should report metadata suggestions off without completion support', async () => {
     const res = await createTestApp(db, { user: null }).request('/api/v1/site/settings')
-    expect((await res.json()).metadataSuggestEnabled).toBe(false)
+    const body = await res.json()
+    expect(body.metadataSuggestEnabled).toBe(false)
+    expect(body.metadataSuggestLocalModel).toBe(false)
   })
 
   it('should report metadata suggestions on with completion support and reflect the kill switch', async () => {
     const app = createTestApp(db, { search: mockSearch, ai: mockCompletionAi() })
 
     let res = await app.request('/api/v1/site/settings')
-    expect((await res.json()).metadataSuggestEnabled).toBe(true)
+    const body = await res.json()
+    expect(body.metadataSuggestEnabled).toBe(true)
+    expect(body.metadataSuggestLocalModel).toBe(true)
 
     const put = await app.request('/api/v1/admin/settings/ai-suggest-enabled', {
       method: 'PUT',
