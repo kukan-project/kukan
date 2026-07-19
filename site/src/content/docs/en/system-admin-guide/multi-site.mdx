@@ -1,0 +1,93 @@
+---
+title: Multi-Site Operation
+description: Running multiple KUKAN sites on one shared infrastructure (ADR-041)
+sidebar:
+  order: 3
+---
+
+When one operator runs multiple KUKAN sites (for example, data catalogs for
+several municipalities), duplicating the full stack per site makes fixed costs
+grow linearly with the site count. The multi-site layout shares the
+hourly-billed "boxes" (database cluster, OpenSearch, VPC, ECS cluster) while
+keeping every logical resource that holds data or a namespace per site
+(database, search index, storage bucket, queue, web/worker services).
+
+- Site isolation: a dedicated DB role per site (no access to other sites'
+  databases), per-site search index prefixes, buckets, and queues
+- Each site can have its own domain, brand (once multi-brand builds land), and
+  sizing overrides
+- The layout **assumes all sites belong to the same operator** (see the
+  security boundary below)
+
+## AWS (CDK)
+
+Declare `sites` on an environment entry in `infra/config/environments.ts` and
+that environment splits into a SharedStack (the shared boxes) plus one
+SiteStack per site.
+
+```ts
+prd: {
+  account: '...',
+  scale: 'medium',
+  githubRepo: '...', deployBranch: 'main',
+  sites: [
+    {
+      name: 'citya', // lowercase alphanumeric, 2–16 chars
+      domainName: 'catalog.city-a.example.jp',
+      hostedZoneId: 'Z...', hostedZoneName: 'city-a.example.jp',
+      certificateArn: 'arn:aws:acm:us-east-1:...', // required for site domains
+      webAclArn: 'arn:aws:wafv2:us-east-1:...',    // may be shared across sites
+    },
+    { name: 'cityb', enableWaf: false },
+  ],
+},
+```
+
+- **Opt-in only**: environments without `sites` keep today's single-stack
+  layout unchanged. Never add `sites` to an already-deployed single-site
+  environment (it would replace resources) — migrate blue/green by standing up
+  a new environment and switching DNS
+- Site domains require a pre-created us-east-1 ACM certificate ARN (multi-site
+  environments never auto-create the certificate stack)
+- Deploy ordering is automatic: shared stack → first site (canary) → the rest.
+  Core code changes roll out to every site; a change scoped to one site leaves
+  the others untouched
+- Per-site sizing uses `overrides` (only `web` / `worker` / `dbPool` /
+  `backup`)
+
+Configuration is validated at `cdk synth` (site names, certificate ARNs, the
+shared database connection budget, and more). See `docs/specs/phase4-deploy.md`
+in the repository for detailed operations: resources retained on site deletion,
+manual purge steps, and connection sizing.
+
+## Docker Compose (on-premises)
+
+Opt-in templates under `docker/multi-site/` build the same
+shared-boxes/per-site model with Docker Compose: start the shared stack
+(postgres / minio / elasticmq / opensearch / ollama / caddy) once, then attach
+one web/worker pair per site to the shared network. See the README in that
+directory.
+
+Regular single-site operation keeps using the root `compose.yml`.
+
+## Security boundary
+
+The multi-site layout is not a hard multi-tenant boundary between sites.
+
+- Only the database is isolated at the credential level. Search index, bucket,
+  and queue separation relies on naming conventions plus (on AWS) IAM and
+  security groups; the on-premises shared services have no authentication
+- Do not use it to host sites for untrusted third parties — choose full
+  per-site isolation (duplicated environments) instead
+- Failures and maintenance of the shared infrastructure hit all sites at once;
+  co-locate only sites with similar SLA expectations
+
+## Capacity guidelines
+
+- **Database connections**: the sum of each site's pool limits × maximum task
+  counts must fit within the shared cluster's `max_connections`. On AWS this is
+  checked automatically at synth — exceeding the estimate fails, and crossing
+  70% warns
+- **OpenSearch**: all sites share one domain (one JVM on-premises). On AWS,
+  medium (m6g.large.search) or larger is recommended; on-premises, grow the
+  heap (`OPENSEARCH_JAVA_OPTS`) with the site count
