@@ -30,6 +30,11 @@ const t = {
       link: '詳しく見る',
       hash: 'ai-によるメタデータ提案',
     },
+    spotlight2: {
+      title: 'マルチサイトデプロイ',
+      desc: '1 つのインフラで複数のデータカタログサイトを運用。データベース・検索インデックス・ストレージはサイトごとに分離したまま、コストのかかる基盤を共有し、サイトを増やしても費用を最小限に抑えます。',
+      link: '詳しく見る',
+    },
     features: [
       {
         icon: '⚡',
@@ -100,6 +105,11 @@ const t = {
       desc: 'AI drafts titles, descriptions, and tags from what is actually in your files — CSV columns and sample rows, even the text inside PDF and Office documents. Review and adopt field by field; nothing is overwritten automatically.',
       link: 'Learn more',
       hash: 'ai-metadata-suggestions',
+    },
+    spotlight2: {
+      title: 'Multi-Site Deployment',
+      desc: 'Run multiple data catalog sites on one shared infrastructure. Databases, search indices, and storage stay isolated per site while the costly backbone is shared — keeping each additional site inexpensive.',
+      link: 'Learn more',
     },
     features: [
       {
@@ -252,6 +262,22 @@ const techStack = [
             id="spotlight-link">{t.en.spotlight.link}</a
           >
         </div>
+        <div class="spotlight-card">
+          <div class="spotlight-body">
+            <div class="spotlight-header">
+              <span class="spotlight-icon">🏙</span>
+              <h2 class="spotlight-title" data-i18n="spotlight2.title">{t.en.spotlight2.title}</h2>
+              <span class="spotlight-badge">NEW</span>
+            </div>
+            <p class="spotlight-desc" data-i18n="spotlight2.desc">{t.en.spotlight2.desc}</p>
+          </div>
+          <a
+            href={`${base}en/system-admin-guide/multi-site/`}
+            class="btn-outline spotlight-link"
+            data-i18n="spotlight2.link"
+            id="spotlight2-link">{t.en.spotlight2.link}</a
+          >
+        </div>
       </div>
     </section>
 
@@ -345,6 +371,9 @@ const techStack = [
           var spotlightLink = document.getElementById('spotlight-link')
           if (spotlightLink)
             spotlightLink.href = docsBase + 'data-admin-guide/#' + tr.spotlight.hash
+          var spotlight2Link = document.getElementById('spotlight2-link')
+          if (spotlight2Link)
+            spotlight2Link.href = docsBase + 'system-admin-guide/multi-site/'
         }
 
         // Apply on load (for ja, since head script already ran; reinforce with full DOM)
@@ -528,6 +557,9 @@ const techStack = [
         border: 1px solid hsl(214 81% 84%);
         border-radius: 0.75rem;
         background: hsl(214 81% 97%);
+      }
+      .spotlight-card + .spotlight-card {
+        margin-top: 1rem;
       }
       .spotlight-body {
         flex: 1;
