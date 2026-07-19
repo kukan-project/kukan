@@ -18,10 +18,11 @@
     "dev:standalone": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts",
     "lint": "eslint src",
     "clean": "rm -rf dist",
-    "eval:search": "tsx scripts/eval-search.ts"
+    "eval:search": "tsx scripts/eval-search.ts",
+    "eval:suggest": "tsx scripts/eval-suggest.ts"
   },
   "dependencies": {
     "@duckdb/node-api": "1.5.4-r.1",

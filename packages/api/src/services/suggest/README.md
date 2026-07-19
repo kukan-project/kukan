@@ -125,6 +125,8 @@ sooner than this budget, so a slow cloud generation can time out at the edge
 - Prompts and output schemas: `suggest/prompt.ts`
 - The name contract (`PACKAGE_NAME_*`): `packages/shared/src/validators/package.ts`
 - Rate limiting: `suggest/rate-limit.ts`
+- Quality evaluation (golden set): `packages/api/scripts/eval-suggest.ts`
+  (`pnpm eval:suggest`; copy `golden-suggest.example.yaml`)
 
 ---
 
@@ -234,3 +236,5 @@ suggest() 開始 … deadlineAt = now + SUGGEST_TOTAL_DEADLINE_MS (110s)
 - プロンプト・出力スキーマ: `suggest/prompt.ts`
 - name 契約（`PACKAGE_NAME_*`）: `packages/shared/src/validators/package.ts`
 - レート制限: `suggest/rate-limit.ts`
+- 品質評価（ゴールデンセット）: `packages/api/scripts/eval-suggest.ts`
+  （`pnpm eval:suggest`。`golden-suggest.example.yaml` をコピーして使う）

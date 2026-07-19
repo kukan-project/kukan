@@ -1,0 +1,47 @@
+# ゴールデンセット — AI メタデータ提案の品質評価用データセット定義
+#
+# このファイルは記入ガイド付きのテンプレートです。環境ごとの実データは
+#   cd packages/api/scripts && cp golden-suggest.example.yaml golden-suggest.yaml
+# で作成してください（golden-suggest.yaml は .gitignore 対象 — カタログの中身は
+# デプロイ環境ごとに異なるため、リポジトリにはコミットしません）。
+#
+# 実行: KUKAN_TOKEN=kukan_xxx pnpm eval:suggest
+#       （対象環境は -- --base、生成の揺らぎを見るなら -- --runs 3）
+# 出力: コンソールの集計 + eval-suggest-report.md（全出力の目視レビュー用）
+#
+# 使い方の想定（ADR-040 §4 / 並列生成追記 §5）:
+# - モデル・プロバイダ比較（管理画面でモデルを切り替えて同じセットを実行）や
+#   プロンプト変更の前後比較に同一ファイルを使い回し、レポートを見比べる
+# - 各リクエストはユーザー単位レート制限（60回/時）を消費する点に注意
+#
+# 記入ガイド:
+# - 5〜10 件を目標に、フォーマット構成が偏らないよう層化して選ぶ:
+#   CSV 主体 / PDF・文書系 / ZIP / リソースなし / 多リソース（10件超）/
+#   既存メタデータあり（公開済み）と空の draft
+# - titleKeywords / notesKeywords: 提案に含まれるべき語。全網羅ではなく
+#   「これが無ければ要点を外している」ものだけを挙げる（含有率を採点）
+# - forbidden: 幻覚カナリア。素材のどこにも現れない固有名詞を挙げる
+#   （例: 実在するが無関係な市名）。1 件でも出現したら exit 1
+# - expectedTags / expectedGroups: 期待するタグ・カテゴリー name。
+#   提案は追加専用なので、データセットの現在値も提案に含まれて返る
+# - expectName: draft のみ true にする（有効なスラッグの提案有無を検証）
+#
+# 以下は記入例（nameOrId・期待値は環境ごとに異なる）:
+
+datasets:
+  - nameOrId: niigata-jinkou-doukou # 多リソース XLSX 主体・draft の例
+    locale: ja
+    titleKeywords: [人口]
+    notesKeywords: [新潟県, 移動]
+    forbidden: [豊橋, 上越] # 過去に実測した幻覚の再発検知
+    expectedTags: [人口, 統計]
+    expectedGroups: [c001]
+    expectName: true
+
+  - nameOrId: bousai-hinanjo # CSV 1 件・公開済み・既存メタデータありの例
+    locale: ja
+    titleKeywords: [避難所]
+    notesKeywords: [防災]
+    forbidden: []
+    expectedTags: [防災]
+    expectedGroups: [c015]

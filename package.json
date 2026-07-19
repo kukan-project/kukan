@@ -27,7 +27,8 @@
     "clean": "turbo run clean && rm -rf node_modules",
     "db:create-user": "pnpm --filter @kukan/db db:create-user --",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,astro}\"",
-    "eval:search": "pnpm --filter @kukan/api eval:search --"
+    "eval:search": "pnpm --filter @kukan/api eval:search --",
+    "eval:suggest": "pnpm --filter @kukan/api eval:suggest --"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -289,6 +289,7 @@ pnpm db:generate                # Drizzle マイグレーション生成
 pnpm db:migrate                 # マイグレーション実行
 pnpm db:create-user             # ユーザー作成（初期 sysadmin 作成等）
 pnpm eval:search                # 検索品質評価（ゴールデンセット、要稼働環境。ADR-034）
+pnpm eval:suggest               # AI提案品質評価（ゴールデンセット、要稼働環境+KUKAN_TOKEN。ADR-040）
 pnpm lint                       # ESLint
 pnpm typecheck                  # TypeScript 型チェック
 ```

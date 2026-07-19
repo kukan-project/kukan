@@ -71,6 +71,10 @@ seed-sample-*
 # Search-quality golden set (deployment-specific — copy from golden-queries.example.yaml)
 packages/api/scripts/golden-queries.yaml
 
+# Suggestion-quality golden set and its report (deployment-specific)
+packages/api/scripts/golden-suggest.yaml
+packages/api/scripts/eval-suggest-report*.md
+
 # Temporary files
 tmp/
 temp/
