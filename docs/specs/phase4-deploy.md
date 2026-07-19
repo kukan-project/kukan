@@ -298,8 +298,14 @@ prd: {
 - **証明書 / WAF**: マルチサイト環境は standalone / pipeline 両モードとも
   GlobalStack を自動作成しない。サイトごとに us-east-1 の ACM 証明書 ARN を
   用意する（コンソール、または一時的な standalone GlobalStack デプロイで作成
-  して ARN を貼る）。env レベルの domainName / certificateArn / webAclArn は
-  設定禁止（synth 時に validateSites が拒否）
+  して ARN を貼る）
+- **サイトスコープのフィールドは env 側に書けない**: domainName / hostedZone\* /
+  certificateArn / webAclArn / enableWaf / allowedIpRanges / basicAuth /
+  bucketName / enableGa4DataApi は `sites` 内でのみ宣言する（env 側に書くと
+  synth 時に validateSites が拒否。黙って無視されるより安全）。例外は
+  `overrides` のみで、env の値の上にサイトの値が deep-merge される（全サイト
+  共通のチューニング + サイト個別上書き）。全サイトに同じゲートを掛けたい
+  場合は TypeScript の変数として定義し各サイトへスプレッドする
 - **AWS Backup**: マルチサイト環境では使用不可（共有クラスタがサイト数分
   スナップショットされるため）。scale `large` は
   `overrides: { backup: { awsBackup: false } }` が必要。サイト単位の復元は

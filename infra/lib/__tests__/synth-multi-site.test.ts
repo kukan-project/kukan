@@ -174,10 +174,30 @@ describe('validateSites', () => {
     ).toBeUndefined()
   })
 
-  it('rejects env-level domain fields and per-site AWS Backup', () => {
+  it('rejects site-scoped fields on the environment entry and per-site AWS Backup', () => {
     expect(() =>
       validateSites({ ...base, domainName: 'x.example.jp', sites: [{ name: 'citya' }] })
-    ).toThrow(/per site/)
+    ).toThrow(/domainName per site/)
+    // Security gates must never be silently discarded
+    expect(() =>
+      validateSites({
+        ...base,
+        allowedIpRanges: ['203.0.113.0/24'],
+        basicAuth: { username: 'u', password: 'p' },
+        sites: [{ name: 'citya', enableWaf: false }],
+      })
+    ).toThrow(/allowedIpRanges\/basicAuth per site/)
+    expect(() =>
+      validateSites({ ...base, enableWaf: false, sites: [{ name: 'citya', enableWaf: false }] })
+    ).toThrow(/enableWaf per site/)
+    // overrides stays allowed at env level (deep-merged under site overrides)
+    expect(
+      validateSites({
+        ...base,
+        overrides: { dbPool: { webMax: 5 } },
+        sites: [{ name: 'citya', enableWaf: false }],
+      })
+    ).toBeUndefined()
     expect(() =>
       validateSites({
         ...base,

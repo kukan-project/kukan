@@ -224,10 +224,30 @@ const SITE_NAME_PATTERN = /^[a-z][a-z0-9]{1,15}$/
 export function validateSites(env: EnvironmentConfig): string | undefined {
   const sites = env.sites ?? []
   if (sites.length === 0) return
-  if (env.domainName || env.certificateArn || env.webAclArn) {
+  // Site-scoped fields live ONLY in sites[] — an env-level value would be
+  // silently discarded by resolveSiteConfig, which is worst for the security
+  // gates (allowedIpRanges/basicAuth). `overrides` stays env-allowed: it
+  // deep-merges under each site's overrides (shared tuning + per-site tweaks).
+  const siteScopedEnvFields = (
+    [
+      'domainName',
+      'hostedZoneId',
+      'hostedZoneName',
+      'certificateArn',
+      'webAclArn',
+      'enableWaf',
+      'allowedIpRanges',
+      'basicAuth',
+      'bucketName',
+      'enableGa4DataApi',
+    ] as const
+  ).filter((key) => env[key] !== undefined)
+  if (siteScopedEnvFields.length > 0) {
     throw new Error(
-      'Multi-site environments declare domains/certificates per site — remove ' +
-        'domainName/certificateArn/webAclArn from the environment entry (ADR-041)'
+      `Multi-site environments declare ${siteScopedEnvFields.join('/')} per site — ` +
+        'move them from the environment entry into sites[]. To share a value ' +
+        'across sites, define it once in environments.ts and spread it into ' +
+        'each site entry'
     )
   }
   const envComputed = deepMerge(SCALE_DEFAULTS[env.scale ?? 'small'], env.overrides)

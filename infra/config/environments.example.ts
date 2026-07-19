@@ -131,7 +131,10 @@ export const environments = {
     // bucket, queue, web/worker services, CloudFront). Opt-in only: do NOT add
     // `sites` to an already-deployed single-site env — migrate blue/green
     // instead. Site domains need per-site us-east-1 cert ARNs (webAclArn may be
-    // shared); the env-level domain/cert fields must stay unset. With `sites`,
+    // shared). Site-scoped fields (domainName/hostedZone*/certificateArn/
+    // webAclArn/enableWaf/allowedIpRanges/basicAuth/bucketName/enableGa4DataApi)
+    // are rejected on the env entry — declare them per site; only `overrides`
+    // stays env-level (deep-merged under each site's overrides). With `sites`,
     // scale `large` also needs `overrides: { backup: { awsBackup: false } }`
     // (the shared cluster must not be snapshotted once per site).
     // sites: [
