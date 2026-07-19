@@ -19,6 +19,18 @@ export interface DatabaseProps {
   dbSecurityGroup: ec2.ISecurityGroup
 }
 
+/**
+ * Postgres connection surface consumed by the web/worker services. Satisfied by
+ * DatabaseConstruct (single-site) and, under ADR-041, by a per-site credentials
+ * wrapper — the services stay ignorant of which one they got.
+ */
+export interface DbAccess {
+  /** Non-secret POSTGRES_* environment variables for ECS containers */
+  buildPostgresEnvironment(): Record<string, string>
+  /** POSTGRES_USER/PASSWORD as ECS secrets (injected at runtime via Secrets Manager) */
+  buildPostgresSecrets(): Record<string, ecs.Secret>
+}
+
 export class DatabaseConstruct extends Construct {
   readonly secret: secretsmanager.ISecret
   readonly endpoint: string

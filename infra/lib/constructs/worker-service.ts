@@ -16,13 +16,13 @@ import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
 import { resourceName } from '../naming.js'
 import { configureBedrockEmbedding } from './ai.js'
-import type { DatabaseConstruct } from './database.js'
+import type { DbAccess } from './database.js'
 
 export interface WorkerServiceProps {
   config: KukanConfig
   cluster: ecs.ICluster
   workerSecurityGroup: ec2.ISecurityGroup
-  database: DatabaseConstruct
+  database: DbAccess
   authSecret: secretsmanager.ISecret
   bucket: s3.IBucket
   queue: sqs.IQueue
