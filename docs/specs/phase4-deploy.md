@@ -340,8 +340,11 @@ pg_dump / restore → S3 sync → 再インデックス → DNS 切替 → 旧�
 
 ### 運用ノート
 
-- DB 接続数はサイト数 ×（`WEB_DB_POOL_MAX` × タスク数 + worker プール）で増える。
-  Aurora Serverless v2 の max_connections は maxACU 連動のため、サイト追加時に見直す
+- DB 接続数はサイト数 ×（`WEB_DB_POOL_MAX` × **最大**タスク数 + worker プール）で増える。
+  Aurora Serverless v2 の max_connections は maxACU で固定（縮退しても減らない）。
+  synth 時に validateSites が autoscale worst case を概算 max_connections と比較し、
+  **70% 超で警告・超過でエラー**にする（対処: `sites[].overrides.dbPool` /
+  `web.maxSize` を絞る、`db.maxAcu` を上げる、または RDS Proxy）
 - 共用 OpenSearch は medium（m6g.large.search）以上を前提とする（1 サイトの
   再インデックスが全サイトの検索レイテンシに波及するため）
 - 非 AWS 環境（Docker Compose）は `docker/multi-site/` の opt-in テンプレートを

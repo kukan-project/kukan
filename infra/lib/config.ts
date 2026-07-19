@@ -218,8 +218,10 @@ const SITE_NAME_PATTERN = /^[a-z][a-z0-9]{1,15}$/
 /**
  * Validate the `sites` list of a multi-site environment. Throws at synth with
  * an actionable message — misconfiguration must never reach CloudFormation.
+ * Returns a warning message (for cdk.Annotations) when the connection budget
+ * passes but exceeds 70% of the estimate.
  */
-export function validateSites(env: EnvironmentConfig): void {
+export function validateSites(env: EnvironmentConfig): string | undefined {
   const sites = env.sites ?? []
   if (sites.length === 0) return
   if (env.domainName || env.certificateArn || env.webAclArn) {
@@ -228,8 +230,8 @@ export function validateSites(env: EnvironmentConfig): void {
         'domainName/certificateArn/webAclArn from the environment entry (ADR-041)'
     )
   }
-  const envBackup = deepMerge(SCALE_DEFAULTS[env.scale ?? 'small'], env.overrides).backup
-  if (envBackup.awsBackup) {
+  const envComputed = deepMerge(SCALE_DEFAULTS[env.scale ?? 'small'], env.overrides)
+  if (envComputed.backup.awsBackup) {
     throw new Error(
       'Multi-site environments must disable AWS Backup (the shared DB cluster ' +
         'would be snapshotted once per site) — set overrides: { backup: ' +
@@ -274,6 +276,43 @@ export function validateSites(env: EnvironmentConfig): void {
       )
     }
   }
+
+  // Connection budget (ADR-041): pg pools open lazily up to their max, so the
+  // shared cluster must be sized for the AUTOSCALED worst case, not the steady
+  // state. 30% headroom covers rolling deploys (old+new tasks overlap),
+  // startup migrations, the site-DB bootstrap Lambda, and superuser reserves.
+  const db = { ...envComputed.db, engine: env.dbEngine ?? envComputed.db.engine }
+  const maxConnections = estimateMaxConnections(db)
+  const worstCase = sites.reduce((sum, site) => {
+    const c = deepMerge(envComputed, site.overrides ?? {})
+    return sum + c.dbPool.webMax * c.web.maxSize + c.dbPool.workerMax * c.worker.maxTasks
+  }, 0)
+  const remedy =
+    'lower sites[].overrides.dbPool / web.maxSize, raise db.maxAcu, or consider RDS Proxy (ADR-041)'
+  if (worstCase > maxConnections) {
+    throw new Error(
+      `Worst-case DB connections across sites (${worstCase}) exceed the estimated ` +
+        `max_connections (${maxConnections}) of the shared database — ${remedy}`
+    )
+  }
+  if (worstCase > maxConnections * 0.7) {
+    return (
+      `Worst-case DB connections across sites (${worstCase}) exceed 70% of the ` +
+      `estimated max_connections (${maxConnections}) of the shared database — ${remedy}`
+    )
+  }
+  return undefined
+}
+
+/**
+ * Estimated PostgreSQL max_connections of the shared database.
+ * Aurora fixes it by maxACU (1 ACU = 2 GiB) regardless of the current ACU:
+ * LEAST(memory / 9531392, 5000). The rds engine preset is db.t4g.micro (1 GiB).
+ */
+function estimateMaxConnections(db: ScaleComputed['db']): number {
+  const maxAcu = db.maxAcu ?? 2 // loadConfig default when forcing aurora
+  const memoryBytes = (db.engine === 'aurora' ? maxAcu * 2 : 1) * 1024 ** 3
+  return Math.min(Math.floor(memoryBytes / 9_531_392), 5000)
 }
 
 /**

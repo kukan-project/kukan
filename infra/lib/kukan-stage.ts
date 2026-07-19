@@ -33,7 +33,10 @@ export class KukanStage extends cdk.Stage {
     // Environments without `sites` keep the all-in-one KukanStack below with
     // unchanged logical IDs (guarded by the synth snapshot tests).
     if (config.sites?.length) {
-      validateSites(config)
+      const budgetWarning = validateSites(config)
+      if (budgetWarning) {
+        cdk.Annotations.of(this).addWarningV2('kukan:site-connection-budget', budgetWarning)
+      }
       const shared = new KukanSharedStack(this, 'KukanSharedStack', {
         env: { account, region },
         envConfig: config,

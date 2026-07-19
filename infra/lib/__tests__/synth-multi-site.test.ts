@@ -147,6 +147,33 @@ describe('validateSites', () => {
     expect(() => validateSites({ ...base, sites: [{ name: 'citya' }] })).toThrow(/webAclArn/)
   })
 
+  it('enforces the shared-database connection budget', () => {
+    // medium preset: 60 worst-case connections per site (10×5 web + 5×2 worker);
+    // maxACU 2 → ~450 estimated max_connections, 70% ≈ 315
+    const site = (name: string) => ({ name, enableWaf: false })
+    const sitesOf = (n: number) => Array.from({ length: n }, (_, i) => site(`s${i + 1}`))
+
+    expect(() => validateSites({ ...base, scale: 'medium', sites: sitesOf(8) })).toThrow(
+      /480.*exceed the estimated max_connections \(450\)/
+    )
+
+    expect(validateSites({ ...base, scale: 'medium', sites: sitesOf(6) })).toContain('exceed 70%')
+
+    expect(validateSites({ ...base, scale: 'medium', sites: sitesOf(2) })).toBeUndefined()
+
+    // Site-level pool overrides relax the budget
+    expect(
+      validateSites({
+        ...base,
+        scale: 'medium',
+        sites: sitesOf(8).map((s) => ({
+          ...s,
+          overrides: { dbPool: { webMax: 5 }, web: { maxSize: 2 } },
+        })),
+      })
+    ).toBeUndefined()
+  })
+
   it('rejects env-level domain fields and per-site AWS Backup', () => {
     expect(() =>
       validateSites({ ...base, domainName: 'x.example.jp', sites: [{ name: 'citya' }] })
