@@ -34,7 +34,6 @@ const PROPS = {
   DbHost: 'db.example.internal',
   DbPort: '5432',
   DbName: 'kukan_citya',
-  RoleName: 'kukan_citya',
 }
 
 function event(requestType: 'Create' | 'Update' | 'Delete', props = PROPS) {

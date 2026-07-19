@@ -206,42 +206,57 @@ export interface SiteConfig {
   enableGa4DataApi?: boolean
   /**
    * Per-site sizing on top of the environment's scale preset. Only the
-   * site-owned sections — db/opensearch sizing belongs to the shared boxes,
-   * and AWS Backup plans are rejected per site (the shared cluster would be
-   * snapshotted once per site; use per-site pg_dump instead, ADR-041).
+   * site-owned sections — db/opensearch sizing belongs to the shared boxes.
+   * Of `backup`, only the S3 (site bucket) settings are allowed: DB retention
+   * is a shared-cluster setting (set it on the environment) and AWS Backup is
+   * rejected per site (the shared cluster would be snapshotted once per site;
+   * use per-site pg_dump instead, ADR-041).
    */
-  overrides?: DeepPartial<Pick<ScaleComputed, 'web' | 'worker' | 'dbPool' | 'backup'>>
+  overrides?: DeepPartial<Pick<ScaleComputed, 'web' | 'worker' | 'dbPool'>> & {
+    backup?: Partial<
+      Pick<ScaleComputed['backup'], 's3Versioning' | 's3NoncurrentVersionExpirationDays'>
+    >
+  }
 }
 
 const SITE_NAME_PATTERN = /^[a-z][a-z0-9]{1,15}$/
+
+/**
+ * SiteConfig fields that shadow an EnvironmentConfig field. Single source for
+ * validateSites (reject them on the env entry — an env-level value would be
+ * silently discarded, worst for the security gates allowedIpRanges/basicAuth)
+ * and resolveSiteConfig (copy them from the site). The `satisfies` makes a new
+ * site-scoped field fail to compile until both consumers pick it up.
+ * `name`/`brand` have no env-level counterpart; `overrides` deliberately
+ * deep-merges instead (shared tuning + per-site tweaks).
+ */
+type SiteScopedKey = Exclude<keyof SiteConfig, 'name' | 'brand' | 'overrides'>
+const SITE_SCOPED_FIELDS = Object.keys({
+  domainName: true,
+  hostedZoneId: true,
+  hostedZoneName: true,
+  certificateArn: true,
+  webAclArn: true,
+  enableWaf: true,
+  allowedIpRanges: true,
+  basicAuth: true,
+  bucketName: true,
+  enableGa4DataApi: true,
+} satisfies Record<SiteScopedKey, true>) as SiteScopedKey[]
 
 /**
  * Validate the `sites` list of a multi-site environment. Throws at synth with
  * an actionable message — misconfiguration must never reach CloudFormation.
  * Returns a warning message (for cdk.Annotations) when the connection budget
  * passes but exceeds 70% of the estimate.
+ * Pass the stage as `scope` so CLI context (-c scale / -c dbEngine) enters the
+ * budget the same way it enters loadConfig — the check must see the numbers
+ * that actually deploy.
  */
-export function validateSites(env: EnvironmentConfig): string | undefined {
+export function validateSites(env: EnvironmentConfig, scope?: Construct): string | undefined {
   const sites = env.sites ?? []
   if (sites.length === 0) return
-  // Site-scoped fields live ONLY in sites[] — an env-level value would be
-  // silently discarded by resolveSiteConfig, which is worst for the security
-  // gates (allowedIpRanges/basicAuth). `overrides` stays env-allowed: it
-  // deep-merges under each site's overrides (shared tuning + per-site tweaks).
-  const siteScopedEnvFields = (
-    [
-      'domainName',
-      'hostedZoneId',
-      'hostedZoneName',
-      'certificateArn',
-      'webAclArn',
-      'enableWaf',
-      'allowedIpRanges',
-      'basicAuth',
-      'bucketName',
-      'enableGa4DataApi',
-    ] as const
-  ).filter((key) => env[key] !== undefined)
+  const siteScopedEnvFields = SITE_SCOPED_FIELDS.filter((key) => env[key] !== undefined)
   if (siteScopedEnvFields.length > 0) {
     throw new Error(
       `Multi-site environments declare ${siteScopedEnvFields.join('/')} per site — ` +
@@ -250,7 +265,12 @@ export function validateSites(env: EnvironmentConfig): string | undefined {
         'each site entry'
     )
   }
-  const envComputed = deepMerge(SCALE_DEFAULTS[env.scale ?? 'small'], env.overrides)
+  const ctx = <T>(key: string): T | undefined => scope?.node.tryGetContext(key) as T | undefined
+  const envComputed = computeScaled(
+    ctx<Scale>('scale') ?? env.scale ?? 'small',
+    ctx<DbEngine>('dbEngine') ?? env.dbEngine,
+    env.overrides
+  )
   if (envComputed.backup.awsBackup) {
     throw new Error(
       'Multi-site environments must disable AWS Backup (the shared DB cluster ' +
@@ -289,50 +309,146 @@ export function validateSites(env: EnvironmentConfig): string | undefined {
           'sites), or set enableWaf: false (ADR-041)'
       )
     }
+    // Runtime mirror of the SiteConfig.overrides.backup type (tsx strips types
+    // without checking, so hand-written environments.ts needs the real gate)
     if (site.overrides?.backup && 'awsBackup' in site.overrides.backup) {
       throw new Error(
         `Site "${site.name}" must not override backup.awsBackup — the shared DB ` +
           'cluster would be snapshotted once per site (ADR-041)'
       )
     }
+    if (site.overrides?.backup && 'dbBackupRetentionDays' in site.overrides.backup) {
+      throw new Error(
+        `Site "${site.name}" must not override backup.dbBackupRetentionDays — DB ` +
+          'retention is a shared-cluster setting; set it on the environment entry ' +
+          '(only the S3 bucket settings are per-site, ADR-041)'
+      )
+    }
   }
 
   // Connection budget (ADR-041): pg pools open lazily up to their max, so the
   // shared cluster must be sized for the AUTOSCALED worst case, not the steady
-  // state. 30% headroom covers rolling deploys (old+new tasks overlap),
-  // startup migrations, the site-DB bootstrap Lambda, and superuser reserves.
-  const db = { ...envComputed.db, engine: env.dbEngine ?? envComputed.db.engine }
-  const maxConnections = estimateMaxConnections(db)
-  const worstCase = sites.reduce((sum, site) => {
+  // state. Site stacks deploy serially (kukan-stage), so at most ONE site runs
+  // a rolling update (old+new tasks together, ECS MaximumPercent 200) at a
+  // time — count that site's doubling explicitly. 30% headroom covers startup
+  // migrations, the site-DB bootstrap Lambda, and superuser reserves.
+  const { connections: maxConnections, uncappedConnections } = estimateMaxConnections(
+    envComputed.db
+  )
+  const perSite = sites.map((site) => {
     const c = deepMerge(envComputed, site.overrides ?? {})
-    return sum + c.dbPool.webMax * c.web.maxSize + c.dbPool.workerMax * c.worker.maxTasks
-  }, 0)
-  const remedy =
-    'lower sites[].overrides.dbPool / web.maxSize, raise db.maxAcu, or consider RDS Proxy (ADR-041)'
+    return c.dbPool.webMax * c.web.maxSize + c.dbPool.workerMax * c.worker.maxTasks
+  })
+  const steady = perSite.reduce((sum, value) => sum + value, 0)
+  const rolling = Math.max(...perSite)
+  const worstCase = steady + rolling
+  const breakdown = `${worstCase} — steady ${steady} + one site's rolling update ${rolling}`
+  // The remedy must never invite a harmful or ineffective change: an in-place
+  // dbEngine switch creates an EMPTY Aurora cluster (different logical ID — no
+  // data migration), and any ACU change only takes effect after a reboot
+  // (max_connections is static). Which ACU knob to raise is decided against
+  // the REQUIRED connections: worstCase > 2,000 with a 0/0.5 minACU needs
+  // minAcu (the cap ignores maxAcu), worstCase above the uncapped estimate
+  // needs maxAcu, and both can be true at once.
+  const lowerPools = 'lower sites[].overrides.dbPool / web.maxSize'
+  const separateDeploy =
+    'in a SEPARATE deploy first (then reboot the DB instances — max_connections ' +
+    'is static and keeps the old value until reboot) before adding sites'
+  // `required` is what the limit must reach for the advice to actually work:
+  // worstCase for the hard error, ceil(worstCase / 0.7) to clear the warning —
+  // an ACU knob that cannot reach it must not be suggested.
+  const buildRemedy = (required: number): string => {
+    if (envComputed.db.engine !== 'aurora') {
+      return (
+        `${lowerPools}, or migrate to aurora blue/green with pg_dump/restore — ` +
+        'switching dbEngine in place would create an EMPTY Aurora cluster and ' +
+        'point the app at it (the rds preset db.t4g.micro allows only ~112 ' +
+        'connections) — or consider RDS Proxy (ADR-041)'
+      )
+    }
+    const absoluteMax = AURORA_MAX_CONNECTIONS[AURORA_MAX_CONNECTIONS.length - 1][1]
+    if (required > absoluteMax) {
+      return (
+        `${lowerPools}, split the sites across more than one shared cluster/` +
+        `environment, or consider RDS Proxy — no ACU setting reaches the required ` +
+        `${required} connections, Aurora PostgreSQL tops out at ${absoluteMax} (ADR-041)`
+      )
+    }
+    const minAcuNote =
+      'db.minAcu to 1 or higher (a minimum of 0/0.5 ACUs caps ' +
+      'max_connections at 2,000 regardless of maxAcu)'
+    const needMinAcu = (envComputed.db.minAcu ?? 0) <= 0.5 && required > 2000
+    const needMaxAcu = required > uncappedConnections
+    const acuAdvice =
+      needMinAcu && needMaxAcu
+        ? `raise ${minAcuNote} AND db.maxAcu (the current maxAcu tops out at ` +
+          `${uncappedConnections} connections)`
+        : needMinAcu
+          ? `raise ${minAcuNote}`
+          : 'raise db.maxAcu'
+    return `${lowerPools}, or ${acuAdvice} ${separateDeploy}, or consider RDS Proxy (ADR-041)`
+  }
   if (worstCase > maxConnections) {
     throw new Error(
-      `Worst-case DB connections across sites (${worstCase}) exceed the estimated ` +
-        `max_connections (${maxConnections}) of the shared database — ${remedy}`
+      `Worst-case DB connections across sites (${breakdown}) exceed the estimated ` +
+        `max_connections (${maxConnections}) of the shared database — ${buildRemedy(worstCase)}`
     )
   }
   if (worstCase > maxConnections * 0.7) {
     return (
-      `Worst-case DB connections across sites (${worstCase}) exceed 70% of the ` +
-      `estimated max_connections (${maxConnections}) of the shared database — ${remedy}`
+      `Worst-case DB connections across sites (${breakdown}) exceed 70% of the ` +
+      `estimated max_connections (${maxConnections}) of the shared database — ` +
+      buildRemedy(Math.ceil(worstCase / 0.7))
     )
   }
   return undefined
 }
 
 /**
- * Estimated PostgreSQL max_connections of the shared database.
- * Aurora fixes it by maxACU (1 ACU = 2 GiB) regardless of the current ACU:
- * LEAST(memory / 9531392, 5000). The rds engine preset is db.t4g.micro (1 GiB).
+ * AWS-documented default max_connections for Aurora PostgreSQL Serverless v2
+ * by maximum ACU ("Maximum connections for Aurora serverless" table). Held
+ * constant regardless of the current ACU. The raw LEAST(memory/9531392, 5000)
+ * formula overestimates (it ignores the instance memory overhead), so the
+ * budget interpolates between these anchors instead.
  */
-function estimateMaxConnections(db: ScaleComputed['db']): number {
-  const maxAcu = db.maxAcu ?? 2 // loadConfig default when forcing aurora
-  const memoryBytes = (db.engine === 'aurora' ? maxAcu * 2 : 1) * 1024 ** 3
-  return Math.min(Math.floor(memoryBytes / 9_531_392), 5000)
+const AURORA_MAX_CONNECTIONS: ReadonlyArray<readonly [maxAcu: number, connections: number]> = [
+  [1, 189],
+  [4, 823],
+  [8, 1669],
+  [16, 3360],
+  [32, 5000],
+]
+
+/** Estimated max_connections of the shared database (see AURORA_MAX_CONNECTIONS).
+ *  The rds engine preset is db.t4g.micro (1 GiB → ~112 by the raw formula).
+ *  `uncappedConnections` is the value before the PostgreSQL rule that a
+ *  minimum capacity of 0 or 0.5 ACUs caps max_connections at 2,000 — the
+ *  remedy compares the required connections against both bounds to tell
+ *  which ACU knob (minAcu, maxAcu, or both) actually helps. */
+function estimateMaxConnections(db: ScaleComputed['db']): {
+  connections: number
+  uncappedConnections: number
+} {
+  if (db.engine !== 'aurora') {
+    const connections = Math.floor(1024 ** 3 / 9_531_392)
+    return { connections, uncappedConnections: connections }
+  }
+  const maxAcu = db.maxAcu ?? 2
+  const [firstAcu, firstConns] = AURORA_MAX_CONNECTIONS[0]
+  const [lastAcu, lastConns] = AURORA_MAX_CONNECTIONS[AURORA_MAX_CONNECTIONS.length - 1]
+  let connections: number
+  if (maxAcu <= firstAcu) {
+    connections = Math.floor((firstConns * maxAcu) / firstAcu)
+  } else if (maxAcu >= lastAcu) {
+    connections = lastConns
+  } else {
+    const upper = AURORA_MAX_CONNECTIONS.findIndex(([acu]) => acu >= maxAcu)
+    const [a0, c0] = AURORA_MAX_CONNECTIONS[upper - 1]
+    const [a1, c1] = AURORA_MAX_CONNECTIONS[upper]
+    connections = Math.floor(c0 + ((c1 - c0) * (maxAcu - a0)) / (a1 - a0))
+  }
+  const capped = (db.minAcu ?? 0) <= 0.5 && connections > 2000
+  return { connections: capped ? 2000 : connections, uncappedConnections: connections }
 }
 
 /**
@@ -347,19 +463,13 @@ export function resolveSiteConfig(
   const merged: EnvironmentConfig = {
     ...env,
     sites: undefined,
-    domainName: site.domainName,
-    hostedZoneId: site.hostedZoneId,
-    hostedZoneName: site.hostedZoneName,
-    certificateArn: site.certificateArn,
-    webAclArn: site.webAclArn,
-    enableWaf: site.enableWaf,
-    allowedIpRanges: site.allowedIpRanges,
-    basicAuth: site.basicAuth,
-    bucketName: site.bucketName,
-    enableGa4DataApi: site.enableGa4DataApi,
+    ...(Object.fromEntries(SITE_SCOPED_FIELDS.map((key) => [key, site[key]])) as Pick<
+      SiteConfig,
+      SiteScopedKey
+    >),
     overrides: deepMerge(env.overrides ?? {}, site.overrides ?? {}),
   }
-  return loadConfig(scope, merged)
+  return loadConfig(scope, merged, SITE_SCOPED_FIELDS)
 }
 
 /**
@@ -491,14 +601,19 @@ function deepMerge<T>(base: T, override: DeepPartial<T> | undefined): T {
 /**
  * Resolve the effective configuration.
  * Precedence: CLI `-c` context > environment entry > scale defaults > built-in defaults.
+ * `ignoreContext` lists keys the `-c` channel must NOT override — site stacks
+ * pass the site-scoped fields, otherwise one `-c domainName=…` would stamp the
+ * same domain/bucket/edge-gate onto every site (ADR-041).
  */
-export function loadConfig(scope: Construct, env: Partial<EnvironmentConfig> = {}): KukanConfig {
-  const ctx = <T>(key: string): T | undefined => scope.node.tryGetContext(key) as T | undefined
+export function loadConfig(
+  scope: Construct,
+  env: Partial<EnvironmentConfig> = {},
+  ignoreContext: readonly string[] = []
+): KukanConfig {
+  const ctx = <T>(key: string): T | undefined =>
+    ignoreContext.includes(key) ? undefined : (scope.node.tryGetContext(key) as T | undefined)
 
   const scale = ctx<Scale>('scale') ?? env.scale ?? 'small'
-  const base = SCALE_DEFAULTS[scale]
-
-  const dbEngine = ctx<DbEngine>('dbEngine') ?? env.dbEngine ?? base.db.engine
   const enableOpenSearch = ctx<boolean>('enableOpenSearch') ?? env.enableOpenSearch ?? true
   const allowedIpRanges = ctx<string[]>('allowedIpRanges') ?? env.allowedIpRanges
   // env-only (no ctx): a credential must not live in committed cdk.json / shell history.
@@ -526,15 +641,8 @@ export function loadConfig(scope: Construct, env: Partial<EnvironmentConfig> = {
           completionModels: resolveCompletionModels(bedrockEnv.completionModels),
         }
 
-  // Apply per-env overrides on top of the scale preset.
-  const computed = deepMerge<ScaleComputed>(base, env.overrides)
-
-  // Override DB engine.
-  const db = { ...computed.db, engine: dbEngine }
-  if (dbEngine === 'aurora' && db.minAcu == null) {
-    db.minAcu = 0
-    db.maxAcu = 2
-  }
+  const computed = computeScaled(scale, ctx<DbEngine>('dbEngine') ?? env.dbEngine, env.overrides)
+  const { db } = computed
 
   // --- Consistency checks (catch broken override combinations at synth time) ---
   if (computed.opensearch.indexReplicas >= computed.opensearch.instanceCount) {
@@ -561,7 +669,7 @@ export function loadConfig(scope: Construct, env: Partial<EnvironmentConfig> = {
 
   return {
     scale,
-    dbEngine,
+    dbEngine: db.engine,
     enableOpenSearch,
     enableWaf,
     allowedIpRanges,
@@ -573,6 +681,24 @@ export function loadConfig(scope: Construct, env: Partial<EnvironmentConfig> = {
     enableGa4DataApi,
     bedrock,
     ...computed,
-    db,
   }
+}
+
+/**
+ * Scale preset + overrides + db engine/ACU resolution — shared by loadConfig
+ * and the multi-site connection budget (validateSites) so the two can never
+ * disagree on the numbers.
+ */
+function computeScaled(
+  scale: Scale,
+  dbEngine: DbEngine | undefined,
+  overrides?: DeepPartial<ScaleComputed>
+): ScaleComputed {
+  const computed = deepMerge<ScaleComputed>(SCALE_DEFAULTS[scale], overrides)
+  const db = { ...computed.db, engine: dbEngine ?? computed.db.engine }
+  if (db.engine === 'aurora' && db.minAcu == null) {
+    db.minAcu = 0
+    db.maxAcu = 2
+  }
+  return { ...computed, db }
 }

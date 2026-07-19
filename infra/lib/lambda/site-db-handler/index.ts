@@ -15,8 +15,8 @@ interface SiteDbProperties {
   SiteSecretArn: string
   DbHost: string
   DbPort: string
+  /** `kukan_<site>` — database name AND role name (one concept). */
   DbName: string
-  RoleName: string
 }
 
 interface CustomResourceEvent {
@@ -55,16 +55,18 @@ export async function handler(event: CustomResourceEvent): Promise<{
 
   if (event.RequestType === 'Delete') {
     console.log(
-      `Retaining database ${props.DbName} and role ${props.RoleName}. Manual purge (as master): ` +
-        `DROP DATABASE ${props.DbName}; DROP ROLE ${props.RoleName};`
+      `Retaining database ${props.DbName} and its role. Manual purge (as master): ` +
+        `DROP DATABASE ${props.DbName}; DROP ROLE ${props.DbName};`
     )
     return { PhysicalResourceId: event.PhysicalResourceId ?? physicalId }
   }
 
   const dbName = assertIdentifier(props.DbName)
-  const roleName = assertIdentifier(props.RoleName)
-  const master = await getSecret(props.MasterSecretArn)
-  const site = await getSecret(props.SiteSecretArn)
+  const roleName = dbName
+  const [master, site] = await Promise.all([
+    getSecret(props.MasterSecretArn),
+    getSecret(props.SiteSecretArn),
+  ])
   if (!site.password) throw new Error('Site secret has no password field')
 
   const client = new pg.Client({

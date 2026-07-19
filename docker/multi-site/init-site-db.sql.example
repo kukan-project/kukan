@@ -1,16 +1,19 @@
 -- KUKAN multi-site — per-site database bootstrap (ADR-041)
 -- The compose analog of the AWS Custom Resource: run once per site as the
--- postgres superuser, replacing __SITE__ / __PASSWORD__:
+-- postgres superuser. Values are passed as psql variables — :'password' and
+-- :"db" are quoted by psql itself, so any generated password is safe (no
+-- sed/shell escaping of the SQL):
 --
---   sed -e 's/__SITE__/citya/g' -e 's/__PASSWORD__/change-me/g' \
---     docker/multi-site/init-site-db.sql.example \
---     | docker exec -i kukan-shared-postgres psql -U kukan -d postgres
+--   docker exec -i kukan-shared-postgres psql -U kukan -d postgres \
+--     -v db=kukan_citya -v password='<generated password>' \
+--     -f - < docker/multi-site/init-site-db.sql.example
 --
--- Idempotence: CREATE ROLE/DATABASE fail if the object exists — safe to treat
--- "already exists" as success. Schema migrations are NOT run here; each site's
--- app containers migrate their own database at startup (advisory lock).
+-- :"db" doubles as the role name (one concept, kukan_<site>). Idempotence:
+-- CREATE ROLE/DATABASE fail if the object exists — safe to treat "already
+-- exists" as success. Schema migrations are NOT run here; each site's app
+-- containers migrate their own database at startup (advisory lock).
 
-CREATE ROLE kukan___SITE__ WITH LOGIN PASSWORD '__PASSWORD__';
-CREATE DATABASE kukan___SITE__ OWNER kukan___SITE__;
-REVOKE CONNECT ON DATABASE kukan___SITE__ FROM PUBLIC;
-GRANT CONNECT ON DATABASE kukan___SITE__ TO kukan___SITE__;
+CREATE ROLE :"db" WITH LOGIN PASSWORD :'password';
+CREATE DATABASE :"db" OWNER :"db";
+REVOKE CONNECT ON DATABASE :"db" FROM PUBLIC;
+GRANT CONNECT ON DATABASE :"db" TO :"db";

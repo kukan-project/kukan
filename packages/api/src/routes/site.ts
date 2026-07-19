@@ -4,6 +4,7 @@
  */
 
 import { Hono } from 'hono'
+import { isLocalAIProvider } from '@kukan/shared/ai'
 import { publicCache } from '../middleware/cache-control'
 import { isRegistrationAllowed } from '../services/bootstrap'
 import { SEMANTIC_SEARCH_ENABLED_KEY, SEARCH_EXAMPLE_QUERIES_KEY } from '../services/system-setting'
@@ -38,6 +39,6 @@ siteRouter.get('/settings', publicCache(), async (c) => {
     searchExampleQueries,
     metadataSuggestEnabled,
     // Local models get a quality caveat in edit UIs (ADR-040 evaluation)
-    metadataSuggestLocalModel: suggestAvailability?.provider === 'ollama',
+    metadataSuggestLocalModel: isLocalAIProvider(suggestAvailability?.provider),
   })
 })

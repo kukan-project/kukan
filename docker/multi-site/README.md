@@ -33,12 +33,27 @@ S3_BUCKETS="kukan-citya kukan-cityb" \
   docker compose -f docker/multi-site/compose.shared.yml up -d
 ```
 
-### 2. サイト DB とロールの作成(サイトごとに 1 回)
+ローカル AI(Ollama)を使う場合は、**共有スタックの起動時にも** AI 設定を渡す
+(モデルの取得は共有側の `ollama-init` が行うため。サイト env の `AI_TYPE` は
+アプリの利用設定であり、モデル取得はトリガーしない):
 
 ```bash
-sed -e 's/__SITE__/citya/g' -e 's/__PASSWORD__/<生成したパスワード>/g' \
-  docker/multi-site/init-site-db.sql.example \
-  | docker exec -i kukan-shared-postgres psql -U kukan -d postgres
+S3_BUCKETS="kukan-citya kukan-cityb" \
+  AI_TYPE=ollama AI_EMBEDDING_MODEL=bge-m3 AI_COMPLETION_MODELS=gemma4:e4b \
+  docker compose -f docker/multi-site/compose.shared.yml up -d
+```
+
+### 2. サイト DB とロールの作成(サイトごとに 1 回)
+
+パスワードは URL セーフな `openssl rand -hex 24` を推奨(`DATABASE_URL` は
+文字列連結で組み立てられるため、記号入りパスワードは接続を壊し得る)。
+値は psql 変数として渡す — SQL 側で安全に引用されるため、sed 置換のような
+エスケープ事故が起きない。
+
+```bash
+docker exec -i kukan-shared-postgres psql -U kukan -d postgres \
+  -v db=kukan_citya -v password='<生成したパスワード>' \
+  -f - < docker/multi-site/init-site-db.sql.example
 ```
 
 ### 3. サイトスタックの起動(サイトごと)

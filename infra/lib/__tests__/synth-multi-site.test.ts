@@ -7,8 +7,13 @@
 
 import { describe, it, expect } from 'vitest'
 import { Match } from 'aws-cdk-lib/assertions'
-import type * as cdk from 'aws-cdk-lib'
-import { validateSites, type EnvironmentConfig } from '../config.js'
+import * as cdk from 'aws-cdk-lib'
+import {
+  resolveSiteConfig,
+  validateSites,
+  type EnvironmentConfig,
+  type SiteConfig,
+} from '../config.js'
 import { normalize, stackTemplate, synthStage, TEST_ACCOUNT } from './helpers/synth.js'
 
 const MULTI_SITE: Omit<EnvironmentConfig, 'account'> = {
@@ -101,7 +106,6 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
   it('creates the site database custom resource', () => {
     siteA.hasResourceProperties('Custom::KukanSiteDatabase', {
       DbName: 'kukan_citya',
-      RoleName: 'kukan_citya',
     })
   })
 
@@ -115,7 +119,7 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
     }
   })
 
-  it('orders site stacks behind the shared stack with a canary first', () => {
+  it('deploys serially: shared → canary site → remaining sites', () => {
     const stacks = Object.fromEntries(
       ['KukanSharedStack', 'KukanSiteStackCitya', 'KukanSiteStackCityb'].map((id) => [
         id,
@@ -123,9 +127,10 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
       ])
     )
     const deps = (s: cdk.Stack) => s.dependencies.map((d) => d.node.id)
-    expect(deps(stacks.KukanSiteStackCitya)).toContain('KukanSharedStack')
-    expect(deps(stacks.KukanSiteStackCityb)).toContain('KukanSharedStack')
-    expect(deps(stacks.KukanSiteStackCityb)).toContain('KukanSiteStackCitya')
+    // A chain, not a fan-out — the connection budget assumes at most one site
+    // runs a rolling update at a time
+    expect(deps(stacks.KukanSiteStackCitya)).toEqual(['KukanSharedStack'])
+    expect(deps(stacks.KukanSiteStackCityb)).toEqual(['KukanSiteStackCitya'])
   })
 })
 
@@ -148,16 +153,110 @@ describe('validateSites', () => {
   })
 
   it('enforces the shared-database connection budget', () => {
-    // medium preset: 60 worst-case connections per site (10×5 web + 5×2 worker);
-    // maxACU 2 → ~450 estimated max_connections, 70% ≈ 315
+    // medium preset: 60 worst-case connections per site (10×5 web + 5×2 worker),
+    // plus one site's rolling-update doubling (+60); maxACU 2 → 400 estimated
+    // max_connections (documented-anchor interpolation), 70% = 280
     const site = (name: string) => ({ name, enableWaf: false })
     const sitesOf = (n: number) => Array.from({ length: n }, (_, i) => site(`s${i + 1}`))
 
     expect(() => validateSites({ ...base, scale: 'medium', sites: sitesOf(8) })).toThrow(
-      /480.*exceed the estimated max_connections \(450\)/
+      /480.*exceed the estimated max_connections \(400\)/
     )
 
-    expect(validateSites({ ...base, scale: 'medium', sites: sitesOf(6) })).toContain('exceed 70%')
+    // large preset (250 worst-case/site): the raw memory formula said ~1802 and
+    // let 7 sites (1750) pass with a warning — the AWS-documented 8-ACU value
+    // is 1669, so this must fail
+    const largeBase = {
+      ...base,
+      scale: 'large' as const,
+      overrides: { backup: { awsBackup: false as const } },
+    }
+    expect(() => validateSites({ ...largeBase, sites: sitesOf(7) })).toThrow(
+      /1750.*exceed the estimated max_connections \(1669\)/
+    )
+
+    // PostgreSQL caps max_connections at 2,000 when minACU is 0 or 0.5.
+    // 34 sites (2,100 required) fit the uncapped 16-ACU estimate (3,360) —
+    // only minAcu needs to change
+    expect(() =>
+      validateSites({
+        ...base,
+        scale: 'medium',
+        overrides: { db: { maxAcu: 16 } },
+        sites: sitesOf(34),
+      })
+    ).toThrow(/2040.*\(2000\).*raise db\.minAcu to 1 or higher(?!.*AND db\.maxAcu)/)
+
+    // Boundary: 33 sites on maxAcu 8 need 2,040 — above the uncapped 8-ACU
+    // estimate (1,669) AND above the 2,000 minACU cap, so raising maxAcu
+    // alone would just hit the cap: both knobs must move
+    expect(() =>
+      validateSites({
+        ...base,
+        scale: 'medium',
+        overrides: { db: { maxAcu: 8 } },
+        sites: sitesOf(33),
+      })
+    ).toThrow(/raise db\.minAcu to 1 or higher.*AND db\.maxAcu/)
+
+    // Boundary: 60 sites on maxAcu 16 need 3,660 — uncapping via minAcu is
+    // not enough (16 ACU tops out at 3,360), so both knobs must move
+    expect(() =>
+      validateSites({
+        ...base,
+        scale: 'medium',
+        overrides: { db: { maxAcu: 16 } },
+        sites: sitesOf(60),
+      })
+    ).toThrow(/AND db\.maxAcu \(the current maxAcu tops out at 3360 connections\)/)
+
+    // Beyond the Aurora PostgreSQL absolute ceiling (5,000) no ACU setting
+    // helps — the remedy must not suggest one (medium 84 sites need 5,100)
+    const overCeiling = () =>
+      validateSites({
+        ...base,
+        scale: 'medium',
+        overrides: { db: { minAcu: 1, maxAcu: 32 } },
+        sites: sitesOf(84),
+      })
+    expect(overCeiling).toThrow(/Aurora PostgreSQL tops out at 5000/)
+    expect(overCeiling).toThrow(/split the sites/)
+    try {
+      overCeiling()
+      expect.unreachable()
+    } catch (error) {
+      expect((error as Error).message).not.toMatch(/raise db\.(min|max)Acu/)
+    }
+
+    // 6 sites: steady 360 + rolling 60 = 420 > 400 — the rolling component tips it over
+    expect(() => validateSites({ ...base, scale: 'medium', sites: sitesOf(6) })).toThrow(
+      /420 — steady 360/
+    )
+
+    expect(validateSites({ ...base, scale: 'medium', sites: sitesOf(5) })).toContain('exceed 70%')
+
+    // Warning advice targets ceil(worstCase / 0.7), not the hard limit:
+    // 29 sites need 1,800/2,000 (capped) — clearing 70% needs 2,572, which the
+    // 0.5-minACU cap blocks regardless of maxAcu → advise minAcu, not maxAcu
+    const cappedWarning = validateSites({
+      ...base,
+      scale: 'medium',
+      overrides: { db: { maxAcu: 16 } },
+      sites: sitesOf(29),
+    })
+    expect(cappedWarning).toContain('raise db.minAcu to 1 or higher')
+    expect(cappedWarning).not.toMatch(/AND db\.maxAcu/)
+
+    // 74 sites need 4,500/5,000 — clearing 70% needs 6,429, beyond the Aurora
+    // absolute ceiling → no ACU advice at all
+    const ceilingWarning = validateSites({
+      ...base,
+      scale: 'medium',
+      overrides: { db: { minAcu: 1, maxAcu: 32 } },
+      sites: sitesOf(74),
+    })
+    expect(ceilingWarning).toContain('Aurora PostgreSQL tops out at 5000')
+    expect(ceilingWarning).not.toMatch(/raise db\.(min|max)Acu/)
 
     expect(validateSites({ ...base, scale: 'medium', sites: sitesOf(2) })).toBeUndefined()
 
@@ -198,11 +297,44 @@ describe('validateSites', () => {
         sites: [{ name: 'citya', enableWaf: false }],
       })
     ).toBeUndefined()
+    // Untypeable via SiteConfig (tsx strips types, so the runtime gate matters)
+    const backupOverride = (backup: object): SiteConfig['overrides'] =>
+      ({ backup }) as SiteConfig['overrides']
     expect(() =>
       validateSites({
         ...base,
-        sites: [{ name: 'citya', enableWaf: false, overrides: { backup: { awsBackup: false } } }],
+        sites: [
+          { name: 'citya', enableWaf: false, overrides: backupOverride({ awsBackup: false }) },
+        ],
       })
     ).toThrow(/awsBackup/)
+    expect(() =>
+      validateSites({
+        ...base,
+        sites: [
+          {
+            name: 'citya',
+            enableWaf: false,
+            overrides: backupOverride({ dbBackupRetentionDays: 35 }),
+          },
+        ],
+      })
+    ).toThrow(/dbBackupRetentionDays/)
+  })
+
+  it('ignores site-scoped CLI context when resolving a site (no cross-site stamping)', () => {
+    const app = new cdk.App({
+      context: { domainName: 'ctx.example.jp', bucketName: 'ctx-bucket', enableWaf: false },
+    })
+    const config = resolveSiteConfig(app, { ...base }, { name: 'citya', enableWaf: false })
+    expect(config.domainName).toBeUndefined()
+    expect(config.bucketName).toBeUndefined()
+    // Shared-box context (scale/dbEngine/enableOpenSearch) still applies
+    const scaled = resolveSiteConfig(
+      new cdk.App({ context: { scale: 'medium' } }),
+      { ...base },
+      { name: 'citya', enableWaf: false }
+    )
+    expect(scaled.scale).toBe('medium')
   })
 })

@@ -12,6 +12,7 @@ import * as cdk from 'aws-cdk-lib'
 import type { Construct } from 'constructs'
 import { loadConfig, type EnvironmentConfig } from './config.js'
 import { composeShared, composeSite } from './composition.js'
+import { BackupConstruct } from './constructs/backup.js'
 
 export interface KukanStackProps extends cdk.StackProps {
   /** Environment definition for this stack (ADR-031). */
@@ -30,7 +31,7 @@ export class KukanStack extends cdk.Stack {
 
     const shared = composeShared(this, config)
 
-    composeSite(
+    const site = composeSite(
       this,
       config,
       {
@@ -39,7 +40,6 @@ export class KukanStack extends cdk.Stack {
         webSecurityGroup: shared.network.webSecurityGroup,
         workerSecurityGroup: shared.network.workerSecurityGroup,
         db: shared.database,
-        dbArn: shared.database.dbArn,
         searchDomainEndpoint: shared.search?.domainEndpoint,
       },
       {
@@ -47,5 +47,16 @@ export class KukanStack extends cdk.Stack {
         webAclArn: props.globalWebAclArn,
       }
     )
+
+    // AWS Backup spans shared (DB cluster) and site (bucket) resources, so it
+    // lives here rather than in either composition — single-site only; multi-
+    // site environments reject it at validateSites (ADR-037 / ADR-041).
+    if (config.backup.awsBackup) {
+      new BackupConstruct(this, 'Backup', {
+        config,
+        bucket: site.bucket,
+        dbArn: shared.database.dbArn,
+      })
+    }
   }
 }

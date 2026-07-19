@@ -27,9 +27,8 @@ import {
   isDocumentFormat,
   isZipFormat,
   createLogger,
-  PACKAGE_NAME_PATTERN,
-  PACKAGE_NAME_MIN_LENGTH,
   PACKAGE_NAME_MAX_LENGTH,
+  isValidPackageName,
   type Logger,
   type SuggestMetadataResponse,
   type MetadataSuggestion,
@@ -768,7 +767,7 @@ function normalizeSlug(raw: string): string | null {
     .replace(/-{2,}/g, '-')
     .slice(0, PACKAGE_NAME_MAX_LENGTH)
     .replace(/^[-._]+|[-._]+$/g, '')
-  return slug.length >= PACKAGE_NAME_MIN_LENGTH && PACKAGE_NAME_PATTERN.test(slug) ? slug : null
+  return isValidPackageName(slug) ? slug : null
 }
 
 /** Global-setTimeout sleep so fake timers can drive the backoff in tests

@@ -20,3 +20,9 @@ export function parseCompletionModels(csv: string | undefined): string[] | undef
   ]
   return models.length ? models : undefined
 }
+
+/** Providers that run local models — edit UIs show a quality caveat for these
+ *  (ADR-040 evaluation). One definition for server routes and client UI. */
+export function isLocalAIProvider(provider: string | null | undefined): boolean {
+  return provider === 'ollama'
+}

@@ -21,6 +21,7 @@ import {
   SelectValue,
   Switch,
 } from '@kukan/ui'
+import { isLocalAIProvider } from '@kukan/shared/ai'
 import { clientFetch } from '@/lib/client-api'
 
 interface AiSuggestSettings {
@@ -177,7 +178,7 @@ export function AiSuggestCard() {
           </div>
 
           {/* Static caveat — role note, not a live region */}
-          {settings.provider === 'ollama' && (
+          {isLocalAIProvider(settings.provider) && (
             <Alert variant="warning" role="note">
               <AlertDescription>{t('aiSuggestOllamaQualityNote')}</AlertDescription>
             </Alert>

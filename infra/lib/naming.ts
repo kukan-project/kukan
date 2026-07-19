@@ -14,19 +14,25 @@ import * as cdk from 'aws-cdk-lib'
 import type { Construct } from 'constructs'
 
 /**
- * Node-context key carrying the site name (ADR-041). KukanSiteStack sets it on
- * itself before creating children, which extends every name derived here to
- * `kukan-<env>-<site>-*` without touching the constructs. Never set on the
- * single-site KukanStack — its names must stay `kukan-<env>-*`.
+ * Marker for stacks that scope naming to one site (ADR-041). KukanSiteStack
+ * assigns `kukanSiteName` before creating children, which extends every name
+ * derived here to `kukan-<env>-<site>-*` without touching the constructs.
+ * A stack property rather than CDK context: context resolves up to the App,
+ * so a stray `-c kukan:site=x` or cdk.json entry could silently rename every
+ * environment's resources — a property is settable by code only.
  */
-export const SITE_CONTEXT_KEY = 'kukan:site'
+export interface SiteScopedStack {
+  readonly kukanSiteName: string
+}
 
 /** Per-environment prefix, e.g. `kukan-dev` (with a site: `kukan-dev-<site>`). */
 export function envPrefix(scope: Construct): string {
   const stageName = cdk.Stage.of(scope)?.stageName
   const base = stageName ? `kukan-${stageName.toLowerCase()}` : 'kukan'
-  const site = scope.node.tryGetContext(SITE_CONTEXT_KEY) as string | undefined
-  return site ? `${base}-${site}` : base
+  const stack = scope.node.scopes.filter(cdk.Stack.isStack).pop() as
+    | (cdk.Stack & Partial<SiteScopedStack>)
+    | undefined
+  return stack?.kukanSiteName ? `${base}-${stack.kukanSiteName}` : base
 }
 
 /** Env-prefixed resource name, e.g. `kukan-dev-web`. */

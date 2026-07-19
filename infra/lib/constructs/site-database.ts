@@ -42,9 +42,10 @@ export class SiteDatabaseConstruct extends Construct implements DbAccess {
   readonly secret: secretsmanager.ISecret
   /** `kukan_<site>` — database name and role name. */
   readonly dbName: string
+  /** Anchor for `node.addDependency` — tasks must not start before the DB exists. */
+  readonly customResource: cdk.CustomResource
   private readonly dbHost: string
   private readonly dbPort: string
-  private readonly resource: cdk.CustomResource
 
   constructor(scope: Construct, id: string, props: SiteDatabaseProps) {
     super(scope, id)
@@ -91,7 +92,7 @@ export class SiteDatabaseConstruct extends Construct implements DbAccess {
       logRetention: logs.RetentionDays.ONE_MONTH,
     })
 
-    this.resource = new cdk.CustomResource(this, 'Resource', {
+    this.customResource = new cdk.CustomResource(this, 'Resource', {
       serviceToken: provider.serviceToken,
       resourceType: 'Custom::KukanSiteDatabase',
       properties: {
@@ -100,14 +101,8 @@ export class SiteDatabaseConstruct extends Construct implements DbAccess {
         DbHost: props.dbHost,
         DbPort: props.dbPort,
         DbName: this.dbName,
-        RoleName: this.dbName,
       },
     })
-  }
-
-  /** Anchor for `node.addDependency` — tasks must not start before the DB exists. */
-  get customResource(): cdk.CustomResource {
-    return this.resource
   }
 
   buildPostgresEnvironment(): Record<string, string> {

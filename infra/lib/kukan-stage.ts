@@ -33,7 +33,7 @@ export class KukanStage extends cdk.Stage {
     // Environments without `sites` keep the all-in-one KukanStack below with
     // unchanged logical IDs (guarded by the synth snapshot tests).
     if (config.sites?.length) {
-      const budgetWarning = validateSites(config)
+      const budgetWarning = validateSites(config, this)
       if (budgetWarning) {
         cdk.Annotations.of(this).addWarningV2('kukan:site-connection-budget', budgetWarning)
       }
@@ -49,13 +49,13 @@ export class KukanStage extends cdk.Stage {
             site,
           })
       )
-      for (const stack of siteStacks) {
-        stack.addDependency(shared)
-      }
-      // First site is the canary: it deploys alone before the rest (ADR-041)
-      for (const stack of siteStacks.slice(1)) {
-        stack.addDependency(siteStacks[0])
-      }
+      // Sites deploy one at a time: the first is the canary, and serializing
+      // the rest bounds the rolling-update connection overlap (ECS runs old and
+      // new tasks together, MaximumPercent 200) to a single site — exactly the
+      // one doubling the connection budget accounts for (validateSites).
+      siteStacks.forEach((stack, i) => {
+        stack.addDependency(i === 0 ? shared : siteStacks[i - 1])
+      })
       return
     }
 

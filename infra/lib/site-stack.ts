@@ -13,7 +13,7 @@ import * as ssm from 'aws-cdk-lib/aws-ssm'
 import type { Construct } from 'constructs'
 import { resolveSiteConfig, type EnvironmentConfig, type SiteConfig } from './config.js'
 import { composeSite } from './composition.js'
-import { envPrefix, sharedParamName, SITE_CONTEXT_KEY } from './naming.js'
+import { envPrefix, sharedParamName, type SiteScopedStack } from './naming.js'
 import { SiteDatabaseConstruct } from './constructs/site-database.js'
 
 export interface KukanSiteStackProps extends cdk.StackProps {
@@ -21,13 +21,13 @@ export interface KukanSiteStackProps extends cdk.StackProps {
   site: SiteConfig
 }
 
-export class KukanSiteStack extends cdk.Stack {
+export class KukanSiteStack extends cdk.Stack implements SiteScopedStack {
+  /** Extends every resourceName()/envPrefix() result to kukan-<env>-<site>-*. */
+  readonly kukanSiteName: string
+
   constructor(scope: Construct, id: string, props: KukanSiteStackProps) {
     super(scope, id, props)
-
-    // Extends every resourceName()/envPrefix() result to kukan-<env>-<site>-*.
-    // Must run before any children are created.
-    this.node.setContext(SITE_CONTEXT_KEY, props.site.name)
+    this.kukanSiteName = props.site.name
 
     const config = resolveSiteConfig(this, props.envConfig, props.site)
 

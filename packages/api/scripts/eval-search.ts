@@ -7,7 +7,8 @@
  * the keyword-only baseline (the ADR-034 shipping condition).
  *
  * Usage (from the repo root):
- *   pnpm eval:search [-- --base http://localhost:3000] [-- --file <golden-queries.yaml>]
+ *   pnpm eval:search [--base http://localhost:3000] [--file <golden-queries.yaml>]
+ *   (pnpm forwards flags as-is — do NOT add `--`, parseArgs would reject it)
  *
  * The golden set lives next to this script — copy golden-queries.example.yaml
  * to golden-queries.yaml (gitignored; deployment-specific) and fill it in.
@@ -17,6 +18,7 @@ import { fileURLToPath } from 'node:url'
 import { resolve, dirname } from 'node:path'
 import { parseArgs } from 'node:util'
 import { load } from 'js-yaml'
+import { mean, pct, responseDetail } from './eval-utils.js'
 
 const K = 10
 // Default golden-set location, independent of the working directory
@@ -61,7 +63,7 @@ async function searchTopNames(base: string, query: string, semantic: boolean): P
       const body = (await res.json()) as { items: Array<{ name: string }> }
       return body.items.map((item) => item.name)
     }
-    const detail = (await res.text().catch(() => '')).slice(0, 200)
+    const detail = await responseDetail(res)
     if (res.status >= 500 && attempt === 0) {
       console.warn(`  retrying "${query}" after ${res.status}: ${detail}`)
       await new Promise((r) => setTimeout(r, 1000))
@@ -69,14 +71,6 @@ async function searchTopNames(base: string, query: string, semantic: boolean): P
     }
     throw new Error(`search failed (${res.status}) for "${query}": ${detail}`)
   }
-}
-
-function mean(values: number[]): number {
-  return values.length === 0 ? 0 : values.reduce((a, b) => a + b, 0) / values.length
-}
-
-function pct(value: number): string {
-  return (value * 100).toFixed(0).padStart(3) + '%'
 }
 
 async function main() {

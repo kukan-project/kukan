@@ -10,6 +10,16 @@ export const PACKAGE_NAME_PATTERN = /^[a-z0-9._-]+$/
 export const PACKAGE_NAME_MIN_LENGTH = 2
 export const PACKAGE_NAME_MAX_LENGTH = 100
 
+/** The package-name contract as a predicate — one definition for the API
+ *  service, scripts, and anything else that must agree with the schema. */
+export function isValidPackageName(name: string): boolean {
+  return (
+    name.length >= PACKAGE_NAME_MIN_LENGTH &&
+    name.length <= PACKAGE_NAME_MAX_LENGTH &&
+    PACKAGE_NAME_PATTERN.test(name)
+  )
+}
+
 export const createPackageSchema = z.object({
   name: z
     .string()

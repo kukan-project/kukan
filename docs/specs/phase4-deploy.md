@@ -318,7 +318,8 @@ prd: {
 ### デプロイ挙動
 
 - 初回もデプロイ順は自動制御される: SharedStack → 先頭サイト（カナリア）→
-  残りサイト。SharedStack が書く SSM パラメータ（`/kukan/<env>/shared/*`:
+  残りサイトの**直列デプロイ**（ローリング更新中は ECS が新旧タスクを併走させる
+  ため、同時に更新されるサイトを常に 1 つに抑え、接続数バジェットの前提を守る）。SharedStack が書く SSM パラメータ（`/kukan/<env>/shared/*`:
   vpc/sg/ecs/db/search）を SiteStack がデプロイ時に解決する（CFN Export 不使用
   — 共有側の変更がサイト参照でロックされない）
 - サイト DB（`kukan_<site>` + 専用ロール）は SiteStack 内の Lambda Custom
@@ -346,11 +347,16 @@ pg_dump / restore → S3 sync → 再インデックス → DNS 切替 → 旧�
 
 ### 運用ノート
 
-- DB 接続数はサイト数 ×（`WEB_DB_POOL_MAX` × **最大**タスク数 + worker プール）で増える。
-  Aurora Serverless v2 の max_connections は maxACU で固定（縮退しても減らない）。
-  synth 時に validateSites が autoscale worst case を概算 max_connections と比較し、
-  **70% 超で警告・超過でエラー**にする（対処: `sites[].overrides.dbPool` /
-  `web.maxSize` を絞る、`db.maxAcu` を上げる、または RDS Proxy）
+- DB 接続数はサイト数 ×（`WEB_DB_POOL_MAX` × **最大**タスク数 + worker プール）
+  - **ローリング更新中の 1 サイト分**（新旧タスク併走）で見積もる。
+    Aurora Serverless v2 の max_connections は maxACU で固定（縮退しても減らない）。
+    synth 時に validateSites がこの worst case を AWS 公式表ベースの概算
+    max_connections と比較し、**70% 超で警告・超過でエラー**にする（対処:
+    `sites[].overrides.dbPool` / `web.maxSize` を絞る、`db.maxAcu` を上げる、
+    または RDS Proxy）
+- **`db.maxAcu` の引き上げとサイト追加は同一デプロイにしない**。max_connections は
+  静的パラメータで、maxACU 変更後も**インスタンス再起動まで旧値のまま**残る。
+  先に ACU 変更をデプロイして再起動を済ませ、新しい上限が効いてからサイトを追加する
 - 共用 OpenSearch は medium（m6g.large.search）以上を前提とする（1 サイトの
   再インデックスが全サイトの検索レイテンシに波及するため）
 - 非 AWS 環境（Docker Compose）は `docker/multi-site/` の opt-in テンプレートを

@@ -14,8 +14,9 @@
  *
  * Usage (from the repo root; the target user needs editor rights):
  *   KUKAN_TOKEN=kukan_xxx pnpm eval:suggest \
- *     [-- --base http://localhost:3000] [-- --file <golden-suggest.yaml>] \
- *     [-- --runs 3] [-- --out <report.md>]
+ *     [--base http://localhost:3000] [--file <golden-suggest.yaml>] \
+ *     [--runs 3] [--out <report.md>]
+ *   (pnpm forwards flags as-is — do NOT add `--`, parseArgs would reject it)
  *
  * The golden set lives next to this script — copy golden-suggest.example.yaml
  * to golden-suggest.yaml (gitignored; deployment-specific) and fill it in.
@@ -26,23 +27,12 @@ import { fileURLToPath } from 'node:url'
 import { resolve, dirname } from 'node:path'
 import { parseArgs } from 'node:util'
 import { load } from 'js-yaml'
-import {
-  PACKAGE_NAME_PATTERN,
-  PACKAGE_NAME_MIN_LENGTH,
-  PACKAGE_NAME_MAX_LENGTH,
-} from '@kukan/shared'
+import { mean, pct, responseDetail } from './eval-utils.js'
+import { isValidPackageName } from '@kukan/shared'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const DEFAULT_FILE = resolve(SCRIPT_DIR, 'golden-suggest.yaml')
 const DEFAULT_OUT = resolve(SCRIPT_DIR, 'eval-suggest-report.md')
-
-function isValidName(name: string): boolean {
-  return (
-    name.length >= PACKAGE_NAME_MIN_LENGTH &&
-    name.length <= PACKAGE_NAME_MAX_LENGTH &&
-    PACKAGE_NAME_PATTERN.test(name)
-  )
-}
 
 interface GoldenDataset {
   nameOrId: string
@@ -113,14 +103,6 @@ function setScores(
   }
 }
 
-function mean(values: number[]): number {
-  return values.length === 0 ? 0 : values.reduce((a, b) => a + b, 0) / values.length
-}
-
-function pct(value: number | null): string {
-  return value === null ? '  — ' : (value * 100).toFixed(0).padStart(3) + '%'
-}
-
 async function requestSuggestion(
   base: string,
   token: string,
@@ -138,21 +120,17 @@ async function requestSuggestion(
     )
     return { res, latencyMs: Date.now() - startedAt }
   }
-  const detailOf = (res: Response) =>
-    res
-      .text()
-      .then((t) => t.slice(0, 200))
-      .catch(() => '')
-
   let { res, latencyMs } = await attempt()
   if (res.status >= 500) {
-    console.warn(`  retrying "${dataset.nameOrId}" after ${res.status}: ${await detailOf(res)}`)
+    console.warn(
+      `  retrying "${dataset.nameOrId}" after ${res.status}: ${await responseDetail(res)}`
+    )
     ;({ res, latencyMs } = await attempt())
   }
   if (res.ok) {
     return { response: (await res.json()) as SuggestResponse, latencyMs }
   }
-  const detail = await detailOf(res)
+  const detail = await responseDetail(res)
   if (res.status === 429) {
     throw new Error(`rate limit reached (${detail}) — retry after the window resets`)
   }
@@ -187,7 +165,7 @@ function evaluateRun(
     forbiddenHits: (dataset.forbidden ?? []).filter((t) => everything.includes(t.toLowerCase())),
     tags: setScores(tagNames, dataset.expectedTags),
     groups: setScores(s.groups ?? [], dataset.expectedGroups),
-    nameOk: dataset.expectName ? !!s.name && isValidName(s.name) : null,
+    nameOk: dataset.expectName ? !!s.name && isValidPackageName(s.name) : null,
   }
 }
 
@@ -230,7 +208,15 @@ async function main() {
   }
   const base = values.base!
   const runs = Number(values.runs)
+  if (!Number.isInteger(runs) || runs < 1) {
+    console.error(`--runs must be a positive integer (got "${values.runs}")`)
+    process.exit(1)
+  }
   const golden = load(readFileSync(values.file!, 'utf8')) as { datasets: GoldenDataset[] }
+  if (!golden?.datasets?.length) {
+    console.error(`No datasets in ${values.file} — nothing to evaluate`)
+    process.exit(1)
+  }
 
   const results: RunResult[] = []
   let failed = 0

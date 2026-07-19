@@ -15,6 +15,7 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2'
 import * as ecs from 'aws-cdk-lib/aws-ecs'
 import * as route53 from 'aws-cdk-lib/aws-route53'
 import * as route53Targets from 'aws-cdk-lib/aws-route53-targets'
+import * as s3 from 'aws-cdk-lib/aws-s3'
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
 import type { Construct } from 'constructs'
 import type { KukanConfig } from './config.js'
@@ -27,7 +28,6 @@ import { SearchConstruct } from './constructs/search.js'
 import { WebServiceConstruct } from './constructs/web-service.js'
 import { WorkerServiceConstruct } from './constructs/worker-service.js'
 import { CdnConstruct } from './constructs/cdn.js'
-import { BackupConstruct } from './constructs/backup.js'
 
 /** The hourly-billed "boxes" shared across sites (ADR-041). */
 export interface SharedResources {
@@ -47,12 +47,6 @@ export interface SiteSurface {
   webSecurityGroup: ec2.ISecurityGroup
   workerSecurityGroup: ec2.ISecurityGroup
   db: DbAccess
-  /**
-   * Cluster/instance ARN — AWS Backup selection target (ADR-037). Required
-   * when `config.backup.awsBackup` is enabled; SiteStacks never pass it
-   * (validateSites rejects per-site AWS Backup, ADR-041).
-   */
-  dbArn?: string
   searchDomainEndpoint?: string
   /** Per-site OPENSEARCH_INDEX_PREFIX (ADR-041). Unset → containers use the app default. */
   searchIndexPrefix?: string
@@ -60,10 +54,11 @@ export interface SiteSurface {
   webImageBuildArgs?: Record<string, string>
 }
 
-/** Handles a SiteStack needs for cross-resource ordering after composition. */
+/** Handles the composing stack needs after composition (ordering, backup). */
 export interface SiteResources {
   webService: WebServiceConstruct
   workerService: WorkerServiceConstruct
+  bucket: s3.IBucket
 }
 
 /** Edge resources created in us-east-1 (KukanGlobalStack) or supplied as ARNs. */
@@ -114,18 +109,6 @@ export function composeSite(
 
   // --- Storage (S3) ---
   const storage = new StorageConstruct(scope, 'Storage', { config })
-
-  // --- Backup (AWS Backup vault + plan, ADR-037) ---
-  if (config.backup.awsBackup) {
-    if (!surface.dbArn) {
-      throw new Error('backup.awsBackup requires SiteSurface.dbArn (single-site only, ADR-041)')
-    }
-    new BackupConstruct(scope, 'Backup', {
-      config,
-      bucket: storage.bucket,
-      dbArn: surface.dbArn,
-    })
-  }
 
   // --- Queue (SQS) ---
   const queue = new QueueConstruct(scope, 'Queue')
@@ -224,5 +207,5 @@ export function composeSite(
     description: 'S3 Bucket Name',
   })
 
-  return { webService, workerService }
+  return { webService, workerService, bucket: storage.bucket }
 }

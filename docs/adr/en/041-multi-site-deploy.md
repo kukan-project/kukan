@@ -13,6 +13,8 @@ Decisions fixed at implementation time (deltas from the body):
 - `OPENSEARCH_INDEX_PREFIX` is `kukan-<env>-<site>` (index `kukan-<env>-<site>-search`)
 - **AWS Backup is rejected for multi-site environments** (the shared cluster would be snapshotted once per site; per-site pg_dump complements instead — a premise change to ADR-037)
 - The site database/role are **retained** on SiteStack deletion (the Custom Resource's Delete is a no-op, protecting data from rollback-deletes of a failed create)
+- Site stacks deploy **serially** (canary, then one site at a time). ECS rolling updates run old and new tasks together, so the connection budget counts exactly one site's doubling on the assumption that only one site updates at a time; wave parallelism is a future optimization for deployments that can budget several sites' doubling
+- **Never raise `db.maxAcu` and add sites in the same deploy**: max_connections is a static parameter that keeps its old value until every DB instance is rebooted. Deploy the ACU change alone, reboot the instances, confirm they are in sync, then add sites (the synth error's remedy text says so too)
 
 ## Context
 
@@ -65,7 +67,7 @@ KukanPipeline (fork, one pipeline)
 │   └─ SiteStack × n(dev)           ← the site list is defined per environment (dev can be minimal)
 └─ Prd stage
     ├─ SharedStack (prd)
-    └─ SiteStack × n(prd)           ← order the first site as a canary; parallelize the rest with waves
+    └─ SiteStack × n(prd)           ← canary, then one site at a time (the connection budget's premise)
 ```
 
 - Extend the naming convention from `kukan-<env>-*` (ADR-031) to `kukan-<env>-<site>-*`
@@ -113,7 +115,7 @@ The application layer (index prefix, `POSTGRES_DB`, brand build) is fully shared
 - **Connection multiplication**: web pool (`WEB_DB_POOL_MAX`) × tasks + worker pools multiply by the site count. Aurora Serverless v2 max_connections tracks maxACU, so it must be reviewed as sites grow (RDS Proxy is a future option)
 - **Sizing the shared domain**: one site's reindex (bulk ingestion) affects search latency for all sites. A shared OpenSearch hosting multiple sites assumes medium (m6g.large.search) or larger
 - **Shared AI quotas**: Bedrock invoke quotas are account-wide. Concurrent bulk embedding jobs across sites can throttle (with Ollama the same manifests as CPU inference contention)
-- **Pipeline duration**: each push deploys "dev site count + prd site count" stacks. Mitigate with wave parallelization and keeping the dev site list small
+- **Pipeline duration**: each push deploys "dev site count + prd site count" stacks serially. Mitigate by keeping the dev site list small (wave parallelism only becomes an option if the connection budget is changed to account for several sites updating at once)
 
 ## Migration of Existing Environments
 
