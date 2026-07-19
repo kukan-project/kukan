@@ -1,0 +1,15 @@
+# KUKAN multi-site — Caddy edge (ADR-041)
+# One virtual host per site, routed to that site's web container on the
+# kukan-shared network. Container names double as DNS names.
+#
+# With public DNS, Caddy provisions Let's Encrypt automatically; for closed
+# networks use `tls /certs/cert.pem /certs/key.pem` (mount the certs volume
+# in compose.shared.yml) or plain :80 host matchers.
+
+catalog.city-a.example.jp {
+	reverse_proxy kukan-citya-web:3000
+}
+
+catalog.city-b.example.jp {
+	reverse_proxy kukan-cityb-web:3000
+}

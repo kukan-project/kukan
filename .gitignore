@@ -15,6 +15,8 @@ out/
 .env.prod
 .env.local
 .env.*.local
+# Multi-site per-site env files (ADR-041) — only the .example template is committed
+docker/multi-site/sites/*.env
 
 # Testing
 coverage/

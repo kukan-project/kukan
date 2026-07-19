@@ -1,0 +1,161 @@
+# KUKAN multi-site — shared stack template (ADR-041)
+#
+# The hourly "boxes" shared by all sites: postgres / minio / elasticmq /
+# opensearch / ollama, plus one caddy edge routing per-site virtual hosts.
+# Start once per host:
+#
+#   docker compose -f docker/multi-site/compose.shared.yml up -d
+#
+# Sites join the `kukan-shared` network (compose.site.yml) and reach these
+# services by container name (kukan-shared-postgres etc.). This file is a
+# template: it deliberately duplicates the single-site compose.yml settings —
+# review both when upgrading service versions.
+
+name: kukan-shared
+
+networks:
+  default:
+    name: kukan-shared
+    attachable: true
+
+x-minio-credentials: &minio-credentials
+  MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: kukan-shared-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kukan}
+      POSTGRES_USER: ${POSTGRES_USER:-kukan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kukan}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: pgsty/minio:RELEASE.2026-04-17T00-00-00Z
+    container_name: kukan-shared-minio
+    environment:
+      <<: *minio-credentials
+    command: server /data --console-address ":9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    # One bucket per site: space-separated list in S3_BUCKETS
+    image: pgsty/minio:RELEASE.2026-04-17T00-00-00Z
+    container_name: kukan-shared-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      <<: *minio-credentials
+      S3_BUCKETS: ${S3_BUCKETS:-kukan-citya kukan-cityb}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        for bucket in $$S3_BUCKETS; do
+          mc mb --ignore-existing "local/$$bucket"
+        done
+
+  elasticmq:
+    image: softwaremill/elasticmq-native:1.7.1
+    container_name: kukan-shared-elasticmq
+    volumes:
+      # Static queue definitions — add a block per site (see elasticmq.conf)
+      - ./elasticmq.conf:/opt/elasticmq.conf
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          "wget -qO- 'http://localhost:9324/?Action=ListQueues&Version=2012-11-05' || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  opensearch:
+    build:
+      context: ..
+      dockerfile: opensearch.Dockerfile
+    image: kukan-opensearch:3
+    container_name: kukan-shared-opensearch
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true
+      # Heap sizing bounds how many sites one host can serve (ADR-041): all
+      # sites' indices share this JVM. Start at 2g and raise with site count.
+      - OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS:--Xms2g -Xmx2g}
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -s http://localhost:9200 || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: kukan-shared-ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:--1}
+    volumes:
+      - ollama-models:/root/.ollama
+
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: kukan-shared-ollama-init
+    depends_on:
+      ollama:
+        condition: service_started
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      AI_TYPE: ${AI_TYPE:-none}
+      EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-bge-m3}
+      COMPLETION_MODELS: ${AI_COMPLETION_MODELS:-gemma4:e4b}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        [ "$$AI_TYPE" = "ollama" ] || { echo "AI_TYPE=$$AI_TYPE — skipping model pull"; exit 0; }
+        for i in $$(seq 30); do ollama list >/dev/null 2>&1 && break; sleep 1; done
+        for model in "$$EMBEDDING_MODEL" $$(echo "$$COMPLETION_MODELS" | tr ',' ' '); do
+          ollama show "$$model" >/dev/null 2>&1 && { echo "$$model already present"; continue; }
+          ollama pull "$$model"
+        done
+
+  caddy:
+    # Single edge for every site — per-site virtual hosts in ./Caddyfile.
+    # No depends_on: the site web containers live in their own compose
+    # projects; caddy just 502s until they are up.
+    image: caddy:2-alpine
+    container_name: kukan-shared-caddy
+    restart: unless-stopped
+    ports:
+      - '${HTTP_PORT:-80}:80'
+      - '${HTTPS_PORT:-443}:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  pgdata:
+  miniodata:
+  opensearch-data:
+  ollama-models:
+  caddy-data:
+  caddy-config:

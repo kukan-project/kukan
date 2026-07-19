@@ -1,0 +1,80 @@
+# KUKAN multi-site — per-site stack template (ADR-041)
+#
+# One web + worker pair per site, joined to the shared network. Run with a
+# per-site env file and project name:
+#
+#   docker compose -f docker/multi-site/compose.site.yml \
+#     --env-file docker/multi-site/sites/citya.env -p kukan-citya up -d --build
+#
+# Requires the shared stack (compose.shared.yml) and the site's database/role
+# (init-site-db.sql.example) to exist first. There is no cross-project
+# depends_on: the containers restart until the shared services answer.
+
+networks:
+  default:
+    name: kukan-shared
+    external: true
+
+x-app-environment: &app-environment
+  POSTGRES_HOST: kukan-shared-postgres
+  POSTGRES_PORT: '5432'
+  POSTGRES_DB: kukan_${SITE}
+  POSTGRES_USER: kukan_${SITE}
+  POSTGRES_PASSWORD: ${SITE_DB_PASSWORD}
+  POSTGRES_SSLMODE: disable
+  S3_ENDPOINT: http://kukan-shared-minio:9000
+  S3_BUCKET: kukan-${SITE}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:-${MINIO_ROOT_USER:-minioadmin}}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:-${MINIO_ROOT_PASSWORD:-minioadmin}}
+  SEARCH_TYPE: ${SEARCH_TYPE:-opensearch}
+  OPENSEARCH_URL: http://kukan-shared-opensearch:9200
+  OPENSEARCH_INDEX_PREFIX: kukan-${SITE}
+  SQS_ENDPOINT: http://kukan-shared-elasticmq:9324
+  SQS_QUEUE_URL: http://kukan-shared-elasticmq:9324/000000000000/kukan-${SITE}-pipeline
+  SQS_ACCESS_KEY: ${SQS_ACCESS_KEY:-x}
+  SQS_SECRET_KEY: ${SQS_SECRET_KEY:-x}
+  AI_TYPE: ${AI_TYPE:-none}
+  AI_EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-bge-m3}
+  AI_COMPLETION_MODELS: ${AI_COMPLETION_MODELS:-gemma4:e4b}
+  OLLAMA_URL: http://kukan-shared-ollama:11434
+  BETTER_AUTH_SECRET: ${SITE_AUTH_SECRET}
+  BETTER_AUTH_URL: ${SITE_URL}
+
+services:
+  web:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: web
+      # args:
+      #   KUKAN_BRAND: ${KUKAN_BRAND} # per-site brand build (ADR-042)
+    image: kukan-web:${SITE}
+    container_name: kukan-${SITE}-web
+    restart: unless-stopped
+    environment:
+      <<: *app-environment
+      PORT: '3000'
+    expose:
+      - '3000'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3000/api/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: worker
+    image: kukan-worker:latest
+    container_name: kukan-${SITE}-worker
+    restart: unless-stopped
+    environment: *app-environment
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8080/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
