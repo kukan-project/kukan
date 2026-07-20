@@ -79,7 +79,11 @@ export class KukanSiteStack extends cdk.Stack implements SiteScopedStack {
         searchDomainEndpoint: config.enableOpenSearch ? read('search/endpoint') : undefined,
         // kukan-<env>-<site> → index kukan-<env>-<site>-search on the shared domain
         searchIndexPrefix: envPrefix(this),
-        webImageBuildArgs: props.site.brand ? { KUKAN_BRAND: props.site.brand } : undefined,
+        // 'default' == unset: no build arg → resolved via the @/brand tsconfig path (ADR-042)
+        webImageBuildArgs:
+          props.site.brand && props.site.brand !== 'default'
+            ? { KUKAN_BRAND: props.site.brand }
+            : undefined,
       },
       {
         certificateArn: props.globalCertificateArn,

@@ -185,8 +185,9 @@ export interface SiteConfig {
    */
   name: string
   /**
-   * Web image brand (ADR-042): the Docker build arg `KUKAN_BRAND`. Unset → the
-   * default brand (`apps/web/brands/default`); set requires a matching
+   * Web image brand (ADR-042): the Docker build arg `KUKAN_BRAND`. Default
+   * `'default'` (the `apps/web/brands/default` brand) — omitting it or setting
+   * `'default'` are equivalent. Any other value requires a matching
    * `apps/web/brands/<brand>/` (an unknown brand fails the image build).
    */
   brand?: string

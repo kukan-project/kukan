@@ -32,4 +32,4 @@ if (existsSync(src)) {
   cpSync(src, dest, { recursive: true, filter: (s) => !s.endsWith('.gitkeep') })
 }
 
-console.log(`Copied ${brand ?? 'default'} brand assets to ${dest}`)
+console.log(`Copied ${brand} brand assets to ${dest}`)
