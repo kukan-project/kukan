@@ -10,21 +10,50 @@ KUKAN をフォークして自組織向けにカスタマイズする際のガ�
 
 ## カスタマイズの範囲
 
-フォーク側で変更するファイルは以下の 2 箇所に限定されます。
+フォーク側で変更するファイルは `apps/web/brands/default/` 配下に限定されます。中身は次の通りです。
 
-| ディレクトリ             | 内容                                        |
-| ------------------------ | ------------------------------------------- |
-| `apps/web/src/brand/`    | 設定・CSS 変数・コンポーネント override     |
-| `apps/web/public/brand/` | ロゴ、ファビコン、OG 画像などの静的ファイル |
+| パス（`brands/default/` 配下） | 内容                                                                   | 対応セクション                       |
+| ------------------------------ | ---------------------------------------------------------------------- | ------------------------------------ |
+| `brand-config.ts`              | サイト名・説明・ロゴ・フッターリンク・OG 画像・ファビコン・GA 測定 ID   | [Tier 2](#tier-2-テキストメタデータの変更) |
+| `theme.css`                    | CSS 変数（色・サイズ）の上書き                                         | [Tier 1](#tier-1-色サイズの変更)     |
+| `messages/ja.json` / `en.json` | UI テキスト（i18n メッセージ）の上書き                                 | [i18n メッセージの上書き](#i18n-メッセージの上書き) |
+| `overrides/`                   | Header / Footer / TopPage などのコンポーネント差し替え（スロット）     | [Tier 3](#tier-3-コンポーネント差し替え) |
+| `pages/`                       | 独自の静的ページ（利用規約・プライバシーポリシー等）                   | [静的ページの追加](#静的ページの追加) |
+| `public/`                      | ロゴ・ファビコン・OG 画像などの静的ファイル                           | [静的ファイルの配置](#静的ファイルの配置) |
+| `index.ts` / `messages/index.ts` | エクスポートのまとめ（バレル）。通常は編集不要                       | —                                    |
 
 これ以外のファイルは変更しないでください。本体の更新を取り込む際にコンフリクトが発生します。
+
+:::caution[v0.10.0 以前からのアップグレード：ブランドの移行（一度きり）]
+デフォルトブランドの置き場所はバージョンで異なります（マルチブランド対応 ADR-042）。
+
+- **v0.10.0 以前**: コードは `apps/web/src/brand/`、静的ファイルは `apps/web/public/brand/`
+- **v0.11.0 以降**: `apps/web/brands/default/` に統合（コードと `public/` を同じ場所に）
+
+**v0.10.0 以前から v0.11.0 以降へアップグレードする**際、`src/brand/` を
+カスタマイズしていたフォークは一度だけ、中身を新しい場所へ移してください。
+
+```bash
+git mv apps/web/src/brand apps/web/brands/default
+# public/brand/ にロゴ等を置いていた場合は brands/default/public/ へ移動
+git mv apps/web/public/brand/* apps/web/brands/default/public/  # ファイルがある場合
+```
+
+`@/brand` のインポートは不変なのでアプリコードの変更は不要です。実行時の
+参照 URL `/brand/...` も不変です（`public/brand/` は生成物になり gitignore
+されます）。
+
+なお v0.11.0 以降、`brands/default/public/` の静的ファイルはビルド／dev 起動時に
+`public/brand/` へコピーされます。そのため**追加・変更の反映にはビルド（または
+dev サーバーの再起動）が必要**です（[静的ファイルの配置](#静的ファイルの配置)を参照）。
+:::
 
 ## Tier 1: 色・サイズの変更
 
 `brand/theme.css` に CSS 変数を記述するだけで、サイト全体の配色やサイズを変更できます。
 
 ```css
-/* apps/web/src/brand/theme.css */
+/* apps/web/brands/default/theme.css */
 :root {
   --primary: 142 64% 32%; /* メインカラー（HSL） */
   --primary-foreground: 0 0% 100%; /* メインカラー上のテキスト色 */
@@ -76,7 +105,7 @@ shadcn/ui 標準の変数と KUKAN 固有の変数（`--kukan-*` プレフィッ
 デザイナー指定の配色に、公式トークンの役割（主要色・強調色など）に当てはまらない独自色が含まれる場合は、`--brand-` プレフィックスの独自トークンを `brand/theme.css` に追加できます。
 
 ```css
-/* apps/web/src/brand/theme.css */
+/* apps/web/brands/default/theme.css */
 :root {
   --brand-accent-green: 183 29% 87%;
   --brand-link: 183 79% 28%;
@@ -101,7 +130,7 @@ shadcn/ui 標準の変数と KUKAN 固有の変数（`--kukan-*` プレフィッ
 `brand/brand-config.ts` を編集して、サイト名・著作権表示・メタデータを変更します。
 
 ```typescript
-// apps/web/src/brand/brand-config.ts
+// apps/web/brands/default/brand-config.ts
 import type { BrandConfig } from '@/types/brand'
 
 export const brandConfig: BrandConfig = {
@@ -158,7 +187,7 @@ logo: { type: 'image', src: '/brand/logo.svg', width: 160, height: 40, alt: '○
 UI に表示される翻訳テキストを組織ごとに変更できます。`brand/messages/{locale}.json` に上書きしたいキーだけを記述してください。
 
 ```json
-// apps/web/src/brand/messages/ja.json
+// apps/web/brands/default/messages/ja.json
 {
   "home": {
     "title": "○○市オープンデータカタログ",
@@ -168,7 +197,7 @@ UI に表示される翻訳テキストを組織ごとに変更できます。`b
 ```
 
 ```json
-// apps/web/src/brand/messages/en.json
+// apps/web/brands/default/messages/en.json
 {
   "home": {
     "title": "City of Example Open Data Catalog",
@@ -197,7 +226,7 @@ Header や Footer の構造自体を変更したい場合は、カスタムコ�
 **1. カスタムコンポーネントを作成**
 
 ```tsx
-// apps/web/src/brand/overrides/header.tsx
+// apps/web/brands/default/overrides/header.tsx
 import { getCurrentUser } from '@/lib/server-api'
 import { LanguageSwitcher } from '@/components/layout/language-switcher'
 import { MobileNav } from '@/components/layout/mobile-nav'
@@ -224,7 +253,7 @@ export async function Header() {
 **2. `overrides/index.ts` に登録**
 
 ```typescript
-// apps/web/src/brand/overrides/index.ts
+// apps/web/brands/default/overrides/index.ts
 import type { BrandOverrides } from '@/types/brand'
 import { Header } from './header'
 
@@ -279,7 +308,7 @@ brand/overrides/
 **1. `brand/pages/` にページコンポーネントを作成**
 
 ```tsx
-// apps/web/src/brand/pages/privacy.tsx
+// apps/web/brands/default/pages/privacy.tsx
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
@@ -325,16 +354,40 @@ footerLinks: [
 
 ## 静的ファイルの配置
 
-ロゴ、ファビコン、OG 画像などは `apps/web/public/brand/` に配置します。
+ロゴ、ファビコン、OG 画像などは `apps/web/brands/default/public/` に配置します。
 
 ```
-apps/web/public/brand/
+apps/web/brands/default/public/
 ├── logo.svg
 ├── favicon.ico
 └── og-image.png
 ```
 
 配置したファイルは `/brand/logo.svg` のような URL で参照できます。
+
+:::note[反映にはビルド（または dev の再起動）が必要]
+`brands/default/public/` の中身は、`dev` / `build` の**開始時**に
+`public/brand/` へコピーされ、そこから配信されます。したがって **dev サーバー
+稼働中にファイルを追加・変更しても自動反映されません**。`pnpm build` を通すか、
+dev サーバーを再起動（コピーを再実行）してください。
+:::
+
+## 複数ブランド（1 フォークで複数サイト）
+
+1 つのフォークで複数サイト（[マルチサイト運用](/ja/system-admin-guide/multi-site/)）を
+運用し、サイトごとに見た目を変えたい場合は、ブランドを複数持てます（ADR-042）。
+
+- デフォルトブランドは `apps/web/brands/default/` です。**新しいブランドは
+  `brands/default/` をコピー**して `apps/web/brands/<name>/` を作り、中身を編集します
+- ビルド時に `KUKAN_BRAND=<name>` を渡すと `@/brand` の解決先がそのブランドに
+  切り替わります（未指定なら `brands/default/`）。ビルドに入るのは選択した 1
+  ブランドのみです
+- AWS では `environments.ts` の各サイトに `brand: '<name>'` を指定すると、
+  パイプラインがサイトごとに `KUKAN_BRAND` を変えて web イメージをビルドします
+  （[環境設定リファレンス](/ja/system-admin-guide/environment-config/)）。存在しない
+  ブランドを指定するとイメージビルドが失敗します
+- `BrandConfig` / `BrandOverrides` の契約と CSS 変数のルールは全ブランド共通です。
+  各ブランドは値と差し替え部品だけを持ちます
 
 ## 本体更新の取り込み
 
@@ -346,7 +399,7 @@ git fetch upstream
 git merge upstream/main
 ```
 
-カスタマイズが `src/brand/` と `public/brand/` に限定されていれば、コンフリクトは原則発生しません。
+カスタマイズが `brands/default/`(`public/` 含む)に限定されていれば、コンフリクトは原則発生しません。
 
 ### コンフリクトが発生した場合
 
@@ -354,13 +407,13 @@ git merge upstream/main
 
 ## テスト
 
-本体のユニットテストはブランド非依存に設計されており、テスト内では `src/brand/` の内容が KUKAN デフォルト値に固定されます。**ブランドをどうカスタマイズしても本体のテスト（CI）はそのまま通ります**。
+本体のユニットテストはブランド非依存に設計されており、テスト内では `brands/default/` の内容が KUKAN デフォルト値に固定されます。**ブランドをどうカスタマイズしても本体のテスト（CI）はそのまま通ります**。
 
 - **本体のテストファイルは変更しないでください**。カスタマイズによって本体のテストが失敗する場合は、フォーク側で修正せず、本体リポジトリへ issue で報告してください
-- **カスタムコンポーネント自体のテストは `apps/web/src/brand/__tests__/` に配置します**。`*.test.ts` / `*.test.tsx` は自動的に検出され、`pnpm test` で実行されます。テストを書くかどうかはフォーク側の裁量です
+- **カスタムコンポーネント自体のテストは `apps/web/brands/default/__tests__/` に配置します**。`*.test.ts` / `*.test.tsx` は自動的に検出され、`pnpm test` で実行されます。テストを書くかどうかはフォーク側の裁量です
 
 ```tsx
-// apps/web/src/brand/__tests__/header.test.tsx
+// apps/web/brands/default/__tests__/header.test.tsx
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { Header } from '../overrides/header'
@@ -381,7 +434,7 @@ describe('Custom Header', () => {
 | 公式トークンにない独自色を使いたい | `brand/theme.css` に `--brand-*` トークンを定義   | 5 分           |
 | サイト名・テキストを変えたい       | `brand/brand-config.ts` を編集                    | 30 分          |
 | UI の翻訳テキストを変えたい        | `brand/messages/{locale}.json` に上書きキーを記述 | 10 分          |
-| ロゴを差し替えたい                 | `public/brand/` にファイルを配置 + config 編集    | 10 分          |
+| ロゴを差し替えたい                 | `brands/default/public/` に配置 + config 編集    | 10 分          |
 | ヘッダー/フッターの構造を変えたい  | `brand/overrides/` にコンポーネント作成           | 数時間         |
 | トップページを差し替えたい         | `brand/overrides/` にコンポーネント作成           | 数時間         |
 | 静的ページを追加したい             | `brand/pages/` にコンポーネント作成 + 登録        | 30 分          |

@@ -19,6 +19,8 @@
       }
     ],
     "paths": {
+      "@/brand": ["./brands/default"],
+      "@/brand/*": ["./brands/default/*"],
       "@/*": ["./src/*"],
       "@kukan/shared": ["../../packages/shared/src"],
       "@kukan/ui": ["../../packages/ui/src"],

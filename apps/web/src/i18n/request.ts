@@ -1,6 +1,9 @@
 import { cookies, headers } from 'next/headers'
 import { getRequestConfig } from 'next-intl/server'
 
+// Barrel import so the @/brand alias resolves the active brand (ADR-042).
+import { messages as BRAND_MESSAGES } from '@/brand/messages'
+
 import { deepMerge, type Messages } from './deep-merge'
 
 const SUPPORTED_LOCALES = ['ja', 'en'] as const
@@ -43,7 +46,7 @@ export default getRequestConfig(async () => {
   }
 
   const defaultMessages: Messages = (await import(`../../messages/${locale}.json`)).default
-  const brandMessages: Messages = (await import(`../brand/messages/${locale}.json`)).default
+  const brandMessages = BRAND_MESSAGES[locale]
   const messages =
     Object.keys(brandMessages).length > 0
       ? deepMerge(defaultMessages, brandMessages)

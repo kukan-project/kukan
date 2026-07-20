@@ -47,7 +47,7 @@ export const connectionArn = 'arn:aws:codeconnections:...:connection/...'
 | フィールド         | 型                       | デフォルト                                         | 説明                                                                                          |
 | ------------------ | ------------------------ | -------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `name`             | string                   | **必須**                                           | サイトキー(`^[a-z][a-z0-9]{1,15}$`)。リソース名 `kukan-<env>-<site>-*` と DB 名 `kukan_<site>` |
-| `brand`            | string                   | なし                                               | web イメージのブランド(将来のマルチブランドビルド機能用)。**機能実装までは設定しない**(未対応の build arg でイメージビルドが失敗します) |
+| `brand`            | string                   | なし(既定ブランド `brands/default`)                     | web イメージのブランド(`KUKAN_BRAND`)。**未指定なら既定ブランド(`brands/default`)が使われます**。設定する場合は対応する `apps/web/brands/<brand>/` が必要です(未知のブランドはイメージビルドが失敗します) |
 | `domainName`       | string                   | なし                                               | カスタムドメイン(未設定時は CloudFront デフォルトドメイン)                                    |
 | `hostedZoneId`     | string                   | なし                                               | Route53 Hosted Zone ID(`domainName` 設定時に必要)                                             |
 | `hostedZoneName`   | string                   | なし                                               | Route53 Hosted Zone 名(同上)                                                                  |

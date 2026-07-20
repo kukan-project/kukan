@@ -10,21 +10,50 @@ Changes can be applied incrementally — start with the simplest approach.
 
 ## Scope of Changes
 
-Files you modify in a fork should be limited to these two locations:
+Files you modify in a fork are limited to `apps/web/brands/default/`. Its contents:
 
-| Directory                | Contents                                        |
-| ------------------------ | ----------------------------------------------- |
-| `apps/web/src/brand/`    | Config, CSS variables, component overrides      |
-| `apps/web/public/brand/` | Logo, favicon, OG image, and other static files |
+| Path (under `brands/default/`)   | Contents                                                              | Section                                            |
+| -------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------- |
+| `brand-config.ts`                | Site name, description, logo, footer links, OG image, favicon, GA ID | [Tier 2](#tier-2-text-and-metadata)                |
+| `theme.css`                      | CSS variable overrides (colors, sizing)                              | [Tier 1](#tier-1-colors-and-sizing)                |
+| `messages/ja.json` / `en.json`   | UI text (i18n message) overrides                                     | [i18n Message Overrides](#i18n-message-overrides)  |
+| `overrides/`                     | Component replacements for Header / Footer / TopPage (slots)         | [Tier 3](#tier-3-component-replacement)            |
+| `pages/`                         | Custom static pages (terms, privacy policy, etc.)                    | [Static Pages](#static-pages)                      |
+| `public/`                        | Static files: logo, favicon, OG image, etc.                          | [Static Files](#static-files)                      |
+| `index.ts` / `messages/index.ts` | Export barrels; normally no need to edit                             | —                                                  |
 
-Do not modify files outside these directories. Doing so will cause merge conflicts when pulling upstream updates.
+Do not modify files outside this directory. Doing so will cause merge conflicts when pulling upstream updates.
+
+:::caution[Upgrading from v0.10.0 or earlier: brand migration (one-time)]
+The default brand's location differs by version (multi-brand support, ADR-042):
+
+- **v0.10.0 and earlier**: code in `apps/web/src/brand/`, static files in `apps/web/public/brand/`
+- **v0.11.0 and later**: unified under `apps/web/brands/default/` (code and `public/` in one place)
+
+**When upgrading from v0.10.0 or earlier to v0.11.0 or later**, a fork that
+customized `src/brand/` must move its contents to the new location once.
+
+```bash
+git mv apps/web/src/brand apps/web/brands/default
+# If you kept logos etc. in public/brand/, move them to brands/default/public/
+git mv apps/web/public/brand/* apps/web/brands/default/public/  # if any files exist
+```
+
+`@/brand` imports are unchanged, so no app-code changes are needed, and the
+runtime `/brand/...` URLs are unchanged (`public/brand/` becomes generated and
+gitignored).
+
+Note that from v0.11.0, static files in `brands/default/public/` are copied to
+`public/brand/` at build / dev start, so **adding or changing them requires a
+build (or a dev-server restart) to take effect** (see [Static Files](#static-files)).
+:::
 
 ## Tier 1: Colors and Sizing
 
 Write CSS variables in `brand/theme.css` to change colors and sizes across the entire site.
 
 ```css
-/* apps/web/src/brand/theme.css */
+/* apps/web/brands/default/theme.css */
 :root {
   --primary: 142 64% 32%; /* Main color (HSL) */
   --primary-foreground: 0 0% 100%; /* Text color on main color */
@@ -76,7 +105,7 @@ Follow these rules to swap colors safely:
 When a designer-specified palette includes colors that do not fit any official token role (primary, accent, etc.), you can add custom tokens with the `--brand-` prefix in `brand/theme.css`.
 
 ```css
-/* apps/web/src/brand/theme.css */
+/* apps/web/brands/default/theme.css */
 :root {
   --brand-accent-green: 183 29% 87%;
   --brand-link: 183 79% 28%;
@@ -101,7 +130,7 @@ If you want to recolor a single component on an upstream screen you have not ove
 Edit `brand/brand-config.ts` to change the site name, copyright, and metadata.
 
 ```typescript
-// apps/web/src/brand/brand-config.ts
+// apps/web/brands/default/brand-config.ts
 import type { BrandConfig } from '@/types/brand'
 
 export const brandConfig: BrandConfig = {
@@ -158,7 +187,7 @@ logo: { type: 'image', src: '/brand/logo.svg', width: 160, height: 40, alt: 'Cit
 You can override UI translation text for your organization. Specify only the keys you want to change in `brand/messages/{locale}.json`.
 
 ```json
-// apps/web/src/brand/messages/ja.json
+// apps/web/brands/default/messages/ja.json
 {
   "home": {
     "title": "○○市オープンデータカタログ",
@@ -168,7 +197,7 @@ You can override UI translation text for your organization. Specify only the key
 ```
 
 ```json
-// apps/web/src/brand/messages/en.json
+// apps/web/brands/default/messages/en.json
 {
   "home": {
     "title": "City of Example Open Data Catalog",
@@ -197,7 +226,7 @@ To change the structure of the Header or Footer, create custom components and re
 **1. Create a custom component**
 
 ```tsx
-// apps/web/src/brand/overrides/header.tsx
+// apps/web/brands/default/overrides/header.tsx
 import { getCurrentUser } from '@/lib/server-api'
 import { LanguageSwitcher } from '@/components/layout/language-switcher'
 import { MobileNav } from '@/components/layout/mobile-nav'
@@ -224,7 +253,7 @@ export async function Header() {
 **2. Register in `overrides/index.ts`**
 
 ```typescript
-// apps/web/src/brand/overrides/index.ts
+// apps/web/brands/default/overrides/index.ts
 import type { BrandOverrides } from '@/types/brand'
 import { Header } from './header'
 
@@ -279,7 +308,7 @@ A sample terms page (`/terms`) is included by default. Remove it if not needed.
 **1. Create a page component in `brand/pages/`**
 
 ```tsx
-// apps/web/src/brand/pages/privacy.tsx
+// apps/web/brands/default/pages/privacy.tsx
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
@@ -325,16 +354,39 @@ To remove a page, delete its entry from the `pages` map in `brand/pages/index.ts
 
 ## Static Files
 
-Place logos, favicons, and OG images in `apps/web/public/brand/`.
+Place logos, favicons, and OG images in `apps/web/brands/default/public/`.
 
 ```
-apps/web/public/brand/
+apps/web/brands/default/public/
 ├── logo.svg
 ├── favicon.ico
 └── og-image.png
 ```
 
 Files placed here are served at URLs like `/brand/logo.svg`.
+
+:::note[Requires a build (or dev restart) to take effect]
+The contents of `brands/default/public/` are copied to `public/brand/` at the
+**start** of `dev` / `build`, and served from there. So **adding or changing a
+file while the dev server is running does not take effect automatically.** Run
+`pnpm build`, or restart the dev server (which re-runs the copy).
+:::
+
+## Multiple Brands (Multiple Sites in One Fork)
+
+If one fork operates multiple sites ([Multi-Site Operation](/en/system-admin-guide/multi-site/))
+and you want a different look per site, you can hold multiple brands (ADR-042).
+
+- The default brand is `apps/web/brands/default/`. **Add a new brand by copying
+  `brands/default/`** to `apps/web/brands/<name>/` and editing it
+- Passing `KUKAN_BRAND=<name>` at build time switches what `@/brand` resolves to
+  (unset → `brands/default/`). Only the selected brand enters the build
+- On AWS, set `brand: '<name>'` on each site in `environments.ts` and the
+  pipeline builds a web image per site with the matching `KUKAN_BRAND`
+  ([Environment Configuration Reference](/en/system-admin-guide/environment-config/)).
+  An unknown brand fails the image build
+- The `BrandConfig` / `BrandOverrides` contract and the CSS variable rules are
+  common to all brands; each brand only supplies values and override components
 
 ## Pulling Upstream Updates
 
@@ -346,7 +398,7 @@ git fetch upstream
 git merge upstream/main
 ```
 
-As long as your changes are limited to `src/brand/` and `public/brand/`, merge conflicts should not occur.
+As long as your changes are limited to `brands/default/` (including its `public/`), merge conflicts should not occur.
 
 ### If Conflicts Occur
 
@@ -354,13 +406,13 @@ When the upstream adds new fields to `src/types/brand.ts`, you may need to add t
 
 ## Testing
 
-The upstream unit tests are designed to be brand-independent: inside tests, the contents of `src/brand/` are pinned to the KUKAN defaults. **No matter how you customize the brand, the upstream tests (CI) will keep passing.**
+The upstream unit tests are designed to be brand-independent: inside tests, the contents of `brands/default/` are pinned to the KUKAN defaults. **No matter how you customize the brand, the upstream tests (CI) will keep passing.**
 
 - **Do not modify upstream test files.** If a customization breaks an upstream test, report it to the upstream repository via an issue instead of patching it in your fork
-- **Place tests for your custom components in `apps/web/src/brand/__tests__/`.** Files named `*.test.ts` / `*.test.tsx` are discovered automatically and run with `pnpm test`. Whether to write tests is up to your fork
+- **Place tests for your custom components in `apps/web/brands/default/__tests__/`.** Files named `*.test.ts` / `*.test.tsx` are discovered automatically and run with `pnpm test`. Whether to write tests is up to your fork
 
 ```tsx
-// apps/web/src/brand/__tests__/header.test.tsx
+// apps/web/brands/default/__tests__/header.test.tsx
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { Header } from '../overrides/header'
@@ -381,7 +433,7 @@ describe('Custom Header', () => {
 | Use custom colors outside official tokens | Define `--brand-*` tokens in `brand/theme.css`      | 5 min          |
 | Change site name and text                 | Edit `brand/brand-config.ts`                        | 30 min         |
 | Override UI translation text              | Add override keys to `brand/messages/{locale}.json` | 10 min         |
-| Replace logo                              | Place file in `public/brand/` + edit config         | 10 min         |
+| Replace logo                              | Place file in `brands/default/public/` + edit config         | 10 min         |
 | Change header/footer structure            | Create components in `brand/overrides/`             | A few hours    |
 | Replace the top page                      | Create component in `brand/overrides/`              | A few hours    |
 | Add static pages                          | Create components in `brand/pages/` + register      | 30 min         |

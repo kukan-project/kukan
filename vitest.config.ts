@@ -99,6 +99,9 @@ export default defineConfig({
         },
         resolve: {
           alias: {
+            // Brand resolves to the default brand; must precede '@' so '@/brand/*'
+            // is not swallowed by the general '@' → src mapping (ADR-042).
+            '@/brand': resolve(__dirname, 'apps/web/brands/default'),
             '@': resolve(__dirname, 'apps/web/src'),
             '@kukan/ui': resolve(__dirname, 'packages/ui/src'),
             '@kukan/shared': resolve(__dirname, 'packages/shared/src'),

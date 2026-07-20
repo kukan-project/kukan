@@ -185,9 +185,9 @@ export interface SiteConfig {
    */
   name: string
   /**
-   * Web image brand (ADR-042): passed to the Docker build as `KUKAN_BRAND`.
-   * Leave unset until the Dockerfile consumes that ARG (ADR-042 implementation)
-   * — an unknown build arg fails the image build at asset publish time.
+   * Web image brand (ADR-042): the Docker build arg `KUKAN_BRAND`. Unset → the
+   * default brand (`apps/web/brands/default`); set requires a matching
+   * `apps/web/brands/<brand>/` (an unknown brand fails the image build).
    */
   brand?: string
   domainName?: string

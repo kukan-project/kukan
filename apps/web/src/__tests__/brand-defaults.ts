@@ -1,7 +1,8 @@
 import type { BrandConfig, BrandOverrides } from '@/types/brand'
 
 // Stand-in for the `@/brand` module in body tests. Forks rewrite the real
-// `src/brand/` contents (ADR-023), so body tests must not import it directly —
+// `brands/default/` contents (ADR-023/042), so body tests must not import it
+// directly —
 // assertions against default text and components would break on every fork.
 // Tests that render brand-consuming components mock it instead:
 //

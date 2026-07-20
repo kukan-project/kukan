@@ -25,6 +25,10 @@ RUN pnpm install --frozen-lockfile
 
 # ---- Build ----
 FROM deps AS build
+# Web image brand (ADR-042): --build-arg KUKAN_BRAND=<name> selects
+# apps/web/brands/<name>; unset → the default brand. Ignored by the worker.
+ARG KUKAN_BRAND
+ENV KUKAN_BRAND=${KUKAN_BRAND}
 COPY . .
 RUN pnpm build --filter='!@kukan/site'
 

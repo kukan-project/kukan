@@ -138,7 +138,7 @@ export const environments = {
         // webAclArn: 'arn:aws:wafv2:us-east-1:000000000000:global/webacl/...', // sharable across sites
 
         // --- Misc ---
-        // brand: 'my-brand', // web image brand (requires the ADR-042 KUKAN_BRAND Dockerfile ARG)
+        // brand: 'my-brand', // web image brand; unset → default brand src/brand (needs apps/web/brands/my-brand/, ADR-042)
         // bucketName: 'my-resource-bucket', // omit → CDK auto-naming (globally unique)
         // enableGa4DataApi: false,
         // overrides: { web: { maxSize: 2 }, dbPool: { webMax: 5 } }, // site-owned sections only

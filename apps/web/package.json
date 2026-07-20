@@ -5,12 +5,12 @@
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/copy-duckdb-wasm.mjs && next dev --port 3000",
-    "build": "node scripts/copy-duckdb-wasm.mjs && next build",
+    "dev": "node scripts/copy-duckdb-wasm.mjs && node scripts/copy-brand-assets.mjs && next dev --port 3000",
+    "build": "node scripts/copy-duckdb-wasm.mjs && node scripts/copy-brand-assets.mjs && next build",
     "start": "next start",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src",
+    "lint": "eslint src brands",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .next"
   },
