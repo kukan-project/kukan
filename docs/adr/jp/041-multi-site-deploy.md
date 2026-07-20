@@ -8,12 +8,16 @@
 
 - 共有の箱に **Secrets Manager interface VPC endpoint** を追加（VPC に NAT が
   ないため、サイト DB 作成 Lambda の唯一の到達経路。サイト数によらず env あたり 1 つ）
-- サイトドメインの ACM 証明書 ARN は **standalone / pipeline 両モードとも必須**
-  （GlobalStack はマルチサイト環境では自動作成しない）
+- サイトドメインの ACM 証明書 / WAF WebACL は **standalone モードでは GlobalStack が
+  自動作成**する（サイトごとの証明書 + サイト間共有の WebACL。pipeline モードは
+  シングルサイトと同じく ARN 貼り付け必須 — cross-region 参照が CDK Pipelines と
+  非互換のため、ADR-030。当初は両モードとも ARN 必須だったが 2026-07-20 に緩和）
 - `OPENSEARCH_INDEX_PREFIX` の値は `kukan-<env>-<site>`（インデックスは
   `kukan-<env>-<site>-search`）
-- マルチサイト環境では **AWS Backup を使用不可**とした（共有クラスタがサイト数分
-  スナップショットされるため。サイト単位は pg_dump で補完 — ADR-037 の前提変更）
+- **AWS Backup はマルチサイトでも使用可能**。DB プランは SharedStack（共有クラスタを
+  1 回だけスナップショット）、バケットプランは各 SiteStack（vault
+  `kukan-<env>-<site>-backup`）に分割する（当初は「共有クラスタがサイト数分
+  スナップショットされる」ため使用不可としていたが 2026-07-20 に分割で解消）
 - サイト DB/ロールは SiteStack 削除時も**残す**（Custom Resource の Delete は
   no-op。失敗 create のロールバック削除からデータを守る）
 - サイトスタックのデプロイは**直列**（カナリア → 以降 1 サイトずつ。ECS の
@@ -122,7 +126,7 @@ CDK のイメージアセットはコンテンツハッシュ管理のため、*
 - **DB バックアップの粒度低下**: Aurora の PITR / スナップショットはクラスタ単位。「1 サイトだけ戻す」にはクラスタをクローンして該当 DB を pg_dump / restore する手順になり RTO が伸びる。サイト単位の論理バックアップ（pg_dump 定期実行）を補完する（ADR-037 の前提変更）
 - **爆発半径の共有**: 共用 Aurora / OpenSearch の障害・メンテナンス・エンジンアップグレードは全サイトに同時波及する。SLA 要求が近いサイト同士だけを共用する同居ポリシーが必要。なお 1 サイト分のデータは DB・インデックス・バケット単位で閉じているため、後から特定サイトを別クラスタへ退避することは可能（同居は不可逆な決定ではない）
 - **接続数の掛け算**: Web プール（`WEB_DB_POOL_MAX`）× タスク数 + Worker プールがサイト数分掛かる。Aurora Serverless v2 の max_connections は maxACU に連動するため、サイト数に応じた見直しが必要（将来的には RDS Proxy も選択肢）
-- **共用ドメインのサイジング**: 1 サイトの再インデックス（bulk 投入）が全サイトの検索レイテンシに波及する。複数サイトを載せる共用 OpenSearch は medium（m6g.large.search）以上を前提とする
+- **共用ドメインのサイジング**: 1 サイトの再インデックス（bulk 投入）が全サイトの検索レイテンシに波及する。複数サイトを載せる共用 OpenSearch は medium（m6g.large.search）以上を推奨（強制はしない — 2 サイト以上を burstable インスタンスに載せると synth 時に警告を出す）
 - **AI クォータの共有**: Bedrock の invoke クォータはアカウント共有。複数サイトの一括 embedding ジョブが同時に走るとスロットリングし得る（Ollama の場合は CPU 推論の競合として同様）
 - **パイプライン所要時間**: 1 push あたり「dev のサイト数 + prd のサイト数」分のデプロイが直列で流れる。dev のサイト数の絞り込みで対処する（Wave 並列化は、接続数バジェットが複数サイトの同時更新分を計上するよう変更した場合のみの将来対応）
 
@@ -131,6 +135,7 @@ CDK のイメージアセットはコンテンツハッシュ管理のため、*
 本 ADR は既存のシングルサイト環境に移行を強制しない。
 
 - **既存環境は現行構成のまま（マルチサイトは opt-in）**: `environments.ts` に `sites` を持たない環境は、従来どおり全部入り `KukanStack` + `kukan-<env>-*` 命名で合成する。SharedStack / SiteStack 分割はマルチサイトを宣言した環境にのみ適用する。constructs（network / database / search 等）は両スタック形状で共用するため、二重実装にはならない
+- **新規環境は最初から `sites` で始めることを推奨**: 後から `sites` を追加する in-place 移行は置換になるため、将来サイトを増やす可能性がある新規構築は `sites` 1 件（例: `sites: [{ name: 'main' }]`）のマルチサイト形状で開始する。証明書自動作成と AWS Backup 分割（2026-07-20 緩和）により、シングルサイト形状に対する機能差はない
 - **既存環境を新構成へ移す場合はブルーグリーン**: スタック間のリソース移動と物理名変更（Aurora `clusterIdentifier`、OpenSearch `domainName` 等）は CloudFormation 上の置換となるため、in-place の載せ替え（`cdk refactor` / retain + `cdk import`）は行わない。新構成を並行構築し、pg_dump / restore + S3 sync + 再インデックスの後に DNS を切り替え、旧環境を破棄する。複雑さは運用手順に閉じ、切り戻しも可能
 - **実装ガードレール（二形状のドリフト対策）**: 実ロジックは既存の constructs（network / database / search 等）に置いたまま、形状分岐はスタック合成の 1 点に封じ込める。シングルサイト形状は construct ツリーのパス（= 論理 ID）を現行から変えないことを必須条件とし、リファクタ前後の synth テンプレートのゴールデン diff と、CI の synth スナップショットテストで機械検証する（ラッパー construct を挟むとパスが変わり全リソース置換になるため不可。素の関数への切り出しはツリーに現れないため安全）。この制約下で両形状を単一の合成コードに統一することを実装目標とし、維持できない場合は薄い配線層を 2 つ持つ構成に後退して、両形状のスナップショットテストでドリフトを検出する
 

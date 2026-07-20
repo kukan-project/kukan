@@ -109,7 +109,9 @@ environment is switched back to `awsBackup: false`. To avoid this:
   existing recovery points expire on the lifecycle baked into each of them
   (e.g. daily 35d). Storage billing continues until then (only if cost must
   drop to zero immediately, empty the vault manually and delete it)
-- **The vault name is fixed (`kukan-<env>-backup`); re-enable only after
+- **The vault name is fixed (`kukan-<env>-backup`; in multi-site environments
+  the DB vault keeps that name in the SharedStack and each SiteStack gets a
+  bucket vault `kukan-<env>-<site>-backup` — ADR-041); re-enable only after
   deleting the old vault** — CloudFormation makes `BackupVaultName`
   mandatory, so collision-free auto-naming is impossible (even a
   CDK-generated name is deterministic from the construct path). A switchable

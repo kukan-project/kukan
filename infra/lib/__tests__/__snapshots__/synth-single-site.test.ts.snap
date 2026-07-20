@@ -8935,6 +8935,23 @@ function expandV6(addr) {
 
 exports[`self-created global stack (domain without certificateArn) > matches the golden global template 1`] = `
 {
+  "Outputs": {
+    "CertificateArn": {
+      "Description": "ACM certificate ARN (certificateArn)",
+      "Value": {
+        "Ref": "Certificate4E7ABB08",
+      },
+    },
+    "WebAclArn": {
+      "Description": "WAF WebACL ARN (webAclArn)",
+      "Value": {
+        "Fn::GetAtt": [
+          "WafWebAclBE24253C",
+          "Arn",
+        ],
+      },
+    },
+  },
   "Parameters": {
     "BootstrapVersion": {
       "Default": "/cdk-bootstrap/hnb659fds/version",
@@ -8944,6 +8961,10 @@ exports[`self-created global stack (domain without certificateArn) > matches the
   },
   "Resources": {
     "Certificate4E7ABB08": {
+      "DeletionPolicy": "Retain",
+      "Metadata": {
+        "kukan:retain": "in-use edge resource — persist RETAIN before removal",
+      },
       "Properties": {
         "DomainName": "data.example.jp",
         "DomainValidationOptions": [
@@ -8965,6 +8986,7 @@ exports[`self-created global stack (domain without certificateArn) > matches the
         "ValidationMethod": "DNS",
       },
       "Type": "AWS::CertificateManager::Certificate",
+      "UpdateReplacePolicy": "Retain",
     },
     "CustomCrossRegionExportWriterCustomResourceProviderHandlerD8786E8A": {
       "DependsOn": [
@@ -9071,6 +9093,10 @@ exports[`self-created global stack (domain without certificateArn) > matches the
       "UpdateReplacePolicy": "Delete",
     },
     "WafWebAclBE24253C": {
+      "DeletionPolicy": "Retain",
+      "Metadata": {
+        "kukan:retain": "in-use edge resource — persist RETAIN before removal",
+      },
       "Properties": {
         "DefaultAction": {
           "Allow": {},
@@ -9149,6 +9175,7 @@ exports[`self-created global stack (domain without certificateArn) > matches the
         },
       },
       "Type": "AWS::WAFv2::WebACL",
+      "UpdateReplacePolicy": "Retain",
     },
   },
   "Rules": {

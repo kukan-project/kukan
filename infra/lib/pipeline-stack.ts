@@ -31,13 +31,15 @@ export class KukanPipelineStack extends cdk.Stack {
 
       // CDK Pipelines cannot create the us-east-1 cert/WAF (cross-region is incompatible).
       // Fail early with an actionable message instead of a cryptic synthesizer error.
-      // Multi-site environments carry cert/WAF ARNs per site instead (validateSites).
-      if (!config.sites?.length && needsGlobalStack(config)) {
+      if (needsGlobalStack(config)) {
+        const where = config.sites?.length
+          ? 'per site in config/environments.ts (sites[].certificateArn / webAclArn)'
+          : 'in config/environments.ts'
         throw new Error(
           `Environment "${name}": pipeline mode cannot create the us-east-1 ACM certificate / WAF ` +
             `(cross-region references are incompatible with CDK Pipelines). ` +
             `Create them once via "npx cdk deploy -c env=${name} ${pascal(name)}/KukanGlobalStack", ` +
-            `then set certificateArn / webAclArn in config/environments.ts — or set enableWaf:false. See ADR-030.`
+            `then set certificateArn / webAclArn ${where} — or set enableWaf:false. See ADR-030.`
         )
       }
 

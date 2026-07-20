@@ -1,8 +1,8 @@
 ---
 title: マルチサイト運用
-description: 1 つのインフラで複数の KUKAN サイトを運用する構成(ADR-041)
+description: 1 つのインフラで複数の KUKAN サイトを運用する構成
 sidebar:
-  order: 3
+  order: 2
 ---
 
 1 つの運用主体が複数の KUKAN サイト(例: 複数自治体のデータカタログ)を運用する場合、
@@ -31,7 +31,7 @@ prd: {
       name: 'citya', // 英小文字+数字、2〜16 文字
       domainName: 'catalog.city-a.example.jp',
       hostedZoneId: 'Z...', hostedZoneName: 'city-a.example.jp',
-      certificateArn: 'arn:aws:acm:us-east-1:...', // サイトドメインには必須
+      certificateArn: 'arn:aws:acm:us-east-1:...', // pipeline モードでは必須
       webAclArn: 'arn:aws:wafv2:us-east-1:...',    // 複数サイトで共有可
     },
     { name: 'cityb', enableWaf: false },
@@ -39,20 +39,118 @@ prd: {
 },
 ```
 
-- **opt-in 専用**: `sites` の無い環境は従来どおりの単一スタック構成のまま変わりません。
-  稼働中のシングルサイト環境に `sites` を後付けしないでください(リソース置換が発生します)。
-  移行する場合は新環境を並行構築して DNS を切り替えます(ブルーグリーン)
-- サイトのドメインには us-east-1 の ACM 証明書 ARN が必須です(マルチサイト環境は
-  証明書スタックを自動作成しません)
+- **`sites` 宣言が標準の書き方です。新規構築はサイト 1 件でも `sites` で
+  始めてください**(例: `sites: [{ name: 'main' }]`)。`sites` の無い
+  シングルサイト形状(サイト固有の設定を env 直下に書く)は**過去互換**として
+  従来どおり動作しますが、新規構築では使用しません
+- 稼働中のシングルサイト形状の環境に `sites` を後付けすることはできません
+  (後述の「[シングルサイト形状からの移行](#シングルサイト形状からの移行)」を参照)
+- サイト固有の設定(ドメイン・証明書・WAF・アクセス制限・バケット名など)は
+  各サイトエントリに書きます。`sites` を宣言した環境の env 直下に書くと
+  synth 時にエラーになります(シングルサイト形状との混在はできません)
+- サイトドメインの証明書と WAF はシングルサイトと同じ規則です: standalone デプロイ
+  では不足分が us-east-1 に自動作成され(ドメインには `hostedZoneId` /
+  `hostedZoneName` が必要)、pipeline モードでは事前作成した ARN を貼り付けます
 - デプロイ順は自動制御されます: 共有スタック → 先頭サイト(カナリア)→ 残りサイト。
   本体コードの変更は全サイトに順次展開され、特定サイトだけの変更は他サイトに影響しません
+- AWS Backup はマルチサイトでもそのまま使えます(データベースは共有スタックで
+  1 回だけ、バケットはサイトごとにバックアップされます)
 - サイズや接続プールはサイトごとに `overrides` で調整できます
   (`web` / `worker` / `dbPool` / `backup` のみ)
 
 設定の妥当性は `cdk synth` 時に検査されます(サイト名、証明書 ARN、
-共有データベースの接続数バジェット超過など)。詳細な運用手順(サイト削除時の
-残存リソースとパージ、接続数の考え方)はリポジトリの
-`docs/specs/phase4-deploy.md` を参照してください。
+共有データベースの接続数バジェット超過など)。全パラメータの一覧は
+[環境設定リファレンス](/ja/system-admin-guide/environment-config/)を、
+詳細な運用手順(サイト削除時の残存リソースとパージ、接続数の考え方)は
+リポジトリの `docs/specs/phase4-deploy.md` を参照してください。
+
+### シングルサイト形状からの移行
+
+稼働中のシングルサイト形状の環境に `sites` を後付けすることはできません。
+スタックの分割とリソースの物理名変更を伴うため、CloudFormation 上は全リソースの
+置き換え(=データ喪失)になります。移行は、新しい環境を並行構築して切り替える
+ブルーグリーン方式で行います:
+
+1. `sites` を宣言した新しい環境エントリを追加してデプロイする(旧環境はそのまま残す)
+2. データベースを移行する(旧環境で `pg_dump` → 新環境のサイトデータベースへリストア)
+3. ストレージのファイルを新環境のサイトバケットへコピーする(`aws s3 sync`)
+4. 新環境で検索インデックスを再構築する
+5. 動作確認のうえ、カスタムドメインを付け替える: 旧環境エントリからドメイン設定を
+   外してデプロイ → 新環境のサイトエントリに追加してデプロイ → DNS を新環境へ切替
+   (同一ドメインは 2 つの CloudFront に同時に割り当てられないため、この順で行う)
+6. 旧環境を破棄する: **先に `cdk destroy` を実行し、そのあとで `environments.ts` の
+   旧エントリを削除する**(`environments.ts` からエントリを消しても、デプロイ済みの
+   スタックは自動削除されません。またエントリを先に消すと環境を合成できなくなり、
+   destroy 自体がやりにくくなります)。本体スタックの destroy コマンドは環境の
+   管理方法で異なります:
+   - standalone 管理: `npx cdk destroy -c env=prd 'Prd/**'`
+   - pipeline 管理(掲載例のように `githubRepo` を持つ環境): 修飾パスで
+     `npx cdk destroy 'KukanPipeline/Prd/**'`(**`-c env` は付けない**)。destroy 後は
+     **すみやかに旧エントリを削除して push** し、旧環境のパイプラインを消します
+     (旧パイプラインが残ったまま `deployBranch` へ push すると、破棄した環境が
+     再作成されてしまいます)
+
+   **us-east-1 の GlobalStack は別途削除が必要**です。`needsGlobalStack=false` に
+   なった状態(pipeline モードで ARN を貼った、手順 5 でドメインを外し
+   `enableWaf: false` にした等)では GlobalStack は CDK の合成対象から消えるため、
+   上記の `cdk destroy` では拾えず、物理スタックだけが残ります。管理方法に
+   よらず、CloudFormation で物理スタック名を直接指定して削除するのが確実です:
+   `aws cloudformation delete-stack --stack-name Prd-KukanGlobalStack --region us-east-1`
+   (証明書 / WebACL は RETAIN のため、このスタック削除後も残ります)。
+
+   destroy 後も次のリソースは残るため、確認のうえ手動でパージします:
+   - S3 バケット — 空にしてから削除
+   - データベースの最終スナップショット — 保管課金が続くため不要なら削除
+   - AWS Backup の vault(有効にしていた場合)
+   - ACM 証明書と WAF WebACL(自動作成していた場合。どちらも RETAIN のため
+     GlobalStack を destroy しても残り、**WebACL は残っている間課金が継続**します)。
+     **必ず GlobalStack の destroy が済んでから**手動削除してください — スタックを
+     残したまま証明書/WebACL だけ消すと CloudFormation スタックが drift します
+
+パラメータの書き換えは「サイトスコープの設定を env 直下から `sites[]` の
+エントリへ移す」だけです。移行前:
+
+```ts
+prd: {
+  account: '000000000000',
+  scale: 'medium',
+  githubRepo: 'owner/repo', deployBranch: 'main',
+  domainName: 'catalog.example.jp',
+  hostedZoneId: 'Z0123456789', hostedZoneName: 'example.jp',
+  certificateArn: 'arn:aws:acm:us-east-1:...',
+  enableWaf: false, // WAF を使っている場合は webAclArn を設定
+},
+```
+
+移行用に追加する新環境(旧環境と併存させるため別名にする):
+
+```ts
+prd2: {
+  account: '000000000000',        // 共有側の設定(account/scale/CI 等)はそのまま
+  scale: 'medium',
+  githubRepo: 'owner/repo', deployBranch: 'main',
+  sites: [
+    {
+      name: 'main',
+      // ドメイン関連は手順 5 の付け替えまでコメントアウトしておく。
+      // 証明書 ARN は旧環境と同じものを使い回せる
+      // domainName: 'catalog.example.jp',
+      // hostedZoneId: 'Z0123456789', hostedZoneName: 'example.jp',
+      // certificateArn: 'arn:aws:acm:us-east-1:...',
+      enableWaf: false, // 付け替えまでの検証用(旧環境の WAF/アクセス制限設定に合わせて調整)
+    },
+  ],
+},
+```
+
+ドメイン付け替えまでの新環境は CloudFront の既定ドメイン(デプロイ出力の
+`CloudFrontDomainName`)で検証できます。手順 5 の付け替え前までは旧環境が
+無傷のまま動いているため、問題があれば移行を中断するだけで済みます。
+
+付け替え後に切り戻す場合は、ドメインを逆向きに付け替え直す必要があります:
+新環境のサイトエントリからドメイン設定を外してデプロイ → 旧環境エントリに
+再設定してデプロイ → DNS を旧環境へ戻す。ドメインと証明書を旧 CloudFront に
+付け直す前に DNS だけ戻しても、証明書不一致のエラーになる点に注意してください。
 
 ## Docker Compose(オンプレミス)
 
@@ -81,5 +179,7 @@ opensearch / ollama / caddy)を 1 回起動し、サイトごとに web/worker �
   共有クラスタの `max_connections` に収まる必要があります。AWS では synth 時に
   自動検査され、超過時はエラー、70% 超で警告になります
 - **OpenSearch**: 全サイトのインデックスが 1 ドメイン(オンプレでは 1 JVM)を
-  共有します。AWS では medium(m6g.large.search)以上を推奨、オンプレでは
-  ヒープサイズ(`OPENSEARCH_JAVA_OPTS`)をサイト数に応じて拡張してください
+  共有します。AWS では medium(m6g.large.search)以上を推奨
+  (2 サイト以上を小型の burstable インスタンスに載せると synth 時に警告が
+  出ます)、オンプレではヒープサイズ(`OPENSEARCH_JAVA_OPTS`)をサイト数に
+  応じて拡張してください

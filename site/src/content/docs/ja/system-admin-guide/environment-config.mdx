@@ -1,0 +1,118 @@
+---
+title: 環境設定リファレンス(AWS)
+description: CDK 環境定義 environments.ts の全パラメータ一覧
+sidebar:
+  order: 1
+---
+
+AWS デプロイの環境(dev / prd 等)は `infra/config/environments.ts` で定義します
+(`environments.example.ts` をコピーして作成し、フォークがコミットします)。
+設定の優先順位は CLI `-c` フラグ > env エントリ > スケール既定 > 組込み既定です。
+ただし `-c` が効くのは**環境エントリのフィールド**(`scale` / `dbEngine` /
+`enableOpenSearch` 等)だけで、サイトスコープのフィールド(`domainName` /
+`allowedIpRanges` / `basicAuth` 等)への `-c` はマルチサイト環境では**無視されます**
+(1 つの `-c` が全サイトへ一括適用される事故の防止)。
+
+ファイルのトップレベルには CodeConnections の接続 ARN(全 env 共通)を export します:
+
+```ts
+export const connectionArn = 'arn:aws:codeconnections:...:connection/...'
+```
+
+環境は**マルチサイト形状(`sites` 宣言)で作成するのが標準**です。フィールドは
+「環境エントリに書くもの」(共有リソース + CI/CD)と「サイトエントリに書くもの」
+(サイト固有設定)に分かれます。
+
+## 環境エントリのフィールド
+
+共有リソース(データベース・OpenSearch・VPC・ECS クラスタ)と CI/CD の設定です。
+
+| フィールド         | 型                             | デフォルト                                     | 説明                                                                                       |
+| ------------------ | ------------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `account`          | string                         | **必須**                                       | 対象 AWS アカウント ID。誤デプロイ防止(認証情報のアカウントと不一致なら CDK が拒否)        |
+| `region`           | string                         | `ap-northeast-1`                               | 対象リージョン                                                                             |
+| `scale`            | `small` \| `medium` \| `large` | `small`                                        | デプロイ規模(リソースサイズを一括制御)                                                     |
+| `dbEngine`         | `rds` \| `aurora`              | スケール依存(small=rds、medium/large=aurora)   | DB エンジン                                                                                |
+| `enableOpenSearch` | boolean                        | `true`                                         | `false` → PostgreSQL 全文検索フォールバック                                                |
+| `bedrock`          | object \| `false`              | 有効(Titan v2)                                 | セマンティック検索と AI メタデータ提案。`false` で無効(`AI_TYPE=none`)    |
+| `githubRepo`       | string                         | なし                                           | CodeConnections ソースリポジトリ(`owner/repo`)。未設定の env はパイプライン対象外 |
+| `deployBranch`     | string                         | `main`                                         | この env を pipeline でデプロイするブランチ                                                |
+| `overrides`        | 部分指定                       | なし                                           | スケール preset の個別上書き(下記「overrides」)                                            |
+| `sites`            | SiteConfig[]                   | なし(過去互換のシングルサイト形状)             | この環境が運用するサイトの一覧。**新規構築では必ず宣言する**(1 件でも可)          |
+
+## サイトエントリのフィールド(`sites[]`)
+
+サイト固有の設定です。環境エントリには書けません(synth 時にエラー)。
+
+| フィールド         | 型                       | デフォルト                                         | 説明                                                                                          |
+| ------------------ | ------------------------ | -------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `name`             | string                   | **必須**                                           | サイトキー(`^[a-z][a-z0-9]{1,15}$`)。リソース名 `kukan-<env>-<site>-*` と DB 名 `kukan_<site>` |
+| `brand`            | string                   | なし                                               | web イメージのブランド(将来のマルチブランドビルド機能用)。**機能実装までは設定しない**(未対応の build arg でイメージビルドが失敗します) |
+| `domainName`       | string                   | なし                                               | カスタムドメイン(未設定時は CloudFront デフォルトドメイン)                                    |
+| `hostedZoneId`     | string                   | なし                                               | Route53 Hosted Zone ID(`domainName` 設定時に必要)                                             |
+| `hostedZoneName`   | string                   | なし                                               | Route53 Hosted Zone 名(同上)                                                                  |
+| `certificateArn`   | string                   | standalone は自動作成                              | us-east-1 ACM 証明書 ARN。**pipeline モードで `domainName` 設定時は必須**                                |
+| `webAclArn`        | string                   | standalone は自動作成                              | us-east-1 WAF WebACL ARN(複数サイトで共有可)。**pipeline モードで WAF 有効なら必須**          |
+| `enableWaf`        | boolean                  | ON(`allowedIpRanges` / `basicAuth` 設定時は OFF)   | CloudFront の WAF マネージドルール(~$9/月)                                           |
+| `allowedIpRanges`  | string[]                 | なし                                               | IP 制限(CloudFront Function、IPv4 CIDR + IPv6 対応)                                           |
+| `basicAuth`        | `{ username, password }`  | なし                                               | Basic 認証ゲート(`allowedIpRanges` と OR 結合の軽量ゲート)                           |
+| `bucketName`       | string                   | 自動命名                                           | S3 バケット名(未設定でグローバル一意な自動命名)                                               |
+| `enableGa4DataApi` | boolean                  | `false`                                            | GA4 アクセス統計ダッシュボード                                                                |
+| `overrides`        | 部分指定                 | なし                                               | サイト所有セクションのみ(下記「overrides」)                                                   |
+
+`certificateArn` / `webAclArn` を後から外部の ARN に切り替えても、それまで
+自動作成されていた証明書 / WebACL は削除されず残ります(CloudFront が参照中の
+リソースを削除してデプロイが失敗するのを防ぐため、RETAIN=削除時保持を付けています)。
+切り替え後の後片付けは、残る managed リソースの有無で異なります:
+
+- **証明書・WAF の片方だけを外部 ARN にした場合**(もう片方は自動作成のまま):
+  GlobalStack は残り、切り替えた側だけがテンプレートから外れて RETAIN で
+  切り離されます。不要なら手動で削除してください
+- **両方(=最後の managed リソース)を外部 ARN にした場合**: `needsGlobalStack=false`
+  となり GlobalStack ごと合成対象から消えるため、「リソースを外す更新」は
+  送られず、**物理 GlobalStack がリソースを管理したまま残ります**。この状態で
+  証明書 / WebACL を直接削除するとスタックが drift します。**RETAIN が保存済み
+  であることを `get-template` で確認したうえで、GlobalStack を物理スタック名で
+  削除**してください(RETAIN によりリソースはスタック削除後も残ります)。その後、
+  本当に不要なら証明書 / WebACL を手動削除します(WebACL は残っている間も課金)
+
+この RETAIN 保持ポリシーは「リソースがテンプレートに存在する状態でのデプロイ」で
+初めて CloudFormation に保存されます。そのため、**RETAIN に対応していない古い
+バージョンからアップグレードしつつ同じデプロイで ARN 切替まで行うと**、リソースが
+旧ポリシー(削除)のまま除去され、CloudFront が参照中だとデプロイが失敗します。
+既存環境では次の二段階で行ってください(最新版で新規作成した環境は初回から
+RETAIN が付くため、一度のデプロイで切り替えられます):
+
+1. まず最新版をデプロイして GlobalStack に RETAIN を保存する。反映されたことを
+   `aws cloudformation get-template`(us-east-1)で確認する — 証明書 / WebACL に
+   `DeletionPolicy: Retain` が付いていれば OK
+2. その後、別のデプロイで ARN を切り替える
+
+## overrides
+
+スケール preset の個別上書きです。適用順は スケール既定 ← env の `overrides` ←
+サイトの `overrides` の deep-merge で、書ける範囲がレベルごとに異なります。
+
+- **環境エントリ**: 全セクション(`web` / `worker` / `db` / `opensearch` /
+  `dbPool` / `backup`)。共有リソースのサイズと DB 保持期間・AWS Backup
+  スケジュールは環境レベルでのみ設定できます
+- **サイトエントリ**: サイト所有分のみ(`web` / `worker` / `dbPool` と、
+  `backup` のうち S3 バージョニング関連)。`db` / `opensearch` /
+  `backup.awsBackup` / `backup.dbBackupRetentionDays` の上書きは synth 時に
+  拒否されます
+
+スケール別のデフォルト値はリポジトリの `docs/specs/phase4-deploy.md`
+「スケール別デフォルト値」を参照してください。
+
+## 過去互換: シングルサイト形状
+
+サイトエントリのフィールドのうち `name` / `brand` を除くものは、**`sites` を
+宣言しない環境に限り** env 直下にも書けます。これは `sites` 導入前の
+シングルサイト形状(全部入り単一スタック)との**過去互換**で、デプロイ済みの
+既存環境のために残されています。
+
+- 新規構築ではこの形状は使わず、サイトが 1 つでも `sites` 1 件で作成してください
+- 両形状の混在(`sites` + env 直下のサイトフィールド)は synth 時に拒否されます
+- デプロイ済みのシングルサイト形状の環境に `sites` を後付けすることはできません
+  (リソース置換が発生するため。移行は[マルチサイト運用](/ja/system-admin-guide/multi-site/)
+  のブルーグリーン手順を参照)

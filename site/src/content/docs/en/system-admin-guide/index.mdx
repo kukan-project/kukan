@@ -42,27 +42,35 @@ On-premises deployments use the following alternative services:
 
 ### AWS Deployment
 
-KUKAN deploys on AWS as **CloudFront (WAF + cache) → internal ALB → ECS Fargate** (ADR-027).
+KUKAN deploys on AWS as **CloudFront (WAF + cache) → internal ALB → ECS Fargate**.
 Deployment is **automated with CDK Pipelines (AWS CodePipeline)**: using a CodeConnections
 (GitHub App) source, a push to the target branch deploys each environment (dev / prd, etc.)
 as a CDK Stage.
 
 Environments are defined in `infra/config/environments.ts` (**copied from** `environments.example.ts`).
+Create environments **in the multi-site shape (declare `sites`)**. Even with a single site,
+starting with one `sites` entry makes adding sites later non-destructive (see
+[Multi-Site Operation](/en/system-admin-guide/multi-site/)). The single-site shape — no
+`sites`, with site-specific settings (domain, WAF, etc.) directly on the env entry —
+keeps working for **backward compatibility** but should not be used for new deployments
+(the two shapes cannot be mixed). See the
+[Environment Configuration Reference](/en/system-admin-guide/environment-config/) for the
+full parameter list.
 
 Key AWS resources:
 
-- **CloudFront** — CDN, WAF, TLS termination (the front layer, ADR-027)
+- **CloudFront** — CDN, WAF, TLS termination (the front layer)
 - **ALB (internal)** — load balancer (reachable only via the CloudFront VPC origin)
 - **ECS Fargate** — Web application + Pipeline Worker
 - **Aurora Serverless v2 / RDS** — PostgreSQL database
 - **S3** — File storage
 - **SQS** — Pipeline queue
 - **OpenSearch** — Full-text search engine
-- **AWS Backup** — Isolated backups (enabled on the large scale etc., ADR-037)
+- **AWS Backup** — Isolated backups (enabled on the large scale etc.)
 
 #### Backups and data protection
 
-Data-protection settings are integrated into the `scale` presets (ADR-037):
+Data-protection settings are integrated into the `scale` presets:
 
 | Setting                                           | small | medium | large                    |
 | ------------------------------------------------- | :---: | :----: | :----------------------- |
@@ -79,7 +87,7 @@ Uploaded files are stored in S3 and automatically replicated across multiple ava
    - Open **CodeBuild** → **Settings → Connections → Create connection** in the left nav (a shared "Developer Tools" setting; reaching it via CodeBuild is easiest) → select **GitHub** → name it (e.g. `kukan-github`, an AWS-side label) → **Connect to GitHub** → install/authorize the **AWS Connector for GitHub** app (choose **Only select repositories** and grant just the repo you deploy from — least privilege) → once status is **Available**, copy the ARN
    - The GitHub App authorization requires a browser action (creating via CLI/CDK leaves it `PENDING` until authorized in the browser)
 3. `cdk bootstrap` (prerequisite for deploy; per account/region, include us-east-1 for the GlobalStack)
-4. For a custom domain / WAF only: create the us-east-1 certificate/WAF once via standalone (`npx cdk deploy -c env=prd Prd/KukanGlobalStack`) and set `certificateArn`/`webAclArn`
+4. For a custom domain / WAF only: create the us-east-1 certificate/WAF once via standalone (`npx cdk deploy -c env=prd Prd/KukanGlobalStack`) and set `certificateArn`/`webAclArn` on each site entry
 5. Commit `environments.ts` and `cdk.context.json` so the CodeBuild synth reads them from the checkout
 6. Deploy the pipeline stack once (`npx cdk deploy KukanPipeline`)
 7. After that, pushes to each env's `deployBranch` deploy automatically (the pipeline self-mutates)
@@ -97,12 +105,14 @@ export const environments = {
     scale: 'small',
     githubRepo: 'owner/repo',
     deployBranch: 'develop',
+    sites: [{ name: 'main', enableWaf: false }],
   },
   prd: {
     account: '000000000000',
     scale: 'large',
     githubRepo: 'owner/repo',
     deployBranch: 'main',
+    sites: [{ name: 'main', enableWaf: false }],
   },
 }
 ```

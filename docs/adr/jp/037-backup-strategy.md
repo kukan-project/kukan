@@ -101,7 +101,9 @@ Backup Selection（S3 バケットと DB を tag ではなく ARN 指定）+ サ
   リカバリポイントは各自に焼き込まれたライフサイクル（日次35日等）に従って
   自然消滅する。それまでは保管課金が続く（即時にゼロにしたい場合のみ
   Vault 内を手動で空にして削除する）
-- **Vault 名は固定 `kukan-<env>-backup`、再有効化は旧 Vault 削除後に行う** —
+- **Vault 名は固定 `kukan-<env>-backup`（マルチサイト環境では DB 用が同名で
+  SharedStack に、バケット用 `kukan-<env>-<site>-backup` が各 SiteStack に
+  分かれる — ADR-041）、再有効化は旧 Vault 削除後に行う** —
   CloudFormation の仕様上 `BackupVaultName` は必須のため、衝突しない
   自動命名はできない（CDK に任せてもコンストラクトパス由来の決定的な
   名前になる）。名前を可変にすると初回と2回目以降で挙動が非対称になる

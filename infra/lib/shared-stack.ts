@@ -13,6 +13,7 @@ import type { Construct } from 'constructs'
 import { loadConfig, type EnvironmentConfig } from './config.js'
 import { composeShared } from './composition.js'
 import { sharedParamName } from './naming.js'
+import { BackupConstruct } from './constructs/backup.js'
 
 export interface KukanSharedStackProps extends cdk.StackProps {
   envConfig: EnvironmentConfig
@@ -28,6 +29,12 @@ export class KukanSharedStack extends cdk.Stack {
 
     const shared = composeShared(this, config)
     const vpc = shared.network.vpc
+
+    // DB half of AWS Backup (ADR-037): one plan here — a per-site plan would
+    // snapshot the shared cluster once per site. Buckets back up per site.
+    if (config.backup.awsBackup) {
+      new BackupConstruct(this, 'Backup', { config, dbArn: shared.database.dbArn })
+    }
 
     // SG granted into the DB — attached to each site's bootstrap Lambda
     // (SiteDatabaseConstruct). Kept here so sites never mutate shared SGs.

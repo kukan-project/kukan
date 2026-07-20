@@ -5,9 +5,9 @@
  * The vault is RETAINed: a vault holding recovery points cannot be deleted, so
  * disabling `backup.awsBackup` orphans the vault (new backups stop, existing
  * recovery points expire on their own lifecycle) instead of failing the stack
- * update. The vault name is fixed (kukan-<env>-backup), so re-enabling while
- * the retained vault still exists collides — delete the old vault (once empty)
- * before re-enabling.
+ * update. The vault name is fixed (kukan-<env>-backup; per-site stacks get
+ * kukan-<env>-<site>-backup), so re-enabling while the retained vault still
+ * exists collides — delete the old vault (once empty) before re-enabling.
  */
 
 import * as cdk from 'aws-cdk-lib'
@@ -21,10 +21,12 @@ import { resourceName } from '../naming.js'
 
 export interface BackupProps {
   config: KukanConfig
-  /** Resource file bucket (versioning required — enforced in loadConfig). */
-  bucket: s3.IBucket
-  /** RDS instance / Aurora cluster ARN. */
-  dbArn: string
+  /** Resource file bucket (versioning required — enforced in loadConfig).
+   *  Omitted in the multi-site SharedStack (DB only, ADR-041). */
+  bucket?: s3.IBucket
+  /** RDS instance / Aurora cluster ARN.
+   *  Omitted in the multi-site SiteStack (bucket only, ADR-041). */
+  dbArn?: string
 }
 
 export class BackupConstruct extends Construct {
@@ -35,6 +37,9 @@ export class BackupConstruct extends Construct {
     const awsBackup = config.backup.awsBackup
     if (!awsBackup) {
       throw new Error('BackupConstruct requires backup.awsBackup to be enabled')
+    }
+    if (!bucket && !dbArn) {
+      throw new Error('BackupConstruct requires a bucket and/or a dbArn')
     }
 
     const vault = new backup.BackupVault(this, 'Vault', {
@@ -52,8 +57,12 @@ export class BackupConstruct extends Construct {
         iam.ManagedPolicy.fromAwsManagedPolicyName(
           'service-role/AWSBackupServiceRolePolicyForRestores'
         ),
-        iam.ManagedPolicy.fromAwsManagedPolicyName('AWSBackupServiceRolePolicyForS3Backup'),
-        iam.ManagedPolicy.fromAwsManagedPolicyName('AWSBackupServiceRolePolicyForS3Restore'),
+        ...(bucket
+          ? [
+              iam.ManagedPolicy.fromAwsManagedPolicyName('AWSBackupServiceRolePolicyForS3Backup'),
+              iam.ManagedPolicy.fromAwsManagedPolicyName('AWSBackupServiceRolePolicyForS3Restore'),
+            ]
+          : []),
       ],
     })
 
@@ -81,8 +90,8 @@ export class BackupConstruct extends Construct {
     plan.addSelection('Selection', {
       role,
       resources: [
-        backup.BackupResource.fromArn(bucket.bucketArn),
-        backup.BackupResource.fromArn(dbArn),
+        ...(bucket ? [backup.BackupResource.fromArn(bucket.bucketArn)] : []),
+        ...(dbArn ? [backup.BackupResource.fromArn(dbArn)] : []),
       ],
     })
 

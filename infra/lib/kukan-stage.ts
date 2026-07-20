@@ -10,7 +10,14 @@
 
 import * as cdk from 'aws-cdk-lib'
 import { Construct } from 'constructs'
-import { needsGlobalStack, resolveEnv, validateSites, type EnvironmentConfig } from './config.js'
+import {
+  needsGlobalStack,
+  needsManagedWaf,
+  rejectBlankEdgeArns,
+  resolveEnv,
+  validateSites,
+  type EnvironmentConfig,
+} from './config.js'
 import { pascal } from './naming.js'
 import { KukanGlobalStack } from './global-stack.js'
 import { KukanStack } from './kukan-stack.js'
@@ -29,14 +36,18 @@ export class KukanStage extends cdk.Stage {
     const { config } = props
     const { account, region } = resolveEnv(config)
 
+    // Runs before the shape branch so `sites: []` is rejected instead of
+    // silently falling back to the single-site shape below.
+    const warnings = validateSites(config, this)
+
     // Multi-site environments (ADR-041): shared boxes + one stack per site.
     // Environments without `sites` keep the all-in-one KukanStack below with
     // unchanged logical IDs (guarded by the synth snapshot tests).
     if (config.sites?.length) {
-      const budgetWarning = validateSites(config, this)
-      if (budgetWarning) {
-        cdk.Annotations.of(this).addWarningV2('kukan:site-connection-budget', budgetWarning)
+      for (const warning of warnings) {
+        cdk.Annotations.of(this).addWarningV2(warning.key, warning.message)
       }
+      const globalStack = this.createGlobalStack(config, account)
       const shared = new KukanSharedStack(this, 'KukanSharedStack', {
         env: { account, region },
         envConfig: config,
@@ -45,8 +56,13 @@ export class KukanStage extends cdk.Stage {
         (site) =>
           new KukanSiteStack(this, `KukanSiteStack${pascal(site.name)}`, {
             env: { account, region },
+            crossRegionReferences: globalStack !== undefined,
             envConfig: config,
             site,
+            globalCertificateArn:
+              site.certificateArn ?? globalStack?.siteCertificateArns[site.name],
+            globalWebAclArn:
+              site.webAclArn ?? (needsManagedWaf(site) ? globalStack?.webAclArn : undefined),
           })
       )
       // Sites deploy one at a time: the first is the canary, and serializing
@@ -56,30 +72,20 @@ export class KukanStage extends cdk.Stage {
       siteStacks.forEach((stack, i) => {
         stack.addDependency(i === 0 ? shared : siteStacks[i - 1])
       })
+      if (globalStack) {
+        siteStacks[0].addDependency(globalStack)
+      }
       return
     }
 
-    // Create the us-east-1 global stack only when we must CREATE the cert/WAF.
-    // When the ARNs are supplied (config.certificateArn / config.webAclArn), the main
-    // stack consumes them as plain strings — no cross-region reference, which keeps this
-    // compatible with CDK Pipelines (whose Lambda-backed cross-region support stack
-    // cannot carry the Docker assets in the main stack). See ADR-030.
-    const needGlobal = needsGlobalStack(config)
-
-    let globalStack: KukanGlobalStack | undefined
-    if (needGlobal) {
-      globalStack = new KukanGlobalStack(this, 'KukanGlobalStack', {
-        env: { account, region: 'us-east-1' },
-        crossRegionReferences: true,
-        envConfig: config,
-      })
-    }
+    rejectBlankEdgeArns(config, `Environment "${id}"`)
+    const globalStack = this.createGlobalStack(config, account)
 
     const mainStack = new KukanStack(this, 'KukanStack', {
       env: { account, region },
       // Cross-region references are only needed (and only safe outside CDK Pipelines)
       // when this stage creates the global stack itself.
-      crossRegionReferences: needGlobal,
+      crossRegionReferences: globalStack !== undefined,
       envConfig: config,
       globalCertificateArn: config.certificateArn ?? globalStack?.certificateArn,
       globalWebAclArn: config.webAclArn ?? globalStack?.webAclArn,
@@ -88,5 +94,24 @@ export class KukanStage extends cdk.Stage {
     if (globalStack) {
       mainStack.addDependency(globalStack)
     }
+  }
+
+  /**
+   * Create the us-east-1 global stack only when we must CREATE the cert/WAF.
+   * When the ARNs are supplied, the consuming stacks take them as plain strings
+   * — no cross-region reference, which keeps this compatible with CDK Pipelines
+   * (whose Lambda-backed cross-region support stack cannot carry the Docker
+   * assets in the main stack; KukanPipelineStack rejects the combination). See ADR-030.
+   */
+  private createGlobalStack(
+    config: EnvironmentConfig,
+    account: string
+  ): KukanGlobalStack | undefined {
+    if (!needsGlobalStack(config)) return undefined
+    return new KukanGlobalStack(this, 'KukanGlobalStack', {
+      env: { account, region: 'us-east-1' },
+      crossRegionReferences: true,
+      envConfig: config,
+    })
   }
 }

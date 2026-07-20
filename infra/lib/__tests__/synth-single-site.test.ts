@@ -9,6 +9,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
+import { Match } from 'aws-cdk-lib/assertions'
 import { normalize, stackTemplate, synthStage } from './helpers/synth.js'
 
 describe('minimal dev (small / rds / no OpenSearch / no AI)', () => {
@@ -96,5 +97,64 @@ describe('self-created global stack (domain without certificateArn)', () => {
 
   it('matches the golden global template', () => {
     expect(normalize(stackTemplate(stage, 'KukanGlobalStack'))).toMatchSnapshot()
+  })
+
+  it('exports the created ARNs as outputs for pipeline-mode pasting', () => {
+    const template = stackTemplate(stage, 'KukanGlobalStack')
+    template.hasOutput('CertificateArn', {})
+    template.hasOutput('WebAclArn', {})
+  })
+
+  it('retains cert/WAF so an external-ARN switchover never deletes in-use resources', () => {
+    const template = stackTemplate(stage, 'KukanGlobalStack')
+    // Metadata forces the DeletionPolicy change to be a recognized update
+    // (CloudFormation skips DeletionPolicy/Outputs-only diffs) so upgrading an
+    // existing stack actually persists RETAIN
+    template.hasResource('AWS::CertificateManager::Certificate', {
+      DeletionPolicy: 'Retain',
+      Metadata: { 'kukan:retain': Match.anyValue() },
+    })
+    template.hasResource('AWS::WAFv2::WebACL', {
+      DeletionPolicy: 'Retain',
+      Metadata: { 'kukan:retain': Match.anyValue() },
+    })
+  })
+})
+
+describe('half-supplied edge ARNs (create only the missing side)', () => {
+  const CERT_ARN =
+    'arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000'
+  const WAF_ARN =
+    'arn:aws:wafv2:us-east-1:123456789012:global/webacl/kukan/00000000-0000-0000-0000-000000000000'
+  const domain = {
+    domainName: 'data.example.jp',
+    hostedZoneId: 'Z0000000000000000000',
+    hostedZoneName: 'example.jp',
+  }
+
+  it('cert supplied → only the WAF is created', () => {
+    const template = stackTemplate(
+      synthStage({ ...domain, certificateArn: CERT_ARN }),
+      'KukanGlobalStack'
+    )
+    template.resourceCountIs('AWS::CertificateManager::Certificate', 0)
+    template.resourceCountIs('AWS::WAFv2::WebACL', 1)
+  })
+
+  it('WAF supplied → only the certificate is created', () => {
+    const template = stackTemplate(
+      synthStage({ ...domain, webAclArn: WAF_ARN }),
+      'KukanGlobalStack'
+    )
+    template.resourceCountIs('AWS::CertificateManager::Certificate', 1)
+    template.resourceCountIs('AWS::WAFv2::WebACL', 0)
+  })
+})
+
+describe('blank edge ARNs', () => {
+  it('rejects a blank certificateArn at synth', () => {
+    expect(() => synthStage({ domainName: 'data.example.jp', certificateArn: '' })).toThrow(
+      /blank certificateArn/
+    )
   })
 })

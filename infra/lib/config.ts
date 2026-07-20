@@ -125,6 +125,10 @@ export interface EnvironmentConfig {
   scale?: Scale
   dbEngine?: DbEngine
   enableOpenSearch?: boolean
+  // --- Site-scoped fields, enableWaf through enableGa4DataApi (ADR-041) ---
+  // Legacy single-site placement, kept for compatibility: without `sites` they
+  // apply to the environment's one site; with `sites` declared they are
+  // rejected at synth (validateSites) — declare them per site instead.
   enableWaf?: boolean
   allowedIpRanges?: string[]
   /**
@@ -190,13 +194,14 @@ export interface SiteConfig {
   hostedZoneId?: string
   hostedZoneName?: string
   /**
-   * Pre-created us-east-1 ACM certificate ARN. Required when `domainName` is
-   * set — multi-site environments never create the global stack themselves, in
-   * standalone mode too (one cert per site domain; create it via the console or
-   * a one-off standalone GlobalStack deploy, then paste the ARN).
+   * Pre-created us-east-1 ACM certificate ARN. Omit in standalone mode to have
+   * the environment's KukanGlobalStack create one per site domain; pipeline
+   * mode requires the ARN (cross-region references are incompatible with CDK
+   * Pipelines — same rule as single-site, ADR-030).
    */
   certificateArn?: string
-  /** Pre-created us-east-1 WAF WebACL ARN. May be shared by several sites. */
+  /** Pre-created us-east-1 WAF WebACL ARN. May be shared by several sites.
+   *  Omit in standalone mode to have KukanGlobalStack create one shared ACL. */
   webAclArn?: string
   enableWaf?: boolean
   allowedIpRanges?: string[]
@@ -208,9 +213,9 @@ export interface SiteConfig {
    * Per-site sizing on top of the environment's scale preset. Only the
    * site-owned sections — db/opensearch sizing belongs to the shared boxes.
    * Of `backup`, only the S3 (site bucket) settings are allowed: DB retention
-   * is a shared-cluster setting (set it on the environment) and AWS Backup is
-   * rejected per site (the shared cluster would be snapshotted once per site;
-   * use per-site pg_dump instead, ADR-041).
+   * and the AWS Backup schedule are environment-level settings (the DB plan
+   * lives in the SharedStack, the per-site bucket plans follow the same
+   * schedule — ADR-041).
    */
   overrides?: DeepPartial<Pick<ScaleComputed, 'web' | 'worker' | 'dbPool'>> & {
     backup?: Partial<
@@ -220,6 +225,20 @@ export interface SiteConfig {
 }
 
 const SITE_NAME_PATTERN = /^[a-z][a-z0-9]{1,15}$/
+
+/** Runtime mirrors of the SiteConfig.overrides type (see validateSites). The
+ *  `satisfies` binds them to the type — extending it fails to compile until
+ *  the list here is updated, same pattern as SITE_SCOPED_FIELDS below. */
+const SITE_OVERRIDE_SECTIONS = Object.keys({
+  web: true,
+  worker: true,
+  dbPool: true,
+  backup: true,
+} satisfies Record<keyof NonNullable<SiteConfig['overrides']>, true>)
+const SITE_BACKUP_KEYS = Object.keys({
+  s3Versioning: true,
+  s3NoncurrentVersionExpirationDays: true,
+} satisfies Record<keyof NonNullable<NonNullable<SiteConfig['overrides']>['backup']>, true>)
 
 /**
  * SiteConfig fields that shadow an EnvironmentConfig field. Single source for
@@ -244,18 +263,33 @@ const SITE_SCOPED_FIELDS = Object.keys({
   enableGa4DataApi: true,
 } satisfies Record<SiteScopedKey, true>) as SiteScopedKey[]
 
+/** One synth-time warning from validateSites, keyed for cdk.Annotations. */
+export interface SiteWarning {
+  key: string
+  message: string
+}
+
 /**
  * Validate the `sites` list of a multi-site environment. Throws at synth with
  * an actionable message — misconfiguration must never reach CloudFormation.
- * Returns a warning message (for cdk.Annotations) when the connection budget
- * passes but exceeds 70% of the estimate.
+ * Returns warning messages (for cdk.Annotations) for conditions that deploy
+ * but deserve operator attention (connection budget over 70%, burstable
+ * shared OpenSearch).
  * Pass the stage as `scope` so CLI context (-c scale / -c dbEngine) enters the
  * budget the same way it enters loadConfig — the check must see the numbers
  * that actually deploy.
  */
-export function validateSites(env: EnvironmentConfig, scope?: Construct): string | undefined {
-  const sites = env.sites ?? []
-  if (sites.length === 0) return
+export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWarning[] {
+  const sites = env.sites
+  if (sites === undefined) return []
+  // An empty array would silently fall back to the single-site shape, and
+  // adding the first site later would then be a full replacement — reject it.
+  if (sites.length === 0) {
+    throw new Error(
+      'sites is declared but empty — declare at least one site (the multi-site ' +
+        'shape), or remove `sites` entirely for the legacy single-site shape (ADR-041)'
+    )
+  }
   const siteScopedEnvFields = SITE_SCOPED_FIELDS.filter((key) => env[key] !== undefined)
   if (siteScopedEnvFields.length > 0) {
     throw new Error(
@@ -271,14 +305,7 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): string
     ctx<DbEngine>('dbEngine') ?? env.dbEngine,
     env.overrides
   )
-  if (envComputed.backup.awsBackup) {
-    throw new Error(
-      'Multi-site environments must disable AWS Backup (the shared DB cluster ' +
-        'would be snapshotted once per site) — set overrides: { backup: ' +
-        '{ awsBackup: false } } on the environment and use per-site pg_dump ' +
-        'instead (ADR-041)'
-    )
-  }
+  const warnings: SiteWarning[] = []
   const seen = new Set<string>()
   for (const site of sites) {
     if (!SITE_NAME_PATTERN.test(site.name)) {
@@ -294,36 +321,61 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): string
       throw new Error(`Duplicate site name "${site.name}"`)
     }
     seen.add(site.name)
-    if (site.domainName && !site.certificateArn) {
+    rejectBlankEdgeArns(site, `Site "${site.name}"`)
+    // Missing cert/WAF ARNs auto-create in the us-east-1 global stack, but a
+    // DNS-validated cert needs the hosted zone — reject that gap here.
+    if (site.domainName && !site.certificateArn && !(site.hostedZoneId && site.hostedZoneName)) {
       throw new Error(
-        `Site "${site.name}" sets domainName but no certificateArn. Multi-site ` +
-          'environments never create the us-east-1 global stack — create the ACM ' +
-          'certificate once (console, or a one-off standalone GlobalStack deploy) ' +
-          'and paste its ARN into the site entry (ADR-041)'
+        `Site "${site.name}" sets domainName but neither certificateArn nor ` +
+          'hostedZoneId/hostedZoneName. Supply the hosted zone so the global ' +
+          'stack can create a DNS-validated certificate, or paste a pre-created ' +
+          'us-east-1 certificate ARN (ADR-041)'
       )
     }
-    if (resolveEnableWaf(site) && !site.webAclArn) {
-      throw new Error(
-        `Site "${site.name}" resolves to enableWaf but has no webAclArn. Create ` +
-          'the us-east-1 WebACL once and paste its ARN (it may be shared across ' +
-          'sites), or set enableWaf: false (ADR-041)'
+    // Runtime mirror of the SiteConfig.overrides type (tsx strips types without
+    // checking, so hand-written environments.ts needs the real gate). Allow-list
+    // instead of deny-list: a disallowed section would be silently ignored by
+    // the shared boxes yet still skew the connection budget below.
+    if (site.overrides) {
+      const badSections = Object.keys(site.overrides).filter(
+        (key) => !SITE_OVERRIDE_SECTIONS.includes(key)
       )
-    }
-    // Runtime mirror of the SiteConfig.overrides.backup type (tsx strips types
-    // without checking, so hand-written environments.ts needs the real gate)
-    if (site.overrides?.backup && 'awsBackup' in site.overrides.backup) {
-      throw new Error(
-        `Site "${site.name}" must not override backup.awsBackup — the shared DB ` +
-          'cluster would be snapshotted once per site (ADR-041)'
+      if (badSections.length > 0) {
+        throw new Error(
+          `Site "${site.name}" must not override ${badSections.join('/')} — only ` +
+            `${SITE_OVERRIDE_SECTIONS.join('/')} are per-site; db/opensearch sizing ` +
+            'belongs to the shared boxes (set it on the environment entry, ADR-041)'
+        )
+      }
+      const badBackupKeys = Object.keys(site.overrides.backup ?? {}).filter(
+        (key) => !SITE_BACKUP_KEYS.includes(key)
       )
+      if (badBackupKeys.length > 0) {
+        throw new Error(
+          `Site "${site.name}" must not override backup.${badBackupKeys.join('/backup.')} — ` +
+            `only ${SITE_BACKUP_KEYS.join('/')} are per-site; the backup schedule and ` +
+            'DB retention are environment-level settings (ADR-041)'
+        )
+      }
     }
-    if (site.overrides?.backup && 'dbBackupRetentionDays' in site.overrides.backup) {
-      throw new Error(
-        `Site "${site.name}" must not override backup.dbBackupRetentionDays — DB ` +
-          'retention is a shared-cluster setting; set it on the environment entry ' +
-          '(only the S3 bucket settings are per-site, ADR-041)'
-      )
-    }
+  }
+
+  // Burstable shared OpenSearch: one site's reindex degrades every site, so
+  // warn (not error) from the second site on.
+  const enableOpenSearch = ctx<boolean>('enableOpenSearch') ?? env.enableOpenSearch ?? true
+  if (
+    sites.length >= 2 &&
+    enableOpenSearch &&
+    envComputed.opensearch.instanceType.startsWith('t3.')
+  ) {
+    warnings.push({
+      key: 'kukan:site-opensearch-small',
+      message:
+        `Sites share one OpenSearch domain and the resolved instance type is ` +
+        `burstable (${envComputed.opensearch.instanceType}) — one site's reindex ` +
+        'degrades all sites and t3.small risks heap exhaustion. Use scale ' +
+        'medium+ or overrides: { opensearch: { instanceType: … } } (ADR-041)',
+    })
   }
 
   // Connection budget (ADR-041): pg pools open lazily up to their max, so the
@@ -395,13 +447,15 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): string
     )
   }
   if (worstCase > maxConnections * 0.7) {
-    return (
-      `Worst-case DB connections across sites (${breakdown}) exceed 70% of the ` +
-      `estimated max_connections (${maxConnections}) of the shared database — ` +
-      buildRemedy(Math.ceil(worstCase / 0.7))
-    )
+    warnings.push({
+      key: 'kukan:site-connection-budget',
+      message:
+        `Worst-case DB connections across sites (${breakdown}) exceed 70% of the ` +
+        `estimated max_connections (${maxConnections}) of the shared database — ` +
+        buildRemedy(Math.ceil(worstCase / 0.7)),
+    })
   }
-  return undefined
+  return warnings
 }
 
 /**
@@ -496,11 +550,51 @@ export function resolveEnableWaf(
 }
 
 /**
+ * Reject blank/whitespace cert/WAF ARNs at synth. A blank string counts as
+ * "missing" in needsGlobalStack (truthiness) yet "supplied" when wiring
+ * (`??`), which would create a cert/WAF that never gets attached.
+ */
+export function rejectBlankEdgeArns(
+  entry: Pick<SiteConfig, 'certificateArn' | 'webAclArn'>,
+  label: string
+): void {
+  for (const key of ['certificateArn', 'webAclArn'] as const) {
+    const value = entry[key]
+    if (value !== undefined && value.trim() === '') {
+      throw new Error(
+        `${label} sets a blank ${key} — omit the field to have the global stack ` +
+          'create it (standalone mode), or paste the real us-east-1 ARN'
+      )
+    }
+  }
+}
+
+/** The entry (site or single-site env) needs the global stack to CREATE its
+ *  ACM certificate — a domain is set but no pre-created ARN is supplied. */
+export function needsManagedCert(
+  entry: Pick<SiteConfig, 'domainName' | 'certificateArn'>
+): boolean {
+  return !!entry.domainName && !entry.certificateArn
+}
+
+/** The entry needs the global stack to CREATE its WAF WebACL — WAF resolves
+ *  to enabled but no pre-created ARN is supplied. The single source for this
+ *  predicate: needsGlobalStack (branch), KukanGlobalStack (creation), and
+ *  KukanStage (wiring) must never disagree on it. */
+export function needsManagedWaf(
+  entry: Pick<SiteConfig, 'enableWaf' | 'allowedIpRanges' | 'basicAuth' | 'webAclArn'>
+): boolean {
+  return resolveEnableWaf(entry) && !entry.webAclArn
+}
+
+/**
  * Whether this environment must CREATE the us-east-1 global stack (ACM cert / WAF).
  * False when the ARNs are supplied (pipeline mode passes them as strings — ADR-030).
+ * Multi-site: true when any site is missing an ARN it needs (ADR-041).
  */
 export function needsGlobalStack(env: EnvironmentConfig): boolean {
-  return (!!env.domainName && !env.certificateArn) || (resolveEnableWaf(env) && !env.webAclArn)
+  const entries = env.sites?.length ? env.sites : [env]
+  return entries.some((entry) => needsManagedCert(entry) || needsManagedWaf(entry))
 }
 
 /** Fully-resolved configuration consumed by stacks and constructs. */

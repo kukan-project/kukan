@@ -42,26 +42,31 @@ docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 
 ### AWS デプロイ
 
-KUKAN は **CloudFront（WAF + キャッシュ）→ 内部 ALB → ECS Fargate** 構成で AWS にデプロイします（ADR-027）。
+KUKAN は **CloudFront（WAF + キャッシュ）→ 内部 ALB → ECS Fargate** 構成で AWS にデプロイします。
 デプロイは **CDK Pipelines（AWS CodePipeline）で自動化**され、CodeConnections（GitHub App）をソースに、
 対象ブランチへの push を起点に各環境（dev / prd 等）を CDK Stage としてデプロイします。
 
 環境は `infra/config/environments.ts` で定義します（`environments.example.ts` を**コピーして作成**）。
+環境は**マルチサイト形状（`sites` 宣言）で作成します**。サイトが 1 つでも `sites` 1 件で
+始めておくと、後からのサイト追加が非破壊になります（[マルチサイト運用](/ja/system-admin-guide/multi-site/)を参照）。
+`sites` を書かず、サイト固有の設定（ドメイン・WAF 等）を env 直下に書くシングルサイト形状は
+**過去互換**として引き続き動作しますが、新規構築では使用しません（両形状の混在は不可）。
+全パラメータの一覧は[環境設定リファレンス](/ja/system-admin-guide/environment-config/)を参照してください。
 
 主要な AWS リソース:
 
-- **CloudFront** — CDN・WAF・TLS 終端（最前面、ADR-027）
+- **CloudFront** — CDN・WAF・TLS 終端（最前面）
 - **ALB（internal）** — ロードバランサー（CloudFront VPC Origin 経由でのみ到達）
 - **ECS Fargate** — Web アプリケーション + Pipeline Worker
 - **Aurora Serverless v2 / RDS** — PostgreSQL データベース
 - **S3** — ファイルストレージ
 - **SQS** — パイプラインキュー
 - **OpenSearch** — 全文検索エンジン
-- **AWS Backup** — 隔離バックアップ（large スケール等で有効、ADR-037）
+- **AWS Backup** — 隔離バックアップ（large スケール等で有効）
 
 #### バックアップとデータ保護
 
-データ保護の設定は `scale` プリセットに統合されています（ADR-037）:
+データ保護の設定は `scale` プリセットに統合されています:
 
 | 設定                                    | small | medium | large                 |
 | --------------------------------------- | :---: | :----: | :-------------------- |
@@ -78,7 +83,7 @@ KUKAN は **CloudFront（WAF + キャッシュ）→ 内部 ALB → ECS Fargate*
    - **CodeBuild** を開く → 左メニュー下部の **Settings → Connections → Create connection**（「Developer Tools」共通設定。CodeBuild 経由が分かりやすい）→ **GitHub** を選択 → 接続名（例 `kukan-github`、AWS 側の識別ラベル）を入力 → **Connect to GitHub** → **AWS Connector for GitHub** アプリをインストール・認可（**Only select repositories** を選び、デプロイ対象のリポジトリのみに絞る。最小権限）→ ステータスが **Available** になったら ARN をコピー
    - GitHub App の認可はブラウザ操作が必須（CLI/CDK で作成しても `PENDING` になり結局ブラウザ認可が必要）
 3. `cdk bootstrap`（deploy の前提。各アカウント・リージョン。GlobalStack 用に us-east-1 も含める）
-4. 独自ドメイン/WAF を使う場合のみ: us-east-1 の証明書/WAF を一度 standalone で作成（`npx cdk deploy -c env=prd Prd/KukanGlobalStack`）し、ARN を `certificateArn`/`webAclArn` に設定
+4. 独自ドメイン/WAF を使う場合のみ: us-east-1 の証明書/WAF を一度 standalone で作成（`npx cdk deploy -c env=prd Prd/KukanGlobalStack`）し、ARN を各サイトエントリの `certificateArn`/`webAclArn` に設定
 5. `environments.ts` と `cdk.context.json` をコミット（CodeBuild の synth が checkout から読み込む）
 6. パイプラインスタックを初回デプロイ（`npx cdk deploy KukanPipeline`）
 7. 以降は各 env の `deployBranch` への push で自動デプロイ（パイプラインも自己変異で更新）
@@ -96,12 +101,14 @@ export const environments = {
     scale: 'small',
     githubRepo: 'owner/repo',
     deployBranch: 'develop',
+    sites: [{ name: 'main', enableWaf: false }],
   },
   prd: {
     account: '000000000000',
     scale: 'large',
     githubRepo: 'owner/repo',
     deployBranch: 'main',
+    sites: [{ name: 'main', enableWaf: false }],
   },
 }
 ```

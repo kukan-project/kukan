@@ -14,6 +14,7 @@ import {
   type EnvironmentConfig,
   type SiteConfig,
 } from '../config.js'
+import { KukanPipelineStack } from '../pipeline-stack.js'
 import { normalize, stackTemplate, synthStage, TEST_ACCOUNT } from './helpers/synth.js'
 
 const MULTI_SITE: Omit<EnvironmentConfig, 'account'> = {
@@ -134,8 +135,117 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
   })
 })
 
+describe('multi-site global stack (auto-created cert/WAF, standalone mode)', () => {
+  // citya: cert to create (hosted zone, no ARN) + default-on WAF without an ARN
+  // cityb: no domain, default-on WAF → shares the auto-created ACL
+  const stage = synthStage({
+    scale: 'medium',
+    sites: [
+      {
+        name: 'citya',
+        domainName: 'catalog.city-a.example.jp',
+        hostedZoneId: 'Z0000000000000000000',
+        hostedZoneName: 'city-a.example.jp',
+      },
+      { name: 'cityb' },
+    ],
+  })
+  const global = stackTemplate(stage, 'KukanGlobalStack')
+
+  it('matches the golden global template', () => {
+    expect(normalize(global)).toMatchSnapshot()
+  })
+
+  it('creates one cert per site domain and a single shared WebACL', () => {
+    global.hasResourceProperties('AWS::CertificateManager::Certificate', {
+      DomainName: 'catalog.city-a.example.jp',
+    })
+    global.resourceCountIs('AWS::CertificateManager::Certificate', 1)
+    global.resourceCountIs('AWS::WAFv2::WebACL', 1)
+  })
+
+  it('exports the created ARNs as outputs for pipeline-mode pasting', () => {
+    global.hasOutput('CertificateArnCitya', {})
+    global.hasOutput('WebAclArn', {})
+  })
+
+  it('retains cert/WAF so an external-ARN switchover never deletes in-use resources', () => {
+    // Metadata forces the DeletionPolicy change to be a recognized update
+    global.hasResource('AWS::CertificateManager::Certificate', {
+      DeletionPolicy: 'Retain',
+      Metadata: { 'kukan:retain': Match.anyValue() },
+    })
+    global.hasResource('AWS::WAFv2::WebACL', {
+      DeletionPolicy: 'Retain',
+      Metadata: { 'kukan:retain': Match.anyValue() },
+    })
+  })
+
+  it('deploys the global stack before the canary site', () => {
+    const canary = stage.node.findChild('KukanSiteStackCitya') as cdk.Stack
+    expect(canary.dependencies.map((d) => d.node.id)).toEqual(
+      expect.arrayContaining(['KukanSharedStack', 'KukanGlobalStack'])
+    )
+  })
+})
+
+describe('multi-site AWS Backup (large preset)', () => {
+  const stage = synthStage({
+    scale: 'large',
+    sites: [
+      { name: 'citya', enableWaf: false },
+      { name: 'cityb', enableWaf: false },
+    ],
+  })
+  const shared = stackTemplate(stage, 'KukanSharedStack')
+  const siteA = stackTemplate(stage, 'KukanSiteStackCitya')
+
+  it('backs up the shared database once, in the shared stack', () => {
+    shared.hasResourceProperties('AWS::Backup::BackupVault', {
+      BackupVaultName: 'kukan-dev-backup',
+    })
+    shared.resourceCountIs('AWS::Backup::BackupSelection', 1)
+  })
+
+  it('backs up each site bucket in its own site-scoped vault', () => {
+    siteA.hasResourceProperties('AWS::Backup::BackupVault', {
+      BackupVaultName: 'kukan-dev-citya-backup',
+    })
+    siteA.resourceCountIs('AWS::Backup::BackupSelection', 1)
+  })
+})
+
+describe('pipeline mode', () => {
+  it('rejects multi-site environments that need the global stack', () => {
+    const app = new cdk.App()
+    expect(
+      () =>
+        new KukanPipelineStack(app, 'KukanPipeline', {
+          connectionArn: `arn:aws:codeconnections:ap-northeast-1:${TEST_ACCOUNT}:connection/x`,
+          environments: {
+            dev: {
+              account: TEST_ACCOUNT,
+              githubRepo: 'example/kukan',
+              sites: [{ name: 'main' }],
+            },
+          },
+        })
+    ).toThrow(/pipeline mode cannot create the us-east-1 ACM certificate \/ WAF/)
+  })
+})
+
 describe('validateSites', () => {
   const base = { account: TEST_ACCOUNT }
+  const messages = (env: EnvironmentConfig) =>
+    validateSites(env)
+      .map((w) => w.message)
+      .join('\n')
+
+  it('rejects an empty sites array (it would silently deploy the single-site shape)', () => {
+    expect(() => validateSites({ ...base, sites: [] })).toThrow(/declared but empty/)
+    // The stage runs the check before choosing a shape
+    expect(() => synthStage({ sites: [] })).toThrow(/declared but empty/)
+  })
 
   it('rejects invalid names, duplicates, and the reserved name', () => {
     expect(() => validateSites({ ...base, sites: [{ name: 'City-A' }] })).toThrow(/must match/)
@@ -145,11 +255,47 @@ describe('validateSites', () => {
     expect(() => validateSites({ ...base, sites: [{ name: 'shared' }] })).toThrow(/reserved/)
   })
 
-  it('requires per-site cert/WAF ARNs', () => {
+  it('requires the hosted zone when the certificate is to be auto-created', () => {
     expect(() =>
       validateSites({ ...base, sites: [{ name: 'citya', domainName: 'a.example.jp' }] })
-    ).toThrow(/certificateArn/)
-    expect(() => validateSites({ ...base, sites: [{ name: 'citya' }] })).toThrow(/webAclArn/)
+    ).toThrow(/hostedZone/)
+    // Hosted zone present → the global stack creates the cert; ARN → nothing to create
+    expect(
+      validateSites({
+        ...base,
+        sites: [
+          {
+            name: 'citya',
+            domainName: 'a.example.jp',
+            hostedZoneId: 'Z0000000000000000000',
+            hostedZoneName: 'example.jp',
+            enableWaf: false,
+          },
+        ],
+      })
+    ).toEqual([])
+    // Missing webAclArn is fine too — the global stack creates a shared ACL
+    expect(validateSites({ ...base, sites: [{ name: 'citya' }] })).toEqual([])
+  })
+
+  it('rejects blank cert/WAF ARNs (missing for needsGlobalStack, supplied for wiring)', () => {
+    expect(() =>
+      validateSites({ ...base, sites: [{ name: 'citya', certificateArn: ' ' }] })
+    ).toThrow(/blank certificateArn/)
+    expect(() => validateSites({ ...base, sites: [{ name: 'citya', webAclArn: '' }] })).toThrow(
+      /blank webAclArn/
+    )
+  })
+
+  it('warns about a burstable shared OpenSearch from the second site on', () => {
+    const sites = [
+      { name: 'citya', enableWaf: false },
+      { name: 'cityb', enableWaf: false },
+    ]
+    expect(messages({ ...base, sites })).toContain('t3.small.search')
+    expect(validateSites({ ...base, sites: [sites[0]] })).toEqual([])
+    expect(validateSites({ ...base, enableOpenSearch: false, sites })).toEqual([])
+    expect(validateSites({ ...base, scale: 'medium', sites })).toEqual([])
   })
 
   it('enforces the shared-database connection budget', () => {
@@ -166,12 +312,7 @@ describe('validateSites', () => {
     // large preset (250 worst-case/site): the raw memory formula said ~1802 and
     // let 7 sites (1750) pass with a warning — the AWS-documented 8-ACU value
     // is 1669, so this must fail
-    const largeBase = {
-      ...base,
-      scale: 'large' as const,
-      overrides: { backup: { awsBackup: false as const } },
-    }
-    expect(() => validateSites({ ...largeBase, sites: sitesOf(7) })).toThrow(
+    expect(() => validateSites({ ...base, scale: 'large', sites: sitesOf(7) })).toThrow(
       /1750.*exceed the estimated max_connections \(1669\)/
     )
 
@@ -233,12 +374,12 @@ describe('validateSites', () => {
       /420 — steady 360/
     )
 
-    expect(validateSites({ ...base, scale: 'medium', sites: sitesOf(5) })).toContain('exceed 70%')
+    expect(messages({ ...base, scale: 'medium', sites: sitesOf(5) })).toContain('exceed 70%')
 
     // Warning advice targets ceil(worstCase / 0.7), not the hard limit:
     // 29 sites need 1,800/2,000 (capped) — clearing 70% needs 2,572, which the
     // 0.5-minACU cap blocks regardless of maxAcu → advise minAcu, not maxAcu
-    const cappedWarning = validateSites({
+    const cappedWarning = messages({
       ...base,
       scale: 'medium',
       overrides: { db: { maxAcu: 16 } },
@@ -249,7 +390,7 @@ describe('validateSites', () => {
 
     // 74 sites need 4,500/5,000 — clearing 70% needs 6,429, beyond the Aurora
     // absolute ceiling → no ACU advice at all
-    const ceilingWarning = validateSites({
+    const ceilingWarning = messages({
       ...base,
       scale: 'medium',
       overrides: { db: { minAcu: 1, maxAcu: 32 } },
@@ -258,7 +399,7 @@ describe('validateSites', () => {
     expect(ceilingWarning).toContain('Aurora PostgreSQL tops out at 5000')
     expect(ceilingWarning).not.toMatch(/raise db\.(min|max)Acu/)
 
-    expect(validateSites({ ...base, scale: 'medium', sites: sitesOf(2) })).toBeUndefined()
+    expect(validateSites({ ...base, scale: 'medium', sites: sitesOf(2) })).toEqual([])
 
     // Site-level pool overrides relax the budget
     expect(
@@ -270,7 +411,7 @@ describe('validateSites', () => {
           overrides: { dbPool: { webMax: 5 }, web: { maxSize: 2 } },
         })),
       })
-    ).toBeUndefined()
+    ).toEqual([])
   })
 
   it('rejects site-scoped fields on the environment entry and per-site AWS Backup', () => {
@@ -296,30 +437,28 @@ describe('validateSites', () => {
         overrides: { dbPool: { webMax: 5 } },
         sites: [{ name: 'citya', enableWaf: false }],
       })
-    ).toBeUndefined()
+    ).toEqual([])
     // Untypeable via SiteConfig (tsx strips types, so the runtime gate matters)
-    const backupOverride = (backup: object): SiteConfig['overrides'] =>
-      ({ backup }) as SiteConfig['overrides']
-    expect(() =>
-      validateSites({
-        ...base,
-        sites: [
-          { name: 'citya', enableWaf: false, overrides: backupOverride({ awsBackup: false }) },
-        ],
-      })
-    ).toThrow(/awsBackup/)
-    expect(() =>
-      validateSites({
-        ...base,
-        sites: [
-          {
-            name: 'citya',
-            enableWaf: false,
-            overrides: backupOverride({ dbBackupRetentionDays: 35 }),
-          },
-        ],
-      })
-    ).toThrow(/dbBackupRetentionDays/)
+    const forcedOverride = (overrides: object): SiteConfig['overrides'] =>
+      overrides as SiteConfig['overrides']
+    const withOverrides = (overrides: object): EnvironmentConfig => ({
+      ...base,
+      sites: [{ name: 'citya', enableWaf: false, overrides: forcedOverride(overrides) }],
+    })
+    expect(() => validateSites(withOverrides({ backup: { awsBackup: false } }))).toThrow(
+      /awsBackup/
+    )
+    expect(() => validateSites(withOverrides({ backup: { dbBackupRetentionDays: 35 } }))).toThrow(
+      /dbBackupRetentionDays/
+    )
+    // Shared-box sections would be silently ignored by the shared stacks while
+    // still skewing the connection budget — allow-list, not deny-list
+    expect(() => validateSites(withOverrides({ db: { maxAcu: 16 } }))).toThrow(
+      /must not override db/
+    )
+    expect(() => validateSites(withOverrides({ opensearch: { instanceCount: 2 } }))).toThrow(
+      /must not override opensearch/
+    )
   })
 
   it('ignores site-scoped CLI context when resolving a site (no cross-site stamping)', () => {

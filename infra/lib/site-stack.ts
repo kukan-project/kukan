@@ -14,11 +14,16 @@ import type { Construct } from 'constructs'
 import { resolveSiteConfig, type EnvironmentConfig, type SiteConfig } from './config.js'
 import { composeSite } from './composition.js'
 import { envPrefix, sharedParamName, type SiteScopedStack } from './naming.js'
+import { BackupConstruct } from './constructs/backup.js'
 import { SiteDatabaseConstruct } from './constructs/site-database.js'
 
 export interface KukanSiteStackProps extends cdk.StackProps {
   envConfig: EnvironmentConfig
   site: SiteConfig
+  /** Site's viewer certificate ARN (pasted, or created in KukanGlobalStack). */
+  globalCertificateArn?: string
+  /** Site's WAF WebACL ARN (pasted, or the shared one from KukanGlobalStack). */
+  globalWebAclArn?: string
 }
 
 export class KukanSiteStack extends cdk.Stack implements SiteScopedStack {
@@ -77,13 +82,19 @@ export class KukanSiteStack extends cdk.Stack implements SiteScopedStack {
         webImageBuildArgs: props.site.brand ? { KUKAN_BRAND: props.site.brand } : undefined,
       },
       {
-        certificateArn: props.site.certificateArn,
-        webAclArn: props.site.webAclArn,
+        certificateArn: props.globalCertificateArn,
+        webAclArn: props.globalWebAclArn,
       }
     )
 
     // Tasks run drizzle migrations at startup — the database must exist first
     site.webService.node.addDependency(siteDatabase.customResource)
     site.workerService.node.addDependency(siteDatabase.customResource)
+
+    // Bucket half of AWS Backup (ADR-037) — own vault kukan-<env>-<site>-backup;
+    // the shared DB plan lives in KukanSharedStack
+    if (config.backup.awsBackup) {
+      new BackupConstruct(this, 'Backup', { config, bucket: site.bucket })
+    }
   }
 }

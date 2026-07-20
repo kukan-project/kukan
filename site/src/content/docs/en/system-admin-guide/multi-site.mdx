@@ -1,8 +1,8 @@
 ---
 title: Multi-Site Operation
-description: Running multiple KUKAN sites on one shared infrastructure (ADR-041)
+description: Running multiple KUKAN sites on one shared infrastructure
 sidebar:
-  order: 3
+  order: 2
 ---
 
 When one operator runs multiple KUKAN sites (for example, data catalogs for
@@ -35,7 +35,7 @@ prd: {
       name: 'citya', // lowercase alphanumeric, 2–16 chars
       domainName: 'catalog.city-a.example.jp',
       hostedZoneId: 'Z...', hostedZoneName: 'city-a.example.jp',
-      certificateArn: 'arn:aws:acm:us-east-1:...', // required for site domains
+      certificateArn: 'arn:aws:acm:us-east-1:...', // required in pipeline mode
       webAclArn: 'arn:aws:wafv2:us-east-1:...',    // may be shared across sites
     },
     { name: 'cityb', enableWaf: false },
@@ -43,22 +43,133 @@ prd: {
 },
 ```
 
-- **Opt-in only**: environments without `sites` keep today's single-stack
-  layout unchanged. Never add `sites` to an already-deployed single-site
-  environment (it would replace resources) — migrate blue/green by standing up
-  a new environment and switching DNS
-- Site domains require a pre-created us-east-1 ACM certificate ARN (multi-site
-  environments never auto-create the certificate stack)
+- **Declaring `sites` is the standard shape. Start with `sites` even for a
+  single site** (for example `sites: [{ name: 'main' }]`). The single-site
+  shape without `sites` (site-specific settings directly on the env entry)
+  keeps working for **backward compatibility** but should not be used for new
+  deployments
+- `sites` cannot be added to an already-deployed single-site-shape environment
+  (see [Migrating from the single-site shape](#migrating-from-the-single-site-shape) below)
+- Site-specific settings (domain, certificate, WAF, access gates, bucket name,
+  and so on) go on each site entry. Putting them on the environment entry of an
+  environment that declares `sites` fails at synth — the single-site and
+  multi-site shapes cannot be mixed
+- Site certificates and WAF follow the single-site rule: standalone deploys
+  auto-create the missing pieces in us-east-1 (a site domain then needs
+  `hostedZoneId` / `hostedZoneName`); pipeline mode requires pre-created ARNs
 - Deploy ordering is automatic: shared stack → first site (canary) → the rest.
   Core code changes roll out to every site; a change scoped to one site leaves
   the others untouched
+- AWS Backup works as-is in multi-site environments (the database is backed up
+  once in the shared stack, buckets per site)
 - Per-site sizing uses `overrides` (only `web` / `worker` / `dbPool` /
   `backup`)
 
 Configuration is validated at `cdk synth` (site names, certificate ARNs, the
-shared database connection budget, and more). See `docs/specs/phase4-deploy.md`
-in the repository for detailed operations: resources retained on site deletion,
-manual purge steps, and connection sizing.
+shared database connection budget, and more). See the
+[Environment Configuration Reference](/en/system-admin-guide/environment-config/)
+for the full parameter list, and `docs/specs/phase4-deploy.md` in the repository
+for detailed operations: resources retained on site deletion, manual purge
+steps, and connection sizing.
+
+### Migrating from the single-site shape
+
+`sites` cannot be added to an already-deployed single-site-shape environment:
+the stack split and physical renames make it a full CloudFormation replacement
+(= data loss). Migrate blue/green instead — build a new environment alongside
+and switch over:
+
+1. Add a new environment entry that declares `sites` and deploy it (leave the
+   old environment untouched)
+2. Migrate the database (`pg_dump` from the old environment → restore into the
+   new site database)
+3. Copy the stored files into the new site bucket (`aws s3 sync`)
+4. Rebuild the search index in the new environment
+5. Verify, then move the custom domain over: remove the domain settings from
+   the old environment entry and deploy, add them to the new environment's site
+   entry and deploy, then switch DNS (this order matters — the same domain
+   cannot be attached to two CloudFront distributions at once)
+6. Destroy the old environment: **run `cdk destroy` first, and only then remove
+   the old entry from `environments.ts`** (removing an entry does not delete the
+   deployed stacks, and removing it first makes the environment impossible to
+   synthesize — and hard to destroy). The main-stack destroy command depends on
+   how the environment is managed:
+   - Standalone-managed: `npx cdk destroy -c env=prd 'Prd/**'`
+   - Pipeline-managed (an environment with `githubRepo`, as in the example):
+     use the qualified path `npx cdk destroy 'KukanPipeline/Prd/**'` (**without
+     `-c env`**). After the destroy, **remove the old entry and push promptly**
+     to delete the old environment's pipeline (a push to its `deployBranch`
+     while the old pipeline still exists would recreate the destroyed
+     environment)
+
+   **The us-east-1 GlobalStack must be deleted separately.** Once
+   `needsGlobalStack=false` (ARNs pasted in pipeline mode, or the domain removed
+   with `enableWaf: false` in step 5, etc.) the GlobalStack drops out of the CDK
+   assembly, so the `cdk destroy` commands above cannot reach it and the
+   physical stack lingers. Regardless of management mode, the reliable path is
+   to delete it by physical stack name via CloudFormation:
+   `aws cloudformation delete-stack --stack-name Prd-KukanGlobalStack --region us-east-1`
+   (the certificate / WebACL are RETAINed, so they survive this stack deletion).
+
+   The following resources survive the destroy — review and purge them
+   manually:
+   - The S3 bucket — empty it, then delete
+   - The final database snapshot — storage keeps billing, delete if unneeded
+   - The AWS Backup vault (if it was enabled)
+   - The ACM certificate and WAF WebACL (if they were auto-created; both are
+     RETAINed, so they survive even the GlobalStack destroy, and **the WebACL
+     keeps billing while it exists**). Delete them manually **only after the
+     GlobalStack is destroyed** — deleting the certificate/WebACL while the
+     stack still exists leaves the CloudFormation stack in drift
+
+Rewriting the parameters just means moving the site-scoped settings from the
+env entry into a `sites[]` entry. Before:
+
+```ts
+prd: {
+  account: '000000000000',
+  scale: 'medium',
+  githubRepo: 'owner/repo', deployBranch: 'main',
+  domainName: 'catalog.example.jp',
+  hostedZoneId: 'Z0123456789', hostedZoneName: 'example.jp',
+  certificateArn: 'arn:aws:acm:us-east-1:...',
+  enableWaf: false, // when using WAF, set webAclArn instead
+},
+```
+
+The new environment added for the migration (a different name, since it runs
+alongside the old one):
+
+```ts
+prd2: {
+  account: '000000000000',        // shared-side settings (account/scale/CI) stay as they are
+  scale: 'medium',
+  githubRepo: 'owner/repo', deployBranch: 'main',
+  sites: [
+    {
+      name: 'main',
+      // Keep the domain settings commented out until the switchover in step 5.
+      // The certificate ARN can be reused from the old environment
+      // domainName: 'catalog.example.jp',
+      // hostedZoneId: 'Z0123456789', hostedZoneName: 'example.jp',
+      // certificateArn: 'arn:aws:acm:us-east-1:...',
+      enableWaf: false, // for pre-switchover verification (align with the old env's WAF/access gates)
+    },
+  ],
+},
+```
+
+Until the switchover, verify the new environment on its default CloudFront
+domain (the `CloudFrontDomainName` deploy output). Up to the domain move in
+step 5 the old environment keeps running untouched, so aborting the migration
+is all it takes to back out.
+
+Rolling back after the domain move requires moving the domain back the same
+way: remove the domain settings from the new environment's site entry and
+deploy, re-add them to the old environment entry and deploy, then point DNS
+back at the old environment. Note that switching DNS alone — before the domain
+and certificate are re-attached to the old CloudFront distribution — results
+in certificate-mismatch errors.
 
 ## Docker Compose (on-premises)
 
@@ -89,5 +200,6 @@ The multi-site layout is not a hard multi-tenant boundary between sites.
   checked automatically at synth — exceeding the estimate fails, and crossing
   70% warns
 - **OpenSearch**: all sites share one domain (one JVM on-premises). On AWS,
-  medium (m6g.large.search) or larger is recommended; on-premises, grow the
-  heap (`OPENSEARCH_JAVA_OPTS`) with the site count
+  medium (m6g.large.search) or larger is recommended (synth warns when two or
+  more sites land on a small burstable instance); on-premises, grow the heap
+  (`OPENSEARCH_JAVA_OPTS`) with the site count

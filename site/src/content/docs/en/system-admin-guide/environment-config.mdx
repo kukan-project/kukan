@@ -1,0 +1,125 @@
+---
+title: Environment Configuration Reference (AWS)
+description: Full parameter list for the CDK environment definitions in environments.ts
+sidebar:
+  order: 1
+---
+
+AWS deployment environments (dev / prd, etc.) are defined in
+`infra/config/environments.ts` (copied from `environments.example.ts`; forks
+commit it). Settings resolve in this order: CLI `-c` flags > env entry > scale
+defaults > built-in defaults. Note that `-c` only applies to **environment
+entry fields** (`scale` / `dbEngine` / `enableOpenSearch`, etc.) — for
+site-scoped fields (`domainName` / `allowedIpRanges` / `basicAuth`, etc.) the
+`-c` channel is **ignored** in multi-site environments (preventing one `-c`
+from stamping every site at once).
+
+The top level of the file exports the CodeConnections connection ARN (shared by
+all envs):
+
+```ts
+export const connectionArn = 'arn:aws:codeconnections:...:connection/...'
+```
+
+**The multi-site shape (declaring `sites`) is the standard way to create an
+environment.** Fields split into "environment entry" fields (shared resources +
+CI/CD) and "site entry" fields (site-specific settings).
+
+## Environment entry fields
+
+Settings for the shared resources (database, OpenSearch, VPC, ECS cluster) and
+CI/CD.
+
+| Field              | Type                           | Default                                            | Description                                                                                      |
+| ------------------ | ------------------------------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `account`          | string                         | **required**                                       | Target AWS account ID. Misdeployment guard (CDK refuses to deploy with mismatched credentials)   |
+| `region`           | string                         | `ap-northeast-1`                                   | Target region                                                                                    |
+| `scale`            | `small` \| `medium` \| `large` | `small`                                            | Deployment size (controls resource sizing as one knob)                                           |
+| `dbEngine`         | `rds` \| `aurora`              | scale-dependent (small=rds, medium/large=aurora)   | Database engine                                                                                  |
+| `enableOpenSearch` | boolean                        | `true`                                             | `false` → PostgreSQL full-text search fallback                                                   |
+| `bedrock`          | object \| `false`              | enabled (Titan v2)                                 | Semantic search and AI metadata suggestions. `false` disables (`AI_TYPE=none`) |
+| `githubRepo`       | string                         | none                                               | CodeConnections source repository (`owner/repo`). Envs without it get no pipeline       |
+| `deployBranch`     | string                         | `main`                                             | Branch that deploys this env in pipeline mode                                                    |
+| `overrides`        | deep-partial                   | none                                               | Fine-grained overrides of the scale preset (see "overrides" below)                               |
+| `sites`            | SiteConfig[]                   | none (the legacy single-site shape)                | The sites this environment hosts. **Always declare it for new deployments** (one entry is fine) |
+
+## Site entry fields (`sites[]`)
+
+Site-specific settings. They cannot appear on the environment entry (synth
+fails).
+
+| Field              | Type                     | Default                                            | Description                                                                                                    |
+| ------------------ | ------------------------ | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `name`             | string                   | **required**                                       | Site key (`^[a-z][a-z0-9]{1,15}$`), used in resource names `kukan-<env>-<site>-*` and database `kukan_<site>`  |
+| `brand`            | string                   | none                                               | Web image brand (for the upcoming multi-brand build feature). **Leave unset until that feature lands** (an unknown build arg fails the image build) |
+| `domainName`       | string                   | none                                               | Custom domain (defaults to the CloudFront domain)                                                              |
+| `hostedZoneId`     | string                   | none                                               | Route53 hosted zone ID (needed with `domainName`)                                                              |
+| `hostedZoneName`   | string                   | none                                               | Route53 hosted zone name (same)                                                                                |
+| `certificateArn`   | string                   | auto-created in standalone mode                    | us-east-1 ACM certificate ARN. **Required in pipeline mode when `domainName` is set**                                         |
+| `webAclArn`        | string                   | auto-created in standalone mode                    | us-east-1 WAF WebACL ARN (sharable across sites). **Required in pipeline mode when WAF is on**                 |
+| `enableWaf`        | boolean                  | ON (OFF when `allowedIpRanges` / `basicAuth` set)  | WAF managed rules on CloudFront (~$9/month)                                                           |
+| `allowedIpRanges`  | string[]                 | none                                               | IP restriction (CloudFront Function, IPv4 CIDR + IPv6)                                                         |
+| `basicAuth`        | `{ username, password }`  | none                                               | Basic auth gate, OR-combined with `allowedIpRanges` (light gate only)                                 |
+| `bucketName`       | string                   | auto-named                                         | S3 bucket name (globally unique auto-naming when omitted)                                                      |
+| `enableGa4DataApi` | boolean                  | `false`                                            | GA4 access analytics dashboard                                                                                 |
+| `overrides`        | partial                  | none                                               | Site-owned sections only (see "overrides" below)                                                               |
+
+If you later switch `certificateArn` / `webAclArn` to external ARNs, the
+previously auto-created certificate / WebACL is not deleted (`RemovalPolicy.RETAIN`,
+so deleting a resource CloudFront still references cannot fail the deploy). How
+you clean up afterward depends on whether any managed resource remains:
+
+- **Only one of the certificate / WAF switched to an external ARN** (the other
+  stays auto-created): the GlobalStack remains, and only the switched resource
+  leaves the template and is detached by RETAIN. Delete it manually if unneeded
+- **Both switched (i.e. the last managed resource)**: `needsGlobalStack=false`,
+  so the whole GlobalStack drops out of the assembly — no "remove the resource"
+  update is ever sent, and **the physical GlobalStack lingers still managing the
+  resources**. Deleting the certificate / WebACL directly here would drift the
+  stack. Instead, after confirming RETAIN is persisted with `get-template`,
+  **delete the GlobalStack by physical stack name** (RETAIN keeps the resources
+  alive through the stack deletion), then delete the certificate / WebACL
+  manually if they are genuinely unused (a WebACL keeps billing while it exists)
+
+That retain policy is only persisted to CloudFormation by a deploy where the
+resource is still present in the template. So **upgrading from an older version
+that predates this behavior and switching the ARN in the same deploy** would
+remove the resource under its old (delete) policy and fail the deploy while
+CloudFront still references it. On existing environments, do it in two steps
+(environments created fresh on a version with this behavior carry RETAIN from
+the first deploy, so they can switch in one):
+
+1. Deploy the latest version first to persist RETAIN on the GlobalStack, then
+   confirm it landed with `aws cloudformation get-template` (us-east-1) — the
+   certificate / WebACL should show `DeletionPolicy: Retain`
+2. Switch the ARN in a separate later deploy
+
+## overrides
+
+Fine-grained overrides of the scale preset. They apply as a deep merge — scale
+defaults ← env `overrides` ← site `overrides` — and the allowed range differs
+per level:
+
+- **Environment entry**: every section (`web` / `worker` / `db` / `opensearch` /
+  `dbPool` / `backup`). Shared-resource sizing, DB retention, and the AWS
+  Backup schedule are environment-level only
+- **Site entry**: site-owned sections only (`web` / `worker` / `dbPool`, plus
+  the S3 versioning settings of `backup`). Overriding `db` / `opensearch` /
+  `backup.awsBackup` / `backup.dbBackupRetentionDays` is rejected at synth
+
+For the per-scale default values, see "Scale defaults" in
+`docs/specs/phase4-deploy.md` in the repository.
+
+## Backward compatibility: the single-site shape
+
+Every site entry field except `name` / `brand` may also be written directly on
+the environment entry — **but only in an environment that does not declare
+`sites`**. This is **backward compatibility** with the earlier single-site
+shape (the all-in-one stack) and exists for already-deployed environments.
+
+- Do not use this shape for new deployments — declare `sites` even for a
+  single site
+- Mixing the shapes (`sites` plus env-level site fields) is rejected at synth
+- `sites` cannot be added to an already-deployed single-site-shape environment
+  (that would replace resources; see the blue/green procedure in
+  [Multi-Site Operation](/en/system-admin-guide/multi-site/))

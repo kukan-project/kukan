@@ -14,13 +14,37 @@
  *   - omit `account`            → CDK_DEFAULT_ACCOUNT (same-account operation)
  *   - set `account` per env     → separate-account operation
  *
+ * This example presents the multi-site shape only (ADR-041): every environment
+ * declares `sites`, starting with a single entry, because `sites` cannot be
+ * added to an already-deployed single-site environment later (that path is a
+ * blue/green migration). An environment without `sites` still synthesizes the
+ * classic all-in-one single-site stack — the site-scoped fields below then
+ * live on the environment entry (see docs/specs/phase4-deploy.md).
+ *
+ * Where each field goes:
+ *   - Environment entry ONLY (the shared boxes + CI/CD):
+ *       account, region, scale, dbEngine, enableOpenSearch, bedrock,
+ *       githubRepo, deployBranch
+ *   - Site entries ONLY (rejected on the environment entry):
+ *       name, brand, domainName, hostedZoneId, hostedZoneName, certificateArn,
+ *       webAclArn, enableWaf, allowedIpRanges, basicAuth, bucketName,
+ *       enableGa4DataApi
+ *       (the type still accepts these on the environment entry, but ONLY as
+ *       the legacy single-site shape without `sites`. Mixing the shapes —
+ *       `sites` plus env-level site fields — is invalid and rejected at synth)
+ *   - BOTH: `overrides` — the environment level tunes every section (including
+ *     the shared db/opensearch and the backup schedule); a site may only tune
+ *     its own sections (web / worker / dbPool / backup S3 settings), deep-merged
+ *     on top of the environment's.
+ *
  * Custom domain / WAF in PIPELINE mode (ADR-030):
  *   CDK Pipelines is incompatible with cross-region references, so the us-east-1
- *   ACM certificate and WAF WebACL cannot be created inside the pipeline. Create them
- *   once via a standalone deploy, then paste their ARNs here:
+ *   ACM certificates and WAF WebACL cannot be created inside the pipeline
+ *   (standalone deploys auto-create the missing ones). Create them once via a
+ *   standalone deploy, then paste the ARNs into the site entries:
  *     npx cdk deploy -c env=prd Prd/KukanGlobalStack
- *   and set `certificateArn` / `webAclArn` below. WAF defaults ON (secure by default,
- *   ADR-027); set `enableWaf: false` or supply `webAclArn` to use pipeline mode.
+ *   WAF defaults ON (secure by default, ADR-027); set `enableWaf: false` or
+ *   supply `webAclArn` per site to use pipeline mode.
  */
 
 import type { EnvironmentConfig } from '../lib/config.js'
@@ -45,18 +69,19 @@ export const environments = {
     //                          refuses to deploy if your credentials are for another account)
     // region: 'ap-northeast-1', // omit → ap-northeast-1
 
-    // --- Sizing ---
+    // --- Sizing (the shared boxes) ---
     scale: 'small', // 'small' | 'medium' | 'large'
     // dbEngine: 'rds', // omit → scale default (small=rds, medium/large=aurora)
     // enableOpenSearch: true, // false → PostgreSQL full-text fallback
 
-    // --- Fine-tuning (one `overrides` object, deep-merged onto the scale preset) ---
+    // --- Fine-tuning (deep-merged onto the scale preset, then under each site's overrides) ---
     // overrides: {
     //   // Scaling
     //   web: { maxSize: 5 },
     //   opensearch: { instanceCount: 2, indexReplicas: 1 },
     //   // Backup (ADR-037). Presets: small = 7-day DB retention only; medium adds
-    //   // S3 versioning + 14 days; large = 35 days + AWS Backup (daily 35d + monthly 12mo)
+    //   // S3 versioning + 14 days; large = 35 days + AWS Backup (daily 35d + monthly 12mo).
+    //   // The DB plan runs once in the SharedStack, bucket plans per site (ADR-041)
     //   backup: {
     //     s3Versioning: true, // required when awsBackup is set
     //     dbBackupRetentionDays: 35, // PITR window, days (1–35)
@@ -64,22 +89,6 @@ export const environments = {
     //   },
     // },
 
-    // --- Security ---
-    enableWaf: false, // omit → ON unless allowedIpRanges or basicAuth is set (ADR-027)
-    // allowedIpRanges: ['203.0.113.0/24', '2001:db8::/32'],
-    // Basic auth gate, OR-combined with allowedIpRanges (light gate only — ADR-027):
-    // basicAuth: { username: 'preview', password: 'change-me' },
-
-    // --- Custom domain (for pipeline mode, also supply the us-east-1 ARNs below) ---
-    // domainName: 'dev.example.com',
-    // hostedZoneId: 'Z0123456789',
-    // hostedZoneName: 'example.com',
-    // certificateArn: 'arn:aws:acm:us-east-1:000000000000:certificate/...',
-    // webAclArn: 'arn:aws:wafv2:us-east-1:000000000000:global/webacl/...',
-
-    // --- Misc ---
-    // bucketName: 'my-resource-bucket', // omit → CDK auto-naming (globally unique)
-    // enableGa4DataApi: false,
     // --- AI (Bedrock: semantic search ADR-034 + metadata suggestions ADR-040) ---
     // Presence enables it. Amazon models (Titan v2 embedding, the default Nova Lite
     // completion) work on first invocation; Anthropic models (Claude, only if you add
@@ -108,47 +117,56 @@ export const environments = {
     // --- CI/CD (pipeline mode) ---
     githubRepo: 'kukan-project/your-repo', // CodeConnections source repo (owner/repo)
     deployBranch: 'develop', // branch that deploys this env
+
+    // --- Sites (ADR-041): resources kukan-dev-<site>-*, database kukan_<site> ---
+    sites: [
+      {
+        name: 'main', // ^[a-z][a-z0-9]{1,15}$ (used in resource names AND PostgreSQL identifiers)
+
+        // --- Security (edge gate, per site) ---
+        enableWaf: false, // omit → ON unless allowedIpRanges or basicAuth is set (ADR-027)
+        // allowedIpRanges: ['203.0.113.0/24', '2001:db8::/32'],
+        // Basic auth gate, OR-combined with allowedIpRanges (light gate only — ADR-027):
+        // basicAuth: { username: 'preview', password: 'change-me' },
+
+        // --- Custom domain (standalone: cert auto-created from the hosted zone;
+        //     pipeline: paste the us-east-1 ARNs — see the header) ---
+        // domainName: 'dev.example.com',
+        // hostedZoneId: 'Z0123456789',
+        // hostedZoneName: 'example.com',
+        // certificateArn: 'arn:aws:acm:us-east-1:000000000000:certificate/...',
+        // webAclArn: 'arn:aws:wafv2:us-east-1:000000000000:global/webacl/...', // sharable across sites
+
+        // --- Misc ---
+        // brand: 'my-brand', // web image brand (requires the ADR-042 KUKAN_BRAND Dockerfile ARG)
+        // bucketName: 'my-resource-bucket', // omit → CDK auto-naming (globally unique)
+        // enableGa4DataApi: false,
+        // overrides: { web: { maxSize: 2 }, dbPool: { webMax: 5 } }, // site-owned sections only
+      },
+    ],
   },
 
-  // `prd` shows a typical production env with a custom domain + IP allowlist.
+  // `prd` shows a typical production environment. Add sites as they onboard —
+  // the first site is the deploy canary, sites deploy serially, and only sites
+  // whose image content changed actually roll.
   prd: {
     account: '000000000000', // REQUIRED: target AWS account ID (misdeployment guard)
     scale: 'large',
-    enableWaf: false,
     githubRepo: 'kukan-project/your-repo',
     deployBranch: 'main',
-    // domainName: 'catalog.example.com',
-    // hostedZoneId: 'Z0123456789',
-    // hostedZoneName: 'example.com',
-    // allowedIpRanges: ['203.0.113.0/24'], // WAF auto-off when set (SG/CF Function protects)
-    // certificateArn: 'arn:aws:acm:us-east-1:000000000000:certificate/...', // pipeline: create once
-    // webAclArn: 'arn:aws:wafv2:us-east-1:000000000000:global/webacl/...',
     // overrides: { web: { maxSize: 20 }, opensearch: { instanceCount: 3, indexReplicas: 2 } },
-
-    // --- Multi-site (ADR-041) ---
-    // Declaring `sites` splits this env into SharedStack (VPC, DB cluster,
-    // OpenSearch, ECS cluster) + one SiteStack per entry (site database+role,
-    // bucket, queue, web/worker services, CloudFront). Opt-in only: do NOT add
-    // `sites` to an already-deployed single-site env — migrate blue/green
-    // instead. Site domains need per-site us-east-1 cert ARNs (webAclArn may be
-    // shared). Site-scoped fields (domainName/hostedZone*/certificateArn/
-    // webAclArn/enableWaf/allowedIpRanges/basicAuth/bucketName/enableGa4DataApi)
-    // are rejected on the env entry — declare them per site; only `overrides`
-    // stays env-level (deep-merged under each site's overrides). With `sites`,
-    // scale `large` also needs `overrides: { backup: { awsBackup: false } }`
-    // (the shared cluster must not be snapshotted once per site).
-    // sites: [
-    //   {
-    //     name: 'citya', // ^[a-z][a-z0-9]{1,15}$ → kukan-prd-citya-*, DB kukan_citya
-    //     domainName: 'catalog.city-a.example.jp',
-    //     hostedZoneId: 'Z0123456789',
-    //     hostedZoneName: 'city-a.example.jp',
-    //     certificateArn: 'arn:aws:acm:us-east-1:000000000000:certificate/...',
-    //     webAclArn: 'arn:aws:wafv2:us-east-1:000000000000:global/webacl/...',
-    //     // brand: 'city-a', // requires the ADR-042 KUKAN_BRAND Dockerfile ARG
-    //     // overrides: { web: { maxSize: 10 } },
-    //   },
-    //   { name: 'cityb', enableWaf: false, basicAuth: { username: 'preview', password: '...' } },
-    // ],
+    sites: [
+      { name: 'main', enableWaf: false }, // pipeline mode: WAF on needs a pasted webAclArn
+      // {
+      //   name: 'citya',
+      //   domainName: 'catalog.city-a.example.jp',
+      //   hostedZoneId: 'Z0123456789',
+      //   hostedZoneName: 'city-a.example.jp',
+      //   certificateArn: 'arn:aws:acm:us-east-1:000000000000:certificate/...', // pipeline only
+      //   webAclArn: 'arn:aws:wafv2:us-east-1:000000000000:global/webacl/...', // sharable
+      //   overrides: { web: { maxSize: 10 } },
+      // },
+      // { name: 'cityb', enableWaf: false, basicAuth: { username: 'preview', password: '...' } },
+    ],
   },
 } satisfies Record<string, EnvironmentConfig>

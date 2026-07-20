@@ -173,30 +173,21 @@ cp infra/config/environments.example.ts infra/config/environments.ts
 # environments.ts を編集
 ```
 
-各 env のフィールド（すべて任意。未設定はスケール既定／組込み既定にフォールバック）:
+フィールドの一覧（型・デフォルト・env 側 / サイト側の区分、過去互換の注記）は
+公開ドキュメントの**環境設定リファレンス**に一元化した
+（`site/src/content/docs/ja/system-admin-guide/environment-config.mdx`、公開 URL:
+<https://kukan-project.github.io/ja/system-admin-guide/environment-config/>）。
+`environments.example.ts` も全フィールドをコメント付きで列挙する（推奨の
+マルチサイト形状のみを提示）。
 
-| フィールド         | 型                             | デフォルト         | 説明                                                                                       |
-| ------------------ | ------------------------------ | ------------------ | ------------------------------------------------------------------------------------------ |
-| `account`          | string                         | **必須**           | 対象アカウント ID。誤デプロイ防止のため必須（認証情報のアカウントと不一致なら CDK が拒否） |
-| `region`           | string                         | `ap-northeast-1`   | 対象リージョン                                                                             |
-| `scale`            | `small` \| `medium` \| `large` | `small`            | デプロイ規模（リソースサイズを一括制御）                                                   |
-| `dbEngine`         | `rds` \| `aurora`              | スケール依存       | DB エンジン                                                                                |
-| `enableOpenSearch` | boolean                        | `true`             | `false` → PostgreSQL 全文検索フォールバック                                                |
-| `enableWaf`        | boolean                        | `!allowedIpRanges` | WAF on CloudFront（マネージドルール、~$9/月追加）                                          |
-| `allowedIpRanges`  | string[]                       | なし               | IP 制限（CloudFront Function、IPv4 CIDR + IPv6 対応）                                      |
-| `domainName`       | string                         | なし               | カスタムドメイン（未設定時は CloudFront デフォルトドメイン）                               |
-| `hostedZoneId`     | string                         | なし               | Route53 Hosted Zone ID（`domainName` 設定時に必要）                                        |
-| `hostedZoneName`   | string                         | なし               | Route53 Hosted Zone 名（`domainName` 設定時に必要）                                        |
-| `certificateArn`   | string                         | なし               | 事前作成した us-east-1 ACM 証明書 ARN（pipeline モード用、ADR-030）                        |
-| `webAclArn`        | string                         | なし               | 事前作成した us-east-1 WAF WebACL ARN（同上）                                              |
-| `bucketName`       | string                         | 自動命名           | S3 バケット名（未設定でグローバル一意な自動命名、ADR-031）                                 |
-| `enableGa4DataApi` | boolean                        | `false`            | GA4 アクセス統計ダッシュボード                                                             |
-| `bedrock`          | object \| `false`              | 有効（Titan v2）   | Bedrock 埋め込みによるセマンティック検索（ADR-034）。`false` で無効化                      |
-| `githubRepo`       | string                         | なし               | CodeConnections ソースリポジトリ（`owner/repo`、ADR-030）                                  |
-| `deployBranch`     | string                         | `main`             | この env を pipeline でデプロイするブランチ                                                |
-| `overrides`        | deep-partial                   | なし               | スケール preset の個別パラメータ上書き（後述）                                             |
+要点: サイトスコープのフィールド（`enableWaf` 〜 `enableGa4DataApi`）を env
+直下に書けるのはシングルサイト形状（`sites` なし）だけの**過去互換**で、`sites`
+を宣言した環境では各サイトエントリに書く（混在は synth 時に validateSites が拒否）。
 
 優先順位: CLI `-c` フラグ > `environments.ts` の env エントリ > スケール既定（`config.ts`）> 組込み既定。
+ただし `-c` が効くのは環境エントリのフィールドのみで、サイトスコープのフィールドへの
+`-c` はマルチサイト環境では無視される（1 つの `-c domainName=…` が全サイトへ
+一括適用される事故の防止、ADR-041）。
 
 ```ts
 // infra/config/environments.ts の例
@@ -205,19 +196,24 @@ export const connectionArn = 'arn:aws:codeconnections:ap-northeast-1:...:connect
 export const environments = {
   dev: {
     scale: 'small',
-    enableWaf: false,
     githubRepo: 'kukan-project/demo.kukan.dev',
     deployBranch: 'develop',
+    sites: [{ name: 'main', enableWaf: false }],
   },
   prd: {
     scale: 'large',
     githubRepo: 'kukan-project/demo.kukan.dev',
     deployBranch: 'main',
-    domainName: 'demo.example.com',
-    hostedZoneId: 'Z0123456789',
-    hostedZoneName: 'example.com',
-    allowedIpRanges: ['203.0.113.0/24', '2001:db8::/32'],
-    certificateArn: 'arn:aws:acm:us-east-1:...:certificate/...', // pipeline 用に一度作成（後述）
+    sites: [
+      {
+        name: 'main',
+        domainName: 'demo.example.com',
+        hostedZoneId: 'Z0123456789',
+        hostedZoneName: 'example.com',
+        allowedIpRanges: ['203.0.113.0/24', '2001:db8::/32'],
+        certificateArn: 'arn:aws:acm:us-east-1:...:certificate/...', // pipeline 用に一度作成（後述）
+      },
+    ],
   },
 } satisfies Record<string, EnvironmentConfig>
 ```
@@ -267,6 +263,10 @@ SiteStack × N（サイト別リソース）に分割される。**opt-in 専用
 `sites` の無い環境は従来の全部入り KukanStack を論理 ID 不変のまま合成し続ける
 （synth スナップショットテストが機械検証する。`infra/lib/__tests__/`）。
 
+**新規環境は `sites` 1 件（例: `sites: [{ name: 'main' }]`）で始めることを推奨**。
+デプロイ済み環境への `sites` 後付けは全リソース置換になる（後述のブルーグリーン移行）
+ため、将来サイトを増やす可能性が少しでもあれば最初からマルチサイト形状にしておく。
+
 ```
 Dev (Stage)
 ├─ KukanSharedStack        VPC/SG・Aurora/RDS・OpenSearch・ECS クラスタ・
@@ -287,18 +287,24 @@ prd: {
       name: 'citya',            // ^[a-z][a-z0-9]{1,15}$（リソース名 kukan-<env>-<site>-* と DB 名 kukan_<site> に使用）
       domainName: 'catalog.city-a.example.jp',
       hostedZoneId: 'Z...', hostedZoneName: 'city-a.example.jp',
-      certificateArn: 'arn:aws:acm:us-east-1:...',   // サイトドメインには必須（下記）
-      webAclArn: 'arn:aws:wafv2:us-east-1:...',      // 複数サイトで共有可
+      certificateArn: 'arn:aws:acm:us-east-1:...',   // pipeline モードでは必須（standalone は自動作成、下記）
+      webAclArn: 'arn:aws:wafv2:us-east-1:...',      // 複数サイトで共有可（同上）
     },
     { name: 'cityb', enableWaf: false },
   ],
 },
 ```
 
-- **証明書 / WAF**: マルチサイト環境は standalone / pipeline 両モードとも
-  GlobalStack を自動作成しない。サイトごとに us-east-1 の ACM 証明書 ARN を
-  用意する（コンソール、または一時的な standalone GlobalStack デプロイで作成
-  して ARN を貼る）
+- **証明書 / WAF**: シングルサイトと同じ規則。standalone モードでは不足分を
+  GlobalStack が自動作成する（サイトごとの ACM 証明書 — `hostedZoneId` /
+  `hostedZoneName` が必要 — と、WAF が有効で ARN 未指定のサイトが共有する
+  WebACL 1 つ）。pipeline モードは cross-region 参照が使えないため（ADR-030）
+  サイトごとに ARN を貼る（`npx cdk deploy -c env=<name> <Stage>/KukanGlobalStack`
+  で一度作成して出力 ARN を設定）。自動作成済みの証明書 / WebACL は **RETAIN**
+  — 外部 ARN への切り替えでテンプレートから消えても削除は試みない（GlobalStack
+  は CloudFront より先に更新されるため、使用中リソースの削除はデプロイを失敗
+  させる）。切り離されて残った WebACL は課金が続くため、参照が無くなったら
+  手動で削除する
 - **サイトスコープのフィールドは env 側に書けない**: domainName / hostedZone\* /
   certificateArn / webAclArn / enableWaf / allowedIpRanges / basicAuth /
   bucketName / enableGa4DataApi は `sites` 内でのみ宣言する（env 側に書くと
@@ -306,10 +312,12 @@ prd: {
   `overrides` のみで、env の値の上にサイトの値が deep-merge される（全サイト
   共通のチューニング + サイト個別上書き）。全サイトに同じゲートを掛けたい
   場合は TypeScript の変数として定義し各サイトへスプレッドする
-- **AWS Backup**: マルチサイト環境では使用不可（共有クラスタがサイト数分
-  スナップショットされるため）。scale `large` は
-  `overrides: { backup: { awsBackup: false } }` が必要。サイト単位の復元は
-  pg_dump の定期実行で補完する（ADR-037 の前提変更）
+- **AWS Backup**: マルチサイトでもそのまま使える（scale `large` の既定で有効）。
+  DB プランは SharedStack（vault `kukan-<env>-backup`、共有クラスタを 1 回だけ
+  スナップショット）、バケットプランは各 SiteStack（vault
+  `kukan-<env>-<site>-backup`）に分かれる。クラスタ単位 PITR で「1 サイトだけ
+  戻す」はできないため、サイト単位の復元には pg_dump の定期実行を補完する
+  （ADR-037 / ADR-041 トレードオフ）
 - **サイト中心で書きたい場合**: `environments.ts` は素の TypeScript なので、
   サイト台帳を先に定義して env エントリへ転置するヘルパーを書けばよい
   （ネイティブ構造が env 外側なのは、共有の箱・AWS アカウント・パイプラインが
@@ -332,12 +340,13 @@ prd: {
 
 SiteStack を削除（`cdk destroy` / sites から除去）した場合:
 
-| リソース                                | 挙動                        | 手動パージ                                                      |
-| --------------------------------------- | --------------------------- | --------------------------------------------------------------- |
-| サイト DB + ロール                      | **残る**（CR は削除しない） | master で `DROP DATABASE kukan_<site>; DROP ROLE kukan_<site>;` |
-| S3 バケット                             | **残る**（RETAIN）          | 空にしてから削除                                                |
-| OpenSearch インデックス                 | **残る**（共有ドメイン内）  | `DELETE /kukan-<env>-<site>-search`                             |
-| SQS キュー / Secrets / ECS / CloudFront | 削除される                  | DLQ は削除前に内容確認                                          |
+| リソース                                | 挙動                        | 手動パージ                                                                                                                                                        |
+| --------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| サイト DB + ロール                      | **残る**（CR は削除しない） | master で `DROP DATABASE kukan_<site>; DROP ROLE kukan_<site>;`                                                                                                   |
+| S3 バケット                             | **残る**（RETAIN）          | 空にしてから削除                                                                                                                                                  |
+| Backup vault（awsBackup 有効時）        | **残る**（RETAIN）          | リカバリポイントの失効（または手動削除）後に `kukan-<env>-<site>-backup` を削除。**同名サイトを再追加する場合は先に削除**（固定名のため衝突、ADR-037 と同じ規則） |
+| OpenSearch インデックス                 | **残る**（共有ドメイン内）  | `DELETE /kukan-<env>-<site>-search`                                                                                                                               |
+| SQS キュー / Secrets / ECS / CloudFront | 削除される                  | DLQ は削除前に内容確認                                                                                                                                            |
 
 ### 既存シングルサイト環境の移行（ブルーグリーン）
 
@@ -357,8 +366,9 @@ pg_dump / restore → S3 sync → 再インデックス → DNS 切替 → 旧�
 - **`db.maxAcu` の引き上げとサイト追加は同一デプロイにしない**。max_connections は
   静的パラメータで、maxACU 変更後も**インスタンス再起動まで旧値のまま**残る。
   先に ACU 変更をデプロイして再起動を済ませ、新しい上限が効いてからサイトを追加する
-- 共用 OpenSearch は medium（m6g.large.search）以上を前提とする（1 サイトの
-  再インデックスが全サイトの検索レイテンシに波及するため）
+- 共用 OpenSearch は medium（m6g.large.search）以上を推奨（1 サイトの
+  再インデックスが全サイトの検索レイテンシに波及するため）。強制はしないが、
+  2 サイト以上を burstable インスタンス（t3.\*）に載せると synth 時に警告が出る
 - 非 AWS 環境（Docker Compose）は `docker/multi-site/` の opt-in テンプレートを
   使う（手順は同ディレクトリの README）
 

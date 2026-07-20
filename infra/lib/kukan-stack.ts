@@ -49,8 +49,8 @@ export class KukanStack extends cdk.Stack {
     )
 
     // AWS Backup spans shared (DB cluster) and site (bucket) resources, so it
-    // lives here rather than in either composition — single-site only; multi-
-    // site environments reject it at validateSites (ADR-037 / ADR-041).
+    // lives here rather than in either composition; multi-site splits it into
+    // the shared (DB) and site (bucket) stacks (ADR-037 / ADR-041).
     if (config.backup.awsBackup) {
       new BackupConstruct(this, 'Backup', {
         config,
