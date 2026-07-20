@@ -3,6 +3,38 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.0] - 2026-07-20
+
+**Breaking Changes**
+
+- **The default brand moved from `apps/web/src/brand/` to `apps/web/brands/default/`.** Multi-brand support (ADR-042) consolidates every brand under `apps/web/brands/`, and the default brand now lives alongside the others. Forks that customized the brand must run `git mv apps/web/src/brand apps/web/brands/default` once when upgrading, and move any static assets from `apps/web/public/brand/` to `apps/web/brands/default/public/`. The `@/brand` imports and the runtime `/brand/...` URLs are unchanged, so no application code changes are needed. See the "Appearance Customization" guide for the full migration (#118).
+
+**Highlights**
+
+- **One fork can now ship multiple brands, one per site (ADR-042).** A `KUKAN_BRAND` build argument selects which brand under `apps/web/brands/` becomes the web image's look — its configuration, theme, messages, component overrides, static pages, and assets. Only the selected brand enters a build, so brands never mix in a bundle. In a multi-site deployment each site's `brand` in the environment definition drives a per-site image, so several municipalities can share one fork while each keeps its own identity. The default brand needs no configuration and builds exactly as before (#118).
+- **Multi-site is now on equal footing with single-site and can be the default shape (ADR-041).** New deployments can start multi-site from day one, because the three rough edges are gone: the us-east-1 ACM certificate and WAF WebACL are auto-created for site domains in standalone mode (matching single-site), AWS Backup works for multi-site with the shared database backed up once and each site's bucket backed up per site, and a burstable shared OpenSearch is a synth warning rather than a hard error. The example configuration now presents the multi-site shape first, keeping the single-site layout as a backward-compatible option, and a new environment-config reference documents every field (#117).
+
+**Features**
+
+- feat(infra): give multi-site parity with single-site so it can be the default (ADR-041) (#117)
+- feat(web)!: multi-brand build via KUKAN_BRAND (ADR-042) (#118)
+
+---
+
+**破壊的変更**
+
+- **デフォルトブランドの置き場所が `apps/web/src/brand/` から `apps/web/brands/default/` へ移動しました。** マルチブランド対応（ADR-042）で全ブランドを `apps/web/brands/` 配下に統合し、デフォルトブランドも他のブランドと同じ場所に置くようにしたためです。ブランドをカスタマイズしていたフォークは、アップグレード時に一度だけ `git mv apps/web/src/brand apps/web/brands/default` を実行し、`apps/web/public/brand/` に置いていた静的アセットは `apps/web/brands/default/public/` へ移してください。`@/brand` のインポートと実行時の `/brand/...` URL は不変なので、アプリケーションコードの変更は不要です。詳しい移行手順は「外観カスタマイズ」ガイドを参照してください（#118）。
+
+**ハイライト**
+
+- **1 つのフォークでサイトごとに異なるブランドを配布できるようになりました（ADR-042）。** ビルド引数 `KUKAN_BRAND` で、`apps/web/brands/` 配下のどのブランド（設定・テーマ・文言・コンポーネント差し替え・静的ページ・アセット）を web イメージの見た目にするかを選択します。ビルドに入るのは選択した 1 ブランドのみで、ブランド同士がバンドルで混ざりません。マルチサイト構成では環境定義の各サイトの `brand` がサイトごとのイメージを決めるため、複数自治体が 1 つのフォークを共有しつつ、それぞれ独自の見た目を保てます。デフォルトブランドは設定不要で、従来どおりビルドされます（#118）。
+- **マルチサイトがシングルサイトと同等になり、標準の構成として選べるようになりました（ADR-041）。** 3 つの引っかかりが解消され、新規構築は最初からマルチサイトで始められます。us-east-1 の ACM 証明書と WAF WebACL は standalone モードでサイトドメイン分が自動作成され（シングルサイトと同じ）、AWS Backup はマルチサイトでも利用可能になり（共有データベースは 1 回、各サイトのバケットはサイトごとにバックアップ）、burstable な共用 OpenSearch は synth 時のエラーではなく警告になりました。サンプル設定はマルチサイト形状を第一に提示してシングルサイト構成を後方互換の選択肢として残し、全フィールドを説明する環境設定リファレンスを新設しました（#117）。
+
+**機能**
+
+- feat(infra): マルチサイトをシングルサイトと同等にし標準構成として選べるように（ADR-041）（#117）
+- feat(web)!: `KUKAN_BRAND` によるマルチブランドビルド（ADR-042）（#118）
+
 ## [0.10.0] - 2026-07-19
 
 **Highlights**

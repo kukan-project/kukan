@@ -28,6 +28,7 @@ const dest = join(webRoot, 'public', 'brand')
 rmSync(dest, { recursive: true, force: true })
 mkdirSync(dest, { recursive: true })
 if (existsSync(src)) {
+  // Skip .gitkeep — it only keeps the source dir tracked; dest is gitignored.
   cpSync(src, dest, { recursive: true, filter: (s) => !s.endsWith('.gitkeep') })
 }
 
