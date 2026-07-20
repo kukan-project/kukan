@@ -3,6 +3,18 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.1] - 2026-07-21
+
+**Improvements**
+
+- **A site's `brand` now treats `'default'` exactly like leaving it unset.** After the multi-brand refactor the default brand is a real brand named `default`, so writing `brand: 'default'` and omitting the field are now equivalent — both build the default web image with no `KUKAN_BRAND` build argument. Previously an explicit `'default'` passed an unnecessary build argument that produced a different image asset hash for the same image. The environment-config reference documents the field's default value accordingly (#120).
+
+---
+
+**改善**
+
+- **サイトの `brand` で `'default'` を指定した場合と未指定を完全に同じ扱いにしました。** マルチブランド化でデフォルトブランドは `default` という名前の実在ブランドになったため、`brand: 'default'` と省略は等価になり、どちらも `KUKAN_BRAND` ビルド引数なしでデフォルトの web イメージをビルドします。従来は明示的な `'default'` が不要なビルド引数を渡し、同じイメージなのにアセットハッシュが変わっていました。環境設定リファレンスにも既定値を明記しています（#120）。
+
 ## [0.11.0] - 2026-07-20
 
 **Breaking Changes**
