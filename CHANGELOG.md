@@ -3,6 +3,46 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.3] - 2026-07-21
+
+**Security**
+
+- **All dependency vulnerabilities reported by `pnpm audit` are resolved.** 29 advisories (10 high / 14 moderate / 5 low) were cleared by updating direct dependencies (including Astro to 7.x) and adding scoped `pnpm.overrides` for transitive packages, with no breaking major bumps to runtime libraries (#125).
+- **Supply-chain hardening for CI.** All GitHub Actions are now pinned to full commit SHAs, workflow token permissions are scoped to least privilege, and Dependabot plus CodeQL static analysis run continuously (#124).
+
+**Bug Fixes**
+
+- **Multi-site databases now get their PostgreSQL extensions.** A newly deployed site previously failed to start because its per-site database role lacks the privilege to `CREATE EXTENSION`, so the worker's startup migration errored and tripped the ECS circuit breaker. The site-database provisioner now creates `pg_trgm` and `vector` as the master user, so first deploys succeed (#142).
+
+**Maintenance**
+
+- **Removed a deprecated CDK pattern.** The per-site database construct now uses an explicit `logGroup` instead of the deprecated `logRetention`, which also drops the extra `Custom::LogRetention` helper resources from the synthesized template (#143).
+- **Dependencies and pinned action versions updated**, including aws-cdk-lib, Next.js, better-auth, and the CodeQL / checkout / setup-node / upload-pages-artifact / create-github-app-token actions (#141, #131, #127, #129, #130, #128, #139, #135).
+
+**Documentation**
+
+- **Guidance on multi-environment AWS accounts.** The docs now recommend separate AWS accounts for dev and prd, and document the ECR asset-tag push conflict that can occur when the same commit is deployed to two environments in one account near-simultaneously, along with how to avoid it (#137).
+
+---
+
+**セキュリティ**
+
+- **`pnpm audit` が検出した依存脆弱性をすべて解消しました。** 29 件（high 10 / moderate 14 / low 5）を、直接依存の更新（Astro の 7.x 化を含む）と推移的依存への範囲限定の `pnpm.overrides` で解消し、ランタイムライブラリのメジャー更新による破壊は避けました（#125）。
+- **CI のサプライチェーン強化。** すべての GitHub Actions をコミット SHA に固定し、ワークフローのトークン権限を最小化、Dependabot と CodeQL 静的解析を常時実行するようにしました（#124）。
+
+**バグ修正**
+
+- **マルチサイトのデータベースに PostgreSQL 拡張が作成されるようになりました。** 従来、新規デプロイしたサイトは、サイト単位の DB ロールに `CREATE EXTENSION` 権限が無いため Worker 起動時のマイグレーションが失敗し、ECS circuit breaker が発動して起動できませんでした。サイト DB のプロビジョナーがマスターユーザーで `pg_trgm` / `vector` を作成するようにし、初回デプロイが成功します（#142）。
+
+**保守**
+
+- **非推奨の CDK パターンを解消しました。** サイト DB construct が非推奨の `logRetention` ではなく明示的な `logGroup` を使うようになり、合成テンプレートから余分な `Custom::LogRetention` ヘルパーリソースも削除されます（#143）。
+- **依存とアクションの固定バージョンを更新しました**（aws-cdk-lib・Next.js・better-auth、CodeQL / checkout / setup-node / upload-pages-artifact / create-github-app-token アクション等。#141, #131, #127, #129, #130, #128, #139, #135）。
+
+**ドキュメント**
+
+- **マルチ環境の AWS アカウント運用に関する指針。** dev と prd で AWS アカウントを分けることを推奨し、同一アカウントで同一コミットをほぼ同時にデプロイした際に起こり得る ECR アセットタグの push 競合とその回避方法を明記しました（#137）。
+
 ## [0.11.2] - 2026-07-21
 
 **Bug Fixes**
