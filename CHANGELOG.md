@@ -3,6 +3,26 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.5] - 2026-07-21
+
+**Security**
+
+- **OpenSearch Docker base image pinned by digest.** The kuromoji-enabled OpenSearch image is now pinned to its manifest digest, completing digest pinning across every container image, and Dependabot watches the `docker/` directory to bump it as the tag moves (#148).
+
+**Maintenance**
+
+- **Updated the `upload-artifact` action** used by the Scorecard workflow to its latest major version (#150).
+
+---
+
+**セキュリティ**
+
+- **OpenSearch の Docker ベースイメージを digest で固定。** kuromoji プラグイン入りの OpenSearch イメージをマニフェスト digest で固定し、全コンテナイメージの digest 固定が完了しました。Dependabot が `docker/` ディレクトリを監視して digest を追従更新します（#148）。
+
+**保守**
+
+- **Scorecard ワークフローが使う `upload-artifact` アクションを最新メジャーに更新しました**（#150）。
+
 ## [0.11.4] - 2026-07-21
 
 **Security**
