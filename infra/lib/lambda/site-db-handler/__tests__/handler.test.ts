@@ -3,10 +3,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const queryMock = vi.fn()
 const connectMock = vi.fn()
 const endMock = vi.fn()
+const clientConfigs: Array<{ database?: string }> = []
 
 vi.mock('pg', () => ({
   default: {
     Client: class {
+      constructor(config: { database?: string }) {
+        clientConfigs.push(config)
+      }
       connect = connectMock
       query = queryMock
       end = endMock
@@ -42,6 +46,7 @@ function event(requestType: 'Create' | 'Update' | 'Delete', props = PROPS) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  clientConfigs.length = 0
   getSecretMock.mockImplementation((input: { SecretId: string }) => ({
     SecretString: input.SecretId.endsWith('master')
       ? JSON.stringify({ username: 'postgres', password: 'master-pass' })
@@ -62,6 +67,18 @@ describe('site-db-handler', () => {
     expect(sql).toContain('REVOKE CONNECT ON DATABASE kukan_citya FROM PUBLIC')
     expect(sql).toContain('GRANT CONNECT ON DATABASE kukan_citya TO kukan_citya')
     expect(endMock).toHaveBeenCalled()
+  })
+
+  it('creates required extensions in the site database as master', async () => {
+    queryMock.mockResolvedValue({ rowCount: 0 })
+
+    await handler(event('Create'))
+
+    const sql = queryMock.mock.calls.map((c: unknown[]) => c[0] as string)
+    expect(sql).toContain('CREATE EXTENSION IF NOT EXISTS pg_trgm')
+    expect(sql).toContain('CREATE EXTENSION IF NOT EXISTS vector')
+    // Bootstrap runs against the `postgres` db; extensions against the site db.
+    expect(clientConfigs.map((c) => c.database)).toEqual(['postgres', 'kukan_citya'])
   })
 
   it('converges an existing role/database instead of failing (idempotent re-create)', async () => {

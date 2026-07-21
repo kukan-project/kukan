@@ -104,5 +104,26 @@ export async function handler(event: CustomResourceEvent): Promise<{
     await client.end()
   }
 
+  // Extensions live inside the site database and need privileges the site role
+  // lacks (rds_superuser). Create them here as master so the worker's startup
+  // migration (CREATE EXTENSION IF NOT EXISTS pg_trgm / vector) becomes a no-op
+  // instead of failing and tripping the ECS circuit breaker (ADR-041).
+  const siteClient = new pg.Client({
+    host: props.DbHost,
+    port: Number(props.DbPort),
+    database: dbName,
+    user: master.username,
+    password: master.password,
+    ssl: { rejectUnauthorized: false },
+    connectionTimeoutMillis: 15_000,
+  })
+  await siteClient.connect()
+  try {
+    await siteClient.query('CREATE EXTENSION IF NOT EXISTS pg_trgm')
+    await siteClient.query('CREATE EXTENSION IF NOT EXISTS vector')
+  } finally {
+    await siteClient.end()
+  }
+
   return { PhysicalResourceId: physicalId }
 }
