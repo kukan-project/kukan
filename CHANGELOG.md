@@ -3,6 +3,20 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.4] - 2026-07-21
+
+**Security**
+
+- **Docker base image pinned by digest.** The Node base image is now pinned to its manifest digest for a reproducible, tamper-evident build, and Dependabot bumps the digest as the upstream tag moves (#145).
+- **OpenSSF Scorecard analysis and badge.** A scheduled OpenSSF Scorecard workflow publishes supply-chain security results and surfaces them as a README badge (#146).
+
+---
+
+**セキュリティ**
+
+- **Docker ベースイメージを digest で固定。** Node ベースイメージをマニフェスト digest で固定し、再現性・改ざん検知性を確保しました。Dependabot が上流タグの移動に合わせて digest を追従更新します（#145）。
+- **OpenSSF Scorecard 分析とバッジ。** OpenSSF Scorecard の定期ワークフローがサプライチェーンのセキュリティ結果を公開し、README バッジとして表示します（#146）。
+
 ## [0.11.3] - 2026-07-21
 
 **Security**
