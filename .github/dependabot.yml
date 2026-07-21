@@ -1,11 +1,17 @@
 # Dependabot keeps dependencies and pinned action SHAs current.
 # Runs on the private source of truth (InfoLoungeLLC/kukan); updates reach the
 # public mirror through the normal publish flow. Grouped to keep PR noise low.
+#
+# target-branch is pinned to `develop` (the private default branch). The public
+# mirror only has `main` (no develop), so Dependabot finds no target there and
+# opens no PRs — this avoids duplicate PRs on the one-way mirror while the file
+# stays present so Scorecard's Dependency-Update-Tool check still passes.
 version: 2
 updates:
   # JS/TS dependencies across the pnpm workspace (root pnpm-lock.yaml covers all packages).
   - package-ecosystem: npm
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
@@ -19,6 +25,7 @@ updates:
   # Keep the SHA-pinned actions in .github/workflows up to date.
   - package-ecosystem: github-actions
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
     groups:
@@ -30,5 +37,6 @@ updates:
   # Base image in the multi-target Dockerfile.
   - package-ecosystem: docker
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
