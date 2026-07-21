@@ -4,7 +4,10 @@
 #   docker build --target worker -t kukan-worker .
 
 # ---- Base (shared by all targets: upgraded OS + pnpm) ----
-FROM public.ecr.aws/docker/library/node:24-alpine AS base
+# Pinned by digest for a reproducible, tamper-evident base (Scorecard
+# Pinned-Dependencies). The digest below is node 24.18.0 on alpine 3.24.1;
+# Dependabot (docker ecosystem) bumps it as the node:24-alpine tag moves.
+FROM public.ecr.aws/docker/library/node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS base
 RUN apk upgrade --no-cache && corepack enable && corepack prepare pnpm@10 --activate
 WORKDIR /app
 
