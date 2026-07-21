@@ -71,7 +71,9 @@ export class SiteDatabaseConstruct extends Construct implements DbAccess {
       handler: 'handler',
       runtime: lambda.Runtime.NODEJS_22_X,
       timeout: cdk.Duration.minutes(2),
-      logRetention: logs.RetentionDays.ONE_MONTH,
+      logGroup: new logs.LogGroup(this, 'HandlerLogs', {
+        retention: logs.RetentionDays.ONE_MONTH,
+      }),
       // The VPC has no NAT; Secrets Manager is reachable via the interface
       // endpoint created by KukanSharedStack
       vpc: props.vpc,
@@ -89,7 +91,9 @@ export class SiteDatabaseConstruct extends Construct implements DbAccess {
 
     const provider = new cr.Provider(this, 'Provider', {
       onEventHandler: handler,
-      logRetention: logs.RetentionDays.ONE_MONTH,
+      logGroup: new logs.LogGroup(this, 'ProviderLogs', {
+        retention: logs.RetentionDays.ONE_MONTH,
+      }),
     })
 
     this.customResource = new cdk.CustomResource(this, 'Resource', {
