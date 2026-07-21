@@ -10,12 +10,12 @@
     "clean": "rm -rf dist .astro"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.39.2",
-    "astro": "^6.4.2",
+    "@astrojs/starlight": "^0.41.3",
+    "astro": "^7.1.1",
     "sharp": "^0.34.5"
   },
   "devDependencies": {
     "remark-gfm": "^4.0.1",
-    "vite": "^7.3.3"
+    "vite": "^8.1.5"
   }
 }
