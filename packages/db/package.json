@@ -25,13 +25,13 @@
   "dependencies": {
     "@kukan/shared": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "pg": "^8.21.0"
+    "pg": "^8.22.0"
   },
   "devDependencies": {
     "@types/node": "^24.12.2",
     "@types/pg": "^8.20.0",
     "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
-    "tsx": "^4.22.3"
+    "tsx": "^4.23.1"
   }
 }

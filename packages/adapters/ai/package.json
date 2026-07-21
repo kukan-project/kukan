@@ -21,7 +21,7 @@
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1057.0",
     "@kukan/shared": "workspace:*",
-    "openai": "^6.39.1"
+    "openai": "^6.48.0"
   },
   "devDependencies": {
     "@types/node": "^24.12.2"

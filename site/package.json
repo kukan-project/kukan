@@ -12,7 +12,7 @@
   "dependencies": {
     "@astrojs/starlight": "^0.41.3",
     "astro": "^7.1.1",
-    "sharp": "^0.34.5"
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "remark-gfm": "^4.0.1",

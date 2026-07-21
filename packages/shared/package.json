@@ -19,8 +19,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "chardet": "^2.1.1",
-    "lru-cache": "~11.3.6",
+    "chardet": "^2.2.0",
+    "lru-cache": "~11.5.2",
     "pino": "^10.3.1",
     "zod": "4.4.3"
   },
