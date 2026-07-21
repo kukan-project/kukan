@@ -3,6 +3,18 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.2] - 2026-07-21
+
+**Bug Fixes**
+
+- **AWS deploys no longer need Docker to bundle the site-database Lambda.** The infrastructure package now declares `esbuild` directly, so the `NodejsFunction` bundling used by the multi-site database bootstrap always runs esbuild locally instead of falling back to a Docker build. This unblocks `cdk synth` / `cdk deploy` in environments without Docker (for example CodeBuild), which forks could previously hit because esbuild was only available at the workspace root (#122).
+
+---
+
+**バグ修正**
+
+- **AWS デプロイでサイト DB 用 Lambda のバンドルに Docker が不要になりました。** infra パッケージが `esbuild` を直接依存するようになり、マルチサイトのデータベースブートストラップが使う `NodejsFunction` のバンドルが常にローカルの esbuild で実行されます（Docker バンドルへのフォールバックを回避）。従来は esbuild がワークスペースのルートにしか無く、フォークの `cdk synth` / `cdk deploy` が Docker の無い環境（例: CodeBuild）で失敗し得ましたが、これが解消されます（#122）。
+
 ## [0.11.1] - 2026-07-21
 
 **Improvements**
