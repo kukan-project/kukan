@@ -34,9 +34,11 @@ updates:
           - minor
           - patch
 
-  # Base image in the multi-target Dockerfile.
+  # Base images: the multi-target Dockerfile (/) and the OpenSearch image (/docker).
   - package-ecosystem: docker
-    directory: /
+    directories:
+      - /
+      - /docker
     target-branch: develop
     schedule:
       interval: weekly
