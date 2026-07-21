@@ -1,0 +1,44 @@
+name: CodeQL
+
+# Static analysis (SAST) for the TypeScript/JavaScript sources. Runs on pushes
+# and PRs to the default branch plus a weekly schedule so newly disclosed query
+# patterns catch existing code. build-mode 'none' suits an interpreted stack —
+# no compilation step is required for JS/TS analysis.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    - cron: '27 3 * * 1' # weekly, Monday 03:27 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    # Code scanning upload is free on public repos but needs GitHub Advanced
+    # Security (paid) on the private source. Run only on the public mirror, the
+    # same guard deploy-site.yml uses. Private PRs skip this job.
+    if: github.repository == 'kukan-project/kukan'
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write # upload results to code scanning
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@b7351df727350dca84cb9d725d57dcf5bc82ba26 # v3.37.1
+        with:
+          languages: javascript-typescript
+          build-mode: none
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@b7351df727350dca84cb9d725d57dcf5bc82ba26 # v3.37.1
+        with:
+          category: '/language:javascript-typescript'

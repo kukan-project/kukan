@@ -1,0 +1,34 @@
+# Dependabot keeps dependencies and pinned action SHAs current.
+# Runs on the private source of truth (InfoLoungeLLC/kukan); updates reach the
+# public mirror through the normal publish flow. Grouped to keep PR noise low.
+version: 2
+updates:
+  # JS/TS dependencies across the pnpm workspace (root pnpm-lock.yaml covers all packages).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # One PR per week for the low-risk bumps; majors stay separate for review.
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Keep the SHA-pinned actions in .github/workflows up to date.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        update-types:
+          - minor
+          - patch
+
+  # Base image in the multi-target Dockerfile.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
