@@ -2,15 +2,16 @@
 
 ## Supported Versions / サポート対象バージョン
 
-KUKAN is currently in beta. Security fixes are applied to the latest
-development branch only.
+KUKAN is in beta (pre-1.0). Security fixes ship in the latest release;
+please upgrade to the most recent release before reporting.
 
-KUKAN は現在ベータ版です。セキュリティ修正は最新の開発ブランチにのみ
-適用されます。
+KUKAN はベータ版（1.0 未満）です。セキュリティ修正は最新リリースで
+提供されます。報告前に最新リリースへの更新をご確認ください。
 
-| Version   | Supported          |
-| --------- | ------------------ |
-| `develop` | :white_check_mark: |
+| Version        | Supported          |
+| -------------- | ------------------ |
+| Latest release | :white_check_mark: |
+| Older releases | :x:                |
 
 ## Reporting a Vulnerability / 脆弱性の報告
 
@@ -18,11 +19,17 @@ KUKAN は現在ベータ版です。セキュリティ修正は最新の開発�
 
 **セキュリティ脆弱性について、公開の GitHub Issue を作成しないでください。**
 
-Please report vulnerabilities by emailing **root@info-lounge.jp**.
+Preferred: use GitHub's private vulnerability reporting — the
+**"Report a vulnerability"** button on the repository's **Security** tab.
+Alternatively, email **root@info-lounge.jp**.
+
+推奨: GitHub の private vulnerability reporting（リポジトリの **Security**
+タブにある **「Report a vulnerability」** ボタン）をご利用ください。
+または **root@info-lounge.jp** にメールで報告してください。
+
 Include the following information:
 
-脆弱性は **root@info-lounge.jp** にメールで報告してください。
-以下の情報を含めてください:
+いずれの場合も以下の情報を含めてください:
 
 - Description of the vulnerability / 脆弱性の説明
 - Steps to reproduce / 再現手順
