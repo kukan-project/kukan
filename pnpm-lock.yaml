@@ -284,6 +284,9 @@ importers:
       aws-cdk:
         specifier: ^2.1126.0
         version: 2.1126.0
+      esbuild:
+        specifier: ^0.28.1
+        version: 0.28.1
       pg:
         specifier: ^8.21.0
         version: 8.21.0
