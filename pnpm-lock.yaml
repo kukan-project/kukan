@@ -30,7 +30,7 @@ importers:
         version: 8.20.0
       '@vitejs/plugin-react':
         specifier: ^6.0.2
-        version: 6.0.2(vite@8.1.5(@types/node@24.12.2)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3))
+        version: 6.0.2(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3))
       esbuild:
         specifier: ^0.28.1
         version: 0.28.1
@@ -60,10 +60,10 @@ importers:
         version: 8.60.0(eslint@10.4.1(jiti@2.6.1))(typescript@6.0.3)
       vite:
         specifier: ^8.0.16
-        version: 8.1.5(@types/node@24.12.2)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3)
+        version: 8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3)
       vitest:
         specifier: ^4.1.7
-        version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.5(@types/node@24.12.2)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3))
+        version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3))
 
   apps/web:
     dependencies:
@@ -77,8 +77,8 @@ importers:
         specifier: ^3.2.2
         version: 3.2.2(react@19.2.6)
       '@duckdb/duckdb-wasm':
-        specifier: 1.33.1-dev45.0
-        version: 1.33.1-dev45.0
+        specifier: 1.33.1-dev57.0
+        version: 1.33.1-dev57.0
       '@hookform/resolvers':
         specifier: ^5.4.0
         version: 5.4.0(react-hook-form@7.76.1(react@19.2.6))
@@ -111,7 +111,7 @@ importers:
         version: 16.2.6(@opentelemetry/api@1.9.1)(@playwright/test@1.60.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       next-intl:
         specifier: ^4.13.0
-        version: 4.13.0(next@16.2.6(@opentelemetry/api@1.9.1)(@playwright/test@1.60.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react@19.2.6)(typescript@6.0.3)
+        version: 4.13.0(@swc/helpers@0.5.23)(next@16.2.6(@opentelemetry/api@1.9.1)(@playwright/test@1.60.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react@19.2.6)(typescript@6.0.3)
       react:
         specifier: ^19.2.6
         version: 19.2.6
@@ -266,7 +266,7 @@ importers:
         version: 13.1.3
       tsup:
         specifier: ^8.5.1
-        version: 8.5.1(@swc/core@1.15.30)(jiti@2.6.1)(postcss@8.5.20)(tsx@4.22.3)(typescript@6.0.3)
+        version: 8.5.1(@swc/core@1.15.30(@swc/helpers@0.5.23))(jiti@2.6.1)(postcss@8.5.20)(tsx@4.22.3)(typescript@6.0.3)
       tsx:
         specifier: ^4.22.3
         version: 4.22.3
@@ -539,10 +539,10 @@ importers:
     dependencies:
       '@astrojs/starlight':
         specifier: ^0.41.3
-        version: 0.41.3(@astrojs/markdown-remark@7.2.1)(astro@7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.12.2)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3))(typescript@6.0.3)
+        version: 0.41.3(@astrojs/markdown-remark@7.2.1)(astro@7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.13.3)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3))(typescript@6.0.3)
       astro:
         specifier: ^7.1.1
-        version: 7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.12.2)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3)
+        version: 7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.13.3)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3)
       sharp:
         specifier: ^0.34.5
         version: 0.34.5
@@ -552,7 +552,7 @@ importers:
         version: 4.0.1
       vite:
         specifier: ^8.1.5
-        version: 8.1.5(@types/node@24.12.2)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3)
+        version: 8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3)
 
 packages:
 
@@ -1158,8 +1158,8 @@ packages:
   '@drizzle-team/brocli@0.10.2':
     resolution: {integrity: sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w==}
 
-  '@duckdb/duckdb-wasm@1.33.1-dev45.0':
-    resolution: {integrity: sha512-ETlrjhiGQzNdaOhpro/Y9u/RCcK+iyuczLy7uOn0kG5Mqlj8C+gTuhBXjs4JpK9ocdUgr3oT8zYYIbUnFD9AYA==}
+  '@duckdb/duckdb-wasm@1.33.1-dev57.0':
+    resolution: {integrity: sha512-ndn5l2EHq1PEMvCg8G6lRV0vjhSUcbqdM/niNBTTqH4/PyyUUVKbge0uUyCnj27b9SF/CiqBwDsgKLTqBvaxdw==}
 
   '@duckdb/node-api@1.5.4-r.1':
     resolution: {integrity: sha512-3PYk/4//svuYmb9RYVM71cCoNa6ngoYWwrMhJaqbm010txzIMWbJCbxrFeqDl+krdIug+Hc/MNCeS0gHsTXSIw==}
@@ -1225,11 +1225,11 @@ packages:
 
   '@esbuild-kit/core-utils@3.3.2':
     resolution: {integrity: sha512-sPRAnw9CdSsRmEtnsl2WXWdyquogVpB3yZ3dgwJfe8zrOzTsV7cJvmwrKVa+0ma5BoiGJ+BoqkMvawbayKUsqQ==}
-    deprecated: 'Merged into tsx: https://tsx.is'
+    deprecated: 'Merged into tsx: https://tsx.hirok.io'
 
   '@esbuild-kit/esm-loader@2.6.5':
     resolution: {integrity: sha512-FxEMIkJKnodyA1OaCUoEvbYRkoZlLZ4d/eXFu9Fh8CbBBgP5EmZxrfTRyN0qpXZ4vOvqnE5YdRdcrmUUXuU+dA==}
-    deprecated: 'Merged into tsx: https://tsx.is'
+    deprecated: 'Merged into tsx: https://tsx.hirok.io'
 
   '@esbuild/aix-ppc64@0.28.1':
     resolution: {integrity: sha512-Svl7tq8k/08+p6CXPpRjQ1fKX+1odH/BQbb48fV6fj3CWHhsoIOoY87w1oHXm0qEpkIK3ZfVgp0hed3XBXzXMQ==}
@@ -3180,6 +3180,9 @@ packages:
   '@swc/helpers@0.5.15':
     resolution: {integrity: sha512-JQ5TuMi45Owi4/BIMAJBoSQoOJu12oOk/gADqlcUL9JEdHB8vyjUSsxqeNXnmXHjYKMi2WcYtezGEEhqUI/E2g==}
 
+  '@swc/helpers@0.5.23':
+    resolution: {integrity: sha512-5lSsMOTXURePglDfvuAQUqkGek9Hg2kksOYay2m0+XR++b2NWYL/4sWyuvVBIs8oKnJaxkdi9whaL/sqN13afw==}
+
   '@swc/types@0.1.26':
     resolution: {integrity: sha512-lyMwd7WGgG79RS7EERZV3T8wMdmPq3xwyg+1nmAM64kIhx5yl+juO2PYIHb7vTiPgPCj8LYjsNV2T5wiQHUEaw==}
 
@@ -3395,11 +3398,14 @@ packages:
   '@types/nlcst@2.0.3':
     resolution: {integrity: sha512-vSYNSDe6Ix3q+6Z7ri9lyWqgGhJTmzRjZRqyq15N0Z/1/UnVsno9G/N40NBijoYx2seFDIl0+B2mgAb9mezUCA==}
 
-  '@types/node@20.19.41':
-    resolution: {integrity: sha512-ECymXOukMnOoVkC2bb1Vc/w/836DXncOg5m8Xj1RH7xSHZJWNYY6Zh7EH477vcnD5egKNNfy2RpNOmuChhFPgQ==}
+  '@types/node@20.19.43':
+    resolution: {integrity: sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA==}
 
   '@types/node@24.12.2':
     resolution: {integrity: sha512-A1sre26ke7HDIuY/M23nd9gfB+nrmhtYyMINbjI1zHJxYteKR6qSMX56FsmjMcDb3SMcjJg5BiRRgOCC/yBD0g==}
+
+  '@types/node@24.13.3':
+    resolution: {integrity: sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q==}
 
   '@types/papaparse@5.5.2':
     resolution: {integrity: sha512-gFnFp/JMzLHCwRf7tQHrNnfhN4eYBVYYI897CGX4MY1tzY9l2aLkVyx2IlKZ/SAqDbB3I1AOZW5gTMGGsqWliA==}
@@ -4271,8 +4277,8 @@ packages:
   es-module-lexer@2.0.0:
     resolution: {integrity: sha512-5POEcUuZybH7IdmGsD8wlf0AI55wMecM9rVBTI/qEAy2c1kTOm3DjFYjrBdI2K3BaJjJYfYFeRtM0t9ssnRuxw==}
 
-  es-object-atoms@1.1.1:
-    resolution: {integrity: sha512-FGgH2h8zKNim9ljj7dankFPcICIK9Cp5bm+c2gQSYePhpaG5+esrLODihIorn+Pe6FGJzWhXQotPv73jTaldXA==}
+  es-object-atoms@1.1.2:
+    resolution: {integrity: sha512-HWcBoN6NileqtSydK2FqHbS/LoDd2pqrnQHLyJzBj4kOp/ky2MWMN694xOfkK8/SnUsW2DH7EfyVlydKCsm1Zw==}
     engines: {node: '>= 0.4'}
 
   esast-util-from-estree@2.0.0:
@@ -4610,8 +4616,8 @@ packages:
     resolution: {integrity: sha512-1cDNdwJ2Jaohmb3sg4OmKaMBwuC48sYni5HUw2DvsC8LjGTLK9h+eb1X6RyuOHe4hT0ULCW68iomhjUoKUqlPQ==}
     engines: {node: '>= 0.4'}
 
-  hasown@2.0.3:
-    resolution: {integrity: sha512-ej4AhfhfL2Q2zpMmLo7U1Uv9+PyhIZpgQLGT1F9miIGmiCJIoCgSmczFdrc97mWT4kVY72KA+WnnhJ5pghSvSg==}
+  hasown@2.0.4:
+    resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
     engines: {node: '>= 0.4'}
 
   hast-util-embedded@3.0.0:
@@ -6375,6 +6381,9 @@ packages:
   undici-types@7.16.0:
     resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
 
+  undici-types@7.18.2:
+    resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
+
   undici@7.28.0:
     resolution: {integrity: sha512-cRZYrTDwWznlnRiPjggAGxZXanty6M8RV1ff8Wm4LWXBp7/IG8v5DnOm74DtUBp9OONpK75YlPnIjQqX0dBDtA==}
     engines: {node: '>=20.18.1'}
@@ -6874,13 +6883,13 @@ snapshots:
       hast-util-from-html: 2.0.3
       satteri: 0.9.5
 
-  '@astrojs/mdx@7.0.3(@astrojs/markdown-satteri@0.3.4)(astro@7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.12.2)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3))':
+  '@astrojs/mdx@7.0.3(@astrojs/markdown-satteri@0.3.4)(astro@7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.13.3)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3))':
     dependencies:
       '@astrojs/internal-helpers': 0.10.1
       '@astrojs/markdown-remark': 7.2.1
       '@mdx-js/mdx': 3.1.1
       acorn: 8.16.0
-      astro: 7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.12.2)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3)
+      astro: 7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.13.3)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3)
       es-module-lexer: 2.0.0
       estree-util-visit: 2.0.0
       hast-util-to-html: 9.0.5
@@ -6906,17 +6915,17 @@ snapshots:
       stream-replace-string: 2.0.0
       zod: 4.4.3
 
-  '@astrojs/starlight@0.41.3(@astrojs/markdown-remark@7.2.1)(astro@7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.12.2)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3))(typescript@6.0.3)':
+  '@astrojs/starlight@0.41.3(@astrojs/markdown-remark@7.2.1)(astro@7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.13.3)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3))(typescript@6.0.3)':
     dependencies:
       '@astrojs/markdown-satteri': 0.3.4
-      '@astrojs/mdx': 7.0.3(@astrojs/markdown-satteri@0.3.4)(astro@7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.12.2)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3))
+      '@astrojs/mdx': 7.0.3(@astrojs/markdown-satteri@0.3.4)(astro@7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.13.3)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3))
       '@astrojs/sitemap': 3.7.2
       '@pagefind/default-ui': 1.5.2
       '@types/hast': 3.0.4
       '@types/js-yaml': 4.0.9
       '@types/mdast': 4.0.4
-      astro: 7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.12.2)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3)
-      astro-expressive-code: 0.44.0(astro@7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.12.2)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3))
+      astro: 7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.13.3)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3)
+      astro-expressive-code: 0.44.0(astro@7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.13.3)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3))
       bcp-47: 2.1.0
       hast-util-from-html: 2.0.3
       hast-util-select: 6.0.4
@@ -7638,7 +7647,7 @@ snapshots:
 
   '@drizzle-team/brocli@0.10.2': {}
 
-  '@duckdb/duckdb-wasm@1.33.1-dev45.0':
+  '@duckdb/duckdb-wasm@1.33.1-dev57.0':
     dependencies:
       apache-arrow: 17.0.0
       qs: 6.15.3
@@ -9380,7 +9389,7 @@ snapshots:
   '@swc/core-win32-x64-msvc@1.15.30':
     optional: true
 
-  '@swc/core@1.15.30':
+  '@swc/core@1.15.30(@swc/helpers@0.5.23)':
     dependencies:
       '@swc/counter': 0.1.3
       '@swc/types': 0.1.26
@@ -9397,10 +9406,15 @@ snapshots:
       '@swc/core-win32-arm64-msvc': 1.15.30
       '@swc/core-win32-ia32-msvc': 1.15.30
       '@swc/core-win32-x64-msvc': 1.15.30
+      '@swc/helpers': 0.5.23
 
   '@swc/counter@0.1.3': {}
 
   '@swc/helpers@0.5.15':
+    dependencies:
+      tslib: 2.8.1
+
+  '@swc/helpers@0.5.23':
     dependencies:
       tslib: 2.8.1
 
@@ -9592,13 +9606,17 @@ snapshots:
     dependencies:
       '@types/unist': 3.0.3
 
-  '@types/node@20.19.41':
+  '@types/node@20.19.43':
     dependencies:
       undici-types: 6.21.0
 
   '@types/node@24.12.2':
     dependencies:
       undici-types: 7.16.0
+
+  '@types/node@24.13.3':
+    dependencies:
+      undici-types: 7.18.2
 
   '@types/papaparse@5.5.2':
     dependencies:
@@ -9620,7 +9638,7 @@ snapshots:
 
   '@types/sax@1.2.7':
     dependencies:
-      '@types/node': 24.12.2
+      '@types/node': 24.13.3
 
   '@types/unist@2.0.11': {}
 
@@ -9728,6 +9746,11 @@ snapshots:
       '@rolldown/pluginutils': 1.0.1
       vite: 8.1.5(@types/node@24.12.2)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3)
 
+  '@vitejs/plugin-react@6.0.2(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3))':
+    dependencies:
+      '@rolldown/pluginutils': 1.0.1
+      vite: 8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3)
+
   '@vitest/expect@4.1.7':
     dependencies:
       '@standard-schema/spec': 1.1.0
@@ -9744,6 +9767,14 @@ snapshots:
       magic-string: 0.30.21
     optionalDependencies:
       vite: 8.1.5(@types/node@24.12.2)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3)
+
+  '@vitest/mocker@4.1.7(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3))':
+    dependencies:
+      '@vitest/spy': 4.1.7
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+    optionalDependencies:
+      vite: 8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3)
 
   '@vitest/pretty-format@4.1.7':
     dependencies:
@@ -9827,10 +9858,10 @@ snapshots:
 
   apache-arrow@17.0.0:
     dependencies:
-      '@swc/helpers': 0.5.15
+      '@swc/helpers': 0.5.23
       '@types/command-line-args': 5.2.3
       '@types/command-line-usage': 5.0.4
-      '@types/node': 20.19.41
+      '@types/node': 20.19.43
       command-line-args: 5.2.1
       command-line-usage: 7.0.4
       flatbuffers: 24.12.23
@@ -9861,13 +9892,13 @@ snapshots:
 
   astring@1.9.0: {}
 
-  astro-expressive-code@0.44.0(astro@7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.12.2)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3)):
+  astro-expressive-code@0.44.0(astro@7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.13.3)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3)):
     dependencies:
-      astro: 7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.12.2)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3)
+      astro: 7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.13.3)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3)
       rehype-expressive-code: 0.44.0
       url-extras: 0.1.0
 
-  astro@7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.12.2)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3):
+  astro@7.1.1(@astrojs/markdown-remark@7.2.1)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.13.3)(idb-keyval@6.2.4)(jiti@2.6.1)(rollup@4.60.2)(tsx@4.22.3):
     dependencies:
       '@astrojs/compiler-rs': 0.3.1(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
       '@astrojs/internal-helpers': 0.10.1
@@ -9917,8 +9948,8 @@ snapshots:
       ultrahtml: 1.6.0
       unifont: 0.7.4
       unstorage: 1.17.5(idb-keyval@6.2.4)
-      vite: 8.1.5(@types/node@24.12.2)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3)
-      vitefu: 1.1.3(vite@8.1.5(@types/node@24.12.2)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3))
+      vite: 8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3)
+      vitefu: 1.1.3(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3))
       xxhash-wasm: 1.1.0
       yargs-parser: 22.0.0
       zod: 4.4.3
@@ -10384,7 +10415,7 @@ snapshots:
 
   es-module-lexer@2.0.0: {}
 
-  es-object-atoms@1.1.1:
+  es-object-atoms@1.1.2:
     dependencies:
       es-errors: 1.3.0
 
@@ -10757,12 +10788,12 @@ snapshots:
       call-bind-apply-helpers: 1.0.2
       es-define-property: 1.0.1
       es-errors: 1.3.0
-      es-object-atoms: 1.1.1
+      es-object-atoms: 1.1.2
       function-bind: 1.1.2
       get-proto: 1.0.1
       gopd: 1.2.0
       has-symbols: 1.1.0
-      hasown: 2.0.3
+      hasown: 2.0.4
       math-intrinsics: 1.1.0
 
   get-nonce@1.0.1: {}
@@ -10770,7 +10801,7 @@ snapshots:
   get-proto@1.0.1:
     dependencies:
       dunder-proto: 1.0.1
-      es-object-atoms: 1.1.1
+      es-object-atoms: 1.1.2
 
   get-tsconfig@4.14.0:
     dependencies:
@@ -10852,7 +10883,7 @@ snapshots:
 
   has-symbols@1.1.0: {}
 
-  hasown@2.0.3:
+  hasown@2.0.4:
     dependencies:
       function-bind: 1.1.2
 
@@ -11875,11 +11906,11 @@ snapshots:
 
   next-intl-swc-plugin-extractor@4.13.0: {}
 
-  next-intl@4.13.0(next@16.2.6(@opentelemetry/api@1.9.1)(@playwright/test@1.60.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react@19.2.6)(typescript@6.0.3):
+  next-intl@4.13.0(@swc/helpers@0.5.23)(next@16.2.6(@opentelemetry/api@1.9.1)(@playwright/test@1.60.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react@19.2.6)(typescript@6.0.3):
     dependencies:
       '@formatjs/intl-localematcher': 0.8.3
       '@parcel/watcher': 2.5.6
-      '@swc/core': 1.15.30
+      '@swc/core': 1.15.30(@swc/helpers@0.5.23)
       icu-minify: 4.13.0
       negotiator: 1.0.0
       next: 16.2.6(@opentelemetry/api@1.9.1)(@playwright/test@1.60.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -12279,7 +12310,7 @@ snapshots:
       '@protobufjs/path': 1.1.2
       '@protobufjs/pool': 1.1.0
       '@protobufjs/utf8': 1.1.1
-      '@types/node': 24.12.2
+      '@types/node': 24.13.3
       long: 5.3.2
 
   proxy-addr@2.0.7:
@@ -12858,7 +12889,7 @@ snapshots:
 
   sitemap@9.0.1:
     dependencies:
-      '@types/node': 24.12.2
+      '@types/node': 24.13.3
       '@types/sax': 1.2.7
       arg: 5.0.2
       sax: 1.6.0
@@ -13101,7 +13132,7 @@ snapshots:
 
   tslib@2.8.1: {}
 
-  tsup@8.5.1(@swc/core@1.15.30)(jiti@2.6.1)(postcss@8.5.20)(tsx@4.22.3)(typescript@6.0.3):
+  tsup@8.5.1(@swc/core@1.15.30(@swc/helpers@0.5.23))(jiti@2.6.1)(postcss@8.5.20)(tsx@4.22.3)(typescript@6.0.3):
     dependencies:
       bundle-require: 5.1.0(esbuild@0.28.1)
       cac: 6.7.14
@@ -13121,7 +13152,7 @@ snapshots:
       tinyglobby: 0.2.16
       tree-kill: 1.2.2
     optionalDependencies:
-      '@swc/core': 1.15.30
+      '@swc/core': 1.15.30(@swc/helpers@0.5.23)
       postcss: 8.5.20
       typescript: 6.0.3
     transitivePeerDependencies:
@@ -13189,6 +13220,8 @@ snapshots:
   undici-types@6.21.0: {}
 
   undici-types@7.16.0: {}
+
+  undici-types@7.18.2: {}
 
   undici@7.28.0: {}
 
@@ -13337,9 +13370,23 @@ snapshots:
       jiti: 2.6.1
       tsx: 4.22.3
 
-  vitefu@1.1.3(vite@8.1.5(@types/node@24.12.2)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3)):
+  vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3):
+    dependencies:
+      lightningcss: 1.32.0
+      picomatch: 4.0.5
+      postcss: 8.5.20
+      rolldown: 1.1.5
+      tinyglobby: 0.2.17
     optionalDependencies:
-      vite: 8.1.5(@types/node@24.12.2)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3)
+      '@types/node': 24.13.3
+      esbuild: 0.28.1
+      fsevents: 2.3.3
+      jiti: 2.6.1
+      tsx: 4.22.3
+
+  vitefu@1.1.3(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3)):
+    optionalDependencies:
+      vite: 8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3)
 
   vitest@4.1.7(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.5(@types/node@24.12.2)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3)):
     dependencies:
@@ -13366,6 +13413,35 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       '@types/node': 24.12.2
+      jsdom: 29.1.1(@noble/hashes@2.2.0)
+    transitivePeerDependencies:
+      - msw
+
+  vitest@4.1.7(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3)):
+    dependencies:
+      '@vitest/expect': 4.1.7
+      '@vitest/mocker': 4.1.7(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3))
+      '@vitest/pretty-format': 4.1.7
+      '@vitest/runner': 4.1.7
+      '@vitest/snapshot': 4.1.7
+      '@vitest/spy': 4.1.7
+      '@vitest/utils': 4.1.7
+      es-module-lexer: 2.0.0
+      expect-type: 1.3.0
+      magic-string: 0.30.21
+      obug: 2.1.1
+      pathe: 2.0.3
+      picomatch: 4.0.4
+      std-env: 4.1.0
+      tinybench: 2.9.0
+      tinyexec: 1.1.1
+      tinyglobby: 0.2.16
+      tinyrainbow: 3.1.0
+      vite: 8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.22.3)
+      why-is-node-running: 2.3.0
+    optionalDependencies:
+      '@opentelemetry/api': 1.9.1
+      '@types/node': 24.13.3
       jsdom: 29.1.1(@noble/hashes@2.2.0)
     transitivePeerDependencies:
       - msw
