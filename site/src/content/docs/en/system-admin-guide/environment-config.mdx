@@ -25,6 +25,22 @@ export const connectionArn = 'arn:aws:codeconnections:...:connection/...'
 environment.** Fields split into "environment entry" fields (shared resources +
 CI/CD) and "site entry" fields (site-specific settings).
 
+## Account strategy (dev / prd)
+
+**Separate AWS accounts are recommended for prd vs dev** (isolation of failures,
+permissions, and billing; a contained blast radius). Setting a distinct `account`
+per environment separates them at the account boundary.
+
+Running multiple environments in one account is also supported (for evaluation /
+small / cost-conscious setups), with one caveat: deploying **the same commit to
+dev and prd near-simultaneously** can race on pushing the same tag to the CDK
+bootstrap image ECR repository the two environments share (image tags are a hash
+of the build content, so the same commit yields the same tag). The conflict is
+**transient and self-healing — re-running the failed deploy resolves it** (the
+already-pushed image is skipped). To avoid it for good, make that ECR
+repository's tags MUTABLE, or stagger the dev and prd deploys. See
+`docs/specs/phase4-deploy.md` in the repository for the procedure.
+
 ## Environment entry fields
 
 Settings for the shared resources (database, OpenSearch, VPC, ECS cluster) and

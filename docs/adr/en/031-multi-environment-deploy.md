@@ -86,6 +86,18 @@ export const environments = {
 | Separate account | a distinct ID per env   | Separated by account; set via the Stage `env`                                                                                             |
 | Same account     | the same ID in each env | Stage name separates stack names, logical IDs, and auto-named resources. **Explicit physical names still need env suffixing** (see below) |
 
+> [!NOTE]
+> **Separate accounts are RECOMMENDED for prd** (isolation, blast radius, billing,
+> IAM boundary). Same-account operation is also a first-class supported path (so as
+> not to raise the barrier for OSS self-hosters), with one caveat: deploying the
+> same commit to multiple envs near-simultaneously can race on pushing the same tag
+> to the CDK bootstrap asset ECR repository (current bootstrap creates it with
+> `ImageTagMutability: IMMUTABLE`). The conflict is **transient and retry-safe**
+> (`cdk-assets` skips an existing digest, so re-running resolves it); the durable
+> fix is to make that repository MUTABLE. Separate accounts avoid it entirely since
+> the repositories are distinct. See `docs/specs/phase4-deploy.md` for details and
+> the MUTABLE procedure.
+
 ### Handling fixed physical names
 
 Even with Stage namespacing, **explicit physical names are not auto-separated**, so for multiple environments in the same account, resolve the following.

@@ -435,6 +435,37 @@ Worker 起動時にマイグレーションを自動実行:
 デプロイには2つのモードがある。Docker イメージのビルド・ECR プッシュは CDK が
 `DockerImageAsset` で自動実行するため、手動の `docker build` / `docker push` は不要。
 
+> [!NOTE]
+> **同一アカウントで複数環境（dev/prd）を運用する場合の ECR タグ競合**
+> `DockerImageAsset` のイメージタグは**ビルド内容のハッシュ**で決まるため、同一コミットは
+> dev と prd で同じタグになる。両環境を**同一アカウント・リージョン**で運用すると
+> （`environments.ts` で `account` を省略）CDK bootstrap のアセット用 ECR リポジトリ
+> （既定で `cdk-hnb659fds-container-assets-<account>-<region>`）を共有するため、**同一コミットを
+> dev と prd へほぼ同時にデプロイ**（dev マージ直後に prd マージ等）すると同じタグへの push が
+> 競合し得る。現行の CDK bootstrap はこのリポジトリを **`ImageTagMutability: IMMUTABLE`** で作るため、
+> 2 つ目の push が immutability 違反で失敗する。
+>
+> ただし **transient かつ retry-safe**: `cdk-assets` は push 前にタグ存在を確認し、既に同一
+> ダイジェストがあればスキップするため、**落ちた側を再実行すれば解消**する（データ損失ではない）。
+>
+> 恒久対策（いずれか）:
+>
+> - **prd は別アカウント運用を推奨**（分離・blast radius・課金・IAM 境界。ADR-031）。別アカウントなら
+>   リポジトリが分かれるため本競合は発生しない。
+> - same-account を維持するなら、アセット用 ECR リポジトリを **MUTABLE 化**する。bootstrap
+>   テンプレートを書き換えて bootstrap し直すのが IaC 的で確実（ハッシュタグなので上書きは
+>   同一バイト列の再 push＝実質 no-op であり安全。イミュータビリティはハッシュタグで既に達成済み）:
+>
+>   ```bash
+>   cd infra
+>   npx cdk bootstrap --show-template \
+>     | sed 's/ImageTagMutability: IMMUTABLE/ImageTagMutability: MUTABLE/' \
+>     > bootstrap-mutable.yaml
+>   npx cdk bootstrap --template bootstrap-mutable.yaml aws://<account>/<region>
+>   ```
+>
+> - 組織 SCP が MUTABLE を許さない場合は、同一コミットの dev/prd デプロイを**直列化**する。
+
 | モード            | コマンド                                   | 用途                                         |
 | ----------------- | ------------------------------------------ | -------------------------------------------- |
 | **A. Standalone** | `npx cdk deploy -c env=<name> '<Name>/**'` | 初回セットアップ・ローカルからの手動デプロイ |

@@ -13,6 +13,11 @@
  * Same-account vs separate-account is chosen purely here:
  *   - omit `account`            → CDK_DEFAULT_ACCOUNT (same-account operation)
  *   - set `account` per env     → separate-account operation
+ * Separate accounts are RECOMMENDED for prd (isolation, blast radius, billing,
+ * IAM boundary — ADR-031). Same-account is fully supported for evaluation / small
+ * / cost-conscious setups, with one caveat: deploying the same commit to two envs
+ * in one account near-simultaneously can hit an ECR asset-tag push conflict
+ * (transient and retry-safe — see docs/specs/phase4-deploy.md).
  *
  * This example presents the multi-site shape only (ADR-041): every environment
  * declares `sites`, starting with a single entry, because `sites` cannot be

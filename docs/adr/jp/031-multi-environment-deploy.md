@@ -84,6 +84,15 @@ export const environments = {
 | 別アカウント   | 各 env で別の ID を指定 | アカウントで分離。Stage の `env` で指定                                                                        |
 | 同一アカウント | 各 env で同じ ID を指定 | Stage 名でスタック名・論理 ID・自動命名リソースを分離。**明示的物理名は別途 env サフィックス化が必要**（下記） |
 
+> [!NOTE]
+> **推奨は prd の別アカウント運用**（分離・blast radius・課金・IAM 境界）。同一アカウント運用も
+> first-class でサポートする（OSS 自己ホストの導入障壁を上げないため）が、caveat が 1 つある:
+> 同一コミットを複数 env へほぼ同時にデプロイすると、CDK bootstrap のアセット用 ECR リポジトリ
+> （現行 bootstrap は `ImageTagMutability: IMMUTABLE` で作成）へ同一タグを push して競合し得る。
+> **transient かつ retry-safe**（`cdk-assets` が既存ダイジェストをスキップするため再実行で解消）で、
+> 恒久対策は当該リポジトリの MUTABLE 化。別アカウント運用ならリポジトリが分かれるため無関係。
+> 詳細と MUTABLE 化手順は `docs/specs/phase4-deploy.md` を参照。
+
 ### 固定の物理名の扱い
 
 Stage 名前空間化でも**明示的な物理名は自動分離されない**ため、同一アカウントで複数環境を持つ場合は以下を解消する。
