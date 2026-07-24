@@ -4,7 +4,7 @@
  * when its content hash differs from the latest one. Format-agnostic.
  */
 
-import { getVersionKey } from '@kukan/shared'
+import { getVersionKey, versionOrigin } from '@kukan/shared'
 import type { ResourceSchema } from '@kukan/shared'
 import type { PipelineContext } from '../types'
 
@@ -52,7 +52,7 @@ export async function executeVersion(
     storageKey: versionKey,
     size: res.size,
     hash: res.hash,
-    origin: res.urlType === 'upload' ? 'upload' : 'fetch',
+    origin: versionOrigin(res.urlType),
     schema,
   })
 

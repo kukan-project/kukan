@@ -24,6 +24,7 @@ import {
   ForbiddenError,
   UnauthorizedError,
   REINDEX_JOB_TYPE,
+  BACKFILL_VERSIONS_JOB_TYPE,
   RESOURCE_PREFIX,
   PREVIEW_PREFIX,
   escapeLike,
@@ -31,6 +32,7 @@ import {
   userRoleSchema,
 } from '@kukan/shared'
 import { PipelineService } from '../services/pipeline-service'
+import { ResourceVersionService } from '../services/resource-version-service'
 import { UserService } from '../services/user-service'
 import {
   VECTOR_SIMILARITY_NOTCHES_KEY,
@@ -408,6 +410,21 @@ adminRouter.post(
     return c.json({ queued: true })
   }
 )
+
+// GET /api/v1/admin/version-backfill-status — Resources still missing a version.
+// Drives the one-time "backfill versions" migration control (ADR-043): the UI
+// shows the action only while unversionedCount > 0.
+adminRouter.get('/version-backfill-status', async (c) => {
+  const unversionedCount = await new ResourceVersionService(c.get('db')).countUnversioned()
+  return c.json({ unversionedCount })
+})
+
+// POST /api/v1/admin/backfill-versions — Enqueue the one-time version backfill.
+// Snapshots each unversioned resource's live file as v1 (no re-fetch/re-index).
+adminRouter.post('/backfill-versions', async (c) => {
+  await c.get('queue').enqueue(BACKFILL_VERSIONS_JOB_TYPE, {})
+  return c.json({ queued: true })
+})
 
 // POST /api/v1/admin/jobs/enqueue-all — Enqueue pipeline for all active resources
 adminRouter.post('/jobs/enqueue-all', async (c) => {

@@ -76,6 +76,10 @@ export const EMBED_JOB_TYPE = 'embed-package' as const
 /** Legal deletion: permanently erase one resource version's content (ADR-043). */
 export const PURGE_VERSION_JOB_TYPE = 'purge-resource-version' as const
 
+/** One-time migration: snapshot the current file of every unversioned resource
+ *  as v1 (ADR-043). No re-fetch/re-index — just copies the live key. */
+export const BACKFILL_VERSIONS_JOB_TYPE = 'backfill-resource-versions' as const
+
 // ── Job payload schemas (the worker validates against these before acting) ──
 
 export const pipelineJobSchema = z.object({ resourceId: z.uuid() })
@@ -86,6 +90,7 @@ export const purgeVersionJobSchema = z.object({
   resourceId: z.uuid(),
   version: z.number().int().positive(),
 })
+export const backfillVersionsJobSchema = z.object({})
 
 /** A single file/directory entry in a ZIP manifest */
 export interface ZipEntry {

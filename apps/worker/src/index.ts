@@ -13,11 +13,13 @@ import {
   REINDEX_JOB_TYPE,
   PURGE_ORG_JOB_TYPE,
   PURGE_VERSION_JOB_TYPE,
+  BACKFILL_VERSIONS_JOB_TYPE,
   EMBED_JOB_TYPE,
   pipelineJobSchema,
   reindexJobSchema,
   purgeOrgJobSchema,
   purgeVersionJobSchema,
+  backfillVersionsJobSchema,
   embedJobSchema,
 } from '@kukan/shared'
 import { eq, sql } from 'drizzle-orm'
@@ -255,6 +257,19 @@ await queue.process({
     log.info(
       { jobId: job.id, type: job.type, resourceId, version, ...result, elapsed },
       result.purged ? 'Purge version job completed' : 'Purge version job skipped (not purging)'
+    )
+  },
+  // One-time migration: snapshot every unversioned resource's live file as v1
+  // (ADR-043). No re-fetch/re-index — just server-side copies.
+  [BACKFILL_VERSIONS_JOB_TYPE]: async (job: Job) => {
+    if (!parseJobPayload(job, backfillVersionsJobSchema)) return
+    log.info({ jobId: job.id, type: job.type }, 'Backfill versions job started')
+    const start = performance.now()
+    const result = await new ResourceVersionService(db).backfillVersions({ storage })
+    const elapsed = Math.round(performance.now() - start)
+    log.info(
+      { jobId: job.id, type: job.type, ...result, elapsed },
+      'Backfill versions job completed'
     )
   },
 })

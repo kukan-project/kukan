@@ -7,7 +7,7 @@
 import { eq, and, lt, desc, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, resourceVersion, resourcePipeline, auditLog } from '@kukan/db'
-import { NotFoundError, getStorageKey } from '@kukan/shared'
+import { NotFoundError, getStorageKey, getVersionKey, versionOrigin } from '@kukan/shared'
 import type { ResourceSchema } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
@@ -16,6 +16,9 @@ import { PipelineService } from './pipeline-service'
 
 export type VersionState = 'active' | 'purging' | 'purged'
 export type VersionOrigin = 'upload' | 'fetch'
+
+/** Bounded concurrency for the one-time version backfill's storage copies. */
+const BACKFILL_CONCURRENCY = 10
 
 /** A version as exposed through the API. Purged versions are tombstones: their
  *  content-bearing fields (storageKey/hash/size/schema) are withheld. */
@@ -49,6 +52,80 @@ function toView(row: typeof resourceVersion.$inferSelect): VersionView {
 
 export class ResourceVersionService {
   constructor(private db: Database) {}
+
+  /**
+   * Count active resources that have content but no version yet — the work left
+   * for a one-time backfill (ADR-043). Zero means the migration is complete.
+   */
+  async countUnversioned(): Promise<number> {
+    const [row] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(resource)
+      .where(this.unversionedWhere())
+    return row?.count ?? 0
+  }
+
+  /** Active resources that have content but no version yet — the backfill work set. */
+  private unversionedWhere() {
+    return and(
+      eq(resource.state, 'active'),
+      sql`${resource.hash} IS NOT NULL`,
+      sql`NOT EXISTS (SELECT 1 FROM ${resourceVersion} rv WHERE rv.resource_id = ${resource.id})`
+    )
+  }
+
+  /**
+   * One-time migration: snapshot the live file of every unversioned resource as
+   * v1 by server-side copy (ADR-043). No re-fetch, re-index, or re-embedding —
+   * the current storage key already holds the content. Idempotent (skips
+   * resources that already have a version). Runs in the worker.
+   */
+  async backfillVersions(deps: {
+    storage: StorageAdapter
+  }): Promise<{ backfilled: number; failed: number }> {
+    // Fetch every unversioned resource once (small rows), then process each
+    // exactly once — no re-query, so a failure isn't retried into a success.
+    const rows = await this.db
+      .select({
+        id: resource.id,
+        packageId: resource.packageId,
+        urlType: resource.urlType,
+        hash: resource.hash,
+        size: resource.size,
+        schema: sql<ResourceSchema | null>`${resourcePipeline.metadata} -> 'schema'`,
+      })
+      .from(resource)
+      .leftJoin(resourcePipeline, eq(resourcePipeline.resourceId, resource.id))
+      .where(this.unversionedWhere())
+
+    let backfilled = 0
+    let failed = 0
+    // Per-resource copy+insert, bounded concurrency. Kept per-row (not one batched
+    // INSERT) so one bad object fails only its own resource, not the whole chunk.
+    for (let i = 0; i < rows.length; i += BACKFILL_CONCURRENCY) {
+      const results = await Promise.allSettled(
+        rows.slice(i, i + BACKFILL_CONCURRENCY).map(async (r) => {
+          const versionKey = getVersionKey(r.packageId, r.id, 1)
+          await deps.storage.copy(getStorageKey(r.packageId, r.id), versionKey)
+          await this.db.insert(resourceVersion).values({
+            resourceId: r.id,
+            version: 1,
+            storageKey: versionKey,
+            size: r.size,
+            hash: r.hash,
+            origin: versionOrigin(r.urlType),
+            schema: r.schema ?? null,
+          })
+        })
+      )
+      for (const res of results) {
+        if (res.status === 'fulfilled') backfilled++
+        else failed++
+      }
+    }
+
+    return { backfilled, failed }
+  }
 
   /** List a resource's versions, newest first. */
   async listByResource(resourceId: string): Promise<VersionView[]> {

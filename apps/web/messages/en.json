@@ -487,6 +487,13 @@
       "ok": "OK",
       "error": "Error",
       "unknown": "Unknown"
+    },
+    "versionBackfill": {
+      "backfillTitle": "Backfill versions",
+      "backfillDescription": "{count} resource(s) do not have a version yet. This records each resource's current file as v1 (no re-fetch or re-indexing). It is a one-time migration step and disappears once complete.",
+      "backfill": "Backfill versions",
+      "backfilling": "Running…",
+      "backfillQueued": "Backfill queued. This section disappears once it completes."
     }
   },
   "profile": {

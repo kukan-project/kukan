@@ -8,6 +8,7 @@ import { clientFetch } from '@/lib/client-api'
 import { useUser } from '@/components/dashboard/user-provider'
 import { StatCard } from '@/components/dashboard/stat-card'
 import { FormatBadges } from '@/components/format-badges'
+import { VersionBackfillNotice } from '@/components/dashboard/version-backfill-notice'
 
 interface PkgItem {
   id: string
@@ -52,6 +53,8 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
         <p className="text-muted-foreground">{t('welcome', { name: user.name })}</p>
       </div>
+
+      <VersionBackfillNotice />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard label={t('datasetCount')} value={loading ? undefined : total} />

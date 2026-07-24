@@ -186,6 +186,14 @@ export function getVersionKey(packageId: string, resourceId: string, version: nu
   return `${VERSION_PREFIX}${packageId}/${resourceId}/v${version}`
 }
 
+/**
+ * How a captured version's content was obtained (ADR-043): an explicit upload,
+ * or a snapshot observed when fetching an external URL.
+ */
+export function versionOrigin(urlType: string | null): 'upload' | 'fetch' {
+  return urlType === 'upload' ? 'upload' : 'fetch'
+}
+
 /** Compute storage key for a resource's preview file */
 export function getPreviewKey(
   packageId: string,
