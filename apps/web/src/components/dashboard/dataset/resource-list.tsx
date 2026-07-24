@@ -98,14 +98,19 @@ function SortableResourceRow({
   resource: r,
   isDragDisabled,
   isActionsDisabled,
+  isActive,
   onEdit,
+  onClose,
   onDelete,
   onPipelineSettled,
 }: {
   resource: Resource
   isDragDisabled: boolean
   isActionsDisabled: boolean
+  /** True when this row's inline editor is open — a row click then closes it. */
+  isActive: boolean
   onEdit: (r: Resource) => void
+  onClose: () => void
   onDelete: (id: string) => void
   onPipelineSettled?: () => void
 }) {
@@ -122,13 +127,36 @@ function SortableResourceRow({
     opacity: isDragging ? 0.5 : 1,
   }
 
+  // Row click toggles the inline editor: open it, or close it if already open.
+  const toggleEdit = () => {
+    if (isActionsDisabled) return
+    if (isActive) onClose()
+    else onEdit(r)
+  }
+
   return (
-    <TableRow ref={setNodeRef} style={style}>
+    <TableRow
+      ref={setNodeRef}
+      style={style}
+      role="button"
+      tabIndex={isActionsDisabled ? undefined : 0}
+      aria-disabled={isActionsDisabled}
+      className={isActionsDisabled ? undefined : 'cursor-pointer hover:bg-muted/50'}
+      onClick={toggleEdit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          toggleEdit()
+        }
+      }}
+    >
       <TableCell className="w-8 p-2">
         <button
           type="button"
           {...attributes}
           {...listeners}
+          // Drag handle: don't let a click here open the editor.
+          onClick={(e) => e.stopPropagation()}
           className="cursor-grab touch-none p-1 text-muted-foreground hover:text-foreground disabled:cursor-default disabled:opacity-30"
           disabled={isDragDisabled}
           aria-label={tc('reorder')}
@@ -164,19 +192,18 @@ function SortableResourceRow({
         )}
       </TableCell>
       <TableCell>
-        <div className="flex gap-1">
-          <Button variant="ghost" size="sm" onClick={() => onEdit(r)} disabled={isActionsDisabled}>
-            {tc('edit')}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onDelete(r.id)}
-            disabled={isActionsDisabled}
-          >
-            {tc('delete')}
-          </Button>
-        </div>
+        {/* Row click opens the editor; delete stops propagation so it doesn't. */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation()
+            onDelete(r.id)
+          }}
+          disabled={isActionsDisabled}
+        >
+          {tc('delete')}
+        </Button>
       </TableCell>
     </TableRow>
   )
@@ -790,7 +817,9 @@ export function ResourceList({
                       resource={r}
                       isDragDisabled={isFormOpen || savingOrder || dropUploads.length > 0}
                       isActionsDisabled={isDirty || savingOrder}
+                      isActive={editId === r.id}
                       onEdit={startEdit}
+                      onClose={resetForm}
                       onDelete={setDeleteId}
                       // A settle means the row's status (and maybe others)
                       // changed — refresh through the retrying gate

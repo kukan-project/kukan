@@ -402,6 +402,23 @@ describe('ResourceList drop-to-create', () => {
     await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(false))
   })
 
+  it('toggles the inline editor open and closed on row click', async () => {
+    render(
+      <ResourceList
+        {...baseProps}
+        resources={[{ id: 'r1', name: 'data.csv', urlType: 'upload', format: 'CSV' }]}
+      />
+    )
+
+    // First row click opens the editor.
+    fireEvent.click(screen.getByText('data.csv'))
+    expect(screen.getByText('Save')).toBeInTheDocument()
+
+    // Clicking the same row again closes it (toggle).
+    fireEvent.click(screen.getByText('data.csv'))
+    expect(screen.queryByText('Save')).not.toBeInTheDocument()
+  })
+
   it('should close the gate before a url-resource save resolves', async () => {
     const onUploadingChange = vi.fn()
     mockClientFetch.mockReturnValue(new Promise<Response>(() => {}))
@@ -415,7 +432,8 @@ describe('ResourceList drop-to-create', () => {
       />
     )
 
-    fireEvent.click(screen.getByText('Edit'))
+    // Row click opens the inline editor (the Edit button was removed)
+    fireEvent.click(screen.getByText('data.csv'))
     fireEvent.click(screen.getByText('Save'))
     await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true))
   })
@@ -451,7 +469,8 @@ describe('ResourceList drop-to-create', () => {
       />
     )
 
-    fireEvent.click(screen.getByText('Edit'))
+    // Row click opens the inline editor (the Edit button was removed)
+    fireEvent.click(screen.getByText('data.csv'))
     fireEvent.click(screen.getByText('Replace file'))
     const input = container.querySelector('input[type="file"]:not([multiple])')!
     fireEvent.change(input, {

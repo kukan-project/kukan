@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   Button,
   Badge,
@@ -59,6 +60,7 @@ type CategoryFilter = 'public' | 'private' | 'drafts' | 'deleted'
 export default function DatasetsManagePage() {
   const t = useTranslations('dataset')
   const tc = useTranslations('common')
+  const router = useRouter()
 
   // Filter state
   const [nameFilter, setNameFilter] = useState('')
@@ -275,15 +277,30 @@ export default function DatasetsManagePage() {
                 <TableHead colSpan={2}>{tc('title')}</TableHead>
                 <TableHead className="whitespace-nowrap">{t('visibility')}</TableHead>
                 <TableHead className="whitespace-nowrap">{tc('format')}</TableHead>
-                <TableHead className="w-[80px] whitespace-nowrap">{tc('actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {items.map((pkg) => {
                 const pkgGroups = parseGroups(pkg.groups)
                 const pkgTags = pkg.tags?.split(',').filter(Boolean) ?? []
+                const editHref =
+                  activeCategory === 'deleted'
+                    ? `/dashboard/datasets/${pkg.name}/edit?state=deleted`
+                    : `/dashboard/datasets/${pkg.name}/edit`
                 return (
-                  <TableRow key={pkg.id}>
+                  <TableRow
+                    key={pkg.id}
+                    role="link"
+                    tabIndex={0}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => router.push(editHref)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        router.push(editHref)
+                      }
+                    }}
+                  >
                     <TableCell className="font-mono text-sm">{pkg.name}</TableCell>
                     <TableCell colSpan={2}>
                       <div className="font-medium">{pkg.title || '-'}</div>
@@ -319,19 +336,6 @@ export default function DatasetsManagePage() {
                     </TableCell>
                     <TableCell>
                       <FormatBadges formats={pkg.formats} />
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="sm" asChild>
-                        <Link
-                          href={
-                            activeCategory === 'deleted'
-                              ? `/dashboard/datasets/${pkg.name}/edit?state=deleted`
-                              : `/dashboard/datasets/${pkg.name}/edit`
-                          }
-                        >
-                          {tc('edit')}
-                        </Link>
-                      </Button>
                     </TableCell>
                   </TableRow>
                 )

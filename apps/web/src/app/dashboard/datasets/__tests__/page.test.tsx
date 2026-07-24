@@ -7,6 +7,11 @@ vi.mock('@/lib/client-api', () => ({
   clientFetch: vi.fn(),
 }))
 
+const mockPush = vi.fn()
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mockPush }),
+}))
+
 function mockFetchResponse(data: unknown) {
   return { ok: true, json: async () => data } as Response
 }
@@ -48,6 +53,7 @@ function setupDefaultMocks(items = sampleItems, total = items.length) {
 describe('DatasetsManagePage', () => {
   beforeEach(() => {
     vi.mocked(clientFetch).mockReset()
+    mockPush.mockClear()
   })
 
   it('should display datasets in table', async () => {
@@ -130,15 +136,13 @@ describe('DatasetsManagePage', () => {
     expect(comboboxes.length).toBe(2)
   })
 
-  it('should link to edit page', async () => {
+  it('navigates to the edit page on row click', async () => {
     setupDefaultMocks()
     render(<DatasetsManagePage />)
 
-    await waitFor(() => {
-      const editLinks = screen.getAllByText('Edit')
-      const link = editLinks[0].closest('a')
-      expect(link).toHaveAttribute('href', '/dashboard/datasets/population-data/edit')
-    })
+    await waitFor(() => expect(screen.getByText('population-data')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('population-data'))
+    expect(mockPush).toHaveBeenCalledWith('/dashboard/datasets/population-data/edit')
   })
 
   it('should show error state with retry button on fetch failure', async () => {
@@ -232,32 +236,26 @@ describe('DatasetsManagePage', () => {
       }
     })
 
-    it('should link the edit button to the draft edit page by ID', async () => {
+    it('navigates to the draft edit page on row click', async () => {
       setupDraftMocks()
       await openDraftsTab()
 
-      const editLinks = screen.getAllByText('Edit')
-      expect(editLinks[0].closest('a')).toHaveAttribute(
-        'href',
-        '/dashboard/datasets/d1/edit?state=draft'
-      )
+      fireEvent.click(screen.getByText('My Draft'))
+      expect(mockPush).toHaveBeenCalledWith('/dashboard/datasets/d2/edit?state=draft')
     })
 
-    it('should flag purging drafts and hide their edit link', async () => {
+    it('flags purging drafts and does not make their row clickable', async () => {
       setupDraftMocks()
       await openDraftsTab()
 
       expect(screen.getByText('Deletion incomplete')).toBeInTheDocument()
       expect(screen.getByText('Retry Delete')).toBeInTheDocument()
-      // Only the two intact drafts have edit links
-      const editLinks = screen.getAllByText('Edit')
-      expect(editLinks).toHaveLength(2)
-      for (const link of editLinks) {
-        expect(link.closest('a')).not.toHaveAttribute(
-          'href',
-          '/dashboard/datasets/d3/edit?state=draft'
-        )
-      }
+      // A purging draft's row is not clickable — clicking it must not navigate
+      fireEvent.click(screen.getByText('Stuck Draft'))
+      expect(mockPush).not.toHaveBeenCalled()
+      // An intact draft still navigates on row click
+      fireEvent.click(screen.getByText('My Draft'))
+      expect(mockPush).toHaveBeenCalledWith('/dashboard/datasets/d2/edit?state=draft')
     })
 
     it('should retry deletion of a purging draft with a dedicated confirmation', async () => {

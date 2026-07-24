@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   Badge,
   Button,
@@ -40,6 +40,7 @@ export function DraftsTable({ items, onDeleted }: DraftsTableProps) {
   const t = useTranslations('dataset')
   const tc = useTranslations('common')
   const locale = useLocale()
+  const router = useRouter()
 
   // Draft deletion (ADR-039): skips the trash, permanently removed
   const [draftToDelete, setDraftToDelete] = useState<DraftItem | null>(null)
@@ -73,8 +74,22 @@ export function DraftsTable({ items, onDeleted }: DraftsTableProps) {
         <TableBody>
           {items.map((pkg) => {
             const isPurging = pkg.state === 'purging'
+            // Purging drafts are mid-deletion and not editable — no row navigation.
+            const editHref = isPurging ? null : draftEditPath(pkg.id)
             return (
-              <TableRow key={pkg.id}>
+              <TableRow
+                key={pkg.id}
+                role={editHref ? 'link' : undefined}
+                tabIndex={editHref ? 0 : undefined}
+                className={editHref ? 'cursor-pointer hover:bg-muted/50' : undefined}
+                onClick={() => editHref && router.push(editHref)}
+                onKeyDown={(e) => {
+                  if (editHref && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault()
+                    router.push(editHref)
+                  }
+                }}
+              >
                 <TableCell>
                   {pkg.title ? (
                     <span className="font-medium">{pkg.title}</span>
@@ -102,17 +117,16 @@ export function DraftsTable({ items, onDeleted }: DraftsTableProps) {
                   {pkg.updated ? formatDateTimeCompact(pkg.updated, locale) : '-'}
                 </TableCell>
                 <TableCell className="whitespace-nowrap">
-                  {/* Purging rows are mid-deletion — no edit, only the delete retry */}
-                  {!isPurging && (
-                    <Button variant="ghost" size="sm" asChild>
-                      <Link href={draftEditPath(pkg.id)}>{tc('edit')}</Link>
-                    </Button>
-                  )}
+                  {/* Row click opens the editor; the delete button stops propagation
+                      so it doesn't also navigate. */}
                   <Button
                     variant="ghost"
                     size="sm"
                     className="text-destructive hover:text-destructive"
-                    onClick={() => setDraftToDelete(pkg)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setDraftToDelete(pkg)
+                    }}
                   >
                     {isPurging ? t('retryDelete') : tc('delete')}
                   </Button>
