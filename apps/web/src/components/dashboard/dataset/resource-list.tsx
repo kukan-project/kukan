@@ -50,6 +50,7 @@ import { PipelineStatusBadge } from './pipeline-status-badge'
 import { DropFilesZone, dropZoneClass } from './drop-files-zone'
 import { FileUploadZone } from './file-upload-zone'
 import { ResourceFormFields } from './resource-form-fields'
+import { ResourceVersionHistory } from './resource-version-history'
 import type { PipelineStatus } from '@/hooks/use-pipeline-status'
 
 interface Resource {
@@ -60,6 +61,7 @@ interface Resource {
   format?: string | null
   description?: string | null
   pipelineStatus?: PipelineStatus | null
+  latestVersion?: number | null
 }
 
 interface FormState {
@@ -136,6 +138,13 @@ function SortableResourceRow({
       </TableCell>
       <TableCell>{r.name || '-'}</TableCell>
       <TableCell>{r.format ? <FormatBadge format={r.format} /> : '-'}</TableCell>
+      <TableCell className="whitespace-nowrap">
+        {r.latestVersion != null ? (
+          <Badge variant="secondary">v{r.latestVersion}</Badge>
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        )}
+      </TableCell>
       <TableCell className="whitespace-nowrap">
         {r.urlType === 'upload' ? (
           <Badge variant="outline">{t('sourceUpload')}</Badge>
@@ -724,6 +733,11 @@ export function ResourceList({
               {tc('cancel')}
             </Button>
           </div>
+          {isEditing && !creating && editId && (
+            <div className="mt-2 border-t pt-4">
+              <ResourceVersionHistory resourceId={editId} />
+            </div>
+          )}
         </div>
       </>
     )
@@ -761,6 +775,7 @@ export function ResourceList({
                   <TableHead className="w-8" />
                   <TableHead>{tc('name')}</TableHead>
                   <TableHead>{tc('format')}</TableHead>
+                  <TableHead>{t('versions.version')}</TableHead>
                   <TableHead>{t('source')}</TableHead>
                   <TableHead>{t('status')}</TableHead>
                   <TableHead className="w-[120px]">{tc('actions')}</TableHead>
@@ -783,7 +798,7 @@ export function ResourceList({
                     />
                     {activeFormId === r.id && (
                       <TableRow>
-                        <TableCell colSpan={6} className="bg-muted/30 p-4">
+                        <TableCell colSpan={7} className="bg-muted/30 p-4">
                           {renderInlineForm()}
                         </TableCell>
                       </TableRow>
@@ -793,7 +808,7 @@ export function ResourceList({
               </SortableContext>
               {creating && (
                 <TableRow>
-                  <TableCell colSpan={6} className="bg-muted/30 p-4">
+                  <TableCell colSpan={7} className="bg-muted/30 p-4">
                     {renderInlineForm()}
                   </TableCell>
                 </TableRow>

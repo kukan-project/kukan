@@ -6,7 +6,7 @@ import { z } from 'zod'
 
 export type PipelineStatus = 'pending' | 'queued' | 'processing' | 'complete' | 'error'
 export type PipelineStepStatus = 'pending' | 'running' | 'complete' | 'error' | 'skipped'
-export type PipelineStepName = 'fetch' | 'extract' | 'index'
+export type PipelineStepName = 'fetch' | 'extract' | 'version' | 'index'
 
 /** Content type for indexed resource text */
 export type ContentType = 'tabular' | 'text' | 'manifest' | 'document'
@@ -73,12 +73,19 @@ export const PURGE_ORG_JOB_TYPE = 'purge-organization' as const
 /** Semantic search: (re)generate the embedding vector for one package (ADR-034). */
 export const EMBED_JOB_TYPE = 'embed-package' as const
 
+/** Legal deletion: permanently erase one resource version's content (ADR-043). */
+export const PURGE_VERSION_JOB_TYPE = 'purge-resource-version' as const
+
 // ── Job payload schemas (the worker validates against these before acting) ──
 
 export const pipelineJobSchema = z.object({ resourceId: z.uuid() })
 export const reindexJobSchema = z.object({ includeContent: z.boolean().optional() })
 export const purgeOrgJobSchema = z.object({ organizationId: z.uuid() })
 export const embedJobSchema = z.object({ packageId: z.uuid() })
+export const purgeVersionJobSchema = z.object({
+  resourceId: z.uuid(),
+  version: z.number().int().positive(),
+})
 
 /** A single file/directory entry in a ZIP manifest */
 export interface ZipEntry {

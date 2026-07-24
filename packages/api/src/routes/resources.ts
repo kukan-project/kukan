@@ -8,6 +8,7 @@ import { bodyLimit } from 'hono/body-limit'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { ResourceService } from '../services/resource-service'
+import { ResourceVersionService } from '../services/resource-version-service'
 import { PipelineService } from '../services/pipeline-service'
 import { PackageService } from '../services/package-service'
 import { QueryService } from '../services/query-service'
@@ -18,6 +19,8 @@ import {
   UnauthorizedError,
   NotFoundError,
   ValidationError,
+  ForbiddenError,
+  PURGE_VERSION_JOB_TYPE,
   getStorageKey,
   getMimeType,
   detectContentType,
@@ -50,6 +53,15 @@ import type { AppContext } from '../context'
 import type { Context } from 'hono'
 
 export const resourcesRouter = new Hono<{ Variables: AppContext }>()
+
+/** Parse a `:v` path param into a positive version number (rejects junk). */
+function parseVersionParam(raw: string): number {
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n < 1) {
+    throw new ValidationError('Invalid version number')
+  }
+  return n
+}
 
 /** Convert S3 NoSuchKey errors to 404 NotFoundError */
 function throwIfNotFound(err: unknown, resourceId: string): never {
@@ -424,6 +436,93 @@ resourcesRouter.post(
     const service = new QueryService(c.get('db'), c.get('storage'), c.get('logger'))
     const result = await service.query(id, sql, c.get('user'))
     return c.json({ id, ...result })
+  }
+)
+
+// --- Resource versions (ADR-043, layer 1) ---
+
+// GET /api/v1/resources/:id/versions - List canonical file versions (newest first).
+// Same visibility check as download/preview. Purged versions appear as tombstones.
+resourcesRouter.get('/:id/versions', async (c) => {
+  const id = c.req.param('id')
+  const db = c.get('db')
+  await new ResourceService(db).getByIdWithAccessCheck(id, c.get('user'))
+  const versions = await new ResourceVersionService(db).listByResource(id)
+  return c.json({ id, versions })
+})
+
+// GET /api/v1/resources/:id/versions/:v - Single version metadata.
+resourcesRouter.get('/:id/versions/:v', async (c) => {
+  const id = c.req.param('id')
+  const version = parseVersionParam(c.req.param('v'))
+  const db = c.get('db')
+  await new ResourceService(db).getByIdWithAccessCheck(id, c.get('user'))
+  const view = await new ResourceVersionService(db).getVersion(id, version)
+  return c.json(view)
+})
+
+// GET /api/v1/resources/:id/versions/:v/download - Stream a specific version's bytes.
+resourcesRouter.get('/:id/versions/:v/download', async (c) => {
+  const id = c.req.param('id')
+  const version = parseVersionParam(c.req.param('v'))
+  const db = c.get('db')
+  const resource = await new ResourceService(db).getByIdWithAccessCheck(id, c.get('user'))
+  const { storageKey, size } = await new ResourceVersionService(db).getDownloadTarget(id, version)
+
+  const storage = c.get('storage')
+  let nodeStream
+  try {
+    nodeStream = await storage.download(storageKey)
+  } catch (err) {
+    throwIfNotFound(err, id)
+  }
+
+  const filename = `${resource.url || resource.id}.v${version}`
+  const encodedFilename = encodeURIComponent(filename)
+  const asciiFilename = filename.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, "'")
+  const contentType = resource.mimetype || detectContentType(resource.url || resource.id)
+
+  const headers: Record<string, string> = {
+    'Content-Type': contentType,
+    'Content-Disposition': `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`,
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'private, max-age=0',
+  }
+  if (size) headers['Content-Length'] = String(size)
+
+  return new Response(Readable.toWeb(nodeStream) as ReadableStream, { headers })
+})
+
+// POST /api/v1/resources/:id/versions/:v/purge - Legal deletion of one version.
+// Sysadmin only; a reason is required and recorded. Claims the version (async),
+// then a worker job destroys the content (rolling back the live version if needed).
+resourcesRouter.post(
+  '/:id/versions/:v/purge',
+  zValidator('json', z.object({ reason: z.string().trim().min(1) })),
+  async (c) => {
+    const user = c.get('user')
+    if (!user) throw new UnauthorizedError()
+    if (!user.sysadmin) throw new ForbiddenError('Only sysadmin can purge resource versions')
+
+    const id = c.req.param('id')
+    const version = parseVersionParam(c.req.param('v'))
+    const { reason } = c.req.valid('json')
+    const db = c.get('db')
+
+    // 404 if the resource doesn't exist.
+    await new ResourceService(db).getById(id)
+
+    const { claimed, view } = await new ResourceVersionService(db).claimPurge(
+      id,
+      version,
+      user.id,
+      reason
+    )
+    // Only enqueue when we actually claimed it (idempotent on repeat calls).
+    if (claimed) {
+      await c.get('queue').enqueue(PURGE_VERSION_JOB_TYPE, { resourceId: id, version })
+    }
+    return c.json(view, 202)
   }
 )
 

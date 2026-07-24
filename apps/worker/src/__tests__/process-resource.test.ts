@@ -11,6 +11,9 @@ vi.mock('../pipeline/steps/fetch', () => ({
 vi.mock('../pipeline/steps/extract', () => ({
   executeExtract: vi.fn(),
 }))
+vi.mock('../pipeline/steps/version', () => ({
+  executeVersion: vi.fn(),
+}))
 vi.mock('../pipeline/steps/index-content', () => ({
   executeIndexContent: vi.fn(),
 }))
@@ -35,17 +38,20 @@ vi.mock('../pipeline/step-tracker', () => ({
 // Import mocked modules
 import { executeFetch } from '../pipeline/steps/fetch'
 import { executeExtract } from '../pipeline/steps/extract'
+import { executeVersion } from '../pipeline/steps/version'
 import { executeIndexContent } from '../pipeline/steps/index-content'
 
 function createMockCtx(): PipelineContext {
   return {
-    storage: { download: vi.fn(), upload: vi.fn() },
+    storage: { download: vi.fn(), upload: vi.fn(), copy: vi.fn() },
     getResource: vi.fn(),
     updateResourceHashAndSize: vi.fn(),
     acquireFetchSlot: vi.fn().mockResolvedValue(true),
     indexContent: vi.fn(),
     deleteContent: vi.fn(),
     updatePipelineMetadata: vi.fn(),
+    getVersionCaptureInfo: vi.fn().mockResolvedValue({ maxVersion: null, latestActiveHash: null }),
+    insertResourceVersion: vi.fn(),
   }
 }
 
@@ -78,6 +84,9 @@ describe('processResource', () => {
     mockTracker.skipStep.mockResolvedValue(undefined)
     mockTracker.updateStatus.mockResolvedValue(undefined)
     mockTracker.updateExtractResult.mockResolvedValue(undefined)
+
+    // Version step defaults to capturing a new version (v1).
+    vi.mocked(executeVersion).mockResolvedValue({ captured: true, version: 1 })
   })
 
   it('should run all steps for CSV resource', async () => {
@@ -110,8 +119,8 @@ describe('processResource', () => {
       'CSV',
       ctx
     )
-    // Fetch + Extract + Index = 3 steps
-    expect(mockTracker.startStep).toHaveBeenCalledTimes(3)
+    // Fetch + Extract + Version + Index = 4 steps
+    expect(mockTracker.startStep).toHaveBeenCalledTimes(4)
     expect(mockTracker.completeStep).toHaveBeenCalledWith('step-0')
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
     expect(mockTracker.updateExtractResult).toHaveBeenCalledWith(
@@ -180,10 +189,10 @@ describe('processResource', () => {
     await processResource('res-1', ctx, db, queue)
 
     expect(mockTracker.skipStep).toHaveBeenCalledWith('step-1') // extract skipped
-    expect(mockTracker.skipStep).toHaveBeenCalledWith('step-2') // index skipped
+    expect(mockTracker.skipStep).toHaveBeenCalledWith('step-3') // index skipped (step-2 = version)
     // Clears any stale preview/schema from a previous run (e.g. CSV → PDF replace).
     expect(mockTracker.updateExtractResult).toHaveBeenCalledWith('pipeline-1', null, {})
-    expect(mockTracker.startStep).toHaveBeenCalledTimes(3)
+    expect(mockTracker.startStep).toHaveBeenCalledTimes(4)
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
   })
 
@@ -218,7 +227,7 @@ describe('processResource', () => {
     await processResource('res-1', ctx, db, queue)
 
     expect(mockTracker.failStep).toHaveBeenCalled()
-    expect(mockTracker.startStep).toHaveBeenCalledTimes(3)
+    expect(mockTracker.startStep).toHaveBeenCalledTimes(4)
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
   })
 

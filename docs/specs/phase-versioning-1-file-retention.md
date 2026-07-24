@@ -103,8 +103,26 @@ export const resourceVersion = pgTable(
   本体（S3）と DuckLake は cascade で消えない** → リソース purge 側で明示的に掃除する（残課題、
   Phase ii のリソース purge 拡張で扱う。本フェーズはリソース delete=論理削除のため版ファイルは残置）。
 - `ResourceSchema` は `@kukan/shared` の既存 Zod 型（ADR-032）を再利用。
-- マイグレーションは Drizzle Kit（`pnpm db:generate`）。既存リソースへのバックフィルは**しない**
-  （次回パイプライン実行時から版が付く。ADR-029/032 と同方針）。
+- マイグレーションは Drizzle Kit（`pnpm db:generate`）。DB スキーマ追加のみで、既存リソースへの
+  版レコードの自動作成（バックフィル）はマイグレーションでは行わない。
+
+### 4.1 既存リソースの移行（バックフィル）
+
+Version ステップは「版がまだ無いリソース」のパイプライン実行時に、現行内容を **v1** として捕捉する。
+したがって既存リソースの移行は、**専用コードを追加せず、管理画面の「コンテンツを含む再インデックス」
+（`POST /admin/reindex-metadata { includeContent: true }`）で全リソースを reprocess することで
+v1 を一括発行する**（`enqueueAll()` が全 active リソースをパイプラインに投入する）。移行は導入時の
+一回だけで、以後の新規作成・差し替えでは版が自動で付く。
+
+注意点（管理者向けドキュメントに明記する）:
+
+- **外部 URL リソースは再取得を伴う**（FQDN 単位のレート制限つき）。取得できた時点の内容が
+  `origin: fetch` の v1 になる。reprocess 時に上流が落ちていると v1 は作られない。
+- この操作はコンテンツ検索インデックスを一旦全消去して再構築するため（既存挙動）、実行中は
+  全文検索が一時的に劣化する。
+- アップロードリソースは Fetch が skip され、現行キーの内容がそのまま v1 になる（再取得なし）。
+- 軽量バックフィル（アップロードのみ copy + 行 insert でパイプライン非実行）は一般ユーザーには
+  操作が難しいため採用しない。既存の管理機能に一本化する。
 
 ## 5. Step 2: StorageAdapter に `copy` を追加
 
@@ -137,25 +155,33 @@ export interface StorageAdapter {
 ### 6.1 ロジック
 
 ```
-executeVersion(resourceId, packageId, currentStorageKey, hash, size, urlType, schema, ctx):
-  latest = 最新の resource_version（resourceId, max(version), state != purged）
-  if latest && latest.hash === hash:
-    return { captured: false }          // 内容不変 → 版を作らない
-  next = (latest?.version ?? 0) + 1
+executeVersion(resourceId, packageId, currentStorageKey, schema, ctx):
+  res = ctx.getResource(resourceId)                    // 最新 hash/size/urlType（Fetch 確定後）
+  if !res or !res.hash: return { captured: false }     // ハッシュ無し → 版化できない
+  { maxVersion, latestActiveHash } = ctx.getVersionCaptureInfo(resourceId)
+  if latestActiveHash === res.hash:
+    return { captured: false }                          // 内容不変 → 版を作らない
+  next = (maxVersion ?? 0) + 1
   versionKey = getVersionKey(packageId, resourceId, next)
   await ctx.storage.copy(currentStorageKey, versionKey)   // immutable コピー
   await ctx.insertResourceVersion({
     resourceId, version: next, storageKey: versionKey,
-    size, hash, origin: urlType === 'upload' ? 'upload' : 'fetch',
-    schema: schema ?? null, createdBy: <pipeline actor>,
+    size: res.size, hash: res.hash,
+    origin: res.urlType === 'upload' ? 'upload' : 'fetch',
+    schema: schema ?? null,
   })
   return { captured: true, version: next }
 ```
 
-- **ハッシュゲート**: `latest.hash === hash` なら版を作らず終了（外部 URL の定期再取得で内容が
-  変わらないケースを無駄に版化しない）。`resource.hash` は Fetch が確定済み。
+- **採番とゲートの分離**（パージ/ロールバックとの整合、実装で確定）:
+  - **採番** `next = maxVersion + 1` は**全状態の最大版**（purged 墓標を含む）を基準にする。
+    purged 行は台帳に残るため、非 purged だけで採番すると unique `(resource_id, version)` と衝突する。
+  - **変更ゲート**は**最新 active 版のハッシュ**で判定する（最大版ではない）。最新版パージ後の
+    ロールバックで直前版の内容が現行キーに戻ったとき、再生成パイプラインが**同一内容を再び版化
+    しない**ようにするため。purged 墓標が最上位にあってもゲートは直下の active 版で判定する。
 - **origin**: `urlType === 'upload'` → `'upload'`、それ以外（外部 URL）→ `'fetch'`。
 - **schema**: Extract が返した列スキーマ（CSV/TSV のみ非 null）をそのまま版に載せる。
+- `createdBy` はパイプライン実行（キュー起点で actor 不明）のため null。
 - Version ステップは**非クリティカル**扱い（Extract/Index と同じ）。失敗はステップに記録するが
   パイプライン全体は継続する（版が作れなくても最新版の配信は動く）。
 - `createdBy`（版を発生させたユーザー）はパイプラインコンテキストに actor を渡せる場合のみ設定。
@@ -200,15 +226,27 @@ POST /resources/:id/versions/:v/purge
 active → purging → purged
 ```
 
-1. API が `active → purging` に更新（durable claim。ここで監査ログ `action='purge_request'` を記録）
-2. Worker ジョブ（新キュージョブ `RESOURCE_VERSION_PURGE`）が波及処理を実行:
+1. API が `active → purging` に更新（durable claim。`purgedBy`/`purgeReason` もこの時点で
+   行に記録する。監査ログ `action='purge_request'`）
+2. Worker ジョブ（新キュージョブ `PURGE_VERSION_JOB_TYPE = 'purge-resource-version'`）が
+   波及処理を実行:
    - **層1**: 版ファイル `versions/.../v{n}` を storage から削除
-   - **派生物**: パージ対象が最新版なら、その版由来のプレビュー Parquet（`resource_pipeline.previewKey`）と
-     OpenSearch リソースコンテンツインデックス（ADR-021）を無効化／再生成。過去版由来の派生物は
-     現状最新版からしか作らないため通常は対象外
+   - **最新（ライブ）版の扱い — 直前版へロールバック**（本フェーズの確定挙動）:
+     パージ対象が**ライブ版**（自分より上位に active 版が無い）の場合、版ファイルを消しただけでは
+     現行キー `resources/.../` に同一内容が残り配信され続ける。そこで:
+     1. **直前の active 版**（version が小さい最大の active 行）を現行キーへ copy して**内容を巻き戻す**。
+        `resource.hash`/`size` を巻き戻し先の値に更新する
+     2. **派生物**（プレビュー Parquet と OpenSearch コンテンツ）を即時無効化する（`previewKey` の
+        オブジェクト削除＋クリア、`deleteContent`）。パージ済み内容を配信し続けないため
+     3. パイプラインを再投入し、巻き戻した内容からプレビュー・検索インデックスを再生成する。
+        Version ステップの変更ゲートは「最新 active 版ハッシュ＝巻き戻し先」を検知して**新版を作らない**
+     - **ロールバック先が無い場合**（全過去版もパージ済み等）は現行キー・派生物も削除し、
+       リソースを**無コンテンツ状態**にする（`resource.hash`/`size` を null）
+   - **過去（非ライブ）版のパージ**: 現行キーには無関係。版ファイル削除のみで、ロールバックも
+     派生物操作も行わない
    - **層2（DuckLake）**: 本フェーズ対象外（Phase ii で compaction rewrite を追加）
-3. 全波及完了後 `purging → purged`。`purgedAt`/`purgedBy`/`purgeReason` を確定し、
-   監査ログ `action='purge'` を記録。**台帳行は残す（墓標）**。
+3. 全波及完了後 `purging → purged`。`purgedAt` を確定し、監査ログ `action='purge'`
+   （`changes` に version・reason・rolledBack を記録）。**台帳行は残す（墓標）**。
 
 ### 8.3 物理消滅タイムライン（仕様として明文化）
 

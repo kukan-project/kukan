@@ -12,10 +12,12 @@ import {
   PIPELINE_JOB_TYPE,
   REINDEX_JOB_TYPE,
   PURGE_ORG_JOB_TYPE,
+  PURGE_VERSION_JOB_TYPE,
   EMBED_JOB_TYPE,
   pipelineJobSchema,
   reindexJobSchema,
   purgeOrgJobSchema,
+  purgeVersionJobSchema,
   embedJobSchema,
 } from '@kukan/shared'
 import { eq, sql } from 'drizzle-orm'
@@ -24,6 +26,7 @@ import type { Job } from '@kukan/queue-adapter'
 import { rebuildMetadataIndex } from '@kukan/api/services/search-index'
 import { PipelineService } from '@kukan/api/services/pipeline-service'
 import { OrganizationService } from '@kukan/api/services/organization-service'
+import { ResourceVersionService } from '@kukan/api/services/resource-version-service'
 import { createAIAdapter } from '@kukan/api/adapters'
 import { createDb, runMigrations } from '@kukan/db'
 import { SQSQueueAdapter } from '@kukan/queue-adapter'
@@ -233,6 +236,25 @@ await queue.process({
     log.info(
       { jobId: job.id, type: job.type, organizationId, purged, packageCount, elapsed },
       purged ? 'Purge organization job completed' : 'Purge organization job skipped (not deleted)'
+    )
+  },
+  // Legal deletion: destroy one resource version's content (ADR-043). Rolls the
+  // live version back to the previous one when the purged version was live.
+  [PURGE_VERSION_JOB_TYPE]: async (job: Job) => {
+    const data = parseJobPayload(job, purgeVersionJobSchema)
+    if (!data) return
+    const { resourceId, version } = data
+    log.info({ jobId: job.id, type: job.type, resourceId, version }, 'Purge version job started')
+    const start = performance.now()
+    const result = await new ResourceVersionService(db).executePurge(resourceId, version, {
+      storage,
+      search,
+      queue,
+    })
+    const elapsed = Math.round(performance.now() - start)
+    log.info(
+      { jobId: job.id, type: job.type, resourceId, version, ...result, elapsed },
+      result.purged ? 'Purge version job completed' : 'Purge version job skipped (not purging)'
     )
   },
 })

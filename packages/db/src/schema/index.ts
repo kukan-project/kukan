@@ -18,6 +18,7 @@ export * from './api-token'
 export * from './package'
 export * from './resource'
 export * from './resource-pipeline'
+export * from './resource-version'
 
 // Tags
 export * from './tag'

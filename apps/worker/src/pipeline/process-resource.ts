@@ -9,6 +9,7 @@ import { PIPELINE_JOB_TYPE } from '@kukan/shared'
 import { StepTracker } from './step-tracker'
 import { executeFetch } from './steps/fetch'
 import { executeExtract } from './steps/extract'
+import { executeVersion } from './steps/version'
 import { executeIndexContent } from './steps/index-content'
 import type { PipelineContext } from './types'
 import { FETCH_RATE_LIMIT_REQUEUE_DELAY_S } from '@/config'
@@ -97,7 +98,28 @@ export async function processResource(
       await tracker.failStep(extractStepId, (err as Error).message)
     }
 
-    // Step 3: Index — extract text content and index to search engine
+    // Step 3: Version — capture an immutable copy of the canonical file (ADR-043).
+    // Runs after Extract so the column schema can be snapshotted onto the version.
+    // Non-critical: a capture failure is recorded but never fails the pipeline.
+    const versionStepId = await tracker.startStep(pipeline.id, 'version')
+    try {
+      const versionResult = await executeVersion(
+        resourceId,
+        fetchResult.packageId,
+        fetchResult.storageKey,
+        extractResult?.schema ?? null,
+        ctx
+      )
+      if (versionResult.captured) {
+        await tracker.completeStep(versionStepId)
+      } else {
+        await tracker.skipStep(versionStepId)
+      }
+    } catch (err) {
+      await tracker.failStep(versionStepId, (err as Error).message)
+    }
+
+    // Step 4: Index — extract text content and index to search engine
     // Non-critical: failures are recorded but don't fail the pipeline
     const indexStepId = await tracker.startStep(pipeline.id, 'index')
     try {

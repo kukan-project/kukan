@@ -29,6 +29,10 @@ vi.mock('../pipeline-status-badge', () => ({
   PipelineStatusBadge: () => null,
 }))
 
+vi.mock('../resource-version-history', () => ({
+  ResourceVersionHistory: () => null,
+}))
+
 const mockClientFetch = vi.mocked(clientFetch)
 
 function jsonResponse(data: unknown, ok = true) {

@@ -620,7 +620,27 @@
     "explorerFilterColumn": "Filter {column}",
     "source": "Source",
     "replaceFile": "Replace file",
-    "download": "Download"
+    "download": "Download",
+    "versions": {
+      "title": "Version history",
+      "version": "Version",
+      "created": "Created",
+      "size": "Size",
+      "origin": "Origin",
+      "originUpload": "Upload",
+      "originFetch": "Fetched",
+      "download": "Download",
+      "purge": "Purge",
+      "purged": "Purged",
+      "purging": "Purging",
+      "purgeTitle": "Purge version v{version}",
+      "purgeWarning": "This permanently destroys the content of this version (legal deletion). It becomes unreachable from the app immediately and is physically erased after the backup retention period. If it is the latest version, the resource rolls back to the previous one. This cannot be undone.",
+      "reasonPlaceholder": "Reason for the purge (recorded in the audit log)",
+      "purgeConfirm": "Purge",
+      "cancel": "Cancel",
+      "loadError": "Failed to load version history",
+      "purgeError": "Failed to purge"
+    }
   },
   "apiToken": {
     "title": "API Tokens",

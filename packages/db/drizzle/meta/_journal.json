@@ -120,6 +120,13 @@
       "when": 1783423378982,
       "tag": "0016_supreme_maverick",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1784898727562,
+      "tag": "0017_overconfident_sway",
+      "breakpoints": true
     }
   ]
 }

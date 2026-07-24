@@ -2,13 +2,13 @@
  * Build PipelineContext from adapters and database.
  */
 
-import { eq, and, sql } from 'drizzle-orm'
+import { eq, and, sql, desc } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { resource, resourcePipeline, packageTable } from '@kukan/db'
+import { resource, resourcePipeline, resourceVersion, packageTable } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter, ContentDoc } from '@kukan/search-adapter'
 import type { PackageDbState } from '@kukan/shared'
-import type { PipelineContext, ResourceForPipeline } from './types'
+import type { PipelineContext, ResourceForPipeline, NewResourceVersion } from './types'
 import { FETCH_RATE_LIMIT_INTERVAL_S } from '@/config'
 
 export function buildPipelineContext(
@@ -30,6 +30,7 @@ export function buildPipelineContext(
           urlType: resource.urlType,
           format: resource.format,
           hash: resource.hash,
+          size: resource.size,
         })
         .from(resource)
         .where(and(eq(resource.id, id), eq(resource.state, 'active')))
@@ -95,6 +96,33 @@ export function buildPipelineContext(
           updated: sql`NOW()`,
         })
         .where(eq(resourcePipeline.id, pipelineId))
+    },
+
+    async getVersionCaptureInfo(
+      resourceId: string
+    ): Promise<{ maxVersion: number | null; latestActiveHash: string | null }> {
+      const [maxRow] = await db
+        .select({ version: resourceVersion.version })
+        .from(resourceVersion)
+        .where(eq(resourceVersion.resourceId, resourceId))
+        .orderBy(desc(resourceVersion.version))
+        .limit(1)
+
+      const [activeRow] = await db
+        .select({ hash: resourceVersion.hash })
+        .from(resourceVersion)
+        .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.state, 'active')))
+        .orderBy(desc(resourceVersion.version))
+        .limit(1)
+
+      return {
+        maxVersion: maxRow?.version ?? null,
+        latestActiveHash: activeRow?.hash ?? null,
+      }
+    },
+
+    async insertResourceVersion(row: NewResourceVersion): Promise<void> {
+      await db.insert(resourceVersion).values(row)
     },
   }
 }

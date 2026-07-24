@@ -3,9 +3,9 @@
  * Business logic for resource management
  */
 
-import { eq, and, sql, inArray } from 'drizzle-orm'
+import { eq, ne, and, sql, inArray, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { resource, packageTable } from '@kukan/db'
+import { resource, resourceVersion, packageTable } from '@kukan/db'
 import { NotFoundError, ValidationError, normalizeFormat, detectFormat } from '@kukan/shared'
 import type { CreateResourceInput, UpdateResourceInput, PackageDbState } from '@kukan/shared'
 import { hasOrgMembership, hasDraftAccess, type AuthUser } from '../auth/permissions'
@@ -34,9 +34,24 @@ export class ResourceService {
       throw new NotFoundError('Package', packageId)
     }
 
+    // Latest live version number per resource (ADR-043); null until first captured.
+    const versionAgg = this.db
+      .select({
+        resourceId: resourceVersion.resourceId,
+        maxVersion: sql<number>`MAX(${resourceVersion.version})`.as('max_version'),
+      })
+      .from(resourceVersion)
+      .where(ne(resourceVersion.state, 'purged'))
+      .groupBy(resourceVersion.resourceId)
+      .as('version_agg')
+
     const resources = await this.db
-      .select()
+      .select({
+        ...getTableColumns(resource),
+        latestVersion: versionAgg.maxVersion,
+      })
       .from(resource)
+      .leftJoin(versionAgg, eq(versionAgg.resourceId, resource.id))
       .where(and(eq(resource.packageId, packageId), eq(resource.state, 'active')))
       .orderBy(resource.position)
 

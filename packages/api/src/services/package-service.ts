@@ -4,7 +4,7 @@
  */
 
 import { randomBytes } from 'node:crypto'
-import { eq, and, or, sql, getTableColumns, inArray, asc, desc, ilike } from 'drizzle-orm'
+import { eq, ne, and, or, sql, getTableColumns, inArray, asc, desc, ilike } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import {
@@ -14,6 +14,7 @@ import {
   organization,
   resource,
   resourcePipeline,
+  resourceVersion,
   group,
   packageGroup,
 } from '@kukan/db'
@@ -426,14 +427,27 @@ export class PackageService {
   ) {
     const pkg = await this.getByNameOrIdWithAccessCheck(nameOrId, viewer, state)
 
+    // Latest live version number per resource (ADR-043); null until first captured.
+    const versionAgg = this.db
+      .select({
+        resourceId: resourceVersion.resourceId,
+        maxVersion: sql<number>`MAX(${resourceVersion.version})`.as('max_version'),
+      })
+      .from(resourceVersion)
+      .where(ne(resourceVersion.state, 'purged'))
+      .groupBy(resourceVersion.resourceId)
+      .as('version_agg')
+
     const [resources, tags, groups, org] = await Promise.all([
       this.db
         .select({
           ...getTableColumns(resource),
           pipelineStatus: resourcePipeline.status,
+          latestVersion: versionAgg.maxVersion,
         })
         .from(resource)
         .leftJoin(resourcePipeline, eq(resourcePipeline.resourceId, resource.id))
+        .leftJoin(versionAgg, eq(versionAgg.resourceId, resource.id))
         .where(and(eq(resource.packageId, pkg.id), eq(resource.state, 'active')))
         .orderBy(resource.position),
       this.db

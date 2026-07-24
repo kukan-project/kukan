@@ -9,6 +9,7 @@ import {
   GetObjectCommand,
   HeadObjectCommand,
   DeleteObjectCommand,
+  CopyObjectCommand,
   ListObjectsV2Command,
   DeleteObjectsCommand,
 } from '@aws-sdk/client-s3'
@@ -96,6 +97,17 @@ export class S3StorageAdapter implements StorageAdapter {
       new DeleteObjectCommand({
         Bucket: this.bucket,
         Key: key,
+      })
+    )
+  }
+
+  async copy(sourceKey: string, destKey: string): Promise<void> {
+    await this.client.send(
+      new CopyObjectCommand({
+        Bucket: this.bucket,
+        // CopySource must be URL-encoded so keys with spaces/special chars resolve.
+        CopySource: encodeURI(`${this.bucket}/${sourceKey}`),
+        Key: destKey,
       })
     )
   }

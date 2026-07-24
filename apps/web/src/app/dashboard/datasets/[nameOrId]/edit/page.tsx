@@ -32,6 +32,7 @@ interface Resource {
   format?: string | null
   description?: string | null
   pipelineStatus?: PipelineStatus | null
+  latestVersion?: number | null
 }
 
 interface PackageDetail {

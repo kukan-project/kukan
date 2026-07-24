@@ -17,6 +17,9 @@ vi.mock('@aws-sdk/client-s3', () => ({
   DeleteObjectCommand: vi.fn().mockImplementation(function (input: unknown) {
     return { input, _type: 'DeleteObject' }
   }),
+  CopyObjectCommand: vi.fn().mockImplementation(function (input: unknown) {
+    return { input, _type: 'CopyObject' }
+  }),
   ListObjectsV2Command: vi.fn().mockImplementation(function (input: unknown) {
     return { input, _type: 'ListObjectsV2' }
   }),
@@ -128,6 +131,22 @@ describe('S3StorageAdapter', () => {
       expect(cmd._type).toBe('DeleteObject')
       expect(cmd.input.Bucket).toBe('test-bucket')
       expect(cmd.input.Key).toBe('test/key.txt')
+    })
+  })
+
+  describe('copy', () => {
+    it('should send CopyObjectCommand with URL-encoded source', async () => {
+      mockSend.mockResolvedValue({})
+
+      await storage.copy('resources/pkg 1/res 1', 'versions/pkg 1/res 1/v1')
+
+      expect(mockSend).toHaveBeenCalledTimes(1)
+      const cmd = mockSend.mock.calls[0][0]
+      expect(cmd._type).toBe('CopyObject')
+      expect(cmd.input.Bucket).toBe('test-bucket')
+      expect(cmd.input.Key).toBe('versions/pkg 1/res 1/v1')
+      // CopySource must be URL-encoded so keys with spaces resolve.
+      expect(cmd.input.CopySource).toBe('test-bucket/resources/pkg%201/res%201')
     })
   })
 

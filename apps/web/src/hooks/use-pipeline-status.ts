@@ -26,8 +26,11 @@ interface UsePipelineStatusOptions {
   enabled?: boolean
   /** Initial status to avoid a loading flash */
   initialStatus?: PipelineStatus | null
-  /** Polling interval in ms (default: 500) */
+  /** Initial polling interval in ms (default: 500). Backs off exponentially up to maxInterval. */
   interval?: number
+  /** Upper bound for the backed-off polling interval in ms (default: 5000).
+   *  Keeps a long-queued resource from polling at high frequency indefinitely. */
+  maxInterval?: number
   /** Called once when pipeline transitions to a terminal state (complete or error).
    *  Does NOT fire on initial load if already terminal — only on actual transitions. */
   onSettled?: (status: PipelineStatus) => void
@@ -47,6 +50,7 @@ export function usePipelineStatus({
   enabled = true,
   initialStatus = null,
   interval = 500,
+  maxInterval = 5000,
   onSettled,
   initialActive = false,
 }: UsePipelineStatusOptions) {
@@ -56,6 +60,11 @@ export function usePipelineStatus({
   const [loading, setLoading] = useState(true)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const activeRef = useRef(false)
+  // Current backoff delay; grows each reschedule up to maxInterval, reset on (re)start.
+  const delayRef = useRef(interval)
+  // Last observed status — a change (e.g. queued → processing) resets the backoff
+  // so completion is detected promptly after a long queue wait.
+  const lastStatusRef = useRef<PipelineStatus | null>(initialStatus)
   const onSettledRef = useRef(onSettled)
   onSettledRef.current = onSettled
 
@@ -77,12 +86,20 @@ export function usePipelineStatus({
   pollRef.current = async () => {
     if (!activeRef.current) return
 
+    // Schedule the next poll using the current backoff delay, then grow it
+    // (exponential, capped at maxInterval) so a long-queued resource stops
+    // polling at high frequency.
+    const scheduleNext = () => {
+      timeoutRef.current = setTimeout(() => pollRef.current?.(), delayRef.current)
+      delayRef.current = Math.min(delayRef.current * 2, maxInterval)
+    }
+
     try {
       const res = await clientFetch(`/api/v1/resources/${resourceId}/pipeline-status`)
       if (!activeRef.current) return
 
       if (!res.ok) {
-        timeoutRef.current = setTimeout(() => pollRef.current?.(), interval)
+        scheduleNext()
         return
       }
 
@@ -100,21 +117,29 @@ export function usePipelineStatus({
         return
       }
 
+      // A status change (queued → processing) means fresh activity — reset the
+      // backoff so the next transition is caught quickly.
+      if (json.pipeline_status !== lastStatusRef.current) {
+        delayRef.current = interval
+      }
+      lastStatusRef.current = json.pipeline_status
       hasSeenActiveRef.current = true
-      timeoutRef.current = setTimeout(() => pollRef.current?.(), interval)
+      scheduleNext()
     } catch {
       setLoading(false)
       if (activeRef.current) {
-        timeoutRef.current = setTimeout(() => pollRef.current?.(), interval)
+        scheduleNext()
       }
     }
   }
 
   const startPolling = useCallback(() => {
     stopPolling()
+    delayRef.current = interval
+    lastStatusRef.current = null
     activeRef.current = true
     pollRef.current?.()
-  }, [stopPolling])
+  }, [stopPolling, interval])
 
   // Refetch and restart polling (e.g. after reprocess)
   const refetch = useCallback(() => {

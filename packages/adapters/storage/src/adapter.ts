@@ -39,6 +39,12 @@ export interface StorageAdapter {
   delete(key: string): Promise<void>
 
   /**
+   * Server-side copy within the same bucket (no data streamed through the app).
+   * Used to capture immutable per-version snapshots (ADR-043).
+   */
+  copy(sourceKey: string, destKey: string): Promise<void>
+
+  /**
    * Get object metadata (byte size) without downloading the body.
    * Returns null if the object does not exist.
    */

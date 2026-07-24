@@ -620,7 +620,27 @@
     "explorerFilterColumn": "{column} のフィルター",
     "source": "ソース",
     "replaceFile": "ファイルを差し替え",
-    "download": "ダウンロード"
+    "download": "ダウンロード",
+    "versions": {
+      "title": "バージョン履歴",
+      "version": "版",
+      "created": "作成日時",
+      "size": "サイズ",
+      "origin": "取得元",
+      "originUpload": "アップロード",
+      "originFetch": "取得時点",
+      "download": "ダウンロード",
+      "purge": "パージ",
+      "purged": "パージ済み",
+      "purging": "パージ中",
+      "purgeTitle": "版 v{version} をパージ",
+      "purgeWarning": "この版の内容を完全に削除します（法的削除）。アプリからは即時に到達不能になり、バックアップ保持期間の経過後に物理的に消滅します。最新版の場合は直前の版に戻ります。この操作は取り消せません。",
+      "reasonPlaceholder": "パージの理由（監査ログに記録されます）",
+      "purgeConfirm": "パージする",
+      "cancel": "キャンセル",
+      "loadError": "バージョン履歴の取得に失敗しました",
+      "purgeError": "パージに失敗しました"
+    }
   },
   "apiToken": {
     "title": "APIトークン",

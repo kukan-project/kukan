@@ -12,7 +12,8 @@
     "./adapters": "./dist/adapters.js",
     "./services/search-index": "./dist/services/search-index.js",
     "./services/pipeline-service": "./dist/services/pipeline-service.js",
-    "./services/organization-service": "./dist/services/organization-service.js"
+    "./services/organization-service": "./dist/services/organization-service.js",
+    "./services/resource-version-service": "./dist/services/resource-version-service.js"
   },
   "scripts": {
     "dev:standalone": "tsx watch src/server.ts",
