@@ -1,8 +1,10 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
+import { rowActivateProps } from '@/lib/row-activate'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
@@ -17,6 +19,7 @@ interface GroupItem {
 export default function GroupsManagePage() {
   const t = useTranslations('category')
   const tc = useTranslations('common')
+  const router = useRouter()
   const { items, loading, error, ...pagination } = usePaginatedFetch<GroupItem>('/api/v1/groups')
 
   return (
@@ -55,15 +58,16 @@ export default function GroupsManagePage() {
             </TableHeader>
             <TableBody>
               {items.map((grp) => (
-                <TableRow key={grp.id}>
+                <TableRow
+                  key={grp.id}
+                  {...rowActivateProps(() => router.push(`/dashboard/groups/${grp.name}/edit`))}
+                >
                   <TableCell className="font-medium">{grp.name}</TableCell>
                   <TableCell>{grp.title || '-'}</TableCell>
                   <TableCell className="text-right">{grp.datasetCount}</TableCell>
                   <TableCell>
+                    {/* Row click opens the editor; these nested links act on their own. */}
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" asChild>
-                        <Link href={`/dashboard/groups/${grp.name}/edit`}>{tc('edit')}</Link>
-                      </Button>
                       <Button variant="ghost" size="sm" asChild>
                         <Link href={`/dashboard/groups/${grp.name}/members`}>{tc('members')}</Link>
                       </Button>

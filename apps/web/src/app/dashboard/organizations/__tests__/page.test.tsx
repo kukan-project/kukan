@@ -7,6 +7,11 @@ vi.mock('@/lib/client-api', () => ({
   clientFetch: vi.fn(),
 }))
 
+const mockPush = vi.fn()
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mockPush }),
+}))
+
 // Mock useUser — sysadmin by default, mutable per test
 const mockUser = vi.hoisted(() => ({
   id: 'u1',
@@ -38,6 +43,7 @@ const sampleOrgs = [
 describe('OrganizationsManagePage', () => {
   beforeEach(() => {
     vi.mocked(clientFetch).mockReset()
+    mockPush.mockClear()
     mockUser.sysadmin = true
   })
 
@@ -92,15 +98,15 @@ describe('OrganizationsManagePage', () => {
     fireEvent.click(screen.getByText('Deleted'))
 
     await waitFor(() => {
-      const editLinks = screen.getAllByText('Edit')
-      const editLink = editLinks[0].closest('a')
-      expect(editLink).toHaveAttribute('href', '/dashboard/organizations/tokyo/edit?state=deleted')
+      expect(
+        vi
+          .mocked(clientFetch)
+          .mock.calls.some(([url]) => String(url).includes('state=deleted&limit=20'))
+      ).toBe(true)
     })
-    expect(
-      vi
-        .mocked(clientFetch)
-        .mock.calls.some(([url]) => String(url).includes('state=deleted&limit=20'))
-    ).toBe(true)
+    // A deleted-org row click navigates to its edit page in the deleted state.
+    fireEvent.click(screen.getByText('tokyo'))
+    expect(mockPush).toHaveBeenCalledWith('/dashboard/organizations/tokyo/edit?state=deleted')
   })
 
   it('should show empty state when no organizations', async () => {
@@ -157,15 +163,13 @@ describe('OrganizationsManagePage', () => {
     expect(link).toHaveAttribute('href', '/dashboard/organizations/new')
   })
 
-  it('should link to edit, members and view pages', async () => {
+  it('opens edit on row click, and links to members and view pages', async () => {
     vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: sampleOrgs, total: 2 }))
     render(<OrganizationsManagePage />)
 
-    await waitFor(() => {
-      const editLinks = screen.getAllByText('Edit')
-      const editLink = editLinks[0].closest('a')
-      expect(editLink).toHaveAttribute('href', '/dashboard/organizations/tokyo/edit')
-    })
+    await waitFor(() => expect(screen.getByText('tokyo')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('tokyo'))
+    expect(mockPush).toHaveBeenCalledWith('/dashboard/organizations/tokyo/edit')
 
     const memberLinks = screen.getAllByText('Members')
     const memberLink = memberLinks[0].closest('a')

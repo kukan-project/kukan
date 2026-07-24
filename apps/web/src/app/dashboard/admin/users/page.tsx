@@ -6,7 +6,7 @@ import { useLocale, useTranslations } from 'next-intl'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Pencil, Trash2, RotateCcw, XCircle } from 'lucide-react'
+import { Trash2, RotateCcw, XCircle } from 'lucide-react'
 import {
   Alert,
   AlertDescription,
@@ -32,6 +32,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@kukan/ui'
+import { rowActivateProps } from '@/lib/row-activate'
 import { useUser } from '@/components/dashboard/user-provider'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
@@ -319,7 +320,13 @@ export default function AdminUsersPage() {
             </TableHeader>
             <TableBody>
               {items.map((u) => (
-                <TableRow key={u.id} className={u.state !== 'active' ? 'opacity-50' : undefined}>
+                <TableRow
+                  key={u.id}
+                  {...rowActivateProps(() => openEditDialog(u), {
+                    role: 'button',
+                    className: u.state !== 'active' ? 'opacity-50' : undefined,
+                  })}
+                >
                   <TableCell className="truncate font-medium" title={u.name}>
                     {u.name}
                   </TableCell>
@@ -335,16 +342,8 @@ export default function AdminUsersPage() {
                     {formatDateTimeCompact(u.createdAt, locale)}
                   </TableCell>
                   <TableCell>
+                    {/* Row click opens the edit dialog; these buttons act on their own. */}
                     <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => openEditDialog(u)}
-                        title={t('editUser')}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
                       {u.id !== user.id && u.state === 'active' && (
                         <Button
                           variant="ghost"

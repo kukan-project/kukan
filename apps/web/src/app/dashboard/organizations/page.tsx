@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
+import { rowActivateProps } from '@/lib/row-activate'
 import { useUser } from '@/components/dashboard/user-provider'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
@@ -25,6 +27,7 @@ export default function OrganizationsManagePage() {
   const user = useUser()
   const t = useTranslations('organization')
   const tc = useTranslations('common')
+  const router = useRouter()
   const [activeCategory, setActiveCategory] = useState<CategoryFilter>('public')
 
   // Stats (inactive category fetched separately; active category uses pagination.total)
@@ -121,31 +124,24 @@ export default function OrganizationsManagePage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {items.map((org) => (
-                <TableRow key={org.id}>
-                  <TableCell className="font-medium">{org.name}</TableCell>
-                  <TableCell>{org.title || '-'}</TableCell>
-                  <TableCell className="text-right">
-                    {org.datasetCount + org.deletedDatasetCount}
-                    <span className="ml-1 text-xs text-muted-foreground">
-                      {t('deletedDatasetCount', { count: org.deletedDatasetCount })}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      {showDeleted ? (
-                        <Button variant="ghost" size="sm" asChild>
-                          <Link href={`/dashboard/organizations/${org.name}/edit?state=deleted`}>
-                            {tc('edit')}
-                          </Link>
-                        </Button>
-                      ) : (
-                        <>
-                          <Button variant="ghost" size="sm" asChild>
-                            <Link href={`/dashboard/organizations/${org.name}/edit`}>
-                              {tc('edit')}
-                            </Link>
-                          </Button>
+              {items.map((org) => {
+                const editHref = `/dashboard/organizations/${org.name}/edit${
+                  showDeleted ? '?state=deleted' : ''
+                }`
+                return (
+                  <TableRow key={org.id} {...rowActivateProps(() => router.push(editHref))}>
+                    <TableCell className="font-medium">{org.name}</TableCell>
+                    <TableCell>{org.title || '-'}</TableCell>
+                    <TableCell className="text-right">
+                      {org.datasetCount + org.deletedDatasetCount}
+                      <span className="ml-1 text-xs text-muted-foreground">
+                        {t('deletedDatasetCount', { count: org.deletedDatasetCount })}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {/* Row click opens the editor; these nested links act on their own. */}
+                      {!showDeleted && (
+                        <div className="flex gap-1">
                           <Button variant="ghost" size="sm" asChild>
                             <Link href={`/dashboard/organizations/${org.name}/members`}>
                               {tc('members')}
@@ -154,12 +150,12 @@ export default function OrganizationsManagePage() {
                           <Button variant="ghost" size="sm" asChild>
                             <Link href={`/organization/${org.name}`}>{tc('view')}</Link>
                           </Button>
-                        </>
+                        </div>
                       )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
           <PaginationControls {...pagination} onPageChange={pagination.fetchPage} />

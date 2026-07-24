@@ -1,10 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import AnnouncementsManagePage from '../page'
 
 vi.mock('@/lib/client-api', () => ({
   clientFetch: vi.fn(),
+}))
+
+const mockPush = vi.fn()
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mockPush }),
 }))
 
 function mockFetchResponse(data: unknown) {
@@ -31,6 +36,7 @@ const sampleAnnouncements = [
 describe('AnnouncementsManagePage', () => {
   beforeEach(() => {
     vi.mocked(clientFetch).mockReset()
+    mockPush.mockClear()
   })
 
   it('should display announcements in table', async () => {
@@ -77,17 +83,15 @@ describe('AnnouncementsManagePage', () => {
     expect(link).toHaveAttribute('href', '/dashboard/admin/announcements/new')
   })
 
-  it('should link to edit page', async () => {
+  it('navigates to the edit page on row click', async () => {
     vi.mocked(clientFetch).mockResolvedValue(
       mockFetchResponse({ items: sampleAnnouncements, total: 2 })
     )
     render(<AnnouncementsManagePage />)
 
-    await waitFor(() => {
-      const editLinks = screen.getAllByText('Edit')
-      const editLink = editLinks[0].closest('a')
-      expect(editLink).toHaveAttribute('href', '/dashboard/admin/announcements/a1/edit')
-    })
+    await waitFor(() => expect(screen.getByText('System maintenance')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('System maintenance'))
+    expect(mockPush).toHaveBeenCalledWith('/dashboard/admin/announcements/a1/edit')
   })
 
   it('should show error state with retry button on fetch failure', async () => {

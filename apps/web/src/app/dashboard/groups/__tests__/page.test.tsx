@@ -1,10 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import GroupsManagePage from '../page'
 
 vi.mock('@/lib/client-api', () => ({
   clientFetch: vi.fn(),
+}))
+
+const mockPush = vi.fn()
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mockPush }),
 }))
 
 function mockFetchResponse(data: unknown) {
@@ -19,6 +24,7 @@ const sampleGroups = [
 describe('GroupsManagePage', () => {
   beforeEach(() => {
     vi.mocked(clientFetch).mockReset()
+    mockPush.mockClear()
   })
 
   it('should display groups in table', async () => {
@@ -90,15 +96,13 @@ describe('GroupsManagePage', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
   })
 
-  it('should link to edit, members and view pages', async () => {
+  it('opens edit on row click, and links to members and view pages', async () => {
     vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: sampleGroups, total: 2 }))
     render(<GroupsManagePage />)
 
-    await waitFor(() => {
-      const editLinks = screen.getAllByText('Edit')
-      const editLink = editLinks[0].closest('a')
-      expect(editLink).toHaveAttribute('href', '/dashboard/groups/demographics/edit')
-    })
+    await waitFor(() => expect(screen.getByText('demographics')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('demographics'))
+    expect(mockPush).toHaveBeenCalledWith('/dashboard/groups/demographics/edit')
 
     const memberLinks = screen.getAllByText('Members')
     const memberLink = memberLinks[0].closest('a')

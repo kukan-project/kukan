@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   Badge,
   Button,
@@ -16,6 +17,7 @@ import { PageHeader } from '@/components/dashboard/page-header'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
 import { clientFetch } from '@/lib/client-api'
+import { rowActivateProps } from '@/lib/row-activate'
 
 interface AnnouncementItem {
   id: string
@@ -33,6 +35,7 @@ function getStatus(publishedAt: string | null): 'published' | 'scheduled' | 'dra
 export default function AnnouncementsManagePage() {
   const t = useTranslations('announcement')
   const tc = useTranslations('common')
+  const router = useRouter()
   const { items, loading, error, ...pagination } = usePaginatedFetch<AnnouncementItem>(
     '/api/v1/announcements?publishedOnly=false'
   )
@@ -88,7 +91,12 @@ export default function AnnouncementsManagePage() {
               {items.map((item) => {
                 const status = getStatus(item.publishedAt)
                 return (
-                  <TableRow key={item.id}>
+                  <TableRow
+                    key={item.id}
+                    {...rowActivateProps(() =>
+                      router.push(`/dashboard/admin/announcements/${item.id}/edit`)
+                    )}
+                  >
                     <TableCell className="font-medium">{item.title}</TableCell>
                     <TableCell>{t(`category_${item.category}`)}</TableCell>
                     <TableCell>
@@ -98,16 +106,10 @@ export default function AnnouncementsManagePage() {
                       {item.publishedAt ? new Date(item.publishedAt).toLocaleString() : '-'}
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="sm" asChild>
-                          <Link href={`/dashboard/admin/announcements/${item.id}/edit`}>
-                            {tc('edit')}
-                          </Link>
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => handleDelete(item.id)}>
-                          {tc('delete')}
-                        </Button>
-                      </div>
+                      {/* Row click opens the editor; the delete button acts on its own. */}
+                      <Button variant="ghost" size="sm" onClick={() => handleDelete(item.id)}>
+                        {tc('delete')}
+                      </Button>
                     </TableCell>
                   </TableRow>
                 )
