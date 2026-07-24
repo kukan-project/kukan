@@ -222,6 +222,7 @@ pnpm format        # Prettier フォーマット
 - AI メタデータ提案（提案型・オンデマンド生成） → `docs/adr/jp/040-ai-metadata-suggest.md`
 - マルチサイトデプロイ（共用インフラ + サイト単位の論理分離、ADR-031 拡張） → `docs/adr/jp/041-multi-site-deploy.md`
 - マルチブランドビルド（`KUKAN_BRAND` によるブランド選択、ADR-023 拡張、提案） → `docs/adr/jp/042-multi-brand-build.md`
+- リソースバージョニングと行レベル差分（DuckLake、提案） → `docs/adr/jp/043-resource-versioning-ducklake.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
