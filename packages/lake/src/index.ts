@@ -20,7 +20,7 @@ export {
   rollbackLakeTable,
 } from './table'
 export { sqlLiteral } from './sql'
-export { openLakeSession, withLakeSession } from './connection'
+export { openLakeSession, withLakeSession, closeLakeInstances } from './connection'
 export type { LakeSession, LakeRow } from './connection'
 export { ingestParquetVersion } from './ingest'
 export type { IngestResult } from './ingest'

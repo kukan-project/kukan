@@ -31,7 +31,7 @@ import { OrganizationService } from '@kukan/api/services/organization-service'
 import { ResourceVersionService } from '@kukan/api/services/resource-version-service'
 import { createAIAdapter } from '@kukan/api/adapters'
 import { createDb, runMigrations } from '@kukan/db'
-import { lakeConfigFromEnv } from '@kukan/lake'
+import { closeLakeInstances, lakeConfigFromEnv } from '@kukan/lake'
 import { SQSQueueAdapter } from '@kukan/queue-adapter'
 import { S3StorageAdapter } from '@kukan/storage-adapter'
 import { OpenSearchAdapter } from '@kukan/search-adapter'
@@ -333,6 +333,9 @@ const shutdown = async () => {
   orphanCleanupJob.stop()
   if (indexCheckTimer) clearInterval(indexCheckTimer)
   await queue.stop()
+  // Before the pool: each holds a libpq connection of its own, opened by the
+  // catalog ATTACH and invisible to Drizzle's accounting (ADR-043).
+  await closeLakeInstances()
   await db.$client.end()
   process.exit(0)
 }

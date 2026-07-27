@@ -3,9 +3,10 @@
  *
  * Opens an in-memory DuckDB session, loads the required extensions, points it at
  * the S3/MinIO bucket, and ATTACHes the DuckLake catalog (backed by PostgreSQL)
- * as `lake`. All DuckLake access is confined to this module (ADR-005): the
- * worker writes through it, the API reads through it, nothing else touches
- * DuckLake directly.
+ * as `lake`. That setup is instance-scoped, so it is done once per process and
+ * every session after the first is a connection on it. All DuckLake access is
+ * confined to this module (ADR-005): the worker writes through it, the API
+ * reads through it, nothing else touches DuckLake directly.
  *
  * Validated against dev PostgreSQL + MinIO in the Phase ii spike: extension
  * load, ATTACH, ingest, time travel, and `table_changes` all work.
@@ -26,7 +27,7 @@ export interface LakeSession {
   rows(sql: string): Promise<LakeRow[]>
   /** Abort the statement in flight — DuckDB has no statement_timeout. */
   interrupt(): void
-  /** Close the underlying instance/connection. */
+  /** Release the connection; the instance stays for the next session. */
   close(): Promise<void>
 }
 
@@ -36,15 +37,41 @@ export interface LakeSessionLimits {
   threads: number
 }
 
+/** The DuckDB instance type, without importing the module eagerly. */
+type DuckDBInstance = Awaited<
+  ReturnType<(typeof import('@duckdb/node-api'))['DuckDBInstance']['create']>
+>
+
 /**
- * Open a DuckLake session. The caller owns it and must `close()` when done
- * (typically per ingest/diff operation, mirroring the ADR-032 query sandbox
- * which uses a fresh instance per request).
+ * Prepared instances, keyed by what makes them differ.
+ *
+ * Everything setup does is instance-scoped — loaded extensions, the S3 secret,
+ * the attached catalog, and `memory_limit`/`threads`, which DuckDB treats as
+ * globals. So it is paid once and every later session is an `instance.connect()`
+ * on top of it. A process using two distinct limit sets (the diff bounds itself
+ * more tightly than ingest) keeps one instance for each.
+ *
+ * The promise is cached, not the instance, so concurrent first callers wait on
+ * one setup rather than racing to build several.
  */
-export async function openLakeSession(
+const instances = new Map<string, Promise<DuckDBInstance>>()
+
+/**
+ * Errors that mean the instance itself is finished — the catalog's libpq
+ * connection went away — rather than the statement being wrong. The cached
+ * instance is dropped so the next caller rebuilds; the current call still
+ * fails, and its caller retries (SQS redelivery for ingest, the user for a
+ * diff).
+ */
+function isInstanceLost(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err)
+  return /connection|server closed|terminating|SSL|socket/i.test(message)
+}
+
+async function prepareInstance(
   config: LakeConfig,
-  limits?: LakeSessionLimits
-): Promise<LakeSession> {
+  limits: LakeSessionLimits | undefined
+): Promise<DuckDBInstance> {
   const duckdb = await import('@duckdb/node-api')
   // Container images pre-install the extensions here so a closed-network
   // deployment never has to reach extensions.duckdb.org (see Dockerfile).
@@ -55,32 +82,18 @@ export async function openLakeSession(
   )
   const conn = await instance.connect()
 
-  const close = async (): Promise<void> => {
-    conn.disconnectSync()
-    instance.closeSync()
-  }
-
-  const run = async (sql: string): Promise<void> => {
-    await conn.run(sql)
-  }
-  const rows = async (sql: string): Promise<LakeRow[]> => {
-    const reader = await conn.runAndReadAll(sql)
-    // JSON variant serializes BIGINT etc. to JSON-safe values.
-    return reader.getRowObjectsJson() as LakeRow[]
-  }
-
   try {
     if (limits) {
-      await run(`SET memory_limit = '${Math.trunc(limits.memoryLimitMb)}MB'`)
-      await run(`SET threads = ${Math.trunc(limits.threads)}`)
+      await conn.run(`SET memory_limit = '${Math.trunc(limits.memoryLimitMb)}MB'`)
+      await conn.run(`SET threads = ${Math.trunc(limits.threads)}`)
     }
 
     // `aws` backs PROVIDER credential_chain below. Loaded explicitly rather
     // than left to autoloading, which reaches for the network — fatal on a
     // closed-network deployment even though the image ships the extension.
     for (const ext of ['httpfs', 'aws', 'postgres', 'ducklake']) {
-      await run(`INSTALL ${ext}`)
-      await run(`LOAD ${ext}`)
+      await conn.run(`INSTALL ${ext}`)
+      await conn.run(`LOAD ${ext}`)
     }
 
     // S3 credentials. With an explicit endpoint (MinIO) we must force path-style
@@ -104,29 +117,86 @@ export async function openLakeSession(
           ]
         : []),
     ]
-    await run(`CREATE OR REPLACE SECRET lake_s3 (${secretParts.join(', ')})`)
+    await conn.run(`CREATE OR REPLACE SECRET lake_s3 (${secretParts.join(', ')})`)
 
-    await run(
+    await conn.run(
       `ATTACH ${sqlLiteral(`ducklake:postgres:${config.pgConnString}`)} AS lake ` +
         `(DATA_PATH ${sqlLiteral(lakeStorageUrl(config, LAKE_DATA_PREFIX))}, ` +
         `METADATA_SCHEMA ${sqlLiteral(LAKE_METADATA_SCHEMA)})`
     )
+    return instance
   } catch (err) {
-    // Setup failed partway (extension load, S3 secret, ATTACH). The instance and
-    // connection already exist and would otherwise become unreachable while
-    // holding their buffer manager and worker threads.
-    await close().catch(() => {})
+    // Setup failed partway (extension load, S3 secret, ATTACH). The instance
+    // would otherwise become unreachable while holding its buffer manager,
+    // worker threads, and whatever the ATTACH opened.
+    instance.closeSync()
+    throw err
+  } finally {
+    conn.disconnectSync()
+  }
+}
+
+/**
+ * Open a DuckLake session — a connection on the process's prepared instance.
+ *
+ * The caller owns it and must `close()` when done; that disconnects, and leaves
+ * the instance for the next operation. `limits` applies to the instance and is
+ * therefore only honoured the first time a given set is asked for.
+ */
+export async function openLakeSession(
+  config: LakeConfig,
+  limits?: LakeSessionLimits
+): Promise<LakeSession> {
+  const key = JSON.stringify({ config, limits })
+  let pending = instances.get(key)
+  if (!pending) {
+    pending = prepareInstance(config, limits)
+    instances.set(key, pending)
+    // A failed setup must not be cached, or the process never recovers.
+    pending.catch(() => instances.delete(key))
+  }
+
+  const instance = await pending
+  const conn = await instance.connect()
+
+  const forget = (err: unknown) => {
+    if (isInstanceLost(err) && instances.get(key) === pending) {
+      instances.delete(key)
+      void pending.then((i) => i.closeSync()).catch(() => {})
+    }
     throw err
   }
 
-  return { run, rows, interrupt: () => conn.interrupt(), close }
+  return {
+    run: async (sql) => {
+      await conn.run(sql).catch(forget)
+    },
+    rows: async (sql) => {
+      const reader = await conn.runAndReadAll(sql).catch(forget)
+      // JSON variant serializes BIGINT etc. to JSON-safe values.
+      return reader.getRowObjectsJson() as LakeRow[]
+    },
+    interrupt: () => conn.interrupt(),
+    close: async () => conn.disconnectSync(),
+  }
+}
+
+/**
+ * Close every prepared instance. For shutdown: each holds worker threads and
+ * the libpq connection its catalog ATTACH opened, neither of which a process
+ * should still be holding while it drains.
+ */
+export async function closeLakeInstances(): Promise<void> {
+  const pending = [...instances.values()]
+  instances.clear()
+  await Promise.all(pending.map((p) => p.then((i) => i.closeSync()).catch(() => {})))
 }
 
 /**
  * Open a session, run `fn`, and close it whatever happens. A leaked session
- * holds its DuckDB buffer manager, worker threads, and the libpq connection the
- * catalog ATTACH opened, so every caller needs this — use it unless you need
- * the session object itself (the diff races setup against a deadline).
+ * holds a connection on the shared instance, so every caller needs this — use
+ * it unless you need the session object itself (the diff races setup against a
+ * deadline).
  */
 export async function withLakeSession<T>(
   config: LakeConfig,
