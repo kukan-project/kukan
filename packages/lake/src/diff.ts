@@ -82,11 +82,70 @@ function diffSchemas(from: LakeColumn[], to: LakeColumn[]): SchemaDiff {
 }
 
 /**
- * Diff two snapshots of one resource's table.
+ * A column name no user column can shadow. CSV headers become column names, so
+ * `__net` is not off-limits to a dataset; `SELECT *, 1 AS __net` against a table
+ * that already has one is a duplicate-name error.
+ */
+function markerName(columns: LakeColumn[], base: string): string {
+  const taken = new Set(columns.map((c) => c.name))
+  let name = base
+  while (taken.has(name)) name += '_'
+  return name
+}
+
+/**
+ * One statement answering both "how many rows moved" and "show me a few".
  *
- * Row counts use `EXCEPT ALL` rather than `EXCEPT` so duplicate rows are counted
- * individually — with `EXCEPT`, dropping one of three identical rows would
- * register as no change at all.
+ * The two snapshots are stacked with a +1/-1 marker and grouped by the whole
+ * row, so a row's net marker sum is how many copies were added (positive) or
+ * removed (negative). That is `EXCEPT ALL` in both directions — duplicates
+ * counted individually, NULLs matching — from a single pass, where the four
+ * `EXCEPT ALL` scans it replaces each re-read both snapshots in full.
+ *
+ * The totals ride along as window sums so the counts need no second pass, and
+ * `QUALIFY` caps what crosses into JavaScript at {@link SAMPLE_LIMIT} rows per
+ * side: the grouped set is as large as the diff, which for a wholesale
+ * replacement is the whole table.
+ *
+ * Sampled rows are the distinct contents that moved. `EXCEPT ALL` listed one
+ * row three times when three copies were added, spending the sample budget on
+ * repetition; the counts already say how many.
+ *
+ * @param fromRef - `FROM` clause for the older side, `toRef` for the newer.
+ */
+export function buildDiffQuery(
+  fromRef: string,
+  toRef: string,
+  columns: LakeColumn[]
+): { sql: string; net: string; total: string } {
+  const net = markerName(columns, '__net')
+  const total = markerName(columns, '__total')
+  const cols = columns.map((c) => sqlIdentifier(c.name)).join(', ')
+
+  return {
+    net,
+    total,
+    sql: `
+      WITH grouped AS (
+        SELECT ${cols}, sum(${net}) AS ${net}
+        FROM (
+          SELECT ${cols}, 1 AS ${net} FROM ${toRef}
+          UNION ALL
+          SELECT ${cols}, -1 AS ${net} FROM ${fromRef}
+        )
+        GROUP BY ${cols}
+        HAVING sum(${net}) <> 0
+      )
+      SELECT ${net}, sum(abs(${net})) OVER (PARTITION BY ${net} > 0) AS ${total},
+             ${sampleProjection(columns)}
+      FROM grouped
+      QUALIFY row_number() OVER (PARTITION BY ${net} > 0) <= ${SAMPLE_LIMIT}
+    `,
+  }
+}
+
+/**
+ * Diff two snapshots of one resource's table.
  */
 export async function diffVersions(
   session: LakeSession,
@@ -109,24 +168,31 @@ export async function diffVersions(
     return { schemaChanged: true, schemaDiff: diffSchemas(fromCols, toCols) }
   }
 
-  const onlyIn = (a: number, b: number) =>
-    `SELECT * FROM ${at(ref, a)} EXCEPT ALL SELECT * FROM ${at(ref, b)}`
-  const countOf = async (sql: string): Promise<number> => {
-    const [row] = await session.rows(`SELECT count(*) AS c FROM (${sql})`)
-    return Number(row.c)
+  const { sql, net, total } = buildDiffQuery(at(ref, fromSnapshot), at(ref, toSnapshot), toCols)
+  return splitDiffRows(await session.rows(sql), net, total)
+}
+
+/** Fold the sampled rows into the diff, dropping the bookkeeping columns. */
+export function splitDiffRows(rows: LakeRow[], net: string, total: string): VersionDiff {
+  const diff = {
+    schemaChanged: false as const,
+    addedRows: 0,
+    removedRows: 0,
+    sampleAdded: [] as LakeRow[],
+    sampleRemoved: [] as LakeRow[],
   }
 
-  const addedSql = onlyIn(toSnapshot, fromSnapshot)
-  const removedSql = onlyIn(fromSnapshot, toSnapshot)
-  const projection = sampleProjection(toCols)
-  const sampleOf = (sql: string) =>
-    session.rows(`SELECT ${projection} FROM (${sql}) LIMIT ${SAMPLE_LIMIT}`)
-  const [addedRows, removedRows, sampleAdded, sampleRemoved] = await Promise.all([
-    countOf(addedSql),
-    countOf(removedSql),
-    sampleOf(addedSql),
-    sampleOf(removedSql),
-  ])
+  for (const row of rows) {
+    const added = Number(row[net]) > 0
+    const { [net]: _net, [total]: _total, ...content } = row
+    if (added) {
+      diff.addedRows = Number(row[total])
+      diff.sampleAdded.push(content)
+    } else {
+      diff.removedRows = Number(row[total])
+      diff.sampleRemoved.push(content)
+    }
+  }
 
-  return { schemaChanged: false, addedRows, removedRows, sampleAdded, sampleRemoved }
+  return diff
 }
