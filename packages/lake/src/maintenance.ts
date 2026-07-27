@@ -29,7 +29,7 @@ export interface ReclaimResult {
  */
 export async function reclaimUnreferencedSnapshots(
   session: LakeSession,
-  retain: Iterable<number>
+  retain: readonly number[]
 ): Promise<ReclaimResult> {
   const all = (await session.rows(`SELECT snapshot_id FROM ducklake_snapshots('lake')`)).map((r) =>
     Number(r.snapshot_id)
@@ -37,7 +37,7 @@ export async function reclaimUnreferencedSnapshots(
   if (all.length === 0) return { expired: 0, filesDeleted: 0 }
 
   const keep = new Set(retain)
-  keep.add(Math.max(...all))
+  keep.add(all.reduce((a, b) => (a > b ? a : b)))
   const doomed = all.filter((id) => !keep.has(id))
 
   if (doomed.length > 0) {

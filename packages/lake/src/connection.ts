@@ -41,6 +41,7 @@ export interface LakeSessionLimits {
 type DuckDBInstance = Awaited<
   ReturnType<(typeof import('@duckdb/node-api'))['DuckDBInstance']['create']>
 >
+type DuckDBConnection = Awaited<ReturnType<DuckDBInstance['connect']>>
 
 /**
  * Prepared instances, keyed by what makes them differ.
@@ -82,10 +83,7 @@ function isInstanceLost(err: unknown): boolean {
  * this session: the guarantee must not depend on who opened the connection.
  * Read first so the steady state costs no catalog write.
  */
-async function disableDataInlining(conn: {
-  run(sql: string): Promise<unknown>
-  runAndReadAll(sql: string): Promise<{ getRowObjectsJson(): unknown[] }>
-}): Promise<void> {
+async function disableDataInlining(conn: DuckDBConnection): Promise<void> {
   const reader = await conn.runAndReadAll(
     `SELECT value FROM ducklake_options('lake') WHERE option_name = 'data_inlining_row_limit'`
   )

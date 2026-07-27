@@ -6,7 +6,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { digestStream } from '@kukan/shared/hash-node'
-import { eq, and, lt, desc, sql } from 'drizzle-orm'
+import { eq, and, lt, desc, isNotNull, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, resourceVersion, resourcePipeline, auditLog } from '@kukan/db'
 import { NotFoundError, getStorageKey, getVersionKey, versionOrigin } from '@kukan/shared'
@@ -334,13 +334,13 @@ export class ResourceVersionService {
    */
   private async purgeFromLake(
     resourceId: string,
-    restore: { toSnapshot: number | null } | undefined,
-    lake: LakeConfig | undefined
+    lake: LakeConfig | undefined,
+    restore?: { toSnapshot: number | null }
   ): Promise<void> {
     if (!lake) return
     const table = lakeTableName(resourceId)
     await withLakeSession(lake, async (session) => {
-      await withLakeIngestLock(this.db, async () => {
+      await withLakeIngestLock(this.db, async (tx) => {
         // Non-tabular resource, or never ingested — nothing to roll back, but
         // the reclaim below still runs: another resource's purge may have left
         // snapshots behind when it failed partway.
@@ -354,17 +354,14 @@ export class ResourceVersionService {
 
         // Snapshot ids are one catalog-wide sequence, so the retained set spans
         // every resource. The row being purged is already out of `active`, so
-        // it needs no special case. Under the ingest lock, which is what stops
-        // this from expiring a snapshot an ingest has committed but not yet
-        // recorded on its version row.
-        const retained = await this.db
+        // it needs no special case. On `tx`, not the pool: the lock is itself a
+        // pooled connection, and reaching back for another while holding
+        // several deadlocks.
+        const retained = await tx
           .select({ snapshot: resourceVersion.ducklakeSnapshotId })
           .from(resourceVersion)
           .where(
-            and(
-              eq(resourceVersion.state, 'active'),
-              sql`${resourceVersion.ducklakeSnapshotId} IS NOT NULL`
-            )
+            and(eq(resourceVersion.state, 'active'), isNotNull(resourceVersion.ducklakeSnapshotId))
           )
         await reclaimUnreferencedSnapshots(
           session,
@@ -586,7 +583,7 @@ export class ResourceVersionService {
           rolledBack = true
           // Layer 2 must follow the rollback: otherwise the lake's current
           // contents would still be the purged rows (ADR-043 §9).
-          await this.purgeFromLake(resourceId, { toSnapshot: prev.ducklakeSnapshotId }, deps.lake)
+          await this.purgeFromLake(resourceId, deps.lake, { toSnapshot: prev.ducklakeSnapshotId })
         } else {
           // Nothing to roll back to — the resource is left with no live content.
           await this.db
@@ -601,7 +598,7 @@ export class ResourceVersionService {
         // The parked row survives and the sweep's delete is then a no-op.
         if (pkgRow.storageKey) await deps.storage.delete(pkgRow.storageKey)
         // No version survives, so the lake table goes with it.
-        if (!prev) await this.purgeFromLake(resourceId, { toSnapshot: null }, deps.lake)
+        if (!prev) await this.purgeFromLake(resourceId, deps.lake, { toSnapshot: null })
 
         // Invalidate derivatives so the purged content stops being served
         // immediately, before the (async) pipeline regenerates them.
@@ -618,7 +615,7 @@ export class ResourceVersionService {
     } else {
       // A middle version: the live contents are already free of it, but its own
       // snapshot still holds the rows and must be reclaimed (ADR-043 §9).
-      await this.purgeFromLake(resourceId, undefined, deps.lake)
+      await this.purgeFromLake(resourceId, deps.lake)
     }
 
     await this.db
