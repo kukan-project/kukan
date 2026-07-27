@@ -8,10 +8,10 @@ import { createHash } from 'crypto'
 import { Transform, Readable } from 'stream'
 import { KukanError, NotFoundError, ValidationError, getStorageKey } from '@kukan/shared'
 import { safeFetch } from '@/safe-fetch'
+import { HASH_PREFIX, digestStream } from '@kukan/shared/hash-node'
 import type { PipelineContext } from '../types'
 import { MAX_FETCH_SIZE, FETCH_TIMEOUT_MS } from '@/config'
 
-const HASH_PREFIX = 'sha256:'
 const SIZE_LIMIT_MSG = `Resource exceeds ${MAX_FETCH_SIZE / 1024 / 1024}MB limit`
 
 interface FetchResultData {
@@ -20,9 +20,7 @@ interface FetchResultData {
   packageId: string
 }
 
-export type FetchResult =
-  | (FetchResultData & { status: 'fetched' | 'skipped' })
-  | { status: 'deferred' }
+export type FetchResult = (FetchResultData & { status: 'fetched' }) | { status: 'deferred' }
 
 /**
  * Fetch resource data into Storage.
@@ -39,13 +37,13 @@ export async function executeFetch(resourceId: string, ctx: PipelineContext): Pr
   const storageKey = getStorageKey(res.packageId, res.id)
 
   if (res.urlType === 'upload') {
-    // Already in Storage — compute hash if missing
-    if (!res.hash) {
-      const { hash, size } = await computeHash(storageKey, ctx)
-      await ctx.updateResourceHashAndSize(resourceId, { hash, size })
-      return { storageKey, format: res.format, packageId: res.packageId, status: 'fetched' }
-    }
-    return { storageKey, format: res.format, packageId: res.packageId, status: 'skipped' }
+    // Already in Storage — hash it here rather than trusting the value the
+    // upload-complete call carried. Version capture gates on this hash and
+    // records it against the bytes it copies (ADR-043), so a client-supplied
+    // one would let a caller decide whether new versions are ever captured.
+    const { hash, size } = await digestStream(await ctx.storage.download(storageKey))
+    await ctx.recordContent(resourceId, { hash, size, previousHash: res.hash })
+    return { storageKey, format: res.format, packageId: res.packageId, status: 'fetched' }
   }
 
   if (!res.url) {
@@ -59,34 +57,24 @@ export async function executeFetch(resourceId: string, ctx: PipelineContext): Pr
     return { status: 'deferred' }
   }
 
-  const { hash, size } = await downloadToStorage(res.url, storageKey, ctx)
-  if (hash !== res.hash) {
-    await ctx.updateResourceHashAndSize(resourceId, { hash, size })
-  }
+  // The hash is cleared only once bytes are about to land, not before the
+  // request: a DNS failure, an HTTP error or an oversize response leaves the
+  // previous object in place, so the row must keep describing it. Once the
+  // upload starts, the object is indeterminate and null is the honest value.
+  const { hash, size } = await downloadToStorage(res.url, storageKey, ctx, () =>
+    ctx.beginContentReplacement(resourceId)
+  )
+  await ctx.recordContent(resourceId, { hash, size, previousHash: res.hash })
 
   return { storageKey, format: res.format, packageId: res.packageId, status: 'fetched' }
-}
-
-/** Compute SHA-256 hash and size from an existing Storage object */
-async function computeHash(
-  storageKey: string,
-  ctx: PipelineContext
-): Promise<{ hash: string; size: number }> {
-  const stream = await ctx.storage.download(storageKey)
-  const hashDigest = createHash('sha256')
-  let totalSize = 0
-  for await (const chunk of stream) {
-    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-    hashDigest.update(buf)
-    totalSize += buf.length
-  }
-  return { hash: `${HASH_PREFIX}${hashDigest.digest('hex')}`, size: totalSize }
 }
 
 async function downloadToStorage(
   url: string,
   storageKey: string,
-  ctx: PipelineContext
+  ctx: PipelineContext,
+  /** Called once the response is validated and the write is about to begin. */
+  beforeWrite: () => Promise<void>
 ): Promise<{ hash: string; size: number }> {
   const response = await safeFetch(url, {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -120,6 +108,7 @@ async function downloadToStorage(
   })
 
   const stream = readable.pipe(meter)
+  await beforeWrite()
   await ctx.storage.upload(storageKey, stream)
 
   return {

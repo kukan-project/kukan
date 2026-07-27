@@ -14,10 +14,12 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@duckdb/node-api": "1.5.4-r.1",
     "@hono/node-server": "^2.0.4",
     "@kukan/ai-adapter": "workspace:*",
     "@kukan/api": "workspace:*",
     "@kukan/db": "workspace:*",
+    "@kukan/lake": "workspace:*",
     "@kukan/queue-adapter": "workspace:*",
     "@kukan/search-adapter": "workspace:*",
     "@kukan/shared": "workspace:*",

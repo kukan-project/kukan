@@ -1,0 +1,28 @@
+{
+  "name": "@kukan/lake",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "KUKAN DuckLake integration (ADR-043 layer 2: row-level diff)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./*": "./dist/*.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@duckdb/node-api": "1.5.4-r.1",
+    "@kukan/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.2"
+  }
+}

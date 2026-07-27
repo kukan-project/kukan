@@ -44,7 +44,8 @@ function createMockCtx(overrides?: Partial<PipelineContext>): PipelineContext {
       }),
     },
     getResource: vi.fn(),
-    updateResourceHashAndSize: vi.fn(),
+    beginContentReplacement: vi.fn(),
+    recordContent: vi.fn(),
     acquireFetchSlot: vi.fn().mockResolvedValue(true),
     indexContent: vi.fn(),
     deleteContent: vi.fn(),
@@ -84,23 +85,51 @@ describe('executeFetch', () => {
       status: 'fetched',
     })
     expect(ctx.storage.upload).not.toHaveBeenCalled()
-    expect(ctx.updateResourceHashAndSize).toHaveBeenCalledWith('res-1', {
+    expect(ctx.recordContent).toHaveBeenCalledWith('res-1', {
       hash: expectedHash,
       size: content.length,
+      previousHash: null,
     })
   })
 
-  it('should skip hash computation for upload resources when already set', async () => {
+  it('recomputes the hash of an upload rather than trusting the stored one', async () => {
+    // upload-complete accepts a client-supplied hash. Version capture gates on
+    // this value and records it against the bytes it copies (ADR-043), so a
+    // wrong one would decide whether versions are ever captured at all.
+    const content = 'name,age\nAlice,30\n'
+    const expectedHash = `sha256:${createHash('sha256').update(content).digest('hex')}`
     const ctx = createMockCtx()
+    vi.mocked(ctx.storage.download).mockResolvedValue(Readable.from(Buffer.from(content)))
     vi.mocked(ctx.getResource).mockResolvedValue(
-      makeResource({ urlType: 'upload', hash: 'sha256:abc' })
+      makeResource({ urlType: 'upload', hash: 'sha256:not-the-real-hash' })
     )
 
     const result = await executeFetch('res-1', ctx)
 
-    expect(result.status).toBe('skipped')
-    expect(ctx.storage.download).not.toHaveBeenCalled()
-    expect(ctx.updateResourceHashAndSize).not.toHaveBeenCalled()
+    expect(result.status).toBe('fetched')
+    expect(ctx.recordContent).toHaveBeenCalledWith('res-1', {
+      hash: expectedHash,
+      size: content.length,
+      previousHash: 'sha256:not-the-real-hash',
+    })
+  })
+
+  it('does not clear the hash for an upload — the object is already in place', async () => {
+    // Only a writer that replaces the live bytes announces itself that way.
+    const content = 'name,age\nAlice,30\n'
+    const hash = `sha256:${createHash('sha256').update(content).digest('hex')}`
+    const ctx = createMockCtx()
+    vi.mocked(ctx.storage.download).mockResolvedValue(Readable.from(Buffer.from(content)))
+    vi.mocked(ctx.getResource).mockResolvedValue(makeResource({ urlType: 'upload', hash }))
+
+    await executeFetch('res-1', ctx)
+
+    expect(ctx.beginContentReplacement).not.toHaveBeenCalled()
+    expect(ctx.recordContent).toHaveBeenCalledWith('res-1', {
+      hash,
+      size: content.length,
+      previousHash: hash,
+    })
   })
 
   it('should stream from external URL to Storage and compute hash', async () => {
@@ -127,29 +156,38 @@ describe('executeFetch', () => {
       status: 'fetched',
     })
     expect(ctx.storage.upload).toHaveBeenCalledWith('resources/pkg-1/res-1', expect.any(Readable))
-    expect(ctx.updateResourceHashAndSize).toHaveBeenCalledWith('res-1', {
+    expect(ctx.recordContent).toHaveBeenCalledWith('res-1', {
       hash: expectedHash,
       size: body.length,
+      previousHash: null,
     })
 
     fetchSpy.mockRestore()
   })
 
-  it('should not update hash when unchanged', async () => {
+  it('clears the hash before replacing the live object, then records the new one', async () => {
+    // "hash is null" is how a capture in flight learns the bytes are being
+    // replaced under it — the object and the recorded hash are never both
+    // current and disagreeing (ADR-043).
     const body = 'data'
-    const existingHash = `sha256:${createHash('sha256').update(body).digest('hex')}`
+    const hash = `sha256:${createHash('sha256').update(body).digest('hex')}`
 
     const mockResponse = new Response(body, { status: 200 })
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse)
 
     const ctx = createMockCtx()
     vi.mocked(ctx.getResource).mockResolvedValue(
-      makeResource({ url: 'https://example.com/data.csv', hash: existingHash })
+      makeResource({ url: 'https://example.com/data.csv', hash })
     )
 
     await executeFetch('res-1', ctx)
 
-    expect(ctx.updateResourceHashAndSize).not.toHaveBeenCalled()
+    expect(ctx.beginContentReplacement).toHaveBeenCalledWith('res-1')
+    expect(ctx.recordContent).toHaveBeenCalledWith('res-1', {
+      hash,
+      size: body.length,
+      previousHash: hash,
+    })
 
     fetchSpy.mockRestore()
   })

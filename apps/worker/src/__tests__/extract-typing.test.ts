@@ -22,7 +22,8 @@ function createMockCtx() {
   return {
     storage: { download: vi.fn(), upload: vi.fn() },
     getResource: vi.fn(),
-    updateResourceHashAndSize: vi.fn(),
+    beginContentReplacement: vi.fn(),
+    recordContent: vi.fn(),
     acquireFetchSlot: vi.fn(),
     indexContent: vi.fn(),
     deleteContent: vi.fn(),

@@ -51,28 +51,18 @@ describe('createResourceSchema', () => {
     expect(result.success).toBe(true)
   })
 
-  it('should accept valid positive size', () => {
-    const result = createResourceSchema.safeParse({
-      packageId: validUuid,
-      size: 1024,
-    })
-    expect(result.success).toBe(true)
-  })
-
-  it('should reject negative size', () => {
+  // size/hash are measured by the pipeline, not accepted from callers (ADR-043):
+  // version capture gates on the hash, so a supplied value would decide whether
+  // versions are ever captured.
+  it('ignores a caller-supplied size and hash', () => {
     const result = createResourceSchema.safeParse({
       packageId: validUuid,
       size: -1,
+      hash: 'sha256:whatever',
     })
-    expect(result.success).toBe(false)
-  })
-
-  it('should reject non-integer size', () => {
-    const result = createResourceSchema.safeParse({
-      packageId: validUuid,
-      size: 1.5,
-    })
-    expect(result.success).toBe(false)
+    expect(result.success).toBe(true)
+    expect(result.data).not.toHaveProperty('size')
+    expect(result.data).not.toHaveProperty('hash')
   })
 
   it('should not include extras (system-managed)', () => {
@@ -175,8 +165,6 @@ describe('updateResourceSchema', () => {
       description: null,
       format: null,
       mimetype: null,
-      size: null,
-      hash: null,
       resourceType: null,
       url: null,
       urlType: null,

@@ -4,6 +4,8 @@
  * Non-text formats return null (skip).
  */
 
+import { randomUUID } from 'crypto'
+import { hashBuffer } from '@kukan/shared/hash-node'
 import { streamToBuffer, streamToTempFile, cleanupTempFile } from '../node-utils'
 import { detectEncoding, bufferToUtf8 } from '@kukan/shared/encoding-node'
 import { getPreviewKey, isCsvFormat, isTextFormat, isZipFormat } from '@kukan/shared'
@@ -27,6 +29,14 @@ export interface ExtractResult {
   encoding: string
   /** Column schema (CSV/TSV only, when a Parquet preview was generated). */
   schema?: ResourceSchema | null
+  /**
+   * Hash of the bytes this step actually parsed (Parquet preview only). The live
+   * key is shared and a concurrent run can rewrite it between here and the copy,
+   * so version capture refuses to record a version whose bytes disagree with
+   * this — better a missing version than a schema attributed to content it does
+   * not describe.
+   */
+  sourceHash?: string
 }
 
 /**
@@ -41,6 +51,11 @@ export async function executeExtract(
   format: string | null,
   ctx: PipelineContext
 ): Promise<ExtractResult | null> {
+  // Unique to this run, so the object this run writes is never rewritten by a
+  // later one. The pointer in resource_pipeline.preview_key is what readers
+  // follow; the superseded object is deleted once that pointer moves.
+  const runToken = randomUUID()
+
   // ZIP: stream to temp file, extract manifest, upload JSON
   if (isZipFormat(format)) {
     const zipStream = await ctx.storage.download(storageKey)
@@ -48,7 +63,7 @@ export async function executeExtract(
     try {
       const manifest = await extractZipManifest(tmpPath)
       if (!manifest) return null
-      const previewKey = getPreviewKey(packageId, resourceId, 'json')
+      const previewKey = getPreviewKey(packageId, resourceId, 'json', runToken)
       await ctx.storage.upload(previewKey, Buffer.from(JSON.stringify(manifest)), {
         contentType: 'application/json',
       })
@@ -131,12 +146,12 @@ export async function executeExtract(
   }
 
   // I/O: upload to Storage
-  const previewKey = getPreviewKey(packageId, resourceId)
+  const previewKey = getPreviewKey(packageId, resourceId, 'parquet', runToken)
   await ctx.storage.upload(previewKey, Buffer.from(parquetBuf), {
     contentType: 'application/vnd.apache.parquet',
   })
 
-  return { previewKey, encoding, schema }
+  return { previewKey, encoding, schema, sourceHash: hashBuffer(fileBuffer) }
 }
 
 /** Count the cells in a row that are not blank (after trimming). */

@@ -12,6 +12,9 @@
     "./adapters": "./dist/adapters.js",
     "./services/search-index": "./dist/services/search-index.js",
     "./services/pipeline-service": "./dist/services/pipeline-service.js",
+    "./services/lake-ingest": "./dist/services/lake-ingest.js",
+    "./services/advisory-lock": "./dist/services/advisory-lock.js",
+    "./services/verified-copy": "./dist/services/verified-copy.js",
     "./services/organization-service": "./dist/services/organization-service.js",
     "./services/resource-version-service": "./dist/services/resource-version-service.js"
   },
@@ -34,6 +37,7 @@
     "@kukan/db": "workspace:*",
     "@kukan/queue-adapter": "workspace:*",
     "@kukan/search-adapter": "workspace:*",
+    "@kukan/lake": "workspace:*",
     "@kukan/shared": "workspace:*",
     "@kukan/storage-adapter": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",

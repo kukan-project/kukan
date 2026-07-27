@@ -13,6 +13,7 @@
  */
 
 import { ValidationError, RequestTimeoutError, ServiceUnavailableError } from '@kukan/shared'
+import { sqlLiteral } from '@kukan/lake'
 import { assertReadOnlySql } from './sql-guard'
 
 export interface SandboxLimits {
@@ -28,11 +29,6 @@ export interface SandboxResult {
   rows: Record<string, unknown>[]
   rowCount: number
   truncated: boolean
-}
-
-/** Single-quote a string literal for safe interpolation into SQL. */
-function sqlLiteral(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`
 }
 
 /** Largest number of leading rows whose JSON serialization stays within maxBytes. */

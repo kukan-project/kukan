@@ -38,3 +38,6 @@ export async function closePool(): Promise<void> {
 }
 
 export type Database = ReturnType<typeof createDb>
+
+/** The handle a `db.transaction(...)` callback receives. */
+export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0]

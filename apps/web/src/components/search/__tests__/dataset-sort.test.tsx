@@ -24,29 +24,26 @@ describe('DatasetSort', () => {
     expect(screen.getByRole('combobox')).toBeInTheDocument()
   })
 
-  // The translation mock resolves nested keys like "sort.updated_desc" as
-  // the fallback format "search.sort.updated_desc" because the mock only
-  // does single-level lookup within the namespace.
   it('should default to updated:desc when no query', () => {
     render(<DatasetSort />)
-    expect(screen.getByText('search.sort.updated_desc')).toBeInTheDocument()
+    expect(screen.getByText('Last Updated (Newest)')).toBeInTheDocument()
   })
 
   it('should show relevance when search query is present', () => {
     mockSearchParams.mockReturnValue(new URLSearchParams('q=test'))
     render(<DatasetSort />)
-    expect(screen.getByText('search.sort.relevance')).toBeInTheDocument()
+    expect(screen.getByText('Relevance')).toBeInTheDocument()
   })
 
   it('should show explicit sort when sort_by param is set', () => {
     mockSearchParams.mockReturnValue(new URLSearchParams('sort_by=name&sort_order=asc'))
     render(<DatasetSort />)
-    expect(screen.getByText('search.sort.name_asc')).toBeInTheDocument()
+    expect(screen.getByText('URL Identifier (A→Z)')).toBeInTheDocument()
   })
 
   it('should show created desc sort', () => {
     mockSearchParams.mockReturnValue(new URLSearchParams('sort_by=created&sort_order=desc'))
     render(<DatasetSort />)
-    expect(screen.getByText('search.sort.created_desc')).toBeInTheDocument()
+    expect(screen.getByText('Date Created (Newest)')).toBeInTheDocument()
   })
 })

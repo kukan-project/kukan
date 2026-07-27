@@ -6,15 +6,23 @@ import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 import { useUser } from '@/components/dashboard/user-provider'
 
+interface BackfillStatus {
+  /** Layer 1: resources with no version at all. */
+  unversionedCount: number
+  /** Layer 2: tabular current versions not yet loaded into DuckLake. */
+  pendingLakeIngestCount: number
+}
+
 /**
  * One-time version-backfill prompt (ADR-043). Sysadmin-only. Shows only while
- * resources are still missing a version, and disappears once the migration
- * completes — so it never lingers as permanent clutter.
+ * migration work remains — versions to create, or current versions to load into
+ * DuckLake for row-level diff — and disappears once both are done, so it never
+ * lingers as permanent clutter.
  */
 export function VersionBackfillNotice() {
   const { sysadmin } = useUser()
   const t = useTranslations('dashboard.versionBackfill')
-  const [count, setCount] = useState<number | null>(null)
+  const [status, setStatus] = useState<BackfillStatus | null>(null)
   const [backfilling, setBackfilling] = useState(false)
   const [queued, setQueued] = useState(false)
 
@@ -23,7 +31,7 @@ export function VersionBackfillNotice() {
     clientFetch('/api/v1/admin/version-backfill-status')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data) setCount(data.unversionedCount)
+        if (data) setStatus(data)
       })
       .catch(() => {})
   }, [sysadmin])
@@ -35,7 +43,9 @@ export function VersionBackfillNotice() {
     if (res.ok) setQueued(true)
   }
 
-  if (!sysadmin || count === null || count === 0) return null
+  if (!sysadmin || status === null) return null
+  const { unversionedCount, pendingLakeIngestCount } = status
+  if (unversionedCount === 0 && pendingLakeIngestCount === 0) return null
 
   return (
     <Card className="border-primary/40 bg-primary/5">
@@ -43,7 +53,12 @@ export function VersionBackfillNotice() {
         <CardTitle className="text-base">{t('backfillTitle')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">{t('backfillDescription', { count })}</p>
+        <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+          {unversionedCount > 0 && <p>{t('backfillDescription', { count: unversionedCount })}</p>}
+          {pendingLakeIngestCount > 0 && (
+            <p>{t('lakeIngestDescription', { count: pendingLakeIngestCount })}</p>
+          )}
+        </div>
         <div className="flex items-center gap-4">
           <Button onClick={handleBackfill} disabled={backfilling || queued}>
             {backfilling ? t('backfilling') : t('backfill')}

@@ -58,21 +58,35 @@ export class StepTracker {
   }
 
   /**
-   * Update preview key and/or metadata after extract step.
+   * Move the preview pointer and replace the metadata describing it, parking
+   * the key it replaced for later deletion (ADR-043).
+   *
+   * One statement, because both halves read the row: the key being parked is
+   * whatever `preview_key` is *now* — not what this run read at startup, which a
+   * concurrent run of the same resource may already have moved past — and it is
+   * appended to the current list rather than to a stale copy. Splitting them
+   * would let one write undo the other. Deletion is the sweep's job.
    */
   async updateExtractResult(
     pipelineId: string,
     previewKey: string | null,
-    metadata?: Record<string, unknown>
+    metadata: Record<string, unknown>
   ) {
-    await this.db
-      .update(resourcePipeline)
-      .set({
-        previewKey,
-        ...(metadata !== undefined && { metadata }),
-        updated: sql`NOW()`,
-      })
-      .where(eq(resourcePipeline.id, pipelineId))
+    await this.db.execute(sql`
+      UPDATE resource_pipeline
+      SET
+        preview_key = ${previewKey},
+        metadata = ${JSON.stringify(metadata)}::jsonb || jsonb_build_object(
+          'supersededPreviews',
+          COALESCE(metadata -> 'supersededPreviews', '[]'::jsonb) || CASE
+            WHEN preview_key IS NOT NULL AND preview_key IS DISTINCT FROM ${previewKey}
+            THEN jsonb_build_array(jsonb_build_object('key', preview_key, 'at', ${Date.now()}::bigint))
+            ELSE '[]'::jsonb
+          END
+        ),
+        updated = NOW()
+      WHERE id = ${pipelineId}::uuid
+    `)
   }
 
   /**

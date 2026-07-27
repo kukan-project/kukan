@@ -38,10 +38,14 @@ vi.mock('next/navigation', () => ({
 // Mock next-intl
 type Messages = Record<string, unknown>
 
+/** Dotted lookup, as real next-intl does — `t('group.key')` inside a namespace. */
 function resolve(obj: Messages, key: string): string | undefined {
-  const val = obj[key]
-  if (typeof val === 'string') return val
-  return undefined
+  let current: unknown = obj
+  for (const part of key.split('.')) {
+    if (!current || typeof current !== 'object') return undefined
+    current = (current as Messages)[part]
+  }
+  return typeof current === 'string' ? current : undefined
 }
 
 function resolveNamespace(obj: Messages, path: string): Messages | null {

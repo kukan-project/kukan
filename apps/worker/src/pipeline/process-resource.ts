@@ -1,6 +1,8 @@
 /**
  * KUKAN Pipeline — Resource Processing Orchestrator
- * Runs Fetch → Extract → Index steps with error isolation.
+ * Runs Fetch → Extract → Version → Lake → Index. Every step after Fetch records
+ * its own failure and lets the pipeline continue: only the canonical file is
+ * critical, and each derivative can be rebuilt on the next run.
  */
 
 import type { Database } from '@kukan/db'
@@ -9,7 +11,7 @@ import { PIPELINE_JOB_TYPE } from '@kukan/shared'
 import { StepTracker } from './step-tracker'
 import { executeFetch } from './steps/fetch'
 import { executeExtract } from './steps/extract'
-import { executeVersion } from './steps/version'
+import { executeLake } from './steps/lake'
 import { executeIndexContent } from './steps/index-content'
 import type { PipelineContext } from './types'
 import { FETCH_RATE_LIMIT_REQUEUE_DELAY_S } from '@/config'
@@ -57,11 +59,7 @@ export async function processResource(
       return
     }
 
-    if (fetchResult.status === 'skipped') {
-      await tracker.skipStep(fetchStepId)
-    } else {
-      await tracker.completeStep(fetchStepId)
-    }
+    await tracker.completeStep(fetchStepId)
 
     // Step 2: Extract — parse from Storage, generate Parquet preview
     // Non-critical: failures are recorded but don't fail the pipeline
@@ -92,6 +90,9 @@ export async function processResource(
           encoding: extractResult.encoding,
           // Persist the column schema (ADR-032) when one was generated (CSV/TSV).
           ...(extractResult.schema ? { schema: extractResult.schema } : {}),
+          // Ties the preview to the bytes it was built from, so the backfill
+          // can tell whether it describes a given version (ADR-043 layer 2).
+          ...(extractResult.sourceHash ? { sourceHash: extractResult.sourceHash } : {}),
         })
       }
     } catch (err) {
@@ -103,13 +104,13 @@ export async function processResource(
     // Non-critical: a capture failure is recorded but never fails the pipeline.
     const versionStepId = await tracker.startStep(pipeline.id, 'version')
     try {
-      const versionResult = await executeVersion(
+      const versionResult = await ctx.captureVersion({
         resourceId,
-        fetchResult.packageId,
-        fetchResult.storageKey,
-        extractResult?.schema ?? null,
-        ctx
-      )
+        packageId: fetchResult.packageId,
+        currentStorageKey: fetchResult.storageKey,
+        schema: extractResult?.schema ?? null,
+        sourceHash: extractResult?.sourceHash,
+      })
       if (versionResult.captured) {
         await tracker.completeStep(versionStepId)
       } else {
@@ -119,7 +120,27 @@ export async function processResource(
       await tracker.failStep(versionStepId, (err as Error).message)
     }
 
-    // Step 4: Index — extract text content and index to search engine
+    // Step 4: Lake — load the captured version into DuckLake for row-level
+    // diff (ADR-043 layer 2). Only runs for a newly captured tabular version;
+    // non-critical, and rebuildable from layer 1 if it fails.
+    const lakeStepId = await tracker.startStep(pipeline.id, 'lake')
+    try {
+      const lakeResult = await executeLake(
+        resourceId,
+        extractResult?.previewKey ?? null,
+        extractResult?.sourceHash,
+        ctx
+      )
+      if (lakeResult.ingested) {
+        await tracker.completeStep(lakeStepId)
+      } else {
+        await tracker.skipStep(lakeStepId)
+      }
+    } catch (err) {
+      await tracker.failStep(lakeStepId, (err as Error).message)
+    }
+
+    // Step 5: Index — extract text content and index to search engine
     // Non-critical: failures are recorded but don't fail the pipeline
     const indexStepId = await tracker.startStep(pipeline.id, 'index')
     try {

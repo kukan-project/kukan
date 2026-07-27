@@ -4,6 +4,16 @@ import JSZip from 'jszip'
 import type { PipelineContext } from '../pipeline/types'
 import { executeExtract } from '../pipeline/steps/extract'
 
+/**
+ * Preview keys carry a per-run UUID (ADR-043 layer 2: the object a reader
+ * resolved must never be rewritten), so they are matched by shape.
+ */
+const PREVIEW_KEY_RE = (pkg: string, res: string, ext: string) =>
+  new RegExp(`^previews/${pkg}/${res}\\.[0-9a-f-]{36}\\.${ext}$`)
+
+const previewKeyMatching = (pkg: string, res: string, ext: string) =>
+  expect.stringMatching(PREVIEW_KEY_RE(pkg, res, ext))
+
 function createMockCtx() {
   return {
     storage: {
@@ -11,7 +21,8 @@ function createMockCtx() {
       upload: vi.fn(),
     },
     getResource: vi.fn(),
-    updateResourceHashAndSize: vi.fn(),
+    beginContentReplacement: vi.fn(),
+    recordContent: vi.fn(),
     acquireFetchSlot: vi.fn(),
     indexContent: vi.fn(),
     deleteContent: vi.fn(),
@@ -37,7 +48,10 @@ describe('executeExtract', () => {
 
     expect(ctx.storage.download).toHaveBeenCalledWith('resources/pkg-1/res-1')
     expect(result).toEqual({
-      previewKey: 'previews/pkg-1/res-1.parquet',
+      previewKey: previewKeyMatching('pkg-1', 'res-1', 'parquet'),
+      // Hash of the bytes parsed here, so the Lake step can verify the version
+      // it ingests holds the same content.
+      sourceHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
       encoding: expect.stringMatching(/^(ASCII|ISO-8859-1)$/),
       schema: {
         rowCount: 2,
@@ -56,7 +70,8 @@ describe('executeExtract', () => {
     expect(ctx.storage.upload).toHaveBeenCalledOnce()
 
     const [key, buf, meta] = ctx.storage.upload.mock.calls[0]
-    expect(key).toBe('previews/pkg-1/res-1.parquet')
+    // Unique per run so a later run cannot rewrite it (ADR-043 layer 2).
+    expect(key).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-1', 'parquet'))
     expect(meta).toEqual({ contentType: 'application/vnd.apache.parquet' })
     expect(Buffer.isBuffer(buf)).toBe(true)
     expect(buf.length).toBeGreaterThan(0)
@@ -67,7 +82,7 @@ describe('executeExtract', () => {
 
     const result = await executeExtract('res-2', 'pkg-1', 'resources/pkg-1/res-2', 'CSV', ctx)
 
-    expect(result?.previewKey).toBe('previews/pkg-1/res-2.parquet')
+    expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-2', 'parquet'))
     expect(ctx.storage.upload).toHaveBeenCalledOnce()
   })
 
@@ -76,7 +91,7 @@ describe('executeExtract', () => {
 
     const result = await executeExtract('res-3', 'pkg-1', 'resources/pkg-1/res-3', 'TSV', ctx)
 
-    expect(result?.previewKey).toBe('previews/pkg-1/res-3.parquet')
+    expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-3', 'parquet'))
     expect(ctx.storage.upload).toHaveBeenCalledOnce()
   })
 
@@ -90,7 +105,7 @@ describe('executeExtract', () => {
     const result = await executeExtract('res-4', 'pkg-1', 'resources/pkg-1/res-4', 'CSV', ctx)
 
     // Parquet stores all rows (no 200-row limit)
-    expect(result?.previewKey).toBe('previews/pkg-1/res-4.parquet')
+    expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-4', 'parquet'))
     expect(ctx.storage.upload).toHaveBeenCalledOnce()
   })
 
@@ -186,7 +201,7 @@ describe('executeExtract', () => {
 
     const result = await executeExtract('res-13', 'pkg-1', 'resources/pkg-1/res-13', 'CSV', ctx)
 
-    expect(result?.previewKey).toBe('previews/pkg-1/res-13.parquet')
+    expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-13', 'parquet'))
     expect(ctx.storage.upload).toHaveBeenCalledOnce()
   })
 
@@ -209,7 +224,7 @@ describe('executeExtract', () => {
     const result = await executeExtract('res-14', 'pkg-1', 'resources/pkg-1/res-14', 'CSV', ctx)
 
     expect(result?.encoding).toBe('Shift_JIS')
-    expect(result?.previewKey).toBe('previews/pkg-1/res-14.parquet')
+    expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-14', 'parquet'))
   })
 
   it('should not skip header in single-column CSV', async () => {
@@ -217,7 +232,7 @@ describe('executeExtract', () => {
 
     const result = await executeExtract('res-16', 'pkg-1', 'resources/pkg-1/res-16', 'CSV', ctx)
 
-    expect(result?.previewKey).toBe('previews/pkg-1/res-16.parquet')
+    expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-16', 'parquet'))
     expect(ctx.storage.upload).toHaveBeenCalledOnce()
   })
 
@@ -228,7 +243,7 @@ describe('executeExtract', () => {
 
     const result = await executeExtract('res-15', 'pkg-1', 'resources/pkg-1/res-15', 'CSV', ctx)
 
-    expect(result?.previewKey).toBe('previews/pkg-1/res-15.parquet')
+    expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-15', 'parquet'))
     expect(ctx.storage.upload).toHaveBeenCalledOnce()
   })
 
@@ -242,14 +257,14 @@ describe('executeExtract', () => {
     const result = await executeExtract('res-zip', 'pkg-1', 'resources/pkg-1/res-zip', 'ZIP', ctx)
 
     expect(result).toEqual({
-      previewKey: 'previews/pkg-1/res-zip.json',
+      previewKey: previewKeyMatching('pkg-1', 'res-zip', 'json'),
       encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/),
     })
     expect(ctx.storage.download).toHaveBeenCalledWith('resources/pkg-1/res-zip')
     expect(ctx.storage.upload).toHaveBeenCalledOnce()
 
     const [key, buf, meta] = ctx.storage.upload.mock.calls[0]
-    expect(key).toBe('previews/pkg-1/res-zip.json')
+    expect(key).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-zip', 'json'))
     expect(meta).toEqual({ contentType: 'application/json' })
 
     const manifest = JSON.parse(buf.toString())

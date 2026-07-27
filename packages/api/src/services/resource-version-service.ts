@@ -8,17 +8,103 @@ import { eq, and, lt, desc, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, resourceVersion, resourcePipeline, auditLog } from '@kukan/db'
 import { NotFoundError, getStorageKey, getVersionKey, versionOrigin } from '@kukan/shared'
+import type { LakeConfig } from '@kukan/lake'
+import {
+  LAKE_PREVIEW_SUFFIX,
+  dropLakeTable,
+  lakeTableExists,
+  lakeTableName,
+  rollbackLakeTable,
+  withLakeSession,
+} from '@kukan/lake'
 import type { ResourceSchema } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
+import { ingestVersionIntoLake, withLakeIngestLock } from './lake-ingest'
+import { VERSION_CAPTURE_LOCK, withAdvisoryLock } from './advisory-lock'
+import { copyAndMeasure, discardCopy } from './verified-copy'
 import { PipelineService } from './pipeline-service'
 
 export type VersionState = 'active' | 'purging' | 'purged'
 export type VersionOrigin = 'upload' | 'fetch'
 
-/** Bounded concurrency for the one-time version backfill's storage copies. */
-const BACKFILL_CONCURRENCY = 10
+/**
+ * Bounded concurrency for the one-time version backfill's storage copies.
+ *
+ * Each unit holds a pooled connection for its whole capture — the advisory lock
+ * scopes a transaction across the copy and the read-back — so this is really a
+ * claim on the connection pool, not just on storage. Kept below
+ * `WORKER_DB_POOL_MAX` (default 3) so the worker still has a connection for the
+ * pipeline, the crons, and the health check while a migration runs.
+ */
+const BACKFILL_CONCURRENCY = 2
+
+/**
+ * Current versions of tabular resources that are not in DuckLake yet (ADR-043
+ * layer 2). Restricted to the latest active version because the preview Parquet
+ * — the only tabular rendering that exists — always holds the newest content;
+ * older versions cannot be reconstructed from it.
+ *
+ * The preview is mutable and outlives the run that made it — it is kept when an
+ * Extract fails, and it still points at the old object while a re-queued
+ * pipeline waits to start. Neither the version's hash nor a completed Extract
+ * step rules that out: the backfill *creates* the version from the live file, so
+ * their hashes always agree.
+ *
+ * What settles it is the hash of the bytes Extract actually parsed, recorded on
+ * the pipeline alongside the preview it produced. Requiring it to equal the
+ * version's hash means the Parquet provably describes *that* version.
+ *
+ * Previews written before that hash was recorded have none, and they are exactly
+ * the ones this migration exists for — so they fall back to a weaker but still
+ * sound test: the pipeline must be settled (`complete`, not re-queued behind a
+ * newer file), that run's Extract must have produced the preview rather than
+ * failing and leaving the previous one in place (a failed Extract does not fail
+ * the pipeline), and the version must be the resource's live content. Steps are
+ * cleared at the start of each run, so they describe only the latest one.
+ *
+ * Re-evaluated inside the ingest lock (see `ingestPendingIntoLake`), because the
+ * scan and the ingest are minutes apart on a large migration.
+ *
+ * @param resourceId - restrict to one resource, for that re-check.
+ */
+function pendingLakeIngestQuery(resourceId?: string) {
+  return sql`
+  SELECT rv.resource_id AS "resourceId", rv.version, rp.preview_key AS "previewKey"
+  FROM resource_version rv
+  JOIN resource r ON r.id = rv.resource_id
+  JOIN resource_pipeline rp ON rp.resource_id = r.id
+  WHERE r.state = 'active'
+    ${resourceId === undefined ? sql`` : sql`AND rv.resource_id = ${resourceId}::uuid`}
+    AND rv.state = 'active'
+    AND rv.ducklake_snapshot_id IS NULL
+    AND rp.preview_key LIKE ${`%${LAKE_PREVIEW_SUFFIX}`}
+    AND rv.hash IS NOT NULL
+    AND (
+      rp.metadata->>'sourceHash' = rv.hash
+      OR (
+        rp.metadata->>'sourceHash' IS NULL
+        AND rp.status = 'complete'
+        AND rv.hash = r.hash
+        AND EXISTS (
+          SELECT 1 FROM resource_pipeline_step s
+          WHERE s.pipeline_id = rp.id AND s.step_name = 'extract' AND s.status = 'complete'
+        )
+      )
+    )
+    AND rv.version = (
+      SELECT max(rv2.version) FROM resource_version rv2
+      WHERE rv2.resource_id = rv.resource_id AND rv2.state = 'active'
+    )
+`
+}
+
+interface PendingLakeIngest {
+  resourceId: string
+  version: number
+  previewKey: string
+}
 
 /** A version as exposed through the API. Purged versions are tombstones: their
  *  content-bearing fields (storageKey/hash/size/schema) are withheld. */
@@ -65,13 +151,37 @@ export class ResourceVersionService {
     return row?.count ?? 0
   }
 
-  /** Active resources that have content but no version yet — the backfill work set. */
+  /**
+   * Active resources that have content but no version yet — the backfill work set.
+   *
+   * Resources whose pipeline is in flight are excluded: an external-URL fetch
+   * writes the new object to storage *before* it updates the hash, so during a
+   * run the live bytes and `resource.hash` can disagree with nothing to detect
+   * it from. The advisory lock does not help — Fetch never takes it. They are
+   * picked up by the next backfill pass, or captured by the run itself.
+   */
   private unversionedWhere() {
     return and(
       eq(resource.state, 'active'),
       sql`${resource.hash} IS NOT NULL`,
-      sql`NOT EXISTS (SELECT 1 FROM ${resourceVersion} rv WHERE rv.resource_id = ${resource.id})`
+      sql`NOT EXISTS (SELECT 1 FROM ${resourceVersion} rv WHERE rv.resource_id = ${resource.id})`,
+      sql`NOT EXISTS (
+        SELECT 1 FROM ${resourcePipeline} rp
+        WHERE rp.resource_id = ${resource.id} AND rp.status IN ('queued', 'processing')
+      )`
     )
+  }
+
+  /**
+   * Count latest versions that aren't in DuckLake yet — the layer-2 half of the
+   * migration (ADR-043 Phase ii). Zero means every tabular resource's current
+   * version can be diffed once it is updated again.
+   */
+  async countPendingLakeIngest(): Promise<number> {
+    const result = await this.db.execute(sql`
+      SELECT count(*)::int AS count FROM (${pendingLakeIngestQuery()}) t
+    `)
+    return (result.rows[0] as { count: number } | undefined)?.count ?? 0
   }
 
   /**
@@ -79,10 +189,21 @@ export class ResourceVersionService {
    * v1 by server-side copy (ADR-043). No re-fetch, re-index, or re-embedding —
    * the current storage key already holds the content. Idempotent (skips
    * resources that already have a version). Runs in the worker.
+   *
+   * When a DuckLake config is supplied, a second pass loads each tabular
+   * resource's current version into the lake (layer 2). The preview Parquet is
+   * only ever the *latest* version's content, which is exactly what the current
+   * version is — so this is the one moment existing data can enter the lake.
+   * Older versions have no preview Parquet and stay out of it.
    */
-  async backfillVersions(deps: {
-    storage: StorageAdapter
-  }): Promise<{ backfilled: number; failed: number }> {
+  async backfillVersions(deps: { storage: StorageAdapter; lake?: LakeConfig }): Promise<{
+    backfilled: number
+    /** Captured or replaced by something else since the scan — retry-safe. */
+    skipped: number
+    failed: number
+    ingested: number
+    ingestFailed: number
+  }> {
     // Fetch every unversioned resource once (small rows), then process each
     // exactly once — no re-query, so a failure isn't retried into a success.
     const rows = await this.db
@@ -93,38 +214,211 @@ export class ResourceVersionService {
         hash: resource.hash,
         size: resource.size,
         schema: sql<ResourceSchema | null>`${resourcePipeline.metadata} -> 'schema'`,
+        // Whether that schema was built from the bytes the resource holds now.
+        // A failed Extract keeps the previous preview and schema without failing
+        // the run, so an unchecked copy would pin an older content's columns
+        // onto v1. Same test as `pendingLakeIngestQuery`, against the live hash.
+        schemaTrusted: sql<boolean>`(
+          ${resourcePipeline.metadata}->>'sourceHash' = ${resource.hash}
+          OR (
+            ${resourcePipeline.metadata}->>'sourceHash' IS NULL
+            AND ${resourcePipeline.status} = 'complete'
+            AND EXISTS (
+              SELECT 1 FROM resource_pipeline_step s
+              WHERE s.pipeline_id = ${resourcePipeline.id}
+                AND s.step_name = 'extract' AND s.status = 'complete'
+            )
+          )
+        )`,
       })
       .from(resource)
       .leftJoin(resourcePipeline, eq(resourcePipeline.resourceId, resource.id))
       .where(this.unversionedWhere())
 
     let backfilled = 0
+    let skipped = 0
     let failed = 0
     // Per-resource copy+insert, bounded concurrency. Kept per-row (not one batched
     // INSERT) so one bad object fails only its own resource, not the whole chunk.
     for (let i = 0; i < rows.length; i += BACKFILL_CONCURRENCY) {
       const results = await Promise.allSettled(
-        rows.slice(i, i + BACKFILL_CONCURRENCY).map(async (r) => {
-          const versionKey = getVersionKey(r.packageId, r.id, 1)
-          await deps.storage.copy(getStorageKey(r.packageId, r.id), versionKey)
-          await this.db.insert(resourceVersion).values({
-            resourceId: r.id,
-            version: 1,
-            storageKey: versionKey,
-            size: r.size,
-            hash: r.hash,
-            origin: versionOrigin(r.urlType),
-            schema: r.schema ?? null,
+        rows.slice(i, i + BACKFILL_CONCURRENCY).map(async (r) =>
+          // Same lock the pipeline's Version step takes: the migration must not
+          // capture v1 for a resource the pipeline is capturing right now. Every
+          // query runs on the transaction's own connection — reaching back to
+          // the pool here would deadlock, since each held lock is a connection
+          // and the backfill runs more of them in parallel than the pool has.
+          withAdvisoryLock(this.db, VERSION_CAPTURE_LOCK, r.id, async (tx) => {
+            // Re-checked under the lock, against the row as it is *now*: the
+            // scan happened earlier, and since then a pipeline run may have
+            // captured v1 (copying first would overwrite its file before the
+            // unique index rejected the insert) or an upload may have replaced
+            // the live object (prepareForUpload nulls the hash first, so a
+            // changed or absent hash means the bytes are no longer the ones
+            // this row describes).
+            const [current] = await tx
+              .select({
+                hash: resource.hash,
+                versions: sql<number>`(
+                  SELECT count(*)::int FROM ${resourceVersion} rv
+                  WHERE rv.resource_id = ${resource.id}
+                )`,
+                // A run that started since the scan may be rewriting the live
+                // object right now: an external fetch writes storage before it
+                // updates the hash, so nothing else here would detect it.
+                busy: sql<boolean>`EXISTS (
+                  SELECT 1 FROM ${resourcePipeline} rp
+                  WHERE rp.resource_id = ${resource.id}
+                    AND rp.status IN ('queued', 'processing')
+                )`,
+              })
+              .from(resource)
+              .where(eq(resource.id, r.id))
+              .limit(1)
+            if (!current || current.versions > 0 || current.busy) return false
+            if (current.hash !== r.hash) return false
+
+            const versionKey = getVersionKey(r.packageId, r.id, 1)
+            const captured = await copyAndMeasure(
+              deps.storage,
+              getStorageKey(r.packageId, r.id),
+              versionKey
+            )
+
+            // Read the hash once more: an upload may have replaced the live
+            // object between the check above and the copy, in which case the
+            // copy holds the new bytes while `r.size`/`r.schema` describe the
+            // old ones. prepareForUpload nulls the hash before the new bytes
+            // land, so any change here — including to null — means exactly that.
+            const [after] = await tx
+              .select({ hash: resource.hash })
+              .from(resource)
+              .where(eq(resource.id, r.id))
+              .limit(1)
+            if (after?.hash !== r.hash) {
+              await discardCopy(deps.storage, versionKey)
+              return false
+            }
+
+            // A differing hash can only be a stored value that was never the
+            // real digest — `upload-complete` has always accepted any string,
+            // and refusing those rows would leave the migration permanently
+            // incomplete. It cannot be an object that changed under us: every
+            // writer of the live object nulls the hash before replacing it —
+            // Fetch, the upload flow, and the purge rollback — so the re-read
+            // above would have seen null. Normalize to the measurement.
+            if (captured.hash !== r.hash || captured.size !== r.size) {
+              await tx
+                .update(resource)
+                .set({ hash: captured.hash, size: captured.size })
+                .where(eq(resource.id, r.id))
+            }
+
+            await tx.insert(resourceVersion).values({
+              resourceId: r.id,
+              version: 1,
+              storageKey: versionKey,
+              size: captured.size,
+              hash: captured.hash,
+              origin: versionOrigin(r.urlType),
+              schema: r.schemaTrusted ? (r.schema ?? null) : null,
+            })
+            return true
           })
-        })
+        )
       )
       for (const res of results) {
-        if (res.status === 'fulfilled') backfilled++
-        else failed++
+        if (res.status === 'rejected') failed++
+        else if (res.value) backfilled++
+        // Skipped: something captured or replaced the resource since the scan.
+        else skipped++
       }
     }
 
-    return { backfilled, failed }
+    const { ingested, ingestFailed } = await this.ingestPendingIntoLake(deps.lake)
+    return { backfilled, skipped, failed, ingested, ingestFailed }
+  }
+
+  /**
+   * Propagate a purge into DuckLake (ADR-043 §9, layer 2).
+   *
+   * Called only when the purged version was the live one, since that is when the
+   * lake's current contents would otherwise still hold the purged rows:
+   * - a snapshot given — roll the table back to the version we reverted to.
+   * - null — no version survives, so drop the table.
+   *
+   * Purging a middle version needs nothing here: the live contents are unchanged
+   * and the old snapshot is unreachable through the API. Physically erasing the
+   * files behind expired snapshots (compaction rewrite + cleanup) is separate and
+   * bound by the backup-retention rule (ADR-037).
+   *
+   * Failures propagate: the version stays in `purging` and the worker retries,
+   * rather than a legal deletion silently completing with data left in the lake.
+   */
+  private async purgeFromLake(
+    resourceId: string,
+    restoreToSnapshot: number | null,
+    lake: LakeConfig | undefined
+  ): Promise<void> {
+    if (!lake) return
+    const table = lakeTableName(resourceId)
+    await withLakeSession(lake, async (session) => {
+      // Non-tabular resource, or never ingested.
+      if (!(await lakeTableExists(session, table))) return
+
+      await withLakeIngestLock(this.db, async () => {
+        if (restoreToSnapshot === null) {
+          await dropLakeTable(session, table)
+        } else {
+          await rollbackLakeTable(session, table, restoreToSnapshot)
+        }
+      })
+    })
+  }
+
+  /**
+   * Load the current version of each tabular resource into DuckLake (layer 2).
+   *
+   * One session for the whole pass (opening one is expensive), but the advisory
+   * lock is taken per resource: it is what makes the committed snapshot
+   * identifiable, and holding it for the entire migration would block the
+   * pipeline's own ingests for the duration.
+   */
+  private async ingestPendingIntoLake(
+    lake: LakeConfig | undefined
+  ): Promise<{ ingested: number; ingestFailed: number }> {
+    if (!lake) return { ingested: 0, ingestFailed: 0 }
+
+    const result = await this.db.execute(pendingLakeIngestQuery())
+    const pending = result.rows as unknown as PendingLakeIngest[]
+    if (pending.length === 0) return { ingested: 0, ingestFailed: 0 }
+
+    let ingested = 0
+    let ingestFailed = 0
+    await withLakeSession(lake, async (session) => {
+      for (const row of pending) {
+        try {
+          const done = await withLakeIngestLock(this.db, async (tx) => {
+            // Re-run the same predicate inside the lock. A pipeline run that
+            // landed since the scan may have replaced the preview with a newer
+            // version's content, which would otherwise be recorded as this
+            // version's snapshot.
+            const fresh = await tx.execute(pendingLakeIngestQuery(row.resourceId))
+            const stillPending = (fresh.rows as unknown as PendingLakeIngest[]).some(
+              (r) => r.version === row.version && r.previewKey === row.previewKey
+            )
+            if (!stillPending) return false
+            await ingestVersionIntoLake(tx, session, lake, row)
+            return true
+          })
+          if (done) ingested++
+        } catch {
+          // One resource's failure must not abandon the rest of the migration.
+          ingestFailed++
+        }
+      }
+    })
+    return { ingested, ingestFailed }
   }
 
   /** List a resource's versions, newest first. */
@@ -222,7 +516,12 @@ export class ResourceVersionService {
   async executePurge(
     resourceId: string,
     version: number,
-    deps: { storage: StorageAdapter; search?: SearchAdapter; queue: QueueAdapter }
+    deps: {
+      storage: StorageAdapter
+      search?: SearchAdapter
+      queue: QueueAdapter
+      lake?: LakeConfig
+    }
   ): Promise<{ purged: boolean; rolledBack: boolean }> {
     const [row] = await this.db
       .select()
@@ -277,12 +576,23 @@ export class ResourceVersionService {
           .limit(1)
 
         if (prev) {
+          // Null first, like every other writer of the live object: a capture or
+          // a backfill running concurrently reads "hash is null" as "the bytes
+          // are being replaced" and steps aside rather than attributing these
+          // ones to a version.
+          await this.db
+            .update(resource)
+            .set({ hash: null, size: null })
+            .where(eq(resource.id, resourceId))
           await deps.storage.copy(prev.storageKey, currentKey)
           await this.db
             .update(resource)
             .set({ hash: prev.hash, size: prev.size, lastModified: sql`NOW()` })
             .where(eq(resource.id, resourceId))
           rolledBack = true
+          // Layer 2 must follow the rollback: otherwise the lake's current
+          // contents would still be the purged rows (ADR-043 §9).
+          await this.purgeFromLake(resourceId, prev.ducklakeSnapshotId, deps.lake)
         } else {
           // Nothing to roll back to — the resource is left with no live content.
           await deps.storage.delete(currentKey)
@@ -290,6 +600,8 @@ export class ResourceVersionService {
             .update(resource)
             .set({ hash: null, size: null, lastModified: sql`NOW()` })
             .where(eq(resource.id, resourceId))
+          // No version survives, so the lake table goes with it.
+          await this.purgeFromLake(resourceId, null, deps.lake)
         }
 
         // Invalidate derivatives so the purged content stops being served
@@ -308,7 +620,13 @@ export class ResourceVersionService {
 
     await this.db
       .update(resourceVersion)
-      .set({ state: 'purged', purgedAt: sql`NOW()`, updated: sql`NOW()` })
+      .set({
+        state: 'purged',
+        purgedAt: sql`NOW()`,
+        updated: sql`NOW()`,
+        // Drop the layer-2 reference: the tombstone must not point at content.
+        ducklakeSnapshotId: null,
+      })
       .where(eq(resourceVersion.id, row.id))
 
     await this.db.insert(auditLog).values({

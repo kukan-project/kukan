@@ -1,0 +1,1 @@
+ALTER TABLE "resource_version" ADD COLUMN "ducklake_snapshot_id" bigint;

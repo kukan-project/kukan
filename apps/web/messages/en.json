@@ -493,7 +493,8 @@
       "backfillDescription": "{count} resource(s) do not have a version yet. This records each resource's current file as v1 (no re-fetch or re-indexing). It is a one-time migration step and disappears once complete.",
       "backfill": "Backfill versions",
       "backfilling": "Running…",
-      "backfillQueued": "Backfill queued. This section disappears once it completes."
+      "backfillQueued": "Backfill queued. This section disappears once it completes.",
+      "lakeIngestDescription": "{count} resources have a current version that is not yet loaded for diffing. Loading them lets you see added and removed rows from the next update onward."
     }
   },
   "profile": {
@@ -574,6 +575,8 @@
     "pipelineStuck": "Stalled",
     "pipelineStepFetch": "Fetch",
     "pipelineStepExtract": "Extract",
+    "pipelineStepVersion": "Version",
+    "pipelineStepLake": "Diff ingest",
     "pipelineStepIndex": "Index",
     "pipelineStepRunning": "Running",
     "pipelineStepComplete": "Complete",
@@ -646,7 +649,24 @@
       "purgeConfirm": "Purge",
       "cancel": "Cancel",
       "loadError": "Failed to load version history",
-      "purgeError": "Failed to purge"
+      "purgeError": "Failed to purge",
+      "diff": "Diff",
+      "diffHide": "Hide diff",
+      "diffLoading": "Loading diff…",
+      "diffError": "Failed to load the diff",
+      "diffAgainst": "Diff of v{from} → v{to}",
+      "diffAdded": "{count} rows added",
+      "diffRemoved": "{count} rows removed",
+      "diffNoRowChanges": "No row changes",
+      "diffSampleAdded": "Added rows (sample)",
+      "diffSampleRemoved": "Removed rows (sample)",
+      "diffSchemaChanged": "The columns changed, so a row-level diff is not available.",
+      "purgeWarningLastVersion": "This permanently destroys the content of this version (legal deletion). No earlier version remains to restore, so the resource will be left with no file (its metadata stays). This cannot be undone.",
+      "diffUnavailable": {
+        "purged": "One of the versions has been purged, so a diff is not available.",
+        "no-previous-version": "This is the first version, so there is nothing to compare against.",
+        "not-ingested": "This version is not covered by diffs (not tabular, or captured before the feature was introduced)."
+      }
     }
   },
   "apiToken": {

@@ -493,7 +493,8 @@
       "backfillDescription": "まだバージョンが付いていないリソースが {count} 件あります。各リソースの現在のファイルを v1 として記録します（再取得や再インデックスは行いません）。この操作は移行時の一度きりで、完了すると表示されなくなります。",
       "backfill": "バージョンを補完",
       "backfilling": "実行中…",
-      "backfillQueued": "バックフィルをキューに投入しました。完了後、この項目は表示されなくなります。"
+      "backfillQueued": "バックフィルをキューに投入しました。完了後、この項目は表示されなくなります。",
+      "lakeIngestDescription": "{count} 件のリソースの現在のバージョンが差分表示に取り込まれていません。取り込むと、次回の更新から追加・削除された行を確認できます。"
     }
   },
   "profile": {
@@ -574,6 +575,8 @@
     "pipelineStuck": "処理停止",
     "pipelineStepFetch": "取得",
     "pipelineStepExtract": "抽出",
+    "pipelineStepVersion": "版の取得",
+    "pipelineStepLake": "差分取り込み",
     "pipelineStepIndex": "インデックス",
     "pipelineStepRunning": "実行中",
     "pipelineStepComplete": "完了",
@@ -637,16 +640,33 @@
       "originUpload": "アップロード",
       "originFetch": "取得時点",
       "download": "ダウンロード",
-      "purge": "パージ",
-      "purged": "パージ済み",
-      "purging": "パージ中",
-      "purgeTitle": "版 v{version} をパージ",
-      "purgeWarning": "この版の内容を完全に削除します（法的削除）。アプリからは即時に到達不能になり、バックアップ保持期間の経過後に物理的に消滅します。最新版の場合は直前の版に戻ります。この操作は取り消せません。",
-      "reasonPlaceholder": "パージの理由（監査ログに記録されます）",
-      "purgeConfirm": "パージする",
+      "purge": "完全削除",
+      "purged": "削除済み",
+      "purging": "削除中",
+      "purgeTitle": "版 v{version} を完全削除",
+      "purgeWarning": "この版の内容を完全に消去します（法的削除）。アプリからは即時に到達不能になり、バックアップ保持期間の経過後に物理的に消滅します。最新版の場合は直前の版に戻ります。この操作は取り消せません。",
+      "reasonPlaceholder": "完全削除の理由（監査ログに記録されます）",
+      "purgeConfirm": "完全削除する",
       "cancel": "キャンセル",
       "loadError": "バージョン履歴の取得に失敗しました",
-      "purgeError": "パージに失敗しました"
+      "purgeError": "完全削除に失敗しました",
+      "diff": "差分",
+      "diffHide": "差分を隠す",
+      "diffLoading": "差分を取得しています…",
+      "diffError": "差分の取得に失敗しました",
+      "diffAgainst": "v{from} → v{to} の差分",
+      "diffAdded": "追加 {count} 行",
+      "diffRemoved": "削除 {count} 行",
+      "diffNoRowChanges": "行の変更はありません",
+      "diffSampleAdded": "追加された行（抜粋）",
+      "diffSampleRemoved": "削除された行（抜粋）",
+      "diffSchemaChanged": "列構成が変わったため、行単位の差分は取得できません。",
+      "purgeWarningLastVersion": "この版の内容を完全に消去します（法的削除）。復元できる過去の版がないため、このリソースはファイルのない状態になります（メタデータは残ります）。この操作は取り消せません。",
+      "diffUnavailable": {
+        "purged": "一方の版が完全削除されているため、差分を取得できません。",
+        "no-previous-version": "最初の版のため、比較対象がありません。",
+        "not-ingested": "この版は差分の対象外です（表形式でない、または機能導入前に取得された版です）。"
+      }
     }
   },
   "apiToken": {

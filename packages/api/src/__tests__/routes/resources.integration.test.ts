@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { Readable } from 'stream'
-import { resource as resourceTable, resourcePipeline, resourcePipelineStep } from '@kukan/db'
+import {
+  resource as resourceTable,
+  resourcePipeline,
+  resourcePipelineStep,
+  resourceVersion,
+} from '@kukan/db'
 import { MAX_UPLOAD_SIZE } from '@kukan/shared'
 import { createTestApp, mockSearch } from '../test-helpers/test-app'
 import {
@@ -356,6 +361,40 @@ describe('Resources API Routes', () => {
   })
 
   describe('PUT /api/v1/resources/:id', () => {
+    it('leaves the pipeline-owned columns untouched', async () => {
+      // size/hash/extras are measured or produced by the worker. An edit must
+      // not carry them at all — writing back what the request read would revert
+      // whatever the pipeline recorded in between, and an upload is not
+      // reprocessed on edit, so a stale hash would stick (ADR-043).
+      const pkg = await createPackage('put-preserves-pkg')
+      const resource = await createResource(pkg.id)
+      await db
+        .update(resourceTable)
+        .set({ size: 1234, hash: 'sha256:worker-measured', extras: { pipeline: 'state' } })
+        .where(eq(resourceTable.id, resource.id))
+
+      const res = await app.request(`/api/v1/resources/${resource.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'renamed', size: 99, hash: 'sha256:caller-supplied' }),
+      })
+      expect(res.status).toBe(200)
+
+      const [row] = await db
+        .select({
+          size: resourceTable.size,
+          hash: resourceTable.hash,
+          extras: resourceTable.extras,
+        })
+        .from(resourceTable)
+        .where(eq(resourceTable.id, resource.id))
+      expect(row).toEqual({
+        size: 1234,
+        hash: 'sha256:worker-measured',
+        extras: { pipeline: 'state' },
+      })
+    })
+
     it('should update resource', async () => {
       const pkg = await createPackage('update-res-pkg')
       const resource = await createResource(pkg.id)
@@ -762,7 +801,7 @@ describe('Resources API Routes', () => {
       expect(body.job_id).toBeDefined()
     })
 
-    it('should record the actual stored size (from storage head) and the client hash', async () => {
+    it('records the stored size and leaves the hash for the worker to compute', async () => {
       const pkg = await createPackage('complete-meta-pkg')
       const resource = await createResource(pkg.id)
 
@@ -776,13 +815,15 @@ describe('Resources API Routes', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // Client claims 4096, but the server records the real object size (mock head → 1024).
+        // A hash is not accepted at all: version capture gates on it (ADR-043),
+        // so the caller must not be able to decide what it says.
         body: JSON.stringify({ size: 4096, hash: 'sha256:def' }),
       })
 
       const getRes = await app.request(`/api/v1/resources/${resource.id}`)
       const body = await getRes.json()
       expect(body.size).toBe(1024)
-      expect(body.hash).toBe('sha256:def')
+      expect(body.hash).toBeNull()
     })
 
     it('should reject an upload whose stored size exceeds the limit', async () => {
@@ -1076,6 +1117,44 @@ describe('Resources API Routes', () => {
         { method: 'POST' }
       )
       expect(res.status).toBe(404)
+    })
+  })
+
+  // ADR-043 layer 2. The diff scans both snapshots in full, so unlike the other
+  // version routes it is gated on edit rights rather than visibility — ii-a puts
+  // it in the dashboard, and public diffs are Phase iii.
+  describe('GET /api/v1/resources/:id/versions/:v/diff', () => {
+    it('should return 401 for unauthenticated users even on a public dataset', async () => {
+      const pkg = await createPackage('diff-unauth-pkg')
+      const resource = await createResource(pkg.id)
+
+      const res = await unauthApp.request(`/api/v1/resources/${resource.id}/versions/1/diff`)
+      expect(res.status).toBe(401)
+    })
+
+    it('should return 403 for a user who cannot edit the dataset', async () => {
+      const pkg = await createPackage('diff-outsider-pkg')
+      const resource = await createResource(pkg.id)
+
+      const res = await outsiderApp.request(`/api/v1/resources/${resource.id}/versions/1/diff`)
+      expect(res.status).toBe(403)
+    })
+
+    it('should report no previous version for an editor when v1 is all there is', async () => {
+      const pkg = await createPackage('diff-editor-pkg')
+      const resource = await createResource(pkg.id)
+      await db.insert(resourceVersion).values({
+        resourceId: resource.id,
+        version: 1,
+        storageKey: `versions/${pkg.id}/${resource.id}/v1`,
+        hash: 'sha256:v1',
+        origin: 'upload',
+      })
+
+      const res = await app.request(`/api/v1/resources/${resource.id}/versions/1/diff`)
+      expect(res.status).toBe(200)
+      // Resolved without ever opening a lake session.
+      expect(await res.json()).toMatchObject({ available: false, reason: 'no-previous-version' })
     })
   })
 })

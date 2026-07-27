@@ -4,6 +4,7 @@ import { Alert, AlertDescription, Badge, Button } from '@kukan/ui'
 import { RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslations } from 'next-intl'
+import type { PipelineStepName } from '@kukan/shared'
 import { usePipelineStatus, type PipelineStatus } from '@/hooks/use-pipeline-status'
 import { STATUS_KEYS } from '@/components/dashboard/dataset/pipeline-status-badge'
 import { clientFetch } from '@/lib/client-api'
@@ -14,9 +15,13 @@ interface PipelineStatusDetailProps {
   onSettled?: (status: PipelineStatus) => void
 }
 
-const STEP_LABEL_KEYS: Record<string, string> = {
+// Typed by PipelineStepName so adding a step forces a label rather than
+// silently rendering the raw step id.
+const STEP_LABEL_KEYS: Record<PipelineStepName, string> = {
   fetch: 'pipelineStepFetch',
   extract: 'pipelineStepExtract',
+  version: 'pipelineStepVersion',
+  lake: 'pipelineStepLake',
   index: 'pipelineStepIndex',
 }
 
@@ -142,7 +147,7 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
               >
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">
-                    {t(STEP_LABEL_KEYS[step.step_name] || step.step_name)}
+                    {t(STEP_LABEL_KEYS[step.step_name as PipelineStepName] || step.step_name)}
                   </span>
                   <Badge variant={getStepBadgeVariant(step.status)} className="text-xs">
                     {t(STEP_STATUS_KEYS[step.status] || step.status)}

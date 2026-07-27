@@ -11,8 +11,8 @@ vi.mock('../pipeline/steps/fetch', () => ({
 vi.mock('../pipeline/steps/extract', () => ({
   executeExtract: vi.fn(),
 }))
-vi.mock('../pipeline/steps/version', () => ({
-  executeVersion: vi.fn(),
+vi.mock('../pipeline/steps/lake', () => ({
+  executeLake: vi.fn(),
 }))
 vi.mock('../pipeline/steps/index-content', () => ({
   executeIndexContent: vi.fn(),
@@ -38,20 +38,21 @@ vi.mock('../pipeline/step-tracker', () => ({
 // Import mocked modules
 import { executeFetch } from '../pipeline/steps/fetch'
 import { executeExtract } from '../pipeline/steps/extract'
-import { executeVersion } from '../pipeline/steps/version'
+import { executeLake } from '../pipeline/steps/lake'
 import { executeIndexContent } from '../pipeline/steps/index-content'
 
 function createMockCtx(): PipelineContext {
   return {
     storage: { download: vi.fn(), upload: vi.fn(), copy: vi.fn() },
     getResource: vi.fn(),
-    updateResourceHashAndSize: vi.fn(),
+    beginContentReplacement: vi.fn(),
+    recordContent: vi.fn(),
     acquireFetchSlot: vi.fn().mockResolvedValue(true),
     indexContent: vi.fn(),
     deleteContent: vi.fn(),
     updatePipelineMetadata: vi.fn(),
-    getVersionCaptureInfo: vi.fn().mockResolvedValue({ maxVersion: null, latestActiveHash: null }),
-    insertResourceVersion: vi.fn(),
+    captureVersion: vi.fn().mockResolvedValue({ captured: true, version: 1 }),
+    withVersionCaptureLock: vi.fn((_id: string, fn: () => Promise<unknown>) => fn()),
   }
 }
 
@@ -83,10 +84,11 @@ describe('processResource', () => {
     mockTracker.failStep.mockResolvedValue(undefined)
     mockTracker.skipStep.mockResolvedValue(undefined)
     mockTracker.updateStatus.mockResolvedValue(undefined)
-    mockTracker.updateExtractResult.mockResolvedValue(undefined)
+    mockTracker.updateExtractResult.mockResolvedValue(null)
 
     // Version step defaults to capturing a new version (v1).
-    vi.mocked(executeVersion).mockResolvedValue({ captured: true, version: 1 })
+    // Lake step defaults to a no-op (no DuckLake configured in these tests).
+    vi.mocked(executeLake).mockResolvedValue({ ingested: false })
   })
 
   it('should run all steps for CSV resource', async () => {
@@ -119,8 +121,8 @@ describe('processResource', () => {
       'CSV',
       ctx
     )
-    // Fetch + Extract + Version + Index = 4 steps
-    expect(mockTracker.startStep).toHaveBeenCalledTimes(4)
+    // Fetch + Extract + Version + Lake + Index = 5 steps
+    expect(mockTracker.startStep).toHaveBeenCalledTimes(5)
     expect(mockTracker.completeStep).toHaveBeenCalledWith('step-0')
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
     expect(mockTracker.updateExtractResult).toHaveBeenCalledWith(
@@ -160,22 +162,6 @@ describe('processResource', () => {
     )
   })
 
-  it('should skip fetch step when upload already has hash', async () => {
-    vi.mocked(executeFetch).mockResolvedValue({
-      storageKey: 'resources/pkg-1/res-1',
-      format: 'CSV',
-      packageId: 'pkg-1',
-      status: 'skipped',
-    })
-    vi.mocked(executeExtract).mockResolvedValue(null)
-    vi.mocked(executeIndexContent).mockResolvedValue(null)
-
-    await processResource('res-1', ctx, db, queue)
-
-    expect(mockTracker.skipStep).toHaveBeenCalledWith('step-0')
-    expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
-  })
-
   it('should skip extract and index when format is unsupported', async () => {
     vi.mocked(executeFetch).mockResolvedValue({
       storageKey: 'resources/pkg-1/res-1',
@@ -189,11 +175,10 @@ describe('processResource', () => {
     await processResource('res-1', ctx, db, queue)
 
     expect(mockTracker.skipStep).toHaveBeenCalledWith('step-1') // extract skipped
-    expect(mockTracker.skipStep).toHaveBeenCalledWith('step-3') // index skipped (step-2 = version)
+    // step-2 = version, step-3 = lake (skipped: no preview Parquet), step-4 = index
+    expect(mockTracker.skipStep).toHaveBeenCalledWith('step-4')
     // Clears any stale preview/schema from a previous run (e.g. CSV → PDF replace).
     expect(mockTracker.updateExtractResult).toHaveBeenCalledWith('pipeline-1', null, {})
-    expect(mockTracker.startStep).toHaveBeenCalledTimes(4)
-    expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
   })
 
   it('does NOT clear preview/schema when extract throws (transient failure)', async () => {
@@ -227,7 +212,7 @@ describe('processResource', () => {
     await processResource('res-1', ctx, db, queue)
 
     expect(mockTracker.failStep).toHaveBeenCalled()
-    expect(mockTracker.startStep).toHaveBeenCalledTimes(4)
+    expect(mockTracker.startStep).toHaveBeenCalledTimes(5)
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
   })
 

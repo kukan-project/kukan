@@ -108,14 +108,23 @@ describe('buildPipelineContext', () => {
     expect(res).toBeNull()
   })
 
-  it('updateResourceHashAndSize should update hash, size, and lastModified', async () => {
+  it('recordContent should write the measured hash and size', async () => {
     const { db } = createMockDb()
 
     const ctx = buildPipelineContext(db, mockStorage)
-    await ctx.updateResourceHashAndSize('res-1', { hash: 'sha256:new', size: 1024 })
+    await ctx.recordContent('res-1', { hash: 'sha256:new', size: 1024 })
 
     expect(db.update).toHaveBeenCalled()
     expect(db.set).toHaveBeenCalled()
+  })
+
+  it('beginContentReplacement should clear the recorded hash and size', async () => {
+    const { db } = createMockDb()
+
+    const ctx = buildPipelineContext(db, mockStorage)
+    await ctx.beginContentReplacement('res-1')
+
+    expect(db.set).toHaveBeenCalledWith({ hash: null, size: null })
   })
 
   it('should pass storage adapter through', () => {

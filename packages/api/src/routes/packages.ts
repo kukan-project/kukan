@@ -35,6 +35,7 @@ import {
   indexResourceDocFromRow,
 } from '../services/search-index'
 import { hybridSearch } from '../services/hybrid-search'
+import { dropResourceTables, lakeConfigFromEnv } from '@kukan/lake'
 import { purgePackageExternals } from '../services/package-cleanup'
 import { MetadataSuggestService } from '../services/metadata-suggest-service'
 import { suggestRateLimiter } from '../services/suggest/rate-limit'
@@ -354,7 +355,7 @@ packagesRouter.delete('/:nameOrId', async (c) => {
   if (existing.state === 'draft' || existing.state === 'purging') {
     const purged = await service.purgeDraft(
       existing.id,
-      { search: c.get('search'), storage: c.get('storage') },
+      { search: c.get('search'), storage: c.get('storage'), lake: lakeConfigFromEnv(c.get('env')) },
       makePackageAuthorize(db, user, 'editor')
     )
     return c.json(purged)
@@ -444,10 +445,18 @@ packagesRouter.post('/:nameOrId/purge', async (c) => {
   const nameOrId = c.req.param('nameOrId')
   const service = new PackageService(db)
 
+  // Read the ingested resource ids before the purge deletes the rows — they name
+  // the DuckLake tables that have to go with them, and an empty list saves
+  // opening a lake session at all.
+  const target = await service.getByNameOrId(nameOrId, 'deleted')
+  const lakeResourceIds = await service.listLakeResourceIds(target.id)
+
   const pkg = await service.purge(nameOrId, makePackageAuthorize(db, user, 'admin'))
 
-  // Remove the package's search docs AND storage objects (raw files + previews).
-  await purgePackageExternals(pkg.id, c.get('search'), c.get('storage'))
+  // Remove the package's search docs and every external trace: raw files,
+  // previews, retained versions, and DuckLake tables.
+  await purgePackageExternals(pkg.id, { search: c.get('search'), storage: c.get('storage') })
+  await dropResourceTables(lakeConfigFromEnv(c.get('env')), lakeResourceIds)
   return c.json(pkg)
 })
 

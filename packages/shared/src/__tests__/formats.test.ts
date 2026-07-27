@@ -4,6 +4,7 @@ import {
   detectFormat,
   getMimeType,
   detectContentType,
+  versionedFilename,
   isCsvFormat,
   isTextFormat,
   isOfficeFormat,
@@ -366,5 +367,25 @@ describe('isImageFormat', () => {
 
   it('should return false for null', () => {
     expect(isImageFormat(null)).toBe(false)
+  })
+})
+
+describe('versionedFilename', () => {
+  it('inserts the version before the extension so the file type survives', () => {
+    expect(versionedFilename('data.csv', 2)).toBe('data.v2.csv')
+    expect(versionedFilename('report.xlsx', 10)).toBe('report.v10.xlsx')
+  })
+
+  it('appends when there is no extension', () => {
+    expect(versionedFilename('data', 1)).toBe('data.v1')
+  })
+
+  it('appends for leading-dot names rather than renaming them', () => {
+    expect(versionedFilename('.gitignore', 1)).toBe('.gitignore.v1')
+  })
+
+  it('uses the last extension for multi-dot names', () => {
+    expect(versionedFilename('archive.tar.gz', 3)).toBe('archive.tar.v3.gz')
+    expect(versionedFilename('2026.census.csv', 2)).toBe('2026.census.v2.csv')
   })
 })

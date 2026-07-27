@@ -8,6 +8,7 @@ import type { Database } from '@kukan/db'
 import { resource, resourceVersion, packageTable } from '@kukan/db'
 import { NotFoundError, ValidationError, normalizeFormat, detectFormat } from '@kukan/shared'
 import type { CreateResourceInput, UpdateResourceInput, PackageDbState } from '@kukan/shared'
+import { RESOURCE_POSITION_LOCK, lockInTransaction } from './advisory-lock'
 import { hasOrgMembership, hasDraftAccess, type AuthUser } from '../auth/permissions'
 
 // Package states whose resources are reachable — drafts hold resources before publish (ADR-039)
@@ -146,9 +147,7 @@ export class ResourceService {
    * race under READ COMMITTED without it
    */
   private async lockResourcePositions(tx: Pick<Database, 'execute'>, packageId: string) {
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtextextended(${'resource_position:' + packageId}, 0))`
-    )
+    await lockInTransaction(tx, RESOURCE_POSITION_LOCK, packageId)
   }
 
   /**
@@ -194,8 +193,6 @@ export class ResourceService {
           description: input.description,
           format: input.format ? normalizeFormat(input.format) : undefined,
           mimetype: input.mimetype,
-          size: input.size,
-          hash: input.hash,
           position: nextPosition,
           resourceType: input.resourceType,
           state: 'active',
@@ -210,8 +207,6 @@ export class ResourceService {
    * Update resource
    */
   async update(id: string, input: UpdateResourceInput) {
-    const existing = await this.getById(id)
-
     const [updated] = await this.db
       .update(resource)
       .set({
@@ -221,16 +216,18 @@ export class ResourceService {
         description: input.description ?? null,
         format: input.format ? normalizeFormat(input.format) : null,
         mimetype: input.mimetype ?? null,
-        size: input.size ?? null,
-        hash: input.hash ?? null,
         resourceType: input.resourceType ?? null,
-        // extras is system-managed (pipeline metadata) — preserve existing value on update
-        extras: existing.extras,
+        // size/hash/extras are absent on purpose: they are system-managed
+        // (measured or produced by the pipeline) and left untouched. Writing
+        // back the values read above would be a read-modify-write that reverts
+        // whatever the worker or the health check recorded in between — and an
+        // upload is not reprocessed on edit, so a stale hash would persist.
         updated: sql`NOW()`,
       })
-      .where(eq(resource.id, existing.id))
+      .where(eq(resource.id, id))
       .returning()
 
+    if (!updated) throw new NotFoundError('Resource', id)
     return updated
   }
 
@@ -330,12 +327,11 @@ export class ResourceService {
   /**
    * Update resource metadata after a successful upload.
    */
-  async updateAfterUpload(id: string, input: { size?: number; hash?: string }) {
+  async updateAfterUpload(id: string, input: { size: number }) {
     const [updated] = await this.db
       .update(resource)
       .set({
-        ...(input.size !== undefined && { size: input.size }),
-        ...(input.hash !== undefined && { hash: input.hash }),
+        size: input.size,
         updated: sql`NOW()`,
       })
       .where(and(eq(resource.id, id), eq(resource.state, 'active')))

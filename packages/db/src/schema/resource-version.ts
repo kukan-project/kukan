@@ -40,6 +40,9 @@ export const resourceVersion = pgTable(
     // Column schema snapshot for this version (ADR-032 shape); null for
     // non-tabular formats or when Extract produced none.
     schema: jsonb('schema').$type<ResourceSchema | null>(),
+    // DuckLake snapshot this tabular version maps to (ADR-043 layer 2 / Phase ii).
+    // Null for non-tabular versions or before layer-2 ingest; nulled on purge.
+    ducklakeSnapshotId: bigint('ducklake_snapshot_id', { mode: 'number' }),
     // Purge audit trail, retained on the tombstone row after content is destroyed.
     purgedAt: timestamp('purged_at', { withTimezone: true }),
     purgedBy: text('purged_by').references(() => user.id),

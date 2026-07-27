@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { pipeline } from 'node:stream/promises'
-import { ValidationError, TooManyRequestsError, createLogger, type Logger } from '@kukan/shared'
+import { ValidationError, createLogger, type Logger } from '@kukan/shared'
 import type { Database } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { ResourceService } from './resource-service'
@@ -19,14 +19,13 @@ import { PipelineService } from './pipeline-service'
 import type { AuthUser } from '../auth/permissions'
 import { runSandboxedQuery } from './query/duckdb-sandbox'
 import { assertReadOnlySql } from './query/sql-guard'
-import { Semaphore } from './query/semaphore'
+import { withDuckdbSlot } from './query/semaphore'
 import {
   QUERY_MAX_ROWS,
   QUERY_MAX_BYTES,
   QUERY_TIMEOUT_MS,
   QUERY_MEMORY_LIMIT_MB,
   QUERY_THREADS,
-  QUERY_MAX_CONCURRENT,
   QUERY_MAX_SQL_LENGTH,
 } from '../config'
 
@@ -37,9 +36,6 @@ export interface QueryResult {
   truncated: boolean
   elapsedMs: number
 }
-
-// Module-level: shared across requests to bound total concurrent DuckDB memory.
-const semaphore = new Semaphore(QUERY_MAX_CONCURRENT)
 
 export class QueryService {
   private readonly log: Logger
@@ -76,41 +72,40 @@ export class QueryService {
       )
     }
 
+    const previewKey = target.previewKey
+
     // Bound concurrency to keep total DuckDB memory within the container.
-    if (!semaphore.tryAcquire()) {
-      throw new TooManyRequestsError('Too many concurrent queries; please retry shortly')
-    }
+    return withDuckdbSlot(async () => {
+      const tmpPath = join(tmpdir(), `kukan-query-${randomUUID()}.parquet`)
+      const startedAt = Date.now()
+      try {
+        const source = await this.storage.download(previewKey)
+        await pipeline(source, createWriteStream(tmpPath))
 
-    const tmpPath = join(tmpdir(), `kukan-query-${randomUUID()}.parquet`)
-    const startedAt = Date.now()
-    try {
-      const source = await this.storage.download(target.previewKey)
-      await pipeline(source, createWriteStream(tmpPath))
+        const result = await runSandboxedQuery(tmpPath, sql, {
+          maxRows: QUERY_MAX_ROWS,
+          maxBytes: QUERY_MAX_BYTES,
+          timeoutMs: QUERY_TIMEOUT_MS,
+          memoryLimitMb: QUERY_MEMORY_LIMIT_MB,
+          threads: QUERY_THREADS,
+        })
 
-      const result = await runSandboxedQuery(tmpPath, sql, {
-        maxRows: QUERY_MAX_ROWS,
-        maxBytes: QUERY_MAX_BYTES,
-        timeoutMs: QUERY_TIMEOUT_MS,
-        memoryLimitMb: QUERY_MEMORY_LIMIT_MB,
-        threads: QUERY_THREADS,
-      })
-
-      const elapsedMs = Date.now() - startedAt
-      this.log.info(
-        {
-          component: 'query',
-          resourceId,
-          sql,
-          elapsedMs,
-          rowCount: result.rowCount,
-          truncated: result.truncated,
-        },
-        'resource query'
-      )
-      return { ...result, elapsedMs }
-    } finally {
-      semaphore.release()
-      await unlink(tmpPath).catch(() => {})
-    }
+        const elapsedMs = Date.now() - startedAt
+        this.log.info(
+          {
+            component: 'query',
+            resourceId,
+            sql,
+            elapsedMs,
+            rowCount: result.rowCount,
+            truncated: result.truncated,
+          },
+          'resource query'
+        )
+        return { ...result, elapsedMs }
+      } finally {
+        await unlink(tmpPath).catch(() => {})
+      }
+    })
   }
 }

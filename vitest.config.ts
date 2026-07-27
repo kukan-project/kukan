@@ -56,6 +56,14 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'lake',
+          root: './packages/lake',
+          include: ['src/__tests__/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
+      {
+        test: {
           name: 'worker',
           root: './apps/worker',
           include: ['src/__tests__/**/*.test.ts'],

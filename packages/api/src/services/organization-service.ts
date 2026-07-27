@@ -5,7 +5,14 @@
 
 import { eq, ilike, and, or, sql, inArray, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { organization, userOrgMembership, user, packageTable } from '@kukan/db'
+import {
+  organization,
+  userOrgMembership,
+  user,
+  packageTable,
+  resource,
+  resourceVersion,
+} from '@kukan/db'
 import {
   NotFoundError,
   ValidationError,
@@ -23,6 +30,8 @@ import type {
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
+import type { LakeConfig } from '@kukan/lake'
+import { dropResourceTables } from '@kukan/lake'
 import { purgePackageExternals } from './package-cleanup'
 import { deleteOrphanFreeTags } from './tag-service'
 
@@ -228,7 +237,7 @@ export class OrganizationService {
    */
   async purgeDeletedOrg(
     id: string,
-    deps: { search?: SearchAdapter; storage: StorageAdapter }
+    deps: { search?: SearchAdapter; storage: StorageAdapter; lake?: LakeConfig }
   ): Promise<{ purged: boolean; packageCount: number }> {
     const [claimed] = await this.db
       .update(organization)
@@ -245,14 +254,38 @@ export class OrganizationService {
       .where(eq(packageTable.ownerOrg, id))
     const packageIds = pkgs.map((p) => p.id)
 
+    // Read the ingested resource ids while the rows still exist (deleted below):
+    // they name the DuckLake tables that have to go with them, and only these
+    // can have one, so an empty list saves opening a lake session at all.
+    const lakeResourceIds =
+      packageIds.length > 0
+        ? (
+            await this.db
+              .selectDistinct({ id: resource.id })
+              .from(resource)
+              .innerJoin(resourceVersion, eq(resourceVersion.resourceId, resource.id))
+              .where(
+                and(
+                  inArray(resource.packageId, packageIds),
+                  sql`${resourceVersion.ducklakeSnapshotId} IS NOT NULL`
+                )
+              )
+          ).map((r) => r.id)
+        : []
+
     // Bounded concurrency; Promise.all (not allSettled) so a single failure throws
     // and skips the DB delete below, leaving the org 'purging' for a retry.
+    // DuckLake is left out of the per-package pass and done once below: opening
+    // a lake session is expensive, and one per package would mean hundreds.
     for (let i = 0; i < packageIds.length; i += EXTERNALS_CLEANUP_CONCURRENCY) {
       const chunk = packageIds.slice(i, i + EXTERNALS_CLEANUP_CONCURRENCY)
       await Promise.all(
-        chunk.map((pkgId) => purgePackageExternals(pkgId, deps.search, deps.storage))
+        chunk.map((pkgId) =>
+          purgePackageExternals(pkgId, { search: deps.search, storage: deps.storage })
+        )
       )
     }
+    if (deps.lake) await dropResourceTables(deps.lake, lakeResourceIds)
 
     await this.db.transaction(async (tx) => {
       if (packageIds.length > 0) {

@@ -1,3 +1,4 @@
+import type { LakeConfig } from '@kukan/lake'
 import { randomUUID } from 'crypto'
 
 export function createPackageFixture(overrides?: Record<string, unknown>) {
@@ -100,4 +101,15 @@ export function createAnnouncementFixture(overrides?: Record<string, unknown>) {
     updated: new Date(),
     ...overrides,
   }
+}
+
+/**
+ * DuckLake config pointed at nothing reachable: a test that unexpectedly falls
+ * through to the lake fails loudly instead of quietly depending on MinIO.
+ */
+export const unreachableLake: LakeConfig = {
+  pgConnString: 'host=127.0.0.1 port=1 dbname=nope user=nope password=nope sslmode=disable',
+  bucket: 'nope',
+  region: 'us-east-1',
+  s3UseSsl: false,
 }

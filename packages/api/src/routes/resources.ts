@@ -7,8 +7,10 @@ import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
+import { lakeConfigFromEnv } from '@kukan/lake'
 import { ResourceService } from '../services/resource-service'
 import { ResourceVersionService } from '../services/resource-version-service'
+import { VersionDiffService } from '../services/version-diff-service'
 import { PipelineService } from '../services/pipeline-service'
 import { PackageService } from '../services/package-service'
 import { QueryService } from '../services/query-service'
@@ -24,6 +26,7 @@ import {
   getStorageKey,
   getMimeType,
   detectContentType,
+  versionedFilename,
   toCharset,
   isOfficeFormat,
   isImageFormat,
@@ -61,6 +64,26 @@ function parseVersionParam(raw: string): number {
     throw new ValidationError('Invalid version number')
   }
   return n
+}
+
+/**
+ * Response headers for an attachment download. The filename is sent twice:
+ * an ASCII-only form for old clients, and RFC 5987 UTF-8 for everyone else.
+ */
+function downloadHeaders(
+  filename: string,
+  contentType: string,
+  size: number | null
+): Record<string, string> {
+  const ascii = filename.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, "'")
+  const headers: Record<string, string> = {
+    'Content-Type': contentType,
+    'Content-Disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'private, max-age=0',
+  }
+  if (size) headers['Content-Length'] = String(size)
+  return headers
 }
 
 /** Convert S3 NoSuchKey errors to 404 NotFoundError */
@@ -282,20 +305,11 @@ resourcesRouter.get('/:id/download', async (c) => {
   }
 
   const filename = resource.url || resource.id
-  const encodedFilename = encodeURIComponent(filename)
-  const asciiFilename = filename.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, "'")
-  const contentType = resource.mimetype || detectContentType(filename)
-
-  const headers: Record<string, string> = {
-    'Content-Type': contentType,
-    'Content-Disposition': `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`,
-    'X-Content-Type-Options': 'nosniff',
-    'Cache-Control': 'private, max-age=0',
-  }
-
-  if (resource.size) {
-    headers['Content-Length'] = String(resource.size)
-  }
+  const headers = downloadHeaders(
+    filename,
+    resource.mimetype || detectContentType(filename),
+    resource.size
+  )
 
   return new Response(Readable.toWeb(nodeStream) as ReadableStream, { headers })
 })
@@ -461,6 +475,32 @@ resourcesRouter.get('/:id/versions/:v', async (c) => {
   return c.json(view)
 })
 
+// GET /api/v1/resources/:id/versions/:v/diff - Row-level diff against another
+// version (ADR-043 layer 2). `from` defaults to the preceding version. The SQL
+// is composed server-side from version numbers; the ADR-032 query sandbox is a
+// separate path and is not involved.
+resourcesRouter.get('/:id/versions/:v/diff', async (c) => {
+  const id = c.req.param('id')
+  const version = parseVersionParam(c.req.param('v'))
+  const fromRaw = c.req.query('from')
+  const from = fromRaw === undefined ? undefined : parseVersionParam(fromRaw)
+  const db = c.get('db')
+  // Editor on the owning package, not merely visibility: ii-a's diff lives in
+  // the dashboard (spec §7.1), and it is the one version route that scans both
+  // snapshots in full. Public diffs are Phase iii.
+  const user = c.get('user')
+  if (!user) throw new UnauthorizedError()
+  await checkResourcePermission(db, user, new ResourceService(db), id)
+  const service = new VersionDiffService(db, lakeConfigFromEnv(c.get('env')))
+  const view = await service.diff(id, version, from)
+  // A computed diff is immutable — both snapshots are written once and never
+  // change — and it is the most expensive GET here, so a re-expand in the UI
+  // must not re-run it. An unavailable answer is not cached that way: a version
+  // reported as not-ingested becomes ingestable the moment the backfill runs.
+  if (view.available) c.header('Cache-Control', 'private, max-age=86400, immutable')
+  return c.json(view)
+})
+
 // GET /api/v1/resources/:id/versions/:v/download - Stream a specific version's bytes.
 resourcesRouter.get('/:id/versions/:v/download', async (c) => {
   const id = c.req.param('id')
@@ -477,18 +517,12 @@ resourcesRouter.get('/:id/versions/:v/download', async (c) => {
     throwIfNotFound(err, id)
   }
 
-  const filename = `${resource.url || resource.id}.v${version}`
-  const encodedFilename = encodeURIComponent(filename)
-  const asciiFilename = filename.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, "'")
-  const contentType = resource.mimetype || detectContentType(resource.url || resource.id)
-
-  const headers: Record<string, string> = {
-    'Content-Type': contentType,
-    'Content-Disposition': `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`,
-    'X-Content-Type-Options': 'nosniff',
-    'Cache-Control': 'private, max-age=0',
-  }
-  if (size) headers['Content-Length'] = String(size)
+  const original = resource.url || resource.id
+  const headers = downloadHeaders(
+    versionedFilename(original, version),
+    resource.mimetype || detectContentType(original),
+    size
+  )
 
   return new Response(Readable.toWeb(nodeStream) as ReadableStream, { headers })
 })
@@ -603,7 +637,6 @@ resourcesRouter.post(
 
     const db = c.get('db')
     const id = c.req.param('id')
-    const input = c.req.valid('json')
 
     const resourceService = new ResourceService(db)
     const existing = await checkResourcePermission(db, user, resourceService, id)
@@ -629,9 +662,12 @@ resourcesRouter.post(
       )
     }
 
-    // Record the actual stored size (not the client-reported value).
-    // updateAfterUpload ignores an undefined hash, so no need to guard it here.
-    await resourceService.updateAfterUpload(id, { size: head.size, hash: input.hash })
+    // Size comes from storage, not the client. The hash is deliberately left
+    // null for the worker to compute (ADR-043): version capture gates on it and
+    // records it against the bytes it copies, so a caller-supplied value would
+    // decide whether versions are ever captured — and `prepareForUpload` having
+    // nulled it is what tells a capture in flight that the bytes are changing.
+    await resourceService.updateAfterUpload(id, { size: head.size })
 
     return c.json(await enqueuePipeline(c, id), 200)
   }

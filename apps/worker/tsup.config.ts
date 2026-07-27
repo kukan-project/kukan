@@ -10,7 +10,9 @@ export default defineConfig({
   // pino uses dynamic require() for Node built-ins — must stay external
   // croner uses Node.js timer APIs — keep external to avoid bundling issues
   // @opensearch-project/opensearch uses CommonJS require('events') etc.
-  external: ['pino', 'pino-pretty', 'croner', '@opensearch-project/opensearch'],
+  // @duckdb/node-api (via @kukan/lake) loads a platform-specific .node binding
+  // at runtime; bundling it makes esbuild resolve every platform's binary.
+  external: ['pino', 'pino-pretty', 'croner', '@opensearch-project/opensearch', /^@duckdb\/node-/],
   splitting: false,
   clean: true,
   sourcemap: true,

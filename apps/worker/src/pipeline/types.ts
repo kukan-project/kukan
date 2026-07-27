@@ -5,6 +5,7 @@
 
 import type { Readable } from 'node:stream'
 import type { ContentDoc } from '@kukan/search-adapter'
+import type { IngestResult } from '@kukan/lake'
 import type { PackageDbState, ResourceSchema } from '@kukan/shared'
 
 /** Minimal resource data needed by pipeline steps */
@@ -20,17 +21,6 @@ export interface ResourceForPipeline {
   size: number | null
 }
 
-/** A newly captured version row (ADR-043, layer 1). */
-export interface NewResourceVersion {
-  resourceId: string
-  version: number
-  storageKey: string
-  size: number | null
-  hash: string | null
-  origin: 'upload' | 'fetch'
-  schema: ResourceSchema | null
-}
-
 export interface PipelineContext {
   storage: {
     download(key: string): Promise<Readable>
@@ -43,7 +33,26 @@ export interface PipelineContext {
   /** Get a package's state (null when the package doesn't exist) */
   getPackageState(packageId: string): Promise<PackageDbState | null>
   /** Update resource hash, size, and lastModified (without touching updated) */
-  updateResourceHashAndSize(id: string, meta: { hash: string; size: number }): Promise<void>
+  /**
+   * Mark the resource's live object as being replaced (ADR-043).
+   *
+   * Clears the recorded hash so a version capture or backfill running
+   * concurrently reads "hash is null" as "these bytes are moving" and steps
+   * aside instead of attributing them to a version. Every writer of the live
+   * key does this first — Fetch, the upload flow, and the purge rollback.
+   */
+  beginContentReplacement(id: string): Promise<void>
+  /**
+   * Record what the live object now holds.
+   *
+   * `lastModified` moves only when the content actually changed, so an unchanged
+   * re-fetch is not an edit. The comparison uses `previousHash` rather than the
+   * stored value, which {@link beginContentReplacement} has already cleared.
+   */
+  recordContent(
+    id: string,
+    content: { hash: string; size: number; previousHash: string | null }
+  ): Promise<void>
   /**
    * Atomically acquire a fetch slot for the given FQDN.
    * Returns true if the slot was acquired (i.e. last fetch was >1s ago or first time).
@@ -59,16 +68,48 @@ export interface PipelineContext {
   /** Update pipeline metadata JSONB (merges with existing metadata) */
   updatePipelineMetadata(pipelineId: string, metadata: Record<string, unknown>): Promise<void>
   /**
-   * Info needed to decide version capture:
-   * - maxVersion: highest version number across ALL rows (incl. purged tombstones),
-   *   so the next number never collides on the unique (resource_id, version) index.
-   * - latestActiveHash: content hash of the highest-numbered *active* version, used
-   *   as the change gate. Distinct from maxVersion because a purged tombstone can
-   *   sit above the live version (e.g. after a latest-version purge + rollback).
+   * Capture the resource's current file as its next version (ADR-043 layer 1).
+   *
+   * The whole sequence — change gate, next number, copy, insert — runs under a
+   * per-resource advisory lock on a single transaction. Serialized, because two
+   * runs would otherwise pick the same N and the second copy would overwrite
+   * the first's file while only one insert survived the unique index. On one
+   * transaction, because a lock held while reaching back to the pool for the
+   * reads and the insert exhausts it.
    */
-  getVersionCaptureInfo(
+  captureVersion(input: {
     resourceId: string
-  ): Promise<{ maxVersion: number | null; latestActiveHash: string | null }>
-  /** Insert a captured version row. */
-  insertResourceVersion(row: NewResourceVersion): Promise<void>
+    packageId: string
+    /** The resource's live key, holding the content to capture. */
+    currentStorageKey: string
+    /** Column schema from Extract (CSV/TSV only), snapshotted onto the version. */
+    schema: ResourceSchema | null
+    /**
+     * Hash of the bytes Extract parsed, when it produced a schema. Extract and
+     * the copy both read the shared live key, so a concurrent run can leave the
+     * schema describing different content than the version holds — capture is
+     * abandoned rather than recording the mismatch.
+     */
+    sourceHash: string | undefined
+  }): Promise<{ captured: false } | { captured: true; version: number }>
+  /**
+   * The active version holding exactly these bytes and not yet in DuckLake, or
+   * null (ADR-043 layer 2).
+   *
+   * Asked every run, not only when a version was just captured: a Lake step that
+   * failed once would otherwise never retry — the next run finds the content
+   * unchanged, skips the capture, and once a newer version exists the backfill
+   * cannot reach the older one either, leaving that pair permanently undiffable.
+   */
+  pendingLakeVersion(resourceId: string, contentHash: string): Promise<number | null>
+  /**
+   * Layer 2 (ADR-043 Phase ii): load a captured version's tabular content into
+   * DuckLake from its preview Parquet and record the snapshot on the version
+   * row. Returns null when the context was built without a DuckLake config.
+   */
+  ingestLakeVersion(opts: {
+    resourceId: string
+    version: number
+    previewKey: string
+  }): Promise<IngestResult | null>
 }

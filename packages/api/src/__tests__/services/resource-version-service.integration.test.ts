@@ -8,6 +8,7 @@ import { eq, and, sql } from 'drizzle-orm'
 import { resource, resourceVersion } from '@kukan/db'
 import { getStorageKey, getVersionKey } from '@kukan/shared'
 import { ResourceVersionService } from '../../services/resource-version-service'
+import { unreachableLake } from '../test-helpers/fixtures'
 import {
   getTestDb,
   cleanDatabase,
@@ -153,5 +154,42 @@ describe('executePurge', () => {
     const result = await service.executePurge(resourceId, 1, deps)
     expect(result).toEqual({ purged: false, rolledBack: false })
     expect(deps.storage.delete).not.toHaveBeenCalled()
+  })
+})
+
+describe('executePurge — layer 2 (DuckLake)', () => {
+  it('clears the snapshot reference on the tombstone', async () => {
+    await addVersion(1, 'sha256:v1')
+    await db
+      .update(resourceVersion)
+      .set({ ducklakeSnapshotId: 42 })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+    await service.claimPurge(resourceId, 1, userId, 'test')
+
+    // No lake config: layer 2 is skipped, but the reference must still be dropped.
+    await service.executePurge(resourceId, 1, mockDeps())
+
+    const [row] = await db
+      .select({ snap: resourceVersion.ducklakeSnapshotId, state: resourceVersion.state })
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+    expect(row.state).toBe('purged')
+    expect(row.snap).toBeNull()
+  })
+
+  it('leaves the lake alone when purging a middle version', async () => {
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    await service.claimPurge(resourceId, 1, userId, 'test')
+
+    // v2 is still live, so no lake work is needed — an unusable config proves it
+    // is never contacted.
+    const result = await service.executePurge(resourceId, 1, {
+      ...mockDeps(),
+      lake: unreachableLake,
+    })
+
+    expect(result.purged).toBe(true)
+    expect(result.rolledBack).toBe(false)
   })
 })

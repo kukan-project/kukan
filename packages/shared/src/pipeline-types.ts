@@ -6,7 +6,7 @@ import { z } from 'zod'
 
 export type PipelineStatus = 'pending' | 'queued' | 'processing' | 'complete' | 'error'
 export type PipelineStepStatus = 'pending' | 'running' | 'complete' | 'error' | 'skipped'
-export type PipelineStepName = 'fetch' | 'extract' | 'version' | 'index'
+export type PipelineStepName = 'fetch' | 'extract' | 'version' | 'lake' | 'index'
 
 /** Content type for indexed resource text */
 export type ContentType = 'tabular' | 'text' | 'manifest' | 'document'

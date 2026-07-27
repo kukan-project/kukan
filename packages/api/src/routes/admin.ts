@@ -27,11 +27,13 @@ import {
   BACKFILL_VERSIONS_JOB_TYPE,
   RESOURCE_PREFIX,
   PREVIEW_PREFIX,
+  VERSION_PREFIX,
   escapeLike,
   userNameSchema,
   userRoleSchema,
 } from '@kukan/shared'
 import { PipelineService } from '../services/pipeline-service'
+import { LAKE_DATA_PREFIX, LAKE_METADATA_SCHEMA } from '@kukan/lake'
 import { ResourceVersionService } from '../services/resource-version-service'
 import { UserService } from '../services/user-service'
 import {
@@ -411,16 +413,23 @@ adminRouter.post(
   }
 )
 
-// GET /api/v1/admin/version-backfill-status — Resources still missing a version.
-// Drives the one-time "backfill versions" migration control (ADR-043): the UI
-// shows the action only while unversionedCount > 0.
+// GET /api/v1/admin/version-backfill-status — Migration work still outstanding.
+// Drives the one-time "backfill versions" control (ADR-043): the UI shows the
+// action while either count is above zero. `unversionedCount` is layer 1
+// (resources with no version at all), `pendingLakeIngestCount` is layer 2
+// (tabular current versions not yet in DuckLake).
 adminRouter.get('/version-backfill-status', async (c) => {
-  const unversionedCount = await new ResourceVersionService(c.get('db')).countUnversioned()
-  return c.json({ unversionedCount })
+  const service = new ResourceVersionService(c.get('db'))
+  const [unversionedCount, pendingLakeIngestCount] = await Promise.all([
+    service.countUnversioned(),
+    service.countPendingLakeIngest(),
+  ])
+  return c.json({ unversionedCount, pendingLakeIngestCount })
 })
 
 // POST /api/v1/admin/backfill-versions — Enqueue the one-time version backfill.
-// Snapshots each unversioned resource's live file as v1 (no re-fetch/re-index).
+// Snapshots each unversioned resource's live file as v1 and loads current
+// tabular versions into DuckLake (no re-fetch/re-index).
 adminRouter.post('/backfill-versions', async (c) => {
   await c.get('queue').enqueue(BACKFILL_VERSIONS_JOB_TYPE, {})
   return c.json({ queued: true })
@@ -552,13 +561,24 @@ adminRouter.delete('/data', async (c) => {
   // 3. Clear storage files (best-effort)
   let storageObjects = 0
   try {
-    const [r, p] = await Promise.all([
+    const [r, p, v, l] = await Promise.all([
       storage.deleteByPrefix(RESOURCE_PREFIX),
       storage.deleteByPrefix(PREVIEW_PREFIX),
+      // Retained versions and DuckLake data files belong to the deleted rows too.
+      storage.deleteByPrefix(VERSION_PREFIX),
+      storage.deleteByPrefix(LAKE_DATA_PREFIX),
     ])
-    storageObjects = r + p
+    storageObjects = r + p + v + l
   } catch {
     // Storage cleanup is best-effort
+  }
+
+  // 4. Drop the DuckLake catalog (best-effort). Its tables described the data
+  // just deleted; leaving them would strand snapshots pointing at removed files.
+  try {
+    await db.execute(sql.raw(`DROP SCHEMA IF EXISTS ${LAKE_METADATA_SCHEMA} CASCADE`))
+  } catch {
+    // Catalog cleanup is best-effort
   }
 
   return c.json({ deleted: { ...counts, storageObjects } })

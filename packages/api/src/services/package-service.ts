@@ -39,6 +39,8 @@ import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { CreatePackageInput, CreateDraftPackageInput, UpdatePackageInput } from '@kukan/shared'
 import { hasOrgMembership, hasDraftAccess, type AuthUser } from '../auth/permissions'
 import { deleteOrphanFreeTags } from './tag-service'
+import type { LakeConfig } from '@kukan/lake'
+import { dropResourceTables } from '@kukan/lake'
 import { purgePackageExternals } from './package-cleanup'
 
 /** Random placeholder name for a draft (ADR-039) — replaced before publish */
@@ -676,6 +678,27 @@ export class PackageService {
     })
   }
 
+  /**
+   * IDs of a package's resources whose content reached DuckLake. Callers need
+   * these *before* a purge deletes the rows, to drop the per-resource tables
+   * afterwards. Only ingested resources can have one, and an empty list lets the
+   * caller skip opening a lake session — which costs extension loads and a
+   * catalog ATTACH — on a package that never had a tabular resource.
+   */
+  async listLakeResourceIds(packageId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectDistinct({ id: resource.id })
+      .from(resource)
+      .innerJoin(resourceVersion, eq(resourceVersion.resourceId, resource.id))
+      .where(
+        and(
+          eq(resource.packageId, packageId),
+          sql`${resourceVersion.ducklakeSnapshotId} IS NOT NULL`
+        )
+      )
+    return rows.map((r) => r.id)
+  }
+
   /** Hard-delete a soft-deleted package and all related data (CASCADE). */
   async purge(nameOrId: string, authorize?: PackageAuthorize) {
     return await this.db.transaction(async (tx) => {
@@ -881,11 +904,14 @@ export class PackageService {
    */
   async purgeDraft(
     nameOrId: string,
-    deps: { search?: SearchAdapter; storage: StorageAdapter },
+    deps: { search?: SearchAdapter; storage: StorageAdapter; lake?: LakeConfig },
     authorize?: PackageAuthorize
   ) {
     const claimed = await this.claimDraftForPurge(nameOrId, authorize)
-    await purgePackageExternals(claimed.id, deps.search, deps.storage)
+    // Read the resource ids while the rows still exist.
+    const lakeResourceIds = await this.listLakeResourceIds(claimed.id)
+    await purgePackageExternals(claimed.id, deps)
+    if (deps.lake) await dropResourceTables(deps.lake, lakeResourceIds)
     return this.finalizeDraftPurge(claimed.id)
   }
 }

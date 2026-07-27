@@ -65,10 +65,13 @@ const resourceFieldsSchema = z.object({
   description: z.string().nullish(),
   format: z.string().max(100).nullish(),
   mimetype: z.string().max(200).nullish(),
-  size: z.number().int().positive().nullish(),
-  hash: z.string().nullish(),
   resourceType: z.string().max(50).nullish(),
 })
+
+// `size` and `hash` are deliberately absent: the pipeline measures the stored
+// object and owns both. Version capture gates on the hash and records it
+// against the bytes it copies (ADR-043), so a caller-supplied value would
+// decide whether versions are ever captured.
 
 export const createResourceSchema = resourceFieldsSchema.superRefine(refineUrl)
 
@@ -95,7 +98,6 @@ export type UploadUrlInput = z.infer<typeof uploadUrlSchema>
 
 export const uploadCompleteSchema = z.object({
   size: z.number().int().positive().optional(),
-  hash: z.string().optional(),
 })
 
 export type UploadCompleteInput = z.infer<typeof uploadCompleteSchema>

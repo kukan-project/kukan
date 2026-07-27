@@ -77,6 +77,18 @@ function getExtension(filename: string): string | undefined {
   return filename.slice(dotIndex + 1).toLowerCase()
 }
 
+/**
+ * Mark a download filename as a specific version without breaking its
+ * extension: `data.csv` → `data.v2.csv`. Appending instead would yield
+ * `data.csv.v2`, which the OS reads as a `.v2` file of unknown type.
+ */
+export function versionedFilename(filename: string, version: number): string {
+  const dotIndex = filename.lastIndexOf('.')
+  // No extension, or a leading-dot name like `.gitignore`: append.
+  if (dotIndex <= 0) return `${filename}.v${version}`
+  return `${filename.slice(0, dotIndex)}.v${version}${filename.slice(dotIndex)}`
+}
+
 /** Normalize a format string to its canonical case (e.g. 'csv' → 'CSV', 'geojson' → 'GeoJSON') */
 export function normalizeFormat(format: string): string {
   return FORMAT_MAP[format.toLowerCase()] ?? format.toUpperCase()
@@ -194,13 +206,28 @@ export function versionOrigin(urlType: string | null): 'upload' | 'fetch' {
   return urlType === 'upload' ? 'upload' : 'fetch'
 }
 
-/** Compute storage key for a resource's preview file */
+/**
+ * Compute storage key for a resource's preview file.
+ *
+ * @param runToken - makes the key unique to one pipeline run. Readers follow
+ *   `resource_pipeline.preview_key` rather than recomputing the key, so a fresh
+ *   token per run means the object a reader resolved can never be rewritten
+ *   underneath it — which is what lets DuckLake ingest (ADR-043 layer 2) trust
+ *   that the Parquet it reads is the version it was told to record.
+ *
+ *   The Index step's `.txt` artifact still omits it and is overwritten in place.
+ *   That is a gap, not a rule: its pointer (`metadata.textHeadKey`) is read the
+ *   same way, so a reader can get the newer text head. Nothing is attributed to
+ *   a version there, so it costs freshness rather than correctness.
+ */
 export function getPreviewKey(
   packageId: string,
   resourceId: string,
-  ext: 'parquet' | 'json' | 'txt' = 'parquet'
+  ext: 'parquet' | 'json' | 'txt' = 'parquet',
+  runToken?: string
 ): string {
-  return `${PREVIEW_PREFIX}${packageId}/${resourceId}.${ext}`
+  const token = runToken ? `.${runToken}` : ''
+  return `${PREVIEW_PREFIX}${packageId}/${resourceId}${token}.${ext}`
 }
 
 const OFFICE_FORMATS = new Set(['xlsx', 'xls', 'doc', 'docx', 'ppt', 'pptx'])
