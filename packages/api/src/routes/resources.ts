@@ -580,19 +580,16 @@ resourcesRouter.post('/:id/upload-url', zValidator('json', uploadUrlSchema), asy
   const resourceService = new ResourceService(db)
   const existing = await checkResourcePermission(db, user, resourceService, id)
 
-  const res = await resourceService.prepareForUpload(
+  const pendingKey = await resourceService.prepareForUpload(
     id,
     { filename: input.filename, contentType: input.contentType, format: input.format },
     existing
   )
 
   const storage = c.get('storage')
-  const uploadUrl = await storage.getSignedUploadUrl(
-    res.pendingStorageKey!,
-    input.contentType,
-    undefined,
-    { originalFilename: input.filename }
-  )
+  const uploadUrl = await storage.getSignedUploadUrl(pendingKey, input.contentType, undefined, {
+    originalFilename: input.filename,
+  })
 
   return c.json({ upload_url: uploadUrl })
 })
@@ -616,7 +613,7 @@ resourcesRouter.post('/:id/upload', bodyLimit({ maxSize: MAX_UPLOAD_SIZE }), asy
   }
 
   const contentType = file.type || 'application/octet-stream'
-  const res = await resourceService.prepareForUpload(
+  const pendingKey = await resourceService.prepareForUpload(
     id,
     { filename: file.name, contentType },
     existing
@@ -624,13 +621,16 @@ resourcesRouter.post('/:id/upload', bodyLimit({ maxSize: MAX_UPLOAD_SIZE }), asy
 
   const storage = c.get('storage')
   const stream = Readable.fromWeb(file.stream() as Parameters<typeof Readable.fromWeb>[0])
-  await storage.upload(res.pendingStorageKey!, stream, {
+  await storage.upload(pendingKey, stream, {
     contentType,
     originalFilename: file.name,
   })
 
-  if (!(await resourceService.promoteUpload(id, { size: file.size }))) {
-    throw new NotFoundError('Resource', id)
+  // Promote the key we wrote to, not whatever is pending now: a concurrent
+  // request may have replaced it, and promoting that one would point the
+  // resource at an object nobody has uploaded yet.
+  if (!(await resourceService.promoteUpload(id, pendingKey, { size: file.size }))) {
+    throw new ValidationError('A newer upload replaced this one before it completed')
   }
 
   return c.json(await enqueuePipeline(c, id), 200)
@@ -680,7 +680,10 @@ resourcesRouter.post(
     // worker to measure (ADR-043): version capture records the hash against the
     // bytes it copies, so a caller-supplied value would decide what a version
     // claims to hold.
-    if (!(await resourceService.promoteUpload(id, { size: head.size }))) {
+    // Bound to the key that was headed above, so a `prepareForUpload` that ran
+    // in between cannot have this call promote its not-yet-uploaded key — with
+    // the size measured from a different object.
+    if (!(await resourceService.promoteUpload(id, pendingKey, { size: head.size }))) {
       throw new ValidationError('No upload is pending for this resource')
     }
 

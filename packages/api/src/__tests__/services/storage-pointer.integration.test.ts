@@ -141,20 +141,20 @@ describe('promoteUpload', () => {
       .set({ storageKey: live, hash: 'sha256:live', size: 5 })
       .where(eq(resource.id, resourceId))
 
-    const prepared = await service.prepareForUpload(resourceId, {
+    const pending = await service.prepareForUpload(resourceId, {
       filename: 'data.csv',
       contentType: 'text/csv',
     })
     // The live object still serves while the upload is only pending.
-    expect(prepared.storageKey).toBe(live)
-    expect(prepared.pendingStorageKey).not.toBe(live)
+    expect((await row()).storageKey).toBe(live)
+    expect(pending).not.toBe(live)
     expect(await parkedKeys()).toEqual([])
 
-    const promoted = await service.promoteUpload(resourceId, { size: 42 })
+    const promoted = await service.promoteUpload(resourceId, pending, { size: 42 })
 
-    expect(promoted).toBe(prepared.pendingStorageKey)
+    expect(promoted).toBe(pending)
     const r = await row()
-    expect(r.storageKey).toBe(prepared.pendingStorageKey)
+    expect(r.storageKey).toBe(pending)
     expect(r.pendingStorageKey).toBeNull()
     expect(r.size).toBe(42)
     // Left for the worker to measure — a client-supplied hash would decide
@@ -165,10 +165,13 @@ describe('promoteUpload', () => {
 
   it('is a no-op on a repeated upload-complete', async () => {
     const service = new ResourceService(db)
-    await service.prepareForUpload(resourceId, { filename: 'data.csv', contentType: 'text/csv' })
-    const promoted = await service.promoteUpload(resourceId, { size: 42 })
+    const pending = await service.prepareForUpload(resourceId, {
+      filename: 'data.csv',
+      contentType: 'text/csv',
+    })
+    const promoted = await service.promoteUpload(resourceId, pending, { size: 42 })
 
-    expect(await service.promoteUpload(resourceId, { size: 42 })).toBeNull()
+    expect(await service.promoteUpload(resourceId, pending, { size: 42 })).toBeNull()
     // The second call must not park the object the first one just published.
     expect(await parkedKeys()).toEqual([])
     expect((await row()).storageKey).toBe(promoted)
@@ -186,12 +189,12 @@ describe('promoteUpload', () => {
     })
 
     // The client may already have written to the first URL.
-    expect(await parkedKeys()).toEqual([first.pendingStorageKey])
+    expect(await parkedKeys()).toEqual([first])
   })
 
   it('parks an upload URL nobody used, once its window has passed', async () => {
     const service = new ResourceService(db)
-    const prepared = await service.prepareForUpload(resourceId, {
+    const pending = await service.prepareForUpload(resourceId, {
       filename: 'data.csv',
       contentType: 'text/csv',
     })
@@ -199,7 +202,7 @@ describe('promoteUpload', () => {
     // Still inside the window: an upload may yet be in flight.
     expect(await expirePendingUploads(db, 60_000)).toBe(0)
     expect(await parkedKeys()).toEqual([])
-    expect((await row()).pendingStorageKey).toBe(prepared.pendingStorageKey)
+    expect((await row()).pendingStorageKey).toBe(pending)
 
     await db
       .update(resource)
@@ -207,7 +210,7 @@ describe('promoteUpload', () => {
       .where(eq(resource.id, resourceId))
 
     expect(await expirePendingUploads(db, 60_000)).toBe(1)
-    expect(await parkedKeys()).toEqual([prepared.pendingStorageKey])
+    expect(await parkedKeys()).toEqual([pending])
     const r = await row()
     expect(r.pendingStorageKey).toBeNull()
     expect(r.pendingStorageKeyAt).toBeNull()
@@ -218,11 +221,86 @@ describe('promoteUpload', () => {
   it('timestamps the pending key, and clears it on promotion', async () => {
     // The timestamp is what lets the sweep reclaim an upload URL nobody used.
     const service = new ResourceService(db)
-    await service.prepareForUpload(resourceId, { filename: 'data.csv', contentType: 'text/csv' })
+    const pending = await service.prepareForUpload(resourceId, {
+      filename: 'data.csv',
+      contentType: 'text/csv',
+    })
 
     expect((await row()).pendingStorageKeyAt).toBeInstanceOf(Date)
 
-    await service.promoteUpload(resourceId, { size: 42 })
+    await service.promoteUpload(resourceId, pending, { size: 42 })
     expect((await row()).pendingStorageKeyAt).toBeNull()
+  })
+
+  it('refuses to promote a key a newer upload replaced', async () => {
+    // The losing request finished uploading to its own key and asked to
+    // publish. Promoting "whatever is pending" would point the resource at the
+    // winner's key — an object nobody has written yet — and describe it with
+    // the size measured from the loser's.
+    const service = new ResourceService(db)
+    const first = await service.prepareForUpload(resourceId, {
+      filename: 'first.csv',
+      contentType: 'text/csv',
+    })
+    const second = await service.prepareForUpload(resourceId, {
+      filename: 'second.csv',
+      contentType: 'text/csv',
+    })
+
+    expect(await service.promoteUpload(resourceId, first, { size: 42 })).toBeNull()
+
+    const r = await row()
+    expect(r.storageKey).toBeNull()
+    expect(r.pendingStorageKey).toBe(second)
+    // Only the key `prepareForUpload` displaced is parked; the live pointer and
+    // the winner's pending key are untouched.
+    expect(await parkedKeys()).toEqual([first])
+  })
+
+  it('applies the replacement metadata it derives', async () => {
+    // Moved here from the unit suite when prepare stopped returning the row:
+    // format resolution is explicit > filename > whatever the resource had.
+    const service = new ResourceService(db)
+
+    await service.prepareForUpload(resourceId, {
+      filename: 'data.json',
+      contentType: 'application/json',
+    })
+    expect((await row()).format).toBe('JSON')
+
+    await service.prepareForUpload(resourceId, {
+      filename: 'data.json',
+      contentType: 'application/json',
+      format: 'GeoJSON',
+    })
+    const r = await row()
+    expect(r.format).toBe('GeoJSON')
+    expect(r.urlType).toBe('upload')
+    expect(r.url).toBe('data.json')
+    expect(r.mimetype).toBe('application/json')
+  })
+
+  it('parks the key the row actually held, not one the caller read earlier', async () => {
+    // Routes pass the row they already fetched for the permission check. If the
+    // replaced key came from that value rather than from the row itself, a
+    // concurrent prepare would leave its key referenced by nothing and parked
+    // by no one.
+    const service = new ResourceService(db)
+    const stale = await service.getById(resourceId)
+
+    const first = await service.prepareForUpload(
+      resourceId,
+      { filename: 'first.csv', contentType: 'text/csv' },
+      stale
+    )
+    // `stale` still says there is no pending key, but the row now holds `first`.
+    const second = await service.prepareForUpload(
+      resourceId,
+      { filename: 'second.csv', contentType: 'text/csv' },
+      stale
+    )
+
+    expect(await parkedKeys()).toEqual([first])
+    expect((await row()).pendingStorageKey).toBe(second)
   })
 })

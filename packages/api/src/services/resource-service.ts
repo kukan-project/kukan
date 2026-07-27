@@ -16,7 +16,6 @@ import {
 } from '@kukan/shared'
 import type { CreateResourceInput, UpdateResourceInput, PackageDbState } from '@kukan/shared'
 import { RESOURCE_POSITION_LOCK, lockInTransaction } from './advisory-lock'
-import { parkObject } from './storage-pointer'
 import { hasOrgMembership, hasDraftAccess, type AuthUser } from '../auth/permissions'
 
 // Package states whose resources are reachable — drafts hold resources before publish (ADR-039)
@@ -326,6 +325,8 @@ export class ResourceService {
   /**
    * Prepare a resource for file upload (new or replacement).
    *
+   * Returns the key the caller must upload to.
+   *
    * Mints the key the new bytes go to and holds it in `pending_storage_key`
    * rather than moving the live pointer (ADR-043): until the upload actually
    * lands, the resource still has its previous content, and an upload the user
@@ -334,7 +335,10 @@ export class ResourceService {
    *
    * A key minted by an earlier call to this endpoint is parked: the client may
    * have written to it before asking for another URL, and nothing points at it
-   * once this one replaces it.
+   * once this one replaces it. The key parked is the one the row actually held,
+   * read under the row lock in the same statement — a value read beforehand can
+   * be stale by the time the update lands, which would leave a concurrent
+   * caller's key referenced by nothing and parked by no one.
    */
   async prepareForUpload(
     id: string,
@@ -346,26 +350,43 @@ export class ResourceService {
       (input.format ? normalizeFormat(input.format) : undefined) ||
       detectFormat(input.filename) ||
       existing.format
-
     const pendingKey = getStorageKey(existing.packageId, id, randomUUID())
-    await parkObject(this.db, existing.pendingStorageKey)
+    const name = existing.name || input.filename
 
-    const [updated] = await this.db
-      .update(resource)
-      .set({
-        url: input.filename,
-        urlType: 'upload',
-        name: existing.name || input.filename,
-        format,
-        mimetype: input.contentType,
-        pendingStorageKey: pendingKey,
-        pendingStorageKeyAt: sql`NOW()`,
-        updated: sql`NOW()`,
-      })
-      .where(eq(resource.id, id))
-      .returning()
+    const result = await this.db.execute(sql`
+      WITH before AS (
+        SELECT id, pending_storage_key
+        FROM resource
+        WHERE id = ${id}::uuid
+        FOR UPDATE
+      ),
+      updated AS (
+        UPDATE resource r
+        SET url = ${input.filename}::text,
+            url_type = 'upload',
+            name = ${name}::text,
+            format = ${format ?? null}::text,
+            mimetype = ${input.contentType}::text,
+            pending_storage_key = ${pendingKey}::text,
+            pending_storage_key_at = NOW(),
+            updated = NOW()
+        FROM before b
+        WHERE r.id = b.id
+        RETURNING b.pending_storage_key AS previous_key
+      ),
+      parked AS (
+        INSERT INTO orphaned_object (key)
+        SELECT previous_key FROM updated
+        WHERE previous_key IS NOT NULL
+        ON CONFLICT (key) DO NOTHING
+      )
+      SELECT count(*)::int AS updated FROM updated
+    `)
 
-    return updated!
+    if ((result.rows[0] as { updated: number } | undefined)?.updated !== 1) {
+      throw new NotFoundError('Resource', id)
+    }
+    return pendingKey
   }
 
   /**
@@ -376,15 +397,26 @@ export class ResourceService {
    * cleared rather than taken from the caller: the worker measures the stored
    * bytes, and version capture records what it measured.
    *
-   * Returns the promoted key, or null when there was nothing pending — a
-   * duplicate `upload-complete`, which must not re-park the live object.
+   * `expectedPendingKey` is the key the caller uploaded to. Promoting whatever
+   * happens to be pending would publish a key a concurrent `prepareForUpload`
+   * minted — an object nobody has written yet — and describe it with the size
+   * measured from a different one.
+   *
+   * Returns the promoted key, or null when that key is no longer the pending
+   * one: a duplicate `upload-complete`, or an upload a newer one replaced.
+   * Either way the live object must not be re-parked.
    */
-  async promoteUpload(id: string, input: { size: number }): Promise<string | null> {
+  async promoteUpload(
+    id: string,
+    expectedPendingKey: string,
+    input: { size: number }
+  ): Promise<string | null> {
     const result = await this.db.execute(sql`
       WITH before AS (
         SELECT id, storage_key, pending_storage_key
         FROM resource
-        WHERE id = ${id}::uuid AND state = 'active' AND pending_storage_key IS NOT NULL
+        WHERE id = ${id}::uuid AND state = 'active'
+          AND pending_storage_key = ${expectedPendingKey}::text
         FOR UPDATE
       ),
       promoted AS (
