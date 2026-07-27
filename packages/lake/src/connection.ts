@@ -68,6 +68,32 @@ function isInstanceLost(err: unknown): boolean {
   return /connection|server closed|terminating|SSL|socket/i.test(message)
 }
 
+/**
+ * Turn off DuckLake's data inlining, which keeps small tables' rows in the
+ * catalog instead of Parquet (ADR-043 §9).
+ *
+ * Inlined rows are never reclaimed: once every snapshot that could observe one
+ * is expired, it is unreachable through DuckLake yet still sits in PostgreSQL,
+ * and neither `expire_snapshots` nor `cleanup_old_files` removes it. A purge
+ * could then report a legal deletion having erased nothing. With inlining off
+ * each version owns its files, so expiring it frees them whole.
+ *
+ * Stored on the catalog rather than passed to ATTACH, which would only bind
+ * this session: the guarantee must not depend on who opened the connection.
+ * Read first so the steady state costs no catalog write.
+ */
+async function disableDataInlining(conn: {
+  run(sql: string): Promise<unknown>
+  runAndReadAll(sql: string): Promise<{ getRowObjectsJson(): unknown[] }>
+}): Promise<void> {
+  const reader = await conn.runAndReadAll(
+    `SELECT value FROM ducklake_options('lake') WHERE option_name = 'data_inlining_row_limit'`
+  )
+  const [row] = reader.getRowObjectsJson() as { value?: string }[]
+  if (row?.value === '0') return
+  await conn.run(`CALL lake.set_option('data_inlining_row_limit', 0)`)
+}
+
 async function prepareInstance(
   config: LakeConfig,
   limits: LakeSessionLimits | undefined
@@ -124,6 +150,7 @@ async function prepareInstance(
         `(DATA_PATH ${sqlLiteral(lakeStorageUrl(config, LAKE_DATA_PREFIX))}, ` +
         `METADATA_SCHEMA ${sqlLiteral(LAKE_METADATA_SCHEMA)})`
     )
+    await disableDataInlining(conn)
     return instance
   } catch (err) {
     // Setup failed partway (extension load, S3 secret, ATTACH). The instance

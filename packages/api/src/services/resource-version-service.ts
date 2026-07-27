@@ -16,6 +16,7 @@ import {
   dropLakeTable,
   lakeTableExists,
   lakeTableName,
+  reclaimUnreferencedSnapshots,
   rollbackLakeTable,
   withLakeSession,
 } from '@kukan/lake'
@@ -318,36 +319,57 @@ export class ResourceVersionService {
   /**
    * Propagate a purge into DuckLake (ADR-043 §9, layer 2).
    *
-   * Called only when the purged version was the live one, since that is when the
-   * lake's current contents would otherwise still hold the purged rows:
-   * - a snapshot given — roll the table back to the version we reverted to.
-   * - null — no version survives, so drop the table.
+   * `restore` is given only when the purged version was the live one, since that
+   * is when the lake's current contents would otherwise still hold the purged
+   * rows: a snapshot rolls the table back to the version we reverted to, null
+   * drops it because no version survives. Purging a middle version leaves the
+   * contents alone.
    *
-   * Purging a middle version needs nothing here: the live contents are unchanged
-   * and the old snapshot is unreachable through the API. Physically erasing the
-   * files behind expired snapshots (compaction rewrite + cleanup) is separate and
-   * bound by the backup-retention rule (ADR-037).
+   * Either way the snapshot has to be expired and its Parquet deleted, or the
+   * rows remain readable straight from the catalog. That runs for every purge,
+   * which is why this is no longer called only for the live version.
    *
    * Failures propagate: the version stays in `purging` and the worker retries,
    * rather than a legal deletion silently completing with data left in the lake.
    */
   private async purgeFromLake(
     resourceId: string,
-    restoreToSnapshot: number | null,
+    restore: { toSnapshot: number | null } | undefined,
     lake: LakeConfig | undefined
   ): Promise<void> {
     if (!lake) return
     const table = lakeTableName(resourceId)
     await withLakeSession(lake, async (session) => {
-      // Non-tabular resource, or never ingested.
-      if (!(await lakeTableExists(session, table))) return
-
       await withLakeIngestLock(this.db, async () => {
-        if (restoreToSnapshot === null) {
-          await dropLakeTable(session, table)
-        } else {
-          await rollbackLakeTable(session, table, restoreToSnapshot)
+        // Non-tabular resource, or never ingested — nothing to roll back, but
+        // the reclaim below still runs: another resource's purge may have left
+        // snapshots behind when it failed partway.
+        if (restore && (await lakeTableExists(session, table))) {
+          if (restore.toSnapshot === null) {
+            await dropLakeTable(session, table)
+          } else {
+            await rollbackLakeTable(session, table, restore.toSnapshot)
+          }
         }
+
+        // Snapshot ids are one catalog-wide sequence, so the retained set spans
+        // every resource. The row being purged is already out of `active`, so
+        // it needs no special case. Under the ingest lock, which is what stops
+        // this from expiring a snapshot an ingest has committed but not yet
+        // recorded on its version row.
+        const retained = await this.db
+          .select({ snapshot: resourceVersion.ducklakeSnapshotId })
+          .from(resourceVersion)
+          .where(
+            and(
+              eq(resourceVersion.state, 'active'),
+              sql`${resourceVersion.ducklakeSnapshotId} IS NOT NULL`
+            )
+          )
+        await reclaimUnreferencedSnapshots(
+          session,
+          retained.map((r) => r.snapshot!)
+        )
       })
     })
   }
@@ -564,7 +586,7 @@ export class ResourceVersionService {
           rolledBack = true
           // Layer 2 must follow the rollback: otherwise the lake's current
           // contents would still be the purged rows (ADR-043 §9).
-          await this.purgeFromLake(resourceId, prev.ducklakeSnapshotId, deps.lake)
+          await this.purgeFromLake(resourceId, { toSnapshot: prev.ducklakeSnapshotId }, deps.lake)
         } else {
           // Nothing to roll back to — the resource is left with no live content.
           await this.db
@@ -579,7 +601,7 @@ export class ResourceVersionService {
         // The parked row survives and the sweep's delete is then a no-op.
         if (pkgRow.storageKey) await deps.storage.delete(pkgRow.storageKey)
         // No version survives, so the lake table goes with it.
-        if (!prev) await this.purgeFromLake(resourceId, null, deps.lake)
+        if (!prev) await this.purgeFromLake(resourceId, { toSnapshot: null }, deps.lake)
 
         // Invalidate derivatives so the purged content stops being served
         // immediately, before the (async) pipeline regenerates them.
@@ -593,6 +615,10 @@ export class ResourceVersionService {
           await new PipelineService(this.db, deps.queue).enqueue(resourceId)
         }
       }
+    } else {
+      // A middle version: the live contents are already free of it, but its own
+      // snapshot still holds the rows and must be reclaimed (ADR-043 §9).
+      await this.purgeFromLake(resourceId, undefined, deps.lake)
     }
 
     await this.db

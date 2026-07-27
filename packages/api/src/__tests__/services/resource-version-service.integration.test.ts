@@ -187,19 +187,23 @@ describe('executePurge — layer 2 (DuckLake)', () => {
     expect(row.snap).toBeNull()
   })
 
-  it('leaves the lake alone when purging a middle version', async () => {
+  it('reaches the lake when purging a middle version', async () => {
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2')
     await service.claimPurge(resourceId, 1, userId, 'test')
 
-    // v2 is still live, so no lake work is needed — an unusable config proves it
-    // is never contacted.
-    const result = await service.executePurge(resourceId, 1, {
-      ...mockDeps(),
-      lake: unreachableLake,
-    })
+    // v2 stays live, so the contents do not change — but v1's snapshot still
+    // holds its rows and has to be reclaimed, so the lake is contacted anyway
+    // (ADR-043 §9). An unusable config proves it: the purge fails rather than
+    // reporting a legal deletion it did not carry out.
+    await expect(
+      service.executePurge(resourceId, 1, { ...mockDeps(), lake: unreachableLake })
+    ).rejects.toThrow()
 
-    expect(result.purged).toBe(true)
-    expect(result.rolledBack).toBe(false)
-  })
+    const [row] = await db
+      .select({ state: resourceVersion.state })
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+    expect(row.state).toBe('purging')
+  }, 60_000)
 })

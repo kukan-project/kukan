@@ -202,10 +202,11 @@ normal deletion (resource delete).
    durable-claim pattern, executed by the worker).
 3. **Affected locations**:
    - Layer 1: delete the version file (`versions/.../v{n}`)
-   - Layer 2: expire the relevant snapshots → **rewrite (compaction rewrite)** the files
-     containing the targeted data → physically delete the old files. Note that data files
-     are physically shared between versions, so expiry alone does not remove the data.
-     Time travel to the purged versions becomes impossible (which is the point)
+   - Layer 2: expire the relevant snapshots, then physically delete the files that leaves
+     unreferenced with `ducklake_cleanup_old_files`. **No file is rewritten** — with
+     whole-table replacement a data file's lifetime coincides with a version
+     boundary, so expiry frees the file as a whole. Time travel to the purged versions
+     becomes impossible (which is the point)
    - Derivatives: the preview Parquet derived from that version, and the OpenSearch
      resource-content index (ADR-021, when the purged version is the latest)
 4. **Physical destruction timeline** (AWS): On purge, the content becomes immediately
@@ -218,15 +219,106 @@ normal deletion (resource delete).
    On-prem (MinIO without versioning), deletion is immediate and no residue exists (note
    that backup handling depends on the deploying organization's operations).
 
-### 6. Operations — compaction and snapshot retention
+#### 5.1 The container principle
 
-1. **Compaction**: Read performance is dominated by file count, so a periodic worker
-   maintenance job consolidates files. **The latest version is guaranteed to be
-   compacted**; historical versions may remain fragmented.
-2. **Snapshot / version retention count**: Held as a runtime system setting (ADR-036),
+Whether a purge is cheap comes down to one thing: **do several versions share a single
+unit of disposal?** If they do not, expiring that version's container and running cleanup
+is the whole job. If they do, the container can only be discarded whole, so **every
+surviving version inside it has to be rebuilt from Layer 1**.
+
+Three things can become such a container, and all lead to the same place:
+
+| Container     | When it arises                                 | Cost at purge                                         |
+| ------------- | ---------------------------------------------- | ----------------------------------------------------- |
+| Data file     | Does not arise under whole-table replacement   | —                                                     |
+| Data file     | Compaction merges across versions (§6-2)       | Rebuild every merged version                          |
+| Data file     | Delta writes mix history-only and current rows | Re-ingest from the purged version onward              |
+| Inlined table | Data inlining enabled (§6-1)                   | Rebuild every version (`DROP TABLE` is the only path) |
+
+Measurements agree: with either compaction applied or inlining enabled, "roll back and
+re-ingest only later versions" fails and only a full rebuild succeeds. Whole-table
+replacement is the one shape that shares no container, which is exactly why expiry plus
+cleanup suffices for it.
+
+**Whether a version has a key is per-version state, not a phase.** A primary key can be
+set later and removed again, so a single resource's history can mix versions ingested
+without a key and versions ingested with one. Whole-table replacement is therefore treated
+as the **degenerate case of a keyed diff**, and the purge mechanism is chosen **per range
+of versions**, not per resource. Whether a given version shares a container is derivable
+from the lifetimes in `ducklake_data_file`, so no extra application state is needed.
+
+That every version is a whole-table replacement today is only because there is no key
+selection UI yet. Once keys can be specified, both shapes appear in the same catalog
+(Open Issue 7) — and that is also where consolidating for read performance starts
+competing with keeping purges cheap.
+
+### 6. Operations — data inlining, compaction, snapshot retention
+
+1. **Data inlining is disabled** (`data_inlining_row_limit = 0`). By default DuckLake
+   keeps small tables (measured: 10 rows or fewer) in the catalog rather than in Parquet.
+   The representation itself carries `begin_snapshot` / `end_snapshot` per row, so it
+   **could in principle be reclaimed at a finer granularity than files**. The problem is
+   that the implementation does not do so:
+   - **Inlined rows are never reclaimed.** Once every snapshot that could observe a row is
+     expired, it is unreachable through DuckLake yet still sits in PostgreSQL, and neither
+     `expire_snapshots` nor `cleanup_old_files` removes it. (The documentation says inlined
+     data differs from Parquet only in where it lives; on this point it behaves differently.)
+   - `ducklake_flush_inlined_data` is not a workaround. It does write the rows out, but
+     because it materializes the inlined MVCC table as-is, **all versions' rows land in a
+     single file**. Surviving versions reference that file, so the purged rows still cannot
+     be deleted.
+   - Without inlining, whole-table replacement gives each version its own file with
+     a disjoint lifetime, so expiry frees the file as a whole.
+
+   **Flushing never happens on its own.** The limit is judged per write — the official
+   description is _"Maximum amount of rows to inline in a single insert"_ — so it does not
+   accumulate, and `auto_compact` is not a scheduler (it only decides whether a table is
+   included when a maintenance function is called without a table argument). Measured: 15
+   single-row INSERTs followed by 15 single-row UPDATEs produced no Parquet at all and left
+   30 inlined rows for 15 live ones.
+
+   Structurally, an inlined table is always in the same state as a compacted file, so §5.1's
+   container principle applies directly (container = the table, cost = rebuilding every
+   version). Enabling inlining therefore costs ii-b the "leave earlier versions untouched"
+   optimisation.
+
+   This is therefore a workaround for an implementation gap, not a judgement about the
+   representation. **If upstream implements reclamation of inlined rows on expiry, this
+   decision can be revisited.** The setting is persisted on the catalog; an ATTACH option
+   would bind only that session, leaving the guarantee dependent on who opened the
+   connection.
+
+2. **Whether compaction is needed follows from the write shape** (this too is not a
+   property of a phase). Under whole-table replacement the live data files are just one
+   version's output and **do not grow with the number of versions**; a diff always reads
+   two versions' worth, so the cost is flat however many versions exist (measured across 21
+   versions: v1→v20 costs the same as v19→v20). With nothing to consolidate,
+   `ducklake_merge_adjacent_files` does nothing and returns `[]`.
+
+   Once a resource starts receiving keyed deltas, live files accumulate per version and
+   compaction becomes effective (measured: 501 files → 1, 3.9× faster scan; it runs with
+   every version retained and time travel intact).
+
+   There is a **tension with purging**, though: merging across versions creates a §5.1
+   container, so a purge then drags in the surviving versions sharing it. For a resource
+   that only ever sees whole-table replacements there is no benefit and only that cost, so
+   it is not run.
+
+3. **Snapshot / version retention count**: Held as a runtime system setting (ADR-036),
    changeable by sysadmin (default unlimited; expected operation is to tighten it when
-   storage pressure rises). Expiring old snapshots and cleaning up orphaned files run in
-   the same maintenance job.
+   storage pressure rises). Expiring old snapshots runs in the same maintenance job.
+
+4. **Expiry uses an explicit list** (`versions => [...]`): every snapshot minus those
+   referenced by an `active` `resource_version` minus the newest snapshot. A time-based
+   `older_than` cannot be used — the ids are one catalog-wide sequence, so an age cutoff
+   sweeps up snapshots belonging to resources that simply have not changed. The newest is
+   always kept because a purge that rolled a table back has just created one that no
+   version row points at yet.
+
+5. **Orphaned files**: DuckLake writes Parquet before committing to the catalog, so a
+   crash in between leaves untracked files under `lake/`. Neither expiry nor cleanup
+   covers them (that is `ducklake_delete_orphaned_files`' job). This is a storage leak,
+   not a correctness problem.
 
 ## Consequences
 
@@ -261,10 +353,30 @@ normal deletion (resource delete).
    version/diff access for AI agents
 6. **AI key suggestion**: Add primary-key candidate suggestion to the ADR-040 suggestion
    infrastructure to help resources graduate to keyed diffs (the MERGE tier)
-7. **IAM hardening**: Explicitly deny `s3:GetObjectVersion` / `s3:DeleteObjectVersion` on
+7. **The ii-b purge mechanism (a prerequisite for graduating)**: Keyed diffs break the §5
+   purge. This is a precondition for the move, not a follow-up. The heart of it is that
+   §5.1's container principle loses its ii-a exception and starts applying always.
+   - A delta write mixes history-only rows with rows that are still current in one file, so
+     expiry plus cleanup cannot free it. `ducklake_rewrite_data_files` is not the answer
+     either: it writes a new file but does not re-point retained snapshots, so the old file
+     survives.
+   - What works is **re-writing at the version level**: roll back to the version before
+     the purged one and re-ingest only the versions after it from layer 1. Earlier
+     versions own their own files and need not be touched.
+   - Once compaction has run, earlier versions share the container too, so every version
+     must be rebuilt — a trade-off between read performance and the cost of legal deletion.
+     Compacting only versions past the diff-retention window looks promising but is untested.
+   - The semantics change: a row written by the purged version is **not** erased if a
+     later version still carries it, because that is current data. UI wording has to
+     reflect this.
+   - One version spans several DuckLake snapshots (one per statement), so an expiry list
+     built from `resource_version.ducklake_snapshot_id` alone misses some.
+   - DuckLake supports no PRIMARY KEY / UNIQUE constraint; the key is a logical one used
+     in the MERGE condition.
+8. **IAM hardening**: Explicitly deny `s3:GetObjectVersion` / `s3:DeleteObjectVersion` on
    task roles so that noncurrent versions during the purge residual window are blocked at
    the IAM level too (currently blocked only by the absence of code paths)
-8. **Iceberg export**: Provide public snapshots in Iceberg format (direct reads from
+9. **Iceberg export**: Provide public snapshots in Iceberg format (direct reads from
    external engines). DuckLake's Iceberg-compatible delete vectors keep conversion cost
    limited
 

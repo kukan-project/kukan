@@ -644,7 +644,7 @@
       "purged": "Purged",
       "purging": "Purging",
       "purgeTitle": "Purge version v{version}",
-      "purgeWarning": "This permanently destroys the content of this version (legal deletion). It becomes unreachable from the app immediately and is physically erased after the backup retention period. If it is the latest version, the resource rolls back to the previous one. This cannot be undone.",
+      "purgeWarning": "This permanently destroys the content of this version (legal deletion). The version file and its row data are deleted immediately. Where storage versioning is enabled, the superseded object expires after its retention window (30 days by default). If it is the latest version, the resource rolls back to the previous one. This cannot be undone.",
       "reasonPlaceholder": "Reason for the purge (recorded in the audit log)",
       "purgeConfirm": "Purge",
       "cancel": "Cancel",
