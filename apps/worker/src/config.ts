@@ -69,6 +69,13 @@ export const ORPHAN_CLEANUP_CRON = '17 * * * *'
 export const ORPHAN_RETENTION_MS = 60 * 60 * 1000
 
 /**
+ * How long an upload URL's object is kept before the sweep reclaims it. Bounds
+ * a slow client rather than an in-flight read, so far longer than the orphan
+ * retention: reclaiming an upload still in progress would break it.
+ */
+export const PENDING_UPLOAD_TTL_MS = 24 * 60 * 60 * 1000
+
+/**
  * Keys deleted per sweep; the rest wait for the next one. A pipeline run parks
  * up to two objects (live content, preview), so this has to stay well above
  * the runs an hour the deployment does or the backlog never drains.

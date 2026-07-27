@@ -39,7 +39,8 @@ import { processResource } from './pipeline/process-resource'
 import { buildPipelineContext } from './pipeline/build-context'
 import { startCronJob } from './cron/start-cron-job'
 import { sweepOrphanedObjects } from './cron/orphan-cleanup/sweep-orphans'
-import { ORPHAN_CLEANUP_CRON } from '@/config'
+import { expirePendingUploads } from '@kukan/api/services/storage-pointer'
+import { ORPHAN_CLEANUP_CRON, PENDING_UPLOAD_TTL_MS } from '@/config'
 import { checkBatch } from './cron/health-check/check-batch'
 import { embedPackage, enqueueAllPackageEmbeds } from './embed/embed-package'
 
@@ -144,6 +145,10 @@ const orphanCleanupJob = startCronJob({
   cronExpression: ORPHAN_CLEANUP_CRON,
   log: orphanSweepLog,
   run: async () => {
+    // Expire first: a key parked now still waits out the orphan retention
+    // before it is deleted.
+    const expired = await expirePendingUploads(db, PENDING_UPLOAD_TTL_MS)
+    if (expired > 0) orphanSweepLog.info({ expired }, 'Expired abandoned upload URLs')
     await sweepOrphanedObjects(db, storage, orphanSweepLog)
   },
 })

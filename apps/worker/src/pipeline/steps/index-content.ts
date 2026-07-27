@@ -14,6 +14,7 @@
  * Non-text formats (DOC, XLS, PPT, RDF, images) are skipped (contentIndexed: false).
  */
 
+import { randomUUID } from 'node:crypto'
 import {
   isTextFormat,
   isCsvFormat,
@@ -183,7 +184,7 @@ async function indexDocument(
       truncateToByteLimit(text.slice(0, TEXT_HEAD_ARTIFACT_SIZE), TEXT_HEAD_ARTIFACT_SIZE),
       'utf-8'
     )
-    const textHeadKey = getPreviewKey(packageId, resourceId, 'txt')
+    const textHeadKey = getPreviewKey(packageId, resourceId, 'txt', randomUUID())
     await ctx.storage.upload(textHeadKey, textHead, {
       contentType: 'text/plain; charset=utf-8',
     })

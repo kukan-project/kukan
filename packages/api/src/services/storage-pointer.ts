@@ -71,6 +71,42 @@ export async function publishLiveContent(
 }
 
 /**
+ * Park the objects of upload URLs that were never completed (ADR-043).
+ *
+ * `prepareForUpload` parks the pending key it replaces, so reissuing a URL
+ * reclaims the old object; the last one has no such trigger. A client that asks
+ * for a URL, writes the object and never calls `upload-complete` would
+ * otherwise leave it named by `pending_storage_key` forever.
+ *
+ * @param ttlMs - how long a pending key is left alone. Bounds a slow upload
+ *   rather than an in-flight read, so far longer than the orphan retention.
+ */
+export async function expirePendingUploads(
+  db: Pick<Database, 'execute'>,
+  ttlMs: number
+): Promise<number> {
+  const result = await db.execute(sql`
+    WITH before AS (
+      SELECT id, pending_storage_key FROM resource
+      WHERE pending_storage_key IS NOT NULL
+        AND pending_storage_key_at < NOW() - ${`${Math.trunc(ttlMs)} milliseconds`}::interval
+      FOR UPDATE
+    ),
+    cleared AS (
+      UPDATE resource r
+      SET pending_storage_key = NULL, pending_storage_key_at = NULL
+      FROM before b WHERE r.id = b.id
+      RETURNING b.pending_storage_key AS key
+    )
+    INSERT INTO orphaned_object (key)
+    SELECT key FROM cleared
+    ON CONFLICT (key) DO NOTHING
+    RETURNING key
+  `)
+  return result.rows.length
+}
+
+/**
  * Hand a key to the sweep. For the writers that have no pointer to move — an
  * upload URL reissued before the previous one was used. Null is ignored so
  * callers can pass a pointer that may be unset.

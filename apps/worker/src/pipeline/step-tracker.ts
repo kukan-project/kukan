@@ -59,12 +59,15 @@ export class StepTracker {
 
   /**
    * Move the preview pointer and replace the metadata describing it, parking
-   * the key it replaced for later deletion (ADR-043).
+   * the objects that leaves behind (ADR-043).
    *
-   * One statement, because the key being parked is whatever `preview_key` is
-   * *now* — not what this run read at startup, which a concurrent run of the
-   * same resource may already have moved past. Splitting the two would let one
-   * write undo the other. Deletion is the sweep's job.
+   * Two of them: the preview this run replaces, and the previous run's text
+   * head — the metadata is replaced wholesale rather than merged, so its
+   * pointer goes with it and nothing else would ever park that object.
+   *
+   * One statement, because the keys being parked are whatever the row holds
+   * *now*, not what this run read at startup, which a concurrent run of the
+   * same resource may already have moved past. Deletion is the sweep's job.
    */
   async updateExtractResult(
     pipelineId: string,
@@ -73,7 +76,8 @@ export class StepTracker {
   ) {
     await this.db.execute(sql`
       WITH before AS (
-        SELECT id, preview_key FROM resource_pipeline WHERE id = ${pipelineId}::uuid FOR UPDATE
+        SELECT id, preview_key, metadata ->> 'textHeadKey' AS text_head
+        FROM resource_pipeline WHERE id = ${pipelineId}::uuid FOR UPDATE
       ),
       moved AS (
         UPDATE resource_pipeline p
@@ -82,11 +86,11 @@ export class StepTracker {
             updated = NOW()
         FROM before b
         WHERE p.id = b.id
-        RETURNING b.preview_key AS previous_key
+        RETURNING b.preview_key AS previous_preview, b.text_head AS previous_text_head
       )
       INSERT INTO orphaned_object (key)
-      SELECT previous_key FROM moved
-      WHERE previous_key IS NOT NULL
+      SELECT key FROM moved, LATERAL (VALUES (previous_preview), (previous_text_head)) v(key)
+      WHERE key IS NOT NULL
       ON CONFLICT (key) DO NOTHING
     `)
   }

@@ -17,6 +17,9 @@ function bufferToStream(buf: Buffer): Readable {
   return Readable.from(buf)
 }
 
+/** Run-scoped text-head key: `previews/{pkg}/{res}.{runToken}.txt`. */
+const TEXT_HEAD_KEY = expect.stringMatching(/^previews\/pkg-1\/res-1\.[0-9a-f-]{36}\.txt$/)
+
 function createMockCtx(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
     storage: {
@@ -376,14 +379,13 @@ describe('executeIndexContent', () => {
 
       const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)
 
-      expect(ctx.storage.upload).toHaveBeenCalledWith(
-        'previews/pkg-1/res-1.txt',
-        expect.any(Buffer),
-        { contentType: 'text/plain; charset=utf-8' }
-      )
+      // Unique to this run, like every other object a run writes (ADR-043).
+      expect(ctx.storage.upload).toHaveBeenCalledWith(TEXT_HEAD_KEY, expect.any(Buffer), {
+        contentType: 'text/plain; charset=utf-8',
+      })
       const uploaded = vi.mocked(ctx.storage.upload).mock.calls[0][1] as Buffer
       expect(uploaded.toString('utf-8')).toContain('Extracted document text')
-      expect(result!.textHeadKey).toBe('previews/pkg-1/res-1.txt')
+      expect(result!.textHeadKey).toEqual(TEXT_HEAD_KEY)
       expect(result!.textHeadBytes).toBe(uploaded.length)
     })
 
@@ -440,7 +442,7 @@ describe('executeIndexContent', () => {
       const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)
 
       expect(result).not.toBeNull()
-      expect(result!.textHeadKey).toBe('previews/pkg-1/res-1.txt')
+      expect(result!.textHeadKey).toEqual(TEXT_HEAD_KEY)
       expect(result!.contentIndexed).toBe(false)
       expect(result!.contentChunks).toBe(0)
       expect(result!.contentOriginalSize).toBeGreaterThan(0)

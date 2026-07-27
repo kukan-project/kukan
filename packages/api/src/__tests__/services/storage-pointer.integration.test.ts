@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import { resource } from '@kukan/db'
 import { getStorageKey } from '@kukan/shared'
-import { publishLiveContent } from '../../services/storage-pointer'
+import { expirePendingUploads, publishLiveContent } from '../../services/storage-pointer'
 import { ResourceService } from '../../services/resource-service'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
@@ -187,5 +187,42 @@ describe('promoteUpload', () => {
 
     // The client may already have written to the first URL.
     expect(await parkedKeys()).toEqual([first.pendingStorageKey])
+  })
+
+  it('parks an upload URL nobody used, once its window has passed', async () => {
+    const service = new ResourceService(db)
+    const prepared = await service.prepareForUpload(resourceId, {
+      filename: 'data.csv',
+      contentType: 'text/csv',
+    })
+
+    // Still inside the window: an upload may yet be in flight.
+    expect(await expirePendingUploads(db, 60_000)).toBe(0)
+    expect(await parkedKeys()).toEqual([])
+    expect((await row()).pendingStorageKey).toBe(prepared.pendingStorageKey)
+
+    await db
+      .update(resource)
+      .set({ pendingStorageKeyAt: sql`NOW() - interval '2 days'` })
+      .where(eq(resource.id, resourceId))
+
+    expect(await expirePendingUploads(db, 60_000)).toBe(1)
+    expect(await parkedKeys()).toEqual([prepared.pendingStorageKey])
+    const r = await row()
+    expect(r.pendingStorageKey).toBeNull()
+    expect(r.pendingStorageKeyAt).toBeNull()
+    // The live content is untouched — only the unused upload URL went.
+    expect(r.storageKey).toBeNull()
+  })
+
+  it('timestamps the pending key, and clears it on promotion', async () => {
+    // The timestamp is what lets the sweep reclaim an upload URL nobody used.
+    const service = new ResourceService(db)
+    await service.prepareForUpload(resourceId, { filename: 'data.csv', contentType: 'text/csv' })
+
+    expect((await row()).pendingStorageKeyAt).toBeInstanceOf(Date)
+
+    await service.promoteUpload(resourceId, { size: 42 })
+    expect((await row()).pendingStorageKeyAt).toBeNull()
   })
 })

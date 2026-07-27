@@ -4,7 +4,7 @@
 
 import { eq, and, sql, desc } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { resource, resourcePipeline, resourceVersion, packageTable } from '@kukan/db'
+import { resource, resourceVersion, packageTable } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter, ContentDoc } from '@kukan/search-adapter'
 import type { IngestResult, LakeConfig } from '@kukan/lake'
@@ -96,14 +96,28 @@ export function buildPipelineContext(
       pipelineId: string,
       metadata: Record<string, unknown>
     ): Promise<void> {
-      // Merge with existing metadata using jsonb_concat (||)
-      await db
-        .update(resourcePipeline)
-        .set({
-          metadata: sql`COALESCE(${resourcePipeline.metadata}, '{}'::jsonb) || ${JSON.stringify(metadata)}::jsonb`,
-          updated: sql`NOW()`,
-        })
-        .where(eq(resourcePipeline.id, pipelineId))
+      // Merges with jsonb_concat, and parks the text head the merge replaces —
+      // the one pointer that lives inside metadata rather than in a column of
+      // its own (ADR-043). Reached when Extract threw and so left the previous
+      // metadata in place; a successful Extract has already parked it.
+      await db.execute(sql`
+        WITH before AS (
+          SELECT id, metadata ->> 'textHeadKey' AS text_head
+          FROM resource_pipeline WHERE id = ${pipelineId}::uuid FOR UPDATE
+        ),
+        merged AS (
+          UPDATE resource_pipeline p
+          SET metadata = COALESCE(p.metadata, '{}'::jsonb) || ${JSON.stringify(metadata)}::jsonb,
+              updated = NOW()
+          FROM before b
+          WHERE p.id = b.id
+          RETURNING b.text_head AS previous_key, p.metadata ->> 'textHeadKey' AS new_key
+        )
+        INSERT INTO orphaned_object (key)
+        SELECT previous_key FROM merged
+        WHERE previous_key IS NOT NULL AND previous_key IS DISTINCT FROM new_key
+        ON CONFLICT (key) DO NOTHING
+      `)
     },
 
     async captureVersion({

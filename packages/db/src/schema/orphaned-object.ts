@@ -8,9 +8,6 @@
  * requests for a Parquet. The writer parks the key here in the same statement
  * that moves the pointer, and the worker's hourly sweep deletes it once the
  * retention window has passed.
- *
- * The one exception is the Index step's text-head artifact, which is not yet
- * run-scoped and is still overwritten in place.
  */
 
 import { pgTable, text, timestamp, index } from 'drizzle-orm/pg-core'

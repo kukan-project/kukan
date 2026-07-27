@@ -223,11 +223,6 @@ export function versionOrigin(urlType: string | null): 'upload' | 'fetch' {
  *   token per run means the object a reader resolved can never be rewritten
  *   underneath it — which is what lets DuckLake ingest (ADR-043 layer 2) trust
  *   that the Parquet it reads is the version it was told to record.
- *
- *   The Index step's `.txt` artifact still omits it and is overwritten in place.
- *   That is a gap, not a rule: its pointer (`metadata.textHeadKey`) is read the
- *   same way, so a reader can get the newer text head. Nothing is attributed to
- *   a version there, so it costs freshness rather than correctness.
  */
 export function getPreviewKey(
   packageId: string,

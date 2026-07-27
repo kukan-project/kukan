@@ -359,6 +359,7 @@ export class ResourceService {
         format,
         mimetype: input.contentType,
         pendingStorageKey: pendingKey,
+        pendingStorageKeyAt: sql`NOW()`,
         updated: sql`NOW()`,
       })
       .where(eq(resource.id, id))
@@ -390,6 +391,7 @@ export class ResourceService {
         UPDATE resource r
         SET storage_key = b.pending_storage_key,
             pending_storage_key = NULL,
+            pending_storage_key_at = NULL,
             size = ${input.size}::bigint,
             hash = NULL,
             updated = NOW()

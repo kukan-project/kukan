@@ -37,8 +37,10 @@ export const resource = pgTable(
     // that property, so it is state again.
     storageKey: text('storage_key'),
     // Key a presigned upload was issued for, promoted by `upload-complete` —
-    // separate so the live object keeps serving an abandoned upload.
+    // separate so the live object keeps serving an abandoned upload. The
+    // timestamp is what lets the sweep reclaim one that never completed.
     pendingStorageKey: text('pending_storage_key'),
+    pendingStorageKeyAt: timestamp('pending_storage_key_at', { withTimezone: true }),
     position: integer('position').default(0).notNull(),
     state: varchar('state', { length: 20 }).default('active'),
     resourceType: varchar('resource_type', { length: 50 }),
