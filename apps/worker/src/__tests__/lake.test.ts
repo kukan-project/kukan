@@ -18,7 +18,7 @@ describe('executeLake', () => {
   it('skips resources with no preview at all (non-tabular or oversize)', async () => {
     const ctx = createCtx()
 
-    expect(await executeLake('res-1', null, HASH, ctx)).toEqual({ ingested: false })
+    expect(await executeLake('res-1', null, HASH, ctx)).toEqual({ status: 'skipped' })
     expect(ctx.ingestLakeVersion).not.toHaveBeenCalled()
   })
 
@@ -27,21 +27,21 @@ describe('executeLake', () => {
 
     const result = await executeLake('res-1', 'previews/pkg-1/res-1.tok.json', HASH, ctx)
 
-    expect(result).toEqual({ ingested: false })
+    expect(result).toEqual({ status: 'skipped' })
     expect(ctx.ingestLakeVersion).not.toHaveBeenCalled()
   })
 
   it('skips when no version holds these bytes awaiting ingest', async () => {
     const ctx = createCtx({ pendingLakeVersion: vi.fn().mockResolvedValue(null) })
 
-    expect(await executeLake('res-1', PARQUET, HASH, ctx)).toEqual({ ingested: false })
+    expect(await executeLake('res-1', PARQUET, HASH, ctx)).toEqual({ status: 'skipped' })
     expect(ctx.ingestLakeVersion).not.toHaveBeenCalled()
   })
 
   it('skips when the context carries no DuckLake config', async () => {
     const ctx = createCtx({ ingestLakeVersion: vi.fn().mockResolvedValue(null) })
 
-    expect(await executeLake('res-1', PARQUET, HASH, ctx)).toEqual({ ingested: false })
+    expect(await executeLake('res-1', PARQUET, HASH, ctx)).toEqual({ status: 'skipped' })
   })
 
   it('ingests the version holding the bytes the preview was built from', async () => {
@@ -49,12 +49,33 @@ describe('executeLake', () => {
     // version whose earlier ingest failed is retried on any later run.
     const ctx = createCtx()
 
-    expect(await executeLake('res-1', PARQUET, HASH, ctx)).toEqual({ ingested: true })
+    expect(await executeLake('res-1', PARQUET, HASH, ctx)).toEqual({ status: 'ingested' })
     expect(ctx.pendingLakeVersion).toHaveBeenCalledWith('res-1', HASH)
     expect(ctx.ingestLakeVersion).toHaveBeenCalledWith({
       resourceId: 'res-1',
       version: 2,
       previewKey: PARQUET,
     })
+  })
+
+  it('hands back what a retry needs when the ingest fails', async () => {
+    // Waiting for the next run does not recover it: that run ingests its own
+    // newer version, and this one's Parquet is superseded and swept.
+    const ctx = createCtx({
+      ingestLakeVersion: vi.fn().mockRejectedValue(new Error('catalog unreachable')),
+    })
+
+    expect(await executeLake('res-1', PARQUET, HASH, ctx)).toEqual({
+      status: 'failed',
+      version: 2,
+      previewKey: PARQUET,
+      error: expect.any(Error),
+    })
+  })
+
+  it('skips when something else ingested the version first', async () => {
+    const ctx = createCtx({ ingestLakeVersion: vi.fn().mockResolvedValue(null) })
+
+    expect(await executeLake('res-1', PARQUET, HASH, ctx)).toEqual({ status: 'skipped' })
   })
 })

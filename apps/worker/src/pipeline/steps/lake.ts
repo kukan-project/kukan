@@ -6,13 +6,17 @@
  * advisory: skipping or failing it never costs data.
  *
  * The version to load is the one holding this run's content, so the Parquet
- * cannot be attributed to content it does not describe — and a version whose
- * earlier ingest failed is picked up again on any later run that produces the
- * same preview.
+ * cannot be attributed to content it does not describe.
  */
 
 import { isLakeIngestable } from '@kukan/lake'
 import type { PipelineContext } from '../types'
+
+/** `failed` carries what a retry needs; the caller queues it (ADR-043). */
+export type LakeStepResult =
+  | { status: 'ingested' }
+  | { status: 'skipped' }
+  | { status: 'failed'; version: number; previewKey: string; error: Error }
 
 /**
  * @param previewKey - the Extract output. Null for resources with no preview,
@@ -20,20 +24,25 @@ import type { PipelineContext } from '../types'
  *   manifest); both are skipped rather than handed to `read_parquet`.
  * @param contentHash - what Fetch measured on the object Extract parsed. The
  *   version to ingest is the one holding it, which is how a run that captured
- *   nothing still retries a version whose earlier ingest failed.
+ *   nothing still picks up a version whose earlier ingest failed.
  */
 export async function executeLake(
   resourceId: string,
   previewKey: string | null,
   contentHash: string,
   ctx: PipelineContext
-): Promise<{ ingested: boolean }> {
-  if (!isLakeIngestable(previewKey)) return { ingested: false }
+): Promise<LakeStepResult> {
+  if (!isLakeIngestable(previewKey)) return { status: 'skipped' }
 
   const version = await ctx.pendingLakeVersion(resourceId, contentHash)
-  if (version === null) return { ingested: false }
+  if (version === null) return { status: 'skipped' }
 
-  const result = await ctx.ingestLakeVersion({ resourceId, version, previewKey })
-  // null when the pipeline context carries no DuckLake config.
-  return { ingested: result !== null }
+  try {
+    const result = await ctx.ingestLakeVersion({ resourceId, version, previewKey })
+    // null when the context carries no DuckLake config, or when something else
+    // ingested this version first.
+    return result === null ? { status: 'skipped' } : { status: 'ingested' }
+  } catch (err) {
+    return { status: 'failed', version, previewKey, error: err as Error }
+  }
 }

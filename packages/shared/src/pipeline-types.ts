@@ -80,6 +80,9 @@ export const PURGE_VERSION_JOB_TYPE = 'purge-resource-version' as const
  *  as v1 (ADR-043). No re-fetch/re-index — just copies the live key. */
 export const BACKFILL_VERSIONS_JOB_TYPE = 'backfill-resource-versions' as const
 
+/** Retry a DuckLake ingest the pipeline's advisory Lake step failed (ADR-043). */
+export const LAKE_INGEST_JOB_TYPE = 'lake-ingest-version' as const
+
 // ── Job payload schemas (the worker validates against these before acting) ──
 
 export const pipelineJobSchema = z.object({ resourceId: z.uuid() })
@@ -91,6 +94,13 @@ export const purgeVersionJobSchema = z.object({
   version: z.number().int().positive(),
 })
 export const backfillVersionsJobSchema = z.object({})
+// Carries the preview key rather than resolving it later: the pipeline moves
+// that pointer on every run, and this version's Parquet is the superseded one.
+export const lakeIngestJobSchema = z.object({
+  resourceId: z.uuid(),
+  version: z.number().int().positive(),
+  previewKey: z.string().min(1),
+})
 
 /** A single file/directory entry in a ZIP manifest */
 export interface ZipEntry {

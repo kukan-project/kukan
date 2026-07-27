@@ -7,7 +7,7 @@
 
 import type { Database } from '@kukan/db'
 import type { QueueAdapter } from '@kukan/queue-adapter'
-import { PIPELINE_JOB_TYPE } from '@kukan/shared'
+import { LAKE_INGEST_JOB_TYPE, PIPELINE_JOB_TYPE } from '@kukan/shared'
 import { StepTracker } from './step-tracker'
 import { executeFetch } from './steps/fetch'
 import { executeExtract } from './steps/extract'
@@ -142,10 +142,20 @@ export async function processResource(
         fetchResult.hash,
         ctx
       )
-      if (lakeResult.ingested) {
+      if (lakeResult.status === 'ingested') {
         await tracker.completeStep(lakeStepId)
-      } else {
+      } else if (lakeResult.status === 'skipped') {
         await tracker.skipStep(lakeStepId)
+      } else {
+        // Queued, because the next run ingests its own newer version and this
+        // one's Parquet is then superseded and swept — after which the pair can
+        // never be diffed.
+        await tracker.failStep(lakeStepId, lakeResult.error.message)
+        await queue.enqueue(LAKE_INGEST_JOB_TYPE, {
+          resourceId,
+          version: lakeResult.version,
+          previewKey: lakeResult.previewKey,
+        })
       }
     } catch (err) {
       await tracker.failStep(lakeStepId, (err as Error).message)

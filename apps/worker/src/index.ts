@@ -14,12 +14,14 @@ import {
   PURGE_ORG_JOB_TYPE,
   PURGE_VERSION_JOB_TYPE,
   BACKFILL_VERSIONS_JOB_TYPE,
+  LAKE_INGEST_JOB_TYPE,
   EMBED_JOB_TYPE,
   pipelineJobSchema,
   reindexJobSchema,
   purgeOrgJobSchema,
   purgeVersionJobSchema,
   backfillVersionsJobSchema,
+  lakeIngestJobSchema,
   embedJobSchema,
 } from '@kukan/shared'
 import { eq, sql } from 'drizzle-orm'
@@ -281,6 +283,26 @@ await queue.process({
     log.info(
       { jobId: job.id, type: job.type, resourceId, version, ...result, elapsed },
       result.purged ? 'Purge version job completed' : 'Purge version job skipped (not purging)'
+    )
+  },
+  // Retry a DuckLake ingest the pipeline's advisory Lake step could not
+  // complete (ADR-043). The preview it names is the superseded one, kept alive
+  // by the orphan retention — past that there is nothing left to ingest.
+  [LAKE_INGEST_JOB_TYPE]: async (job: Job) => {
+    const data = parseJobPayload(job, lakeIngestJobSchema)
+    if (!data) return
+    const { resourceId, version, previewKey } = data
+    if (!(await storage.head(previewKey))) {
+      log.warn(
+        { jobId: job.id, type: job.type, resourceId, version, previewKey },
+        'Lake ingest retry abandoned — the preview it was built from is gone'
+      )
+      return
+    }
+    const result = await ctx.ingestLakeVersion({ resourceId, version, previewKey })
+    log.info(
+      { jobId: job.id, type: job.type, resourceId, version, snapshotId: result?.snapshotId },
+      result ? 'Lake ingest retry completed' : 'Lake ingest retry skipped (already ingested)'
     )
   },
   // One-time migration: snapshot every unversioned resource's live file as v1

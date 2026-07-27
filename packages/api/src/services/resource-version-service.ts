@@ -384,8 +384,7 @@ export class ResourceVersionService {
               (r) => r.version === row.version && r.previewKey === row.previewKey
             )
             if (!stillPending) return false
-            await ingestVersionIntoLake(tx, session, lake, row)
-            return true
+            return (await ingestVersionIntoLake(tx, session, lake, row)) !== null
           })
           if (done) ingested++
         } catch {

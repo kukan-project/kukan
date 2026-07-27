@@ -30,13 +30,30 @@ export async function withLakeIngestLock<T>(
  * writes are serialized. The caller owns both the lock and the session, so the
  * backfill can re-check its preconditions under the same lock and reuse one
  * session across the whole pass.
+ *
+ * Returns null when the version already carries a snapshot. ii-a ingests whole
+ * versions, so a second pass would append every row again — and the retry path
+ * exists precisely to run this after something else may have succeeded.
  */
 export async function ingestVersionIntoLake(
   tx: Transaction,
   session: LakeSession,
   lake: LakeConfig,
   row: { resourceId: string; version: number; previewKey: string }
-): Promise<IngestResult> {
+): Promise<IngestResult | null> {
+  const [pending] = await tx
+    .select({ snapshot: resourceVersion.ducklakeSnapshotId })
+    .from(resourceVersion)
+    .where(
+      and(
+        eq(resourceVersion.resourceId, row.resourceId),
+        eq(resourceVersion.version, row.version),
+        eq(resourceVersion.state, 'active')
+      )
+    )
+    .limit(1)
+  if (!pending || pending.snapshot !== null) return null
+
   const result = await ingestParquetVersion(session, {
     table: lakeTableName(row.resourceId),
     parquetUrl: lakeStorageUrl(lake, row.previewKey),

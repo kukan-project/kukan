@@ -87,7 +87,7 @@ describe('processResource', () => {
 
     // Version step defaults to capturing a new version (v1).
     // Lake step defaults to a no-op (no DuckLake configured in these tests).
-    vi.mocked(executeLake).mockResolvedValue({ ingested: false })
+    vi.mocked(executeLake).mockResolvedValue({ status: 'skipped' })
   })
 
   it('should run all steps for CSV resource', async () => {
@@ -250,5 +250,34 @@ describe('processResource', () => {
 
     expect(executeFetch).not.toHaveBeenCalled()
     expect(mockTracker.startStep).not.toHaveBeenCalled()
+  })
+
+  it('queues a retry when the Lake step could not ingest', async () => {
+    // The next run ingests its own newer version and this one's Parquet is then
+    // swept, so the pair would become permanently undiffable (ADR-043).
+    vi.mocked(executeFetch).mockResolvedValue({
+      storageKey: 'resources/pkg-1/res-1.tok',
+      format: 'CSV',
+      packageId: 'pkg-1',
+      hash: 'sha256:abc',
+      size: 10,
+      status: 'fetched',
+    })
+    vi.mocked(executeLake).mockResolvedValue({
+      status: 'failed',
+      version: 3,
+      previewKey: 'previews/pkg-1/res-1.tok.parquet',
+      error: new Error('catalog unreachable'),
+    })
+
+    await processResource('res-1', ctx, db, queue)
+
+    expect(queue.enqueue).toHaveBeenCalledWith('lake-ingest-version', {
+      resourceId: 'res-1',
+      version: 3,
+      previewKey: 'previews/pkg-1/res-1.tok.parquet',
+    })
+    // Still advisory: the pipeline itself completes.
+    expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
   })
 })
