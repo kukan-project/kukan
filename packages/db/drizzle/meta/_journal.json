@@ -141,6 +141,13 @@
       "when": 1785139737233,
       "tag": "0019_cloudy_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785150621695,
+      "tag": "0020_flippant_vindicator",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+CREATE INDEX "idx_resource_version_pending_lake" ON "resource_version" USING btree ("resource_id","version") WHERE "resource_version"."state" = 'active' AND "resource_version"."ducklake_snapshot_id" IS NULL;

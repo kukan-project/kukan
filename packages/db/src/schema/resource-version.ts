@@ -16,6 +16,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 import type { ResourceSchema } from '@kukan/shared'
 import { resource } from './resource'
 import { user } from './user'
@@ -54,5 +55,10 @@ export const resourceVersion = pgTable(
   (table) => [
     uniqueIndex('idx_resource_version_res_ver').on(table.resourceId, table.version),
     index('idx_resource_version_state').on(table.state),
+    // Drives the dashboard's pending-ingest count; partial, so once the
+    // migration is done it is empty and proving that costs nothing.
+    index('idx_resource_version_pending_lake')
+      .on(table.resourceId, table.version)
+      .where(sql`${table.state} = 'active' AND ${table.ducklakeSnapshotId} IS NULL`),
   ]
 )
