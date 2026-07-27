@@ -15,13 +15,12 @@ import type { Readable } from 'node:stream'
 import { inArray } from 'drizzle-orm'
 import type { z } from 'zod'
 import type { Database } from '@kukan/db'
-import { packageTable, resourcePipeline } from '@kukan/db'
+import { packageTable, resource, resourcePipeline } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import {
   ServiceUnavailableError,
   ValidationError,
-  getStorageKey,
   isCsvFormat,
   isTextFormat,
   isDocumentFormat,
@@ -327,23 +326,28 @@ export class MetadataSuggestService {
     described: ResourceMaterial[]
     others: { name: string | null; format: string | null }[]
   }> {
-    const pipelineRows = pkg.resources.length
-      ? await this.db
-          .select({
-            resourceId: resourcePipeline.resourceId,
-            status: resourcePipeline.status,
-            previewKey: resourcePipeline.previewKey,
-            metadata: resourcePipeline.metadata,
-          })
-          .from(resourcePipeline)
-          .where(
-            inArray(
-              resourcePipeline.resourceId,
-              pkg.resources.map((r) => r.id)
-            )
-          )
-      : []
+    const resourceIds = pkg.resources.map((r) => r.id)
+    // The live-object pointers are read here rather than carried on the package
+    // detail: they are internal (ADR-043) and the detail is a serialized shape.
+    const [pipelineRows, liveKeyRows] = pkg.resources.length
+      ? await Promise.all([
+          this.db
+            .select({
+              resourceId: resourcePipeline.resourceId,
+              status: resourcePipeline.status,
+              previewKey: resourcePipeline.previewKey,
+              metadata: resourcePipeline.metadata,
+            })
+            .from(resourcePipeline)
+            .where(inArray(resourcePipeline.resourceId, resourceIds)),
+          this.db
+            .select({ id: resource.id, storageKey: resource.storageKey })
+            .from(resource)
+            .where(inArray(resource.id, resourceIds)),
+        ])
+      : [[], []]
     const pipelines = new Map(pipelineRows.map((row) => [row.resourceId, row]))
+    const liveKeys = new Map(liveKeyRows.map((row) => [row.id, row.storageKey]))
 
     // Documents require the Index step's text-head artifact (ADR-040 addendum)
     // and ZIPs their Extract-step manifest; requiring the pipeline record also
@@ -352,7 +356,8 @@ export class MetadataSuggestService {
       const pipeline = pipelines.get(r.id)
       if (pipeline?.status !== 'complete') return null
       if (isCsvFormat(r.format, r.mimetype)) return 'tabular'
-      if (isTextFormat(r.format)) return 'text'
+      // Text is read from the live object; the others from pipeline artifacts.
+      if (isTextFormat(r.format)) return liveKeys.get(r.id) ? 'text' : null
       if (isDocumentFormat(r.format) && textHeadKeyOf(pipeline.metadata)) return 'document'
       if (isZipFormat(r.format) && pipeline.previewKey) return 'zip'
       return null
@@ -395,7 +400,7 @@ export class MetadataSuggestService {
             material.schema = parseResourceSchema(pipeline.metadata)
             material.sampleRows = await this.readSampleRows(resource.id, user)
           } else if (kind === 'text') {
-            material.textHead = await this.readTextHead(pkg.id, resource.id, {
+            material.textHead = await this.readTextHead(liveKeys.get(resource.id)!, {
               format: resource.format ?? '',
               metadata: pipeline.metadata,
             })
@@ -631,16 +636,8 @@ export class MetadataSuggestService {
   }
 
   /** Head of the storage original, decoded and stripped of a cut multi-byte char */
-  private async readTextHead(
-    packageId: string,
-    resourceId: string,
-    source: { format: string; metadata: unknown }
-  ) {
-    const { stream } = await this.storage.downloadRange(
-      getStorageKey(packageId, resourceId),
-      0,
-      SUGGEST_TEXT_HEAD_BYTES - 1
-    )
+  private async readTextHead(storageKey: string, source: { format: string; metadata: unknown }) {
+    const { stream } = await this.storage.downloadRange(storageKey, 0, SUGGEST_TEXT_HEAD_BYTES - 1)
     const buffer = await readAll(stream)
     // Prefer the encoding the Extract step detected on the full file; only
     // re-detect when the pipeline row predates encoding persistence

@@ -39,6 +39,7 @@ import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { CreatePackageInput, CreateDraftPackageInput, UpdatePackageInput } from '@kukan/shared'
 import { hasOrgMembership, hasDraftAccess, type AuthUser } from '../auth/permissions'
 import { deleteOrphanFreeTags } from './tag-service'
+import { publicResourceColumns } from './resource-service'
 import type { LakeConfig } from '@kukan/lake'
 import { dropResourceTables } from '@kukan/lake'
 import { purgePackageExternals } from './package-cleanup'
@@ -443,7 +444,7 @@ export class PackageService {
     const [resources, tags, groups, org] = await Promise.all([
       this.db
         .select({
-          ...getTableColumns(resource),
+          ...publicResourceColumns,
           pipelineStatus: resourcePipeline.status,
           latestVersion: versionAgg.maxVersion,
         })

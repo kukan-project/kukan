@@ -1,24 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { ResourceService } from '../../services/resource-service'
-import { getStorageKey } from '@kukan/shared'
 import { createMockDb } from '../test-helpers/mock-db'
 import { createResourceFixture } from '../test-helpers/fixtures'
-
-describe('getStorageKey', () => {
-  it('should return resources/{packageId}/{resourceId}', () => {
-    expect(getStorageKey('pkg-1', 'res-1')).toBe('resources/pkg-1/res-1')
-  })
-
-  it('should handle UUID-style ids', () => {
-    const key = getStorageKey(
-      '550e8400-e29b-41d4-a716-446655440000',
-      '660e8400-e29b-41d4-a716-446655440001'
-    )
-    expect(key).toBe(
-      'resources/550e8400-e29b-41d4-a716-446655440000/660e8400-e29b-41d4-a716-446655440001'
-    )
-  })
-})
 
 describe('ResourceService upload methods', () => {
   let service: ResourceService
@@ -103,34 +86,18 @@ describe('ResourceService upload methods', () => {
     })
   })
 
-  describe('updateAfterUpload', () => {
-    it('should update size and hash', async () => {
-      const res = createResourceFixture()
-      const updated = { ...res, size: 2048, hash: 'sha256:abc123' }
-      mock.addResult([updated])
+  describe('promoteUpload', () => {
+    it('returns the key it promoted', async () => {
+      mock.addResult([{ new_key: 'resources/pkg-1/res-1.tok' }])
 
-      const result = await service.updateAfterUpload(res.id as string, {
-        size: 2048,
-        hash: 'sha256:abc123',
-      })
-      expect(result.size).toBe(2048)
-      expect(result.hash).toBe('sha256:abc123')
+      expect(await service.promoteUpload('res-1', { size: 2048 })).toBe('resources/pkg-1/res-1.tok')
     })
 
-    it('should update size only', async () => {
-      const res = createResourceFixture()
-      const updated = { ...res, size: 1024 }
-      mock.addResult([updated])
+    it('returns null when nothing was pending', async () => {
+      // A duplicate upload-complete: promoting again would park the live object.
+      mock.addResult([])
 
-      const result = await service.updateAfterUpload(res.id as string, { size: 1024 })
-      expect(result.size).toBe(1024)
-    })
-
-    it('should throw NotFoundError for non-existent resource', async () => {
-      mock.addResult([]) // empty result
-      await expect(service.updateAfterUpload('nonexistent', { size: 100 })).rejects.toThrow(
-        'Resource not found'
-      )
+      expect(await service.promoteUpload('res-1', { size: 2048 })).toBeNull()
     })
   })
 })

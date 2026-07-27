@@ -5,7 +5,6 @@
  */
 
 import { randomUUID } from 'crypto'
-import { hashBuffer } from '@kukan/shared/hash-node'
 import { streamToBuffer, streamToTempFile, cleanupTempFile } from '../node-utils'
 import { detectEncoding, bufferToUtf8 } from '@kukan/shared/encoding-node'
 import { getPreviewKey, isCsvFormat, isTextFormat, isZipFormat } from '@kukan/shared'
@@ -29,14 +28,6 @@ export interface ExtractResult {
   encoding: string
   /** Column schema (CSV/TSV only, when a Parquet preview was generated). */
   schema?: ResourceSchema | null
-  /**
-   * Hash of the bytes this step actually parsed (Parquet preview only). The live
-   * key is shared and a concurrent run can rewrite it between here and the copy,
-   * so version capture refuses to record a version whose bytes disagree with
-   * this — better a missing version than a schema attributed to content it does
-   * not describe.
-   */
-  sourceHash?: string
 }
 
 /**
@@ -151,7 +142,7 @@ export async function executeExtract(
     contentType: 'application/vnd.apache.parquet',
   })
 
-  return { previewKey, encoding, schema, sourceHash: hashBuffer(fileBuffer) }
+  return { previewKey, encoding, schema }
 }
 
 /** Count the cells in a row that are not blank (after trimming). */

@@ -18,6 +18,9 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { Readable } from 'stream'
 import { type ObjectMeta, type SignedUrlOptions, type StorageAdapter } from './adapter'
 
+/** S3's per-request cap for DeleteObjects. */
+const DELETE_BATCH_SIZE = 1000
+
 export interface S3Config {
   bucket: string
   region?: string
@@ -233,5 +236,24 @@ export class S3StorageAdapter implements StorageAdapter {
     }
 
     return deleted
+  }
+
+  async deleteMany(keys: string[]): Promise<string[]> {
+    const gone: string[] = []
+    // DeleteObjects takes 1000 keys per request; the alternative is one request
+    // per key, which for the hourly orphan sweep is three orders of magnitude
+    // more round trips for the same work.
+    for (let i = 0; i < keys.length; i += DELETE_BATCH_SIZE) {
+      const batch = keys.slice(i, i + DELETE_BATCH_SIZE)
+      const result = await this.client.send(
+        new DeleteObjectsCommand({
+          Bucket: this.bucket,
+          Delete: { Objects: batch.map((Key) => ({ Key })) },
+        })
+      )
+      const failed = new Set((result.Errors ?? []).map((e) => e.Key))
+      gone.push(...batch.filter((key) => !failed.has(key)))
+    }
+    return gone
   }
 }

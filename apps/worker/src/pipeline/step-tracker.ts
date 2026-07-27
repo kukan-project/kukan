@@ -61,11 +61,10 @@ export class StepTracker {
    * Move the preview pointer and replace the metadata describing it, parking
    * the key it replaced for later deletion (ADR-043).
    *
-   * One statement, because both halves read the row: the key being parked is
-   * whatever `preview_key` is *now* — not what this run read at startup, which a
-   * concurrent run of the same resource may already have moved past — and it is
-   * appended to the current list rather than to a stale copy. Splitting them
-   * would let one write undo the other. Deletion is the sweep's job.
+   * One statement, because the key being parked is whatever `preview_key` is
+   * *now* — not what this run read at startup, which a concurrent run of the
+   * same resource may already have moved past. Splitting the two would let one
+   * write undo the other. Deletion is the sweep's job.
    */
   async updateExtractResult(
     pipelineId: string,
@@ -73,19 +72,22 @@ export class StepTracker {
     metadata: Record<string, unknown>
   ) {
     await this.db.execute(sql`
-      UPDATE resource_pipeline
-      SET
-        preview_key = ${previewKey},
-        metadata = ${JSON.stringify(metadata)}::jsonb || jsonb_build_object(
-          'supersededPreviews',
-          COALESCE(metadata -> 'supersededPreviews', '[]'::jsonb) || CASE
-            WHEN preview_key IS NOT NULL AND preview_key IS DISTINCT FROM ${previewKey}
-            THEN jsonb_build_array(jsonb_build_object('key', preview_key, 'at', ${Date.now()}::bigint))
-            ELSE '[]'::jsonb
-          END
-        ),
-        updated = NOW()
-      WHERE id = ${pipelineId}::uuid
+      WITH before AS (
+        SELECT id, preview_key FROM resource_pipeline WHERE id = ${pipelineId}::uuid FOR UPDATE
+      ),
+      moved AS (
+        UPDATE resource_pipeline p
+        SET preview_key = ${previewKey}::text,
+            metadata = ${JSON.stringify(metadata)}::jsonb,
+            updated = NOW()
+        FROM before b
+        WHERE p.id = b.id
+        RETURNING b.preview_key AS previous_key
+      )
+      INSERT INTO orphaned_object (key)
+      SELECT previous_key FROM moved
+      WHERE previous_key IS NOT NULL
+      ON CONFLICT (key) DO NOTHING
     `)
   }
 

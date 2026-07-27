@@ -80,4 +80,11 @@ export interface StorageAdapter {
    * Returns the number of deleted objects.
    */
   deleteByPrefix(prefix: string): Promise<number>
+
+  /**
+   * Delete the given keys, returning the ones that are gone. A key the backend
+   * reports an error for is left out rather than failing the batch, so a caller
+   * tracking objects for deletion can keep the rest (ADR-043).
+   */
+  deleteMany(keys: string[]): Promise<string[]>
 }

@@ -4,7 +4,7 @@
  * or verifies it exists (for uploads already in Storage).
  */
 
-import { createHash } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { Transform, Readable } from 'stream'
 import { KukanError, NotFoundError, ValidationError, getStorageKey } from '@kukan/shared'
 import { safeFetch } from '@/safe-fetch'
@@ -15,17 +15,25 @@ import { MAX_FETCH_SIZE, FETCH_TIMEOUT_MS } from '@/config'
 const SIZE_LIMIT_MSG = `Resource exceeds ${MAX_FETCH_SIZE / 1024 / 1024}MB limit`
 
 interface FetchResultData {
+  /** The object this run holds; nothing else writes it (ADR-043). */
   storageKey: string
   format: string | null
   packageId: string
+  hash: string
+  size: number
 }
 
-export type FetchResult = (FetchResultData & { status: 'fetched' }) | { status: 'deferred' }
+export type FetchResult =
+  | (FetchResultData & { status: 'fetched' })
+  | { status: 'deferred' }
+  /** Another run replaced the content while this one was fetching. */
+  | { status: 'superseded' }
 
 /**
  * Fetch resource data into Storage.
- * - Upload resources: already in Storage, nothing to do.
- * - External URL resources: stream to Storage, compute hash/size on the fly.
+ * - Upload resources: already in Storage, measure what landed there.
+ * - External URL resources: stream to a key of this run's own, compute hash/size
+ *   on the fly, then publish it as the resource's content.
  */
 export async function executeFetch(resourceId: string, ctx: PipelineContext): Promise<FetchResult> {
   const res = await ctx.getResource(resourceId)
@@ -34,47 +42,62 @@ export async function executeFetch(resourceId: string, ctx: PipelineContext): Pr
     throw new NotFoundError('Resource', resourceId)
   }
 
-  const storageKey = getStorageKey(res.packageId, res.id)
+  let key: string
+  let measured: { hash: string; size: number }
 
   if (res.urlType === 'upload') {
-    // Already in Storage — hash it here rather than trusting the value the
-    // upload-complete call carried. Version capture gates on this hash and
-    // records it against the bytes it copies (ADR-043), so a client-supplied
-    // one would let a caller decide whether new versions are ever captured.
-    const { hash, size } = await digestStream(await ctx.storage.download(storageKey))
-    await ctx.recordContent(resourceId, { hash, size, previousHash: res.hash })
-    return { storageKey, format: res.format, packageId: res.packageId, status: 'fetched' }
+    // `upload-complete` moved the pointer; this measures what actually landed
+    // rather than trusting the value the call carried. Version capture records
+    // this hash against the bytes it copies (ADR-043), so a client-supplied one
+    // would decide what a version claims to hold.
+    if (!res.storageKey) {
+      throw new ValidationError('Resource has no uploaded file')
+    }
+    key = res.storageKey
+    measured = await digestStream(await ctx.storage.download(key))
+  } else {
+    if (!res.url) {
+      throw new ValidationError('Resource has no file or URL')
+    }
+
+    // Rate limit: max 1 request per interval per FQDN
+    const fqdn = new URL(res.url).hostname
+    if (!(await ctx.acquireFetchSlot(fqdn))) {
+      return { status: 'deferred' }
+    }
+
+    // A key of this run's own, so the resource keeps serving the object it has
+    // until these bytes are complete: a DNS failure, an HTTP error, an oversize
+    // response or a half-written stream leaves the previous content untouched
+    // because it was never the target.
+    key = getStorageKey(res.packageId, res.id, randomUUID())
+    measured = await downloadToStorage(res.url, key, ctx)
   }
 
-  if (!res.url) {
-    throw new ValidationError('Resource has no file or URL')
+  const published = await ctx.publishContent(resourceId, {
+    key,
+    // For an upload the pointer is already this key, so the move is a no-op and
+    // only its guard matters: a newer upload having moved it means these bytes
+    // are no longer the content.
+    previousKey: res.urlType === 'upload' ? key : res.storageKey,
+    ...measured,
+    previousHash: res.hash,
+  })
+  if (!published) return { status: 'superseded' }
+
+  return {
+    storageKey: key,
+    format: res.format,
+    packageId: res.packageId,
+    ...measured,
+    status: 'fetched',
   }
-
-  // Rate limit: max 1 request per interval per FQDN
-  const fqdn = new URL(res.url).hostname
-  const acquired = await ctx.acquireFetchSlot(fqdn)
-  if (!acquired) {
-    return { status: 'deferred' }
-  }
-
-  // The hash is cleared only once bytes are about to land, not before the
-  // request: a DNS failure, an HTTP error or an oversize response leaves the
-  // previous object in place, so the row must keep describing it. Once the
-  // upload starts, the object is indeterminate and null is the honest value.
-  const { hash, size } = await downloadToStorage(res.url, storageKey, ctx, () =>
-    ctx.beginContentReplacement(resourceId)
-  )
-  await ctx.recordContent(resourceId, { hash, size, previousHash: res.hash })
-
-  return { storageKey, format: res.format, packageId: res.packageId, status: 'fetched' }
 }
 
 async function downloadToStorage(
   url: string,
   storageKey: string,
-  ctx: PipelineContext,
-  /** Called once the response is validated and the write is about to begin. */
-  beforeWrite: () => Promise<void>
+  ctx: PipelineContext
 ): Promise<{ hash: string; size: number }> {
   const response = await safeFetch(url, {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -108,7 +131,6 @@ async function downloadToStorage(
   })
 
   const stream = readable.pipe(meter)
-  await beforeWrite()
   await ctx.storage.upload(storageKey, stream)
 
   return {

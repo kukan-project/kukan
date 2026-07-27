@@ -6,7 +6,7 @@
 import { Hono, type Context } from 'hono'
 import { LICENSES, findLicense } from '@kukan/shared'
 import { PackageService } from '../services/package-service'
-import { ResourceService } from '../services/resource-service'
+import { ResourceService, omitStoragePointers } from '../services/resource-service'
 import { OrganizationService } from '../services/organization-service'
 import { GroupService } from '../services/group-service'
 import { TagService } from '../services/tag-service'
@@ -175,7 +175,10 @@ ckanCompatRouter.get('/resource_show', async (c) => {
   const service = new ResourceService(c.get('db'))
   try {
     const resource = await service.getByIdWithAccessCheck(id, user)
-    return ckanResponse(toCkanResource(resource as unknown as Record<string, unknown>), c)
+    return ckanResponse(
+      toCkanResource(omitStoragePointers(resource) as unknown as Record<string, unknown>),
+      c
+    )
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Resource not found'
     return ckanError(message, c, 404)

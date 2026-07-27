@@ -22,6 +22,7 @@ const service = new ResourceVersionService(db)
 
 let packageId: string
 let resourceId: string
+let liveKey: string
 const userId = TEST_USER_ID
 
 function mockDeps() {
@@ -56,6 +57,8 @@ beforeEach(async () => {
     .values({ packageId, name: 'r', urlType: 'upload', hash: 'sha256:v2', size: 102 })
     .returning()
   resourceId = res[0].id
+  liveKey = getStorageKey(packageId, resourceId, 'live')
+  await db.update(resource).set({ storageKey: liveKey }).where(eq(resource.id, resourceId))
 })
 
 afterAll(async () => {
@@ -97,17 +100,23 @@ describe('executePurge', () => {
     expect(result).toEqual({ purged: true, rolledBack: true })
     // v2's versioned copy deleted.
     expect(deps.storage.delete).toHaveBeenCalledWith(getVersionKey(packageId, resourceId, 2))
-    // v1 restored to the current key.
+    // v1 restored to a fresh key, and the pointer moved to it.
+    const [restoredTo] = vi.mocked(deps.storage.copy).mock.calls[0].slice(1)
     expect(deps.storage.copy).toHaveBeenCalledWith(
       getVersionKey(packageId, resourceId, 1),
-      getStorageKey(packageId, resourceId)
+      expect.stringMatching(/^resources\/.+\/.+\..+$/)
     )
+    expect(restoredTo).not.toBe(liveKey)
+    // The object that held the purged content is deleted, not parked: a purge
+    // is a legal deletion, so an in-flight reader is meant to be cut off.
+    expect(deps.storage.delete).toHaveBeenCalledWith(liveKey)
     // Pipeline re-enqueued to regenerate derivatives.
     expect(deps.queue.enqueue).toHaveBeenCalled()
 
-    // resource hash rolled back to v1.
+    // resource hash rolled back to v1, pointing at the restored object.
     const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
     expect(res.hash).toBe('sha256:v1')
+    expect(res.storageKey).toBe(restoredTo)
 
     // v2 is a purged tombstone; content fields withheld via the view.
     const view = await service.getVersion(resourceId, 2)
@@ -124,12 +133,13 @@ describe('executePurge', () => {
     const result = await service.executePurge(resourceId, 1, deps)
 
     expect(result).toEqual({ purged: true, rolledBack: false })
-    // Current key deleted (nothing to roll back to).
-    expect(deps.storage.delete).toHaveBeenCalledWith(getStorageKey(packageId, resourceId))
+    // Live object deleted (nothing to roll back to), pointer cleared.
+    expect(deps.storage.delete).toHaveBeenCalledWith(liveKey)
     expect(deps.queue.enqueue).not.toHaveBeenCalled()
 
     const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
     expect(res.hash).toBeNull()
+    expect(res.storageKey).toBeNull()
   })
 
   it('purging a historical (non-live) version leaves the current key intact', async () => {

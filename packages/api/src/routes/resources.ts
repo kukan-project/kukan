@@ -8,7 +8,7 @@ import { bodyLimit } from 'hono/body-limit'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { lakeConfigFromEnv } from '@kukan/lake'
-import { ResourceService } from '../services/resource-service'
+import { ResourceService, omitStoragePointers } from '../services/resource-service'
 import { ResourceVersionService } from '../services/resource-version-service'
 import { VersionDiffService } from '../services/version-diff-service'
 import { PipelineService } from '../services/pipeline-service'
@@ -23,7 +23,6 @@ import {
   ValidationError,
   ForbiddenError,
   PURGE_VERSION_JOB_TYPE,
-  getStorageKey,
   getMimeType,
   detectContentType,
   versionedFilename,
@@ -101,10 +100,20 @@ async function enqueuePipeline(c: Context<{ Variables: AppContext }>, resourceId
   return { pipeline_status: 'queued' as const, job_id: jobId }
 }
 
+/**
+ * The object holding the resource's content, or a 404 when none is stored
+ * (ADR-043): a link-type resource never fetched, an upload never completed, or
+ * content a purge removed with no version to fall back to.
+ */
+function liveKey(res: { id: string; storageKey: string | null }): string {
+  if (!res.storageKey) throw new NotFoundError('Resource file', res.id)
+  return res.storageKey
+}
+
 /** Resolve preview storage key and content type for a resource */
 async function resolvePreviewTarget(
   db: Database,
-  resource: { id: string; packageId: string; format: string | null }
+  resource: { id: string; packageId: string; format: string | null; storageKey: string | null }
 ): Promise<{ storageKey: string; contentType: string } | null> {
   if (
     isPdfFormat(resource.format) ||
@@ -112,7 +121,7 @@ async function resolvePreviewTarget(
     isImageFormat(resource.format)
   ) {
     return {
-      storageKey: getStorageKey(resource.packageId, resource.id),
+      storageKey: liveKey(resource),
       contentType: getMimeType(resource.format!)!,
     }
   }
@@ -176,7 +185,7 @@ resourcesRouter.get('/:id', async (c) => {
   const user = c.get('user')
   const service = new ResourceService(c.get('db'))
   const res = await service.getByIdWithAccessCheck(id, user)
-  return c.json(res)
+  return c.json(omitStoragePointers(res))
 })
 
 // GET /api/v1/resources/:id/text - Stream raw bytes with charset header
@@ -197,10 +206,9 @@ resourcesRouter.get('/:id/text', async (c) => {
 
   const charset = toCharset(encoding)
   const storage = c.get('storage')
-  const storageKey = getStorageKey(resource.packageId, resource.id)
   let result
   try {
-    result = await storage.downloadRange(storageKey, 0, TEXT_PREVIEW_LIMIT - 1)
+    result = await storage.downloadRange(liveKey(resource), 0, TEXT_PREVIEW_LIMIT - 1)
   } catch (err) {
     throwIfNotFound(err, id)
   }
@@ -253,12 +261,11 @@ resourcesRouter.get('/:id/json', async (c) => {
   }
 
   const storage = c.get('storage')
-  const storageKey = getStorageKey(resource.packageId, resource.id)
 
   // Single storage call: fetch up to limit bytes and check actual size
   let rangeResult
   try {
-    rangeResult = await storage.downloadRange(storageKey, 0, JSON_PREVIEW_LIMIT - 1)
+    rangeResult = await storage.downloadRange(liveKey(resource), 0, JSON_PREVIEW_LIMIT - 1)
   } catch (err) {
     throwIfNotFound(err, id)
   }
@@ -296,10 +303,9 @@ resourcesRouter.get('/:id/download', async (c) => {
 
   // Uploaded file: stream from Storage
   const storage = c.get('storage')
-  const storageKey = getStorageKey(resource.packageId, resource.id)
   let nodeStream
   try {
-    nodeStream = await storage.download(storageKey)
+    nodeStream = await storage.download(liveKey(resource))
   } catch (err) {
     throwIfNotFound(err, id)
   }
@@ -581,10 +587,12 @@ resourcesRouter.post('/:id/upload-url', zValidator('json', uploadUrlSchema), asy
   )
 
   const storage = c.get('storage')
-  const storageKey = getStorageKey(res.packageId, res.id)
-  const uploadUrl = await storage.getSignedUploadUrl(storageKey, input.contentType, undefined, {
-    originalFilename: input.filename,
-  })
+  const uploadUrl = await storage.getSignedUploadUrl(
+    res.pendingStorageKey!,
+    input.contentType,
+    undefined,
+    { originalFilename: input.filename }
+  )
 
   return c.json({ upload_url: uploadUrl })
 })
@@ -615,14 +623,15 @@ resourcesRouter.post('/:id/upload', bodyLimit({ maxSize: MAX_UPLOAD_SIZE }), asy
   )
 
   const storage = c.get('storage')
-  const storageKey = getStorageKey(res.packageId, res.id)
   const stream = Readable.fromWeb(file.stream() as Parameters<typeof Readable.fromWeb>[0])
-  await storage.upload(storageKey, stream, {
+  await storage.upload(res.pendingStorageKey!, stream, {
     contentType,
     originalFilename: file.name,
   })
 
-  await resourceService.updateAfterUpload(id, { size: file.size })
+  if (!(await resourceService.promoteUpload(id, { size: file.size }))) {
+    throw new NotFoundError('Resource', id)
+  }
 
   return c.json(await enqueuePipeline(c, id), 200)
 })
@@ -649,25 +658,31 @@ resourcesRouter.post(
     // actually-stored object size server-side instead of trusting the client.
     // Reject (and remove) anything over the limit before enqueueing the
     // pipeline, so an oversize object can't drive worker memory exhaustion.
+    // The pending key is checked, never the live one: rejecting must not touch
+    // the content the resource is still serving.
     const storage = c.get('storage')
-    const storageKey = getStorageKey(existing.packageId, existing.id)
-    const head = await storage.head(storageKey)
+    const pendingKey = existing.pendingStorageKey
+    if (!pendingKey) {
+      throw new ValidationError('No upload is pending for this resource')
+    }
+    const head = await storage.head(pendingKey)
     if (!head) {
       throw new ValidationError('Uploaded object not found in storage')
     }
     if (head.size > MAX_UPLOAD_SIZE) {
-      await storage.delete(storageKey)
+      await storage.delete(pendingKey)
       throw new ValidationError(
         `Uploaded file exceeds the maximum size of ${MAX_UPLOAD_SIZE} bytes`
       )
     }
 
-    // Size comes from storage, not the client. The hash is deliberately left
-    // null for the worker to compute (ADR-043): version capture gates on it and
-    // records it against the bytes it copies, so a caller-supplied value would
-    // decide whether versions are ever captured — and `prepareForUpload` having
-    // nulled it is what tells a capture in flight that the bytes are changing.
-    await resourceService.updateAfterUpload(id, { size: head.size })
+    // Size comes from storage, not the client, and the hash is left for the
+    // worker to measure (ADR-043): version capture records the hash against the
+    // bytes it copies, so a caller-supplied value would decide what a version
+    // claims to hold.
+    if (!(await resourceService.promoteUpload(id, { size: head.size }))) {
+      throw new ValidationError('No upload is pending for this resource')
+    }
 
     return c.json(await enqueuePipeline(c, id), 200)
   }

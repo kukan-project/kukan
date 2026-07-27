@@ -21,8 +21,7 @@ function createMockCtx() {
       upload: vi.fn(),
     },
     getResource: vi.fn(),
-    beginContentReplacement: vi.fn(),
-    recordContent: vi.fn(),
+    publishContent: vi.fn().mockResolvedValue(true),
     acquireFetchSlot: vi.fn(),
     indexContent: vi.fn(),
     deleteContent: vi.fn(),
@@ -49,9 +48,6 @@ describe('executeExtract', () => {
     expect(ctx.storage.download).toHaveBeenCalledWith('resources/pkg-1/res-1')
     expect(result).toEqual({
       previewKey: previewKeyMatching('pkg-1', 'res-1', 'parquet'),
-      // Hash of the bytes parsed here, so the Lake step can verify the version
-      // it ingests holds the same content.
-      sourceHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
       encoding: expect.stringMatching(/^(ASCII|ISO-8859-1)$/),
       schema: {
         rowCount: 2,

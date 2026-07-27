@@ -3,16 +3,48 @@
  * Business logic for resource management
  */
 
+import { randomUUID } from 'node:crypto'
 import { eq, ne, and, sql, inArray, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, resourceVersion, packageTable } from '@kukan/db'
-import { NotFoundError, ValidationError, normalizeFormat, detectFormat } from '@kukan/shared'
+import {
+  NotFoundError,
+  ValidationError,
+  normalizeFormat,
+  detectFormat,
+  getStorageKey,
+} from '@kukan/shared'
 import type { CreateResourceInput, UpdateResourceInput, PackageDbState } from '@kukan/shared'
 import { RESOURCE_POSITION_LOCK, lockInTransaction } from './advisory-lock'
+import { parkObject } from './storage-pointer'
 import { hasOrgMembership, hasDraftAccess, type AuthUser } from '../auth/permissions'
 
 // Package states whose resources are reachable — drafts hold resources before publish (ADR-039)
 const RESOURCE_PARENT_STATES: PackageDbState[] = ['active', 'draft']
+
+// Public column set — the storage pointers name objects in the bucket so the
+// server can resolve content for a request; no response includes them
+// (ADR-043). Projected here rather than scrubbed per route, so an endpoint
+// cannot leak them by forgetting.
+const {
+  storageKey: _storageKey,
+  pendingStorageKey: _pendingStorageKey,
+  ...publicResourceColumns
+} = getTableColumns(resource)
+
+export { publicResourceColumns }
+
+/**
+ * Scrub the pointers off a row from {@link ResourceService.getByIdWithAccessCheck}
+ * — the one read that must carry them, because the content endpoints resolve
+ * the live object from it. Everything else is projected above.
+ */
+export function omitStoragePointers<T extends object>(
+  row: T
+): Omit<T, 'storageKey' | 'pendingStorageKey'> {
+  const { storageKey: _k, pendingStorageKey: _p, ...rest } = row as T & Record<string, unknown>
+  return rest as Omit<T, 'storageKey' | 'pendingStorageKey'>
+}
 
 export class ResourceService {
   constructor(private db: Database) {}
@@ -48,7 +80,7 @@ export class ResourceService {
 
     const resources = await this.db
       .select({
-        ...getTableColumns(resource),
+        ...publicResourceColumns,
         latestVersion: versionAgg.maxVersion,
       })
       .from(resource)
@@ -197,7 +229,7 @@ export class ResourceService {
           resourceType: input.resourceType,
           state: 'active',
         })
-        .returning()
+        .returning(publicResourceColumns)
 
       return newResource
     })
@@ -225,7 +257,7 @@ export class ResourceService {
         updated: sql`NOW()`,
       })
       .where(eq(resource.id, id))
-      .returning()
+      .returning(publicResourceColumns)
 
     if (!updated) throw new NotFoundError('Resource', id)
     return updated
@@ -266,7 +298,7 @@ export class ResourceService {
       }
 
       return await tx
-        .select()
+        .select(publicResourceColumns)
         .from(resource)
         .where(and(eq(resource.packageId, packageId), eq(resource.state, 'active')))
         .orderBy(resource.position)
@@ -286,14 +318,23 @@ export class ResourceService {
         updated: sql`NOW()`,
       })
       .where(eq(resource.id, existing.id))
-      .returning()
+      .returning(publicResourceColumns)
 
     return deleted
   }
 
   /**
    * Prepare a resource for file upload (new or replacement).
-   * Clears previous upload metadata (size, hash).
+   *
+   * Mints the key the new bytes go to and holds it in `pending_storage_key`
+   * rather than moving the live pointer (ADR-043): until the upload actually
+   * lands, the resource still has its previous content, and an upload the user
+   * abandons must leave it serving — and describing — exactly that. `hash` and
+   * `size` therefore keep describing the live object too.
+   *
+   * A key minted by an earlier call to this endpoint is parked: the client may
+   * have written to it before asking for another URL, and nothing points at it
+   * once this one replaces it.
    */
   async prepareForUpload(
     id: string,
@@ -306,6 +347,9 @@ export class ResourceService {
       detectFormat(input.filename) ||
       existing.format
 
+    const pendingKey = getStorageKey(existing.packageId, id, randomUUID())
+    await parkObject(this.db, existing.pendingStorageKey)
+
     const [updated] = await this.db
       .update(resource)
       .set({
@@ -314,8 +358,7 @@ export class ResourceService {
         name: existing.name || input.filename,
         format,
         mimetype: input.contentType,
-        size: null,
-        hash: null,
+        pendingStorageKey: pendingKey,
         updated: sql`NOW()`,
       })
       .where(eq(resource.id, id))
@@ -325,22 +368,45 @@ export class ResourceService {
   }
 
   /**
-   * Update resource metadata after a successful upload.
+   * Publish the uploaded object as the resource's content (ADR-043).
+   *
+   * The pointer moves and the key it replaced is parked in one statement, so
+   * the row can never name an object that is already being deleted. `hash` is
+   * cleared rather than taken from the caller: the worker measures the stored
+   * bytes, and version capture records what it measured.
+   *
+   * Returns the promoted key, or null when there was nothing pending — a
+   * duplicate `upload-complete`, which must not re-park the live object.
    */
-  async updateAfterUpload(id: string, input: { size: number }) {
-    const [updated] = await this.db
-      .update(resource)
-      .set({
-        size: input.size,
-        updated: sql`NOW()`,
-      })
-      .where(and(eq(resource.id, id), eq(resource.state, 'active')))
-      .returning()
+  async promoteUpload(id: string, input: { size: number }): Promise<string | null> {
+    const result = await this.db.execute(sql`
+      WITH before AS (
+        SELECT id, storage_key, pending_storage_key
+        FROM resource
+        WHERE id = ${id}::uuid AND state = 'active' AND pending_storage_key IS NOT NULL
+        FOR UPDATE
+      ),
+      promoted AS (
+        UPDATE resource r
+        SET storage_key = b.pending_storage_key,
+            pending_storage_key = NULL,
+            size = ${input.size}::bigint,
+            hash = NULL,
+            updated = NOW()
+        FROM before b
+        WHERE r.id = b.id
+        RETURNING b.storage_key AS previous_key, b.pending_storage_key AS new_key
+      ),
+      parked AS (
+        INSERT INTO orphaned_object (key)
+        SELECT previous_key FROM promoted
+        WHERE previous_key IS NOT NULL
+        ON CONFLICT (key) DO NOTHING
+      )
+      SELECT new_key FROM promoted
+    `)
 
-    if (!updated) {
-      throw new NotFoundError('Resource', id)
-    }
-
-    return updated
+    const row = result.rows[0] as { new_key: string } | undefined
+    return row?.new_key ?? null
   }
 }

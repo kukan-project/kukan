@@ -62,26 +62,18 @@ export const HEALTH_CHECK_CONCURRENCY = 10
 /** Timeout for HEAD requests (10 s) */
 export const HEALTH_CHECK_TIMEOUT_MS = 10_000
 
-/**
- * How often parked preview keys are swept (ADR-043). Hourly matches the
- * retention window: a key becomes deletable an hour after it was replaced, so
- * checking more often would find nothing new.
- */
-export const PREVIEW_CLEANUP_CRON = '17 * * * *'
+/** How often orphaned objects are swept (ADR-043); matches the retention. */
+export const ORPHAN_CLEANUP_CRON = '17 * * * *'
 
-/** Pipelines examined per sweep; the rest wait for the next one. */
-export const PREVIEW_CLEANUP_BATCH_SIZE = 500
+/** How long an object nothing points at is kept, so in-flight reads finish. */
+export const ORPHAN_RETENTION_MS = 60 * 60 * 1000
 
 /**
- * Storage deletes in flight during a sweep. The only bound on its burst —
- * capping the count instead would leave PREVIEW_PARKED_LIMIT unenforceable,
- * since parking is unbounded and a sweep runs hourly.
+ * Keys deleted per sweep; the rest wait for the next one. A pipeline run parks
+ * up to two objects (live content, preview), so this has to stay well above
+ * the runs an hour the deployment does or the backlog never drains.
  */
-export const PREVIEW_DELETE_CONCURRENCY = 8
-
-/** Pipeline rows swept at once. The common row has one key, so without this the
- *  sweep would be a serial chain of round trips over the whole batch. */
-export const PREVIEW_SWEEP_ROW_CONCURRENCY = 8
+export const ORPHAN_CLEANUP_BATCH_SIZE = 5000
 
 /**
  * Resource bounds for the worker's DuckLake sessions (ADR-043 layer 2).

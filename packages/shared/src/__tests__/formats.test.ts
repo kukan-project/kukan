@@ -214,8 +214,8 @@ describe('toCharset', () => {
 })
 
 describe('getStorageKey', () => {
-  it('should compute storage key from package and resource IDs', () => {
-    expect(getStorageKey('pkg-123', 'res-456')).toBe('resources/pkg-123/res-456')
+  it("carries a run token, so a run never overwrites another run's object", () => {
+    expect(getStorageKey('pkg-123', 'res-456', 'tok')).toBe('resources/pkg-123/res-456.tok')
   })
 })
 

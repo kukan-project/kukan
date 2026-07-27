@@ -107,6 +107,11 @@ function pipe(id: string, metadata: unknown = {}, previewKey: string | null = nu
   return { resourceId: id, status: 'complete', previewKey, metadata }
 }
 
+/** Live-object pointer rows, read alongside the pipeline rows (ADR-043) */
+function liveKeys(...ids: string[]) {
+  return ids.map((id) => ({ id, storageKey: `resources/pkg-1/${id}.tok` }))
+}
+
 /** Queue the tag + group candidate queries (consumed by every suggest call) */
 function addCandidates(addResult: (rows: unknown[]) => void) {
   addResult(TAG_ROWS)
@@ -168,6 +173,7 @@ describe('MetadataSuggestService', () => {
   it('runs one completion per resource, then integrates the results', async () => {
     const { db, addResult } = createMockDb()
     addResult([pipe('r1'), pipe('r2')])
+    addResult(liveKeys('r1', 'r2'))
     addCandidates(addResult)
     const { ai, complete } = makeAi(
       resourceJson('r1の名前', 'r1の説明'),
@@ -212,6 +218,7 @@ describe('MetadataSuggestService', () => {
   it('degrades an all-blank resource result to lightweight context', async () => {
     const { db, addResult } = createMockDb()
     addResult([pipe('r1'), pipe('r2')])
+    addResult(liveKeys('r1', 'r2'))
     addCandidates(addResult)
     const { ai, complete } = makeAi(
       resourceJson('', '  '),
@@ -240,6 +247,7 @@ describe('MetadataSuggestService', () => {
   it('keeps going when one resource completion fails (graceful degradation)', async () => {
     const { db, addResult } = createMockDb()
     addResult([pipe('r1'), pipe('r2')])
+    addResult(liveKeys('r1', 'r2'))
     addCandidates(addResult)
     const { ai, complete } = makeAi(
       new Error('Ollama chat failed: connection reset'),
@@ -267,6 +275,7 @@ describe('MetadataSuggestService', () => {
   it('fails with 503 when every resource completion fails', async () => {
     const { db, addResult } = createMockDb()
     addResult([pipe('r1'), pipe('r2')])
+    addResult(liveKeys('r1', 'r2'))
     addCandidates(addResult)
     const { ai, complete } = makeAi(new Error('provider down'), new Error('provider down'))
     const service = new MetadataSuggestService(db, makeStorage('本文').storage, ai, silentLogger)
@@ -310,6 +319,7 @@ describe('MetadataSuggestService', () => {
   it('reads head text from the storage original for text resources', async () => {
     const { db, addResult } = createMockDb()
     addResult([pipe('r1')])
+    addResult(liveKeys('r1'))
     addCandidates(addResult)
     const { ai, complete } = makeAi(resourceJson(), datasetJson())
     const { storage, downloadRange } = makeStorage('本文の先頭テキスト')
@@ -321,7 +331,7 @@ describe('MetadataSuggestService', () => {
       OPTS
     )
 
-    expect(downloadRange).toHaveBeenCalledWith('resources/pkg-1/r1', 0, 16_383)
+    expect(downloadRange).toHaveBeenCalledWith('resources/pkg-1/r1.tok', 0, 16_383)
     expect(sentContent(complete).resource.textHead).toBe('本文の先頭テキスト')
     expect(result.usedResources).toEqual(['r1'])
     expect(result.skippedResources).toEqual([])
@@ -330,6 +340,7 @@ describe('MetadataSuggestService', () => {
   it('decodes head text with the encoding the Extract step persisted', async () => {
     const { db, addResult } = createMockDb()
     addResult([pipe('r1', { encoding: 'Shift_JIS' })])
+    addResult(liveKeys('r1'))
     addCandidates(addResult)
     const { ai, complete } = makeAi(resourceJson(), datasetJson())
     // "名前" in Shift_JIS — the persisted encoding must win over chardet
@@ -354,6 +365,7 @@ describe('MetadataSuggestService', () => {
   it('reads document text from the Index step artifact (ADR-040 addendum)', async () => {
     const { db, addResult } = createMockDb()
     addResult([pipe('r1', { textHeadKey: 'previews/pkg-1/r1.txt', textHeadBytes: 100 })])
+    addResult(liveKeys('r1'))
     addCandidates(addResult)
     const { ai, complete } = makeAi(resourceJson(), datasetJson())
     const { storage, downloadRange } = makeStorage('PDFの抽出テキスト')
@@ -378,6 +390,7 @@ describe('MetadataSuggestService', () => {
     // text have no artifact — the metadata slot still applies
     const { db, addResult } = createMockDb()
     addResult([pipe('r1')])
+    addResult(liveKeys('r1'))
     addCandidates(addResult)
     const { ai, complete } = makeAi(resourceJson(), datasetJson())
     const { storage, downloadRange } = makeStorage()
@@ -414,6 +427,7 @@ describe('MetadataSuggestService', () => {
     }
     const { db, addResult } = createMockDb()
     addResult([pipe('r1', {}, 'previews/pkg-1/r1.json')])
+    addResult(liveKeys('r1'))
     addCandidates(addResult)
     const { ai, complete } = makeAi(resourceJson(), datasetJson())
     const download = vi.fn(async () => Readable.from([Buffer.from(JSON.stringify(manifest))]))
@@ -444,6 +458,7 @@ describe('MetadataSuggestService', () => {
     // read instead of buffering it wholesale
     const { db, addResult } = createMockDb()
     addResult([pipe('r1', {}, 'previews/pkg-1/r1.json')])
+    addResult(liveKeys('r1'))
     addCandidates(addResult)
     const { ai, complete } = makeAi(resourceJson(), datasetJson())
     const download = vi.fn(async () =>
@@ -479,6 +494,7 @@ describe('MetadataSuggestService', () => {
     }))
     const { db, addResult } = createMockDb()
     addResult([pipe('r1', { schema: { columns, rowCount: 2 } })])
+    addResult(liveKeys('r1'))
     addCandidates(addResult)
     mockQuery.mockResolvedValueOnce({ rows: [{ col0: '太郎' }], columns: ['col0'] })
     const { ai, complete } = makeAi(resourceJson(), datasetJson())
@@ -509,6 +525,7 @@ describe('MetadataSuggestService', () => {
     }))
     const { db, addResult } = createMockDb()
     addResult([pipe('r1', { schema: { columns, rowCount: 1 } })])
+    addResult(liveKeys('r1'))
     addCandidates(addResult)
     // The SELECT * row carries all 40 columns' values
     const wideRow = Object.fromEntries(columns.map((c) => [c.name, 'v']))
@@ -533,6 +550,7 @@ describe('MetadataSuggestService', () => {
   it('keeps ZIPs without a manifest as metadata-only', async () => {
     const { db, addResult } = createMockDb()
     addResult([pipe('r1')])
+    addResult(liveKeys('r1'))
     addCandidates(addResult)
     const { ai, complete } = makeAi(resourceJson(), datasetJson())
     const service = new MetadataSuggestService(db, makeStorage().storage, ai, silentLogger)
@@ -551,6 +569,7 @@ describe('MetadataSuggestService', () => {
     const { db, addResult } = createMockDb()
     // r1 complete text (content-eligible); r2 still processing; r3 PDF
     addResult([pipe('r1'), { resourceId: 'r2', status: 'processing', metadata: {} }, pipe('r3')])
+    addResult(liveKeys('r1', 'r2', 'r3'))
     addCandidates(addResult)
     const { ai, complete } = makeAi(
       resourceJson('r1の名前', 'r1の説明'),
@@ -584,6 +603,7 @@ describe('MetadataSuggestService', () => {
     // r1 is a PDF (not eligible); r2 is complete text (eligible) — eligibility
     // decides which get a slot, but the output must stay in package order
     addResult([pipe('r1'), pipe('r2')])
+    addResult(liveKeys('r1', 'r2'))
     addCandidates(addResult)
     const { ai, complete } = makeAi(
       resourceJson('r1の名前', 'r1の説明'),
@@ -606,6 +626,7 @@ describe('MetadataSuggestService', () => {
   it('degrades to metadata when reading content fails', async () => {
     const { db, addResult } = createMockDb()
     addResult([pipe('r1')])
+    addResult(liveKeys('r1'))
     addCandidates(addResult)
     const { ai, complete } = makeAi(resourceJson('r1の名前', 'r1の説明'), datasetJson())
     const storage = {
@@ -635,6 +656,7 @@ describe('MetadataSuggestService', () => {
     const resources = Array.from({ length: 22 }, (_, i) => resourceRow(`r${i + 1}`))
     const { db, addResult } = createMockDb()
     addResult(resources.map((r) => pipe(r.id)))
+    addResult(liveKeys(...resources.map((r) => r.id)))
     addCandidates(addResult)
     const { ai, complete } = makeAi(
       ...Array.from({ length: 20 }, () => resourceJson()),
@@ -685,6 +707,7 @@ describe('MetadataSuggestService', () => {
   it('trims oversized text heads to the per-resource prompt budget', async () => {
     const { db, addResult } = createMockDb()
     addResult([pipe('r1')])
+    addResult(liveKeys('r1'))
     addCandidates(addResult)
     const { ai, complete } = makeAi(resourceJson(), datasetJson())
     // The mock ignores the range, so the decoded head exceeds the budget
@@ -705,6 +728,7 @@ describe('MetadataSuggestService', () => {
   it('clamps unbounded free-text columns so the budget holds', async () => {
     const { db, addResult } = createMockDb()
     addResult([pipe('r1')])
+    addResult(liveKeys('r1'))
     addCandidates(addResult)
     const { ai, complete } = makeAi(resourceJson(), datasetJson())
     const service = new MetadataSuggestService(db, makeStorage().storage, ai, silentLogger)
@@ -764,6 +788,7 @@ describe('MetadataSuggestService', () => {
   it('enforces tag limits (dedupe, ≤2 new, ≤5 total) and clamps lengths', async () => {
     const { db, addResult } = createMockDb()
     addResult([pipe('r1')])
+    addResult(liveKeys('r1'))
     addCandidates(addResult)
     const { ai } = makeAi(
       resourceJson(' 名前 ', ' 説明文 '),
@@ -927,6 +952,7 @@ describe('MetadataSuggestService', () => {
   it('skips resource completions once the request deadline is reached', async () => {
     const { db, addResult } = createMockDb()
     addResult([pipe('r1'), pipe('r2')])
+    addResult(liveKeys('r1', 'r2'))
     addCandidates(addResult)
     const { ai, complete } = makeAi(resourceJson('r1の名前', 'r1の説明'), datasetJson())
     const service = new MetadataSuggestService(db, makeStorage('本文').storage, ai, silentLogger)

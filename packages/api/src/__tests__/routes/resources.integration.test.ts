@@ -90,7 +90,14 @@ async function createResource(packageId: string, data: Record<string, unknown> =
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: 'test-resource', format: 'CSV', ...data }),
   })
-  return res.json()
+  const created = await res.json()
+  // A resource is created before it has content; the content-serving endpoints
+  // resolve `storage_key` (ADR-043), which a pipeline run would have set.
+  await db
+    .update(resourceTable)
+    .set({ storageKey: `resources/${packageId}/${created.id}.test` })
+    .where(eq(resourceTable.id, created.id))
+  return created
 }
 
 describe('Resources API Routes', () => {

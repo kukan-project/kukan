@@ -43,6 +43,14 @@ export async function processResource(
     const fetchStepId = await tracker.startStep(pipeline.id, 'fetch')
     const fetchResult = await executeFetch(resourceId, ctx)
 
+    if (fetchResult.status === 'superseded') {
+      // A newer run replaced the content while this one was fetching, and owns
+      // the resource from here. Its bytes are already parked; the pipeline row
+      // is left alone because that run is the one describing it.
+      await tracker.skipStep(fetchStepId)
+      return
+    }
+
     if (fetchResult.status === 'deferred') {
       // Rate-limited — requeue with delay and revert pipeline to 'queued'
       await Promise.all([
@@ -90,9 +98,11 @@ export async function processResource(
           encoding: extractResult.encoding,
           // Persist the column schema (ADR-032) when one was generated (CSV/TSV).
           ...(extractResult.schema ? { schema: extractResult.schema } : {}),
-          // Ties the preview to the bytes it was built from, so the backfill
-          // can tell whether it describes a given version (ADR-043 layer 2).
-          ...(extractResult.sourceHash ? { sourceHash: extractResult.sourceHash } : {}),
+          // Ties the preview to the bytes it was built from, so a later run or
+          // the backfill can tell whether it describes a given version
+          // (ADR-043 layer 2). Extract read the object Fetch measured, so this
+          // is that measurement rather than a second pass over the file.
+          sourceHash: fetchResult.hash,
         })
       }
     } catch (err) {
@@ -108,8 +118,9 @@ export async function processResource(
         resourceId,
         packageId: fetchResult.packageId,
         currentStorageKey: fetchResult.storageKey,
+        contentHash: fetchResult.hash,
+        contentSize: fetchResult.size,
         schema: extractResult?.schema ?? null,
-        sourceHash: extractResult?.sourceHash,
       })
       if (versionResult.captured) {
         await tracker.completeStep(versionStepId)
@@ -128,7 +139,7 @@ export async function processResource(
       const lakeResult = await executeLake(
         resourceId,
         extractResult?.previewKey ?? null,
-        extractResult?.sourceHash,
+        fetchResult.hash,
         ctx
       )
       if (lakeResult.ingested) {

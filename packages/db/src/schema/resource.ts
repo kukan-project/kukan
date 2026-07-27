@@ -31,6 +31,14 @@ export const resource = pgTable(
     mimetype: varchar('mimetype', { length: 200 }),
     size: bigint('size', { mode: 'number' }),
     hash: text('hash'),
+
+    // Which object holds the content, null when none is stored (ADR-043).
+    // 0009 dropped a column of this name as derivable; per-run keys removed
+    // that property, so it is state again.
+    storageKey: text('storage_key'),
+    // Key a presigned upload was issued for, promoted by `upload-complete` —
+    // separate so the live object keeps serving an abandoned upload.
+    pendingStorageKey: text('pending_storage_key'),
     position: integer('position').default(0).notNull(),
     state: varchar('state', { length: 20 }).default('active'),
     resourceType: varchar('resource_type', { length: 50 }),

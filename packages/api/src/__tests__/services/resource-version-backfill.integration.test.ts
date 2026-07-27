@@ -61,7 +61,9 @@ async function addResource(opts: {
       urlType: opts.urlType ?? 'upload',
     })
     .returning()
-  objects.set(getStorageKey(packageId, r.id), body)
+  const key = getStorageKey(packageId, r.id, 'run')
+  await db.update(resource).set({ storageKey: key }).where(eq(resource.id, r.id))
+  objects.set(key, body)
   return r.id
 }
 
@@ -112,7 +114,7 @@ describe('backfillVersions', () => {
     expect(result).toEqual({ backfilled: 2, skipped: 0, failed: 0, ingested: 0, ingestFailed: 0 })
     // Copies from the live key to v1 — never a network fetch.
     expect((storage as { copy: ReturnType<typeof vi.fn> }).copy).toHaveBeenCalledWith(
-      getStorageKey(packageId, uploadId),
+      getStorageKey(packageId, uploadId, 'run'),
       getVersionKey(packageId, uploadId, 1)
     )
 
@@ -127,8 +129,8 @@ describe('backfillVersions', () => {
   })
 
   it('leaves a resource alone while its pipeline is in flight', async () => {
-    // An external-URL fetch writes the new object before it updates the hash, so
-    // mid-run the live bytes and resource.hash can disagree undetectably.
+    // That run captures v1 itself; counting it here would misreport how much
+    // migration work is left.
     const id = await addResource({ name: 'a' })
     await db.insert(resourcePipeline).values({ resourceId: id, status: 'processing' })
     const storage = mockStorage()
@@ -180,22 +182,30 @@ describe('backfillVersions', () => {
     expect(await service.countUnversioned()).toBe(0)
   })
 
-  it('abandons the copy when the live object is replaced mid-capture', async () => {
-    // The row's size/schema describe the old bytes, so recording the new ones
-    // under them would be worse than leaving the resource for the next run.
-    const id = await addResource({ name: 'a', content: 'original' })
+  it('leaves the row describing newer content when a run publishes mid-capture', async () => {
+    // The copy takes a key nothing rewrites, so v1 still holds the bytes this
+    // row described — that is real history. What must not happen is the row
+    // being normalized back to it: `hash` now describes the newer object, and
+    // the run that published it owns that.
+    const id = await addResource({ name: 'a', content: 'original', hash: 'sha256:stale' })
     const storage = mockStorage()
     const realCopy = (storage as { copy: (s: string, d: string) => Promise<void> }).copy
     ;(storage as { copy: unknown }).copy = vi.fn(async (src: string, dest: string) => {
-      objects.set(src, Buffer.from('replaced by an upload'))
-      await db.update(resource).set({ hash: null }).where(eq(resource.id, id))
+      const newerKey = getStorageKey(packageId, id, 'newer')
+      objects.set(newerKey, Buffer.from('published by a pipeline run'))
+      await db
+        .update(resource)
+        .set({ storageKey: newerKey, hash: 'sha256:newer' })
+        .where(eq(resource.id, id))
       await realCopy(src, dest)
     })
 
     const result = await service.backfillVersions({ storage })
 
-    expect(result).toMatchObject({ backfilled: 0, skipped: 1, failed: 0 })
-    expect(objects.has(getVersionKey(packageId, id, 1))).toBe(false)
+    expect(result).toMatchObject({ backfilled: 1, skipped: 0, failed: 0 })
+    expect(objects.get(getVersionKey(packageId, id, 1))?.toString()).toBe('original')
+    const [row] = await db.select().from(resource).where(eq(resource.id, id))
+    expect(row.hash).toBe('sha256:newer')
   })
 
   it('counts a copy failure and keeps going', async () => {

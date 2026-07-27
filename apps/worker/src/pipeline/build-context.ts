@@ -11,9 +11,9 @@ import type { IngestResult, LakeConfig } from '@kukan/lake'
 import { withLakeSession } from '@kukan/lake'
 import { ingestVersionIntoLake, withLakeIngestLock } from '@kukan/api/services/lake-ingest'
 import { VERSION_CAPTURE_LOCK, withAdvisoryLock } from '@kukan/api/services/advisory-lock'
+import { publishLiveContent } from '@kukan/api/services/storage-pointer'
 import type { PackageDbState } from '@kukan/shared'
 import { getVersionKey, versionOrigin } from '@kukan/shared'
-import { copyAndMeasure, discardCopy } from '@kukan/api/services/verified-copy'
 import { decideVersionCapture } from './version-capture'
 import type { PipelineContext, ResourceForPipeline } from './types'
 import {
@@ -44,6 +44,7 @@ export function buildPipelineContext(
           format: resource.format,
           hash: resource.hash,
           size: resource.size,
+          storageKey: resource.storageKey,
         })
         .from(resource)
         .where(and(eq(resource.id, id), eq(resource.state, 'active')))
@@ -63,25 +64,8 @@ export function buildPipelineContext(
       return (pkg?.state as PackageDbState | undefined) ?? null
     },
 
-    async beginContentReplacement(id: string): Promise<void> {
-      await db.update(resource).set({ hash: null, size: null }).where(eq(resource.id, id))
-    },
-
-    async recordContent(
-      id: string,
-      content: { hash: string; size: number; previousHash: string | null }
-    ): Promise<void> {
-      // Only a genuine change is a modification: a scheduled re-fetch that finds
-      // the same bytes must not look like an edit downstream.
-      const changed = content.previousHash !== content.hash
-      await db
-        .update(resource)
-        .set({
-          hash: content.hash,
-          size: content.size,
-          ...(changed && { lastModified: sql`NOW()` }),
-        })
-        .where(eq(resource.id, id))
+    async publishContent(id, content): Promise<boolean> {
+      return publishLiveContent(db, id, content)
     },
 
     async acquireFetchSlot(fqdn: string): Promise<boolean> {
@@ -122,11 +106,18 @@ export function buildPipelineContext(
         .where(eq(resourcePipeline.id, pipelineId))
     },
 
-    async captureVersion({ resourceId, packageId, currentStorageKey, schema, sourceHash }) {
+    async captureVersion({
+      resourceId,
+      packageId,
+      currentStorageKey,
+      contentHash,
+      contentSize,
+      schema,
+    }) {
       return withAdvisoryLock(db, VERSION_CAPTURE_LOCK, resourceId, async (tx) => {
         // Read under the lock, on the lock's own connection.
         const [res] = await tx
-          .select({ hash: resource.hash, size: resource.size, urlType: resource.urlType })
+          .select({ urlType: resource.urlType })
           .from(resource)
           .where(eq(resource.id, resourceId))
           .limit(1)
@@ -145,8 +136,11 @@ export function buildPipelineContext(
           .orderBy(desc(resourceVersion.version))
           .limit(1)
 
+        // Gated on this run's own measurement, not the row's: the row describes
+        // whichever run published last, while the copy below takes the object
+        // this run wrote and no one rewrites.
         const decision = decideVersionCapture({
-          hash: res?.hash ?? null,
+          hash: contentHash,
           maxVersion: maxRow?.version ?? null,
           latestActiveHash: activeRow?.hash ?? null,
         })
@@ -154,27 +148,14 @@ export function buildPipelineContext(
 
         const { version } = decision
         const versionKey = getVersionKey(packageId, resourceId, version)
-        const captured = await copyAndMeasure(storage, currentStorageKey, versionKey)
-
-        // The measured hash must match the row, and — when Extract produced a
-        // schema — the bytes Extract parsed, since it read the same shared key
-        // earlier in this run. Either mismatch means a concurrent run moved the
-        // live key; the version is abandoned rather than recorded against
-        // content or a schema it does not hold, and that run captures it.
-        if (
-          captured.hash !== decision.hash ||
-          (sourceHash !== undefined && sourceHash !== captured.hash)
-        ) {
-          await discardCopy(storage, versionKey)
-          return { captured: false as const }
-        }
+        await storage.copy(currentStorageKey, versionKey)
 
         await tx.insert(resourceVersion).values({
           resourceId,
           version,
           storageKey: versionKey,
-          size: captured.size,
-          hash: captured.hash,
+          size: contentSize,
+          hash: contentHash,
           origin: versionOrigin(res!.urlType),
           schema,
         })

@@ -185,9 +185,18 @@ export const RESOURCE_PREFIX = 'resources/'
 /** Storage key prefix for preview files */
 export const PREVIEW_PREFIX = 'previews/'
 
-/** Compute storage key for a resource's raw file */
-export function getStorageKey(packageId: string, resourceId: string): string {
-  return `${RESOURCE_PREFIX}${packageId}/${resourceId}`
+/**
+ * Compute storage key for a resource's raw file.
+ *
+ * @param runToken - makes the key unique to the run that writes it, exactly as
+ *   {@link getPreviewKey} does. Readers follow `resource.storage_key` instead of
+ *   recomputing the key, so the object a run wrote can never be rewritten
+ *   underneath it: a version capture copies bytes that cannot have moved since
+ *   its own Fetch read them, and a failed write leaves the previous object
+ *   untouched because it was never the target.
+ */
+export function getStorageKey(packageId: string, resourceId: string, runToken: string): string {
+  return `${RESOURCE_PREFIX}${packageId}/${resourceId}.${runToken}`
 }
 
 /** Storage key prefix for immutable per-version files (ADR-043) */

@@ -14,7 +14,7 @@
     "./services/pipeline-service": "./dist/services/pipeline-service.js",
     "./services/lake-ingest": "./dist/services/lake-ingest.js",
     "./services/advisory-lock": "./dist/services/advisory-lock.js",
-    "./services/verified-copy": "./dist/services/verified-copy.js",
+    "./services/storage-pointer": "./dist/services/storage-pointer.js",
     "./services/organization-service": "./dist/services/organization-service.js",
     "./services/resource-version-service": "./dist/services/resource-version-service.js"
   },

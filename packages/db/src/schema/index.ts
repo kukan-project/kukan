@@ -28,6 +28,7 @@ export * from './membership'
 
 // Pipeline utilities
 export * from './fetch-rate-limit'
+export * from './orphaned-object'
 
 // Audit & Activity
 export * from './audit'

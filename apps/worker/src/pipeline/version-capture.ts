@@ -6,11 +6,6 @@
 
 export type VersionResult = { captured: false } | { captured: true; version: number }
 
-/** Adds the hash the capture must find on the copy, which the caller verifies. */
-export type CaptureDecision =
-  | { captured: false }
-  | { captured: true; version: number; hash: string }
-
 /**
  * Decide whether to capture, and as which version number.
  *
@@ -26,14 +21,10 @@ export type CaptureDecision =
  *   then re-capture content that is already the live version.
  */
 export function decideVersionCapture(input: {
-  hash: string | null
+  hash: string
   maxVersion: number | null
   latestActiveHash: string | null
-}): CaptureDecision {
-  // Without a content hash there is nothing to gate on or attribute — skip.
-  if (!input.hash) return { captured: false }
-  if (input.latestActiveHash !== null && input.latestActiveHash === input.hash) {
-    return { captured: false }
-  }
-  return { captured: true, version: (input.maxVersion ?? 0) + 1, hash: input.hash }
+}): VersionResult {
+  if (input.latestActiveHash === input.hash) return { captured: false }
+  return { captured: true, version: (input.maxVersion ?? 0) + 1 }
 }

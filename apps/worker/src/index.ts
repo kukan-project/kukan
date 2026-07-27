@@ -38,8 +38,8 @@ import { OpenSearchAdapter } from '@kukan/search-adapter'
 import { processResource } from './pipeline/process-resource'
 import { buildPipelineContext } from './pipeline/build-context'
 import { startCronJob } from './cron/start-cron-job'
-import { sweepSupersededPreviews } from './cron/preview-cleanup/sweep'
-import { PREVIEW_CLEANUP_CRON } from '@/config'
+import { sweepOrphanedObjects } from './cron/orphan-cleanup/sweep-orphans'
+import { ORPHAN_CLEANUP_CRON } from '@/config'
 import { checkBatch } from './cron/health-check/check-batch'
 import { embedPackage, enqueueAllPackageEmbeds } from './embed/embed-package'
 
@@ -137,16 +137,14 @@ if (env.HEALTH_CHECK_ENABLED) {
   })
 }
 
-// --- Superseded preview sweeper (ADR-043) ---
-// Parked preview keys are drained by the next pipeline run for that resource;
-// this covers the resources that never get one.
-const previewSweepLog = log.child({ component: 'preview-cleanup' })
-const previewCleanupJob = startCronJob({
-  name: 'Preview cleanup',
-  cronExpression: PREVIEW_CLEANUP_CRON,
-  log: previewSweepLog,
+// --- Orphaned object sweeper (ADR-043) ---
+const orphanSweepLog = log.child({ component: 'orphan-cleanup' })
+const orphanCleanupJob = startCronJob({
+  name: 'Orphaned object cleanup',
+  cronExpression: ORPHAN_CLEANUP_CRON,
+  log: orphanSweepLog,
   run: async () => {
-    await sweepSupersededPreviews(db, storage, previewSweepLog)
+    await sweepOrphanedObjects(db, storage, orphanSweepLog)
   },
 })
 
@@ -332,7 +330,7 @@ log.info({ queueUrl: env.SQS_QUEUE_URL, healthPort: HEALTH_PORT }, 'Worker start
 const shutdown = async () => {
   log.info('Shutting down...')
   healthCheckJob?.stop()
-  previewCleanupJob.stop()
+  orphanCleanupJob.stop()
   if (indexCheckTimer) clearInterval(indexCheckTimer)
   await queue.stop()
   await db.$client.end()

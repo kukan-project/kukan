@@ -134,6 +134,13 @@
       "when": 1784914927457,
       "tag": "0018_redundant_obadiah_stane",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785139737233,
+      "tag": "0019_cloudy_hulk",
+      "breakpoints": true
     }
   ]
 }

@@ -22,8 +22,7 @@ function createMockCtx() {
   return {
     storage: { download: vi.fn(), upload: vi.fn() },
     getResource: vi.fn(),
-    beginContentReplacement: vi.fn(),
-    recordContent: vi.fn(),
+    publishContent: vi.fn().mockResolvedValue(true),
     acquireFetchSlot: vi.fn(),
     indexContent: vi.fn(),
     deleteContent: vi.fn(),

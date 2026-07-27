@@ -52,9 +52,7 @@ export function createMockDb() {
           })
         }
         if (prop === 'execute') {
-          return vi.fn(async () => {
-            return results[callIndex++] ?? []
-          })
+          return vi.fn(async () => ({ rows: results[callIndex++] ?? [] }))
         }
         // select, insert, update, delete all return chain
         return vi.fn(() => createChain())

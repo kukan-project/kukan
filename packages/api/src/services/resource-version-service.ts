@@ -4,6 +4,8 @@
  * Purge *execution* (file deletion, state → purged) runs in the worker via executePurge.
  */
 
+import { randomUUID } from 'node:crypto'
+import { digestStream } from '@kukan/shared/hash-node'
 import { eq, and, lt, desc, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, resourceVersion, resourcePipeline, auditLog } from '@kukan/db'
@@ -23,7 +25,7 @@ import type { SearchAdapter } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import { ingestVersionIntoLake, withLakeIngestLock } from './lake-ingest'
 import { VERSION_CAPTURE_LOCK, withAdvisoryLock } from './advisory-lock'
-import { copyAndMeasure, discardCopy } from './verified-copy'
+import { publishLiveContent } from './storage-pointer'
 import { PipelineService } from './pipeline-service'
 
 export type VersionState = 'active' | 'purging' | 'purged'
@@ -154,11 +156,10 @@ export class ResourceVersionService {
   /**
    * Active resources that have content but no version yet — the backfill work set.
    *
-   * Resources whose pipeline is in flight are excluded: an external-URL fetch
-   * writes the new object to storage *before* it updates the hash, so during a
-   * run the live bytes and `resource.hash` can disagree with nothing to detect
-   * it from. The advisory lock does not help — Fetch never takes it. They are
-   * picked up by the next backfill pass, or captured by the run itself.
+   * Resources whose pipeline is in flight are excluded: that run captures v1
+   * itself, so counting them as outstanding migration work would misreport the
+   * progress the dashboard shows. Whichever of the two arrives second at the
+   * capture lock finds the version already there and steps aside.
    */
   private unversionedWhere() {
     return and(
@@ -213,6 +214,7 @@ export class ResourceVersionService {
         urlType: resource.urlType,
         hash: resource.hash,
         size: resource.size,
+        storageKey: resource.storageKey,
         schema: sql<ResourceSchema | null>`${resourcePipeline.metadata} -> 'schema'`,
         // Whether that schema was built from the bytes the resource holds now.
         // A failed Extract keeps the previous preview and schema without failing
@@ -252,66 +254,40 @@ export class ResourceVersionService {
             // Re-checked under the lock, against the row as it is *now*: the
             // scan happened earlier, and since then a pipeline run may have
             // captured v1 (copying first would overwrite its file before the
-            // unique index rejected the insert) or an upload may have replaced
-            // the live object (prepareForUpload nulls the hash first, so a
-            // changed or absent hash means the bytes are no longer the ones
-            // this row describes).
+            // unique index rejected the insert) or a newer run may have moved
+            // the pointer, which means the object this row described is no
+            // longer the resource's content.
             const [current] = await tx
               .select({
-                hash: resource.hash,
+                storageKey: resource.storageKey,
                 versions: sql<number>`(
                   SELECT count(*)::int FROM ${resourceVersion} rv
                   WHERE rv.resource_id = ${resource.id}
-                )`,
-                // A run that started since the scan may be rewriting the live
-                // object right now: an external fetch writes storage before it
-                // updates the hash, so nothing else here would detect it.
-                busy: sql<boolean>`EXISTS (
-                  SELECT 1 FROM ${resourcePipeline} rp
-                  WHERE rp.resource_id = ${resource.id}
-                    AND rp.status IN ('queued', 'processing')
                 )`,
               })
               .from(resource)
               .where(eq(resource.id, r.id))
               .limit(1)
-            if (!current || current.versions > 0 || current.busy) return false
-            if (current.hash !== r.hash) return false
+            if (!current || current.versions > 0) return false
+            if (!current.storageKey || current.storageKey !== r.storageKey) return false
 
             const versionKey = getVersionKey(r.packageId, r.id, 1)
-            const captured = await copyAndMeasure(
-              deps.storage,
-              getStorageKey(r.packageId, r.id),
-              versionKey
-            )
+            await deps.storage.copy(current.storageKey, versionKey)
+            // Measured rather than taken from the row: this is pre-existing
+            // data, and `upload-complete` used to accept any string as a hash.
+            const captured = await digestStream(await deps.storage.download(versionKey))
 
-            // Read the hash once more: an upload may have replaced the live
-            // object between the check above and the copy, in which case the
-            // copy holds the new bytes while `r.size`/`r.schema` describe the
-            // old ones. prepareForUpload nulls the hash before the new bytes
-            // land, so any change here — including to null — means exactly that.
-            const [after] = await tx
-              .select({ hash: resource.hash })
-              .from(resource)
-              .where(eq(resource.id, r.id))
-              .limit(1)
-            if (after?.hash !== r.hash) {
-              await discardCopy(deps.storage, versionKey)
-              return false
-            }
-
-            // A differing hash can only be a stored value that was never the
-            // real digest — `upload-complete` has always accepted any string,
-            // and refusing those rows would leave the migration permanently
-            // incomplete. It cannot be an object that changed under us: every
-            // writer of the live object nulls the hash before replacing it —
-            // Fetch, the upload flow, and the purge rollback — so the re-read
-            // above would have seen null. Normalize to the measurement.
+            // Normalize the row to the measurement when the stored values were
+            // never the real ones; refusing those rows instead would leave the
+            // migration permanently incomplete. Guarded on the pointer, since a
+            // pipeline run may have published newer content while this copied —
+            // its hash describes that content and must not be overwritten with
+            // a measurement of the object it replaced.
             if (captured.hash !== r.hash || captured.size !== r.size) {
               await tx
                 .update(resource)
                 .set({ hash: captured.hash, size: captured.size })
-                .where(eq(resource.id, r.id))
+                .where(and(eq(resource.id, r.id), eq(resource.storageKey, current.storageKey)))
             }
 
             await tx.insert(resourceVersion).values({
@@ -553,14 +529,12 @@ export class ResourceVersionService {
     let rolledBack = false
     if (isLive) {
       const [pkgRow] = await this.db
-        .select({ packageId: resource.packageId })
+        .select({ packageId: resource.packageId, storageKey: resource.storageKey })
         .from(resource)
         .where(eq(resource.id, resourceId))
         .limit(1)
 
       if (pkgRow) {
-        const currentKey = getStorageKey(pkgRow.packageId, resourceId)
-
         // Previous active version to restore as the live content.
         const [prev] = await this.db
           .select()
@@ -576,33 +550,37 @@ export class ResourceVersionService {
           .limit(1)
 
         if (prev) {
-          // Null first, like every other writer of the live object: a capture or
-          // a backfill running concurrently reads "hash is null" as "the bytes
-          // are being replaced" and steps aside rather than attributing these
-          // ones to a version.
-          await this.db
-            .update(resource)
-            .set({ hash: null, size: null })
-            .where(eq(resource.id, resourceId))
-          await deps.storage.copy(prev.storageKey, currentKey)
-          await this.db
-            .update(resource)
-            .set({ hash: prev.hash, size: prev.size, lastModified: sql`NOW()` })
-            .where(eq(resource.id, resourceId))
+          // Restored through the same mover as every other writer (ADR-043): a
+          // key of this run's own, and the pointer moves only once the copy is
+          // complete, so a failed copy leaves the resource on the object it had.
+          const restoredKey = getStorageKey(pkgRow.packageId, resourceId, randomUUID())
+          await deps.storage.copy(prev.storageKey, restoredKey)
+          await publishLiveContent(this.db, resourceId, {
+            key: restoredKey,
+            previousKey: pkgRow.storageKey,
+            hash: prev.hash!,
+            size: prev.size!,
+            previousHash: null,
+          })
           rolledBack = true
           // Layer 2 must follow the rollback: otherwise the lake's current
           // contents would still be the purged rows (ADR-043 §9).
           await this.purgeFromLake(resourceId, prev.ducklakeSnapshotId, deps.lake)
         } else {
           // Nothing to roll back to — the resource is left with no live content.
-          await deps.storage.delete(currentKey)
           await this.db
             .update(resource)
-            .set({ hash: null, size: null, lastModified: sql`NOW()` })
+            .set({ storageKey: null, hash: null, size: null, lastModified: sql`NOW()` })
             .where(eq(resource.id, resourceId))
-          // No version survives, so the lake table goes with it.
-          await this.purgeFromLake(resourceId, null, deps.lake)
         }
+
+        // The mover parked the object holding the purged content; delete it now
+        // instead of waiting for the sweep. A purge is a legal deletion, so
+        // cutting off a reader that already resolved that key is the point.
+        // The parked row survives and the sweep's delete is then a no-op.
+        if (pkgRow.storageKey) await deps.storage.delete(pkgRow.storageKey)
+        // No version survives, so the lake table goes with it.
+        if (!prev) await this.purgeFromLake(resourceId, null, deps.lake)
 
         // Invalidate derivatives so the purged content stops being served
         // immediately, before the (async) pipeline regenerates them.

@@ -7,6 +7,7 @@ import type { Readable } from 'node:stream'
 import type { ContentDoc } from '@kukan/search-adapter'
 import type { IngestResult } from '@kukan/lake'
 import type { PackageDbState, ResourceSchema } from '@kukan/shared'
+import type { PublishedContent } from '@kukan/api/services/storage-pointer'
 
 /** Minimal resource data needed by pipeline steps */
 export interface ResourceForPipeline {
@@ -19,6 +20,8 @@ export interface ResourceForPipeline {
   format: string | null
   hash: string | null
   size: number | null
+  /** Key of the object holding the content, null when nothing is stored yet. */
+  storageKey: string | null
 }
 
 export interface PipelineContext {
@@ -32,27 +35,12 @@ export interface PipelineContext {
   getResource(id: string): Promise<ResourceForPipeline | null>
   /** Get a package's state (null when the package doesn't exist) */
   getPackageState(packageId: string): Promise<PackageDbState | null>
-  /** Update resource hash, size, and lastModified (without touching updated) */
   /**
-   * Mark the resource's live object as being replaced (ADR-043).
+   * Publish the object this run wrote as the resource's content (ADR-043).
    *
-   * Clears the recorded hash so a version capture or backfill running
-   * concurrently reads "hash is null" as "these bytes are moving" and steps
-   * aside instead of attributing them to a version. Every writer of the live
-   * key does this first — Fetch, the upload flow, and the purge rollback.
+   * @returns whether this run's object became the live content.
    */
-  beginContentReplacement(id: string): Promise<void>
-  /**
-   * Record what the live object now holds.
-   *
-   * `lastModified` moves only when the content actually changed, so an unchanged
-   * re-fetch is not an edit. The comparison uses `previousHash` rather than the
-   * stored value, which {@link beginContentReplacement} has already cleared.
-   */
-  recordContent(
-    id: string,
-    content: { hash: string; size: number; previousHash: string | null }
-  ): Promise<void>
+  publishContent(id: string, content: PublishedContent): Promise<boolean>
   /**
    * Atomically acquire a fetch slot for the given FQDN.
    * Returns true if the slot was acquired (i.e. last fetch was >1s ago or first time).
@@ -80,17 +68,18 @@ export interface PipelineContext {
   captureVersion(input: {
     resourceId: string
     packageId: string
-    /** The resource's live key, holding the content to capture. */
+    /**
+     * The key this run wrote, holding the content to capture. Nothing rewrites
+     * it, so the copy is the content Fetch measured and Extract parsed — the
+     * version, its hash and its schema cannot come apart.
+     */
     currentStorageKey: string
+    /** Hash Fetch measured on that object; gates the capture and is recorded. */
+    contentHash: string
+    /** Size Fetch measured on that object. */
+    contentSize: number
     /** Column schema from Extract (CSV/TSV only), snapshotted onto the version. */
     schema: ResourceSchema | null
-    /**
-     * Hash of the bytes Extract parsed, when it produced a schema. Extract and
-     * the copy both read the shared live key, so a concurrent run can leave the
-     * schema describing different content than the version holds — capture is
-     * abandoned rather than recording the mismatch.
-     */
-    sourceHash: string | undefined
   }): Promise<{ captured: false } | { captured: true; version: number }>
   /**
    * The active version holding exactly these bytes and not yet in DuckLake, or
