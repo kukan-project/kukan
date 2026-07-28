@@ -41,6 +41,7 @@ import { processResource } from './pipeline/process-resource'
 import { buildPipelineContext } from './pipeline/build-context'
 import { startCronJob } from './cron/start-cron-job'
 import { sweepOrphanedObjects } from './cron/orphan-cleanup/sweep-orphans'
+import { sweepLakeOrphans } from './cron/orphan-cleanup/sweep-lake-orphans'
 import { expirePendingUploads } from '@kukan/api/services/storage-pointer'
 import { ORPHAN_CLEANUP_CRON, PENDING_UPLOAD_TTL_MS } from '@/config'
 import { checkBatch } from './cron/health-check/check-batch'
@@ -140,6 +141,9 @@ if (env.HEALTH_CHECK_ENABLED) {
   })
 }
 
+// --- DuckLake (ADR-043 layer 2): catalog + bucket derived from the same env ---
+const lake = lakeConfigFromEnv(env)
+
 // --- Orphaned object sweeper (ADR-043) ---
 const orphanSweepLog = log.child({ component: 'orphan-cleanup' })
 const orphanCleanupJob = startCronJob({
@@ -152,6 +156,9 @@ const orphanCleanupJob = startCronJob({
     const expired = await expirePendingUploads(db, PENDING_UPLOAD_TTL_MS)
     if (expired > 0) orphanSweepLog.info({ expired }, 'Expired abandoned upload URLs')
     await sweepOrphanedObjects(db, storage, orphanSweepLog)
+    // Layer 2's orphans are the ones no writer could park: a Parquet written
+    // but never committed to the catalog (ADR-043).
+    await sweepLakeOrphans(lake, orphanSweepLog)
   },
 })
 
@@ -166,9 +173,6 @@ const search =
         logger: osLogger,
       })
     : undefined
-
-// --- DuckLake (ADR-043 layer 2): catalog + bucket derived from the same env ---
-const lake = lakeConfigFromEnv(env)
 
 // --- AI adapter (embedding; NoOp when AI_TYPE=none) ---
 const ai = createAIAdapter(env)

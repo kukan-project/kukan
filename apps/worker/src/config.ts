@@ -76,6 +76,18 @@ export const ORPHAN_RETENTION_MS = 60 * 60 * 1000
 export const PENDING_UPLOAD_TTL_MS = 24 * 60 * 60 * 1000
 
 /**
+ * How long an untracked DuckLake file is left alone before it counts as an
+ * orphan (24 h).
+ *
+ * Much longer than the layer-1 retention, and deliberately so. That one waits
+ * out readers of a key nothing points at; this one has to outlast the gap
+ * between DuckLake writing a Parquet and committing it, and a file caught
+ * inside that gap is live data. Reclaiming late costs storage; reclaiming
+ * early costs the file.
+ */
+export const LAKE_ORPHAN_RETENTION_MS = 24 * 60 * 60 * 1000
+
+/**
  * Keys deleted per sweep; the rest wait for the next one. A pipeline run parks
  * up to two objects (live content, preview), so this has to stay well above
  * the runs an hour the deployment does or the backlog never drains.

@@ -13,11 +13,11 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api'
-import { mkdtempSync, rmSync, readdirSync } from 'node:fs'
+import { mkdtempSync, rmSync, readdirSync, copyFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { LakeRow, LakeSession } from '../connection'
-import { reclaimUnreferencedSnapshots } from '../maintenance'
+import { deleteOrphanedFiles, reclaimUnreferencedSnapshots } from '../maintenance'
 
 let dir: string
 let conn: DuckDBConnection
@@ -140,5 +140,55 @@ describe('reclaimUnreferencedSnapshots — real catalog', () => {
       `SELECT file_count FROM ducklake_table_info('lake') WHERE table_name = 't'`
     )
     expect(Number(info.file_count)).toBe(0)
+  })
+})
+
+describe('deleteOrphanedFiles — real catalog', () => {
+  it('deletes an untracked file and leaves the tracked data alone', async () => {
+    // DuckLake writes a Parquet before committing it, so a process that dies in
+    // between leaves one the catalog has no record of. Nothing else collects
+    // those: expiry and cleanup both work from the catalog.
+    await attach(false)
+    await conn.run(`CREATE TABLE lake.t AS SELECT i AS id, 'v' || i AS name FROM range(100) t(i)`)
+    const [tracked] = readdirSync(join(dir, 'data'), { recursive: true })
+      .map(String)
+      .filter((f) => f.endsWith('.parquet'))
+    copyFileSync(join(dir, 'data', tracked), join(dir, 'data', dirname(tracked), 'orphan.parquet'))
+
+    const deleted = await deleteOrphanedFiles(session, new Date())
+
+    expect(deleted).toHaveLength(1)
+    expect(deleted[0]).toContain('orphan.parquet')
+    const rows = await session.rows(`SELECT count(*) AS n FROM lake.t`)
+    expect(Number(rows[0].n)).toBe(100)
+  })
+
+  it('spares an untracked file younger than the window', async () => {
+    // The guard that keeps a write in flight from being read as an orphan.
+    await attach(false)
+    await conn.run(`CREATE TABLE lake.t AS SELECT i AS id, 'v' || i AS name FROM range(100) t(i)`)
+    const [tracked] = readdirSync(join(dir, 'data'), { recursive: true })
+      .map(String)
+      .filter((f) => f.endsWith('.parquet'))
+    copyFileSync(join(dir, 'data', tracked), join(dir, 'data', dirname(tracked), 'orphan.parquet'))
+
+    const deleted = await deleteOrphanedFiles(session, new Date(Date.now() - 60 * 60 * 1000))
+
+    expect(deleted).toEqual([])
+  })
+
+  it('reports without deleting on a dry run', async () => {
+    await attach(false)
+    await conn.run(`CREATE TABLE lake.t AS SELECT i AS id, 'v' || i AS name FROM range(100) t(i)`)
+    const [tracked] = readdirSync(join(dir, 'data'), { recursive: true })
+      .map(String)
+      .filter((f) => f.endsWith('.parquet'))
+    const orphan = join(dir, 'data', dirname(tracked), 'orphan.parquet')
+    copyFileSync(join(dir, 'data', tracked), orphan)
+
+    const listed = await deleteOrphanedFiles(session, new Date(), true)
+
+    expect(listed).toHaveLength(1)
+    expect(existsSync(orphan)).toBe(true)
   })
 })

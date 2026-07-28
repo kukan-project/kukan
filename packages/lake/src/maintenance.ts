@@ -49,3 +49,30 @@ export async function reclaimUnreferencedSnapshots(
   const deleted = await session.rows(`CALL ducklake_cleanup_old_files('lake', cleanup_all => true)`)
   return { expired: doomed.length, filesDeleted: deleted.length }
 }
+
+/**
+ * Delete Parquet under the data path that the catalog has never tracked.
+ *
+ * DuckLake writes a file before committing it, so a process that dies in
+ * between leaves one nothing references — not the catalog, and so not
+ * `cleanup_old_files` either, which only deletes what expiry scheduled. Left
+ * alone they accumulate for the life of the deployment.
+ *
+ * `olderThan` is what keeps a write in flight from looking like one of them:
+ * a file younger than it is never a candidate, however untracked it currently
+ * is. It has to exceed the longest gap between writing a Parquet and
+ * committing it — which is why the window is generous rather than tuned.
+ *
+ * @param dryRun - list what would go without deleting it.
+ */
+export async function deleteOrphanedFiles(
+  session: LakeSession,
+  olderThan: Date,
+  dryRun = false
+): Promise<string[]> {
+  const rows = await session.rows(
+    `CALL ducklake_delete_orphaned_files('lake', dry_run => ${dryRun},` +
+      ` older_than => TIMESTAMPTZ '${olderThan.toISOString()}')`
+  )
+  return rows.map((r) => String(r.path))
+}
