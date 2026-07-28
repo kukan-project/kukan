@@ -5,7 +5,7 @@
  * whose correctness depends on the lock — write, read the snapshot back, record
  * it on the version row — has exactly one implementation.
  */
-import { and, eq } from 'drizzle-orm'
+import { and, eq, gt, isNotNull } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import { resourceVersion } from '@kukan/db'
 import type { IngestResult, LakeConfig, LakeSession } from '@kukan/lake'
@@ -31,9 +31,19 @@ export async function withLakeIngestLock<T>(
  * backfill can re-check its preconditions under the same lock and reuse one
  * session across the whole pass.
  *
- * Returns null when the version already carries a snapshot. ii-a ingests whole
- * versions, so a second pass would append every row again — and the retry path
- * exists precisely to run this after something else may have succeeded.
+ * Returns null when there is nothing to do, for either of two reasons.
+ *
+ * The version already carries a snapshot: ii-a ingests whole versions, so a
+ * second pass would append every row again — and the retry path exists
+ * precisely to run this after something else may have succeeded.
+ *
+ * Or a newer version is already in: ingesting replaces the table's contents, so
+ * loading an older version now would leave the lake serving content the
+ * resource no longer has, under a snapshot id above the newer version's. A
+ * retry that waited while the next version went in is exactly how that happens.
+ * The version stays un-ingested and its diffs stay unavailable, which is the
+ * lesser harm — layer 2 is rebuildable from layer 1, a rewound table is not
+ * detectable from it.
  */
 export async function ingestVersionIntoLake(
   tx: Transaction,
@@ -53,6 +63,19 @@ export async function ingestVersionIntoLake(
     )
     .limit(1)
   if (!pending || pending.snapshot !== null) return null
+
+  const [newer] = await tx
+    .select({ version: resourceVersion.version })
+    .from(resourceVersion)
+    .where(
+      and(
+        eq(resourceVersion.resourceId, row.resourceId),
+        gt(resourceVersion.version, row.version),
+        isNotNull(resourceVersion.ducklakeSnapshotId)
+      )
+    )
+    .limit(1)
+  if (newer) return null
 
   const result = await ingestParquetVersion(session, {
     table: lakeTableName(row.resourceId),
