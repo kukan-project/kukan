@@ -142,22 +142,23 @@ races had not been considered.
 
 ### The races fall into two classes
 
-| Class                                    | Instances          | Does a DB queue fix it? |
-| ---------------------------------------- | ------------------ | ----------------------- |
-| A. Two writers to the same row or object | #180 / #181 / #182 | **No**                  |
-| B. A side effect outside the transaction | #183 / #184        | **Yes**                 |
+| Class                                    | Instances                                                      | Does a DB queue fix it? |
+| ---------------------------------------- | -------------------------------------------------------------- | ----------------------- |
+| A. Two writers to the same row or object | version inversion, stranded upload key, metadata applied early | **No**                  |
+| B. A side effect outside the transaction | a lost enqueue, an untracked object                            | **Yes**                 |
 
 B is what a DB-backed queue is for: the enqueue becomes an `INSERT`, so it joins the
-transaction that writes the business data and "committed but the job vanished" (#183)
+transaction that writes the business data and "committed but the job vanished"
 stops being possible.
 
-A is untouched. #181 is two HTTP requests racing and never goes near the queue, #182 is an
-API design question, and #180 comes down to two runs writing the same resource. A
-per-resource singleton key reduces the overlap, but any lease-based scheme still lets a
+A is untouched. The stranded upload key is two HTTP requests racing and never goes near
+the queue, metadata applied early is an API design question, and the version inversion
+comes down to two runs writing the same resource. A per-resource singleton key reduces
+the overlap, but any lease-based scheme still lets a
 stalled worker resume after its lease expires, so the compare-and-swap is needed anyway.
 **The frequency drops; the work does not go away.**
 
-The three class-A defects — two of them P1 — were also the expensive ones to fix.
+The class-A defects were also the expensive ones to fix.
 
 ### The withdrawal reasons still hold
 
@@ -179,7 +180,7 @@ The sweep interval bounds only the failure path. With several workers the cron r
 each process (`protect: true` only prevents overlap within one), so claiming needs
 `FOR UPDATE SKIP LOCKED`.
 
-For #183 specifically, the intent is already durable as
+For the Lake retry specifically, the intent is already durable as
 `resource_version.ducklake_snapshot_id IS NULL`, so even an outbox table may be
 unnecessary — re-enqueuing from the existing `pendingLakeIngestQuery` may be enough.
 
