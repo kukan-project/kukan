@@ -58,10 +58,29 @@ guard, but that approach carries three properties:
 ### 1. What the claim covers
 
 The claim is the `resource_pipeline` row itself; no new table (the one-row-per-resource
-constraint already exists).
+constraint already exists). The row records an **owner (a run id)** — see §3 for why.
 
 It covers **both pipeline runs and purges**. Both rewrite the resource's content, so they
 must exclude each other. "No new version until the purge finishes" follows from that.
+
+**Jobs that span resources take a claim on each one they touch** — the backfill, reindex,
+and package and organization purges. That looks heavy-handed until you check what happens
+without it; at least two of the outcomes do real damage.
+
+**Purge against a pipeline run — a hole in legal deletion.** Extract writes the preview to
+storage **before** returning, and the DB write happens afterwards; version capture likewise
+copies the object before inserting its row. If a package purge lands in that window, the
+pipeline writes the preview and the version file **after** the purge has finished cleaning
+up. The DB writes fail harmlessly with the rows gone — but **the objects stay**. The
+purge's own cleanup has already passed, nothing parked them in `orphaned_object`, and the
+DuckLake orphan sweep only looks under `lake/`. **There is no path that collects them.**
+Content is written back moments after a deletion claimed to have erased it, and stays.
+
+**Backfill against a pipeline run — what §5 depends on.** The backfill takes
+`VERSION_CAPTURE_LOCK` today, so concurrent runs cannot collide on a version number. §5
+proposes removing that lock, so if the backfill takes no claim, **removing it leaves
+nothing**: two runs pick the same number, one copy overwrites the other's file, and the
+unique index keeps only one of the rows — exactly what the lock was there to prevent.
 
 ### 2. Taking the claim
 
@@ -78,7 +97,27 @@ The claim is taken in one statement, never read-then-write.
 **Automatic takeover**: a claim whose steps have not progressed for a set period can be
 taken by another run. This is what makes a dead worker (OOM, task replacement, deploy)
 self-healing; without it every redeploy would leave stuck claims for someone to clear by
-hand. Progress is `resource_pipeline.updated`, which each step advances.
+hand.
+
+Progress is read from the running step's **`resource_pipeline_step.started_at`**, not from
+`resource_pipeline.updated`: only `startPipeline`, `updateStatus` and
+`updateExtractResult` advance that one, so everything from the end of Extract to the final
+update looks like no progress at all. A value that moves at each step boundary means the
+threshold only has to exceed the **longest single step**.
+
+**The threshold is 15 minutes.** Fetch is capped at 30 seconds by `AbortSignal.timeout`,
+Extract's input is capped at 50MB of CSV, Version is a server-side S3 copy, and Index is
+chunking and indexing — all expected in the order of minutes. Several times that leaves no
+risk of taking a run that is merely slow. It is **derived from the input caps, not measured
+in production**, so it goes in as a fixed value and moves to a runtime setting (ADR-036) if
+measurement calls for it.
+
+**Why the owner is recorded.** When a takeover happens, the displaced run has to be able to
+find out. Without an owner, (1) that run's final `updateStatus` **releases someone else's
+claim**, (2) its writes advance `updated` and **fake liveness**, and (3) the run itself
+**cannot tell it was displaced and keeps going**. (3) is what §5 rests on: "the claim means
+the generation fence can go" only holds if a displaced run has some way to know. With an
+owner, its writes can carry `WHERE owner = me`.
 
 **Manual kill**: an operator can stop a run without waiting for the threshold — an
 external URL that is known not to be answering has no reason to wait it out. A kill
@@ -151,9 +190,8 @@ scope, and remains a problem at its own layer.
 
 ## Consequences
 
-- **DB**: `resource_pipeline` needs enough to express the claim's holder and liveness.
-  Whether `status` / `updated` suffice or a dedicated column is warranted is an
-  implementation decision
+- **DB**: `resource_pipeline` records the claim's owner (a run id). Liveness is read from
+  the running step's `started_at`, so no expiry column is needed
 - **Worker**: the pipeline and purge handlers take the claim and do nothing without it.
   The step-boundary fence and the version-capture lock are removed (§5)
 - **API**: routes to report a run's state and to kill it
@@ -169,16 +207,14 @@ leave a hole in.
 
 ## Open Issues
 
-1. **The takeover threshold**: how long "no step progress" has to last. Derived from the
-   fetch size cap (100MB) and how long Extract takes. Whether it is configurable is also open
-2. **How the claim is expressed**: whether `status = 'processing'` plus `updated` is
-   enough, or the holder (a run id) has to be recorded. A taken-over run and the run that
-   took it must be distinguishable
-3. **Bulk jobs** (backfill, reindex): how they relate to a per-resource claim — whether
-   they take each resource's claim or are treated separately
-4. **Serializing the Lake retry**: expected to be absorbed here, but what to do
+1. **Measuring the threshold**: 15 minutes comes from the input caps (100MB fetched, 50MB
+   of CSV), not from the longest step observed in production. To be tightened once measured
+2. **Granularity for bulk jobs**: taking a claim per resource touched is settled, but a
+   package or organization purge covering hundreds of resources still needs an acquisition
+   order and a deadlock story (fix the order, or give up and retry when one cannot be taken)
+3. **Serializing the Lake retry**: expected to be absorbed here, but what to do
    once a mid-history version's preview has been swept (give up / purge) is unsettled
-5. **Ordering of the removals**: §5 comes after the claim lands. Removing first would
+4. **Ordering of the removals**: §5 comes after the claim lands. Removing first would
    leave nothing in place until it does
 
 ## Related ADRs
