@@ -94,7 +94,7 @@ export async function expirePendingUploads(
     ),
     cleared AS (
       UPDATE resource r
-      SET pending_storage_key = NULL, pending_storage_key_at = NULL
+      SET pending_storage_key = NULL, pending_storage_key_at = NULL, pending_metadata = NULL
       FROM before b WHERE r.id = b.id
       RETURNING b.pending_storage_key AS key
     )

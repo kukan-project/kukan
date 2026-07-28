@@ -15,6 +15,7 @@ import {
   getStorageKey,
 } from '@kukan/shared'
 import type { CreateResourceInput, UpdateResourceInput, PackageDbState } from '@kukan/shared'
+import type { PendingResourceMetadata } from '@kukan/db'
 import { RESOURCE_POSITION_LOCK, lockInTransaction } from './advisory-lock'
 import { hasOrgMembership, hasDraftAccess, type AuthUser } from '../auth/permissions'
 
@@ -28,6 +29,7 @@ const RESOURCE_PARENT_STATES: PackageDbState[] = ['active', 'draft']
 const {
   storageKey: _storageKey,
   pendingStorageKey: _pendingStorageKey,
+  pendingMetadata: _pendingMetadata,
   ...publicResourceColumns
 } = getTableColumns(resource)
 
@@ -40,9 +42,14 @@ export { publicResourceColumns }
  */
 export function omitStoragePointers<T extends object>(
   row: T
-): Omit<T, 'storageKey' | 'pendingStorageKey'> {
-  const { storageKey: _k, pendingStorageKey: _p, ...rest } = row as T & Record<string, unknown>
-  return rest as Omit<T, 'storageKey' | 'pendingStorageKey'>
+): Omit<T, 'storageKey' | 'pendingStorageKey' | 'pendingMetadata'> {
+  const {
+    storageKey: _k,
+    pendingStorageKey: _p,
+    pendingMetadata: _m,
+    ...rest
+  } = row as T & Record<string, unknown>
+  return rest as Omit<T, 'storageKey' | 'pendingStorageKey' | 'pendingMetadata'>
 }
 
 export class ResourceService {
@@ -351,7 +358,13 @@ export class ResourceService {
       detectFormat(input.filename) ||
       existing.format
     const pendingKey = getStorageKey(existing.packageId, id, randomUUID())
-    const name = existing.name || input.filename
+    const pendingMetadata: PendingResourceMetadata = {
+      url: input.filename,
+      urlType: 'upload',
+      name: existing.name || input.filename,
+      format: format ?? null,
+      mimetype: input.contentType,
+    }
 
     const result = await this.db.execute(sql`
       WITH before AS (
@@ -362,13 +375,9 @@ export class ResourceService {
       ),
       updated AS (
         UPDATE resource r
-        SET url = ${input.filename}::text,
-            url_type = 'upload',
-            name = ${name}::text,
-            format = ${format ?? null}::text,
-            mimetype = ${input.contentType}::text,
-            pending_storage_key = ${pendingKey}::text,
+        SET pending_storage_key = ${pendingKey}::text,
             pending_storage_key_at = NOW(),
+            pending_metadata = ${JSON.stringify(pendingMetadata)}::jsonb,
             updated = NOW()
         FROM before b
         WHERE r.id = b.id
@@ -413,7 +422,7 @@ export class ResourceService {
   ): Promise<string | null> {
     const result = await this.db.execute(sql`
       WITH before AS (
-        SELECT id, storage_key, pending_storage_key
+        SELECT id, storage_key, pending_storage_key, pending_metadata
         FROM resource
         WHERE id = ${id}::uuid AND state = 'active'
           AND pending_storage_key = ${expectedPendingKey}::text
@@ -424,6 +433,15 @@ export class ResourceService {
         SET storage_key = b.pending_storage_key,
             pending_storage_key = NULL,
             pending_storage_key_at = NULL,
+            -- The replacement's name and type land with its bytes, so the row
+            -- never describes content it is not serving.
+            url = COALESCE(b.pending_metadata ->> 'url', r.url),
+            url_type = COALESCE(b.pending_metadata ->> 'urlType', r.url_type),
+            name = COALESCE(b.pending_metadata ->> 'name', r.name),
+            format = CASE WHEN b.pending_metadata IS NULL THEN r.format
+                          ELSE b.pending_metadata ->> 'format' END,
+            mimetype = COALESCE(b.pending_metadata ->> 'mimetype', r.mimetype),
+            pending_metadata = NULL,
             size = ${input.size}::bigint,
             hash = NULL,
             updated = NOW()

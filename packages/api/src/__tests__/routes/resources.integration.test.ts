@@ -654,7 +654,10 @@ describe('Resources API Routes', () => {
       expect(typeof body.upload_url).toBe('string')
     })
 
-    it('should update resource urlType to upload', async () => {
+    it('leaves the resource describing what it still serves', async () => {
+      // The upload has only been offered a URL — nothing has been written yet,
+      // and abandoning it must not leave the resource claiming to be the file
+      // that never arrived (ADR-043).
       const pkg = await createPackage('upload-url-type-pkg')
       const resource = await createResource(pkg.id)
 
@@ -664,29 +667,12 @@ describe('Resources API Routes', () => {
         body: JSON.stringify({ filename: 'data.csv', contentType: 'text/csv' }),
       })
 
-      // Verify resource was updated
       const getRes = await app.request(`/api/v1/resources/${resource.id}`)
       const body = await getRes.json()
-      expect(body.urlType).toBe('upload')
-      expect(body.url).toBe('data.csv')
-    })
-
-    it('should derive format from filename', async () => {
-      const pkg = await createPackage('upload-url-format-pkg')
-      const resource = await createResource(pkg.id)
-
-      await app.request(`/api/v1/resources/${resource.id}/upload-url`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          filename: 'report.xlsx',
-          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        }),
-      })
-
-      const getRes = await app.request(`/api/v1/resources/${resource.id}`)
-      const body = await getRes.json()
-      expect(body.format).toBe('XLSX')
+      expect(body.url).not.toBe('data.csv')
+      expect(body.urlType).not.toBe('upload')
+      // Held server-side until the upload lands; never part of the response.
+      expect(body).not.toHaveProperty('pendingMetadata')
     })
 
     it('should reject unauthenticated requests', async () => {

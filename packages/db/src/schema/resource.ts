@@ -16,6 +16,18 @@ import {
 } from 'drizzle-orm/pg-core'
 import { packageTable } from './package'
 
+/**
+ * The columns a replacement upload will set, held until it is promoted
+ * (ADR-043). Exactly the fields `prepareForUpload` derives from the request.
+ */
+export interface PendingResourceMetadata {
+  url: string
+  urlType: string
+  name: string
+  format: string | null
+  mimetype: string
+}
+
 export const resource = pgTable(
   'resource',
   {
@@ -41,6 +53,11 @@ export const resource = pgTable(
     // timestamp is what lets the sweep reclaim one that never completed.
     pendingStorageKey: text('pending_storage_key'),
     pendingStorageKeyAt: timestamp('pending_storage_key_at', { withTimezone: true }),
+    // What the replacement will be called and how it is typed. Held here rather
+    // than applied straight away, so an abandoned upload leaves the resource
+    // describing the content it is still serving, not the one that never
+    // arrived. Applied to the columns above when the upload is promoted.
+    pendingMetadata: jsonb('pending_metadata').$type<PendingResourceMetadata>(),
     position: integer('position').default(0).notNull(),
     state: varchar('state', { length: 20 }).default('active'),
     resourceType: varchar('resource_type', { length: 50 }),

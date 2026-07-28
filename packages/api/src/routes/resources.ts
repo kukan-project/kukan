@@ -650,16 +650,15 @@ resourcesRouter.post(
     const resourceService = new ResourceService(db)
     const existing = await checkResourcePermission(db, user, resourceService, id)
 
-    if (existing.urlType !== 'upload') {
-      throw new ValidationError('Resource is not an uploaded file')
-    }
-
     // The presigned PUT URL does not bind a content length, so verify the
     // actually-stored object size server-side instead of trusting the client.
     // Reject (and remove) anything over the limit before enqueueing the
     // pipeline, so an oversize object can't drive worker memory exhaustion.
     // The pending key is checked, never the live one: rejecting must not touch
     // the content the resource is still serving.
+    // The precondition is that an upload is pending, which this states exactly.
+    // `url_type` no longer says so: it describes the content being served, and
+    // only becomes 'upload' when this call promotes the new object.
     const storage = c.get('storage')
     const pendingKey = existing.pendingStorageKey
     if (!pendingKey) {

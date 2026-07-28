@@ -257,27 +257,64 @@ describe('promoteUpload', () => {
     expect(await parkedKeys()).toEqual([first])
   })
 
-  it('applies the replacement metadata it derives', async () => {
-    // Moved here from the unit suite when prepare stopped returning the row:
-    // format resolution is explicit > filename > whatever the resource had.
+  it('holds the replacement metadata until the upload is promoted', async () => {
+    // An abandoned upload must leave the resource describing the content it is
+    // still serving. A CSV replaced by a PDF that never arrives would otherwise
+    // be served as the old CSV under a PDF's name, MIME type and format — and
+    // the preview would branch on the format of a file that is not there.
     const service = new ResourceService(db)
+    const before = await row()
 
-    await service.prepareForUpload(resourceId, {
-      filename: 'data.json',
-      contentType: 'application/json',
-    })
-    expect((await row()).format).toBe('JSON')
-
-    await service.prepareForUpload(resourceId, {
+    const pending = await service.prepareForUpload(resourceId, {
       filename: 'data.json',
       contentType: 'application/json',
       format: 'GeoJSON',
     })
-    const r = await row()
-    expect(r.format).toBe('GeoJSON')
-    expect(r.urlType).toBe('upload')
-    expect(r.url).toBe('data.json')
-    expect(r.mimetype).toBe('application/json')
+
+    const held = await row()
+    expect(held.url).toBe(before.url)
+    expect(held.urlType).toBe(before.urlType)
+    expect(held.format).toBe(before.format)
+    expect(held.mimetype).toBe(before.mimetype)
+
+    await service.promoteUpload(resourceId, pending, { size: 42 })
+
+    // Format resolution is explicit > filename > whatever the resource had.
+    const after = await row()
+    expect(after.format).toBe('GeoJSON')
+    expect(after.urlType).toBe('upload')
+    expect(after.url).toBe('data.json')
+    expect(after.mimetype).toBe('application/json')
+    expect(after.pendingMetadata).toBeNull()
+  })
+
+  it('derives the format from the filename when none is given', async () => {
+    const service = new ResourceService(db)
+    const pending = await service.prepareForUpload(resourceId, {
+      filename: 'report.xlsx',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    await service.promoteUpload(resourceId, pending, { size: 42 })
+
+    expect((await row()).format).toBe('XLSX')
+  })
+
+  it('drops the held metadata when the upload is never completed', async () => {
+    // The sweep reclaims the key; the description it would have applied must go
+    // with it, or a later promotion would apply a name from an upload that was
+    // abandoned days earlier.
+    const service = new ResourceService(db)
+    await service.prepareForUpload(resourceId, {
+      filename: 'data.csv',
+      contentType: 'text/csv',
+    })
+    await db
+      .update(resource)
+      .set({ pendingStorageKeyAt: sql`NOW() - interval '2 days'` })
+      .where(eq(resource.id, resourceId))
+
+    expect(await expirePendingUploads(db, 60_000)).toBe(1)
+    expect((await row()).pendingMetadata).toBeNull()
   })
 
   it('parks the key the row actually held, not one the caller read earlier', async () => {
