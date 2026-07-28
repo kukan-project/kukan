@@ -46,6 +46,7 @@ function createMockCtx(): PipelineContext {
     storage: { download: vi.fn(), upload: vi.fn(), copy: vi.fn() },
     getResource: vi.fn(),
     publishContent: vi.fn().mockResolvedValue(true),
+    isSuperseded: vi.fn().mockResolvedValue(false),
     acquireFetchSlot: vi.fn().mockResolvedValue(true),
     indexContent: vi.fn(),
     deleteContent: vi.fn(),
@@ -250,6 +251,45 @@ describe('processResource', () => {
 
     expect(executeFetch).not.toHaveBeenCalled()
     expect(mockTracker.startStep).not.toHaveBeenCalled()
+  })
+
+  it('stops before recording its work once a newer run has published', async () => {
+    // Publishing settles which object is the content; a run that has been
+    // overtaken must not write its stale preview, search document or pipeline
+    // state over the newer run's.
+    vi.mocked(executeFetch).mockResolvedValue({
+      storageKey: 'resources/pkg-1/res-1.tok',
+      format: 'CSV',
+      packageId: 'pkg-1',
+      status: 'fetched',
+    })
+    vi.mocked(executeExtract).mockResolvedValue({
+      previewKey: 'previews/pkg-1/res-1.tok.parquet',
+      encoding: 'UTF8',
+    })
+    vi.mocked(ctx.isSuperseded).mockResolvedValue(true)
+
+    await processResource('res-1', ctx, db, queue)
+
+    expect(mockTracker.updateExtractResult).not.toHaveBeenCalled()
+    expect(executeLake).not.toHaveBeenCalled()
+    expect(executeIndexContent).not.toHaveBeenCalled()
+    // The pipeline row belongs to the run that owns the content.
+    expect(mockTracker.updateStatus).not.toHaveBeenCalledWith('pipeline-1', 'complete')
+  })
+
+  it('checks for a newer run against the object it published', async () => {
+    vi.mocked(executeFetch).mockResolvedValue({
+      storageKey: 'resources/pkg-1/res-1.tok',
+      format: 'CSV',
+      packageId: 'pkg-1',
+      status: 'fetched',
+    })
+    vi.mocked(executeExtract).mockResolvedValue(null)
+
+    await processResource('res-1', ctx, db, queue)
+
+    expect(ctx.isSuperseded).toHaveBeenCalledWith('res-1', 'resources/pkg-1/res-1.tok')
   })
 
   it('queues a retry when the Lake step could not ingest', async () => {

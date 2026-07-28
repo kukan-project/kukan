@@ -68,6 +68,15 @@ export function buildPipelineContext(
       return publishLiveContent(db, id, content)
     },
 
+    async isSuperseded(id: string, storageKey: string): Promise<boolean> {
+      const [res] = await db
+        .select({ storageKey: resource.storageKey })
+        .from(resource)
+        .where(eq(resource.id, id))
+        .limit(1)
+      return res?.storageKey !== storageKey
+    },
+
     async acquireFetchSlot(fqdn: string): Promise<boolean> {
       const result = await db.execute(sql`
         INSERT INTO fetch_rate_limit (fqdn, last_fetched_at)
@@ -131,10 +140,11 @@ export function buildPipelineContext(
       return withAdvisoryLock(db, VERSION_CAPTURE_LOCK, resourceId, async (tx) => {
         // Read under the lock, on the lock's own connection.
         const [res] = await tx
-          .select({ urlType: resource.urlType })
+          .select({ urlType: resource.urlType, storageKey: resource.storageKey })
           .from(resource)
           .where(eq(resource.id, resourceId))
           .limit(1)
+
         const [maxRow] = await tx
           .select({ version: resourceVersion.version })
           .from(resourceVersion)
@@ -152,9 +162,12 @@ export function buildPipelineContext(
 
         // Gated on this run's own measurement, not the row's: the row describes
         // whichever run published last, while the copy below takes the object
-        // this run wrote and no one rewrites.
+        // this run wrote and no one rewrites. The pointer comparison is what
+        // establishes that this run is still the one describing the resource.
         const decision = decideVersionCapture({
           hash: contentHash,
+          publishedKey: currentStorageKey,
+          currentKey: res?.storageKey ?? null,
           maxVersion: maxRow?.version ?? null,
           latestActiveHash: activeRow?.hash ?? null,
         })

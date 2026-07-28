@@ -9,10 +9,18 @@ export type VersionResult = { captured: false } | { captured: true; version: num
 /**
  * Decide whether to capture, and as which version number.
  *
- * Kept separate from the IO so the two rules that are easy to get wrong stay
- * testable: the gate compares against the latest *active* hash rather than the
- * highest row, and the number comes from the highest row of *any* state.
+ * Kept separate from the IO so the rules that are easy to get wrong stay
+ * testable: this run must still own the content, the gate compares against the
+ * latest *active* hash rather than the highest row, and the number comes from
+ * the highest row of *any* state.
  *
+ * @param publishedKey - the object this run published.
+ * @param currentKey - what the resource row names now, read under the capture
+ *   lock. A mismatch means another run published while this one was between its
+ *   publish and here; capturing would file this run's older bytes above the
+ *   version that run captured, leaving the live content behind its own latest
+ *   version. The lock is what makes the comparison decisive — nobody can move
+ *   the pointer between it and the insert.
  * @param maxVersion - highest version across ALL rows, purged tombstones
  *   included, so the next number never collides on the unique index.
  * @param latestActiveHash - content hash of the highest-numbered active version.
@@ -22,9 +30,12 @@ export type VersionResult = { captured: false } | { captured: true; version: num
  */
 export function decideVersionCapture(input: {
   hash: string
+  publishedKey: string
+  currentKey: string | null
   maxVersion: number | null
   latestActiveHash: string | null
 }): VersionResult {
+  if (input.currentKey !== input.publishedKey) return { captured: false }
   if (input.latestActiveHash === input.hash) return { captured: false }
   return { captured: true, version: (input.maxVersion ?? 0) + 1 }
 }

@@ -42,6 +42,19 @@ export interface PipelineContext {
    */
   publishContent(id: string, content: PublishedContent): Promise<boolean>
   /**
+   * Whether another run has published since this one did (ADR-043).
+   *
+   * Publishing only settles which object is the content; everything after it —
+   * preview, search, the pipeline row — still describes what this run read. A
+   * run that has been overtaken stops instead of writing that over the newer
+   * run's work. The ordering-critical write, version capture, does not rely on
+   * this: it re-checks under its own lock, where the answer cannot go stale
+   * between the check and the insert.
+   *
+   * @param storageKey - the object this run published.
+   */
+  isSuperseded(id: string, storageKey: string): Promise<boolean>
+  /**
    * Atomically acquire a fetch slot for the given FQDN.
    * Returns true if the slot was acquired (i.e. last fetch was >1s ago or first time).
    * Returns false if rate-limited (another fetch happened within the last second).
