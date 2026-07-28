@@ -63,18 +63,6 @@ export const HEALTH_CHECK_CONCURRENCY = 10
 export const HEALTH_CHECK_TIMEOUT_MS = 10_000
 
 /**
- * How long a resource's claim survives without progress before another run can
- * take it (15 min, ADR-044).
- *
- * Sized against the longest single step rather than a whole run: Fetch is
- * capped at 30 s by its abort signal, Extract's input at 50MB of CSV, Version
- * is a server-side copy, and Index chunks and indexes — all expected in the
- * order of minutes. Several times over that, so a run that is merely slow is
- * never taken from. Derived from those caps, not measured in production.
- */
-export const CLAIM_STALE_AFTER_MS = 15 * 60 * 1000
-
-/**
  * How long a job waits before trying a resource someone else is holding.
  * Long enough that a run is not spun on, short enough that a replacement that
  * arrived mid-run is not left waiting out the whole staleness window.

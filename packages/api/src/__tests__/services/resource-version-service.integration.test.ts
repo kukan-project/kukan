@@ -5,9 +5,11 @@
  */
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { eq, and, sql } from 'drizzle-orm'
-import { resource, resourceVersion } from '@kukan/db'
+import { randomUUID } from 'node:crypto'
+import { resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import { getStorageKey, getVersionKey } from '@kukan/shared'
 import { ResourceVersionService } from '../../services/resource-version-service'
+import { CLAIM_STALE_AFTER_MS, claimResources } from '../../services/pipeline-claim'
 import { unreachableLake } from '../test-helpers/fixtures'
 import {
   getTestDb,
@@ -164,6 +166,44 @@ describe('executePurge', () => {
     const result = await service.executePurge(resourceId, 1, deps)
     expect(result).toEqual({ purged: false, rolledBack: false })
     expect(deps.storage.delete).not.toHaveBeenCalled()
+  })
+})
+
+describe('executePurge — the resource claim (ADR-044)', () => {
+  it('defers while a run holds the resource, leaving the version purging', async () => {
+    // The run may be between writing a preview and recording it. Sweeping now
+    // would leave that object behind with nothing left to reclaim it.
+    await db.insert(resourcePipeline).values({ resourceId })
+    await addVersion(1, 'sha256:v2')
+    await service.claimPurge(resourceId, 1, userId, 'illegal')
+    await claimResources(db, [resourceId], randomUUID(), CLAIM_STALE_AFTER_MS)
+
+    const deps = mockDeps()
+    await expect(service.executePurge(resourceId, 1, deps)).rejects.toThrow(/being processed/)
+
+    expect(deps.storage.delete).not.toHaveBeenCalled()
+    // Still claimed for purge, so the redelivered job finishes it.
+    expect((await service.getVersion(resourceId, 1)).state).toBe('purging')
+  })
+
+  it('holds the resource while it purges', async () => {
+    const [pipe] = await db.insert(resourcePipeline).values({ resourceId }).returning()
+    await addVersion(1, 'sha256:v2')
+    await service.claimPurge(resourceId, 1, userId, 'illegal')
+
+    let heldDuringDelete = false
+    const deps = mockDeps()
+    vi.mocked(deps.storage.delete).mockImplementation(async () => {
+      const [row] = await db.select().from(resourcePipeline).where(eq(resourcePipeline.id, pipe.id))
+      heldDuringDelete = row.claimOwner !== null
+    })
+
+    await service.executePurge(resourceId, 1, deps)
+
+    expect(heldDuringDelete).toBe(true)
+    // And given back, so the pipeline this re-enqueues can start.
+    const [after] = await db.select().from(resourcePipeline).where(eq(resourcePipeline.id, pipe.id))
+    expect(after.claimOwner).toBeNull()
   })
 })
 

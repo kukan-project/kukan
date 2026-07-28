@@ -20,21 +20,34 @@ vi.mock('../pipeline/steps/index-content', () => ({
 
 // Mock StepTracker
 const mockTracker = {
-  startPipeline: vi.fn(),
+  beginRun: vi.fn(),
   startStep: vi.fn(),
   completeStep: vi.fn(),
   failStep: vi.fn(),
   skipStep: vi.fn(),
   updateStatus: vi.fn(),
   updateExtractResult: vi.fn(),
-  releaseClaim: vi.fn(),
-  claimHolder: vi.fn(),
 }
 
 vi.mock('../pipeline/step-tracker', () => ({
   StepTracker: vi.fn(function () {
     return mockTracker
   }),
+}))
+
+/**
+ * The claim is the database's (ADR-044) and is tested against a real one; what
+ * belongs here is what the run does with each answer it gets back.
+ */
+const claim = vi.hoisted(() => ({ answer: 'ran' as 'ran' | 'held' | 'absent' }))
+
+vi.mock('@kukan/api/services/pipeline-claim', () => ({
+  withResourceClaim: vi.fn(
+    async (_db: unknown, resourceId: string, fn: (c: { id: string }) => Promise<void>) => {
+      if (claim.answer !== 'ran') return { status: claim.answer }
+      return { status: 'ran', result: await fn({ id: 'pipeline-1', resourceId }) }
+    }
+  ),
 }))
 
 // Import mocked modules
@@ -80,15 +93,14 @@ describe('processResource', () => {
     queue = createMockQueue()
     stepCounter = 0
 
-    mockTracker.startPipeline.mockResolvedValue({ id: 'pipeline-1' })
+    claim.answer = 'ran'
+    mockTracker.beginRun.mockResolvedValue(undefined)
     mockTracker.startStep.mockImplementation(() => Promise.resolve(`step-${stepCounter++}`))
     mockTracker.completeStep.mockResolvedValue(undefined)
     mockTracker.failStep.mockResolvedValue(undefined)
     mockTracker.skipStep.mockResolvedValue(undefined)
     mockTracker.updateStatus.mockResolvedValue(undefined)
     mockTracker.updateExtractResult.mockResolvedValue(null)
-    mockTracker.releaseClaim.mockResolvedValue(undefined)
-    mockTracker.claimHolder.mockResolvedValue(false)
 
     // Version step defaults to capturing a new version (v1).
     // Lake step defaults to a no-op (no DuckLake configured in these tests).
@@ -249,15 +261,12 @@ describe('processResource', () => {
   })
 
   it('does nothing when the resource has no pipeline row', async () => {
-    mockTracker.startPipeline.mockResolvedValue(null)
-    mockTracker.claimHolder.mockResolvedValue(false)
+    claim.answer = 'absent'
 
     await processResource('res-1', ctx, db, queue)
 
     expect(executeFetch).not.toHaveBeenCalled()
     expect(mockTracker.startStep).not.toHaveBeenCalled()
-    // Nothing to give up, and releasing would take a holder's claim.
-    expect(mockTracker.releaseClaim).not.toHaveBeenCalled()
     // Nothing is coming, so requeueing would spin forever.
     expect(queue.enqueue).not.toHaveBeenCalled()
   })
@@ -266,8 +275,7 @@ describe('processResource', () => {
     // SQS delivers at least once, and a replacement can arrive mid-run. The
     // holder read what it read, so dropping this job would leave the newer
     // content with no run of its own (ADR-044).
-    mockTracker.startPipeline.mockResolvedValue(null)
-    mockTracker.claimHolder.mockResolvedValue(true)
+    claim.answer = 'held'
 
     await processResource('res-1', ctx, db, queue)
 
@@ -279,48 +287,14 @@ describe('processResource', () => {
     )
   })
 
-  it('gives the claim up when the run finishes', async () => {
-    vi.mocked(executeFetch).mockResolvedValue({
-      storageKey: 'resources/pkg-1/res-1.tok',
-      format: 'CSV',
-      packageId: 'pkg-1',
-      status: 'fetched',
-    })
-    vi.mocked(executeExtract).mockResolvedValue(null)
-
-    await processResource('res-1', ctx, db, queue)
-
-    // Held to the end, so the claim outlives the last write it guards.
-    expect(mockTracker.releaseClaim).toHaveBeenCalledWith('pipeline-1')
-  })
-
-  it('gives the claim up on the early exits too', async () => {
-    // Rate-limited and superseded runs leave through their own returns. Left
-    // held, the resource would sit out the staleness window before anything
-    // could touch it again.
-    vi.mocked(executeFetch).mockResolvedValue({ status: 'deferred' })
-
-    await processResource('res-1', ctx, db, queue)
-
-    expect(mockTracker.releaseClaim).toHaveBeenCalledWith('pipeline-1')
-  })
-
-  it('gives the claim up when a newer run superseded this one', async () => {
-    // The superseded exit leaves through its own return, before any status
-    // write. Left held, the resource would sit out the staleness window.
+  it('records the run against the row it was given', async () => {
+    // The claim names the pipeline row, so nothing has to look it up again —
+    // and the reset that opens the run is safe only under it.
     vi.mocked(executeFetch).mockResolvedValue({ status: 'superseded' })
 
     await processResource('res-1', ctx, db, queue)
 
-    expect(mockTracker.releaseClaim).toHaveBeenCalledWith('pipeline-1')
-  })
-
-  it('gives the claim up when a step throws', async () => {
-    vi.mocked(executeFetch).mockRejectedValue(new Error('Download failed'))
-
-    await processResource('res-1', ctx, db, queue)
-
-    expect(mockTracker.releaseClaim).toHaveBeenCalledWith('pipeline-1')
+    expect(mockTracker.beginRun).toHaveBeenCalledWith('pipeline-1')
   })
 
   it('stops before recording its work once a newer run has published', async () => {

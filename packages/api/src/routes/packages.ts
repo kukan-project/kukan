@@ -35,9 +35,7 @@ import {
   indexResourceDocFromRow,
 } from '../services/search-index'
 import { hybridSearch } from '../services/hybrid-search'
-import { dropResourceTables, lakeConfigFromEnv } from '@kukan/lake'
-import { reclaimLakeStorage } from '../services/lake-reclaim'
-import { purgePackageExternals } from '../services/package-cleanup'
+import { lakeConfigFromEnv } from '@kukan/lake'
 import { MetadataSuggestService } from '../services/metadata-suggest-service'
 import { suggestRateLimiter } from '../services/suggest/rate-limit'
 import { getSuggestAvailability } from '../services/suggest/availability'
@@ -446,23 +444,13 @@ packagesRouter.post('/:nameOrId/purge', async (c) => {
   const nameOrId = c.req.param('nameOrId')
   const service = new PackageService(db)
 
-  // Read the ingested resource ids before the purge deletes the rows — they name
-  // the DuckLake tables that have to go with them, and an empty list saves
-  // opening a lake session at all.
-  const target = await service.getByNameOrId(nameOrId, 'deleted')
-  const lakeResourceIds = await service.listLakeResourceIds(target.id)
-
-  const pkg = await service.purge(nameOrId, makePackageAuthorize(db, user, 'admin'))
-
-  // Remove the package's search docs and every external trace: raw files,
-  // previews, retained versions, and DuckLake tables.
-  await purgePackageExternals(pkg.id, { search: c.get('search'), storage: c.get('storage') })
-  const lake = lakeConfigFromEnv(c.get('env'))
-  await dropResourceTables(lake, lakeResourceIds)
-  // The purge above deleted the rows, so the snapshots they referenced are
-  // unreferenced now. Dropping the tables does not delete the Parquet
-  // (ADR-043 §9).
-  if (lakeResourceIds.length > 0) await reclaimLakeStorage(db, lake)
+  // Rows, search docs and every external trace — raw files, previews, retained
+  // versions, DuckLake tables — all under the resources' claim (ADR-044).
+  const pkg = await service.purge(
+    nameOrId,
+    { search: c.get('search'), storage: c.get('storage'), lake: lakeConfigFromEnv(c.get('env')) },
+    makePackageAuthorize(db, user, 'admin')
+  )
   return c.json(pkg)
 })
 

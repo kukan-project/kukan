@@ -88,7 +88,19 @@ A run takes the claim first. If a live claim is already held it **does not start
 job completes rather than failing, and leaves the queue: another run already owns the
 content, so retrying means nothing.
 
-The claim is taken in one statement, never read-then-write.
+The claim is taken in one statement, never read-then-write. **A set of resources is taken
+in one statement too.** Nothing waits, so there is no acquisition order to agree on and
+nothing to deadlock against (settling open issue 2). If even one of them is held, the ones
+taken are given back and the job **abandons the whole set** — doing half of a purge creates
+exactly the state the claim exists to prevent. The caller retries.
+
+**Taking the claim does not touch the row's own state.** `status` and the clearing of steps
+are the run's record of itself, not part of the claim: a purge holds the claim without ever
+being "processing", and that distinction has to survive. The write in which a run resets its
+own record is safe precisely because it happens while holding the claim.
+
+A resource with no pipeline row cannot be taken — and cannot be run against either, so
+there is nothing to exclude and a purge simply proceeds.
 
 ### 3. Releasing the claim — three paths
 
@@ -192,9 +204,10 @@ scope, and remains a problem at its own layer.
 
 - **DB**: `resource_pipeline` records the claim's owner (a run id). Liveness is read from
   the running step's `started_at`, so no expiry column is needed
-- **Worker**: the pipeline and purge handlers take the claim and do nothing without it.
-  The step-boundary fence and the version-capture lock are removed (§5)
-- **API**: routes to report a run's state and to kill it
+- **Worker**: the pipeline, purge, Lake-retry and backfill handlers take the claim and do
+  nothing without it. The step-boundary fence and the version-capture lock are removed (§5)
+- **API**: package and draft purges run over HTTP, so they take the claim too (409 for a
+  retry when they cannot). Plus routes to report a run's state and to kill it
 - **Frontend**: processing state and elapsed time, the kill action, and the purge path
   with its warning
 - **Operations**: a hang does not resolve itself; it waits for a decision. Layer 1
@@ -209,11 +222,11 @@ leave a hole in.
 
 1. **Measuring the threshold**: 15 minutes comes from the input caps (100MB fetched, 50MB
    of CSV), not from the longest step observed in production. To be tightened once measured
-2. **Granularity for bulk jobs**: taking a claim per resource touched is settled, but a
-   package or organization purge covering hundreds of resources still needs an acquisition
-   order and a deadlock story (fix the order, or give up and retry when one cannot be taken)
-3. **Serializing the Lake retry**: expected to be absorbed here, but what to do
-   once a mid-history version's preview has been swept (give up / purge) is unsettled
+2. ~~**Granularity for bulk jobs**~~: settled (§2). One statement, so no acquisition order
+   and no deadlock; one resource held abandons the whole set for a retry
+3. **Serializing the Lake retry**: absorbed into the claim (the retry job takes one too).
+   What remains is what to do once a mid-history version's preview has been swept: today
+   it gives up, logging a warning. Whether to go further and purge is unsettled
 4. **Ordering of the removals**: §5 comes after the claim lands. Removing first would
    leave nothing in place until it does
 

@@ -8,6 +8,7 @@
 import type { Database } from '@kukan/db'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import { LAKE_INGEST_JOB_TYPE, PIPELINE_JOB_TYPE } from '@kukan/shared'
+import { withResourceClaim } from '@kukan/api/services/pipeline-claim'
 import { StepTracker } from './step-tracker'
 import { executeFetch } from './steps/fetch'
 import { executeExtract } from './steps/extract'
@@ -31,24 +32,34 @@ export async function processResource(
   queue: QueueAdapter
 ): Promise<void> {
   const tracker = new StepTracker(db)
-  const pipeline = await tracker.startPipeline(resourceId)
+  const outcome = await withResourceClaim(db, resourceId, (claim) =>
+    runPipeline(resourceId, claim.id, tracker, ctx, queue)
+  )
 
-  if (!pipeline) {
-    // Held by another run (ADR-044), or there is no pipeline row at all. The
-    // first has to come back: the holder read the content it read, so a
-    // replacement that arrived after it started would otherwise never be
-    // processed — the job would be dropped and nothing would record that work
-    // was outstanding. Requeued with a delay rather than retried, so a long run
-    // is not spun on.
-    if (await tracker.claimHolder(resourceId)) {
-      await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId }, { delaySeconds: CLAIM_RETRY_DELAY_S })
-    }
-    return
+  // Held by another run or a purge (ADR-044). This job has to come back: the
+  // holder read the content it read, so a replacement that arrived after it
+  // started would otherwise never be processed — the job would be dropped and
+  // nothing would record that work was outstanding. Requeued with a delay
+  // rather than retried, so a long run is not spun on. A resource with no
+  // pipeline row is the other refusal, and there is nothing to come back for.
+  if (outcome.status === 'held') {
+    await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId }, { delaySeconds: CLAIM_RETRY_DELAY_S })
   }
+}
+
+/** The run itself, with the resource already claimed for its duration. */
+async function runPipeline(
+  resourceId: string,
+  pipelineId: string,
+  tracker: StepTracker,
+  ctx: PipelineContext,
+  queue: QueueAdapter
+): Promise<void> {
+  await tracker.beginRun(pipelineId)
 
   try {
     // Step 1: Fetch — download external URL to Storage (uploads already there)
-    const fetchStepId = await tracker.startStep(pipeline.id, 'fetch')
+    const fetchStepId = await tracker.startStep(pipelineId, 'fetch')
     const fetchResult = await executeFetch(resourceId, ctx)
 
     if (fetchResult.status === 'superseded') {
@@ -63,7 +74,7 @@ export async function processResource(
       // Rate-limited — requeue with delay and revert pipeline to 'queued'
       await Promise.all([
         tracker.skipStep(fetchStepId),
-        tracker.updateStatus(pipeline.id, 'queued'),
+        tracker.updateStatus(pipelineId, 'queued'),
         queue.enqueue(
           PIPELINE_JOB_TYPE,
           { resourceId },
@@ -97,7 +108,7 @@ export async function processResource(
     // Step 2: Extract — parse from Storage, generate Parquet preview
     // Non-critical: failures are recorded but don't fail the pipeline
     let extractResult: Awaited<ReturnType<typeof executeExtract>> = null
-    const extractStepId = await tracker.startStep(pipeline.id, 'extract')
+    const extractStepId = await tracker.startStep(pipelineId, 'extract')
     try {
       extractResult = await executeExtract(
         resourceId,
@@ -116,11 +127,11 @@ export async function processResource(
         // with a PDF must not keep reporting the old schema as queryable.
         // (A transient extract failure throws instead and is caught below, where
         // the previous preview is intentionally preserved.)
-        await tracker.updateExtractResult(pipeline.id, null, {})
+        await tracker.updateExtractResult(pipelineId, null, {})
       } else {
         if (await supersededAfter(extractStepId)) return
         await tracker.completeStep(extractStepId)
-        await tracker.updateExtractResult(pipeline.id, extractResult.previewKey, {
+        await tracker.updateExtractResult(pipelineId, extractResult.previewKey, {
           encoding: extractResult.encoding,
           // Persist the column schema (ADR-032) when one was generated (CSV/TSV).
           ...(extractResult.schema ? { schema: extractResult.schema } : {}),
@@ -138,7 +149,7 @@ export async function processResource(
     // Step 3: Version — capture an immutable copy of the canonical file (ADR-043).
     // Runs after Extract so the column schema can be snapshotted onto the version.
     // Non-critical: a capture failure is recorded but never fails the pipeline.
-    const versionStepId = await tracker.startStep(pipeline.id, 'version')
+    const versionStepId = await tracker.startStep(pipelineId, 'version')
     try {
       const versionResult = await ctx.captureVersion({
         resourceId,
@@ -160,7 +171,7 @@ export async function processResource(
     // Step 4: Lake — load the captured version into DuckLake for row-level
     // diff (ADR-043 layer 2). Only runs for a newly captured tabular version;
     // non-critical, and rebuildable from layer 1 if it fails.
-    const lakeStepId = await tracker.startStep(pipeline.id, 'lake')
+    const lakeStepId = await tracker.startStep(pipelineId, 'lake')
     if (await supersededAfter(lakeStepId)) return
     try {
       const lakeResult = await executeLake(
@@ -190,7 +201,7 @@ export async function processResource(
 
     // Step 5: Index — extract text content and index to search engine
     // Non-critical: failures are recorded but don't fail the pipeline
-    const indexStepId = await tracker.startStep(pipeline.id, 'index')
+    const indexStepId = await tracker.startStep(pipelineId, 'index')
     if (await supersededAfter(indexStepId)) return
     try {
       const indexResult = await executeIndexContent(
@@ -203,23 +214,18 @@ export async function processResource(
       )
       if (indexResult === null) {
         await tracker.skipStep(indexStepId)
-        await ctx.updatePipelineMetadata(pipeline.id, { contentIndexed: false })
+        await ctx.updatePipelineMetadata(pipelineId, { contentIndexed: false })
       } else {
         await tracker.completeStep(indexStepId)
-        await ctx.updatePipelineMetadata(pipeline.id, { ...indexResult })
+        await ctx.updatePipelineMetadata(pipelineId, { ...indexResult })
       }
     } catch (err) {
       await tracker.failStep(indexStepId, (err as Error).message)
-      await ctx.updatePipelineMetadata(pipeline.id, { contentIndexed: false })
+      await ctx.updatePipelineMetadata(pipelineId, { contentIndexed: false })
     }
 
-    await tracker.updateStatus(pipeline.id, 'complete')
+    await tracker.updateStatus(pipelineId, 'complete')
   } catch (err) {
-    await tracker.updateStatus(pipeline.id, 'error', (err as Error).message)
-  } finally {
-    // Every exit gives the claim up — the early returns for a superseded or
-    // rate-limited run as much as the normal one. Left held, the resource would
-    // sit out the staleness window before anything could touch it again.
-    await tracker.releaseClaim(pipeline.id)
+    await tracker.updateStatus(pipelineId, 'error', (err as Error).message)
   }
 }

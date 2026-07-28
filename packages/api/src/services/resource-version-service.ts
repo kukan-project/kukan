@@ -26,11 +26,20 @@ import type { QueueAdapter } from '@kukan/queue-adapter'
 import { ingestVersionIntoLake, withLakeIngestLock } from './lake-ingest'
 import { reclaimInSession } from './lake-reclaim'
 import { VERSION_CAPTURE_LOCK, withAdvisoryLock } from './advisory-lock'
+import { withResourceClaims, withResourceClaimsOrConflict } from './pipeline-claim'
 import { publishLiveContent } from './storage-pointer'
 import { PipelineService } from './pipeline-service'
 
 export type VersionState = 'active' | 'purging' | 'purged'
 export type VersionOrigin = 'upload' | 'fetch'
+
+/** What a purge needs to reach: layer 1, the search index, the queue, layer 2. */
+interface PurgeDeps {
+  storage: StorageAdapter
+  search?: SearchAdapter
+  queue: QueueAdapter
+  lake?: LakeConfig
+}
 
 /**
  * Bounded concurrency for the one-time version backfill's storage copies.
@@ -245,75 +254,111 @@ export class ResourceVersionService {
     // INSERT) so one bad object fails only its own resource, not the whole chunk.
     for (let i = 0; i < rows.length; i += BACKFILL_CONCURRENCY) {
       const results = await Promise.allSettled(
-        rows.slice(i, i + BACKFILL_CONCURRENCY).map(async (r) =>
-          // Same lock the pipeline's Version step takes: the migration must not
-          // capture v1 for a resource the pipeline is capturing right now. Every
-          // query runs on the transaction's own connection — reaching back to
-          // the pool here would deadlock, since each held lock is a connection
-          // and the backfill runs more of them in parallel than the pool has.
-          withAdvisoryLock(this.db, VERSION_CAPTURE_LOCK, r.id, async (tx) => {
-            // Re-checked under the lock, against the row as it is *now*: the
-            // scan happened earlier, and since then a pipeline run may have
-            // captured v1 (copying first would overwrite its file before the
-            // unique index rejected the insert) or a newer run may have moved
-            // the pointer, which means the object this row described is no
-            // longer the resource's content.
-            const [current] = await tx
-              .select({
-                storageKey: resource.storageKey,
-                versions: sql<number>`(
-                  SELECT count(*)::int FROM ${resourceVersion} rv
-                  WHERE rv.resource_id = ${resource.id}
-                )`,
-              })
-              .from(resource)
-              .where(eq(resource.id, r.id))
-              .limit(1)
-            if (!current || current.versions > 0) return false
-            if (!current.storageKey || current.storageKey !== r.storageKey) return false
-
-            const versionKey = getVersionKey(r.packageId, r.id, 1)
-            await deps.storage.copy(current.storageKey, versionKey)
-            // Measured rather than taken from the row: this is pre-existing
-            // data, and `upload-complete` used to accept any string as a hash.
-            const captured = await digestStream(await deps.storage.download(versionKey))
-
-            // Normalize the row to the measurement when the stored values were
-            // never the real ones; refusing those rows instead would leave the
-            // migration permanently incomplete. Guarded on the pointer, since a
-            // pipeline run may have published newer content while this copied —
-            // its hash describes that content and must not be overwritten with
-            // a measurement of the object it replaced.
-            if (captured.hash !== r.hash || captured.size !== r.size) {
-              await tx
-                .update(resource)
-                .set({ hash: captured.hash, size: captured.size })
-                .where(and(eq(resource.id, r.id), eq(resource.storageKey, current.storageKey)))
-            }
-
-            await tx.insert(resourceVersion).values({
-              resourceId: r.id,
-              version: 1,
-              storageKey: versionKey,
-              size: captured.size,
-              hash: captured.hash,
-              origin: versionOrigin(r.urlType),
-              schema: r.schemaTrusted ? (r.schema ?? null) : null,
-            })
-            return true
-          })
-        )
+        rows
+          .slice(i, i + BACKFILL_CONCURRENCY)
+          .map((r) => this.captureFirstVersion(r, deps.storage))
       )
       for (const res of results) {
         if (res.status === 'rejected') failed++
         else if (res.value) backfilled++
-        // Skipped: something captured or replaced the resource since the scan.
+        // Skipped: something captured, replaced or is holding the resource.
         else skipped++
       }
     }
 
     const { ingested, ingestFailed } = await this.ingestPendingIntoLake(deps.lake)
     return { backfilled, skipped, failed, ingested, ingestFailed }
+  }
+
+  /**
+   * Snapshot one resource's live file as v1, or report that nothing was done.
+   *
+   * Claimed for the duration (ADR-044): a run holding this resource is
+   * capturing that same v1, and a migration is never worth waiting for — a
+   * refused resource counts as skipped and the next run of the job picks it up.
+   * This is also what the capture lock's removal (ADR-044 §5) rests on, since
+   * after it the claim is all that keeps the two apart.
+   */
+  private async captureFirstVersion(
+    r: {
+      id: string
+      packageId: string
+      urlType: string | null
+      hash: string | null
+      size: number | null
+      storageKey: string | null
+      schema: ResourceSchema | null
+      schemaTrusted: boolean
+    },
+    storage: StorageAdapter
+  ): Promise<boolean> {
+    return this.withClaimOrSkip(r.id, () =>
+      // Same lock the pipeline's Version step takes: the migration must not
+      // capture v1 for a resource the pipeline is capturing right now. Every
+      // query runs on the transaction's own connection — reaching back to the
+      // pool here would deadlock, since each held lock is a connection and the
+      // backfill runs more of them in parallel than the pool has.
+      withAdvisoryLock(this.db, VERSION_CAPTURE_LOCK, r.id, async (tx) => {
+        // Re-checked under the lock, against the row as it is *now*: the scan
+        // happened earlier, and since then a pipeline run may have captured v1
+        // (copying first would overwrite its file before the unique index
+        // rejected the insert) or a newer run may have moved the pointer, which
+        // means the object this row described is no longer the content.
+        const [current] = await tx
+          .select({
+            storageKey: resource.storageKey,
+            versions: sql<number>`(
+              SELECT count(*)::int FROM ${resourceVersion} rv
+              WHERE rv.resource_id = ${resource.id}
+            )`,
+          })
+          .from(resource)
+          .where(eq(resource.id, r.id))
+          .limit(1)
+        if (!current || current.versions > 0) return false
+        if (!current.storageKey || current.storageKey !== r.storageKey) return false
+
+        const versionKey = getVersionKey(r.packageId, r.id, 1)
+        await storage.copy(current.storageKey, versionKey)
+        // Measured rather than taken from the row: this is pre-existing data,
+        // and `upload-complete` used to accept any string as a hash.
+        const captured = await digestStream(await storage.download(versionKey))
+
+        // Normalize the row to the measurement when the stored values were never
+        // the real ones; refusing those rows instead would leave the migration
+        // permanently incomplete. Guarded on the pointer, since a pipeline run
+        // may have published newer content while this copied — its hash
+        // describes that content and must not be overwritten with a measurement
+        // of the object it replaced.
+        if (captured.hash !== r.hash || captured.size !== r.size) {
+          await tx
+            .update(resource)
+            .set({ hash: captured.hash, size: captured.size })
+            .where(and(eq(resource.id, r.id), eq(resource.storageKey, current.storageKey)))
+        }
+
+        await tx.insert(resourceVersion).values({
+          resourceId: r.id,
+          version: 1,
+          storageKey: versionKey,
+          size: captured.size,
+          hash: captured.hash,
+          origin: versionOrigin(r.urlType),
+          schema: r.schemaTrusted ? (r.schema ?? null) : null,
+        })
+        return true
+      })
+    )
+  }
+
+  /**
+   * Do a unit of migration work with the resource claimed, treating one held by
+   * a run as work not done rather than as a failure — the job is re-runnable,
+   * and a migration has no business waiting on a live pipeline.
+   */
+  private async withClaimOrSkip(resourceId: string, fn: () => Promise<boolean>): Promise<boolean> {
+    const outcome = await withResourceClaims(this.db, [resourceId], fn)
+    return outcome.status === 'ran' ? outcome.result : false
   }
 
   /**
@@ -386,18 +431,22 @@ export class ResourceVersionService {
     await withLakeSession(lake, async (session) => {
       for (const row of pending) {
         try {
-          const done = await withLakeIngestLock(this.db, async (tx) => {
-            // Re-run the same predicate inside the lock. A pipeline run that
-            // landed since the scan may have replaced the preview with a newer
-            // version's content, which would otherwise be recorded as this
-            // version's snapshot.
-            const fresh = await tx.execute(pendingLakeIngestQuery(row.resourceId))
-            const stillPending = (fresh.rows as unknown as PendingLakeIngest[]).some(
-              (r) => r.version === row.version && r.previewKey === row.previewKey
-            )
-            if (!stillPending) return false
-            return (await ingestVersionIntoLake(tx, session, lake, row)) !== null
-          })
+          // Claimed like the capture pass above (ADR-044): the preview this
+          // reads is the one a run in flight is replacing.
+          const done = await this.withClaimOrSkip(row.resourceId, () =>
+            withLakeIngestLock(this.db, async (tx) => {
+              // Re-run the same predicate inside the lock. A pipeline run that
+              // landed since the scan may have replaced the preview with a newer
+              // version's content, which would otherwise be recorded as this
+              // version's snapshot.
+              const fresh = await tx.execute(pendingLakeIngestQuery(row.resourceId))
+              const stillPending = (fresh.rows as unknown as PendingLakeIngest[]).some(
+                (r) => r.version === row.version && r.previewKey === row.previewKey
+              )
+              if (!stillPending) return false
+              return (await ingestVersionIntoLake(tx, session, lake, row)) !== null
+            })
+          )
           if (done) ingested++
         } catch {
           // One resource's failure must not abandon the rest of the migration.
@@ -503,12 +552,24 @@ export class ResourceVersionService {
   async executePurge(
     resourceId: string,
     version: number,
-    deps: {
-      storage: StorageAdapter
-      search?: SearchAdapter
-      queue: QueueAdapter
-      lake?: LakeConfig
-    }
+    deps: PurgeDeps
+  ): Promise<{ purged: boolean; rolledBack: boolean }> {
+    // Held for the whole purge (ADR-044). Extract writes its preview to storage
+    // before the database learns of it, and version capture copies the file
+    // before inserting the row; a run inside either window would write those
+    // objects back *after* this purge had swept them, with no row left to make
+    // them reachable and nothing to reclaim them. A legal deletion cannot end
+    // with the content still in the bucket. A refusal leaves the version in
+    // 'purging', so the redelivered job finishes it.
+    return withResourceClaimsOrConflict(this.db, [resourceId], () =>
+      this.purgeVersion(resourceId, version, deps)
+    )
+  }
+
+  private async purgeVersion(
+    resourceId: string,
+    version: number,
+    deps: PurgeDeps
   ): Promise<{ purged: boolean; rolledBack: boolean }> {
     const [row] = await this.db
       .select()

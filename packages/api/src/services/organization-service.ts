@@ -5,14 +5,7 @@
 
 import { eq, ilike, and, or, sql, inArray, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import {
-  organization,
-  userOrgMembership,
-  user,
-  packageTable,
-  resource,
-  resourceVersion,
-} from '@kukan/db'
+import { organization, userOrgMembership, user, packageTable } from '@kukan/db'
 import {
   NotFoundError,
   ValidationError,
@@ -33,7 +26,8 @@ import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { LakeConfig } from '@kukan/lake'
 import { dropResourceTables } from '@kukan/lake'
 import { reclaimLakeStorage } from './lake-reclaim'
-import { purgePackageExternals } from './package-cleanup'
+import { listPurgeTargets, purgePackageExternals } from './package-cleanup'
+import { withResourceClaimsOrConflict } from './pipeline-claim'
 import { deleteOrphanFreeTags } from './tag-service'
 
 /** Concurrency cap for per-package external cleanup during an org purge — keeps
@@ -255,45 +249,40 @@ export class OrganizationService {
       .where(eq(packageTable.ownerOrg, id))
     const packageIds = pkgs.map((p) => p.id)
 
-    // Read the ingested resource ids while the rows still exist (deleted below):
-    // they name the DuckLake tables that have to go with them, and only these
-    // can have one, so an empty list saves opening a lake session at all.
-    const lakeResourceIds =
-      packageIds.length > 0
-        ? (
-            await this.db
-              .selectDistinct({ id: resource.id })
-              .from(resource)
-              .innerJoin(resourceVersion, eq(resourceVersion.resourceId, resource.id))
-              .where(
-                and(
-                  inArray(resource.packageId, packageIds),
-                  sql`${resourceVersion.ducklakeSnapshotId} IS NOT NULL`
-                )
-              )
-          ).map((r) => r.id)
-        : []
+    // Read while the rows still exist (deleted below): every resource, to claim
+    // it, and the ingested ones, which name the DuckLake tables that go with
+    // them — an empty list saves opening a lake session at all.
+    const { resourceIds, lakeResourceIds } = await listPurgeTargets(this.db, packageIds)
 
-    // Bounded concurrency; Promise.all (not allSettled) so a single failure throws
-    // and skips the DB delete below, leaving the org 'purging' for a retry.
-    // DuckLake is left out of the per-package pass and done once below: opening
-    // a lake session is expensive, and one per package would mean hundreds.
-    for (let i = 0; i < packageIds.length; i += EXTERNALS_CLEANUP_CONCURRENCY) {
-      const chunk = packageIds.slice(i, i + EXTERNALS_CLEANUP_CONCURRENCY)
-      await Promise.all(
-        chunk.map((pkgId) =>
-          purgePackageExternals(pkgId, { search: deps.search, storage: deps.storage })
+    // Claimed for the whole erasure (ADR-044). A run in flight writes its
+    // preview and version files to storage before the database hears of them,
+    // so one crossing the sweep below would leave the content of a purged
+    // organization in the bucket with no row that names it. Taken in one
+    // statement, so hundreds of resources need no acquisition order and cannot
+    // deadlock; one of them held refuses the lot and the job is redelivered,
+    // which the 'purging' state was already built for.
+    await withResourceClaimsOrConflict(this.db, resourceIds, async () => {
+      // Bounded concurrency; Promise.all (not allSettled) so a single failure throws
+      // and skips the DB delete below, leaving the org 'purging' for a retry.
+      // DuckLake is left out of the per-package pass and done once below: opening
+      // a lake session is expensive, and one per package would mean hundreds.
+      for (let i = 0; i < packageIds.length; i += EXTERNALS_CLEANUP_CONCURRENCY) {
+        const chunk = packageIds.slice(i, i + EXTERNALS_CLEANUP_CONCURRENCY)
+        await Promise.all(
+          chunk.map((pkgId) =>
+            purgePackageExternals(pkgId, { search: deps.search, storage: deps.storage })
+          )
         )
-      )
-    }
-    if (deps.lake) await dropResourceTables(deps.lake, lakeResourceIds)
-
-    await this.db.transaction(async (tx) => {
-      if (packageIds.length > 0) {
-        await tx.delete(packageTable).where(eq(packageTable.ownerOrg, id))
-        await deleteOrphanFreeTags(tx)
       }
-      await tx.delete(organization).where(eq(organization.id, id))
+      if (deps.lake) await dropResourceTables(deps.lake, lakeResourceIds)
+
+      await this.db.transaction(async (tx) => {
+        if (packageIds.length > 0) {
+          await tx.delete(packageTable).where(eq(packageTable.ownerOrg, id))
+          await deleteOrphanFreeTags(tx)
+        }
+        await tx.delete(organization).where(eq(organization.id, id))
+      })
     })
 
     // After the rows are gone: dropping the tables only unreferences the

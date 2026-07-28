@@ -8,42 +8,26 @@ import { eq, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import type { PipelineStatus, PipelineStepStatus, PipelineStepName } from '@kukan/shared'
-import {
-  claimPipeline,
-  pipelineClaimHolder,
-  releasePipelineClaim,
-} from '@kukan/api/services/pipeline-claim'
-import { randomUUID } from 'node:crypto'
-import { CLAIM_STALE_AFTER_MS } from '@/config'
 
 export class StepTracker {
   constructor(private db: Database) {}
 
   /**
-   * The run this tracker speaks for. Minted here because the tracker is built
-   * once per run, so nothing else has to carry it around.
-   */
-  private readonly owner = randomUUID()
-
-  /**
-   * Claim the resource for this run, and clear the previous run's steps.
+   * Take the row over for this run: mark it running and drop the steps of
+   * whatever ran last, so the record describes this run alone.
    *
-   * The rules live with the other database invariants (ADR-044); this is the
-   * pipeline's entry point into them. Returns null when another run holds it —
-   * which is not a failure.
+   * Safe as a write of its own only because the caller holds the claim
+   * (ADR-044) — no other run can be recording steps against this row.
    */
-  async startPipeline(resourceId: string) {
-    return claimPipeline(this.db, resourceId, this.owner, CLAIM_STALE_AFTER_MS)
-  }
-
-  /** Whether anyone holds the resource, to tell "busy" from "no such row". */
-  async claimHolder(resourceId: string) {
-    return pipelineClaimHolder(this.db, resourceId)
-  }
-
-  /** Give the claim up. No-op unless this run still holds it. */
-  async releaseClaim(pipelineId: string) {
-    await releasePipelineClaim(this.db, pipelineId, this.owner)
+  async beginRun(pipelineId: string) {
+    await this.db.execute(sql`
+      WITH cleared AS (
+        DELETE FROM resource_pipeline_step WHERE pipeline_id = ${pipelineId}::uuid
+      )
+      UPDATE resource_pipeline
+      SET status = 'processing', error = NULL, updated = NOW()
+      WHERE id = ${pipelineId}::uuid
+    `)
   }
 
   /**

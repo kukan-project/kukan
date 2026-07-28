@@ -8,7 +8,9 @@ import { resource, resourceVersion, resourcePipeline, resourcePipelineStep } fro
 import { Readable } from 'node:stream'
 import { getStorageKey, getVersionKey } from '@kukan/shared'
 import { hashBuffer } from '@kukan/shared/hash-node'
+import { randomUUID } from 'node:crypto'
 import { ResourceVersionService } from '../../services/resource-version-service'
+import { CLAIM_STALE_AFTER_MS, claimResources } from '../../services/pipeline-claim'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()
@@ -139,6 +141,23 @@ describe('backfillVersions', () => {
 
     expect(result.backfilled).toBe(0)
     expect(await service.countUnversioned()).toBe(0)
+  })
+
+  it('skips a resource something else is holding', async () => {
+    // A purge holds the claim without moving the pipeline's status, so the
+    // status filter above does not see it. The migration steps aside and the
+    // next run of the job picks the resource up — and once the capture lock
+    // goes (ADR-044 §5), this claim is the only thing keeping the two apart.
+    const id = await addResource({ name: 'a' })
+    await db.insert(resourcePipeline).values({ resourceId: id, status: 'complete' })
+    await claimResources(db, [id], randomUUID(), CLAIM_STALE_AFTER_MS)
+    const storage = mockStorage()
+
+    const result = await service.backfillVersions({ storage })
+
+    expect(result).toMatchObject({ backfilled: 0, skipped: 1, failed: 0 })
+    expect((storage as { copy: ReturnType<typeof vi.fn> }).copy).not.toHaveBeenCalled()
+    expect(await service.countUnversioned()).toBe(1)
   })
 
   it('is idempotent — a second run does nothing', async () => {

@@ -106,7 +106,7 @@ describe('orphan free-tag GC', () => {
       const pkg = await service.create(createInput('pkg-b', ['shared', 'solo']))
 
       await service.delete(pkg.id)
-      await service.purge(pkg.id)
+      await service.purge(pkg.id, { storage: mockStorage })
 
       expect(await tagNames()).toEqual(['shared'])
     })

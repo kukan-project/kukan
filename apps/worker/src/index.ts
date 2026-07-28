@@ -39,6 +39,7 @@ import { S3StorageAdapter } from '@kukan/storage-adapter'
 import { OpenSearchAdapter } from '@kukan/search-adapter'
 import { processResource } from './pipeline/process-resource'
 import { buildPipelineContext } from './pipeline/build-context'
+import { retryLakeIngest } from './pipeline/retry-lake-ingest'
 import { startCronJob } from './cron/start-cron-job'
 import { sweepOrphanedObjects } from './cron/orphan-cleanup/sweep-orphans'
 import { sweepLakeOrphans } from './cron/orphan-cleanup/sweep-lake-orphans'
@@ -295,19 +296,13 @@ await queue.process({
   [LAKE_INGEST_JOB_TYPE]: async (job: Job) => {
     const data = parseJobPayload(job, lakeIngestJobSchema)
     if (!data) return
-    const { resourceId, version, previewKey } = data
-    if (!(await storage.head(previewKey))) {
-      log.warn(
-        { jobId: job.id, type: job.type, resourceId, version, previewKey },
-        'Lake ingest retry abandoned — the preview it was built from is gone'
-      )
-      return
-    }
-    const result = await ctx.ingestLakeVersion({ resourceId, version, previewKey })
-    log.info(
-      { jobId: job.id, type: job.type, resourceId, version, snapshotId: result?.snapshotId },
-      result ? 'Lake ingest retry completed' : 'Lake ingest retry skipped (already ingested)'
-    )
+    await retryLakeIngest(data, {
+      ctx,
+      db,
+      queue,
+      storage,
+      log: log.child({ jobId: job.id, type: job.type }),
+    })
   },
   // One-time migration: snapshot every unversioned resource's live file as v1
   // (ADR-043). No re-fetch/re-index — just server-side copies.
