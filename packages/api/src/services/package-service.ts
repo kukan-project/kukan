@@ -42,6 +42,7 @@ import { deleteOrphanFreeTags } from './tag-service'
 import { publicResourceColumns } from './resource-service'
 import type { LakeConfig } from '@kukan/lake'
 import { dropResourceTables } from '@kukan/lake'
+import { reclaimLakeStorage } from './lake-reclaim'
 import { purgePackageExternals } from './package-cleanup'
 
 /** Random placeholder name for a draft (ADR-039) — replaced before publish */
@@ -913,6 +914,12 @@ export class PackageService {
     const lakeResourceIds = await this.listLakeResourceIds(claimed.id)
     await purgePackageExternals(claimed.id, deps)
     if (deps.lake) await dropResourceTables(deps.lake, lakeResourceIds)
-    return this.finalizeDraftPurge(claimed.id)
+    const purged = await this.finalizeDraftPurge(claimed.id)
+    // After the rows are gone: dropping the tables only unreferences the
+    // snapshots, and the retained set is read from the version rows this just
+    // deleted (ADR-043 §9). Only when this purge had tables of its own — a
+    // catalog-wide sweep is a maintenance job's business.
+    if (lakeResourceIds.length > 0) await reclaimLakeStorage(this.db, deps.lake)
+    return purged
   }
 }

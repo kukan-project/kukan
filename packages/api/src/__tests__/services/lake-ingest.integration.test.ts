@@ -13,6 +13,7 @@ import { eq, and, sql } from 'drizzle-orm'
 import { resource, resourceVersion } from '@kukan/db'
 import type { LakeConfig, LakeSession } from '@kukan/lake'
 import { ingestVersionIntoLake } from '../../services/lake-ingest'
+import { reclaimLakeStorage } from '../../services/lake-reclaim'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()
@@ -118,5 +119,12 @@ describe('ingestVersionIntoLake', () => {
         })
       )
     ).rejects.toThrow('reached DuckLake')
+  })
+})
+
+describe('reclaimLakeStorage', () => {
+  it('does nothing without a lake configured', async () => {
+    // Deployments run without layer 2, and every purge path now calls this.
+    expect(await reclaimLakeStorage(db, undefined)).toEqual({ expired: 0, filesDeleted: 0 })
   })
 })

@@ -36,6 +36,7 @@ import {
 } from '../services/search-index'
 import { hybridSearch } from '../services/hybrid-search'
 import { dropResourceTables, lakeConfigFromEnv } from '@kukan/lake'
+import { reclaimLakeStorage } from '../services/lake-reclaim'
 import { purgePackageExternals } from '../services/package-cleanup'
 import { MetadataSuggestService } from '../services/metadata-suggest-service'
 import { suggestRateLimiter } from '../services/suggest/rate-limit'
@@ -456,7 +457,12 @@ packagesRouter.post('/:nameOrId/purge', async (c) => {
   // Remove the package's search docs and every external trace: raw files,
   // previews, retained versions, and DuckLake tables.
   await purgePackageExternals(pkg.id, { search: c.get('search'), storage: c.get('storage') })
-  await dropResourceTables(lakeConfigFromEnv(c.get('env')), lakeResourceIds)
+  const lake = lakeConfigFromEnv(c.get('env'))
+  await dropResourceTables(lake, lakeResourceIds)
+  // The purge above deleted the rows, so the snapshots they referenced are
+  // unreferenced now. Dropping the tables does not delete the Parquet
+  // (ADR-043 §9).
+  if (lakeResourceIds.length > 0) await reclaimLakeStorage(db, lake)
   return c.json(pkg)
 })
 

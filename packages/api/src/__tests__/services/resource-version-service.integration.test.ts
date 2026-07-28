@@ -187,9 +187,13 @@ describe('executePurge — layer 2 (DuckLake)', () => {
     expect(row.snap).toBeNull()
   })
 
-  it('reaches the lake when purging a middle version', async () => {
+  it('reaches the lake when purging a middle version that reached it', async () => {
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2')
+    await db
+      .update(resourceVersion)
+      .set({ ducklakeSnapshotId: 7 })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
     await service.claimPurge(resourceId, 1, userId, 'test')
 
     // v2 stays live, so the contents do not change — but v1's snapshot still
@@ -206,4 +210,20 @@ describe('executePurge — layer 2 (DuckLake)', () => {
       .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
     expect(row.state).toBe('purging')
   }, 60_000)
+
+  it('leaves the lake alone for a version that never reached it', async () => {
+    // Most resources are not tabular. Opening a session costs extension loads
+    // and a catalog ATTACH, so a version with no snapshot must not pay it —
+    // an unusable config proves the lake is never contacted.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    await service.claimPurge(resourceId, 1, userId, 'test')
+
+    const result = await service.executePurge(resourceId, 1, {
+      ...mockDeps(),
+      lake: unreachableLake,
+    })
+
+    expect(result.purged).toBe(true)
+  })
 })
