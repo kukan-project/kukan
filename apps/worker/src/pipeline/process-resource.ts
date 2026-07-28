@@ -14,7 +14,7 @@ import { executeExtract } from './steps/extract'
 import { executeLake } from './steps/lake'
 import { executeIndexContent } from './steps/index-content'
 import type { PipelineContext } from './types'
-import { FETCH_RATE_LIMIT_REQUEUE_DELAY_S } from '@/config'
+import { CLAIM_RETRY_DELAY_S, FETCH_RATE_LIMIT_REQUEUE_DELAY_S } from '@/config'
 
 /**
  * Process a resource through the full pipeline.
@@ -34,7 +34,15 @@ export async function processResource(
   const pipeline = await tracker.startPipeline(resourceId)
 
   if (!pipeline) {
-    // No pipeline record exists for this resource — nothing to process
+    // Held by another run (ADR-044), or there is no pipeline row at all. The
+    // first has to come back: the holder read the content it read, so a
+    // replacement that arrived after it started would otherwise never be
+    // processed — the job would be dropped and nothing would record that work
+    // was outstanding. Requeued with a delay rather than retried, so a long run
+    // is not spun on.
+    if (await tracker.claimHolder(resourceId)) {
+      await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId }, { delaySeconds: CLAIM_RETRY_DELAY_S })
+    }
     return
   }
 
@@ -208,5 +216,10 @@ export async function processResource(
     await tracker.updateStatus(pipeline.id, 'complete')
   } catch (err) {
     await tracker.updateStatus(pipeline.id, 'error', (err as Error).message)
+  } finally {
+    // Every exit gives the claim up — the early returns for a superseded or
+    // rate-limited run as much as the normal one. Left held, the resource would
+    // sit out the staleness window before anything could touch it again.
+    await tracker.releaseClaim(pipeline.id)
   }
 }

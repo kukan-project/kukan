@@ -23,6 +23,16 @@ export const resourcePipeline = pgTable(
       .notNull()
       .references(() => resource.id, { onDelete: 'cascade' }),
     status: varchar('status', { length: 20 }).notNull().default('pending'),
+    // Which run owns this resource right now (ADR-044). Null when none does.
+    // Recorded rather than inferred from `status` so a run that was taken over
+    // can tell: without it, its final write would release the claim of whoever
+    // displaced it, and it would never learn it had lost.
+    claimOwner: uuid('claim_owner'),
+    // When it was taken. Liveness is judged from this and the newest step
+    // start, never from `updated` — that column is also written by enqueue and
+    // by purge's preview invalidation, neither of which holds the claim, so a
+    // user re-uploading would keep extending a dead run's window.
+    claimOwnerAt: timestamp('claim_owner_at', { withTimezone: true }),
     error: text('error'),
     previewKey: text('preview_key'),
     metadata: jsonb('metadata').$type<Record<string, unknown>>(),

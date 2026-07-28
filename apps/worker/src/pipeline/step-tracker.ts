@@ -8,39 +8,42 @@ import { eq, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import type { PipelineStatus, PipelineStepStatus, PipelineStepName } from '@kukan/shared'
+import {
+  claimPipeline,
+  pipelineClaimHolder,
+  releasePipelineClaim,
+} from '@kukan/api/services/pipeline-claim'
+import { randomUUID } from 'node:crypto'
+import { CLAIM_STALE_AFTER_MS } from '@/config'
 
 export class StepTracker {
   constructor(private db: Database) {}
 
   /**
-   * Start pipeline processing: transition to 'processing' and delete old steps.
-   * Accepts any current status — SQS visibility timeout guarantees single-consumer
-   * delivery, so we don't need a status='queued' guard. This allows recovery from
-   * stuck 'processing' pipelines (e.g. worker crash during deployment).
-   * previewKey/metadata are preserved here — they are overwritten by
-   * updateExtractResult on success, and kept as-is on failure so the
-   * previous preview remains available.
+   * The run this tracker speaks for. Minted here because the tracker is built
+   * once per run, so nothing else has to carry it around.
+   */
+  private readonly owner = randomUUID()
+
+  /**
+   * Claim the resource for this run, and clear the previous run's steps.
+   *
+   * The rules live with the other database invariants (ADR-044); this is the
+   * pipeline's entry point into them. Returns null when another run holds it —
+   * which is not a failure.
    */
   async startPipeline(resourceId: string) {
-    return this.db.transaction(async (tx) => {
-      const [pipeline] = await tx
-        .update(resourcePipeline)
-        .set({
-          status: 'processing' satisfies PipelineStatus,
-          error: null,
-          updated: sql`NOW()`,
-        })
-        .where(eq(resourcePipeline.resourceId, resourceId))
-        .returning()
+    return claimPipeline(this.db, resourceId, this.owner, CLAIM_STALE_AFTER_MS)
+  }
 
-      if (pipeline) {
-        await tx
-          .delete(resourcePipelineStep)
-          .where(eq(resourcePipelineStep.pipelineId, pipeline.id))
-      }
+  /** Whether anyone holds the resource, to tell "busy" from "no such row". */
+  async claimHolder(resourceId: string) {
+    return pipelineClaimHolder(this.db, resourceId)
+  }
 
-      return pipeline
-    })
+  /** Give the claim up. No-op unless this run still holds it. */
+  async releaseClaim(pipelineId: string) {
+    await releasePipelineClaim(this.db, pipelineId, this.owner)
   }
 
   /**
