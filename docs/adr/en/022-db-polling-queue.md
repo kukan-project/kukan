@@ -131,7 +131,60 @@ Maintaining SQS is more appropriate when:
 - **When bulk enqueue is needed**: Background processing of `enqueue-all` (Option A: immediate response + async SQS send)
   can address this. There is no need to eliminate SQS itself
 
+## Re-examination (2026-07-28) — the correctness angle
+
+After several concurrency defects surfaced while implementing ADR-043, we revisited
+whether moving to a DB-backed queue (pg-boss and similar) would make those defects
+easier to handle. **The conclusion is unchanged: keep SQS.**
+
+The original withdrawal weighed throughput and operational simplicity; correctness under
+races had not been considered.
+
+### The races fall into two classes
+
+| Class                                    | Instances          | Does a DB queue fix it? |
+| ---------------------------------------- | ------------------ | ----------------------- |
+| A. Two writers to the same row or object | #180 / #181 / #182 | **No**                  |
+| B. A side effect outside the transaction | #183 / #184        | **Yes**                 |
+
+B is what a DB-backed queue is for: the enqueue becomes an `INSERT`, so it joins the
+transaction that writes the business data and "committed but the job vanished" (#183)
+stops being possible.
+
+A is untouched. #181 is two HTTP requests racing and never goes near the queue, #182 is an
+API design question, and #180 comes down to two runs writing the same resource. A
+per-resource singleton key reduces the overlap, but any lease-based scheme still lets a
+stalled worker resume after its lease expires, so the compare-and-swap is needed anyway.
+**The frequency drops; the work does not go away.**
+
+The three class-A defects — two of them P1 — were also the expensive ones to fix.
+
+### The withdrawal reasons still hold
+
+The main blocker, Aurora Serverless v2 scaling to 0 ACU, applies to any DB-backed queue,
+pg-boss included: **it keeps a connection alive**. After the move to multi-site (ADR-041)
+the cost multiplies by the number of sites.
+
+### B's benefit is available without migrating
+
+Putting the enqueue inside the transaction can be had with an outbox instead:
+
+```
+write the intent to the DB (same transaction as the business data)
+  → attempt the enqueue right after commit (normal path, low latency)
+  → a periodic sweep picks up whatever that missed (the guarantee)
+```
+
+The sweep interval bounds only the failure path. With several workers the cron runs in
+each process (`protect: true` only prevents overlap within one), so claiming needs
+`FOR UPDATE SKIP LOCKED`.
+
+For #183 specifically, the intent is already durable as
+`resource_version.ducklake_snapshot_id IS NULL`, so even an outbox table may be
+unnecessary — re-enqueuing from the existing `pendingLakeIngestQuery` may be enough.
+
 ## Related ADRs
 
 - ADR-002: SQS over BullMQ (current decision)
 - ADR-005: Only four adapters (QueueAdapter is one of them)
+- ADR-043: Resource versioning (where the races that prompted the re-examination came from)
