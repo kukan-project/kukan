@@ -404,12 +404,27 @@ export class ResourceVersionService {
   /**
    * Load the current version of each tabular resource into DuckLake (layer 2).
    *
+   * The migration's second pass, and the standing repair for every version that
+   * did not reach the lake the first time. The intent to ingest is already in
+   * the database — an active version with no `ducklake_snapshot_id` — so a run
+   * whose Lake step failed *and* whose retry could not be enqueued is not lost
+   * work, it is a row this pass will find. That is what makes an enqueue
+   * failure survivable without an outbox of its own.
+   *
+   * Only the latest version of each resource is reachable this way: the preview
+   * Parquet is the sole tabular rendering and it always holds the newest
+   * content. A mid-history version whose own preview is still within the orphan
+   * retention needs the queued retry job, which names that preview explicitly.
+   *
    * One session for the whole pass (opening one is expensive), but the advisory
    * lock is taken per resource: it is what makes the committed snapshot
-   * identifiable, and holding it for the entire migration would block the
-   * pipeline's own ingests for the duration.
+   * identifiable, and holding it for the entire pass would block the pipeline's
+   * own ingests for the duration.
+   *
+   * Safe to run from every worker at once: each resource is taken under its
+   * claim (ADR-044), so two sweeps cannot ingest the same one.
    */
-  private async ingestPendingIntoLake(
+  async ingestPendingIntoLake(
     lake: LakeConfig | undefined
   ): Promise<{ ingested: number; ingestFailed: number }> {
     if (!lake) return { ingested: 0, ingestFailed: 0 }

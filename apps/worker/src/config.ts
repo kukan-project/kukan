@@ -72,6 +72,14 @@ export const CLAIM_RETRY_DELAY_S = 30
 /** How often orphaned objects are swept (ADR-043); matches the retention. */
 export const ORPHAN_CLEANUP_CRON = '17 * * * *'
 
+/**
+ * How often versions that never reached DuckLake are swept back in (ADR-043
+ * layer 2). Offset from the orphan sweep so the two do not contend for the
+ * catalog, and hourly because it only catches what the queue dropped — the
+ * normal path enqueues a retry immediately.
+ */
+export const LAKE_INGEST_SWEEP_CRON = '37 * * * *'
+
 /** How long an object nothing points at is kept, so in-flight reads finish. */
 export const ORPHAN_RETENTION_MS = 60 * 60 * 1000
 

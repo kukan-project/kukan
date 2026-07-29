@@ -25,10 +25,15 @@ describe('sweepLakeOrphans', () => {
     // committed from being read as an orphan — it is live data.
     const before = Date.now()
     await sweepLakeOrphans(lake, log)
+    const after = Date.now()
 
+    // The cutoff is a whole retention behind whenever the sweep read the clock,
+    // so it lands inside the interval the call spanned — bounded from both
+    // sides rather than against one reading, which only holds if the two land
+    // in the same millisecond.
     const olderThan = deleteOrphanedFiles.mock.calls[0][1] as Date
-    expect(olderThan.getTime()).toBeLessThanOrEqual(before - LAKE_ORPHAN_RETENTION_MS)
-    expect(olderThan.getTime()).toBeGreaterThan(before - LAKE_ORPHAN_RETENTION_MS - 60_000)
+    expect(olderThan.getTime()).toBeGreaterThanOrEqual(before - LAKE_ORPHAN_RETENTION_MS)
+    expect(olderThan.getTime()).toBeLessThanOrEqual(after - LAKE_ORPHAN_RETENTION_MS)
   })
 
   it('deletes rather than reporting what it would delete', async () => {

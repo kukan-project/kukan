@@ -11,6 +11,7 @@ import { hashBuffer } from '@kukan/shared/hash-node'
 import { randomUUID } from 'node:crypto'
 import { ResourceVersionService } from '../../services/resource-version-service'
 import { CLAIM_STALE_AFTER_MS, claimResources } from '../../services/pipeline-claim'
+import { unreachableLake } from '../test-helpers/fixtures'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()
@@ -81,6 +82,52 @@ beforeEach(async () => {
 afterAll(async () => {
   await closeTestDb()
 })
+
+/**
+ * A resource whose preview records the hash of the bytes it was built from —
+ * the proof the backfill requires before attaching it to a version.
+ */
+async function addTabularResource(
+  name: string,
+  versions: { version: number; snapshotId?: number | null; state?: string }[],
+  opts: {
+    previewKey?: string
+    sourceHash?: string | null
+    liveHash?: string
+    status?: string
+    extractStatus?: string
+  } = {}
+): Promise<void> {
+  const top = Math.max(...versions.map((v) => v.version))
+  const id = await addResource({ name, hash: opts.liveHash ?? `sha256:v${top}` })
+  const sourceHash = opts.sourceHash === undefined ? `sha256:v${top}` : opts.sourceHash
+  const [pipeline] = await db
+    .insert(resourcePipeline)
+    .values({
+      resourceId: id,
+      status: opts.status ?? 'complete',
+      previewKey: opts.previewKey ?? `preview/${packageId}/x.parquet`,
+      metadata: sourceHash === null ? {} : { sourceHash },
+    })
+    .returning()
+  await db.insert(resourcePipelineStep).values({
+    pipelineId: pipeline.id,
+    stepName: 'extract',
+    status: opts.extractStatus ?? 'complete',
+  })
+  for (const v of versions) {
+    await db.insert(resourceVersion).values({
+      resourceId: id,
+      version: v.version,
+      storageKey: getVersionKey(packageId, id, v.version),
+      size: 10,
+      hash: `sha256:v${v.version}`,
+      origin: 'upload',
+      state: v.state ?? 'active',
+      ducklakeSnapshotId: v.snapshotId ?? null,
+    })
+  }
+}
 
 describe('countUnversioned', () => {
   it('counts active resources with content and no version', async () => {
@@ -245,52 +292,6 @@ describe('backfillVersions', () => {
 })
 
 describe('countPendingLakeIngest', () => {
-  /**
-   * A resource whose preview records the hash of the bytes it was built from —
-   * the proof the backfill requires before attaching it to a version.
-   */
-  async function addTabularResource(
-    name: string,
-    versions: { version: number; snapshotId?: number | null; state?: string }[],
-    opts: {
-      previewKey?: string
-      sourceHash?: string | null
-      liveHash?: string
-      status?: string
-      extractStatus?: string
-    } = {}
-  ): Promise<void> {
-    const top = Math.max(...versions.map((v) => v.version))
-    const id = await addResource({ name, hash: opts.liveHash ?? `sha256:v${top}` })
-    const sourceHash = opts.sourceHash === undefined ? `sha256:v${top}` : opts.sourceHash
-    const [pipeline] = await db
-      .insert(resourcePipeline)
-      .values({
-        resourceId: id,
-        status: opts.status ?? 'complete',
-        previewKey: opts.previewKey ?? `preview/${packageId}/x.parquet`,
-        metadata: sourceHash === null ? {} : { sourceHash },
-      })
-      .returning()
-    await db.insert(resourcePipelineStep).values({
-      pipelineId: pipeline.id,
-      stepName: 'extract',
-      status: opts.extractStatus ?? 'complete',
-    })
-    for (const v of versions) {
-      await db.insert(resourceVersion).values({
-        resourceId: id,
-        version: v.version,
-        storageKey: getVersionKey(packageId, id, v.version),
-        size: 10,
-        hash: `sha256:v${v.version}`,
-        origin: 'upload',
-        state: v.state ?? 'active',
-        ducklakeSnapshotId: v.snapshotId ?? null,
-      })
-    }
-  }
-
   it('counts a tabular current version that has no snapshot', async () => {
     await addTabularResource('a', [{ version: 1 }])
 
@@ -361,5 +362,32 @@ describe('countPendingLakeIngest', () => {
     await addTabularResource('a', [{ version: 1, state: 'purged' }])
 
     expect(await service.countPendingLakeIngest()).toBe(0)
+  })
+})
+
+describe('ingestPendingIntoLake', () => {
+  // The standing repair for a version the queue never delivered: the pipeline's
+  // Lake step failed, its retry could not be enqueued, and the original message
+  // was deleted with the run. The intent survives as an active version with no
+  // snapshot id — which is `pendingLakeIngestQuery`, the same predicate the
+  // countPendingLakeIngest cases above pin down. What is left to check here is
+  // that an idle sweep costs nothing, since it now runs hourly on every worker.
+
+  it('opens no lake session when there is nothing pending', async () => {
+    // Runs hourly on every worker, and most hours have nothing to do. An
+    // unreachable catalog stands in for the cost: reaching it would throw.
+    await addResource({ name: 'a' })
+
+    expect(await service.ingestPendingIntoLake(unreachableLake)).toEqual({
+      ingested: 0,
+      ingestFailed: 0,
+    })
+  })
+
+  it('does nothing without a lake configured', async () => {
+    expect(await service.ingestPendingIntoLake(undefined)).toEqual({
+      ingested: 0,
+      ingestFailed: 0,
+    })
   })
 })
