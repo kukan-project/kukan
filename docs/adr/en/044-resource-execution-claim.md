@@ -191,9 +191,14 @@ different property, and not removable.
 
 **The live-pointer compare-and-swap**
 
-The condition itself stops firing under a claim, but the statement also exists to move the
-pointer, hash and size **together**. It is not purely a concurrency mechanism, so dropping
-the condition would not simplify it.
+**Uploads do not take the claim.** Everything from `prepareForUpload` to `promoteUpload` runs
+on an API request, outside it. So this condition still fires under a claim — when **a user
+replaces the file while a run is in flight**. That is what Fetch's `superseded` now means.
+
+Without the condition, the overtaken run's publish would pull the resource back to its own,
+older bytes. There is a real counterparty, so keeping it is not a secondary call. The
+statement also moves pointer, hash and size **together** and parks the key it replaces, so
+dropping the condition alone would not simplify it either.
 
 **Pending-upload atomicity**
 
