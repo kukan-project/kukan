@@ -25,7 +25,6 @@ import type { SearchAdapter } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import { ingestVersionIntoLake, withLakeIngestLock } from './lake-ingest'
 import { reclaimInSession } from './lake-reclaim'
-import { VERSION_CAPTURE_LOCK, withAdvisoryLock } from './advisory-lock'
 import { withResourceClaims, withResourceClaimsOrConflict } from './pipeline-claim'
 import { publishLiveContent } from './storage-pointer'
 import { PipelineService } from './pipeline-service'
@@ -44,11 +43,11 @@ interface PurgeDeps {
 /**
  * Bounded concurrency for the one-time version backfill's storage copies.
  *
- * Each unit holds a pooled connection for its whole capture — the advisory lock
- * scopes a transaction across the copy and the read-back — so this is really a
- * claim on the connection pool, not just on storage. Kept below
- * `WORKER_DB_POOL_MAX` (default 3) so the worker still has a connection for the
- * pipeline, the crons, and the health check while a migration runs.
+ * A migration is background work: it shares the worker's connection pool
+ * (`WORKER_DB_POOL_MAX`, default 3) and its object store with the pipeline, the
+ * crons and the health check, and none of them should wait on it. No longer a
+ * pool reservation — since the capture lock went (ADR-044 §5) a unit holds a
+ * connection only for each statement, not across its storage copy.
  */
 const BACKFILL_CONCURRENCY = 2
 
@@ -276,8 +275,8 @@ export class ResourceVersionService {
    * Claimed for the duration (ADR-044): a run holding this resource is
    * capturing that same v1, and a migration is never worth waiting for — a
    * refused resource counts as skipped and the next run of the job picks it up.
-   * This is also what the capture lock's removal (ADR-044 §5) rests on, since
-   * after it the claim is all that keeps the two apart.
+   * Since the capture lock went (ADR-044 §5), the claim is the only thing
+   * keeping the migration and a live run off the same resource.
    */
   private async captureFirstVersion(
     r: {
@@ -292,63 +291,56 @@ export class ResourceVersionService {
     },
     storage: StorageAdapter
   ): Promise<boolean> {
-    return this.withClaimOrSkip(r.id, () =>
-      // Same lock the pipeline's Version step takes: the migration must not
-      // capture v1 for a resource the pipeline is capturing right now. Every
-      // query runs on the transaction's own connection — reaching back to the
-      // pool here would deadlock, since each held lock is a connection and the
-      // backfill runs more of them in parallel than the pool has.
-      withAdvisoryLock(this.db, VERSION_CAPTURE_LOCK, r.id, async (tx) => {
-        // Re-checked under the lock, against the row as it is *now*: the scan
-        // happened earlier, and since then a pipeline run may have captured v1
-        // (copying first would overwrite its file before the unique index
-        // rejected the insert) or a newer run may have moved the pointer, which
-        // means the object this row described is no longer the content.
-        const [current] = await tx
-          .select({
-            storageKey: resource.storageKey,
-            versions: sql<number>`(
-              SELECT count(*)::int FROM ${resourceVersion} rv
-              WHERE rv.resource_id = ${resource.id}
-            )`,
-          })
-          .from(resource)
-          .where(eq(resource.id, r.id))
-          .limit(1)
-        if (!current || current.versions > 0) return false
-        if (!current.storageKey || current.storageKey !== r.storageKey) return false
-
-        const versionKey = getVersionKey(r.packageId, r.id, 1)
-        await storage.copy(current.storageKey, versionKey)
-        // Measured rather than taken from the row: this is pre-existing data,
-        // and `upload-complete` used to accept any string as a hash.
-        const captured = await digestStream(await storage.download(versionKey))
-
-        // Normalize the row to the measurement when the stored values were never
-        // the real ones; refusing those rows instead would leave the migration
-        // permanently incomplete. Guarded on the pointer, since a pipeline run
-        // may have published newer content while this copied — its hash
-        // describes that content and must not be overwritten with a measurement
-        // of the object it replaced.
-        if (captured.hash !== r.hash || captured.size !== r.size) {
-          await tx
-            .update(resource)
-            .set({ hash: captured.hash, size: captured.size })
-            .where(and(eq(resource.id, r.id), eq(resource.storageKey, current.storageKey)))
-        }
-
-        await tx.insert(resourceVersion).values({
-          resourceId: r.id,
-          version: 1,
-          storageKey: versionKey,
-          size: captured.size,
-          hash: captured.hash,
-          origin: versionOrigin(r.urlType),
-          schema: r.schemaTrusted ? (r.schema ?? null) : null,
+    return this.withClaimOrSkip(r.id, async () => {
+      // Re-checked against the row as it is *now*: the scan happened earlier,
+      // and since then a pipeline run may have captured v1 (copying first would
+      // overwrite its file before the unique index rejected the insert) or a
+      // newer run may have moved the pointer, which means the object this row
+      // described is no longer the content.
+      const [current] = await this.db
+        .select({
+          storageKey: resource.storageKey,
+          versions: sql<number>`(
+            SELECT count(*)::int FROM ${resourceVersion} rv
+            WHERE rv.resource_id = ${resource.id}
+          )`,
         })
-        return true
+        .from(resource)
+        .where(eq(resource.id, r.id))
+        .limit(1)
+      if (!current || current.versions > 0) return false
+      if (!current.storageKey || current.storageKey !== r.storageKey) return false
+
+      const versionKey = getVersionKey(r.packageId, r.id, 1)
+      await storage.copy(current.storageKey, versionKey)
+      // Measured rather than taken from the row: this is pre-existing data,
+      // and `upload-complete` used to accept any string as a hash.
+      const captured = await digestStream(await storage.download(versionKey))
+
+      // Normalize the row to the measurement when the stored values were never
+      // the real ones; refusing those rows instead would leave the migration
+      // permanently incomplete. Guarded on the pointer, since a pipeline run
+      // may have published newer content while this copied — its hash
+      // describes that content and must not be overwritten with a measurement
+      // of the object it replaced.
+      if (captured.hash !== r.hash || captured.size !== r.size) {
+        await this.db
+          .update(resource)
+          .set({ hash: captured.hash, size: captured.size })
+          .where(and(eq(resource.id, r.id), eq(resource.storageKey, current.storageKey)))
+      }
+
+      await this.db.insert(resourceVersion).values({
+        resourceId: r.id,
+        version: 1,
+        storageKey: versionKey,
+        size: captured.size,
+        hash: captured.hash,
+        origin: versionOrigin(r.urlType),
+        schema: r.schemaTrusted ? (r.schema ?? null) : null,
       })
-    )
+      return true
+    })
   }
 
   /**

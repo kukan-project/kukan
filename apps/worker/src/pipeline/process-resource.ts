@@ -88,23 +88,6 @@ async function runPipeline(
 
     await tracker.completeStep(fetchStepId)
 
-    /**
-     * Stop once a newer run has published (ADR-043).
-     *
-     * Publishing settles which object is the content; everything after it still
-     * describes what this run read, so continuing would write stale previews,
-     * search documents and pipeline state over the newer run's. Checked at each
-     * boundary rather than once, because the steps in between are the long ones.
-     *
-     * The pipeline row is left alone — the run that owns the content is the one
-     * that should describe it.
-     */
-    const supersededAfter = async (stepId: string): Promise<boolean> => {
-      if (!(await ctx.isSuperseded(resourceId, fetchResult.storageKey))) return false
-      await tracker.skipStep(stepId)
-      return true
-    }
-
     // Step 2: Extract — parse from Storage, generate Parquet preview
     // Non-critical: failures are recorded but don't fail the pipeline
     let extractResult: Awaited<ReturnType<typeof executeExtract>> = null
@@ -129,7 +112,6 @@ async function runPipeline(
         // the previous preview is intentionally preserved.)
         await tracker.updateExtractResult(pipelineId, null, {})
       } else {
-        if (await supersededAfter(extractStepId)) return
         await tracker.completeStep(extractStepId)
         await tracker.updateExtractResult(pipelineId, extractResult.previewKey, {
           encoding: extractResult.encoding,
@@ -172,7 +154,6 @@ async function runPipeline(
     // diff (ADR-043 layer 2). Only runs for a newly captured tabular version;
     // non-critical, and rebuildable from layer 1 if it fails.
     const lakeStepId = await tracker.startStep(pipelineId, 'lake')
-    if (await supersededAfter(lakeStepId)) return
     try {
       const lakeResult = await executeLake(
         resourceId,
@@ -202,7 +183,6 @@ async function runPipeline(
     // Step 5: Index — extract text content and index to search engine
     // Non-critical: failures are recorded but don't fail the pipeline
     const indexStepId = await tracker.startStep(pipelineId, 'index')
-    if (await supersededAfter(indexStepId)) return
     try {
       const indexResult = await executeIndexContent(
         resourceId,

@@ -8,15 +8,6 @@
 import { sql } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 
-/**
- * Serialize per-resource version capture (ADR-043 layer 1): choosing the next
- * version number, copying the file to `versions/.../vN`, and inserting the row.
- * Two runs would otherwise pick the same N, the second copy would overwrite the
- * first's file, and only one insert would survive the unique index — leaving a
- * row that describes bytes it does not hold.
- */
-export const VERSION_CAPTURE_LOCK = 'resource_version'
-
 /** Serialize per-package resource position writes (max+1 vs. renumbering). */
 export const RESOURCE_POSITION_LOCK = 'resource_position'
 

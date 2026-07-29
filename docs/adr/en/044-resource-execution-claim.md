@@ -227,8 +227,8 @@ leave a hole in.
 3. **Serializing the Lake retry**: absorbed into the claim (the retry job takes one too).
    What remains is what to do once a mid-history version's preview has been swept: today
    it gives up, logging a warning. Whether to go further and purge is unsettled
-4. **Ordering of the removals**: §5 comes after the claim lands. Removing first would
-   leave nothing in place until it does
+4. ~~**Ordering of the removals**~~: settled. §5 was carried out once every path took the
+   claim — the `isSuperseded` fence with its three call sites, and `VERSION_CAPTURE_LOCK`
 
 ## Related ADRs
 

@@ -10,7 +10,6 @@ import type { SearchAdapter, ContentDoc } from '@kukan/search-adapter'
 import type { IngestResult, LakeConfig } from '@kukan/lake'
 import { withLakeSession } from '@kukan/lake'
 import { ingestVersionIntoLake, withLakeIngestLock } from '@kukan/api/services/lake-ingest'
-import { VERSION_CAPTURE_LOCK, withAdvisoryLock } from '@kukan/api/services/advisory-lock'
 import { publishLiveContent } from '@kukan/api/services/storage-pointer'
 import type { PackageDbState } from '@kukan/shared'
 import { getVersionKey, versionOrigin } from '@kukan/shared'
@@ -66,15 +65,6 @@ export function buildPipelineContext(
 
     async publishContent(id, content): Promise<boolean> {
       return publishLiveContent(db, id, content)
-    },
-
-    async isSuperseded(id: string, storageKey: string): Promise<boolean> {
-      const [res] = await db
-        .select({ storageKey: resource.storageKey })
-        .from(resource)
-        .where(eq(resource.id, id))
-        .limit(1)
-      return res?.storageKey !== storageKey
     },
 
     async acquireFetchSlot(fqdn: string): Promise<boolean> {
@@ -137,57 +127,56 @@ export function buildPipelineContext(
       contentSize,
       schema,
     }) {
-      return withAdvisoryLock(db, VERSION_CAPTURE_LOCK, resourceId, async (tx) => {
-        // Read under the lock, on the lock's own connection.
-        const [res] = await tx
-          .select({ urlType: resource.urlType, storageKey: resource.storageKey })
-          .from(resource)
-          .where(eq(resource.id, resourceId))
-          .limit(1)
+      // Unserialized: the run holds the resource's claim (ADR-044), so nothing
+      // else is choosing a version number for it. The pointer comparison below
+      // is what remains — it catches the one case the claim does not, a run
+      // that was taken over for being stale and is still alive.
+      const [res] = await db
+        .select({ urlType: resource.urlType, storageKey: resource.storageKey })
+        .from(resource)
+        .where(eq(resource.id, resourceId))
+        .limit(1)
 
-        const [maxRow] = await tx
-          .select({ version: resourceVersion.version })
-          .from(resourceVersion)
-          .where(eq(resourceVersion.resourceId, resourceId))
-          .orderBy(desc(resourceVersion.version))
-          .limit(1)
-        const [activeRow] = await tx
-          .select({ hash: resourceVersion.hash })
-          .from(resourceVersion)
-          .where(
-            and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.state, 'active'))
-          )
-          .orderBy(desc(resourceVersion.version))
-          .limit(1)
+      const [maxRow] = await db
+        .select({ version: resourceVersion.version })
+        .from(resourceVersion)
+        .where(eq(resourceVersion.resourceId, resourceId))
+        .orderBy(desc(resourceVersion.version))
+        .limit(1)
+      const [activeRow] = await db
+        .select({ hash: resourceVersion.hash })
+        .from(resourceVersion)
+        .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.state, 'active')))
+        .orderBy(desc(resourceVersion.version))
+        .limit(1)
 
-        // Gated on this run's own measurement, not the row's: the row describes
-        // whichever run published last, while the copy below takes the object
-        // this run wrote and no one rewrites. The pointer comparison is what
-        // establishes that this run is still the one describing the resource.
-        const decision = decideVersionCapture({
-          hash: contentHash,
-          publishedKey: currentStorageKey,
-          currentKey: res?.storageKey ?? null,
-          maxVersion: maxRow?.version ?? null,
-          latestActiveHash: activeRow?.hash ?? null,
-        })
-        if (!decision.captured) return decision
-
-        const { version } = decision
-        const versionKey = getVersionKey(packageId, resourceId, version)
-        await storage.copy(currentStorageKey, versionKey)
-
-        await tx.insert(resourceVersion).values({
-          resourceId,
-          version,
-          storageKey: versionKey,
-          size: contentSize,
-          hash: contentHash,
-          origin: versionOrigin(res!.urlType),
-          schema,
-        })
-        return { captured: true as const, version }
+      // Gated on this run's own measurement, not the row's: the row describes
+      // whichever run published last, while the copy below takes the object
+      // this run wrote and no one rewrites. The pointer comparison is what
+      // establishes that this run is still the one describing the resource.
+      const decision = decideVersionCapture({
+        hash: contentHash,
+        publishedKey: currentStorageKey,
+        currentKey: res?.storageKey ?? null,
+        maxVersion: maxRow?.version ?? null,
+        latestActiveHash: activeRow?.hash ?? null,
       })
+      if (!decision.captured) return decision
+
+      const { version } = decision
+      const versionKey = getVersionKey(packageId, resourceId, version)
+      await storage.copy(currentStorageKey, versionKey)
+
+      await db.insert(resourceVersion).values({
+        resourceId,
+        version,
+        storageKey: versionKey,
+        size: contentSize,
+        hash: contentHash,
+        origin: versionOrigin(res!.urlType),
+        schema,
+      })
+      return { captured: true as const, version }
     },
 
     async pendingLakeVersion(resourceId: string, contentHash: string): Promise<number | null> {
