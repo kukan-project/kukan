@@ -224,6 +224,7 @@ pnpm format        # Prettier フォーマット
 - マルチブランドビルド（`KUKAN_BRAND` によるブランド選択、ADR-023 拡張、提案） → `docs/adr/jp/042-multi-brand-build.md`
 - リソースバージョニングと行レベル差分（DuckLake、提案） → `docs/adr/jp/043-resource-versioning-ducklake.md`
 - リソース単位の実行 claim（同時実行の排他、提案） → `docs/adr/jp/044-resource-execution-claim.md`
+- ストレージオブジェクトの先行記録（クラッシュ由来のリーク、提案） → `docs/adr/jp/045-object-write-ahead.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
