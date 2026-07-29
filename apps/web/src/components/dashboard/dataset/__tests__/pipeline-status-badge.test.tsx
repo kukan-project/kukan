@@ -36,6 +36,15 @@ describe('PipelineStatusBadge', () => {
     expect(screen.getByText('Processing')).toBeInTheDocument()
   })
 
+  it('renders a run that was stopped, and does not poll for it', () => {
+    // `cancelled` reaches this component from an ordinary flow — replacing a
+    // file while a run is in flight (ADR-044 §4). Rendering it as a missing key
+    // would crash the badge, and treating it as unsettled would poll forever.
+    render(<PipelineStatusBadge resourceId="r1" initialStatus="cancelled" />)
+    expect(screen.getByText('Stopped')).toBeInTheDocument()
+    expect(mockClientFetch).not.toHaveBeenCalled()
+  })
+
   it('should show complete badge without polling', () => {
     render(<PipelineStatusBadge resourceId="r1" initialStatus="complete" />)
     expect(screen.getByText('Complete')).toBeInTheDocument()

@@ -58,10 +58,12 @@ const STATUS_BADGE_VARIANTS: Record<
   PipelineStatus,
   'outline' | 'default' | 'secondary' | 'destructive'
 > = {
+  pending: 'outline',
   queued: 'outline',
   processing: 'default',
   complete: 'secondary',
   error: 'destructive',
+  cancelled: 'secondary',
 }
 
 /**

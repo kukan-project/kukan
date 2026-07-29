@@ -6,11 +6,17 @@
  * deleted underneath a reader.
  */
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import { eq, sql } from 'drizzle-orm'
 import { resource } from '@kukan/db'
 import { getStorageKey } from '@kukan/shared'
 import { expirePendingUploads, publishLiveContent } from '../../services/storage-pointer'
 import { ResourceService } from '../../services/resource-service'
+import {
+  CLAIM_STALE_AFTER_MS,
+  claimResources,
+  type ResourceClaim,
+} from '../../services/pipeline-claim'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()
@@ -339,5 +345,74 @@ describe('promoteUpload', () => {
 
     expect(await parkedKeys()).toEqual([first])
     expect((await row()).pendingStorageKey).toBe(second)
+  })
+})
+
+describe('prepareForUpload — stopping the run it replaces', () => {
+  const service = new ResourceService(db)
+
+  async function runInFlight(): Promise<ResourceClaim> {
+    const [pipe] = await db
+      .execute(
+        sql`
+      INSERT INTO resource_pipeline (resource_id, status) VALUES (${resourceId}::uuid, 'processing')
+      RETURNING id
+    `
+      )
+      .then((r) => r.rows as unknown as { id: string }[])
+    const { claimed } = await claimResources(db, [resourceId], randomUUID(), CLAIM_STALE_AFTER_MS)
+    expect(claimed).toHaveLength(1)
+    expect(claimed[0].id).toBe(pipe.id)
+    return claimed[0]
+  }
+
+  async function pipeline() {
+    const rows = await db.execute(sql`
+      SELECT status, claim_owner FROM resource_pipeline WHERE resource_id = ${resourceId}::uuid
+    `)
+    return rows.rows[0] as { status: string; claim_owner: string | null }
+  }
+
+  it('stops the run processing the content being replaced', async () => {
+    // Uploads do not take the claim, so without this whether the run notices it
+    // was overtaken is chance — and one that does not notice goes on feeding
+    // the content the user is retracting into the search index (ADR-044 §4).
+    await runInFlight()
+
+    await service.prepareForUpload(resourceId, {
+      filename: 'right.csv',
+      contentType: 'text/csv',
+    })
+
+    const row = await pipeline()
+    expect(row.claim_owner).toBeNull()
+    expect(row.status).toBe('cancelled')
+  })
+
+  it('leaves the live content alone', async () => {
+    // The replacement has not arrived yet. Reverting is a separate choice.
+    const live = getStorageKey(packageId, resourceId, 'live')
+    await db.update(resource).set({ storageKey: live }).where(eq(resource.id, resourceId))
+    await runInFlight()
+
+    await service.prepareForUpload(resourceId, {
+      filename: 'right.csv',
+      contentType: 'text/csv',
+    })
+
+    expect((await row()).storageKey).toBe(live)
+  })
+
+  it('is a no-op when nothing is running', async () => {
+    await db.execute(sql`
+      INSERT INTO resource_pipeline (resource_id, status) VALUES (${resourceId}::uuid, 'complete')
+    `)
+
+    await service.prepareForUpload(resourceId, {
+      filename: 'right.csv',
+      contentType: 'text/csv',
+    })
+
+    expect((await pipeline()).status).toBe('complete')
   })
 })

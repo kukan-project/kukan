@@ -15,6 +15,7 @@ const STATUS_CONFIG: Record<
   PipelineStatus,
   { variant: 'outline' | 'default' | 'secondary' | 'destructive'; className?: string }
 > = {
+  pending: { variant: 'outline' },
   queued: { variant: 'outline' },
   processing: { variant: 'default', className: 'animate-pulse' },
   complete: {
@@ -22,13 +23,22 @@ const STATUS_CONFIG: Record<
     className: 'bg-success/15 text-success-tint-foreground',
   },
   error: { variant: 'destructive' },
+  // Not a failure, but not finished either: the resource holds content that no
+  // version, preview or index describes (ADR-044 §4), so it reads as a warning
+  // rather than as a neutral resting state.
+  cancelled: {
+    variant: 'secondary',
+    className: 'bg-warning/15 text-warning-tint-foreground',
+  },
 }
 
 export const STATUS_KEYS: Record<PipelineStatus, string> = {
+  pending: 'pipelinePending',
   queued: 'pipelineQueued',
   processing: 'pipelineProcessing',
   complete: 'pipelineComplete',
   error: 'pipelineError',
+  cancelled: 'pipelineCancelled',
 }
 
 export function PipelineStatusBadge({

@@ -4,7 +4,14 @@
 
 import { z } from 'zod'
 
-export type PipelineStatus = 'pending' | 'queued' | 'processing' | 'complete' | 'error'
+/**
+ * `cancelled` is a run that was stopped on purpose — a replacement was started,
+ * or an operator killed it (ADR-044 §4). Distinct from `error`, which means the
+ * run tried and failed: nothing went wrong here, and the resource is left
+ * holding content no derivative describes.
+ */
+export type PipelineStatus =
+  'pending' | 'queued' | 'processing' | 'complete' | 'error' | 'cancelled'
 export type PipelineStepStatus = 'pending' | 'running' | 'complete' | 'error' | 'skipped'
 export type PipelineStepName = 'fetch' | 'extract' | 'version' | 'lake' | 'index'
 

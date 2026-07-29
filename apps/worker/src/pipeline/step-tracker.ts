@@ -2,46 +2,72 @@
  * KUKAN Pipeline Step Tracker (Worker-side)
  * Manages pipeline state in resource_pipeline / resource_pipeline_step tables
  * during pipeline execution.
+ *
+ * Every write here is conditioned on this run still holding the resource's
+ * claim (ADR-044 §4). That is what makes a run killable: releasing the claim
+ * is the kill, and from that moment the run's writes land on nothing. It is
+ * also why the tracker is built per run rather than per worker — the owner is
+ * the run's identity, and no call site should have to carry it.
  */
 
-import { eq, sql } from 'drizzle-orm'
+import { sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { resourcePipeline, resourcePipelineStep } from '@kukan/db'
+import { resourcePipeline } from '@kukan/db'
 import type { PipelineStatus, PipelineStepStatus, PipelineStepName } from '@kukan/shared'
+import { heldBy, type ResourceClaim } from '@kukan/api/services/pipeline-claim'
+
+/**
+ * The run no longer holds its resource: something killed it, or took it over
+ * for having stalled. Thrown rather than returned so it cannot be ignored at a
+ * call site, and caught by the orchestrator, which leaves without recording
+ * anything — the record belongs to whoever holds the claim now.
+ */
+export class RunCancelledError extends Error {
+  constructor(resourceId: string) {
+    super(`Run for resource ${resourceId} no longer holds the claim`)
+    this.name = 'RunCancelledError'
+  }
+}
 
 export class StepTracker {
-  constructor(private db: Database) {}
+  constructor(
+    private db: Database,
+    private claim: ResourceClaim
+  ) {}
+
+  /** SQL condition: this row, and this run still holds it. */
+  private get held() {
+    return heldBy(this.claim)
+  }
 
   /**
    * Take the row over for this run: mark it running and drop the steps of
    * whatever ran last, so the record describes this run alone.
    *
-   * Safe as a write of its own only because the caller holds the claim
-   * (ADR-044) — no other run can be recording steps against this row.
+   * Safe as a write of its own only because the caller holds the claim —
+   * no other run can be recording steps against this row.
    */
-  async beginRun(pipelineId: string) {
+  async beginRun() {
     await this.db.execute(sql`
       WITH cleared AS (
-        DELETE FROM resource_pipeline_step WHERE pipeline_id = ${pipelineId}::uuid
+        DELETE FROM resource_pipeline_step WHERE pipeline_id = ${this.claim.id}::uuid
       )
       UPDATE resource_pipeline
       SET status = 'processing', error = NULL, updated = NOW()
-      WHERE id = ${pipelineId}::uuid
+      WHERE ${this.held}
     `)
   }
 
   /**
-   * Update pipeline status.
+   * Update pipeline status. A run that has been killed leaves its status alone
+   * — `cancelled` is the record of what happened, and this run is not the one
+   * describing the resource any more.
    */
-  async updateStatus(pipelineId: string, status: PipelineStatus, error?: string) {
+  async updateStatus(status: PipelineStatus, error?: string) {
     await this.db
       .update(resourcePipeline)
-      .set({
-        status,
-        error: error ?? null,
-        updated: sql`NOW()`,
-      })
-      .where(eq(resourcePipeline.id, pipelineId))
+      .set({ status, error: error ?? null, updated: sql`NOW()` })
+      .where(this.held)
   }
 
   /**
@@ -53,18 +79,13 @@ export class StepTracker {
    * pointer goes with it and nothing else would ever park that object.
    *
    * One statement, because the keys being parked are whatever the row holds
-   * *now*, not what this run read at startup, which a concurrent run of the
-   * same resource may already have moved past. Deletion is the sweep's job.
+   * *now*, not what this run read at startup. Deletion is the sweep's job.
    */
-  async updateExtractResult(
-    pipelineId: string,
-    previewKey: string | null,
-    metadata: Record<string, unknown>
-  ) {
+  async updateExtractResult(previewKey: string | null, metadata: Record<string, unknown>) {
     await this.db.execute(sql`
       WITH before AS (
         SELECT id, preview_key, metadata ->> 'textHeadKey' AS text_head
-        FROM resource_pipeline WHERE id = ${pipelineId}::uuid FOR UPDATE
+        FROM resource_pipeline WHERE ${this.held} FOR UPDATE
       ),
       moved AS (
         UPDATE resource_pipeline p
@@ -83,59 +104,83 @@ export class StepTracker {
   }
 
   /**
-   * Create a step record and mark it as running.
+   * Merge into the pipeline's metadata, parking the text head the merge
+   * replaces — the one pointer that lives inside metadata rather than in a
+   * column of its own (ADR-043). Reached when Extract threw and so left the
+   * previous metadata in place; a successful Extract has already parked it.
    */
-  async startStep(pipelineId: string, stepName: PipelineStepName) {
-    const [step] = await this.db
-      .insert(resourcePipelineStep)
-      .values({
-        pipelineId,
-        stepName,
-        status: 'running' satisfies PipelineStepStatus,
-        startedAt: sql`NOW()`,
-      })
-      .returning()
+  async mergeMetadata(metadata: Record<string, unknown>) {
+    await this.db.execute(sql`
+      WITH before AS (
+        SELECT id, metadata ->> 'textHeadKey' AS text_head
+        FROM resource_pipeline WHERE ${this.held} FOR UPDATE
+      ),
+      merged AS (
+        UPDATE resource_pipeline p
+        SET metadata = COALESCE(p.metadata, '{}'::jsonb) || ${JSON.stringify(metadata)}::jsonb,
+            updated = NOW()
+        FROM before b
+        WHERE p.id = b.id
+        RETURNING b.text_head AS previous_key, p.metadata ->> 'textHeadKey' AS new_key
+      )
+      INSERT INTO orphaned_object (key)
+      SELECT previous_key FROM merged
+      WHERE previous_key IS NOT NULL AND previous_key IS DISTINCT FROM new_key
+      ON CONFLICT (key) DO NOTHING
+    `)
+  }
 
+  /**
+   * Create a step record and mark it as running.
+   *
+   * The one place the run checks whether it still holds the resource. Every
+   * step opens with it, so a kill takes effect at the next boundary rather than
+   * mid-step — which is as fine-grained as it can be without a way to interrupt
+   * a read in progress, and enough to stop the work that follows.
+   *
+   * @throws RunCancelledError when the claim is gone.
+   */
+  async startStep(stepName: PipelineStepName) {
+    const result = await this.db.execute(sql`
+      INSERT INTO resource_pipeline_step (pipeline_id, step_name, status, started_at)
+      SELECT ${this.claim.id}::uuid, ${stepName}, 'running', NOW()
+      FROM resource_pipeline WHERE ${this.held}
+      RETURNING id
+    `)
+    const step = result.rows[0] as { id: string } | undefined
+    if (!step) throw new RunCancelledError(this.claim.resourceId)
     return step.id
   }
 
   /**
-   * Mark a step as complete.
+   * Settle a step, on the same condition as everything else this run writes.
+   *
+   * Reached through the step's id rather than the pipeline's, so the ownership
+   * check joins back — without it a run killed mid-step could still mark that
+   * step complete under a pipeline the killer already recorded as cancelled,
+   * which is exactly the half-done state §4 wants shown honestly.
    */
+  private async settleStep(stepId: string, status: PipelineStepStatus, error?: string) {
+    await this.db.execute(sql`
+      UPDATE resource_pipeline_step s
+      SET status = ${status}, error = ${error ?? null}, completed_at = NOW()
+      FROM resource_pipeline p
+      WHERE s.id = ${stepId}::uuid AND s.pipeline_id = p.id AND ${heldBy(this.claim, 'p')}
+    `)
+  }
+
+  /** Mark a step as complete. */
   async completeStep(stepId: string) {
-    await this.db
-      .update(resourcePipelineStep)
-      .set({
-        status: 'complete' satisfies PipelineStepStatus,
-        completedAt: sql`NOW()`,
-      })
-      .where(eq(resourcePipelineStep.id, stepId))
+    await this.settleStep(stepId, 'complete')
   }
 
-  /**
-   * Mark a step as failed.
-   */
+  /** Mark a step as failed. */
   async failStep(stepId: string, error: string) {
-    await this.db
-      .update(resourcePipelineStep)
-      .set({
-        status: 'error' satisfies PipelineStepStatus,
-        error,
-        completedAt: sql`NOW()`,
-      })
-      .where(eq(resourcePipelineStep.id, stepId))
+    await this.settleStep(stepId, 'error', error)
   }
 
-  /**
-   * Mark a step as skipped.
-   */
+  /** Mark a step as skipped. */
   async skipStep(stepId: string) {
-    await this.db
-      .update(resourcePipelineStep)
-      .set({
-        status: 'skipped' satisfies PipelineStepStatus,
-        completedAt: sql`NOW()`,
-      })
-      .where(eq(resourcePipelineStep.id, stepId))
+    await this.settleStep(stepId, 'skipped')
   }
 }

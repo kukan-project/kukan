@@ -26,7 +26,6 @@ function createMockCtx() {
     acquireFetchSlot: vi.fn(),
     indexContent: vi.fn(),
     deleteContent: vi.fn(),
-    updatePipelineMetadata: vi.fn(),
   } satisfies PipelineContext
 }
 

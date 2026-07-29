@@ -17,6 +17,7 @@ import {
 import type { CreateResourceInput, UpdateResourceInput, PackageDbState } from '@kukan/shared'
 import type { PendingResourceMetadata } from '@kukan/db'
 import { RESOURCE_POSITION_LOCK, lockInTransaction } from './advisory-lock'
+import { cancelResourceRun } from './pipeline-claim'
 import { hasOrgMembership, hasDraftAccess, type AuthUser } from '../auth/permissions'
 
 // Package states whose resources are reachable — drafts hold resources before publish (ADR-039)
@@ -395,6 +396,15 @@ export class ResourceService {
     if ((result.rows[0] as { updated: number } | undefined)?.updated !== 1) {
       throw new NotFoundError('Resource', id)
     }
+
+    // Declaring a replacement stops whatever is processing the content being
+    // replaced (ADR-044 §4). Uploads do not take the claim, so without this
+    // whether a run notices it was overtaken depends on where it happens to be
+    // — and a run that does not notice goes on feeding the content the user is
+    // retracting into the search index. The content itself is left alone;
+    // reverting it is a separate choice.
+    await cancelResourceRun(this.db, id)
+
     return pendingKey
   }
 

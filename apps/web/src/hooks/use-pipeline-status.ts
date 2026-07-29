@@ -1,7 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
+import type { PipelineStatus } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
 
-export type PipelineStatus = 'queued' | 'processing' | 'complete' | 'error'
+// Re-exported rather than redeclared: a copy of the union here is a copy the
+// compiler cannot check against the API, and a status added on the server would
+// reach these components with nothing to render it.
+export type { PipelineStatus }
 
 export interface PipelineStep {
   id: string
@@ -107,7 +111,12 @@ export function usePipelineStatus({
       setData(json)
       setLoading(false)
 
-      const isTerminal = json.pipeline_status === 'complete' || json.pipeline_status === 'error'
+      // `cancelled` settles too — the run was stopped on purpose (ADR-044 §4)
+      // and nothing is coming, so polling on would never end.
+      const isTerminal =
+        json.pipeline_status === 'complete' ||
+        json.pipeline_status === 'error' ||
+        json.pipeline_status === 'cancelled'
       if (isTerminal) {
         activeRef.current = false
         if (hasSeenActiveRef.current && json.pipeline_status) {

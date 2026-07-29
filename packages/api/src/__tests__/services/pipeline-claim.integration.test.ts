@@ -11,7 +11,9 @@ import { eq, sql } from 'drizzle-orm'
 import { resource, resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import {
   CLAIM_STALE_AFTER_MS,
+  cancelResourceRun,
   claimResources,
+  heldBy,
   releaseResourceClaims,
   withResourceClaim,
   withResourceClaims,
@@ -78,12 +80,15 @@ afterAll(async () => {
 
 describe('claimResources', () => {
   it('gives the resource to one run and refuses the next', async () => {
-    const first = await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS)
+    const owner = randomUUID()
+    const first = await claimResources(db, [resourceId], owner, STALE_AFTER_MS)
     const second = await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS)
 
-    expect(first.claimed).toEqual([{ id: pipelineId, resourceId }])
+    // The owner comes back with the claim: the holder conditions its own writes
+    // on it, which is what makes the run killable (ADR-044 §4).
+    expect(first.claimed).toEqual([{ id: pipelineId, resourceId, owner }])
     expect(second.claimed).toEqual([])
-    expect(second.held).toEqual([{ id: pipelineId, resourceId }])
+    expect(second.held).toMatchObject([{ id: pipelineId, resourceId }])
   })
 
   it('reports a resource with no pipeline row as neither taken nor held', async () => {
@@ -123,8 +128,8 @@ describe('claimResources', () => {
       STALE_AFTER_MS
     )
 
-    expect(result.claimed).toEqual([{ id: pipelineId, resourceId }])
-    expect(result.held).toEqual([{ id: second.pipelineId, resourceId: second.resourceId }])
+    expect(result.claimed).toMatchObject([{ id: pipelineId, resourceId }])
+    expect(result.held).toMatchObject([{ id: second.pipelineId, resourceId: second.resourceId }])
   })
 
   it('lets another run take a claim nothing has progressed', async () => {
@@ -136,7 +141,7 @@ describe('claimResources', () => {
 
     const taken = await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS)
 
-    expect(taken.claimed).toEqual([{ id: pipelineId, resourceId }])
+    expect(taken.claimed).toMatchObject([{ id: pipelineId, resourceId }])
     expect((await pipelineRow()).claimOwner).not.toBe(dead)
   })
 
@@ -252,7 +257,7 @@ describe('withResourceClaims', () => {
     })
 
     // Named, so a purge that will not finish says which resource is blocking it.
-    expect(outcome).toEqual({
+    expect(outcome).toMatchObject({
       status: 'held',
       held: [{ id: second.pipelineId, resourceId: second.resourceId }],
     })
@@ -276,5 +281,74 @@ describe('withResourceClaims', () => {
     ).rejects.toThrow('cleanup failed')
 
     expect((await pipelineRow()).claimOwner).toBeNull()
+  })
+})
+
+describe('cancelResourceRun', () => {
+  it('takes the resource back and records that the run was stopped', async () => {
+    await hold()
+
+    expect(await cancelResourceRun(db, resourceId)).toBe(true)
+
+    const row = await pipelineRow()
+    expect(row.claimOwner).toBeNull()
+    // Not `error` — nothing failed. The run was stopped on purpose, and the
+    // resource is left holding content no derivative describes (ADR-044 §4).
+    expect(row.status).toBe('cancelled')
+  })
+
+  it('reports that there was nothing to stop', async () => {
+    // A resource whose run already finished. Saying otherwise would have the
+    // caller believe it interrupted work that was already done.
+    expect(await cancelResourceRun(db, resourceId)).toBe(false)
+  })
+
+  it('leaves the content alone', async () => {
+    // Reverting is a separate decision (§4): someone stopping a stuck run does
+    // not want their content moved out from under them.
+    await db
+      .update(resource)
+      .set({ storageKey: 'resources/pkg/live', hash: 'sha256:x' })
+      .where(eq(resource.id, resourceId))
+    await hold()
+
+    await cancelResourceRun(db, resourceId)
+
+    const [row] = await db.select().from(resource).where(eq(resource.id, resourceId))
+    expect(row.storageKey).toBe('resources/pkg/live')
+    expect(row.hash).toBe('sha256:x')
+  })
+})
+
+describe('heldBy', () => {
+  // The condition every write a run makes carries. It is what turns releasing
+  // the claim into a kill: the run's next statement matches nothing.
+  async function writeAsRun(claim: { id: string; resourceId: string; owner: string }) {
+    const result = await db.execute(sql`
+      UPDATE resource_pipeline SET status = 'processing' WHERE ${heldBy(claim)} RETURNING id
+    `)
+    return result.rows.length
+  }
+
+  it('matches while the run holds the resource, and stops once it does not', async () => {
+    const owner = await hold()
+    const claim = { id: pipelineId, resourceId, owner }
+
+    expect(await writeAsRun(claim)).toBe(1)
+
+    await cancelResourceRun(db, resourceId)
+
+    expect(await writeAsRun(claim)).toBe(0)
+  })
+
+  it('stops matching for a run that was taken over', async () => {
+    // The stale-takeover path reaches the same place as a kill: the displaced
+    // run is still alive, and its writes must not land on the row the run that
+    // displaced it now owns.
+    const displaced = await hold()
+    await ageClaim('1 hour')
+    await hold()
+
+    expect(await writeAsRun({ id: pipelineId, resourceId, owner: displaced })).toBe(0)
   })
 })

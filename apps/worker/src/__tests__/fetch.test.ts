@@ -53,7 +53,6 @@ function createMockCtx(overrides?: Partial<PipelineContext>): PipelineContext {
     acquireFetchSlot: vi.fn().mockResolvedValue(true),
     indexContent: vi.fn(),
     deleteContent: vi.fn(),
-    updatePipelineMetadata: vi.fn(),
     ...overrides,
   } as unknown as PipelineContext
 }

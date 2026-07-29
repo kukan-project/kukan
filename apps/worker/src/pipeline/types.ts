@@ -53,8 +53,6 @@ export interface PipelineContext {
   /** Delete all content chunks for a resource.
    *  No-op when OpenSearch is not configured. */
   deleteContent(resourceId: string): Promise<void>
-  /** Update pipeline metadata JSONB (merges with existing metadata) */
-  updatePipelineMetadata(pipelineId: string, metadata: Record<string, unknown>): Promise<void>
   /**
    * Capture the resource's current file as its next version (ADR-043 layer 1).
    *

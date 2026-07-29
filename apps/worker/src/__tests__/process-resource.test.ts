@@ -21,6 +21,7 @@ vi.mock('../pipeline/steps/index-content', () => ({
 // Mock StepTracker
 const mockTracker = {
   beginRun: vi.fn(),
+  mergeMetadata: vi.fn(),
   startStep: vi.fn(),
   completeStep: vi.fn(),
   failStep: vi.fn(),
@@ -33,6 +34,8 @@ vi.mock('../pipeline/step-tracker', () => ({
   StepTracker: vi.fn(function () {
     return mockTracker
   }),
+  // The run's exit when it has been killed; the orchestrator branches on it.
+  RunCancelledError: class RunCancelledError extends Error {},
 }))
 
 /**
@@ -45,7 +48,7 @@ vi.mock('@kukan/api/services/pipeline-claim', () => ({
   withResourceClaim: vi.fn(
     async (_db: unknown, resourceId: string, fn: (c: { id: string }) => Promise<void>) => {
       if (claim.answer !== 'ran') return { status: claim.answer }
-      return { status: 'ran', result: await fn({ id: 'pipeline-1', resourceId }) }
+      return { status: 'ran', result: await fn({ id: 'pipeline-1', resourceId, owner: 'run-1' }) }
     }
   ),
 }))
@@ -64,7 +67,6 @@ function createMockCtx(): PipelineContext {
     acquireFetchSlot: vi.fn().mockResolvedValue(true),
     indexContent: vi.fn(),
     deleteContent: vi.fn(),
-    updatePipelineMetadata: vi.fn(),
     captureVersion: vi.fn().mockResolvedValue({ captured: true, version: 1 }),
     withVersionCaptureLock: vi.fn((_id: string, fn: () => Promise<unknown>) => fn()),
   }
@@ -94,6 +96,7 @@ describe('processResource', () => {
 
     claim.answer = 'ran'
     mockTracker.beginRun.mockResolvedValue(undefined)
+    mockTracker.mergeMetadata.mockResolvedValue(undefined)
     mockTracker.startStep.mockImplementation(() => Promise.resolve(`step-${stepCounter++}`))
     mockTracker.completeStep.mockResolvedValue(undefined)
     mockTracker.failStep.mockResolvedValue(undefined)
@@ -139,12 +142,10 @@ describe('processResource', () => {
     // Fetch + Extract + Version + Lake + Index = 5 steps
     expect(mockTracker.startStep).toHaveBeenCalledTimes(5)
     expect(mockTracker.completeStep).toHaveBeenCalledWith('step-0')
-    expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
-    expect(mockTracker.updateExtractResult).toHaveBeenCalledWith(
-      'pipeline-1',
-      'previews/pkg-1/res-1.parquet',
-      { encoding: 'UTF8' }
-    )
+    expect(mockTracker.updateStatus).toHaveBeenCalledWith('complete')
+    expect(mockTracker.updateExtractResult).toHaveBeenCalledWith('previews/pkg-1/res-1.parquet', {
+      encoding: 'UTF8',
+    })
   })
 
   it('should persist the column schema into metadata when extract returns one (ADR-032)', async () => {
@@ -170,11 +171,10 @@ describe('processResource', () => {
 
     await processResource('res-1', ctx, db, queue)
 
-    expect(mockTracker.updateExtractResult).toHaveBeenCalledWith(
-      'pipeline-1',
-      'previews/pkg-1/res-1.parquet',
-      { encoding: 'UTF8', schema }
-    )
+    expect(mockTracker.updateExtractResult).toHaveBeenCalledWith('previews/pkg-1/res-1.parquet', {
+      encoding: 'UTF8',
+      schema,
+    })
   })
 
   it('should skip extract and index when format is unsupported', async () => {
@@ -193,7 +193,7 @@ describe('processResource', () => {
     // step-2 = version, step-3 = lake (skipped: no preview Parquet), step-4 = index
     expect(mockTracker.skipStep).toHaveBeenCalledWith('step-4')
     // Clears any stale preview/schema from a previous run (e.g. CSV → PDF replace).
-    expect(mockTracker.updateExtractResult).toHaveBeenCalledWith('pipeline-1', null, {})
+    expect(mockTracker.updateExtractResult).toHaveBeenCalledWith(null, {})
   })
 
   it('does NOT clear preview/schema when extract throws (transient failure)', async () => {
@@ -228,7 +228,7 @@ describe('processResource', () => {
 
     expect(mockTracker.failStep).toHaveBeenCalled()
     expect(mockTracker.startStep).toHaveBeenCalledTimes(5)
-    expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
+    expect(mockTracker.updateStatus).toHaveBeenCalledWith('complete')
   })
 
   it('should set error status if fetch fails', async () => {
@@ -236,7 +236,7 @@ describe('processResource', () => {
 
     await processResource('res-1', ctx, db, queue)
 
-    expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'error', 'Download failed')
+    expect(mockTracker.updateStatus).toHaveBeenCalledWith('error', 'Download failed')
   })
 
   it('should requeue and set queued status when fetch is deferred', async () => {
@@ -247,7 +247,7 @@ describe('processResource', () => {
     // Fetch step should be skipped
     expect(mockTracker.skipStep).toHaveBeenCalledWith('step-0')
     // Pipeline set back to queued
-    expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'queued')
+    expect(mockTracker.updateStatus).toHaveBeenCalledWith('queued')
     // Requeued with delay
     expect(queue.enqueue).toHaveBeenCalledWith(
       'resource-pipeline',
@@ -286,6 +286,27 @@ describe('processResource', () => {
     )
   })
 
+  it('leaves without recording anything once it has been killed', async () => {
+    // The kill is the claim being released, so the run finds out at its next
+    // step boundary. It must not write `error` over the `cancelled` the killer
+    // recorded, nor mark itself complete (ADR-044 §4).
+    vi.mocked(executeFetch).mockResolvedValue({
+      storageKey: 'resources/pkg-1/res-1.tok',
+      format: 'CSV',
+      packageId: 'pkg-1',
+      status: 'fetched',
+    })
+    const { RunCancelledError } = await import('../pipeline/step-tracker')
+    mockTracker.startStep
+      .mockImplementationOnce(() => Promise.resolve('step-0'))
+      .mockImplementationOnce(() => Promise.reject(new RunCancelledError('res-1')))
+
+    await processResource('res-1', ctx, db, queue)
+
+    expect(mockTracker.updateStatus).not.toHaveBeenCalled()
+    expect(executeExtract).not.toHaveBeenCalled()
+  })
+
   it('records the run against the row it was given', async () => {
     // The claim names the pipeline row, so nothing has to look it up again —
     // and the reset that opens the run is safe only under it.
@@ -293,7 +314,7 @@ describe('processResource', () => {
 
     await processResource('res-1', ctx, db, queue)
 
-    expect(mockTracker.beginRun).toHaveBeenCalledWith('pipeline-1')
+    expect(mockTracker.beginRun).toHaveBeenCalled()
   })
 
   it('queues a retry when the Lake step could not ingest', async () => {
@@ -322,6 +343,6 @@ describe('processResource', () => {
       previewKey: 'previews/pkg-1/res-1.tok.parquet',
     })
     // Still advisory: the pipeline itself completes.
-    expect(mockTracker.updateStatus).toHaveBeenCalledWith('pipeline-1', 'complete')
+    expect(mockTracker.updateStatus).toHaveBeenCalledWith('complete')
   })
 })

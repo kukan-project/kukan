@@ -9,7 +9,7 @@ import type { Database } from '@kukan/db'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import { LAKE_INGEST_JOB_TYPE, PIPELINE_JOB_TYPE } from '@kukan/shared'
 import { withResourceClaim } from '@kukan/api/services/pipeline-claim'
-import { StepTracker } from './step-tracker'
+import { RunCancelledError, StepTracker } from './step-tracker'
 import { executeFetch } from './steps/fetch'
 import { executeExtract } from './steps/extract'
 import { executeLake } from './steps/lake'
@@ -31,9 +31,8 @@ export async function processResource(
   db: Database,
   queue: QueueAdapter
 ): Promise<void> {
-  const tracker = new StepTracker(db)
   const outcome = await withResourceClaim(db, resourceId, (claim) =>
-    runPipeline(resourceId, claim.id, tracker, ctx, queue)
+    runPipeline(resourceId, new StepTracker(db, claim), ctx, queue)
   )
 
   // Held by another run or a purge (ADR-044). This job has to come back: the
@@ -50,16 +49,15 @@ export async function processResource(
 /** The run itself, with the resource already claimed for its duration. */
 async function runPipeline(
   resourceId: string,
-  pipelineId: string,
   tracker: StepTracker,
   ctx: PipelineContext,
   queue: QueueAdapter
 ): Promise<void> {
-  await tracker.beginRun(pipelineId)
+  await tracker.beginRun()
 
   try {
     // Step 1: Fetch — download external URL to Storage (uploads already there)
-    const fetchStepId = await tracker.startStep(pipelineId, 'fetch')
+    const fetchStepId = await tracker.startStep('fetch')
     const fetchResult = await executeFetch(resourceId, ctx)
 
     if (fetchResult.status === 'superseded') {
@@ -74,7 +72,7 @@ async function runPipeline(
       // Rate-limited — requeue with delay and revert pipeline to 'queued'
       await Promise.all([
         tracker.skipStep(fetchStepId),
-        tracker.updateStatus(pipelineId, 'queued'),
+        tracker.updateStatus('queued'),
         queue.enqueue(
           PIPELINE_JOB_TYPE,
           { resourceId },
@@ -91,7 +89,7 @@ async function runPipeline(
     // Step 2: Extract — parse from Storage, generate Parquet preview
     // Non-critical: failures are recorded but don't fail the pipeline
     let extractResult: Awaited<ReturnType<typeof executeExtract>> = null
-    const extractStepId = await tracker.startStep(pipelineId, 'extract')
+    const extractStepId = await tracker.startStep('extract')
     try {
       extractResult = await executeExtract(
         resourceId,
@@ -110,10 +108,10 @@ async function runPipeline(
         // with a PDF must not keep reporting the old schema as queryable.
         // (A transient extract failure throws instead and is caught below, where
         // the previous preview is intentionally preserved.)
-        await tracker.updateExtractResult(pipelineId, null, {})
+        await tracker.updateExtractResult(null, {})
       } else {
         await tracker.completeStep(extractStepId)
-        await tracker.updateExtractResult(pipelineId, extractResult.previewKey, {
+        await tracker.updateExtractResult(extractResult.previewKey, {
           encoding: extractResult.encoding,
           // Persist the column schema (ADR-032) when one was generated (CSV/TSV).
           ...(extractResult.schema ? { schema: extractResult.schema } : {}),
@@ -131,7 +129,7 @@ async function runPipeline(
     // Step 3: Version — capture an immutable copy of the canonical file (ADR-043).
     // Runs after Extract so the column schema can be snapshotted onto the version.
     // Non-critical: a capture failure is recorded but never fails the pipeline.
-    const versionStepId = await tracker.startStep(pipelineId, 'version')
+    const versionStepId = await tracker.startStep('version')
     try {
       const versionResult = await ctx.captureVersion({
         resourceId,
@@ -153,7 +151,7 @@ async function runPipeline(
     // Step 4: Lake — load the captured version into DuckLake for row-level
     // diff (ADR-043 layer 2). Only runs for a newly captured tabular version;
     // non-critical, and rebuildable from layer 1 if it fails.
-    const lakeStepId = await tracker.startStep(pipelineId, 'lake')
+    const lakeStepId = await tracker.startStep('lake')
     try {
       const lakeResult = await executeLake(
         resourceId,
@@ -182,7 +180,7 @@ async function runPipeline(
 
     // Step 5: Index — extract text content and index to search engine
     // Non-critical: failures are recorded but don't fail the pipeline
-    const indexStepId = await tracker.startStep(pipelineId, 'index')
+    const indexStepId = await tracker.startStep('index')
     try {
       const indexResult = await executeIndexContent(
         resourceId,
@@ -194,18 +192,21 @@ async function runPipeline(
       )
       if (indexResult === null) {
         await tracker.skipStep(indexStepId)
-        await ctx.updatePipelineMetadata(pipelineId, { contentIndexed: false })
+        await tracker.mergeMetadata({ contentIndexed: false })
       } else {
         await tracker.completeStep(indexStepId)
-        await ctx.updatePipelineMetadata(pipelineId, { ...indexResult })
+        await tracker.mergeMetadata({ ...indexResult })
       }
     } catch (err) {
       await tracker.failStep(indexStepId, (err as Error).message)
-      await ctx.updatePipelineMetadata(pipelineId, { contentIndexed: false })
+      await tracker.mergeMetadata({ contentIndexed: false })
     }
 
-    await tracker.updateStatus(pipelineId, 'complete')
+    await tracker.updateStatus('complete')
   } catch (err) {
-    await tracker.updateStatus(pipelineId, 'error', (err as Error).message)
+    // A killed run records nothing: the resource was taken from it, and
+    // `cancelled` is already on the row (ADR-044 §4).
+    if (err instanceof RunCancelledError) return
+    await tracker.updateStatus('error', (err as Error).message)
   }
 }

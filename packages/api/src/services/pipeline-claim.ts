@@ -37,6 +37,13 @@ export const CLAIM_STALE_AFTER_MS = 15 * 60 * 1000
 export interface ResourceClaim {
   id: string
   resourceId: string
+  /**
+   * The run this claim was taken for. Carried so the holder can condition its
+   * own writes on still being it — which is what makes a run killable
+   * (ADR-044 §4): released, the claim stops matching and the run's next write
+   * lands on nothing.
+   */
+  owner: string
 }
 
 /**
@@ -70,7 +77,7 @@ export async function claimResources(
   resourceIds: string[],
   owner: string,
   staleAfterMs: number
-): Promise<{ claimed: ResourceClaim[]; held: ResourceClaim[] }> {
+): Promise<{ claimed: ResourceClaim[]; held: HeldResource[] }> {
   if (resourceIds.length === 0) return { claimed: [], held: [] }
 
   const result = await db.execute(sql`
@@ -93,9 +100,9 @@ export async function claimResources(
     WHERE p.resource_id = ANY(${sql.param(resourceIds)}::uuid[])
   `)
 
-  const rows = result.rows as unknown as (ResourceClaim & { taken: boolean })[]
+  const rows = result.rows as unknown as (HeldResource & { taken: boolean })[]
   return {
-    claimed: rows.filter((r) => r.taken).map(({ id, resourceId }) => ({ id, resourceId })),
+    claimed: rows.filter((r) => r.taken).map(({ id, resourceId }) => ({ id, resourceId, owner })),
     held: rows.filter((r) => !r.taken).map(({ id, resourceId }) => ({ id, resourceId })),
   }
 }
@@ -127,10 +134,14 @@ export async function releaseResourceClaims(
   return result.rows.length
 }
 
+/** A pipeline row someone else holds. Which run holds it is deliberately not
+ *  reported: only the holder itself can act on that, and it already knows. */
+export type HeldResource = Omit<ResourceClaim, 'owner'>
+
 /** Refused: these resources are held by someone else, and nothing was run. */
 export interface ClaimHeld {
   status: 'held'
-  held: ResourceClaim[]
+  held: HeldResource[]
 }
 
 /** What became of a claimed section of work. */
@@ -221,4 +232,46 @@ export async function withResourceClaimsOrConflict<T>(
     )
   }
   return outcome.result
+}
+
+/**
+ * SQL condition: this pipeline row, and `claim.owner` still holds it.
+ *
+ * Every write a run makes to its own record carries this, which is what turns
+ * releasing the claim into a kill — the run's next statement matches nothing
+ * and it leaves. Here rather than in the worker for the same reason the rest of
+ * this file is: it is the claim's rule, and it has to read the same everywhere
+ * it is applied.
+ */
+export function heldBy(claim: ResourceClaim, table?: 'p') {
+  const col = (name: string) => sql.raw(table ? `${table}.${name}` : name)
+  return sql`${col('id')} = ${claim.id}::uuid AND ${col('claim_owner')} = ${claim.owner}::uuid`
+}
+
+/**
+ * Stop whatever run holds this resource (ADR-044 §4).
+ *
+ * Releasing the claim is the kill: every write a run makes to its own record is
+ * conditioned on still holding it, so from here the run lands on nothing and
+ * leaves. It is not asked to stop — there is no channel to ask over, and a run
+ * wedged in a slow read would not hear it anyway.
+ *
+ * The row is marked `cancelled` rather than left as it was, because otherwise
+ * nothing distinguishes a run that was stopped from one still going: the
+ * resource keeps content that no version, preview or index describes, and
+ * `processing` would go on claiming otherwise.
+ *
+ * The content is not touched. Reverting it is a separate decision (§4), and one
+ * a caller stopping a stuck run does not want made for them.
+ *
+ * @returns whether a run was actually stopped.
+ */
+export async function cancelResourceRun(db: Database, resourceId: string): Promise<boolean> {
+  const result = await db.execute(sql`
+    UPDATE resource_pipeline
+    SET claim_owner = NULL, claim_owner_at = NULL, status = 'cancelled', updated = NOW()
+    WHERE resource_id = ${resourceId}::uuid AND claim_owner IS NOT NULL
+    RETURNING id
+  `)
+  return result.rows.length > 0
 }
