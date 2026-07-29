@@ -12,15 +12,15 @@ Changes can be applied incrementally — start with the simplest approach.
 
 Files you modify in a fork are limited to `apps/web/brands/default/`. Its contents:
 
-| Path (under `brands/default/`)   | Contents                                                              | Section                                            |
-| -------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------- |
-| `brand-config.ts`                | Site name, description, logo, footer links, OG image, favicon, GA ID | [Tier 2](#tier-2-text-and-metadata)                |
-| `theme.css`                      | CSS variable overrides (colors, sizing)                              | [Tier 1](#tier-1-colors-and-sizing)                |
-| `messages/ja.json` / `en.json`   | UI text (i18n message) overrides                                     | [i18n Message Overrides](#i18n-message-overrides)  |
-| `overrides/`                     | Component replacements for Header / Footer / TopPage (slots)         | [Tier 3](#tier-3-component-replacement)            |
-| `pages/`                         | Custom static pages (terms, privacy policy, etc.)                    | [Static Pages](#static-pages)                      |
-| `public/`                        | Static files: logo, favicon, OG image, etc.                          | [Static Files](#static-files)                      |
-| `index.ts` / `messages/index.ts` | Export barrels; normally no need to edit                             | —                                                  |
+| Path (under `brands/default/`)   | Contents                                                             | Section                                           |
+| -------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------- |
+| `brand-config.ts`                | Site name, description, logo, footer links, OG image, favicon, GA ID | [Tier 2](#tier-2-text-and-metadata)               |
+| `theme.css`                      | CSS variable overrides (colors, sizing)                              | [Tier 1](#tier-1-colors-and-sizing)               |
+| `messages/ja.json` / `en.json`   | UI text (i18n message) overrides                                     | [i18n Message Overrides](#i18n-message-overrides) |
+| `overrides/`                     | Component replacements for Header / Footer / TopPage (slots)         | [Tier 3](#tier-3-component-replacement)           |
+| `pages/`                         | Custom static pages (terms, privacy policy, etc.)                    | [Static Pages](#static-pages)                     |
+| `public/`                        | Static files: logo, favicon, OG image, etc.                          | [Static Files](#static-files)                     |
+| `index.ts` / `messages/index.ts` | Export barrels; normally no need to edit                             | —                                                 |
 
 Do not modify files outside this directory. Doing so will cause merge conflicts when pulling upstream updates.
 
@@ -427,13 +427,13 @@ describe('Custom Header', () => {
 
 ## Summary
 
-| Goal                                      | Method                                              | Estimated time |
-| ----------------------------------------- | --------------------------------------------------- | -------------- |
-| Change colors                             | Write CSS variables in `brand/theme.css`            | 5 min          |
-| Use custom colors outside official tokens | Define `--brand-*` tokens in `brand/theme.css`      | 5 min          |
-| Change site name and text                 | Edit `brand/brand-config.ts`                        | 30 min         |
-| Override UI translation text              | Add override keys to `brand/messages/{locale}.json` | 10 min         |
-| Replace logo                              | Place file in `brands/default/public/` + edit config         | 10 min         |
-| Change header/footer structure            | Create components in `brand/overrides/`             | A few hours    |
-| Replace the top page                      | Create component in `brand/overrides/`              | A few hours    |
-| Add static pages                          | Create components in `brand/pages/` + register      | 30 min         |
+| Goal                                      | Method                                               | Estimated time |
+| ----------------------------------------- | ---------------------------------------------------- | -------------- |
+| Change colors                             | Write CSS variables in `brand/theme.css`             | 5 min          |
+| Use custom colors outside official tokens | Define `--brand-*` tokens in `brand/theme.css`       | 5 min          |
+| Change site name and text                 | Edit `brand/brand-config.ts`                         | 30 min         |
+| Override UI translation text              | Add override keys to `brand/messages/{locale}.json`  | 10 min         |
+| Replace logo                              | Place file in `brands/default/public/` + edit config | 10 min         |
+| Change header/footer structure            | Create components in `brand/overrides/`              | A few hours    |
+| Replace the top page                      | Create component in `brand/overrides/`               | A few hours    |
+| Add static pages                          | Create components in `brand/pages/` + register       | 30 min         |

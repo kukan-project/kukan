@@ -41,19 +41,19 @@ KUKAN は [CKAN Action API v3](https://docs.ckan.org/en/latest/api/) と互換�
 
 すべて公開（認証不要）、GET メソッドです。
 
-| Path | 説明 |
-|------|------|
-| `/api/3/action/package_list` | データセット名の一覧 |
-| `/api/3/action/package_show?id={nameOrId}` | データセット詳細（CKAN フィールド名） |
-| `/api/3/action/package_search?q={query}` | データセット検索 |
-| `/api/3/action/resource_show?id={id}` | リソース詳細（CKAN フィールド名） |
-| `/api/3/action/organization_list` | 組織名の一覧 |
-| `/api/3/action/organization_show?id={nameOrId}` | 組織詳細 |
-| `/api/3/action/group_list` | カテゴリー名の一覧 |
-| `/api/3/action/group_show?id={nameOrId}` | カテゴリー詳細 |
-| `/api/3/action/tag_list` | タグ名の一覧 |
-| `/api/3/action/tag_show?id={id}` | タグ詳細 |
-| `/api/3/action/license_list` | ライセンス一覧 |
+| Path                                            | 説明                                  |
+| ----------------------------------------------- | ------------------------------------- |
+| `/api/3/action/package_list`                    | データセット名の一覧                  |
+| `/api/3/action/package_show?id={nameOrId}`      | データセット詳細（CKAN フィールド名） |
+| `/api/3/action/package_search?q={query}`        | データセット検索                      |
+| `/api/3/action/resource_show?id={id}`           | リソース詳細（CKAN フィールド名）     |
+| `/api/3/action/organization_list`               | 組織名の一覧                          |
+| `/api/3/action/organization_show?id={nameOrId}` | 組織詳細                              |
+| `/api/3/action/group_list`                      | カテゴリー名の一覧                    |
+| `/api/3/action/group_show?id={nameOrId}`        | カテゴリー詳細                        |
+| `/api/3/action/tag_list`                        | タグ名の一覧                          |
+| `/api/3/action/tag_show?id={id}`                | タグ詳細                              |
+| `/api/3/action/license_list`                    | ライセンス一覧                        |
 
 ## フィールド名のマッピング
 
@@ -61,22 +61,22 @@ KUKAN は内部で camelCase のフィールドを使用しますが、CKAN 互�
 
 ### データセット (package)
 
-| KUKAN (REST) | CKAN |
-|-------------|------|
-| `created` | `metadata_created` |
-| `updated` | `metadata_modified` |
-| `creatorUserId` | `creator_user_id` |
-| `ownerOrg` | `owner_org` |
-| `licenseId` | `license_id` |
+| KUKAN (REST)    | CKAN                |
+| --------------- | ------------------- |
+| `created`       | `metadata_created`  |
+| `updated`       | `metadata_modified` |
+| `creatorUserId` | `creator_user_id`   |
+| `ownerOrg`      | `owner_org`         |
+| `licenseId`     | `license_id`        |
 
 ### リソース (resource)
 
-| KUKAN (REST) | CKAN |
-|-------------|------|
-| `updated` | `metadata_modified` |
-| `lastModified` | `last_modified` |
-| `packageId` | `package_id` |
-| `resourceType` | `resource_type` |
+| KUKAN (REST)   | CKAN                |
+| -------------- | ------------------- |
+| `updated`      | `metadata_modified` |
+| `lastModified` | `last_modified`     |
+| `packageId`    | `package_id`        |
+| `resourceType` | `resource_type`     |
 
 ## 使用例
 

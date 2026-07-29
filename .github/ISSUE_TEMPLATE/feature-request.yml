@@ -1,6 +1,6 @@
 name: Feature Request / 機能要望
 description: Suggest a new feature or improvement / 新機能や改善を提案する
-labels: ["enhancement"]
+labels: ['enhancement']
 body:
   - type: markdown
     attributes:

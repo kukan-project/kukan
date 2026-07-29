@@ -70,20 +70,20 @@ curl -X DELETE https://your-kukan-site/api/v1/api-tokens/tok_... \
 
 ## Permission model
 
-| Level | Description |
-|-------|-------------|
-| Public (no auth) | Search, view public datasets |
-| Authenticated | Own profile, private datasets in member orgs |
-| Organization member / editor / admin | Create, edit, manage organization data |
-| Category member / editor / admin | Add, manage datasets in categories |
-| System administrator (sysadmin) | Manage all users, organizations, jobs |
+| Level                                | Description                                  |
+| ------------------------------------ | -------------------------------------------- |
+| Public (no auth)                     | Search, view public datasets                 |
+| Authenticated                        | Own profile, private datasets in member orgs |
+| Organization member / editor / admin | Create, edit, manage organization data       |
+| Category member / editor / admin     | Add, manage datasets in categories           |
+| System administrator (sysadmin)      | Manage all users, organizations, jobs        |
 
 ## Error codes
 
-| HTTP | Meaning |
-|------|---------|
-| 401 | Not authenticated (login or token required) |
-| 403 | Insufficient permissions |
-| 404 | Resource not found |
-| 409 | Conflict (e.g., duplicate resource) |
-| 422 | Validation error |
+| HTTP | Meaning                                     |
+| ---- | ------------------------------------------- |
+| 401  | Not authenticated (login or token required) |
+| 403  | Insufficient permissions                    |
+| 404  | Resource not found                          |
+| 409  | Conflict (e.g., duplicate resource)         |
+| 422  | Validation error                            |

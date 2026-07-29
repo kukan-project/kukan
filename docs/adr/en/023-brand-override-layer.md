@@ -111,8 +111,7 @@ export interface NavItem {
 }
 
 export type LogoConfig =
-  | { type: 'default' }
-  | { type: 'image'; src: string; width: number; height: number; alt: string }
+  { type: 'default' } | { type: 'image'; src: string; width: number; height: number; alt: string }
 
 /** Component override slot definitions */
 export interface BrandOverrides {

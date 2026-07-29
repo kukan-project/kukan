@@ -1,6 +1,6 @@
 name: Bug Report / バグ報告
 description: Report a bug or unexpected behavior / バグや予期しない動作を報告する
-labels: ["bug"]
+labels: ['bug']
 body:
   - type: markdown
     attributes:
@@ -44,7 +44,7 @@ body:
     attributes:
       label: KUKAN Version / バージョン
       description: KUKAN version or commit hash / バージョンまたはコミットハッシュ
-      placeholder: "0.1.0 or commit SHA"
+      placeholder: '0.1.0 or commit SHA'
     validations:
       required: false
   - type: textarea

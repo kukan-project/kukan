@@ -40,8 +40,7 @@ interface AiSuggestSettings {
 const DEFAULT_MODEL_VALUE = '__default__'
 
 type TestResult =
-  | { ok: true; model: string; latencyMs: number }
-  | { ok: false; error?: string; code?: string }
+  { ok: true; model: string; latencyMs: number } | { ok: false; error?: string; code?: string }
 
 /** Maps a server diagnose code (see services/suggest/diagnose.ts) to the i18n
  *  key of an actionable setup instruction. Unmapped codes show the raw error. */

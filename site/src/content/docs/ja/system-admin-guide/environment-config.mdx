@@ -41,38 +41,38 @@ CDK bootstrap のイメージ用 ECR リポジトリへ同一タグを push し�
 
 共有リソース(データベース・OpenSearch・VPC・ECS クラスタ)と CI/CD の設定です。
 
-| フィールド         | 型                             | デフォルト                                     | 説明                                                                                       |
-| ------------------ | ------------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `account`          | string                         | **必須**                                       | 対象 AWS アカウント ID。誤デプロイ防止(認証情報のアカウントと不一致なら CDK が拒否)        |
-| `region`           | string                         | `ap-northeast-1`                               | 対象リージョン                                                                             |
-| `scale`            | `small` \| `medium` \| `large` | `small`                                        | デプロイ規模(リソースサイズを一括制御)                                                     |
-| `dbEngine`         | `rds` \| `aurora`              | スケール依存(small=rds、medium/large=aurora)   | DB エンジン                                                                                |
-| `enableOpenSearch` | boolean                        | `true`                                         | `false` → PostgreSQL 全文検索フォールバック                                                |
-| `bedrock`          | object \| `false`              | 有効(Titan v2)                                 | セマンティック検索と AI メタデータ提案。`false` で無効(`AI_TYPE=none`)    |
-| `githubRepo`       | string                         | なし                                           | CodeConnections ソースリポジトリ(`owner/repo`)。未設定の env はパイプライン対象外 |
-| `deployBranch`     | string                         | `main`                                         | この env を pipeline でデプロイするブランチ                                                |
-| `overrides`        | 部分指定                       | なし                                           | スケール preset の個別上書き(下記「overrides」)                                            |
-| `sites`            | SiteConfig[]                   | なし(過去互換のシングルサイト形状)             | この環境が運用するサイトの一覧。**新規構築では必ず宣言する**(1 件でも可)          |
+| フィールド         | 型                             | デフォルト                                   | 説明                                                                                |
+| ------------------ | ------------------------------ | -------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `account`          | string                         | **必須**                                     | 対象 AWS アカウント ID。誤デプロイ防止(認証情報のアカウントと不一致なら CDK が拒否) |
+| `region`           | string                         | `ap-northeast-1`                             | 対象リージョン                                                                      |
+| `scale`            | `small` \| `medium` \| `large` | `small`                                      | デプロイ規模(リソースサイズを一括制御)                                              |
+| `dbEngine`         | `rds` \| `aurora`              | スケール依存(small=rds、medium/large=aurora) | DB エンジン                                                                         |
+| `enableOpenSearch` | boolean                        | `true`                                       | `false` → PostgreSQL 全文検索フォールバック                                         |
+| `bedrock`          | object \| `false`              | 有効(Titan v2)                               | セマンティック検索と AI メタデータ提案。`false` で無効(`AI_TYPE=none`)              |
+| `githubRepo`       | string                         | なし                                         | CodeConnections ソースリポジトリ(`owner/repo`)。未設定の env はパイプライン対象外   |
+| `deployBranch`     | string                         | `main`                                       | この env を pipeline でデプロイするブランチ                                         |
+| `overrides`        | 部分指定                       | なし                                         | スケール preset の個別上書き(下記「overrides」)                                     |
+| `sites`            | SiteConfig[]                   | なし(過去互換のシングルサイト形状)           | この環境が運用するサイトの一覧。**新規構築では必ず宣言する**(1 件でも可)            |
 
 ## サイトエントリのフィールド(`sites[]`)
 
 サイト固有の設定です。環境エントリには書けません(synth 時にエラー)。
 
-| フィールド         | 型                       | デフォルト                                         | 説明                                                                                          |
-| ------------------ | ------------------------ | -------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `name`             | string                   | **必須**                                           | サイトキー(`^[a-z][a-z0-9]{1,15}$`)。リソース名 `kukan-<env>-<site>-*` と DB 名 `kukan_<site>` |
-| `brand`            | string                   | `default`(既定ブランド `brands/default`)               | web イメージのブランド(`KUKAN_BRAND`)。既定値は `default` で、**未指定と `brand: 'default'` は等価**(既定ブランド `brands/default`)。それ以外を設定する場合は対応する `apps/web/brands/<brand>/` が必要です(未知のブランドはイメージビルドが失敗します) |
-| `domainName`       | string                   | なし                                               | カスタムドメイン(未設定時は CloudFront デフォルトドメイン)                                    |
-| `hostedZoneId`     | string                   | なし                                               | Route53 Hosted Zone ID(`domainName` 設定時に必要)                                             |
-| `hostedZoneName`   | string                   | なし                                               | Route53 Hosted Zone 名(同上)                                                                  |
-| `certificateArn`   | string                   | standalone は自動作成                              | us-east-1 ACM 証明書 ARN。**pipeline モードで `domainName` 設定時は必須**                                |
-| `webAclArn`        | string                   | standalone は自動作成                              | us-east-1 WAF WebACL ARN(複数サイトで共有可)。**pipeline モードで WAF 有効なら必須**          |
-| `enableWaf`        | boolean                  | ON(`allowedIpRanges` / `basicAuth` 設定時は OFF)   | CloudFront の WAF マネージドルール(~$9/月)                                           |
-| `allowedIpRanges`  | string[]                 | なし                                               | IP 制限(CloudFront Function、IPv4 CIDR + IPv6 対応)                                           |
-| `basicAuth`        | `{ username, password }`  | なし                                               | Basic 認証ゲート(`allowedIpRanges` と OR 結合の軽量ゲート)                           |
-| `bucketName`       | string                   | 自動命名                                           | S3 バケット名(未設定でグローバル一意な自動命名)                                               |
-| `enableGa4DataApi` | boolean                  | `false`                                            | GA4 アクセス統計ダッシュボード                                                                |
-| `overrides`        | 部分指定                 | なし                                               | サイト所有セクションのみ(下記「overrides」)                                                   |
+| フィールド         | 型                       | デフォルト                                       | 説明                                                                                                                                                                                                                                                    |
+| ------------------ | ------------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`             | string                   | **必須**                                         | サイトキー(`^[a-z][a-z0-9]{1,15}$`)。リソース名 `kukan-<env>-<site>-*` と DB 名 `kukan_<site>`                                                                                                                                                          |
+| `brand`            | string                   | `default`(既定ブランド `brands/default`)         | web イメージのブランド(`KUKAN_BRAND`)。既定値は `default` で、**未指定と `brand: 'default'` は等価**(既定ブランド `brands/default`)。それ以外を設定する場合は対応する `apps/web/brands/<brand>/` が必要です(未知のブランドはイメージビルドが失敗します) |
+| `domainName`       | string                   | なし                                             | カスタムドメイン(未設定時は CloudFront デフォルトドメイン)                                                                                                                                                                                              |
+| `hostedZoneId`     | string                   | なし                                             | Route53 Hosted Zone ID(`domainName` 設定時に必要)                                                                                                                                                                                                       |
+| `hostedZoneName`   | string                   | なし                                             | Route53 Hosted Zone 名(同上)                                                                                                                                                                                                                            |
+| `certificateArn`   | string                   | standalone は自動作成                            | us-east-1 ACM 証明書 ARN。**pipeline モードで `domainName` 設定時は必須**                                                                                                                                                                               |
+| `webAclArn`        | string                   | standalone は自動作成                            | us-east-1 WAF WebACL ARN(複数サイトで共有可)。**pipeline モードで WAF 有効なら必須**                                                                                                                                                                    |
+| `enableWaf`        | boolean                  | ON(`allowedIpRanges` / `basicAuth` 設定時は OFF) | CloudFront の WAF マネージドルール(~$9/月)                                                                                                                                                                                                              |
+| `allowedIpRanges`  | string[]                 | なし                                             | IP 制限(CloudFront Function、IPv4 CIDR + IPv6 対応)                                                                                                                                                                                                     |
+| `basicAuth`        | `{ username, password }` | なし                                             | Basic 認証ゲート(`allowedIpRanges` と OR 結合の軽量ゲート)                                                                                                                                                                                              |
+| `bucketName`       | string                   | 自動命名                                         | S3 バケット名(未設定でグローバル一意な自動命名)                                                                                                                                                                                                         |
+| `enableGa4DataApi` | boolean                  | `false`                                          | GA4 アクセス統計ダッシュボード                                                                                                                                                                                                                          |
+| `overrides`        | 部分指定                 | なし                                             | サイト所有セクションのみ(下記「overrides」)                                                                                                                                                                                                             |
 
 `certificateArn` / `webAclArn` を後から外部の ARN に切り替えても、それまで
 自動作成されていた証明書 / WebACL は削除されず残ります(CloudFront が参照中の

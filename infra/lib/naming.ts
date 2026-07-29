@@ -30,8 +30,7 @@ export function envPrefix(scope: Construct): string {
   const stageName = cdk.Stage.of(scope)?.stageName
   const base = stageName ? `kukan-${stageName.toLowerCase()}` : 'kukan'
   const stack = scope.node.scopes.filter(cdk.Stack.isStack).pop() as
-    | (cdk.Stack & Partial<SiteScopedStack>)
-    | undefined
+    (cdk.Stack & Partial<SiteScopedStack>) | undefined
   return stack?.kukanSiteName ? `${base}-${stack.kukanSiteName}` : base
 }
 

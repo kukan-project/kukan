@@ -22,39 +22,39 @@ As an exception, **PUT on a dataset in draft state is a partial update** (see "D
 
 ## Datasets (packages)
 
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| GET | `/packages` | List datasets (with search and filters) | Public |
-| POST | `/packages` | Create dataset (include `resources` array to create resources simultaneously) | Org editor |
-| POST | `/packages/drafts` | Create draft dataset (every field optional) | Auth |
-| GET | `/packages/{nameOrId}` | Get dataset details | Public |
-| PUT | `/packages/{nameOrId}` | Update dataset (active: full replacement / draft: partial update; `resources` not included) | Org editor |
-| DELETE | `/packages/{nameOrId}` | Delete dataset (active: soft delete / draft: immediate permanent delete) | Org editor |
-| POST | `/packages/{nameOrId}/publish` | Publish a draft (`draft` → `active`) | Org editor |
-| POST | `/packages/{nameOrId}/restore` | Restore soft-deleted dataset | sysadmin |
-| POST | `/packages/{nameOrId}/purge` | Permanently delete soft-deleted dataset | Org admin |
-| GET | `/packages/{id}/resources` | List resources | Public |
-| POST | `/packages/{id}/resources` | Add resource | Org editor |
-| PUT | `/packages/{id}/resources/reorder` | Reorder resources | Org editor |
+| Method | Path                               | Description                                                                                 | Auth       |
+| ------ | ---------------------------------- | ------------------------------------------------------------------------------------------- | ---------- |
+| GET    | `/packages`                        | List datasets (with search and filters)                                                     | Public     |
+| POST   | `/packages`                        | Create dataset (include `resources` array to create resources simultaneously)               | Org editor |
+| POST   | `/packages/drafts`                 | Create draft dataset (every field optional)                                                 | Auth       |
+| GET    | `/packages/{nameOrId}`             | Get dataset details                                                                         | Public     |
+| PUT    | `/packages/{nameOrId}`             | Update dataset (active: full replacement / draft: partial update; `resources` not included) | Org editor |
+| DELETE | `/packages/{nameOrId}`             | Delete dataset (active: soft delete / draft: immediate permanent delete)                    | Org editor |
+| POST   | `/packages/{nameOrId}/publish`     | Publish a draft (`draft` → `active`)                                                        | Org editor |
+| POST   | `/packages/{nameOrId}/restore`     | Restore soft-deleted dataset                                                                | sysadmin   |
+| POST   | `/packages/{nameOrId}/purge`       | Permanently delete soft-deleted dataset                                                     | Org admin  |
+| GET    | `/packages/{id}/resources`         | List resources                                                                              | Public     |
+| POST   | `/packages/{id}/resources`         | Add resource                                                                                | Org editor |
+| PUT    | `/packages/{id}/resources/reorder` | Reorder resources                                                                           | Org editor |
 
 ### Key query parameters (GET /packages)
 
-| Parameter | Description |
-|-----------|-------------|
-| `q` | Search query (keywords or natural language; hybrid search) |
-| `semantic` | `false` limits results to keyword matches only (default: `true`) |
-| `offset` / `limit` | Pagination (max 100) |
-| `organization[]` | Filter by organization |
-| `groups[]` | Filter by category |
-| `tags[]` | Filter by tag |
-| `res_format[]` | Filter by resource format (e.g., `CSV`) |
-| `license_id[]` | Filter by license |
-| `state` | `active` / `deleted` / `draft` (`draft` requires auth; see below) |
-| `my_org` | Limit to user's organizations |
-| `private` | Include private datasets |
-| `sort_by` | `updated` / `created` / `name` |
-| `sort_order` | `asc` / `desc` |
-| `include_facets` | Include facet information |
+| Parameter          | Description                                                       |
+| ------------------ | ----------------------------------------------------------------- |
+| `q`                | Search query (keywords or natural language; hybrid search)        |
+| `semantic`         | `false` limits results to keyword matches only (default: `true`)  |
+| `offset` / `limit` | Pagination (max 100)                                              |
+| `organization[]`   | Filter by organization                                            |
+| `groups[]`         | Filter by category                                                |
+| `tags[]`           | Filter by tag                                                     |
+| `res_format[]`     | Filter by resource format (e.g., `CSV`)                           |
+| `license_id[]`     | Filter by license                                                 |
+| `state`            | `active` / `deleted` / `draft` (`draft` requires auth; see below) |
+| `my_org`           | Limit to user's organizations                                     |
+| `private`          | Include private datasets                                          |
+| `sort_by`          | `updated` / `created` / `name`                                    |
+| `sort_order`       | `asc` / `desc`                                                    |
+| `include_facets`   | Include facet information                                         |
 
 ### Example: dataset search
 
@@ -116,23 +116,23 @@ the listing.
 
 ## Resources
 
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| GET | `/resources/count` | Active resource count | Public |
-| GET | `/resources/formats` | List used formats | Public |
-| GET | `/resources/{id}` | Resource details | Public |
-| GET | `/resources/{id}/text` | Text content (preview-size limited) | Public |
-| GET | `/resources/{id}/download` | Download file (302 redirect for external URLs) | Public |
-| GET | `/resources/{id}/preview` | Server-proxied preview (Range supported) | Public |
-| GET | `/resources/{id}/pipeline-status` | Pipeline job status | Public |
-| GET | `/resources/{id}/schema` | Column schema (names, types, row count, numeric stats). CSV/TSV only | Public |
-| POST | `/resources/{id}/query` | Server-side DuckDB query (SELECT only). CSV/TSV only | Public |
-| POST | `/resources/{id}/upload-url` | Issue presigned upload URL | Org editor |
-| POST | `/resources/{id}/upload` | Server-proxied upload | Org editor |
-| POST | `/resources/{id}/upload-complete` | Notify completion, enqueue pipeline | Org editor |
-| POST | `/resources/{id}/run-pipeline` | Manually trigger pipeline | Org editor |
-| PUT | `/resources/{id}` | Update resource (full replacement; extras is system-managed) | Org editor |
-| DELETE | `/resources/{id}` | Delete resource | Org editor |
+| Method | Path                              | Description                                                          | Auth       |
+| ------ | --------------------------------- | -------------------------------------------------------------------- | ---------- |
+| GET    | `/resources/count`                | Active resource count                                                | Public     |
+| GET    | `/resources/formats`              | List used formats                                                    | Public     |
+| GET    | `/resources/{id}`                 | Resource details                                                     | Public     |
+| GET    | `/resources/{id}/text`            | Text content (preview-size limited)                                  | Public     |
+| GET    | `/resources/{id}/download`        | Download file (302 redirect for external URLs)                       | Public     |
+| GET    | `/resources/{id}/preview`         | Server-proxied preview (Range supported)                             | Public     |
+| GET    | `/resources/{id}/pipeline-status` | Pipeline job status                                                  | Public     |
+| GET    | `/resources/{id}/schema`          | Column schema (names, types, row count, numeric stats). CSV/TSV only | Public     |
+| POST   | `/resources/{id}/query`           | Server-side DuckDB query (SELECT only). CSV/TSV only                 | Public     |
+| POST   | `/resources/{id}/upload-url`      | Issue presigned upload URL                                           | Org editor |
+| POST   | `/resources/{id}/upload`          | Server-proxied upload                                                | Org editor |
+| POST   | `/resources/{id}/upload-complete` | Notify completion, enqueue pipeline                                  | Org editor |
+| POST   | `/resources/{id}/run-pipeline`    | Manually trigger pipeline                                            | Org editor |
+| PUT    | `/resources/{id}`                 | Update resource (full replacement; extras is system-managed)         | Org editor |
+| DELETE | `/resources/{id}`                 | Delete resource                                                      | Org editor |
 
 ### Schema and data query
 
@@ -197,102 +197,102 @@ Query rules:
 
 Limits and errors:
 
-| Item | Value |
-|------|-------|
-| Max rows | 10,000 (`truncated: true` when exceeded) |
-| Max result size | 5 MB |
-| Execution timeout | 15 s (`408`) |
-| Concurrency | 1 (`429` when exceeded) |
+| Item              | Value                                    |
+| ----------------- | ---------------------------------------- |
+| Max rows          | 10,000 (`truncated: true` when exceeded) |
+| Max result size   | 5 MB                                     |
+| Execution timeout | 15 s (`408`)                             |
+| Concurrency       | 1 (`429` when exceeded)                  |
 
-| Error | Condition |
-|-------|-----------|
+| Error | Condition                                                       |
+| ----- | --------------------------------------------------------------- |
 | `400` | Invalid SQL / non-SELECT / over length / non-queryable resource |
-| `404` | Resource not found / private without access |
-| `408` | Execution timeout |
-| `429` | Concurrent query limit |
+| `404` | Resource not found / private without access                     |
+| `408` | Execution timeout                                               |
+| `429` | Concurrent query limit                                          |
 
 ## Organizations
 
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| GET | `/organizations` | List organizations | Public |
-| POST | `/organizations` | Create organization | sysadmin |
-| GET | `/organizations/{nameOrId}` | Organization details | Public |
-| PUT | `/organizations/{nameOrId}` | Update organization (full replacement) | Org admin |
-| DELETE | `/organizations/{nameOrId}` | Soft-delete organization | Org admin |
-| POST | `/organizations/{nameOrId}/restore` | Restore soft-deleted organization | sysadmin |
-| POST | `/organizations/{nameOrId}/purge` | Permanently delete soft-deleted organization (async via SQS) | sysadmin |
-| GET | `/organizations/{nameOrId}/members` | List members | Org member |
-| POST | `/organizations/{nameOrId}/members` | Add member / change role | Org admin |
-| DELETE | `/organizations/{nameOrId}/members/{userId}` | Remove member | Org admin |
+| Method | Path                                         | Description                                                  | Auth       |
+| ------ | -------------------------------------------- | ------------------------------------------------------------ | ---------- |
+| GET    | `/organizations`                             | List organizations                                           | Public     |
+| POST   | `/organizations`                             | Create organization                                          | sysadmin   |
+| GET    | `/organizations/{nameOrId}`                  | Organization details                                         | Public     |
+| PUT    | `/organizations/{nameOrId}`                  | Update organization (full replacement)                       | Org admin  |
+| DELETE | `/organizations/{nameOrId}`                  | Soft-delete organization                                     | Org admin  |
+| POST   | `/organizations/{nameOrId}/restore`          | Restore soft-deleted organization                            | sysadmin   |
+| POST   | `/organizations/{nameOrId}/purge`            | Permanently delete soft-deleted organization (async via SQS) | sysadmin   |
+| GET    | `/organizations/{nameOrId}/members`          | List members                                                 | Org member |
+| POST   | `/organizations/{nameOrId}/members`          | Add member / change role                                     | Org admin  |
+| DELETE | `/organizations/{nameOrId}/members/{userId}` | Remove member                                                | Org admin  |
 
 Member roles are one of `admin` / `editor` / `member`.
 
 ## Categories (groups)
 
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| GET | `/groups` | List categories | Public |
-| POST | `/groups` | Create category | sysadmin |
-| GET | `/groups/{nameOrId}` | Category details | Public |
-| PUT | `/groups/{nameOrId}` | Update category (full replacement) | Category admin |
-| DELETE | `/groups/{nameOrId}` | Delete category | Category admin |
-| POST | `/groups/{nameOrId}/restore` | Restore soft-deleted category | sysadmin |
-| POST | `/groups/{nameOrId}/purge` | Permanently delete soft-deleted category | sysadmin |
-| GET | `/groups/{nameOrId}/members` | List members | Category member |
-| POST | `/groups/{nameOrId}/members` | Add member / change role | Category admin |
-| DELETE | `/groups/{nameOrId}/members/{userId}` | Remove member | Category admin |
+| Method | Path                                  | Description                              | Auth            |
+| ------ | ------------------------------------- | ---------------------------------------- | --------------- |
+| GET    | `/groups`                             | List categories                          | Public          |
+| POST   | `/groups`                             | Create category                          | sysadmin        |
+| GET    | `/groups/{nameOrId}`                  | Category details                         | Public          |
+| PUT    | `/groups/{nameOrId}`                  | Update category (full replacement)       | Category admin  |
+| DELETE | `/groups/{nameOrId}`                  | Delete category                          | Category admin  |
+| POST   | `/groups/{nameOrId}/restore`          | Restore soft-deleted category            | sysadmin        |
+| POST   | `/groups/{nameOrId}/purge`            | Permanently delete soft-deleted category | sysadmin        |
+| GET    | `/groups/{nameOrId}/members`          | List members                             | Category member |
+| POST   | `/groups/{nameOrId}/members`          | Add member / change role                 | Category admin  |
+| DELETE | `/groups/{nameOrId}/members/{userId}` | Remove member                            | Category admin  |
 
 ## Tags
 
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| GET | `/tags` | List tags | Public |
-| GET | `/tags/{id}` | Tag details | Public |
+| Method | Path         | Description | Auth   |
+| ------ | ------------ | ----------- | ------ |
+| GET    | `/tags`      | List tags   | Public |
+| GET    | `/tags/{id}` | Tag details | Public |
 
 ## Users
 
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| GET | `/users/me` | Current user info | Auth |
-| GET | `/users/me/organizations` | User's organizations | Auth |
-| GET | `/users` | Search users (for member management) | Auth |
+| Method | Path                      | Description                          | Auth |
+| ------ | ------------------------- | ------------------------------------ | ---- |
+| GET    | `/users/me`               | Current user info                    | Auth |
+| GET    | `/users/me/organizations` | User's organizations                 | Auth |
+| GET    | `/users`                  | Search users (for member management) | Auth |
 
 ## API tokens
 
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| POST | `/api-tokens` | Create token | Auth |
-| GET | `/api-tokens` | List own tokens | Auth |
-| DELETE | `/api-tokens/{id}` | Revoke token | Auth |
+| Method | Path               | Description     | Auth |
+| ------ | ------------------ | --------------- | ---- |
+| POST   | `/api-tokens`      | Create token    | Auth |
+| GET    | `/api-tokens`      | List own tokens | Auth |
+| DELETE | `/api-tokens/{id}` | Revoke token    | Auth |
 
 ## Admin
 
 All sysadmin only.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/admin/search/stats` | Search index statistics (doc count, size, DB counts) |
-| GET | `/admin/search/doc/{index}/{id}` | Get index document (index: `packages` / `resources` / `contents`) |
-| GET | `/admin/search/browse/{index}` | Browse index documents (pagination, search) |
-| POST | `/admin/reindex-metadata` | Rebuild search index (async via SQS) |
-| POST | `/admin/jobs/enqueue-all` | Enqueue pipeline for all resources |
-| GET | `/admin/jobs/stats` | Pipeline job statistics |
-| GET | `/admin/jobs` | List pipeline jobs |
-| DELETE | `/admin/data` | Delete all data (preserves users) |
-| GET | `/admin/health/stats` | Health check statistics |
-| GET | `/admin/health` | Health check results |
-| GET | `/admin/users/stats` | User statistics |
-| GET | `/admin/users` | List users |
-| POST | `/admin/users` | Create user |
-| PATCH | `/admin/users/{userId}` | Update user |
-| DELETE | `/admin/users/{userId}` | Soft-delete user (revokes sessions/tokens) |
-| POST | `/admin/users/{userId}/restore` | Restore user |
-| POST | `/admin/users/{userId}/purge` | Permanently delete user |
+| Method | Path                             | Description                                                       |
+| ------ | -------------------------------- | ----------------------------------------------------------------- |
+| GET    | `/admin/search/stats`            | Search index statistics (doc count, size, DB counts)              |
+| GET    | `/admin/search/doc/{index}/{id}` | Get index document (index: `packages` / `resources` / `contents`) |
+| GET    | `/admin/search/browse/{index}`   | Browse index documents (pagination, search)                       |
+| POST   | `/admin/reindex-metadata`        | Rebuild search index (async via SQS)                              |
+| POST   | `/admin/jobs/enqueue-all`        | Enqueue pipeline for all resources                                |
+| GET    | `/admin/jobs/stats`              | Pipeline job statistics                                           |
+| GET    | `/admin/jobs`                    | List pipeline jobs                                                |
+| DELETE | `/admin/data`                    | Delete all data (preserves users)                                 |
+| GET    | `/admin/health/stats`            | Health check statistics                                           |
+| GET    | `/admin/health`                  | Health check results                                              |
+| GET    | `/admin/users/stats`             | User statistics                                                   |
+| GET    | `/admin/users`                   | List users                                                        |
+| POST   | `/admin/users`                   | Create user                                                       |
+| PATCH  | `/admin/users/{userId}`          | Update user                                                       |
+| DELETE | `/admin/users/{userId}`          | Soft-delete user (revokes sessions/tokens)                        |
+| POST   | `/admin/users/{userId}/restore`  | Restore user                                                      |
+| POST   | `/admin/users/{userId}/purge`    | Permanently delete user                                           |
 
 ## Other
 
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| GET | `/api/health` | Health check | Public |
-| GET | `/api/v1/site/settings` | Site settings (registration etc.) | Public |
+| Method | Path                    | Description                       | Auth   |
+| ------ | ----------------------- | --------------------------------- | ------ |
+| GET    | `/api/health`           | Health check                      | Public |
+| GET    | `/api/v1/site/settings` | Site settings (registration etc.) | Public |

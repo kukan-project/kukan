@@ -109,8 +109,7 @@ export interface NavItem {
 }
 
 export type LogoConfig =
-  | { type: 'default' }
-  | { type: 'image'; src: string; width: number; height: number; alt: string }
+  { type: 'default' } | { type: 'image'; src: string; width: number; height: number; alt: string }
 
 /** コンポーネントオーバーライドのスロット定義 */
 export interface BrandOverrides {

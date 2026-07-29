@@ -41,19 +41,19 @@ All CKAN-compatible endpoints return responses in the following format.
 
 All are public (no authentication) and use the GET method.
 
-| Path | Description |
-|------|-------------|
-| `/api/3/action/package_list` | List of dataset names |
-| `/api/3/action/package_show?id={nameOrId}` | Dataset details (CKAN field names) |
-| `/api/3/action/package_search?q={query}` | Dataset search |
-| `/api/3/action/resource_show?id={id}` | Resource details (CKAN field names) |
-| `/api/3/action/organization_list` | List of organization names |
-| `/api/3/action/organization_show?id={nameOrId}` | Organization details |
-| `/api/3/action/group_list` | List of category names |
-| `/api/3/action/group_show?id={nameOrId}` | Category details |
-| `/api/3/action/tag_list` | List of tag names |
-| `/api/3/action/tag_show?id={id}` | Tag details |
-| `/api/3/action/license_list` | List of available licenses |
+| Path                                            | Description                         |
+| ----------------------------------------------- | ----------------------------------- |
+| `/api/3/action/package_list`                    | List of dataset names               |
+| `/api/3/action/package_show?id={nameOrId}`      | Dataset details (CKAN field names)  |
+| `/api/3/action/package_search?q={query}`        | Dataset search                      |
+| `/api/3/action/resource_show?id={id}`           | Resource details (CKAN field names) |
+| `/api/3/action/organization_list`               | List of organization names          |
+| `/api/3/action/organization_show?id={nameOrId}` | Organization details                |
+| `/api/3/action/group_list`                      | List of category names              |
+| `/api/3/action/group_show?id={nameOrId}`        | Category details                    |
+| `/api/3/action/tag_list`                        | List of tag names                   |
+| `/api/3/action/tag_show?id={id}`                | Tag details                         |
+| `/api/3/action/license_list`                    | List of available licenses          |
 
 ## Field name mapping
 
@@ -61,22 +61,22 @@ KUKAN uses camelCase fields internally, but the CKAN-compatible API converts the
 
 ### Dataset (package)
 
-| KUKAN (REST) | CKAN |
-|-------------|------|
-| `created` | `metadata_created` |
-| `updated` | `metadata_modified` |
-| `creatorUserId` | `creator_user_id` |
-| `ownerOrg` | `owner_org` |
-| `licenseId` | `license_id` |
+| KUKAN (REST)    | CKAN                |
+| --------------- | ------------------- |
+| `created`       | `metadata_created`  |
+| `updated`       | `metadata_modified` |
+| `creatorUserId` | `creator_user_id`   |
+| `ownerOrg`      | `owner_org`         |
+| `licenseId`     | `license_id`        |
 
 ### Resource
 
-| KUKAN (REST) | CKAN |
-|-------------|------|
-| `updated` | `metadata_modified` |
-| `lastModified` | `last_modified` |
-| `packageId` | `package_id` |
-| `resourceType` | `resource_type` |
+| KUKAN (REST)   | CKAN                |
+| -------------- | ------------------- |
+| `updated`      | `metadata_modified` |
+| `lastModified` | `last_modified`     |
+| `packageId`    | `package_id`        |
+| `resourceType` | `resource_type`     |
 
 ## Usage examples
 

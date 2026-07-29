@@ -17,14 +17,14 @@ Drafts never appear in search results or dataset listings until published.
 
 ### Basic information
 
-| Field | Description | Required to publish |
-|-------|-------------|:-------------------:|
-| Name (URL slug) | Alphanumeric, hyphens, underscores, periods | Yes |
-| Title | Display title | - |
-| Description | Detailed description of the dataset | - |
-| Organization | The organization that owns the data | Yes |
-| License | Data license | Yes |
-| Public / Private | Private datasets are only visible to organization members | - |
+| Field            | Description                                               | Required to publish |
+| ---------------- | --------------------------------------------------------- | :-----------------: |
+| Name (URL slug)  | Alphanumeric, hyphens, underscores, periods               |         Yes         |
+| Title            | Display title                                             |          -          |
+| Description      | Detailed description of the dataset                       |          -          |
+| Organization     | The organization that owns the data                       |         Yes         |
+| License          | Data license                                              |         Yes         |
+| Public / Private | Private datasets are only visible to organization members |          -          |
 
 Fields marked "Required to publish" may stay unset while the dataset is a draft, but all three
 must be set before it can be published. While the name is blank, an auto-generated identifier is
@@ -86,11 +86,11 @@ Organizations are the ownership unit for datasets.
 
 Organization admins can add, remove, and change member roles.
 
-| Role | View datasets | Edit datasets | Delete | Restore / Purge | Manage members |
-|------|:------------:|:------------:|:------:|:---------------:|:-------------:|
-| Member | Yes | - | - | - | - |
-| Editor | Yes | Yes | Yes | - | - |
-| Admin | Yes | Yes | Yes | Yes | Yes |
+| Role   | View datasets | Edit datasets | Delete | Restore / Purge | Manage members |
+| ------ | :-----------: | :-----------: | :----: | :-------------: | :------------: |
+| Member |      Yes      |       -       |   -    |        -        |       -        |
+| Editor |      Yes      |      Yes      |  Yes   |        -        |       -        |
+| Admin  |      Yes      |      Yes      |  Yes   |       Yes       |      Yes       |
 
 Deleted datasets are visible to organization members in the dashboard "Deleted" tab. Only admins can restore or permanently purge them.
 
@@ -111,8 +111,8 @@ Assign categories when creating a dataset.
 
 Categories also have member management with the same role structure as organizations.
 
-| Role | View category | Add datasets | Manage members |
-|------|:------------:|:----------:|:-------------:|
-| Member | Yes | - | - |
-| Editor | Yes | Yes | - |
-| Admin | Yes | Yes | Yes |
+| Role   | View category | Add datasets | Manage members |
+| ------ | :-----------: | :----------: | :------------: |
+| Member |      Yes      |      -       |       -        |
+| Editor |      Yes      |     Yes      |       -        |
+| Admin  |      Yes      |     Yes      |      Yes       |

@@ -201,8 +201,7 @@ resourcesRouter.get('/:id/text', async (c) => {
   ])
   const encoding =
     ((pipelineStatus?.metadata as Record<string, unknown> | null)?.encoding as
-      | string
-      | undefined) ?? 'UNKNOWN'
+      string | undefined) ?? 'UNKNOWN'
 
   const charset = toCharset(encoding)
   const storage = c.get('storage')

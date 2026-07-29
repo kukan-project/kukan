@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@duckdb/node-api": "1.5.4-r.1",
-    "@hono/node-server": "^2.0.4",
+    "@hono/node-server": "^2.0.12",
     "@kukan/ai-adapter": "workspace:*",
     "@kukan/api": "workspace:*",
     "@kukan/db": "workspace:*",
@@ -28,14 +28,14 @@
     "croner": "^10.0.1",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.12.31",
+    "hono": "^4.12.32",
     "hyparquet-writer": "^0.16.1",
-    "officeparser": "^7.4.0",
-    "p-limit": "^7.3.0",
+    "officeparser": "^7.5.0",
+    "p-limit": "^7.3.1",
     "papaparse": "^5.5.4",
     "pg": "^8.22.0",
     "pino": "^10.3.1",
-    "undici": "^8.5.0",
+    "undici": "^8.9.0",
     "yauzl": "^3.4.0"
   },
   "devDependencies": {

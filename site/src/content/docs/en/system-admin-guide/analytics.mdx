@@ -10,10 +10,10 @@ This feature is designed for internet-facing deployments. In closed networks (LG
 
 ## Overview
 
-| What is tracked | How |
-|---|---|
-| Page views | Automatic (gtag.js) |
-| File downloads | Custom event on download button click |
+| What is tracked      | How                                                      |
+| -------------------- | -------------------------------------------------------- |
+| Page views           | Automatic (gtag.js)                                      |
+| File downloads       | Custom event on download button click                    |
 | Site search keywords | Automatic (Enhanced Measurement detects `?q=` parameter) |
 
 Analytics data can be viewed in the GA4 console. With GA4 Data API configured, you can also view analytics in the KUKAN admin dashboard.
@@ -47,7 +47,7 @@ Set the Measurement ID in your brand configuration file:
 // apps/web/src/brand/brand-config.ts
 export const brandConfig: BrandConfig = {
   // ...other settings
-  gaMeasurementId: 'G-XXXXXXXXXX',  // your Measurement ID
+  gaMeasurementId: 'G-XXXXXXXXXX', // your Measurement ID
 }
 ```
 
@@ -63,10 +63,10 @@ KUKAN sends a `file_download` custom event with additional parameters. To use th
 2. Create the following event-scoped dimensions:
 
 | Dimension name | Event parameter | Scope |
-|---|---|---|
-| Dataset Name | `dataset_name` | Event |
-| Resource ID | `resource_id` | Event |
-| File Format | `format` | Event |
+| -------------- | --------------- | ----- |
+| Dataset Name   | `dataset_name`  | Event |
+| Resource ID    | `resource_id`   | Event |
+| File Format    | `format`        | Event |
 
 This step is optional but recommended for detailed download analysis.
 
@@ -79,11 +79,11 @@ The KUKAN admin dashboard shows dataset view counts, download counts, and search
 3. In GA4 Admin > **Property Access Management**, add the service account email with **Viewer** role
 4. Set the following environment variables in your deployment:
 
-| Variable | Value |
-|---|---|
-| `GA4_PROPERTY_ID` | Your GA4 property ID (numeric, found in Admin > Property Settings) |
-| `GA4_CLIENT_EMAIL` | Service account email address |
-| `GA4_PRIVATE_KEY` | Service account private key (PEM format, from the JSON key's `private_key` field) |
+| Variable           | Value                                                                             |
+| ------------------ | --------------------------------------------------------------------------------- |
+| `GA4_PROPERTY_ID`  | Your GA4 property ID (numeric, found in Admin > Property Settings)                |
+| `GA4_CLIENT_EMAIL` | Service account email address                                                     |
+| `GA4_PRIVATE_KEY`  | Service account private key (PEM format, from the JSON key's `private_key` field) |
 
 On AWS, add `enableGa4DataApi=true` to the CDK context and store the values in Secrets Manager.
 

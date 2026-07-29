@@ -22,39 +22,39 @@ PUT エンドポイントは全フィールド置換です。リクエストに�
 
 ## データセット (packages)
 
-| Method | Path | 説明 | 認証 |
-|--------|------|------|------|
-| GET | `/packages` | データセット一覧（検索・絞り込み対応） | 公開 |
-| POST | `/packages` | データセット作成（`resources` 配列でリソース同時作成可） | 組織 editor |
-| POST | `/packages/drafts` | 下書き作成（全フィールド任意） | 認証 |
-| GET | `/packages/{nameOrId}` | データセット詳細 | 公開 |
-| PUT | `/packages/{nameOrId}` | データセット更新（active は全置換 / draft は部分更新、`resources` は対象外） | 組織 editor |
-| DELETE | `/packages/{nameOrId}` | データセット削除（active は論理削除 / draft は即時完全削除） | 組織 editor |
-| POST | `/packages/{nameOrId}/publish` | 下書きを公開（`draft` → `active`） | 組織 editor |
-| POST | `/packages/{nameOrId}/restore` | 論理削除済みを復元 | sysadmin |
-| POST | `/packages/{nameOrId}/purge` | 論理削除済みを完全削除 | 組織 admin |
-| GET | `/packages/{id}/resources` | リソース一覧 | 公開 |
-| POST | `/packages/{id}/resources` | リソース追加 | 組織 editor |
-| PUT | `/packages/{id}/resources/reorder` | リソース順序変更 | 組織 editor |
+| Method | Path                               | 説明                                                                         | 認証        |
+| ------ | ---------------------------------- | ---------------------------------------------------------------------------- | ----------- |
+| GET    | `/packages`                        | データセット一覧（検索・絞り込み対応）                                       | 公開        |
+| POST   | `/packages`                        | データセット作成（`resources` 配列でリソース同時作成可）                     | 組織 editor |
+| POST   | `/packages/drafts`                 | 下書き作成（全フィールド任意）                                               | 認証        |
+| GET    | `/packages/{nameOrId}`             | データセット詳細                                                             | 公開        |
+| PUT    | `/packages/{nameOrId}`             | データセット更新（active は全置換 / draft は部分更新、`resources` は対象外） | 組織 editor |
+| DELETE | `/packages/{nameOrId}`             | データセット削除（active は論理削除 / draft は即時完全削除）                 | 組織 editor |
+| POST   | `/packages/{nameOrId}/publish`     | 下書きを公開（`draft` → `active`）                                           | 組織 editor |
+| POST   | `/packages/{nameOrId}/restore`     | 論理削除済みを復元                                                           | sysadmin    |
+| POST   | `/packages/{nameOrId}/purge`       | 論理削除済みを完全削除                                                       | 組織 admin  |
+| GET    | `/packages/{id}/resources`         | リソース一覧                                                                 | 公開        |
+| POST   | `/packages/{id}/resources`         | リソース追加                                                                 | 組織 editor |
+| PUT    | `/packages/{id}/resources/reorder` | リソース順序変更                                                             | 組織 editor |
 
 ### 主なクエリパラメータ（GET /packages）
 
-| パラメータ | 説明 |
-|----------|------|
-| `q` | 検索クエリ（キーワードまたは自然文。ハイブリッド検索） |
-| `semantic` | `false` でキーワード一致のみ（デフォルト: `true`） |
-| `offset` / `limit` | ページネーション（最大 100） |
-| `organization[]` | 組織で絞り込み |
-| `groups[]` | カテゴリーで絞り込み |
-| `tags[]` | タグで絞り込み |
-| `res_format[]` | リソース形式で絞り込み（例: `CSV`） |
-| `license_id[]` | ライセンスで絞り込み |
-| `state` | `active` / `deleted` / `draft`（`draft` は要認証・後述） |
-| `my_org` | 自分の所属組織に限定 |
-| `private` | 非公開データを含む |
-| `sort_by` | `updated` / `created` / `name` |
-| `sort_order` | `asc` / `desc` |
-| `include_facets` | ファセット情報を含める |
+| パラメータ         | 説明                                                     |
+| ------------------ | -------------------------------------------------------- |
+| `q`                | 検索クエリ（キーワードまたは自然文。ハイブリッド検索）   |
+| `semantic`         | `false` でキーワード一致のみ（デフォルト: `true`）       |
+| `offset` / `limit` | ページネーション（最大 100）                             |
+| `organization[]`   | 組織で絞り込み                                           |
+| `groups[]`         | カテゴリーで絞り込み                                     |
+| `tags[]`           | タグで絞り込み                                           |
+| `res_format[]`     | リソース形式で絞り込み（例: `CSV`）                      |
+| `license_id[]`     | ライセンスで絞り込み                                     |
+| `state`            | `active` / `deleted` / `draft`（`draft` は要認証・後述） |
+| `my_org`           | 自分の所属組織に限定                                     |
+| `private`          | 非公開データを含む                                       |
+| `sort_by`          | `updated` / `created` / `name`                           |
+| `sort_order`       | `asc` / `desc`                                           |
+| `include_facets`   | ファセット情報を含める                                   |
 
 ### 例: データセット検索
 
@@ -113,23 +113,23 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 
 ## リソース (resources)
 
-| Method | Path | 説明 | 認証 |
-|--------|------|------|------|
-| GET | `/resources/count` | アクティブなリソース数 | 公開 |
-| GET | `/resources/formats` | 使われているフォーマット一覧 | 公開 |
-| GET | `/resources/{id}` | リソース詳細 | 公開 |
-| GET | `/resources/{id}/text` | テキストコンテンツ取得（プレビューサイズ制限） | 公開 |
-| GET | `/resources/{id}/download` | ファイルダウンロード（外部 URL は 302 リダイレクト） | 公開 |
-| GET | `/resources/{id}/preview` | サーバー経由プレビュー（Range 対応） | 公開 |
-| GET | `/resources/{id}/pipeline-status` | パイプライン処理状態 | 公開 |
-| GET | `/resources/{id}/schema` | 列スキーマ（列名・型・行数・数値統計）。CSV/TSV のみ | 公開 |
-| POST | `/resources/{id}/query` | サーバーサイド DuckDB クエリ（SELECT 限定）。CSV/TSV のみ | 公開 |
-| POST | `/resources/{id}/upload-url` | プリサインドアップロード URL 発行 | 組織 editor |
-| POST | `/resources/{id}/upload` | サーバー経由アップロード | 組織 editor |
-| POST | `/resources/{id}/upload-complete` | アップロード完了通知・パイプライン投入 | 組織 editor |
-| POST | `/resources/{id}/run-pipeline` | パイプライン手動実行 | 組織 editor |
-| PUT | `/resources/{id}` | リソース更新（全フィールド置換、extras はシステム管理） | 組織 editor |
-| DELETE | `/resources/{id}` | リソース削除 | 組織 editor |
+| Method | Path                              | 説明                                                      | 認証        |
+| ------ | --------------------------------- | --------------------------------------------------------- | ----------- |
+| GET    | `/resources/count`                | アクティブなリソース数                                    | 公開        |
+| GET    | `/resources/formats`              | 使われているフォーマット一覧                              | 公開        |
+| GET    | `/resources/{id}`                 | リソース詳細                                              | 公開        |
+| GET    | `/resources/{id}/text`            | テキストコンテンツ取得（プレビューサイズ制限）            | 公開        |
+| GET    | `/resources/{id}/download`        | ファイルダウンロード（外部 URL は 302 リダイレクト）      | 公開        |
+| GET    | `/resources/{id}/preview`         | サーバー経由プレビュー（Range 対応）                      | 公開        |
+| GET    | `/resources/{id}/pipeline-status` | パイプライン処理状態                                      | 公開        |
+| GET    | `/resources/{id}/schema`          | 列スキーマ（列名・型・行数・数値統計）。CSV/TSV のみ      | 公開        |
+| POST   | `/resources/{id}/query`           | サーバーサイド DuckDB クエリ（SELECT 限定）。CSV/TSV のみ | 公開        |
+| POST   | `/resources/{id}/upload-url`      | プリサインドアップロード URL 発行                         | 組織 editor |
+| POST   | `/resources/{id}/upload`          | サーバー経由アップロード                                  | 組織 editor |
+| POST   | `/resources/{id}/upload-complete` | アップロード完了通知・パイプライン投入                    | 組織 editor |
+| POST   | `/resources/{id}/run-pipeline`    | パイプライン手動実行                                      | 組織 editor |
+| PUT    | `/resources/{id}`                 | リソース更新（全フィールド置換、extras はシステム管理）   | 組織 editor |
+| DELETE | `/resources/{id}`                 | リソース削除                                              | 組織 editor |
 
 ### スキーマとデータクエリ
 
@@ -193,102 +193,102 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
 
 制限とエラー:
 
-| 項目 | 値 |
-|------|------|
-| 最大行数 | 10,000（超過時は `truncated: true`） |
-| 最大結果サイズ | 5 MB |
-| 実行タイムアウト | 15 秒（`408`） |
-| 同時実行 | 1（超過時 `429`） |
+| 項目             | 値                                   |
+| ---------------- | ------------------------------------ |
+| 最大行数         | 10,000（超過時は `truncated: true`） |
+| 最大結果サイズ   | 5 MB                                 |
+| 実行タイムアウト | 15 秒（`408`）                       |
+| 同時実行         | 1（超過時 `429`）                    |
 
-| エラー | 状況 |
-|------|------|
-| `400` | SQL 不正・非 SELECT・長さ超過・クエリ不可リソース |
-| `404` | リソース不存在 / 非公開で権限なし |
-| `408` | 実行タイムアウト |
-| `429` | 同時クエリ上限 |
+| エラー | 状況                                              |
+| ------ | ------------------------------------------------- |
+| `400`  | SQL 不正・非 SELECT・長さ超過・クエリ不可リソース |
+| `404`  | リソース不存在 / 非公開で権限なし                 |
+| `408`  | 実行タイムアウト                                  |
+| `429`  | 同時クエリ上限                                    |
 
 ## 組織 (organizations)
 
-| Method | Path | 説明 | 認証 |
-|--------|------|------|------|
-| GET | `/organizations` | 組織一覧 | 公開 |
-| POST | `/organizations` | 組織作成 | sysadmin |
-| GET | `/organizations/{nameOrId}` | 組織詳細 | 公開 |
-| PUT | `/organizations/{nameOrId}` | 組織更新（全フィールド置換） | 組織 admin |
-| DELETE | `/organizations/{nameOrId}` | 組織論理削除 | 組織 admin |
-| POST | `/organizations/{nameOrId}/restore` | 論理削除済みを復元 | sysadmin |
-| POST | `/organizations/{nameOrId}/purge` | 論理削除済みを完全削除（SQS 経由、非同期） | sysadmin |
-| GET | `/organizations/{nameOrId}/members` | メンバー一覧 | 組織 member |
-| POST | `/organizations/{nameOrId}/members` | メンバー追加・ロール変更 | 組織 admin |
-| DELETE | `/organizations/{nameOrId}/members/{userId}` | メンバー削除 | 組織 admin |
+| Method | Path                                         | 説明                                       | 認証        |
+| ------ | -------------------------------------------- | ------------------------------------------ | ----------- |
+| GET    | `/organizations`                             | 組織一覧                                   | 公開        |
+| POST   | `/organizations`                             | 組織作成                                   | sysadmin    |
+| GET    | `/organizations/{nameOrId}`                  | 組織詳細                                   | 公開        |
+| PUT    | `/organizations/{nameOrId}`                  | 組織更新（全フィールド置換）               | 組織 admin  |
+| DELETE | `/organizations/{nameOrId}`                  | 組織論理削除                               | 組織 admin  |
+| POST   | `/organizations/{nameOrId}/restore`          | 論理削除済みを復元                         | sysadmin    |
+| POST   | `/organizations/{nameOrId}/purge`            | 論理削除済みを完全削除（SQS 経由、非同期） | sysadmin    |
+| GET    | `/organizations/{nameOrId}/members`          | メンバー一覧                               | 組織 member |
+| POST   | `/organizations/{nameOrId}/members`          | メンバー追加・ロール変更                   | 組織 admin  |
+| DELETE | `/organizations/{nameOrId}/members/{userId}` | メンバー削除                               | 組織 admin  |
 
 メンバーのロールは `admin` / `editor` / `member` のいずれか。
 
 ## カテゴリー (groups)
 
-| Method | Path | 説明 | 認証 |
-|--------|------|------|------|
-| GET | `/groups` | カテゴリー一覧 | 公開 |
-| POST | `/groups` | カテゴリー作成 | sysadmin |
-| GET | `/groups/{nameOrId}` | カテゴリー詳細 | 公開 |
-| PUT | `/groups/{nameOrId}` | カテゴリー更新（全フィールド置換） | カテゴリー admin |
-| DELETE | `/groups/{nameOrId}` | カテゴリー削除 | カテゴリー admin |
-| POST | `/groups/{nameOrId}/restore` | 論理削除済みを復元 | sysadmin |
-| POST | `/groups/{nameOrId}/purge` | 論理削除済みを完全削除 | sysadmin |
-| GET | `/groups/{nameOrId}/members` | メンバー一覧 | カテゴリー member |
-| POST | `/groups/{nameOrId}/members` | メンバー追加・ロール変更 | カテゴリー admin |
-| DELETE | `/groups/{nameOrId}/members/{userId}` | メンバー削除 | カテゴリー admin |
+| Method | Path                                  | 説明                               | 認証              |
+| ------ | ------------------------------------- | ---------------------------------- | ----------------- |
+| GET    | `/groups`                             | カテゴリー一覧                     | 公開              |
+| POST   | `/groups`                             | カテゴリー作成                     | sysadmin          |
+| GET    | `/groups/{nameOrId}`                  | カテゴリー詳細                     | 公開              |
+| PUT    | `/groups/{nameOrId}`                  | カテゴリー更新（全フィールド置換） | カテゴリー admin  |
+| DELETE | `/groups/{nameOrId}`                  | カテゴリー削除                     | カテゴリー admin  |
+| POST   | `/groups/{nameOrId}/restore`          | 論理削除済みを復元                 | sysadmin          |
+| POST   | `/groups/{nameOrId}/purge`            | 論理削除済みを完全削除             | sysadmin          |
+| GET    | `/groups/{nameOrId}/members`          | メンバー一覧                       | カテゴリー member |
+| POST   | `/groups/{nameOrId}/members`          | メンバー追加・ロール変更           | カテゴリー admin  |
+| DELETE | `/groups/{nameOrId}/members/{userId}` | メンバー削除                       | カテゴリー admin  |
 
 ## タグ (tags)
 
-| Method | Path | 説明 | 認証 |
-|--------|------|------|------|
-| GET | `/tags` | タグ一覧 | 公開 |
-| GET | `/tags/{id}` | タグ詳細 | 公開 |
+| Method | Path         | 説明     | 認証 |
+| ------ | ------------ | -------- | ---- |
+| GET    | `/tags`      | タグ一覧 | 公開 |
+| GET    | `/tags/{id}` | タグ詳細 | 公開 |
 
 ## ユーザー (users)
 
-| Method | Path | 説明 | 認証 |
-|--------|------|------|------|
-| GET | `/users/me` | 自分の情報 | 認証 |
-| GET | `/users/me/organizations` | 所属組織一覧 | 認証 |
-| GET | `/users` | ユーザー検索（メンバー管理用） | 認証 |
+| Method | Path                      | 説明                           | 認証 |
+| ------ | ------------------------- | ------------------------------ | ---- |
+| GET    | `/users/me`               | 自分の情報                     | 認証 |
+| GET    | `/users/me/organizations` | 所属組織一覧                   | 認証 |
+| GET    | `/users`                  | ユーザー検索（メンバー管理用） | 認証 |
 
 ## API トークン (api-tokens)
 
-| Method | Path | 説明 | 認証 |
-|--------|------|------|------|
-| POST | `/api-tokens` | トークン発行 | 認証 |
-| GET | `/api-tokens` | 自分のトークン一覧 | 認証 |
-| DELETE | `/api-tokens/{id}` | トークン失効 | 認証 |
+| Method | Path               | 説明               | 認証 |
+| ------ | ------------------ | ------------------ | ---- |
+| POST   | `/api-tokens`      | トークン発行       | 認証 |
+| GET    | `/api-tokens`      | 自分のトークン一覧 | 認証 |
+| DELETE | `/api-tokens/{id}` | トークン失効       | 認証 |
 
 ## 管理 (admin)
 
 すべて sysadmin 限定。
 
-| Method | Path | 説明 |
-|--------|------|------|
-| GET | `/admin/search/stats` | 検索インデックス統計（件数・サイズ・DB カウント） |
-| GET | `/admin/search/doc/{index}/{id}` | インデックスドキュメント取得（index: `packages` / `resources` / `contents`） |
-| GET | `/admin/search/browse/{index}` | インデックスドキュメント一覧（ページング・検索対応） |
-| POST | `/admin/reindex-metadata` | 検索インデックス再構築（SQS 経由、非同期） |
-| POST | `/admin/jobs/enqueue-all` | 全リソースのパイプライン一括予約 |
-| GET | `/admin/jobs/stats` | パイプラインジョブ統計 |
-| GET | `/admin/jobs` | パイプラインジョブ一覧 |
-| DELETE | `/admin/data` | 全データ削除（ユーザー除く） |
-| GET | `/admin/health/stats` | ヘルスチェック統計 |
-| GET | `/admin/health` | ヘルスチェック結果一覧 |
-| GET | `/admin/users/stats` | ユーザー統計 |
-| GET | `/admin/users` | ユーザー一覧 |
-| POST | `/admin/users` | ユーザー作成 |
-| PATCH | `/admin/users/{userId}` | ユーザー更新 |
-| DELETE | `/admin/users/{userId}` | ユーザー論理削除（セッション・トークン即時失効） |
-| POST | `/admin/users/{userId}/restore` | ユーザー復元 |
-| POST | `/admin/users/{userId}/purge` | ユーザー完全削除 |
+| Method | Path                             | 説明                                                                         |
+| ------ | -------------------------------- | ---------------------------------------------------------------------------- |
+| GET    | `/admin/search/stats`            | 検索インデックス統計（件数・サイズ・DB カウント）                            |
+| GET    | `/admin/search/doc/{index}/{id}` | インデックスドキュメント取得（index: `packages` / `resources` / `contents`） |
+| GET    | `/admin/search/browse/{index}`   | インデックスドキュメント一覧（ページング・検索対応）                         |
+| POST   | `/admin/reindex-metadata`        | 検索インデックス再構築（SQS 経由、非同期）                                   |
+| POST   | `/admin/jobs/enqueue-all`        | 全リソースのパイプライン一括予約                                             |
+| GET    | `/admin/jobs/stats`              | パイプラインジョブ統計                                                       |
+| GET    | `/admin/jobs`                    | パイプラインジョブ一覧                                                       |
+| DELETE | `/admin/data`                    | 全データ削除（ユーザー除く）                                                 |
+| GET    | `/admin/health/stats`            | ヘルスチェック統計                                                           |
+| GET    | `/admin/health`                  | ヘルスチェック結果一覧                                                       |
+| GET    | `/admin/users/stats`             | ユーザー統計                                                                 |
+| GET    | `/admin/users`                   | ユーザー一覧                                                                 |
+| POST   | `/admin/users`                   | ユーザー作成                                                                 |
+| PATCH  | `/admin/users/{userId}`          | ユーザー更新                                                                 |
+| DELETE | `/admin/users/{userId}`          | ユーザー論理削除（セッション・トークン即時失効）                             |
+| POST   | `/admin/users/{userId}/restore`  | ユーザー復元                                                                 |
+| POST   | `/admin/users/{userId}/purge`    | ユーザー完全削除                                                             |
 
 ## その他
 
-| Method | Path | 説明 | 認証 |
-|--------|------|------|------|
-| GET | `/api/health` | ヘルスチェック | 公開 |
-| GET | `/api/v1/site/settings` | サイト設定（登録可否等） | 公開 |
+| Method | Path                    | 説明                     | 認証 |
+| ------ | ----------------------- | ------------------------ | ---- |
+| GET    | `/api/health`           | ヘルスチェック           | 公開 |
+| GET    | `/api/v1/site/settings` | サイト設定（登録可否等） | 公開 |
