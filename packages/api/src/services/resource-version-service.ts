@@ -25,7 +25,11 @@ import type { SearchAdapter } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import { ingestVersionIntoLake, withLakeIngestLock } from './lake-ingest'
 import { reclaimInSession } from './lake-reclaim'
-import { withResourceClaims, withResourceClaimsOrConflict } from './pipeline-claim'
+import {
+  cancelResourceRun,
+  withResourceClaims,
+  withResourceClaimsOrConflict,
+} from './pipeline-claim'
 import { publishLiveContent } from './storage-pointer'
 import { PipelineService } from './pipeline-service'
 
@@ -615,44 +619,15 @@ export class ResourceVersionService {
 
       if (pkgRow) {
         // Previous active version to restore as the live content.
-        const [prev] = await this.db
-          .select()
-          .from(resourceVersion)
-          .where(
-            and(
-              eq(resourceVersion.resourceId, resourceId),
-              eq(resourceVersion.state, 'active'),
-              lt(resourceVersion.version, version)
-            )
-          )
-          .orderBy(desc(resourceVersion.version))
-          .limit(1)
+        const prev = await this.restoreLiveFromVersions(resourceId, pkgRow, deps.storage, version)
+        rolledBack = prev !== null
 
         if (prev) {
-          // Restored through the same mover as every other writer (ADR-043): a
-          // key of this run's own, and the pointer moves only once the copy is
-          // complete, so a failed copy leaves the resource on the object it had.
-          const restoredKey = getStorageKey(pkgRow.packageId, resourceId, randomUUID())
-          await deps.storage.copy(prev.storageKey, restoredKey)
-          await publishLiveContent(this.db, resourceId, {
-            key: restoredKey,
-            previousKey: pkgRow.storageKey,
-            hash: prev.hash!,
-            size: prev.size!,
-            previousHash: null,
-          })
-          rolledBack = true
           // Layer 2 must follow the rollback: otherwise the lake's current
           // contents would still be the purged rows (ADR-043 §9).
           await this.purgeFromLake(resourceId, deps.lake, row.ducklakeSnapshotId, {
             toSnapshot: prev.ducklakeSnapshotId,
           })
-        } else {
-          // Nothing to roll back to — the resource is left with no live content.
-          await this.db
-            .update(resource)
-            .set({ storageKey: null, hash: null, size: null, lastModified: sql`NOW()` })
-            .where(eq(resource.id, resourceId))
         }
 
         // The mover parked the object holding the purged content; delete it now
@@ -704,6 +679,108 @@ export class ResourceVersionService {
     })
 
     return { purged: true, rolledBack }
+  }
+
+  /**
+   * Stop the run and put the content back (ADR-044 §4, the middle rung).
+   *
+   * For the case the claim cannot fix on its own: the wrong file was uploaded,
+   * and stopping the run leaves it live. Killing first is what makes the rest
+   * safe — from there nothing is writing derivatives from the content being
+   * retracted.
+   *
+   * The retracted object is parked, not deleted: it is unwanted, not illegal,
+   * and a reader that already resolved the key deserves to finish. Destroying
+   * it is the rung above (purge), which also takes the version rows with it —
+   * so a version already captured from the wrong content survives this and has
+   * to be purged on its own. That is the ladder working as intended, not a gap.
+   *
+   * @returns the version restored, `null` when nothing survived to restore
+   *   (the resource is emptied), and `notFound` for a resource that is gone.
+   */
+  async revertLiveContent(
+    resourceId: string,
+    deps: { storage: StorageAdapter; search?: SearchAdapter; queue: QueueAdapter }
+  ): Promise<{ cancelled: boolean; restored: number | null }> {
+    const cancelled = await cancelResourceRun(this.db, resourceId)
+
+    const [current] = await this.db
+      .select({ packageId: resource.packageId, storageKey: resource.storageKey })
+      .from(resource)
+      .where(eq(resource.id, resourceId))
+      .limit(1)
+    if (!current) throw new NotFoundError('Resource', resourceId)
+
+    const restored = await this.restoreLiveFromVersions(resourceId, current, deps.storage)
+
+    // The derivatives describe the content just retracted, so they go now
+    // rather than when the pipeline gets round to replacing them.
+    await this.invalidatePreview(resourceId, deps.storage)
+    if (deps.search) await deps.search.deleteContent(resourceId)
+
+    // Rebuild them from the restored content. The Version step's change gate
+    // sees the restored hash as the latest active version and skips, so no
+    // spurious version is captured. Nothing to rebuild from when the resource
+    // was emptied.
+    if (restored) await new PipelineService(this.db, deps.queue).enqueue(resourceId)
+
+    return { cancelled, restored: restored?.version ?? null }
+  }
+
+  /**
+   * Put the live pointer back on the newest surviving version's content, or
+   * empty the resource when none survives.
+   *
+   * Shared by the two things that retract live content: a purge of the live
+   * version (ADR-043 §9) and a revert (ADR-044 §4). They differ in what happens
+   * to the object left behind — a purge destroys it, a revert lets the sweep
+   * take it — not in how the pointer moves.
+   *
+   * Restored through the same mover as every other writer (ADR-043): a key of
+   * this operation's own, and the pointer moves only once the copy is complete,
+   * so a failed copy leaves the resource on the object it had.
+   *
+   * @param below - restrict to versions under this one. A purge must not
+   *   restore the version it is destroying; a revert has nothing to exclude.
+   * @returns the version restored, or null when the resource was emptied.
+   */
+  private async restoreLiveFromVersions(
+    resourceId: string,
+    current: { packageId: string; storageKey: string | null },
+    storage: StorageAdapter,
+    below?: number
+  ): Promise<typeof resourceVersion.$inferSelect | null> {
+    const [prev] = await this.db
+      .select()
+      .from(resourceVersion)
+      .where(
+        and(
+          eq(resourceVersion.resourceId, resourceId),
+          eq(resourceVersion.state, 'active'),
+          below === undefined ? sql`TRUE` : lt(resourceVersion.version, below)
+        )
+      )
+      .orderBy(desc(resourceVersion.version))
+      .limit(1)
+
+    if (!prev) {
+      await this.db
+        .update(resource)
+        .set({ storageKey: null, hash: null, size: null, lastModified: sql`NOW()` })
+        .where(eq(resource.id, resourceId))
+      return null
+    }
+
+    const restoredKey = getStorageKey(current.packageId, resourceId, randomUUID())
+    await storage.copy(prev.storageKey, restoredKey)
+    await publishLiveContent(this.db, resourceId, {
+      key: restoredKey,
+      previousKey: current.storageKey,
+      hash: prev.hash!,
+      size: prev.size!,
+      previousHash: null,
+    })
+    return prev
   }
 
   /** Delete the resource's preview object and clear its pipeline previewKey. */

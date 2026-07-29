@@ -12,6 +12,7 @@ import { ResourceService, omitStoragePointers } from '../services/resource-servi
 import { ResourceVersionService } from '../services/resource-version-service'
 import { VersionDiffService } from '../services/version-diff-service'
 import { PipelineService } from '../services/pipeline-service'
+import { cancelResourceRun } from '../services/pipeline-claim'
 import { PackageService } from '../services/package-service'
 import { QueryService } from '../services/query-service'
 import {
@@ -700,6 +701,44 @@ resourcesRouter.post('/:id/run-pipeline', async (c) => {
   await checkResourcePermission(db, user, resourceService, id)
 
   return c.json(await enqueuePipeline(c, id), 200)
+})
+
+// POST /api/v1/resources/:id/cancel-pipeline - Stop the run processing this
+// resource (ADR-044 §4). The content is left alone: putting it back is the next
+// rung up, and not a decision to make for someone stopping a stuck run.
+resourcesRouter.post('/:id/cancel-pipeline', async (c) => {
+  const user = c.get('user')
+  if (!user) throw new UnauthorizedError()
+
+  const db = c.get('db')
+  const id = c.req.param('id')
+  const resourceService = new ResourceService(db)
+  await checkResourcePermission(db, user, resourceService, id)
+
+  // False means there was nothing running — reported rather than treated as an
+  // error, since the caller's intent (this resource is not being processed) is
+  // satisfied either way.
+  return c.json({ id, cancelled: await cancelResourceRun(db, id) })
+})
+
+// POST /api/v1/resources/:id/revert - Stop the run and put the live content
+// back to the newest surviving version (ADR-044 §4). For the wrong file having
+// been uploaded: stopping alone leaves it live and downloadable.
+resourcesRouter.post('/:id/revert', async (c) => {
+  const user = c.get('user')
+  if (!user) throw new UnauthorizedError()
+
+  const db = c.get('db')
+  const id = c.req.param('id')
+  const resourceService = new ResourceService(db)
+  await checkResourcePermission(db, user, resourceService, id)
+
+  const result = await new ResourceVersionService(db).revertLiveContent(id, {
+    storage: c.get('storage'),
+    search: c.get('search'),
+    queue: c.get('queue'),
+  })
+  return c.json({ id, ...result })
 })
 
 // --- CRUD endpoints ---

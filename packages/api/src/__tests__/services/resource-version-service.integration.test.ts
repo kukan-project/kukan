@@ -267,3 +267,71 @@ describe('executePurge — layer 2 (DuckLake)', () => {
     expect(result.purged).toBe(true)
   })
 })
+
+describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
+  it('stops the run and puts the live content back', async () => {
+    // The wrong file was uploaded and is live. Stopping alone would leave it
+    // downloadable and its content in the search index.
+    await db.insert(resourcePipeline).values({ resourceId })
+    await claimResources(db, [resourceId], randomUUID(), CLAIM_STALE_AFTER_MS)
+    await addVersion(1, 'sha256:v1')
+
+    const deps = mockDeps()
+    const result = await service.revertLiveContent(resourceId, deps)
+
+    expect(result).toEqual({ cancelled: true, restored: 1 })
+    // v1's bytes are copied to a key of this operation's own, never reused.
+    const [, restoredKey] = vi.mocked(deps.storage.copy).mock.calls[0]
+    expect(restoredKey).not.toBe(liveKey)
+    const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
+    expect(res.storageKey).toBe(restoredKey)
+    expect(res.hash).toBe('sha256:v1')
+    // Derivatives describing the retracted content go now, and are rebuilt.
+    expect(deps.search.deleteContent).toHaveBeenCalledWith(resourceId)
+    expect(deps.queue.enqueue).toHaveBeenCalled()
+  })
+
+  it('parks the retracted object rather than deleting it', async () => {
+    // Unwanted, not illegal — a reader that already resolved the key deserves
+    // to finish. Destroying it is the rung above.
+    await addVersion(1, 'sha256:v1')
+
+    const deps = mockDeps()
+    await service.revertLiveContent(resourceId, deps)
+
+    expect(deps.storage.delete).not.toHaveBeenCalledWith(liveKey)
+    const parked = await db.execute(sql`SELECT key FROM orphaned_object`)
+    expect((parked.rows as unknown as { key: string }[]).map((r) => r.key)).toContain(liveKey)
+  })
+
+  it('empties the resource when no version survives to restore', async () => {
+    // A first upload that was wrong: there is nothing to go back to, and
+    // leaving it live would be the one thing the caller asked against.
+    const deps = mockDeps()
+    const result = await service.revertLiveContent(resourceId, deps)
+
+    expect(result.restored).toBeNull()
+    const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
+    expect(res.storageKey).toBeNull()
+    expect(res.hash).toBeNull()
+    // Nothing to rebuild from.
+    expect(deps.queue.enqueue).not.toHaveBeenCalled()
+  })
+
+  it('reports when there was no run to stop', async () => {
+    await addVersion(1, 'sha256:v1')
+
+    expect((await service.revertLiveContent(resourceId, mockDeps())).cancelled).toBe(false)
+  })
+
+  it('leaves a version captured from the retracted content alone', async () => {
+    // The ladder: destroying that version is a purge, which this deliberately
+    // is not. Reverting the pointer must not quietly delete version rows.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+
+    await service.revertLiveContent(resourceId, mockDeps())
+
+    expect((await service.listByResource(resourceId)).map((v) => v.version)).toEqual([2, 1])
+  })
+})
