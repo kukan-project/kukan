@@ -1,13 +1,14 @@
 'use client'
 
 import { Alert, AlertDescription, Badge, Button } from '@kukan/ui'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, Undo2, X } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslations } from 'next-intl'
 import type { PipelineStepName } from '@kukan/shared'
 import { usePipelineStatus, type PipelineStatus } from '@/hooks/use-pipeline-status'
 import { STATUS_KEYS } from '@/components/dashboard/dataset/pipeline-status-badge'
 import { clientFetch } from '@/lib/client-api'
+import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
 
 interface PipelineStatusDetailProps {
   resourceId: string
@@ -52,6 +53,22 @@ function getDuration(startedAt: string | null, completedAt: string | null): stri
   return (ms / 1000).toFixed(1)
 }
 
+/**
+ * How long the run has been going, read from its first step.
+ *
+ * Recomputed on each poll rather than ticked by a timer of its own: the number
+ * is there to tell a run that is working from one that is wedged, and a
+ * poll-rate resolution answers that.
+ */
+function getElapsed(steps: { started_at: string | null }[]): string | null {
+  const first = steps.find((s) => s.started_at !== null)?.started_at
+  if (!first) return null
+  const seconds = Math.floor((Date.now() - new Date(first).getTime()) / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+}
+
 const STUCK_THRESHOLD_MS = 5 * 60 * 1000
 
 const STATUS_BADGE_VARIANTS: Record<
@@ -80,7 +97,10 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
     resourceId,
     onSettled,
   })
-  const [reprocessing, setReprocessing] = useState(false)
+  // At most one action can be in flight, so one value rather than a flag each —
+  // which also makes "something is running, disable the others" a single check.
+  const [busy, setBusy] = useState<'run-pipeline' | 'cancel-pipeline' | 'revert' | null>(null)
+  const [confirmRevert, setConfirmRevert] = useState(false)
 
   // Detect stuck pipelines: processing with a step running for 5+ minutes
   const stuck =
@@ -91,17 +111,29 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
         s.started_at &&
         Date.now() - new Date(s.started_at).getTime() > STUCK_THRESHOLD_MS
     )
-  const isRunning = (status === 'queued' || status === 'processing') && !stuck
+  const active = status === 'queued' || status === 'processing'
+  // A stalled run is still active — it just stops counting as healthy, which is
+  // what decides the badge and whether reprocessing is offered.
+  const isRunning = active && !stuck
+  const elapsed = active ? getElapsed(steps) : null
 
-  async function handleReprocess() {
-    setReprocessing(true)
+  // The Version step settles whether the current content was captured: complete
+  // means it was, skipped means an identical version already existed. Anything
+  // else — missing, running, failed — means it was not, and replacing the file
+  // would lose it (ADR-044 §4).
+  const versionStep = steps.find((s) => s.step_name === 'version')
+  const versionSaved = versionStep?.status === 'complete' || versionStep?.status === 'skipped'
+
+  // None of these return the new pipeline state, so each ends by refetching it.
+  async function post(action: 'run-pipeline' | 'cancel-pipeline' | 'revert') {
+    setBusy(action)
     try {
-      await clientFetch(`/api/v1/resources/${encodeURIComponent(resourceId)}/run-pipeline`, {
+      await clientFetch(`/api/v1/resources/${encodeURIComponent(resourceId)}/${action}`, {
         method: 'POST',
       })
       refetch()
     } finally {
-      setReprocessing(false)
+      setBusy(null)
     }
   }
 
@@ -114,22 +146,74 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
               {t(stuck ? 'pipelineStuck' : STATUS_KEYS[status])}
             </Badge>
           </div>
-          {!isRunning && (
-            <Button variant="outline" size="sm" onClick={handleReprocess} disabled={reprocessing}>
-              <RefreshCw className={`mr-1 size-3 ${reprocessing ? 'animate-spin' : ''}`} />
-              {reprocessing ? t('reprocessing') : t('reprocessResource')}
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {elapsed && (
+              <span className="text-xs text-muted-foreground">
+                {t('pipelineElapsed', { duration: elapsed })}
+              </span>
+            )}
+            {/* Stopping is offered whenever something is running, including a
+                run that looks stalled — waiting out the staleness window is
+                exactly what an operator who already knows should not have to
+                do (ADR-044 §4). */}
+            {active && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => post('cancel-pipeline')}
+                  disabled={busy !== null}
+                >
+                  <X className="mr-1 size-3" />
+                  {busy === 'cancel-pipeline' ? t('cancellingRun') : t('cancelRun')}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setConfirmRevert(true)}
+                  disabled={busy !== null}
+                >
+                  <Undo2 className="mr-1 size-3" />
+                  {busy === 'revert' ? t('revertingRun') : t('revertRun')}
+                </Button>
+              </>
+            )}
+            {!isRunning && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => post('run-pipeline')}
+                disabled={busy !== null}
+              >
+                <RefreshCw
+                  className={`mr-1 size-3 ${busy === 'run-pipeline' ? 'animate-spin' : ''}`}
+                />
+                {busy === 'run-pipeline' ? t('reprocessing') : t('reprocessResource')}
+              </Button>
+            )}
+          </div>
         </div>
       )}
 
       {!status && (
         <div className="flex items-center justify-center py-4">
-          <Button variant="outline" onClick={handleReprocess} disabled={reprocessing}>
-            <RefreshCw className={`mr-1 size-4 ${reprocessing ? 'animate-spin' : ''}`} />
-            {reprocessing ? t('reprocessing') : t('reprocessResource')}
+          <Button variant="outline" onClick={() => post('run-pipeline')} disabled={busy !== null}>
+            <RefreshCw className={`mr-1 size-4 ${busy === 'run-pipeline' ? 'animate-spin' : ''}`} />
+            {busy === 'run-pipeline' ? t('reprocessing') : t('reprocessResource')}
           </Button>
         </div>
+      )}
+
+      {/* What a stopped run leaves behind depends on how far it got, and the
+          case worth naming is the content that was never captured as a version:
+          replacing the file loses it for good (ADR-044 §4). Nothing else on
+          this screen would say so. */}
+      {status === 'cancelled' && (
+        <Alert>
+          <AlertDescription>
+            {t(versionSaved ? 'cancelledNotice' : 'cancelledNoticeUnsaved')}
+          </AlertDescription>
+        </Alert>
       )}
 
       {error && (
@@ -168,6 +252,20 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
           })}
         </div>
       )}
+
+      <DeleteConfirmDialog
+        open={confirmRevert}
+        onOpenChange={setConfirmRevert}
+        title={t('revertConfirmTitle')}
+        description={t('revertConfirmDescription')}
+        isDeleting={busy === 'revert'}
+        confirmLabel={t('revertRun')}
+        confirmingLabel={t('revertingRun')}
+        onConfirm={async () => {
+          await post('revert')
+          setConfirmRevert(false)
+        }}
+      />
     </div>
   )
 }
