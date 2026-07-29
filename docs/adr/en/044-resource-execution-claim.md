@@ -138,17 +138,73 @@ releases the claim and marks that run cancelled.
 Takeover and kill are not alternatives. **Both a state worth judging and a way to act on
 that judgement are needed.**
 
-### 4. What an operator sees and does
+### 4. Stopping a run
 
-Surface that a resource is being processed, and for how long. An operator decides when a
-run has gone on too long and kills it.
+Surface that a resource is being processed, and for how long. There are two reasons to stop
+a run, and they need different reach.
 
-If the content is broken beyond a kill — it cannot be ingested into layer 2, say — offer
-to **purge that version**, reusing the existing mechanism (sysadmin only, reason required,
-audit logged).
+**The run is stuck** (an external URL that never answers, a hang) — what has to stop is the
+processing, not the content.
 
-A purge also deletes the layer-1 version file, so **that version stops being
-downloadable**. The screen offering it must say so and ask for confirmation.
+**The content is wrong** (the wrong file was uploaded) — what has to stop is the processing
+**and** the exposure of that content. The second is the more urgent of the two: an overtaken
+run goes on **feeding the content the user is retracting into the search index**. That is
+not "a derivative is briefly stale" (what §5 accepts) — it is wrong content becoming
+findable from anywhere in the catalog.
+
+So the actions separate by how much they destroy, and each is **chosen explicitly**.
+
+| Action             | Stops                              | Content                                            |
+| ------------------ | ---------------------------------- | -------------------------------------------------- |
+| Stop processing    | preview, index and version capture | left alone                                         |
+| Stop and roll back | same                               | restored to the previous version (emptied if none) |
+| Purge the version  | same                               | the version file goes too                          |
+
+They are not welded together because someone stopping a stuck run does not want the content
+reverted — and if that content was the resource's first version, there is nothing to revert
+to and **the resource is emptied**.
+
+The rollback needs no new mechanism. It is what a version purge already does when the purged
+version was live: restore the previous one, drop the preview and the search content, and
+enqueue reprocessing.
+
+A purge also deletes the layer-1 version file, so **that version stops being downloadable**.
+The screen offering it must say so and ask for confirmation. Purges reuse the existing
+mechanism (sysadmin only, reason required, audit logged).
+
+**Starting a replacement kills the run.** `prepareForUpload` does not take the claim (§6), so
+whether an upload overtakes a run depends on where that run happens to be — chance. Stopping
+the run when the intent to replace is declared removes that. The content is untouched;
+whether to roll it back is the user's choice from the three above. If the replacement is then
+abandoned, the resource is left without derivatives — a safe direction to fail for a file
+someone was trying to retract.
+
+**A kill needs teeth.** Today only the release is conditioned on the claim's owner; step
+records, preview updates and index writes do not check it. Releasing the claim therefore does
+not stop the run, so **conditioning the run's derivative writes on `WHERE claim_owner = me`**
+is a precondition for killing at all. A run that finds the condition gone leaves quietly, as
+cancelled rather than as an error.
+
+This looks like partly restoring the step-boundary fence §5 removed, but the question is a
+different one. What went was "am I still the latest?" — a defence against a race the claim
+now prevents. What arrives is "do I still hold this?" — the path by which a user's explicit
+action reaches a running job.
+
+**Show that the resource is half-done.** A killed run — or an abandoned replacement — leaves
+a resource **holding bytes with no version**. It downloads, but there is no preview, no
+search content and no `resource_version` row, which means **layer 1 never captured that
+content and it stops being recoverable the moment something replaces it**. Killed right after
+a replacement, `hash` is still NULL as well (`promoteUpload` writes NULL and the pipeline
+fills it in from what it measures).
+
+Nothing surfaces this today. The pipeline row is neither `complete` nor `error`, and
+`countUnversioned()` requires `hash IS NOT NULL`, so it does not count the NULL ones. **It
+goes half-done quietly.** So:
+
+- add a terminal `cancelled` status to the pipeline, distinct from `error` — it was not a
+  failure
+- show on the resource that it holds content no version has captured, with a way to
+  reprocess it
 
 ### 5. What the claim lets us remove
 
