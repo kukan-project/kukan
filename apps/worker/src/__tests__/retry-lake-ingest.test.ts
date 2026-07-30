@@ -15,10 +15,18 @@ vi.mock('@kukan/api/services/pipeline-claim', () => ({
   ),
 }))
 
-const job = { resourceId: 'res-1', version: 2, previewKey: 'previews/pkg-1/res-1.parquet' }
+/** The version's pointer is the database's; what matters here is its answer. */
+const pointer = vi.hoisted(() => ({ key: null as string | null }))
 
-/** Stands in for the UPDATE that withdraws the version's pointer. */
-const cleared = vi.fn()
+vi.mock('@kukan/api/services/lake-ingest', () => ({
+  pendingLakeSourceKey: vi.fn(async () => pointer.key),
+  abandonLakeIngest: vi.fn(),
+}))
+
+import { abandonLakeIngest } from '@kukan/api/services/lake-ingest'
+
+const PREVIEW = 'previews/pkg-1/res-1.parquet'
+const job = { resourceId: 'res-1', version: 2 }
 
 let deps: {
   ctx: PipelineContext
@@ -31,9 +39,10 @@ let deps: {
 beforeEach(() => {
   vi.clearAllMocks()
   claim.answer = 'ran'
+  pointer.key = PREVIEW
   deps = {
     ctx: { ingestLakeVersion: vi.fn().mockResolvedValue({ snapshotId: 7 }) } as never,
-    db: { update: () => ({ set: () => ({ where: cleared }) }) } as unknown as Database,
+    db: {} as Database,
     queue: { enqueue: vi.fn().mockResolvedValue('job-1') } as never,
     storage: { head: vi.fn().mockResolvedValue({ size: 10 }) } as never,
     log: { info: vi.fn(), warn: vi.fn() } as never,
@@ -44,7 +53,8 @@ describe('retryLakeIngest', () => {
   it('ingests the version under the resource claim', async () => {
     await retryLakeIngest(job, deps)
 
-    expect(deps.ctx.ingestLakeVersion).toHaveBeenCalledWith(job)
+    // Resolved from the row, so the key comes from there rather than the message.
+    expect(deps.ctx.ingestLakeVersion).toHaveBeenCalledWith({ ...job, previewKey: PREVIEW })
     expect(deps.queue.enqueue).not.toHaveBeenCalled()
   })
 
@@ -70,7 +80,18 @@ describe('retryLakeIngest', () => {
 
     await retryLakeIngest(job, deps)
 
-    expect(cleared).toHaveBeenCalled()
+    expect(abandonLakeIngest).toHaveBeenCalledWith(deps.db, job)
+  })
+
+  it('does nothing when the version is not waiting for a Parquet', async () => {
+    // Redelivered after the hourly pass ingested it, or after a purge. The row
+    // is the record, so the message has nothing to act on (ADR-043 §6-6).
+    pointer.key = null
+
+    await retryLakeIngest(job, deps)
+
+    expect(deps.ctx.ingestLakeVersion).not.toHaveBeenCalled()
+    expect(deps.storage.head).not.toHaveBeenCalled()
   })
 
   it('gives up when the preview it was built from is gone', async () => {

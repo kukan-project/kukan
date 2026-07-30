@@ -13,12 +13,12 @@ import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { Logger } from '@kukan/shared'
 import { LAKE_INGEST_JOB_TYPE } from '@kukan/shared'
 import { withResourceClaims } from '@kukan/api/services/pipeline-claim'
-import { abandonLakeIngest } from '@kukan/api/services/lake-ingest'
+import { abandonLakeIngest, pendingLakeSourceKey } from '@kukan/api/services/lake-ingest'
 import type { PipelineContext } from './types'
 import { CLAIM_RETRY_DELAY_S } from '@/config'
 
 export async function retryLakeIngest(
-  job: { resourceId: string; version: number; previewKey: string },
+  job: { resourceId: string; version: number },
   deps: {
     ctx: PipelineContext
     db: Database
@@ -27,13 +27,24 @@ export async function retryLakeIngest(
     log: Logger
   }
 ): Promise<void> {
-  const { resourceId, version, previewKey } = job
+  const { resourceId, version } = job
   const { log } = deps
 
+  // Resolved from the row, not from the message. Null means the version is not
+  // waiting for a Parquet any more — the hourly pass ingested it, or a purge
+  // took it — and a redelivered message must not undo that.
+  const previewKey = await pendingLakeSourceKey(deps.db, job)
+  if (!previewKey) {
+    log.info({ resourceId, version }, 'Lake ingest retry skipped (nothing outstanding)')
+    return
+  }
+
   if (!(await deps.storage.head(previewKey))) {
-    // Give the pointer up with the attempt. Left naming an object that is gone,
-    // it would keep this version in the pending count and have the hourly sweep
-    // pick it up and fail on it every hour (ADR-043 §6-6).
+    // Should not happen now the version names it: the sweep asks before
+    // deleting, and this key is one of the answers (ADR-045 §3). Reaching here
+    // means the object went some other way, so the intent goes with it —
+    // otherwise this version sits in the pending count and the hourly pass
+    // fails on it every hour.
     await abandonLakeIngest(deps.db, { resourceId, version })
     log.warn(
       { resourceId, version, previewKey },
@@ -54,7 +65,7 @@ export async function retryLakeIngest(
     // version is still worth loading (ADR-043).
     await deps.queue.enqueue(
       LAKE_INGEST_JOB_TYPE,
-      { resourceId, version, previewKey },
+      { resourceId, version },
       { delaySeconds: CLAIM_RETRY_DELAY_S }
     )
     log.info({ resourceId, version }, 'Lake ingest retry requeued — the resource is held')

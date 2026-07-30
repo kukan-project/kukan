@@ -346,16 +346,16 @@ describe('processResource', () => {
     vi.mocked(executeLake).mockResolvedValue({
       status: 'failed',
       version: 3,
-      previewKey: 'previews/pkg-1/res-1.tok.parquet',
       error: new Error('catalog unreachable'),
     })
 
     await processResource('res-1', ctx, db, queue)
 
+    // Ids only: the Lake step put the Parquet on the version row, and the
+    // handler reads it from there, so the message cannot disagree with it.
     expect(queue.enqueue).toHaveBeenCalledWith('lake-ingest-version', {
       resourceId: 'res-1',
       version: 3,
-      previewKey: 'previews/pkg-1/res-1.tok.parquet',
     })
     // Still advisory: the pipeline itself completes.
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('complete')

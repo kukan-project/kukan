@@ -78,16 +78,16 @@ describe('executeLake', () => {
     })
   })
 
-  it('hands back what a retry needs when the ingest fails', async () => {
+  it('names the version a retry has to come back for', async () => {
     // Waiting for the next run does not recover it: that run ingests its own
-    // newer version, and this one's Parquet is superseded and swept.
+    // newer version. The Parquet is not handed back — it is on the version row
+    // now, and the caller queues ids only (ADR-043 §6-6).
     const ctx = createCtx()
     ctx.ingestLakeVersion.mockRejectedValue(new Error('catalog unreachable'))
 
     expect(await executeLake('res-1', PARQUET, HASH, ctx)).toEqual({
       status: 'failed',
       version: 2,
-      previewKey: PARQUET,
       error: expect.any(Error),
     })
   })

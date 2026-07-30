@@ -169,11 +169,9 @@ async function runPipeline(
         // one's Parquet is then superseded and swept — after which the pair can
         // never be diffed.
         await tracker.failStep(lakeStepId, lakeResult.error.message)
-        await queue.enqueue(LAKE_INGEST_JOB_TYPE, {
-          resourceId,
-          version: lakeResult.version,
-          previewKey: lakeResult.previewKey,
-        })
+        // Ids only: the Lake step recorded the Parquet on the version, and the
+        // handler reads it from there (ADR-043 §6-6).
+        await queue.enqueue(LAKE_INGEST_JOB_TYPE, { resourceId, version: lakeResult.version })
       }
     } catch (err) {
       await tracker.failStep(lakeStepId, (err as Error).message)

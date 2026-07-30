@@ -40,6 +40,29 @@ export async function deferLakeIngest(
 }
 
 /**
+ * The Parquet this version is still waiting to be ingested from, or null when
+ * it is not waiting for one (ADR-043 §6-6).
+ *
+ * The retry asks the database rather than reading the key off its own message:
+ * the row is what the sweep protects and what the hourly pass reads, so a
+ * message that disagrees with it — one queued before the ingest landed, or
+ * before someone abandoned it — has nothing to act on.
+ */
+export async function pendingLakeSourceKey(
+  db: Pick<Database, 'select'>,
+  row: { resourceId: string; version: number }
+): Promise<string | null> {
+  const [found] = await db
+    .select({ key: resourceVersion.lakeSourceKey })
+    .from(resourceVersion)
+    .where(
+      and(eq(resourceVersion.resourceId, row.resourceId), eq(resourceVersion.version, row.version))
+    )
+    .limit(1)
+  return found?.key ?? null
+}
+
+/**
  * Give up on ingesting this version: it no longer needs a Parquet.
  *
  * The pointer is the record of intent, so an attempt that cannot be completed

@@ -101,12 +101,14 @@ export const purgeVersionJobSchema = z.object({
   version: z.number().int().positive(),
 })
 export const backfillVersionsJobSchema = z.object({})
-// Carries the preview key rather than resolving it later: the pipeline moves
-// that pointer on every run, and this version's Parquet is the superseded one.
+// Ids only, like every other job: the version names the Parquet it needs
+// (ADR-043 §6-6), so the handler resolves it and the message cannot come to
+// disagree with the row. `previewKey` is accepted and ignored for messages
+// queued before that column existed; removable once the queue has drained.
 export const lakeIngestJobSchema = z.object({
   resourceId: z.uuid(),
   version: z.number().int().positive(),
-  previewKey: z.string().min(1),
+  previewKey: z.string().min(1).optional(),
 })
 
 /** A single file/directory entry in a ZIP manifest */

@@ -16,7 +16,7 @@ import type { PipelineContext } from '../types'
 export type LakeStepResult =
   | { status: 'ingested' }
   | { status: 'skipped' }
-  | { status: 'failed'; version: number; previewKey: string; error: Error }
+  | { status: 'failed'; version: number; error: Error }
 
 /**
  * @param previewKey - the Extract output. Null for resources with no preview,
@@ -47,6 +47,6 @@ export async function executeLake(
     // Recorded before the caller queues anything: the pointer is what the
     // preview survives on, and what makes this version findable again.
     await ctx.deferLakeIngest(row)
-    return { status: 'failed', version, previewKey, error: err as Error }
+    return { status: 'failed', version, error: err as Error }
   }
 }
