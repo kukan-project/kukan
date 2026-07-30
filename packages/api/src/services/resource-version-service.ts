@@ -9,7 +9,13 @@ import { digestStream } from '@kukan/shared/hash-node'
 import { eq, and, lt, desc, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, resourceVersion, resourcePipeline, auditLog } from '@kukan/db'
-import { NotFoundError, getStorageKey, getVersionKey, versionOrigin } from '@kukan/shared'
+import {
+  ConflictError,
+  NotFoundError,
+  getStorageKey,
+  getVersionKey,
+  versionOrigin,
+} from '@kukan/shared'
 import type { LakeConfig } from '@kukan/lake'
 import {
   LAKE_PREVIEW_SUFFIX,
@@ -26,15 +32,60 @@ import type { QueueAdapter } from '@kukan/queue-adapter'
 import { ingestVersionIntoLake, withLakeIngestLock } from './lake-ingest'
 import { reclaimInSession } from './lake-reclaim'
 import {
-  cancelResourceRun,
+  heldBy,
+  withClaimFromRun,
   withResourceClaims,
   withResourceClaimsOrConflict,
+  type ResourceClaim,
 } from './pipeline-claim'
 import { copyObject, publishLiveContent, releaseObject } from './storage-pointer'
 import { PipelineService } from './pipeline-service'
 
 export type VersionState = 'active' | 'purging' | 'purged'
 export type VersionOrigin = 'upload' | 'fetch'
+
+/** The row a capture adds, minus everything the table fills in. */
+export interface CapturedVersion {
+  resourceId: string
+  version: number
+  storageKey: string
+  size: number
+  hash: string
+  origin: VersionOrigin
+  schema: ResourceSchema | null
+}
+
+/**
+ * Record a captured version, but only while `claim` still holds the resource
+ * (ADR-044 §4).
+ *
+ * The one write a capture makes that outlives its run. Everything else a run
+ * produces is its own record, which the tracker already conditions on the
+ * claim; this is a row the resource keeps, and a run that was stopped adding
+ * one leaves the resource describing itself as half-done when it is not — the
+ * step that would have reported the version is the same one the kill cut off.
+ *
+ * A null claim is not a missing one: it means the resource has no pipeline row,
+ * and a run cannot start without that row either (see `withResourceClaim`), so
+ * there is nothing the insert could lose a race against.
+ *
+ * @returns false when the claim is gone. The caller has been displaced and
+ *   should stop rather than carry on producing derivatives of this content.
+ */
+export async function insertVersionIfHeld(
+  db: Pick<Database, 'execute'>,
+  claim: ResourceClaim | null,
+  v: CapturedVersion
+): Promise<boolean> {
+  const result = await db.execute(sql`
+    INSERT INTO resource_version (resource_id, version, storage_key, size, hash, origin, schema)
+    SELECT ${v.resourceId}::uuid, ${v.version}, ${v.storageKey}::text, ${v.size}::bigint,
+           ${v.hash}::text, ${v.origin}, ${v.schema ? JSON.stringify(v.schema) : null}::jsonb
+    ${claim ? sql`FROM resource_pipeline WHERE ${heldBy(claim)}` : sql``}
+    RETURNING id
+  `)
+  return result.rows.length > 0
+}
 
 /** What a purge needs to reach: layer 1, the search index, the queue, layer 2. */
 interface PurgeDeps {
@@ -295,7 +346,7 @@ export class ResourceVersionService {
     },
     storage: StorageAdapter
   ): Promise<boolean> {
-    return this.withClaimOrSkip(r.id, async () => {
+    return this.withClaimOrSkip(r.id, async (claim) => {
       // Re-checked against the row as it is *now*: the scan happened earlier,
       // and since then a pipeline run may have captured v1 (copying first would
       // overwrite its file before the unique index rejected the insert) or a
@@ -334,7 +385,7 @@ export class ResourceVersionService {
           .where(and(eq(resource.id, r.id), eq(resource.storageKey, current.storageKey)))
       }
 
-      await this.db.insert(resourceVersion).values({
+      const inserted = await insertVersionIfHeld(this.db, claim, {
         resourceId: r.id,
         version: 1,
         storageKey: versionKey,
@@ -343,6 +394,7 @@ export class ResourceVersionService {
         origin: versionOrigin(r.urlType),
         schema: r.schemaTrusted ? (r.schema ?? null) : null,
       })
+      if (!inserted) return false
       await releaseObject(this.db, versionKey)
       return true
     })
@@ -353,8 +405,16 @@ export class ResourceVersionService {
    * a run as work not done rather than as a failure — the job is re-runnable,
    * and a migration has no business waiting on a live pipeline.
    */
-  private async withClaimOrSkip(resourceId: string, fn: () => Promise<boolean>): Promise<boolean> {
-    const outcome = await withResourceClaims(this.db, [resourceId], fn)
+  private async withClaimOrSkip(
+    resourceId: string,
+    fn: (claim: ResourceClaim | null) => Promise<boolean>
+  ): Promise<boolean> {
+    // One resource in, so at most one claim out. None means the resource has no
+    // pipeline row, which is not a refusal: nothing can run against it either,
+    // and a resource that was never enqueued still needs its v1.
+    const outcome = await withResourceClaims(this.db, [resourceId], (claims) =>
+      fn(claims[0] ?? null)
+    )
     return outcome.status === 'ran' ? outcome.result : false
   }
 
@@ -696,6 +756,10 @@ export class ResourceVersionService {
    * so a version already captured from the wrong content survives this and has
    * to be purged on its own. That is the ladder working as intended, not a gap.
    *
+   * The stop and the claim are one statement. Released and then re-taken, the
+   * resource is free for the moment in between, and a job already waiting on it
+   * would start writing over the very content being retracted.
+   *
    * @returns the version restored, `null` when nothing survived to restore
    *   (the resource is emptied), and `notFound` for a resource that is gone.
    */
@@ -703,26 +767,35 @@ export class ResourceVersionService {
     resourceId: string,
     deps: { storage: StorageAdapter; search?: SearchAdapter; queue: QueueAdapter }
   ): Promise<{ cancelled: boolean; restored: number | null }> {
-    const cancelled = await cancelResourceRun(this.db, resourceId)
+    const { cancelled, restored } = await withClaimFromRun(
+      this.db,
+      resourceId,
+      'revert',
+      async (_claim, cancelled) => {
+        const [current] = await this.db
+          .select({ packageId: resource.packageId, storageKey: resource.storageKey })
+          .from(resource)
+          .where(eq(resource.id, resourceId))
+          .limit(1)
+        if (!current) throw new NotFoundError('Resource', resourceId)
 
-    const [current] = await this.db
-      .select({ packageId: resource.packageId, storageKey: resource.storageKey })
-      .from(resource)
-      .where(eq(resource.id, resourceId))
-      .limit(1)
-    if (!current) throw new NotFoundError('Resource', resourceId)
+        const restored = await this.restoreLiveFromVersions(resourceId, current, deps.storage)
 
-    const restored = await this.restoreLiveFromVersions(resourceId, current, deps.storage)
+        // The derivatives describe the content just retracted, so they go now
+        // rather than when the pipeline gets round to replacing them.
+        await this.invalidatePreview(resourceId, deps.storage)
+        if (deps.search) await deps.search.deleteContent(resourceId)
 
-    // The derivatives describe the content just retracted, so they go now
-    // rather than when the pipeline gets round to replacing them.
-    await this.invalidatePreview(resourceId, deps.storage)
-    if (deps.search) await deps.search.deleteContent(resourceId)
+        return { cancelled, restored }
+      }
+    )
 
-    // Rebuild them from the restored content. The Version step's change gate
-    // sees the restored hash as the latest active version and skips, so no
-    // spurious version is captured. Nothing to rebuild from when the resource
-    // was emptied.
+    // Rebuild the derivatives from the restored content, once the claim is
+    // back: enqueued inside it, the run that picks the job up finds the
+    // resource held and puts itself back on the queue for another 30 seconds.
+    // The Version step's change gate sees the restored hash as the latest
+    // active version and skips, so no spurious version is captured. Nothing to
+    // rebuild from when the resource was emptied.
     if (restored) await new PipelineService(this.db, deps.queue).enqueue(resourceId)
 
     return { cancelled, restored: restored?.version ?? null }
@@ -744,6 +817,11 @@ export class ResourceVersionService {
    * @param below - restrict to versions under this one. A purge must not
    *   restore the version it is destroying; a revert has nothing to exclude.
    * @returns the version restored, or null when the resource was emptied.
+   * @throws ConflictError when the pointer moved while this was running. Both
+   *   callers go on to delete the preview and the indexed content, which
+   *   describe whatever is live — so treating a lost move as a restore deletes
+   *   the derivatives of the content that won. Uploads do not take the claim
+   *   (ADR-044 §6), which is what leaves this reachable while one is held.
    */
   private async restoreLiveFromVersions(
     resourceId: string,
@@ -774,13 +852,18 @@ export class ResourceVersionService {
 
     const restoredKey = getStorageKey(current.packageId, resourceId, randomUUID())
     await copyObject(this.db, storage, prev.storageKey, restoredKey)
-    await publishLiveContent(this.db, resourceId, {
+    const published = await publishLiveContent(this.db, resourceId, {
       key: restoredKey,
       previousKey: current.storageKey,
       hash: prev.hash!,
       size: prev.size!,
       previousHash: null,
     })
+    // The mover parked this operation's own object on the way out, so nothing
+    // is stranded by leaving.
+    if (!published) {
+      throw new ConflictError(`Resource ${resourceId} changed while being restored; retry`)
+    }
     return prev
   }
 

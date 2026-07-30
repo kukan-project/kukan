@@ -33,7 +33,8 @@ export class RunCancelledError extends Error {
 export class StepTracker {
   constructor(
     private db: Database,
-    private claim: ResourceClaim
+    /** The run's identity, and what the steps read to write under it. */
+    readonly claim: ResourceClaim
   ) {}
 
   /** SQL condition: this row, and this run still holds it. */
@@ -45,17 +46,20 @@ export class StepTracker {
    * Take the row over for this run: mark it running and drop the steps of
    * whatever ran last, so the record describes this run alone.
    *
-   * Safe as a write of its own only because the caller holds the claim —
-   * no other run can be recording steps against this row.
+   * The delete hangs off the update rather than standing beside it. A
+   * data-modifying CTE runs whether or not the primary statement matches
+   * anything, so written the other way round a run that had already been
+   * displaced would clear the steps of the run that displaced it.
    */
   async beginRun() {
     await this.db.execute(sql`
-      WITH cleared AS (
-        DELETE FROM resource_pipeline_step WHERE pipeline_id = ${this.claim.id}::uuid
+      WITH taken AS (
+        UPDATE resource_pipeline
+        SET status = 'processing', error = NULL, updated = NOW()
+        WHERE ${this.held}
+        RETURNING id
       )
-      UPDATE resource_pipeline
-      SET status = 'processing', error = NULL, updated = NOW()
-      WHERE ${this.held}
+      DELETE FROM resource_pipeline_step s USING taken WHERE s.pipeline_id = taken.id
     `)
   }
 

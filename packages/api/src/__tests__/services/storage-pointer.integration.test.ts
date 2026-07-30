@@ -364,7 +364,13 @@ describe('prepareForUpload — stopping the run it replaces', () => {
     `
       )
       .then((r) => r.rows as unknown as { id: string }[])
-    const { claimed } = await claimResources(db, [resourceId], randomUUID(), CLAIM_STALE_AFTER_MS)
+    const { claimed } = await claimResources(
+      db,
+      [resourceId],
+      randomUUID(),
+      CLAIM_STALE_AFTER_MS,
+      'run'
+    )
     expect(claimed).toHaveLength(1)
     expect(claimed[0].id).toBe(pipe.id)
     return claimed[0]

@@ -1,0 +1,1 @@
+ALTER TABLE "resource_pipeline" ADD COLUMN "claim_kind" varchar(10);

@@ -8,8 +8,15 @@ import { eq, and, sql } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
 import { resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import { getStorageKey, getVersionKey } from '@kukan/shared'
-import { ResourceVersionService } from '../../services/resource-version-service'
-import { CLAIM_STALE_AFTER_MS, claimResources } from '../../services/pipeline-claim'
+import {
+  ResourceVersionService,
+  insertVersionIfHeld,
+} from '../../services/resource-version-service'
+import {
+  CLAIM_STALE_AFTER_MS,
+  cancelResourceRun,
+  claimResources,
+} from '../../services/pipeline-claim'
 import { unreachableLake } from '../test-helpers/fixtures'
 import {
   getTestDb,
@@ -176,7 +183,7 @@ describe('executePurge — the resource claim (ADR-044)', () => {
     await db.insert(resourcePipeline).values({ resourceId })
     await addVersion(1, 'sha256:v2')
     await service.claimPurge(resourceId, 1, userId, 'illegal')
-    await claimResources(db, [resourceId], randomUUID(), CLAIM_STALE_AFTER_MS)
+    await claimResources(db, [resourceId], randomUUID(), CLAIM_STALE_AFTER_MS, 'run')
 
     const deps = mockDeps()
     await expect(service.executePurge(resourceId, 1, deps)).rejects.toThrow(/being processed/)
@@ -268,12 +275,66 @@ describe('executePurge — layer 2 (DuckLake)', () => {
   })
 })
 
+describe('insertVersionIfHeld', () => {
+  const captured = {
+    version: 1,
+    storageKey: 'versions/pkg/res/v1',
+    size: 10,
+    hash: 'sha256:v1',
+    origin: 'upload' as const,
+    schema: null,
+  }
+
+  async function versions() {
+    return db.select().from(resourceVersion).where(eq(resourceVersion.resourceId, resourceId))
+  }
+
+  it('records the version while the run holds the resource', async () => {
+    await db.insert(resourcePipeline).values({ resourceId })
+    const { claimed } = await claimResources(
+      db,
+      [resourceId],
+      randomUUID(),
+      CLAIM_STALE_AFTER_MS,
+      'run'
+    )
+
+    expect(await insertVersionIfHeld(db, claimed[0], { resourceId, ...captured })).toBe(true)
+    expect(await versions()).toHaveLength(1)
+  })
+
+  it('records nothing once the run has been stopped', async () => {
+    // The step that would have reported this version is the one the kill cut
+    // off, so a row written anyway has the resource page calling saved content
+    // unsaved (ADR-044 §4).
+    await db.insert(resourcePipeline).values({ resourceId })
+    const { claimed } = await claimResources(
+      db,
+      [resourceId],
+      randomUUID(),
+      CLAIM_STALE_AFTER_MS,
+      'run'
+    )
+    await cancelResourceRun(db, resourceId)
+
+    expect(await insertVersionIfHeld(db, claimed[0], { resourceId, ...captured })).toBe(false)
+    expect(await versions()).toEqual([])
+  })
+
+  it('records a version for a resource that has no pipeline row', async () => {
+    // Not a missing claim: a run cannot start without that row either, so
+    // there is nothing for the backfill to lose a race against.
+    expect(await insertVersionIfHeld(db, null, { resourceId, ...captured })).toBe(true)
+    expect(await versions()).toHaveLength(1)
+  })
+})
+
 describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
   it('stops the run and puts the live content back', async () => {
     // The wrong file was uploaded and is live. Stopping alone would leave it
     // downloadable and its content in the search index.
     await db.insert(resourcePipeline).values({ resourceId })
-    await claimResources(db, [resourceId], randomUUID(), CLAIM_STALE_AFTER_MS)
+    await claimResources(db, [resourceId], randomUUID(), CLAIM_STALE_AFTER_MS, 'run')
     await addVersion(1, 'sha256:v1')
 
     const deps = mockDeps()
@@ -333,5 +394,56 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     await service.revertLiveContent(resourceId, mockDeps())
 
     expect((await service.listByResource(resourceId)).map((v) => v.version)).toEqual([2, 1])
+  })
+
+  it('holds the resource for the whole revert', async () => {
+    // Cancelling and then claiming leaves the resource free in between, long
+    // enough for a waiting job to start writing over what is being retracted.
+    const [pipe] = await db.insert(resourcePipeline).values({ resourceId }).returning()
+    await addVersion(1, 'sha256:v1')
+
+    let heldDuringCopy = false
+    const deps = mockDeps()
+    vi.mocked(deps.storage.copy).mockImplementation(async () => {
+      const [row] = await db.select().from(resourcePipeline).where(eq(resourcePipeline.id, pipe.id))
+      heldDuringCopy = row.claimOwner !== null
+    })
+
+    await service.revertLiveContent(resourceId, deps)
+
+    expect(heldDuringCopy).toBe(true)
+    const [after] = await db.select().from(resourcePipeline).where(eq(resourcePipeline.id, pipe.id))
+    expect(after.claimOwner).toBeNull()
+  })
+
+  it('refuses while a purge holds the resource', async () => {
+    await db.insert(resourcePipeline).values({ resourceId })
+    await claimResources(db, [resourceId], randomUUID(), CLAIM_STALE_AFTER_MS, 'job')
+    await addVersion(1, 'sha256:v1')
+
+    await expect(service.revertLiveContent(resourceId, mockDeps())).rejects.toThrow(
+      /being processed/
+    )
+  })
+
+  it('does not report a restore it lost, nor delete the winner derivatives', async () => {
+    // Uploads do not take the claim (ADR-044 §6), so the live pointer can move
+    // while this runs. Calling that a restore would delete the preview and the
+    // indexed content of whatever won.
+    await addVersion(1, 'sha256:v1')
+
+    const deps = mockDeps()
+    vi.mocked(deps.storage.copy).mockImplementation(async () => {
+      await db
+        .update(resource)
+        .set({ storageKey: 'resources/pkg/newer', hash: 'sha256:newer' })
+        .where(eq(resource.id, resourceId))
+    })
+
+    await expect(service.revertLiveContent(resourceId, deps)).rejects.toThrow(/changed/)
+
+    expect(deps.search.deleteContent).not.toHaveBeenCalled()
+    const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
+    expect(res.storageKey).toBe('resources/pkg/newer')
   })
 })

@@ -5,16 +5,18 @@
  * hold the resource for good, and a job that touches many resources either gets
  * all of them or none.
  */
-import { describe, it, expect, beforeEach, afterAll } from 'vitest'
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { eq, sql } from 'drizzle-orm'
 import { resource, resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import {
   CLAIM_STALE_AFTER_MS,
   cancelResourceRun,
+  claimFromRun,
   claimResources,
   heldBy,
   releaseResourceClaims,
+  withClaimFromRun,
   withResourceClaim,
   withResourceClaims,
 } from '../../services/pipeline-claim'
@@ -55,7 +57,7 @@ async function ageClaim(interval: string, id = pipelineId) {
 /** Take the resource and keep it, as a run in flight does. */
 async function hold(id = resourceId): Promise<string> {
   const owner = randomUUID()
-  await claimResources(db, [id], owner, STALE_AFTER_MS)
+  await claimResources(db, [id], owner, STALE_AFTER_MS, 'run')
   return owner
 }
 
@@ -81,14 +83,27 @@ afterAll(async () => {
 describe('claimResources', () => {
   it('gives the resource to one run and refuses the next', async () => {
     const owner = randomUUID()
-    const first = await claimResources(db, [resourceId], owner, STALE_AFTER_MS)
-    const second = await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS)
+    const first = await claimResources(db, [resourceId], owner, STALE_AFTER_MS, 'run')
+    const second = await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS, 'run')
 
     // The owner comes back with the claim: the holder conditions its own writes
     // on it, which is what makes the run killable (ADR-044 §4).
     expect(first.claimed).toEqual([{ id: pipelineId, resourceId, owner }])
     expect(second.claimed).toEqual([])
     expect(second.held).toMatchObject([{ id: pipelineId, resourceId }])
+    // Recorded on the row, because the kill is where the distinction has to be
+    // made and by then the claimer is gone.
+    expect((await pipelineRow()).claimKind).toBe('run')
+  })
+
+  it('gives the claim back along with the kind that took it', async () => {
+    const owner = randomUUID()
+    await claimResources(db, [resourceId], owner, STALE_AFTER_MS, 'job')
+    expect((await pipelineRow()).claimKind).toBe('job')
+
+    await releaseResourceClaims(db, [pipelineId], owner)
+
+    expect((await pipelineRow()).claimKind).toBeNull()
   })
 
   it('reports a resource with no pipeline row as neither taken nor held', async () => {
@@ -96,7 +111,7 @@ describe('claimResources', () => {
     // difference between "busy" and "cannot run at all".
     await db.delete(resourcePipeline).where(eq(resourcePipeline.id, pipelineId))
 
-    const result = await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS)
+    const result = await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS, 'run')
 
     expect(result).toEqual({ claimed: [], held: [] })
   })
@@ -110,7 +125,8 @@ describe('claimResources', () => {
       db,
       [resourceId, second.resourceId],
       randomUUID(),
-      STALE_AFTER_MS
+      STALE_AFTER_MS,
+      'run'
     )
 
     expect(result.claimed.map((c) => c.id).sort()).toEqual([pipelineId, second.pipelineId].sort())
@@ -125,7 +141,8 @@ describe('claimResources', () => {
       db,
       [resourceId, second.resourceId],
       randomUUID(),
-      STALE_AFTER_MS
+      STALE_AFTER_MS,
+      'run'
     )
 
     expect(result.claimed).toMatchObject([{ id: pipelineId, resourceId }])
@@ -139,7 +156,7 @@ describe('claimResources', () => {
     const dead = await hold()
     await ageClaim('1 hour')
 
-    const taken = await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS)
+    const taken = await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS, 'run')
 
     expect(taken.claimed).toMatchObject([{ id: pipelineId, resourceId }])
     expect((await pipelineRow()).claimOwner).not.toBe(dead)
@@ -155,7 +172,7 @@ describe('claimResources', () => {
       .insert(resourcePipelineStep)
       .values({ pipelineId, stepName: 'index', status: 'running', startedAt: sql`NOW()` })
 
-    const result = await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS)
+    const result = await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS, 'run')
 
     expect(result.claimed).toEqual([])
     expect(result.held).toHaveLength(1)
@@ -169,7 +186,7 @@ describe('claimResources', () => {
       .set({ status: 'complete' })
       .where(eq(resourcePipeline.id, pipelineId))
 
-    await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS)
+    await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS, 'run')
 
     expect((await pipelineRow()).status).toBe('complete')
   })
@@ -181,7 +198,7 @@ describe('releaseResourceClaims', () => {
 
     expect(await releaseResourceClaims(db, [pipelineId], owner)).toBe(1)
     expect(
-      (await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS)).claimed
+      (await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS, 'run')).claimed
     ).toHaveLength(1)
   })
 
@@ -317,6 +334,97 @@ describe('cancelResourceRun', () => {
     const [row] = await db.select().from(resource).where(eq(resource.id, resourceId))
     expect(row.storageKey).toBe('resources/pkg/live')
     expect(row.hash).toBe('sha256:x')
+  })
+
+  it('leaves a job holding the resource alone', async () => {
+    // A purge or a backfill has no per-write ownership check to fail, so
+    // releasing its claim would not stop it — it would only let a run start
+    // alongside the work the claim exists to keep runs away from.
+    const owner = randomUUID()
+    await claimResources(db, [resourceId], owner, STALE_AFTER_MS, 'job')
+
+    expect(await cancelResourceRun(db, resourceId)).toBe(false)
+
+    const row = await pipelineRow()
+    expect(row.claimOwner).toBe(owner)
+    expect(row.status).not.toBe('cancelled')
+  })
+})
+
+describe('claimFromRun', () => {
+  it('stops the run and holds the resource in the same statement', async () => {
+    await hold()
+
+    const outcome = await claimFromRun(db, resourceId)
+
+    expect(outcome).toMatchObject({ status: 'claimed', cancelled: true })
+    const row = await pipelineRow()
+    expect(row.status).toBe('cancelled')
+    // Never free in between: a job already waiting would otherwise take the
+    // resource and write over the very content being retracted.
+    expect(row.claimOwner).not.toBeNull()
+    expect(row.claimKind).toBe('job')
+  })
+
+  it('holds an idle resource without calling it cancelled', async () => {
+    const outcome = await claimFromRun(db, resourceId)
+
+    expect(outcome).toMatchObject({ status: 'claimed', cancelled: false })
+    // Nothing was stopped, so nothing is recorded as stopped.
+    expect((await pipelineRow()).status).not.toBe('cancelled')
+  })
+
+  it('refuses a resource a job is already working on', async () => {
+    await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS, 'job')
+
+    expect(await claimFromRun(db, resourceId)).toMatchObject({ status: 'held' })
+  })
+
+  it('takes a job claim nothing has progressed under', async () => {
+    // The same recovery every claimer gets: a purge whose worker died must not
+    // hold the resource against a revert for good.
+    await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS, 'job')
+    await ageClaim(`${STALE_AFTER_MS * 2} milliseconds`)
+
+    expect(await claimFromRun(db, resourceId)).toMatchObject({ status: 'claimed' })
+  })
+
+  it('has nothing to hold for a resource with no pipeline row', async () => {
+    // Not a refusal: a run cannot start without that row either, so the caller
+    // proceeds — with no claim, because there is nothing to claim.
+    await db.delete(resourcePipeline).where(eq(resourcePipeline.id, pipelineId))
+
+    expect(await claimFromRun(db, resourceId)).toEqual({
+      status: 'claimed',
+      claim: null,
+      cancelled: false,
+    })
+  })
+})
+
+describe('withClaimFromRun', () => {
+  it('gives the claim back however the work ends', async () => {
+    await hold()
+
+    await expect(
+      withClaimFromRun(db, resourceId, 'revert', async () => {
+        throw new Error('revert failed')
+      })
+    ).rejects.toThrow('revert failed')
+
+    // Held on the way out, the resource would be closed to every run and every
+    // other revert until it went stale.
+    expect((await pipelineRow()).claimOwner).toBeNull()
+  })
+
+  it('refuses rather than running alongside a job', async () => {
+    await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS, 'job')
+    const ran = vi.fn()
+
+    await expect(withClaimFromRun(db, resourceId, 'revert', ran)).rejects.toThrow(
+      /being processed; retry the revert/
+    )
+    expect(ran).not.toHaveBeenCalled()
   })
 })
 

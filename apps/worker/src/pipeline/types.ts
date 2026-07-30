@@ -9,6 +9,7 @@ import type { ObjectMeta } from '@kukan/storage-adapter'
 import type { IngestResult } from '@kukan/lake'
 import type { PackageDbState, ResourceSchema } from '@kukan/shared'
 import type { PublishedContent } from '@kukan/api/services/storage-pointer'
+import type { ResourceClaim } from '@kukan/api/services/pipeline-claim'
 
 /** Minimal resource data needed by pipeline steps */
 export interface ResourceForPipeline {
@@ -90,6 +91,12 @@ export interface PipelineContext {
     contentSize: number
     /** Column schema from Extract (CSV/TSV only), snapshotted onto the version. */
     schema: ResourceSchema | null
+    /**
+     * This run's claim. The version row is the one thing a capture leaves
+     * behind for the resource rather than for the run, so it is written under
+     * the claim like every other durable write (ADR-044 §4).
+     */
+    claim: ResourceClaim
   }): Promise<{ captured: false } | { captured: true; version: number }>
   /**
    * The active version holding exactly these bytes and not yet in DuckLake, or

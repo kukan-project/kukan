@@ -59,7 +59,7 @@ async function addResource(packageId: string): Promise<string> {
 
 /** Take the resource, as a run in flight holds it. */
 async function hold(resourceId: string) {
-  await claimResources(db, [resourceId], randomUUID(), CLAIM_STALE_AFTER_MS)
+  await claimResources(db, [resourceId], randomUUID(), CLAIM_STALE_AFTER_MS, 'run')
 }
 
 function createInput(name: string, state?: 'draft') {

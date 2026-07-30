@@ -72,7 +72,8 @@ beforeEach(async () => {
     db,
     [resourceId],
     crypto.randomUUID(),
-    CLAIM_STALE_AFTER_MS
+    CLAIM_STALE_AFTER_MS,
+    'run'
   )
   claim = claimed[0]
 })
@@ -181,6 +182,24 @@ describe('the run record', () => {
     expect(steps).toHaveLength(1)
     expect(steps[0]).toMatchObject({ status: 'error', error: 'boom' })
     expect((await pipelineRow()).status).toBe('processing')
+  })
+
+  it('does not clear the steps of the run that displaced it', async () => {
+    // A data-modifying CTE runs whether or not the primary statement matches,
+    // so the delete has to hang off the update rather than stand beside it.
+    const displaced = new StepTracker(db, claim)
+    const { claimed } = await claimResources(db, [resourceId], crypto.randomUUID(), 0, 'run')
+    const successor = new StepTracker(db, claimed[0])
+    await successor.beginRun()
+    await successor.startStep('fetch')
+
+    await displaced.beginRun()
+
+    const steps = await db
+      .select()
+      .from(resourcePipelineStep)
+      .where(eq(resourcePipelineStep.pipelineId, pipelineId))
+    expect(steps).toHaveLength(1)
   })
 
   it('refuses to start a step once the claim is gone', async () => {

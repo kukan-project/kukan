@@ -183,6 +183,13 @@
       "when": 1785310736513,
       "tag": "0025_faulty_kate_bishop",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1785373160373,
+      "tag": "0026_quiet_groot",
+      "breakpoints": true
     }
   ]
 }

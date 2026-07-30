@@ -138,6 +138,7 @@ async function runPipeline(
         contentHash: fetchResult.hash,
         contentSize: fetchResult.size,
         schema: extractResult?.schema ?? null,
+        claim: tracker.claim,
       })
       if (versionResult.captured) {
         await tracker.completeStep(versionStepId)

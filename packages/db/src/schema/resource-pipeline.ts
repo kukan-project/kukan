@@ -29,6 +29,11 @@ export const resourcePipeline = pgTable(
     // can tell: without it, its final write would release the claim of whoever
     // displaced it, and it would never learn it had lost.
     claimOwner: uuid('claim_owner'),
+    // What holds it: a pipeline run, or a job that merely needs runs kept away
+    // (a purge, the backfill, a lake retry). Null when nothing holds it. Only a
+    // run can be cancelled — a user replacing the content stops the processing
+    // of it, and must not release the claim a purge is working under.
+    claimKind: varchar('claim_kind', { length: 10 }).$type<'run' | 'job'>(),
     // When it was taken. Liveness is judged from this and the newest step
     // start, never from `updated` — that column is also written by enqueue and
     // by purge's preview invalidation, neither of which holds the claim, so a

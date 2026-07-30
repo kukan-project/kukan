@@ -10,6 +10,7 @@ import type { SearchAdapter, ContentDoc } from '@kukan/search-adapter'
 import type { IngestResult, LakeConfig } from '@kukan/lake'
 import { withLakeSession } from '@kukan/lake'
 import { ingestVersionIntoLake, withLakeIngestLock } from '@kukan/api/services/lake-ingest'
+import { insertVersionIfHeld } from '@kukan/api/services/resource-version-service'
 import {
   copyObject,
   publishLiveContent,
@@ -110,6 +111,7 @@ export function buildPipelineContext(
       contentHash,
       contentSize,
       schema,
+      claim,
     }) {
       // Unserialized: the run holds the resource's claim (ADR-044), so nothing
       // else is choosing a version number for it. The pointer comparison below
@@ -151,7 +153,9 @@ export function buildPipelineContext(
       const versionKey = getVersionKey(packageId, resourceId, version)
       await copyObject(db, storage, currentStorageKey, versionKey)
 
-      await db.insert(resourceVersion).values({
+      // Under the claim, so a run that was stopped mid-capture does not leave
+      // the resource a version its own step never got to report (ADR-044 §4).
+      const inserted = await insertVersionIfHeld(db, claim, {
         resourceId,
         version,
         storageKey: versionKey,
@@ -160,6 +164,7 @@ export function buildPipelineContext(
         origin: versionOrigin(res!.urlType),
         schema,
       })
+      if (!inserted) return { captured: false as const }
       // The row references the object now (ADR-045). Its own statement, since
       // unlike the pointer movers this insert has no orphan write to ride on.
       await releaseObject(db, versionKey)

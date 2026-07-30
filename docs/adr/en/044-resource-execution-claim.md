@@ -58,7 +58,8 @@ guard, but that approach carries three properties:
 ### 1. What the claim covers
 
 The claim is the `resource_pipeline` row itself; no new table (the one-row-per-resource
-constraint already exists). The row records an **owner (a run id)** — see §3 for why.
+constraint already exists). The row records an **owner (a run id)** — see §3 for why — and
+**what is holding it**: a pipeline run, or a job that merely needs runs kept away (see §4).
 
 It covers **both pipeline runs and purges**. Both rewrite the resource's content, so they
 must exclude each other. "No new version until the purge finishes" follows from that.
@@ -90,9 +91,14 @@ content, so retrying means nothing.
 
 The claim is taken in one statement, never read-then-write. **A set of resources is taken
 in one statement too.** Nothing waits, so there is no acquisition order to agree on and
-nothing to deadlock against (settling open issue 2). If even one of them is held, the ones
-taken are given back and the job **abandons the whole set** — doing half of a purge creates
-exactly the state the claim exists to prevent. The caller retries.
+nothing to deadlock against (settling open issue 2). If even one of them is held, the job
+**abandons the whole set** — doing half of a purge creates exactly the state the claim
+exists to prevent. The caller retries.
+
+**Taking them and giving them up belong to one transaction.** Released by hand, a process
+that dies between the two leaves **an owner holding resources it is not working on**: nothing
+runs and nothing can, until the claims go stale. A rollback leaves no partial acquisition to
+clean up.
 
 **Taking the claim does not touch the row's own state.** `status` and the clearing of steps
 are the run's record of itself, not part of the claim: a purge holds the claim without ever
@@ -190,6 +196,30 @@ different one. What went was "am I still the latest?" — a defence against a ra
 now prevents. What arrives is "do I still hold this?" — the path by which a user's explicit
 action reaches a running job.
 
+**A kill reaches as far as the next step boundary, with one exception.** Every step opens by
+checking the claim, so what survives a kill is **the body of the one step that was running**.
+Almost everything that step writes is the run's own record, which the condition erases — but
+**the version row stays with the resource, not with the run**. Inserted after a kill, it sits
+alongside a step still marked `running`, and the resource page then reports **content that
+was saved as unsaved**. So the version insert carries the claim as well. Without a way to
+interrupt a read in progress, the step boundary is as fine-grained as a kill can be, and
+conditioning the writes that outlast it is what that costs.
+
+**Only a run can be killed.** Purges, the backfill and the Lake retry take the claim too, but
+none of them checks ownership per write, so releasing their claim does not **stop** them. It
+removes the exclusion while the work carries on — worse than the state the kill was for. The
+kind of holder recorded on the row (§1) exists for this distinction.
+
+**A revert takes the claim over rather than releasing it.** Split into "stop" and then
+"claim", the resource is unowned in between, and a job already waiting can start writing
+**over the very content being retracted**. Swapping the owner in one statement leaves no
+moment at which the resource is free.
+
+**Losing the pointer move is not a restore.** A revert deletes the preview and the indexed
+content right after restoring. Those describe whatever is live, so treating a lost
+compare-and-swap as a success **deletes the derivatives of the writer that won**. The loss is
+returned as a conflict for the caller to retry.
+
 **Show that the resource is half-done.** A killed run — or an abandoned replacement — leaves
 a resource **holding bytes with no version**. It downloads, but there is no preview, no
 search content and no `resource_version` row, which means **layer 1 never captured that
@@ -263,8 +293,8 @@ scope, and remains a problem at its own layer.
 
 ## Consequences
 
-- **DB**: `resource_pipeline` records the claim's owner (a run id). Liveness is read from
-  the running step's `started_at`, so no expiry column is needed
+- **DB**: `resource_pipeline` records the claim's owner (a run id) and the kind of holder.
+  Liveness is read from the running step's `started_at`, so no expiry column is needed
 - **Worker**: the pipeline, purge, Lake-retry and backfill handlers take the claim and do
   nothing without it. The step-boundary fence and the version-capture lock are removed (§5)
 - **API**: package and draft purges run over HTTP, so they take the claim too (409 for a
@@ -290,6 +320,11 @@ leave a hole in.
    it gives up, logging a warning. Whether to go further and purge is unsettled
 4. ~~**Ordering of the removals**~~: settled. §5 was carried out once every path took the
    claim — the `isSuperseded` fence with its three call sites, and `VERSION_CAPTURE_LOCK`
+5. **Resuming after a kill**: a kill frees the claim, so a job already requeued for the same
+   resource can take it 30 seconds later and start the same work again. An execution
+   generation would close it, but the trigger is narrow (a concurrent job already waiting)
+   and resuming does little harm — after a revert it processes the restored content, the
+   version gate skips, and it rebuilds the derivatives. Whether to add one is unsettled
 
 ## Related ADRs
 

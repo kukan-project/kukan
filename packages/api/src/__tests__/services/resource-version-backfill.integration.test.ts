@@ -197,7 +197,7 @@ describe('backfillVersions', () => {
     // goes (ADR-044 §5), this claim is the only thing keeping the two apart.
     const id = await addResource({ name: 'a' })
     await db.insert(resourcePipeline).values({ resourceId: id, status: 'complete' })
-    await claimResources(db, [id], randomUUID(), CLAIM_STALE_AFTER_MS)
+    await claimResources(db, [id], randomUUID(), CLAIM_STALE_AFTER_MS, 'run')
     const storage = mockStorage()
 
     const result = await service.backfillVersions({ storage })
