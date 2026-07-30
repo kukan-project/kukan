@@ -63,23 +63,44 @@ export async function pendingLakeSourceKey(
 }
 
 /**
- * Give up on ingesting this version: it no longer needs a Parquet.
+ * Let go of the Parquet a version was waiting on, and park it.
  *
- * The pointer is the record of intent, so an attempt that cannot be completed
- * has to withdraw it — otherwise the version stays in the pending count and the
- * hourly sweep re-selects it for ever. The object it named is not parked here:
- * this is reached when it is already gone.
+ * The one way the pointer is ever dropped outside a successful ingest, so that
+ * dropping it and handing the object to the sweep cannot come apart. While the
+ * version named the key the sweep read it as referenced and dropped its ledger
+ * record (ADR-045 §3) — cleared without parking, the object would be left with
+ * neither a pointer nor a record.
+ *
+ * Conditional on the key it was asked about: an attempt that read the pointer,
+ * decided to give up, and got here after another attempt recorded a different
+ * Parquet must not withdraw that one's intent.
+ *
+ * Parking a key whose object is already gone costs nothing — the sweep asks the
+ * backend, which answers that it is not there, and the record goes.
+ *
+ * @returns whether the pointer was the one given, and so was dropped.
  */
-export async function abandonLakeIngest(
-  db: Pick<Database | Transaction, 'update'>,
-  row: { resourceId: string; version: number }
-): Promise<void> {
-  await db
-    .update(resourceVersion)
-    .set({ lakeSourceKey: null })
-    .where(
-      and(eq(resourceVersion.resourceId, row.resourceId), eq(resourceVersion.version, row.version))
+export async function releaseLakeSource(
+  db: Pick<Database, 'execute'>,
+  row: { resourceId: string; version: number; previewKey: string }
+): Promise<boolean> {
+  const result = await db.execute(sql`
+    WITH released AS (
+      UPDATE resource_version
+      SET lake_source_key = NULL
+      WHERE resource_id = ${row.resourceId}::uuid
+        AND version = ${row.version}
+        AND lake_source_key = ${row.previewKey}
+      RETURNING id
+    ),
+    parked AS (
+      INSERT INTO orphaned_object (key, expires_at)
+      SELECT ${row.previewKey}, ${PARKED_UNTIL} FROM released
+      ON CONFLICT (key) DO NOTHING
     )
+    SELECT id FROM released
+  `)
+  return result.rows.length > 0
 }
 
 /**
@@ -145,7 +166,13 @@ export async function ingestVersionIntoLake(
       )
     )
     .limit(1)
-  if (newer) return null
+  if (newer) {
+    // Refused for good, not deferred: no later pass can change the answer. The
+    // pointer goes with the decision, or this version stays in the pending
+    // count and its Parquet is pinned by a reference nothing will ever release.
+    await releaseLakeSource(tx, row)
+    return null
+  }
 
   const result = await ingestParquetVersion(session, {
     table: lakeTableName(row.resourceId),

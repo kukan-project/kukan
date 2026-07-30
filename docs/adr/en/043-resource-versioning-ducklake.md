@@ -331,6 +331,14 @@ competing with keeping purges cheap.
    No clock is involved, so nothing is lost to a dead-lettered message or a worker that was
    down for a day.
 
+   Three paths drop the pointer — the ingest lands, a newer version has overtaken it for
+   good, or the object is gone — and **all three park the key in the statement that drops
+   it**. While a version names a key the sweep reads it as referenced and removes the ledger
+   record instead (ADR-045 §3), so dropping without parking leaves an object with neither.
+   The two that are not a successful ingest are **conditional on the key they were asked
+   about**, so an attempt that gave up does not withdraw a pointer another one has since
+   recorded.
+
    It also stops the queue message being the only record. The hourly ingest sweep can
    decide on this column alone, so a version is recoverable wherever it sits in the history
    and whether or not its message survived — previously that sweep saw only the latest

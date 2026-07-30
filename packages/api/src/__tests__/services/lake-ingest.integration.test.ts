@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { eq, and, sql } from 'drizzle-orm'
 import { resource, resourceVersion } from '@kukan/db'
 import type { LakeConfig, LakeSession } from '@kukan/lake'
-import { ingestVersionIntoLake } from '../../services/lake-ingest'
+import { ingestVersionIntoLake, releaseLakeSource } from '../../services/lake-ingest'
 import { reclaimLakeStorage } from '../../services/lake-reclaim'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
@@ -135,6 +135,33 @@ describe('ingestVersionIntoLake', () => {
     ).rejects.toThrow('reached DuckLake')
   })
 
+  it('lets go of the Parquet when a newer version has already been ingested', async () => {
+    // Refused for good — no later pass changes the answer. Left set, the
+    // pointer keeps this version in the pending count and pins its Parquet by a
+    // reference nothing will ever release (ADR-043 §6-6).
+    await addVersion(1, null, 'previews/v1.parquet')
+    await addVersion(2, 42)
+
+    const result = await db.transaction((tx) =>
+      ingestVersionIntoLake(tx, refusingSession, lake, {
+        resourceId,
+        version: 1,
+        previewKey: 'previews/v1.parquet',
+      })
+    )
+
+    expect(result).toBeNull()
+    const [row] = await db
+      .select({ source: resourceVersion.lakeSourceKey })
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+    expect(row.source).toBeNull()
+    const parked = await db.execute(sql`SELECT key FROM orphaned_object`)
+    expect((parked.rows as unknown as { key: string }[]).map((r) => r.key)).toEqual([
+      'previews/v1.parquet',
+    ])
+  })
+
   it('lets go of the Parquet it was waiting on once the version is in', async () => {
     // The pointer is what keeps that preview from being swept (ADR-043 §6-6).
     // Left behind, it would pin the object for as long as the version lives.
@@ -156,6 +183,27 @@ describe('ingestVersionIntoLake', () => {
       .from(resourceVersion)
       .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
     expect(row).toEqual({ snapshot: 99, source: null })
+  })
+
+  it('leaves a pointer another attempt has moved on', async () => {
+    // Read the pointer, decided to give up, and got here after another attempt
+    // recorded a different Parquet. Withdrawing that one's intent would strand
+    // the version it belongs to.
+    await addVersion(1, null, 'previews/second-attempt.parquet')
+
+    const released = await releaseLakeSource(db, {
+      resourceId,
+      version: 1,
+      previewKey: 'previews/first-attempt.parquet',
+    })
+
+    expect(released).toBe(false)
+    const [row] = await db
+      .select({ source: resourceVersion.lakeSourceKey })
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+    expect(row.source).toBe('previews/second-attempt.parquet')
+    expect((await db.execute(sql`SELECT key FROM orphaned_object`)).rows).toEqual([])
   })
 
   it('parks the Parquet it lets go of', async () => {

@@ -13,7 +13,7 @@ import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { Logger } from '@kukan/shared'
 import { LAKE_INGEST_JOB_TYPE } from '@kukan/shared'
 import { withResourceClaims } from '@kukan/api/services/pipeline-claim'
-import { abandonLakeIngest, pendingLakeSourceKey } from '@kukan/api/services/lake-ingest'
+import { pendingLakeSourceKey, releaseLakeSource } from '@kukan/api/services/lake-ingest'
 import type { PipelineContext } from './types'
 import { CLAIM_RETRY_DELAY_S } from '@/config'
 
@@ -45,7 +45,7 @@ export async function retryLakeIngest(
     // means the object went some other way, so the intent goes with it —
     // otherwise this version sits in the pending count and the hourly pass
     // fails on it every hour.
-    await abandonLakeIngest(deps.db, { resourceId, version })
+    await releaseLakeSource(deps.db, { resourceId, version, previewKey })
     log.warn(
       { resourceId, version, previewKey },
       'Lake ingest retry abandoned — the preview it was built from is gone'

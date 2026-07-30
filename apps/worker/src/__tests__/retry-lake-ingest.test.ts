@@ -20,10 +20,10 @@ const pointer = vi.hoisted(() => ({ key: null as string | null }))
 
 vi.mock('@kukan/api/services/lake-ingest', () => ({
   pendingLakeSourceKey: vi.fn(async () => pointer.key),
-  abandonLakeIngest: vi.fn(),
+  releaseLakeSource: vi.fn(),
 }))
 
-import { abandonLakeIngest } from '@kukan/api/services/lake-ingest'
+import { releaseLakeSource } from '@kukan/api/services/lake-ingest'
 
 const PREVIEW = 'previews/pkg-1/res-1.parquet'
 const job = { resourceId: 'res-1', version: 2 }
@@ -80,7 +80,7 @@ describe('retryLakeIngest', () => {
 
     await retryLakeIngest(job, deps)
 
-    expect(abandonLakeIngest).toHaveBeenCalledWith(deps.db, job)
+    expect(releaseLakeSource).toHaveBeenCalledWith(deps.db, { ...job, previewKey: PREVIEW })
   })
 
   it('does nothing when the version is not waiting for a Parquet', async () => {
