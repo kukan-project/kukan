@@ -78,14 +78,14 @@ export default defineConfig({
       },
       {
         // The worker's raw SQL — the step tracker's parking CTEs, the orphan
-        // sweep's reference check — against a real Postgres. Shares the API's
-        // globalSetup, and so its migrated `kukan_test` database.
+        // sweep's reference check — against a real Postgres, in a database of
+        // its own so it and the API's suites cannot truncate each other's rows.
         test: {
           name: 'worker-integration',
           root: './apps/worker',
           include: ['src/__tests__/**/*.integration.test.ts'],
           environment: 'node',
-          globalSetup: ['../../packages/api/src/__tests__/test-helpers/global-setup.ts'],
+          globalSetup: ['src/__tests__/test-helpers/global-setup.ts'],
           pool: 'forks',
           fileParallelism: false,
         },

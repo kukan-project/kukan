@@ -8,9 +8,10 @@ import { drizzle } from 'drizzle-orm/node-postgres'
 import { sql } from 'drizzle-orm'
 import { Pool } from 'pg'
 import * as schema from '@kukan/db/schema/index'
+import { testDatabaseUrl } from '@kukan/db/testing'
+import { API_TEST_DB } from './global-setup'
 
-const TEST_DATABASE_URL =
-  process.env.TEST_DATABASE_URL || 'postgresql://kukan:kukan@localhost:5432/kukan_test'
+const TEST_DATABASE_URL = testDatabaseUrl(API_TEST_DB)
 
 let pool: Pool | null = null
 let db: ReturnType<typeof drizzle<typeof schema>> | null = null

@@ -69,7 +69,48 @@ jobs:
 
       - name: Test (unit only)
         # `test:unit` runs every project except the `*-integration` ones, whose
-        # globalSetup connects to Postgres. To run integration tests, provide a
-        # database via `services:` and run `test:integration` as a separate job.
+        # globalSetup connects to Postgres. Those run in `integration` below.
         if: steps.changes.outputs.code == 'true'
         run: pnpm test:unit
+
+  # Not part of `quality`, so it is not a required check: it needs a database,
+  # and a service container failing should not block a PR the same way a lint
+  # error does. It still runs on every code change, which is the point — the raw
+  # SQL these suites cover (data-modifying CTEs, the orphan sweep's reference
+  # check) is not exercised anywhere else.
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: kukan
+          POSTGRES_PASSWORD: kukan
+          POSTGRES_DB: kukan
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kukan"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      # The worker's suites import `@kukan/api` and `@kukan/db` by their package
+      # entry points, which resolve to `dist`.
+      - run: pnpm build
+
+      - name: Test (integration)
+        env:
+          DATABASE_URL: postgresql://kukan:kukan@localhost:5432/kukan
+        run: pnpm test:integration
