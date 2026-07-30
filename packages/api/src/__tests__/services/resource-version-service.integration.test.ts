@@ -42,7 +42,11 @@ function mockDeps() {
   // the purge and the revert reach for, and `never` has no properties at all,
   // so every `vi.mocked(deps.storage.delete)` below would be reading one off it.
   return {
-    storage: { copy: vi.fn(), delete: vi.fn() } as unknown as StorageAdapter,
+    storage: {
+      copy: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn().mockImplementation((keys: string[]) => Promise.resolve(keys)),
+    } as unknown as StorageAdapter,
     search: { deleteContent: vi.fn() } as unknown as SearchAdapter,
     queue: { enqueue: vi.fn().mockResolvedValue('job-1') } as unknown as QueueAdapter,
   }
@@ -517,5 +521,91 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     expect(deps.search.deleteContent).not.toHaveBeenCalled()
     const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
     expect(res.storageKey).toBe('resources/pkg/newer')
+  })
+})
+
+describe('the artifacts derived from retracted content', () => {
+  // The preview lives in a column, the text head inside `metadata` (ADR-040).
+  // Being referenced there, the sweep leaves the text head alone — so whatever
+  // retracts the content has to destroy it, or an extract of it stays in the
+  // bucket and stays readable through the suggestion path.
+  const PREVIEW = 'previews/pkg/res.tok.parquet'
+  const TEXT_HEAD = 'previews/pkg/res.tok.txt'
+
+  async function withArtifacts() {
+    await db.insert(resourcePipeline).values({
+      resourceId,
+      previewKey: PREVIEW,
+      metadata: { textHeadKey: TEXT_HEAD, contentIndexed: true },
+    })
+  }
+
+  async function pipelineRow() {
+    const [row] = await db
+      .select()
+      .from(resourcePipeline)
+      .where(eq(resourcePipeline.resourceId, resourceId))
+    return row
+  }
+
+  it('are destroyed when the live version is purged', async () => {
+    await withArtifacts()
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    const deps = mockDeps()
+    await service.claimPurge(resourceId, 2, userId, 'legal')
+
+    await service.executePurge(resourceId, 2, deps)
+
+    expect(vi.mocked(deps.storage.deleteMany).mock.calls[0][0].sort()).toEqual(
+      [PREVIEW, TEXT_HEAD].sort()
+    )
+    const row = await pipelineRow()
+    expect(row.previewKey).toBeNull()
+    expect(row.metadata).toEqual({ contentIndexed: true })
+  })
+
+  it('are destroyed by a revert', async () => {
+    // The caller asked for this file to stop being served; what describes it
+    // goes now rather than when the pipeline gets round to replacing it.
+    await withArtifacts()
+    await addVersion(1, 'sha256:v1')
+    const deps = mockDeps()
+
+    await service.revertLiveContent(resourceId, deps)
+
+    expect(vi.mocked(deps.storage.deleteMany).mock.calls[0][0].sort()).toEqual(
+      [PREVIEW, TEXT_HEAD].sort()
+    )
+    expect((await pipelineRow()).metadata).toEqual({ contentIndexed: true })
+  })
+
+  it('leaves a pointer another run has moved on', async () => {
+    // A run taken over for being stale can write a newer preview while this is
+    // deleting. Clearing that one would leave its object named by nothing.
+    await withArtifacts()
+    await addVersion(1, 'sha256:v1')
+    const deps = mockDeps()
+    vi.mocked(deps.storage.deleteMany).mockImplementation(async (keys: string[]) => {
+      await db
+        .update(resourcePipeline)
+        .set({ previewKey: 'previews/pkg/res.newer.parquet' })
+        .where(eq(resourcePipeline.resourceId, resourceId))
+      return keys
+    })
+
+    await service.revertLiveContent(resourceId, deps)
+
+    expect((await pipelineRow()).previewKey).toBe('previews/pkg/res.newer.parquet')
+  })
+
+  it('does nothing when there are none', async () => {
+    await db.insert(resourcePipeline).values({ resourceId })
+    await addVersion(1, 'sha256:v1')
+    const deps = mockDeps()
+
+    await service.revertLiveContent(resourceId, deps)
+
+    expect(deps.storage.deleteMany).not.toHaveBeenCalled()
   })
 })

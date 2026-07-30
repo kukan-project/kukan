@@ -207,8 +207,11 @@ normal deletion (resource delete).
      whole-table replacement a data file's lifetime coincides with a version
      boundary, so expiry frees the file as a whole. Time travel to the purged versions
      becomes impossible (which is the point)
-   - Derivatives: the preview Parquet derived from that version, and the OpenSearch
-     resource-content index (ADR-021, when the purged version is the latest)
+   - Derivatives: the preview Parquet derived from that version, **the text head** of its
+     content (ADR-040), and the OpenSearch resource-content index (ADR-021, when the purged
+     version is the latest). The text head is named by a pointer inside `metadata`, so the
+     orphan sweep never collects it — a purge that does not destroy it leaves an extract of
+     the content in the bucket, readable through the suggestion path
 4. **Physical destruction timeline** (AWS): On purge, the content becomes immediately
    invisible to the app layer (all roles). S3 noncurrent versions expire via lifecycle
    (30 days, ADR-037), and AWS Backup recovery points disappear when their retention

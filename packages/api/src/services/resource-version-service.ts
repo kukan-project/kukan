@@ -737,7 +737,7 @@ export class ResourceVersionService {
 
         // Invalidate derivatives so the purged content stops being served
         // immediately, before the (async) pipeline regenerates them.
-        await this.invalidatePreview(resourceId, deps.storage)
+        await this.discardDerivedArtifacts(resourceId, deps.storage)
         if (deps.search) await deps.search.deleteContent(resourceId)
 
         // Regenerate preview/index from the restored content. The Version step's
@@ -830,7 +830,7 @@ export class ResourceVersionService {
 
         // The derivatives describe the content just retracted, so they go now
         // rather than when the pipeline gets round to replacing them.
-        await this.invalidatePreview(resourceId, deps.storage)
+        await this.discardDerivedArtifacts(resourceId, deps.storage)
         if (deps.search) await deps.search.deleteContent(resourceId)
 
         return { cancelled, restored }
@@ -955,19 +955,56 @@ export class ResourceVersionService {
     return prev
   }
 
-  /** Delete the resource's preview object and clear its pipeline previewKey. */
-  private async invalidatePreview(resourceId: string, storage: StorageAdapter): Promise<void> {
+  /**
+   * Destroy what was derived from the content being retracted, and the pointers
+   * that name it.
+   *
+   * Two artifacts, not one. The preview lives in a column; the text head
+   * (ADR-040) lives in `metadata`, and being referenced there the sweep would
+   * never take it either — so a purge that dropped only the preview left an
+   * extract of the purged content in the bucket, still readable through the
+   * suggestion path. A legal deletion cannot end with the content still
+   * readable, which is the whole of ADR-043 §5.
+   *
+   * Deleted rather than parked, for both callers: a purge because destroying it
+   * is the point, a revert because the artifacts describe the very file the
+   * caller asked to stop serving.
+   *
+   * Each pointer is cleared only if it still names the key that was read, the
+   * way every other pointer here moves: a run taken over for being stale could
+   * have written a newer preview since, and clearing that would leave its object
+   * with nothing naming it and nothing to reclaim it.
+   */
+  private async discardDerivedArtifacts(
+    resourceId: string,
+    storage: StorageAdapter
+  ): Promise<void> {
     const [pipe] = await this.db
-      .select({ id: resourcePipeline.id, previewKey: resourcePipeline.previewKey })
+      .select({
+        id: resourcePipeline.id,
+        previewKey: resourcePipeline.previewKey,
+        textHeadKey: sql<string | null>`${resourcePipeline.metadata} ->> 'textHeadKey'`,
+      })
       .from(resourcePipeline)
       .where(eq(resourcePipeline.resourceId, resourceId))
       .limit(1)
-    if (!pipe?.previewKey) return
-    await storage.delete(pipe.previewKey)
-    await this.db
-      .update(resourcePipeline)
-      .set({ previewKey: null, updated: sql`NOW()` })
-      .where(eq(resourcePipeline.id, pipe.id))
+
+    const keys = [pipe?.previewKey, pipe?.textHeadKey].filter((k): k is string => !!k)
+    if (keys.length === 0) return
+
+    await storage.deleteMany(keys)
+    await this.db.execute(sql`
+      UPDATE resource_pipeline
+      SET preview_key = CASE
+            WHEN preview_key IS NOT DISTINCT FROM ${pipe!.previewKey}::text THEN NULL
+            ELSE preview_key END,
+          metadata = CASE
+            WHEN metadata ->> 'textHeadKey' IS NOT DISTINCT FROM ${pipe!.textHeadKey}::text
+            THEN metadata - 'textHeadKey'
+            ELSE metadata END,
+          updated = NOW()
+      WHERE id = ${pipe!.id}::uuid
+    `)
   }
 
   private async getRow(resourceId: string, version: number) {
