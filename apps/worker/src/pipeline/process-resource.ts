@@ -10,6 +10,7 @@ import type { QueueAdapter } from '@kukan/queue-adapter'
 import { LAKE_INGEST_JOB_TYPE, PIPELINE_JOB_TYPE } from '@kukan/shared'
 import { withResourceClaim } from '@kukan/api/services/pipeline-claim'
 import { RunCancelledError, StepTracker } from './step-tracker'
+import { heldContext } from './held-context'
 import { executeFetch } from './steps/fetch'
 import { executeExtract } from './steps/extract'
 import { executeLake } from './steps/lake'
@@ -32,7 +33,9 @@ export async function processResource(
   queue: QueueAdapter
 ): Promise<void> {
   const outcome = await withResourceClaim(db, resourceId, (claim) =>
-    runPipeline(resourceId, new StepTracker(db, claim), ctx, queue)
+    // The context the steps get is this run's: the writes that leave the
+    // database carry the claim check the row-level ones get for free.
+    runPipeline(resourceId, new StepTracker(db, claim), heldContext(ctx, claim, db), queue)
   )
 
   // Held by another run or a purge (ADR-044). This job has to come back: the
@@ -123,6 +126,9 @@ async function runPipeline(
         })
       }
     } catch (err) {
+      // A kill is not this step failing: the orchestrator leaves without
+      // recording, because the record belongs to whoever holds the claim now.
+      if (err instanceof RunCancelledError) throw err
       await tracker.failStep(extractStepId, (err as Error).message)
     }
 
@@ -146,6 +152,9 @@ async function runPipeline(
         await tracker.skipStep(versionStepId)
       }
     } catch (err) {
+      // A kill is not this step failing: the orchestrator leaves without
+      // recording, because the record belongs to whoever holds the claim now.
+      if (err instanceof RunCancelledError) throw err
       await tracker.failStep(versionStepId, (err as Error).message)
     }
 
@@ -174,6 +183,9 @@ async function runPipeline(
         await queue.enqueue(LAKE_INGEST_JOB_TYPE, { resourceId, version: lakeResult.version })
       }
     } catch (err) {
+      // A kill is not this step failing: the orchestrator leaves without
+      // recording, because the record belongs to whoever holds the claim now.
+      if (err instanceof RunCancelledError) throw err
       await tracker.failStep(lakeStepId, (err as Error).message)
     }
 
@@ -197,6 +209,9 @@ async function runPipeline(
         await tracker.mergeMetadata({ ...indexResult })
       }
     } catch (err) {
+      // A kill is not this step failing: the orchestrator leaves without
+      // recording, because the record belongs to whoever holds the claim now.
+      if (err instanceof RunCancelledError) throw err
       await tracker.failStep(indexStepId, (err as Error).message)
       await tracker.mergeMetadata({ contentIndexed: false })
     }

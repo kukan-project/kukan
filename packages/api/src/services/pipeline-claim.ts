@@ -311,6 +311,23 @@ export function heldBy(claim: ResourceClaim, table?: 'p') {
 }
 
 /**
+ * Whether `claim` still holds its resource.
+ *
+ * For the writes that leave the database — a search index, a lake catalog —
+ * where there is no row to condition on and the only fence available is asking
+ * first. That leaves a window between the answer and the write, so it is worth
+ * having only where the write is repeated: asked per chunk it bounds a kill to
+ * one chunk, where asking once per step bounds it to the whole step.
+ */
+export async function stillHolds(
+  db: Pick<Database, 'execute'>,
+  claim: ResourceClaim
+): Promise<boolean> {
+  const result = await db.execute(sql`SELECT 1 FROM resource_pipeline WHERE ${heldBy(claim)}`)
+  return result.rows.length > 0
+}
+
+/**
  * Stop whatever run holds this resource (ADR-044 §4).
  *
  * Releasing the claim is the kill: every write a run makes to its own record is

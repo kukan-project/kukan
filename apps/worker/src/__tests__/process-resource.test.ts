@@ -133,13 +133,16 @@ describe('processResource', () => {
 
     await processResource('res-1', ctx, db, queue)
 
-    expect(executeFetch).toHaveBeenCalledWith('res-1', ctx)
+    // The steps get this run's context, not the worker's: the writes that leave
+    // the database are wrapped in a claim check (ADR-044 §4).
+    const held = expect.objectContaining({ getResource: ctx.getResource })
+    expect(executeFetch).toHaveBeenCalledWith('res-1', held)
     expect(executeExtract).toHaveBeenCalledWith(
       'res-1',
       'pkg-1',
       'resources/pkg-1/res-1',
       'CSV',
-      ctx
+      held
     )
     // Fetch + Extract + Version + Lake + Index = 5 steps
     expect(mockTracker.startStep).toHaveBeenCalledTimes(5)

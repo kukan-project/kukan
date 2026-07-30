@@ -205,6 +205,21 @@ was saved as unsaved**. So the version insert carries the claim as well. Without
 interrupt a read in progress, the step boundary is as fine-grained as a kill can be, and
 conditioning the writes that outlast it is what that costs.
 
+**The writes that leave the database have no row to condition on.** A chunk sent to the
+search index, a version loaded into the lake catalog: there is nowhere to hang
+`WHERE claim_owner = me`, so a stopped run goes on writing. A revert deletes the indexed
+content right after restoring, so **a chunk written after that puts the retracted content
+back into search**. These ask whether the claim still holds before each write.
+
+Asking is not fencing — the claim can go between the answer and the write. What it buys is
+**the size of that window**: asked per chunk, a kill stops at the next one; asked once per
+step, the rest of a long file is indexed anyway. Closing it entirely needs each document in
+the index to carry the run that wrote it, which is more than the exposure warrants.
+
+The check sits where the capability is handed out — a run-scoped view of the context —
+rather than at each call site: the step bodies reach for these six times across four
+functions, one of them a loop.
+
 **Only a run can be killed.** Purges, the backfill and the Lake retry take the claim too, but
 none of them checks ownership per write, so releasing their claim does not **stop** them. It
 removes the exclusion while the work carries on — worse than the state the kill was for. The
