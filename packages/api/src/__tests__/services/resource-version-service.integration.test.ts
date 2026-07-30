@@ -251,7 +251,7 @@ describe('executePurge — layer 2 (DuckLake)', () => {
 
     // v2 stays live, so the contents do not change — but v1's snapshot still
     // holds its rows and has to be reclaimed, so the lake is contacted anyway
-    // (ADR-043 §9). An unusable config proves it: the purge fails rather than
+    // (ADR-043 §5). An unusable config proves it: the purge fails rather than
     // reporting a legal deletion it did not carry out.
     await expect(
       service.executePurge(resourceId, 1, { ...mockDeps(), lake: unreachableLake })

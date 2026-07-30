@@ -419,7 +419,7 @@ export class ResourceVersionService {
   }
 
   /**
-   * Propagate a purge into DuckLake (ADR-043 §9, layer 2).
+   * Propagate a purge into DuckLake (ADR-043 §5, layer 2).
    *
    * `restore` is given only when the purged version was the live one, since that
    * is when the lake's current contents would otherwise still hold the purged
@@ -685,7 +685,7 @@ export class ResourceVersionService {
 
         if (prev) {
           // Layer 2 must follow the rollback: otherwise the lake's current
-          // contents would still be the purged rows (ADR-043 §9).
+          // contents would still be the purged rows (ADR-043 §5).
           await this.purgeFromLake(resourceId, deps.lake, row.ducklakeSnapshotId, {
             toSnapshot: prev.ducklakeSnapshotId,
           })
@@ -716,7 +716,7 @@ export class ResourceVersionService {
       }
     } else {
       // A middle version: the live contents are already free of it, but its own
-      // snapshot still holds the rows and must be reclaimed (ADR-043 §9).
+      // snapshot still holds the rows and must be reclaimed (ADR-043 §5).
       await this.purgeFromLake(resourceId, deps.lake, row.ducklakeSnapshotId)
     }
 
@@ -806,7 +806,7 @@ export class ResourceVersionService {
    * empty the resource when none survives.
    *
    * Shared by the two things that retract live content: a purge of the live
-   * version (ADR-043 §9) and a revert (ADR-044 §4). They differ in what happens
+   * version (ADR-043 §5) and a revert (ADR-044 §4). They differ in what happens
    * to the object left behind — a purge destroys it, a revert lets the sweep
    * take it — not in how the pointer moves.
    *

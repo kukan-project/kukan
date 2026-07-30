@@ -1,5 +1,5 @@
 /**
- * DuckLake snapshot reclamation (ADR-043 §9, layer 2).
+ * DuckLake snapshot reclamation (ADR-043 §5, layer 2).
  *
  * A purge is a legal deletion, so it is not enough to stop referencing the
  * rows — the Parquet holding them has to go. Every version owns its files

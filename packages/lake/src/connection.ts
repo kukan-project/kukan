@@ -71,7 +71,7 @@ function isInstanceLost(err: unknown): boolean {
 
 /**
  * Turn off DuckLake's data inlining, which keeps small tables' rows in the
- * catalog instead of Parquet (ADR-043 §9).
+ * catalog instead of Parquet (ADR-043 §6-1).
  *
  * Inlined rows are never reclaimed: once every snapshot that could observe one
  * is expired, it is unreachable through DuckLake yet still sits in PostgreSQL,

@@ -287,7 +287,7 @@ export class OrganizationService {
 
     // After the rows are gone: dropping the tables only unreferences the
     // snapshots, and the retained set is read from the version rows the
-    // cascade just deleted (ADR-043 §9). Only when this purge had tables of
+    // cascade just deleted (ADR-043 §5). Only when this purge had tables of
     // its own — a catalog-wide sweep is a maintenance job's business.
     if (lakeResourceIds.length > 0) await reclaimLakeStorage(this.db, deps.lake)
 

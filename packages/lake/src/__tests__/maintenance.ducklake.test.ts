@@ -3,7 +3,7 @@
  *
  * `maintenance.test.ts` pins which snapshots get expired; this pins that
  * expiring them actually erases the bytes. That distinction is the whole point
- * of ADR-043 §9 — a purge is a legal deletion, so "no longer referenced" is not
+ * of ADR-043 §5 — a purge is a legal deletion, so "no longer referenced" is not
  * the guarantee, "no longer on storage" is — and it is invisible to a fake
  * session, which cannot show that `cleanup_old_files` deletes anything.
  *

@@ -1,5 +1,5 @@
 /**
- * Freeing the DuckLake storage a deletion left behind (ADR-043 §9, layer 2).
+ * Freeing the DuckLake storage a deletion left behind (ADR-043 §5, layer 2).
  *
  * Dropping a table, rolling one back, or deleting the rows that referenced its
  * snapshots only stops the data being reachable. The Parquet stays until the
