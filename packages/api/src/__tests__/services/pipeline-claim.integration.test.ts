@@ -5,10 +5,12 @@
  * hold the resource for good, and a job that touches many resources either gets
  * all of them or none.
  */
-import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
+import { Client } from 'pg'
 import { eq, sql } from 'drizzle-orm'
 import { resource, resourcePipeline, resourcePipelineStep } from '@kukan/db'
+import { testDatabaseUrl } from '@kukan/db/testing'
 import {
   CLAIM_STALE_AFTER_MS,
   cancelResourceRun,
@@ -16,10 +18,12 @@ import {
   claimResources,
   heldBy,
   releaseResourceClaims,
+  stillHeld,
   withClaimFromRun,
   withResourceClaim,
   withResourceClaims,
 } from '../../services/pipeline-claim'
+import { API_TEST_DB } from '../test-helpers/global-setup'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()
@@ -460,3 +464,76 @@ describe('heldBy', () => {
     expect(await writeAsRun({ id: pipelineId, resourceId, owner: displaced })).toBe(0)
   })
 })
+
+describe('stillHeld — ordering against the cancel', () => {
+  // The condition the three writes that outlive a run carry (the version row,
+  // the live pointer, the deferred-ingest pointer). `heldBy` above is checked
+  // against a claim that is already gone; what is checked here is the harder
+  // case — a write in flight when the cancel arrives.
+  //
+  // A second connection is needed because the scenario is three sessions: one
+  // holding the writer's target row, the writer waiting on it, and the cancel.
+  // The pool cannot supply the first, since a transaction left open on a pooled
+  // client would be handed to something else.
+  let blocker: Client
+
+  beforeEach(async () => {
+    blocker = new Client({ connectionString: testDatabaseUrl(API_TEST_DB) })
+    await blocker.connect()
+  })
+
+  afterEach(async () => {
+    await blocker.end()
+  })
+
+  /** A write conditioned on the claim, of the shape all three writers use. */
+  const writeAsRun = (claim: { id: string; owner: string }) =>
+    db.execute(sql`
+      UPDATE resource SET size = 99 WHERE id = ${resourceId}::uuid AND ${stillHeld(claim as never)}
+      RETURNING id
+    `)
+
+  it('finishes the write before the cancel it raced, not after', async () => {
+    // Without the lock the writer reads the claim from a snapshot taken before
+    // the cancel, waits on the row it is updating, and then lands anyway — so
+    // `cancelResourceRun` returns having stopped a run that goes on writing.
+    const owner = await hold()
+    const claim = { id: pipelineId, owner }
+    const order: string[] = []
+
+    // Something else holds the row the write is aimed at — an upload promoting,
+    // a purge restoring — so the write has to wait, as it would in production.
+    await blocker.query('BEGIN')
+    await blocker.query(`UPDATE resource SET size = 1 WHERE id = $1`, [resourceId])
+
+    const written = writeAsRun(claim).then((r) => {
+      order.push('write')
+      return r.rows.length
+    })
+    await settle()
+    const cancelled = cancelResourceRun(db, resourceId).then((c) => {
+      order.push('cancel')
+      return c
+    })
+    await settle()
+
+    await blocker.query('COMMIT')
+    const [rows, stopped] = await Promise.all([written, cancelled])
+
+    expect(stopped).toBe(true)
+    expect(order).toEqual(['write', 'cancel'])
+    // It wrote, and that is correct: it got there first. What must not happen is
+    // the other order — a cancel that has already returned, then a write.
+    expect(rows).toBe(1)
+  })
+
+  it('refuses once the cancel has settled', async () => {
+    const owner = await hold()
+    await cancelResourceRun(db, resourceId)
+
+    expect((await writeAsRun({ id: pipelineId, owner })).rows.length).toBe(0)
+  })
+})
+
+/** Long enough for a blocked statement to have reached the lock it waits on. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 300))

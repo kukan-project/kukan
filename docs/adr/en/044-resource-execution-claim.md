@@ -191,6 +191,20 @@ not stop the run, so **conditioning the run's derivative writes on `WHERE claim_
 is a precondition for killing at all. A run that finds the condition gone leaves quietly, as
 cancelled rather than as an error.
 
+**Reading the claim is not enough; the condition has to be ordered against the cancel.** Read
+with a plain `EXISTS`, the row comes from the statement's snapshot. If the statement then
+waits — because the row it is updating is held by someone else, an upload promoting or a purge
+restoring — it re-checks against a view of the claim taken **before** the cancel and writes
+anyway: `cancelResourceRun` returns having stopped the run, and the stopped run's write lands
+afterwards. Measured, not reasoned. So the claim row is read `FOR SHARE`. The cancel takes the
+same row exclusively, so it waits for a statement already in flight, and a statement that
+starts after it finds nothing. **A kill waits out one statement of the run it is killing** —
+not a side effect, but the price of "stopped" meaning nothing more lands.
+
+The check made before a write that leaves the database (below) does not take that lock. What
+follows its answer goes somewhere no lock reaches, so the lock would only hold up a kill it
+cannot help, and it would be released at the end of that statement regardless.
+
 This looks like partly restoring the step-boundary fence §5 removed, but the question is a
 different one. What went was "am I still the latest?" — a defence against a race the claim
 now prevents. What arrives is "do I still hold this?" — the path by which a user's explicit

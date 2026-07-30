@@ -325,10 +325,23 @@ export function heldBy(claim: ResourceClaim, table?: 'p') {
  * which nothing can run against either. So it reads `TRUE`, decided here rather
  * than by a ternary at each site: it is the same answer every time, and a rule
  * about what may be written is not one to restate per caller.
+ *
+ * `FOR SHARE` is what makes this a fence rather than a look. Without it the row
+ * is read from the statement's snapshot, and a statement that then waits — on
+ * its own target row, held by anything else — re-checks against a view of the
+ * claim taken before the cancel and writes anyway. Measured, not reasoned: with
+ * a plain `EXISTS`, `cancelResourceRun` returns having stopped the run and the
+ * killed run's write still lands afterwards. The lock puts the two in a line:
+ * the cancel takes the row exclusively, so it waits for a statement already
+ * holding it, and a statement that starts after it finds nothing.
+ *
+ * The cost is that a kill waits out one statement of the run it is killing.
+ * That is the guarantee, not a side effect: "stopped" has to mean nothing more
+ * lands, and something already in flight has to finish before that is true.
  */
 export function stillHeld(claim?: ResourceClaim | null) {
   return claim
-    ? sql`EXISTS (SELECT 1 FROM resource_pipeline p WHERE ${heldBy(claim, 'p')})`
+    ? sql`EXISTS (SELECT 1 FROM resource_pipeline p WHERE ${heldBy(claim, 'p')} FOR SHARE)`
     : sql`TRUE`
 }
 
@@ -340,12 +353,17 @@ export function stillHeld(claim?: ResourceClaim | null) {
  * first. That leaves a window between the answer and the write, so it is worth
  * having only where the write is repeated: asked per chunk it bounds a kill to
  * one chunk, where asking once per step bounds it to the whole step.
+ *
+ * Deliberately not {@link stillHeld}: this is a look, and the lock that makes
+ * that one a fence would be released the moment this statement ended, holding
+ * up the kill it cannot help. What follows this answer leaves the database
+ * anyway, where no lock reaches.
  */
 export async function stillHolds(
   db: Pick<Database, 'execute'>,
   claim: ResourceClaim
 ): Promise<boolean> {
-  const result = await db.execute(sql`SELECT 1 WHERE ${stillHeld(claim)}`)
+  const result = await db.execute(sql`SELECT 1 FROM resource_pipeline WHERE ${heldBy(claim)}`)
   return result.rows.length > 0
 }
 

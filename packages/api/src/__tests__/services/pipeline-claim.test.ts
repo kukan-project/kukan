@@ -28,7 +28,7 @@ describe('stillHeld', () => {
     const { sql, params } = render(stillHeld(claim))
 
     expect(sql).toBe(
-      'EXISTS (SELECT 1 FROM resource_pipeline p WHERE p.id = $1::uuid AND p.claim_owner = $2::uuid)'
+      'EXISTS (SELECT 1 FROM resource_pipeline p WHERE p.id = $1::uuid AND p.claim_owner = $2::uuid FOR SHARE)'
     )
     expect(params).toEqual([claim.id, claim.owner])
   })
@@ -61,9 +61,17 @@ describe('stillHeld', () => {
 
     expect(text).toBe(
       'UPDATE resource SET storage_key = $1 WHERE EXISTS ' +
-        '(SELECT 1 FROM resource_pipeline p WHERE p.id = $2::uuid AND p.claim_owner = $3::uuid)'
+        '(SELECT 1 FROM resource_pipeline p WHERE p.id = $2::uuid AND p.claim_owner = $3::uuid FOR SHARE)'
     )
     expect(params).toEqual([evil, evil, evil])
+  })
+
+  it('locks the claim row it reads', () => {
+    // Without it the row comes from the statement's snapshot, and a statement
+    // that waits — on its own target row — writes on a view of the claim taken
+    // before the cancel (ADR-044 §4). The ordering itself is exercised in
+    // pipeline-claim.integration.test.ts; this pins the token.
+    expect(render(stillHeld(claim)).sql).toMatch(/FOR SHARE\)$/)
   })
 
   it('renders TRUE for a writer with no claim', () => {
