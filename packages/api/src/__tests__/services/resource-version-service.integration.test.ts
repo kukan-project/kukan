@@ -416,6 +416,35 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     expect(result.restored).toBe(1)
   })
 
+  it('steps back one version at a time', async () => {
+    // What a revert is: the history walked backwards from where the content is
+    // standing, not "the newest version that is not this one".
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    await addVersion(3, 'sha256:v3')
+    await db.update(resource).set({ hash: 'sha256:v3' }).where(eq(resource.id, resourceId))
+
+    expect((await service.revertLiveContent(resourceId, mockDeps())).restored).toBe(2)
+    expect((await service.revertLiveContent(resourceId, mockDeps())).restored).toBe(1)
+  })
+
+  it('does not step forward into a version an earlier revert stepped off', async () => {
+    // The first revert leaves v2 active — destroying it is a purge, which this
+    // deliberately is not. Choosing by "not the current content" alone, the
+    // second revert then finds v2 the newest version that is not v1 and hands
+    // back exactly what the first one retracted.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+
+    expect((await service.revertLiveContent(resourceId, mockDeps())).restored).toBe(1)
+    const second = await service.revertLiveContent(resourceId, mockDeps())
+
+    expect(second.restored).toBeNull()
+    const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
+    expect(res.hash).not.toBe('sha256:v2')
+    expect(res.storageKey).toBeNull()
+  })
+
   it('empties the resource when the only version holds the retracted content', async () => {
     // v1 was captured from the wrong file itself: there is nothing behind it,
     // and leaving it live is the one thing the caller asked against.

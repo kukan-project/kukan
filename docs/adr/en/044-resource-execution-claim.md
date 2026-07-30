@@ -253,13 +253,29 @@ kind of holder recorded on the row (§1) exists for this distinction.
 **over the very content being retracted**. Swapping the owner in one statement leaves no
 moment at which the resource is free.
 
-**A revert goes back to the newest version that is not the content being
-retracted.** The run it stopped may have captured that very file as a version moments
-before, and going back to it is going nowhere: **the file the caller asked to retract stays
-live, with a version number quoted back at them**. The exclusion is by hash rather than by
-version number — whichever row holds those bytes, restoring it restores them. If the only
-version holds the retracted content, the resource is emptied, as the table in this section
-says.
+**A revert goes back to the newest version below the one that is live.** The run it
+stopped may have captured that very file as a version moments before, and going back to it
+is going nowhere: **the file the caller asked to retract stays live, with a version number
+quoted back at them**.
+
+**"The newest version that is not the retracted content" is not enough.** A revert does not
+delete version rows (a purge does — the three rungs above), so after one revert the version
+it stepped off is still active and still the newest. The next revert picks it as the newest
+version that is not the current content, and **hands back exactly what the first one
+retracted**. A revert walks the history backwards, so where it lands is decided by where it
+is standing: below the version that is live. Excluding everything above that is what stops a
+step back turning into a step forward — and what makes a resent request, or a user going
+round twice, land in the same place.
+
+**Where it is standing is found by hash.** The live pointer names an object, not a version,
+so the live version is the newest active row holding those bytes. When no version holds them
+— nothing captured yet, or a kill cut the capture off — there is no bound, and the newest
+version is the right place to land. With nothing below, the resource is emptied, as the
+table in this section says.
+
+The exclusion is then the same shape a purge uses (`below`). The two differ only in how they
+answer "which version holds the content being retracted"; going back from there is one
+behaviour.
 
 **Emptying goes through the same mover.** The "nothing to go back to" path cleared the
 pointer unconditionally, but uploads take no claim (§6), so a promote landing after the read
