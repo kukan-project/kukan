@@ -5,12 +5,59 @@
  * whose correctness depends on the lock — write, read the snapshot back, record
  * it on the version row — has exactly one implementation.
  */
-import { and, eq, gt, isNotNull } from 'drizzle-orm'
+import { and, eq, gt, isNotNull, sql } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import { resourceVersion } from '@kukan/db'
 import type { IngestResult, LakeConfig, LakeSession } from '@kukan/lake'
 import { ingestParquetVersion, lakeStorageUrl, lakeTableName } from '@kukan/lake'
 import { LAKE_INGEST_LOCK, withGlobalAdvisoryLock } from './advisory-lock'
+import { PARKED_UNTIL } from './storage-pointer'
+
+/**
+ * Record that a version still has to be ingested from `previewKey`
+ * (ADR-043 §6-6).
+ *
+ * Here rather than at either caller because it is one half of a pair: the
+ * statement below clears this column when the ingest lands, and a pointer that
+ * is set in one package and cleared in another drifts. Both paths that give up
+ * on an ingest — the pipeline's Lake step and the hourly sweep — reach it.
+ *
+ * What keeps the preview alive: the orphan sweep asks whether any pointer names
+ * a key before deleting its object, and a key sitting in a queue message is a
+ * reference it cannot see (ADR-045 §3). Recorded here, an ingest whose message
+ * is lost is still found — and found wherever the version sits in the history.
+ */
+export async function deferLakeIngest(
+  db: Pick<Database | Transaction, 'update'>,
+  row: { resourceId: string; version: number; previewKey: string }
+): Promise<void> {
+  await db
+    .update(resourceVersion)
+    .set({ lakeSourceKey: row.previewKey })
+    .where(
+      and(eq(resourceVersion.resourceId, row.resourceId), eq(resourceVersion.version, row.version))
+    )
+}
+
+/**
+ * Give up on ingesting this version: it no longer needs a Parquet.
+ *
+ * The pointer is the record of intent, so an attempt that cannot be completed
+ * has to withdraw it — otherwise the version stays in the pending count and the
+ * hourly sweep re-selects it for ever. The object it named is not parked here:
+ * this is reached when it is already gone.
+ */
+export async function abandonLakeIngest(
+  db: Pick<Database | Transaction, 'update'>,
+  row: { resourceId: string; version: number }
+): Promise<void> {
+  await db
+    .update(resourceVersion)
+    .set({ lakeSourceKey: null })
+    .where(
+      and(eq(resourceVersion.resourceId, row.resourceId), eq(resourceVersion.version, row.version))
+    )
+}
 
 /**
  * Run `fn` while holding the DuckLake ingest lock. The transaction exists only
@@ -83,11 +130,28 @@ export async function ingestVersionIntoLake(
   })
   // The DuckLake commit is on its own connection, so a failure here leaves an
   // unreferenced snapshot — harmless, and reclaimed by expire.
-  await tx
-    .update(resourceVersion)
-    .set({ ducklakeSnapshotId: result.snapshotId })
-    .where(
-      and(eq(resourceVersion.resourceId, row.resourceId), eq(resourceVersion.version, row.version))
+  //
+  // One statement, because letting go of the Parquet and parking it cannot come
+  // apart: while the version named it the sweep read it as referenced and
+  // dropped its ledger record (ADR-045 §3), so a clear on its own would leave an
+  // object with neither a pointer nor a record — the one thing that ledger
+  // exists to prevent. Parking a key something still references is harmless:
+  // the next sweep reads it as referenced and drops the record again.
+  await tx.execute(sql`
+    WITH before AS (
+      SELECT id, lake_source_key FROM resource_version
+      WHERE resource_id = ${row.resourceId}::uuid AND version = ${row.version}
+      FOR UPDATE
+    ),
+    ingested AS (
+      UPDATE resource_version rv
+      SET ducklake_snapshot_id = ${result.snapshotId}, lake_source_key = NULL
+      FROM before b WHERE rv.id = b.id
+      RETURNING b.lake_source_key AS released
     )
+    INSERT INTO orphaned_object (key, expires_at)
+    SELECT released, ${PARKED_UNTIL} FROM ingested WHERE released IS NOT NULL
+    ON CONFLICT (key) DO NOTHING
+  `)
   return result
 }

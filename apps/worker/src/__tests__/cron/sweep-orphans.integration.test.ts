@@ -70,6 +70,7 @@ describe('sweepOrphanedObjects', () => {
       storageKey: 'live/current',
       pendingStorageKey: 'live/pending',
       versionKey: 'live/version',
+      lakeSourceKey: 'live/lake-source',
       previewKey: 'live/preview',
       textHeadKey: 'live/text-head',
     }
@@ -82,6 +83,10 @@ describe('sweepOrphanedObjects', () => {
       resourceId,
       version: 1,
       storageKey: live.versionKey,
+      // A version whose DuckLake ingest was deferred names the Parquet it still
+      // has to be read from (ADR-043 §6-6); the retry's queue message is a
+      // reference this check cannot see, so the pointer is what it asks about.
+      lakeSourceKey: live.lakeSourceKey,
       size: 1,
       hash: 'h',
       origin: 'upload',
@@ -98,7 +103,7 @@ describe('sweepOrphanedObjects', () => {
     const result = await sweepOrphanedObjects(db, storage, log)
 
     expect(deleted).toEqual(['orphan/nothing-points-here'])
-    expect(result).toEqual({ scanned: 6, deleted: 1, stillReferenced: 5 })
+    expect(result).toEqual({ scanned: 7, deleted: 1, stillReferenced: 6 })
     // Both reasons to stop tracking a key end the same way — the object is
     // gone, or something references it after all and the record is the
     // leftover. Left in place either would be re-examined every hour for good.

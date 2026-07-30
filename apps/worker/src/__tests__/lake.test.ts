@@ -60,6 +60,22 @@ describe('executeLake', () => {
       version: 2,
       previewKey: PARQUET,
     })
+    expect(ctx.deferLakeIngest).not.toHaveBeenCalled()
+  })
+
+  it('records the Parquet the version still needs before giving up', async () => {
+    // The pointer is what keeps the preview from being swept, and what makes
+    // this version findable again if the retry message is lost (kukan#204).
+    const ctx = createCtx()
+    ctx.ingestLakeVersion.mockRejectedValue(new Error('catalog unreachable'))
+
+    await executeLake('res-1', PARQUET, HASH, ctx)
+
+    expect(ctx.deferLakeIngest).toHaveBeenCalledWith({
+      resourceId: 'res-1',
+      version: 2,
+      previewKey: PARQUET,
+    })
   })
 
   it('hands back what a retry needs when the ingest fails', async () => {

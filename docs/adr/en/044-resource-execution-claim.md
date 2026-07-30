@@ -315,9 +315,11 @@ leave a hole in.
    of CSV), not from the longest step observed in production. To be tightened once measured
 2. ~~**Granularity for bulk jobs**~~: settled (§2). One statement, so no acquisition order
    and no deadlock; one resource held abandons the whole set for a retry
-3. **Serializing the Lake retry**: absorbed into the claim (the retry job takes one too).
-   What remains is what to do once a mid-history version's preview has been swept: today
-   it gives up, logging a warning. Whether to go further and purge is unsettled
+3. ~~**Serializing the Lake retry**~~: settled. Absorbed into the claim (the retry job
+   takes one too), and what remained — a mid-history version whose preview had been swept
+   — is answered by the version naming that preview (ADR-043 §6-6, kukan#204). The sweep's
+   reference check reads it, so the preview is not swept, and there is no longer a case of
+   "already gone" to decide about
 4. ~~**Ordering of the removals**~~: settled. §5 was carried out once every path took the
    claim — the `isSuperseded` fence with its three call sites, and `VERSION_CAPTURE_LOCK`
 5. **Resuming after a kill**: a kill frees the claim, so a job already requeued for the same

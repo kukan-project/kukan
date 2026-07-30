@@ -37,12 +37,16 @@ export async function executeLake(
   const version = await ctx.pendingLakeVersion(resourceId, contentHash)
   if (version === null) return { status: 'skipped' }
 
+  const row = { resourceId, version, previewKey }
   try {
-    const result = await ctx.ingestLakeVersion({ resourceId, version, previewKey })
+    const result = await ctx.ingestLakeVersion(row)
     // null when the context carries no DuckLake config, or when something else
     // ingested this version first.
     return result === null ? { status: 'skipped' } : { status: 'ingested' }
   } catch (err) {
+    // Recorded before the caller queues anything: the pointer is what the
+    // preview survives on, and what makes this version findable again.
+    await ctx.deferLakeIngest(row)
     return { status: 'failed', version, previewKey, error: err as Error }
   }
 }

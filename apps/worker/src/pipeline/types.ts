@@ -109,6 +109,18 @@ export interface PipelineContext {
    */
   pendingLakeVersion(resourceId: string, contentHash: string): Promise<number | null>
   /**
+   * Record that this version still has to be ingested from `previewKey`
+   * (ADR-043 §6-6).
+   *
+   * What keeps the preview alive: the orphan sweep asks whether any pointer
+   * names a key before deleting its object, and a key sitting in a queue
+   * message is a reference it cannot see (ADR-045 §3). Written by the step that
+   * gives up rather than beside the retry it queues, so the queue message stops
+   * being the only record — an ingest whose message is lost is still found by
+   * the hourly sweep.
+   */
+  deferLakeIngest(opts: { resourceId: string; version: number; previewKey: string }): Promise<void>
+  /**
    * Layer 2 (ADR-043 Phase ii): load a captured version's tabular content into
    * DuckLake from its preview Parquet and record the snapshot on the version
    * row. Returns null when the context was built without a DuckLake config.

@@ -5,8 +5,9 @@
  * current contents. Phase ii-a ingests whole versions, so loading one replaces
  * the table — an ingest that runs out of order rewinds it.
  *
- * No DuckLake here: both cases refuse before reaching it, which the session
- * stub asserts by throwing if it is ever used.
+ * No real DuckLake here: the refusal cases never reach it, which a session stub
+ * asserts by throwing if it is ever used, and the one case that gets past them
+ * runs against a stub that answers the two queries an ingest asks.
  */
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { eq, and, sql } from 'drizzle-orm'
@@ -19,6 +20,18 @@ import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 const db = getTestDb()
 
 let resourceId: string
+
+/**
+ * Answers just enough for the create-table path: no table yet, then a snapshot
+ * id. Everything else about DuckLake is exercised in `@kukan/lake`.
+ */
+const ingestingSession = {
+  run: async () => {},
+  rows: async (sql: string) =>
+    sql.includes('ducklake_snapshots') ? [{ id: 99 }] : ([] as unknown[]),
+  interrupt: () => {},
+  close: async () => {},
+} as unknown as LakeSession
 
 /** Fails the test if the ingest gets as far as touching DuckLake. */
 const refusingSession = {
@@ -34,7 +47,7 @@ const refusingSession = {
 
 const lake = { bucket: 'b', region: 'r', pgConnString: '', s3UseSsl: false } as LakeConfig
 
-async function addVersion(version: number, snapshotId: number | null) {
+async function addVersion(version: number, snapshotId: number | null, lakeSourceKey?: string) {
   await db.insert(resourceVersion).values({
     resourceId,
     version,
@@ -43,6 +56,7 @@ async function addVersion(version: number, snapshotId: number | null) {
     hash: `sha256:v${version}`,
     origin: 'upload',
     ducklakeSnapshotId: snapshotId,
+    lakeSourceKey: lakeSourceKey ?? null,
   })
 }
 
@@ -119,6 +133,50 @@ describe('ingestVersionIntoLake', () => {
         })
       )
     ).rejects.toThrow('reached DuckLake')
+  })
+
+  it('lets go of the Parquet it was waiting on once the version is in', async () => {
+    // The pointer is what keeps that preview from being swept (ADR-043 §6-6).
+    // Left behind, it would pin the object for as long as the version lives.
+    await addVersion(1, null, 'previews/v1.parquet')
+
+    await db.transaction((tx) =>
+      ingestVersionIntoLake(tx, ingestingSession, lake, {
+        resourceId,
+        version: 1,
+        previewKey: 'previews/v1.parquet',
+      })
+    )
+
+    const [row] = await db
+      .select({
+        snapshot: resourceVersion.ducklakeSnapshotId,
+        source: resourceVersion.lakeSourceKey,
+      })
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+    expect(row).toEqual({ snapshot: 99, source: null })
+  })
+
+  it('parks the Parquet it lets go of', async () => {
+    // While the version named it, the sweep read the key as referenced and
+    // dropped its ledger record (ADR-045 §3). Clearing the pointer without
+    // parking it again would leave an object with neither — the one state that
+    // ledger exists to prevent.
+    await addVersion(1, null, 'previews/v1.parquet')
+
+    await db.transaction((tx) =>
+      ingestVersionIntoLake(tx, ingestingSession, lake, {
+        resourceId,
+        version: 1,
+        previewKey: 'previews/v1.parquet',
+      })
+    )
+
+    const parked = await db.execute(sql`SELECT key FROM orphaned_object`)
+    expect((parked.rows as unknown as { key: string }[]).map((r) => r.key)).toEqual([
+      'previews/v1.parquet',
+    ])
   })
 })
 

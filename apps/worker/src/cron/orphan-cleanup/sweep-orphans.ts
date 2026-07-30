@@ -32,7 +32,8 @@ function referenced(keys: string[]) {
     SELECT o.key FROM unnest(${sql.param(keys)}::text[]) AS o(key)
     WHERE EXISTS (SELECT 1 FROM resource r
                   WHERE r.storage_key = o.key OR r.pending_storage_key = o.key)
-       OR EXISTS (SELECT 1 FROM resource_version rv WHERE rv.storage_key = o.key)
+       OR EXISTS (SELECT 1 FROM resource_version rv
+                  WHERE rv.storage_key = o.key OR rv.lake_source_key = o.key)
        OR EXISTS (SELECT 1 FROM resource_pipeline rp
                   WHERE rp.preview_key = o.key OR rp.metadata ->> 'textHeadKey' = o.key)
   `

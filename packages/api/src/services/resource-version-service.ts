@@ -38,7 +38,7 @@ import {
   withResourceClaimsOrConflict,
   type ResourceClaim,
 } from './pipeline-claim'
-import { copyObject, publishLiveContent, releaseObject } from './storage-pointer'
+import { copyObject, parkObject, publishLiveContent, releaseObject } from './storage-pointer'
 import { PipelineService } from './pipeline-service'
 
 export type VersionState = 'active' | 'purging' | 'purged'
@@ -107,10 +107,20 @@ interface PurgeDeps {
 const BACKFILL_CONCURRENCY = 2
 
 /**
- * Current versions of tabular resources that are not in DuckLake yet (ADR-043
- * layer 2). Restricted to the latest active version because the preview Parquet
- * — the only tabular rendering that exists — always holds the newest content;
- * older versions cannot be reconstructed from it.
+ * Versions of tabular resources that are not in DuckLake yet (ADR-043 layer 2).
+ *
+ * Two ways in. A version whose ingest was deferred **names the Parquet it needs**
+ * (`lake_source_key`, ADR-043 §6-6), and that is the whole test — the pointer
+ * keeps the object from being swept, so it is still there, and the version is
+ * found here whatever its position in the history and whether or not the retry
+ * message survived.
+ *
+ * The other way is the resource's current preview, restricted to the latest
+ * active version because the preview Parquet always holds the newest content
+ * and older versions cannot be reconstructed from it. Not only a migration
+ * path: the pointer is written when the Lake step gives up, so a version whose
+ * run was killed before that step reaches — or whose capture is older than the
+ * column — has no pointer, and this is what finds it.
  *
  * The preview is mutable and outlives the run that made it — it is kept when an
  * Extract fails, and it still points at the old object while a re-queued
@@ -136,15 +146,34 @@ const BACKFILL_CONCURRENCY = 2
  * @param resourceId - restrict to one resource, for that re-check.
  */
 function pendingLakeIngestQuery(resourceId?: string) {
+  const forResource =
+    resourceId === undefined ? sql`` : sql`AND rv.resource_id = ${resourceId}::uuid`
+  // Two disjoint branches rather than one predicate with an OR: the OR mixes
+  // columns from both tables, so the planner cannot push it below the join and
+  // ends up running the `max(version)` subquery twice per candidate row — and
+  // the pointer branch, which needs no pipeline row at all, is dragged through
+  // the join anyway.
   return sql`
+  SELECT rv.resource_id AS "resourceId", rv.version, rv.lake_source_key AS "previewKey"
+  FROM resource_version rv
+  JOIN resource r ON r.id = rv.resource_id
+  WHERE r.state = 'active'
+    ${forResource}
+    AND rv.state = 'active'
+    AND rv.ducklake_snapshot_id IS NULL
+    AND rv.lake_source_key IS NOT NULL
+
+  UNION ALL
+
   SELECT rv.resource_id AS "resourceId", rv.version, rp.preview_key AS "previewKey"
   FROM resource_version rv
   JOIN resource r ON r.id = rv.resource_id
   JOIN resource_pipeline rp ON rp.resource_id = r.id
   WHERE r.state = 'active'
-    ${resourceId === undefined ? sql`` : sql`AND rv.resource_id = ${resourceId}::uuid`}
+    ${forResource}
     AND rv.state = 'active'
     AND rv.ducklake_snapshot_id IS NULL
+    AND rv.lake_source_key IS NULL
     AND rp.preview_key LIKE ${`%${LAKE_PREVIEW_SUFFIX}`}
     AND rv.hash IS NOT NULL
     AND (
@@ -476,10 +505,10 @@ export class ResourceVersionService {
    * work, it is a row this pass will find. That is what makes an enqueue
    * failure survivable without an outbox of its own.
    *
-   * Only the latest version of each resource is reachable this way: the preview
-   * Parquet is the sole tabular rendering and it always holds the newest
-   * content. A mid-history version whose own preview is still within the orphan
-   * retention needs the queued retry job, which names that preview explicitly.
+   * Reaches a version wherever it sits in the history, because a version whose
+   * ingest was deferred names the Parquet it needs (ADR-043 §6-6) and the sweep
+   * keeps that object alive. Only versions from before that column depend on
+   * the resource's current preview, and those are the latest one by definition.
    *
    * One session for the whole pass (opening one is expensive), but the advisory
    * lock is taken per resource: it is what makes the committed snapshot
@@ -726,10 +755,15 @@ export class ResourceVersionService {
         state: 'purged',
         purgedAt: sql`NOW()`,
         updated: sql`NOW()`,
-        // Drop the layer-2 reference: the tombstone must not point at content.
+        // Drop the layer-2 references: the tombstone must not point at content,
+        // and that is both the snapshot and any Parquet an ingest was deferred
+        // from (ADR-043 §6-6).
         ducklakeSnapshotId: null,
+        lakeSourceKey: null,
       })
       .where(eq(resourceVersion.id, row.id))
+    // Nothing names it now, so it needs the way back the ledger is for.
+    await parkObject(this.db, row.lakeSourceKey)
 
     await this.db.insert(auditLog).values({
       entityType: 'resource_version',

@@ -1,0 +1,2 @@
+ALTER TABLE "resource_version" ADD COLUMN "lake_source_key" text;--> statement-breakpoint
+CREATE INDEX "idx_resource_version_lake_source_key" ON "resource_version" USING btree ("lake_source_key") WHERE "resource_version"."lake_source_key" IS NOT NULL;

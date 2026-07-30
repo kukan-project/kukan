@@ -312,8 +312,8 @@ await queue.process({
     )
   },
   // Retry a DuckLake ingest the pipeline's advisory Lake step could not
-  // complete (ADR-043). The preview it names is the superseded one, kept alive
-  // by the orphan retention — past that there is nothing left to ingest.
+  // complete (ADR-043). The fast path: the version names the same preview, so
+  // the hourly sweep finds it too if this message never arrives.
   [LAKE_INGEST_JOB_TYPE]: async (job: Job) => {
     const data = parseJobPayload(job, lakeIngestJobSchema)
     if (!data) return

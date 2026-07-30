@@ -68,7 +68,7 @@ record left behind is what the sweep reclaims.
 Enumerate each prefix and reclaim objects no pointer references.
 
 - **For**: nothing on the execution path, and nothing can be missed — the listing is the truth.
-- **Against**: references live in five places (`resource.storage_key`,
+- **Against**: references live in several places (`resource.storage_key`,
   `resource.pending_storage_key`, `resource_version.storage_key`,
   `resource_pipeline.preview_key`, `metadata.textHeadKey`). **Add a pointer column later and
   forget the reconciler, and it deletes what that column referenced.** Exhaustiveness becomes
@@ -118,15 +118,22 @@ the sweep becomes a uniform `expires_at < NOW()`.
 
 ### 3. The sweep's predicate
 
-For keys past their deadline, check the five reference sources before deleting.
+For keys past their deadline, check the reference sources before deleting. Five to begin
+with, six now (`resource_version.lake_source_key` joined them — ADR-043 §6-6).
 
 **If something references the key, delete the record rather than the object.** A referenced
 key means that write completed, so the record is a leftover. Keeping it would have the sweep
 re-decide the same key every hour, forever. **This one move turns write-ahead's only danger —
 a missed removal deleting live data — into self-repair.**
 
-Parked keys are referenced by none of them, so the predicate does not change today's
-behaviour. **It matters only for write-ahead keys.**
+Parked keys are referenced by none of them, so the predicate changes almost nothing about
+today's behaviour — **it matters only for write-ahead keys.**
+
+With one exception. `resource_version.lake_source_key` (ADR-043 §6-6) is a reference meant
+to be **released later**. While it names a parked key the record is what goes, so **the
+statement that drops the pointer has to park the key again, in the same statement** — or
+the object is left with neither a pointer nor a record, which is the state this ledger
+exists to prevent.
 
 ### 4. Where the record is removed
 
@@ -182,7 +189,7 @@ back. No new mechanism — one column on the ledger and sweep already in place.
 
 1. **The existing leak**: this protects future writes and **does not reclaim what is already
    stranded**. A one-off reconciliation (option B, run once by hand) is still needed
-2. **Measuring the check**: five reference sources, against batches of 5000 keys. Expected to
+2. **Measuring the check**: every reference source, against batches of 5000 keys. Expected to
    be fine on indexes, but not measured
 3. **Two kinds of `previews/`**: the preview Parquet and the text head share a prefix and
    differ only in what references them. The predicate looks at both, so this works — but

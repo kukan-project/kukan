@@ -25,6 +25,7 @@ export function createPipelineContextMock(): PipelineContextMock {
     acquireFetchSlot: vi.fn().mockResolvedValue(true),
     captureVersion: vi.fn().mockResolvedValue({ captured: false }),
     pendingLakeVersion: vi.fn().mockResolvedValue(null),
+    deferLakeIngest: vi.fn(),
     ingestLakeVersion: vi.fn().mockResolvedValue(null),
     indexContent: vi.fn(),
     deleteContent: vi.fn(),

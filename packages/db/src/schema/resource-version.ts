@@ -44,6 +44,17 @@ export const resourceVersion = pgTable(
     // DuckLake snapshot this tabular version maps to (ADR-043 layer 2 / Phase ii).
     // Null for non-tabular versions or before layer-2 ingest; nulled on purge.
     ducklakeSnapshotId: bigint('ducklake_snapshot_id', { mode: 'number' }),
+    // The preview Parquet this version still has to be ingested from, when its
+    // ingest was deferred (ADR-043 §6-6). Set when the Lake step gives up and
+    // queues a retry, cleared when the snapshot above lands.
+    //
+    // A pointer rather than a deadline: the retry carries the key in a queue
+    // message, which the orphan sweep cannot see, and without this the run that
+    // replaces the preview parks it and the sweep takes it — leaving a version
+    // that can never enter layer 2. Named here, the sweep's reference check
+    // finds it (ADR-045 §3), and the version is recoverable from the database
+    // whether or not the message survived.
+    lakeSourceKey: text('lake_source_key'),
     // Purge audit trail, retained on the tombstone row after content is destroyed.
     purgedAt: timestamp('purged_at', { withTimezone: true }),
     purgedBy: text('purged_by').references(() => user.id),
@@ -57,6 +68,13 @@ export const resourceVersion = pgTable(
     index('idx_resource_version_state').on(table.state),
     // As above: the orphan sweep's reference check reads this column.
     index('idx_resource_version_storage_key').on(table.storageKey),
+    // As above: the orphan sweep's reference check reads this column too.
+    // Partial, like the one below and for the same reason: it is null for all
+    // but the handful of versions waiting on an ingest, and `= o.key` never
+    // matches a null anyway.
+    index('idx_resource_version_lake_source_key')
+      .on(table.lakeSourceKey)
+      .where(sql`${table.lakeSourceKey} IS NOT NULL`),
     // Drives the dashboard's pending-ingest count; partial, so once the
     // migration is done it is empty and proving that costs nothing.
     index('idx_resource_version_pending_lake')

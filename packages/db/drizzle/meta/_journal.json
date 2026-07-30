@@ -190,6 +190,13 @@
       "when": 1785373160373,
       "tag": "0026_quiet_groot",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1785384194006,
+      "tag": "0027_secret_cargill",
+      "breakpoints": true
     }
   ]
 }

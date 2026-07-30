@@ -17,6 +17,9 @@ vi.mock('@kukan/api/services/pipeline-claim', () => ({
 
 const job = { resourceId: 'res-1', version: 2, previewKey: 'previews/pkg-1/res-1.parquet' }
 
+/** Stands in for the UPDATE that withdraws the version's pointer. */
+const cleared = vi.fn()
+
 let deps: {
   ctx: PipelineContext
   db: Database
@@ -30,7 +33,7 @@ beforeEach(() => {
   claim.answer = 'ran'
   deps = {
     ctx: { ingestLakeVersion: vi.fn().mockResolvedValue({ snapshotId: 7 }) } as never,
-    db: {} as Database,
+    db: { update: () => ({ set: () => ({ where: cleared }) }) } as unknown as Database,
     queue: { enqueue: vi.fn().mockResolvedValue('job-1') } as never,
     storage: { head: vi.fn().mockResolvedValue({ size: 10 }) } as never,
     log: { info: vi.fn(), warn: vi.fn() } as never,
@@ -58,6 +61,16 @@ describe('retryLakeIngest', () => {
       job,
       expect.objectContaining({ delaySeconds: expect.any(Number) })
     )
+  })
+
+  it('withdraws the version pointer when the preview is gone', async () => {
+    // Left set, it would keep this version in the pending count and have the
+    // hourly sweep pick it up and fail on it every hour (ADR-043 §6-6).
+    vi.mocked(deps.storage.head).mockResolvedValue(null)
+
+    await retryLakeIngest(job, deps)
+
+    expect(cleared).toHaveBeenCalled()
   })
 
   it('gives up when the preview it was built from is gone', async () => {

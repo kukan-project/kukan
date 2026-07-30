@@ -9,7 +9,11 @@ import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter, ContentDoc } from '@kukan/search-adapter'
 import type { IngestResult, LakeConfig } from '@kukan/lake'
 import { withLakeSession } from '@kukan/lake'
-import { ingestVersionIntoLake, withLakeIngestLock } from '@kukan/api/services/lake-ingest'
+import {
+  deferLakeIngest,
+  ingestVersionIntoLake,
+  withLakeIngestLock,
+} from '@kukan/api/services/lake-ingest'
 import { insertVersionIfHeld } from '@kukan/api/services/resource-version-service'
 import {
   copyObject,
@@ -186,6 +190,10 @@ export function buildPipelineContext(
         .orderBy(desc(resourceVersion.version))
         .limit(1)
       return row?.version ?? null
+    },
+
+    async deferLakeIngest(row): Promise<void> {
+      await deferLakeIngest(db, row)
     },
 
     async ingestLakeVersion(row): Promise<IngestResult | null> {

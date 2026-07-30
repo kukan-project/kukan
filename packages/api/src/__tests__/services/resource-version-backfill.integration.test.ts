@@ -89,7 +89,12 @@ afterAll(async () => {
  */
 async function addTabularResource(
   name: string,
-  versions: { version: number; snapshotId?: number | null; state?: string }[],
+  versions: {
+    version: number
+    snapshotId?: number | null
+    state?: string
+    lakeSourceKey?: string
+  }[],
   opts: {
     previewKey?: string
     sourceHash?: string | null
@@ -125,6 +130,7 @@ async function addTabularResource(
       origin: 'upload',
       state: v.state ?? 'active',
       ducklakeSnapshotId: v.snapshotId ?? null,
+      lakeSourceKey: v.lakeSourceKey ?? null,
     })
   }
 }
@@ -362,6 +368,19 @@ describe('countPendingLakeIngest', () => {
     await addTabularResource('a', [{ version: 1, state: 'purged' }])
 
     expect(await service.countPendingLakeIngest()).toBe(0)
+  })
+
+  it('counts a mid-history version that names the Parquet it needs', async () => {
+    // The case the current preview cannot answer for: v1's ingest was deferred
+    // and v2 has since replaced the preview. Before the version carried the
+    // pointer, only the retry's queue message knew — and once that was gone the
+    // version was unreachable from the database (ADR-043 §6-6, kukan#204).
+    await addTabularResource('a', [
+      { version: 1, lakeSourceKey: 'preview/v1.parquet' },
+      { version: 2, snapshotId: 7 },
+    ])
+
+    expect(await service.countPendingLakeIngest()).toBe(1)
   })
 })
 

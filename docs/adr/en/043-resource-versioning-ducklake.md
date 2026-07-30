@@ -320,6 +320,22 @@ competing with keeping purges cheap.
    covers them (that is `ducklake_delete_orphaned_files`' job). This is a storage leak,
    not a correctness problem.
 
+6. **A version whose ingest was deferred names the Parquet it needs**
+   (`resource_version.lake_source_key`). That version stays queued as a retry carrying the
+   preview it was built from — but a queue message is **a reference the orphan sweep
+   cannot see**, so the run that replaces the preview parks it and the sweep takes it, and
+   the version can never enter layer 2.
+
+   A column rather than a longer expiry. It becomes the sixth source the sweep's reference
+   check reads (ADR-045 §3), so the preview survives exactly as long as a version needs it.
+   No clock is involved, so nothing is lost to a dead-lettered message or a worker that was
+   down for a day.
+
+   It also stops the queue message being the only record. The hourly ingest sweep can
+   decide on this column alone, so a version is recoverable wherever it sits in the history
+   and whether or not its message survived — previously that sweep saw only the latest
+   version. Cleared in the same statement that records `ducklake_snapshot_id` (kukan#204).
+
 ## Consequences
 
 - **DB**: Adds the `resource_version` table (Drizzle). A DuckLake catalog schema is added

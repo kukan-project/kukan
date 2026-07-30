@@ -2,8 +2,9 @@
  * Retry a DuckLake ingest the pipeline's Lake step could not complete
  * (ADR-043 layer 2).
  *
- * The preview it names is the superseded one, kept alive by the orphan
- * retention — past that there is nothing left to ingest.
+ * The preview it names is the superseded one, kept alive because the version
+ * names it too (ADR-043 §6-6) — the message is the fast path, not the record.
+ * An hourly sweep finds the same versions from the database.
  */
 
 import type { Database } from '@kukan/db'
@@ -12,6 +13,7 @@ import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { Logger } from '@kukan/shared'
 import { LAKE_INGEST_JOB_TYPE } from '@kukan/shared'
 import { withResourceClaims } from '@kukan/api/services/pipeline-claim'
+import { abandonLakeIngest } from '@kukan/api/services/lake-ingest'
 import type { PipelineContext } from './types'
 import { CLAIM_RETRY_DELAY_S } from '@/config'
 
@@ -29,6 +31,10 @@ export async function retryLakeIngest(
   const { log } = deps
 
   if (!(await deps.storage.head(previewKey))) {
+    // Give the pointer up with the attempt. Left naming an object that is gone,
+    // it would keep this version in the pending count and have the hourly sweep
+    // pick it up and fail on it every hour (ADR-043 §6-6).
+    await abandonLakeIngest(deps.db, { resourceId, version })
     log.warn(
       { resourceId, version, previewKey },
       'Lake ingest retry abandoned — the preview it was built from is gone'
