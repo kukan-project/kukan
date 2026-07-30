@@ -9,6 +9,7 @@ CKANの後継として設計されたTypeScriptフルスタックのデータカ
 クラウド（AWS）からオンプレミス・閉域網（LGWAN等）まで対応するハイブリッドデプロイ設計。
 
 設計書全文: `docs/design-v4.md`
+パイプラインの実行時挙動（書き込みと条件の対応、オブジェクトの一生）: `docs/pipeline.md`
 
 ## 技術スタック
 
@@ -56,6 +57,7 @@ KUKAN/
 ├── site/                   # ドキュメントサイト（Astro + Starlight、日英対応）
 ├── docs/
 │   ├── design-v4.md        # 設計書（全体像、参照用）
+│   ├── pipeline.md         # パイプライン実行時リファレンス（書き込みと条件の対応）
 │   ├── adr/                # Architecture Decision Records
 │   │   ├── jp/             # 日本語（正本）
 │   │   └── en/             # English（機械翻訳・参考）
