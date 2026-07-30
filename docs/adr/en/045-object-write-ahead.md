@@ -135,6 +135,10 @@ statement that drops the pointer has to park the key again, in the same statemen
 the object is left with neither a pointer nor a record, which is the state this ledger
 exists to prevent.
 
+**Dropping includes overwriting with a different key.** A version that gives up on its ingest
+twice ends up naming the second Parquet, and nothing names the first any more. To the ledger
+those are the same event, so the parking rides on that statement too.
+
 ### 4. Where the record is removed
 
 On the statement that moves the pointer. Those statements already insert into

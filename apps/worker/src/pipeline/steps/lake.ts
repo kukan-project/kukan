@@ -10,6 +10,7 @@
  */
 
 import { isLakeIngestable } from '@kukan/lake'
+import { RunCancelledError } from '../step-tracker'
 import type { PipelineContext } from '../types'
 
 /** `failed` carries what a retry needs; the caller queues it (ADR-043). */
@@ -44,6 +45,10 @@ export async function executeLake(
     // ingested this version first.
     return result === null ? { status: 'skipped' } : { status: 'ingested' }
   } catch (err) {
+    // A kill is not this step failing. Treated as one, a stopped run would
+    // record an intent and have a retry queued for it — and the version it
+    // points at is one a revert has just decided against (ADR-044 §4).
+    if (err instanceof RunCancelledError) throw err
     // Recorded before the caller queues anything: the pointer is what the
     // preview survives on, and what makes this version findable again.
     await ctx.deferLakeIngest(row)

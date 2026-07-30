@@ -219,6 +219,13 @@ normal deletion (resource delete).
    On-prem (MinIO without versioning), deletion is immediate and no residue exists (note
    that backup handling depends on the deploying organization's operations).
 
+**What layer 2's current contents follow is the newest version ingested, not the live
+content.** A purge that destroys the live version rewinds the table to the previous one; a
+revert (ADR-044 §4) leaves the version rows standing and so does not rewind — after a revert,
+layer 2 still holds the retracted version's rows. That follows from layer 2 being an image of
+layer 1's version history, and is not an inconsistency. To destroy those contents too, purge
+the version: that is the rung above on the ladder.
+
 #### 5.1 The container principle
 
 Whether a purge is cheap comes down to one thing: **do several versions share a single

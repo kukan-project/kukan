@@ -9,6 +9,7 @@ import type { ObjectMeta } from '@kukan/storage-adapter'
 import type { IngestResult } from '@kukan/lake'
 import type { PackageDbState, ResourceSchema } from '@kukan/shared'
 import type { PublishedContent } from '@kukan/api/services/storage-pointer'
+import type { DeferredIngest } from '@kukan/api/services/lake-ingest'
 import type { ResourceClaim } from '@kukan/api/services/pipeline-claim'
 
 /** Minimal resource data needed by pipeline steps */
@@ -118,8 +119,13 @@ export interface PipelineContext {
    * gives up rather than beside the retry it queues, so the queue message stops
    * being the only record — an ingest whose message is lost is still found by
    * the hourly sweep.
+   *
+   * Recorded only while the run still holds the resource, and only onto a
+   * version still waiting for a Parquet; the statement carries both conditions
+   * (ADR-044 §4). The claim comes from the run-scoped context, not from the
+   * step.
    */
-  deferLakeIngest(opts: { resourceId: string; version: number; previewKey: string }): Promise<void>
+  deferLakeIngest(opts: DeferredIngest): Promise<void>
   /**
    * Layer 2 (ADR-043 Phase ii): load a captured version's tabular content into
    * DuckLake from its preview Parquet and record the snapshot on the version

@@ -6,10 +6,12 @@
  * that condition put on them here rather than getting it from the statement
  * they are part of.
  *
- * The pointer to the live content, which the statement can condition and
- * simply was not: it is one of the two writes that outlive the run (the version
- * row is the other), so a stopped fetch could publish its bytes afterwards and
- * a stop that promises to leave the content alone would not.
+ * The writes the statement can condition, and simply was not conditioning: the
+ * pointer to the live content, so a stopped fetch cannot publish its bytes
+ * afterwards and make a nonsense of a stop that promised to leave the content
+ * alone; and the intent that a version still needs a Parquet, which the
+ * resource keeps until something acts on it. Both take the claim into their own
+ * statement, so for these it is a fence.
  *
  * And the writes that leave the database, which have no row to condition on: a
  * chunk sent to OpenSearch, a version loaded into the lake catalog. Those are
@@ -21,9 +23,9 @@
  * change than the exposure warrants.
  *
  * Wrapped here rather than handled at each call site because the step bodies
- * reach for these nine times across six functions, and one of them is a loop
- * over chunks. The condition belongs where the capability is handed out, so a
- * tenth call site inherits it.
+ * reach for these from a dozen places, one of them a loop over chunks. The
+ * condition belongs where the capability is handed out, so the next call site
+ * inherits it.
  */
 import type { Database } from '@kukan/db'
 import { stillHolds, type ResourceClaim } from '@kukan/api/services/pipeline-claim'
@@ -46,6 +48,10 @@ export function heldContext(
       // first: this one write can carry the condition into its own statement,
       // so it is a fence and not a window.
       return ctx.publishContent(id, { ...content, claim })
+    },
+    async deferLakeIngest(row) {
+      // The other write that carries its own condition.
+      return ctx.deferLakeIngest({ ...row, claim })
     },
     async indexContent(doc) {
       await assertHeld()

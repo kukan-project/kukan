@@ -125,6 +125,18 @@ describe('heldContext', () => {
     expect(inner.publishContent).toHaveBeenCalledWith(resourceId, { ...content, claim })
   })
 
+  it('carries the claim into the deferred-ingest record', async () => {
+    // The other write that can hold its own condition: what it records is an
+    // intent the resource keeps until something acts on it (ADR-043 §6-6).
+    const inner = createPipelineContextMock()
+    const held = heldContext(inner, claim, db)
+    const row = { resourceId, version: 1, previewKey: 'previews/v1.parquet' }
+
+    await held.deferLakeIngest(row)
+
+    expect(inner.deferLakeIngest).toHaveBeenCalledWith({ ...row, claim })
+  })
+
   it('leaves the rest of the context alone', async () => {
     // Reads and the writes that carry their own condition go through untouched;
     // this is not a second gate on everything.
@@ -148,6 +160,7 @@ it('wraps the writes a kill has to reach', () => {
   )
 
   expect(wrapped.sort()).toEqual([
+    'deferLakeIngest',
     'deleteContent',
     'indexContent',
     'ingestLakeVersion',

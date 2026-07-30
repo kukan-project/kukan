@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { executeLake } from '../pipeline/steps/lake'
+import { RunCancelledError } from '../pipeline/step-tracker'
 import {
   createPipelineContextMock,
   type PipelineContextMock,
@@ -90,6 +91,15 @@ describe('executeLake', () => {
       version: 2,
       error: expect.any(Error),
     })
+  })
+
+  it('lets a kill through rather than recording an intent for it', async () => {
+    // The run-scoped context throws this when the claim is gone (ADR-044 §4).
+    const ctx = createCtx()
+    ctx.ingestLakeVersion.mockRejectedValue(new RunCancelledError('res-1'))
+
+    await expect(executeLake('res-1', PARQUET, HASH, ctx)).rejects.toBeInstanceOf(RunCancelledError)
+    expect(ctx.deferLakeIngest).not.toHaveBeenCalled()
   })
 
   it('skips when something else ingested the version first', async () => {

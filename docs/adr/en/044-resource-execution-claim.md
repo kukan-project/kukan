@@ -226,6 +226,18 @@ Asking is not fencing — the claim can go between the answer and the write. Wha
 step, the rest of a long file is indexed anyway. Closing it entirely needs each document in
 the index to carry the run that wrote it, which is more than the exposure warrants.
 
+**What this does not guarantee, stated plainly.** It is not a guarantee that retracted content
+stays out of search. The window is the gap between the answer and the write — milliseconds to
+seconds — and a revert queues the restored content for reprocessing, so a late chunk is
+normally overwritten by that re-index. What is not overwritten is **the case where there was
+nothing to go back to and the resource was emptied**: there is no reprocessing to queue.
+
+**The lake's window is the whole ingest, not one chunk.** The question is asked in the same
+place, but a single write is large and cannot be cut up. What gets ingested, though, is a
+version the revert left standing — a revert does not delete version rows; a purge does (the
+three rungs above). So this is not a route by which retracted content comes back, but layer 2
+catching up with what layer 1 currently holds.
+
 The check sits where the capability is handed out — a run-scoped view of the context —
 rather than at each call site: the step bodies reach for these eight times across five
 functions, one of them a loop. The pointer move is handed out from the same place, so that a

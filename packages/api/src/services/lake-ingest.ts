@@ -11,7 +11,22 @@ import { resourceVersion } from '@kukan/db'
 import type { IngestResult, LakeConfig, LakeSession } from '@kukan/lake'
 import { ingestParquetVersion, lakeStorageUrl, lakeTableName } from '@kukan/lake'
 import { LAKE_INGEST_LOCK, withGlobalAdvisoryLock } from './advisory-lock'
+import { stillHeld, type ResourceClaim } from './pipeline-claim'
 import { PARKED_UNTIL } from './storage-pointer'
+
+/** A version, and the Parquet it still has to be ingested from. */
+export interface DeferredIngest {
+  resourceId: string
+  version: number
+  previewKey: string
+  /**
+   * The claim the writer holds, for the same reason the version row and the
+   * live pointer carry one (ADR-044 §4): this is a write that stays with the
+   * resource, and a run that has been stopped must not leave one behind.
+   * Omitted by callers that hold no claim.
+   */
+  claim?: ResourceClaim | null
+}
 
 /**
  * Record that a version still has to be ingested from `previewKey`
@@ -26,17 +41,50 @@ import { PARKED_UNTIL } from './storage-pointer'
  * a key before deleting its object, and a key sitting in a queue message is a
  * reference it cannot see (ADR-045 §3). Recorded here, an ingest whose message
  * is lost is still found — and found wherever the version sits in the history.
+ *
+ * Whatever key this displaces is parked in the same statement, for the reason
+ * every other pointer move is (ADR-045 §3): while the version named it the
+ * sweep read it as referenced and dropped its ledger record, so overwriting the
+ * pointer on its own would leave that object with neither a pointer nor a
+ * record — the one state the ledger exists to prevent.
+ *
+ * Only onto a version that is still waiting for one. A row that has been
+ * ingested is not in `pendingLakeIngestQuery` any more, so a pointer set on it
+ * afterwards is read by nobody and released by nobody: it would pin its Parquet
+ * for good. A purged row must not be given a reference to content either.
+ *
+ * @returns whether the intent was recorded.
  */
 export async function deferLakeIngest(
-  db: Pick<Database | Transaction, 'update'>,
-  row: { resourceId: string; version: number; previewKey: string }
-): Promise<void> {
-  await db
-    .update(resourceVersion)
-    .set({ lakeSourceKey: row.previewKey })
-    .where(
-      and(eq(resourceVersion.resourceId, row.resourceId), eq(resourceVersion.version, row.version))
+  db: Pick<Database, 'execute'>,
+  row: DeferredIngest
+): Promise<boolean> {
+  const result = await db.execute(sql`
+    WITH before AS (
+      SELECT id, lake_source_key FROM resource_version
+      WHERE resource_id = ${row.resourceId}::uuid
+        AND version = ${row.version}
+        AND state = 'active'
+        AND ducklake_snapshot_id IS NULL
+      FOR UPDATE
+    ),
+    deferred AS (
+      UPDATE resource_version rv
+      SET lake_source_key = ${row.previewKey}
+      FROM before b
+      WHERE rv.id = b.id
+        AND ${stillHeld(row.claim)}
+      RETURNING b.id, b.lake_source_key AS released
+    ),
+    parked AS (
+      INSERT INTO orphaned_object (key, expires_at)
+      SELECT released, ${PARKED_UNTIL} FROM deferred
+      WHERE released IS NOT NULL AND released <> ${row.previewKey}
+      ON CONFLICT (key) DO NOTHING
     )
+    SELECT id FROM deferred
+  `)
+  return result.rows.length > 0
 }
 
 /**

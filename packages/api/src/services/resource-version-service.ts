@@ -32,7 +32,7 @@ import type { QueueAdapter } from '@kukan/queue-adapter'
 import { ingestVersionIntoLake, withLakeIngestLock } from './lake-ingest'
 import { reclaimInSession } from './lake-reclaim'
 import {
-  heldBy,
+  stillHeld,
   withClaimFromRun,
   withResourceClaims,
   withResourceClaimsOrConflict,
@@ -65,10 +65,6 @@ export interface CapturedVersion {
  * one leaves the resource describing itself as half-done when it is not — the
  * step that would have reported the version is the same one the kill cut off.
  *
- * A null claim is not a missing one: it means the resource has no pipeline row,
- * and a run cannot start without that row either (see `withResourceClaim`), so
- * there is nothing the insert could lose a race against.
- *
  * @returns false when the claim is gone. The caller has been displaced and
  *   should stop rather than carry on producing derivatives of this content.
  */
@@ -81,7 +77,7 @@ export async function insertVersionIfHeld(
     INSERT INTO resource_version (resource_id, version, storage_key, size, hash, origin, schema)
     SELECT ${v.resourceId}::uuid, ${v.version}, ${v.storageKey}::text, ${v.size}::bigint,
            ${v.hash}::text, ${v.origin}, ${v.schema ? JSON.stringify(v.schema) : null}::jsonb
-    ${claim ? sql`FROM resource_pipeline WHERE ${heldBy(claim)}` : sql``}
+    WHERE ${stillHeld(claim)}
     RETURNING id
   `)
   return result.rows.length > 0

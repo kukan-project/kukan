@@ -12,7 +12,7 @@ import { eq, sql } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import { orphanedObject } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
-import { heldBy, type ResourceClaim } from './pipeline-claim'
+import { stillHeld, type ResourceClaim } from './pipeline-claim'
 
 export interface PublishedContent {
   /**
@@ -73,7 +73,7 @@ export async function publishLiveContent(
           ${changed ? sql`, last_modified = NOW()` : sql``}
       WHERE id = ${resourceId}::uuid
         AND storage_key IS NOT DISTINCT FROM ${previousKey}::text
-        ${claim ? sql`AND EXISTS (SELECT 1 FROM resource_pipeline p WHERE ${heldBy(claim, 'p')})` : sql``}
+        AND ${stillHeld(claim)}
       RETURNING id
     ),
     outcome AS (SELECT EXISTS (SELECT 1 FROM published) AS ok),

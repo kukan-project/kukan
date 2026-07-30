@@ -311,6 +311,28 @@ export function heldBy(claim: ResourceClaim, table?: 'p') {
 }
 
 /**
+ * SQL condition: `claim` still holds its resource — for a statement with no
+ * `resource_pipeline` row of its own to condition on.
+ *
+ * The writes that outlive their run are on three different tables in three
+ * different statement shapes (the version row, the live pointer, the pointer to
+ * a Parquet a version is still waiting on), and each has to ask this same
+ * question. Here so that they ask it in one voice; {@link heldBy} is the form
+ * for a statement that already has the row in scope.
+ *
+ * An absent claim is not a missing one — the writer either takes none (an
+ * upload promotion, ADR-044 §6) or works on a resource with no pipeline row,
+ * which nothing can run against either. So it reads `TRUE`, decided here rather
+ * than by a ternary at each site: it is the same answer every time, and a rule
+ * about what may be written is not one to restate per caller.
+ */
+export function stillHeld(claim?: ResourceClaim | null) {
+  return claim
+    ? sql`EXISTS (SELECT 1 FROM resource_pipeline p WHERE ${heldBy(claim, 'p')})`
+    : sql`TRUE`
+}
+
+/**
  * Whether `claim` still holds its resource.
  *
  * For the writes that leave the database — a search index, a lake catalog —
@@ -323,7 +345,7 @@ export async function stillHolds(
   db: Pick<Database, 'execute'>,
   claim: ResourceClaim
 ): Promise<boolean> {
-  const result = await db.execute(sql`SELECT 1 FROM resource_pipeline WHERE ${heldBy(claim)}`)
+  const result = await db.execute(sql`SELECT 1 WHERE ${stillHeld(claim)}`)
   return result.rows.length > 0
 }
 

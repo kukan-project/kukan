@@ -16,12 +16,8 @@ import {
   reserveObject,
 } from '../../services/storage-pointer'
 import { ResourceService } from '../../services/resource-service'
-import {
-  CLAIM_STALE_AFTER_MS,
-  cancelResourceRun,
-  claimResources,
-  type ResourceClaim,
-} from '../../services/pipeline-claim'
+import { cancelResourceRun } from '../../services/pipeline-claim'
+import { runInFlight } from '../test-helpers/claim'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()
@@ -193,20 +189,8 @@ describe('publishLiveContent', () => {
 })
 
 describe('publishLiveContent — under the claim (ADR-044 §4)', () => {
-  async function runInFlight(): Promise<ResourceClaim> {
-    await db.insert(resourcePipeline).values({ resourceId, status: 'processing' })
-    const { claimed } = await claimResources(
-      db,
-      [resourceId],
-      randomUUID(),
-      CLAIM_STALE_AFTER_MS,
-      'run'
-    )
-    return claimed[0]
-  }
-
   it('publishes while the run still holds the resource', async () => {
-    const claim = await runInFlight()
+    const claim = await runInFlight(resourceId)
     const key = getStorageKey(packageId, resourceId, 'run')
 
     expect(
@@ -228,7 +212,7 @@ describe('publishLiveContent — under the claim (ADR-044 §4)', () => {
     // the run found it and the compare-and-swap would let this through. The
     // claim is the only thing that says the run is no longer entitled to
     // publish what it was fetching when the stop arrived.
-    const claim = await runInFlight()
+    const claim = await runInFlight(resourceId)
     const key = getStorageKey(packageId, resourceId, 'stopped-run')
 
     expect(await cancelResourceRun(db, resourceId)).toBe(true)
@@ -255,7 +239,7 @@ describe('publishLiveContent — under the claim (ADR-044 §4)', () => {
   it('refuses once another run has taken the resource over', async () => {
     // The stale takeover, where nobody asked for a stop: the first run is still
     // alive and the second now owns what the resource says about itself.
-    const claim = await runInFlight()
+    const claim = await runInFlight(resourceId)
     await db
       .update(resourcePipeline)
       .set({ claimOwner: randomUUID() })
@@ -506,27 +490,6 @@ describe('promoteUpload', () => {
 describe('prepareForUpload — stopping the run it replaces', () => {
   const service = new ResourceService(db)
 
-  async function runInFlight(): Promise<ResourceClaim> {
-    const [pipe] = await db
-      .execute(
-        sql`
-      INSERT INTO resource_pipeline (resource_id, status) VALUES (${resourceId}::uuid, 'processing')
-      RETURNING id
-    `
-      )
-      .then((r) => r.rows as unknown as { id: string }[])
-    const { claimed } = await claimResources(
-      db,
-      [resourceId],
-      randomUUID(),
-      CLAIM_STALE_AFTER_MS,
-      'run'
-    )
-    expect(claimed).toHaveLength(1)
-    expect(claimed[0].id).toBe(pipe.id)
-    return claimed[0]
-  }
-
   async function pipeline() {
     const rows = await db.execute(sql`
       SELECT status, claim_owner FROM resource_pipeline WHERE resource_id = ${resourceId}::uuid
@@ -538,7 +501,7 @@ describe('prepareForUpload — stopping the run it replaces', () => {
     // Uploads do not take the claim, so without this whether the run notices it
     // was overtaken is chance — and one that does not notice goes on feeding
     // the content the user is retracting into the search index (ADR-044 §4).
-    await runInFlight()
+    await runInFlight(resourceId)
 
     await service.prepareForUpload(resourceId, {
       filename: 'right.csv',
@@ -554,7 +517,7 @@ describe('prepareForUpload — stopping the run it replaces', () => {
     // The replacement has not arrived yet. Reverting is a separate choice.
     const live = getStorageKey(packageId, resourceId, 'live')
     await db.update(resource).set({ storageKey: live }).where(eq(resource.id, resourceId))
-    await runInFlight()
+    await runInFlight(resourceId)
 
     await service.prepareForUpload(resourceId, {
       filename: 'right.csv',
