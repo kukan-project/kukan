@@ -196,14 +196,24 @@ different one. What went was "am I still the latest?" — a defence against a ra
 now prevents. What arrives is "do I still hold this?" — the path by which a user's explicit
 action reaches a running job.
 
-**A kill reaches as far as the next step boundary, with one exception.** Every step opens by
+**A kill reaches as far as the next step boundary, with two exceptions.** Every step opens by
 checking the claim, so what survives a kill is **the body of the one step that was running**.
 Almost everything that step writes is the run's own record, which the condition erases — but
-**the version row stays with the resource, not with the run**. Inserted after a kill, it sits
-alongside a step still marked `running`, and the resource page then reports **content that
-was saved as unsaved**. So the version insert carries the claim as well. Without a way to
-interrupt a read in progress, the step boundary is as fine-grained as a kill can be, and
-conditioning the writes that outlast it is what that costs.
+two writes stay with the resource rather than with the run.
+
+**The version row.** Inserted after a kill, it sits alongside a step still marked `running`,
+and the resource page then reports **content that was saved as unsaved**. So the version
+insert carries the claim as well.
+
+**The pointer to the live content.** Fetch moves it to its own key the moment the download
+completes, so a kill that lands mid-fetch is followed by the content changing anyway — while
+the table above promises that stopping a run leaves the content as it was. A revert is not
+exposed to this: it moves the pointer itself, so the stopped run's compare-and-swap finds it
+gone and refuses. A plain stop touches nothing, which is exactly why nothing stops the
+publish. So the pointer move carries the claim too.
+
+Without a way to interrupt a read in progress, the step boundary is as fine-grained as a kill
+can be, and conditioning the writes that outlast it is what that costs.
 
 **The writes that leave the database have no row to condition on.** A chunk sent to the
 search index, a version loaded into the lake catalog: there is nowhere to hang
@@ -217,8 +227,9 @@ step, the rest of a long file is indexed anyway. Closing it entirely needs each 
 the index to carry the run that wrote it, which is more than the exposure warrants.
 
 The check sits where the capability is handed out — a run-scoped view of the context —
-rather than at each call site: the step bodies reach for these six times across four
-functions, one of them a loop.
+rather than at each call site: the step bodies reach for these eight times across five
+functions, one of them a loop. The pointer move is handed out from the same place, so that a
+write carrying its own condition and a write that has to ask are not two different habits.
 
 **Only a run can be killed.** Purges, the backfill and the Lake retry take the claim too, but
 none of them checks ownership per write, so releasing their claim does not **stop** them. It

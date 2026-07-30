@@ -12,6 +12,7 @@ import { eq, sql } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import { orphanedObject } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
+import { heldBy, type ResourceClaim } from './pipeline-claim'
 
 export interface PublishedContent {
   /**
@@ -26,6 +27,19 @@ export interface PublishedContent {
   hash: string | null
   size: number | null
   previousHash: string | null
+  /**
+   * The claim the writer holds, when it has one (ADR-044 §4).
+   *
+   * The live pointer is the second thing a run writes that outlives it — the
+   * version row is the other — so like that row it moves only while the run
+   * still holds the resource. Without it, stopping a run leaves the fetch it
+   * was in the middle of free to publish its bytes afterwards, and "the content
+   * is left as it was" stops being true of a stop.
+   *
+   * Omitted by the writers that have no claim to offer: an upload promotion
+   * takes none (§6), and a resource with no pipeline row cannot be run against.
+   */
+  claim?: ResourceClaim | null
 }
 
 /**
@@ -33,7 +47,9 @@ export interface PublishedContent {
  *
  * The move is conditional on the pointer still being where this run found it,
  * so a run whose content was superseded while it was fetching does not pull the
- * resource back to its own bytes. Whichever object stops being pointed at is
+ * resource back to its own bytes — and, for a writer that holds a claim, on
+ * still holding it, so a run that was stopped does not publish what it was
+ * fetching when the stop arrived. Whichever object stops being pointed at is
  * parked — the one the move replaced when it applied, this run's own when it
  * did not, and nothing when this run had none. `lastModified` moves only on a
  * genuine content change.
@@ -45,7 +61,7 @@ export async function publishLiveContent(
   resourceId: string,
   content: PublishedContent
 ): Promise<boolean> {
-  const { key, previousKey, hash, size } = content
+  const { key, previousKey, hash, size, claim } = content
   const changed = content.previousHash !== hash
 
   const result = await db.execute(sql`
@@ -57,6 +73,7 @@ export async function publishLiveContent(
           ${changed ? sql`, last_modified = NOW()` : sql``}
       WHERE id = ${resourceId}::uuid
         AND storage_key IS NOT DISTINCT FROM ${previousKey}::text
+        ${claim ? sql`AND EXISTS (SELECT 1 FROM resource_pipeline p WHERE ${heldBy(claim, 'p')})` : sql``}
       RETURNING id
     ),
     outcome AS (SELECT EXISTS (SELECT 1 FROM published) AS ok),

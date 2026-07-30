@@ -105,6 +105,26 @@ describe('heldContext', () => {
     expect(inner.indexContent).toHaveBeenCalledTimes(1)
   })
 
+  it('carries the claim into the pointer move rather than asking first', async () => {
+    // The one write here that can hold its own condition. Asked about instead,
+    // a stop arriving between the answer and the UPDATE would still let the
+    // fetch publish (ADR-044 §4).
+    const inner = createPipelineContextMock()
+    const held = heldContext(inner, claim, db)
+    await cancelResourceRun(db, resourceId)
+
+    const content = {
+      key: 'resources/p/r/run',
+      previousKey: null,
+      hash: 'sha256:a',
+      size: 1,
+      previousHash: null,
+    }
+    await held.publishContent(resourceId, content)
+
+    expect(inner.publishContent).toHaveBeenCalledWith(resourceId, { ...content, claim })
+  })
+
   it('leaves the rest of the context alone', async () => {
     // Reads and the writes that carry their own condition go through untouched;
     // this is not a second gate on everything.
@@ -120,13 +140,18 @@ describe('heldContext', () => {
 
 // Keeps the shared mock honest: a context member added later is not silently
 // left ungated because nothing looked.
-it('wraps only the writes that leave the database', () => {
+it('wraps the writes a kill has to reach', () => {
   const inner = createPipelineContextMock()
   const held = heldContext(inner, claim, db)
   const wrapped = Object.keys(inner).filter(
     (k) => held[k as keyof typeof held] !== inner[k as keyof typeof inner]
   )
 
-  expect(wrapped.sort()).toEqual(['deleteContent', 'indexContent', 'ingestLakeVersion'])
+  expect(wrapped.sort()).toEqual([
+    'deleteContent',
+    'indexContent',
+    'ingestLakeVersion',
+    'publishContent',
+  ])
   vi.clearAllMocks()
 })

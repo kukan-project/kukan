@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { eq, sql } from 'drizzle-orm'
-import { resource } from '@kukan/db'
+import { resource, resourcePipeline } from '@kukan/db'
 import { getStorageKey } from '@kukan/shared'
 import {
   expirePendingUploads,
@@ -18,6 +18,7 @@ import {
 import { ResourceService } from '../../services/resource-service'
 import {
   CLAIM_STALE_AFTER_MS,
+  cancelResourceRun,
   claimResources,
   type ResourceClaim,
 } from '../../services/pipeline-claim'
@@ -188,6 +189,107 @@ describe('publishLiveContent', () => {
     })
 
     expect((await row()).lastModified).toEqual(changedAt)
+  })
+})
+
+describe('publishLiveContent — under the claim (ADR-044 §4)', () => {
+  async function runInFlight(): Promise<ResourceClaim> {
+    await db.insert(resourcePipeline).values({ resourceId, status: 'processing' })
+    const { claimed } = await claimResources(
+      db,
+      [resourceId],
+      randomUUID(),
+      CLAIM_STALE_AFTER_MS,
+      'run'
+    )
+    return claimed[0]
+  }
+
+  it('publishes while the run still holds the resource', async () => {
+    const claim = await runInFlight()
+    const key = getStorageKey(packageId, resourceId, 'run')
+
+    expect(
+      await publishLiveContent(db, resourceId, {
+        key,
+        previousKey: null,
+        hash: 'sha256:a',
+        size: 10,
+        previousHash: null,
+        claim,
+      })
+    ).toBe(true)
+
+    expect((await row()).storageKey).toBe(key)
+  })
+
+  it('refuses once the run has been stopped, and parks its own object', async () => {
+    // A stop leaves the content alone by design, so the pointer is still where
+    // the run found it and the compare-and-swap would let this through. The
+    // claim is the only thing that says the run is no longer entitled to
+    // publish what it was fetching when the stop arrived.
+    const claim = await runInFlight()
+    const key = getStorageKey(packageId, resourceId, 'stopped-run')
+
+    expect(await cancelResourceRun(db, resourceId)).toBe(true)
+
+    expect(
+      await publishLiveContent(db, resourceId, {
+        key,
+        previousKey: null,
+        hash: 'sha256:a',
+        size: 10,
+        previousHash: null,
+        claim,
+      })
+    ).toBe(false)
+
+    const r = await row()
+    expect(r.storageKey).toBeNull()
+    expect(r.hash).toBeNull()
+    // Nothing points at the bytes it downloaded, so they go the way every
+    // losing run's object goes.
+    expect(await parkedKeys()).toEqual([key])
+  })
+
+  it('refuses once another run has taken the resource over', async () => {
+    // The stale takeover, where nobody asked for a stop: the first run is still
+    // alive and the second now owns what the resource says about itself.
+    const claim = await runInFlight()
+    await db
+      .update(resourcePipeline)
+      .set({ claimOwner: randomUUID() })
+      .where(eq(resourcePipeline.resourceId, resourceId))
+
+    expect(
+      await publishLiveContent(db, resourceId, {
+        key: getStorageKey(packageId, resourceId, 'displaced'),
+        previousKey: null,
+        hash: 'sha256:a',
+        size: 10,
+        previousHash: null,
+        claim,
+      })
+    ).toBe(false)
+  })
+
+  it('publishes for a writer with no claim to offer', async () => {
+    // An upload promotion takes no claim (ADR-044 §6), and a restore may run
+    // against a resource that has no pipeline row at all. Neither is asked for
+    // one it does not have.
+    const key = getStorageKey(packageId, resourceId, 'unclaimed')
+
+    expect(
+      await publishLiveContent(db, resourceId, {
+        key,
+        previousKey: null,
+        hash: 'sha256:a',
+        size: 10,
+        previousHash: null,
+      })
+    ).toBe(true)
+
+    expect((await row()).storageKey).toBe(key)
   })
 })
 
