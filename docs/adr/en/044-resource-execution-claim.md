@@ -246,6 +246,15 @@ seconds — and a revert queues the restored content for reprocessing, so a late
 normally overwritten by that re-index. What is not overwritten is **the case where there was
 nothing to go back to and the resource was emptied**: there is no reprocessing to queue.
 
+**The window is open in the other direction too.** Deleting the index runs after the same
+check, so a stopped run caught between the answer and the call can land its delete on **the
+restored content's index**. Unlike a late chunk this does not repair itself — the delete
+arrives after the re-index, and nothing queues another run. The resource drops out of search
+until something processes it again. Layer 1 is untouched and one reprocessing restores it.
+
+Closing either direction needs each document in the index to carry the run that wrote it.
+What is accepted here is **both of these together**, not one of them.
+
 **The lake's window is the whole ingest, not one chunk.** The question is asked in the same
 place, but a single write is large and cannot be cut up. What gets ingested, though, is a
 version the revert left standing — a revert does not delete version rows; a purge does (the
