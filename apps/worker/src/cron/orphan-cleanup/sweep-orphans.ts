@@ -54,6 +54,11 @@ export async function sweepOrphanedObjects(
     .limit(ORPHAN_CLEANUP_BATCH_SIZE)
   if (due.length === 0) return { scanned: 0, deleted: 0, stillReferenced: 0 }
 
+  // What makes the gap between this list, the check below and the delete after
+  // it safe: no writer can produce a key that is already on it. Every key a
+  // writer mints carries a token of its own attempt (ADR-043), so a capture or
+  // an upload that failed and is retried writes somewhere else — the object
+  // this pass decided about is the one it deletes.
   const keys = due.map((r) => r.key)
   const result = await db.execute(referenced(keys))
   const live = new Set((result.rows as unknown as { key: string }[]).map((r) => r.key))

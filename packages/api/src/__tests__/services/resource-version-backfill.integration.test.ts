@@ -3,7 +3,7 @@
  * unversioned resource's live file as v1 without re-fetching/re-indexing.
  */
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { resource, resourceVersion, resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import { Readable } from 'node:stream'
 import { getStorageKey, getVersionKey } from '@kukan/shared'
@@ -124,7 +124,7 @@ async function addTabularResource(
     await db.insert(resourceVersion).values({
       resourceId: id,
       version: v.version,
-      storageKey: getVersionKey(packageId, id, v.version),
+      storageKey: getVersionKey(packageId, id, v.version, 'v'),
       size: 10,
       hash: `sha256:v${v.version}`,
       origin: 'upload',
@@ -149,7 +149,7 @@ describe('countUnversioned', () => {
     await db.insert(resourceVersion).values({
       resourceId: id,
       version: 1,
-      storageKey: getVersionKey(packageId, id, 1),
+      storageKey: getVersionKey(packageId, id, 1, 'v'),
       hash: 'sha256:a',
       origin: 'upload',
     })
@@ -158,6 +158,24 @@ describe('countUnversioned', () => {
 })
 
 describe('backfillVersions', () => {
+  it('writes a key of its own attempt, so a retry cannot land on one being swept', async () => {
+    // The orphan sweep decides what to delete from a list it read moments
+    // earlier. Derived from the version number alone, a capture that failed and
+    // is retried would reserve, copy and record that same key — and have its
+    // object deleted with the row already pointing at it (ADR-045 §3).
+    const id = await addResource({ name: 'a' })
+
+    await service.backfillVersions({ storage: mockStorage() })
+
+    const [captured] = await db
+      .select({ storageKey: resourceVersion.storageKey })
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, id), eq(resourceVersion.version, 1)))
+    expect(captured.storageKey).toMatch(
+      new RegExp(`^versions/${packageId}/${id}/v1\\.[0-9a-f-]{36}$`)
+    )
+  })
+
   it('snapshots the live key as v1 by server-side copy, no re-fetch', async () => {
     const uploadId = await addResource({ name: 'up', urlType: 'upload' })
     const urlId = await addResource({ name: 'ext', urlType: 'external' })
@@ -167,10 +185,11 @@ describe('backfillVersions', () => {
 
     // No lake config supplied, so the layer-2 pass is a no-op.
     expect(result).toEqual({ backfilled: 2, skipped: 0, failed: 0, ingested: 0, ingestFailed: 0 })
-    // Copies from the live key to v1 — never a network fetch.
+    // Copies from the live key to v1 — never a network fetch. The destination
+    // carries a per-attempt token (ADR-043), so it is matched by shape.
     expect((storage as { copy: ReturnType<typeof vi.fn> }).copy).toHaveBeenCalledWith(
       getStorageKey(packageId, uploadId, 'run'),
-      getVersionKey(packageId, uploadId, 1)
+      expect.stringMatching(new RegExp(`^versions/${packageId}/${uploadId}/v1\\.[0-9a-f-]{36}$`))
     )
 
     const upVer = await service.getVersion(uploadId, 1)
@@ -275,7 +294,13 @@ describe('backfillVersions', () => {
     const result = await service.backfillVersions({ storage })
 
     expect(result).toMatchObject({ backfilled: 1, skipped: 0, failed: 0 })
-    expect(objects.get(getVersionKey(packageId, id, 1))?.toString()).toBe('original')
+    // The key carries a per-attempt token, so it is read back off the row.
+    // (The view omits storage pointers — no response carries them, ADR-043.)
+    const [captured] = await db
+      .select({ storageKey: resourceVersion.storageKey })
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, id), eq(resourceVersion.version, 1)))
+    expect(objects.get(captured.storageKey)?.toString()).toBe('original')
     const [row] = await db.select().from(resource).where(eq(resource.id, id))
     expect(row.hash).toBe('sha256:newer')
   })

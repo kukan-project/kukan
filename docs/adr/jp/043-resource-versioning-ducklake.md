@@ -72,7 +72,7 @@ CKAN でも同様にリソース履歴は弱く、更新のたびに旧データ
 
 ```
 層1: 正本バージョンファイル（全フォーマット対象）
-     versions/{packageId}/{resourceId}/v{n} — immutable、resource_version テーブルで管理
+     versions/{packageId}/{resourceId}/v{n}.{attempt} — immutable、resource_version で管理
 層2: DuckLake（表形式リソースのみ）
      1 リソース = 1 テーブル。行レベル差分・タイムトラベル・列スキーマ履歴
      カタログ = 既存 PostgreSQL、データファイル = 既存 S3/MinIO
@@ -89,7 +89,7 @@ CKAN でも同様にリソース履歴は弱く、更新のたびに旧データ
 1. **対象は全フォーマット**（PDF・画像・ZIP 等も含む）。表形式でなくても
    「いつ・誰が・何に差し替えたか」の履歴は成立する。
 2. アップロード（差し替え）時、現行キー `resources/{packageId}/{resourceId}` への書き込みに
-   加えて、`versions/{packageId}/{resourceId}/v{n}` へ**同一内容を immutable 保存**する。
+   加えて、`versions/{packageId}/{resourceId}/v{n}.{attempt}` へ**同一内容を immutable 保存**する。
    現行キーは「最新版」として従来どおり機能し、既存のダウンロード・プレビュー・
    パイプライン経路は無変更で動く。
 3. `resource_version` テーブル（Drizzle 管理）を新設する:
@@ -173,7 +173,7 @@ DuckLake へのアクセス可否で経路を明確に分離する:
    全波及先から消す。`state: active → purging → purged` の非同期遷移
    （ADR-028 の durable claim パターンを踏襲、worker が実行）。
 3. **波及先**:
-   - 層1: 版ファイル（`versions/.../v{n}`）を削除
+   - 層1: 版ファイル（`versions/.../v{n}.{attempt}`）を削除
    - 層2: 該当スナップショットを expire し、それによって参照ゼロになったファイルを
      `ducklake_cleanup_old_files` で物理削除する。**ファイルの書き直しは行わない** —
      版まるごと置換ではファイルの生存区間が版境界と一致するため、expire が

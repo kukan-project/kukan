@@ -24,7 +24,7 @@ async function addVersion(resourceId: string, version: number, state = 'active')
   await db.insert(resourceVersion).values({
     resourceId,
     version,
-    storageKey: getVersionKey(packageId, resourceId, version),
+    storageKey: getVersionKey(packageId, resourceId, version, 'v'),
     hash: `sha256:v${version}`,
     origin: 'upload',
     state,

@@ -202,9 +202,24 @@ export function getStorageKey(packageId: string, resourceId: string, runToken: s
 /** Storage key prefix for immutable per-version files (ADR-043) */
 export const VERSION_PREFIX = 'versions/'
 
-/** Compute storage key for a specific version of a resource's canonical file */
-export function getVersionKey(packageId: string, resourceId: string, version: number): string {
-  return `${VERSION_PREFIX}${packageId}/${resourceId}/v${version}`
+/**
+ * Compute storage key for a specific version of a resource's canonical file.
+ *
+ * @param attempt - makes the key unique to the attempt that writes it, as
+ *   {@link getStorageKey} and {@link getPreviewKey} do. Derived from the version
+ *   number alone, a capture that failed and is retried would reserve, copy and
+ *   record *the same key* — and the orphan sweep decides what to delete from a
+ *   list it read moments earlier, so a retry landing in between would have its
+ *   object deleted with the row already pointing at it (ADR-045 §3). Nothing
+ *   recomputes this: every reader follows `resource_version.storage_key`.
+ */
+export function getVersionKey(
+  packageId: string,
+  resourceId: string,
+  version: number,
+  attempt: string
+): string {
+  return `${VERSION_PREFIX}${packageId}/${resourceId}/v${version}.${attempt}`
 }
 
 /**

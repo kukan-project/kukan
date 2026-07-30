@@ -30,7 +30,8 @@ export const resourceVersion = pgTable(
       .references(() => resource.id, { onDelete: 'cascade' }),
     // Sequential per resource, assigned at capture time (max + 1).
     version: integer('version').notNull(),
-    // versions/{packageId}/{resourceId}/v{n}
+    // versions/{packageId}/{resourceId}/v{n}.{attempt} — the token is per write,
+    // so a retried capture never reuses a key the orphan sweep is deciding about
     storageKey: text('storage_key').notNull(),
     size: bigint('size', { mode: 'number' }),
     hash: text('hash'),

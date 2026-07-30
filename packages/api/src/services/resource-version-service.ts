@@ -395,7 +395,7 @@ export class ResourceVersionService {
       if (!current || current.versions > 0) return false
       if (!current.storageKey || current.storageKey !== r.storageKey) return false
 
-      const versionKey = getVersionKey(r.packageId, r.id, 1)
+      const versionKey = getVersionKey(r.packageId, r.id, 1, randomUUID())
       await copyObject(this.db, storage, current.storageKey, versionKey)
       // Measured rather than taken from the row: this is pre-existing data,
       // and `upload-complete` used to accept any string as a hash.

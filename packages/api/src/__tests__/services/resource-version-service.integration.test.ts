@@ -52,7 +52,7 @@ async function addVersion(version: number, hash: string, state = 'active') {
   await db.insert(resourceVersion).values({
     resourceId,
     version,
-    storageKey: getVersionKey(packageId, resourceId, version),
+    storageKey: getVersionKey(packageId, resourceId, version, 'v'),
     size: 100 + version,
     hash,
     origin: 'upload',
@@ -114,11 +114,11 @@ describe('executePurge', () => {
 
     expect(result).toEqual({ purged: true, rolledBack: true })
     // v2's versioned copy deleted.
-    expect(deps.storage.delete).toHaveBeenCalledWith(getVersionKey(packageId, resourceId, 2))
+    expect(deps.storage.delete).toHaveBeenCalledWith(getVersionKey(packageId, resourceId, 2, 'v'))
     // v1 restored to a fresh key, and the pointer moved to it.
     const [restoredTo] = vi.mocked(deps.storage.copy).mock.calls[0].slice(1)
     expect(deps.storage.copy).toHaveBeenCalledWith(
-      getVersionKey(packageId, resourceId, 1),
+      getVersionKey(packageId, resourceId, 1, 'v'),
       expect.stringMatching(/^resources\/.+\/.+\..+$/)
     )
     expect(restoredTo).not.toBe(liveKey)
@@ -166,7 +166,7 @@ describe('executePurge', () => {
     const result = await service.executePurge(resourceId, 1, deps)
 
     expect(result).toEqual({ purged: true, rolledBack: false })
-    expect(deps.storage.delete).toHaveBeenCalledWith(getVersionKey(packageId, resourceId, 1))
+    expect(deps.storage.delete).toHaveBeenCalledWith(getVersionKey(packageId, resourceId, 1, 'v'))
     // No rollback / current-key touch for a non-live version.
     expect(deps.storage.copy).not.toHaveBeenCalled()
     const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))

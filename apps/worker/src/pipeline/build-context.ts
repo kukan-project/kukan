@@ -2,6 +2,7 @@
  * Build PipelineContext from adapters and database.
  */
 
+import { randomUUID } from 'node:crypto'
 import { eq, and, sql, desc } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, resourceVersion, packageTable } from '@kukan/db'
@@ -154,7 +155,7 @@ export function buildPipelineContext(
       if (!decision.captured) return decision
 
       const { version } = decision
-      const versionKey = getVersionKey(packageId, resourceId, version)
+      const versionKey = getVersionKey(packageId, resourceId, version, randomUUID())
       await copyObject(db, storage, currentStorageKey, versionKey)
 
       // Under the claim, so a run that was stopped mid-capture does not leave
