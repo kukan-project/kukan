@@ -402,6 +402,43 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     expect((await service.listByResource(resourceId)).map((v) => v.version)).toEqual([2, 1])
   })
 
+  it('does not go back to the content it is retracting', async () => {
+    // The run being stopped may have captured the new file as a version moments
+    // before. Restoring that is going nowhere: the caller asked for this file to
+    // stop being live, and it would still be live with a version number quoted
+    // back at them (ADR-044 §4).
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:live') // captured from the file being retracted
+    await db.update(resource).set({ hash: 'sha256:live' }).where(eq(resource.id, resourceId))
+
+    const result = await service.revertLiveContent(resourceId, mockDeps())
+
+    expect(result.restored).toBe(1)
+  })
+
+  it('empties the resource when the only version holds the retracted content', async () => {
+    // v1 was captured from the wrong file itself: there is nothing behind it,
+    // and leaving it live is the one thing the caller asked against.
+    await addVersion(1, 'sha256:live')
+    await db.update(resource).set({ hash: 'sha256:live' }).where(eq(resource.id, resourceId))
+
+    const result = await service.revertLiveContent(resourceId, mockDeps())
+
+    expect(result.restored).toBeNull()
+    const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
+    expect(res.storageKey).toBeNull()
+  })
+
+  it('parks the object it empties the resource of', async () => {
+    // Emptying moves the same pointer as every other write, so what it replaces
+    // is parked the same way (ADR-043) — unconditionally cleared, the retracted
+    // object would be tracked by nothing.
+    await service.revertLiveContent(resourceId, mockDeps())
+
+    const parked = await db.execute(sql`SELECT key FROM orphaned_object`)
+    expect((parked.rows as unknown as { key: string }[]).map((r) => r.key)).toContain(liveKey)
+  })
+
   it('holds the resource for the whole revert', async () => {
     // Cancelling and then claiming leaves the resource free in between, long
     // enough for a waiting job to start writing over what is being retracted.

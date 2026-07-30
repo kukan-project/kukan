@@ -14,12 +14,17 @@ import { orphanedObject } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 
 export interface PublishedContent {
-  /** Key this run's bytes are at. */
-  key: string
+  /**
+   * Key this run's bytes are at, or null to leave the resource with no content
+   * — a revert with nothing left to go back to. Emptying moves the same
+   * pointer under the same condition, so it takes the same route rather than an
+   * unconditional update of its own.
+   */
+  key: string | null
   /** Pointer value this run started from; the move is conditional on it. */
   previousKey: string | null
-  hash: string
-  size: number
+  hash: string | null
+  size: number | null
   previousHash: string | null
 }
 
@@ -30,7 +35,8 @@ export interface PublishedContent {
  * so a run whose content was superseded while it was fetching does not pull the
  * resource back to its own bytes. Whichever object stops being pointed at is
  * parked — the one the move replaced when it applied, this run's own when it
- * did not. `lastModified` moves only on a genuine content change.
+ * did not, and nothing when this run had none. `lastModified` moves only on a
+ * genuine content change.
  *
  * @returns whether this run's object became the live content.
  */

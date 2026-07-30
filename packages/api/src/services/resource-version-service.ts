@@ -6,7 +6,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { digestStream } from '@kukan/shared/hash-node'
-import { eq, and, lt, desc, sql } from 'drizzle-orm'
+import { eq, and, lt, ne, desc, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, resourceVersion, resourcePipeline, auditLog } from '@kukan/db'
 import {
@@ -702,14 +702,22 @@ export class ResourceVersionService {
     let rolledBack = false
     if (isLive) {
       const [pkgRow] = await this.db
-        .select({ packageId: resource.packageId, storageKey: resource.storageKey })
+        .select({
+          packageId: resource.packageId,
+          storageKey: resource.storageKey,
+          // Read so the mover can tell a genuine content change from a re-fetch
+          // of the same bytes, and move `lastModified` accordingly.
+          hash: resource.hash,
+        })
         .from(resource)
         .where(eq(resource.id, resourceId))
         .limit(1)
 
       if (pkgRow) {
         // Previous active version to restore as the live content.
-        const prev = await this.restoreLiveFromVersions(resourceId, pkgRow, deps.storage, version)
+        const prev = await this.restoreLiveFromVersions(resourceId, pkgRow, deps.storage, {
+          below: version,
+        })
         rolledBack = prev !== null
 
         if (prev) {
@@ -807,13 +815,23 @@ export class ResourceVersionService {
       'revert',
       async (_claim, cancelled) => {
         const [current] = await this.db
-          .select({ packageId: resource.packageId, storageKey: resource.storageKey })
+          .select({
+            packageId: resource.packageId,
+            storageKey: resource.storageKey,
+            hash: resource.hash,
+          })
           .from(resource)
           .where(eq(resource.id, resourceId))
           .limit(1)
         if (!current) throw new NotFoundError('Resource', resourceId)
 
-        const restored = await this.restoreLiveFromVersions(resourceId, current, deps.storage)
+        // Not the newest version — the newest version *of other content*. The
+        // run being stopped may have captured what is live now, and going back
+        // to that is going nowhere: the revert would report a version restored
+        // and leave the file the caller asked to retract exactly where it was.
+        const restored = await this.restoreLiveFromVersions(resourceId, current, deps.storage, {
+          notHash: current.hash,
+        })
 
         // The derivatives describe the content just retracted, so they go now
         // rather than when the pipeline gets round to replacing them.
@@ -848,8 +866,10 @@ export class ResourceVersionService {
    * this operation's own, and the pointer moves only once the copy is complete,
    * so a failed copy leaves the resource on the object it had.
    *
-   * @param below - restrict to versions under this one. A purge must not
-   *   restore the version it is destroying; a revert has nothing to exclude.
+   * @param exclude - what not to go back to. A purge names the version it is
+   *   destroying (`below`); a revert names the content it is retracting
+   *   (`notHash`), which may have been captured as a version moments ago by the
+   *   run it just stopped.
    * @returns the version restored, or null when the resource was emptied.
    * @throws ConflictError when the pointer moved while this was running. Both
    *   callers go on to delete the preview and the indexed content, which
@@ -859,9 +879,9 @@ export class ResourceVersionService {
    */
   private async restoreLiveFromVersions(
     resourceId: string,
-    current: { packageId: string; storageKey: string | null },
+    current: { packageId: string; storageKey: string | null; hash?: string | null },
     storage: StorageAdapter,
-    below?: number
+    exclude: { below?: number; notHash?: string | null } = {}
   ): Promise<typeof resourceVersion.$inferSelect | null> {
     const [prev] = await this.db
       .select()
@@ -870,17 +890,29 @@ export class ResourceVersionService {
         and(
           eq(resourceVersion.resourceId, resourceId),
           eq(resourceVersion.state, 'active'),
-          below === undefined ? sql`TRUE` : lt(resourceVersion.version, below)
+          exclude.below === undefined ? sql`TRUE` : lt(resourceVersion.version, exclude.below),
+          // By hash rather than by version number: whichever row holds the
+          // content being retracted, restoring it restores those bytes.
+          exclude.notHash == null ? sql`TRUE` : ne(resourceVersion.hash, exclude.notHash)
         )
       )
       .orderBy(desc(resourceVersion.version))
       .limit(1)
 
     if (!prev) {
-      await this.db
-        .update(resource)
-        .set({ storageKey: null, hash: null, size: null, lastModified: sql`NOW()` })
-        .where(eq(resource.id, resourceId))
+      // Through the mover like every other pointer move: unconditional, this
+      // would clear a pointer an upload had moved since (uploads take no claim,
+      // ADR-044 §6) and leave the retracted object tracked by nothing.
+      const emptied = await publishLiveContent(this.db, resourceId, {
+        key: null,
+        previousKey: current.storageKey,
+        hash: null,
+        size: null,
+        previousHash: current.hash ?? null,
+      })
+      if (!emptied) {
+        throw new ConflictError(`Resource ${resourceId} changed while being emptied; retry`)
+      }
       return null
     }
 

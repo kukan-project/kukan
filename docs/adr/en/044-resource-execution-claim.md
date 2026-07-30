@@ -215,6 +215,20 @@ kind of holder recorded on the row (§1) exists for this distinction.
 **over the very content being retracted**. Swapping the owner in one statement leaves no
 moment at which the resource is free.
 
+**A revert goes back to the newest version that is not the content being
+retracted.** The run it stopped may have captured that very file as a version moments
+before, and going back to it is going nowhere: **the file the caller asked to retract stays
+live, with a version number quoted back at them**. The exclusion is by hash rather than by
+version number — whichever row holds those bytes, restoring it restores them. If the only
+version holds the retracted content, the resource is emptied, as the table in this section
+says.
+
+**Emptying goes through the same mover.** The "nothing to go back to" path cleared the
+pointer unconditionally, but uploads take no claim (§6), so a promote landing after the read
+would have it **delete the winner's content** — and the retracted object was left parked by
+nobody and tracked by nothing. The conditional move and the parking are one statement,
+content or no content.
+
 **Losing the pointer move is not a restore.** A revert deletes the preview and the indexed
 content right after restoring. Those describe whatever is live, so treating a lost
 compare-and-swap as a success **deletes the derivatives of the writer that won**. The loss is

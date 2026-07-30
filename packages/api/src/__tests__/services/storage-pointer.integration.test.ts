@@ -117,6 +117,55 @@ describe('publishLiveContent', () => {
     expect(await parkedKeys()).toEqual([loser])
   })
 
+  it('empties the resource, parking what it was holding', async () => {
+    // A revert with nothing left to go back to. The same conditional move, so
+    // the object it replaces is parked the same way (ADR-044 §4).
+    const live = getStorageKey(packageId, resourceId, 'live')
+    await publishLiveContent(db, resourceId, {
+      key: live,
+      previousKey: null,
+      hash: 'sha256:a',
+      size: 10,
+      previousHash: null,
+    })
+
+    expect(
+      await publishLiveContent(db, resourceId, {
+        key: null,
+        previousKey: live,
+        hash: null,
+        size: null,
+        previousHash: 'sha256:a',
+      })
+    ).toBe(true)
+
+    const r = await row()
+    expect(r.storageKey).toBeNull()
+    expect(r.hash).toBeNull()
+    expect(await parkedKeys()).toEqual([live])
+  })
+
+  it('refuses to empty a pointer that moved, and parks nothing', async () => {
+    // Uploads take no claim (ADR-044 §6), so a promote can land while a revert
+    // is deciding. Clearing anyway would delete the winner's content.
+    const newer = getStorageKey(packageId, resourceId, 'newer')
+    await db.update(resource).set({ storageKey: newer }).where(eq(resource.id, resourceId))
+
+    expect(
+      await publishLiveContent(db, resourceId, {
+        key: null,
+        previousKey: getStorageKey(packageId, resourceId, 'stale'),
+        hash: null,
+        size: null,
+        previousHash: null,
+      })
+    ).toBe(false)
+
+    expect((await row()).storageKey).toBe(newer)
+    // Nothing of its own to park: this operation wrote no object.
+    expect(await parkedKeys()).toEqual([])
+  })
+
   it('moves lastModified only when the content actually changed', async () => {
     const first = getStorageKey(packageId, resourceId, 'run-1')
     await publishLiveContent(db, resourceId, {
