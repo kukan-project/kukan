@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Hono } from 'hono'
 import { createLogger, SESSION_COOKIE_NAME } from '@kukan/shared'
+import type { Database } from '@kukan/db'
 import { optionalAuth, requireAuth, requireSysadmin } from '../../middleware/auth'
 import { errorHandler } from '../../middleware/error-handler'
 
@@ -25,7 +26,7 @@ function createTestApp(middleware: ReturnType<typeof optionalAuth>) {
   const app = new Hono()
   app.use('*', async (c, next) => {
     c.set('logger', createLogger({ name: 'test', level: 'silent' }))
-    c.set('db', {}) // mock db
+    c.set('db', {} as Database) // nothing under test reaches it
     await next()
   })
   app.onError(errorHandler)

@@ -72,6 +72,7 @@ describe('PackageService', () => {
           type: 'dataset',
           extras: {},
           tags: [],
+          groups: [],
           resources: [],
         })
       ).rejects.toThrow('Package name already exists')
@@ -89,6 +90,7 @@ describe('PackageService', () => {
           type: 'dataset',
           extras: {},
           tags: [],
+          groups: [],
           resources: [],
         })
       ).rejects.toThrow('Organization not found')
@@ -107,6 +109,7 @@ describe('PackageService', () => {
         type: 'dataset',
         extras: {},
         tags: [],
+        groups: [],
         resources: [],
       })
       expect(result.name).toBe('new-pkg')

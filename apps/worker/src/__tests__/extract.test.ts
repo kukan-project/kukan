@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { Readable } from 'stream'
 import JSZip from 'jszip'
-import type { PipelineContext } from '../pipeline/types'
 import { executeExtract } from '../pipeline/steps/extract'
+import { createPipelineContextMock } from './test-helpers/pipeline-context'
 
 /**
  * Preview keys carry a per-run UUID (ADR-043 layer 2: the object a reader
@@ -14,26 +14,11 @@ const PREVIEW_KEY_RE = (pkg: string, res: string, ext: string) =>
 const previewKeyMatching = (pkg: string, res: string, ext: string) =>
   expect.stringMatching(PREVIEW_KEY_RE(pkg, res, ext))
 
-function createMockCtx() {
-  return {
-    storage: {
-      download: vi.fn(),
-      upload: vi.fn(),
-    },
-    getResource: vi.fn(),
-    publishContent: vi.fn().mockResolvedValue(true),
-    putObject: vi.fn(),
-    acquireFetchSlot: vi.fn(),
-    indexContent: vi.fn(),
-    deleteContent: vi.fn(),
-  } satisfies PipelineContext
-}
-
 describe('executeExtract', () => {
-  let ctx: ReturnType<typeof createMockCtx>
+  let ctx: ReturnType<typeof createPipelineContextMock>
 
   beforeEach(() => {
-    ctx = createMockCtx()
+    ctx = createPipelineContextMock()
   })
 
   function mockStorageDownload(content: string) {
@@ -70,7 +55,7 @@ describe('executeExtract', () => {
     expect(key).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-1', 'parquet'))
     expect(meta).toEqual({ contentType: 'application/vnd.apache.parquet' })
     expect(Buffer.isBuffer(buf)).toBe(true)
-    expect(buf.length).toBeGreaterThan(0)
+    expect((buf as Buffer).length).toBeGreaterThan(0)
   })
 
   it('should handle title row skipping in Parquet output', async () => {

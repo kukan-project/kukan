@@ -50,7 +50,7 @@ describe('GroupService', () => {
   describe('create', () => {
     it('should throw ValidationError if name already exists', async () => {
       mock.addResult([createGroupFixture()])
-      await expect(service.create({ name: 'duplicate' })).rejects.toThrow(
+      await expect(service.create({ name: 'duplicate', extras: {} })).rejects.toThrow(
         'Group name already exists'
       )
     })
@@ -60,7 +60,7 @@ describe('GroupService', () => {
       mock.addResult([]) // name check
       mock.addResult([created]) // insert returning
 
-      const result = await service.create({ name: 'new-group' })
+      const result = await service.create({ name: 'new-group', extras: {} })
       expect(result.name).toBe('new-group')
     })
   })
@@ -71,7 +71,11 @@ describe('GroupService', () => {
       mock.addResult([grp]) // getByNameOrId
       mock.addResult([{ ...grp, title: 'Updated Title' }]) // update returning
 
-      const result = await service.update('test-group', { title: 'Updated Title' })
+      const result = await service.update('test-group', {
+        name: 'test-group',
+        title: 'Updated Title',
+        extras: {},
+      })
       expect(result.title).toBe('Updated Title')
     })
   })

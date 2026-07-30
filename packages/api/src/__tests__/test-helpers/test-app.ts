@@ -70,6 +70,7 @@ const mockStorage = {
   getSignedUrl: async () => 'file:///test',
   getSignedUploadUrl: async () => 'https://minio.test/upload?signed=true',
   head: async () => ({ size: 1024 }),
+  deleteMany: async (keys: string[]) => keys,
 }
 
 export const mockQueue: QueueAdapter = {

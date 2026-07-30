@@ -157,6 +157,10 @@ pnpm format        # Prettier フォーマット
 - E2Eテスト: Playwright（`*.e2e.ts`、`apps/web/src/__tests__/e2e/`）
 - テストファイルは `__tests__/` サブディレクトリに配置（例: `src/__tests__/errors.test.ts`）
 - E2Eテストは dev サーバー + Docker Compose サービス起動中に実行
+- **テストも型検査する。** `dist` へ emit するパッケージはビルド設定から `src/__tests__` を
+  除外する必要があるため、`src/__tests__/tsconfig.json`（`noEmit`）を置き、`typecheck`
+  スクリプトの追加パスとして実行する。型検査していないテストは、本番の型が変わっても
+  黙って古いまま通る
 
 ### 環境変数
 

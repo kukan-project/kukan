@@ -1,17 +1,19 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { executeLake } from '../pipeline/steps/lake'
-import type { PipelineContext } from '../pipeline/types'
+import {
+  createPipelineContextMock,
+  type PipelineContextMock,
+} from './test-helpers/pipeline-context'
 
 const PARQUET = 'previews/pkg-1/res-1.tok.parquet'
 const HASH = 'sha256:abc'
 
-/** executeLake touches two context methods, so the rest is not stubbed. */
-function createCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
-  return {
-    pendingLakeVersion: vi.fn().mockResolvedValue(2),
-    ingestLakeVersion: vi.fn().mockResolvedValue({ snapshotId: 42 }),
-    ...overrides,
-  } as unknown as PipelineContext
+/** executeLake touches two context methods; the shared mock supplies the rest. */
+function createCtx(): PipelineContextMock {
+  const ctx = createPipelineContextMock()
+  ctx.pendingLakeVersion.mockResolvedValue(2)
+  ctx.ingestLakeVersion.mockResolvedValue({ snapshotId: 42 })
+  return ctx
 }
 
 describe('executeLake', () => {
@@ -32,14 +34,16 @@ describe('executeLake', () => {
   })
 
   it('skips when no version holds these bytes awaiting ingest', async () => {
-    const ctx = createCtx({ pendingLakeVersion: vi.fn().mockResolvedValue(null) })
+    const ctx = createCtx()
+    ctx.pendingLakeVersion.mockResolvedValue(null)
 
     expect(await executeLake('res-1', PARQUET, HASH, ctx)).toEqual({ status: 'skipped' })
     expect(ctx.ingestLakeVersion).not.toHaveBeenCalled()
   })
 
   it('skips when the context carries no DuckLake config', async () => {
-    const ctx = createCtx({ ingestLakeVersion: vi.fn().mockResolvedValue(null) })
+    const ctx = createCtx()
+    ctx.ingestLakeVersion.mockResolvedValue(null)
 
     expect(await executeLake('res-1', PARQUET, HASH, ctx)).toEqual({ status: 'skipped' })
   })
@@ -61,9 +65,8 @@ describe('executeLake', () => {
   it('hands back what a retry needs when the ingest fails', async () => {
     // Waiting for the next run does not recover it: that run ingests its own
     // newer version, and this one's Parquet is superseded and swept.
-    const ctx = createCtx({
-      ingestLakeVersion: vi.fn().mockRejectedValue(new Error('catalog unreachable')),
-    })
+    const ctx = createCtx()
+    ctx.ingestLakeVersion.mockRejectedValue(new Error('catalog unreachable'))
 
     expect(await executeLake('res-1', PARQUET, HASH, ctx)).toEqual({
       status: 'failed',
@@ -74,7 +77,8 @@ describe('executeLake', () => {
   })
 
   it('skips when something else ingested the version first', async () => {
-    const ctx = createCtx({ ingestLakeVersion: vi.fn().mockResolvedValue(null) })
+    const ctx = createCtx()
+    ctx.ingestLakeVersion.mockResolvedValue(null)
 
     expect(await executeLake('res-1', PARQUET, HASH, ctx)).toEqual({ status: 'skipped' })
   })

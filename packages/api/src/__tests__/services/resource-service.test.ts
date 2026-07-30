@@ -113,7 +113,7 @@ describe('ResourceService', () => {
       mock.addResult([]) // advisory lock
       mock.addResult([]) // package check
       await expect(
-        service.create({ packageId: '550e8400-e29b-41d4-a716-446655440000', state: 'active' })
+        service.create({ packageId: '550e8400-e29b-41d4-a716-446655440000' })
       ).rejects.toThrow('Package not found')
     })
 
@@ -125,7 +125,7 @@ describe('ResourceService', () => {
       mock.addResult([{ maxPosition: -1 }]) // max position query
       mock.addResult([created]) // insert returning
 
-      const result = await service.create({ packageId: pkg.id as string, state: 'active' })
+      const result = await service.create({ packageId: pkg.id as string })
       expect(result.position).toBe(0)
     })
   })
@@ -133,7 +133,7 @@ describe('ResourceService', () => {
   describe('update', () => {
     it('should throw NotFoundError when resource not found', async () => {
       mock.addResult([]) // getById
-      await expect(service.update('nonexistent', { state: 'active' })).rejects.toThrow(
+      await expect(service.update('nonexistent', { name: 'anything' })).rejects.toThrow(
         'Resource not found'
       )
     })

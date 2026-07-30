@@ -8,6 +8,9 @@ import { eq, and, sql } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
 import { resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import { getStorageKey, getVersionKey } from '@kukan/shared'
+import type { StorageAdapter } from '@kukan/storage-adapter'
+import type { SearchAdapter } from '@kukan/search-adapter'
+import type { QueueAdapter } from '@kukan/queue-adapter'
 import {
   ResourceVersionService,
   insertVersionIfHeld,
@@ -35,10 +38,13 @@ let liveKey: string
 const userId = TEST_USER_ID
 
 function mockDeps() {
+  // Cast through unknown rather than to `never`: these carry only the methods
+  // the purge and the revert reach for, and `never` has no properties at all,
+  // so every `vi.mocked(deps.storage.delete)` below would be reading one off it.
   return {
-    storage: { copy: vi.fn(), delete: vi.fn() } as never,
-    search: { deleteContent: vi.fn() } as never,
-    queue: { enqueue: vi.fn().mockResolvedValue('job-1') } as never,
+    storage: { copy: vi.fn(), delete: vi.fn() } as unknown as StorageAdapter,
+    search: { deleteContent: vi.fn() } as unknown as SearchAdapter,
+    queue: { enqueue: vi.fn().mockResolvedValue('job-1') } as unknown as QueueAdapter,
   }
 }
 

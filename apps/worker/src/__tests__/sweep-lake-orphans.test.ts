@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { LakeConfig } from '@kukan/lake'
+import type { Logger } from '@kukan/shared'
 import { LAKE_ORPHAN_RETENTION_MS } from '../config'
 
 const deleteOrphanedFiles = vi.fn()
@@ -11,7 +12,7 @@ vi.mock('@kukan/lake', () => ({
 
 const { sweepLakeOrphans } = await import('../cron/orphan-cleanup/sweep-lake-orphans')
 
-const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never
+const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as unknown as Logger
 const lake = { bucket: 'b', region: 'r', pgConnString: '', s3UseSsl: false } as LakeConfig
 
 beforeEach(() => {

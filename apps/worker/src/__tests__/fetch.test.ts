@@ -2,7 +2,11 @@ import { describe, it, expect, vi } from 'vitest'
 import { createHash } from 'crypto'
 import { Readable } from 'stream'
 import { executeFetch } from '../pipeline/steps/fetch'
-import type { PipelineContext, ResourceForPipeline } from '../pipeline/types'
+import type { ResourceForPipeline } from '../pipeline/types'
+import {
+  createPipelineContextMock,
+  type PipelineContextMock,
+} from './test-helpers/pipeline-context'
 
 // Mock safeFetch to use globalThis.fetch directly (SSRF logic tested separately)
 vi.mock('@/safe-fetch', () => ({
@@ -37,25 +41,15 @@ async function streamToBuffer(stream: Readable): Promise<Buffer> {
   return Buffer.concat(chunks)
 }
 
-/** Create mock context whose putObject consumes the stream, as a real write would */
-function createMockCtx(overrides?: Partial<PipelineContext>): PipelineContext {
-  return {
-    storage: {
-      download: vi.fn(),
-      upload: vi.fn(),
-    },
-    getResource: vi.fn(),
-    publishContent: vi.fn().mockResolvedValue(true),
-    putObject: vi.fn(async (_key: string, body: Buffer | Readable) => {
-      if (body instanceof Readable) {
-        await streamToBuffer(body)
-      }
-    }),
-    acquireFetchSlot: vi.fn().mockResolvedValue(true),
-    indexContent: vi.fn(),
-    deleteContent: vi.fn(),
-    ...overrides,
-  } as unknown as PipelineContext
+/** The shared mock, with a putObject that consumes the stream as a real write would */
+function createMockCtx(): PipelineContextMock {
+  const ctx = createPipelineContextMock()
+  ctx.putObject.mockImplementation(async (_key: string, body: Buffer | Readable) => {
+    if (body instanceof Readable) {
+      await streamToBuffer(body)
+    }
+  })
+  return ctx
 }
 
 describe('executeFetch', () => {
@@ -130,7 +124,8 @@ describe('executeFetch', () => {
   it('reports superseded when another run moved the pointer first', async () => {
     // The pointer is the resource's identity: a run that lost it must not carry
     // on and attribute a version to bytes that are no longer the content.
-    const ctx = createMockCtx({ publishContent: vi.fn().mockResolvedValue(false) })
+    const ctx = createMockCtx()
+    ctx.publishContent.mockResolvedValue(false)
     vi.mocked(ctx.storage.download).mockResolvedValue(Readable.from(Buffer.from('data')))
     vi.mocked(ctx.getResource).mockResolvedValue(
       makeResource({ urlType: 'upload', storageKey: 'resources/pkg-1/res-1.upload' })
@@ -191,7 +186,7 @@ describe('executeFetch', () => {
 
     await executeFetch('res-1', ctx)
 
-    expect(ctx.storage.upload).not.toHaveBeenCalledWith(
+    expect(ctx.putObject).not.toHaveBeenCalledWith(
       'resources/pkg-1/res-1.previous',
       expect.anything()
     )

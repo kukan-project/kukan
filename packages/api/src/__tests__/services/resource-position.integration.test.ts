@@ -35,9 +35,7 @@ describe('concurrent resource creation', () => {
   it('assigns distinct sequential positions', async () => {
     const COUNT = 8
     const created = await Promise.all(
-      Array.from({ length: COUNT }, (_, i) =>
-        service.create({ packageId, name: `res-${i}`, state: 'active' })
-      )
+      Array.from({ length: COUNT }, (_, i) => service.create({ packageId, name: `res-${i}` }))
     )
 
     const positions = created.map((r) => r.position).sort((a, b) => a - b)
@@ -71,7 +69,7 @@ describe('concurrent resource creation', () => {
       // Package B's create must complete while A's lock is held — a lock
       // that is accidentally global would block it (fail fast, not time out)
       const b = (await Promise.race([
-        service.create({ packageId: otherId, name: 'res-b', state: 'active' }),
+        service.create({ packageId: otherId, name: 'res-b' }),
         new Promise<never>((_, reject) =>
           setTimeout(
             () => reject(new Error('create on package B was blocked by package A lock')),
@@ -83,12 +81,10 @@ describe('concurrent resource creation', () => {
 
       // ...while a create on package A itself stays blocked on the lock
       let aSettled = false
-      const aPromise = service
-        .create({ packageId, name: 'res-a', state: 'active' })
-        .then((resource) => {
-          aSettled = true
-          return resource
-        })
+      const aPromise = service.create({ packageId, name: 'res-a' }).then((resource) => {
+        aSettled = true
+        return resource
+      })
       await new Promise((resolve) => setTimeout(resolve, 50))
       expect(aSettled).toBe(false)
 

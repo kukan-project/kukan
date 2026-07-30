@@ -1,16 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Readable } from 'stream'
-import type { PipelineContext } from '../pipeline/types'
 
 // Capture what extract feeds to the Parquet writer so we can assert per-column
 // type inference + cell conversion (ADR-029) without a Parquet reader. The real
 // writer accepting these values is already exercised by extract.test.ts.
-const parquetWriteBuffer = vi.fn(() => new Uint8Array([1, 2, 3]))
+const parquetWriteBuffer = vi.fn((..._args: unknown[]) => new Uint8Array([1, 2, 3]))
 vi.mock('hyparquet-writer', () => ({
   parquetWriteBuffer: (...args: unknown[]) => parquetWriteBuffer(...args),
 }))
 
 import { executeExtract } from '../pipeline/steps/extract'
+import { createPipelineContextMock } from './test-helpers/pipeline-context'
 
 interface CapturedColumn {
   name: string
@@ -18,23 +18,11 @@ interface CapturedColumn {
   data: unknown[]
 }
 
-function createMockCtx() {
-  return {
-    storage: { download: vi.fn(), upload: vi.fn() },
-    getResource: vi.fn(),
-    publishContent: vi.fn().mockResolvedValue(true),
-    putObject: vi.fn(),
-    acquireFetchSlot: vi.fn(),
-    indexContent: vi.fn(),
-    deleteContent: vi.fn(),
-  } satisfies PipelineContext
-}
-
 describe('executeExtract — column typing (ADR-029)', () => {
-  let ctx: ReturnType<typeof createMockCtx>
+  let ctx: ReturnType<typeof createPipelineContextMock>
 
   beforeEach(() => {
-    ctx = createMockCtx()
+    ctx = createPipelineContextMock()
     parquetWriteBuffer.mockClear()
   })
 

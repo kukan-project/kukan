@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { processResource } from '../pipeline/process-resource'
-import type { PipelineContext } from '../pipeline/types'
 import type { Database } from '@kukan/db'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 
@@ -46,7 +45,11 @@ const claim = vi.hoisted(() => ({ answer: 'ran' as 'ran' | 'held' | 'absent' }))
 
 vi.mock('@kukan/api/services/pipeline-claim', () => ({
   withResourceClaim: vi.fn(
-    async (_db: unknown, resourceId: string, fn: (c: { id: string }) => Promise<void>) => {
+    async (
+      _db: unknown,
+      resourceId: string,
+      fn: (c: { id: string; resourceId: string; owner: string }) => Promise<void>
+    ) => {
       if (claim.answer !== 'ran') return { status: claim.answer }
       return { status: 'ran', result: await fn({ id: 'pipeline-1', resourceId, owner: 'run-1' }) }
     }
@@ -58,19 +61,15 @@ import { executeFetch } from '../pipeline/steps/fetch'
 import { executeExtract } from '../pipeline/steps/extract'
 import { executeLake } from '../pipeline/steps/lake'
 import { executeIndexContent } from '../pipeline/steps/index-content'
+import {
+  createPipelineContextMock,
+  type PipelineContextMock,
+} from './test-helpers/pipeline-context'
 
-function createMockCtx(): PipelineContext {
-  return {
-    storage: { download: vi.fn(), upload: vi.fn(), copy: vi.fn() },
-    getResource: vi.fn(),
-    publishContent: vi.fn().mockResolvedValue(true),
-    putObject: vi.fn(),
-    acquireFetchSlot: vi.fn().mockResolvedValue(true),
-    indexContent: vi.fn(),
-    deleteContent: vi.fn(),
-    captureVersion: vi.fn().mockResolvedValue({ captured: true, version: 1 }),
-    withVersionCaptureLock: vi.fn((_id: string, fn: () => Promise<unknown>) => fn()),
-  }
+function createMockCtx(): PipelineContextMock {
+  const ctx = createPipelineContextMock()
+  ctx.captureVersion.mockResolvedValue({ captured: true, version: 1 })
+  return ctx
 }
 
 function createMockQueue(): QueueAdapter {
@@ -83,7 +82,7 @@ function createMockQueue(): QueueAdapter {
 }
 
 describe('processResource', () => {
-  let ctx: PipelineContext
+  let ctx: PipelineContextMock
   let db: Database
   let queue: QueueAdapter
   let stepCounter: number
@@ -115,6 +114,8 @@ describe('processResource', () => {
       storageKey: 'resources/pkg-1/res-1',
       format: 'CSV',
       packageId: 'pkg-1',
+      hash: 'sha256:abc',
+      size: 42,
       status: 'fetched',
     })
     vi.mocked(executeExtract).mockResolvedValue({
@@ -146,6 +147,8 @@ describe('processResource', () => {
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('complete')
     expect(mockTracker.updateExtractResult).toHaveBeenCalledWith('previews/pkg-1/res-1.parquet', {
       encoding: 'UTF8',
+      // Ties the preview to the bytes Fetch measured (ADR-043 layer 2).
+      sourceHash: 'sha256:abc',
     })
   })
 
@@ -161,6 +164,8 @@ describe('processResource', () => {
       storageKey: 'resources/pkg-1/res-1',
       format: 'CSV',
       packageId: 'pkg-1',
+      hash: 'sha256:abc',
+      size: 42,
       status: 'fetched',
     })
     vi.mocked(executeExtract).mockResolvedValue({
@@ -175,6 +180,7 @@ describe('processResource', () => {
     expect(mockTracker.updateExtractResult).toHaveBeenCalledWith('previews/pkg-1/res-1.parquet', {
       encoding: 'UTF8',
       schema,
+      sourceHash: 'sha256:abc',
     })
   })
 
@@ -183,6 +189,8 @@ describe('processResource', () => {
       storageKey: 'resources/pkg-1/res-1',
       format: 'PDF',
       packageId: 'pkg-1',
+      hash: 'sha256:abc',
+      size: 42,
       status: 'fetched',
     })
     vi.mocked(executeExtract).mockResolvedValue(null)
@@ -204,6 +212,8 @@ describe('processResource', () => {
       storageKey: 'resources/pkg-1/res-1',
       format: 'CSV',
       packageId: 'pkg-1',
+      hash: 'sha256:abc',
+      size: 42,
       status: 'fetched',
     })
     vi.mocked(executeExtract).mockRejectedValue(new Error('Parse error'))
@@ -220,6 +230,8 @@ describe('processResource', () => {
       storageKey: 'resources/pkg-1/res-1',
       format: 'CSV',
       packageId: 'pkg-1',
+      hash: 'sha256:abc',
+      size: 42,
       status: 'fetched',
     })
     vi.mocked(executeExtract).mockRejectedValue(new Error('Parse error'))
@@ -295,6 +307,8 @@ describe('processResource', () => {
       storageKey: 'resources/pkg-1/res-1.tok',
       format: 'CSV',
       packageId: 'pkg-1',
+      hash: 'sha256:abc',
+      size: 42,
       status: 'fetched',
     })
     const { RunCancelledError } = await import('../pipeline/step-tracker')

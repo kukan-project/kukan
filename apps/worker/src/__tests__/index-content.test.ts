@@ -1,8 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
 import { Readable } from 'node:stream'
 import { executeIndexContent, splitIntoChunks } from '../pipeline/steps/index-content'
-import type { PipelineContext } from '../pipeline/types'
 import type { ExtractResult } from '../pipeline/steps/extract'
+import {
+  createPipelineContextMock,
+  type PipelineContextMock,
+} from './test-helpers/pipeline-context'
 import type { ContentDoc } from '@kukan/search-adapter'
 
 const mockToText = vi.fn().mockReturnValue('Extracted document text\nPage 2 content')
@@ -20,30 +23,22 @@ function bufferToStream(buf: Buffer): Readable {
 /** Run-scoped text-head key: `previews/{pkg}/{res}.{runToken}.txt`. */
 const TEXT_HEAD_KEY = expect.stringMatching(/^previews\/pkg-1\/res-1\.[0-9a-f-]{36}\.txt$/)
 
-function createMockCtx(overrides?: Partial<PipelineContext>): PipelineContext {
-  return {
-    storage: {
-      download: vi.fn(),
-      upload: vi.fn(),
-    },
-    getResource: vi.fn().mockResolvedValue({
-      id: 'res-1',
-      packageId: 'pkg-1',
-      name: 'data.csv',
-      description: 'Test resource',
-      url: 'data.csv',
-      urlType: 'upload',
-      format: 'CSV',
-      hash: null,
-    }),
-    getPackageState: vi.fn().mockResolvedValue('active'),
-    publishContent: vi.fn().mockResolvedValue(true),
-    putObject: vi.fn(),
-    acquireFetchSlot: vi.fn(),
-    indexContent: vi.fn(),
-    deleteContent: vi.fn(),
-    ...overrides,
-  }
+function createMockCtx(): PipelineContextMock {
+  const ctx = createPipelineContextMock()
+  ctx.getResource.mockResolvedValue({
+    id: 'res-1',
+    packageId: 'pkg-1',
+    name: 'data.csv',
+    description: 'Test resource',
+    url: 'data.csv',
+    urlType: 'upload',
+    format: 'CSV',
+    hash: null,
+    size: null,
+    storageKey: 'resources/pkg-1/res-1',
+  })
+  ctx.getPackageState.mockResolvedValue('active')
+  return ctx
 }
 
 const defaultExtractResult: ExtractResult = {
@@ -54,9 +49,8 @@ const defaultExtractResult: ExtractResult = {
 describe('executeIndexContent', () => {
   describe('draft package skip (ADR-039)', () => {
     it('should skip indexing when the package is a draft', async () => {
-      const ctx = createMockCtx({
-        getPackageState: vi.fn().mockResolvedValue('draft'),
-      })
+      const ctx = createMockCtx()
+      ctx.getPackageState.mockResolvedValue('draft')
 
       const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'CSV', null, ctx)
 
@@ -67,9 +61,8 @@ describe('executeIndexContent', () => {
     })
 
     it('should skip indexing when the package no longer exists', async () => {
-      const ctx = createMockCtx({
-        getPackageState: vi.fn().mockResolvedValue(null),
-      })
+      const ctx = createMockCtx()
+      ctx.getPackageState.mockResolvedValue(null)
 
       const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'CSV', null, ctx)
 
@@ -77,12 +70,11 @@ describe('executeIndexContent', () => {
       expect(ctx.indexContent).not.toHaveBeenCalled()
     })
 
-    it.each(['deleted', 'purging'])(
+    it.each(['deleted', 'purging'] as const)(
       'should skip everything for a %s package even for documents',
       async (state) => {
-        const ctx = createMockCtx({
-          getPackageState: vi.fn().mockResolvedValue(state),
-        })
+        const ctx = createMockCtx()
+        ctx.getPackageState.mockResolvedValue(state)
 
         const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)
 
@@ -434,9 +426,8 @@ describe('executeIndexContent', () => {
     })
 
     it('should persist the artifact for a draft package without indexing (ADR-040 addendum)', async () => {
-      const ctx = createMockCtx({
-        getPackageState: vi.fn().mockResolvedValue('draft'),
-      })
+      const ctx = createMockCtx()
+      ctx.getPackageState.mockResolvedValue('draft')
       vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('fake-pdf')))
 
       const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)
@@ -529,7 +520,8 @@ describe('executeIndexContent', () => {
 
   describe('resource metadata', () => {
     it('should return null when resource is not found', async () => {
-      const ctx = createMockCtx({ getResource: vi.fn().mockResolvedValue(null) })
+      const ctx = createMockCtx()
+      ctx.getResource.mockResolvedValue(null)
       vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('test')))
 
       const result = await executeIndexContent(

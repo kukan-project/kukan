@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { Hono } from 'hono'
 import { cacheControl, publicCache, noCache } from '../../middleware/cache-control'
+import type { AppContext } from '../../context'
 
 function createApp() {
-  const app = new Hono()
+  // Typed with what the tests set: an untyped Hono has no key to set `user` on.
+  const app = new Hono<{ Variables: Pick<AppContext, 'user'> }>()
   app.use('*', cacheControl)
   return app
 }
@@ -95,7 +97,8 @@ describe('publicCache', () => {
     app.get(
       '/test',
       async (c, next) => {
-        c.set('user', { id: 'u1' })
+        // Only its presence matters: a request with a user is not cached.
+        c.set('user', { id: 'u1' } as AppContext['user'])
         await next()
       },
       publicCache(),

@@ -44,7 +44,7 @@ function makeAI(opts?: { available?: boolean; failEmbed?: boolean; dimensions?: 
 }
 
 function makeSettings(over?: { notches?: number; semanticEnabled?: boolean }) {
-  const values: Record<SettingKey, unknown> = {
+  const values: Partial<Record<SettingKey, unknown>> = {
     [VECTOR_SIMILARITY_NOTCHES_KEY]: over?.notches ?? 0,
     [SEMANTIC_SEARCH_ENABLED_KEY]: over?.semanticEnabled ?? true,
   }

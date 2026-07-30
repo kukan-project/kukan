@@ -69,6 +69,10 @@ const mockStorage = {
   delete: vi.fn(),
   getSignedUrl: vi.fn(),
   getSignedUploadUrl: vi.fn(),
+  copy: vi.fn(),
+  deleteByPrefix: vi.fn(),
+  deleteMany: vi.fn(),
+  head: vi.fn(),
 }
 
 describe('buildPipelineContext', () => {

@@ -9,7 +9,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsup",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/__tests__",
     "lint": "eslint src",
     "clean": "rm -rf dist"
   },

@@ -23,7 +23,7 @@
     "dev:standalone": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts && tsc --noEmit -p src/__tests__",
     "lint": "eslint src",
     "clean": "rm -rf dist",
     "eval:search": "tsx scripts/eval-search.ts",
