@@ -22,6 +22,7 @@ function createMockCtx() {
     },
     getResource: vi.fn(),
     publishContent: vi.fn().mockResolvedValue(true),
+    putObject: vi.fn(),
     acquireFetchSlot: vi.fn(),
     indexContent: vi.fn(),
     deleteContent: vi.fn(),
@@ -62,9 +63,9 @@ describe('executeExtract', () => {
         ],
       },
     })
-    expect(ctx.storage.upload).toHaveBeenCalledOnce()
+    expect(ctx.putObject).toHaveBeenCalledOnce()
 
-    const [key, buf, meta] = ctx.storage.upload.mock.calls[0]
+    const [key, buf, meta] = ctx.putObject.mock.calls[0]
     // Unique per run so a later run cannot rewrite it (ADR-043 layer 2).
     expect(key).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-1', 'parquet'))
     expect(meta).toEqual({ contentType: 'application/vnd.apache.parquet' })
@@ -78,7 +79,7 @@ describe('executeExtract', () => {
     const result = await executeExtract('res-2', 'pkg-1', 'resources/pkg-1/res-2', 'CSV', ctx)
 
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-2', 'parquet'))
-    expect(ctx.storage.upload).toHaveBeenCalledOnce()
+    expect(ctx.putObject).toHaveBeenCalledOnce()
   })
 
   it('should extract TSV data', async () => {
@@ -87,7 +88,7 @@ describe('executeExtract', () => {
     const result = await executeExtract('res-3', 'pkg-1', 'resources/pkg-1/res-3', 'TSV', ctx)
 
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-3', 'parquet'))
-    expect(ctx.storage.upload).toHaveBeenCalledOnce()
+    expect(ctx.putObject).toHaveBeenCalledOnce()
   })
 
   it('should store all rows without truncation', async () => {
@@ -101,7 +102,7 @@ describe('executeExtract', () => {
 
     // Parquet stores all rows (no 200-row limit)
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-4', 'parquet'))
-    expect(ctx.storage.upload).toHaveBeenCalledOnce()
+    expect(ctx.putObject).toHaveBeenCalledOnce()
   })
 
   it('should detect encoding for TXT without Parquet generation', async () => {
@@ -111,20 +112,20 @@ describe('executeExtract', () => {
 
     expect(result).toEqual({ previewKey: null, encoding: 'ASCII' })
     expect(ctx.storage.download).toHaveBeenCalled()
-    expect(ctx.storage.upload).not.toHaveBeenCalled()
+    expect(ctx.putObject).not.toHaveBeenCalled()
   })
 
   it('should return null for non-text formats', async () => {
     const result = await executeExtract('res-6', 'pkg-1', 'resources/pkg-1/res-6', 'PDF', ctx)
     expect(result).toBeNull()
-    expect(ctx.storage.upload).not.toHaveBeenCalled()
+    expect(ctx.putObject).not.toHaveBeenCalled()
     expect(ctx.storage.download).not.toHaveBeenCalled()
   })
 
   it('should return null for null format', async () => {
     const result = await executeExtract('res-7', 'pkg-1', 'resources/pkg-1/res-7', null, ctx)
     expect(result).toBeNull()
-    expect(ctx.storage.upload).not.toHaveBeenCalled()
+    expect(ctx.putObject).not.toHaveBeenCalled()
     expect(ctx.storage.download).not.toHaveBeenCalled()
   })
 
@@ -137,7 +138,7 @@ describe('executeExtract', () => {
       previewKey: null,
       encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/),
     })
-    expect(ctx.storage.upload).not.toHaveBeenCalled()
+    expect(ctx.putObject).not.toHaveBeenCalled()
   })
 
   it('should return UTF8 for GeoJSON without downloading', async () => {
@@ -148,7 +149,7 @@ describe('executeExtract', () => {
       encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/),
     })
     expect(ctx.storage.download).not.toHaveBeenCalled()
-    expect(ctx.storage.upload).not.toHaveBeenCalled()
+    expect(ctx.putObject).not.toHaveBeenCalled()
   })
 
   it('should return UTF8 for JSON without downloading', async () => {
@@ -159,7 +160,7 @@ describe('executeExtract', () => {
       encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/),
     })
     expect(ctx.storage.download).not.toHaveBeenCalled()
-    expect(ctx.storage.upload).not.toHaveBeenCalled()
+    expect(ctx.putObject).not.toHaveBeenCalled()
   })
 
   it('should return UTF8 for MD without downloading', async () => {
@@ -197,7 +198,7 @@ describe('executeExtract', () => {
     const result = await executeExtract('res-13', 'pkg-1', 'resources/pkg-1/res-13', 'CSV', ctx)
 
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-13', 'parquet'))
-    expect(ctx.storage.upload).toHaveBeenCalledOnce()
+    expect(ctx.putObject).toHaveBeenCalledOnce()
   })
 
   it('should detect and convert Shift_JIS encoding', async () => {
@@ -228,7 +229,7 @@ describe('executeExtract', () => {
     const result = await executeExtract('res-16', 'pkg-1', 'resources/pkg-1/res-16', 'CSV', ctx)
 
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-16', 'parquet'))
-    expect(ctx.storage.upload).toHaveBeenCalledOnce()
+    expect(ctx.putObject).toHaveBeenCalledOnce()
   })
 
   it('should handle multiple title rows before header', async () => {
@@ -239,7 +240,7 @@ describe('executeExtract', () => {
     const result = await executeExtract('res-15', 'pkg-1', 'resources/pkg-1/res-15', 'CSV', ctx)
 
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-15', 'parquet'))
-    expect(ctx.storage.upload).toHaveBeenCalledOnce()
+    expect(ctx.putObject).toHaveBeenCalledOnce()
   })
 
   it('should generate ZIP manifest and upload as JSON', async () => {
@@ -256,9 +257,9 @@ describe('executeExtract', () => {
       encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/),
     })
     expect(ctx.storage.download).toHaveBeenCalledWith('resources/pkg-1/res-zip')
-    expect(ctx.storage.upload).toHaveBeenCalledOnce()
+    expect(ctx.putObject).toHaveBeenCalledOnce()
 
-    const [key, buf, meta] = ctx.storage.upload.mock.calls[0]
+    const [key, buf, meta] = ctx.putObject.mock.calls[0]
     expect(key).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-zip', 'json'))
     expect(meta).toEqual({ contentType: 'application/json' })
 
@@ -280,6 +281,6 @@ describe('executeExtract', () => {
     )
 
     expect(result).toBeNull()
-    expect(ctx.storage.upload).not.toHaveBeenCalled()
+    expect(ctx.putObject).not.toHaveBeenCalled()
   })
 })

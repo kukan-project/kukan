@@ -80,9 +80,6 @@ export const ORPHAN_CLEANUP_CRON = '17 * * * *'
  */
 export const LAKE_INGEST_SWEEP_CRON = '37 * * * *'
 
-/** How long an object nothing points at is kept, so in-flight reads finish. */
-export const ORPHAN_RETENTION_MS = 60 * 60 * 1000
-
 /**
  * How long an upload URL's object is kept before the sweep reclaims it. Bounds
  * a slow client rather than an in-flight read, so far longer than the orphan

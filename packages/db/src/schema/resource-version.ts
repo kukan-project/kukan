@@ -55,6 +55,8 @@ export const resourceVersion = pgTable(
   (table) => [
     uniqueIndex('idx_resource_version_res_ver').on(table.resourceId, table.version),
     index('idx_resource_version_state').on(table.state),
+    // As above: the orphan sweep's reference check reads this column.
+    index('idx_resource_version_storage_key').on(table.storageKey),
     // Drives the dashboard's pending-ingest count; partial, so once the
     // migration is done it is empty and proving that costs nothing.
     index('idx_resource_version_pending_lake')

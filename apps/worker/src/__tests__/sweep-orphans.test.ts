@@ -15,8 +15,11 @@ function boundStrings(node: unknown, found: string[] = [], seen = new WeakSet<ob
   return found
 }
 
-/** Chainable stub: the SELECT resolves to `due`, the DELETE records its filter. */
-function createDb(due: string[]) {
+/**
+ * Chainable stub: the SELECT resolves to `due`, the DELETE records its filter,
+ * and `execute` answers the reference check with `referenced`.
+ */
+function createDb(due: string[], referenced: string[] = []) {
   const untracked: string[][] = []
   const select = {
     from: () => select,
@@ -26,6 +29,7 @@ function createDb(due: string[]) {
   }
   const db = {
     select: () => select,
+    execute: () => Promise.resolve({ rows: referenced.map((key) => ({ key })) }),
     delete: () => ({
       where: (cond: unknown) => {
         untracked.push(boundStrings(cond))
@@ -43,7 +47,11 @@ describe('sweepOrphanedObjects', () => {
     const { db, untracked } = createDb([])
     const storage = { deleteMany: vi.fn() } as unknown as StorageAdapter
 
-    expect(await sweepOrphanedObjects(db, storage, log)).toEqual({ scanned: 0, deleted: 0 })
+    expect(await sweepOrphanedObjects(db, storage, log)).toEqual({
+      scanned: 0,
+      deleted: 0,
+      stillReferenced: 0,
+    })
     expect(storage.deleteMany).not.toHaveBeenCalled()
     expect(untracked).toHaveLength(0)
   })
@@ -54,7 +62,11 @@ describe('sweepOrphanedObjects', () => {
       deleteMany: vi.fn().mockResolvedValue(['a', 'b']),
     } as unknown as StorageAdapter
 
-    expect(await sweepOrphanedObjects(db, storage, log)).toEqual({ scanned: 2, deleted: 2 })
+    expect(await sweepOrphanedObjects(db, storage, log)).toEqual({
+      scanned: 2,
+      deleted: 2,
+      stillReferenced: 0,
+    })
     // One call, not one per key — the sweep is the reason deleteMany exists.
     expect(storage.deleteMany).toHaveBeenCalledTimes(1)
     expect(storage.deleteMany).toHaveBeenCalledWith(['a', 'b'])
@@ -67,8 +79,29 @@ describe('sweepOrphanedObjects', () => {
     const { db, untracked } = createDb(['ok', 'broken'])
     const storage = { deleteMany: vi.fn().mockResolvedValue(['ok']) } as unknown as StorageAdapter
 
-    expect(await sweepOrphanedObjects(db, storage, log)).toEqual({ scanned: 2, deleted: 1 })
+    expect(await sweepOrphanedObjects(db, storage, log)).toEqual({
+      scanned: 2,
+      deleted: 1,
+      stillReferenced: 0,
+    })
     expect(untracked[0]).toContain('ok')
     expect(untracked[0]).not.toContain('broken')
+  })
+
+  it('drops the record and spares the object when something still points at it', async () => {
+    // A write-ahead record whose removal was missed (ADR-045 §3). Without this
+    // check the sweep would delete an object a row is serving; with it, the
+    // leftover record is what goes.
+    const { db, untracked } = createDb(['live', 'stranded'], ['live'])
+    const storage = {
+      deleteMany: vi.fn().mockResolvedValue(['stranded']),
+    } as unknown as StorageAdapter
+
+    const result = await sweepOrphanedObjects(db, storage, log)
+
+    expect(result).toEqual({ scanned: 2, deleted: 1, stillReferenced: 1 })
+    expect(storage.deleteMany).toHaveBeenCalledWith(['stranded'])
+    // The referenced key is untracked — leaving it would re-ask every hour.
+    expect(untracked[0]).toContain('live')
   })
 })

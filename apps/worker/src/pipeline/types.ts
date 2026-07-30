@@ -5,6 +5,7 @@
 
 import type { Readable } from 'node:stream'
 import type { ContentDoc } from '@kukan/search-adapter'
+import type { ObjectMeta } from '@kukan/storage-adapter'
 import type { IngestResult } from '@kukan/lake'
 import type { PackageDbState, ResourceSchema } from '@kukan/shared'
 import type { PublishedContent } from '@kukan/api/services/storage-pointer'
@@ -25,11 +26,13 @@ export interface ResourceForPipeline {
 }
 
 export interface PipelineContext {
+  /**
+   * Reading only. Creating an object goes through {@link putObject}, and not
+   * offering the raw write here is what keeps that from being bypassed — a step
+   * cannot record nothing if it has nothing to write with (ADR-045).
+   */
   storage: {
     download(key: string): Promise<Readable>
-    upload(key: string, body: Buffer | Readable, meta?: Record<string, unknown>): Promise<void>
-    /** Server-side copy for immutable version capture (ADR-043). */
-    copy(sourceKey: string, destKey: string): Promise<void>
   }
   /** Get an active resource by ID */
   getResource(id: string): Promise<ResourceForPipeline | null>
@@ -41,6 +44,15 @@ export interface PipelineContext {
    * @returns whether this run's object became the live content.
    */
   publishContent(id: string, content: PublishedContent): Promise<boolean>
+  /**
+   * Write an object, recording the key first (ADR-045).
+   *
+   * The record is what makes the object reachable if this run dies before a
+   * pointer references it; the statement that commits the pointer removes it.
+   * Every object this pipeline creates goes through here, so forgetting is not
+   * a thing a step can do.
+   */
+  putObject(key: string, body: Buffer | Readable, meta?: ObjectMeta): Promise<void>
   /**
    * Atomically acquire a fetch slot for the given FQDN.
    * Returns true if the slot was acquired (i.e. last fetch was >1s ago or first time).

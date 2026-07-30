@@ -13,6 +13,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 import { resource } from './resource'
 
 export const resourcePipeline = pgTable(
@@ -42,6 +43,12 @@ export const resourcePipeline = pgTable(
   (table) => [
     uniqueIndex('idx_resource_pipeline_resource_id').on(table.resourceId),
     index('idx_resource_pipeline_status').on(table.status),
+    index('idx_resource_pipeline_preview_key').on(table.previewKey),
+    // The one storage pointer that lives inside JSON rather than in a column.
+    // The orphan sweep asks whether any pointer still references a key before
+    // deleting its object (ADR-045 §3), and this is the only one it could not
+    // answer on an index.
+    index('idx_resource_pipeline_text_head').on(sql`(${table.metadata} ->> 'textHeadKey')`),
   ]
 )
 

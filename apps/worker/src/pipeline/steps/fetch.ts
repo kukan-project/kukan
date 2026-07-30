@@ -131,7 +131,7 @@ async function downloadToStorage(
   })
 
   const stream = readable.pipe(meter)
-  await ctx.storage.upload(storageKey, stream)
+  await ctx.putObject(storageKey, stream)
 
   return {
     hash: `${HASH_PREFIX}${hashDigest.digest('hex')}`,

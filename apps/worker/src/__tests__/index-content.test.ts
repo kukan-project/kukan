@@ -38,6 +38,7 @@ function createMockCtx(overrides?: Partial<PipelineContext>): PipelineContext {
     }),
     getPackageState: vi.fn().mockResolvedValue('active'),
     publishContent: vi.fn().mockResolvedValue(true),
+    putObject: vi.fn(),
     acquireFetchSlot: vi.fn(),
     indexContent: vi.fn(),
     deleteContent: vi.fn(),
@@ -87,7 +88,7 @@ describe('executeIndexContent', () => {
 
         expect(result).toBeNull()
         expect(ctx.storage.download).not.toHaveBeenCalled()
-        expect(ctx.storage.upload).not.toHaveBeenCalled()
+        expect(ctx.putObject).not.toHaveBeenCalled()
         expect(ctx.indexContent).not.toHaveBeenCalled()
       }
     )
@@ -379,10 +380,10 @@ describe('executeIndexContent', () => {
       const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)
 
       // Unique to this run, like every other object a run writes (ADR-043).
-      expect(ctx.storage.upload).toHaveBeenCalledWith(TEXT_HEAD_KEY, expect.any(Buffer), {
+      expect(ctx.putObject).toHaveBeenCalledWith(TEXT_HEAD_KEY, expect.any(Buffer), {
         contentType: 'text/plain; charset=utf-8',
       })
-      const uploaded = vi.mocked(ctx.storage.upload).mock.calls[0][1] as Buffer
+      const uploaded = vi.mocked(ctx.putObject).mock.calls[0][1] as Buffer
       expect(uploaded.toString('utf-8')).toContain('Extracted document text')
       expect(result!.textHeadKey).toEqual(TEXT_HEAD_KEY)
       expect(result!.textHeadBytes).toBe(uploaded.length)
@@ -397,7 +398,7 @@ describe('executeIndexContent', () => {
 
       const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)
 
-      const uploaded = vi.mocked(ctx.storage.upload).mock.calls[0][1] as Buffer
+      const uploaded = vi.mocked(ctx.putObject).mock.calls[0][1] as Buffer
       expect(uploaded.length).toBeLessThanOrEqual(64 * 1024)
       expect(uploaded.toString('utf-8')).not.toContain('�')
       expect(result!.textHeadBytes).toBe(uploaded.length)
@@ -411,7 +412,7 @@ describe('executeIndexContent', () => {
 
       const result = await executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)
 
-      expect(ctx.storage.upload).not.toHaveBeenCalled()
+      expect(ctx.putObject).not.toHaveBeenCalled()
       expect(result!.textHeadKey).toBeUndefined()
     })
 
@@ -428,7 +429,7 @@ describe('executeIndexContent', () => {
         ctx
       )
 
-      expect(ctx.storage.upload).not.toHaveBeenCalled()
+      expect(ctx.putObject).not.toHaveBeenCalled()
       expect(result!.textHeadKey).toBeUndefined()
     })
 
@@ -445,7 +446,7 @@ describe('executeIndexContent', () => {
       expect(result!.contentIndexed).toBe(false)
       expect(result!.contentChunks).toBe(0)
       expect(result!.contentOriginalSize).toBeGreaterThan(0)
-      expect(ctx.storage.upload).toHaveBeenCalledTimes(1)
+      expect(ctx.putObject).toHaveBeenCalledTimes(1)
       expect(ctx.indexContent).not.toHaveBeenCalled()
       expect(ctx.deleteContent).not.toHaveBeenCalled()
     })

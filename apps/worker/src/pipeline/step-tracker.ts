@@ -15,6 +15,7 @@ import type { Database } from '@kukan/db'
 import { resourcePipeline } from '@kukan/db'
 import type { PipelineStatus, PipelineStepStatus, PipelineStepName } from '@kukan/shared'
 import { heldBy, type ResourceClaim } from '@kukan/api/services/pipeline-claim'
+import { PARKED_UNTIL } from '@kukan/api/services/storage-pointer'
 
 /**
  * The run no longer holds its resource: something killed it, or took it over
@@ -95,11 +96,18 @@ export class StepTracker {
         FROM before b
         WHERE p.id = b.id
         RETURNING b.preview_key AS previous_preview, b.text_head AS previous_text_head
+      ),
+      parked AS (
+        INSERT INTO orphaned_object (key, expires_at)
+        SELECT key, ${PARKED_UNTIL}
+        FROM moved, LATERAL (VALUES (previous_preview), (previous_text_head)) v(key)
+        WHERE key IS NOT NULL
+        ON CONFLICT (key) DO NOTHING
       )
-      INSERT INTO orphaned_object (key)
-      SELECT key FROM moved, LATERAL (VALUES (previous_preview), (previous_text_head)) v(key)
-      WHERE key IS NOT NULL
-      ON CONFLICT (key) DO NOTHING
+      -- The preview is referenced now, so its write-ahead record is done. Taken
+      -- from moved so a run that lost the claim does not drop the record of a
+      -- preview its own row never came to reference (ADR-045).
+      DELETE FROM orphaned_object o USING moved WHERE o.key = ${previewKey}::text
     `)
   }
 
@@ -122,11 +130,15 @@ export class StepTracker {
         FROM before b
         WHERE p.id = b.id
         RETURNING b.text_head AS previous_key, p.metadata ->> 'textHeadKey' AS new_key
+      ),
+      parked AS (
+        INSERT INTO orphaned_object (key, expires_at)
+        SELECT previous_key, ${PARKED_UNTIL} FROM merged
+        WHERE previous_key IS NOT NULL AND previous_key IS DISTINCT FROM new_key
+        ON CONFLICT (key) DO NOTHING
       )
-      INSERT INTO orphaned_object (key)
-      SELECT previous_key FROM merged
-      WHERE previous_key IS NOT NULL AND previous_key IS DISTINCT FROM new_key
-      ON CONFLICT (key) DO NOTHING
+      -- The text head this merge names is referenced now.
+      DELETE FROM orphaned_object o USING merged WHERE o.key = merged.new_key
     `)
   }
 

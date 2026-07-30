@@ -68,8 +68,8 @@ jobs:
         run: pnpm typecheck
 
       - name: Test (unit only)
-        # `test:unit` runs every project except `api-integration`, whose globalSetup
-        # connects to Postgres. To run integration tests, provide a database via
-        # `services:` and run `test:integration` as a separate job.
+        # `test:unit` runs every project except the `*-integration` ones, whose
+        # globalSetup connects to Postgres. To run integration tests, provide a
+        # database via `services:` and run `test:integration` as a separate job.
         if: steps.changes.outputs.code == 'true'
         run: pnpm test:unit

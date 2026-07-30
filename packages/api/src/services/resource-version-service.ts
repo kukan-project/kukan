@@ -30,7 +30,7 @@ import {
   withResourceClaims,
   withResourceClaimsOrConflict,
 } from './pipeline-claim'
-import { publishLiveContent } from './storage-pointer'
+import { copyObject, publishLiveContent, releaseObject } from './storage-pointer'
 import { PipelineService } from './pipeline-service'
 
 export type VersionState = 'active' | 'purging' | 'purged'
@@ -316,7 +316,7 @@ export class ResourceVersionService {
       if (!current.storageKey || current.storageKey !== r.storageKey) return false
 
       const versionKey = getVersionKey(r.packageId, r.id, 1)
-      await storage.copy(current.storageKey, versionKey)
+      await copyObject(this.db, storage, current.storageKey, versionKey)
       // Measured rather than taken from the row: this is pre-existing data,
       // and `upload-complete` used to accept any string as a hash.
       const captured = await digestStream(await storage.download(versionKey))
@@ -343,6 +343,7 @@ export class ResourceVersionService {
         origin: versionOrigin(r.urlType),
         schema: r.schemaTrusted ? (r.schema ?? null) : null,
       })
+      await releaseObject(this.db, versionKey)
       return true
     })
   }
@@ -772,7 +773,7 @@ export class ResourceVersionService {
     }
 
     const restoredKey = getStorageKey(current.packageId, resourceId, randomUUID())
-    await storage.copy(prev.storageKey, restoredKey)
+    await copyObject(this.db, storage, prev.storageKey, restoredKey)
     await publishLiveContent(this.db, resourceId, {
       key: restoredKey,
       previousKey: current.storageKey,

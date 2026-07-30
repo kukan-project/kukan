@@ -18,6 +18,7 @@ import type { CreateResourceInput, UpdateResourceInput, PackageDbState } from '@
 import type { PendingResourceMetadata } from '@kukan/db'
 import { RESOURCE_POSITION_LOCK, lockInTransaction } from './advisory-lock'
 import { cancelResourceRun } from './pipeline-claim'
+import { PARKED_UNTIL } from './storage-pointer'
 import { hasOrgMembership, hasDraftAccess, type AuthUser } from '../auth/permissions'
 
 // Package states whose resources are reachable — drafts hold resources before publish (ADR-039)
@@ -385,8 +386,8 @@ export class ResourceService {
         RETURNING b.pending_storage_key AS previous_key
       ),
       parked AS (
-        INSERT INTO orphaned_object (key)
-        SELECT previous_key FROM updated
+        INSERT INTO orphaned_object (key, expires_at)
+        SELECT previous_key, ${PARKED_UNTIL} FROM updated
         WHERE previous_key IS NOT NULL
         ON CONFLICT (key) DO NOTHING
       )
@@ -460,8 +461,8 @@ export class ResourceService {
         RETURNING b.storage_key AS previous_key, b.pending_storage_key AS new_key
       ),
       parked AS (
-        INSERT INTO orphaned_object (key)
-        SELECT previous_key FROM promoted
+        INSERT INTO orphaned_object (key, expires_at)
+        SELECT previous_key, ${PARKED_UNTIL} FROM promoted
         WHERE previous_key IS NOT NULL
         ON CONFLICT (key) DO NOTHING
       )

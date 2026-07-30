@@ -10,7 +10,12 @@ import type { SearchAdapter, ContentDoc } from '@kukan/search-adapter'
 import type { IngestResult, LakeConfig } from '@kukan/lake'
 import { withLakeSession } from '@kukan/lake'
 import { ingestVersionIntoLake, withLakeIngestLock } from '@kukan/api/services/lake-ingest'
-import { publishLiveContent } from '@kukan/api/services/storage-pointer'
+import {
+  copyObject,
+  publishLiveContent,
+  releaseObject,
+  reserveObject,
+} from '@kukan/api/services/storage-pointer'
 import type { PackageDbState } from '@kukan/shared'
 import { getVersionKey, versionOrigin } from '@kukan/shared'
 import { decideVersionCapture } from './version-capture'
@@ -65,6 +70,13 @@ export function buildPipelineContext(
 
     async publishContent(id, content): Promise<boolean> {
       return publishLiveContent(db, id, content)
+    },
+
+    async putObject(key, body, meta) {
+      // Recorded before the write, so an object created by a run that then dies
+      // is still reachable — nothing else would ever name it (ADR-045).
+      await reserveObject(db, key)
+      await storage.upload(key, body, meta)
     },
 
     async acquireFetchSlot(fqdn: string): Promise<boolean> {
@@ -137,7 +149,7 @@ export function buildPipelineContext(
 
       const { version } = decision
       const versionKey = getVersionKey(packageId, resourceId, version)
-      await storage.copy(currentStorageKey, versionKey)
+      await copyObject(db, storage, currentStorageKey, versionKey)
 
       await db.insert(resourceVersion).values({
         resourceId,
@@ -148,6 +160,9 @@ export function buildPipelineContext(
         origin: versionOrigin(res!.urlType),
         schema,
       })
+      // The row references the object now (ADR-045). Its own statement, since
+      // unlike the pointer movers this insert has no orphan write to ride on.
+      await releaseObject(db, versionKey)
       return { captured: true as const, version }
     },
 

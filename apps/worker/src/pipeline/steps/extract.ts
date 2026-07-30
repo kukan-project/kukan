@@ -55,7 +55,7 @@ export async function executeExtract(
       const manifest = await extractZipManifest(tmpPath)
       if (!manifest) return null
       const previewKey = getPreviewKey(packageId, resourceId, 'json', runToken)
-      await ctx.storage.upload(previewKey, Buffer.from(JSON.stringify(manifest)), {
+      await ctx.putObject(previewKey, Buffer.from(JSON.stringify(manifest)), {
         contentType: 'application/json',
       })
       return { previewKey, encoding: 'UTF8' }
@@ -138,7 +138,7 @@ export async function executeExtract(
 
   // I/O: upload to Storage
   const previewKey = getPreviewKey(packageId, resourceId, 'parquet', runToken)
-  await ctx.storage.upload(previewKey, Buffer.from(parquetBuf), {
+  await ctx.putObject(previewKey, Buffer.from(parquetBuf), {
     contentType: 'application/vnd.apache.parquet',
   })
 

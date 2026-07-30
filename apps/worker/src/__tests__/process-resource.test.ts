@@ -64,6 +64,7 @@ function createMockCtx(): PipelineContext {
     storage: { download: vi.fn(), upload: vi.fn(), copy: vi.fn() },
     getResource: vi.fn(),
     publishContent: vi.fn().mockResolvedValue(true),
+    putObject: vi.fn(),
     acquireFetchSlot: vi.fn().mockResolvedValue(true),
     indexContent: vi.fn(),
     deleteContent: vi.fn(),

@@ -185,7 +185,7 @@ async function indexDocument(
       'utf-8'
     )
     const textHeadKey = getPreviewKey(packageId, resourceId, 'txt', randomUUID())
-    await ctx.storage.upload(textHeadKey, textHead, {
+    await ctx.putObject(textHeadKey, textHead, {
       contentType: 'text/plain; charset=utf-8',
     })
 

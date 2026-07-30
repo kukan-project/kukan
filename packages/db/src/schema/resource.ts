@@ -78,5 +78,10 @@ export const resource = pgTable(
     index('idx_resource_name_trgm').using('gin', table.name.op('gin_trgm_ops')),
     index('idx_resource_description_trgm').using('gin', table.description.op('gin_trgm_ops')),
     index('idx_resource_health_check').on(table.urlType, table.state, table.healthCheckedAt),
+    // Read by the orphan sweep, which asks whether any pointer still names a
+    // key before deleting its object (ADR-045 §3). Unindexed it would scan
+    // this table once per swept key, hourly.
+    index('idx_resource_storage_key').on(table.storageKey),
+    index('idx_resource_pending_storage_key').on(table.pendingStorageKey),
   ]
 )

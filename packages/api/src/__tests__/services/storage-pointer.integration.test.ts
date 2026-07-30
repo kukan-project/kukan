@@ -10,7 +10,11 @@ import { randomUUID } from 'node:crypto'
 import { eq, sql } from 'drizzle-orm'
 import { resource } from '@kukan/db'
 import { getStorageKey } from '@kukan/shared'
-import { expirePendingUploads, publishLiveContent } from '../../services/storage-pointer'
+import {
+  expirePendingUploads,
+  publishLiveContent,
+  reserveObject,
+} from '../../services/storage-pointer'
 import { ResourceService } from '../../services/resource-service'
 import {
   CLAIM_STALE_AFTER_MS,
@@ -414,5 +418,77 @@ describe('prepareForUpload — stopping the run it replaces', () => {
     })
 
     expect((await pipeline()).status).toBe('complete')
+  })
+})
+
+describe('the write-ahead record (ADR-045)', () => {
+  async function ledger(): Promise<{ key: string; expires: number }[]> {
+    const rows = await db.execute(sql`SELECT key, expires_at FROM orphaned_object ORDER BY key`)
+    return (rows.rows as unknown as { key: string; expires_at: string }[]).map((r) => ({
+      key: r.key,
+      expires: new Date(r.expires_at).getTime(),
+    }))
+  }
+
+  it('records a key before its object exists, with a deadline of its own', async () => {
+    // Without this there is no path back to an object whose writer died before
+    // anything referenced it: no row names it, and no sweep looks for it.
+    const key = getStorageKey(packageId, resourceId, 'run')
+
+    await reserveObject(db, key)
+
+    const [row] = await ledger()
+    expect(row.key).toBe(key)
+    expect(row.expires).toBeGreaterThan(Date.now())
+  })
+
+  it('drops the record once the pointer references the key', async () => {
+    const key = getStorageKey(packageId, resourceId, 'run')
+    await reserveObject(db, key)
+
+    await publishLiveContent(db, resourceId, {
+      key,
+      previousKey: null,
+      hash: 'sha256:a',
+      size: 1,
+      previousHash: null,
+    })
+
+    expect(await ledger()).toEqual([])
+  })
+
+  it('keeps the record when the pointer move loses', async () => {
+    // The run was overtaken, so its object is garbage rather than content —
+    // exactly what the sweep should collect.
+    const live = getStorageKey(packageId, resourceId, 'live')
+    await db.update(resource).set({ storageKey: live }).where(eq(resource.id, resourceId))
+    const key = getStorageKey(packageId, resourceId, 'late')
+    await reserveObject(db, key)
+
+    const published = await publishLiveContent(db, resourceId, {
+      key,
+      previousKey: null, // this run started from an empty pointer; it has moved
+      hash: 'sha256:a',
+      size: 1,
+      previousHash: null,
+    })
+
+    expect(published).toBe(false)
+    expect((await ledger()).map((r) => r.key)).toContain(key)
+  })
+
+  it('pushes the expiry out when the same key is reserved again', async () => {
+    // Version keys are derived from the version number, so a retried capture
+    // reserves the one the failed attempt did. Inheriting that attempt's expiry
+    // would leave the sweep free to delete the object mid-write.
+    const key = getStorageKey(packageId, resourceId, 'retried')
+    await db.execute(sql`
+      INSERT INTO orphaned_object (key, expires_at) VALUES (${key}, NOW() - INTERVAL '1 minute')
+    `)
+
+    await reserveObject(db, key)
+
+    const [row] = await ledger()
+    expect(row.expires).toBeGreaterThan(Date.now())
   })
 })

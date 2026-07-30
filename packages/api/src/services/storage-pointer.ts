@@ -8,9 +8,10 @@
  * the query builder cannot express a data-modifying CTE.
  */
 
-import { sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import { orphanedObject } from '@kukan/db'
+import type { StorageAdapter } from '@kukan/storage-adapter'
 
 export interface PublishedContent {
   /** Key this run's bytes are at. */
@@ -60,9 +61,15 @@ export async function publishLiveContent(
       FROM outcome
     ),
     parked AS (
-      INSERT INTO orphaned_object (key)
-      SELECT key FROM orphan WHERE key IS NOT NULL
+      INSERT INTO orphaned_object (key, expires_at)
+      SELECT key, ${PARKED_UNTIL} FROM orphan WHERE key IS NOT NULL
       ON CONFLICT (key) DO NOTHING
+    ),
+    -- This run's object is referenced now, so its write-ahead record has done
+    -- its job (ADR-045). When the move did not apply, the record stays: the
+    -- key is garbage, and the row above has already claimed it as such.
+    released AS (
+      DELETE FROM orphaned_object o USING outcome WHERE outcome.ok AND o.key = ${key}::text
     )
     SELECT ok AS published FROM orphan
   `)
@@ -98,12 +105,87 @@ export async function expirePendingUploads(
       FROM before b WHERE r.id = b.id
       RETURNING b.pending_storage_key AS key
     )
-    INSERT INTO orphaned_object (key)
-    SELECT key FROM cleared
+    INSERT INTO orphaned_object (key, expires_at)
+    SELECT key, ${PARKED_UNTIL} FROM cleared
     ON CONFLICT (key) DO NOTHING
     RETURNING key
   `)
   return result.rows.length
+}
+
+/**
+ * When the sweep may delete a key nothing points at any more: long enough for a
+ * request that already resolved it to finish reading, across several Range
+ * requests for a Parquet (ADR-043).
+ */
+export const PARKED_UNTIL = sql`NOW() + INTERVAL '1 hour'`
+
+/**
+ * When the sweep may delete a key whose object is about to be written: long
+ * enough that the write has either finished — removing this record — or died
+ * with it (ADR-045).
+ *
+ * The same hour as {@link PARKED_UNTIL} today, and stated separately because it
+ * answers a different question. Tuning one for its own reason must not move the
+ * other.
+ */
+export const RESERVED_UNTIL = sql`NOW() + INTERVAL '1 hour'`
+
+/**
+ * Record a key before its object exists, so a process that dies before anything
+ * points at it still leaves a way back to the object (ADR-045).
+ *
+ * Removed by the statement that commits the pointer. A record left behind is
+ * what the sweep reclaims — after checking that nothing references the key,
+ * since a missed removal would otherwise cost live data.
+ *
+ * An existing record has its expiry pushed out rather than left alone: version
+ * keys are derived from the version number, so a retried capture reserves the
+ * same key again, and inheriting the first attempt's expiry would leave the
+ * sweep free to delete the object while this write is still going.
+ */
+export async function reserveObject(
+  db: Pick<Database | Transaction, 'insert'>,
+  key: string
+): Promise<void> {
+  await db
+    .insert(orphanedObject)
+    .values({ key, expiresAt: RESERVED_UNTIL })
+    .onConflictDoUpdate({ target: orphanedObject.key, set: { expiresAt: RESERVED_UNTIL } })
+}
+
+/**
+ * Server-side copy of an object, recorded before it exists (ADR-045).
+ *
+ * The counterpart to the pipeline's `putObject`, for the writers that copy
+ * rather than upload — version capture, the backfill, and the restore a purge
+ * or a revert performs. Here so that reaching for a copy reaches for the
+ * recording too; the three of them doing it by hand is three chances to forget,
+ * and a fourth call site would have nothing to copy from.
+ */
+export async function copyObject(
+  db: Pick<Database | Transaction, 'insert'>,
+  storage: Pick<StorageAdapter, 'copy'>,
+  sourceKey: string,
+  destKey: string
+): Promise<void> {
+  await reserveObject(db, destKey)
+  await storage.copy(sourceKey, destKey)
+}
+
+/**
+ * Drop a write-ahead record because something references the key now.
+ *
+ * For the writers whose commit is a plain insert, with no orphan statement to
+ * fold the removal into. A missed removal is not fatal — the sweep checks for a
+ * reference before deleting anything (ADR-045 §3) — but it leaves a row that
+ * gets re-examined every hour until something clears it.
+ */
+export async function releaseObject(
+  db: Pick<Database | Transaction, 'delete'>,
+  key: string
+): Promise<void> {
+  await db.delete(orphanedObject).where(eq(orphanedObject.key, key))
 }
 
 /**
@@ -116,5 +198,5 @@ export async function parkObject(
   key: string | null | undefined
 ): Promise<void> {
   if (!key) return
-  await db.insert(orphanedObject).values({ key }).onConflictDoNothing()
+  await db.insert(orphanedObject).values({ key, expiresAt: PARKED_UNTIL }).onConflictDoNothing()
 }

@@ -37,19 +37,20 @@ async function streamToBuffer(stream: Readable): Promise<Buffer> {
   return Buffer.concat(chunks)
 }
 
-/** Create mock context with storage.upload that consumes the stream */
+/** Create mock context whose putObject consumes the stream, as a real write would */
 function createMockCtx(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
     storage: {
       download: vi.fn(),
-      upload: vi.fn(async (_key: string, body: Buffer | Readable) => {
-        if (body instanceof Readable) {
-          await streamToBuffer(body)
-        }
-      }),
+      upload: vi.fn(),
     },
     getResource: vi.fn(),
     publishContent: vi.fn().mockResolvedValue(true),
+    putObject: vi.fn(async (_key: string, body: Buffer | Readable) => {
+      if (body instanceof Readable) {
+        await streamToBuffer(body)
+      }
+    }),
     acquireFetchSlot: vi.fn().mockResolvedValue(true),
     indexContent: vi.fn(),
     deleteContent: vi.fn(),
@@ -91,7 +92,7 @@ describe('executeFetch', () => {
       size: content.length,
       status: 'fetched',
     })
-    expect(ctx.storage.upload).not.toHaveBeenCalled()
+    expect(ctx.putObject).not.toHaveBeenCalled()
     // Same key in and out: `upload-complete` already moved the pointer here.
     expect(ctx.publishContent).toHaveBeenCalledWith('res-1', {
       key: 'resources/pkg-1/res-1.upload',
@@ -163,7 +164,7 @@ describe('executeFetch', () => {
       status: 'fetched',
     })
     // The bytes go to a key of this run's own, not the shared one.
-    const writtenKey = vi.mocked(ctx.storage.upload).mock.calls[0][0]
+    const writtenKey = vi.mocked(ctx.putObject).mock.calls[0][0]
     expect(writtenKey).toMatch(RUN_KEY)
     expect((result as { storageKey: string }).storageKey).toBe(writtenKey)
 
@@ -293,7 +294,7 @@ describe('executeFetch', () => {
 
     expect(result).toEqual({ status: 'deferred' })
     expect(ctx.acquireFetchSlot).toHaveBeenCalledWith('example.com')
-    expect(ctx.storage.upload).not.toHaveBeenCalled()
+    expect(ctx.putObject).not.toHaveBeenCalled()
   })
 
   it('should not check rate limit for uploads', async () => {
