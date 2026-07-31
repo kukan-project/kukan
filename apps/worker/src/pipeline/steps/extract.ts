@@ -2,6 +2,11 @@
  * KUKAN Pipeline — Extract Step
  * Detects encoding for all text-based formats, then generates Parquet for CSV/TSV.
  * Non-text formats return null (skip).
+ *
+ * Reads the captured version rather than the live object (ADR-046). The version
+ * file is immutable, which is what lets this be re-run: the same input always
+ * gives the same interpretation, and a run that failed here leaves something a
+ * later one can pick up unchanged.
  */
 
 import { randomUUID } from 'crypto'
@@ -31,6 +36,16 @@ export interface ExtractResult {
   schema?: ResourceSchema | null
 }
 
+/** The captured version this step interprets. */
+export interface ExtractSource {
+  storageKey: string
+  /**
+   * Bytes the version holds, from its row. Known before the download, so a file
+   * too large to interpret costs a sample rather than a full transfer.
+   */
+  size: number
+}
+
 /**
  * Detect encoding for text-based formats.
  * For CSV/TSV, also generates Parquet preview inline.
@@ -39,10 +54,11 @@ export interface ExtractResult {
 export async function executeExtract(
   resourceId: string,
   packageId: string,
-  storageKey: string,
+  source: ExtractSource,
   format: string | null,
   ctx: PipelineContext
 ): Promise<ExtractResult | null> {
+  const { storageKey } = source
   // Unique to this run, so the object this run writes is never rewritten by a
   // later one. The pointer in resource_pipeline.preview_key is what readers
   // follow; the superseded object is deleted once that pointer moves.
@@ -92,25 +108,25 @@ export async function executeExtract(
     return { previewKey: null, encoding }
   }
 
+  // CSV/TSV too large to interpret: labelled from a sample like the other text
+  // formats, and never transferred whole. The version row was measured at
+  // capture and the file behind it is immutable, so this needs no download to
+  // decide.
+  if (source.size > MAX_PARQUET_SOURCE_SIZE) {
+    const sampleStream = await ctx.storage.download(storageKey)
+    const sample = await streamToBuffer(sampleStream, ENCODING_SAMPLE_SIZE)
+    return { previewKey: null, encoding: detectEncoding(fmt, sample) }
+  }
+
   // CSV/TSV: DuckDB reads the file off local disk (ADR-046), so it is streamed
   // down rather than buffered — the JS heap never holds the whole table.
   const rawPath = await streamToTempFile(await ctx.storage.download(storageKey), 'csv')
   try {
-    // A file this step interprets is detected over every byte, as it was when
-    // the step buffered it. A 64KB sample is not enough: a CSV whose first
-    // megabyte is ASCII — ids, dates, numbers — is read as UTF-8, and the
-    // Japanese further down comes back as mojibake (measured, ADR-046). One it
-    // only labels gets the sample the other text formats get: scanning 50MB to
-    // annotate a file that will not be previewed costs seconds for nothing.
+    // Detection reads every byte. A 64KB sample is not enough: a CSV whose
+    // first megabyte is ASCII — ids, dates, numbers — is read as UTF-8, and the
+    // Japanese further down comes back as mojibake (measured, ADR-046).
     const { size } = await stat(rawPath)
-    const oversize = size > MAX_PARQUET_SOURCE_SIZE
-    const encoding = detectEncoding(
-      fmt,
-      await readHead(rawPath, oversize ? ENCODING_SAMPLE_SIZE : size)
-    )
-    if (oversize) {
-      return { previewKey: null, encoding }
-    }
+    const encoding = detectEncoding(fmt, await readHead(rawPath, size))
 
     const charset = toCharset(encoding)
     const csvPath = charset === 'utf-8' ? rawPath : await transcodeToUtf8(rawPath, charset)

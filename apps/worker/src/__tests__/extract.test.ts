@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { Readable } from 'stream'
 import JSZip from 'jszip'
 import { executeExtract } from '../pipeline/steps/extract'
+import { MAX_PARQUET_SOURCE_SIZE } from '../config'
 import {
   captureUpload,
   createPipelineContextMock,
@@ -17,6 +18,9 @@ const PREVIEW_KEY_RE = (pkg: string, res: string, ext: string) =>
 
 const previewKeyMatching = (pkg: string, res: string, ext: string) =>
   expect.stringMatching(PREVIEW_KEY_RE(pkg, res, ext))
+
+/** The captured version the step reads (ADR-046); sized under the interpret cap. */
+const version = (storageKey: string, size = 1024) => ({ storageKey, size })
 
 describe('executeExtract', () => {
   let ctx: ReturnType<typeof createPipelineContextMock>
@@ -34,7 +38,13 @@ describe('executeExtract', () => {
   it('should extract CSV from Storage and upload Parquet', async () => {
     mockStorageDownload('name,age\nAlice,30\nBob,25\n')
 
-    const result = await executeExtract('res-1', 'pkg-1', 'resources/pkg-1/res-1', 'CSV', ctx)
+    const result = await executeExtract(
+      'res-1',
+      'pkg-1',
+      version('resources/pkg-1/res-1'),
+      'CSV',
+      ctx
+    )
 
     expect(ctx.storage.download).toHaveBeenCalledWith('resources/pkg-1/res-1')
     expect(result).toEqual({
@@ -78,7 +88,13 @@ describe('executeExtract', () => {
   it('should handle title row skipping in Parquet output', async () => {
     mockStorageDownload('Title Row,,,\n\nname,age,city\nAlice,30,Tokyo\n')
 
-    const result = await executeExtract('res-2', 'pkg-1', 'resources/pkg-1/res-2', 'CSV', ctx)
+    const result = await executeExtract(
+      'res-2',
+      'pkg-1',
+      version('resources/pkg-1/res-2'),
+      'CSV',
+      ctx
+    )
 
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-2', 'parquet'))
     expect(ctx.putObject).toHaveBeenCalledOnce()
@@ -87,7 +103,13 @@ describe('executeExtract', () => {
   it('should extract TSV data', async () => {
     mockStorageDownload('name\tage\nAlice\t30\n')
 
-    const result = await executeExtract('res-3', 'pkg-1', 'resources/pkg-1/res-3', 'TSV', ctx)
+    const result = await executeExtract(
+      'res-3',
+      'pkg-1',
+      version('resources/pkg-1/res-3'),
+      'TSV',
+      ctx
+    )
 
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-3', 'parquet'))
     expect(ctx.putObject).toHaveBeenCalledOnce()
@@ -100,17 +122,62 @@ describe('executeExtract', () => {
     }
     mockStorageDownload(lines.join('\n') + '\n')
 
-    const result = await executeExtract('res-4', 'pkg-1', 'resources/pkg-1/res-4', 'CSV', ctx)
+    const result = await executeExtract(
+      'res-4',
+      'pkg-1',
+      version('resources/pkg-1/res-4'),
+      'CSV',
+      ctx
+    )
 
     // Parquet stores all rows (no 200-row limit)
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-4', 'parquet'))
     expect(ctx.putObject).toHaveBeenCalledOnce()
   })
 
+  it('labels a CSV too large to interpret without transferring it whole', async () => {
+    // The version row carries the size and the file behind it is immutable, so
+    // this is decided before the download rather than after it (ADR-046).
+    const CHUNK = 64 * 1024
+    const CHUNKS = 16
+    let read = 0
+    ctx.storage.download.mockImplementation(async () =>
+      // Chunked like a real object-store read: the cap only saves anything if
+      // the source is delivered in pieces.
+      Readable.from(
+        (function* () {
+          for (let i = 0; i < CHUNKS; i++) {
+            read += CHUNK
+            yield Buffer.alloc(CHUNK, 'a,b\n1,2\n')
+          }
+        })()
+      )
+    )
+
+    const result = await executeExtract(
+      'res-big',
+      'pkg-1',
+      version('versions/pkg-1/res-big/v1', MAX_PARQUET_SOURCE_SIZE + 1),
+      'CSV',
+      ctx
+    )
+
+    expect(result).toEqual({ previewKey: null, encoding: expect.any(String) })
+    expect(ctx.putObject).not.toHaveBeenCalled()
+    // Only the encoding sample crossed the wire, not the whole object.
+    expect(read).toBeLessThan(CHUNK * CHUNKS)
+  })
+
   it('should detect encoding for TXT without Parquet generation', async () => {
     mockStorageDownload('Hello, world!')
 
-    const result = await executeExtract('res-5', 'pkg-1', 'resources/pkg-1/res-5', 'TXT', ctx)
+    const result = await executeExtract(
+      'res-5',
+      'pkg-1',
+      version('resources/pkg-1/res-5'),
+      'TXT',
+      ctx
+    )
 
     expect(result).toEqual({ previewKey: null, encoding: 'ASCII' })
     expect(ctx.storage.download).toHaveBeenCalled()
@@ -118,14 +185,26 @@ describe('executeExtract', () => {
   })
 
   it('should return null for non-text formats', async () => {
-    const result = await executeExtract('res-6', 'pkg-1', 'resources/pkg-1/res-6', 'PDF', ctx)
+    const result = await executeExtract(
+      'res-6',
+      'pkg-1',
+      version('resources/pkg-1/res-6'),
+      'PDF',
+      ctx
+    )
     expect(result).toBeNull()
     expect(ctx.putObject).not.toHaveBeenCalled()
     expect(ctx.storage.download).not.toHaveBeenCalled()
   })
 
   it('should return null for null format', async () => {
-    const result = await executeExtract('res-7', 'pkg-1', 'resources/pkg-1/res-7', null, ctx)
+    const result = await executeExtract(
+      'res-7',
+      'pkg-1',
+      version('resources/pkg-1/res-7'),
+      null,
+      ctx
+    )
     expect(result).toBeNull()
     expect(ctx.putObject).not.toHaveBeenCalled()
     expect(ctx.storage.download).not.toHaveBeenCalled()
@@ -134,7 +213,13 @@ describe('executeExtract', () => {
   it('should return encoding with null previewKey for empty CSV', async () => {
     mockStorageDownload('')
 
-    const result = await executeExtract('res-8', 'pkg-1', 'resources/pkg-1/res-8', 'CSV', ctx)
+    const result = await executeExtract(
+      'res-8',
+      'pkg-1',
+      version('resources/pkg-1/res-8'),
+      'CSV',
+      ctx
+    )
 
     expect(result).toEqual({
       previewKey: null,
@@ -144,7 +229,13 @@ describe('executeExtract', () => {
   })
 
   it('should return UTF8 for GeoJSON without downloading', async () => {
-    const result = await executeExtract('res-9', 'pkg-1', 'resources/pkg-1/res-9', 'GeoJSON', ctx)
+    const result = await executeExtract(
+      'res-9',
+      'pkg-1',
+      version('resources/pkg-1/res-9'),
+      'GeoJSON',
+      ctx
+    )
 
     expect(result).toEqual({
       previewKey: null,
@@ -155,7 +246,13 @@ describe('executeExtract', () => {
   })
 
   it('should return UTF8 for JSON without downloading', async () => {
-    const result = await executeExtract('res-10', 'pkg-1', 'resources/pkg-1/res-10', 'JSON', ctx)
+    const result = await executeExtract(
+      'res-10',
+      'pkg-1',
+      version('resources/pkg-1/res-10'),
+      'JSON',
+      ctx
+    )
 
     expect(result).toEqual({
       previewKey: null,
@@ -166,7 +263,13 @@ describe('executeExtract', () => {
   })
 
   it('should return UTF8 for MD without downloading', async () => {
-    const result = await executeExtract('res-10b', 'pkg-1', 'resources/pkg-1/res-10b', 'MD', ctx)
+    const result = await executeExtract(
+      'res-10b',
+      'pkg-1',
+      version('resources/pkg-1/res-10b'),
+      'MD',
+      ctx
+    )
 
     expect(result).toEqual({
       previewKey: null,
@@ -178,7 +281,13 @@ describe('executeExtract', () => {
   it('should parse XML encoding declaration', async () => {
     mockStorageDownload('<?xml version="1.0" encoding="Shift_JIS"?><root/>')
 
-    const result = await executeExtract('res-11', 'pkg-1', 'resources/pkg-1/res-11', 'XML', ctx)
+    const result = await executeExtract(
+      'res-11',
+      'pkg-1',
+      version('resources/pkg-1/res-11'),
+      'XML',
+      ctx
+    )
 
     expect(result).toEqual({ previewKey: null, encoding: 'Shift_JIS' })
   })
@@ -186,7 +295,13 @@ describe('executeExtract', () => {
   it('should default to UTF8 for XML without encoding declaration', async () => {
     mockStorageDownload('<?xml version="1.0"?><root/>')
 
-    const result = await executeExtract('res-12', 'pkg-1', 'resources/pkg-1/res-12', 'XML', ctx)
+    const result = await executeExtract(
+      'res-12',
+      'pkg-1',
+      version('resources/pkg-1/res-12'),
+      'XML',
+      ctx
+    )
 
     expect(result).toEqual({
       previewKey: null,
@@ -197,7 +312,13 @@ describe('executeExtract', () => {
   it('should remove footer rows (合計, ※)', async () => {
     mockStorageDownload('name,count\nA,10\nB,20\n合計,30\n※ 2024年データ,,\n')
 
-    const result = await executeExtract('res-13', 'pkg-1', 'resources/pkg-1/res-13', 'CSV', ctx)
+    const result = await executeExtract(
+      'res-13',
+      'pkg-1',
+      version('resources/pkg-1/res-13'),
+      'CSV',
+      ctx
+    )
 
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-13', 'parquet'))
     expect(ctx.putObject).toHaveBeenCalledOnce()
@@ -219,7 +340,13 @@ describe('executeExtract', () => {
     const sjisBuf = Buffer.concat([header, ...Array(20).fill(dataRow)])
     ctx.storage.download.mockResolvedValue(Readable.from(sjisBuf))
 
-    const result = await executeExtract('res-14', 'pkg-1', 'resources/pkg-1/res-14', 'CSV', ctx)
+    const result = await executeExtract(
+      'res-14',
+      'pkg-1',
+      version('resources/pkg-1/res-14'),
+      'CSV',
+      ctx
+    )
 
     expect(result?.encoding).toBe('Shift_JIS')
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-14', 'parquet'))
@@ -228,7 +355,13 @@ describe('executeExtract', () => {
   it('should not skip header in single-column CSV', async () => {
     mockStorageDownload('name\nAlice\nBob\n')
 
-    const result = await executeExtract('res-16', 'pkg-1', 'resources/pkg-1/res-16', 'CSV', ctx)
+    const result = await executeExtract(
+      'res-16',
+      'pkg-1',
+      version('resources/pkg-1/res-16'),
+      'CSV',
+      ctx
+    )
 
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-16', 'parquet'))
     expect(ctx.putObject).toHaveBeenCalledOnce()
@@ -239,7 +372,13 @@ describe('executeExtract', () => {
       'Report Title,,,\nSubtitle,,,\n,,,\nname,age,city,country\nAlice,30,Tokyo,Japan\n'
     )
 
-    const result = await executeExtract('res-15', 'pkg-1', 'resources/pkg-1/res-15', 'CSV', ctx)
+    const result = await executeExtract(
+      'res-15',
+      'pkg-1',
+      version('resources/pkg-1/res-15'),
+      'CSV',
+      ctx
+    )
 
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-15', 'parquet'))
     expect(ctx.putObject).toHaveBeenCalledOnce()
@@ -252,7 +391,13 @@ describe('executeExtract', () => {
     const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' })
     ctx.storage.download.mockResolvedValue(Readable.from(zipBuffer))
 
-    const result = await executeExtract('res-zip', 'pkg-1', 'resources/pkg-1/res-zip', 'ZIP', ctx)
+    const result = await executeExtract(
+      'res-zip',
+      'pkg-1',
+      version('resources/pkg-1/res-zip'),
+      'ZIP',
+      ctx
+    )
 
     expect(result).toEqual({
       previewKey: previewKeyMatching('pkg-1', 'res-zip', 'json'),
@@ -277,7 +422,7 @@ describe('executeExtract', () => {
     const result = await executeExtract(
       'res-badzip',
       'pkg-1',
-      'resources/pkg-1/res-badzip',
+      version('resources/pkg-1/res-badzip'),
       'ZIP',
       ctx
     )

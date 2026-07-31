@@ -69,7 +69,22 @@ import {
 function createMockCtx(): PipelineContextMock {
   const ctx = createPipelineContextMock()
   ctx.captureVersion.mockResolvedValue({ captured: true, version: 1 })
+  // What Extract reads (ADR-046): the version holding this run's content.
+  ctx.versionForContent.mockResolvedValue({
+    version: 1,
+    storageKey: 'versions/pkg-1/res-1/v1',
+    size: 42,
+  })
   return ctx
+}
+
+/** Steps in order, so an assertion names the step rather than a number. */
+const STEP = {
+  fetch: 'step-0',
+  version: 'step-1',
+  extract: 'step-2',
+  lake: 'step-3',
+  index: 'step-4',
 }
 
 function createMockQueue(): QueueAdapter {
@@ -137,16 +152,18 @@ describe('processResource', () => {
     // the database are wrapped in a claim check (ADR-044 §4).
     const held = expect.objectContaining({ getResource: ctx.getResource })
     expect(executeFetch).toHaveBeenCalledWith('res-1', held)
+    // The version file, not the live object: the input has to be one nothing
+    // rewrites for the interpretation to be repeatable (ADR-046).
     expect(executeExtract).toHaveBeenCalledWith(
       'res-1',
       'pkg-1',
-      'resources/pkg-1/res-1',
+      { storageKey: 'versions/pkg-1/res-1/v1', size: 42 },
       'CSV',
       held
     )
-    // Fetch + Extract + Version + Lake + Index = 5 steps
+    // Fetch + Version + Extract + Lake + Index = 5 steps
     expect(mockTracker.startStep).toHaveBeenCalledTimes(5)
-    expect(mockTracker.completeStep).toHaveBeenCalledWith('step-0')
+    expect(mockTracker.completeStep).toHaveBeenCalledWith(STEP.fetch)
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('complete')
     expect(mockTracker.updateExtractResult).toHaveBeenCalledWith('previews/pkg-1/res-1.parquet', {
       encoding: 'UTF8',
@@ -185,6 +202,61 @@ describe('processResource', () => {
       schema,
       sourceHash: 'sha256:abc',
     })
+    // And onto the version it was read from, which is where the interpretation
+    // belongs (ADR-046) — carrying the claim, since the row outlives the run.
+    expect(ctx.recordVersionSchema).toHaveBeenCalledWith({
+      resourceId: 'res-1',
+      version: 1,
+      schema,
+      claim: expect.objectContaining({ owner: 'run-1' }),
+    })
+  })
+
+  it('skips extract when no version holds this run’s content', async () => {
+    // The capture failed, or another run moved the pointer. There is nothing
+    // immutable to interpret, and the previous preview still describes some
+    // content — so it is left alone rather than cleared (ADR-046).
+    vi.mocked(executeFetch).mockResolvedValue({
+      storageKey: 'resources/pkg-1/res-1',
+      format: 'CSV',
+      packageId: 'pkg-1',
+      hash: 'sha256:abc',
+      size: 42,
+      status: 'fetched',
+    })
+    ctx.versionForContent.mockResolvedValue(null)
+    vi.mocked(executeIndexContent).mockResolvedValue(null)
+
+    await processResource('res-1', ctx, db, queue)
+
+    expect(executeExtract).not.toHaveBeenCalled()
+    expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.extract)
+    expect(mockTracker.updateExtractResult).not.toHaveBeenCalled()
+    // Still advisory: the run completes and Index gets its own chance.
+    expect(mockTracker.updateStatus).toHaveBeenCalledWith('complete')
+  })
+
+  it('captures the version without a schema (ADR-046)', async () => {
+    vi.mocked(executeFetch).mockResolvedValue({
+      storageKey: 'resources/pkg-1/res-1',
+      format: 'CSV',
+      packageId: 'pkg-1',
+      hash: 'sha256:abc',
+      size: 42,
+      status: 'fetched',
+    })
+    vi.mocked(executeExtract).mockResolvedValue(null)
+    vi.mocked(executeIndexContent).mockResolvedValue(null)
+
+    await processResource('res-1', ctx, db, queue)
+
+    // The version is settled from its bytes; nothing has read the content yet.
+    expect(ctx.captureVersion).toHaveBeenCalledWith(
+      expect.not.objectContaining({ schema: expect.anything() })
+    )
+    expect(ctx.captureVersion.mock.invocationCallOrder[0]).toBeLessThan(
+      ctx.versionForContent.mock.invocationCallOrder[0]
+    )
   })
 
   it('should skip extract and index when format is unsupported', async () => {
@@ -201,9 +273,8 @@ describe('processResource', () => {
 
     await processResource('res-1', ctx, db, queue)
 
-    expect(mockTracker.skipStep).toHaveBeenCalledWith('step-1') // extract skipped
-    // step-2 = version, step-3 = lake (skipped: no preview Parquet), step-4 = index
-    expect(mockTracker.skipStep).toHaveBeenCalledWith('step-4')
+    expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.extract)
+    expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.index)
     // Clears any stale preview/schema from a previous run (e.g. CSV → PDF replace).
     expect(mockTracker.updateExtractResult).toHaveBeenCalledWith(null, {})
   })
@@ -261,7 +332,7 @@ describe('processResource', () => {
     await processResource('res-1', ctx, db, queue)
 
     // Fetch step should be skipped
-    expect(mockTracker.skipStep).toHaveBeenCalledWith('step-0')
+    expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.fetch)
     // Pipeline set back to queued
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('queued')
     // Requeued with delay

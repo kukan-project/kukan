@@ -15,7 +15,10 @@ import {
   ingestVersionIntoLake,
   withLakeIngestLock,
 } from '@kukan/api/services/lake-ingest'
-import { insertVersionIfHeld } from '@kukan/api/services/resource-version-service'
+import {
+  insertVersionIfHeld,
+  setVersionSchemaIfHeld,
+} from '@kukan/api/services/resource-version-service'
 import { copyObject, publishLiveContent, reserveObject } from '@kukan/api/services/storage-pointer'
 import type { PackageDbState } from '@kukan/shared'
 import { getVersionKey, versionOrigin } from '@kukan/shared'
@@ -110,7 +113,6 @@ export function buildPipelineContext(
       currentStorageKey,
       contentHash,
       contentSize,
-      schema,
       claim,
     }) {
       // Unserialized: the run holds the resource's claim (ADR-044), so nothing
@@ -162,10 +164,38 @@ export function buildPipelineContext(
         size: contentSize,
         hash: contentHash,
         origin: versionOrigin(res!.urlType),
-        schema,
+        // The version is settled from its bytes; Interpret fills this in once it
+        // has read the file this row names (ADR-046).
+        schema: null,
       })
       if (!inserted) return { captured: false as const }
       return { captured: true as const, version }
+    },
+
+    async versionForContent(resourceId: string, contentHash: string) {
+      const [row] = await db
+        .select({
+          version: resourceVersion.version,
+          storageKey: resourceVersion.storageKey,
+          size: resourceVersion.size,
+        })
+        .from(resourceVersion)
+        .where(
+          and(
+            eq(resourceVersion.resourceId, resourceId),
+            eq(resourceVersion.state, 'active'),
+            eq(resourceVersion.hash, contentHash)
+          )
+        )
+        .orderBy(desc(resourceVersion.version))
+        .limit(1)
+      // Size is nullable on the table (pre-ADR-043 rows), but a version this
+      // run can interpret was captured with the measurement Fetch took.
+      return row ? { ...row, size: row.size ?? 0 } : null
+    },
+
+    async recordVersionSchema({ resourceId, version, schema, claim }) {
+      await setVersionSchemaIfHeld(db, claim ?? null, { resourceId, version, schema })
     },
 
     async pendingLakeVersion(resourceId: string, contentHash: string): Promise<number | null> {

@@ -14,6 +14,7 @@ import type { QueueAdapter } from '@kukan/queue-adapter'
 import {
   ResourceVersionService,
   insertVersionIfHeld,
+  setVersionSchemaIfHeld,
 } from '../../services/resource-version-service'
 import {
   CLAIM_STALE_AFTER_MS,
@@ -373,6 +374,51 @@ describe('insertVersionIfHeld', () => {
     // there is nothing for the backfill to lose a race against.
     expect(await insertVersionIfHeld(db, null, { resourceId, ...captured })).toBe(true)
     expect(await versions()).toHaveLength(1)
+  })
+
+  describe('setVersionSchemaIfHeld — the interpretation, written after (ADR-046)', () => {
+    const schema = {
+      rowCount: 2,
+      columns: [{ name: 'id', type: 'integer' as const, nullable: false, nullCount: 0 }],
+    }
+
+    async function heldClaim() {
+      await db.insert(resourcePipeline).values({ resourceId })
+      const { claimed } = await claimResources(
+        db,
+        [resourceId],
+        randomUUID(),
+        CLAIM_STALE_AFTER_MS,
+        'run'
+      )
+      return claimed[0]
+    }
+
+    it('fills in the schema of a version captured without one', async () => {
+      const claim = await heldClaim()
+      await insertVersionIfHeld(db, claim, { resourceId, ...captured })
+      expect(((await versions())[0] as { schema: unknown }).schema).toBeNull()
+
+      expect(await setVersionSchemaIfHeld(db, claim, { resourceId, version: 1, schema })).toBe(true)
+      expect(((await versions())[0] as { schema: unknown }).schema).toEqual(schema)
+    })
+
+    it('writes nothing once the run has been stopped', async () => {
+      // The row outlives the run, so a displaced run must not describe it —
+      // the same rule the insert follows (ADR-044 §4).
+      const claim = await heldClaim()
+      await insertVersionIfHeld(db, claim, { resourceId, ...captured })
+      await cancelResourceRun(db, resourceId)
+
+      expect(await setVersionSchemaIfHeld(db, claim, { resourceId, version: 1, schema })).toBe(
+        false
+      )
+      expect(((await versions())[0] as { schema: unknown }).schema).toBeNull()
+    })
+
+    it('reports a version that is not there', async () => {
+      expect(await setVersionSchemaIfHeld(db, null, { resourceId, version: 7, schema })).toBe(false)
+    })
   })
 })
 

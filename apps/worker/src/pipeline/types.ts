@@ -82,16 +82,14 @@ export interface PipelineContext {
     packageId: string
     /**
      * The key this run wrote, holding the content to capture. Nothing rewrites
-     * it, so the copy is the content Fetch measured and Extract parsed — the
-     * version, its hash and its schema cannot come apart.
+     * it, so the copy is the content Fetch measured — the version and its hash
+     * cannot come apart.
      */
     currentStorageKey: string
     /** Hash Fetch measured on that object; gates the capture and is recorded. */
     contentHash: string
     /** Size Fetch measured on that object. */
     contentSize: number
-    /** Column schema from Extract (CSV/TSV only), snapshotted onto the version. */
-    schema: ResourceSchema | null
     /**
      * This run's claim. The version row is the one thing a capture leaves
      * behind for the resource rather than for the run, so it is written under
@@ -99,6 +97,38 @@ export interface PipelineContext {
      */
     claim: ResourceClaim
   }): Promise<{ captured: false } | { captured: true; version: number }>
+  /**
+   * The active version holding exactly these bytes, or null (ADR-046).
+   *
+   * What Interpret reads. Asked rather than taken from the capture, because a
+   * run that captured nothing still has a version to interpret: the content was
+   * already there under an earlier number, and its earlier interpretation may
+   * have failed. The same lookup answers both, and the file it names never
+   * changes — which is what makes interpretation re-runnable.
+   *
+   * Null means no version holds this run's content: the capture failed, or
+   * another run moved the pointer and this one is no longer describing the
+   * resource. Either way there is nothing to interpret yet, and the run that
+   * does capture these bytes will interpret them.
+   */
+  versionForContent(
+    resourceId: string,
+    contentHash: string
+  ): Promise<{ version: number; storageKey: string; size: number } | null>
+  /**
+   * Record what Interpret made of a version (ADR-046).
+   *
+   * Separate from the capture because the version is settled first: no schema
+   * exists at that point, and one that never arrives is a normal state rather
+   * than a lost write. Conditioned on the claim in its own statement, like the
+   * insert it follows — the claim comes from the run-scoped context.
+   */
+  recordVersionSchema(opts: {
+    resourceId: string
+    version: number
+    schema: ResourceSchema
+    claim?: ResourceClaim
+  }): Promise<void>
   /**
    * The active version holding exactly these bytes and not yet in DuckLake, or
    * null (ADR-043 layer 2).

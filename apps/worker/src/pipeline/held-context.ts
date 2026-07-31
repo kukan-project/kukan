@@ -53,6 +53,10 @@ export function heldContext(
       // The other write that carries its own condition.
       return ctx.deferLakeIngest({ ...row, claim })
     },
+    async recordVersionSchema(opts) {
+      // And the third: the interpretation lands on a row the resource keeps.
+      return ctx.recordVersionSchema({ ...opts, claim })
+    },
     async indexContent(doc) {
       await assertHeld()
       return ctx.indexContent(doc)

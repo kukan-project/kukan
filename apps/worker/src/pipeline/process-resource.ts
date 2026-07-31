@@ -1,8 +1,13 @@
 /**
  * KUKAN Pipeline — Resource Processing Orchestrator
- * Runs Fetch → Extract → Version → Lake → Index. Every step after Fetch records
+ * Runs Fetch → Version → Extract → Lake → Index. Every step after Fetch records
  * its own failure and lets the pipeline continue: only the canonical file is
  * critical, and each derivative can be rebuilt on the next run.
+ *
+ * Version comes before everything that reads the content (ADR-046). The bytes
+ * are settled first, and every interpretation of them is then made from a file
+ * that cannot change — so a step that fails leaves work a later run can redo
+ * identically, rather than a derivative of content nothing kept.
  */
 
 import type { Database } from '@kukan/db'
@@ -89,51 +94,9 @@ async function runPipeline(
 
     await tracker.completeStep(fetchStepId)
 
-    // Step 2: Extract — parse from Storage, generate Parquet preview
-    // Non-critical: failures are recorded but don't fail the pipeline
-    let extractResult: Awaited<ReturnType<typeof executeExtract>> = null
-    const extractStepId = await tracker.startStep('extract')
-    try {
-      extractResult = await executeExtract(
-        resourceId,
-        fetchResult.packageId,
-        fetchResult.storageKey,
-        fetchResult.format,
-        ctx
-      )
-      if (extractResult === null) {
-        await tracker.skipStep(extractStepId)
-        // Extract produces no preview/schema for this format (non-text, e.g.
-        // PDF/image — the Index step may still persist a document text-head
-        // artifact, ADR-040).
-        // Clear any stale values a previous run left behind — e.g. a resource
-        // that was a CSV (with a schema + Parquet preview) and was then replaced
-        // with a PDF must not keep reporting the old schema as queryable.
-        // (A transient extract failure throws instead and is caught below, where
-        // the previous preview is intentionally preserved.)
-        await tracker.updateExtractResult(null, {})
-      } else {
-        await tracker.completeStep(extractStepId)
-        await tracker.updateExtractResult(extractResult.previewKey, {
-          encoding: extractResult.encoding,
-          // Persist the column schema (ADR-032) when one was generated (CSV/TSV).
-          ...(extractResult.schema ? { schema: extractResult.schema } : {}),
-          // Ties the preview to the bytes it was built from, so a later run or
-          // the backfill can tell whether it describes a given version
-          // (ADR-043 layer 2). Extract read the object Fetch measured, so this
-          // is that measurement rather than a second pass over the file.
-          sourceHash: fetchResult.hash,
-        })
-      }
-    } catch (err) {
-      // A kill is not this step failing: the orchestrator leaves without
-      // recording, because the record belongs to whoever holds the claim now.
-      if (err instanceof RunCancelledError) throw err
-      await tracker.failStep(extractStepId, (err as Error).message)
-    }
-
-    // Step 3: Version — capture an immutable copy of the canonical file (ADR-043).
-    // Runs after Extract so the column schema can be snapshotted onto the version.
+    // Step 2: Version — capture an immutable copy of the canonical file
+    // (ADR-043). Nothing has read the content yet: the version is settled from
+    // the bytes alone, and what they mean is worked out afterwards (ADR-046).
     // Non-critical: a capture failure is recorded but never fails the pipeline.
     const versionStepId = await tracker.startStep('version')
     try {
@@ -143,7 +106,6 @@ async function runPipeline(
         currentStorageKey: fetchResult.storageKey,
         contentHash: fetchResult.hash,
         contentSize: fetchResult.size,
-        schema: extractResult?.schema ?? null,
         claim: tracker.claim,
       })
       if (versionResult.captured) {
@@ -156,6 +118,74 @@ async function runPipeline(
       // recording, because the record belongs to whoever holds the claim now.
       if (err instanceof RunCancelledError) throw err
       await tracker.failStep(versionStepId, (err as Error).message)
+    }
+
+    // Step 3: Extract — interpret the captured version, generate Parquet preview
+    // Non-critical: failures are recorded but don't fail the pipeline
+    //
+    // Read from the version rather than the live object, whether or not this run
+    // is the one that captured it: content that was already there is interpreted
+    // from the version holding it, which is how a version whose earlier
+    // interpretation failed gets another attempt.
+    let extractResult: Awaited<ReturnType<typeof executeExtract>> = null
+    const extractStepId = await tracker.startStep('extract')
+    try {
+      const version = await ctx.versionForContent(resourceId, fetchResult.hash)
+      if (version === null) {
+        // Nothing holds this run's content: the capture failed, or the pointer
+        // moved and another run is describing the resource now. The previous
+        // preview is left in place rather than cleared — it still describes some
+        // content, and this run has none to replace it with.
+        await tracker.skipStep(extractStepId)
+      } else {
+        extractResult = await executeExtract(
+          resourceId,
+          fetchResult.packageId,
+          { storageKey: version.storageKey, size: version.size },
+          fetchResult.format,
+          ctx
+        )
+        if (extractResult === null) {
+          await tracker.skipStep(extractStepId)
+          // Extract produces no preview/schema for this format (non-text, e.g.
+          // PDF/image — the Index step may still persist a document text-head
+          // artifact, ADR-040).
+          // Clear any stale values a previous run left behind — e.g. a resource
+          // that was a CSV (with a schema + Parquet preview) and was then replaced
+          // with a PDF must not keep reporting the old schema as queryable.
+          // (A transient extract failure throws instead and is caught below, where
+          // the previous preview is intentionally preserved.)
+          await tracker.updateExtractResult(null, {})
+        } else {
+          await tracker.completeStep(extractStepId)
+          await tracker.updateExtractResult(extractResult.previewKey, {
+            encoding: extractResult.encoding,
+            // Persist the column schema (ADR-032) when one was generated (CSV/TSV).
+            ...(extractResult.schema ? { schema: extractResult.schema } : {}),
+            // Ties the preview to the bytes it was built from, so a later run or
+            // the backfill can tell whether it describes a given version
+            // (ADR-043 layer 2). The version this read was found by that same
+            // measurement, so it is not a second pass over the file.
+            sourceHash: fetchResult.hash,
+          })
+          // And onto the version itself, which is where the interpretation
+          // belongs (ADR-046). Still written to the pipeline row above: the
+          // readers of ADR-032 go through it, and moving them to the version is
+          // a change of its own.
+          if (extractResult.schema) {
+            await ctx.recordVersionSchema({
+              resourceId,
+              version: version.version,
+              schema: extractResult.schema,
+            })
+          }
+        }
+      }
+    } catch (err) {
+      // A kill is not this step failing: the orchestrator leaves without
+      // recording, because the record belongs to whoever holds the claim now.
+      if (err instanceof RunCancelledError) throw err
+      await tracker.failStep(extractStepId, (err as Error).message)
     }
 
     // Step 4: Lake — load the captured version into DuckLake for row-level

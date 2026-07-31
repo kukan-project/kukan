@@ -52,6 +52,12 @@ export interface CapturedVersion {
   size: number
   hash: string
   origin: VersionOrigin
+  /**
+   * Null from the pipeline, which settles the version from its bytes alone and
+   * interprets it afterwards (ADR-046). The backfill is the one caller with a
+   * schema in hand: it is building v1 out of content that was already
+   * interpreted, and carries that interpretation across.
+   */
   schema: ResourceSchema | null
 }
 
@@ -92,6 +98,35 @@ export async function insertVersionIfHeld(
       DELETE FROM orphaned_object o USING inserted WHERE o.key = inserted.storage_key
     )
     SELECT id FROM inserted
+  `)
+  return result.rows.length > 0
+}
+
+/**
+ * Record the interpretation of a version that is already captured (ADR-046).
+ *
+ * The capture no longer carries one. A version is settled from its bytes, and
+ * what those bytes mean is worked out after — so a version with no schema is a
+ * normal state rather than a failure, and one that stays that way can always be
+ * interpreted again, because its file never changes.
+ *
+ * Under the claim for the same reason the insert is: this is a row the resource
+ * keeps, and a run that has been displaced must not write onto it.
+ *
+ * @returns false when the claim is gone, or the version is not there.
+ */
+export async function setVersionSchemaIfHeld(
+  db: Pick<Database, 'execute'>,
+  claim: ResourceClaim | null,
+  v: { resourceId: string; version: number; schema: ResourceSchema }
+): Promise<boolean> {
+  const result = await db.execute(sql`
+    UPDATE resource_version
+    SET schema = ${JSON.stringify(v.schema)}::jsonb, updated = NOW()
+    WHERE resource_id = ${v.resourceId}::uuid
+      AND version = ${v.version}
+      AND ${stillHeld(claim)}
+    RETURNING id
   `)
   return result.rows.length > 0
 }

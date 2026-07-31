@@ -137,6 +137,18 @@ describe('heldContext', () => {
     expect(inner.deferLakeIngest).toHaveBeenCalledWith({ ...row, claim })
   })
 
+  it('carries the claim into the version schema write', async () => {
+    // The third write that outlives its run: the interpretation lands on a row
+    // the resource keeps, so a displaced run must not reach it (ADR-046).
+    const inner = createPipelineContextMock()
+    const held = heldContext(inner, claim, db)
+    const opts = { resourceId, version: 1, schema: { rowCount: 0, columns: [] } }
+
+    await held.recordVersionSchema(opts)
+
+    expect(inner.recordVersionSchema).toHaveBeenCalledWith({ ...opts, claim })
+  })
+
   it('leaves the rest of the context alone', async () => {
     // Reads and the writes that carry their own condition go through untouched;
     // this is not a second gate on everything.
@@ -165,6 +177,7 @@ it('wraps the writes a kill has to reach', () => {
     'indexContent',
     'ingestLakeVersion',
     'publishContent',
+    'recordVersionSchema',
   ])
   vi.clearAllMocks()
 })
