@@ -24,7 +24,7 @@ function showing(status: string, steps: unknown[] = []) {
 function runningStep(secondsAgo: number) {
   return {
     id: 's1',
-    step_name: 'extract',
+    step_name: 'interpret',
     status: 'running',
     error: null,
     started_at: new Date(Date.now() - secondsAgo * 1000).toISOString(),
@@ -46,6 +46,18 @@ describe('PipelineStatusDetail', () => {
     render(<PipelineStatusDetail resourceId="r1" />)
 
     expect(screen.getByText(/1m/)).toBeInTheDocument()
+  })
+
+  it('labels a step name runs no longer write', async () => {
+    // `extract` became `interpret` with the stage (ADR-046), but a resource
+    // keeps its old rows until it runs again — steps are cleared at the start
+    // of a run, not by the rename. Unlabelled, the history shows a raw id.
+    showing('complete', [runningStep(5), { ...runningStep(5), id: 's2', step_name: 'extract' }])
+
+    render(<PipelineStatusDetail resourceId="r1" />)
+
+    expect(screen.getByText('Interpret')).toBeInTheDocument()
+    expect(screen.getByText('Extract')).toBeInTheDocument()
   })
 
   it('stops the run without touching the content', async () => {
@@ -85,7 +97,7 @@ describe('PipelineStatusDetail', () => {
   it('names the content that was never saved as a version', async () => {
     // The case worth calling out: replacing the file loses it for good, and
     // nothing else on this screen would say so (ADR-044 §4).
-    showing('cancelled', [{ ...runningStep(5), step_name: 'extract' }])
+    showing('cancelled', [runningStep(5)])
 
     render(<PipelineStatusDetail resourceId="r1" />)
 

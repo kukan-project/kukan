@@ -167,7 +167,7 @@ describe('claimResources', () => {
   })
 
   it('counts a step starting as progress, not just the pipeline row', async () => {
-    // Only three call sites advance `updated`, so between the end of Extract
+    // Only three call sites advance `updated`, so between the end of Interpret
     // and the final write it does not move at all. A run in the middle of that
     // is working, and must not be taken from.
     await hold()

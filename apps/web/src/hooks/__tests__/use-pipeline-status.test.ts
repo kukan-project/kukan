@@ -60,7 +60,7 @@ describe('usePipelineStatus', () => {
             completed_at: '2025-01-01T00:00:01Z',
           },
           {
-            step_name: 'extract',
+            step_name: 'interpret',
             status: 'complete',
             error: null,
             started_at: '2025-01-01T00:00:01Z',
@@ -77,7 +77,7 @@ describe('usePipelineStatus', () => {
       })
 
       expect(result.current.steps[0].step_name).toBe('fetch')
-      expect(result.current.steps[1].step_name).toBe('extract')
+      expect(result.current.steps[1].step_name).toBe('interpret')
     })
 
     it('should not poll when enabled is false', async () => {

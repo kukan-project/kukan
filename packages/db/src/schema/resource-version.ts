@@ -40,7 +40,7 @@ export const resourceVersion = pgTable(
     // active → purging → purged (ADR-028 durable-claim pattern).
     state: varchar('state', { length: 10 }).notNull().default('active'),
     // Column schema snapshot for this version (ADR-032 shape); null for
-    // non-tabular formats or when Extract produced none.
+    // non-tabular formats or when the interpretation produced none.
     schema: jsonb('schema').$type<ResourceSchema | null>(),
     // DuckLake snapshot this tabular version maps to (ADR-043 layer 2 / Phase ii).
     // Null for non-tabular versions or before layer-2 ingest; nulled on purge.

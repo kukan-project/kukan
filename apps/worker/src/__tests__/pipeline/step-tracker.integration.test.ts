@@ -82,12 +82,12 @@ afterAll(async () => {
   await closeTestDb()
 })
 
-describe('updateExtractResult', () => {
+describe('updateInterpretResult', () => {
   it('parks what it replaced and stops tracking the preview it now names', async () => {
     await withPreviousRun()
     await reserve(NEW_PREVIEW)
 
-    await new StepTracker(db, claim).updateExtractResult(NEW_PREVIEW, { encoding: 'UTF-8' })
+    await new StepTracker(db, claim).updateInterpretResult(NEW_PREVIEW, { encoding: 'UTF-8' })
 
     const row = await pipelineRow()
     expect(row.previewKey).toBe(NEW_PREVIEW)
@@ -103,7 +103,7 @@ describe('updateExtractResult', () => {
     const tracker = new StepTracker(db, claim)
     await releaseResourceClaims(db, [claim.id], claim.owner)
 
-    await tracker.updateExtractResult(NEW_PREVIEW, { encoding: 'UTF-8' })
+    await tracker.updateInterpretResult(NEW_PREVIEW, { encoding: 'UTF-8' })
 
     // Nothing came to reference the preview, so dropping its write-ahead record
     // would strand the object for good (ADR-045).
@@ -115,7 +115,7 @@ describe('updateExtractResult', () => {
   it('parks the previous preview when this run produced none', async () => {
     await withPreviousRun()
 
-    await new StepTracker(db, claim).updateExtractResult(null, {})
+    await new StepTracker(db, claim).updateInterpretResult(null, {})
 
     expect((await pipelineRow()).previewKey).toBeNull()
     expect(await tracked()).toEqual([OLD_PREVIEW, OLD_TEXT_HEAD])
@@ -206,7 +206,7 @@ describe('the run record', () => {
     const tracker = new StepTracker(db, claim)
     await releaseResourceClaims(db, [claim.id], claim.owner)
 
-    await expect(tracker.startStep('extract')).rejects.toBeInstanceOf(RunCancelledError)
+    await expect(tracker.startStep('interpret')).rejects.toBeInstanceOf(RunCancelledError)
   })
 
   it('cannot settle a step under a pipeline it no longer holds', async () => {

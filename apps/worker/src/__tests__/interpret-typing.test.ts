@@ -4,7 +4,7 @@ import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { executeExtract } from '../pipeline/steps/extract'
+import { executeInterpret } from '../pipeline/steps/interpret'
 import {
   captureUpload,
   createPipelineContextMock,
@@ -22,7 +22,7 @@ import {
 /** The captured version the step reads (ADR-046); sized under the interpret cap. */
 const version = (storageKey: string, size = 1024) => ({ storageKey, size })
 
-describe('executeExtract — column typing', () => {
+describe('executeInterpret — column typing', () => {
   let ctx: ReturnType<typeof createPipelineContextMock>
   let upload: UploadCapture
   let dir: string
@@ -69,7 +69,7 @@ describe('executeExtract — column typing', () => {
         '3,3.25,true,Carol,003\n'
     )
 
-    await executeExtract('r', 'p', version('resources/p/r'), 'CSV', ctx)
+    await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
     const { types, rows } = await readPreview()
 
     expect(types).toEqual({
@@ -92,7 +92,7 @@ describe('executeExtract — column typing', () => {
     // These must NOT be dropped as footer rows (regression: whole table → 0 rows).
     csv('category,item,amount\n' + 'A,apple,10\n' + ',banana,20\n' + ',cherry,30\n')
 
-    await executeExtract('r', 'p', version('resources/p/r'), 'CSV', ctx)
+    await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
     const { rows } = await readPreview()
 
     expect(rows.map((r) => r.item)).toEqual(['apple', 'banana', 'cherry'])
@@ -103,7 +103,7 @@ describe('executeExtract — column typing', () => {
   it('returns the persisted column schema (ADR-032)', async () => {
     csv('id,price,name\n' + '1,1.5,Alice\n' + '2,,Bob\n' + '3,3.25,Carol\n')
 
-    const result = await executeExtract('r', 'p', version('resources/p/r'), 'CSV', ctx)
+    const result = await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
 
     expect(result?.previewKey).toBeTruthy()
     expect(result?.schema).toEqual({
@@ -145,7 +145,7 @@ describe('executeExtract — column typing', () => {
     // rule must not apply to single-column CSVs (regression: 0-row preview).
     csv('name\nAlice\nBob\n')
 
-    await executeExtract('r', 'p', version('resources/p/r'), 'CSV', ctx)
+    await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
     const { types, rows } = await readPreview()
 
     expect(Object.keys(types)).toEqual(['name'])

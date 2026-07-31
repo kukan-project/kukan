@@ -130,6 +130,9 @@ async function addTabularResource(
     .returning()
   await db.insert(resourcePipelineStep).values({
     pipelineId: pipeline.id,
+    // The retired name on purpose: the fallback this exercises only applies to
+    // previews from before `sourceHash` existed, all of which predate the
+    // rename to `interpret` (ADR-046).
     stepName: 'extract',
     status: opts.extractStatus ?? 'complete',
   })

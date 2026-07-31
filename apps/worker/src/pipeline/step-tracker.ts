@@ -86,7 +86,7 @@ export class StepTracker {
    * One statement, because the keys being parked are whatever the row holds
    * *now*, not what this run read at startup. Deletion is the sweep's job.
    */
-  async updateExtractResult(previewKey: string | null, metadata: Record<string, unknown>) {
+  async updateInterpretResult(previewKey: string | null, metadata: Record<string, unknown>) {
     await this.db.execute(sql`
       WITH before AS (
         SELECT id, preview_key, metadata ->> 'textHeadKey' AS text_head
@@ -118,8 +118,8 @@ export class StepTracker {
   /**
    * Merge into the pipeline's metadata, parking the text head the merge
    * replaces — the one pointer that lives inside metadata rather than in a
-   * column of its own (ADR-043). Reached when Extract threw and so left the
-   * previous metadata in place; a successful Extract has already parked it.
+   * column of its own (ADR-043). Reached when the interpretation threw and so
+   * left the previous metadata in place; one that succeeded has already parked it.
    */
   async mergeMetadata(metadata: Record<string, unknown>) {
     await this.db.execute(sql`

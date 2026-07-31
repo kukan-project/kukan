@@ -16,14 +16,14 @@
 ## 1. 1 回の実行
 
 キュー（`resource-pipeline`）1 通につき、1 リソースに対して 5 ステップが記録される。Lake だけは
-Extract の内側から走る（後述）。
+Interpret の内側から走る（後述）。
 
 ```
-claim を取る ─┬─ Fetch    内容を取得し、live ポインタを自分の鍵へ移す
-              ├─ Version  正本ファイルを版として複製（層 1）
-              ├─ Extract  版ファイルを解釈し、プレビュー Parquet / スキーマ / エンコーディング
-              │   └─ Lake その解釈が作ったテーブルを DuckLake へ取り込む（層 2）
-              └─ Index    本文を抽出して検索索引へ
+claim を取る ─┬─ Fetch      内容を取得し、live ポインタを自分の鍵へ移す
+              ├─ Version    正本ファイルを版として複製（層 1）
+              ├─ Interpret  版ファイルを解釈し、プレビュー Parquet / スキーマ / エンコーディング
+              │   └─ Lake   その解釈が作ったテーブルを DuckLake へ取り込む（層 2）
+              └─ Index      本文を抽出して検索索引へ
 claim を返す
 ```
 
@@ -40,17 +40,17 @@ claim を返す
 書き換わらないファイルから作る。だから解釈は何度でもやり直せる — 失敗した実行が残すのは
 「まだ解釈されていない版」であって、誰も保存しなかった内容の派生物ではない。
 
-**Extract が読むのは版ファイルであって live オブジェクトではない。** 対象の版は
+**Interpret が読むのは版ファイルであって live オブジェクトではない。** 対象の版は
 「この実行の content hash を持つ active な版」で、捕捉したかどうかに依らず引ける
 （`versionForContent`）。内容が変わらず捕捉をスキップした実行も、**過去に解釈が失敗した版**を
-ここで拾い直す。該当する版が無ければ（捕捉が失敗した / ポインタが動いた）Extract はスキップし、
+ここで拾い直す。該当する版が無ければ（捕捉が失敗した / ポインタが動いた）Interpret はスキップし、
 その bytes を捕捉した実行が解釈する。
 
-**スキーマは捕捉時ではなく Extract のあとに書く。** 版行のスキーマが未割当なのは正常な状態である
+**スキーマは捕捉時ではなく Interpret のあとに書く。** 版行のスキーマが未割当なのは正常な状態である
 （ADR-046 §3）。入力が不変で解釈が再実行可能だから、埋め直す経路が常に存在する。
 
 **層 2 が読むのは、解釈がローカルディスクに書いた Parquet である**（ADR-046）。ストレージ上の
-プレビューではない。Lake はコードとしては Extract の内側で走り、**ステップ記録は独立している**
+プレビューではない。Lake はコードとしては Interpret の内側で走り、**ステップ記録は独立している**
 （履歴は `started_at` 順に読むので並びは変わらない）。取り込みだけがカタログ全体のロックの下で
 走り、解釈はロックの外にある — 1 セッションで通すとロックを解釈の間ずっと握ることになる。
 
@@ -98,14 +98,14 @@ claim を返す
 
 `step-tracker.ts` の全文。条件が外れれば書き込みは 0 行に着地し、実行は静かに抜ける。
 
-| 書き込み              | 条件             | 副作用                               |
-| --------------------- | ---------------- | ------------------------------------ |
-| `beginRun`            | `heldBy(claim)`  | 前回のステップ記録を削除             |
-| `startStep`           | `heldBy(claim)`  | 0 行なら `RunCancelledError`         |
-| `completeStep` 他     | step 経由で join | ステップ行と pipeline 行の両方を検査 |
-| `updateExtractResult` | `heldBy(claim)`  | 旧プレビューと旧 text head を park   |
-| `mergeMetadata`       | `heldBy(claim)`  | 旧 text head を park                 |
-| `updateStatus`        | `heldBy(claim)`  | —                                    |
+| 書き込み                | 条件             | 副作用                               |
+| ----------------------- | ---------------- | ------------------------------------ |
+| `beginRun`              | `heldBy(claim)`  | 前回のステップ記録を削除             |
+| `startStep`             | `heldBy(claim)`  | 0 行なら `RunCancelledError`         |
+| `completeStep` 他       | step 経由で join | ステップ行と pipeline 行の両方を検査 |
+| `updateInterpretResult` | `heldBy(claim)`  | 旧プレビューと旧 text head を park   |
+| `mergeMetadata`         | `heldBy(claim)`  | 旧 text head を park                 |
+| `updateStatus`          | `heldBy(claim)`  | —                                    |
 
 ### (b) リソースに残る書き込み — claim を条件にする（外に出せない）
 

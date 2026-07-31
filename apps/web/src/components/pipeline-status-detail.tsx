@@ -4,7 +4,7 @@ import { Alert, AlertDescription, Badge, Button } from '@kukan/ui'
 import { RefreshCw, Undo2, X } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslations } from 'next-intl'
-import type { PipelineStepName } from '@kukan/shared'
+import type { LegacyPipelineStepName, PipelineStepName } from '@kukan/shared'
 import { usePipelineStatus, type PipelineStatus } from '@/hooks/use-pipeline-status'
 import { STATUS_KEYS } from '@/components/dashboard/dataset/pipeline-status-badge'
 import { clientFetch } from '@/lib/client-api'
@@ -16,14 +16,17 @@ interface PipelineStatusDetailProps {
   onSettled?: (status: PipelineStatus) => void
 }
 
-// Typed by PipelineStepName so adding a step forces a label rather than
-// silently rendering the raw step id.
-const STEP_LABEL_KEYS: Record<PipelineStepName, string> = {
+// Typed by the step names so adding one forces a label rather than
+// silently rendering the raw step id. Retired names are labelled too: a run
+// clears its steps at the start, so rows written under the old name are still
+// on screen until each resource has run again (ADR-046).
+const STEP_LABEL_KEYS: Record<PipelineStepName | LegacyPipelineStepName, string> = {
   fetch: 'pipelineStepFetch',
-  extract: 'pipelineStepExtract',
   version: 'pipelineStepVersion',
+  interpret: 'pipelineStepInterpret',
   lake: 'pipelineStepLake',
   index: 'pipelineStepIndex',
+  extract: 'pipelineStepExtract',
 }
 
 const STEP_STATUS_KEYS: Record<string, string> = {
@@ -233,7 +236,10 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
               >
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">
-                    {t(STEP_LABEL_KEYS[step.step_name as PipelineStepName] || step.step_name)}
+                    {t(
+                      STEP_LABEL_KEYS[step.step_name as keyof typeof STEP_LABEL_KEYS] ||
+                        step.step_name
+                    )}
                   </span>
                   <Badge variant={getStepBadgeVariant(step.status)} className="text-xs">
                     {t(STEP_STATUS_KEYS[step.status] || step.status)}

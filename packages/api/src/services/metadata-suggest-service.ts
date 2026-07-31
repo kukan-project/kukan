@@ -350,7 +350,7 @@ export class MetadataSuggestService {
     const liveKeys = new Map(liveKeyRows.map((row) => [row.id, row.storageKey]))
 
     // Documents require the Index step's text-head artifact (ADR-040 addendum)
-    // and ZIPs their Extract-step manifest; requiring the pipeline record also
+    // and ZIPs their Interpret-step manifest; requiring the pipeline record also
     // guards against a key left over from a previous format
     const contentKind = (r: SuggestPackageDetail['resources'][number]) => {
       const pipeline = pipelines.get(r.id)
@@ -639,7 +639,7 @@ export class MetadataSuggestService {
   private async readTextHead(storageKey: string, source: { format: string; metadata: unknown }) {
     const { stream } = await this.storage.downloadRange(storageKey, 0, SUGGEST_TEXT_HEAD_BYTES - 1)
     const buffer = await readAll(stream)
-    // Prefer the encoding the Extract step detected on the full file; only
+    // Prefer the encoding the Interpret step detected on the full file; only
     // re-detect when the pipeline row predates encoding persistence
     const persisted = (source.metadata as { encoding?: unknown } | null)?.encoding
     const encoding =

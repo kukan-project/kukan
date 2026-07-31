@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { Readable } from 'node:stream'
 import { executeIndexContent, splitIntoChunks } from '../pipeline/steps/index-content'
-import type { ExtractResult } from '../pipeline/steps/extract'
+import type { InterpretResult } from '../pipeline/steps/interpret'
 import {
   createPipelineContextMock,
   type PipelineContextMock,
@@ -41,7 +41,7 @@ function createMockCtx(): PipelineContextMock {
   return ctx
 }
 
-const defaultExtractResult: ExtractResult = {
+const defaultInterpretResult: InterpretResult = {
   previewKey: 'previews/pkg-1/res-1.parquet',
   encoding: 'UTF8',
 }
@@ -127,7 +127,7 @@ describe('executeIndexContent', () => {
         'pkg-1',
         'key',
         'CSV',
-        defaultExtractResult,
+        defaultInterpretResult,
         ctx
       )
       expect(result?.contentType).toBe('tabular')
@@ -142,7 +142,7 @@ describe('executeIndexContent', () => {
         'pkg-1',
         'key',
         'TXT',
-        defaultExtractResult,
+        defaultInterpretResult,
         ctx
       )
       expect(result?.contentType).toBe('text')
@@ -157,7 +157,7 @@ describe('executeIndexContent', () => {
         'pkg-1',
         'key',
         'JSON',
-        defaultExtractResult,
+        defaultInterpretResult,
         ctx
       )
       expect(result?.contentType).toBe('text')
@@ -175,7 +175,7 @@ describe('executeIndexContent', () => {
         'pkg-1',
         'key',
         'CSV',
-        defaultExtractResult,
+        defaultInterpretResult,
         ctx
       )
 
@@ -199,7 +199,7 @@ describe('executeIndexContent', () => {
         'pkg-1',
         'key',
         'HTML',
-        defaultExtractResult,
+        defaultInterpretResult,
         ctx
       )
 
@@ -417,7 +417,7 @@ describe('executeIndexContent', () => {
         'pkg-1',
         'key',
         'TXT',
-        defaultExtractResult,
+        defaultInterpretResult,
         ctx
       )
 
@@ -454,7 +454,7 @@ describe('executeIndexContent', () => {
         'pkg-1',
         'key',
         'TXT',
-        defaultExtractResult,
+        defaultInterpretResult,
         ctx
       )
 
@@ -477,7 +477,7 @@ describe('executeIndexContent', () => {
         'pkg-1',
         'key',
         'TXT',
-        defaultExtractResult,
+        defaultInterpretResult,
         ctx
       )
 
@@ -491,7 +491,7 @@ describe('executeIndexContent', () => {
       const ctx = createMockCtx()
       vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('test')))
 
-      await executeIndexContent('res-1', 'pkg-1', 'key', 'TXT', defaultExtractResult, ctx)
+      await executeIndexContent('res-1', 'pkg-1', 'key', 'TXT', defaultInterpretResult, ctx)
 
       expect(ctx.deleteContent).toHaveBeenCalledWith('res-1')
       // deleteContent should be called before indexContent
@@ -509,7 +509,7 @@ describe('executeIndexContent', () => {
         'pkg-1',
         'key',
         'TXT',
-        defaultExtractResult,
+        defaultInterpretResult,
         ctx
       )
 
@@ -529,7 +529,7 @@ describe('executeIndexContent', () => {
         'pkg-1',
         'key',
         'TXT',
-        defaultExtractResult,
+        defaultInterpretResult,
         ctx
       )
       expect(result).toBeNull()
@@ -540,7 +540,7 @@ describe('executeIndexContent', () => {
       const ctx = createMockCtx()
       vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('a,b')))
 
-      await executeIndexContent('res-1', 'pkg-1', 'key', 'CSV', defaultExtractResult, ctx)
+      await executeIndexContent('res-1', 'pkg-1', 'key', 'CSV', defaultInterpretResult, ctx)
 
       const indexedDoc = vi.mocked(ctx.indexContent).mock.calls[0][0] as ContentDoc
       expect(indexedDoc.resourceId).toBe('res-1')

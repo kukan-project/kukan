@@ -22,7 +22,7 @@ import { ConflictError } from '@kukan/shared'
  * take it (15 min, ADR-044).
  *
  * Sized against the longest single step rather than a whole run: Fetch is
- * capped at 30 s by its abort signal, Extract's input at 50MB of CSV, Version
+ * capped at 30 s by its abort signal, Interpret's input at 50MB of CSV, Version
  * is a server-side copy, and Index chunks and indexes — all expected in the
  * order of minutes. Several times over that, so a run that is merely slow is
  * never taken from. Derived from those caps, not measured in production.
@@ -42,7 +42,7 @@ export const CLAIM_STALE_AFTER_MS = 15 * 60 * 1000
  * purge's preview invalidation, neither of which holds the claim, so judging by
  * it would let a user re-uploading keep a dead run's window open indefinitely.
  * Step starts are needed alongside the claim time because a long run must not
- * be taken from: between the end of Extract and the final write, nothing else
+ * be taken from: between the end of Interpret and the final write, nothing else
  * moves.
  *
  * One expression for everyone who asks, for the same reason there is one

@@ -249,10 +249,10 @@ pnpm format        # Prettier フォーマット
 
 ## パイプライン フォーマット別処理マトリクス
 
-パイプラインは Fetch → Extract → Index の3ステップ。
+パイプラインは Fetch → Version → Interpret → Lake → Index の5ステップ。
 Index ステップでリソースコンテンツのテキスト抽出・OpenSearch 投入を行う（ADR-021）。
 メタデータの検索インデックス更新は API ルートハンドラーで CUD 操作時に実行。
-Extract のみフォーマット別処理を行う。
+Interpret のみフォーマット別処理を行う。
 
 | フォーマット                   | isTextFormat | エンコーディング検出                         | Parquet 生成 |    プレビュー表示     |
 | ------------------------------ | :----------: | -------------------------------------------- | :----------: | :-------------------: |
@@ -284,7 +284,7 @@ Extract のみフォーマット別処理を行う。
 
 - フォーマット判定: `packages/shared/src/formats.ts`（`isTextFormat`, `isCsvFormat`, `isZipFormat`, `isOfficeFormat`, `isImageFormat`）
 - エンコーディング検出: `packages/shared/src/encoding-node.ts`（`detectEncoding`）
-- Extract ステップ: `apps/worker/src/pipeline/steps/extract.ts`
+- Interpret ステップ: `apps/worker/src/pipeline/steps/interpret.ts`
 - フロントエンド プレビュー: `apps/web/src/components/resource-preview.tsx`
 - GeoJSON 地図プレビュー: `apps/web/src/components/geojson-preview.tsx`, `geojson-map.tsx`（Leaflet + OSM/国土地理院切替）
 - 画像プレビュー: `apps/web/src/components/image-preview.tsx`

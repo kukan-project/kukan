@@ -1,7 +1,7 @@
 /**
  * Integration tests for the purge paths' execution claim (ADR-044 §1).
  *
- * The hole these close: Extract writes its preview to storage before the
+ * The hole these close: Interpret writes its preview to storage before the
  * database hears of it, and version capture copies the file before inserting
  * the row. A purge crossing either window sweeps the bucket, and the run then
  * writes the content back — with no row left that names it, no entry in

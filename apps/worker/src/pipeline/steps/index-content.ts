@@ -26,7 +26,7 @@ import {
 import { OfficeParser } from 'officeparser'
 import type { ContentDoc } from '@kukan/search-adapter'
 import type { PipelineContext } from '../types'
-import type { ExtractResult } from './extract'
+import type { InterpretResult } from './interpret'
 import { streamToBuffer, streamUtf8Lines, streamToTempFile, cleanupTempFile } from '../node-utils'
 import { bufferToUtf8, stripTrailingReplacementChar } from '@kukan/shared/encoding-node'
 import { MAX_CONTENT_CHUNK_SIZE, MAX_FETCH_SIZE, TEXT_HEAD_ARTIFACT_SIZE } from '@/config'
@@ -53,7 +53,7 @@ export async function executeIndexContent(
   packageId: string,
   storageKey: string,
   format: string | null,
-  extractResult: ExtractResult | null,
+  interpretResult: InterpretResult | null,
   ctx: PipelineContext
 ): Promise<IndexContentResult | null> {
   const normalizedFormat = format?.toLowerCase() ?? null
@@ -78,7 +78,7 @@ export async function executeIndexContent(
   if (!res) return null
 
   if (contentType === 'manifest') {
-    return indexManifest(resourceId, packageId, contentType, extractResult, ctx)
+    return indexManifest(resourceId, packageId, contentType, interpretResult, ctx)
   }
 
   if (contentType === 'document') {
@@ -99,7 +99,7 @@ export async function executeIndexContent(
     storageKey,
     normalizedFormat!,
     contentType,
-    extractResult,
+    interpretResult,
     ctx
   )
 }
@@ -109,12 +109,12 @@ async function indexManifest(
   resourceId: string,
   packageId: string,
   contentType: ContentType,
-  extractResult: ExtractResult | null,
+  interpretResult: InterpretResult | null,
   ctx: PipelineContext
 ): Promise<IndexContentResult | null> {
-  if (!extractResult?.previewKey) return null
+  if (!interpretResult?.previewKey) return null
 
-  const manifestStream = await ctx.storage.download(extractResult.previewKey)
+  const manifestStream = await ctx.storage.download(interpretResult.previewKey)
   const manifestBuf = await streamToBuffer(manifestStream)
   const manifest = JSON.parse(manifestBuf.toString('utf-8'))
   const paths = (manifest.entries ?? []).map((e: { path: string }) => e.path).join('\n')
@@ -239,11 +239,11 @@ async function indexTextStream(
   storageKey: string,
   format: string,
   contentType: ContentType,
-  extractResult: ExtractResult | null,
+  interpretResult: InterpretResult | null,
   ctx: PipelineContext
 ): Promise<IndexContentResult> {
   const stream = await ctx.storage.download(storageKey)
-  const encoding = extractResult?.encoding ?? 'UTF8'
+  const encoding = interpretResult?.encoding ?? 'UTF8'
   const isHtml = format === 'html' || format === 'htm'
   const enc = encoding.toLowerCase()
   const isUtf8 = enc === 'utf8' || enc === 'utf-8' || enc === 'ascii' || enc === 'unknown'

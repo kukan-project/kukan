@@ -7,8 +7,8 @@ import type { QueueAdapter } from '@kukan/queue-adapter'
 vi.mock('../pipeline/steps/fetch', () => ({
   executeFetch: vi.fn(),
 }))
-vi.mock('../pipeline/steps/extract', () => ({
-  executeExtract: vi.fn(),
+vi.mock('../pipeline/steps/interpret', () => ({
+  executeInterpret: vi.fn(),
 }))
 vi.mock('../pipeline/steps/lake', () => ({
   executeLake: vi.fn(),
@@ -26,7 +26,7 @@ const mockTracker = {
   failStep: vi.fn(),
   skipStep: vi.fn(),
   updateStatus: vi.fn(),
-  updateExtractResult: vi.fn(),
+  updateInterpretResult: vi.fn(),
 }
 
 vi.mock('../pipeline/step-tracker', () => ({
@@ -58,7 +58,7 @@ vi.mock('@kukan/api/services/pipeline-claim', () => ({
 
 // Import mocked modules
 import { executeFetch } from '../pipeline/steps/fetch'
-import { executeExtract } from '../pipeline/steps/extract'
+import { executeInterpret } from '../pipeline/steps/interpret'
 import { executeLake } from '../pipeline/steps/lake'
 import { executeIndexContent } from '../pipeline/steps/index-content'
 import {
@@ -69,7 +69,7 @@ import {
 function createMockCtx(): PipelineContextMock {
   const ctx = createPipelineContextMock()
   ctx.captureVersion.mockResolvedValue({ captured: true, version: 1 })
-  // What Extract reads (ADR-046): the version holding this run's content.
+  // What the interpretation reads (ADR-046): the version holding this run's content.
   ctx.versionForContent.mockResolvedValue({
     version: 1,
     storageKey: 'versions/pkg-1/res-1/v1',
@@ -87,7 +87,7 @@ const TABLE_PATH = '/tmp/kukan-x/data.csv.parquet'
 const TABLE_PREVIEW_KEY = 'previews/pkg-1/res-1.tok.parquet'
 
 function interpretProducesTable() {
-  vi.mocked(executeExtract).mockImplementation(async (_r, _p, _s, _f, _ctx, hooks) => {
+  vi.mocked(executeInterpret).mockImplementation(async (_r, _p, _s, _f, _ctx, hooks) => {
     await hooks?.onTable?.(TABLE_PATH)
     return { previewKey: TABLE_PREVIEW_KEY, encoding: 'UTF8' }
   })
@@ -97,7 +97,7 @@ function interpretProducesTable() {
 const STEP = {
   fetch: 'step-0',
   version: 'step-1',
-  extract: 'step-2',
+  interpret: 'step-2',
   lake: 'step-3',
   index: 'step-4',
 }
@@ -132,7 +132,7 @@ describe('processResource', () => {
     mockTracker.failStep.mockResolvedValue(undefined)
     mockTracker.skipStep.mockResolvedValue(undefined)
     mockTracker.updateStatus.mockResolvedValue(undefined)
-    mockTracker.updateExtractResult.mockResolvedValue(null)
+    mockTracker.updateInterpretResult.mockResolvedValue(null)
 
     // Version step defaults to capturing a new version (v1).
     // Lake step defaults to a no-op (no DuckLake configured in these tests).
@@ -148,7 +148,7 @@ describe('processResource', () => {
       size: 42,
       status: 'fetched',
     })
-    vi.mocked(executeExtract).mockResolvedValue({
+    vi.mocked(executeInterpret).mockResolvedValue({
       previewKey: 'previews/pkg-1/res-1.parquet',
       encoding: 'UTF8',
     })
@@ -169,7 +169,7 @@ describe('processResource', () => {
     expect(executeFetch).toHaveBeenCalledWith('res-1', held)
     // The version file, not the live object: the input has to be one nothing
     // rewrites for the interpretation to be repeatable (ADR-046).
-    expect(executeExtract).toHaveBeenCalledWith(
+    expect(executeInterpret).toHaveBeenCalledWith(
       'res-1',
       'pkg-1',
       { storageKey: 'versions/pkg-1/res-1/v1', size: 42 },
@@ -177,18 +177,18 @@ describe('processResource', () => {
       held,
       { onTable: expect.any(Function) }
     )
-    // Fetch + Version + Extract + Lake + Index = 5 steps
+    // Fetch + Version + Interpret + Lake + Index = 5 steps
     expect(mockTracker.startStep).toHaveBeenCalledTimes(5)
     expect(mockTracker.completeStep).toHaveBeenCalledWith(STEP.fetch)
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('complete')
-    expect(mockTracker.updateExtractResult).toHaveBeenCalledWith('previews/pkg-1/res-1.parquet', {
+    expect(mockTracker.updateInterpretResult).toHaveBeenCalledWith('previews/pkg-1/res-1.parquet', {
       encoding: 'UTF8',
       // Ties the preview to the bytes Fetch measured (ADR-043 layer 2).
       sourceHash: 'sha256:abc',
     })
   })
 
-  it('should persist the column schema into metadata when extract returns one (ADR-032)', async () => {
+  it('should persist the column schema into metadata when the interpretation returns one (ADR-032)', async () => {
     const schema = {
       rowCount: 2,
       columns: [
@@ -204,7 +204,7 @@ describe('processResource', () => {
       size: 42,
       status: 'fetched',
     })
-    vi.mocked(executeExtract).mockResolvedValue({
+    vi.mocked(executeInterpret).mockResolvedValue({
       previewKey: 'previews/pkg-1/res-1.parquet',
       encoding: 'UTF8',
       schema,
@@ -213,7 +213,7 @@ describe('processResource', () => {
 
     await processResource('res-1', ctx, db, queue)
 
-    expect(mockTracker.updateExtractResult).toHaveBeenCalledWith('previews/pkg-1/res-1.parquet', {
+    expect(mockTracker.updateInterpretResult).toHaveBeenCalledWith('previews/pkg-1/res-1.parquet', {
       encoding: 'UTF8',
       schema,
       sourceHash: 'sha256:abc',
@@ -228,7 +228,7 @@ describe('processResource', () => {
     })
   })
 
-  it('skips extract when no version holds this run’s content', async () => {
+  it('skips the interpretation when no version holds this run’s content', async () => {
     // The capture failed, or another run moved the pointer. There is nothing
     // immutable to interpret, and the previous preview still describes some
     // content — so it is left alone rather than cleared (ADR-046).
@@ -245,9 +245,9 @@ describe('processResource', () => {
 
     await processResource('res-1', ctx, db, queue)
 
-    expect(executeExtract).not.toHaveBeenCalled()
-    expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.extract)
-    expect(mockTracker.updateExtractResult).not.toHaveBeenCalled()
+    expect(executeInterpret).not.toHaveBeenCalled()
+    expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.interpret)
+    expect(mockTracker.updateInterpretResult).not.toHaveBeenCalled()
     // Still advisory: the run completes and Index gets its own chance.
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('complete')
   })
@@ -261,7 +261,7 @@ describe('processResource', () => {
       size: 42,
       status: 'fetched',
     })
-    vi.mocked(executeExtract).mockResolvedValue(null)
+    vi.mocked(executeInterpret).mockResolvedValue(null)
     vi.mocked(executeIndexContent).mockResolvedValue(null)
 
     await processResource('res-1', ctx, db, queue)
@@ -275,7 +275,7 @@ describe('processResource', () => {
     )
   })
 
-  it('should skip extract and index when format is unsupported', async () => {
+  it('should skip interpret and index when format is unsupported', async () => {
     vi.mocked(executeFetch).mockResolvedValue({
       storageKey: 'resources/pkg-1/res-1',
       format: 'PDF',
@@ -284,18 +284,18 @@ describe('processResource', () => {
       size: 42,
       status: 'fetched',
     })
-    vi.mocked(executeExtract).mockResolvedValue(null)
+    vi.mocked(executeInterpret).mockResolvedValue(null)
     vi.mocked(executeIndexContent).mockResolvedValue(null)
 
     await processResource('res-1', ctx, db, queue)
 
-    expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.extract)
+    expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.interpret)
     expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.index)
     // Clears any stale preview/schema from a previous run (e.g. CSV → PDF replace).
-    expect(mockTracker.updateExtractResult).toHaveBeenCalledWith(null, {})
+    expect(mockTracker.updateInterpretResult).toHaveBeenCalledWith(null, {})
   })
 
-  it('does NOT clear preview/schema when extract throws (transient failure)', async () => {
+  it('does NOT clear preview/schema when the interpretation throws (transient failure)', async () => {
     // A thrown extract is a transient failure — the previous preview/schema must
     // be preserved (unlike a null return, which means "no preview applies").
     vi.mocked(executeFetch).mockResolvedValue({
@@ -306,16 +306,16 @@ describe('processResource', () => {
       size: 42,
       status: 'fetched',
     })
-    vi.mocked(executeExtract).mockRejectedValue(new Error('Parse error'))
+    vi.mocked(executeInterpret).mockRejectedValue(new Error('Parse error'))
     vi.mocked(executeIndexContent).mockResolvedValue(null)
 
     await processResource('res-1', ctx, db, queue)
 
     expect(mockTracker.failStep).toHaveBeenCalled()
-    expect(mockTracker.updateExtractResult).not.toHaveBeenCalled()
+    expect(mockTracker.updateInterpretResult).not.toHaveBeenCalled()
   })
 
-  it('should complete even if extract fails', async () => {
+  it('should complete even if the interpretation fails', async () => {
     vi.mocked(executeFetch).mockResolvedValue({
       storageKey: 'resources/pkg-1/res-1',
       format: 'CSV',
@@ -324,7 +324,7 @@ describe('processResource', () => {
       size: 42,
       status: 'fetched',
     })
-    vi.mocked(executeExtract).mockRejectedValue(new Error('Parse error'))
+    vi.mocked(executeInterpret).mockRejectedValue(new Error('Parse error'))
     vi.mocked(executeIndexContent).mockResolvedValue(null)
 
     await processResource('res-1', ctx, db, queue)
@@ -357,8 +357,8 @@ describe('processResource', () => {
       { resourceId: 'res-1' },
       { delaySeconds: 6 }
     )
-    // Extract should NOT run
-    expect(executeExtract).not.toHaveBeenCalled()
+    // Interpret should NOT run
+    expect(executeInterpret).not.toHaveBeenCalled()
     expect(mockTracker.startStep).toHaveBeenCalledTimes(1) // Only fetch step
   })
 
@@ -409,7 +409,7 @@ describe('processResource', () => {
     await processResource('res-1', ctx, db, queue)
 
     expect(mockTracker.updateStatus).not.toHaveBeenCalled()
-    expect(executeExtract).not.toHaveBeenCalled()
+    expect(executeInterpret).not.toHaveBeenCalled()
   })
 
   it('records the run against the row it was given', async () => {
@@ -461,7 +461,7 @@ describe('processResource', () => {
       size: 42,
       status: 'fetched',
     })
-    vi.mocked(executeExtract).mockResolvedValue(null)
+    vi.mocked(executeInterpret).mockResolvedValue(null)
     vi.mocked(executeIndexContent).mockResolvedValue(null)
 
     await processResource('res-1', ctx, db, queue)

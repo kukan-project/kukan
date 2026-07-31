@@ -221,7 +221,7 @@ has to be told `encoding=`, it does not detect.
 
 ## Consequences
 
-- **Durability**: a deterministic Extract failure (OOM, malformed CSV) no longer costs layer 1.
+- **Durability**: a deterministic interpretation failure (OOM, malformed CSV) no longer costs layer 1.
   Only the interpretation reaches the DLQ
 - **One mechanism fewer**: `lake_source_key` and its whole lifecycle
 - **Memory**: no more expanding every row onto the JS heap; `MAX_PARQUET_SOURCE_SIZE` (50MB)

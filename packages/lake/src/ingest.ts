@@ -2,7 +2,7 @@
  * DuckLake ingest (ADR-043 layer 2 / Phase ii-a).
  *
  * Loads a version's tabular content into its DuckLake table from the preview
- * Parquet the Extract step already produced — the types were inferred once
+ * Parquet the Interpret step already produced — the types were inferred once
  * there (ADR-029) and are reused rather than re-parsed from CSV.
  *
  * ii-a is keyless: each version replaces the table's contents wholesale.

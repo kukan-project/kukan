@@ -339,9 +339,14 @@ export class ResourceVersionService {
         storageKey: resource.storageKey,
         schema: sql<ResourceSchema | null>`${resourcePipeline.metadata} -> 'schema'`,
         // Whether that schema was built from the bytes the resource holds now.
-        // A failed Extract keeps the previous preview and schema without failing
-        // the run, so an unchecked copy would pin an older content's columns
-        // onto v1. Same test as `pendingLakeIngestQuery`, against the live hash.
+        // A failed interpretation keeps the previous preview and schema without
+        // failing the run, so an unchecked copy would pin an older content's
+        // columns onto v1. The version's own bytes are what settle it.
+        //
+        // `'extract'` deliberately: this reads rows already written, and the
+        // fallback only applies to previews from before the source hash existed
+        // — all of which predate the rename (ADR-046). Matching `'interpret'`
+        // here would find none of them.
         schemaTrusted: sql<boolean>`(
           ${resourcePipeline.metadata}->>'sourceHash' = ${resource.hash}
           OR (
@@ -668,7 +673,7 @@ export class ResourceVersionService {
     version: number,
     deps: PurgeDeps
   ): Promise<{ purged: boolean; rolledBack: boolean }> {
-    // Held for the whole purge (ADR-044). Extract writes its preview to storage
+    // Held for the whole purge (ADR-044). Interpret writes its preview to storage
     // before the database learns of it, and version capture copies the file
     // before inserting the row; a run inside either window would write those
     // objects back *after* this purge had swept them, with no row left to make

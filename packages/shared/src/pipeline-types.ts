@@ -13,7 +13,19 @@ import { z } from 'zod'
 export type PipelineStatus =
   'pending' | 'queued' | 'processing' | 'complete' | 'error' | 'cancelled'
 export type PipelineStepStatus = 'pending' | 'running' | 'complete' | 'error' | 'skipped'
-export type PipelineStepName = 'fetch' | 'extract' | 'version' | 'lake' | 'index'
+export type PipelineStepName = 'fetch' | 'version' | 'interpret' | 'lake' | 'index'
+
+/**
+ * Step names that runs no longer write but rows still carry.
+ *
+ * `extract` became `interpret` when the stage did (ADR-046). Steps are cleared
+ * at the start of each run, so these disappear resource by resource as the
+ * pipeline runs again — until then the history has to be able to label them.
+ *
+ * Removable when `SELECT count(*) FROM resource_pipeline_step WHERE step_name =
+ * 'extract'` reaches zero, along with the `pipelineStepExtract` message keys.
+ */
+export type LegacyPipelineStepName = 'extract'
 
 /** Content type for indexed resource text */
 export type ContentType = 'tabular' | 'text' | 'manifest' | 'document'
@@ -22,7 +34,7 @@ export type ContentType = 'tabular' | 'text' | 'manifest' | 'document'
 // The column schema inferred while generating the preview Parquet (ADR-029) is
 // persisted to resource_pipeline.metadata.schema so it can be surfaced before
 // the data is downloaded (e.g. the get_resource_schema MCP tool). Column types
-// mirror the inferred types from the Extract step.
+// mirror the inferred types from the Interpret step.
 
 /**
  * Inferred column type. `date` and `timestamp` arrived with DuckDB's sniffer
@@ -91,7 +103,7 @@ export type ResourceSchema = z.infer<typeof resourceSchemaSchema>
 // Each job carries a validated payload (schemas below) so the worker never trusts
 // an unvalidated queue message body.
 
-/** Pipeline (data-plane): process one resource through Fetch → Extract → Index. */
+/** Pipeline (data-plane): process one resource through Fetch → Version → Interpret → Lake → Index. */
 export const PIPELINE_JOB_TYPE = 'resource-pipeline' as const
 
 /** Maintenance: rebuild the search metadata index (optionally re-enqueue content). */

@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname } from 'node:path'
 import { Readable } from 'stream'
 import JSZip from 'jszip'
-import { executeExtract } from '../pipeline/steps/extract'
+import { executeInterpret } from '../pipeline/steps/interpret'
 import { MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
 import {
   captureUpload,
@@ -24,7 +24,7 @@ const previewKeyMatching = (pkg: string, res: string, ext: string) =>
 /** The captured version the step reads (ADR-046); sized under the interpret cap. */
 const version = (storageKey: string, size = 1024) => ({ storageKey, size })
 
-describe('executeExtract', () => {
+describe('executeInterpret', () => {
   let ctx: ReturnType<typeof createPipelineContextMock>
   let upload: UploadCapture
 
@@ -40,7 +40,7 @@ describe('executeExtract', () => {
   it('should extract CSV from Storage and upload Parquet', async () => {
     mockStorageDownload('name,age\nAlice,30\nBob,25\n')
 
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-1',
       'pkg-1',
       version('resources/pkg-1/res-1'),
@@ -90,7 +90,7 @@ describe('executeExtract', () => {
   it('should handle title row skipping in Parquet output', async () => {
     mockStorageDownload('Title Row,,,\n\nname,age,city\nAlice,30,Tokyo\n')
 
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-2',
       'pkg-1',
       version('resources/pkg-1/res-2'),
@@ -105,7 +105,7 @@ describe('executeExtract', () => {
   it('should extract TSV data', async () => {
     mockStorageDownload('name\tage\nAlice\t30\n')
 
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-3',
       'pkg-1',
       version('resources/pkg-1/res-3'),
@@ -124,7 +124,7 @@ describe('executeExtract', () => {
     }
     mockStorageDownload(lines.join('\n') + '\n')
 
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-4',
       'pkg-1',
       version('resources/pkg-1/res-4'),
@@ -141,7 +141,7 @@ describe('executeExtract', () => {
     mockStorageDownload('name,age\nAlice,30\n')
     let seen: { magic: string; path: string; leftInDir: string[] } | undefined
 
-    await executeExtract('res-t', 'pkg-1', version('versions/pkg-1/res-t/v1'), 'CSV', ctx, {
+    await executeInterpret('res-t', 'pkg-1', version('versions/pkg-1/res-t/v1'), 'CSV', ctx, {
       onTable: async (parquetPath) => {
         // Still there, and a real Parquet: layer 2 loads from here rather
         // than from the preview in storage (ADR-046).
@@ -167,7 +167,7 @@ describe('executeExtract', () => {
     mockStorageDownload('Hello, world!')
     const onTable = vi.fn()
 
-    await executeExtract('res-u', 'pkg-1', version('versions/pkg-1/res-u/v1'), 'TXT', ctx, {
+    await executeInterpret('res-u', 'pkg-1', version('versions/pkg-1/res-u/v1'), 'TXT', ctx, {
       onTable,
     })
 
@@ -193,7 +193,7 @@ describe('executeExtract', () => {
       )
     )
 
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-big',
       'pkg-1',
       version('versions/pkg-1/res-big/v1', MAX_PARQUET_SOURCE_SIZE + 1),
@@ -210,7 +210,7 @@ describe('executeExtract', () => {
   it('should detect encoding for TXT without Parquet generation', async () => {
     mockStorageDownload('Hello, world!')
 
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-5',
       'pkg-1',
       version('resources/pkg-1/res-5'),
@@ -224,7 +224,7 @@ describe('executeExtract', () => {
   })
 
   it('should return null for non-text formats', async () => {
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-6',
       'pkg-1',
       version('resources/pkg-1/res-6'),
@@ -237,7 +237,7 @@ describe('executeExtract', () => {
   })
 
   it('should return null for null format', async () => {
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-7',
       'pkg-1',
       version('resources/pkg-1/res-7'),
@@ -255,7 +255,7 @@ describe('executeExtract', () => {
     // lake sweep from handing it back for good (ADR-046).
     mockStorageDownload('')
 
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-8',
       'pkg-1',
       version('resources/pkg-1/res-8'),
@@ -272,7 +272,7 @@ describe('executeExtract', () => {
   })
 
   it('should return UTF8 for GeoJSON without downloading', async () => {
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-9',
       'pkg-1',
       version('resources/pkg-1/res-9'),
@@ -289,7 +289,7 @@ describe('executeExtract', () => {
   })
 
   it('should return UTF8 for JSON without downloading', async () => {
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-10',
       'pkg-1',
       version('resources/pkg-1/res-10'),
@@ -306,7 +306,7 @@ describe('executeExtract', () => {
   })
 
   it('should return UTF8 for MD without downloading', async () => {
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-10b',
       'pkg-1',
       version('resources/pkg-1/res-10b'),
@@ -324,7 +324,7 @@ describe('executeExtract', () => {
   it('should parse XML encoding declaration', async () => {
     mockStorageDownload('<?xml version="1.0" encoding="Shift_JIS"?><root/>')
 
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-11',
       'pkg-1',
       version('resources/pkg-1/res-11'),
@@ -338,7 +338,7 @@ describe('executeExtract', () => {
   it('should default to UTF8 for XML without encoding declaration', async () => {
     mockStorageDownload('<?xml version="1.0"?><root/>')
 
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-12',
       'pkg-1',
       version('resources/pkg-1/res-12'),
@@ -355,7 +355,7 @@ describe('executeExtract', () => {
   it('should remove footer rows (合計, ※)', async () => {
     mockStorageDownload('name,count\nA,10\nB,20\n合計,30\n※ 2024年データ,,\n')
 
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-13',
       'pkg-1',
       version('resources/pkg-1/res-13'),
@@ -383,7 +383,7 @@ describe('executeExtract', () => {
     const sjisBuf = Buffer.concat([header, ...Array(20).fill(dataRow)])
     ctx.storage.download.mockResolvedValue(Readable.from(sjisBuf))
 
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-14',
       'pkg-1',
       version('resources/pkg-1/res-14'),
@@ -398,7 +398,7 @@ describe('executeExtract', () => {
   it('should not skip header in single-column CSV', async () => {
     mockStorageDownload('name\nAlice\nBob\n')
 
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-16',
       'pkg-1',
       version('resources/pkg-1/res-16'),
@@ -415,7 +415,7 @@ describe('executeExtract', () => {
       'Report Title,,,\nSubtitle,,,\n,,,\nname,age,city,country\nAlice,30,Tokyo,Japan\n'
     )
 
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-15',
       'pkg-1',
       version('resources/pkg-1/res-15'),
@@ -434,7 +434,7 @@ describe('executeExtract', () => {
     const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' })
     ctx.storage.download.mockResolvedValue(Readable.from(zipBuffer))
 
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-zip',
       'pkg-1',
       version('resources/pkg-1/res-zip'),
@@ -462,7 +462,7 @@ describe('executeExtract', () => {
   it('should return null for corrupt ZIP', async () => {
     ctx.storage.download.mockResolvedValue(Readable.from(Buffer.from('not a zip')))
 
-    const result = await executeExtract(
+    const result = await executeInterpret(
       'res-badzip',
       'pkg-1',
       version('resources/pkg-1/res-badzip'),

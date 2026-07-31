@@ -1,5 +1,5 @@
 /**
- * KUKAN Pipeline — Extract Step
+ * KUKAN Pipeline — Interpret Step
  * Detects encoding for all text-based formats, then generates Parquet for CSV/TSV.
  * Non-text formats return null (skip).
  *
@@ -27,7 +27,7 @@ import type { PipelineContext } from '../types'
 import { ENCODING_SAMPLE_SIZE } from '@/config'
 const FIXED_UTF8_FORMATS = new Set(['json', 'geojson', 'md'])
 
-export interface ExtractResult {
+export interface InterpretResult {
   previewKey: string | null
   encoding: string
   /** Column schema (CSV/TSV only, when a Parquet preview was generated). */
@@ -35,7 +35,7 @@ export interface ExtractResult {
 }
 
 /** The captured version this step interprets. */
-export interface ExtractSource {
+export interface InterpretSource {
   storageKey: string
   /**
    * Bytes the version holds, from its row. Known before the download, so a file
@@ -44,7 +44,7 @@ export interface ExtractSource {
   size: number
 }
 
-export interface ExtractHooks {
+export interface InterpretHooks {
   /**
    * The interpreted table, as a Parquet on local disk, for as long as this call
    * runs (ADR-046 §2). Layer 2 loads from here, so the catalog-wide lock covers
@@ -64,14 +64,14 @@ export interface ExtractHooks {
  * For CSV/TSV, also generates Parquet preview inline.
  * Returns encoding (always) and previewKey (CSV/TSV only), or null for non-text formats.
  */
-export async function executeExtract(
+export async function executeInterpret(
   resourceId: string,
   packageId: string,
-  source: ExtractSource,
+  source: InterpretSource,
   format: string | null,
   ctx: PipelineContext,
-  hooks: ExtractHooks = {}
-): Promise<ExtractResult | null> {
+  hooks: InterpretHooks = {}
+): Promise<InterpretResult | null> {
   const { storageKey } = source
   // Unique to this run, so the object this run writes is never rewritten by a
   // later one. The pointer in resource_pipeline.preview_key is what readers

@@ -337,7 +337,7 @@ describe('MetadataSuggestService', () => {
     expect(result.skippedResources).toEqual([])
   })
 
-  it('decodes head text with the encoding the Extract step persisted', async () => {
+  it('decodes head text with the encoding the Interpret step persisted', async () => {
     const { db, addResult } = createMockDb()
     addResult([pipe('r1', { encoding: 'Shift_JIS' })])
     addResult(liveKeys('r1'))

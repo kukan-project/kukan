@@ -11,7 +11,7 @@ import type { PipelineStatus, ResourceSchema } from '@kukan/shared'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 
 /**
- * Validate `resource_pipeline.metadata.schema` (persisted by the Extract step,
+ * Validate `resource_pipeline.metadata.schema` (persisted by the Interpret step,
  * ADR-032), returning null when absent or malformed so unverified data never
  * leaks to callers.
  */

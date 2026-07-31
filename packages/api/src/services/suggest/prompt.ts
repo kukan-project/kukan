@@ -40,7 +40,7 @@ export interface ResourceMaterial {
   description: string | null
   format: string | null
   size: number | null
-  /** Column schema persisted by the Extract step (CSV/TSV, ADR-032) */
+  /** Column schema persisted by the Interpret step (CSV/TSV, ADR-032) */
   schema: ResourceSchema | null
   /** First rows of the preview Parquet (CSV/TSV) */
   sampleRows: Record<string, unknown>[] | null
