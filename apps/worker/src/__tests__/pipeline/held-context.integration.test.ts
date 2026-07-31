@@ -67,7 +67,7 @@ describe('heldContext', () => {
 
     await held.indexContent(doc)
     await held.deleteContent(resourceId)
-    await held.ingestLakeVersion({ resourceId, version: 1, previewKey: 'p.parquet' })
+    await held.ingestLakeVersion({ resourceId, version: 1, sourcePath: '/tmp/t.parquet' })
 
     expect(inner.indexContent).toHaveBeenCalledWith(doc)
     expect(inner.deleteContent).toHaveBeenCalledWith(resourceId)
@@ -84,7 +84,7 @@ describe('heldContext', () => {
     await expect(held.indexContent(doc)).rejects.toBeInstanceOf(RunCancelledError)
     await expect(held.deleteContent(resourceId)).rejects.toBeInstanceOf(RunCancelledError)
     await expect(
-      held.ingestLakeVersion({ resourceId, version: 1, previewKey: 'p.parquet' })
+      held.ingestLakeVersion({ resourceId, version: 1, sourcePath: '/tmp/t.parquet' })
     ).rejects.toBeInstanceOf(RunCancelledError)
 
     expect(inner.indexContent).not.toHaveBeenCalled()
@@ -125,21 +125,9 @@ describe('heldContext', () => {
     expect(inner.publishContent).toHaveBeenCalledWith(resourceId, { ...content, claim })
   })
 
-  it('carries the claim into the deferred-ingest record', async () => {
-    // The other write that can hold its own condition: what it records is an
-    // intent the resource keeps until something acts on it (ADR-043 §6-6).
-    const inner = createPipelineContextMock()
-    const held = heldContext(inner, claim, db)
-    const row = { resourceId, version: 1, previewKey: 'previews/v1.parquet' }
-
-    await held.deferLakeIngest(row)
-
-    expect(inner.deferLakeIngest).toHaveBeenCalledWith({ ...row, claim })
-  })
-
   it('carries the claim into the version schema write', async () => {
-    // The third write that outlives its run: the interpretation lands on a row
-    // the resource keeps, so a displaced run must not reach it (ADR-046).
+    // The other write that can hold its own condition: the interpretation lands
+    // on a row the resource keeps, so a displaced run must not reach it.
     const inner = createPipelineContextMock()
     const held = heldContext(inner, claim, db)
     const opts = { resourceId, version: 1, schema: { rowCount: 0, columns: [] } }
@@ -172,7 +160,6 @@ it('wraps the writes a kill has to reach', () => {
   )
 
   expect(wrapped.sort()).toEqual([
-    'deferLakeIngest',
     'deleteContent',
     'indexContent',
     'ingestLakeVersion',

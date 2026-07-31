@@ -6,7 +6,6 @@ import {
   type PipelineContextMock,
 } from './test-helpers/pipeline-context'
 
-const PARQUET = 'previews/pkg-1/res-1.tok.parquet'
 const SOURCE = '/tmp/kukan-abc/data.csv.parquet'
 const HASH = 'sha256:abc'
 
@@ -18,7 +17,7 @@ function createCtx(): PipelineContextMock {
   return ctx
 }
 
-const opts = { resourceId: 'res-1', previewKey: PARQUET, sourcePath: SOURCE, contentHash: HASH }
+const opts = { resourceId: 'res-1', sourcePath: SOURCE, contentHash: HASH }
 
 /**
  * Only the version resolution and the failure bookkeeping live here. Whether a
@@ -46,32 +45,14 @@ describe('executeLake', () => {
     expect(ctx.ingestLakeVersion).toHaveBeenCalledWith({
       resourceId: 'res-1',
       version: 2,
-      previewKey: PARQUET,
       sourcePath: SOURCE,
-    })
-    expect(ctx.deferLakeIngest).not.toHaveBeenCalled()
-  })
-
-  it('records the Parquet the version still needs before giving up', async () => {
-    // Deferred to the uploaded preview, not the local file: that one is gone by
-    // the time a retry runs. The pointer is what keeps it from being swept, and
-    // what makes this version findable again if the message is lost (kukan#204).
-    const ctx = createCtx()
-    ctx.ingestLakeVersion.mockRejectedValue(new Error('catalog unreachable'))
-
-    await executeLake(opts, ctx)
-
-    expect(ctx.deferLakeIngest).toHaveBeenCalledWith({
-      resourceId: 'res-1',
-      version: 2,
-      previewKey: PARQUET,
     })
   })
 
   it('names the version a retry has to come back for', async () => {
     // Waiting for the next run does not recover it: that run ingests its own
-    // newer version. The Parquet is not handed back — it is on the version row
-    // now, and the caller queues ids only (ADR-043 §6-6).
+    // newer version. Nothing is recorded for the retry to follow — it reads the
+    // version file again, and ids are all the message carries (ADR-046 §4).
     const ctx = createCtx()
     ctx.ingestLakeVersion.mockRejectedValue(new Error('catalog unreachable'))
 
@@ -82,13 +63,14 @@ describe('executeLake', () => {
     })
   })
 
-  it('lets a kill through rather than recording an intent for it', async () => {
+  it('lets a kill through rather than reporting it as a failed ingest', async () => {
     // The run-scoped context throws this when the claim is gone (ADR-044 §4).
+    // Reported as a failure, the caller would queue a retry for a version a
+    // revert has just decided against.
     const ctx = createCtx()
     ctx.ingestLakeVersion.mockRejectedValue(new RunCancelledError('res-1'))
 
     await expect(executeLake(opts, ctx)).rejects.toBeInstanceOf(RunCancelledError)
-    expect(ctx.deferLakeIngest).not.toHaveBeenCalled()
   })
 
   it('skips on a null ingest — no DuckLake config, or already ingested', async () => {

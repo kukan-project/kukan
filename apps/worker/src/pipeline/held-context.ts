@@ -49,12 +49,9 @@ export function heldContext(
       // so it is a fence and not a window.
       return ctx.publishContent(id, { ...content, claim })
     },
-    async deferLakeIngest(row) {
-      // The other write that carries its own condition.
-      return ctx.deferLakeIngest({ ...row, claim })
-    },
     async recordVersionSchema(opts) {
-      // And the third: the interpretation lands on a row the resource keeps.
+      // The other write that carries its own condition: the interpretation
+      // lands on a row the resource keeps.
       return ctx.recordVersionSchema({ ...opts, claim })
     },
     async indexContent(doc) {

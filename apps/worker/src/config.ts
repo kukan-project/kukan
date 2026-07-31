@@ -8,9 +8,6 @@ export const MAX_FETCH_SIZE = 100 * 1024 * 1024
 /** Timeout for fetching external URLs (30 s) */
 export const FETCH_TIMEOUT_MS = 30_000
 
-/** Maximum file size for CSV/TSV Parquet preview generation (50 MB) */
-export const MAX_PARQUET_SOURCE_SIZE = 50 * 1024 * 1024
-
 /**
  * Rows per Parquet row group. Far below DuckDB's default: the preview reads the
  * file over HTTP range requests, so a small group is what keeps the first screen

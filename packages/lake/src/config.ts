@@ -11,17 +11,6 @@ export const LAKE_METADATA_SCHEMA = 'ducklake'
 /** Storage key prefix for DuckLake data files (Parquet). */
 export const LAKE_DATA_PREFIX = 'lake/'
 
-/**
- * The suffix that tells a tabular preview from one layer 2 cannot read — a
- * ZIP's JSON manifest, notably.
- *
- * The pipeline no longer tests it: the ingest runs from inside the
- * interpretation, so a resource with no table never reaches it (ADR-046). What
- * still needs the rule is the backfill's SQL, which finds candidates by
- * `preview_key LIKE '%' || the suffix` and has no interpretation to lean on.
- */
-export const LAKE_PREVIEW_SUFFIX = '.parquet'
-
 export interface LakeConfig {
   /** libpq keyword connection string for the DuckLake catalog. */
   pgConnString: string

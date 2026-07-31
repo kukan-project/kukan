@@ -150,11 +150,10 @@ async function runPipeline(
           fetchResult.format,
           ctx,
           {
-            onTable: async (parquetPath, previewKey) => {
+            onTable: async (parquetPath) => {
               lakeRan = true
               await runLakeStep(tracker, queue, ctx, {
                 resourceId,
-                previewKey,
                 sourcePath: parquetPath,
                 contentHash: fetchResult.hash,
               })
@@ -270,12 +269,13 @@ async function runLakeStep(
     } else if (lakeResult.status === 'skipped') {
       await tracker.skipStep(lakeStepId)
     } else {
-      // Queued, because the next run ingests its own newer version and this
-      // one's Parquet is then superseded and swept — after which the pair can
-      // never be diffed.
+      // Queued, because the next run captures its own newer version and the
+      // ordering guard then refuses this one for good — after which the pair
+      // can never be diffed.
       await tracker.failStep(lakeStepId, lakeResult.error.message)
-      // Ids only: the Lake step recorded the Parquet on the version, and the
-      // handler reads it from there (ADR-043 §6-6).
+      // Ids only: the handler reads the version row and interprets its file
+      // again, so a message carrying anything else could only disagree with it
+      // (ADR-046).
       await queue.enqueue(LAKE_INGEST_JOB_TYPE, {
         resourceId: opts.resourceId,
         version: lakeResult.version,

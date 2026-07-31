@@ -24,10 +24,9 @@ export type LakeStepResult =
   | { status: 'skipped' }
   | { status: 'failed'; version: number; error: Error }
 
-/** `previewKey` and `sourcePath` are documented on {@link LakeIngestRow}. */
-export interface LakeStepOptions extends Omit<LakeIngestRow, 'version' | 'sourcePath'> {
-  /** Required here: this runs inside the interpretation, so there is a table. */
-  sourcePath: string
+/** `sourcePath` is documented on {@link LakeIngestRow}; the version is resolved
+ *  here rather than given, from the hash below. */
+export interface LakeStepOptions extends Omit<LakeIngestRow, 'version'> {
   /**
    * What Fetch measured on the version this interpreted. The version to ingest
    * is the one holding it, which is how a run that captured nothing still picks
@@ -40,25 +39,24 @@ export async function executeLake(
   opts: LakeStepOptions,
   ctx: PipelineContext
 ): Promise<LakeStepResult> {
-  const { resourceId, previewKey, sourcePath, contentHash } = opts
+  const { resourceId, sourcePath, contentHash } = opts
 
   const version = await ctx.pendingLakeVersion(resourceId, contentHash)
   if (version === null) return { status: 'skipped' }
 
-  const row = { resourceId, version, previewKey }
   try {
-    const result = await ctx.ingestLakeVersion({ ...row, sourcePath })
+    const result = await ctx.ingestLakeVersion({ resourceId, version, sourcePath })
     // null when the context carries no DuckLake config, or when something else
     // ingested this version first.
     return result === null ? { status: 'skipped' } : { status: 'ingested' }
   } catch (err) {
     // A kill is not this step failing. Treated as one, a stopped run would
-    // record an intent and have a retry queued for it — and the version it
-    // points at is one a revert has just decided against (ADR-044 §4).
+    // have a retry queued for a version a revert has just decided against
+    // (ADR-044 §4).
     if (err instanceof RunCancelledError) throw err
-    // Recorded before the caller queues anything: the pointer is what the
-    // preview survives on, and what makes this version findable again.
-    await ctx.deferLakeIngest(row)
+    // Nothing is recorded for the retry to follow. The version file is what
+    // gets interpreted again, and "an active version with no snapshot" is the
+    // whole of what makes this one findable (ADR-046 §4).
     return { status: 'failed', version, error: err as Error }
   }
 }

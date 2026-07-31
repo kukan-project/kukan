@@ -4,7 +4,7 @@ import { basename, dirname } from 'node:path'
 import { Readable } from 'stream'
 import JSZip from 'jszip'
 import { executeExtract } from '../pipeline/steps/extract'
-import { MAX_PARQUET_SOURCE_SIZE } from '../config'
+import { MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
 import {
   captureUpload,
   createPipelineContextMock,
@@ -139,32 +139,23 @@ describe('executeExtract', () => {
 
   it('hands the interpreted table over while it is still on disk', async () => {
     mockStorageDownload('name,age\nAlice,30\n')
-    let seen: { magic: string; previewKey: string; path: string; leftInDir: string[] } | undefined
+    let seen: { magic: string; path: string; leftInDir: string[] } | undefined
 
-    const result = await executeExtract(
-      'res-t',
-      'pkg-1',
-      version('versions/pkg-1/res-t/v1'),
-      'CSV',
-      ctx,
-      {
-        onTable: async (parquetPath, previewKey) => {
-          // Still there, and a real Parquet: layer 2 loads from here rather
-          // than from the preview in storage (ADR-046).
-          seen = {
-            magic: readFileSync(parquetPath).subarray(0, 4).toString('ascii'),
-            previewKey,
-            path: parquetPath,
-            // And nothing else: the hook waits on a catalog-wide lock, so the
-            // source CSV and its transcoded copy must not be held through it.
-            leftInDir: readdirSync(dirname(parquetPath)),
-          }
-        },
-      }
-    )
+    await executeExtract('res-t', 'pkg-1', version('versions/pkg-1/res-t/v1'), 'CSV', ctx, {
+      onTable: async (parquetPath) => {
+        // Still there, and a real Parquet: layer 2 loads from here rather
+        // than from the preview in storage (ADR-046).
+        seen = {
+          magic: readFileSync(parquetPath).subarray(0, 4).toString('ascii'),
+          path: parquetPath,
+          // And nothing else: the hook waits on a catalog-wide lock, so the
+          // source CSV and its transcoded copy must not be held through it.
+          leftInDir: readdirSync(dirname(parquetPath)),
+        }
+      },
+    })
 
     expect(seen?.magic).toBe('PAR1')
-    expect(seen?.previewKey).toBe(result!.previewKey)
     expect(seen?.leftInDir).toEqual([basename(seen!.path)])
     // And gone once the step returns — the temp directory belongs to the step.
     expect(existsSync(seen!.path)).toBe(false)
@@ -258,7 +249,10 @@ describe('executeExtract', () => {
     expect(ctx.storage.download).not.toHaveBeenCalled()
   })
 
-  it('should return encoding with null previewKey for empty CSV', async () => {
+  it('reports an empty interpretation for an empty CSV', async () => {
+    // Not a missing answer: the schema records that this version was
+    // interpreted and holds nothing to load, which is what keeps the hourly
+    // lake sweep from handing it back for good (ADR-046).
     mockStorageDownload('')
 
     const result = await executeExtract(
@@ -272,6 +266,7 @@ describe('executeExtract', () => {
     expect(result).toEqual({
       previewKey: null,
       encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/),
+      schema: { rowCount: 0, columns: [] },
     })
     expect(ctx.putObject).not.toHaveBeenCalled()
   })

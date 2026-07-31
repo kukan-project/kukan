@@ -3,13 +3,7 @@
  * this package; callers ask for operations (ingest, diff, drop, roll back), not
  * for statements.
  */
-export {
-  LAKE_METADATA_SCHEMA,
-  LAKE_DATA_PREFIX,
-  LAKE_PREVIEW_SUFFIX,
-  lakeConfigFromEnv,
-  lakeStorageUrl,
-} from './config'
+export { LAKE_METADATA_SCHEMA, LAKE_DATA_PREFIX, lakeConfigFromEnv, lakeStorageUrl } from './config'
 export type { LakeConfig } from './config'
 export {
   lakeTableName,

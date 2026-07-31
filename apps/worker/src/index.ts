@@ -169,17 +169,17 @@ const orphanCleanupJob = startCronJob({
 // that job failing, and the pipeline moves on to 'complete' either way with the
 // original message already deleted. The intent survives in the database — an
 // active version with no snapshot id — so this pass picks up what the queue
-// dropped. Cheap when there is nothing to do: the scan finds no rows and no
-// lake session is opened.
+// dropped. Cheap when there is nothing to do: the scan finds no rows and
+// nothing is enqueued.
 const lakeIngestSweepLog = log.child({ component: 'lake-ingest-sweep' })
 const lakeIngestSweepJob = startCronJob({
   name: 'Pending lake ingest',
   cronExpression: LAKE_INGEST_SWEEP_CRON,
   log: lakeIngestSweepLog,
   run: async () => {
-    const result = await new ResourceVersionService(db).ingestPendingIntoLake(lake)
-    if (result.ingested > 0 || result.ingestFailed > 0) {
-      lakeIngestSweepLog.info(result, 'Swept versions the queue never delivered')
+    const result = await new ResourceVersionService(db).queuePendingLakeIngests(queue)
+    if (result.queued > 0 || result.failed > 0) {
+      lakeIngestSweepLog.info(result, 'Queued versions layer 2 has not loaded')
     }
   },
 })
@@ -321,7 +321,6 @@ await queue.process({
       ctx,
       db,
       queue,
-      storage,
       log: log.child({ jobId: job.id, type: job.type }),
     })
   },
@@ -333,7 +332,7 @@ await queue.process({
     const start = performance.now()
     const result = await new ResourceVersionService(db).backfillVersions({
       storage,
-      lake,
+      queue,
     })
     const elapsed = Math.round(performance.now() - start)
     log.info(

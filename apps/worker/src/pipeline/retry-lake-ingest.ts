@@ -1,63 +1,62 @@
 /**
- * Retry a DuckLake ingest the pipeline's Lake step could not complete
- * (ADR-043 layer 2).
+ * Retry a DuckLake ingest the pipeline could not complete (ADR-043 layer 2).
  *
- * The preview it names is the superseded one, kept alive because the version
- * names it too (ADR-043 §6-6) — the message is the fast path, not the record.
- * An hourly sweep finds the same versions from the database.
+ * Interprets the version again rather than reading something the first attempt
+ * left behind (ADR-046). The version file is immutable, so the same input gives
+ * the same table — which is why a failed ingest needs no pointer to a preview
+ * kept alive on its behalf, and why the message is the fast path rather than
+ * the record. An hourly sweep finds the same versions from the database.
  */
 
 import type { Database } from '@kukan/db'
 import type { QueueAdapter } from '@kukan/queue-adapter'
-import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { Logger } from '@kukan/shared'
 import { LAKE_INGEST_JOB_TYPE } from '@kukan/shared'
 import { withResourceClaims } from '@kukan/api/services/pipeline-claim'
-import { pendingLakeSourceKey, releaseLakeSource } from '@kukan/api/services/lake-ingest'
+import { pendingLakeVersionSource } from '@kukan/api/services/resource-version-service'
+import { withInterpretedVersion } from './interpret-version'
 import type { PipelineContext } from './types'
 import { CLAIM_RETRY_DELAY_S } from '@/config'
 
 export async function retryLakeIngest(
   job: { resourceId: string; version: number },
-  deps: {
-    ctx: PipelineContext
-    db: Database
-    queue: QueueAdapter
-    storage: StorageAdapter
-    log: Logger
-  }
+  deps: { ctx: PipelineContext; db: Database; queue: QueueAdapter; log: Logger }
 ): Promise<void> {
   const { resourceId, version } = job
-  const { log } = deps
+  const { ctx, log } = deps
 
-  // Resolved from the row, not from the message. Null means the version is not
-  // waiting for a Parquet any more — the hourly pass ingested it, or a purge
-  // took it — and a redelivered message must not undo that.
-  const previewKey = await pendingLakeSourceKey(deps.db, job)
-  if (!previewKey) {
+  // Asked before anything is read — the same predicate the sweep queued from,
+  // narrowed to this version, so there is no second opinion about what layer 2
+  // covers. Every worker task runs that sweep, so the same version arrives
+  // several times over; without this, all but one of them would download and
+  // interpret up to 50MB to find out the work was already done.
+  const source = await pendingLakeVersionSource(deps.db, job)
+  if (!source) {
     log.info({ resourceId, version }, 'Lake ingest retry skipped (nothing outstanding)')
-    return
-  }
-
-  if (!(await deps.storage.head(previewKey))) {
-    // Should not happen now the version names it: the sweep asks before
-    // deleting, and this key is one of the answers (ADR-045 §3). Reaching here
-    // means the object went some other way, so the intent goes with it —
-    // otherwise this version sits in the pending count and the hourly pass
-    // fails on it every hour.
-    await releaseLakeSource(deps.db, { resourceId, version, previewKey })
-    log.warn(
-      { resourceId, version, previewKey },
-      'Lake ingest retry abandoned — the preview it was built from is gone'
-    )
     return
   }
 
   // Under the resource's claim like every other writer (ADR-044): a run or a
   // purge in flight is about to move the very version this is loading.
-  const outcome = await withResourceClaims(deps.db, [resourceId], () =>
-    deps.ctx.ingestLakeVersion({ resourceId, version, previewKey })
-  )
+  const outcome = await withResourceClaims(deps.db, [resourceId], async (claims) => {
+    const result = await withInterpretedVersion(
+      { storageKey: source.storageKey },
+      source.format.toLowerCase(),
+      ctx,
+      (t) => ctx.ingestLakeVersion({ resourceId, version, sourcePath: t.parquetPath })
+    )
+    // Written whether or not there was a table. An empty schema is how this
+    // version stops being outstanding: without it, an empty CSV is handed back
+    // by the hourly sweep every hour, and every task reads the file to find out
+    // there is nothing in it (ADR-046).
+    await ctx.recordVersionSchema({
+      resourceId,
+      version,
+      schema: result.schema,
+      claim: claims[0] ?? undefined,
+    })
+    return result
+  })
 
   if (outcome.status === 'held') {
     // Comes back rather than failing: the holder releases within the staleness
@@ -72,8 +71,9 @@ export async function retryLakeIngest(
     return
   }
 
+  const ingested = outcome.result.used
   log.info(
-    { resourceId, version, snapshotId: outcome.result?.snapshotId },
-    outcome.result ? 'Lake ingest retry completed' : 'Lake ingest retry skipped (already ingested)'
+    { resourceId, version, snapshotId: ingested?.snapshotId },
+    ingested ? 'Lake ingest retry completed' : 'Lake ingest retry skipped (already ingested)'
   )
 }

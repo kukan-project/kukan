@@ -6,12 +6,12 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { and, eq, sql } from 'drizzle-orm'
 import { resource, resourceVersion, resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import { Readable } from 'node:stream'
-import { getStorageKey, getVersionKey } from '@kukan/shared'
+import type { QueueAdapter } from '@kukan/queue-adapter'
+import { getStorageKey, getVersionKey, MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
 import { hashBuffer } from '@kukan/shared/hash-node'
 import { randomUUID } from 'node:crypto'
 import { ResourceVersionService } from '../../services/resource-version-service'
 import { CLAIM_STALE_AFTER_MS, claimResources } from '../../services/pipeline-claim'
-import { unreachableLake } from '../test-helpers/fixtures'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()
@@ -21,6 +21,12 @@ let packageId: string
 
 /** Bytes each storage key holds, so the post-copy verification has something real to hash. */
 const objects = new Map<string, Buffer>()
+
+/** The backfill hands pending versions to the worker rather than loading them
+ *  itself (ADR-046), so it needs somewhere to put them. */
+function mockQueue() {
+  return { enqueue: vi.fn(), getStats: vi.fn(), process: vi.fn(), stop: vi.fn() } as QueueAdapter
+}
 
 function mockStorage(overrides: Record<string, unknown> = {}) {
   return {
@@ -52,6 +58,7 @@ async function addResource(opts: {
   content?: string
   urlType?: string
   size?: number
+  format?: string
 }): Promise<string> {
   const body = Buffer.from(opts.content ?? `content of ${opts.name}`)
   const [r] = await db
@@ -61,6 +68,7 @@ async function addResource(opts: {
       name: opts.name,
       hash: opts.hash === undefined ? hashBuffer(body) : opts.hash,
       size: opts.size ?? 10,
+      format: opts.format ?? null,
       urlType: opts.urlType ?? 'upload',
     })
     .returning()
@@ -94,6 +102,7 @@ async function addTabularResource(
     snapshotId?: number | null
     state?: string
     lakeSourceKey?: string
+    size?: number
   }[],
   opts: {
     previewKey?: string
@@ -101,10 +110,15 @@ async function addTabularResource(
     liveHash?: string
     status?: string
     extractStatus?: string
+    format?: string
   } = {}
 ): Promise<void> {
   const top = Math.max(...versions.map((v) => v.version))
-  const id = await addResource({ name, hash: opts.liveHash ?? `sha256:v${top}` })
+  const id = await addResource({
+    name,
+    hash: opts.liveHash ?? `sha256:v${top}`,
+    format: opts.format ?? 'CSV',
+  })
   const sourceHash = opts.sourceHash === undefined ? `sha256:v${top}` : opts.sourceHash
   const [pipeline] = await db
     .insert(resourcePipeline)
@@ -125,7 +139,7 @@ async function addTabularResource(
       resourceId: id,
       version: v.version,
       storageKey: getVersionKey(packageId, id, v.version, 'v'),
-      size: 10,
+      size: v.size ?? 10,
       hash: `sha256:v${v.version}`,
       origin: 'upload',
       state: v.state ?? 'active',
@@ -165,7 +179,7 @@ describe('backfillVersions', () => {
     // object deleted with the row already pointing at it (ADR-045 §3).
     const id = await addResource({ name: 'a' })
 
-    await service.backfillVersions({ storage: mockStorage() })
+    await service.backfillVersions({ storage: mockStorage(), queue: mockQueue() })
 
     const [captured] = await db
       .select({ storageKey: resourceVersion.storageKey })
@@ -181,10 +195,10 @@ describe('backfillVersions', () => {
     const urlId = await addResource({ name: 'ext', urlType: 'external' })
     const storage = mockStorage()
 
-    const result = await service.backfillVersions({ storage })
+    const result = await service.backfillVersions({ storage, queue: mockQueue() })
 
-    // No lake config supplied, so the layer-2 pass is a no-op.
-    expect(result).toEqual({ backfilled: 2, skipped: 0, failed: 0, ingested: 0, ingestFailed: 0 })
+    // Uploads with no format, so nothing for layer 2 to interpret.
+    expect(result).toEqual({ backfilled: 2, skipped: 0, failed: 0, queued: 0, queueFailed: 0 })
     // Copies from the live key to v1 — never a network fetch. The destination
     // carries a per-attempt token (ADR-043), so it is matched by shape.
     expect((storage as { copy: ReturnType<typeof vi.fn> }).copy).toHaveBeenCalledWith(
@@ -209,7 +223,7 @@ describe('backfillVersions', () => {
     await db.insert(resourcePipeline).values({ resourceId: id, status: 'processing' })
     const storage = mockStorage()
 
-    const result = await service.backfillVersions({ storage })
+    const result = await service.backfillVersions({ storage, queue: mockQueue() })
 
     expect(result.backfilled).toBe(0)
     expect(await service.countUnversioned()).toBe(0)
@@ -225,7 +239,7 @@ describe('backfillVersions', () => {
     await claimResources(db, [id], randomUUID(), CLAIM_STALE_AFTER_MS, 'run')
     const storage = mockStorage()
 
-    const result = await service.backfillVersions({ storage })
+    const result = await service.backfillVersions({ storage, queue: mockQueue() })
 
     expect(result).toMatchObject({ backfilled: 0, skipped: 1, failed: 0 })
     expect((storage as { copy: ReturnType<typeof vi.fn> }).copy).not.toHaveBeenCalled()
@@ -236,10 +250,10 @@ describe('backfillVersions', () => {
     await addResource({ name: 'a' })
     const storage = mockStorage()
 
-    const first = await service.backfillVersions({ storage })
+    const first = await service.backfillVersions({ storage, queue: mockQueue() })
     expect(first.backfilled).toBe(1)
-    const second = await service.backfillVersions({ storage })
-    expect(second).toEqual({ backfilled: 0, skipped: 0, failed: 0, ingested: 0, ingestFailed: 0 })
+    const second = await service.backfillVersions({ storage, queue: mockQueue() })
+    expect(second).toEqual({ backfilled: 0, skipped: 0, failed: 0, queued: 0, queueFailed: 0 })
   })
 
   it('completes with more resources in flight than the pool has connections', async () => {
@@ -249,9 +263,9 @@ describe('backfillVersions', () => {
     for (let i = 0; i < 12; i++) await addResource({ name: `r${i}` })
     const storage = mockStorage()
 
-    const result = await service.backfillVersions({ storage })
+    const result = await service.backfillVersions({ storage, queue: mockQueue() })
 
-    expect(result).toEqual({ backfilled: 12, skipped: 0, failed: 0, ingested: 0, ingestFailed: 0 })
+    expect(result).toEqual({ backfilled: 12, skipped: 0, failed: 0, queued: 0, queueFailed: 0 })
     expect(await service.countUnversioned()).toBe(0)
   }, 30_000)
 
@@ -263,7 +277,7 @@ describe('backfillVersions', () => {
     const id = await addResource({ name: 'a', content: 'original', hash: 'not-a-real-hash' })
     const storage = mockStorage()
 
-    const result = await service.backfillVersions({ storage })
+    const result = await service.backfillVersions({ storage, queue: mockQueue() })
 
     expect(result).toMatchObject({ backfilled: 1, skipped: 0, failed: 0 })
     const [row] = await db.select({ hash: resource.hash }).from(resource).where(eq(resource.id, id))
@@ -291,7 +305,7 @@ describe('backfillVersions', () => {
       await realCopy(src, dest)
     })
 
-    const result = await service.backfillVersions({ storage })
+    const result = await service.backfillVersions({ storage, queue: mockQueue() })
 
     expect(result).toMatchObject({ backfilled: 1, skipped: 0, failed: 0 })
     // The key carries a per-attempt token, so it is read back off the row.
@@ -316,7 +330,7 @@ describe('backfillVersions', () => {
       .mockRejectedValueOnce(new Error('missing object'))
       .mockImplementation(realCopy)
 
-    const result = await service.backfillVersions({ storage })
+    const result = await service.backfillVersions({ storage, queue: mockQueue() })
     expect(result.backfilled).toBe(1)
     expect(result.failed).toBe(1)
   })
@@ -335,58 +349,45 @@ describe('countPendingLakeIngest', () => {
     expect(await service.countPendingLakeIngest()).toBe(0)
   })
 
-  it('counts only the latest version, not the older ones', async () => {
-    // v1 has no snapshot but is not current; only v2 is eligible.
+  it('ignores a version a newer one has already overtaken', async () => {
+    // Loading v1 now would leave the lake serving content the resource no
+    // longer has; the ingest refuses it, so listing it would queue work that
+    // can only be turned away (ADR-043).
+    await addTabularResource('a', [{ version: 1 }, { version: 2, snapshotId: 7 }])
+
+    expect(await service.countPendingLakeIngest()).toBe(0)
+  })
+
+  it('counts every un-ingested version, not just the latest', async () => {
+    // What changed with ADR-046: the ingest reads the version file, which is
+    // there for every version — so an older one that never made it in is real
+    // outstanding work rather than something only the current preview could
+    // have described.
     await addTabularResource('a', [{ version: 1 }, { version: 2 }])
 
-    expect(await service.countPendingLakeIngest()).toBe(1)
+    expect(await service.countPendingLakeIngest()).toBe(2)
   })
 
-  it('ignores resources with no Parquet preview (non-tabular)', async () => {
-    await addTabularResource('a', [{ version: 1 }], {
-      previewKey: `preview/${packageId}/x.txt`,
-    })
+  it('ignores a resource layer 2 does not cover', async () => {
+    // Nothing interprets a PDF, so its versions would sit here forever and be
+    // re-enqueued every hour.
+    await addTabularResource('a', [{ version: 1 }], { format: 'PDF' })
 
     expect(await service.countPendingLakeIngest()).toBe(0)
   })
 
-  it('ignores a preview built from different bytes than the version holds', async () => {
-    // e.g. the file was replaced and the pipeline is still queued, so the
-    // preview is the one an earlier run produced.
+  it('ignores a version too large to interpret', async () => {
+    await addTabularResource('a', [{ version: 1, size: MAX_PARQUET_SOURCE_SIZE + 1 }])
+
+    expect(await service.countPendingLakeIngest()).toBe(0)
+  })
+
+  it('no longer asks anything of the preview', async () => {
+    // The provenance proof this used to require — the preview's source hash
+    // matching the version's — went with the preview being the input (ADR-046).
     await addTabularResource('a', [{ version: 1 }], { sourceHash: 'sha256:an-older-file' })
 
-    expect(await service.countPendingLakeIngest()).toBe(0)
-  })
-
-  // Previews written before the source hash existed are what this migration is
-  // for, so they fall back to "settled pipeline + version is the live content".
-  it('counts a pre-existing preview with no source hash once the pipeline is settled', async () => {
-    await addTabularResource('a', [{ version: 1 }], { sourceHash: null })
-
     expect(await service.countPendingLakeIngest()).toBe(1)
-  })
-
-  it('ignores a pre-existing preview whose run failed to Extract', async () => {
-    // A failed Extract keeps the previous preview and does not fail the run, so
-    // status alone would let the old Parquet be recorded against the new version.
-    await addTabularResource('a', [{ version: 1 }], { sourceHash: null, extractStatus: 'error' })
-
-    expect(await service.countPendingLakeIngest()).toBe(0)
-  })
-
-  it('ignores a pre-existing preview while a newer file is still queued', async () => {
-    await addTabularResource('a', [{ version: 1 }], { sourceHash: null, status: 'queued' })
-
-    expect(await service.countPendingLakeIngest()).toBe(0)
-  })
-
-  it('ignores a pre-existing preview when the version is not the live content', async () => {
-    await addTabularResource('a', [{ version: 1 }], {
-      sourceHash: null,
-      liveHash: 'sha256:a-newer-file',
-    })
-
-    expect(await service.countPendingLakeIngest()).toBe(0)
   })
 
   it('ignores purged versions', async () => {
@@ -394,44 +395,34 @@ describe('countPendingLakeIngest', () => {
 
     expect(await service.countPendingLakeIngest()).toBe(0)
   })
-
-  it('counts a mid-history version that names the Parquet it needs', async () => {
-    // The case the current preview cannot answer for: v1's ingest was deferred
-    // and v2 has since replaced the preview. Before the version carried the
-    // pointer, only the retry's queue message knew — and once that was gone the
-    // version was unreachable from the database (ADR-043 §6-6, kukan#204).
-    await addTabularResource('a', [
-      { version: 1, lakeSourceKey: 'preview/v1.parquet' },
-      { version: 2, snapshotId: 7 },
-    ])
-
-    expect(await service.countPendingLakeIngest()).toBe(1)
-  })
 })
 
-describe('ingestPendingIntoLake', () => {
+describe('queuePendingLakeIngests', () => {
   // The standing repair for a version the queue never delivered: the pipeline's
   // Lake step failed, its retry could not be enqueued, and the original message
   // was deleted with the run. The intent survives as an active version with no
   // snapshot id — which is `pendingLakeIngestQuery`, the same predicate the
-  // countPendingLakeIngest cases above pin down. What is left to check here is
-  // that an idle sweep costs nothing, since it now runs hourly on every worker.
+  // countPendingLakeIngest cases above pin down.
 
-  it('opens no lake session when there is nothing pending', async () => {
-    // Runs hourly on every worker, and most hours have nothing to do. An
-    // unreachable catalog stands in for the cost: reaching it would throw.
+  it('enqueues nothing when nothing is pending', async () => {
+    // Runs hourly on every worker task, and most hours have nothing to do.
     await addResource({ name: 'a' })
+    const queue = mockQueue()
 
-    expect(await service.ingestPendingIntoLake(unreachableLake)).toEqual({
-      ingested: 0,
-      ingestFailed: 0,
-    })
+    expect(await service.queuePendingLakeIngests(queue)).toEqual({ queued: 0, failed: 0 })
+    expect(queue.enqueue).not.toHaveBeenCalled()
   })
 
-  it('does nothing without a lake configured', async () => {
-    expect(await service.ingestPendingIntoLake(undefined)).toEqual({
-      ingested: 0,
-      ingestFailed: 0,
+  it('hands each outstanding version to the worker by id', async () => {
+    // Ids only: what to read is settled by the version row, so a message that
+    // disagreed with it would have nothing to act on (ADR-046).
+    await addTabularResource('a', [{ version: 1, snapshotId: null }])
+    const queue = mockQueue()
+
+    expect(await service.queuePendingLakeIngests(queue)).toEqual({ queued: 1, failed: 0 })
+    expect(queue.enqueue).toHaveBeenCalledWith('lake-ingest-version', {
+      resourceId: expect.any(String),
+      version: 1,
     })
   })
 })

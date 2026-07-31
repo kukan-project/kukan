@@ -31,7 +31,6 @@ export function createPipelineContextMock(): PipelineContextMock {
       .mockResolvedValue({ version: 1, storageKey: 'versions/v1', size: 1024 }),
     recordVersionSchema: vi.fn(),
     pendingLakeVersion: vi.fn().mockResolvedValue(null),
-    deferLakeIngest: vi.fn(),
     ingestLakeVersion: vi.fn().mockResolvedValue(null),
     indexContent: vi.fn(),
     deleteContent: vi.fn(),

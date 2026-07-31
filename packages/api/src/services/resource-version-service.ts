@@ -11,14 +11,15 @@ import type { Database } from '@kukan/db'
 import { resource, resourceVersion, resourcePipeline, auditLog } from '@kukan/db'
 import {
   ConflictError,
+  LAKE_INGEST_JOB_TYPE,
   NotFoundError,
   getStorageKey,
   getVersionKey,
+  MAX_PARQUET_SOURCE_SIZE,
   versionOrigin,
 } from '@kukan/shared'
 import type { LakeConfig } from '@kukan/lake'
 import {
-  LAKE_PREVIEW_SUFFIX,
   dropLakeTable,
   lakeTableExists,
   lakeTableName,
@@ -29,7 +30,7 @@ import type { ResourceSchema } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
-import { ingestVersionIntoLake, withLakeIngestLock } from './lake-ingest'
+import { withLakeIngestLock } from './lake-ingest'
 import { reclaimInSession } from './lake-reclaim'
 import {
   stillHeld,
@@ -151,98 +152,80 @@ interface PurgeDeps {
 const BACKFILL_CONCURRENCY = 2
 
 /**
- * Versions of tabular resources that are not in DuckLake yet (ADR-043 layer 2).
+ * Versions that layer 2 has not loaded yet (ADR-043 layer 2, ADR-046).
  *
- * Two ways in. A version whose ingest was deferred **names the Parquet it needs**
- * (`lake_source_key`, ADR-043 §6-6), and that is the whole test — the pointer
- * keeps the object from being swept, so it is still there, and the version is
- * found here whatever its position in the history and whether or not the retry
- * message survived.
+ * The rule, in one place. A version is outstanding when it is an active version
+ * of an active resource with no snapshot — everything else here is about not
+ * queueing work that can never succeed:
  *
- * The other way is the resource's current preview, restricted to the latest
- * active version because the preview Parquet always holds the newest content
- * and older versions cannot be reconstructed from it. Not only a migration
- * path: the pointer is written when the Lake step gives up, so a version whose
- * run was killed before that step reaches — or whose capture is older than the
- * column — has no pointer, and this is what finds it.
+ * - a format an interpretation makes no table from, and a file too large for
+ *   one, or every PDF and oversized CSV would sit here and be re-enqueued every
+ *   hour for good
+ * - a version a newer one has already overtaken, which the ingest refuses under
+ *   its own lock (ii-a replaces the table's contents wholesale)
+ * - a version already interpreted to nothing — an empty CSV has no table to
+ *   load and never will, and its schema says so (ADR-046). Absent, rather than
+ *   empty, means nothing has interpreted it yet
  *
- * The preview is mutable and outlives the run that made it — it is kept when an
- * Extract fails, and it still points at the old object while a re-queued
- * pipeline waits to start. Neither the version's hash nor a completed Extract
- * step rules that out: the backfill *creates* the version from the live file, so
- * their hashes always agree.
+ * What it replaces is two disjoint branches over `lake_source_key` and the
+ * resource's current preview, plus a proof that the preview described *that*
+ * version: the preview was mutable and outlived the run that made it, so
+ * pointing layer 2 at it meant establishing which content it held. Reading the
+ * version file needs none of that.
  *
- * What settles it is the hash of the bytes Extract actually parsed, recorded on
- * the pipeline alongside the preview it produced. Requiring it to equal the
- * version's hash means the Parquet provably describes *that* version.
+ * Re-evaluated by the ingest under its own lock, so a version loaded between a
+ * scan and the attempt is refused there.
  *
- * Previews written before that hash was recorded have none, and they are exactly
- * the ones this migration exists for — so they fall back to a weaker but still
- * sound test: the pipeline must be settled (`complete`, not re-queued behind a
- * newer file), that run's Extract must have produced the preview rather than
- * failing and leaving the previous one in place (a failed Extract does not fail
- * the pipeline), and the version must be the resource's live content. Steps are
- * cleared at the start of each run, so they describe only the latest one.
- *
- * Re-evaluated inside the ingest lock (see `ingestPendingIntoLake`), because the
- * scan and the ingest are minutes apart on a large migration.
- *
- * @param resourceId - restrict to one resource, for that re-check.
+ * @param only - narrow to one version, for the handler's own pre-check.
  */
-function pendingLakeIngestQuery(resourceId?: string) {
-  const forResource =
-    resourceId === undefined ? sql`` : sql`AND rv.resource_id = ${resourceId}::uuid`
-  // Two disjoint branches rather than one predicate with an OR: the OR mixes
-  // columns from both tables, so the planner cannot push it below the join and
-  // ends up running the `max(version)` subquery twice per candidate row — and
-  // the pointer branch, which needs no pipeline row at all, is dragged through
-  // the join anyway.
+function pendingLakeIngestQuery(only?: { resourceId: string; version: number }) {
+  const forVersion =
+    only === undefined
+      ? sql``
+      : sql`AND rv.resource_id = ${only.resourceId}::uuid AND rv.version = ${only.version}`
   return sql`
-  SELECT rv.resource_id AS "resourceId", rv.version, rv.lake_source_key AS "previewKey"
+  SELECT rv.resource_id AS "resourceId", rv.version, rv.storage_key AS "storageKey", rv.size,
+         r.format
   FROM resource_version rv
   JOIN resource r ON r.id = rv.resource_id
   WHERE r.state = 'active'
-    ${forResource}
+    ${forVersion}
     AND rv.state = 'active'
     AND rv.ducklake_snapshot_id IS NULL
-    AND rv.lake_source_key IS NOT NULL
-
-  UNION ALL
-
-  SELECT rv.resource_id AS "resourceId", rv.version, rp.preview_key AS "previewKey"
-  FROM resource_version rv
-  JOIN resource r ON r.id = rv.resource_id
-  JOIN resource_pipeline rp ON rp.resource_id = r.id
-  WHERE r.state = 'active'
-    ${forResource}
-    AND rv.state = 'active'
-    AND rv.ducklake_snapshot_id IS NULL
-    AND rv.lake_source_key IS NULL
-    AND rp.preview_key LIKE ${`%${LAKE_PREVIEW_SUFFIX}`}
-    AND rv.hash IS NOT NULL
-    AND (
-      rp.metadata->>'sourceHash' = rv.hash
-      OR (
-        rp.metadata->>'sourceHash' IS NULL
-        AND rp.status = 'complete'
-        AND rv.hash = r.hash
-        AND EXISTS (
-          SELECT 1 FROM resource_pipeline_step s
-          WHERE s.pipeline_id = rp.id AND s.step_name = 'extract' AND s.status = 'complete'
-        )
-      )
-    )
-    AND rv.version = (
-      SELECT max(rv2.version) FROM resource_version rv2
-      WHERE rv2.resource_id = rv.resource_id AND rv2.state = 'active'
+    AND lower(r.format) IN ('csv', 'tsv')
+    AND rv.size IS NOT NULL
+    AND rv.size <= ${MAX_PARQUET_SOURCE_SIZE}
+    AND (rv.schema IS NULL OR jsonb_array_length(rv.schema -> 'columns') > 0)
+    AND NOT EXISTS (
+      SELECT 1 FROM resource_version newer
+      WHERE newer.resource_id = rv.resource_id
+        AND newer.version > rv.version
+        AND newer.ducklake_snapshot_id IS NOT NULL
     )
 `
+}
+
+/**
+ * The version file to interpret, or null when this version is not outstanding.
+ *
+ * The same predicate the sweep uses, narrowed to one version — not a second
+ * opinion. Asked by the handler before it reads anything: every worker task
+ * runs the hourly sweep, so the same version arrives several times over, and
+ * all but one of those would otherwise download and interpret up to 50MB to
+ * find out the work was already done.
+ */
+export async function pendingLakeVersionSource(
+  db: Pick<Database, 'execute'>,
+  row: { resourceId: string; version: number }
+): Promise<{ storageKey: string; format: string } | null> {
+  const result = await db.execute(pendingLakeIngestQuery(row))
+  const [found] = result.rows as unknown as { storageKey: string; format: string }[]
+  return found ?? null
 }
 
 interface PendingLakeIngest {
   resourceId: string
   version: number
-  previewKey: string
 }
 
 /** A version as exposed through the API. Purged versions are tombstones: their
@@ -334,13 +317,15 @@ export class ResourceVersionService {
    * version is — so this is the one moment existing data can enter the lake.
    * Older versions have no preview Parquet and stay out of it.
    */
-  async backfillVersions(deps: { storage: StorageAdapter; lake?: LakeConfig }): Promise<{
+  async backfillVersions(deps: { storage: StorageAdapter; queue: QueueAdapter }): Promise<{
     backfilled: number
     /** Captured or replaced by something else since the scan — retry-safe. */
     skipped: number
     failed: number
-    ingested: number
-    ingestFailed: number
+    /** Versions handed to the worker to interpret and load (ADR-046). */
+    queued: number
+    /** Versions the queue refused; the hourly pass finds them again. */
+    queueFailed: number
   }> {
     // Fetch every unversioned resource once (small rows), then process each
     // exactly once — no re-query, so a failure isn't retried into a success.
@@ -393,8 +378,8 @@ export class ResourceVersionService {
       }
     }
 
-    const { ingested, ingestFailed } = await this.ingestPendingIntoLake(deps.lake)
-    return { backfilled, skipped, failed, ingested, ingestFailed }
+    const { queued, failed: queueFailed } = await this.queuePendingLakeIngests(deps.queue)
+    return { backfilled, skipped, failed, queued, queueFailed }
   }
 
   /**
@@ -539,7 +524,7 @@ export class ResourceVersionService {
   }
 
   /**
-   * Load the current version of each tabular resource into DuckLake (layer 2).
+   * Queue every version layer 2 has not loaded yet (ADR-043 layer 2, ADR-046).
    *
    * The migration's second pass, and the standing repair for every version that
    * did not reach the lake the first time. The intent to ingest is already in
@@ -548,57 +533,42 @@ export class ResourceVersionService {
    * work, it is a row this pass will find. That is what makes an enqueue
    * failure survivable without an outbox of its own.
    *
-   * Reaches a version wherever it sits in the history, because a version whose
-   * ingest was deferred names the Parquet it needs (ADR-043 §6-6) and the sweep
-   * keeps that object alive. Only versions from before that column depend on
-   * the resource's current preview, and those are the latest one by definition.
+   * Queues rather than ingests. Loading a version now means interpreting its
+   * file (ADR-046), which is the worker's job — reaching for it here would pull
+   * encoding detection, DuckDB and object storage into this package. What this
+   * knows is which versions are outstanding; what to do about one belongs with
+   * the code that already does it for the pipeline.
    *
-   * One session for the whole pass (opening one is expensive), but the advisory
-   * lock is taken per resource: it is what makes the committed snapshot
-   * identifiable, and holding it for the entire pass would block the pipeline's
-   * own ingests for the duration.
-   *
-   * Safe to run from every worker at once: each resource is taken under its
-   * claim (ADR-044), so two sweeps cannot ingest the same one.
+   * Safe to run from every worker at once, which they do — the cron is per
+   * process, not per deployment. Duplicate messages are the cost, and the
+   * handler answers the same question again before it interprets anything.
    */
-  async ingestPendingIntoLake(
-    lake: LakeConfig | undefined
-  ): Promise<{ ingested: number; ingestFailed: number }> {
-    if (!lake) return { ingested: 0, ingestFailed: 0 }
-
+  async queuePendingLakeIngests(queue: QueueAdapter): Promise<{ queued: number; failed: number }> {
     const result = await this.db.execute(pendingLakeIngestQuery())
     const pending = result.rows as unknown as PendingLakeIngest[]
-    if (pending.length === 0) return { ingested: 0, ingestFailed: 0 }
 
-    let ingested = 0
-    let ingestFailed = 0
-    await withLakeSession(lake, async (session) => {
-      for (const row of pending) {
-        try {
-          // Claimed like the capture pass above (ADR-044): the preview this
-          // reads is the one a run in flight is replacing.
-          const done = await this.withClaimOrSkip(row.resourceId, () =>
-            withLakeIngestLock(this.db, async (tx) => {
-              // Re-run the same predicate inside the lock. A pipeline run that
-              // landed since the scan may have replaced the preview with a newer
-              // version's content, which would otherwise be recorded as this
-              // version's snapshot.
-              const fresh = await tx.execute(pendingLakeIngestQuery(row.resourceId))
-              const stillPending = (fresh.rows as unknown as PendingLakeIngest[]).some(
-                (r) => r.version === row.version && r.previewKey === row.previewKey
-              )
-              if (!stillPending) return false
-              return (await ingestVersionIntoLake(tx, session, lake, row)) !== null
-            })
-          )
-          if (done) ingested++
-        } catch {
-          // One resource's failure must not abandon the rest of the migration.
-          ingestFailed++
-        }
+    // Batched-concurrent like `PipelineService.enqueueAll`: a sequential loop
+    // would block the single-threaded worker for minutes on the migration pass,
+    // which has a version per tabular resource in it. Settled per message, so
+    // one refusal costs its own row rather than the rest of the pass.
+    const BATCH_SIZE = 100
+    let queued = 0
+    let failed = 0
+    for (let i = 0; i < pending.length; i += BATCH_SIZE) {
+      const results = await Promise.allSettled(
+        pending.slice(i, i + BATCH_SIZE).map((row) =>
+          queue.enqueue(LAKE_INGEST_JOB_TYPE, {
+            resourceId: row.resourceId,
+            version: row.version,
+          })
+        )
+      )
+      for (const r of results) {
+        if (r.status === 'fulfilled') queued++
+        else failed++
       }
-    })
-    return { ingested, ingestFailed }
+    }
+    return { queued, failed }
   }
 
   /** List a resource's versions, newest first. */

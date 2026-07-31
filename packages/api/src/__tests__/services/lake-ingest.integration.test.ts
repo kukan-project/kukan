@@ -12,15 +12,9 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { eq, and, sql } from 'drizzle-orm'
 import { resource, resourceVersion } from '@kukan/db'
-import type { LakeConfig, LakeSession } from '@kukan/lake'
-import {
-  deferLakeIngest,
-  ingestVersionIntoLake,
-  releaseLakeSource,
-} from '../../services/lake-ingest'
-import { cancelResourceRun } from '../../services/pipeline-claim'
+import type { LakeSession } from '@kukan/lake'
+import { ingestVersionIntoLake } from '../../services/lake-ingest'
 import { reclaimLakeStorage } from '../../services/lake-reclaim'
-import { runInFlight } from '../test-helpers/claim'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()
@@ -50,8 +44,6 @@ const refusingSession = {
   interrupt: () => {},
   close: async () => {},
 } as unknown as LakeSession
-
-const lake = { bucket: 'b', region: 'r', pgConnString: '', s3UseSsl: false } as LakeConfig
 
 async function addVersion(version: number, snapshotId: number | null, lakeSourceKey?: string) {
   await db.insert(resourceVersion).values({
@@ -107,10 +99,10 @@ describe('ingestVersionIntoLake', () => {
     await addVersion(3, 99)
 
     const result = await db.transaction((tx) =>
-      ingestVersionIntoLake(tx, refusingSession, lake, {
+      ingestVersionIntoLake(tx, refusingSession, {
         resourceId,
         version: 2,
-        previewKey: 'previews/v2.parquet',
+        sourcePath: '/tmp/v2.parquet',
       })
     )
 
@@ -130,10 +122,10 @@ describe('ingestVersionIntoLake', () => {
     await addVersion(1, 42)
 
     const result = await db.transaction((tx) =>
-      ingestVersionIntoLake(tx, refusingSession, lake, {
+      ingestVersionIntoLake(tx, refusingSession, {
         resourceId,
         version: 1,
-        previewKey: 'previews/v1.parquet',
+        sourcePath: '/tmp/v1.parquet',
       })
     )
 
@@ -147,10 +139,10 @@ describe('ingestVersionIntoLake', () => {
 
     await expect(
       db.transaction((tx) =>
-        ingestVersionIntoLake(tx, refusingSession, lake, {
+        ingestVersionIntoLake(tx, refusingSession, {
           resourceId,
           version: 2,
-          previewKey: 'previews/v2.parquet',
+          sourcePath: '/tmp/v2.parquet',
         })
       )
     ).rejects.toThrow('reached DuckLake')
@@ -164,10 +156,10 @@ describe('ingestVersionIntoLake', () => {
     await addVersion(2, 42)
 
     const result = await db.transaction((tx) =>
-      ingestVersionIntoLake(tx, refusingSession, lake, {
+      ingestVersionIntoLake(tx, refusingSession, {
         resourceId,
         version: 1,
-        previewKey: 'previews/v1.parquet',
+        sourcePath: '/tmp/v1.parquet',
       })
     )
 
@@ -182,10 +174,10 @@ describe('ingestVersionIntoLake', () => {
     await addVersion(1, null, 'previews/v1.parquet')
 
     await db.transaction((tx) =>
-      ingestVersionIntoLake(tx, ingestingSession, lake, {
+      ingestVersionIntoLake(tx, ingestingSession, {
         resourceId,
         version: 1,
-        previewKey: 'previews/v1.parquet',
+        sourcePath: '/tmp/v1.parquet',
       })
     )
 
@@ -199,23 +191,6 @@ describe('ingestVersionIntoLake', () => {
     expect(row).toEqual({ snapshot: 99, source: null })
   })
 
-  it('leaves a pointer another attempt has moved on', async () => {
-    // Read the pointer, decided to give up, and got here after another attempt
-    // recorded a different Parquet. Withdrawing that one's intent would strand
-    // the version it belongs to.
-    await addVersion(1, null, 'previews/second-attempt.parquet')
-
-    const released = await releaseLakeSource(db, {
-      resourceId,
-      version: 1,
-      previewKey: 'previews/first-attempt.parquet',
-    })
-
-    expect(released).toBe(false)
-    expect(await source(1)).toBe('previews/second-attempt.parquet')
-    expect(await parked()).toEqual([])
-  })
-
   it('parks the Parquet it lets go of', async () => {
     // While the version named it, the sweep read the key as referenced and
     // dropped its ledger record (ADR-045 §3). Clearing the pointer without
@@ -224,116 +199,14 @@ describe('ingestVersionIntoLake', () => {
     await addVersion(1, null, 'previews/v1.parquet')
 
     await db.transaction((tx) =>
-      ingestVersionIntoLake(tx, ingestingSession, lake, {
+      ingestVersionIntoLake(tx, ingestingSession, {
         resourceId,
         version: 1,
-        previewKey: 'previews/v1.parquet',
+        sourcePath: '/tmp/v1.parquet',
       })
     )
 
     expect(await parked()).toEqual(['previews/v1.parquet'])
-  })
-})
-
-describe('deferLakeIngest', () => {
-  it('records the Parquet the version still needs', async () => {
-    await addVersion(1, null)
-
-    expect(
-      await deferLakeIngest(db, { resourceId, version: 1, previewKey: 'previews/v1.parquet' })
-    ).toBe(true)
-
-    expect(await source(1)).toBe('previews/v1.parquet')
-    expect(await parked()).toEqual([])
-  })
-
-  it('parks the Parquet it displaces', async () => {
-    // The first attempt's preview was superseded, and while the version named
-    // it the sweep read it as referenced and dropped its ledger record
-    // (ADR-045 §3). Overwriting the pointer alone would leave that object with
-    // neither a pointer nor a record.
-    await addVersion(1, null, 'previews/first.parquet')
-
-    expect(
-      await deferLakeIngest(db, { resourceId, version: 1, previewKey: 'previews/second.parquet' })
-    ).toBe(true)
-
-    expect(await source(1)).toBe('previews/second.parquet')
-    expect(await parked()).toEqual(['previews/first.parquet'])
-  })
-
-  it('parks nothing when the same Parquet is recorded again', async () => {
-    // A second attempt from the same preview. The key is still referenced, so
-    // handing it to the sweep would be asking about an object in use.
-    await addVersion(1, null, 'previews/v1.parquet')
-
-    await deferLakeIngest(db, { resourceId, version: 1, previewKey: 'previews/v1.parquet' })
-
-    expect(await parked()).toEqual([])
-  })
-
-  it('refuses a version that is already in the lake', async () => {
-    // Nothing reads a pointer on an ingested version — it is not in the pending
-    // query — and nothing releases it either, so it would pin its Parquet for
-    // good.
-    await addVersion(1, 42)
-
-    expect(
-      await deferLakeIngest(db, { resourceId, version: 1, previewKey: 'previews/v1.parquet' })
-    ).toBe(false)
-
-    expect(await source(1)).toBeNull()
-  })
-
-  it('refuses a version that has been purged', async () => {
-    // A tombstone must not be given a reference to content (ADR-043 §5).
-    await addVersion(1, null)
-    await db
-      .update(resourceVersion)
-      .set({ state: 'purged' })
-      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
-
-    expect(
-      await deferLakeIngest(db, { resourceId, version: 1, previewKey: 'previews/v1.parquet' })
-    ).toBe(false)
-
-    expect(await source(1)).toBeNull()
-  })
-
-  it('refuses once the run has been stopped', async () => {
-    // The intent stays with the resource until something acts on it, so a
-    // stopped run must not leave one — a retry would then load a version the
-    // revert has just decided against (ADR-044 §4).
-    await addVersion(1, null)
-    const claim = await runInFlight(resourceId)
-    expect(await cancelResourceRun(db, resourceId)).toBe(true)
-
-    expect(
-      await deferLakeIngest(db, {
-        resourceId,
-        version: 1,
-        previewKey: 'previews/v1.parquet',
-        claim,
-      })
-    ).toBe(false)
-
-    expect(await source(1)).toBeNull()
-  })
-
-  it('records it while the run still holds the resource', async () => {
-    await addVersion(1, null)
-    const claim = await runInFlight(resourceId)
-
-    expect(
-      await deferLakeIngest(db, {
-        resourceId,
-        version: 1,
-        previewKey: 'previews/v1.parquet',
-        claim,
-      })
-    ).toBe(true)
-
-    expect(await source(1)).toBe('previews/v1.parquet')
   })
 })
 

@@ -177,8 +177,13 @@ correct.
 ### 4. `lake_source_key` is retired
 
 Once layer 2 reads the version file, everything in context 2 goes. A version awaiting ingest
-is simply "active, with no snapshot id", and that alone is the condition the hourly sweep
-needs.
+is simply "active, with no snapshot id", and **that alone settles whether it is outstanding**.
+The hourly sweep looks for exactly that.
+
+What else the sweep applies is not part of the condition but a filter against queueing work that
+cannot succeed: formats and sizes an interpretation makes no table from, and versions a newer one
+has overtaken (which the ingest refuses anyway). Without it, every PDF version stays outstanding
+for good and is re-enqueued hourly.
 
 ### 5. Encoding stays in front
 

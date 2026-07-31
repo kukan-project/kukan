@@ -76,8 +76,11 @@ export const resourceVersion = pgTable(
     index('idx_resource_version_lake_source_key')
       .on(table.lakeSourceKey)
       .where(sql`${table.lakeSourceKey} IS NOT NULL`),
-    // Drives the dashboard's pending-ingest count; partial, so once the
-    // migration is done it is empty and proving that costs nothing.
+    // Drives the dashboard's pending-ingest count. Partial, but no longer
+    // near-empty: a version of a non-tabular resource never gets a snapshot, so
+    // it stays in here for good and the pending query filters it out by format
+    // (ADR-046). Worth an expression index on `lower(resource.format)` if the
+    // count starts costing anything.
     index('idx_resource_version_pending_lake')
       .on(table.resourceId, table.version)
       .where(sql`${table.state} = 'active' AND ${table.ducklakeSnapshotId} IS NULL`),

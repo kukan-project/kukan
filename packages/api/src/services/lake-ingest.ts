@@ -8,10 +8,9 @@
 import { and, eq, gt, isNotNull, sql } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import { resourceVersion } from '@kukan/db'
-import type { IngestResult, LakeConfig, LakeSession } from '@kukan/lake'
-import { ingestParquetVersion, lakeStorageUrl, lakeTableName } from '@kukan/lake'
+import type { IngestResult, LakeSession } from '@kukan/lake'
+import { ingestParquetVersion, lakeTableName } from '@kukan/lake'
 import { LAKE_INGEST_LOCK, withGlobalAdvisoryLock } from './advisory-lock'
-import { stillHeld, type ResourceClaim } from './pipeline-claim'
 import { PARKED_UNTIL } from './storage-pointer'
 
 /** A version, and where its rows are read from. */
@@ -19,152 +18,56 @@ export interface LakeIngestRow {
   resourceId: string
   version: number
   /**
-   * The uploaded preview. Read when there is no local table (the retry paths),
-   * and either way the pointer `releaseLakeSource` clears and parks — so it is
-   * needed whether or not it is the source.
+   * The interpreted table on local disk (ADR-046). Every caller has one now —
+   * the pipeline because the ingest runs inside its interpretation, the retry
+   * because it interprets the version again. Which is why nothing has to keep
+   * a preview alive between attempts: the input is the version file, and that
+   * never changes.
    */
-  previewKey: string
-  /**
-   * The interpreted table on local disk, when the caller still has one
-   * (ADR-046). Read in place of the preview: the lock is held only for the
-   * load, and a local file needs no pointer keeping it alive between attempts.
-   */
-  sourcePath?: string
-}
-
-/** A version, and the Parquet it still has to be ingested from. */
-export interface DeferredIngest {
-  resourceId: string
-  version: number
-  previewKey: string
-  /**
-   * The claim the writer holds, for the same reason the version row and the
-   * live pointer carry one (ADR-044 §4): this is a write that stays with the
-   * resource, and a run that has been stopped must not leave one behind.
-   * Omitted by callers that hold no claim.
-   */
-  claim?: ResourceClaim | null
+  sourcePath: string
 }
 
 /**
- * Record that a version still has to be ingested from `previewKey`
- * (ADR-043 §6-6).
+ * Let go of whatever Parquet a version is still pointing at, and park it.
  *
- * Here rather than at either caller because it is one half of a pair: the
- * statement below clears this column when the ingest lands, and a pointer that
- * is set in one package and cleared in another drifts. Both paths that give up
- * on an ingest — the pipeline's Lake step and the hourly sweep — reach it.
+ * Only reached by rows written before ADR-046: nothing sets the pointer any
+ * more, since a retry interprets the version file again rather than reading a
+ * preview. What is left is clearing the ones already out there, which happens
+ * where the version is refused for good — otherwise the object stays pinned by
+ * a reference nothing will ever release.
  *
- * What keeps the preview alive: the orphan sweep asks whether any pointer names
- * a key before deleting its object, and a key sitting in a queue message is a
- * reference it cannot see (ADR-045 §3). Recorded here, an ingest whose message
- * is lost is still found — and found wherever the version sits in the history.
+ * Clearing and parking cannot come apart. While the version named the key the
+ * sweep read it as referenced and dropped its ledger record (ADR-045 §3), so a
+ * clear on its own would leave an object with neither a pointer nor a record.
  *
- * Whatever key this displaces is parked in the same statement, for the reason
- * every other pointer move is (ADR-045 §3): while the version named it the
- * sweep read it as referenced and dropped its ledger record, so overwriting the
- * pointer on its own would leave that object with neither a pointer nor a
- * record — the one state the ledger exists to prevent.
+ * Parking a key whose object is already gone costs nothing — the sweep asks the
+ * backend, which answers that it is not there, and the record goes.
  *
- * Only onto a version that is still waiting for one. A row that has been
- * ingested is not in `pendingLakeIngestQuery` any more, so a pointer set on it
- * afterwards is read by nobody and released by nobody: it would pin its Parquet
- * for good. A purged row must not be given a reference to content either.
- *
- * @returns whether the intent was recorded.
+ * @returns whether there was a pointer to drop.
  */
-export async function deferLakeIngest(
+async function releaseLakeSource(
   db: Pick<Database, 'execute'>,
-  row: DeferredIngest
+  row: { resourceId: string; version: number }
 ): Promise<boolean> {
   const result = await db.execute(sql`
     WITH before AS (
       SELECT id, lake_source_key FROM resource_version
       WHERE resource_id = ${row.resourceId}::uuid
         AND version = ${row.version}
-        AND state = 'active'
-        AND ducklake_snapshot_id IS NULL
+        AND lake_source_key IS NOT NULL
       FOR UPDATE
     ),
-    deferred AS (
-      UPDATE resource_version rv
-      SET lake_source_key = ${row.previewKey}
-      FROM before b
-      WHERE rv.id = b.id
-        AND ${stillHeld(row.claim)}
-      RETURNING b.id, b.lake_source_key AS released
+    released AS (
+      UPDATE resource_version rv SET lake_source_key = NULL
+      FROM before b WHERE rv.id = b.id
+      RETURNING b.lake_source_key AS key
     ),
     parked AS (
       INSERT INTO orphaned_object (key, expires_at)
-      SELECT released, ${PARKED_UNTIL} FROM deferred
-      WHERE released IS NOT NULL AND released <> ${row.previewKey}
+      SELECT key, ${PARKED_UNTIL} FROM released
       ON CONFLICT (key) DO NOTHING
     )
-    SELECT id FROM deferred
-  `)
-  return result.rows.length > 0
-}
-
-/**
- * The Parquet this version is still waiting to be ingested from, or null when
- * it is not waiting for one (ADR-043 §6-6).
- *
- * The retry asks the database rather than reading the key off its own message:
- * the row is what the sweep protects and what the hourly pass reads, so a
- * message that disagrees with it — one queued before the ingest landed, or
- * before someone abandoned it — has nothing to act on.
- */
-export async function pendingLakeSourceKey(
-  db: Pick<Database, 'select'>,
-  row: { resourceId: string; version: number }
-): Promise<string | null> {
-  const [found] = await db
-    .select({ key: resourceVersion.lakeSourceKey })
-    .from(resourceVersion)
-    .where(
-      and(eq(resourceVersion.resourceId, row.resourceId), eq(resourceVersion.version, row.version))
-    )
-    .limit(1)
-  return found?.key ?? null
-}
-
-/**
- * Let go of the Parquet a version was waiting on, and park it.
- *
- * The one way the pointer is ever dropped outside a successful ingest, so that
- * dropping it and handing the object to the sweep cannot come apart. While the
- * version named the key the sweep read it as referenced and dropped its ledger
- * record (ADR-045 §3) — cleared without parking, the object would be left with
- * neither a pointer nor a record.
- *
- * Conditional on the key it was asked about: an attempt that read the pointer,
- * decided to give up, and got here after another attempt recorded a different
- * Parquet must not withdraw that one's intent.
- *
- * Parking a key whose object is already gone costs nothing — the sweep asks the
- * backend, which answers that it is not there, and the record goes.
- *
- * @returns whether the pointer was the one given, and so was dropped.
- */
-export async function releaseLakeSource(
-  db: Pick<Database, 'execute'>,
-  row: { resourceId: string; version: number; previewKey: string }
-): Promise<boolean> {
-  const result = await db.execute(sql`
-    WITH released AS (
-      UPDATE resource_version
-      SET lake_source_key = NULL
-      WHERE resource_id = ${row.resourceId}::uuid
-        AND version = ${row.version}
-        AND lake_source_key = ${row.previewKey}
-      RETURNING id
-    ),
-    parked AS (
-      INSERT INTO orphaned_object (key, expires_at)
-      SELECT ${row.previewKey}, ${PARKED_UNTIL} FROM released
-      ON CONFLICT (key) DO NOTHING
-    )
-    SELECT id FROM released
+    SELECT key FROM released
   `)
   return result.rows.length > 0
 }
@@ -205,7 +108,6 @@ export async function withLakeIngestLock<T>(
 export async function ingestVersionIntoLake(
   tx: Transaction,
   session: LakeSession,
-  lake: LakeConfig,
   row: LakeIngestRow
 ): Promise<IngestResult | null> {
   const [pending] = await tx
@@ -242,7 +144,7 @@ export async function ingestVersionIntoLake(
 
   const result = await ingestParquetVersion(session, {
     table: lakeTableName(row.resourceId),
-    parquetUrl: row.sourcePath ?? lakeStorageUrl(lake, row.previewKey),
+    parquetUrl: row.sourcePath,
   })
   // The DuckLake commit is on its own connection, so a failure here leaves an
   // unreferenced snapshot — harmless, and reclaimed by expire.

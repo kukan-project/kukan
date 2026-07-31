@@ -88,7 +88,7 @@ const TABLE_PREVIEW_KEY = 'previews/pkg-1/res-1.tok.parquet'
 
 function interpretProducesTable() {
   vi.mocked(executeExtract).mockImplementation(async (_r, _p, _s, _f, _ctx, hooks) => {
-    await hooks?.onTable?.(TABLE_PATH, TABLE_PREVIEW_KEY)
+    await hooks?.onTable?.(TABLE_PATH)
     return { previewKey: TABLE_PREVIEW_KEY, encoding: 'UTF8' }
   })
 }
@@ -442,7 +442,6 @@ describe('processResource', () => {
     expect(executeLake).toHaveBeenCalledWith(
       {
         resourceId: 'res-1',
-        previewKey: TABLE_PREVIEW_KEY,
         sourcePath: TABLE_PATH,
         contentHash: 'sha256:abc',
       },

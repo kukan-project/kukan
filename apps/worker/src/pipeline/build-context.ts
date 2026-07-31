@@ -10,11 +10,7 @@ import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter, ContentDoc } from '@kukan/search-adapter'
 import type { IngestResult, LakeConfig } from '@kukan/lake'
 import { withLakeSession } from '@kukan/lake'
-import {
-  deferLakeIngest,
-  ingestVersionIntoLake,
-  withLakeIngestLock,
-} from '@kukan/api/services/lake-ingest'
+import { ingestVersionIntoLake, withLakeIngestLock } from '@kukan/api/services/lake-ingest'
 import {
   insertVersionIfHeld,
   setVersionSchemaIfHeld,
@@ -215,10 +211,6 @@ export function buildPipelineContext(
       return row?.version ?? null
     },
 
-    async deferLakeIngest(row): Promise<void> {
-      await deferLakeIngest(db, row)
-    },
-
     async ingestLakeVersion(row): Promise<IngestResult | null> {
       if (!lake) return null
       // Opened outside the lock: session setup costs several round trips, and
@@ -227,7 +219,7 @@ export function buildPipelineContext(
       // which several concurrent ingests on a small task cannot survive.
       return withLakeSession(
         lake,
-        (session) => withLakeIngestLock(db, (tx) => ingestVersionIntoLake(tx, session, lake, row)),
+        (session) => withLakeIngestLock(db, (tx) => ingestVersionIntoLake(tx, session, row)),
         { memoryLimitMb: LAKE_INGEST_MEMORY_LIMIT_MB, threads: LAKE_INGEST_THREADS }
       )
     },

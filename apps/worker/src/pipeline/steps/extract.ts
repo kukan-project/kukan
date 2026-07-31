@@ -11,22 +11,20 @@
 
 import { randomUUID } from 'crypto'
 import { createReadStream } from 'node:fs'
-import { rm, stat } from 'node:fs/promises'
-import {
-  streamToBuffer,
-  streamToTempFile,
-  cleanupTempFile,
-  transcodeToUtf8,
-  readHead,
-} from '../node-utils'
+import { streamToBuffer, streamToTempFile, cleanupTempFile } from '../node-utils'
 import { detectEncoding } from '@kukan/shared/encoding-node'
-import { getPreviewKey, isCsvFormat, isTextFormat, isZipFormat, toCharset } from '@kukan/shared'
+import {
+  getPreviewKey,
+  isCsvFormat,
+  isTextFormat,
+  isZipFormat,
+  MAX_PARQUET_SOURCE_SIZE,
+} from '@kukan/shared'
 import type { ResourceSchema } from '@kukan/shared'
-import { interpretCsv } from '../csv-interpret'
-import { countTitleRows } from '../csv-title-rows'
+import { withInterpretedVersion } from '../interpret-version'
 import { extractZipManifest } from './extract-zip'
 import type { PipelineContext } from '../types'
-import { MAX_PARQUET_SOURCE_SIZE, MAX_CSV_COLUMNS, ENCODING_SAMPLE_SIZE } from '@/config'
+import { ENCODING_SAMPLE_SIZE } from '@/config'
 const FIXED_UTF8_FORMATS = new Set(['json', 'geojson', 'md'])
 
 export interface ExtractResult {
@@ -52,17 +50,13 @@ export interface ExtractHooks {
    * runs (ADR-046 §2). Layer 2 loads from here, so the catalog-wide lock covers
    * the load alone and not the interpretation that produced it.
    *
-   * Called once {@link interpretCsv} has returned, so its DuckDB instance is
+   * Called once the interpretation has returned, so its DuckDB instance is
    * closed before the ingest opens a session.
    *
    * Throwing fails the step. The caller records the ingest's own outcome inside
    * the hook, since layer 2 is advisory and rebuildable from layer 1.
-   *
-   * @param previewKey - where the same table was just uploaded. Given here
-   *   because the step has not returned yet; see `LakeIngestRow` for what the
-   *   ingest does with it.
    */
-  onTable?(parquetPath: string, previewKey: string): Promise<void>
+  onTable?(parquetPath: string): Promise<void>
 }
 
 /**
@@ -138,51 +132,29 @@ export async function executeExtract(
     return { previewKey: null, encoding: detectEncoding(fmt, sample) }
   }
 
-  // CSV/TSV: DuckDB reads the file off local disk (ADR-046), so it is streamed
-  // down rather than buffered — the JS heap never holds the whole table.
-  const rawPath = await streamToTempFile(await ctx.storage.download(storageKey), 'csv')
-  try {
-    // Detection reads every byte. A 64KB sample is not enough: a CSV whose
-    // first megabyte is ASCII — ids, dates, numbers — is read as UTF-8, and the
-    // Japanese further down comes back as mojibake (measured, ADR-046).
-    const { size } = await stat(rawPath)
-    const encoding = detectEncoding(fmt, await readHead(rawPath, size))
+  // CSV/TSV: publish what the interpretation produced. The interpretation
+  // itself is shared with the lake retry, which wants the table and nothing
+  // else (ADR-046).
+  const { encoding, schema, used } = await withInterpretedVersion(
+    source,
+    fmt,
+    ctx,
+    async (table) => {
+      const previewKey = getPreviewKey(packageId, resourceId, 'parquet', runToken)
+      await ctx.putObject(previewKey, createReadStream(table.parquetPath), {
+        contentType: 'application/vnd.apache.parquet',
+      })
 
-    const charset = toCharset(encoding)
-    const csvPath = charset === 'utf-8' ? rawPath : await transcodeToUtf8(rawPath, charset)
-    // Dead the moment it has been transcoded, and up to 50MB of it would
-    // otherwise sit on disk under the whole DuckDB pass.
-    if (csvPath !== rawPath) await rm(rawPath, { force: true })
-
-    const { rows: titleRows, columnCount } = await countTitleRows(csvPath)
-    if (columnCount === 0) {
-      return { previewKey: null, encoding }
+      // Handed over after the upload, so the preview exists whatever the hook
+      // does with it.
+      await hooks.onTable?.(table.parquetPath)
+      return { previewKey }
     }
-    // Reject extremely wide CSVs (e.g. pivot tables) — too many columns to preview
-    if (columnCount > MAX_CSV_COLUMNS) {
-      throw new Error(`Too many columns (${columnCount}), max ${MAX_CSV_COLUMNS}`)
-    }
+  )
 
-    const parquetPath = `${csvPath}.parquet`
-    const schema = await interpretCsv(csvPath, parquetPath, titleRows)
-    // And the source is dead once it has been interpreted. What follows — the
-    // upload, then the hook waiting on a catalog-wide lock — would hold it for
-    // nothing.
-    await rm(csvPath, { force: true })
-
-    const previewKey = getPreviewKey(packageId, resourceId, 'parquet', runToken)
-    await ctx.putObject(previewKey, createReadStream(parquetPath), {
-      contentType: 'application/vnd.apache.parquet',
-    })
-
-    // Handed over while the file is still here, and after the upload so the
-    // preview exists whatever the hook does with it.
-    await hooks.onTable?.(parquetPath, previewKey)
-
-    return { previewKey, encoding, schema }
-  } finally {
-    // Every file this made lives in the directory this made, so one removal
-    // covers whatever a given path left behind.
-    await cleanupTempFile(rawPath)
-  }
+  // The schema goes back whether or not there was a table. An empty one is not
+  // a missing answer: it records that this version has been interpreted and
+  // holds nothing to load, which is what stops the hourly sweep handing it out
+  // again for good (ADR-046).
+  return { previewKey: null, encoding, schema, ...used }
 }

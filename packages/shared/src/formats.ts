@@ -179,6 +179,13 @@ export const MAX_UPLOAD_SIZE_MB = 100
 /** Maximum upload file size in bytes */
 export const MAX_UPLOAD_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
+/**
+ * Largest CSV/TSV an interpretation will read (ADR-046). Shared rather than the
+ * worker's own: the sweep that finds versions layer 2 has not loaded has to
+ * apply the same bound, or it re-enqueues files nothing will ever interpret.
+ */
+export const MAX_PARQUET_SOURCE_SIZE = 50 * 1024 * 1024
+
 /** Storage key prefix for resource raw files */
 export const RESOURCE_PREFIX = 'resources/'
 
