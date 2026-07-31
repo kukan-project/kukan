@@ -75,7 +75,7 @@ preview directly** rather than loading data into dedicated tables.
 
 ### Part A — Persist the column schema
 
-1. In the Extract step (`apps/worker/src/pipeline/steps/extract.ts`), while generating the Parquet,
+1. In the Interpret step (`apps/worker/src/pipeline/steps/interpret.ts`), while generating the Parquet,
    assemble each column's `{ name, type, nullable, nullCount, stats? }` plus `rowCount` and store it
    in `resource_pipeline.metadata.schema`. `type` reuses the ADR-029 inferred types
    (`integer` / `float` / `boolean` / `string`). `stats` holds min/max for numeric columns

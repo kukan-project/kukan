@@ -2,7 +2,9 @@
 
 ## ステータス
 
-**承認済み（Accepted）**
+**承認済み（Accepted）** — ただし**推定の実装は ADR-046 で置き換えた**。列に型を付けるという決定は
+生きているが、本 ADR が定めた自前の `inferColumnType()` は DuckDB の sniffer になり、
+`type-inference.ts` は削除された。以下の記述に出てくるファイルパスは当時のものである。
 
 ADR-016「DuckDB-WASM データエクスプローラー」のフェーズ 2、および ADR-014「プレビュー Parquet 形式」の
 「列型: 全列 STRING」を拡張する設計。整数・小数・真偽値の推定を Extract ステップに実装済み。

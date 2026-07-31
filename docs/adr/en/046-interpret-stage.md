@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed**
+**Accepted** — implemented 2026-08-01 (#239, #241, #245, #246, #247, #249, #250)
 
 Make the canonical copy (layer 1) durable **before** anything interprets it. Fold type
 inference, Parquet generation and the DuckLake ingest into one re-runnable stage, on DuckDB.
@@ -233,7 +233,7 @@ has to be told `encoding=`, it does not detect.
 
 ## Open issues
 
-1. **Parity of type inference**: measured (DuckDB 1.5.4, 29 column patterns from Japanese CSVs).
+1. **Parity of type inference — settled (#241).** Measured (DuckDB 1.5.4, 29 column patterns from Japanese CSVs).
    **The middle course is not needed — the sniffer can take over.** 23 of 29 agree, and the
    guard that was ADR-029's biggest reason to exist — **leading-zero code columns (postal codes,
    municipality codes) — DuckDB also leaves as VARCHAR**. On the three date columns DuckDB is
@@ -267,7 +267,9 @@ has to be told `encoding=`, it does not detect.
    numbering and claim acquisition have to be decided on the user-action side. Whether
    repeated fiddling with a key floods the history (not settling while in draft, say) is a UX
    question too
-3. **Re-running Interpret**: a new queue job type, or a mode on the existing pipeline job
+3. **Re-running Interpret — settled (#247).** The existing layer-2 retry job
+   (`LAKE_INGEST_JOB_TYPE`) re-interprets the version. Interpretation became one unit,
+   `withInterpretedVersion`, shared by the pipeline and the retry; no new job type was needed
 4. **What the preview Parquet is for**: an artifact of the interpretation, or generated on
    demand from layer 2 (the substance of ADR-043's "layer 3")
 5. **Whether the producer of an interpretation becomes a slot**: detecting types (DuckDB's

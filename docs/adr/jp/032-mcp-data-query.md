@@ -72,7 +72,7 @@ search_datasets → get_dataset → get_resource_schema → query_resource
 
 ### Part A — 列スキーマの永続化
 
-1. Extract ステップ（`apps/worker/src/pipeline/steps/extract.ts`）で Parquet を生成する際、
+1. Interpret ステップ（`apps/worker/src/pipeline/steps/interpret.ts`）で Parquet を生成する際、
    各列の `{ name, type, nullable, nullCount, stats? }` と `rowCount` を**スキーマとして組み立て**、
    `resource_pipeline.metadata.schema` に保存する。`type` は ADR-029 の推論型
    （`integer` / `float` / `boolean` / `string`）をそのまま用いる。

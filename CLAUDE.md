@@ -166,7 +166,7 @@ pnpm format        # Prettier フォーマット
 
 ### 環境変数
 
-- `packages/shared/env.ts` で Zod バリデーション付きの環境変数定義
+- `packages/shared/src/env.ts` で Zod バリデーション付きの環境変数定義
 - `.env` ファイルはリポジトリに含めない（`.env.example` を用意）
 
 ## インフラ抽象化の原則
@@ -231,7 +231,7 @@ pnpm format        # Prettier フォーマット
 - リソースバージョニングと行レベル差分（DuckLake、提案） → `docs/adr/jp/043-resource-versioning-ducklake.md`
 - リソース単位の実行 claim（同時実行の排他、提案） → `docs/adr/jp/044-resource-execution-claim.md`
 - ストレージオブジェクトの先行記録（クラッシュ由来のリーク、提案） → `docs/adr/jp/045-object-write-ahead.md`
-- 正本の確定と、その解釈の分離（Version 先行 + DuckDB の Interpret ステージ、提案） → `docs/adr/jp/046-interpret-stage.md`
+- 正本の確定と、その解釈の分離（Version 先行 + DuckDB の Interpret ステージ） → `docs/adr/jp/046-interpret-stage.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
@@ -276,7 +276,7 @@ Interpret のみフォーマット別処理を行う。
 
 | 項目                     | 制限値 | 設定ファイル                     |
 | ------------------------ | ------ | -------------------------------- |
-| ブラウザアップロード     | 100 MB | `apps/web/src/config.ts`         |
+| ブラウザアップロード     | 100 MB | `packages/shared/src/formats.ts` |
 | 外部 URL 取得（Fetch）   | 100 MB | `apps/worker/src/config.ts`      |
 | CSV/TSV Parquet 生成対象 | 50 MB  | `packages/shared/src/formats.ts` |
 

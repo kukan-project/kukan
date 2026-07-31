@@ -4,7 +4,9 @@
 
 ## Status
 
-**Accepted**
+**Accepted** — but **the implementation was replaced by ADR-046**. Typing the columns is still the
+decision; the hand-written `inferColumnType()` this ADR specified became DuckDB's sniffer, and
+`type-inference.ts` is gone. File paths below are the ones current at the time.
 
 A design that extends phase 2 of ADR-016 ("DuckDB-WASM Data Explorer") and the "column type: all STRING" decision of ADR-014 ("Parquet preview format"). Integer, float, and boolean inference is implemented in the Extract step.
 

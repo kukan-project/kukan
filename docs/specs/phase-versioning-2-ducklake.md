@@ -1,5 +1,9 @@
 # Phase Versioning-ii: DuckLake による行レベル差分（層2）— 実装仕様書（ドラフト）
 
+> **記録である。** 実装後に ADR-046 が順序と解釈の担い手を変えた（`Fetch → Version →
+Interpret → Lake → Index`、型推定は DuckDB）。現在の姿は `docs/pipeline.md` を参照。
+> 以下のファイルパスとステップ名は当時のものである。
+
 > **目標**: 表形式リソース（CSV/TSV）を DuckLake テーブルとして ingest し、版間の
 > **行レベル差分・タイムトラベル・列スキーマ履歴**を提供する。カタログは既存 PostgreSQL、
 > データファイルは既存ストレージ（S3/MinIO）。Phase i の正本バージョン（層1）から常に
