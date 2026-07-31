@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import type { AsyncDuckDB, AsyncDuckDBConnection, DuckDBBundles } from '@duckdb/duckdb-wasm'
 import { clientFetch } from '@/lib/client-api'
 import { parquetFileName, buildQuery } from './duckdb-sql'
+import { formatCell } from '@/lib/format-utils'
 
 type ArrowTable = Awaited<ReturnType<AsyncDuckDBConnection['query']>>
 
@@ -85,11 +86,16 @@ async function getDB(): Promise<AsyncDuckDB> {
 
 // --- SQL helpers ---
 
+/**
+ * Arrow rows as display strings. Shares `formatCell` with the hyparquet preview:
+ * both read the same Parquet, and a column typed one way must not read two ways
+ * on screen (ADR-046 gave the preview real DATE and TIMESTAMP columns).
+ */
 function arrowToStringRows(result: ArrowTable, columns: string[]): Record<string, string>[] {
   return result.toArray().map((row: Record<string, unknown>) => {
     const obj: Record<string, string> = {}
     for (const col of columns) {
-      obj[col] = row[col] != null ? String(row[col]) : ''
+      obj[col] = formatCell(row[col])
     }
     return obj
   })

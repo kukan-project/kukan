@@ -5,22 +5,23 @@
  */
 
 import { randomUUID } from 'crypto'
-import { streamToBuffer, streamToTempFile, cleanupTempFile } from '../node-utils'
-import { detectEncoding, bufferToUtf8 } from '@kukan/shared/encoding-node'
-import { getPreviewKey, isCsvFormat, isTextFormat, isZipFormat } from '@kukan/shared'
+import { createReadStream } from 'node:fs'
+import { stat } from 'node:fs/promises'
+import {
+  streamToBuffer,
+  streamToTempFile,
+  cleanupTempFile,
+  transcodeToUtf8,
+  readHead,
+} from '../node-utils'
+import { detectEncoding } from '@kukan/shared/encoding-node'
+import { getPreviewKey, isCsvFormat, isTextFormat, isZipFormat, toCharset } from '@kukan/shared'
 import type { ResourceSchema } from '@kukan/shared'
-import { parquetWriteBuffer } from 'hyparquet-writer'
-import { buildColumns } from '../type-inference'
-import Papa from 'papaparse'
+import { interpretCsv } from '../csv-interpret'
+import { countTitleRows } from '../csv-title-rows'
 import { extractZipManifest } from './extract-zip'
 import type { PipelineContext } from '../types'
-import {
-  MAX_PARQUET_SOURCE_SIZE,
-  PARQUET_ROW_GROUP_SIZE,
-  MAX_CSV_COLUMNS,
-  ENCODING_SAMPLE_SIZE,
-} from '@/config'
-const FOOTER_PREFIXES = ['合計', '注', '※', '出典', '備考', '計', 'total', 'note', 'source']
+import { MAX_PARQUET_SOURCE_SIZE, MAX_CSV_COLUMNS, ENCODING_SAMPLE_SIZE } from '@/config'
 const FIXED_UTF8_FORMATS = new Set(['json', 'geojson', 'md'])
 
 export interface ExtractResult {
@@ -91,111 +92,50 @@ export async function executeExtract(
     return { previewKey: null, encoding }
   }
 
-  // CSV/TSV: need full buffer for Parquet generation (if within size limit).
-  // Cap at limit+1 so an oversize (potentially multi-GB) object is never fully
-  // buffered — that would OOM the worker. streamToBuffer includes the
-  // cap-crossing chunk, so length > limit reliably means the source was
-  // oversize (and the buffer is truncated).
-  const stream = await ctx.storage.download(storageKey)
-  const fileBuffer = await streamToBuffer(stream, MAX_PARQUET_SOURCE_SIZE + 1)
-  const encoding = detectEncoding(fmt, fileBuffer)
-
-  // Skip Parquet generation for large CSV/TSV (buffer above is truncated)
-  if (fileBuffer.length > MAX_PARQUET_SOURCE_SIZE) {
-    return { previewKey: null, encoding }
-  }
-
-  // CSV/TSV: parse + generate Parquet (inline)
-  const text = bufferToUtf8(fileBuffer, encoding)
-  const result = Papa.parse(text, { header: false, skipEmptyLines: true })
-  const allRows = result.data as string[][]
-  const titleSkipped = skipTitleRows(allRows)
-
-  if (titleSkipped.length === 0) {
-    return { previewKey: null, encoding }
-  }
-
-  const headers = titleSkipped[0]
-
-  // Reject extremely wide CSVs (e.g. pivot tables) — too many columns to preview
-  if (headers.length > MAX_CSV_COLUMNS) {
-    throw new Error(`Too many columns (${headers.length}), max ${MAX_CSV_COLUMNS}`)
-  }
-
-  const dataRows = removeFooterRows(titleSkipped.slice(1))
-
-  // Infer each column's type (ADR-029) once, producing both the persisted
-  // schema (ADR-032) and the typed Parquet columnData in a single pass so they
-  // can never diverge. Empty cells become null for typed columns; STRING
-  // columns keep ''.
-  const { schema, columnData } = buildColumns(headers, dataRows)
-
-  const parquetBuf = parquetWriteBuffer({ columnData, rowGroupSize: PARQUET_ROW_GROUP_SIZE })
-
-  if (!parquetBuf) {
-    return { previewKey: null, encoding }
-  }
-
-  // I/O: upload to Storage
-  const previewKey = getPreviewKey(packageId, resourceId, 'parquet', runToken)
-  await ctx.putObject(previewKey, Buffer.from(parquetBuf), {
-    contentType: 'application/vnd.apache.parquet',
-  })
-
-  return { previewKey, encoding, schema }
-}
-
-/** Count the cells in a row that are not blank (after trimming). */
-function nonEmptyCount(row: string[]): number {
-  return row.reduce((n, cell) => (cell.trim() !== '' ? n + 1 : n), 0)
-}
-
-/**
- * Skip title rows at the top of the data.
- * A title row has only one non-empty cell AND the data has multiple columns.
- * Single-column CSVs are never title-skipped.
- */
-function skipTitleRows(rows: string[][]): string[][] {
-  if (rows.length === 0) return rows
-
-  // Determine column count from the widest row
-  const columnCount = Math.max(...rows.map((r) => r.length))
-  if (columnCount <= 1) return rows
-
-  let start = 0
-  for (let i = 0; i < rows.length; i++) {
-    if (nonEmptyCount(rows[i]) <= 1) {
-      start = i + 1
-    } else {
-      break
+  // CSV/TSV: DuckDB reads the file off local disk (ADR-046), so it is streamed
+  // down rather than buffered — the JS heap never holds the whole table.
+  const rawPath = await streamToTempFile(await ctx.storage.download(storageKey), 'csv')
+  try {
+    // A file this step interprets is detected over every byte, as it was when
+    // the step buffered it. A 64KB sample is not enough: a CSV whose first
+    // megabyte is ASCII — ids, dates, numbers — is read as UTF-8, and the
+    // Japanese further down comes back as mojibake (measured, ADR-046). One it
+    // only labels gets the sample the other text formats get: scanning 50MB to
+    // annotate a file that will not be previewed costs seconds for nothing.
+    const { size } = await stat(rawPath)
+    const oversize = size > MAX_PARQUET_SOURCE_SIZE
+    const encoding = detectEncoding(
+      fmt,
+      await readHead(rawPath, oversize ? ENCODING_SAMPLE_SIZE : size)
+    )
+    if (oversize) {
+      return { previewKey: null, encoding }
     }
-  }
-  return rows.slice(start)
-}
 
-/**
- * Remove footer rows from the bottom of the data.
- * A footer row either starts with a known prefix (e.g. 合計, 注, ※) or — for
- * multi-column data only — is nearly empty (≤1 non-empty cell, mirroring
- * title-row skipping). The "nearly empty" rule is gated to multi-column CSVs:
- * in a single-column CSV every value row has exactly one non-empty cell and
- * must never be treated as a footer. A multi-column row whose leading (category)
- * column is blank but that still carries data elsewhere is kept — many Japanese
- * government CSVs leave that column blank on data rows, and treating those as
- * footers would strip the entire table.
- */
-function removeFooterRows(rows: string[][]): string[][] {
-  const multiColumn = rows.length > 0 && Math.max(...rows.map((r) => r.length)) > 1
-  let end = rows.length
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const row = rows[i]
-    const firstCell = row[0]?.trim().toLowerCase() ?? ''
-    const nearlyEmpty = multiColumn && nonEmptyCount(row) <= 1
-    if (nearlyEmpty || FOOTER_PREFIXES.some((p) => firstCell.startsWith(p))) {
-      end = i
-    } else {
-      break
+    const charset = toCharset(encoding)
+    const csvPath = charset === 'utf-8' ? rawPath : await transcodeToUtf8(rawPath, charset)
+
+    const { rows: titleRows, columnCount } = await countTitleRows(csvPath)
+    if (columnCount === 0) {
+      return { previewKey: null, encoding }
     }
+    // Reject extremely wide CSVs (e.g. pivot tables) — too many columns to preview
+    if (columnCount > MAX_CSV_COLUMNS) {
+      throw new Error(`Too many columns (${columnCount}), max ${MAX_CSV_COLUMNS}`)
+    }
+
+    const parquetPath = `${csvPath}.parquet`
+    const schema = await interpretCsv(csvPath, parquetPath, titleRows)
+
+    const previewKey = getPreviewKey(packageId, resourceId, 'parquet', runToken)
+    await ctx.putObject(previewKey, createReadStream(parquetPath), {
+      contentType: 'application/vnd.apache.parquet',
+    })
+
+    return { previewKey, encoding, schema }
+  } finally {
+    // Every file above lives in the directory this made, so one removal covers
+    // the download, the transcode and the Parquet.
+    await cleanupTempFile(rawPath)
   }
-  return rows.slice(0, end)
 }

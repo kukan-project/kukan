@@ -29,7 +29,6 @@
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.32",
-    "hyparquet-writer": "^0.16.1",
     "officeparser": "^7.5.0",
     "p-limit": "^7.3.1",
     "papaparse": "^5.5.4",

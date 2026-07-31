@@ -2,8 +2,8 @@
  * Node.js-specific stream and temp-file utilities (Buffer, Readable).
  */
 
-import { createWriteStream } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { createReadStream, createWriteStream } from 'node:fs'
+import { mkdtemp, open, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { Readable, pipeline } from 'node:stream'
@@ -61,6 +61,36 @@ export async function streamToTempFile(stream: Readable, ext?: string): Promise<
   const filePath = join(dir, safeExt ? `data.${safeExt}` : 'data')
   await pipelineAsync(stream, createWriteStream(filePath))
   return filePath
+}
+
+/**
+ * Rewrite a file as UTF-8 beside itself, returning the new path.
+ *
+ * Decoded a chunk at a time so a large file never becomes a single JS string —
+ * the allocation ADR-046 set out to remove. `TextDecoderStream` carries the
+ * decoder across chunk boundaries, which matters for every multi-byte encoding
+ * and is the whole reason this cannot be a per-chunk `toString`.
+ */
+export async function transcodeToUtf8(filePath: string, charset: string): Promise<string> {
+  const outPath = `${filePath}.utf8`
+  await pipelineAsync(
+    Readable.toWeb(createReadStream(filePath)) as unknown as NodeJS.ReadableStream,
+    new TextDecoderStream(charset) as unknown as NodeJS.ReadWriteStream,
+    createWriteStream(outPath)
+  )
+  return outPath
+}
+
+/** First `maxBytes` of a file. Allocates that much, so callers bound it. */
+export async function readHead(filePath: string, maxBytes: number): Promise<Buffer> {
+  const handle = await open(filePath, 'r')
+  try {
+    const buf = Buffer.alloc(maxBytes)
+    const { bytesRead } = await handle.read(buf, 0, maxBytes, 0)
+    return buf.subarray(0, bytesRead)
+  } finally {
+    await handle.close()
+  }
 }
 
 /** Remove the temp file and its parent directory */

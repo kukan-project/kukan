@@ -1,102 +1,104 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { Readable } from 'stream'
-
-// Capture what extract feeds to the Parquet writer so we can assert per-column
-// type inference + cell conversion (ADR-029) without a Parquet reader. The real
-// writer accepting these values is already exercised by extract.test.ts.
-const parquetWriteBuffer = vi.fn((..._args: unknown[]) => new Uint8Array([1, 2, 3]))
-vi.mock('hyparquet-writer', () => ({
-  parquetWriteBuffer: (...args: unknown[]) => parquetWriteBuffer(...args),
-}))
-
+import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api'
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { executeExtract } from '../pipeline/steps/extract'
-import { createPipelineContextMock } from './test-helpers/pipeline-context'
+import {
+  captureUpload,
+  createPipelineContextMock,
+  type UploadCapture,
+} from './test-helpers/pipeline-context'
 
-interface CapturedColumn {
-  name: string
-  type: string
-  data: unknown[]
-}
-
-describe('executeExtract — column typing (ADR-029)', () => {
+/**
+ * Column typing, asserted against the Parquet that actually leaves the step.
+ *
+ * The interpretation moved onto DuckDB (ADR-046), so there is no longer an
+ * in-process writer whose inputs could stand in for the result — and reading
+ * the file back is the stronger check anyway: it covers the types, the values
+ * and the null handling in one go.
+ */
+describe('executeExtract — column typing', () => {
   let ctx: ReturnType<typeof createPipelineContextMock>
+  let upload: UploadCapture
+  let dir: string
+  let conn: DuckDBConnection
 
-  beforeEach(() => {
+  beforeEach(async () => {
     ctx = createPipelineContextMock()
-    parquetWriteBuffer.mockClear()
+    upload = captureUpload(ctx)
+    dir = mkdtempSync(join(tmpdir(), 'kukan-typing-'))
+    conn = await (await DuckDBInstance.create(':memory:')).connect()
   })
 
-  it('infers per-column types and converts cells (typed empties → null, strings keep raw text)', async () => {
-    ctx.storage.download.mockResolvedValue(
-      Readable.from(
-        Buffer.from(
-          'id,price,flag,name,code\n' +
-            '1,1.5,true,Alice,001\n' +
-            '2,,false,Bob,002\n' +
-            '3,3.25,true,Carol,003\n'
-        )
-      )
+  afterEach(() => {
+    conn?.disconnectSync()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  function csv(content: string) {
+    ctx.storage.download.mockResolvedValue(Readable.from(Buffer.from(content)))
+  }
+
+  /** The uploaded preview, back as rows and column types. */
+  async function readPreview() {
+    const path = join(dir, 'preview.parquet')
+    writeFileSync(path, upload.body!)
+    const described = await conn.runAndReadAll(`DESCRIBE SELECT * FROM read_parquet('${path}')`)
+    const types = Object.fromEntries(
+      (described.getRowObjectsJson() as { column_name: string; column_type: string }[]).map((r) => [
+        r.column_name,
+        r.column_type,
+      ])
+    )
+    const rows = (
+      await conn.runAndReadAll(`SELECT * FROM read_parquet('${path}')`)
+    ).getRowObjectsJson() as Record<string, unknown>[]
+    return { types, rows }
+  }
+
+  it('types each column and keeps leading-zero codes as text', async () => {
+    csv(
+      'id,price,flag,name,code\n' +
+        '1,1.5,true,Alice,001\n' +
+        '2,,false,Bob,002\n' +
+        '3,3.25,true,Carol,003\n'
     )
 
     await executeExtract('r', 'p', 'resources/p/r', 'CSV', ctx)
+    const { types, rows } = await readPreview()
 
-    expect(parquetWriteBuffer).toHaveBeenCalledOnce()
-    const { columnData } = parquetWriteBuffer.mock.calls[0][0] as { columnData: CapturedColumn[] }
-    const byName = Object.fromEntries(columnData.map((c) => [c.name, c]))
-
-    // Integer column → INT64 (bigint values)
-    expect(byName.id.type).toBe('INT64')
-    expect(byName.id.data).toEqual([1n, 2n, 3n])
-
-    // Float column with an empty cell → DOUBLE with null
-    expect(byName.price.type).toBe('DOUBLE')
-    expect(byName.price.data).toEqual([1.5, null, 3.25])
-
-    // Boolean column → BOOLEAN
-    expect(byName.flag.type).toBe('BOOLEAN')
-    expect(byName.flag.data).toEqual([true, false, true])
-
-    // Text column → STRING (raw strings)
-    expect(byName.name.type).toBe('STRING')
-    expect(byName.name.data).toEqual(['Alice', 'Bob', 'Carol'])
-
-    // Leading-zero codes stay STRING (not coerced to integers)
-    expect(byName.code.type).toBe('STRING')
-    expect(byName.code.data).toEqual(['001', '002', '003'])
+    expect(types).toEqual({
+      id: 'BIGINT',
+      price: 'DOUBLE',
+      flag: 'BOOLEAN',
+      name: 'VARCHAR',
+      // Coercing these to integers would drop the leading zero — the guard the
+      // hand-written inference existed for, which the sniffer makes on its own.
+      code: 'VARCHAR',
+    })
+    expect(rows.map((r) => r.id)).toEqual(['1', '2', '3'])
+    expect(rows.map((r) => r.price)).toEqual([1.5, null, 3.25])
+    expect(rows.map((r) => r.flag)).toEqual([true, false, true])
+    expect(rows.map((r) => r.code)).toEqual(['001', '002', '003'])
   })
 
   it('keeps data rows whose leading (category) column is blank', async () => {
     // Japanese government CSVs often leave the first column empty on data rows.
     // These must NOT be dropped as footer rows (regression: whole table → 0 rows).
-    ctx.storage.download.mockResolvedValue(
-      Readable.from(
-        Buffer.from(
-          'category,item,amount\n' +
-            'A,apple,10\n' +
-            ',banana,20\n' + // blank leading column but real data
-            ',cherry,30\n'
-        )
-      )
-    )
+    csv('category,item,amount\n' + 'A,apple,10\n' + ',banana,20\n' + ',cherry,30\n')
 
     await executeExtract('r', 'p', 'resources/p/r', 'CSV', ctx)
+    const { rows } = await readPreview()
 
-    expect(parquetWriteBuffer).toHaveBeenCalledOnce()
-    const { columnData } = parquetWriteBuffer.mock.calls[0][0] as { columnData: CapturedColumn[] }
-    const byName = Object.fromEntries(columnData.map((c) => [c.name, c]))
-
-    // All three data rows survive (none treated as footer).
-    expect(byName.item.data).toEqual(['apple', 'banana', 'cherry'])
-    expect(byName.amount.data).toEqual([10n, 20n, 30n])
-    expect(byName.category.data).toEqual(['A', '', ''])
+    expect(rows.map((r) => r.item)).toEqual(['apple', 'banana', 'cherry'])
+    expect(rows.map((r) => r.amount)).toEqual(['10', '20', '30'])
+    expect(rows.map((r) => r.category)).toEqual(['A', null, null])
   })
 
   it('returns the persisted column schema (ADR-032)', async () => {
-    ctx.storage.download.mockResolvedValue(
-      Readable.from(
-        Buffer.from('id,price,name\n' + '1,1.5,Alice\n' + '2,,Bob\n' + '3,3.25,Carol\n')
-      )
-    )
+    csv('id,price,name\n' + '1,1.5,Alice\n' + '2,,Bob\n' + '3,3.25,Carol\n')
 
     const result = await executeExtract('r', 'p', 'resources/p/r', 'CSV', ctx)
 
@@ -109,6 +111,8 @@ describe('executeExtract — column typing (ADR-029)', () => {
           type: 'integer',
           nullable: false,
           nullCount: 0,
+          distinctCount: 3,
+          unique: true,
           stats: { min: '1', max: '3' },
         },
         {
@@ -116,9 +120,19 @@ describe('executeExtract — column typing (ADR-029)', () => {
           type: 'float',
           nullable: true,
           nullCount: 1,
+          distinctCount: 2,
+          // A missing value disqualifies the column from identifying a row.
+          unique: false,
           stats: { min: 1.5, max: 3.25 },
         },
-        { name: 'name', type: 'string', nullable: false, nullCount: 0 },
+        {
+          name: 'name',
+          type: 'string',
+          nullable: false,
+          nullCount: 0,
+          distinctCount: 3,
+          unique: true,
+        },
       ],
     })
   })
@@ -126,14 +140,12 @@ describe('executeExtract — column typing (ADR-029)', () => {
   it('keeps all rows of a single-column CSV (footer rule is multi-column only)', async () => {
     // Every value row has exactly one non-empty cell; the "nearly empty" footer
     // rule must not apply to single-column CSVs (regression: 0-row preview).
-    ctx.storage.download.mockResolvedValue(Readable.from(Buffer.from('name\nAlice\nBob\n')))
+    csv('name\nAlice\nBob\n')
 
     await executeExtract('r', 'p', 'resources/p/r', 'CSV', ctx)
+    const { types, rows } = await readPreview()
 
-    expect(parquetWriteBuffer).toHaveBeenCalledOnce()
-    const { columnData } = parquetWriteBuffer.mock.calls[0][0] as { columnData: CapturedColumn[] }
-    expect(columnData).toHaveLength(1)
-    expect(columnData[0].name).toBe('name')
-    expect(columnData[0].data).toEqual(['Alice', 'Bob'])
+    expect(Object.keys(types)).toEqual(['name'])
+    expect(rows.map((r) => r.name)).toEqual(['Alice', 'Bob'])
   })
 })

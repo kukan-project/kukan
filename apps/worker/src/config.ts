@@ -11,18 +11,47 @@ export const FETCH_TIMEOUT_MS = 30_000
 /** Maximum file size for CSV/TSV Parquet preview generation (50 MB) */
 export const MAX_PARQUET_SOURCE_SIZE = 50 * 1024 * 1024
 
-/** Number of rows per Parquet row group */
+/**
+ * Rows per Parquet row group. Far below DuckDB's default: the preview reads the
+ * file over HTTP range requests, so a small group is what keeps the first screen
+ * of rows to a short read.
+ */
 export const PARQUET_ROW_GROUP_SIZE = 5_000
 
 /** Maximum number of columns allowed in CSV/TSV preview */
 export const MAX_CSV_COLUMNS = 500
 
 /**
- * Literals recognized as booleans during CSV/TSV column type inference (ADR-029),
- * matched case-insensitively. Kept strict to avoid colliding with integers (0/1)
- * or locale variants (yes/no, はい/いいえ); extend here if that changes.
+ * Rows examined at the end of a CSV when looking for footer rows (合計, 注 …).
+ * A footer has to run to the bottom of the file to be one, so only the tail can
+ * qualify — and reading the whole table back to check would cost more than the
+ * interpretation itself.
  */
-export const BOOLEAN_LITERALS = new Set(['true', 'false'])
+export const CSV_FOOTER_SCAN_ROWS = 100
+
+/** First-cell prefixes that mark a trailing row as a footer rather than data. */
+export const CSV_FOOTER_PREFIXES = [
+  '合計',
+  '注',
+  '※',
+  '出典',
+  '備考',
+  '計',
+  'total',
+  'note',
+  'source',
+]
+
+/**
+ * Bounds on the DuckDB instance that interprets a CSV (ADR-046). Well under the
+ * task's memory so the rest of the run keeps its headroom: DuckDB spills to disk
+ * rather than failing when a file needs more, and the read itself streams.
+ */
+export const INTERPRET_MEMORY_LIMIT_MB = 512
+export const INTERPRET_THREADS = 2
+
+/** Leading rows scanned for the title lines Japanese spreadsheets put above the header */
+export const CSV_TITLE_SCAN_BYTES = 64 * 1024
 
 /** Byte sample size for encoding detection (64 KB) */
 export const ENCODING_SAMPLE_SIZE = 64 * 1024

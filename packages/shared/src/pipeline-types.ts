@@ -24,8 +24,20 @@ export type ContentType = 'tabular' | 'text' | 'manifest' | 'document'
 // the data is downloaded (e.g. the get_resource_schema MCP tool). Column types
 // mirror the inferred types from the Extract step.
 
-/** Inferred column type (same set as the Extract step's type inference, ADR-029). */
-export const RESOURCE_COLUMN_TYPES = ['integer', 'float', 'boolean', 'string'] as const
+/**
+ * Inferred column type. `date` and `timestamp` arrived with DuckDB's sniffer
+ * (ADR-046): the hand-written inference deliberately left dates as strings
+ * because the format was ambiguous, which is a judgement the sniffer makes for
+ * us. Appending to the set keeps schemas written before then valid.
+ */
+export const RESOURCE_COLUMN_TYPES = [
+  'integer',
+  'float',
+  'boolean',
+  'string',
+  'date',
+  'timestamp',
+] as const
 export type ResourceColumnType = (typeof RESOURCE_COLUMN_TYPES)[number]
 
 /**
@@ -52,6 +64,17 @@ export const resourceColumnSchema = z.object({
   nullable: z.boolean(),
   /** Number of missing (empty) values in the column. */
   nullCount: z.number().int().nonnegative(),
+  /**
+   * Distinct non-null values, counted exactly over every row. Optional because
+   * schemas written before ADR-046 have no such count — absent means unknown,
+   * not zero.
+   */
+  distinctCount: z.number().int().nonnegative().optional(),
+  /**
+   * Whether the column identifies a row: every value distinct and none missing.
+   * What the primary-key picker offers as candidates (ADR-046).
+   */
+  unique: z.boolean().optional(),
   /** Min/max bounds for numeric columns (omitted for boolean/string/all-null). */
   stats: columnStatsSchema.optional(),
 })

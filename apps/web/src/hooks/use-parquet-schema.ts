@@ -6,21 +6,17 @@ export type FieldType = 'string' | 'integer' | 'number' | 'boolean' | 'date' | '
 
 export interface ParquetField {
   name: string
-  /** Semantic type, derived from the Parquet logical/physical type. Currently
-   * always 'string' (the writer emits every column as STRING → BYTE_ARRAY/UTF8);
-   * the other branches activate once type inference (ADR-016) lands. */
+  /** Semantic type, derived from the Parquet logical/physical type. */
   type: FieldType
   /** Parquet physical (storage) type, e.g. BYTE_ARRAY, INT64. null if absent. */
   physicalType: string | null
   /** Parquet logical/converted type (semantic annotation), e.g. UTF8/STRING,
    * DATE. null when the column has no logical annotation (raw physical type). */
   logicalType: string | null
-  /** Whether the column may contain nulls (REQUIRED → false). The writer
-   * currently emits every column as OPTIONAL, so this is true for now. */
+  /** Whether the column may contain nulls (REQUIRED → false). Every column the
+   * preview writes is OPTIONAL, so this is true throughout. */
   nullable: boolean
-  /** On-disk (compressed) size of the column in bytes, summed across row groups.
-   * Note: hyparquet-writer 0.15.6 does not populate total_uncompressed_size
-   * (it duplicates the compressed size), so only the compressed size is exposed. */
+  /** On-disk (compressed) size of the column in bytes, summed across row groups. */
   compressedSize: number
 }
 
@@ -38,9 +34,9 @@ function logicalTypeLabel(el: SchemaElement): string | null {
 }
 
 /**
- * Maps a Parquet leaf schema element to a semantic field type.
- * The writer currently emits BYTE_ARRAY/UTF8 (STRING) for every column, so this
- * resolves to 'string' today; the other branches are ready for typed columns.
+ * Maps a Parquet leaf schema element to a semantic field type. The preview is
+ * written from DuckDB's own column types (ADR-046), so every branch below is
+ * reachable — including the date and timestamp ones.
  */
 function mapFieldType(el: SchemaElement): FieldType {
   const conv = el.converted_type

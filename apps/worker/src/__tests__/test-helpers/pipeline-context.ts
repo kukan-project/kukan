@@ -11,7 +11,9 @@
  * quietly answers.
  */
 import { vi, type Mocked } from 'vitest'
+import type { Readable } from 'node:stream'
 import type { PipelineContext } from '../../pipeline/types'
+import { streamToBuffer } from '../../pipeline/node-utils'
 
 export function createPipelineContextMock(): PipelineContextMock {
   // `satisfies` is the point: a context member added or removed shows up here
@@ -31,6 +33,26 @@ export function createPipelineContextMock(): PipelineContextMock {
     deleteContent: vi.fn(),
   } satisfies PipelineContext
   return ctx as PipelineContextMock
+}
+
+/** What the last `putObject` was handed, filled in once the step has run. */
+export interface UploadCapture {
+  body: Buffer | undefined
+}
+
+/**
+ * Collect the bytes of whatever the step uploads.
+ *
+ * A preview is uploaded as a stream off local disk (ADR-046) and the file is
+ * removed as soon as the step returns, so the bytes have to be taken as they go
+ * past to be asserted on at all.
+ */
+export function captureUpload(ctx: PipelineContextMock): UploadCapture {
+  const capture: UploadCapture = { body: undefined }
+  ctx.putObject.mockImplementation(async (_key: string, body: Buffer | Readable) => {
+    capture.body = Buffer.isBuffer(body) ? body : await streamToBuffer(body)
+  })
+  return capture
 }
 
 /** The context with `vi.fn()`'s methods still on every member. */

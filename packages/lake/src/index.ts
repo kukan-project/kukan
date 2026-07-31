@@ -19,7 +19,7 @@ export {
   dropResourceTables,
   rollbackLakeTable,
 } from './table'
-export { sqlLiteral } from './sql'
+export { sqlLiteral, sqlIdentifier } from './sql'
 export { openLakeSession, withLakeSession, closeLakeInstances } from './connection'
 export type { LakeSession, LakeRow } from './connection'
 export { ingestParquetVersion } from './ingest'

@@ -2,7 +2,11 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { Readable } from 'stream'
 import JSZip from 'jszip'
 import { executeExtract } from '../pipeline/steps/extract'
-import { createPipelineContextMock } from './test-helpers/pipeline-context'
+import {
+  captureUpload,
+  createPipelineContextMock,
+  type UploadCapture,
+} from './test-helpers/pipeline-context'
 
 /**
  * Preview keys carry a per-run UUID (ADR-043 layer 2: the object a reader
@@ -16,9 +20,11 @@ const previewKeyMatching = (pkg: string, res: string, ext: string) =>
 
 describe('executeExtract', () => {
   let ctx: ReturnType<typeof createPipelineContextMock>
+  let upload: UploadCapture
 
   beforeEach(() => {
     ctx = createPipelineContextMock()
+    upload = captureUpload(ctx)
   })
 
   function mockStorageDownload(content: string) {
@@ -37,12 +43,21 @@ describe('executeExtract', () => {
       schema: {
         rowCount: 2,
         columns: [
-          { name: 'name', type: 'string', nullable: false, nullCount: 0 },
+          {
+            name: 'name',
+            type: 'string',
+            nullable: false,
+            nullCount: 0,
+            distinctCount: 2,
+            unique: true,
+          },
           {
             name: 'age',
             type: 'integer',
             nullable: false,
             nullCount: 0,
+            distinctCount: 2,
+            unique: true,
             stats: { min: '25', max: '30' },
           },
         ],
@@ -50,12 +65,14 @@ describe('executeExtract', () => {
     })
     expect(ctx.putObject).toHaveBeenCalledOnce()
 
-    const [key, buf, meta] = ctx.putObject.mock.calls[0]
+    const [key, , meta] = ctx.putObject.mock.calls[0]
     // Unique per run so a later run cannot rewrite it (ADR-043 layer 2).
     expect(key).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-1', 'parquet'))
     expect(meta).toEqual({ contentType: 'application/vnd.apache.parquet' })
-    expect(Buffer.isBuffer(buf)).toBe(true)
-    expect((buf as Buffer).length).toBeGreaterThan(0)
+    // The magic bytes, not just "something was uploaded": the preview is now
+    // written by DuckDB rather than assembled in process, so what leaves has to
+    // be a Parquet file (ADR-046).
+    expect(upload.body!.subarray(0, 4).toString('ascii')).toBe('PAR1')
   })
 
   it('should handle title row skipping in Parquet output', async () => {

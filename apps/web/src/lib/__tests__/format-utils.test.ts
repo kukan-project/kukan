@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatBytes } from '../format-utils'
+import { formatBytes, formatCell } from '../format-utils'
 
 describe('formatBytes', () => {
   it('should return null for null/undefined', () => {
@@ -37,5 +37,32 @@ describe('formatBytes', () => {
 
   it('should format terabytes', () => {
     expect(formatBytes(1099511627776)).toBe('1.0 TB')
+  })
+})
+
+describe('formatCell', () => {
+  it('renders a DATE as a plain date, not a JS Date toString', () => {
+    // What a DATE column comes back as: midnight UTC. Showing a time of day
+    // would invent precision the column does not have.
+    expect(formatCell(new Date('2023-04-01T00:00:00.000Z'))).toBe('2023-04-01')
+  })
+
+  it('renders a TIMESTAMP with its time of day', () => {
+    expect(formatCell(new Date('2023-04-01T09:30:15.000Z'))).toBe('2023-04-01 09:30:15')
+  })
+
+  it('renders a 64-bit integer without the BigInt suffix', () => {
+    expect(formatCell(9007199254740993n)).toBe('9007199254740993')
+  })
+
+  it('renders a missing value as empty rather than "null"', () => {
+    expect(formatCell(null)).toBe('')
+    expect(formatCell(undefined)).toBe('')
+  })
+
+  it('leaves ordinary values alone', () => {
+    expect(formatCell('札幌市')).toBe('札幌市')
+    expect(formatCell(0)).toBe('0')
+    expect(formatCell(false)).toBe('false')
   })
 })

@@ -4,6 +4,7 @@ import { Button, Card, CardContent, Skeleton } from '@kukan/ui'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useParquetPreview } from '@/hooks/use-parquet-preview'
+import { formatCell } from '@/lib/format-utils'
 
 interface ParquetPreviewProps {
   resourceId: string
@@ -84,7 +85,7 @@ export function ParquetPreview({ resourceId }: ParquetPreviewProps) {
               <tr key={ri} className="border-b last:border-b-0">
                 {metadata.columns.map((col, ci) => (
                   <td key={ci} className="whitespace-nowrap px-4 py-2">
-                    {row[col] != null ? String(row[col]) : ''}
+                    {formatCell(row[col])}
                   </td>
                 ))}
               </tr>
