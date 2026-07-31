@@ -231,6 +231,7 @@ pnpm format        # Prettier フォーマット
 - リソースバージョニングと行レベル差分（DuckLake、提案） → `docs/adr/jp/043-resource-versioning-ducklake.md`
 - リソース単位の実行 claim（同時実行の排他、提案） → `docs/adr/jp/044-resource-execution-claim.md`
 - ストレージオブジェクトの先行記録（クラッシュ由来のリーク、提案） → `docs/adr/jp/045-object-write-ahead.md`
+- 正本の確定と、その解釈の分離（Version 先行 + DuckDB の Interpret ステージ、提案） → `docs/adr/jp/046-interpret-stage.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
