@@ -92,9 +92,9 @@ and the layer 2 ingest in a single DuckDB session.
 - **For**: the OOM path disappears (`COPY (SELECT * FROM read_csv(...)) TO ... (FORMAT
 parquet)` streams). Layer 2 reads the version file, so the preview dependency goes. The stage
   is re-runnable, so changing a primary key re-runs **only that**
-- **Against**: type inference moves from ADR-029's own implementation to DuckDB's sniffer.
-  DuckDB's `read_csv` **cannot read Shift_JIS** (utf-8 / utf-16 / latin-1 only), so encoding
-  detection and the UTF-8 conversion stay in front of it
+- **Against**: type inference moves from ADR-029's own implementation to DuckDB's sniffer. And
+  since `read_csv` has **no way to read a Japanese CSV correctly**, encoding detection and the
+  UTF-8 conversion stay in front of it (§5)
 
 ## Decision
 
@@ -159,8 +159,37 @@ needs.
 
 ### 5. Encoding stays in front
 
-`Encoding.detect()` and the UTF-8 conversion cannot be handed to DuckDB. The converted object,
-produced by streaming, is what Interpret reads. Handling Japanese CSVs is not negotiable.
+`Encoding.detect()` and the UTF-8 conversion stay in front, and the converted object is what
+Interpret reads. Handling Japanese CSVs is not negotiable.
+
+Letting DuckDB read them was measured and rejected. Adding the core `encodings` extension
+(57MB to distribute, the same channel as the four the Dockerfile already installs) makes it
+accept Japanese encoding names, but **not one of those names reads a Japanese municipal CSV
+correctly** (measured on DuckDB 1.5.4).
+
+| Name                              | CP932 extensions (`㈱` `①` `髙`) | ASCII                                 |
+| --------------------------------- | -------------------------------- | ------------------------------------- |
+| `shift_jis`                       | **fails the whole file**         | nearly right (`\`→`¥`, `~`→`‾`)       |
+| `windows-932-2000`                | reads them correctly             | **29 of 93 characters are corrupted** |
+| `cp932` / `windows-31j` / `ms932` | name not supported at all        | —                                     |
+
+`shift_jis` is strict JIS X 0208, so a single `㈱` — routine in a CSV exported from Excel —
+fails the entire read (`ignore_errors=true` drops that whole row instead, which is a silent
+loss). The wave dash `～` comes back as `〜`.
+
+`windows-932-2000`, the one name that reads CP932, has a broken single-byte range: `1`→`¹`,
+`3`→`³`, `A`→`Æ`, `s`→`ß`. **ASCII, digits included, is silently replaced** — `"1000"` becomes
+`"¹000"` and the column degrades from BIGINT to VARCHAR. It looks like the same root cause as
+[duckdb/duckdb-encodings#10](https://github.com/duckdb/duckdb-encodings/issues/10).
+
+It also loses on speed. For 16.7MB of CP932 across 400,000 rows: reading it directly takes
+1247ms, against 88ms to convert in front plus 231ms to read the UTF-8 = 319ms. **Direct is
+3.9× slower.**
+
+`TextDecoder('shift_jis')` — the WHATWG label, which is Windows-31J in practice — gets every
+case right. **This is worth revisiting if upstream fixes it**, but today converting in front is
+both more accurate and faster. Detection (`chardet`) has to stay in front either way: DuckDB
+has to be told `encoding=`, it does not detect.
 
 ## Consequences
 
@@ -176,9 +205,36 @@ produced by streaming, is what Interpret reads. Handling Japanese CSVs is not ne
 
 ## Open issues
 
-1. **Parity of type inference**: how DuckDB's sniffer differs from ADR-029's own inference on
-   Japanese CSVs is unmeasured. If the gap is wide, a middle course — keep the inference,
-   move only the Parquet generation — is available
+1. **Parity of type inference**: measured (DuckDB 1.5.4, 29 column patterns from Japanese CSVs).
+   **The middle course is not needed — the sniffer can take over.** 23 of 29 agree, and the
+   guard that was ADR-029's biggest reason to exist — **leading-zero code columns (postal codes,
+   municipality codes) — DuckDB also leaves as VARCHAR**. On the three date columns DuckDB is
+   the better of the two, which settles ADR-029's own open issue about typing dates. Three
+   conditions come with it.
+
+   - **Require `sample_size = -1`.** The default (first 20480 rows) breaks in two ways: a value
+     further down that does not fit the sniffed type lets `DESCRIBE` succeed and then fails the
+     read with a `Conversion Error`, while a value that _does_ fit — a code like `0123` — is
+     **silently turned into `123`**. The second is the worse one. Sniffing every row costs
+     +375ms on 43.8MB / 800,000 rows (COPY 118→493ms), which is affordable
+   - **Correct only the INT64-overflow case.** `99999999999999999999` is sniffed DOUBLE and
+     loses its digits as `1e+20`; this is the one real regression against ADR-029's guards.
+     Do not reach for `auto_type_candidates` — adding `DECIMAL(38,0)` **silently rounds** `1.5`
+     to `2` and `43.064310` to `43`, whatever the candidate order. The workable fix is narrow:
+     after sniffing, re-read with `types={col: 'VARCHAR'}` for columns sniffed DOUBLE whose
+     source text is integer-shaped on every row
+   - Accept the rest: `" 123"` → 123 (surrounding space dropped) and `1e5` → DOUBLE
+
+   One quirk to record: **the date format is decided once per file.** A `2023/04/01` column
+   appearing first makes a later `2023-04-01` column TIMESTAMP rather than DATE (reverse the
+   order and both are DATE; the values survive either way). That makes the persisted schema
+   (ADR-032) depend on column order — and since this ADR raises a version whenever the
+   interpretation changes, it could inflate the history.
+
+   The core claim of this ADR also held up in measurement: capped at `memory_limit=256MB`, a
+   43.8MB CSV still converts to Parquet in 582ms, because
+   `COPY (SELECT * FROM read_csv(...)) TO ...` streams.
+
 2. **How an interpretation change enters**: it does not pass the content gate, so version
    numbering and claim acquisition have to be decided on the user-action side. Whether
    repeated fiddling with a key floods the history (not settling while in draft, say) is a UX
