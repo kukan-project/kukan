@@ -45,7 +45,7 @@ const refusingSession = {
   close: async () => {},
 } as unknown as LakeSession
 
-async function addVersion(version: number, snapshotId: number | null, lakeSourceKey?: string) {
+async function addVersion(version: number, snapshotId: number | null) {
   await db.insert(resourceVersion).values({
     resourceId,
     version,
@@ -54,23 +54,7 @@ async function addVersion(version: number, snapshotId: number | null, lakeSource
     hash: `sha256:v${version}`,
     origin: 'upload',
     ducklakeSnapshotId: snapshotId,
-    lakeSourceKey: lakeSourceKey ?? null,
   })
-}
-
-/** The Parquet this version is waiting on, if any. */
-async function source(version: number): Promise<string | null> {
-  const [row] = await db
-    .select({ source: resourceVersion.lakeSourceKey })
-    .from(resourceVersion)
-    .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, version)))
-  return row.source
-}
-
-/** Keys handed to the sweep. */
-async function parked(): Promise<string[]> {
-  const rows = await db.execute(sql`SELECT key FROM orphaned_object ORDER BY key`)
-  return (rows.rows as unknown as { key: string }[]).map((r) => r.key)
 }
 
 beforeEach(async () => {
@@ -148,30 +132,8 @@ describe('ingestVersionIntoLake', () => {
     ).rejects.toThrow('reached DuckLake')
   })
 
-  it('lets go of the Parquet when a newer version has already been ingested', async () => {
-    // Refused for good — no later pass changes the answer. Left set, the
-    // pointer keeps this version in the pending count and pins its Parquet by a
-    // reference nothing will ever release (ADR-043 §6-6).
-    await addVersion(1, null, 'previews/v1.parquet')
-    await addVersion(2, 42)
-
-    const result = await db.transaction((tx) =>
-      ingestVersionIntoLake(tx, refusingSession, {
-        resourceId,
-        version: 1,
-        sourcePath: '/tmp/v1.parquet',
-      })
-    )
-
-    expect(result).toBeNull()
-    expect(await source(1)).toBeNull()
-    expect(await parked()).toEqual(['previews/v1.parquet'])
-  })
-
-  it('lets go of the Parquet it was waiting on once the version is in', async () => {
-    // The pointer is what keeps that preview from being swept (ADR-043 §6-6).
-    // Left behind, it would pin the object for as long as the version lives.
-    await addVersion(1, null, 'previews/v1.parquet')
+  it('records the snapshot on the version once it is in', async () => {
+    await addVersion(1, null)
 
     await db.transaction((tx) =>
       ingestVersionIntoLake(tx, ingestingSession, {
@@ -182,31 +144,10 @@ describe('ingestVersionIntoLake', () => {
     )
 
     const [row] = await db
-      .select({
-        snapshot: resourceVersion.ducklakeSnapshotId,
-        source: resourceVersion.lakeSourceKey,
-      })
+      .select({ snapshot: resourceVersion.ducklakeSnapshotId })
       .from(resourceVersion)
       .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
-    expect(row).toEqual({ snapshot: 99, source: null })
-  })
-
-  it('parks the Parquet it lets go of', async () => {
-    // While the version named it, the sweep read the key as referenced and
-    // dropped its ledger record (ADR-045 §3). Clearing the pointer without
-    // parking it again would leave an object with neither — the one state that
-    // ledger exists to prevent.
-    await addVersion(1, null, 'previews/v1.parquet')
-
-    await db.transaction((tx) =>
-      ingestVersionIntoLake(tx, ingestingSession, {
-        resourceId,
-        version: 1,
-        sourcePath: '/tmp/v1.parquet',
-      })
-    )
-
-    expect(await parked()).toEqual(['previews/v1.parquet'])
+    expect(row).toEqual({ snapshot: 99 })
   })
 })
 

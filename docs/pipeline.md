@@ -157,14 +157,13 @@ sweep（`sweep-orphans.ts`）は期限切れの鍵を最大 5000 件取り、**�
 いるか」を問う**。参照されていれば消すのは記録の方で、オブジェクトは残る。これが先行記録の
 唯一の危険（消し忘れが生きたデータの削除に化ける）を自己修復に変えている。
 
-参照元は 6 つ。**1 つでも漏らすとその列が指すオブジェクトを消す**:
+参照元は 5 つ。**1 つでも漏らすとその列が指すオブジェクトを消す**:
 
 `resource.storage_key` / `resource.pending_storage_key` / `resource_version.storage_key` /
-`resource_version.lake_source_key` / `resource_pipeline.preview_key` /
-`resource_pipeline.metadata->>'textHeadKey'`
+`resource_pipeline.preview_key` / `resource_pipeline.metadata->>'textHeadKey'`
 
-`lake_source_key` は ADR-046 以降**誰も立てない**。列と参照確認が残っているのは、既に立って
-いる行のためだけである。
+かつて 6 つ目だった `resource_version.lake_source_key` は撤去した（ADR-046 §4）。層 2 が読むのは
+版ファイルなので、実行より長生きするオブジェクトを名指しで守る必要が無くなった。
 
 sweep が「判定 → 削除」の間に安全なのは、**書き手が判定中の鍵を名指しできない**からである。
 実行が作る鍵はすべて自分の試行のトークンを含む（`v{n}.{attempt}` など）ので、失敗して再試行

@@ -124,14 +124,13 @@ export const purgeVersionJobSchema = z.object({
   version: z.number().int().positive(),
 })
 export const backfillVersionsJobSchema = z.object({})
-// Ids only, like every other job: the version names the Parquet it needs
-// (ADR-043 §6-6), so the handler resolves it and the message cannot come to
-// disagree with the row. `previewKey` is accepted and ignored for messages
-// queued before that column existed; removable once the queue has drained.
+// Ids only, like every other job. What to read is settled by the version row —
+// the handler interprets its file again (ADR-046) — so a message carrying
+// anything else could only come to disagree with it. Messages queued before
+// that carried a `previewKey`; unknown keys are stripped, so they still parse.
 export const lakeIngestJobSchema = z.object({
   resourceId: z.uuid(),
   version: z.number().int().positive(),
-  previewKey: z.string().min(1).optional(),
 })
 
 /** A single file/directory entry in a ZIP manifest */

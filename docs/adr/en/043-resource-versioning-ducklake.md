@@ -331,28 +331,34 @@ competing with keeping purges cheap.
    not a correctness problem.
 
 6. **A version whose ingest was deferred names the Parquet it needs**
-   (`resource_version.lake_source_key`). That version stays queued as a retry carrying the
-   preview it was built from — but a queue message is **a reference the orphan sweep
-   cannot see**, so the run that replaces the preview parks it and the sweep takes it, and
-   the version can never enter layer 2.
+   (`resource_version.lake_source_key`).
 
-   A column rather than a longer expiry. It becomes the sixth source the sweep's reference
-   check reads (ADR-045 §3), so the preview survives exactly as long as a version needs it.
-   No clock is involved, so nothing is lost to a dead-lettered message or a worker that was
-   down for a day.
-
-   Three paths drop the pointer — the ingest lands, a newer version has overtaken it for
-   good, or the object is gone — and **all three park the key in the statement that drops
-   it**. While a version names a key the sweep reads it as referenced and removes the ledger
-   record instead (ADR-045 §3), so dropping without parking leaves an object with neither.
-   The two that are not a successful ingest are **conditional on the key they were asked
-   about**, so an attempt that gave up does not withdraw a pointer another one has since
-   recorded.
-
-   It also stops the queue message being the only record. The hourly ingest sweep can
-   decide on this column alone, so a version is recoverable wherever it sits in the history
-   and whether or not its message survived — previously that sweep saw only the latest
-   version. Cleared in the same statement that records `ducklake_snapshot_id` (kukan#204).
+   > **Retired (ADR-046 §4).** Layer 2 reads the version file now, and a retry re-runs the
+   > interpretation, so there is no temporary pointer to protect: the column and its whole
+   > lifecycle — defer, park, reference check, hourly sweep — are gone. The rest of this item
+   > describes it as it was.
+   >
+   > That version stays queued as a retry carrying the preview it was built from — but a
+   > queue message is **a reference the orphan sweep cannot see**, so the run that replaces
+   > the preview parks it and the sweep takes it, and the version can never enter layer 2.
+   >
+   > A column rather than a longer expiry. It becomes the sixth source the sweep's reference
+   > check reads (ADR-045 §3), so the preview survives exactly as long as a version needs it.
+   > No clock is involved, so nothing is lost to a dead-lettered message or a worker that was
+   > down for a day.
+   >
+   > Three paths drop the pointer — the ingest lands, a newer version has overtaken it for
+   > good, or the object is gone — and **all three park the key in the statement that drops
+   > it**. While a version names a key the sweep reads it as referenced and removes the ledger
+   > record instead (ADR-045 §3), so dropping without parking leaves an object with neither.
+   > The two that are not a successful ingest are **conditional on the key they were asked
+   > about**, so an attempt that gave up does not withdraw a pointer another one has since
+   > recorded.
+   >
+   > It also stops the queue message being the only record. The hourly ingest sweep can
+   > decide on this column alone, so a version is recoverable wherever it sits in the history
+   > and whether or not its message survived — previously that sweep saw only the latest
+   > version. Cleared in the same statement that records `ducklake_snapshot_id` (kukan#204).
 
 ## Consequences
 

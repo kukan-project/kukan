@@ -312,8 +312,9 @@ await queue.process({
     )
   },
   // Retry a DuckLake ingest the pipeline's advisory Lake step could not
-  // complete (ADR-043). The fast path: the version names the same preview, so
-  // the hourly sweep finds it too if this message never arrives.
+  // complete (ADR-043). The fast path only: a version stays outstanding in the
+  // database until layer 2 has it, so the hourly sweep finds it either way
+  // (ADR-046).
   [LAKE_INGEST_JOB_TYPE]: async (job: Job) => {
     const data = parseJobPayload(job, lakeIngestJobSchema)
     if (!data) return

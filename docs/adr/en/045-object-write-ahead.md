@@ -118,8 +118,8 @@ the sweep becomes a uniform `expires_at < NOW()`.
 
 ### 3. The sweep's predicate
 
-For keys past their deadline, check the reference sources before deleting. Five to begin
-with, six now (`resource_version.lake_source_key` joined them — ADR-043 §6-6).
+For keys past their deadline, check the reference sources before deleting. Five, after
+ADR-046 retired `resource_version.lake_source_key`.
 
 **If something references the key, delete the record rather than the object.** A referenced
 key means that write completed, so the record is a leftover. Keeping it would have the sweep
@@ -129,15 +129,14 @@ a missed removal deleting live data — into self-repair.**
 Parked keys are referenced by none of them, so the predicate changes almost nothing about
 today's behaviour — **it matters only for write-ahead keys.**
 
-With one exception. `resource_version.lake_source_key` (ADR-043 §6-6) is a reference meant
-to be **released later**. While it names a parked key the record is what goes, so **the
-statement that drops the pointer has to park the key again, in the same statement** — or
-the object is left with neither a pointer nor a record, which is the state this ledger
-exists to prevent.
-
-**Dropping includes overwriting with a different key.** A version that gives up on its ingest
-twice ends up naming the second Parquet, and nothing names the first any more. To the ledger
-those are the same event, so the parking rides on that statement too.
+> **There used to be one exception (resolved by ADR-046 §4).**
+> `resource_version.lake_source_key` (ADR-043 §6-6) was a reference meant to be **released
+> later**, so the statement that dropped the pointer had to park the key again in the same
+> statement — or the object was left with neither a pointer nor a record, the state this
+> ledger exists to prevent. "Dropping" included overwriting with a different key.
+>
+> With it retired, **none of the five reference sources is meant to be released later.**
+> Adding one of that kind would need the rule back.
 
 ### 4. Where the record is removed
 

@@ -39,7 +39,7 @@ import {
   withResourceClaimsOrConflict,
   type ResourceClaim,
 } from './pipeline-claim'
-import { copyObject, parkObject, publishLiveContent } from './storage-pointer'
+import { copyObject, publishLiveContent } from './storage-pointer'
 import { PipelineService } from './pipeline-service'
 
 export type VersionState = 'active' | 'purging' | 'purged'
@@ -776,15 +776,11 @@ export class ResourceVersionService {
         state: 'purged',
         purgedAt: sql`NOW()`,
         updated: sql`NOW()`,
-        // Drop the layer-2 references: the tombstone must not point at content,
-        // and that is both the snapshot and any Parquet an ingest was deferred
-        // from (ADR-043 §6-6).
+        // The tombstone must not point at content, and layer 2 is the one
+        // reference left to drop.
         ducklakeSnapshotId: null,
-        lakeSourceKey: null,
       })
       .where(eq(resourceVersion.id, row.id))
-    // Nothing names it now, so it needs the way back the ledger is for.
-    await parkObject(this.db, row.lakeSourceKey)
 
     await this.db.insert(auditLog).values({
       entityType: 'resource_version',

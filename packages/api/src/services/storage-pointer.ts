@@ -195,16 +195,3 @@ export async function copyObject(
   await reserveObject(db, destKey)
   await storage.copy(sourceKey, destKey)
 }
-
-/**
- * Hand a key to the sweep. For the writers that have no pointer to move — an
- * upload URL reissued before the previous one was used. Null is ignored so
- * callers can pass a pointer that may be unset.
- */
-export async function parkObject(
-  db: Pick<Database | Transaction, 'insert'>,
-  key: string | null | undefined
-): Promise<void> {
-  if (!key) return
-  await db.insert(orphanedObject).values({ key, expiresAt: PARKED_UNTIL }).onConflictDoNothing()
-}

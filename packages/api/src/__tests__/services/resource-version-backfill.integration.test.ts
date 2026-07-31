@@ -101,7 +101,6 @@ async function addTabularResource(
     version: number
     snapshotId?: number | null
     state?: string
-    lakeSourceKey?: string
     size?: number
   }[],
   opts: {
@@ -144,7 +143,6 @@ async function addTabularResource(
       origin: 'upload',
       state: v.state ?? 'active',
       ducklakeSnapshotId: v.snapshotId ?? null,
-      lakeSourceKey: v.lakeSourceKey ?? null,
     })
   }
 }

@@ -5,71 +5,23 @@
  * whose correctness depends on the lock — write, read the snapshot back, record
  * it on the version row — has exactly one implementation.
  */
-import { and, eq, gt, isNotNull, sql } from 'drizzle-orm'
+import { and, eq, gt, isNotNull } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import { resourceVersion } from '@kukan/db'
 import type { IngestResult, LakeSession } from '@kukan/lake'
 import { ingestParquetVersion, lakeTableName } from '@kukan/lake'
 import { LAKE_INGEST_LOCK, withGlobalAdvisoryLock } from './advisory-lock'
-import { PARKED_UNTIL } from './storage-pointer'
 
 /** A version, and where its rows are read from. */
 export interface LakeIngestRow {
   resourceId: string
   version: number
   /**
-   * The interpreted table on local disk (ADR-046). Every caller has one now —
-   * the pipeline because the ingest runs inside its interpretation, the retry
-   * because it interprets the version again. Which is why nothing has to keep
-   * a preview alive between attempts: the input is the version file, and that
-   * never changes.
+   * The interpreted table on local disk (ADR-046). The pipeline has one because
+   * the ingest runs inside its interpretation; the retry because it interprets
+   * the version again.
    */
   sourcePath: string
-}
-
-/**
- * Let go of whatever Parquet a version is still pointing at, and park it.
- *
- * Only reached by rows written before ADR-046: nothing sets the pointer any
- * more, since a retry interprets the version file again rather than reading a
- * preview. What is left is clearing the ones already out there, which happens
- * where the version is refused for good — otherwise the object stays pinned by
- * a reference nothing will ever release.
- *
- * Clearing and parking cannot come apart. While the version named the key the
- * sweep read it as referenced and dropped its ledger record (ADR-045 §3), so a
- * clear on its own would leave an object with neither a pointer nor a record.
- *
- * Parking a key whose object is already gone costs nothing — the sweep asks the
- * backend, which answers that it is not there, and the record goes.
- *
- * @returns whether there was a pointer to drop.
- */
-async function releaseLakeSource(
-  db: Pick<Database, 'execute'>,
-  row: { resourceId: string; version: number }
-): Promise<boolean> {
-  const result = await db.execute(sql`
-    WITH before AS (
-      SELECT id, lake_source_key FROM resource_version
-      WHERE resource_id = ${row.resourceId}::uuid
-        AND version = ${row.version}
-        AND lake_source_key IS NOT NULL
-      FOR UPDATE
-    ),
-    released AS (
-      UPDATE resource_version rv SET lake_source_key = NULL
-      FROM before b WHERE rv.id = b.id
-      RETURNING b.lake_source_key AS key
-    ),
-    parked AS (
-      INSERT INTO orphaned_object (key, expires_at)
-      SELECT key, ${PARKED_UNTIL} FROM released
-      ON CONFLICT (key) DO NOTHING
-    )
-    SELECT key FROM released
-  `)
-  return result.rows.length > 0
 }
 
 /**
@@ -134,13 +86,9 @@ export async function ingestVersionIntoLake(
       )
     )
     .limit(1)
-  if (newer) {
-    // Refused for good, not deferred: no later pass can change the answer. The
-    // pointer goes with the decision, or this version stays in the pending
-    // count and its Parquet is pinned by a reference nothing will ever release.
-    await releaseLakeSource(tx, row)
-    return null
-  }
+  // No later pass can change the answer, and the pending query stops listing
+  // this version the moment a newer one is in.
+  if (newer) return null
 
   const result = await ingestParquetVersion(session, {
     table: lakeTableName(row.resourceId),
@@ -148,28 +96,11 @@ export async function ingestVersionIntoLake(
   })
   // The DuckLake commit is on its own connection, so a failure here leaves an
   // unreferenced snapshot — harmless, and reclaimed by expire.
-  //
-  // One statement, because letting go of the Parquet and parking it cannot come
-  // apart: while the version named it the sweep read it as referenced and
-  // dropped its ledger record (ADR-045 §3), so a clear on its own would leave an
-  // object with neither a pointer nor a record — the one thing that ledger
-  // exists to prevent. Parking a key something still references is harmless:
-  // the next sweep reads it as referenced and drops the record again.
-  await tx.execute(sql`
-    WITH before AS (
-      SELECT id, lake_source_key FROM resource_version
-      WHERE resource_id = ${row.resourceId}::uuid AND version = ${row.version}
-      FOR UPDATE
-    ),
-    ingested AS (
-      UPDATE resource_version rv
-      SET ducklake_snapshot_id = ${result.snapshotId}, lake_source_key = NULL
-      FROM before b WHERE rv.id = b.id
-      RETURNING b.lake_source_key AS released
+  await tx
+    .update(resourceVersion)
+    .set({ ducklakeSnapshotId: result.snapshotId })
+    .where(
+      and(eq(resourceVersion.resourceId, row.resourceId), eq(resourceVersion.version, row.version))
     )
-    INSERT INTO orphaned_object (key, expires_at)
-    SELECT released, ${PARKED_UNTIL} FROM ingested WHERE released IS NOT NULL
-    ON CONFLICT (key) DO NOTHING
-  `)
   return result
 }
