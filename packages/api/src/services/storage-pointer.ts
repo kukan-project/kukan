@@ -8,7 +8,7 @@
  * the query builder cannot express a data-modifying CTE.
  */
 
-import { eq, sql } from 'drizzle-orm'
+import { sql } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import { orphanedObject } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
@@ -194,21 +194,6 @@ export async function copyObject(
 ): Promise<void> {
   await reserveObject(db, destKey)
   await storage.copy(sourceKey, destKey)
-}
-
-/**
- * Drop a write-ahead record because something references the key now.
- *
- * For the writers whose commit is a plain insert, with no orphan statement to
- * fold the removal into. A missed removal is not fatal — the sweep checks for a
- * reference before deleting anything (ADR-045 §3) — but it leaves a row that
- * gets re-examined every hour until something clears it.
- */
-export async function releaseObject(
-  db: Pick<Database | Transaction, 'delete'>,
-  key: string
-): Promise<void> {
-  await db.delete(orphanedObject).where(eq(orphanedObject.key, key))
 }
 
 /**

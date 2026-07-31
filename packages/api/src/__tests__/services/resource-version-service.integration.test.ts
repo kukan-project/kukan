@@ -331,6 +331,43 @@ describe('insertVersionIfHeld', () => {
     expect(await versions()).toEqual([])
   })
 
+  it('drops the write-ahead record in the same statement', async () => {
+    // The row references the object once this lands, so the record has done its
+    // job (ADR-045 §4). In a second statement, a process that died in between
+    // left a record naming a key something already referenced — repaired by the
+    // sweep, but an hour later and for no reason.
+    await db.execute(sql`
+      INSERT INTO orphaned_object (key, expires_at) VALUES (${captured.storageKey}, NOW())
+    `)
+
+    expect(await insertVersionIfHeld(db, null, { resourceId, ...captured })).toBe(true)
+
+    const ledger = await db.execute(sql`SELECT key FROM orphaned_object`)
+    expect(ledger.rows).toEqual([])
+  })
+
+  it('keeps the write-ahead record when the claim is gone', async () => {
+    // The object is garbage rather than a version, and the record is what has
+    // the sweep collect it.
+    await db.insert(resourcePipeline).values({ resourceId })
+    const { claimed } = await claimResources(
+      db,
+      [resourceId],
+      randomUUID(),
+      CLAIM_STALE_AFTER_MS,
+      'run'
+    )
+    await db.execute(sql`
+      INSERT INTO orphaned_object (key, expires_at) VALUES (${captured.storageKey}, NOW())
+    `)
+    await cancelResourceRun(db, resourceId)
+
+    expect(await insertVersionIfHeld(db, claimed[0], { resourceId, ...captured })).toBe(false)
+
+    const ledger = await db.execute(sql`SELECT key FROM orphaned_object`)
+    expect(ledger.rows).toHaveLength(1)
+  })
+
   it('records a version for a resource that has no pipeline row', async () => {
     // Not a missing claim: a run cannot start without that row either, so
     // there is nothing for the backfill to lose a race against.

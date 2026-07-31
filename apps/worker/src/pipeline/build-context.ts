@@ -16,12 +16,7 @@ import {
   withLakeIngestLock,
 } from '@kukan/api/services/lake-ingest'
 import { insertVersionIfHeld } from '@kukan/api/services/resource-version-service'
-import {
-  copyObject,
-  publishLiveContent,
-  releaseObject,
-  reserveObject,
-} from '@kukan/api/services/storage-pointer'
+import { copyObject, publishLiveContent, reserveObject } from '@kukan/api/services/storage-pointer'
 import type { PackageDbState } from '@kukan/shared'
 import { getVersionKey, versionOrigin } from '@kukan/shared'
 import { decideVersionCapture } from './version-capture'
@@ -170,9 +165,6 @@ export function buildPipelineContext(
         schema,
       })
       if (!inserted) return { captured: false as const }
-      // The row references the object now (ADR-045). Its own statement, since
-      // unlike the pointer movers this insert has no orphan write to ride on.
-      await releaseObject(db, versionKey)
       return { captured: true as const, version }
     },
 

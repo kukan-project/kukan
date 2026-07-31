@@ -38,7 +38,7 @@ import {
   withResourceClaimsOrConflict,
   type ResourceClaim,
 } from './pipeline-claim'
-import { copyObject, parkObject, publishLiveContent, releaseObject } from './storage-pointer'
+import { copyObject, parkObject, publishLiveContent } from './storage-pointer'
 import { PipelineService } from './pipeline-service'
 
 export type VersionState = 'active' | 'purging' | 'purged'
@@ -65,6 +65,13 @@ export interface CapturedVersion {
  * one leaves the resource describing itself as half-done when it is not — the
  * step that would have reported the version is the same one the kill cut off.
  *
+ * The row references the version's object once this lands, so the write-ahead
+ * record goes with it (ADR-045 §4) — in this statement, like every other write
+ * that comes to reference a key. Left to a second statement, a process that
+ * died in between left a record for a key something already referenced; the
+ * sweep repairs that, since it asks before deleting, but the repair is an hour
+ * away and the rule reads better with no exceptions in it.
+ *
  * @returns false when the claim is gone. The caller has been displaced and
  *   should stop rather than carry on producing derivatives of this content.
  */
@@ -74,11 +81,17 @@ export async function insertVersionIfHeld(
   v: CapturedVersion
 ): Promise<boolean> {
   const result = await db.execute(sql`
-    INSERT INTO resource_version (resource_id, version, storage_key, size, hash, origin, schema)
-    SELECT ${v.resourceId}::uuid, ${v.version}, ${v.storageKey}::text, ${v.size}::bigint,
-           ${v.hash}::text, ${v.origin}, ${v.schema ? JSON.stringify(v.schema) : null}::jsonb
-    WHERE ${stillHeld(claim)}
-    RETURNING id
+    WITH inserted AS (
+      INSERT INTO resource_version (resource_id, version, storage_key, size, hash, origin, schema)
+      SELECT ${v.resourceId}::uuid, ${v.version}, ${v.storageKey}::text, ${v.size}::bigint,
+             ${v.hash}::text, ${v.origin}, ${v.schema ? JSON.stringify(v.schema) : null}::jsonb
+      WHERE ${stillHeld(claim)}
+      RETURNING id, storage_key
+    ),
+    released AS (
+      DELETE FROM orphaned_object o USING inserted WHERE o.key = inserted.storage_key
+    )
+    SELECT id FROM inserted
   `)
   return result.rows.length > 0
 }
@@ -420,7 +433,6 @@ export class ResourceVersionService {
         schema: r.schemaTrusted ? (r.schema ?? null) : null,
       })
       if (!inserted) return false
-      await releaseObject(this.db, versionKey)
       return true
     })
   }
