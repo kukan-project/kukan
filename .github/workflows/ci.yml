@@ -10,8 +10,15 @@ name: CI
 # Astro. `.astro` files count as docs: @kukan/site has no lint/typecheck/test
 # scripts, so the code-only steps never look at them anyway.
 
+# Pushes to develop run the same suite for one reason beyond the extra signal:
+# GitHub Actions caches are branch-scoped, and a pull request can only read the
+# ones its base branch already has. Without a run on develop, every PR would
+# start cold — pnpm store and DuckDB extensions alike — and pay the download.
+
 on:
   pull_request:
+  push:
+    branches: [develop]
 
 permissions:
   contents: read
@@ -27,9 +34,17 @@ jobs:
       - name: Detect non-docs changes
         id: changes
         env:
+          EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          # A push to develop has no PR base to diff against, and its job is to
+          # leave warm caches behind — so it always runs everything.
+          if [ "$EVENT_NAME" != 'pull_request' ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "Push to develop — running full quality suite."
+            exit 0
+          fi
           # A PR is "docs-only" when every changed file is Markdown/MDX/Astro or
           # under docs/. Those still need the format check (prettier covers
           # .md/.mdx/.astro) but not the code-only steps, which don't process
@@ -66,6 +81,31 @@ jobs:
       - name: Typecheck
         if: steps.changes.outputs.code == 'true'
         run: pnpm typecheck
+
+      # `maintenance.ducklake.test.ts` runs against a real DuckLake catalog, so
+      # it needs the `ducklake` extension (~35 MB from extensions.duckdb.org).
+      # Downloading it inside a test means the download is on the clock of the
+      # default 5s timeout, which is how #230 failed. Warm it here instead, and
+      # cache the directory so only a cold branch pays for it. The runtime image
+      # installs the full set (httpfs/aws/postgres/ducklake) itself — see the
+      # Dockerfile — because a closed-network deployment cannot fetch them.
+      - name: Cache DuckDB extensions
+        if: steps.changes.outputs.code == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.duckdb/extensions
+          key: duckdb-ext-${{ runner.os }}-${{ hashFiles('packages/lake/package.json') }}
+
+      - name: Warm DuckDB extensions
+        if: steps.changes.outputs.code == 'true'
+        # `@duckdb/node-api` is a dependency of @kukan/lake, not of the root.
+        working-directory: packages/lake
+        run: |
+          node --input-type=module -e "
+            const { DuckDBInstance } = await import('@duckdb/node-api')
+            const conn = await (await DuckDBInstance.create(':memory:')).connect()
+            await conn.run('INSTALL ducklake')
+          "
 
       - name: Test (unit only)
         # `test:unit` runs every project except the `*-integration` ones, whose
