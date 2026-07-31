@@ -220,12 +220,16 @@ describe('getStorageKey', () => {
 })
 
 describe('getPreviewKey', () => {
-  it('should compute preview key with .parquet extension by default', () => {
-    expect(getPreviewKey('pkg-123', 'res-456')).toBe('previews/pkg-123/res-456.parquet')
+  it("carries a run token, so a run never overwrites another run's object", () => {
+    expect(getPreviewKey('pkg-123', 'res-456', 'parquet', 'tok')).toBe(
+      'previews/pkg-123/res-456.tok.parquet'
+    )
   })
 
   it('should compute preview key with specified extension', () => {
-    expect(getPreviewKey('pkg-123', 'res-456', 'json')).toBe('previews/pkg-123/res-456.json')
+    expect(getPreviewKey('pkg-123', 'res-456', 'json', 'tok')).toBe(
+      'previews/pkg-123/res-456.tok.json'
+    )
   })
 })
 

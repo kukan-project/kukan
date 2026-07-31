@@ -237,16 +237,18 @@ export function versionOrigin(urlType: string | null): 'upload' | 'fetch' {
  *   `resource_pipeline.preview_key` rather than recomputing the key, so a fresh
  *   token per run means the object a reader resolved can never be rewritten
  *   underneath it — which is what lets DuckLake ingest (ADR-043 layer 2) trust
- *   that the Parquet it reads is the version it was told to record.
+ *   that the Parquet it reads is the version it was told to record. Required, as
+ *   in {@link getStorageKey} and {@link getVersionKey}: omitting it yields a key
+ *   a retry would reuse, and the orphan sweep decides what to delete from a list
+ *   it read moments earlier (ADR-045 §3).
  */
 export function getPreviewKey(
   packageId: string,
   resourceId: string,
-  ext: 'parquet' | 'json' | 'txt' = 'parquet',
-  runToken?: string
+  ext: 'parquet' | 'json' | 'txt',
+  runToken: string
 ): string {
-  const token = runToken ? `.${runToken}` : ''
-  return `${PREVIEW_PREFIX}${packageId}/${resourceId}${token}.${ext}`
+  return `${PREVIEW_PREFIX}${packageId}/${resourceId}.${runToken}.${ext}`
 }
 
 const OFFICE_FORMATS = new Set(['xlsx', 'xls', 'doc', 'docx', 'ppt', 'pptx'])
