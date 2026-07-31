@@ -14,6 +14,24 @@ import { LAKE_INGEST_LOCK, withGlobalAdvisoryLock } from './advisory-lock'
 import { stillHeld, type ResourceClaim } from './pipeline-claim'
 import { PARKED_UNTIL } from './storage-pointer'
 
+/** A version, and where its rows are read from. */
+export interface LakeIngestRow {
+  resourceId: string
+  version: number
+  /**
+   * The uploaded preview. Read when there is no local table (the retry paths),
+   * and either way the pointer `releaseLakeSource` clears and parks — so it is
+   * needed whether or not it is the source.
+   */
+  previewKey: string
+  /**
+   * The interpreted table on local disk, when the caller still has one
+   * (ADR-046). Read in place of the preview: the lock is held only for the
+   * load, and a local file needs no pointer keeping it alive between attempts.
+   */
+  sourcePath?: string
+}
+
 /** A version, and the Parquet it still has to be ingested from. */
 export interface DeferredIngest {
   resourceId: string
@@ -188,7 +206,7 @@ export async function ingestVersionIntoLake(
   tx: Transaction,
   session: LakeSession,
   lake: LakeConfig,
-  row: { resourceId: string; version: number; previewKey: string }
+  row: LakeIngestRow
 ): Promise<IngestResult | null> {
   const [pending] = await tx
     .select({ snapshot: resourceVersion.ducklakeSnapshotId })
@@ -224,7 +242,7 @@ export async function ingestVersionIntoLake(
 
   const result = await ingestParquetVersion(session, {
     table: lakeTableName(row.resourceId),
-    parquetUrl: lakeStorageUrl(lake, row.previewKey),
+    parquetUrl: row.sourcePath ?? lakeStorageUrl(lake, row.previewKey),
   })
   // The DuckLake commit is on its own connection, so a failure here leaves an
   // unreferenced snapshot — harmless, and reclaimed by expire.

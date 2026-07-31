@@ -12,17 +12,15 @@ export const LAKE_METADATA_SCHEMA = 'ducklake'
 export const LAKE_DATA_PREFIX = 'lake/'
 
 /**
- * Layer 2 ingests the preview Parquet, so it covers exactly the resources
- * Extract renders as Parquet (CSV/TSV under the size cap). Other previews —
- * notably a ZIP's JSON manifest — are not tabular and must not reach
- * `read_parquet`. The backfill applies the same rule in SQL (`LIKE '%' || the
- * suffix`), so the constant is what keeps the two from drifting.
+ * The suffix that tells a tabular preview from one layer 2 cannot read — a
+ * ZIP's JSON manifest, notably.
+ *
+ * The pipeline no longer tests it: the ingest runs from inside the
+ * interpretation, so a resource with no table never reaches it (ADR-046). What
+ * still needs the rule is the backfill's SQL, which finds candidates by
+ * `preview_key LIKE '%' || the suffix` and has no interpretation to lean on.
  */
 export const LAKE_PREVIEW_SUFFIX = '.parquet'
-
-export function isLakeIngestable(previewKey: string | null | undefined): previewKey is string {
-  return previewKey != null && previewKey.endsWith(LAKE_PREVIEW_SUFFIX)
-}
 
 export interface LakeConfig {
   /** libpq keyword connection string for the DuckLake catalog. */

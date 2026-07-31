@@ -87,7 +87,7 @@ Fetch → Version → Extract → Lake → Index, with the schema attached by an
 ### C) One interpretation stage, on DuckDB
 
 Fetch → Version → Interpret → Index, where Interpret does type inference, Parquet generation
-and the layer 2 ingest in a single DuckDB session.
+and the layer 2 ingest in one stage, on DuckDB.
 
 - **For**: the OOM path disappears (`COPY (SELECT * FROM read_csv(...)) TO ... (FORMAT
 parquet)` streams). Layer 2 reads the version file, so the preview dependency goes. The stage
@@ -102,8 +102,8 @@ parquet)` streams). Layer 2 reads the version file, so the preview dependency go
 
 ```
 Fetch ─→ Version ─────────────→ Interpret ──────────────→ Index
-        layer 1, all formats    one DuckDB session:
-        bytes only              infer → Parquet → layer 2
+        layer 1, all formats    infer → Parquet → layer 2
+        bytes only              (two sessions, see below)
                                 ↑ re-run this alone on a key/type change
 ```
 
@@ -117,9 +117,32 @@ stopped run leaves no version whatever the order. **The claim decides that, not 
 
 ### 2. Interpretation is one re-runnable stage
 
-Inference, Parquet and the ingest read the same input — the version file — in the same DuckDB
-session. All three share one interpretation by construction, and since the input is immutable,
-a failure can be retried any number of times.
+Inference, Parquet and the ingest read the same input — the version file — in one stage. All
+three share one interpretation by construction, and since the input is immutable, a failure can
+be retried any number of times.
+
+**The sessions are split, though.** The DuckLake ingest runs under the catalog-wide advisory
+lock: the snapshot it commits is read back as the catalog-wide maximum, which only identifies
+that commit while writes are serialized. Done in a single session, the lock would be held for
+the whole interpretation — hundreds of milliseconds to seconds — and every other ingest would
+wait it out.
+
+```
+outside the lock  version file → temp file → detect/convert to UTF-8 → inference → local Parquet
+inside the lock   read_parquet('<local Parquet>') → DuckLake
+```
+
+**What the locked section reads is a local file, not the preview in storage.** That is the
+premise of §4: the temporary pointer stops needing to be protected because of this split.
+
+The interpreting DuckDB instance stays open until the interpretation returns — the `COPY` is
+followed by a pass for each column's null count, distinct count and bounds. It does not overlap
+with the ingest's session because the table is handed over after that, not before. And that is
+about the _interpreting_ instance only: the DuckLake one is cached per process (ADR-043, so the
+catalog ATTACH and the extension loads are paid once) and stays resident from the first ingest
+onwards. What survives
+the wait on the lock is the Parquet alone — the source CSV and its transcoded copy are dropped
+as soon as the interpretation is done with them.
 
 **The unit of re-running becomes the interpretation.** Retrying a failed ingest and changing a
 primary key both run this stage alone, without Fetch. The first adds no version, the second

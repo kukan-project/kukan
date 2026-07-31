@@ -1,4 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { basename, dirname } from 'node:path'
 import { Readable } from 'stream'
 import JSZip from 'jszip'
 import { executeExtract } from '../pipeline/steps/extract'
@@ -133,6 +135,52 @@ describe('executeExtract', () => {
     // Parquet stores all rows (no 200-row limit)
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-4', 'parquet'))
     expect(ctx.putObject).toHaveBeenCalledOnce()
+  })
+
+  it('hands the interpreted table over while it is still on disk', async () => {
+    mockStorageDownload('name,age\nAlice,30\n')
+    let seen: { magic: string; previewKey: string; path: string; leftInDir: string[] } | undefined
+
+    const result = await executeExtract(
+      'res-t',
+      'pkg-1',
+      version('versions/pkg-1/res-t/v1'),
+      'CSV',
+      ctx,
+      {
+        onTable: async (parquetPath, previewKey) => {
+          // Still there, and a real Parquet: layer 2 loads from here rather
+          // than from the preview in storage (ADR-046).
+          seen = {
+            magic: readFileSync(parquetPath).subarray(0, 4).toString('ascii'),
+            previewKey,
+            path: parquetPath,
+            // And nothing else: the hook waits on a catalog-wide lock, so the
+            // source CSV and its transcoded copy must not be held through it.
+            leftInDir: readdirSync(dirname(parquetPath)),
+          }
+        },
+      }
+    )
+
+    expect(seen?.magic).toBe('PAR1')
+    expect(seen?.previewKey).toBe(result!.previewKey)
+    expect(seen?.leftInDir).toEqual([basename(seen!.path)])
+    // And gone once the step returns — the temp directory belongs to the step.
+    expect(existsSync(seen!.path)).toBe(false)
+  })
+
+  it('does not hand a table over for a format that produces none', async () => {
+    // The gate layer 2 used to apply to the preview key is structural now: the
+    // hook simply never fires.
+    mockStorageDownload('Hello, world!')
+    const onTable = vi.fn()
+
+    await executeExtract('res-u', 'pkg-1', version('versions/pkg-1/res-u/v1'), 'TXT', ctx, {
+      onTable,
+    })
+
+    expect(onTable).not.toHaveBeenCalled()
   })
 
   it('labels a CSV too large to interpret without transferring it whole', async () => {

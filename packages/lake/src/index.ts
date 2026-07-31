@@ -7,7 +7,6 @@ export {
   LAKE_METADATA_SCHEMA,
   LAKE_DATA_PREFIX,
   LAKE_PREVIEW_SUFFIX,
-  isLakeIngestable,
   lakeConfigFromEnv,
   lakeStorageUrl,
 } from './config'

@@ -11,7 +11,7 @@
 
 import { randomUUID } from 'crypto'
 import { createReadStream } from 'node:fs'
-import { stat } from 'node:fs/promises'
+import { rm, stat } from 'node:fs/promises'
 import {
   streamToBuffer,
   streamToTempFile,
@@ -46,6 +46,25 @@ export interface ExtractSource {
   size: number
 }
 
+export interface ExtractHooks {
+  /**
+   * The interpreted table, as a Parquet on local disk, for as long as this call
+   * runs (ADR-046 §2). Layer 2 loads from here, so the catalog-wide lock covers
+   * the load alone and not the interpretation that produced it.
+   *
+   * Called once {@link interpretCsv} has returned, so its DuckDB instance is
+   * closed before the ingest opens a session.
+   *
+   * Throwing fails the step. The caller records the ingest's own outcome inside
+   * the hook, since layer 2 is advisory and rebuildable from layer 1.
+   *
+   * @param previewKey - where the same table was just uploaded. Given here
+   *   because the step has not returned yet; see `LakeIngestRow` for what the
+   *   ingest does with it.
+   */
+  onTable?(parquetPath: string, previewKey: string): Promise<void>
+}
+
 /**
  * Detect encoding for text-based formats.
  * For CSV/TSV, also generates Parquet preview inline.
@@ -56,7 +75,8 @@ export async function executeExtract(
   packageId: string,
   source: ExtractSource,
   format: string | null,
-  ctx: PipelineContext
+  ctx: PipelineContext,
+  hooks: ExtractHooks = {}
 ): Promise<ExtractResult | null> {
   const { storageKey } = source
   // Unique to this run, so the object this run writes is never rewritten by a
@@ -130,6 +150,9 @@ export async function executeExtract(
 
     const charset = toCharset(encoding)
     const csvPath = charset === 'utf-8' ? rawPath : await transcodeToUtf8(rawPath, charset)
+    // Dead the moment it has been transcoded, and up to 50MB of it would
+    // otherwise sit on disk under the whole DuckDB pass.
+    if (csvPath !== rawPath) await rm(rawPath, { force: true })
 
     const { rows: titleRows, columnCount } = await countTitleRows(csvPath)
     if (columnCount === 0) {
@@ -142,16 +165,24 @@ export async function executeExtract(
 
     const parquetPath = `${csvPath}.parquet`
     const schema = await interpretCsv(csvPath, parquetPath, titleRows)
+    // And the source is dead once it has been interpreted. What follows — the
+    // upload, then the hook waiting on a catalog-wide lock — would hold it for
+    // nothing.
+    await rm(csvPath, { force: true })
 
     const previewKey = getPreviewKey(packageId, resourceId, 'parquet', runToken)
     await ctx.putObject(previewKey, createReadStream(parquetPath), {
       contentType: 'application/vnd.apache.parquet',
     })
 
+    // Handed over while the file is still here, and after the upload so the
+    // preview exists whatever the hook does with it.
+    await hooks.onTable?.(parquetPath, previewKey)
+
     return { previewKey, encoding, schema }
   } finally {
-    // Every file above lives in the directory this made, so one removal covers
-    // the download, the transcode and the Parquet.
+    // Every file this made lives in the directory this made, so one removal
+    // covers whatever a given path left behind.
     await cleanupTempFile(rawPath)
   }
 }

@@ -78,6 +78,21 @@ function createMockCtx(): PipelineContextMock {
   return ctx
 }
 
+/**
+ * Make the mocked interpretation hand a table to its caller, the way the real
+ * one does once the Parquet is on disk (ADR-046). Without this the hook never
+ * fires and the Lake step has nothing to load.
+ */
+const TABLE_PATH = '/tmp/kukan-x/data.csv.parquet'
+const TABLE_PREVIEW_KEY = 'previews/pkg-1/res-1.tok.parquet'
+
+function interpretProducesTable() {
+  vi.mocked(executeExtract).mockImplementation(async (_r, _p, _s, _f, _ctx, hooks) => {
+    await hooks?.onTable?.(TABLE_PATH, TABLE_PREVIEW_KEY)
+    return { previewKey: TABLE_PREVIEW_KEY, encoding: 'UTF8' }
+  })
+}
+
 /** Steps in order, so an assertion names the step rather than a number. */
 const STEP = {
   fetch: 'step-0',
@@ -159,7 +174,8 @@ describe('processResource', () => {
       'pkg-1',
       { storageKey: 'versions/pkg-1/res-1/v1', size: 42 },
       'CSV',
-      held
+      held,
+      { onTable: expect.any(Function) }
     )
     // Fetch + Version + Extract + Lake + Index = 5 steps
     expect(mockTracker.startStep).toHaveBeenCalledTimes(5)
@@ -406,6 +422,55 @@ describe('processResource', () => {
     expect(mockTracker.beginRun).toHaveBeenCalled()
   })
 
+  it('loads the table interpretation produced, while it is still on disk', async () => {
+    // Layer 2 reads the local Parquet rather than the preview in storage
+    // (ADR-046), which is why the step runs from inside the interpretation.
+    vi.mocked(executeFetch).mockResolvedValue({
+      storageKey: 'resources/pkg-1/res-1',
+      format: 'CSV',
+      packageId: 'pkg-1',
+      hash: 'sha256:abc',
+      size: 42,
+      status: 'fetched',
+    })
+    interpretProducesTable()
+    vi.mocked(executeLake).mockResolvedValue({ status: 'ingested' })
+    vi.mocked(executeIndexContent).mockResolvedValue(null)
+
+    await processResource('res-1', ctx, db, queue)
+
+    expect(executeLake).toHaveBeenCalledWith(
+      {
+        resourceId: 'res-1',
+        previewKey: TABLE_PREVIEW_KEY,
+        sourcePath: TABLE_PATH,
+        contentHash: 'sha256:abc',
+      },
+      expect.anything()
+    )
+    expect(mockTracker.completeStep).toHaveBeenCalledWith(STEP.lake)
+  })
+
+  it('records the Lake step as skipped when there was no table', async () => {
+    // A non-tabular resource never reaches the hook, so nothing ran — and the
+    // history says so rather than leaving the step off entirely.
+    vi.mocked(executeFetch).mockResolvedValue({
+      storageKey: 'resources/pkg-1/res-1',
+      format: 'PDF',
+      packageId: 'pkg-1',
+      hash: 'sha256:abc',
+      size: 42,
+      status: 'fetched',
+    })
+    vi.mocked(executeExtract).mockResolvedValue(null)
+    vi.mocked(executeIndexContent).mockResolvedValue(null)
+
+    await processResource('res-1', ctx, db, queue)
+
+    expect(executeLake).not.toHaveBeenCalled()
+    expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.lake)
+  })
+
   it('queues a retry when the Lake step could not ingest', async () => {
     // The next run ingests its own newer version and this one's Parquet is then
     // swept, so the pair would become permanently undiffable (ADR-043).
@@ -417,6 +482,7 @@ describe('processResource', () => {
       size: 10,
       status: 'fetched',
     })
+    interpretProducesTable()
     vi.mocked(executeLake).mockResolvedValue({
       status: 'failed',
       version: 3,

@@ -9,7 +9,7 @@ import type { ObjectMeta } from '@kukan/storage-adapter'
 import type { IngestResult } from '@kukan/lake'
 import type { PackageDbState, ResourceSchema } from '@kukan/shared'
 import type { PublishedContent } from '@kukan/api/services/storage-pointer'
-import type { DeferredIngest } from '@kukan/api/services/lake-ingest'
+import type { DeferredIngest, LakeIngestRow } from '@kukan/api/services/lake-ingest'
 import type { ResourceClaim } from '@kukan/api/services/pipeline-claim'
 
 /** Minimal resource data needed by pipeline steps */
@@ -161,9 +161,5 @@ export interface PipelineContext {
    * DuckLake from its preview Parquet and record the snapshot on the version
    * row. Returns null when the context was built without a DuckLake config.
    */
-  ingestLakeVersion(opts: {
-    resourceId: string
-    version: number
-    previewKey: string
-  }): Promise<IngestResult | null>
+  ingestLakeVersion(opts: LakeIngestRow): Promise<IngestResult | null>
 }

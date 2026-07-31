@@ -7,9 +7,14 @@
  *
  * The version to load is the one holding this run's content, so the Parquet
  * cannot be attributed to content it does not describe.
+ *
+ * Runs inside the interpretation (ADR-046): what it loads is the table that
+ * interpretation just wrote to local disk. Which resources are tabular is
+ * settled by that — a run producing no table never reaches this — so there is
+ * no format test here.
  */
 
-import { isLakeIngestable } from '@kukan/lake'
+import type { LakeIngestRow } from '@kukan/api/services/lake-ingest'
 import { RunCancelledError } from '../step-tracker'
 import type { PipelineContext } from '../types'
 
@@ -19,28 +24,30 @@ export type LakeStepResult =
   | { status: 'skipped' }
   | { status: 'failed'; version: number; error: Error }
 
-/**
- * @param previewKey - the Extract output. Null for resources with no preview,
- *   and non-Parquet for the ones layer 2 does not cover (a ZIP's JSON
- *   manifest); both are skipped rather than handed to `read_parquet`.
- * @param contentHash - what Fetch measured on the object Extract parsed. The
- *   version to ingest is the one holding it, which is how a run that captured
- *   nothing still picks up a version whose earlier ingest failed.
- */
+/** `previewKey` and `sourcePath` are documented on {@link LakeIngestRow}. */
+export interface LakeStepOptions extends Omit<LakeIngestRow, 'version' | 'sourcePath'> {
+  /** Required here: this runs inside the interpretation, so there is a table. */
+  sourcePath: string
+  /**
+   * What Fetch measured on the version this interpreted. The version to ingest
+   * is the one holding it, which is how a run that captured nothing still picks
+   * up a version whose earlier ingest failed.
+   */
+  contentHash: string
+}
+
 export async function executeLake(
-  resourceId: string,
-  previewKey: string | null,
-  contentHash: string,
+  opts: LakeStepOptions,
   ctx: PipelineContext
 ): Promise<LakeStepResult> {
-  if (!isLakeIngestable(previewKey)) return { status: 'skipped' }
+  const { resourceId, previewKey, sourcePath, contentHash } = opts
 
   const version = await ctx.pendingLakeVersion(resourceId, contentHash)
   if (version === null) return { status: 'skipped' }
 
   const row = { resourceId, version, previewKey }
   try {
-    const result = await ctx.ingestLakeVersion(row)
+    const result = await ctx.ingestLakeVersion({ ...row, sourcePath })
     // null when the context carries no DuckLake config, or when something else
     // ingested this version first.
     return result === null ? { status: 'skipped' } : { status: 'ingested' }

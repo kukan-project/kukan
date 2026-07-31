@@ -18,7 +18,7 @@ import { RunCancelledError, StepTracker } from './step-tracker'
 import { heldContext } from './held-context'
 import { executeFetch } from './steps/fetch'
 import { executeExtract } from './steps/extract'
-import { executeLake } from './steps/lake'
+import { executeLake, type LakeStepOptions } from './steps/lake'
 import { executeIndexContent } from './steps/index-content'
 import type { PipelineContext } from './types'
 import { CLAIM_RETRY_DELAY_S, FETCH_RATE_LIMIT_REQUEUE_DELAY_S } from '@/config'
@@ -128,6 +128,11 @@ async function runPipeline(
     // from the version holding it, which is how a version whose earlier
     // interpretation failed gets another attempt.
     let extractResult: Awaited<ReturnType<typeof executeExtract>> = null
+    // Set by the hook below. Layer 2 now loads from the table interpretation
+    // wrote to local disk, so its step is recorded from inside the
+    // interpretation — ordered after this one, since steps are read by
+    // `started_at`.
+    let lakeRan = false
     const extractStepId = await tracker.startStep('extract')
     try {
       const version = await ctx.versionForContent(resourceId, fetchResult.hash)
@@ -143,7 +148,18 @@ async function runPipeline(
           fetchResult.packageId,
           { storageKey: version.storageKey, size: version.size },
           fetchResult.format,
-          ctx
+          ctx,
+          {
+            onTable: async (parquetPath, previewKey) => {
+              lakeRan = true
+              await runLakeStep(tracker, queue, ctx, {
+                resourceId,
+                previewKey,
+                sourcePath: parquetPath,
+                contentHash: fetchResult.hash,
+              })
+            },
+          }
         )
         if (extractResult === null) {
           await tracker.skipStep(extractStepId)
@@ -188,35 +204,12 @@ async function runPipeline(
       await tracker.failStep(extractStepId, (err as Error).message)
     }
 
-    // Step 4: Lake — load the captured version into DuckLake for row-level
-    // diff (ADR-043 layer 2). Only runs for a newly captured tabular version;
-    // non-critical, and rebuildable from layer 1 if it fails.
-    const lakeStepId = await tracker.startStep('lake')
-    try {
-      const lakeResult = await executeLake(
-        resourceId,
-        extractResult?.previewKey ?? null,
-        fetchResult.hash,
-        ctx
-      )
-      if (lakeResult.status === 'ingested') {
-        await tracker.completeStep(lakeStepId)
-      } else if (lakeResult.status === 'skipped') {
-        await tracker.skipStep(lakeStepId)
-      } else {
-        // Queued, because the next run ingests its own newer version and this
-        // one's Parquet is then superseded and swept — after which the pair can
-        // never be diffed.
-        await tracker.failStep(lakeStepId, lakeResult.error.message)
-        // Ids only: the Lake step recorded the Parquet on the version, and the
-        // handler reads it from there (ADR-043 §6-6).
-        await queue.enqueue(LAKE_INGEST_JOB_TYPE, { resourceId, version: lakeResult.version })
-      }
-    } catch (err) {
-      // A kill is not this step failing: the orchestrator leaves without
-      // recording, because the record belongs to whoever holds the claim now.
-      if (err instanceof RunCancelledError) throw err
-      await tracker.failStep(lakeStepId, (err as Error).message)
+    // Step 4: Lake — recorded above, from inside the interpretation, whenever
+    // there was a table to load. Nothing to load means nothing ran, and the
+    // step says so: a non-tabular resource, a format with no preview, or an
+    // interpretation that failed before it produced one.
+    if (!lakeRan) {
+      await tracker.skipStep(await tracker.startStep('lake'))
     }
 
     // Step 5: Index — extract text content and index to search engine
@@ -252,5 +245,46 @@ async function runPipeline(
     // `cancelled` is already on the row (ADR-044 §4).
     if (err instanceof RunCancelledError) return
     await tracker.updateStatus('error', (err as Error).message)
+  }
+}
+
+/**
+ * Load the interpreted table into DuckLake and record the step (ADR-043 layer 2).
+ *
+ * Called from inside the interpretation, while the table it loads is still on
+ * local disk. Non-critical, and rebuildable from layer 1 — so a failure is
+ * recorded and the run carries on, which is why this settles its own step
+ * rather than letting anything propagate to the interpretation around it.
+ */
+async function runLakeStep(
+  tracker: StepTracker,
+  queue: QueueAdapter,
+  ctx: PipelineContext,
+  opts: LakeStepOptions
+): Promise<void> {
+  const lakeStepId = await tracker.startStep('lake')
+  try {
+    const lakeResult = await executeLake(opts, ctx)
+    if (lakeResult.status === 'ingested') {
+      await tracker.completeStep(lakeStepId)
+    } else if (lakeResult.status === 'skipped') {
+      await tracker.skipStep(lakeStepId)
+    } else {
+      // Queued, because the next run ingests its own newer version and this
+      // one's Parquet is then superseded and swept — after which the pair can
+      // never be diffed.
+      await tracker.failStep(lakeStepId, lakeResult.error.message)
+      // Ids only: the Lake step recorded the Parquet on the version, and the
+      // handler reads it from there (ADR-043 §6-6).
+      await queue.enqueue(LAKE_INGEST_JOB_TYPE, {
+        resourceId: opts.resourceId,
+        version: lakeResult.version,
+      })
+    }
+  } catch (err) {
+    // A kill is not this step failing: the orchestrator leaves without
+    // recording, because the record belongs to whoever holds the claim now.
+    if (err instanceof RunCancelledError) throw err
+    await tracker.failStep(lakeStepId, (err as Error).message)
   }
 }
