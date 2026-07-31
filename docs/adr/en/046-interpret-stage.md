@@ -186,6 +186,24 @@ produced by streaming, is what Interpret reads. Handling Japanese CSVs is not ne
 3. **Re-running Interpret**: a new queue job type, or a mode on the existing pipeline job
 4. **What the preview Parquet is for**: an artifact of the interpretation, or generated on
    demand from layer 2 (the substance of ADR-043's "layer 3")
+5. **Whether the producer of an interpretation becomes a slot**: detecting types (DuckDB's
+   sniffer) and detecting structure — where the table starts, how many header rows, what a
+   merged cell means — are different problems. The second is already carried by hand-written
+   heuristics (`skipTitleRows`, `removeFooterRows`) and is already fragile. For spreadsheets
+   built as layouts rather than tables, an AI could sit here.
+
+   **That extension works only because this design stores the interpretation on the version.**
+   An AI is non-deterministic and tied to a model version; run once and recorded, everything
+   downstream reads the record rather than the model — reproducibility comes from storage, not
+   determinism. A human correction stands beside it as another version, and the two can be
+   compared.
+
+   The posture is ADR-040's: **propose, do not decide**. Misreading structure shifts columns,
+   which is a data integrity problem and not a UX one. As a precondition, XLSX is not in the
+   tabular path at all today (`isTextFormat` rejects it), so a parser producing a cell grid
+   with merge information comes first, along with a bounded sample (top-left N×M plus the merge
+   map) since a whole sheet cannot be handed to a model. On a closed network (`AI_TYPE=none`)
+   the heuristics stay as the fallback
 
 ## Related ADRs
 
