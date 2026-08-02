@@ -39,13 +39,20 @@ function nonEmptyCount(row: string[]): number {
  * qualify, and the whole file would be skipped.
  */
 export async function countTitleRows(csvPath: string): Promise<TitleRowScan> {
-  const head = (await readHead(csvPath, CSV_TITLE_SCAN_BYTES)).toString('utf-8')
+  const buf = await readHead(csvPath, CSV_TITLE_SCAN_BYTES)
+  const head = buf.toString('utf-8')
   // Blank lines are kept: one sitting between the title and the header is a
   // line `skip` has to account for, and it satisfies the title rule anyway.
   const parsed = Papa.parse<string[]>(head, { header: false, skipEmptyLines: false })
-  // The last row of a truncated read is usually a partial line; dropping it
-  // costs nothing, since a title run that reaches 64KB is not a title run.
-  const rows = parsed.data.slice(0, Math.max(0, parsed.data.length - 1))
+  // A read that stopped at the cap almost certainly cut a line in half, so its
+  // last row is dropped — a title run that reaches 64KB is not a title run, so
+  // nothing is lost. A read that reached the end of the file did not, and
+  // dropping there loses a real row: a header with no trailing newline is the
+  // whole file, and discarding it reads as empty.
+  const rows =
+    buf.length < CSV_TITLE_SCAN_BYTES
+      ? parsed.data
+      : parsed.data.slice(0, Math.max(0, parsed.data.length - 1))
   if (rows.length === 0) return { rows: 0, columnCount: 0 }
 
   const columnCount = Math.max(...rows.map((r) => r.length))
@@ -65,16 +72,24 @@ export async function countTitleRows(csvPath: string): Promise<TitleRowScan> {
 
 /**
  * Lines the first `rowCount` CSV rows occupy. A quoted field may hold newlines,
- * so counting rows is not counting lines — and `skip` counts lines. Papa reports
- * where it stopped, which makes this exact rather than an assumption about what
- * a title row may contain.
+ * so counting rows is not counting lines — and `skip` counts lines.
+ *
+ * Read per row rather than through `preview`: that option stops *delivering*
+ * after N rows but leaves `meta.cursor` a line further on, so every skip came
+ * out one too many and DuckDB ate the header. The per-row cursor is the
+ * position after that row, which is the number wanted.
  */
 function physicalLines(text: string, rowCount: number): number {
-  const { meta } = Papa.parse<string[]>(text, {
+  let seen = 0
+  let cursor = 0
+  Papa.parse<string[]>(text, {
     header: false,
     skipEmptyLines: false,
-    preview: rowCount,
+    step: (row, parser) => {
+      seen++
+      cursor = row.meta.cursor
+      if (seen >= rowCount) parser.abort()
+    },
   })
-  const consumed = text.slice(0, meta.cursor)
-  return (consumed.match(/\n/g) ?? []).length
+  return (text.slice(0, cursor).match(/\n/g) ?? []).length
 }

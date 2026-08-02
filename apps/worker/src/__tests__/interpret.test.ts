@@ -100,6 +100,45 @@ describe('executeInterpret', () => {
 
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-2', 'parquet'))
     expect(ctx.putObject).toHaveBeenCalledOnce()
+    // The columns, not just "a Parquet came out": skipping one line too many
+    // hands DuckDB the header as data and the first data row as the header,
+    // which a preview-key assertion cannot see.
+    expect(result?.schema?.columns.map((c) => c.name)).toEqual(['name', 'age', 'city'])
+  })
+
+  it('keeps a header that has no trailing newline', async () => {
+    // The last parsed row is only dropped when the read stopped at the 64KB
+    // cap. Dropped unconditionally, a file whose whole content is one line
+    // reads as empty — and ADR-046 then records an empty schema, which takes
+    // it out of the layer-2 sweep for good.
+    mockStorageDownload('name,age\nAlice,30')
+
+    const result = await executeInterpret(
+      'res-nonl',
+      'pkg-1',
+      version('versions/pkg-1/res-nonl/v1'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.schema?.columns.map((c) => c.name)).toEqual(['name', 'age'])
+    expect(result?.schema?.rowCount).toBe(1)
+  })
+
+  it('reads a title row above a header that has no trailing newline', async () => {
+    // Dropping the last row here left only the title, which DuckDB then read
+    // as the header.
+    mockStorageDownload('Report Title,,\nname,age,city\nAlice,30,Tokyo')
+
+    const result = await executeInterpret(
+      'res-title-nonl',
+      'pkg-1',
+      version('versions/pkg-1/res-title-nonl/v1'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.schema?.columns.map((c) => c.name)).toEqual(['name', 'age', 'city'])
   })
 
   it('should extract TSV data', async () => {
@@ -425,6 +464,7 @@ describe('executeInterpret', () => {
 
     expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-15', 'parquet'))
     expect(ctx.putObject).toHaveBeenCalledOnce()
+    expect(result?.schema?.columns.map((c) => c.name)).toEqual(['name', 'age', 'city', 'country'])
   })
 
   it('should generate ZIP manifest and upload as JSON', async () => {
