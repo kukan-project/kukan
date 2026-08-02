@@ -116,7 +116,11 @@ export function buildPipelineContext(
       // is what remains — it catches the one case the claim does not, a run
       // that was taken over for being stale and is still alive.
       const [res] = await db
-        .select({ urlType: resource.urlType, storageKey: resource.storageKey })
+        .select({
+          urlType: resource.urlType,
+          storageKey: resource.storageKey,
+          format: resource.format,
+        })
         .from(resource)
         .where(eq(resource.id, resourceId))
         .limit(1)
@@ -128,7 +132,7 @@ export function buildPipelineContext(
         .orderBy(desc(resourceVersion.version))
         .limit(1)
       const [activeRow] = await db
-        .select({ hash: resourceVersion.hash })
+        .select({ hash: resourceVersion.hash, format: resourceVersion.format })
         .from(resourceVersion)
         .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.state, 'active')))
         .orderBy(desc(resourceVersion.version))
@@ -140,10 +144,16 @@ export function buildPipelineContext(
       // establishes that this run is still the one describing the resource.
       const decision = decideVersionCapture({
         hash: contentHash,
+        // The insert reads the label again for itself, so an edit landing in
+        // between can make the two differ. Harmless either way: the row records
+        // the newer label, which is the one to compare against next time, and a
+        // run this gate skips is re-enqueued by the edit that skipped it.
+        format: res?.format ?? null,
         publishedKey: currentStorageKey,
         currentKey: res?.storageKey ?? null,
         maxVersion: maxRow?.version ?? null,
         latestActiveHash: activeRow?.hash ?? null,
+        latestActiveFormat: activeRow?.format ?? null,
       })
       if (!decision.captured) return decision
 
@@ -174,6 +184,7 @@ export function buildPipelineContext(
           version: resourceVersion.version,
           storageKey: resourceVersion.storageKey,
           size: resourceVersion.size,
+          format: resourceVersion.format,
         })
         .from(resourceVersion)
         .where(

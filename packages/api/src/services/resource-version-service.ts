@@ -79,6 +79,11 @@ export interface CapturedVersion {
  * sweep repairs that, since it asks before deleting, but the repair is an hour
  * away and the rule reads better with no exceptions in it.
  *
+ * The format is read off the resource here rather than passed in: it is the
+ * condition this version's interpretation is made under (ADR-046), and a value
+ * read before the copy can already be stale — nothing stops a metadata edit
+ * while a run holds the claim.
+ *
  * @returns false when the claim is gone. The caller has been displaced and
  *   should stop rather than carry on producing derivatives of this content.
  */
@@ -89,10 +94,12 @@ export async function insertVersionIfHeld(
 ): Promise<boolean> {
   const result = await db.execute(sql`
     WITH inserted AS (
-      INSERT INTO resource_version (resource_id, version, storage_key, size, hash, origin, schema)
+      INSERT INTO resource_version (resource_id, version, storage_key, size, hash, origin, format, schema)
       SELECT ${v.resourceId}::uuid, ${v.version}, ${v.storageKey}::text, ${v.size}::bigint,
-             ${v.hash}::text, ${v.origin}, ${v.schema ? JSON.stringify(v.schema) : null}::jsonb
-      WHERE ${stillHeld(claim)}
+             ${v.hash}::text, ${v.origin}, r.format,
+             ${v.schema ? JSON.stringify(v.schema) : null}::jsonb
+      FROM resource r
+      WHERE r.id = ${v.resourceId}::uuid AND ${stillHeld(claim)}
       RETURNING id, storage_key
     ),
     released AS (
@@ -160,7 +167,9 @@ const BACKFILL_CONCURRENCY = 2
  *
  * - a format an interpretation makes no table from, and a file too large for
  *   one, or every PDF and oversized CSV would sit here and be re-enqueued every
- *   hour for good
+ *   hour for good. The version's format, not the resource's: relabelling a
+ *   resource must not make bytes that were settled as a PDF eligible to be read
+ *   as a table
  * - a version a newer one has already overtaken, which the ingest refuses under
  *   its own lock (ii-a replaces the table's contents wholesale)
  * - a version already interpreted to nothing — an empty CSV has no table to
@@ -185,14 +194,14 @@ function pendingLakeIngestQuery(only?: { resourceId: string; version: number }) 
       : sql`AND rv.resource_id = ${only.resourceId}::uuid AND rv.version = ${only.version}`
   return sql`
   SELECT rv.resource_id AS "resourceId", rv.version, rv.storage_key AS "storageKey", rv.size,
-         r.format
+         rv.format
   FROM resource_version rv
   JOIN resource r ON r.id = rv.resource_id
   WHERE r.state = 'active'
     ${forVersion}
     AND rv.state = 'active'
     AND rv.ducklake_snapshot_id IS NULL
-    AND lower(r.format) IN ('csv', 'tsv')
+    AND lower(rv.format) IN ('csv', 'tsv')
     AND rv.size IS NOT NULL
     AND rv.size <= ${MAX_PARQUET_SOURCE_SIZE}
     AND (rv.schema IS NULL OR jsonb_array_length(rv.schema -> 'columns') > 0)
@@ -234,6 +243,9 @@ export interface VersionView {
   version: number
   origin: VersionOrigin
   state: VersionState
+  /** What this version was read as (ADR-046 §6). Kept on a tombstone: it
+   *  describes how the content was interpreted, not the content itself. */
+  format: string | null
   size: number | null
   hash: string | null
   schema: ResourceSchema | null
@@ -248,6 +260,7 @@ function toView(row: typeof resourceVersion.$inferSelect): VersionView {
     version: row.version,
     origin: row.origin as VersionOrigin,
     state: row.state as VersionState,
+    format: row.format,
     // Withhold content metadata for purged tombstones.
     size: purged ? null : row.size,
     hash: purged ? null : row.hash,

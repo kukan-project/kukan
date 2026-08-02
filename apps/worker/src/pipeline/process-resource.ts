@@ -126,7 +126,9 @@ async function runPipeline(
     // Read from the version rather than the live object, whether or not this run
     // is the one that captured it: content that was already there is interpreted
     // from the version holding it, which is how a version whose earlier
-    // interpretation failed gets another attempt.
+    // interpretation failed gets another attempt. Its format comes from the same
+    // row for the same reason — a label the user has since changed describes
+    // what the next capture will be read as, not these bytes (ADR-046).
     let interpretResult: Awaited<ReturnType<typeof executeInterpret>> = null
     // Set by the hook below. Layer 2 now loads from the table interpretation
     // wrote to local disk, so its step is recorded from inside the
@@ -147,7 +149,7 @@ async function runPipeline(
           resourceId,
           fetchResult.packageId,
           { storageKey: version.storageKey, size: version.size },
-          fetchResult.format,
+          version.format,
           ctx,
           {
             onTable: async (parquetPath) => {

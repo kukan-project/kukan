@@ -74,6 +74,7 @@ function createMockCtx(): PipelineContextMock {
     version: 1,
     storageKey: 'versions/pkg-1/res-1/v1',
     size: 42,
+    format: 'CSV',
   })
   return ctx
 }
@@ -186,6 +187,47 @@ describe('processResource', () => {
       // Ties the preview to the bytes Fetch measured (ADR-043 layer 2).
       sourceHash: 'sha256:abc',
     })
+  })
+
+  it('interprets a version under the format it was captured with, not the label now (ADR-046)', async () => {
+    // The label moved to TSV after these bytes were settled as a CSV. Reading
+    // the current one would parse a settled version by a rule it was never read
+    // with, and overwrite its schema with the result.
+    vi.mocked(executeFetch).mockResolvedValue({
+      storageKey: 'resources/pkg-1/res-1',
+      format: 'TSV',
+      packageId: 'pkg-1',
+      hash: 'sha256:abc',
+      size: 42,
+      status: 'fetched',
+    })
+    // The version stays on the fixture's CSV; only the label moved.
+    vi.mocked(executeInterpret).mockResolvedValue({
+      previewKey: 'previews/pkg-1/res-1.parquet',
+      encoding: 'UTF8',
+    })
+    vi.mocked(executeIndexContent).mockResolvedValue(null)
+
+    await processResource('res-1', ctx, db, queue)
+
+    expect(executeInterpret).toHaveBeenCalledWith(
+      'res-1',
+      'pkg-1',
+      { storageKey: 'versions/pkg-1/res-1/v1', size: 42 },
+      'CSV',
+      expect.anything(),
+      expect.anything()
+    )
+    // Index reads the live object, so it keeps describing it by the resource's
+    // own label — the two are answering different questions.
+    expect(executeIndexContent).toHaveBeenCalledWith(
+      'res-1',
+      'pkg-1',
+      'resources/pkg-1/res-1',
+      'TSV',
+      expect.anything(),
+      expect.anything()
+    )
   })
 
   it('should persist the column schema into metadata when the interpretation returns one (ADR-032)', async () => {

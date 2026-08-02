@@ -167,9 +167,10 @@ version = one object is an invariant the purge depends on**. Shared, purging v2 
 destroys v3's bytes or fails to destroy anything — a legal deletion that does not delete. A
 50MB copy is cheap against that.
 
-Two consequences. **The content gate does not see an interpretation change**:
-`decideVersionCapture` compares hashes against the latest active version, so identical bytes
-are not captured. Interpretation changes arrive through a user action, not the pipeline. And
+Two consequences. **The content gate sees only the interpretation conditions settled at
+capture**: `decideVersionCapture` compares the latest active version's hash _and_ format (§6).
+A corrected format therefore makes a version, while a key or type assignment — which does not
+exist at capture — arrives through a user action rather than the pipeline (open issue 2). And
 **several versions sharing a hash becomes normal**; the places that look a version up by hash
 (a revert's starting point, the version awaiting ingest) take the newest match and stay
 correct.
@@ -219,6 +220,61 @@ case right. **This is worth revisiting if upstream fixes it**, but today convert
 both more accurate and faster. Detection (`chardet`) has to stay in front either way: DuckDB
 has to be told `encoding=`, it does not detect.
 
+### 6. Interpretation conditions settled at capture live on the version row
+
+Once decision 3 defines a version as "these bytes, read this way", **the definition does not hold
+unless the interpretation conditions are on the version row**. Format is the first of them: change
+the delimiter and you have a different table, so format is a display label and an interpretation
+condition at once.
+
+`resource_version.format` holds a copy of `resource.format` taken at capture. Interpret and the
+layer-2 pending check both read the version's. A reader that consults the current label
+**interprets settled bytes by a rule they were never read with, and rewrites the schema of versions
+that have not changed** — the mutation decision 3 forbade, coming back in through a missing column.
+
+`resource.format` stays, because **the two answer different questions**.
+
+|                                              | Reads                     | Question                      |
+| -------------------------------------------- | ------------------------- | ----------------------------- |
+| Badge, facets, search index                  | `resource.format`         | What is this resource now     |
+| Interpret's branching, layer-2 pending check | `resource_version.format` | What were these bytes read as |
+
+**They cannot be forced to agree.** They always agree right after a capture, and diverge only when
+a user changes the label. Forcing them would mean either discarding the edit silently or
+re-interpreting a settled version — and the second is exactly what this section forbids.
+
+**The divergence carries meaning**: the label moved and this content has not been re-interpreted
+under it. That is the trigger condition for open issue 2, so it is something to build on rather
+than something to erase.
+
+Changing a format is not forbidden. A URL with no extension, a `.txt` that holds TSV, dirty values
+in migrated data — correcting a wrong label is legitimate operation. Forbidding it does close the
+hole, but **replaces it with a different breakage — one that cannot be corrected**, leaving the
+wrong label interpreted forever.
+
+**So format joins the content gate.** Once decision 3 says a changed interpretation makes a
+version, a corrected format has to make one — and that is also the correction's only place to
+land: with `decideVersionCapture` looking only at the hash, a correction whose bytes are
+unchanged is never captured, and the existing version goes on being read by the rule the
+correction replaced. A version holding **no** format counts as a difference too (rows from
+before the column existed, or inserted during a deploy window, would otherwise never be
+interpreted).
+
+The cost of a relabel is therefore **one version, one byte copy, and one layer-2 ingest**. The
+first two are what decision 3 accepted; the third follows from them, since a new version holds
+no snapshot and a diff or query would answer "not ingested" until it does. Whether repeated
+edits inflate the history stays a UX question for open issue 2.
+
+**How a correction reaches a re-run differs by resource type.** A metadata update re-enqueues
+the pipeline for URL resources, while an upload needs the explicit "reprocess" action.
+Automating the latter has to be designed alongside the PUT being a full-column replace — a
+partial update that omits `format` writes null — so it belongs with open issue 2.
+
+Tabular and non-tabular versions will now coexist on one resource, but **that mix is already in the
+design**: `ducklake_snapshot_id` is already null for six reasons (non-tabular, oversize, too many
+columns, empty CSV, failed interpretation, not yet ingested), and the diff service reports it as
+`not-ingested`. No new branch is needed.
+
 ## Consequences
 
 - **Durability**: a deterministic interpretation failure (OOM, malformed CSV) no longer costs layer 1.
@@ -227,8 +283,9 @@ has to be told `encoding=`, it does not detect.
 - **Memory**: no more expanding every row onto the JS heap; `MAX_PARQUET_SOURCE_SIZE` (50MB)
   can be revisited
 - **DB**: the version row keeps `schema`, and the primary key and type overrides go there too.
-  No new table
-- **Storage**: a version that changed only its interpretation still holds a copy of the bytes
+  One `format` column is added. No new table
+- **Storage**: a version that changed only its interpretation still holds a copy of the bytes,
+  and carries a layer-2 ingest with it (§6)
 - **Migration**: existing versions keep their `schema`; `lake_source_key` is dropped when it goes
 
 ## Open issues
@@ -266,7 +323,8 @@ has to be told `encoding=`, it does not detect.
 2. **How an interpretation change enters**: it does not pass the content gate, so version
    numbering and claim acquisition have to be decided on the user-action side. Whether
    repeated fiddling with a key floods the history (not settling while in draft, say) is a UX
-   question too
+   question too. Decision 6 makes **a format divergence the first trigger** for it — "this was
+   read as CSV; re-read it as TSV?" is answerable the moment the column exists
 3. **Re-running Interpret — settled (#247).** The existing layer-2 retry job
    (`LAKE_INGEST_JOB_TYPE`) re-interprets the version. Interpretation became one unit,
    `withInterpretedVersion`, shared by the pipeline and the retry; no new job type was needed

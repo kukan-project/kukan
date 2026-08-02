@@ -110,11 +110,19 @@ export interface PipelineContext {
    * another run moved the pointer and this one is no longer describing the
    * resource. Either way there is nothing to interpret yet, and the run that
    * does capture these bytes will interpret them.
+   *
+   * The format comes back with it, and it is the one Interpret reads by
+   * (ADR-046 §6).
    */
   versionForContent(
     resourceId: string,
     contentHash: string
-  ): Promise<{ version: number; storageKey: string; size: number } | null>
+  ): Promise<{
+    version: number
+    storageKey: string
+    size: number
+    format: string | null
+  } | null>
   /**
    * Record what Interpret made of a version (ADR-046).
    *

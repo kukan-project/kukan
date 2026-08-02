@@ -28,7 +28,7 @@ export function createPipelineContextMock(): PipelineContextMock {
     captureVersion: vi.fn().mockResolvedValue({ captured: false }),
     versionForContent: vi
       .fn()
-      .mockResolvedValue({ version: 1, storageKey: 'versions/v1', size: 1024 }),
+      .mockResolvedValue({ version: 1, storageKey: 'versions/v1', size: 1024, format: 'CSV' }),
     recordVersionSchema: vi.fn(),
     pendingLakeVersion: vi.fn().mockResolvedValue(null),
     ingestLakeVersion: vi.fn().mockResolvedValue(null),

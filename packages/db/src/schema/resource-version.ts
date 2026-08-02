@@ -37,6 +37,11 @@ export const resourceVersion = pgTable(
     hash: text('hash'),
     // 'upload' = explicit replacement, 'fetch' = observed at fetch time (external URL).
     origin: varchar('origin', { length: 10 }).notNull(),
+    // The format the resource carried at capture — the condition this version's
+    // interpretation is made under (ADR-046 §6). Held here because the
+    // resource's label is user-editable, and reading the current one would
+    // interpret settled bytes by a rule never applied to them.
+    format: varchar('format', { length: 100 }),
     // active → purging → purged (ADR-028 durable-claim pattern).
     state: varchar('state', { length: 10 }).notNull().default('active'),
     // Column schema snapshot for this version (ADR-032 shape); null for
@@ -61,8 +66,8 @@ export const resourceVersion = pgTable(
     // Drives the dashboard's pending-ingest count. Partial, but no longer
     // near-empty: a version of a non-tabular resource never gets a snapshot, so
     // it stays in here for good and the pending query filters it out by format
-    // (ADR-046). Worth an expression index on `lower(resource.format)` if the
-    // count starts costing anything.
+    // (ADR-046). Worth an expression index on `lower(format)` if the count
+    // starts costing anything.
     index('idx_resource_version_pending_lake')
       .on(table.resourceId, table.version)
       .where(sql`${table.state} = 'active' AND ${table.ducklakeSnapshotId} IS NULL`),

@@ -314,6 +314,28 @@ describe('insertVersionIfHeld', () => {
     expect(await versions()).toHaveLength(1)
   })
 
+  it('records the format the resource carries at insert time (ADR-046)', async () => {
+    // The condition this version's interpretation is made under, settled with
+    // its bytes. A later relabel describes what the next capture will be read
+    // as, and leaves the rows already here alone.
+    await db.update(resource).set({ format: 'CSV' }).where(eq(resource.id, resourceId))
+    expect(await insertVersionIfHeld(db, null, { resourceId, ...captured })).toBe(true)
+
+    await db.update(resource).set({ format: 'TSV' }).where(eq(resource.id, resourceId))
+    expect(
+      await insertVersionIfHeld(db, null, {
+        resourceId,
+        ...captured,
+        version: 2,
+        storageKey: 'versions/pkg/res/v2',
+        hash: 'sha256:v2',
+      })
+    ).toBe(true)
+
+    const rows = (await versions()).sort((a, b) => a.version - b.version)
+    expect(rows.map((r) => r.format)).toEqual(['CSV', 'TSV'])
+  })
+
   it('records nothing once the run has been stopped', async () => {
     // The step that would have reported this version is the one the kill cut
     // off, so a row written anyway has the resource page calling saved content

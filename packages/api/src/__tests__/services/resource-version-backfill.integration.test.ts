@@ -102,6 +102,8 @@ async function addTabularResource(
     snapshotId?: number | null
     state?: string
     size?: number
+    /** Defaults to the resource's, the way a capture records it (ADR-046). */
+    format?: string
   }[],
   opts: {
     previewKey?: string
@@ -113,11 +115,8 @@ async function addTabularResource(
   } = {}
 ): Promise<void> {
   const top = Math.max(...versions.map((v) => v.version))
-  const id = await addResource({
-    name,
-    hash: opts.liveHash ?? `sha256:v${top}`,
-    format: opts.format ?? 'CSV',
-  })
+  const format = opts.format ?? 'CSV'
+  const id = await addResource({ name, hash: opts.liveHash ?? `sha256:v${top}`, format })
   const sourceHash = opts.sourceHash === undefined ? `sha256:v${top}` : opts.sourceHash
   const [pipeline] = await db
     .insert(resourcePipeline)
@@ -145,6 +144,7 @@ async function addTabularResource(
       hash: `sha256:v${v.version}`,
       origin: 'upload',
       state: v.state ?? 'active',
+      format: v.format ?? format,
       ducklakeSnapshotId: v.snapshotId ?? null,
     })
   }
@@ -375,6 +375,18 @@ describe('countPendingLakeIngest', () => {
     await addTabularResource('a', [{ version: 1 }], { format: 'PDF' })
 
     expect(await service.countPendingLakeIngest()).toBe(0)
+  })
+
+  it('reads the format off the version, not the label the resource carries now', async () => {
+    // Relabelling a resource must not decide what settled bytes are (ADR-046).
+    // Both directions in one count: a version captured as a PDF stays out under
+    // a CSV label, and one captured as a CSV stays in under a PDF label.
+    await addTabularResource('now-labelled-csv', [{ version: 1, format: 'PDF' }])
+    await addTabularResource('now-labelled-pdf', [{ version: 1, format: 'CSV' }], {
+      format: 'PDF',
+    })
+
+    expect(await service.countPendingLakeIngest()).toBe(1)
   })
 
   it('ignores a version too large to interpret', async () => {
