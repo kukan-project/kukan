@@ -14,7 +14,7 @@ import type { Logger } from '@kukan/shared'
 import { LAKE_INGEST_JOB_TYPE } from '@kukan/shared'
 import { withResourceClaims } from '@kukan/api/services/pipeline-claim'
 import { pendingLakeVersionSource } from '@kukan/api/services/resource-version-service'
-import { withInterpretedVersion } from './interpret-version'
+import { withInterpretedVersion } from './interpret/version'
 import type { PipelineContext } from './types'
 import { CLAIM_RETRY_DELAY_S } from '@/config'
 

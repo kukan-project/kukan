@@ -12,7 +12,7 @@
 
 import Papa from 'papaparse'
 import { CSV_TITLE_SCAN_BYTES } from '@/config'
-import { readHead } from './node-utils'
+import { readHead } from '../node-utils'
 
 export interface TitleRowScan {
   /**

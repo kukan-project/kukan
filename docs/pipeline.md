@@ -27,7 +27,22 @@ claim を取る ─┬─ Fetch      内容を取得し、live ポインタを�
 claim を返す
 ```
 
-`apps/worker/src/pipeline/process-resource.ts` が全体、各ステップは `steps/` にある。
+コードの配置は**どこから呼ばれるか**で分かれている。
+
+| 場所                  | 中身                                                                     |
+| --------------------- | ------------------------------------------------------------------------ |
+| `pipeline/` 直下      | 入口 2 つと、その足場（コンテキスト・実行記録・共有ユーティリティ）      |
+| `pipeline/steps/`     | `process-resource.ts` が直接呼ぶ単位（Fetch / Interpret / Lake / Index） |
+| `pipeline/interpret/` | 版ファイル 1 つの解釈。2 つの入口が共有する                              |
+
+**入口は 2 つある。** `process-resource.ts`（5 ステップ全体）と `retry-lake-ingest.ts`（層 2 の
+再取り込み。Fetch と Version を飛ばして解釈だけをやり直す、§5）。どちらも `index.ts` の SQS
+ハンドラから呼ばれる。解釈が `steps/` の下ではなく独立しているのはこの 2 つが共有するからで、
+ZIP マニフェストの生成も解釈の一部としてここにある。
+
+**Version には `steps/` のファイルが無い。** 捕捉そのものは `PipelineContext.captureVersion`
+（`build-context.ts`）にあり、判定だけが `version-capture.ts` に分かれている（§7）。DB 操作なので
+コンテキスト側にあり、間違えやすい規則だけを IO から切り離してある。
 
 **Fetch だけが致命的。** 他の 4 つは失敗を記録して次へ進む — いずれも正本ファイルから作り直せる
 派生物だからである。Fetch が失敗すれば、そもそも記述する内容が無い。

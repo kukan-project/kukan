@@ -3,7 +3,7 @@ import { writeFile, rm, mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import JSZip from 'jszip'
-import { extractZipManifest } from '../pipeline/steps/extract-zip'
+import { extractZipManifest } from '../pipeline/interpret/zip'
 
 async function createTestZip(
   files: { name: string; content?: string; dir?: boolean }[]

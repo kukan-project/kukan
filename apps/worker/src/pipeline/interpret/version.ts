@@ -15,10 +15,10 @@ import { rm, stat } from 'node:fs/promises'
 import { detectEncoding } from '@kukan/shared/encoding-node'
 import { toCharset } from '@kukan/shared'
 import type { ResourceSchema } from '@kukan/shared'
-import { cleanupTempFile, readHead, streamToTempFile, transcodeToUtf8 } from './node-utils'
-import { interpretCsv } from './csv-interpret'
+import { cleanupTempFile, readHead, streamToTempFile, transcodeToUtf8 } from '../node-utils'
+import { interpretCsv } from './csv'
 import { countTitleRows } from './csv-title-rows'
-import type { PipelineContext } from './types'
+import type { PipelineContext } from '../types'
 import { MAX_CSV_COLUMNS } from '@/config'
 
 /** The interpretation, for as long as the callback runs. */

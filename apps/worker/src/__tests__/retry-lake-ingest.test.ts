@@ -32,11 +32,11 @@ vi.mock('@kukan/api/services/resource-version-service', () => ({
   pendingLakeVersionSource: vi.fn(async () => pending.source),
 }))
 
-/** The interpretation itself belongs to `interpret-version`; here it is a stub
+/** The interpretation itself belongs to `interpret/version`; here it is a stub
  *  that hands over a table so the retry's own decisions are what is tested. */
 const interpreted = vi.hoisted(() => ({ table: true }))
 
-vi.mock('../pipeline/interpret-version', () => ({
+vi.mock('../pipeline/interpret/version', () => ({
   withInterpretedVersion: vi.fn(
     async (
       _source: unknown,
@@ -54,7 +54,7 @@ vi.mock('../pipeline/interpret-version', () => ({
   ),
 }))
 
-import { withInterpretedVersion } from '../pipeline/interpret-version'
+import { withInterpretedVersion } from '../pipeline/interpret/version'
 
 const VERSION_KEY = 'versions/pkg-1/res-1/v2'
 const job = { resourceId: 'res-1', version: 2 }

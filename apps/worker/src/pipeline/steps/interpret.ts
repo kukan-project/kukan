@@ -21,8 +21,8 @@ import {
   MAX_PARQUET_SOURCE_SIZE,
 } from '@kukan/shared'
 import type { ResourceSchema } from '@kukan/shared'
-import { withInterpretedVersion } from '../interpret-version'
-import { extractZipManifest } from './extract-zip'
+import { withInterpretedVersion } from '../interpret/version'
+import { extractZipManifest } from '../interpret/zip'
 import type { PipelineContext } from '../types'
 import { ENCODING_SAMPLE_SIZE } from '@/config'
 const FIXED_UTF8_FORMATS = new Set(['json', 'geojson', 'md'])
