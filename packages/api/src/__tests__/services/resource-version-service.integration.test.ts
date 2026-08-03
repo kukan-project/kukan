@@ -587,7 +587,7 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     const deps = mockDeps()
     const result = await revertFromLive(deps)
 
-    expect(result).toEqual({ cancelled: true, restored: 1, cleanedUp: true })
+    expect(result).toEqual({ cancelled: true, restored: 1, cleared: true, queued: true })
     // v1's bytes are copied to a key of this operation's own, never reused.
     const [, restoredKey] = vi.mocked(deps.storage.copy).mock.calls[0]
     expect(restoredKey).not.toBe(liveKey)
@@ -742,7 +742,7 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     const result = await revertFromLive(deps)
 
     expect(result.restored).toBe(1)
-    expect(result.cleanedUp).toBe(false)
+    expect(result.cleared).toBe(false)
     const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
     expect(res.hash).toBe('sha256:v1')
   })
@@ -755,7 +755,9 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
 
     const result = await revertFromLive(deps)
 
-    expect(result).toMatchObject({ restored: 1, cleanedUp: false })
+    // The two halves answer separately: the derivatives did go, and only the
+    // rebuild that puts them back never reached the queue.
+    expect(result).toMatchObject({ restored: 1, cleared: true, queued: false })
   })
 
   it('puts the version back in the active set when the restore fails', async () => {
@@ -904,10 +906,11 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     vi.mocked(failing.search.deleteContent).mockRejectedValueOnce(new Error('search is down'))
 
     const first = await service.revertLiveContent(resourceId, request, failing)
-    expect(first).toMatchObject({ restored: null, cleanedUp: false })
+    // Nothing to queue against an emptied resource, so that half is null.
+    expect(first).toMatchObject({ restored: null, cleared: false, queued: null })
 
     const resent = mockDeps()
-    expect((await service.revertLiveContent(resourceId, request, resent)).cleanedUp).toBe(true)
+    expect((await service.revertLiveContent(resourceId, request, resent)).cleared).toBe(true)
     expect(resent.search.deleteContent).toHaveBeenCalledWith(resourceId)
   })
 
@@ -965,10 +968,10 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     const request = { restoreTo: revertTarget, ifLiveRevision: liveRevision }
     const failing = { ...mockDeps(), logger: silentLogger }
     vi.mocked(failing.queue.enqueue).mockRejectedValueOnce(new Error('queue is down'))
-    expect((await service.revertLiveContent(resourceId, request, failing)).cleanedUp).toBe(false)
+    expect((await service.revertLiveContent(resourceId, request, failing)).queued).toBe(false)
 
     const resent = mockDeps()
-    expect((await service.revertLiveContent(resourceId, request, resent)).cleanedUp).toBe(true)
+    expect((await service.revertLiveContent(resourceId, request, resent)).queued).toBe(true)
     expect(resent.queue.enqueue).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ rebuildOnly: true })
@@ -1014,7 +1017,7 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     await db.delete(resourcePipeline).where(eq(resourcePipeline.resourceId, resourceId))
 
     const resent = mockDeps()
-    expect((await service.revertLiveContent(resourceId, request, resent)).cleanedUp).toBe(true)
+    expect((await service.revertLiveContent(resourceId, request, resent)).cleared).toBe(true)
 
     // A row now exists to have been claimed, and it was released again. Its
     // status says what it is — nothing queued, nothing run — rather than
@@ -1282,8 +1285,10 @@ describe('repairDerivatives — the repair a screen can offer (ADR-044 §4)', ()
     )
 
     const repair = mockDeps()
+    // Null, not false: nothing was owed, so a caller reading the outcome does
+    // not take this for a repair that failed.
     expect(await service.repairDerivatives(resourceId, repair)).toEqual({
-      queued: false,
+      queued: null,
       cleared: true,
     })
     expect(repair.queue.enqueue).not.toHaveBeenCalled()

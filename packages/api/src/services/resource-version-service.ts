@@ -141,6 +141,33 @@ export async function setVersionSchemaIfHeld(
   return result.rows.length > 0
 }
 
+/**
+ * What every rung of the ladder leaves behind (ADR-044 §4).
+ *
+ * Stopping, reverting and repairing all end the same way: some derivatives had
+ * to go, and some work had to be queued to put them back. Answering in one
+ * shape is what keeps the rule for reading it out of the client — otherwise it
+ * has to remember which endpoint it called to know which field means done.
+ *
+ * The two halves never merge. Queueing a rebuild is not doing one, so `queued`
+ * says a job is on its way and nothing more, while `cleared` says work actually
+ * finished; folded together, a caller takes an enqueue for a repair.
+ *
+ * **Null is "nothing to do here", never a failure.** An emptied resource has
+ * nothing to rebuild from, a resend has nothing left to clear — and both are
+ * outcomes that stand. So one predicate covers the whole ladder:
+ *
+ * ```ts
+ * const done = cleared !== false && queued !== false
+ * ```
+ */
+export interface LadderOutcome {
+  /** A job is on its way, or null when none was needed. */
+  queued: boolean | null
+  /** The derivatives are gone, or null when none needed to go. */
+  cleared: boolean | null
+}
+
 /** What a purge needs to reach: layer 1, the search index, the queue, layer 2. */
 interface PurgeDeps {
   storage: StorageAdapter
@@ -852,10 +879,11 @@ export class ResourceVersionService {
    * - the generation matches → do the work
    * - otherwise → 409
    *
-   * @returns the version restored, `null` when the resource is empty, and
-   *   `cleanedUp: false` when the content was retracted but its derivatives
-   *   outlived it — repaired by {@link repairDerivatives}, never by reverting
-   *   again.
+   * @returns the version restored, `null` when the resource is empty, plus the
+   *   {@link LadderOutcome} halves — `cleared: false` when the content was
+   *   retracted but its derivatives outlived it, `queued: false` when the
+   *   rebuild that puts them back never reached the queue. Either is repaired by
+   *   {@link repairDerivatives}, never by reverting again.
    */
   async revertLiveContent(
     resourceId: string,
@@ -866,7 +894,7 @@ export class ResourceVersionService {
       queue: QueueAdapter
       logger?: Logger
     }
-  ): Promise<{ cancelled: boolean; restored: number | null; cleanedUp: boolean }> {
+  ): Promise<LadderOutcome & { cancelled: boolean; restored: number | null }> {
     const log = deps.logger ?? createLogger({ name: 'api' })
 
     // Everything that can end in "do not proceed" is settled before the claim,
@@ -908,7 +936,7 @@ export class ResourceVersionService {
     // one this ran unclaimed, and a run starting alongside it would carry on
     // creating and indexing the content being retracted.
     await this.ensureClaimable(resourceId)
-    const { cancelled, restored, cleanedUp } = await withClaimFromRun(
+    const { cancelled, restored, cleared } = await withClaimFromRun(
       this.db,
       resourceId,
       'revert',
@@ -955,9 +983,9 @@ export class ResourceVersionService {
 
         // The retraction has happened: the pointer names the restored content
         // and the versions stepped off are out of the active set.
-        const cleanedUp = await this.discardRetracted(resourceId, deps, log)
+        const cleared = await this.discardRetracted(resourceId, deps, log)
 
-        return { cancelled, restored: restored?.version ?? null, cleanedUp }
+        return { cancelled, restored: restored?.version ?? null, cleared }
       },
       // Refused inside the takeover statement rather than after it: told no
       // here, this call has already stopped whatever was running.
@@ -972,9 +1000,11 @@ export class ResourceVersionService {
     // the step-off above made the restored one, so it matches and no spurious
     // version is created. Nothing to rebuild from when the resource was
     // emptied.
-    const rebuilding = restored ? await this.queueRebuild(resourceId, deps, log) : true
+    // Null rather than false when the resource was emptied: there is no content
+    // for a run to rebuild from, so nothing was owed.
+    const queued = restored ? await this.queueRebuild(resourceId, deps, log) : null
 
-    return { cancelled, restored, cleanedUp: cleanedUp && rebuilding }
+    return { cancelled, restored, cleared, queued }
   }
 
   /**
@@ -1037,7 +1067,7 @@ export class ResourceVersionService {
     target: { restoreTo: number | null },
     deps: { storage: StorageAdapter; search?: SearchAdapter; queue: QueueAdapter },
     log: Logger
-  ): Promise<{ cancelled: boolean; restored: number | null; cleanedUp: boolean } | null> {
+  ): Promise<(LadderOutcome & { cancelled: boolean; restored: number | null }) | null> {
     const [current] = await this.db
       .select({
         storageKey: resource.storageKey,
@@ -1064,7 +1094,10 @@ export class ResourceVersionService {
       return {
         cancelled: false,
         restored: standing,
-        cleanedUp: await this.queueRebuild(resourceId, deps, log),
+        // Nothing left to clear — the attempt that moved the content took the
+        // derivatives with it, which is why this one is settled at all.
+        cleared: null,
+        queued: await this.queueRebuild(resourceId, deps, log),
       }
     }
 
@@ -1072,7 +1105,7 @@ export class ResourceVersionService {
     // Filled up in between: no longer settled, and the caller's generation is
     // stale with it. The path below is where that is answered.
     if (cleaned === null) return null
-    return { cancelled: false, restored: null, cleanedUp: cleaned }
+    return { cancelled: false, restored: null, cleared: cleaned, queued: null }
   }
 
   /**
@@ -1154,14 +1187,18 @@ export class ResourceVersionService {
    *
    * The two halves answer separately. Queueing a rebuild is not doing one — the
    * run can still fail — so `queued` says a job is on its way and nothing more,
-   * while `cleared` (null when nothing needed clearing) says work actually
-   * finished. Reported as one field, a caller would take an enqueue for a
-   * repair, which is the inference this whole rung exists to refuse.
+   * while `cleared` says work actually finished. Reported as one field, a caller
+   * would take an enqueue for a repair, which is the inference this whole rung
+   * exists to refuse.
+   *
+   * Null is "this half had nothing to do", never a failure, so one predicate
+   * reads every rung of the ladder: neither field is `false` (see
+   * {@link LadderOutcome}).
    */
   async repairDerivatives(
     resourceId: string,
     deps: { storage: StorageAdapter; search?: SearchAdapter; queue: QueueAdapter; logger?: Logger }
-  ): Promise<{ queued: boolean; cleared: boolean | null }> {
+  ): Promise<LadderOutcome> {
     const log = deps.logger ?? createLogger({ name: 'api' })
     const [current] = await this.db
       .select({ storageKey: resource.storageKey, revision: resource.contentRevision })
@@ -1174,7 +1211,7 @@ export class ResourceVersionService {
       return { queued: await this.queueRebuild(resourceId, deps, log), cleared: null }
     }
     return {
-      queued: false,
+      queued: null,
       cleared: (await this.clearEmptied(resourceId, current.revision, deps, log)) ?? true,
     }
   }

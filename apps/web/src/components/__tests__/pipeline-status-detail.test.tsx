@@ -143,7 +143,7 @@ describe('PipelineStatusDetail', () => {
     // control instead (ADR-044 §4).
     mockFetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ cleanedUp: false, restored: 1 }),
+      json: async () => ({ restored: 1, cleared: true, queued: false }),
     } as Response)
     showing('processing', [runningStep(5)])
     render(<PipelineStatusDetail resourceId="r1" />)
@@ -182,7 +182,7 @@ describe('PipelineStatusDetail', () => {
     // it, leaving nothing to say the resource still has retracted text indexed.
     mockFetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ cleanedUp: false, restored: 1 }),
+      json: async () => ({ restored: 1, cleared: true, queued: false }),
     } as Response)
     showing('processing', [runningStep(5)])
     const { rerender } = render(<PipelineStatusDetail resourceId="r1" />)
@@ -195,9 +195,9 @@ describe('PipelineStatusDetail', () => {
     )
     await screen.findByRole('alert')
 
-    // The run has stopped, so the repair control is offered. It answers in the
-    // repair's own shape, not the revert's: nothing cleared because there was
-    // content to rebuild, and nothing queued because the queue was down.
+    // The run has stopped, so the repair control is offered. Same shape as the
+    // revert: nothing to clear because there was content to rebuild, and the
+    // enqueue that half is is what failed.
     mockFetch.mockResolvedValue({
       ok: true,
       json: async () => ({ queued: false, cleared: null }),
@@ -215,7 +215,7 @@ describe('PipelineStatusDetail', () => {
     // — nothing later in this view retracts it.
     mockFetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ cleanedUp: false, restored: 1 }),
+      json: async () => ({ restored: 1, cleared: true, queued: false }),
     } as Response)
     showing('processing', [runningStep(5)])
     const { rerender } = render(<PipelineStatusDetail resourceId="r1" />)
@@ -237,6 +237,29 @@ describe('PipelineStatusDetail', () => {
     fireEvent.click(screen.getByRole('button', { name: /Rebuild preview & index/ }))
 
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+  })
+
+  it('does not warn when a half of the outcome had nothing to do', async () => {
+    // Emptying the resource leaves no content to rebuild from, so `queued` is
+    // null — the ladder's "nothing owed here", not a failure. Read as one, this
+    // would put a warning on a revert that finished, pointing at a repair with
+    // nothing to repair.
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ restored: null, cleared: true, queued: null }),
+    } as Response)
+    showing('processing', [runningStep(5)])
+    render(<PipelineStatusDetail resourceId="r1" />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Stop and revert/ }))
+    fireEvent.click(
+      screen
+        .getAllByRole('button', { name: /Stop and revert/ })
+        .find((b) => b.closest('[role="dialog"]'))!
+    )
+
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled())
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('names the content that was never saved as a version', async () => {
