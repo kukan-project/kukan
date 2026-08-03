@@ -1094,6 +1094,24 @@ describe('Resources API Routes', () => {
       expect(body.job_id).toBeDefined()
     })
 
+    it('repairs by rebuilding, without fetching', async () => {
+      // The safe repair after a revert, reachable from the screen alone rather
+      // than only by resending a request someone had to keep (ADR-044 §4).
+      const pkg = await createPackage('run-pipeline-rebuild-pkg')
+      const resource = await createResource(pkg.id, {
+        url: 'https://example.com/data.csv',
+      })
+
+      const res = await app.request(`/api/v1/resources/${resource.id}/run-pipeline`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rebuildOnly: true }),
+      })
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ queued: true, cleared: null })
+    })
+
     it('should return 401 for unauthenticated users', async () => {
       const pkg = await createPackage('run-pipeline-unauth-pkg')
       const resource = await createResource(pkg.id)

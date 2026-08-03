@@ -167,7 +167,7 @@ describe('processResource', () => {
     // The steps get this run's context, not the worker's: the writes that leave
     // the database are wrapped in a claim check (ADR-044 §4).
     const held = expect.objectContaining({ getResource: ctx.getResource })
-    expect(executeFetch).toHaveBeenCalledWith('res-1', held)
+    expect(executeFetch).toHaveBeenCalledWith('res-1', held, false)
     // The version file, not the live object: the input has to be one nothing
     // rewrites for the interpretation to be repeatable (ADR-046).
     expect(executeInterpret).toHaveBeenCalledWith(
@@ -429,6 +429,37 @@ describe('processResource', () => {
       { resourceId: 'res-1' },
       expect.objectContaining({ delaySeconds: expect.any(Number) })
     )
+  })
+
+  it('carries the rebuild flag into the retry it comes back with', async () => {
+    // Dropped here, the retry becomes an ordinary run — and for a resource
+    // reverted because its URL served the wrong thing, that run publishes it
+    // again. The flag has to survive contention, not just one delivery
+    // (ADR-044 §4).
+    claim.answer = 'held'
+
+    await processResource('res-1', ctx, db, queue, { rebuildOnly: true })
+
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      'resource-pipeline',
+      { resourceId: 'res-1', rebuildOnly: true },
+      expect.objectContaining({ delaySeconds: expect.any(Number) })
+    )
+  })
+
+  it('rebuilds from the object the resource holds rather than fetching', async () => {
+    vi.mocked(executeFetch).mockResolvedValue({
+      storageKey: 'resources/pkg-1/res-1',
+      format: 'CSV',
+      packageId: 'pkg-1',
+      hash: 'sha256:abc',
+      size: 42,
+      status: 'fetched',
+    })
+
+    await processResource('res-1', ctx, db, queue, { rebuildOnly: true })
+
+    expect(executeFetch).toHaveBeenCalledWith('res-1', expect.anything(), true)
   })
 
   it('leaves without recording anything once it has been killed', async () => {

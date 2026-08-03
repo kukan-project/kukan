@@ -31,7 +31,7 @@ export class PipelineService {
    * Create or reset a pipeline for a resource and enqueue processing.
    * Returns the queue job ID.
    */
-  async enqueue(resourceId: string): Promise<string> {
+  async enqueue(resourceId: string, opts: { rebuildOnly?: boolean } = {}): Promise<string> {
     if (!this.queue) {
       throw new ValidationError('Queue adapter is required to enqueue pipelines')
     }
@@ -58,7 +58,7 @@ export class PipelineService {
 
     // Enqueue processing job — rollback DB status on failure
     try {
-      const jobId = await this.queue.enqueue(PIPELINE_JOB_TYPE, { resourceId })
+      const jobId = await this.queue.enqueue(PIPELINE_JOB_TYPE, { resourceId, ...opts })
       return jobId
     } catch (err) {
       await this.db

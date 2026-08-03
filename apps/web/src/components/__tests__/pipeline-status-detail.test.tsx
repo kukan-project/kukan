@@ -102,6 +102,107 @@ describe('PipelineStatusDetail', () => {
     )
   })
 
+  it('sends the revert it showed, not what polling moved to since', async () => {
+    // The dialog is the confirmation, so what it was opened against is what the
+    // user agreed to. Reading the target again at confirm time can retract
+    // content they were never shown (ADR-044 §4).
+    showing('processing', [runningStep(5)])
+    const { rerender } = render(<PipelineStatusDetail resourceId="r1" />)
+    fireEvent.click(screen.getByRole('button', { name: /Stop and revert/ }))
+    await screen.findByText(/goes back to its most recent saved version/)
+
+    // A poll lands while the dialog is open: newer content, newer generation.
+    mockStatus.mockReturnValue({
+      status: 'processing',
+      steps: [runningStep(5)],
+      error: null,
+      revertTarget: 2,
+      liveRevision: 'rev-2',
+      refetch,
+    } as unknown as ReturnType<typeof usePipelineStatus>)
+    rerender(<PipelineStatusDetail resourceId="r1" />)
+
+    const confirm = screen
+      .getAllByRole('button', { name: /Stop and revert/ })
+      .find((b) => b.closest('[role="dialog"]'))!
+    fireEvent.click(confirm)
+
+    await waitFor(() =>
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/resources/r1/revert',
+        expect.objectContaining({
+          body: JSON.stringify({ restoreTo: 1, ifLiveRevision: 'rev-1' }),
+        })
+      )
+    )
+  })
+
+  it('says the revert left work behind, and points away from reverting again', async () => {
+    // The content is back; only the rebuild is unfinished. Another revert would
+    // step the content back a second time, so the message names the rebuild
+    // control instead (ADR-044 §4).
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ cleanedUp: false, restored: 1 }),
+    } as Response)
+    showing('processing', [runningStep(5)])
+    render(<PipelineStatusDetail resourceId="r1" />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Stop and revert/ }))
+    const confirm = screen
+      .getAllByRole('button', { name: /Stop and revert/ })
+      .find((b) => b.closest('[role="dialog"]'))!
+    fireEvent.click(confirm)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/Rebuild preview & index/)
+    expect(alert).toHaveTextContent(/do not revert again/i)
+  })
+
+  it('offers a rebuild that fetches nothing, without needing anything remembered', async () => {
+    // This view lives in a dialog. A revert whose rebuild fails later leaves
+    // whoever comes back — a reload, another admin — with only the plain
+    // reprocess, which re-reads an external URL and undoes the revert. The
+    // repair has to be reachable from the screen alone (ADR-044 §4).
+    showing('complete', [])
+    render(<PipelineStatusDetail resourceId="r1" />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Rebuild preview & index/ }))
+
+    await waitFor(() =>
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/resources/r1/run-pipeline',
+        expect.objectContaining({ body: JSON.stringify({ rebuildOnly: true }) })
+      )
+    )
+  })
+
+  it('keeps the warning up when the repair reports work still outstanding', async () => {
+    // Clearing it on the way in would take the only pointer to the problem with
+    // it, leaving nothing to say the resource still has retracted text indexed.
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ cleanedUp: false, restored: 1 }),
+    } as Response)
+    showing('processing', [runningStep(5)])
+    const { rerender } = render(<PipelineStatusDetail resourceId="r1" />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Stop and revert/ }))
+    fireEvent.click(
+      screen
+        .getAllByRole('button', { name: /Stop and revert/ })
+        .find((b) => b.closest('[role="dialog"]'))!
+    )
+    await screen.findByRole('alert')
+
+    // The run has stopped, so the repair control is offered.
+    showing('complete', [])
+    rerender(<PipelineStatusDetail resourceId="r1" />)
+    fireEvent.click(screen.getByRole('button', { name: /Rebuild preview & index/ }))
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+  })
+
   it('names the content that was never saved as a version', async () => {
     // The case worth calling out: replacing the file loses it for good, and
     // nothing else on this screen would say so (ADR-044 §4).

@@ -120,11 +120,27 @@ export const revertResourceSchema = z.object({
   /** Version to put the live content on, or null to leave the resource empty —
    *  which is a destination like any other, and idempotent for the same reason. */
   restoreTo: z.number().int().positive().nullable(),
-  /** `live_revision` as served with the pipeline status. */
-  ifLiveRevision: z.string().min(1),
+  /** `live_revision` as served with the pipeline status. A UUID, and validated
+   *  as one: the takeover compares it as `::uuid`, so anything else is a
+   *  PostgreSQL error rather than the 400 it is. */
+  ifLiveRevision: z.uuid(),
 })
 
 export type RevertResourceInput = z.infer<typeof revertResourceSchema>
+
+/**
+ * Reprocess options. Absent means an ordinary run — fetch included.
+ *
+ * `rebuildOnly` is the safe repair after a revert: it regenerates the
+ * derivatives from the object the resource already holds, so a resource
+ * reverted because its URL served the wrong thing does not have that content
+ * fetched back (ADR-044 §4).
+ */
+export const runPipelineSchema = z.object({
+  rebuildOnly: z.boolean().optional(),
+})
+
+export type RunPipelineInput = z.infer<typeof runPipelineSchema>
 
 export const reorderResourcesSchema = z.object({
   resourceIds: z.array(z.uuid()).min(1),

@@ -34,6 +34,7 @@ import type { QueueAdapter } from '@kukan/queue-adapter'
 import { withLakeIngestLock } from './lake-ingest'
 import { reclaimInSession } from './lake-reclaim'
 import {
+  onRevision,
   stillHeld,
   withClaimFromRun,
   withResourceClaims,
@@ -849,17 +850,15 @@ export class ResourceVersionService {
    * different questions, and answering only the first turns a stale request into
    * a silent overwrite.
    *
-   * - already at `restoreTo` → the content is where it was asked to be. Nothing
-   *   moves, and **nothing is cleaned up**: the derivatives here belong to the
-   *   restored content, and a resend arriving after the rebuild would delete
-   *   the very preview and index it should be keeping
+   * - already at `restoreTo` → answered by {@link settledRevert}, which does
+   *   not take the claim and states there what a resend does and does not redo
    * - the generation matches → do the work
    * - otherwise → 409
    *
    * @returns the version restored, `null` when the resource is empty, and
    *   `cleanedUp: false` when the content was retracted but its derivatives
-   *   outlived it. Reprocessing is the repair — it rebuilds both from the
-   *   restored content — not another revert and not a resend.
+   *   outlived it — repaired by {@link repairDerivatives}, never by reverting
+   *   again.
    */
   async revertLiveContent(
     resourceId: string,
@@ -872,39 +871,68 @@ export class ResourceVersionService {
     }
   ): Promise<{ cancelled: boolean; restored: number | null; cleanedUp: boolean }> {
     const log = deps.logger ?? createLogger({ name: 'api' })
-    const { cancelled, restored, cleanedUp, moved } = await withClaimFromRun(
+
+    // Everything that can end in "do not proceed" is settled before the claim,
+    // because taking it stops whatever is running (ADR-044 §4). A refusal that
+    // waits until after has already cost a run its work.
+    //
+    // The destination has to be a version the resource can stand on. Left
+    // unchecked, naming a superseded or missing one supersedes whatever is above
+    // it and then restores some *other* version — or empties the resource — and
+    // reports success. Superseded is refused rather than resolved: stepping back
+    // onto content an earlier revert set aside is redo, which this ladder does
+    // not have. Nothing can slip in behind this: making it superseded is itself
+    // a revert, which moves the generation the takeover is conditioned on.
+    if (target.restoreTo !== null) {
+      const [row] = await this.db
+        .select({ state: resourceVersion.state })
+        .from(resourceVersion)
+        .where(
+          and(
+            eq(resourceVersion.resourceId, resourceId),
+            eq(resourceVersion.version, target.restoreTo)
+          )
+        )
+        .limit(1)
+      if (!row) throw new NotFoundError('Resource version', `${resourceId}/v${target.restoreTo}`)
+      if (row.state !== 'active') {
+        throw new ConflictError(
+          `Version ${target.restoreTo} of ${resourceId} is ${row.state}; it cannot be restored`
+        )
+      }
+    }
+
+    // A resend can land while the rebuild its own first attempt queued is still
+    // going, so this too is answered without taking the claim.
+    const settled = await this.settledRevert(resourceId, target, deps, log)
+    if (settled) return settled
+
+    // Held for the whole thing, which needs a row to hold (see below). Without
+    // one this ran unclaimed, and a run starting alongside it would carry on
+    // capturing and indexing the content being retracted.
+    await this.ensureClaimable(resourceId)
+    const { cancelled, restored, cleanedUp } = await withClaimFromRun(
       this.db,
       resourceId,
       'revert',
       async (_claim, cancelled) => {
+        // Read as the generation the caller named, not just by id. The takeover
+        // checked it, but an upload takes no claim (ADR-044 §6) and can publish
+        // in the moment after — and then this would read the new object as the
+        // content to retract, with the pointer CAS below agreeing, retracting an
+        // upload the caller never saw.
         const [current] = await this.db
           .select({
             packageId: resource.packageId,
             storageKey: resource.storageKey,
             hash: resource.hash,
-            revision: resource.contentRevision,
           })
           .from(resource)
-          .where(eq(resource.id, resourceId))
+          .where(
+            and(eq(resource.id, resourceId), eq(resource.contentRevision, target.ifLiveRevision))
+          )
           .limit(1)
-        if (!current) throw new NotFoundError('Resource', resourceId)
-
-        // Where the content is standing now. Null covers both "no version holds
-        // it" and "there is no content", which are the same answer to the only
-        // question asked here: is it already at the destination.
-        const standing = current.storageKey
-          ? ((await this.liveVersion(resourceId, current.hash, ['active'])) ?? null)
-          : null
-        if (
-          standing === target.restoreTo &&
-          (current.storageKey !== null) === (standing !== null)
-        ) {
-          // Already there. Nothing moves, and nothing is cleaned up: what is
-          // here now describes the restored content, and a resend arriving
-          // after the rebuild would delete the preview and index it should keep.
-          return { cancelled, restored: standing, cleanedUp: true, moved: false as const }
-        }
-        if (current.revision !== target.ifLiveRevision) {
+        if (!current) {
           throw new ConflictError(
             `Resource ${resourceId} has changed since it was read; retry from its current state`
           )
@@ -940,34 +968,24 @@ export class ResourceVersionService {
         }
 
         // The retraction has happened: the pointer names the restored content
-        // and the versions stepped off are out of the active set. What follows
-        // is cleanup the re-enqueued run performs anyway, so it is reported
-        // rather than thrown — failing the response over it would misstate an
-        // outcome that has already happened.
-        //
-        // Attempted independently: the storage delete failing must not take the
-        // search delete with it, because retracted text left in the index is the
-        // reachable-from-anywhere exposure the ladder exists to close.
-        let cleanedUp = true
-        for (const [what, run] of [
-          ['derivatives', () => this.discardDerivedArtifacts(resourceId, deps.storage)],
-          ['indexed content', () => deps.search?.deleteContent(resourceId)],
-        ] as const) {
-          try {
-            await run()
-          } catch (err) {
-            cleanedUp = false
-            log.error({ err, resourceId }, `Content reverted, but its ${what} outlived it`)
-          }
-        }
+        // and the versions stepped off are out of the active set.
+        const cleanedUp = await this.discardRetracted(resourceId, deps, log)
 
-        return { cancelled, restored: restored?.version ?? null, cleanedUp, moved: true as const }
-      }
+        return { cancelled, restored: restored?.version ?? null, cleanedUp }
+      },
+      // Refused inside the takeover statement rather than after it: told no
+      // here, this call has already stopped whatever was running.
+      target.ifLiveRevision
     )
 
     // Rebuild the derivatives from the restored content, once the claim is
     // back: enqueued inside it, the run that picks the job up finds the
     // resource held and puts itself back on the queue for another 30 seconds.
+    //
+    // A rebuild, not an ordinary run. Fetch re-reads an external URL, and a
+    // resource reverted because that URL served the wrong thing would have this
+    // very job publish it again — undoing the retraction it was queued to
+    // finish (ADR-044 §4).
     // The Version step's change gate reads the highest *active* version, which
     // the step-off above made the restored one, so it matches and no spurious
     // version is captured. Nothing to rebuild from when the resource was
@@ -976,17 +994,10 @@ export class ResourceVersionService {
     // Best-effort for the same reason as above: the revert is done, and failing
     // the response over a queue that is down invites the one retry that is not
     // safe to make.
-    let rebuilding = cleanedUp
-    if (moved && restored) {
-      try {
-        await new PipelineService(this.db, deps.queue).enqueue(resourceId)
-      } catch (err) {
-        rebuilding = false
-        log.error({ err, resourceId }, 'Content reverted, but its rebuild was not queued')
-      }
-    }
+    // Nothing to rebuild from when the resource was emptied.
+    const rebuilding = restored ? await this.queueRebuild(resourceId, deps, log) : true
 
-    return { cancelled, restored, cleanedUp: rebuilding }
+    return { cancelled, restored, cleanedUp: cleanedUp && rebuilding }
   }
 
   /**
@@ -1024,6 +1035,227 @@ export class ResourceVersionService {
       .orderBy(desc(resourceVersion.version))
       .limit(1)
     return { revertTarget: below?.version ?? null, liveRevision: row?.revision ?? '' }
+  }
+
+  /**
+   * The answer for a revert whose content is already where it asked to be, or
+   * null when there is work to do.
+   *
+   * Asked without the claim, and that is the point: taking it stops whatever is
+   * running (ADR-044 §4). A resend arriving while the rebuild its own first
+   * attempt queued is still going would otherwise kill that run before finding
+   * out it had nothing to do — and then not re-queue it, because nothing moved.
+   *
+   * Nothing is cleaned up here **unless the resource is empty**. The ordinary
+   * case leaves it alone because the derivatives describe the restored content,
+   * and a resend landing after the rebuild would delete the preview and index
+   * it should be keeping. An empty resource has no such content: anything left
+   * describing it is the retracted file, so deleting it is right whenever it is
+   * asked. That is the repair path for an emptying revert whose search delete
+   * failed, which has no other — reprocessing cannot rebuild from no content,
+   * and for an external URL it would fetch the retracted file back.
+   */
+  private async settledRevert(
+    resourceId: string,
+    target: { restoreTo: number | null },
+    deps: { storage: StorageAdapter; search?: SearchAdapter; queue: QueueAdapter },
+    log: Logger
+  ): Promise<{ cancelled: boolean; restored: number | null; cleanedUp: boolean } | null> {
+    const [current] = await this.db
+      .select({
+        storageKey: resource.storageKey,
+        hash: resource.hash,
+        revision: resource.contentRevision,
+      })
+      .from(resource)
+      .where(eq(resource.id, resourceId))
+      .limit(1)
+    if (!current) return null
+
+    const standing = current.storageKey
+      ? ((await this.liveVersion(resourceId, current.hash, ['active'])) ?? null)
+      : null
+    const settled =
+      standing === target.restoreTo && (current.storageKey !== null) === (standing !== null)
+    if (!settled) return null
+    if (current.storageKey !== null) {
+      // Settled, but "the content is in the right place" does not say the
+      // derivatives were rebuilt: the attempt that moved it may have failed to
+      // queue that, and then died before saying so. Queue it again — a rebuild
+      // repeated over content already there costs a pass, and repairs a preview
+      // and index that never came back.
+      return {
+        cancelled: false,
+        restored: standing,
+        cleanedUp: await this.queueRebuild(resourceId, deps, log),
+      }
+    }
+
+    const cleaned = await this.clearEmptied(resourceId, current.revision, deps, log)
+    // Filled up in between: no longer settled, and the caller's generation is
+    // stale with it. The path below is where that is answered.
+    if (cleaned === null) return null
+    return { cancelled: false, restored: null, cleanedUp: cleaned }
+  }
+
+  /**
+   * Queue the rebuild that puts the derivatives back, reporting rather than
+   * throwing.
+   *
+   * A rebuild, not an ordinary run: Fetch re-reads an external URL, so for a
+   * resource reverted *because* that URL served the wrong thing, the job queued
+   * to finish the retraction would publish it straight back (ADR-044 §4).
+   *
+   * Best-effort because the retraction has already happened — failing the
+   * response over a queue that is down misstates an outcome that stands.
+   */
+  private async queueRebuild(
+    resourceId: string,
+    deps: { queue: QueueAdapter },
+    log: Logger
+  ): Promise<boolean> {
+    try {
+      await new PipelineService(this.db, deps.queue).enqueue(resourceId, { rebuildOnly: true })
+      return true
+    } catch (err) {
+      log.error({ err, resourceId }, 'Content is in place, but its rebuild was not queued')
+      return false
+    }
+  }
+
+  /**
+   * Delete what an emptied resource still has describing the content it no
+   * longer serves.
+   *
+   * Emptiness is what makes this safe, so it has to still hold when the delete
+   * happens: an upload and the run behind it can land between reading it and
+   * here, and then those derivatives belong to the new content.
+   *
+   * Claimed as a job, not taken from a run. A run against an empty resource is
+   * a fetch that has not published yet — still empty, still the same generation
+   * — so a takeover would cancel exactly the run that was about to fill it, and
+   * nothing here would re-queue it. Refused instead: whatever that run writes
+   * replaces these derivatives anyway.
+   *
+   * The generation goes to the delete as well, because an upload takes no claim
+   * (ADR-044 §6) and so changes the content from outside the claim entirely.
+   *
+   * @returns whether everything went, or null when the resource is no longer
+   *   empty — which means this had nothing to do.
+   */
+  private async clearEmptied(
+    resourceId: string,
+    ifRevision: string,
+    deps: { storage: StorageAdapter; search?: SearchAdapter },
+    log: Logger
+  ): Promise<boolean | null> {
+    const clean = async () => {
+      const [now] = await this.db
+        .select({ storageKey: resource.storageKey, revision: resource.contentRevision })
+        .from(resource)
+        .where(eq(resource.id, resourceId))
+        .limit(1)
+      if (now?.storageKey != null || now?.revision !== ifRevision) return null
+      return this.discardRetracted(resourceId, deps, log, ifRevision)
+    }
+
+    await this.ensureClaimable(resourceId)
+    const outcome = await withResourceClaims(this.db, [resourceId], clean)
+    // `false` covers being held by a run or another job: the cleanup is simply
+    // not this call's to do, and the holder writes its own derivatives.
+    return outcome.status === 'ran' ? outcome.result : false
+  }
+
+  /**
+   * The repair a screen can offer without remembering anything (ADR-044 §4).
+   *
+   * Two shapes, because an emptied resource has no content to rebuild from and
+   * queueing a run against one only fails. Which applies is read here rather
+   * than asked of the caller: a control that has to be told which case it is in
+   * is a control whose caller has to have kept the answer, and keeping it is
+   * exactly what this exists to avoid.
+   *
+   * The two halves answer separately. Queueing a rebuild is not doing one — the
+   * run can still fail — so `queued` says a job is on its way and nothing more,
+   * while `cleared` (null when nothing needed clearing) says work actually
+   * finished. Reported as one field, a caller would take an enqueue for a
+   * repair, which is the inference this whole rung exists to refuse.
+   */
+  async repairDerivatives(
+    resourceId: string,
+    deps: { storage: StorageAdapter; search?: SearchAdapter; queue: QueueAdapter; logger?: Logger }
+  ): Promise<{ queued: boolean; cleared: boolean | null }> {
+    const log = deps.logger ?? createLogger({ name: 'api' })
+    const [current] = await this.db
+      .select({ storageKey: resource.storageKey, revision: resource.contentRevision })
+      .from(resource)
+      .where(eq(resource.id, resourceId))
+      .limit(1)
+    if (!current) throw new NotFoundError('Resource', resourceId)
+
+    if (current.storageKey !== null) {
+      return { queued: await this.queueRebuild(resourceId, deps, log), cleared: null }
+    }
+    return {
+      queued: false,
+      cleared: (await this.clearEmptied(resourceId, current.revision, deps, log)) ?? true,
+    }
+  }
+
+  /**
+   * Destroy what described the retracted content, reporting rather than
+   * throwing.
+   *
+   * Past the pointer move the retraction has happened, so a failure here does
+   * not make the revert one — and saying it did invites a retry of the one
+   * thing that is not safe to repeat. The two are attempted independently: a
+   * storage failure that took the search delete with it would leave retracted
+   * text reachable from the whole catalogue, which is the exposure this rung
+   * exists to close.
+   */
+  private async discardRetracted(
+    resourceId: string,
+    deps: { storage: StorageAdapter; search?: SearchAdapter },
+    log: Logger,
+    ifRevision?: string
+  ): Promise<boolean> {
+    let ok = true
+    for (const [what, run] of [
+      ['derivatives', () => this.discardDerivedArtifacts(resourceId, deps.storage, ifRevision)],
+      ['indexed content', () => deps.search?.deleteContent(resourceId)],
+    ] as const) {
+      try {
+        await run()
+      } catch (err) {
+        ok = false
+        log.error({ err, resourceId }, `Content reverted, but its ${what} outlived it`)
+      }
+    }
+    return ok
+  }
+
+  /**
+   * Make sure there is a pipeline row to claim, without pretending a run is
+   * coming.
+   *
+   * The row *is* the claim (ADR-044 §1), so a resource without one cannot be
+   * held: `withClaimFromRun` hands back a null claim, and claiming a set that
+   * holds nothing still runs its callback. Either way the work proceeds with no
+   * exclusion at all, and a `/run-pipeline` arriving a moment later runs
+   * alongside it. For an upload that is undetectable downstream — its fetch
+   * republishes the same key, so even the pointer CAS sees nothing wrong.
+   *
+   * Left at the column's own default, `pending`, which is what it is: a row
+   * that exists with nothing queued and nothing run. `cancelled` would read as
+   * a run having been stopped, and the screen answers that by offering a
+   * reprocess — which for an external URL fetches the withdrawn content back.
+   * Callers that do queue something overwrite it.
+   */
+  private async ensureClaimable(resourceId: string): Promise<void> {
+    await this.db
+      .insert(resourcePipeline)
+      .values({ resourceId })
+      .onConflictDoNothing({ target: resourcePipeline.resourceId })
   }
 
   /**
@@ -1227,7 +1459,8 @@ export class ResourceVersionService {
    */
   private async discardDerivedArtifacts(
     resourceId: string,
-    storage: StorageAdapter
+    storage: StorageAdapter,
+    ifRevision?: string
   ): Promise<void> {
     const [pipe] = await this.db
       .select({
@@ -1242,7 +1475,7 @@ export class ResourceVersionService {
     const keys = [pipe?.previewKey, pipe?.textHeadKey].filter((k): k is string => !!k)
     if (keys.length === 0) return
 
-    await this.db.execute(sql`
+    const detached = await this.db.execute(sql`
       WITH cleared AS (
         UPDATE resource_pipeline
         SET preview_key = CASE
@@ -1253,17 +1486,24 @@ export class ResourceVersionService {
               THEN metadata - 'textHeadKey'
               ELSE metadata END,
             updated = NOW()
-        WHERE id = ${pipe!.id}::uuid
+        WHERE id = ${pipe!.id}::uuid AND ${onRevision(resourceId, ifRevision)}
         RETURNING id
+      ),
+      parked AS (
+        INSERT INTO orphaned_object (key, expires_at)
+        SELECT v.key, ${PARKED_UNTIL}
+        FROM (VALUES ${sql.join(
+          keys.map((k) => sql`(${k}::text)`),
+          sql`, `
+        )}) AS v(key), cleared
+        ON CONFLICT (key) DO NOTHING
       )
-      INSERT INTO orphaned_object (key, expires_at)
-      SELECT v.key, ${PARKED_UNTIL}
-      FROM (VALUES ${sql.join(
-        keys.map((k) => sql`(${k}::text)`),
-        sql`, `
-      )}) AS v(key), cleared
-      ON CONFLICT (key) DO NOTHING
+      SELECT id FROM cleared
     `)
+
+    // Nothing detached means the caller's premise expired between reading it
+    // and here, so these keys are something else's now.
+    if (detached.rows.length === 0) return
 
     // The records above are the safety net, not the plan: these objects go now.
     // A sweep that finds them already gone deletes nothing and drops the record.

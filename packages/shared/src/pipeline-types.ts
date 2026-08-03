@@ -127,7 +127,18 @@ export const LAKE_INGEST_JOB_TYPE = 'lake-ingest-version' as const
 
 // ── Job payload schemas (the worker validates against these before acting) ──
 
-export const pipelineJobSchema = z.object({ resourceId: z.uuid() })
+export const pipelineJobSchema = z.object({
+  resourceId: z.uuid(),
+  /**
+   * Rebuild the derivatives from the object the resource already holds, without
+   * fetching (ADR-044 §4).
+   *
+   * What a revert queues. The ordinary run re-reads an external URL, which for
+   * a resource reverted *because* that URL served the wrong thing publishes it
+   * straight back — undoing the retraction it was queued to finish.
+   */
+  rebuildOnly: z.boolean().optional(),
+})
 export const reindexJobSchema = z.object({ includeContent: z.boolean().optional() })
 export const purgeOrgJobSchema = z.object({ organizationId: z.uuid() })
 export const embedJobSchema = z.object({ packageId: z.uuid() })

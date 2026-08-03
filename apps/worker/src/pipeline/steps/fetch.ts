@@ -35,7 +35,11 @@ export type FetchResult =
  * - External URL resources: stream to a key of this run's own, compute hash/size
  *   on the fly, then publish it as the resource's content.
  */
-export async function executeFetch(resourceId: string, ctx: PipelineContext): Promise<FetchResult> {
+export async function executeFetch(
+  resourceId: string,
+  ctx: PipelineContext,
+  rebuildOnly = false
+): Promise<FetchResult> {
   const res = await ctx.getResource(resourceId)
 
   if (!res) {
@@ -45,13 +49,19 @@ export async function executeFetch(resourceId: string, ctx: PipelineContext): Pr
   let key: string
   let measured: { hash: string; size: number }
 
-  if (res.urlType === 'upload') {
+  // A rebuild reads the object the resource already holds, whatever its type.
+  // Re-fetching an external URL would publish whatever it serves now — and a
+  // resource reverted *because* that URL served the wrong thing would have the
+  // retraction undone by the run queued to finish it (ADR-044 §4).
+  if (res.urlType === 'upload' || rebuildOnly) {
     // `upload-complete` moved the pointer; this measures what actually landed
     // rather than trusting the value the call carried. Version capture records
     // this hash against the bytes it copies (ADR-043), so a client-supplied one
     // would decide what a version claims to hold.
     if (!res.storageKey) {
-      throw new ValidationError('Resource has no uploaded file')
+      throw new ValidationError(
+        rebuildOnly ? 'Resource has no content to rebuild from' : 'Resource has no uploaded file'
+      )
     }
     key = res.storageKey
     measured = await digestStream(await ctx.storage.download(key))

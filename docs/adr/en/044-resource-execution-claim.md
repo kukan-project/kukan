@@ -174,6 +174,8 @@ The rollback needs no new mechanism. It is what a version purge already does whe
 version was live: restore the previous one, drop the preview and the search content, and
 enqueue reprocessing.
 
+#### What a revert leaves on the versions
+
 **The version stepped off is marked `superseded`, though.** A revert deletes no version rows,
 so leaving that one active leaves it **the highest active version** — which breaks the
 invariant "the live content is the highest active version", and both of the places that read
@@ -186,6 +188,14 @@ that invariant break with it.
   live version after a revert moves no pointer. The version file is destroyed while the live
   object keeps serving a copy of those same bytes — **a legal deletion that does not delete**
 
+For the second symptom the purge's liveness test changes too, from version order to **"is this
+the version the live pointer stands on"**. Comparing the resource's current hash to the
+version's is not enough on its own: several versions may legitimately hold one hash (ADR-046
+decision 3), so that answers yes for _any_ version sharing the live bytes. It reuses the
+question a revert already asks to find where it is standing — the newest holder of that hash —
+differing only in the states it counts, since a purge has to recognise its own row in
+`purging`.
+
 `superseded` destroys nothing; destroying is the purge's job. What it takes away is only
 candidacy for being live, which leaves a revert what it was: setting content aside rather than
 removing it. **A superseded version can still be purged** — content captured from a file that
@@ -197,6 +207,8 @@ The format the version was captured under goes back to the resource with its con
 restores half of it — and since the capture gate compares the resource's label against the
 highest active version's, leaving the label behind has the same bytes filed again under a new
 number.
+
+#### The contract — `restoreTo` and `ifLiveRevision`
 
 **A revert is absolute, and guarded by the generation the caller saw.** Two separate problems,
 so two separate fields.
@@ -224,22 +236,105 @@ writer of the live pointer. The storage key would identify it too, but naming in
 in a response is what `publicResourceColumns` exists to prevent, so the generation is its own
 opaque value.
 
-**Nothing is cleaned up when the content is already at the destination.** The derivatives there
-belong to the _restored_ content, and a resend arriving after the rebuild would delete the very
-preview and index it should be keeping. Durability for a failed cleanup comes from parking the
-keys — the sweep collects them — not from doing it again.
+#### When the claim is taken
+
+**The decision comes before the claim, or inside the statement that takes it.** Taking the claim
+stops whatever is running (§3), so any judgement that ends in "do not proceed" placed _after_ it
+means **a request that is refused costs a run its work on the way out**. The generation check is
+a condition on the stop-and-take statement, and **the read of the content itself carries it
+too** — an upload can publish in the moment after the takeover matched, since uploads take no
+claim (§6), and without the condition that upload becomes what the revert retracts. **The
+destination check and "already at the destination" are read before the claim is touched at
+all**. The second is a resend, which can
+land while the rebuild its own first attempt queued is still going; the first is decidable
+without touching anything, so leaving it until after would kill a run over a version number
+that does not exist.
+
+#### Cleanup, and how it is repaired
+
+**Nothing is cleaned up when the content is already at the destination — unless the resource is
+empty.** The derivatives there normally belong to the _restored_ content, and a resend arriving
+after the rebuild would delete the very preview and index it should be keeping. An empty
+resource has no such content to protect: whatever is left describes the withdrawn file, so
+deleting it is right whenever it is asked. **That is the only repair an emptying revert has** — reprocessing has nothing to rebuild from.
+
+That delete is made **under the claim, and taken as a `job`**. Emptiness is what justifies it,
+so it has to still hold when the delete happens — an upload and the run behind it can land
+between the read and the delete, and then those derivatives belong to the new content.
+
+**A takeover will not do.** A run against an empty resource is a fetch that has not published
+yet, which leaves the resource empty and its generation untouched — invisible to the generation
+condition — so taking over cancels **the very run that was about to fill it**, and nothing here
+re-queues it. Claimed as a job, a held resource is left alone instead: whatever holds it writes
+its own derivatives over these.
+
+**A row to claim is created first — for the revert itself as much as the cleanup.** The row _is_
+the claim (§1), so a resource without one cannot be held: `withClaimFromRun` hands back a null
+claim, and claiming a set that holds nothing still runs its callback. Either way the work
+proceeds **with no exclusion at all**, and a `/run-pipeline` arriving a moment later runs
+alongside it — undetectable downstream for an upload, whose fetch republishes the same key, so
+not even the pointer CAS notices. The row is created, then claimed; a run that got there first
+takes it and this steps aside. **Only the revert path has that guarantee** (open issue 6).
+
+That row keeps the column's own default, `pending`, because that is what it is: a row with
+nothing queued and nothing run. `cancelled` would read as a run having been stopped, and a
+screen answers that by offering a reprocess. Callers that do queue something overwrite it.
+
+Nothing else ever writes `pending` (it is only the default), so **clients treat it as terminal**.
+Left non-terminal, they poll for a run that is never coming.
+
+The statement that detaches the pointers carries the generation as well, because an upload takes
+no claim (§6) and so can change the content from outside the claim entirely. Landing on no rows
+parks nothing and deletes nothing.
+
+**The destination is validated.** Left unchecked, naming a superseded or missing version
+supersedes everything above it and then restores whichever is newest active — a different
+version, or none — and reports success. Superseded is refused rather than resolved: stepping
+back onto content an earlier revert set aside is redo, which this ladder does not have.
+
+**What a revert queues is a rebuild, not an ordinary run.** Fetch re-reads an external URL, so
+for a resource reverted _because_ that URL served the wrong thing, the job queued to finish the
+retraction publishes it straight back — the revert undoing itself. A rebuild regenerates the
+derivatives from the object the resource already holds and fetches nothing.
+
+**The flag rides the claim-contention retry too.** Dropped there, the next attempt is an ordinary
+run again — the flag would hold for only as long as one delivery.
+
+**Being at the destination does not mean the rebuild happened.** The attempt that got there may
+have failed to queue it and then died before saying so, and reporting success on position alone
+leaves the preview and index missing for good. A resend therefore **queues the rebuild again** —
+repeating one costs a pass over content already in place.
 
 **Cleanup past the pointer move reports rather than throws.** The retraction has happened, so
 returning a failure misstates the outcome. The derivative delete and the search delete are
 attempted independently — a storage failure that took the search delete with it would leave
 retracted text reachable from the whole catalogue — and the result comes back as `cleanedUp`.
-The repair for `false` is **reprocessing**, which rebuilds both from the restored content; not
-another revert, and not a resend.
+The repair is the standing control below — in neither case another revert.
 
 Derivatives are cleared and parked in one statement before the objects are deleted (ADR-045 §4),
-so a failed delete is collected by the hourly sweep. That is the repair available to **a revert
-with no version left to restore**, which has no content for a reprocess to rebuild from. The
-search index has no equivalent of parking, so reprocessing is its only repair.
+so a failed delete is collected by the hourly sweep. The search index has no equivalent of
+parking, which is why the standing control below has to exist.
+
+**Rebuilding is its own action.** Queueing one is not doing it, and that run can fail later. If
+the only safe repair then is "resend that revert", **whoever did not keep the request cannot
+repair it** — the screen lives in a dialog, and closing it, reloading, or a different admin
+opening it is enough to lose the pair. What is left is the plain reprocess.
+
+So "regenerate the derivatives from the stored object" is a **standing control on the screen**.
+It carries no state and is safe to press at any time, so nothing has to be remembered for the
+repair to be available. Holding the pair goes back to what it is for: sending what the user was
+shown, and sending it again when the request did not land.
+
+**It has two shapes.** With content, it queues a rebuild; **with none, it clears the leftovers
+under the claim**. Queueing a run against an emptied resource fails outright — Fetch has no
+object to measure — so a single-shape control would be offering a repair guaranteed to do
+nothing. Which case applies is read on the server: a control that has to be _told_ is a control
+whose caller must have kept the answer, and not having to keep one is the whole point.
+
+**The caller holds the pair it was shown.** `restoreTo` and `ifLiveRevision` are read when the
+confirmation opens, not when it is confirmed: read again at confirm time, polling can move them
+onto content the user was never shown. They are held through an unknown outcome too — a freshly
+read pair is the _next_ rung down, not this operation again.
 
 **Known limitation: a version superseded before it reached layer 2 can never reach it.**
 Eligibility is limited to active versions, and admitting superseded ones would let an ingest
@@ -251,17 +346,11 @@ Admitting them safely needs an ingest-then-roll-back-to-the-previous-snapshot se
 adds a step under the catalog lock. A version superseded **after** reaching layer 2 — the
 ordinary path — keeps its snapshot and stays diffable.
 
-The purge's liveness test changes with it, from version order to **"is this the version the
-live pointer stands on"**. Inferring from order is the direct cause of the second symptom.
-Comparing the resource's current hash to the version's is not enough on its own, though:
-several versions may legitimately hold one hash (ADR-046 decision 3), so that answers yes for
-_any_ version sharing the live bytes. The test reuses the question a revert already asks to
-find where it is standing — which version is the newest holder of that hash — differing only
-in the states it counts, since a purge has to recognise its own row in `purging`.
-
 A purge also deletes the layer-1 version file, so **that version stops being downloadable**.
 The screen offering it must say so and ask for confirmation. Purges reuse the existing
 mechanism (sysadmin only, reason required, audit logged).
+
+#### Getting the kill through to the run
 
 **Starting a replacement kills the run.** `prepareForUpload` does not take the claim (§6), so
 whether an upload overtakes a run depends on where that run happens to be — chance. Stopping
@@ -492,10 +581,10 @@ leave a hole in.
 2. ~~**Granularity for bulk jobs**~~: settled (§2). One statement, so no acquisition order
    and no deadlock; one resource held abandons the whole set for a retry
 3. ~~**Serializing the Lake retry**~~: settled. Absorbed into the claim (the retry job
-   takes one too), and what remained — a mid-history version whose preview had been swept
-   — is answered by the version naming that preview (ADR-043 §6-6, kukan#204). The sweep's
-   reference check reads it, so the preview is not swept, and there is no longer a case of
-   "already gone" to decide about
+   takes one too). What remained — a mid-history version whose preview had been swept — was
+   first answered by the version naming that preview (`lake_source_key`), but **that column
+   was retired in ADR-046 §4**. Layer 2 now reads the version file directly, so a preview's
+   survival has no bearing on an ingest and the question itself is gone
 4. ~~**Ordering of the removals**~~: settled. §5 was carried out once every path took the
    claim — the `isSuperseded` fence with its three call sites, and `VERSION_CAPTURE_LOCK`
 5. **Resuming after a kill**: a kill frees the claim, so a job already requeued for the same
@@ -503,6 +592,17 @@ leave a hole in.
    generation would close it, but the trigger is narrow (a concurrent job already waiting)
    and resuming does little harm — after a revert it processes the restored content, the
    version gate skips, and it rebuilds the derivatives. Whether to add one is unsettled
+6. **`claimResources` does not create the row**: the row _is_ the claim, so a resource
+   without a pipeline row cannot be claimed and `fn` runs **with no exclusion** (§4). The
+   revert works around it by creating the row itself; the version purge, package and
+   organization purges, the layer-2 retry and the v1 backfill do not. `captureFirstVersion`
+   is written for "a resource that was never enqueued" and gives it **version 1 with no
+   pipeline row**, so purging that version is a reachable path. Insert-missing-then-claim
+   belongs in `claimResources`, held back because a bulk purge would carry hundreds of inserts
+7. **A version superseded before it reached layer 2** can never reach it (§4, known
+   limitation). An ingest replaces the catalog's current contents wholesale, so admitting one
+   would make retracted content what layer 2 serves. Doing it safely needs an
+   ingest-then-roll-back-to-the-previous-snapshot sequence
 
 ## Related ADRs
 

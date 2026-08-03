@@ -80,6 +80,19 @@ async function revertFromLive(deps = mockDeps()) {
   )
 }
 
+/** A run holding the resource, so a test can check whether it was stopped. */
+async function startRun(): Promise<string> {
+  const owner = randomUUID()
+  await db
+    .insert(resourcePipeline)
+    .values({ resourceId, status: 'processing', claimOwner: owner, claimKind: 'run' })
+    .onConflictDoUpdate({
+      target: resourcePipeline.resourceId,
+      set: { status: 'processing', claimOwner: owner, claimKind: 'run', claimOwnerAt: sql`NOW()` },
+    })
+  return owner
+}
+
 beforeEach(async () => {
   await cleanDatabase()
   await ensureTestUser()
@@ -723,7 +736,10 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
 
     expect(resent.storage.deleteMany).not.toHaveBeenCalled()
     expect(resent.search.deleteContent).not.toHaveBeenCalled()
-    expect(resent.queue.enqueue).not.toHaveBeenCalled()
+    // The rebuild is queued again, though: reaching the destination says nothing
+    // about whether the attempt that got there managed to queue one, and a
+    // rebuild repeated over content already in place costs a pass.
+    expect(resent.queue.enqueue).toHaveBeenCalled()
   })
 
   it('refuses a request overtaken by content its caller never saw', async () => {
@@ -749,6 +765,294 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     ).rejects.toThrow(/has changed/)
     const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
     expect(res.hash).toBe('sha256:v3')
+  })
+
+  it('does not stop the run producing the content that overtook it', async () => {
+    // Taking the claim is what stops a run, so a request that is going to be
+    // refused must be refused *before* it — otherwise being told no costs the
+    // newer content the run that was building it.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    const { revertTarget, liveRevision } = await service.revertContext(resourceId)
+    await db
+      .update(resource)
+      .set({ hash: 'sha256:v3', contentRevision: randomUUID() })
+      .where(eq(resource.id, resourceId))
+    const run = await startRun()
+
+    await expect(
+      service.revertLiveContent(
+        resourceId,
+        { restoreTo: revertTarget, ifLiveRevision: liveRevision },
+        mockDeps()
+      )
+    ).rejects.toThrow(/has changed/)
+
+    const [pipe] = await db
+      .select()
+      .from(resourcePipeline)
+      .where(eq(resourcePipeline.resourceId, resourceId))
+    expect(pipe.claimOwner).toBe(run)
+    expect(pipe.status).not.toBe('cancelled')
+  })
+
+  it('does not stop the rebuild a resend arrives during', async () => {
+    // The resend has nothing to do, so it must not cost the run that the first
+    // attempt queued — which it would, since taking the claim is the stop, and
+    // nothing moves afterwards to re-queue it.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    const { revertTarget, liveRevision } = await service.revertContext(resourceId)
+    const request = { restoreTo: revertTarget, ifLiveRevision: liveRevision }
+    await service.revertLiveContent(resourceId, request, mockDeps())
+    const run = await startRun()
+
+    expect((await service.revertLiveContent(resourceId, request, mockDeps())).restored).toBe(1)
+
+    const [pipe] = await db
+      .select()
+      .from(resourcePipeline)
+      .where(eq(resourcePipeline.resourceId, resourceId))
+    expect(pipe.claimOwner).toBe(run)
+    expect(pipe.status).not.toBe('cancelled')
+  })
+
+  it('clears what the retracted content left behind when the resource is empty', async () => {
+    // The one case reprocessing cannot repair: there is no content to rebuild
+    // from, and for an external URL a reprocess would fetch the retracted file
+    // straight back. Deleting is unconditionally right here — nothing else
+    // describes an empty resource — so the resend is the repair.
+    await addVersion(1, 'sha256:live')
+    await db.update(resource).set({ hash: 'sha256:live' }).where(eq(resource.id, resourceId))
+    const { revertTarget, liveRevision } = await service.revertContext(resourceId)
+    const request = { restoreTo: revertTarget, ifLiveRevision: liveRevision }
+    const failing = { ...mockDeps(), logger: silentLogger }
+    vi.mocked(failing.search.deleteContent).mockRejectedValueOnce(new Error('search is down'))
+
+    const first = await service.revertLiveContent(resourceId, request, failing)
+    expect(first).toMatchObject({ restored: null, cleanedUp: false })
+
+    const resent = mockDeps()
+    expect((await service.revertLiveContent(resourceId, request, resent)).cleanedUp).toBe(true)
+    expect(resent.search.deleteContent).toHaveBeenCalledWith(resourceId)
+  })
+
+  it('refuses an upload that landed after the claim was taken', async () => {
+    // The takeover checked the generation, but an upload takes no claim
+    // (ADR-044 §6) and can publish in the moment after — and then the pointer
+    // CAS would agree, retracting content the caller never saw.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    const { revertTarget, liveRevision } = await service.revertContext(resourceId)
+    // Stand in for that window: the generation the takeover matched is gone by
+    // the time the content is read.
+    const deps = mockDeps()
+    vi.mocked(deps.storage.copy).mockImplementation(async () => {
+      throw new Error('should not have copied')
+    })
+    await db
+      .update(resource)
+      .set({ contentRevision: randomUUID() })
+      .where(eq(resource.id, resourceId))
+
+    await expect(
+      service.revertLiveContent(
+        resourceId,
+        { restoreTo: revertTarget, ifLiveRevision: liveRevision },
+        deps
+      )
+    ).rejects.toThrow(/has changed/)
+    expect(deps.storage.copy).not.toHaveBeenCalled()
+  })
+
+  it('queues a rebuild rather than an ordinary run', async () => {
+    // An ordinary run re-reads an external URL. Reverted because that URL served
+    // the wrong thing, the job queued to finish the retraction would publish it
+    // straight back.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    const deps = mockDeps()
+
+    await revertFromLive(deps)
+
+    expect(deps.queue.enqueue).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ rebuildOnly: true })
+    )
+  })
+
+  it('queues the rebuild a lost attempt never managed to', async () => {
+    // Reaching the destination says nothing about whether the attempt that got
+    // there queued the rebuild. Reporting success on the strength of position
+    // alone leaves the preview and index missing for good.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    const { revertTarget, liveRevision } = await service.revertContext(resourceId)
+    const request = { restoreTo: revertTarget, ifLiveRevision: liveRevision }
+    const failing = { ...mockDeps(), logger: silentLogger }
+    vi.mocked(failing.queue.enqueue).mockRejectedValueOnce(new Error('queue is down'))
+    expect((await service.revertLiveContent(resourceId, request, failing)).cleanedUp).toBe(false)
+
+    const resent = mockDeps()
+    expect((await service.revertLiveContent(resourceId, request, resent)).cleanedUp).toBe(true)
+    expect(resent.queue.enqueue).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ rebuildOnly: true })
+    )
+  })
+
+  it('does not stop a run to reject an invalid destination', async () => {
+    // The rejection is decidable without touching anything, so deciding it
+    // after the claim costs the running job for nothing.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2', 'superseded')
+    const { liveRevision } = await service.revertContext(resourceId)
+    const run = await startRun()
+
+    await expect(
+      service.revertLiveContent(
+        resourceId,
+        { restoreTo: 2, ifLiveRevision: liveRevision },
+        mockDeps()
+      )
+    ).rejects.toThrow(/superseded/)
+
+    const [pipe] = await db
+      .select()
+      .from(resourcePipeline)
+      .where(eq(resourcePipeline.resourceId, resourceId))
+    expect(pipe.claimOwner).toBe(run)
+    expect(pipe.status).not.toBe('cancelled')
+  })
+
+  it('holds a resource that had no pipeline row before cleaning it', async () => {
+    // Claiming a set that holds nothing still runs the callback, so without a
+    // row this would clean unheld — and the search delete has no generation to
+    // condition on the way the DB write does.
+    await addVersion(1, 'sha256:live')
+    await db.update(resource).set({ hash: 'sha256:live' }).where(eq(resource.id, resourceId))
+    await db.delete(resourcePipeline).where(eq(resourcePipeline.resourceId, resourceId))
+    const { revertTarget, liveRevision } = await service.revertContext(resourceId)
+    const request = { restoreTo: revertTarget, ifLiveRevision: liveRevision }
+    const failing = { ...mockDeps(), logger: silentLogger }
+    vi.mocked(failing.search.deleteContent).mockRejectedValueOnce(new Error('search is down'))
+    await service.revertLiveContent(resourceId, request, failing)
+    await db.delete(resourcePipeline).where(eq(resourcePipeline.resourceId, resourceId))
+
+    const resent = mockDeps()
+    expect((await service.revertLiveContent(resourceId, request, resent)).cleanedUp).toBe(true)
+
+    // A row now exists to have been claimed, and it was released again. Its
+    // status says what it is — nothing queued, nothing run — rather than
+    // claiming a run was cancelled, which a screen answers by offering the
+    // reprocess that would fetch the withdrawn content back.
+    const [pipe] = await db
+      .select()
+      .from(resourcePipeline)
+      .where(eq(resourcePipeline.resourceId, resourceId))
+    expect(pipe).toBeDefined()
+    expect(pipe.claimOwner).toBeNull()
+    expect(pipe.status).toBe('pending')
+  })
+
+  it('holds a resource that had no pipeline row while it reverts', async () => {
+    // The row is the claim, so without one the revert ran unheld — and a
+    // `/run-pipeline` arriving a moment later would capture and index the very
+    // content being retracted. For an upload that is undetectable downstream:
+    // its fetch republishes the same key, so the pointer CAS sees nothing.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    await db.delete(resourcePipeline).where(eq(resourcePipeline.resourceId, resourceId))
+
+    expect((await revertFromLive()).restored).toBe(1)
+
+    const [pipe] = await db
+      .select()
+      .from(resourcePipeline)
+      .where(eq(resourcePipeline.resourceId, resourceId))
+    expect(pipe).toBeDefined()
+    expect(pipe.claimOwner).toBeNull()
+  })
+
+  it('does not stop the run that is about to fill an emptied resource', async () => {
+    // The generation cannot see this one: a fetch that has not published yet
+    // leaves the resource empty and its generation untouched, so a takeover
+    // would cancel the very run that was about to fill it — and nothing here
+    // re-queues it. Claimed as a job instead, which refuses rather than takes.
+    await addVersion(1, 'sha256:live')
+    await db.update(resource).set({ hash: 'sha256:live' }).where(eq(resource.id, resourceId))
+    const { revertTarget, liveRevision } = await service.revertContext(resourceId)
+    const request = { restoreTo: revertTarget, ifLiveRevision: liveRevision }
+    const failing = { ...mockDeps(), logger: silentLogger }
+    vi.mocked(failing.search.deleteContent).mockRejectedValueOnce(new Error('search is down'))
+    await service.revertLiveContent(resourceId, request, failing)
+    const run = await startRun()
+
+    const resent = mockDeps()
+    await service.revertLiveContent(resourceId, request, resent)
+
+    const [pipe] = await db
+      .select()
+      .from(resourcePipeline)
+      .where(eq(resourcePipeline.resourceId, resourceId))
+    expect(pipe.claimOwner).toBe(run)
+    expect(pipe.status).not.toBe('cancelled')
+    // The run will write its own derivatives, so this had nothing to do.
+    expect(resent.search.deleteContent).not.toHaveBeenCalled()
+  })
+
+  it('leaves a refilled resource alone when an empty resend arrives late', async () => {
+    // The resend read "empty" and is about to delete what describes it — but an
+    // upload landed in between, so those derivatives are the new content's.
+    await addVersion(1, 'sha256:live')
+    await db.update(resource).set({ hash: 'sha256:live' }).where(eq(resource.id, resourceId))
+    const { revertTarget, liveRevision } = await service.revertContext(resourceId)
+    const request = { restoreTo: revertTarget, ifLiveRevision: liveRevision }
+    const failing = { ...mockDeps(), logger: silentLogger }
+    vi.mocked(failing.search.deleteContent).mockRejectedValueOnce(new Error('search is down'))
+    await service.revertLiveContent(resourceId, request, failing)
+
+    // Something uploads: the resource is no longer empty, and its generation moved.
+    await db
+      .update(resource)
+      .set({ storageKey: liveKey, hash: 'sha256:new', contentRevision: randomUUID() })
+      .where(eq(resource.id, resourceId))
+
+    const resent = mockDeps()
+    await expect(service.revertLiveContent(resourceId, request, resent)).rejects.toThrow(
+      /has changed/
+    )
+    expect(resent.storage.deleteMany).not.toHaveBeenCalled()
+    expect(resent.search.deleteContent).not.toHaveBeenCalled()
+  })
+
+  it('refuses a destination the resource cannot stand on', async () => {
+    // Unchecked, this supersedes everything above the named version and then
+    // restores whichever one is newest active — a different version, or none —
+    // and reports success.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    await addVersion(3, 'sha256:v3', 'superseded')
+    await db.update(resource).set({ hash: 'sha256:v2' }).where(eq(resource.id, resourceId))
+    const { liveRevision } = await service.revertContext(resourceId)
+
+    await expect(
+      service.revertLiveContent(
+        resourceId,
+        { restoreTo: 3, ifLiveRevision: liveRevision },
+        mockDeps()
+      )
+    ).rejects.toThrow(/superseded/)
+    await expect(
+      service.revertLiveContent(
+        resourceId,
+        { restoreTo: 9, ifLiveRevision: liveRevision },
+        mockDeps()
+      )
+    ).rejects.toThrow(/not found/i)
+
+    const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
+    expect(res.hash).toBe('sha256:v2')
   })
 
   it('marks the version it stepped off as superseded', async () => {
@@ -871,6 +1175,45 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     expect(deps.search.deleteContent).not.toHaveBeenCalled()
     const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
     expect(res.storageKey).toBe('resources/pkg/newer')
+  })
+})
+
+describe('repairDerivatives — the repair a screen can offer (ADR-044 §4)', () => {
+  it('queues a rebuild when there is content to rebuild from', async () => {
+    await addVersion(1, 'sha256:v2')
+    const deps = mockDeps()
+
+    expect(await service.repairDerivatives(resourceId, deps)).toEqual({
+      queued: true,
+      cleared: null,
+    })
+    expect(deps.queue.enqueue).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ rebuildOnly: true })
+    )
+  })
+
+  it('clears the leftovers instead when the resource is empty', async () => {
+    // Queueing a run here only fails — Fetch has no object to measure — so the
+    // repair the screen offers would be guaranteed to do nothing.
+    await addVersion(1, 'sha256:live')
+    await db.update(resource).set({ hash: 'sha256:live' }).where(eq(resource.id, resourceId))
+    const { revertTarget, liveRevision } = await service.revertContext(resourceId)
+    const failing = { ...mockDeps(), logger: silentLogger }
+    vi.mocked(failing.search.deleteContent).mockRejectedValueOnce(new Error('search is down'))
+    await service.revertLiveContent(
+      resourceId,
+      { restoreTo: revertTarget, ifLiveRevision: liveRevision },
+      failing
+    )
+
+    const repair = mockDeps()
+    expect(await service.repairDerivatives(resourceId, repair)).toEqual({
+      queued: false,
+      cleared: true,
+    })
+    expect(repair.queue.enqueue).not.toHaveBeenCalled()
+    expect(repair.search.deleteContent).toHaveBeenCalledWith(resourceId)
   })
 })
 

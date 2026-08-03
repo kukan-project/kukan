@@ -90,8 +90,12 @@ export type ClaimKind = 'run' | 'job'
  * nothing to deadlock against, because nothing here waits (ADR-044 open
  * question 2). A resource is either taken or reported held.
  *
- * Resources with no pipeline row appear in neither list. That is not a gap:
- * a run cannot start without that row either, so there is nothing to exclude.
+ * Resources with no pipeline row appear in neither list — **and that is a gap**.
+ * A run cannot start without the row, but `PipelineService.enqueue` creates one
+ * and starts under it, so "no row" means "unclaimed, and the next reprocess
+ * runs alongside you". A caller that needs the exclusion has to create the row
+ * first (ADR-044 §4); the revert does. The rest are named in ADR-044's open
+ * issues.
  *
  * Takeable again once nothing has progressed for `staleAfterMs`, which is what
  * lets a worker that died mid-run (OOM, task replacement, deploy) be recovered
@@ -218,8 +222,11 @@ export async function withResourceClaim<T>(
  * claims already taken are rolled back, because doing half of a purge would
  * leave exactly the objects the claim exists to prevent. The caller retries.
  *
- * Resources with no pipeline row are simply not claimed — nothing can run
- * against them — so `fn` still runs for a set that has none.
+ * Resources with no pipeline row are simply not claimed, and `fn` still runs
+ * for a set that has none — **so it runs unclaimed**. Nothing can be running
+ * yet, but a reprocess arriving meanwhile mints the row and starts under it.
+ * Callers that need the exclusion create the row first (see {@link
+ * claimResources}).
  */
 export async function withResourceClaims<T>(
   db: Database,
@@ -297,6 +304,26 @@ function heldConflict(held: HeldResource[], action: string): ConflictError {
 }
 
 /**
+ * SQL condition: the resource is still on the generation the caller saw
+ * (ADR-044 §4).
+ *
+ * Here for the same reason {@link stillHeld} is: the rule now guards a
+ * takeover, a pointer detach and several reads, in different statement shapes,
+ * and two copies of a predicate that decides whether someone else's content may
+ * be retracted is two chances to edit one and not the other. The `::uuid` cast
+ * belongs to the predicate rather than to each call site.
+ *
+ * `TRUE` when no generation was named, so callers with nothing to check need no
+ * branch of their own.
+ */
+export function onRevision(resourceId: string, revision?: string) {
+  return revision === undefined
+    ? sql`TRUE`
+    : sql`EXISTS (SELECT 1 FROM resource r
+                  WHERE r.id = ${resourceId}::uuid AND r.content_revision = ${revision}::uuid)`
+}
+
+/**
  * SQL condition: this pipeline row, and `claim.owner` still holds it.
  *
  * Every write a run makes to its own record carries this, which is what turns
@@ -321,8 +348,9 @@ export function heldBy(claim: ResourceClaim, table?: 'p') {
  * for a statement that already has the row in scope.
  *
  * An absent claim is not a missing one — the writer either takes none (an
- * upload promotion, ADR-044 §6) or works on a resource with no pipeline row,
- * which nothing can run against either. So it reads `TRUE`, decided here rather
+ * upload promotion, ADR-044 §6) or works on a resource with no pipeline row —
+ * where there is no claim to condition on rather than no risk (see
+ * {@link claimResources}). So it reads `TRUE`, decided here rather
  * than by a ternary at each site: it is the same answer every time, and a rule
  * about what may be written is not one to restate per caller.
  *
@@ -419,9 +447,15 @@ export async function cancelResourceRun(
  */
 export async function claimFromRun(
   db: Pick<Database, 'execute'>,
-  resourceId: string
+  resourceId: string,
+  requireRevision?: string
 ): Promise<ClaimTakeover> {
   const owner = randomUUID()
+  // Stopping a run is destructive, so whatever decides the caller may not
+  // proceed has to be decided *here* rather than after (ADR-044 §4). Evaluated
+  // in the same statement as the takeover: checked before it, a generation that
+  // moves in between still costs a running job its work.
+  const revisionOk = onRevision(resourceId, requireRevision)
   const result = await db.execute(sql`
     WITH before AS (
       SELECT id, claim_owner, claim_kind FROM resource_pipeline
@@ -438,14 +472,24 @@ export async function claimFromRun(
       FROM before b
       WHERE p.id = b.id
         AND (b.claim_kind IS DISTINCT FROM 'job' OR ${staleClaim(CLAIM_STALE_AFTER_MS)})
+        AND ${revisionOk}
       RETURNING p.id
     )
-    SELECT b.id, (b.claim_owner IS NOT NULL) AS cancelled, (t.id IS NOT NULL) AS taken
+    SELECT b.id, (b.claim_owner IS NOT NULL) AS cancelled, (t.id IS NOT NULL) AS taken,
+           ${revisionOk} AS revision_ok
     FROM before b LEFT JOIN taken t ON t.id = b.id
   `)
-  const row = result.rows[0] as { id: string; cancelled: boolean; taken: boolean } | undefined
+  const row = result.rows[0] as
+    { id: string; cancelled: boolean; taken: boolean; revision_ok: boolean } | undefined
+  // No pipeline row: nothing could have been running and nothing was stopped.
+  // Callers that need the generation checked create the row first (ADR-044 §4),
+  // so this is only reached by those that do not.
   if (!row) return { status: 'claimed', claim: null, cancelled: false }
-  if (!row.taken) return { status: 'held', held: [{ id: row.id, resourceId }] }
+  if (!row.taken) {
+    return row.revision_ok
+      ? { status: 'held', held: [{ id: row.id, resourceId }] }
+      : { status: 'stale' }
+  }
   return { status: 'claimed', claim: { id: row.id, resourceId, owner }, cancelled: row.cancelled }
 }
 
@@ -455,7 +499,10 @@ export async function claimFromRun(
  * running, and there is nothing to hold.
  */
 export type ClaimTakeover =
-  { status: 'claimed'; claim: ResourceClaim | null; cancelled: boolean } | ClaimHeld
+  | { status: 'claimed'; claim: ResourceClaim | null; cancelled: boolean }
+  | ClaimHeld
+  /** The generation the caller named is not the one the resource is on. */
+  | { status: 'stale' }
 
 /**
  * Stop the run and hold the resource for the duration of `fn` — the shape a
@@ -468,14 +515,25 @@ export type ClaimTakeover =
  *
  * A refusal is a conflict — only a job can refuse, and its work is not
  * something to proceed alongside.
+ *
+ * `requireRevision` refuses before stopping anything, rather than after. The
+ * takeover is destructive: a caller that turns out to have been looking at
+ * content the resource has moved past would otherwise have killed the run
+ * producing the newer content on its way to being told no.
  */
 export async function withClaimFromRun<T>(
   db: Database,
   resourceId: string,
   action: string,
-  fn: (claim: ResourceClaim | null, cancelled: boolean) => Promise<T>
+  fn: (claim: ResourceClaim | null, cancelled: boolean) => Promise<T>,
+  requireRevision?: string
 ): Promise<T> {
-  const outcome = await claimFromRun(db, resourceId)
+  const outcome = await claimFromRun(db, resourceId, requireRevision)
+  if (outcome.status === 'stale') {
+    throw new ConflictError(
+      `Resource ${resourceId} has changed since it was read; retry from its current state`
+    )
+  }
   if (outcome.status === 'held') throw heldConflict(outcome.held, action)
 
   const { claim, cancelled } = outcome

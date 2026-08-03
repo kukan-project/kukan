@@ -117,11 +117,14 @@ export function usePipelineStatus({
       setLoading(false)
 
       // `cancelled` settles too — the run was stopped on purpose (ADR-044 §4)
-      // and nothing is coming, so polling on would never end.
+      // and nothing is coming, so polling on would never end. So does
+      // `pending`: nothing writes that status, it is the row's default, so a
+      // row wearing it has nothing queued and nothing running either.
       const isTerminal =
         json.pipeline_status === 'complete' ||
         json.pipeline_status === 'error' ||
-        json.pipeline_status === 'cancelled'
+        json.pipeline_status === 'cancelled' ||
+        json.pipeline_status === 'pending'
       if (isTerminal) {
         activeRef.current = false
         if (hasSeenActiveRef.current && json.pipeline_status) {

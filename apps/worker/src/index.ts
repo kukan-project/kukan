@@ -223,10 +223,10 @@ await queue.process({
   [PIPELINE_JOB_TYPE]: async (job: Job) => {
     const data = parseJobPayload(job, pipelineJobSchema)
     if (!data) return
-    const { resourceId } = data
+    const { resourceId, rebuildOnly } = data
     log.info({ jobId: job.id, type: job.type, resourceId }, 'Processing job')
     const start = performance.now()
-    await processResource(resourceId, ctx, db, queue)
+    await processResource(resourceId, ctx, db, queue, { rebuildOnly })
     const elapsed = Math.round(performance.now() - start)
     log.info({ jobId: job.id, type: job.type, resourceId, elapsed }, 'Completed job')
   },

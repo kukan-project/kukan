@@ -35,12 +35,19 @@ export async function processResource(
   resourceId: string,
   ctx: PipelineContext,
   db: Database,
-  queue: QueueAdapter
+  queue: QueueAdapter,
+  opts: { rebuildOnly?: boolean } = {}
 ): Promise<void> {
   const outcome = await withResourceClaim(db, resourceId, (claim) =>
     // The context the steps get is this run's: the writes that leave the
     // database carry the claim check the row-level ones get for free.
-    runPipeline(resourceId, new StepTracker(db, claim), heldContext(ctx, claim, db), queue)
+    runPipeline(
+      resourceId,
+      new StepTracker(db, claim),
+      heldContext(ctx, claim, db),
+      queue,
+      opts.rebuildOnly ?? false
+    )
   )
 
   // Held by another run or a purge (ADR-044). This job has to come back: the
@@ -50,7 +57,14 @@ export async function processResource(
   // rather than retried, so a long run is not spun on. A resource with no
   // pipeline row is the other refusal, and there is nothing to come back for.
   if (outcome.status === 'held') {
-    await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId }, { delaySeconds: CLAIM_RETRY_DELAY_S })
+    // Carrying `rebuildOnly` back with it. Dropped, the retry becomes an
+    // ordinary run, and for a resource reverted because its URL served the
+    // wrong thing that run publishes it again (ADR-044 §4).
+    await queue.enqueue(
+      PIPELINE_JOB_TYPE,
+      { resourceId, ...opts },
+      { delaySeconds: CLAIM_RETRY_DELAY_S }
+    )
   }
 }
 
@@ -59,14 +73,15 @@ async function runPipeline(
   resourceId: string,
   tracker: StepTracker,
   ctx: PipelineContext,
-  queue: QueueAdapter
+  queue: QueueAdapter,
+  rebuildOnly: boolean
 ): Promise<void> {
   await tracker.beginRun()
 
   try {
     // Step 1: Fetch — download external URL to Storage (uploads already there)
     const fetchStepId = await tracker.startStep('fetch')
-    const fetchResult = await executeFetch(resourceId, ctx)
+    const fetchResult = await executeFetch(resourceId, ctx, rebuildOnly)
 
     if (fetchResult.status === 'superseded') {
       // A newer run replaced the content while this one was fetching, and owns

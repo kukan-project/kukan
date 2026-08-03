@@ -20,6 +20,7 @@ import {
   uploadUrlSchema,
   uploadCompleteSchema,
   revertResourceSchema,
+  runPipelineSchema,
   UnauthorizedError,
   NotFoundError,
   ValidationError,
@@ -702,17 +703,41 @@ resourcesRouter.post(
 )
 
 // POST /api/v1/resources/:id/run-pipeline - Manually trigger pipeline processing (reprocess)
-resourcesRouter.post('/:id/run-pipeline', async (c) => {
-  const user = c.get('user')
-  if (!user) throw new UnauthorizedError()
+//
+// `rebuildOnly` regenerates the derivatives from the object the resource already
+// holds, fetching nothing (ADR-044 §4). Its own action rather than something a
+// client has to remember: repairing a rebuild that failed after a revert is
+// otherwise only reachable by resending that revert, and a request nobody kept
+// is a repair nobody can make — leaving the plain reprocess, which re-reads an
+// external URL and undoes the revert.
+resourcesRouter.post(
+  '/:id/run-pipeline',
+  zValidator('json', runPipelineSchema.optional()),
+  async (c) => {
+    const user = c.get('user')
+    if (!user) throw new UnauthorizedError()
 
-  const db = c.get('db')
-  const id = c.req.param('id')
-  const resourceService = new ResourceService(db)
-  await checkResourcePermission(db, user, resourceService, id)
+    const db = c.get('db')
+    const id = c.req.param('id')
+    const resourceService = new ResourceService(db)
+    await checkResourcePermission(db, user, resourceService, id)
 
-  return c.json(await enqueuePipeline(c, id), 200)
-})
+    // `rebuildOnly` is the repair, not a variant of the run: an emptied
+    // resource has nothing to rebuild from, and queueing one against it only
+    // fails. The service reads which case applies so the caller does not have
+    // to have kept the answer.
+    if (c.req.valid('json')?.rebuildOnly) {
+      const result = await new ResourceVersionService(db).repairDerivatives(id, {
+        storage: c.get('storage'),
+        search: c.get('search'),
+        queue: c.get('queue'),
+        logger: c.get('logger'),
+      })
+      return c.json({ id, ...result }, 200)
+    }
+    return c.json(await enqueuePipeline(c, id), 200)
+  }
+)
 
 // POST /api/v1/resources/:id/cancel-pipeline - Stop the run processing this
 // resource (ADR-044 §4). The content is left alone: putting it back is the next

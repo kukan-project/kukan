@@ -135,8 +135,12 @@ today's behaviour — **it matters only for write-ahead keys.**
 > statement — or the object was left with neither a pointer nor a record, the state this
 > ledger exists to prevent. "Dropping" included overwriting with a different key.
 >
-> With it retired, **none of the five reference sources is meant to be released later.**
-> Adding one of that kind would need the rule back.
+> With it retired, **none of the five reference sources is meant to be released later** — none
+> is designed to outlive the object it names. The detach-and-park-in-one-statement rule is in
+> use all the same: when a revert or a purge discards the derivatives (preview, text head), the
+> pointer is cleared and the key parked in one statement, and only then is the object deleted
+> (ADR-044 §4), so a failed delete is collected by the sweep. Adding a reference of that kind
+> would need the rule exactly as written.
 
 ### 4. Where the record is removed
 

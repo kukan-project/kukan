@@ -1,7 +1,7 @@
 'use client'
 
 import { Alert, AlertDescription, Badge, Button } from '@kukan/ui'
-import { RefreshCw, Undo2, X } from 'lucide-react'
+import { RefreshCw, Undo2, Wrench, X } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslations } from 'next-intl'
 import type { LegacyPipelineStepName, PipelineStepName } from '@kukan/shared'
@@ -87,6 +87,26 @@ const STATUS_BADGE_VARIANTS: Record<
 }
 
 /**
+ * Regenerate the derivatives from the object the resource already holds.
+ *
+ * Offered beside the plain reprocess rather than only after a failure, because
+ * the repair has to outlive the screen: this view lives in a dialog, and a
+ * revert whose rebuild fails later leaves whoever comes back — a reload, a
+ * different admin — with nothing but the reprocess, which re-reads an external
+ * URL and undoes the revert (ADR-044 §4). Stateless and safe to press at any
+ * time, so nothing has to be remembered for it to be available.
+ */
+function RebuildButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
+  const t = useTranslations('resource')
+  return (
+    <Button variant="ghost" size="sm" onClick={onClick} disabled={disabled}>
+      <Wrench className="mr-1 size-3" />
+      {t('rebuildDerivatives')}
+    </Button>
+  )
+}
+
+/**
  * Pipeline status display with reprocess button.
  * Polls automatically; fires onSettled when pipeline reaches terminal state.
  */
@@ -103,11 +123,27 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
   // At most one action can be in flight, so one value rather than a flag each —
   // which also makes "something is running, disable the others" a single check.
   const [busy, setBusy] = useState<'run-pipeline' | 'cancel-pipeline' | 'revert' | null>(null)
-  const [confirmRevert, setConfirmRevert] = useState(false)
+  // The revert the user was shown, frozen when the dialog opened. Polling keeps
+  // moving the live target underneath, so sending whatever is current at confirm
+  // time can retract content they never saw. Kept afterwards too: an outcome
+  // nobody knows is retried with this same pair, and a fresh one would be the
+  // next rung down (ADR-044 §4).
+  const [pending, setPending] = useState<{
+    restoreTo: number | null
+    ifLiveRevision: string
+  } | null>(null)
+  // Separate from `pending`, because the pair outlives the dialog: a revert
+  // that left work behind keeps it for the retry, and tying the two together
+  // left that retry behind a modal that discards it on close.
+  const [confirmOpen, setConfirmOpen] = useState(false)
   // The action whose request did not land, so the screen can say the operation
   // did not happen rather than silently refreshing as if it had.
-  const [failed, setFailed] = useState<'run-pipeline' | 'cancel-pipeline' | 'revert' | null>(null)
-  // A revert that completed but left its derivatives behind.
+  const [failed, setFailed] = useState<
+    'run-pipeline' | 'cancel-pipeline' | 'revert' | 'stale' | null
+  >(null)
+  // A revert that completed but left work behind. Repaired by resending the
+  // same pair, whether or not anything was restored — the server answers a
+  // resend with a rebuild either way.
   const [partial, setPartial] = useState(false)
 
   // Detect stuck pipelines: processing with a step running for 5+ minutes
@@ -139,9 +175,13 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
   // the revert, where "it did not run" and "it ran and left work behind" need
   // different answers — the first invites another attempt, the second must not.
   async function post(action: 'run-pipeline' | 'cancel-pipeline' | 'revert', body?: unknown) {
+    const rebuild = action === 'run-pipeline' && body !== undefined
     setBusy(action)
     setFailed(null)
-    setPartial(false)
+    // The warning stands until something reports the work is done: cleared on
+    // the way in, a repair that fails takes the only pointer to it with it. A
+    // plain reprocess rebuilds both derivatives, so that one does clear it.
+    if (!rebuild) setPartial(false)
     try {
       const res = await clientFetch(
         `/api/v1/resources/${encodeURIComponent(resourceId)}/${action}`,
@@ -154,16 +194,25 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
         }
       )
       if (!res.ok) {
-        setFailed(action)
+        // The server answered, so this did not happen. A 4xx is a settled
+        // verdict on the pair the request carried — the generation has moved,
+        // the version is gone, the caller may not — and resending it can only
+        // be refused again, so it is dropped and the next attempt starts from a
+        // fresh reading. A 5xx may be transient, and the operation is
+        // idempotent, so there the pair is worth keeping.
+        const settled = res.status < 500
+        setFailed(res.status === 409 ? 'stale' : action)
+        if (settled) setPending(null)
         refetch()
         return
       }
-      if (action === 'revert') {
-        const result = (await res.json()) as { cleanedUp?: boolean }
-        // The content is back either way. What is left is the preview and the
-        // indexed text of the file just retracted, and resending this same
-        // request is what clears them — reverting again is not.
-        setPartial(result.cleanedUp === false)
+      // The two actions that answer with what they left behind. A revert says
+      // whether its cleanup finished; the repair says whether it cleared what an
+      // emptied resource had left, and `queued` alone is never enough — a job on
+      // its way is not a job that ran.
+      if (action === 'revert' || rebuild) {
+        const result = (await res.json()) as { cleanedUp?: boolean; cleared?: boolean | null }
+        setPartial(result.cleanedUp === false || result.cleared === false)
       }
       refetch()
     } catch {
@@ -211,8 +260,12 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setConfirmRevert(true)}
-                  disabled={busy !== null}
+                  onClick={() => {
+                    if (!liveRevision) return
+                    setPending({ restoreTo: revertTarget, ifLiveRevision: liveRevision })
+                    setConfirmOpen(true)
+                  }}
+                  disabled={busy !== null || !liveRevision}
                 >
                   <Undo2 className="mr-1 size-3" />
                   {busy === 'revert' ? t('revertingRun') : t('revertRun')}
@@ -220,17 +273,23 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
               </>
             )}
             {!isRunning && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => post('run-pipeline')}
-                disabled={busy !== null}
-              >
-                <RefreshCw
-                  className={`mr-1 size-3 ${busy === 'run-pipeline' ? 'animate-spin' : ''}`}
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => post('run-pipeline')}
+                  disabled={busy !== null}
+                >
+                  <RefreshCw
+                    className={`mr-1 size-3 ${busy === 'run-pipeline' ? 'animate-spin' : ''}`}
+                  />
+                  {busy === 'run-pipeline' ? t('reprocessing') : t('reprocessResource')}
+                </Button>
+                <RebuildButton
+                  disabled={busy !== null}
+                  onClick={() => post('run-pipeline', { rebuildOnly: true })}
                 />
-                {busy === 'run-pipeline' ? t('reprocessing') : t('reprocessResource')}
-              </Button>
+              </>
             )}
           </div>
         </div>
@@ -242,6 +301,10 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
             <RefreshCw className={`mr-1 size-4 ${busy === 'run-pipeline' ? 'animate-spin' : ''}`} />
             {busy === 'run-pipeline' ? t('reprocessing') : t('reprocessResource')}
           </Button>
+          <RebuildButton
+            disabled={busy !== null}
+            onClick={() => post('run-pipeline', { rebuildOnly: true })}
+          />
         </div>
       )}
 
@@ -259,7 +322,16 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
 
       {failed && (
         <Alert variant="destructive" role="alert">
-          <AlertDescription>{t('actionFailed')}</AlertDescription>
+          <AlertDescription className="flex items-center justify-between gap-2">
+            {t(failed === 'stale' ? 'actionStale' : 'actionFailed')}
+            {/* The same pair, never a freshly read one — that would be the next
+                rung down rather than this operation again (ADR-044 §4). */}
+            {failed === 'revert' && pending && (
+              <Button variant="outline" size="sm" onClick={() => post('revert', pending)}>
+                {t('revertRetry')}
+              </Button>
+            )}
+          </AlertDescription>
         </Alert>
       )}
 
@@ -310,20 +382,17 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
       )}
 
       <DeleteConfirmDialog
-        open={confirmRevert}
-        onOpenChange={setConfirmRevert}
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
         title={t('revertConfirmTitle')}
         description={t('revertConfirmDescription')}
         isDeleting={busy === 'revert'}
         confirmLabel={t('revertRun')}
         confirmingLabel={t('revertingRun')}
         onConfirm={async () => {
-          // Both echoed back untouched: the destination is what makes a
-          // resend land in the same place, the generation is what refuses a
-          // request the resource has moved past (ADR-044 §4).
-          if (liveRevision)
-            await post('revert', { restoreTo: revertTarget, ifLiveRevision: liveRevision })
-          setConfirmRevert(false)
+          // The frozen pair, echoed back untouched.
+          if (pending) await post('revert', pending)
+          setConfirmOpen(false)
         }}
       />
     </div>
