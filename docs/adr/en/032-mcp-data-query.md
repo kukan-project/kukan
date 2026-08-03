@@ -4,7 +4,7 @@
 
 ## Status
 
-**Accepted** — Both Part A (schema persistence, PR #8) and Part B (server-side DuckDB query) are implemented.
+**Accepted** — Both Part A (schema persistence) and Part B (server-side DuckDB query) are implemented.
 
 Persists the column schema derived by ADR-029 ("CSV/TSV preview Parquet column type inference")
 and extends the query capability of ADR-016 ("DuckDB-WASM data explorer") to the server side so it

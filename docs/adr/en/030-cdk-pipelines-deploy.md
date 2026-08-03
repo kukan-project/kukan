@@ -4,7 +4,7 @@
 
 ## Status
 
-**Accepted** — Implemented and in operation (`infra/lib/pipeline-stack.ts`; CodePipeline V2 in PR #102). Designed together with ADR-031 (Stage-based multi-environment).
+**Accepted** — Implemented and in operation (`infra/lib/pipeline-stack.ts`; CodePipeline V2). Designed together with ADR-031 (Stage-based multi-environment).
 
 ## Context
 

@@ -4,7 +4,7 @@
 
 ## Status
 
-**Accepted** — Implemented 2026-07-19 (PR #106–#109). This ADR **extends** ADR-031 (multi-environment deployment) rather than superseding it. It adds a site axis inside the environment axis (dev / prd).
+**Accepted** — Implemented 2026-07-19. This ADR **extends** ADR-031 (multi-environment deployment) rather than superseding it. It adds a site axis inside the environment axis (dev / prd).
 
 Decisions fixed at implementation time (deltas from the body):
 

@@ -2,7 +2,7 @@
 
 ## ステータス
 
-**承認（Accepted）** — Part A（スキーマ永続化、PR #8）、Part B（サーバーサイド DuckDB クエリ）ともに実装済み。
+**承認（Accepted）** — Part A（スキーマ永続化）、Part B（サーバーサイド DuckDB クエリ）ともに実装済み。
 
 ADR-029「CSV/TSV プレビュー Parquet の列型自動推定」で得られる列スキーマを永続化し、
 ADR-016「DuckDB-WASM データエクスプローラー」のクエリ機能をサーバーサイドに展開して
