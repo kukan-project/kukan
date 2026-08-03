@@ -8,6 +8,7 @@ import { eq, and, sql } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
 import { resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import { createLogger, getStorageKey, getVersionKey } from '@kukan/shared'
+import type { ResourceSchema } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
@@ -54,7 +55,13 @@ function mockDeps() {
   }
 }
 
-async function addVersion(version: number, hash: string, state = 'active', format?: string) {
+async function addVersion(
+  version: number,
+  hash: string,
+  state = 'active',
+  format?: string,
+  schema?: ResourceSchema
+) {
   await db.insert(resourceVersion).values({
     resourceId,
     version,
@@ -64,7 +71,30 @@ async function addVersion(version: number, hash: string, state = 'active', forma
     origin: 'upload',
     state,
     format,
+    schema,
   })
+}
+
+/** Columns, named so a test can tell which version's interpretation it is. */
+function columns(...names: string[]): ResourceSchema {
+  return {
+    rowCount: 1,
+    columns: names.map((name) => ({
+      name,
+      type: 'string' as const,
+      nullable: false,
+      nullCount: 0,
+    })),
+  }
+}
+
+/** The cached interpretation the resource is carrying right now. */
+async function cachedInterpretation() {
+  const [row] = await db
+    .select({ metadata: resourcePipeline.metadata })
+    .from(resourcePipeline)
+    .where(eq(resourcePipeline.resourceId, resourceId))
+  return row?.metadata as { schema?: ResourceSchema; sourceHash?: string } | null | undefined
 }
 
 /**
@@ -567,6 +597,50 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     // Derivatives describing the retracted content go now, and are rebuilt.
     expect(deps.search.deleteContent).toHaveBeenCalledWith(resourceId)
     expect(deps.queue.enqueue).toHaveBeenCalled()
+  })
+
+  it('points the cached interpretation at the version it restored', async () => {
+    // The columns live on the version, so the restore has them: waiting for the
+    // rebuild leaves `getSchema` answering with the retracted version's columns,
+    // and the suggestion path reads it without the preview key whose absence
+    // makes the query path refuse.
+    await addVersion(1, 'sha256:v1', 'active', 'csv', columns('a'))
+    await db
+      .insert(resourcePipeline)
+      .values({ resourceId, metadata: { schema: columns('a', 'b', 'c'), sourceHash: 'sha256:v2' } })
+
+    await revertFromLive()
+
+    expect(await cachedInterpretation()).toEqual({
+      schema: columns('a'),
+      // The proof it describes the bytes now live — readers compare it to
+      // `resource.hash`, which the restore just moved.
+      sourceHash: 'sha256:v1',
+    })
+  })
+
+  it('leaves no interpretation when the restored version has none', async () => {
+    // Non-tabular, or never interpreted. Keeping the old columns would describe
+    // this content as something it is not.
+    await addVersion(1, 'sha256:v1')
+    await db
+      .insert(resourcePipeline)
+      .values({ resourceId, metadata: { schema: columns('a', 'b'), sourceHash: 'sha256:v2' } })
+
+    await revertFromLive()
+
+    expect(await cachedInterpretation()).toEqual({})
+  })
+
+  it('leaves no interpretation when the resource is emptied', async () => {
+    await db
+      .insert(resourcePipeline)
+      .values({ resourceId, metadata: { schema: columns('a'), sourceHash: 'sha256:v2' } })
+
+    const result = await revertFromLive()
+
+    expect(result.restored).toBeNull()
+    expect(await cachedInterpretation()).toEqual({})
   })
 
   it('parks the retracted object rather than deleting it', async () => {

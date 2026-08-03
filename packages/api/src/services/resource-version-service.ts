@@ -1381,6 +1381,7 @@ export class ResourceVersionService {
       if (!emptied) {
         throw new ConflictError(`Resource ${resourceId} changed while being emptied; retry`)
       }
+      await this.adoptVersionInterpretation(resourceId, null)
       return null
     }
 
@@ -1404,7 +1405,46 @@ export class ResourceVersionService {
     if (!published) {
       throw new ConflictError(`Resource ${resourceId} changed while being restored; retry`)
     }
+    await this.adoptVersionInterpretation(resourceId, prev)
     return prev
+  }
+
+  /**
+   * Point the resource's cached interpretation at the version now live.
+   *
+   * `resource_pipeline.metadata.schema` is the live version's columns and
+   * `sourceHash` is the proof it describes those bytes — readers compare it to
+   * `resource.hash`. Left alone, restoring puts back the content and leaves both
+   * describing the version just retracted: the same half-restore that carrying
+   * `format` across avoids, and the one the caller cannot see, because the
+   * suggestion path reads the schema on its own (`getSchema`) without the
+   * preview key whose absence makes the query path refuse.
+   *
+   * Taken from the version rather than derived again. A version file never
+   * changes, so its interpretation cannot have — the rebuild the caller queues
+   * arrives at the same answer, minutes later and only if it completes.
+   *
+   * A version with no interpretation (non-tabular, or never interpreted) leaves
+   * the resource with none, which is what it has.
+   */
+  private async adoptVersionInterpretation(
+    resourceId: string,
+    restored: { schema: ResourceSchema | null; hash: string | null } | null
+  ): Promise<void> {
+    const schema = restored?.schema ?? null
+    await this.db.execute(sql`
+      UPDATE resource_pipeline
+      SET metadata = ${
+        schema
+          ? sql`COALESCE(metadata, '{}'::jsonb) || ${JSON.stringify({
+              schema,
+              sourceHash: restored!.hash,
+            })}::jsonb`
+          : sql`COALESCE(metadata, '{}'::jsonb) - 'schema' - 'sourceHash'`
+      },
+          updated = NOW()
+      WHERE resource_id = ${resourceId}::uuid
+    `)
   }
 
   /**
