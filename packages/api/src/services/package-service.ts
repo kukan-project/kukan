@@ -4,7 +4,7 @@
  */
 
 import { randomBytes } from 'node:crypto'
-import { eq, ne, and, or, sql, getTableColumns, inArray, asc, desc, ilike } from 'drizzle-orm'
+import { eq, and, or, sql, getTableColumns, inArray, asc, desc, ilike } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import {
@@ -14,7 +14,6 @@ import {
   organization,
   resource,
   resourcePipeline,
-  resourceVersion,
   group,
   packageGroup,
 } from '@kukan/db'
@@ -39,7 +38,7 @@ import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { CreatePackageInput, CreateDraftPackageInput, UpdatePackageInput } from '@kukan/shared'
 import { hasOrgMembership, hasDraftAccess, type AuthUser } from '../auth/permissions'
 import { deleteOrphanFreeTags } from './tag-service'
-import { publicResourceColumns } from './resource-service'
+import { latestLiveVersionAgg, publicResourceColumns } from './resource-service'
 import type { LakeConfig } from '@kukan/lake'
 import { dropResourceTables } from '@kukan/lake'
 import { reclaimLakeStorage } from './lake-reclaim'
@@ -432,16 +431,7 @@ export class PackageService {
   ) {
     const pkg = await this.getByNameOrIdWithAccessCheck(nameOrId, viewer, state)
 
-    // Latest live version number per resource (ADR-043); null until first captured.
-    const versionAgg = this.db
-      .select({
-        resourceId: resourceVersion.resourceId,
-        maxVersion: sql<number>`MAX(${resourceVersion.version})`.as('max_version'),
-      })
-      .from(resourceVersion)
-      .where(ne(resourceVersion.state, 'purged'))
-      .groupBy(resourceVersion.resourceId)
-      .as('version_agg')
+    const versionAgg = latestLiveVersionAgg(this.db)
 
     const [resources, tags, groups, org] = await Promise.all([
       this.db

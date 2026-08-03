@@ -4,7 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { eq, ne, and, sql, inArray, getTableColumns } from 'drizzle-orm'
+import { eq, and, sql, inArray, notInArray, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, resourceVersion, packageTable } from '@kukan/db'
 import {
@@ -36,6 +36,31 @@ const {
 } = getTableColumns(resource)
 
 export { publicResourceColumns }
+
+/**
+ * Latest version number a resource still serves, per resource (ADR-043); absent
+ * until the first capture.
+ *
+ * Shared with the package detail read, which reports the same number on the
+ * same rows — stated twice, the two screens can disagree about a resource the
+ * moment a state is added or reclassified.
+ *
+ * Purged and superseded are both excluded, for the same reason: neither is what
+ * the resource serves. A revert leaves the content it stepped off numbered
+ * above what is live (ADR-044 §4), so counting it would label the resource with
+ * a version it has stopped handing out.
+ */
+export function latestLiveVersionAgg(db: Database) {
+  return db
+    .select({
+      resourceId: resourceVersion.resourceId,
+      maxVersion: sql<number>`MAX(${resourceVersion.version})`.as('max_version'),
+    })
+    .from(resourceVersion)
+    .where(notInArray(resourceVersion.state, ['purged', 'superseded']))
+    .groupBy(resourceVersion.resourceId)
+    .as('version_agg')
+}
 
 /**
  * Scrub the pointers off a row from {@link ResourceService.getByIdWithAccessCheck}
@@ -75,16 +100,7 @@ export class ResourceService {
       throw new NotFoundError('Package', packageId)
     }
 
-    // Latest live version number per resource (ADR-043); null until first captured.
-    const versionAgg = this.db
-      .select({
-        resourceId: resourceVersion.resourceId,
-        maxVersion: sql<number>`MAX(${resourceVersion.version})`.as('max_version'),
-      })
-      .from(resourceVersion)
-      .where(ne(resourceVersion.state, 'purged'))
-      .groupBy(resourceVersion.resourceId)
-      .as('version_agg')
+    const versionAgg = latestLiveVersionAgg(this.db)
 
     const resources = await this.db
       .select({
@@ -455,6 +471,8 @@ export class ResourceService {
             pending_metadata = NULL,
             size = ${input.size}::bigint,
             hash = NULL,
+            -- The live pointer's other writer, so it mints a generation too.
+            content_revision = gen_random_uuid(),
             updated = NOW()
         FROM before b
         WHERE r.id = b.id

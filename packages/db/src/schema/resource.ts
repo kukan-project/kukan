@@ -48,6 +48,11 @@ export const resource = pgTable(
     // 0009 dropped a column of this name as derivable; per-run keys removed
     // that property, so it is state again.
     storageKey: text('storage_key'),
+    // Content generation, re-minted by every writer of the pointer above. What
+    // a revert compares against to refuse retracting content its caller never
+    // saw (ADR-044 §4). Not a version number, because content can be live with
+    // no version holding it — an upload no run has captured yet.
+    contentRevision: uuid('content_revision').notNull().defaultRandom(),
     // Key a presigned upload was issued for, promoted by `upload-complete` —
     // separate so the live object keeps serving an abandoned upload. The
     // timestamp is what lets the sweep reclaim one that never completed.

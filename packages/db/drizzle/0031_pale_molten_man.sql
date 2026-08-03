@@ -1,0 +1,1 @@
+ALTER TABLE "resource" ADD COLUMN "content_revision" uuid DEFAULT gen_random_uuid() NOT NULL;

@@ -174,6 +174,91 @@ The rollback needs no new mechanism. It is what a version purge already does whe
 version was live: restore the previous one, drop the preview and the search content, and
 enqueue reprocessing.
 
+**The version stepped off is marked `superseded`, though.** A revert deletes no version rows,
+so leaving that one active leaves it **the highest active version** — which breaks the
+invariant "the live content is the highest active version", and both of the places that read
+that invariant break with it.
+
+- **The capture gate** compares against the highest active version's hash, so the restored
+  content looks new and a spurious version is captured. A second revert steps off that one and
+  lands on **exactly what the first revert retracted**
+- **The purge** decides liveness by "no active version sits above this one", so purging the
+  live version after a revert moves no pointer. The version file is destroyed while the live
+  object keeps serving a copy of those same bytes — **a legal deletion that does not delete**
+
+`superseded` destroys nothing; destroying is the purge's job. What it takes away is only
+candidacy for being live, which leaves a revert what it was: setting content aside rather than
+removing it. **A superseded version can still be purged** — content captured from a file that
+should never have been served survives a revert, so the path to destroying it on its own
+cannot close.
+
+The format the version was captured under goes back to the resource with its content
+(ADR-046 §6). A version is those bytes read under that format, so restoring only the bytes
+restores half of it — and since the capture gate compares the resource's label against the
+highest active version's, leaving the label behind has the same bytes filed again under a new
+number.
+
+**A revert is absolute, and guarded by the generation the caller saw.** Two separate problems,
+so two separate fields.
+
+`restoreTo` says **where the content goes**, not how many rungs to step. Run twice, a relative
+operation is not the operation run once — the second pass steps off what the first restored —
+and a response lost after the pointer moved leaves a caller who cannot tell which of the two
+they are about to do. Naming the destination makes a resend land in the same place, with
+nothing remembered between attempts and no operation ledger to keep.
+
+`ifLiveRevision` is what stops a request **overtaken by a newer upload** from retracting content
+its caller never saw. Idempotency does not give that: "have I already done this" and "is this
+still the thing I was shown" are different questions, and answering only the first turns a stale
+request into a silent overwrite.
+
+| State                  | Answer                                                           |
+| ---------------------- | ---------------------------------------------------------------- |
+| already at `restoreTo` | the content does not move, and **nothing is cleaned up** (below) |
+| the generation matches | do the work                                                      |
+| otherwise              | 409                                                              |
+
+A version number cannot serve as the generation: **content can be live with no version holding
+it** — an upload no run has captured — so `resource.content_revision` is re-minted by every
+writer of the live pointer. The storage key would identify it too, but naming internal objects
+in a response is what `publicResourceColumns` exists to prevent, so the generation is its own
+opaque value.
+
+**Nothing is cleaned up when the content is already at the destination.** The derivatives there
+belong to the _restored_ content, and a resend arriving after the rebuild would delete the very
+preview and index it should be keeping. Durability for a failed cleanup comes from parking the
+keys — the sweep collects them — not from doing it again.
+
+**Cleanup past the pointer move reports rather than throws.** The retraction has happened, so
+returning a failure misstates the outcome. The derivative delete and the search delete are
+attempted independently — a storage failure that took the search delete with it would leave
+retracted text reachable from the whole catalogue — and the result comes back as `cleanedUp`.
+The repair for `false` is **reprocessing**, which rebuilds both from the restored content; not
+another revert, and not a resend.
+
+Derivatives are cleared and parked in one statement before the objects are deleted (ADR-045 §4),
+so a failed delete is collected by the hourly sweep. That is the repair available to **a revert
+with no version left to restore**, which has no content for a reprocess to rebuild from. The
+search index has no equivalent of parking, so reprocessing is its only repair.
+
+**Known limitation: a version superseded before it reached layer 2 can never reach it.**
+Eligibility is limited to active versions, and admitting superseded ones would let an ingest
+**replace the catalog's current contents with that version** (ii-a is a wholesale replace), so
+retracted content would become what layer 2 serves. The overtake guard cannot tell the
+difference — the retracted version carries the higher number. An interpretation or ingest that
+fails and is then reverted therefore leaves that version's diff permanently `not-ingested`.
+Admitting them safely needs an ingest-then-roll-back-to-the-previous-snapshot sequence, which
+adds a step under the catalog lock. A version superseded **after** reaching layer 2 — the
+ordinary path — keeps its snapshot and stays diffable.
+
+The purge's liveness test changes with it, from version order to **"is this the version the
+live pointer stands on"**. Inferring from order is the direct cause of the second symptom.
+Comparing the resource's current hash to the version's is not enough on its own, though:
+several versions may legitimately hold one hash (ADR-046 decision 3), so that answers yes for
+_any_ version sharing the live bytes. The test reuses the question a revert already asks to
+find where it is standing — which version is the newest holder of that hash — differing only
+in the states it counts, since a purge has to recognise its own row in `purging`.
+
 A purge also deletes the layer-1 version file, so **that version stops being downloadable**.
 The screen offering it must say so and ask for confirmation. Purges reuse the existing
 mechanism (sysadmin only, reason required, audit logged).

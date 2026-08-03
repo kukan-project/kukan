@@ -19,6 +19,7 @@ import {
   updateResourceSchema,
   uploadUrlSchema,
   uploadCompleteSchema,
+  revertResourceSchema,
   UnauthorizedError,
   NotFoundError,
   ValidationError,
@@ -404,10 +405,19 @@ resourcesRouter.get('/:id/pipeline-status', async (c) => {
   // Same visibility check as download/preview/schema — draft/private resources stay hidden
   await new ResourceService(db).getByIdWithAccessCheck(id, user)
   const pipelineService = new PipelineService(db)
-  const status = await pipelineService.getStatus(id)
+  // Where a revert would put the content, and the generation it would be acting
+  // on. Served with the status because the revert control lives on it and
+  // echoes both back (ADR-044 §4): the destination is what makes a resend land
+  // in the same place, the generation is what refuses a request that was
+  // overtaken by newer content.
+  const [status, revert] = await Promise.all([
+    pipelineService.getStatus(id),
+    new ResourceVersionService(db).revertContext(id),
+  ])
+  const revertFields = { revert_target: revert.revertTarget, live_revision: revert.liveRevision }
 
   if (!status) {
-    return c.json({ id, pipeline_status: null, steps: [] })
+    return c.json({ id, pipeline_status: null, steps: [], ...revertFields })
   }
 
   // Only expose raw error details to sysadmin; others get a generic message
@@ -419,6 +429,7 @@ resourcesRouter.get('/:id/pipeline-status', async (c) => {
     pipeline_status: status.status,
     error: sanitizeError(status.error),
     updated: status.updated,
+    ...revertFields,
     steps: status.steps.map((s) => ({
       id: s.id,
       step_name: s.stepName,
@@ -724,7 +735,7 @@ resourcesRouter.post('/:id/cancel-pipeline', async (c) => {
 // POST /api/v1/resources/:id/revert - Stop the run and put the live content
 // back to the newest surviving version (ADR-044 §4). For the wrong file having
 // been uploaded: stopping alone leaves it live and downloadable.
-resourcesRouter.post('/:id/revert', async (c) => {
+resourcesRouter.post('/:id/revert', zValidator('json', revertResourceSchema), async (c) => {
   const user = c.get('user')
   if (!user) throw new UnauthorizedError()
 
@@ -733,10 +744,11 @@ resourcesRouter.post('/:id/revert', async (c) => {
   const resourceService = new ResourceService(db)
   await checkResourcePermission(db, user, resourceService, id)
 
-  const result = await new ResourceVersionService(db).revertLiveContent(id, {
+  const result = await new ResourceVersionService(db).revertLiveContent(id, c.req.valid('json'), {
     storage: c.get('storage'),
     search: c.get('search'),
     queue: c.get('queue'),
+    logger: c.get('logger'),
   })
   return c.json({ id, ...result })
 })

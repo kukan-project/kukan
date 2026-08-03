@@ -29,7 +29,7 @@ import { VersionDiffPanel } from './version-diff-panel'
 interface VersionView {
   version: number
   origin: 'upload' | 'fetch'
-  state: 'active' | 'purging' | 'purged'
+  state: 'active' | 'purging' | 'purged' | 'superseded'
   size: number | null
   created: string
   purgedAt: string | null
@@ -140,6 +140,12 @@ export function ResourceVersionHistory({ resourceId }: Props) {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-1">
+                      {/* Superseded still has its content, so it keeps the
+                          diff, download and purge actions — the badge only says
+                          it is not what the resource serves. */}
+                      {v.state === 'superseded' && (
+                        <Badge variant="secondary">{t('superseded')}</Badge>
+                      )}
                       {purged ? (
                         <Badge variant="secondary">{t('purged')}</Badge>
                       ) : purging ? (

@@ -11,7 +11,7 @@
  * it inside one of them made the guarantee a property of that call site rather
  * than of deletion.
  */
-import { and, eq, isNotNull } from 'drizzle-orm'
+import { and, inArray, isNotNull } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resourceVersion } from '@kukan/db'
 import type { LakeConfig, LakeSession, ReclaimResult } from '@kukan/lake'
@@ -48,11 +48,24 @@ export async function reclaimInSession(db: Database, session: LakeSession): Prom
     // connection, and reaching back for another while holding several
     // deadlocks. Under the lock, which is what stops this from expiring a
     // snapshot an ingest has committed but not yet recorded on its version row.
+    // What a surviving version still names — which is more than the active
+    // ones. A snapshot outlives being the current contents: a diff resolves two
+    // versions to their snapshots and reads both, so expiring the one a revert
+    // stepped off would break comparing against it.
+    //
+    // `purging` is excluded with `purged`, and that exclusion is load-bearing:
+    // a version purge calls this from inside its own run, before it can set the
+    // row to `purged` (that write also nulls the snapshot). Retaining a row
+    // mid-purge would leave the purged version's files on disk with nothing but
+    // a package or organization purge able to reach them.
     const retained = await tx
       .select({ snapshot: resourceVersion.ducklakeSnapshotId })
       .from(resourceVersion)
       .where(
-        and(eq(resourceVersion.state, 'active'), isNotNull(resourceVersion.ducklakeSnapshotId))
+        and(
+          inArray(resourceVersion.state, ['active', 'superseded']),
+          isNotNull(resourceVersion.ducklakeSnapshotId)
+        )
       )
     return reclaimUnreferencedSnapshots(
       session,

@@ -42,8 +42,12 @@ export const resourceVersion = pgTable(
     // resource's label is user-editable, and reading the current one would
     // interpret settled bytes by a rule never applied to them.
     format: varchar('format', { length: 100 }),
-    // active → purging → purged (ADR-028 durable-claim pattern).
-    state: varchar('state', { length: 10 }).notNull().default('active'),
+    // active → purging → purged (ADR-028 durable-claim pattern), plus
+    // `superseded`: content a revert stepped off. It stays in the history and
+    // can still be purged, but it is not the live content and never becomes it
+    // again, which is what keeps "the live content is the highest active
+    // version" true across a revert (ADR-044 §4).
+    state: varchar('state', { length: 20 }).notNull().default('active'),
     // Column schema snapshot for this version (ADR-032 shape); null for
     // non-tabular formats or when the interpretation produced none.
     schema: jsonb('schema').$type<ResourceSchema | null>(),

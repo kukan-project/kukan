@@ -16,6 +16,8 @@ function showing(status: string, steps: unknown[] = []) {
     status,
     steps,
     error: null,
+    revertTarget: 1,
+    liveRevision: 'rev-1',
     refetch,
   } as unknown as ReturnType<typeof usePipelineStatus>)
 }
@@ -90,7 +92,13 @@ describe('PipelineStatusDetail', () => {
     fireEvent.click(confirm)
 
     await waitFor(() =>
-      expect(mockFetch).toHaveBeenCalledWith('/api/v1/resources/r1/revert', { method: 'POST' })
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/resources/r1/revert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // Both echoed back: the destination makes a resend land in the same
+        // place, the generation refuses one the resource has moved past.
+        body: JSON.stringify({ restoreTo: 1, ifLiveRevision: 'rev-1' }),
+      })
     )
   })
 

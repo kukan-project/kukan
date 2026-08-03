@@ -96,7 +96,7 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
   // treated as an in-flight reprocess, or onSettled would fire immediately on an
   // already-complete pipeline (triggering a refresh that closes the dialog).
   // A real reprocess goes through refetch(), which arms onSettled itself.
-  const { status, steps, error, refetch } = usePipelineStatus({
+  const { status, steps, error, revertTarget, liveRevision, refetch } = usePipelineStatus({
     resourceId,
     onSettled,
   })
@@ -104,6 +104,11 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
   // which also makes "something is running, disable the others" a single check.
   const [busy, setBusy] = useState<'run-pipeline' | 'cancel-pipeline' | 'revert' | null>(null)
   const [confirmRevert, setConfirmRevert] = useState(false)
+  // The action whose request did not land, so the screen can say the operation
+  // did not happen rather than silently refreshing as if it had.
+  const [failed, setFailed] = useState<'run-pipeline' | 'cancel-pipeline' | 'revert' | null>(null)
+  // A revert that completed but left its derivatives behind.
+  const [partial, setPartial] = useState(false)
 
   // Detect stuck pipelines: processing with a step running for 5+ minutes
   const stuck =
@@ -128,12 +133,45 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
   const versionSaved = versionStep?.status === 'complete' || versionStep?.status === 'skipped'
 
   // None of these return the new pipeline state, so each ends by refetching it.
-  async function post(action: 'run-pipeline' | 'cancel-pipeline' | 'revert') {
+  //
+  // A non-OK response has to be read: `fetch` resolves on a 500, so treating it
+  // as done closed the dialog on operations that never ran. It matters most for
+  // the revert, where "it did not run" and "it ran and left work behind" need
+  // different answers — the first invites another attempt, the second must not.
+  async function post(action: 'run-pipeline' | 'cancel-pipeline' | 'revert', body?: unknown) {
     setBusy(action)
+    setFailed(null)
+    setPartial(false)
     try {
-      await clientFetch(`/api/v1/resources/${encodeURIComponent(resourceId)}/${action}`, {
-        method: 'POST',
-      })
+      const res = await clientFetch(
+        `/api/v1/resources/${encodeURIComponent(resourceId)}/${action}`,
+        {
+          method: 'POST',
+          ...(body !== undefined && {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          }),
+        }
+      )
+      if (!res.ok) {
+        setFailed(action)
+        refetch()
+        return
+      }
+      if (action === 'revert') {
+        const result = (await res.json()) as { cleanedUp?: boolean }
+        // The content is back either way. What is left is the preview and the
+        // indexed text of the file just retracted, and resending this same
+        // request is what clears them — reverting again is not.
+        setPartial(result.cleanedUp === false)
+      }
+      refetch()
+    } catch {
+      // A request that never landed and one whose answer was lost look the
+      // same from here, so neither is reported as "nothing happened". Refetch
+      // so the screen shows which it was; the operation is idempotent, so
+      // trying again from that state is safe (ADR-044 §4).
+      setFailed(action)
       refetch()
     } finally {
       setBusy(null)
@@ -219,6 +257,18 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
         </Alert>
       )}
 
+      {failed && (
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{t('actionFailed')}</AlertDescription>
+        </Alert>
+      )}
+
+      {partial && (
+        <Alert variant="warning" role="alert">
+          <AlertDescription>{t('revertPartial')}</AlertDescription>
+        </Alert>
+      )}
+
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
@@ -268,7 +318,11 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
         confirmLabel={t('revertRun')}
         confirmingLabel={t('revertingRun')}
         onConfirm={async () => {
-          await post('revert')
+          // Both echoed back untouched: the destination is what makes a
+          // resend land in the same place, the generation is what refuses a
+          // request the resource has moved past (ADR-044 §4).
+          if (liveRevision)
+            await post('revert', { restoreTo: revertTarget, ifLiveRevision: liveRevision })
           setConfirmRevert(false)
         }}
       />

@@ -102,6 +102,30 @@ export const uploadCompleteSchema = z.object({
 
 export type UploadCompleteInput = z.infer<typeof uploadCompleteSchema>
 
+/**
+ * A revert states where it is putting the content, and what it saw (ADR-044 §4).
+ *
+ * Absolute rather than relative, because "step back one" run twice is not run
+ * once: the second pass steps off what the first restored. Naming the
+ * destination makes a resend land in the same place, which is the whole of
+ * idempotency here — no operation ledger, nothing remembered between attempts.
+ *
+ * That alone would let a request delayed past a newer upload retract content
+ * its caller never saw, so the generation it was looking at comes with it.
+ * Idempotency and concurrency control are separate questions and get separate
+ * fields: the destination answers "have I already done this", the generation
+ * answers "is this still the thing I was shown".
+ */
+export const revertResourceSchema = z.object({
+  /** Version to put the live content on, or null to leave the resource empty —
+   *  which is a destination like any other, and idempotent for the same reason. */
+  restoreTo: z.number().int().positive().nullable(),
+  /** `live_revision` as served with the pipeline status. */
+  ifLiveRevision: z.string().min(1),
+})
+
+export type RevertResourceInput = z.infer<typeof revertResourceSchema>
+
 export const reorderResourcesSchema = z.object({
   resourceIds: z.array(z.uuid()).min(1),
 })

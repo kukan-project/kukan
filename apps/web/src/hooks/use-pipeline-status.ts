@@ -21,6 +21,11 @@ export interface PipelineStatusData {
   pipeline_status: PipelineStatus | null
   error?: string | null
   updated?: string | null
+  /** Where a revert would put the content, and the generation it would act on.
+   *  Echoed back verbatim: the destination makes a resend land in the same
+   *  place, the generation refuses one overtaken by newer content (ADR-044 §4). */
+  revert_target?: number | null
+  live_revision?: string | null
   steps: PipelineStep[]
 }
 
@@ -168,6 +173,8 @@ export function usePipelineStatus({
     status: data?.pipeline_status ?? null,
     steps: data?.steps ?? [],
     error: data?.error ?? null,
+    revertTarget: data?.revert_target ?? null,
+    liveRevision: data?.live_revision ?? null,
     refetch,
   }
 }

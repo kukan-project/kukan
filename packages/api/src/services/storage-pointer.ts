@@ -28,6 +28,24 @@ export interface PublishedContent {
   size: number | null
   previousHash: string | null
   /**
+   * Format to put back on the resource, for the writers that are restoring a
+   * version rather than publishing new bytes (ADR-046 §6).
+   *
+   * A version is those bytes read under that format, so restoring one restores
+   * both — otherwise the resource describes recovered content by a label that
+   * was never applied to it, and the capture gate, which compares the label
+   * against the highest active version's, sees a difference that is not there
+   * and files the same bytes again under a new number.
+   *
+   * In this statement rather than a second one for the same reason the hash is:
+   * the move is a compare-and-swap, and a value written beside it can land on a
+   * resource the move did not apply to.
+   *
+   * Omitted by Fetch and by an upload promotion, which are publishing content
+   * the resource's own label already describes.
+   */
+  format?: string | null
+  /**
    * The claim the writer holds, when it has one (ADR-044 §4).
    *
    * The live pointer is the second thing a run writes that outlives it — the
@@ -69,7 +87,10 @@ export async function publishLiveContent(
       UPDATE resource
       SET storage_key = ${key}::text,
           hash = ${hash}::text,
-          size = ${size}::bigint
+          size = ${size}::bigint,
+          -- Every move is a new generation.
+          content_revision = gen_random_uuid()
+          ${'format' in content ? sql`, format = ${content.format}::varchar` : sql``}
           ${changed ? sql`, last_modified = NOW()` : sql``}
       WHERE id = ${resourceId}::uuid
         AND storage_key IS NOT DISTINCT FROM ${previousKey}::text
