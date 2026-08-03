@@ -161,7 +161,7 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
   const isRunning = active && !stuck
   const elapsed = active ? getElapsed(steps) : null
 
-  // The Version step settles whether the current content was captured: complete
+  // The Version step settles whether the current content was created: complete
   // means it was, skipped means an identical version already existed. Anything
   // else — missing, running, failed — means it was not, and replacing the file
   // would lose it (ADR-044 §4).
@@ -321,7 +321,7 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
       )}
 
       {/* What a stopped run leaves behind depends on how far it got, and the
-          case worth naming is the content that was never captured as a version:
+          case worth naming is the content that was never created as a version:
           replacing the file loses it for good (ADR-044 §4). Nothing else on
           this screen would say so. */}
       {status === 'cancelled' && (

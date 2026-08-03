@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** — implemented 2026-08-01 (#239, #241, #245, #246, #247, #249, #250)
+**Accepted** — implemented 2026-08-01
 
 Make the canonical copy (layer 1) durable **before** anything interprets it. Fold type
 inference, Parquet generation and the DuckLake ingest into one re-runnable stage, on DuckDB.
@@ -17,7 +17,7 @@ Collects ADR-043's open issue "unifying the preview Parquet (layer 3)".
 
 The order today is Fetch → Extract → Version → Lake → Index. Version — the canonical copy,
 layer 1 — comes after Extract for one reason: **so the column schema Extract produces can be
-burned onto the version row**.
+burned onto the version record**.
 
 But Extract is the heaviest step in the run. For CSV/TSV, with the input capped at 50MB:
 
@@ -79,7 +79,7 @@ a version is**, and not having answered that is the real problem.
 Fetch → Version → Extract → Lake → Index, with the schema attached by an UPDATE after Extract.
 
 - **For**: small, and it fixes the durability problem
-- **Against**: dying between the insert and the update leaves a version row whose schema is
+- **Against**: dying between the insert and the update leaves a version record whose schema is
   **null for good** — the content has not changed, so no later run captures it, and nothing
   attaches a schema to an existing row. That means another repair pass. The preview dependency
   and the burn-in problem both remain
@@ -155,9 +155,9 @@ Assigning a different primary key or type creates a version; it never rewrites a
 
 That dissolves the mutable-judgement problem — **nothing mutates**. The history of
 interpretation changes lands in the version history, so who changed what and when is visible
-there as well as in the audit log, and no new home is needed outside the version row.
+there as well as in the audit log, and no new home is needed outside the version record.
 
-The schema still is not settled at capture, so the write to the version row happens after
+The schema still is not settled at capture, so the write to the version record happens after
 Interpret. B's drawback is not one here: **unassigned is a normal state**, with a path in the
 UI to fill it.
 
@@ -168,7 +168,7 @@ destroys v3's bytes or fails to destroy anything — a legal deletion that does 
 50MB copy is cheap against that.
 
 Two consequences. **The content gate sees only the interpretation conditions settled at
-capture**: `decideVersionCapture` compares the latest active version's hash _and_ format (§6).
+capture**: `decideVersionCreate` compares the latest active version's hash _and_ format (§6).
 A corrected format therefore makes a version, while a key or type assignment — which does not
 exist at capture — arrives through a user action rather than the pipeline (open issue 2). And
 **several versions sharing a hash becomes normal**; the places that look a version up by hash
@@ -220,10 +220,10 @@ case right. **This is worth revisiting if upstream fixes it**, but today convert
 both more accurate and faster. Detection (`chardet`) has to stay in front either way: DuckDB
 has to be told `encoding=`, it does not detect.
 
-### 6. Interpretation conditions settled at capture live on the version row
+### 6. Interpretation conditions settled at capture live on the version record
 
 Once decision 3 defines a version as "these bytes, read this way", **the definition does not hold
-unless the interpretation conditions are on the version row**. Format is the first of them: change
+unless the interpretation conditions are on the version record**. Format is the first of them: change
 the delimiter and you have a different table, so format is a display label and an interpretation
 condition at once.
 
@@ -254,7 +254,7 @@ wrong label interpreted forever.
 
 **So format joins the content gate.** Once decision 3 says a changed interpretation makes a
 version, a corrected format has to make one — and that is also the correction's only place to
-land: with `decideVersionCapture` looking only at the hash, a correction whose bytes are
+land: with `decideVersionCreate` looking only at the hash, a correction whose bytes are
 unchanged is never captured, and the existing version goes on being read by the rule the
 correction replaced. A version holding **no** format counts as a difference too (rows from
 before the column existed, or inserted during a deploy window, would otherwise never be
@@ -282,7 +282,7 @@ columns, empty CSV, failed interpretation, not yet ingested), and the diff servi
 - **One mechanism fewer**: `lake_source_key` and its whole lifecycle
 - **Memory**: no more expanding every row onto the JS heap; `MAX_PARQUET_SOURCE_SIZE` (50MB)
   can be revisited
-- **DB**: the version row keeps `schema`, and the primary key and type overrides go there too.
+- **DB**: the version record keeps `schema`, and the primary key and type overrides go there too.
   One `format` column is added. No new table
 - **Storage**: a version that changed only its interpretation still holds a copy of the bytes,
   and carries a layer-2 ingest with it (§6)
@@ -290,7 +290,7 @@ columns, empty CSV, failed interpretation, not yet ingested), and the diff servi
 
 ## Open issues
 
-1. **Parity of type inference — settled (#241).** Measured (DuckDB 1.5.4, 29 column patterns from Japanese CSVs).
+1. **Parity of type inference — settled.** Measured (DuckDB 1.5.4, 29 column patterns from Japanese CSVs).
    **The middle course is not needed — the sniffer can take over.** 23 of 29 agree, and the
    guard that was ADR-029's biggest reason to exist — **leading-zero code columns (postal codes,
    municipality codes) — DuckDB also leaves as VARCHAR**. On the three date columns DuckDB is
@@ -325,7 +325,7 @@ columns, empty CSV, failed interpretation, not yet ingested), and the diff servi
    repeated fiddling with a key floods the history (not settling while in draft, say) is a UX
    question too. Decision 6 makes **a format divergence the first trigger** for it — "this was
    read as CSV; re-read it as TSV?" is answerable the moment the column exists
-3. **Re-running Interpret — settled (#247).** The existing layer-2 retry job
+3. **Re-running Interpret — settled.** The existing layer-2 retry job
    (`LAKE_INGEST_JOB_TYPE`) re-interprets the version. Interpretation became one unit,
    `withInterpretedVersion`, shared by the pipeline and the retry; no new job type was needed
 4. **What the preview Parquet is for**: an artifact of the interpretation, or generated on

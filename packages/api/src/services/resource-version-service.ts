@@ -47,8 +47,8 @@ import { PipelineService } from './pipeline-service'
 export type VersionState = 'active' | 'purging' | 'purged' | 'superseded'
 export type VersionOrigin = 'upload' | 'fetch'
 
-/** The row a capture adds, minus everything the table fills in. */
-export interface CapturedVersion {
+/** The row creating a version adds, minus everything the table fills in. */
+export interface CreatedVersion {
   resourceId: string
   version: number
   storageKey: string
@@ -65,10 +65,10 @@ export interface CapturedVersion {
 }
 
 /**
- * Record a captured version, but only while `claim` still holds the resource
+ * Record a created version, but only while `claim` still holds the resource
  * (ADR-044 §4).
  *
- * The one write a capture makes that outlives its run. Everything else a run
+ * The one write creating a version makes that outlives its run. Everything else a run
  * produces is its own record, which the tracker already conditions on the
  * claim; this is a row the resource keeps, and a run that was stopped adding
  * one leaves the resource describing itself as half-done when it is not — the
@@ -92,7 +92,7 @@ export interface CapturedVersion {
 export async function insertVersionIfHeld(
   db: Pick<Database, 'execute'>,
   claim: ResourceClaim | null,
-  v: CapturedVersion
+  v: CreatedVersion
 ): Promise<boolean> {
   const result = await db.execute(sql`
     WITH inserted AS (
@@ -113,9 +113,9 @@ export async function insertVersionIfHeld(
 }
 
 /**
- * Record the interpretation of a version that is already captured (ADR-046).
+ * Record the interpretation of a version that is already created (ADR-046).
  *
- * The capture no longer carries one. A version is settled from its bytes, and
+ * The create no longer carries one. A version is settled from its bytes, and
  * what those bytes mean is worked out after — so a version with no schema is a
  * normal state rather than a failure, and one that stays that way can always be
  * interpreted again, because its file never changes.
@@ -150,15 +150,15 @@ interface PurgeDeps {
 }
 
 /**
- * Bounded concurrency for the one-time version backfill's storage copies.
+ * Bounded concurrency for the one-time migration's storage copies.
  *
  * A migration is background work: it shares the worker's connection pool
  * (`WORKER_DB_POOL_MAX`, default 3) and its object store with the pipeline, the
  * crons and the health check, and none of them should wait on it. No longer a
- * pool reservation — since the capture lock went (ADR-044 §5) a unit holds a
+ * pool reservation — since the version lock went (ADR-044 §5) a unit holds a
  * connection only for each statement, not across its storage copy.
  */
-const BACKFILL_CONCURRENCY = 2
+const FIRST_VERSION_CONCURRENCY = 2
 
 /**
  * Versions that layer 2 has not loaded yet (ADR-043 layer 2, ADR-046).
@@ -289,12 +289,12 @@ export class ResourceVersionService {
   }
 
   /**
-   * Active resources that have content but no version yet — the backfill work set.
+   * Active resources that have content but no version yet — the migration work set.
    *
-   * Resources whose pipeline is in flight are excluded: that run captures v1
+   * Resources whose pipeline is in flight are excluded: that run creates v1
    * itself, so counting them as outstanding migration work would misreport the
    * progress the dashboard shows. Whichever of the two arrives second at the
-   * capture lock finds the version already there and steps aside.
+   * version lock finds the version already there and steps aside.
    */
   private unversionedWhere() {
     return and(
@@ -326,15 +326,13 @@ export class ResourceVersionService {
    * the current storage key already holds the content. Idempotent (skips
    * resources that already have a version). Runs in the worker.
    *
-   * When a DuckLake config is supplied, a second pass loads each tabular
-   * resource's current version into the lake (layer 2). The preview Parquet is
-   * only ever the *latest* version's content, which is exactly what the current
-   * version is — so this is the one moment existing data can enter the lake.
-   * Older versions have no preview Parquet and stay out of it.
+   * Layer 2 is not loaded here. Each v1 is queued for the worker to interpret
+   * and ingest (ADR-046), which is the same path a pipeline run takes — so the
+   * lake never receives anything this process derived on the side.
    */
-  async backfillVersions(deps: { storage: StorageAdapter; queue: QueueAdapter }): Promise<{
-    backfilled: number
-    /** Captured or replaced by something else since the scan — retry-safe. */
+  async createFirstVersions(deps: { storage: StorageAdapter; queue: QueueAdapter }): Promise<{
+    created: number
+    /** Created or replaced by something else since the scan — retry-safe. */
     skipped: number
     failed: number
     /** Versions handed to the worker to interpret and load (ADR-046). */
@@ -379,39 +377,39 @@ export class ResourceVersionService {
       .leftJoin(resourcePipeline, eq(resourcePipeline.resourceId, resource.id))
       .where(this.unversionedWhere())
 
-    let backfilled = 0
+    let created = 0
     let skipped = 0
     let failed = 0
     // Per-resource copy+insert, bounded concurrency. Kept per-row (not one batched
     // INSERT) so one bad object fails only its own resource, not the whole chunk.
-    for (let i = 0; i < rows.length; i += BACKFILL_CONCURRENCY) {
+    for (let i = 0; i < rows.length; i += FIRST_VERSION_CONCURRENCY) {
       const results = await Promise.allSettled(
         rows
-          .slice(i, i + BACKFILL_CONCURRENCY)
-          .map((r) => this.captureFirstVersion(r, deps.storage))
+          .slice(i, i + FIRST_VERSION_CONCURRENCY)
+          .map((r) => this.createFirstVersion(r, deps.storage))
       )
       for (const res of results) {
         if (res.status === 'rejected') failed++
-        else if (res.value) backfilled++
-        // Skipped: something captured, replaced or is holding the resource.
+        else if (res.value) created++
+        // Skipped: something created, replaced or is holding the resource.
         else skipped++
       }
     }
 
     const { queued, failed: queueFailed } = await this.queuePendingLakeIngests(deps.queue)
-    return { backfilled, skipped, failed, queued, queueFailed }
+    return { created, skipped, failed, queued, queueFailed }
   }
 
   /**
    * Snapshot one resource's live file as v1, or report that nothing was done.
    *
    * Claimed for the duration (ADR-044): a run holding this resource is
-   * capturing that same v1, and a migration is never worth waiting for — a
+   * creating that same v1, and a migration is never worth waiting for — a
    * refused resource counts as skipped and the next run of the job picks it up.
-   * Since the capture lock went (ADR-044 §5), the claim is the only thing
+   * Since the version lock went (ADR-044 §5), the claim is the only thing
    * keeping the migration and a live run off the same resource.
    */
-  private async captureFirstVersion(
+  private async createFirstVersion(
     r: {
       id: string
       packageId: string
@@ -426,7 +424,7 @@ export class ResourceVersionService {
   ): Promise<boolean> {
     return this.withClaimOrSkip(r.id, async (claim) => {
       // Re-checked against the row as it is *now*: the scan happened earlier,
-      // and since then a pipeline run may have captured v1 (copying first would
+      // and since then a pipeline run may have created v1 (copying first would
       // overwrite its file before the unique index rejected the insert) or a
       // newer run may have moved the pointer, which means the object this row
       // described is no longer the content.
@@ -448,7 +446,7 @@ export class ResourceVersionService {
       await copyObject(this.db, storage, current.storageKey, versionKey)
       // Measured rather than taken from the row: this is pre-existing data,
       // and `upload-complete` used to accept any string as a hash.
-      const captured = await digestStream(await storage.download(versionKey))
+      const created = await digestStream(await storage.download(versionKey))
 
       // Normalize the row to the measurement when the stored values were never
       // the real ones; refusing those rows instead would leave the migration
@@ -456,10 +454,10 @@ export class ResourceVersionService {
       // may have published newer content while this copied — its hash
       // describes that content and must not be overwritten with a measurement
       // of the object it replaced.
-      if (captured.hash !== r.hash || captured.size !== r.size) {
+      if (created.hash !== r.hash || created.size !== r.size) {
         await this.db
           .update(resource)
-          .set({ hash: captured.hash, size: captured.size })
+          .set({ hash: created.hash, size: created.size })
           .where(and(eq(resource.id, r.id), eq(resource.storageKey, current.storageKey)))
       }
 
@@ -467,13 +465,12 @@ export class ResourceVersionService {
         resourceId: r.id,
         version: 1,
         storageKey: versionKey,
-        size: captured.size,
-        hash: captured.hash,
+        size: created.size,
+        hash: created.hash,
         origin: versionOrigin(r.urlType),
         schema: r.schemaTrusted ? (r.schema ?? null) : null,
       })
-      if (!inserted) return false
-      return true
+      return inserted
     })
   }
 
@@ -629,7 +626,7 @@ export class ResourceVersionService {
    * purging/purged is returned unchanged and should not be re-enqueued.
    *
    * Superseded counts because a revert does not destroy anything: content
-   * captured from a file that should never have been served survives it, and
+   * created from a file that should never have been served survives it, and
    * purging that version on its own is the rung above (ADR-044 §4). Refusing
    * here would make the one version most likely to need destroying the one
    * version that cannot be.
@@ -697,7 +694,7 @@ export class ResourceVersionService {
     deps: PurgeDeps
   ): Promise<{ purged: boolean; rolledBack: boolean }> {
     // Held for the whole purge (ADR-044). Interpret writes its preview to storage
-    // before the database learns of it, and version capture copies the file
+    // before the database learns of it, and version create copies the file
     // before inserting the row; a run inside either window would write those
     // objects back *after* this purge had swept them, with no row left to make
     // them reachable and nothing to reclaim them. A legal deletion cannot end
@@ -783,7 +780,7 @@ export class ResourceVersionService {
 
       // Regenerate preview/index from the restored content. The Version step's
       // change gate sees the restored hash as the latest active version and
-      // skips, so no spurious version is captured.
+      // skips, so no spurious version is created.
       if (rolledBack) {
         await new PipelineService(this.db, deps.queue).enqueue(resourceId)
       }
@@ -827,7 +824,7 @@ export class ResourceVersionService {
    * The retracted object is parked, not deleted: it is unwanted, not illegal,
    * and a reader that already resolved the key deserves to finish. Destroying
    * it is the rung above (purge), which also takes the version rows with it —
-   * so a version already captured from the wrong content survives this and has
+   * so a version already created from the wrong content survives this and has
    * to be purged on its own. That is the ladder working as intended, not a gap.
    *
    * The stop and the claim are one statement. Released and then re-taken, the
@@ -909,7 +906,7 @@ export class ResourceVersionService {
 
     // Held for the whole thing, which needs a row to hold (see below). Without
     // one this ran unclaimed, and a run starting alongside it would carry on
-    // capturing and indexing the content being retracted.
+    // creating and indexing the content being retracted.
     await this.ensureClaimable(resourceId)
     const { cancelled, restored, cleanedUp } = await withClaimFromRun(
       this.db,
@@ -942,28 +939,17 @@ export class ResourceVersionService {
         // version at or below the destination, so everything above it has to
         // leave that set first (ADR-044 §4).
         //
-        // The `active` condition on each makes the write a compare-and-swap. A
-        // purge claim takes only a row lock in its own transaction, not this
-        // resource's claim, so it can move one of these rows to `purging`
-        // between the read and here — and dragging it back out of that is worse
-        // than not stepping off at all.
-        //
         // The marks and the pointer cannot be one statement — a storage copy
         // sits between them — so a restore that fails puts them back. Left
         // behind, the resource goes on serving content whose version is no
         // longer the highest active one, which is the state this whole change
         // exists to prevent, and nothing re-runs a revert to repair it.
-        const steppedOff = await this.activeVersionsAbove(resourceId, target.restoreTo)
-        for (const v of steppedOff) {
-          await this.setVersionState(resourceId, v, 'active', 'superseded')
-        }
+        const steppedOff = await this.stepOffAbove(resourceId, target.restoreTo)
         let restored: typeof resourceVersion.$inferSelect | null
         try {
           restored = await this.restoreLiveFromVersions(resourceId, current, deps.storage)
         } catch (err) {
-          for (const v of steppedOff) {
-            await this.setVersionState(resourceId, v, 'superseded', 'active')
-          }
+          await this.restoreSteppedOff(resourceId, steppedOff)
           throw err
         }
 
@@ -982,19 +968,10 @@ export class ResourceVersionService {
     // back: enqueued inside it, the run that picks the job up finds the
     // resource held and puts itself back on the queue for another 30 seconds.
     //
-    // A rebuild, not an ordinary run. Fetch re-reads an external URL, and a
-    // resource reverted because that URL served the wrong thing would have this
-    // very job publish it again — undoing the retraction it was queued to
-    // finish (ADR-044 §4).
     // The Version step's change gate reads the highest *active* version, which
     // the step-off above made the restored one, so it matches and no spurious
-    // version is captured. Nothing to rebuild from when the resource was
+    // version is created. Nothing to rebuild from when the resource was
     // emptied.
-    //
-    // Best-effort for the same reason as above: the revert is done, and failing
-    // the response over a queue that is down invites the one retry that is not
-    // safe to make.
-    // Nothing to rebuild from when the resource was emptied.
     const rebuilding = restored ? await this.queueRebuild(resourceId, deps, log) : true
 
     return { cancelled, restored, cleanedUp: cleanedUp && rebuilding }
@@ -1009,7 +986,7 @@ export class ResourceVersionService {
    *
    * `revertTarget` is the newest active version below the one the content is
    * standing on; when no version holds the live content — an upload no run has
-   * captured — it is the newest active version, since there is nothing to step
+   * created — it is the newest active version, since there is nothing to step
    * off and that is where a step back goes. Null means the revert empties the
    * resource.
    */
@@ -1259,18 +1236,25 @@ export class ResourceVersionService {
   }
 
   /**
-   * Active versions ranked above a restore destination, newest first.
+   * Take every active version above a restore destination out of the active
+   * set, and report which ones moved.
    *
-   * Everything a restore to `below` steps off. More than one when the caller
-   * asks for a destination several rungs down, and the restore lands on the
-   * newest active version — so every version between has to leave that set or
-   * it would land on one of them instead. Null means "empty the resource", and
-   * everything active is above that.
+   * Everything a restore to `below` steps off, because the restore lands on the
+   * newest active version at or below it — left in that set, one of these would
+   * be what it landed on. Null means "empty the resource", and everything
+   * active is above that.
+   *
+   * Chosen and moved in one statement rather than read and then updated. The
+   * `active` condition is a compare-and-swap: a purge claim takes a row lock in
+   * its own transaction rather than this resource's claim, so it can move one
+   * of these rows to `purging` in between. Read first, that row would be listed
+   * as stepped off, silently fail to move, and then be put back on a rollback —
+   * dragging it out of `purging`. Here it is simply not in the answer.
    */
-  private async activeVersionsAbove(resourceId: string, below: number | null): Promise<number[]> {
+  private async stepOffAbove(resourceId: string, below: number | null): Promise<number[]> {
     const rows = await this.db
-      .select({ version: resourceVersion.version })
-      .from(resourceVersion)
+      .update(resourceVersion)
+      .set({ state: 'superseded', updated: sql`NOW()` })
       .where(
         and(
           eq(resourceVersion.resourceId, resourceId),
@@ -1278,36 +1262,27 @@ export class ResourceVersionService {
           below === null ? sql`TRUE` : sql`${resourceVersion.version} > ${below}`
         )
       )
-      .orderBy(desc(resourceVersion.version))
+      .returning({ version: resourceVersion.version })
     return rows.map((r) => r.version)
   }
 
   /**
-   * Move one version between states, and only from the state named.
+   * Put back what {@link stepOffAbove} moved, for a restore that then failed.
    *
-   * The `from` condition makes it a compare-and-swap. A purge claim takes a row
-   * lock in its own transaction rather than this resource's claim, so it can
-   * move the same row to `purging` in between — and dragging it back out of
-   * that is worse than leaving the transition undone.
-   *
-   * A no-op when there is no version to move, so callers that may have found
-   * none need no branch of their own.
+   * Only those versions, and only from `superseded`: a purge can claim one of
+   * them while the storage copy runs, and dragging a row back out of `purging`
+   * is worse than leaving the step-off undone.
    */
-  private async setVersionState(
-    resourceId: string,
-    version: number | undefined,
-    from: VersionState,
-    to: VersionState
-  ): Promise<void> {
-    if (version === undefined) return
+  private async restoreSteppedOff(resourceId: string, versions: number[]): Promise<void> {
+    if (versions.length === 0) return
     await this.db
       .update(resourceVersion)
-      .set({ state: to, updated: sql`NOW()` })
+      .set({ state: 'active', updated: sql`NOW()` })
       .where(
         and(
           eq(resourceVersion.resourceId, resourceId),
-          eq(resourceVersion.version, version),
-          eq(resourceVersion.state, from)
+          inArray(resourceVersion.version, versions),
+          eq(resourceVersion.state, 'superseded')
         )
       )
   }
@@ -1330,7 +1305,7 @@ export class ResourceVersionService {
    * and has already left `active`.
    *
    * Undefined when no version holds the live content — a file uploaded but
-   * never captured, or a capture the kill cut off. There is nothing to step
+   * never created, or a creation the kill cut off. There is nothing to step
    * back from, and the newest version is the right place to land.
    */
   private async liveVersion(
@@ -1420,7 +1395,7 @@ export class ResourceVersionService {
       // The version's own, not the label the resource is carrying: a version is
       // those bytes read under that format (ADR-046 §6), so putting the content
       // back and leaving the label is putting back half of it. It is also what
-      // stops the capture gate seeing a difference and filing these bytes again
+      // stops the version gate seeing a difference and filing these bytes again
       // under a new number.
       format: prev.format,
     })

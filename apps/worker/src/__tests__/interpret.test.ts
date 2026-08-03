@@ -21,7 +21,7 @@ const PREVIEW_KEY_RE = (pkg: string, res: string, ext: string) =>
 const previewKeyMatching = (pkg: string, res: string, ext: string) =>
   expect.stringMatching(PREVIEW_KEY_RE(pkg, res, ext))
 
-/** The captured version the step reads (ADR-046); sized under the interpret cap. */
+/** The created version the step reads (ADR-046); sized under the interpret cap. */
 const version = (storageKey: string, size = 1024) => ({ storageKey, size })
 
 describe('executeInterpret', () => {

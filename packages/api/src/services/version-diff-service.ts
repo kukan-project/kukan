@@ -19,7 +19,7 @@ import { QUERY_MEMORY_LIMIT_MB, QUERY_THREADS, QUERY_TIMEOUT_MS } from '../confi
 export type DiffUnavailableReason =
   /** The version has no predecessor (it is the first). */
   | 'no-previous-version'
-  /** One side isn't in DuckLake: not tabular, oversize, or captured pre-Phase-ii. */
+  /** One side isn't in DuckLake: not tabular, oversize, or created pre-Phase-ii. */
   | 'not-ingested'
   /** One side's content was purged, so it can no longer be compared. */
   | 'purged'

@@ -40,7 +40,7 @@ export interface StorageAdapter {
 
   /**
    * Server-side copy within the same bucket (no data streamed through the app).
-   * Used to capture immutable per-version snapshots (ADR-043).
+   * Used to create immutable per-version snapshots (ADR-043).
    */
   copy(sourceKey: string, destKey: string): Promise<void>
 

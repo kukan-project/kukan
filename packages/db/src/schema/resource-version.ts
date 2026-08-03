@@ -28,16 +28,16 @@ export const resourceVersion = pgTable(
     resourceId: uuid('resource_id')
       .notNull()
       .references(() => resource.id, { onDelete: 'cascade' }),
-    // Sequential per resource, assigned at capture time (max + 1).
+    // Sequential per resource, assigned at creation time (max + 1).
     version: integer('version').notNull(),
     // versions/{packageId}/{resourceId}/v{n}.{attempt} — the token is per write,
-    // so a retried capture never reuses a key the orphan sweep is deciding about
+    // so a retried create never reuses a key the orphan sweep is deciding about
     storageKey: text('storage_key').notNull(),
     size: bigint('size', { mode: 'number' }),
     hash: text('hash'),
     // 'upload' = explicit replacement, 'fetch' = observed at fetch time (external URL).
     origin: varchar('origin', { length: 10 }).notNull(),
-    // The format the resource carried at capture — the condition this version's
+    // The format the resource carried at creation — the condition this version's
     // interpretation is made under (ADR-046 §6). Held here because the
     // resource's label is user-editable, and reading the current one would
     // interpret settled bytes by a rule never applied to them.

@@ -17,8 +17,8 @@ the object is left **referenced by nothing, with no path that reclaims it**.
 | Write                              | Prefix       | Reference                                |
 | ---------------------------------- | ------------ | ---------------------------------------- |
 | Fetch's download                   | `resources/` | `resource.storage_key`                   |
-| Extract's preview Parquet          | `previews/`  | `resource_pipeline.preview_key`          |
-| Extract's ZIP manifest             | `previews/`  | `resource_pipeline.preview_key`          |
+| Interpret's preview Parquet        | `previews/`  | `resource_pipeline.preview_key`          |
+| Interpret's ZIP manifest           | `previews/`  | `resource_pipeline.preview_key`          |
 | Index's text head (ADR-040)        | `previews/`  | `resource_pipeline.metadata.textHeadKey` |
 | Version capture's copy             | `versions/`  | `resource_version.storage_key`           |
 | The backfill's copy                | `versions/`  | `resource_version.storage_key`           |
@@ -153,7 +153,7 @@ The two version inserts (pipeline and backfill) are the exception — they do no
 
 ### 5. `lake/` stays out
 
-DuckLake's built-in already fills this role (ADR-043, #176). It is the thing that knows the
+DuckLake's built-in already fills this role (ADR-043). It is the thing that knows the
 catalog and the file layout; there is no reason to reimplement that from outside. **No
 generalized per-prefix reconciliation job.**
 

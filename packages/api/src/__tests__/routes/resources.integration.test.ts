@@ -808,7 +808,7 @@ describe('Resources API Routes', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // Client claims 4096, but the server records the real object size (mock head → 1024).
-        // A hash is not accepted at all: version capture gates on it (ADR-043),
+        // A hash is not accepted at all: version create gates on it (ADR-043),
         // so the caller must not be able to decide what it says.
         body: JSON.stringify({ size: 4096, hash: 'sha256:def' }),
       })

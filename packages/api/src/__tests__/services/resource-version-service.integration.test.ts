@@ -389,7 +389,7 @@ describe('executePurge — layer 2 (DuckLake)', () => {
 })
 
 describe('insertVersionIfHeld', () => {
-  const captured = {
+  const created = {
     version: 1,
     storageKey: 'versions/pkg/res/v1',
     size: 10,
@@ -412,22 +412,22 @@ describe('insertVersionIfHeld', () => {
       'run'
     )
 
-    expect(await insertVersionIfHeld(db, claimed[0], { resourceId, ...captured })).toBe(true)
+    expect(await insertVersionIfHeld(db, claimed[0], { resourceId, ...created })).toBe(true)
     expect(await versions()).toHaveLength(1)
   })
 
   it('records the format the resource carries at insert time (ADR-046)', async () => {
     // The condition this version's interpretation is made under, settled with
-    // its bytes. A later relabel describes what the next capture will be read
+    // its bytes. A later relabel describes what the next create will be read
     // as, and leaves the rows already here alone.
     await db.update(resource).set({ format: 'CSV' }).where(eq(resource.id, resourceId))
-    expect(await insertVersionIfHeld(db, null, { resourceId, ...captured })).toBe(true)
+    expect(await insertVersionIfHeld(db, null, { resourceId, ...created })).toBe(true)
 
     await db.update(resource).set({ format: 'TSV' }).where(eq(resource.id, resourceId))
     expect(
       await insertVersionIfHeld(db, null, {
         resourceId,
-        ...captured,
+        ...created,
         version: 2,
         storageKey: 'versions/pkg/res/v2',
         hash: 'sha256:v2',
@@ -452,7 +452,7 @@ describe('insertVersionIfHeld', () => {
     )
     await cancelResourceRun(db, resourceId)
 
-    expect(await insertVersionIfHeld(db, claimed[0], { resourceId, ...captured })).toBe(false)
+    expect(await insertVersionIfHeld(db, claimed[0], { resourceId, ...created })).toBe(false)
     expect(await versions()).toEqual([])
   })
 
@@ -462,10 +462,10 @@ describe('insertVersionIfHeld', () => {
     // left a record naming a key something already referenced — repaired by the
     // sweep, but an hour later and for no reason.
     await db.execute(sql`
-      INSERT INTO orphaned_object (key, expires_at) VALUES (${captured.storageKey}, NOW())
+      INSERT INTO orphaned_object (key, expires_at) VALUES (${created.storageKey}, NOW())
     `)
 
-    expect(await insertVersionIfHeld(db, null, { resourceId, ...captured })).toBe(true)
+    expect(await insertVersionIfHeld(db, null, { resourceId, ...created })).toBe(true)
 
     const ledger = await db.execute(sql`SELECT key FROM orphaned_object`)
     expect(ledger.rows).toEqual([])
@@ -483,11 +483,11 @@ describe('insertVersionIfHeld', () => {
       'run'
     )
     await db.execute(sql`
-      INSERT INTO orphaned_object (key, expires_at) VALUES (${captured.storageKey}, NOW())
+      INSERT INTO orphaned_object (key, expires_at) VALUES (${created.storageKey}, NOW())
     `)
     await cancelResourceRun(db, resourceId)
 
-    expect(await insertVersionIfHeld(db, claimed[0], { resourceId, ...captured })).toBe(false)
+    expect(await insertVersionIfHeld(db, claimed[0], { resourceId, ...created })).toBe(false)
 
     const ledger = await db.execute(sql`SELECT key FROM orphaned_object`)
     expect(ledger.rows).toHaveLength(1)
@@ -496,7 +496,7 @@ describe('insertVersionIfHeld', () => {
   it('records a version for a resource that has no pipeline row', async () => {
     // Not a missing claim: a run cannot start without that row either, so
     // there is nothing for the backfill to lose a race against.
-    expect(await insertVersionIfHeld(db, null, { resourceId, ...captured })).toBe(true)
+    expect(await insertVersionIfHeld(db, null, { resourceId, ...created })).toBe(true)
     expect(await versions()).toHaveLength(1)
   })
 
@@ -518,9 +518,9 @@ describe('insertVersionIfHeld', () => {
       return claimed[0]
     }
 
-    it('fills in the schema of a version captured without one', async () => {
+    it('fills in the schema of a version created without one', async () => {
       const claim = await heldClaim()
-      await insertVersionIfHeld(db, claim, { resourceId, ...captured })
+      await insertVersionIfHeld(db, claim, { resourceId, ...created })
       expect(((await versions())[0] as { schema: unknown }).schema).toBeNull()
 
       expect(await setVersionSchemaIfHeld(db, claim, { resourceId, version: 1, schema })).toBe(true)
@@ -531,7 +531,7 @@ describe('insertVersionIfHeld', () => {
       // The row outlives the run, so a displaced run must not describe it —
       // the same rule the insert follows (ADR-044 §4).
       const claim = await heldClaim()
-      await insertVersionIfHeld(db, claim, { resourceId, ...captured })
+      await insertVersionIfHeld(db, claim, { resourceId, ...created })
       await cancelResourceRun(db, resourceId)
 
       expect(await setVersionSchemaIfHeld(db, claim, { resourceId, version: 1, schema })).toBe(
@@ -602,7 +602,7 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     expect((await revertFromLive()).cancelled).toBe(false)
   })
 
-  it('leaves a version captured from the retracted content alone', async () => {
+  it('leaves a version created from the retracted content alone', async () => {
     // The ladder: destroying that version is a purge, which this deliberately
     // is not. Reverting the pointer must not quietly delete version rows.
     await addVersion(1, 'sha256:v1')
@@ -614,12 +614,12 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
   })
 
   it('does not go back to the content it is retracting', async () => {
-    // The run being stopped may have captured the new file as a version moments
+    // The run being stopped may have created the new file as a version moments
     // before. Restoring that is going nowhere: the caller asked for this file to
     // stop being live, and it would still be live with a version number quoted
     // back at them (ADR-044 §4).
     await addVersion(1, 'sha256:v1')
-    await addVersion(2, 'sha256:live') // captured from the file being retracted
+    await addVersion(2, 'sha256:live') // created from the file being retracted
     await db.update(resource).set({ hash: 'sha256:live' }).where(eq(resource.id, resourceId))
 
     const result = await revertFromLive()
@@ -642,7 +642,7 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
   it('puts the format back with the content (ADR-046 §6)', async () => {
     // A version is those bytes read under that format, so restoring one
     // restores both. Left behind, the label describes recovered content by a
-    // rule never applied to it — and the capture gate, comparing the label
+    // rule never applied to it — and the version gate, comparing the label
     // against the highest active version's, files the same bytes again.
     await addVersion(1, 'sha256:v1', 'active', 'CSV')
     await addVersion(2, 'sha256:v2', 'active', 'TSV')
@@ -957,7 +957,7 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
 
   it('holds a resource that had no pipeline row while it reverts', async () => {
     // The row is the claim, so without one the revert ran unheld — and a
-    // `/run-pipeline` arriving a moment later would capture and index the very
+    // `/run-pipeline` arriving a moment later would create and index the very
     // content being retracted. For an upload that is undetectable downstream:
     // its fetch republishes the same key, so the pointer CAS sees nothing.
     await addVersion(1, 'sha256:v1')
@@ -1058,7 +1058,7 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
   it('marks the version it stepped off as superseded', async () => {
     // Its content survives — destroying it is a purge, which this deliberately
     // is not — but it stops being a candidate for anything that asks "what is
-    // live": the restore, a second revert, the capture gate, the purge.
+    // live": the restore, a second revert, the version gate, the purge.
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2')
 
@@ -1075,7 +1075,7 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     // What the pipeline's change gate compares against (ADR-043). Left active,
     // the stepped-off version would still outrank the restored one, its hash
     // would not match the restored content, and the run this revert enqueues
-    // would capture a v3 of bytes that are already v1 — which a second revert
+    // would create a v3 of bytes that are already v1 — which a second revert
     // would then step off, landing back on v2 and handing back what the first
     // one retracted.
     await addVersion(1, 'sha256:v1')
@@ -1106,7 +1106,7 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
   })
 
   it('empties the resource when the only version holds the retracted content', async () => {
-    // v1 was captured from the wrong file itself: there is nothing behind it,
+    // v1 was created from the wrong file itself: there is nothing behind it,
     // and leaving it live is the one thing the caller asked against.
     await addVersion(1, 'sha256:live')
     await db.update(resource).set({ hash: 'sha256:live' }).where(eq(resource.id, resourceId))

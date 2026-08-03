@@ -18,7 +18,7 @@ import {
 import { copyObject, publishLiveContent, reserveObject } from '@kukan/api/services/storage-pointer'
 import type { PackageDbState } from '@kukan/shared'
 import { getVersionKey, versionOrigin } from '@kukan/shared'
-import { decideVersionCapture } from './version-capture'
+import { decideVersionCreate } from './version-gate'
 import type { PipelineContext, ResourceForPipeline } from './types'
 import {
   FETCH_RATE_LIMIT_INTERVAL_S,
@@ -103,7 +103,7 @@ export function buildPipelineContext(
       }
     },
 
-    async captureVersion({
+    async createVersion({
       resourceId,
       packageId,
       currentStorageKey,
@@ -142,7 +142,7 @@ export function buildPipelineContext(
       // whichever run published last, while the copy below takes the object
       // this run wrote and no one rewrites. The pointer comparison is what
       // establishes that this run is still the one describing the resource.
-      const decision = decideVersionCapture({
+      const decision = decideVersionCreate({
         hash: contentHash,
         // The insert reads the label again for itself, so an edit landing in
         // between can make the two differ. Harmless either way: the row records
@@ -155,13 +155,13 @@ export function buildPipelineContext(
         latestActiveHash: activeRow?.hash ?? null,
         latestActiveFormat: activeRow?.format ?? null,
       })
-      if (!decision.captured) return decision
+      if (!decision.created) return decision
 
       const { version } = decision
       const versionKey = getVersionKey(packageId, resourceId, version, randomUUID())
       await copyObject(db, storage, currentStorageKey, versionKey)
 
-      // Under the claim, so a run that was stopped mid-capture does not leave
+      // Under the claim, so a run that was stopped mid-create does not leave
       // the resource a version its own step never got to report (ADR-044 §4).
       const inserted = await insertVersionIfHeld(db, claim, {
         resourceId,
@@ -174,8 +174,8 @@ export function buildPipelineContext(
         // has read the file this row names (ADR-046).
         schema: null,
       })
-      if (!inserted) return { captured: false as const }
-      return { captured: true as const, version }
+      if (!inserted) return { created: false }
+      return { created: true, version }
     },
 
     async versionForContent(resourceId: string, contentHash: string) {
@@ -197,7 +197,7 @@ export function buildPipelineContext(
         .orderBy(desc(resourceVersion.version))
         .limit(1)
       // Size is nullable on the table (pre-ADR-043 rows), but a version this
-      // run can interpret was captured with the measurement Fetch took.
+      // run can interpret was created with the measurement Fetch took.
       return row ? { ...row, size: row.size ?? 0 } : null
     },
 

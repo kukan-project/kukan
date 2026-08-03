@@ -688,7 +688,7 @@ resourcesRouter.post(
     }
 
     // Size comes from storage, not the client, and the hash is left for the
-    // worker to measure (ADR-043): version capture records the hash against the
+    // worker to measure (ADR-043): version create records the hash against the
     // bytes it copies, so a caller-supplied value would decide what a version
     // claims to hold.
     // Bound to the key that was headed above, so a `prepareForUpload` that ran

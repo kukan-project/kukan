@@ -109,13 +109,13 @@ async function runPipeline(
 
     await tracker.completeStep(fetchStepId)
 
-    // Step 2: Version — capture an immutable copy of the canonical file
+    // Step 2: Version — create an immutable copy of the canonical file
     // (ADR-043). Nothing has read the content yet: the version is settled from
     // the bytes alone, and what they mean is worked out afterwards (ADR-046).
-    // Non-critical: a capture failure is recorded but never fails the pipeline.
+    // Non-critical: a failed version create is recorded but never fails the pipeline.
     const versionStepId = await tracker.startStep('version')
     try {
-      const versionResult = await ctx.captureVersion({
+      const versionResult = await ctx.createVersion({
         resourceId,
         packageId: fetchResult.packageId,
         currentStorageKey: fetchResult.storageKey,
@@ -123,7 +123,7 @@ async function runPipeline(
         contentSize: fetchResult.size,
         claim: tracker.claim,
       })
-      if (versionResult.captured) {
+      if (versionResult.created) {
         await tracker.completeStep(versionStepId)
       } else {
         await tracker.skipStep(versionStepId)
@@ -135,15 +135,15 @@ async function runPipeline(
       await tracker.failStep(versionStepId, (err as Error).message)
     }
 
-    // Step 3: Interpret — read the captured version, generate Parquet preview
+    // Step 3: Interpret — read the created version, generate Parquet preview
     // Non-critical: failures are recorded but don't fail the pipeline
     //
     // Read from the version rather than the live object, whether or not this run
-    // is the one that captured it: content that was already there is interpreted
+    // is the one that created it: content that was already there is interpreted
     // from the version holding it, which is how a version whose earlier
     // interpretation failed gets another attempt. Its format comes from the same
     // row for the same reason — a label the user has since changed describes
-    // what the next capture will be read as, not these bytes (ADR-046).
+    // what the next create will be read as, not these bytes (ADR-046).
     let interpretResult: Awaited<ReturnType<typeof executeInterpret>> = null
     // Set by the hook below. Layer 2 now loads from the table interpretation
     // wrote to local disk, so its step is recorded from inside the
@@ -154,7 +154,7 @@ async function runPipeline(
     try {
       const version = await ctx.versionForContent(resourceId, fetchResult.hash)
       if (version === null) {
-        // Nothing holds this run's content: the capture failed, or the pointer
+        // Nothing holds this run's content: the creation failed, or the pointer
         // moved and another run is describing the resource now. The previous
         // preview is left in place rather than cleared — it still describes some
         // content, and this run has none to replace it with.
@@ -287,7 +287,7 @@ async function runLakeStep(
     } else if (lakeResult.status === 'skipped') {
       await tracker.skipStep(lakeStepId)
     } else {
-      // Queued, because the next run captures its own newer version and the
+      // Queued, because the next run creates its own newer version and the
       // ordering guard then refuses this one for good — after which the pair
       // can never be diffed.
       await tracker.failStep(lakeStepId, lakeResult.error.message)

@@ -174,39 +174,41 @@ The rollback needs no new mechanism. It is what a version purge already does whe
 version was live: restore the previous one, drop the preview and the search content, and
 enqueue reprocessing.
 
-#### What a revert leaves on the versions
+A purge destroys the layer-1 version file too, so **downloads of that past version are lost**.
+The screen offering it says so and asks for confirmation. The purge reuses what already
+exists: sysadmin only, a required reason, an audit log entry.
 
-**The version stepped off is marked `superseded`, though.** A revert deletes no version rows,
-so leaving that one active leaves it **the highest active version** — which breaks the
-invariant "the live content is the highest active version", and both of the places that read
-that invariant break with it.
+> What follows are the decisions and why they were made. **How they mesh in the
+> implementation** — which statement carries which predicate, and where it lives — is in
+> `docs/pipeline.md` §2, §3 and §6.
 
-- **The capture gate** compares against the highest active version's hash, so the restored
-  content looks new and a spurious version is captured. A second revert steps off that one and
-  lands on **exactly what the first revert retracted**
-- **The purge** decides liveness by "no active version sits above this one", so purging the
-  live version after a revert moves no pointer. The version file is destroyed while the live
-  object keeps serving a copy of those same bytes — **a legal deletion that does not delete**
+#### A revert deletes no versions — `superseded`
 
-For the second symptom the purge's liveness test changes too, from version order to **"is this
-the version the live pointer stands on"**. Comparing the resource's current hash to the
-version's is not enough on its own: several versions may legitimately hold one hash (ADR-046
-decision 3), so that answers yes for _any_ version sharing the live bytes. It reuses the
-question a revert already asks to find where it is standing — the newest holder of that hash —
-differing only in the states it counts, since a purge has to recognise its own row in
-`purging`.
+Leaving the version stepped off active leaves it **the highest active version**, which breaks
+the invariant "the live content is the highest active version". Both of the places that read
+that invariant break with it: the capture gate captures a spurious version (and a second
+revert steps off that one and lands on **exactly what the first revert retracted**), and the
+purge moves no pointer — destroying the version file while the live object keeps serving a
+copy of those same bytes, **a legal deletion that does not delete**.
 
-`superseded` destroys nothing; destroying is the purge's job. What it takes away is only
-candidacy for being live, which leaves a revert what it was: setting content aside rather than
-removing it. **A superseded version can still be purged** — content captured from a file that
-should never have been served survives a revert, so the path to destroying it on its own
-cannot close.
+So there is a fourth state. `superseded` destroys nothing; destroying is the purge's job. What
+it takes away is only candidacy for being live. **The transition diagram, and what each state
+is still entitled to, are in ADR-043 §1.1.**
 
-The format the version was captured under goes back to the resource with its content
-(ADR-046 §6). A version is those bytes read under that format, so restoring only the bytes
-restores half of it — and since the capture gate compares the resource's label against the
-highest active version's, leaving the label behind has the same bytes filed again under a new
-number.
+**A revert lands not on "the newest version" but on "the newest version below the one the
+content is standing on".** A stopped run may have captured the very file being retracted, and
+going back to that is going nowhere. "The newest version that is not the content being
+retracted" is not enough either: no version record is deleted, so after one revert the version it
+stepped off is still active and still newest, and the next revert would **put back what the
+last one retracted**. The landing point follows from where the resource is standing. And where
+it is standing is found by hash, because the live pointer names an object and not a version —
+**the newest version holding those bytes**. A plain hash match will not do: several versions
+may legitimately hold one hash (ADR-046 decision 3), so that answers yes for any of them. The
+purge's liveness test asks the same question, differing only in the states it counts.
+
+The format the version was captured under goes back with its content (ADR-046 §6). A version
+is those bytes read under that format, so restoring only the bytes restores half of it —
+leaving the label behind has the same bytes filed again under a new number.
 
 #### The contract — `restoreTo` and `ifLiveRevision`
 
@@ -236,6 +238,18 @@ writer of the live pointer. The storage key would identify it too, but naming in
 in a response is what `publicResourceColumns` exists to prevent, so the generation is its own
 opaque value.
 
+**The destination is validated.** Left unchecked, naming a superseded or missing version
+supersedes everything above it and then restores whichever is newest active — a different
+version, or none — and reports success. Superseded is refused rather than resolved: stepping
+back onto content an earlier revert set aside is redo, which this ladder does not have. **A
+revert walks the history backwards, so going forward is always a new version** — otherwise a
+second revert would hand back what the first one retracted (above).
+
+**The content is not lost, though.** A superseded version keeps its file and stays
+downloadable (only `purged` is refused). Someone who reverted by mistake can download that
+version and upload it again — what comes back is **a new version**, not the one that was set
+aside.
+
 #### When the claim is taken
 
 **The decision comes before the claim, or inside the statement that takes it.** Taking the claim
@@ -243,12 +257,22 @@ stops whatever is running (§3), so any judgement that ends in "do not proceed" 
 means **a request that is refused costs a run its work on the way out**. The generation check is
 a condition on the stop-and-take statement, and **the read of the content itself carries it
 too** — an upload can publish in the moment after the takeover matched, since uploads take no
-claim (§6), and without the condition that upload becomes what the revert retracts. **The
-destination check and "already at the destination" are read before the claim is touched at
-all**. The second is a resend, which can
-land while the rebuild its own first attempt queued is still going; the first is decidable
-without touching anything, so leaving it until after would kill a run over a version number
-that does not exist.
+claim (§6), and without the condition that upload becomes what the revert retracts. The
+destination check and "already at the destination" are read before the claim is touched at all.
+
+**A row to claim is created first.** The row _is_ the claim (§1), so a resource without one
+cannot be held and the work proceeds **with no exclusion at all** — a `/run-pipeline` arriving
+a moment later runs alongside it. The row is created, then claimed; a run that got there first
+takes it and this steps aside. **Only the revert path has that guarantee** (open issue 6).
+
+That row keeps the column's own default, `pending`, because that is what it is: a row with
+nothing queued and nothing run. `cancelled` would read as a run having been stopped, and a
+screen answers that by offering a reprocess. Nothing else ever writes `pending`, so **clients
+treat it as terminal** — left non-terminal, they poll for a run that is never coming.
+
+The statement that detaches the pointers carries the generation as well, since an upload takes
+no claim (§6) and so changes the content from outside the claim entirely. Landing on no rows
+parks nothing and deletes nothing.
 
 #### Cleanup, and how it is repaired
 
@@ -258,39 +282,12 @@ after the rebuild would delete the very preview and index it should be keeping. 
 resource has no such content to protect: whatever is left describes the withdrawn file, so
 deleting it is right whenever it is asked. **That is the only repair an emptying revert has** — reprocessing has nothing to rebuild from.
 
-That delete is made **under the claim, and taken as a `job`**. Emptiness is what justifies it,
-so it has to still hold when the delete happens — an upload and the run behind it can land
-between the read and the delete, and then those derivatives belong to the new content.
-
-**A takeover will not do.** A run against an empty resource is a fetch that has not published
-yet, which leaves the resource empty and its generation untouched — invisible to the generation
-condition — so taking over cancels **the very run that was about to fill it**, and nothing here
-re-queues it. Claimed as a job, a held resource is left alone instead: whatever holds it writes
-its own derivatives over these.
-
-**A row to claim is created first — for the revert itself as much as the cleanup.** The row _is_
-the claim (§1), so a resource without one cannot be held: `withClaimFromRun` hands back a null
-claim, and claiming a set that holds nothing still runs its callback. Either way the work
-proceeds **with no exclusion at all**, and a `/run-pipeline` arriving a moment later runs
-alongside it — undetectable downstream for an upload, whose fetch republishes the same key, so
-not even the pointer CAS notices. The row is created, then claimed; a run that got there first
-takes it and this steps aside. **Only the revert path has that guarantee** (open issue 6).
-
-That row keeps the column's own default, `pending`, because that is what it is: a row with
-nothing queued and nothing run. `cancelled` would read as a run having been stopped, and a
-screen answers that by offering a reprocess. Callers that do queue something overwrite it.
-
-Nothing else ever writes `pending` (it is only the default), so **clients treat it as terminal**.
-Left non-terminal, they poll for a run that is never coming.
-
-The statement that detaches the pointers carries the generation as well, because an upload takes
-no claim (§6) and so can change the content from outside the claim entirely. Landing on no rows
-parks nothing and deletes nothing.
-
-**The destination is validated.** Left unchecked, naming a superseded or missing version
-supersedes everything above it and then restores whichever is newest active — a different
-version, or none — and reports success. Superseded is refused rather than resolved: stepping
-back onto content an earlier revert set aside is redo, which this ladder does not have.
+That delete is made **under the claim, taken as a `job` rather than as a takeover**. Emptiness
+is what justifies it, so it has to still hold when the delete happens. And a run against an
+empty resource is a fetch that has not published yet, leaving the resource empty and its
+generation untouched — invisible to the generation condition — so taking over would cancel
+**the very run that was about to fill it**, with nothing here to re-queue it. Claimed as a job,
+a held resource is left alone: whatever holds it writes its own derivatives over these.
 
 **What a revert queues is a rebuild, not an ordinary run.** Fetch re-reads an external URL, so
 for a resource reverted _because_ that URL served the wrong thing, the job queued to finish the
@@ -300,30 +297,23 @@ derivatives from the object the resource already holds and fetches nothing.
 **The flag rides the claim-contention retry too.** Dropped there, the next attempt is an ordinary
 run again — the flag would hold for only as long as one delivery.
 
-**Being at the destination does not mean the rebuild happened.** The attempt that got there may
-have failed to queue it and then died before saying so, and reporting success on position alone
-leaves the preview and index missing for good. A resend therefore **queues the rebuild again** —
-repeating one costs a pass over content already in place.
-
 **Cleanup past the pointer move reports rather than throws.** The retraction has happened, so
 returning a failure misstates the outcome. The derivative delete and the search delete are
 attempted independently — a storage failure that took the search delete with it would leave
 retracted text reachable from the whole catalogue — and the result comes back as `cleanedUp`.
-The repair is the standing control below — in neither case another revert.
+The repair is the standing control below — in neither case another revert. Derivatives have
+parking, so a failed delete is collected by the hourly sweep (ADR-045 §4); **the search index
+has no equivalent**, which is why that standing control has to exist.
 
-Derivatives are cleared and parked in one statement before the objects are deleted (ADR-045 §4),
-so a failed delete is collected by the hourly sweep. The search index has no equivalent of
-parking, which is why the standing control below has to exist.
-
-**Rebuilding is its own action.** Queueing one is not doing it, and that run can fail later. If
-the only safe repair then is "resend that revert", **whoever did not keep the request cannot
+**Rebuilding is its own action.** Queueing one is not doing it, and that run can fail later —
+so being at the destination does not mean the rebuild happened, and a resend queues it again.
+If the only safe repair then is "resend that revert", **whoever did not keep the request cannot
 repair it** — the screen lives in a dialog, and closing it, reloading, or a different admin
-opening it is enough to lose the pair. What is left is the plain reprocess.
+opening it is enough to lose the pair.
 
 So "regenerate the derivatives from the stored object" is a **standing control on the screen**.
 It carries no state and is safe to press at any time, so nothing has to be remembered for the
-repair to be available. Holding the pair goes back to what it is for: sending what the user was
-shown, and sending it again when the request did not land.
+repair to be available.
 
 **It has two shapes.** With content, it queues a rebuild; **with none, it clears the leftovers
 under the claim**. Queueing a run against an emptied resource fails outright — Fetch has no
@@ -336,109 +326,64 @@ confirmation opens, not when it is confirmed: read again at confirm time, pollin
 onto content the user was never shown. They are held through an unknown outcome too — a freshly
 read pair is the _next_ rung down, not this operation again.
 
-**Known limitation: a version superseded before it reached layer 2 can never reach it.**
-Eligibility is limited to active versions, and admitting superseded ones would let an ingest
-**replace the catalog's current contents with that version** (ii-a is a wholesale replace), so
-retracted content would become what layer 2 serves. The overtake guard cannot tell the
-difference — the retracted version carries the higher number. An interpretation or ingest that
-fails and is then reverted therefore leaves that version's diff permanently `not-ingested`.
-Admitting them safely needs an ingest-then-roll-back-to-the-previous-snapshot sequence, which
-adds a step under the catalog lock. A version superseded **after** reaching layer 2 — the
-ordinary path — keeps its snapshot and stays diffable.
-
-A purge also deletes the layer-1 version file, so **that version stops being downloadable**.
-The screen offering it must say so and ask for confirmation. Purges reuse the existing
-mechanism (sysadmin only, reason required, audit logged).
+**Known limitation: a version superseded before it reached layer 2 can never reach it**
+(open issue 7).
 
 #### Getting the kill through to the run
 
 **Starting a replacement kills the run.** `prepareForUpload` does not take the claim (§6), so
 whether an upload overtakes a run depends on where that run happens to be — chance. Stopping
 the run when the intent to replace is declared removes that. The content is untouched;
-whether to roll it back is the user's choice from the three above. If the replacement is then
-abandoned, the resource is left without derivatives — a safe direction to fail for a file
-someone was trying to retract.
+whether to roll it back is the user's choice from the three above.
 
-**A kill needs teeth.** Today only the release is conditioned on the claim's owner; step
-records, preview updates and index writes do not check it. Releasing the claim therefore does
-not stop the run, so **conditioning the run's derivative writes on `WHERE claim_owner = me`**
-is a precondition for killing at all. A run that finds the condition gone leaves quietly, as
-cancelled rather than as an error.
-
-**Reading the claim is not enough; the condition has to be ordered against the cancel.** Read
-with a plain `EXISTS`, the row comes from the statement's snapshot. If the statement then
-waits — because the row it is updating is held by someone else, an upload promoting or a purge
-restoring — it re-checks against a view of the claim taken **before** the cancel and writes
-anyway: `cancelResourceRun` returns having stopped the run, and the stopped run's write lands
-afterwards. Measured, not reasoned. So the claim row is read `FOR SHARE`. The cancel takes the
-same row exclusively, so it waits for a statement already in flight, and a statement that
-starts after it finds nothing. **A kill waits out one statement of the run it is killing** —
-not a side effect, but the price of "stopped" meaning nothing more lands.
-
-The check made before a write that leaves the database (below) does not take that lock. What
-follows its answer goes somewhere no lock reaches, so the lock would only hold up a kill it
-cannot help, and it would be released at the end of that statement regardless.
+**A kill needs teeth.** Releasing the claim does not on its own stop the run, so
+**conditioning the run's writes on `WHERE claim_owner = me`** is a precondition for killing at
+all. A run that finds the condition gone leaves quietly, as cancelled rather than as an error.
 
 This looks like partly restoring the step-boundary fence §5 removed, but the question is a
 different one. What went was "am I still the latest?" — a defence against a race the claim
 now prevents. What arrives is "do I still hold this?" — the path by which a user's explicit
 action reaches a running job.
 
-**A kill reaches as far as the next step boundary, with two exceptions.** Every step opens by
-checking the claim, so what survives a kill is **the body of the one step that was running**.
-Almost everything that step writes is the run's own record, which the condition erases — but
-two writes stay with the resource rather than with the run.
+**Reading the claim is not enough; the condition has to be ordered against the cancel.** Read
+with a plain `EXISTS`, the row comes from the statement's snapshot. If the statement then
+waits — because the row it is updating is held by someone else — it re-checks against a view
+of the claim taken **before** the cancel and writes anyway: `cancelResourceRun` returns having
+stopped the run, and the stopped run's write lands afterwards. Measured, not reasoned. So the
+claim row is read `FOR SHARE`. **A kill waits out one statement of the run it is killing** —
+not a side effect, but the price of "stopped" meaning nothing more lands.
 
-**The version row.** Inserted after a kill, it sits alongside a step still marked `running`,
-and the resource page then reports **content that was saved as unsaved**. So the version
-insert carries the claim as well.
+**A kill reaches as far as the next step boundary.** Every step opens by checking the claim,
+so what survives is the body of the one step that was running, and almost everything it writes
+is the run's own record, which the condition erases. Two writes stay with **the resource**
+rather than with the run — the version record and the live pointer — and those carry the claim
+individually. Without a way to interrupt a read in progress, the step boundary is as
+fine-grained as a kill can be, and conditioning those two is what that costs.
 
-**The pointer to the live content.** Fetch moves it to its own key the moment the download
-completes, so a kill that lands mid-fetch is followed by the content changing anyway — while
-the table above promises that stopping a run leaves the content as it was. A revert is not
-exposed to this: it moves the pointer itself, so the stopped run's compare-and-swap finds it
-gone and refuses. A plain stop touches nothing, which is exactly why nothing stops the
-publish. So the pointer move carries the claim too.
-
-Without a way to interrupt a read in progress, the step boundary is as fine-grained as a kill
-can be, and conditioning the writes that outlast it is what that costs.
-
-**The writes that leave the database have no row to condition on.** A chunk sent to the
-search index, a version loaded into the lake catalog: there is nowhere to hang
-`WHERE claim_owner = me`, so a stopped run goes on writing. A revert deletes the indexed
-content right after restoring, so **a chunk written after that puts the retracted content
-back into search**. These ask whether the claim still holds before each write.
-
-Asking is not fencing — the claim can go between the answer and the write. What it buys is
-**the size of that window**: asked per chunk, a kill stops at the next one; asked once per
-step, the rest of a long file is indexed anyway. Closing it entirely needs each document in
-the index to carry the run that wrote it, which is more than the exposure warrants.
+**The writes that leave the database have no row to condition on.** A chunk sent to the search
+index, a version loaded into the lake catalog: there is nowhere to hang
+`WHERE claim_owner = me`, so these ask whether the claim still holds before each write. But
+**asking is not fencing** — the claim can go between the answer and the write. What it buys is
+the size of that window: asked per chunk, a kill stops at the next one. Closing it entirely
+needs each document in the index to carry the run that wrote it, which is more than the
+exposure warrants. (That check takes no `FOR SHARE`: what follows its answer goes somewhere no
+lock reaches, so the lock would only hold up a kill it cannot help.)
 
 **What this does not guarantee, stated plainly.** It is not a guarantee that retracted content
-stays out of search. The window is the gap between the answer and the write — milliseconds to
-seconds — and a revert queues the restored content for reprocessing, so a late chunk is
-normally overwritten by that re-index. What is not overwritten is **the case where there was
-nothing to go back to and the resource was emptied**: there is no reprocessing to queue.
+stays out of search. The window is open in two directions.
 
-**The window is open in the other direction too.** Deleting the index runs after the same
-check, so a stopped run caught between the answer and the call can land its delete on **the
-restored content's index**. Unlike a late chunk this does not repair itself — the delete
-arrives after the re-index, and nothing queues another run. The resource drops out of search
-until something processes it again. Layer 1 is untouched and one reprocessing restores it.
+- A late chunk putting retracted content back — normally overwritten, because a revert queues
+  the restored content for reprocessing. Not overwritten in **the case where there was nothing
+  to go back to and the resource was emptied**: there is no reprocessing to queue
+- A late delete landing on the restored content's index — this **does not repair itself**, as
+  the delete arrives after the re-index and nothing queues another run. The resource drops out
+  of search until something processes it again (layer 1 is untouched; one reprocessing
+  restores it)
 
-Closing either direction needs each document in the index to carry the run that wrote it.
-What is accepted here is **both of these together**, not one of them.
-
-**The lake's window is the whole ingest, not one chunk.** The question is asked in the same
-place, but a single write is large and cannot be cut up. What gets ingested, though, is a
-version the revert left standing — a revert does not delete version rows; a purge does (the
-three rungs above). So this is not a route by which retracted content comes back, but layer 2
-catching up with what layer 1 currently holds.
-
-The check sits where the capability is handed out — a run-scoped view of the context —
-rather than at each call site: the step bodies reach for these eight times across five
-functions, one of them a loop. The pointer move is handed out from the same place, so that a
-write carrying its own condition and a write that has to ask are not two different habits.
+What is accepted here is **both of these together**, not one of them. The lake's window is the
+whole ingest rather than one chunk, since a single write is large and cannot be cut up — but
+what gets ingested is a version the revert left standing, so that is layer 2 catching up with
+layer 1 rather than retracted content coming back.
 
 **Only a run can be killed.** Purges, the backfill and the Lake retry take the claim too, but
 none of them checks ownership per write, so releasing their claim does not **stop** them. It
@@ -450,42 +395,17 @@ kind of holder recorded on the row (§1) exists for this distinction.
 **over the very content being retracted**. Swapping the owner in one statement leaves no
 moment at which the resource is free.
 
-**A revert goes back to the newest version below the one that is live.** The run it
-stopped may have captured that very file as a version moments before, and going back to it
-is going nowhere: **the file the caller asked to retract stays live, with a version number
-quoted back at them**.
-
-**"The newest version that is not the retracted content" is not enough.** A revert does not
-delete version rows (a purge does — the three rungs above), so after one revert the version
-it stepped off is still active and still the newest. The next revert picks it as the newest
-version that is not the current content, and **hands back exactly what the first one
-retracted**. A revert walks the history backwards, so where it lands is decided by where it
-is standing: below the version that is live. Excluding everything above that is what stops a
-step back turning into a step forward — and what makes a resent request, or a user going
-round twice, land in the same place.
-
-**Where it is standing is found by hash.** The live pointer names an object, not a version,
-so the live version is the newest active row holding those bytes. When no version holds them
-— nothing captured yet, or a kill cut the capture off — there is no bound, and the newest
-version is the right place to land. With nothing below, the resource is emptied, as the
-table in this section says.
-
-The exclusion is then the same shape a purge uses (`below`). The two differ only in how they
-answer "which version holds the content being retracted"; going back from there is one
-behaviour.
-
-**Emptying goes through the same mover.** The "nothing to go back to" path cleared the
-pointer unconditionally, but uploads take no claim (§6), so a promote landing after the read
-would have it **delete the winner's content** — and the retracted object was left parked by
-nobody and tracked by nothing. The conditional move and the parking are one statement,
-content or no content.
-
-**Losing the pointer move is not a restore.** A revert deletes the preview and the indexed
-content right after restoring. Those describe whatever is live, so treating a lost
+**Emptying goes through the same conditional move, not an unconditional clear.** Uploads take
+no claim (§6), so clearing the pointer outright would **delete the winner's content** when a
+promote lands after the read — and leave the retracted object parked by nobody and tracked by
+nothing. **Losing that move is not a restore**: a revert deletes the preview and the indexed
+content right after restoring, and those describe whatever is live, so treating a lost
 compare-and-swap as a success **deletes the derivatives of the writer that won**. The loss is
 returned as a conflict for the caller to retry.
 
-**Show that the resource is half-done.** A killed run — or an abandoned replacement — leaves
+#### Show that the resource is half-done
+
+A killed run — or an abandoned replacement — leaves
 a resource **holding bytes with no version**. It downloads, but there is no preview, no
 search content and no `resource_version` row, which means **layer 1 never captured that
 content and it stops being recoverable the moment something replaces it**. Killed right after
@@ -561,7 +481,7 @@ scope, and remains a problem at its own layer.
 - **DB**: `resource_pipeline` records the claim's owner (a run id) and the kind of holder.
   Liveness is read from the running step's `started_at`, so no expiry column is needed
 - **Worker**: the pipeline, purge, Lake-retry and backfill handlers take the claim and do
-  nothing without it. The step-boundary fence and the version-capture lock are removed (§5)
+  nothing without it. The step-boundary fence and the version-gate lock are removed (§5)
 - **API**: package and draft purges run over HTTP, so they take the claim too (409 for a
   retry when they cannot). Plus routes to report a run's state and to kill it
 - **Frontend**: processing state and elapsed time, the kill action, and the purge path
@@ -570,7 +490,7 @@ scope, and remains a problem at its own layer.
   (versions, downloads, replacement) is unaffected, so waiting is the safe direction
 
 **Net effect**: one mechanism is added, and two go — the generation fence (a context
-method and three call sites) and the version-capture lock. Defence moves from "a condition
+method and three call sites) and the version-gate lock. Defence moves from "a condition
 at every write site" to "one check at the entry point", which is a smaller surface to
 leave a hole in.
 
@@ -595,14 +515,19 @@ leave a hole in.
 6. **`claimResources` does not create the row**: the row _is_ the claim, so a resource
    without a pipeline row cannot be claimed and `fn` runs **with no exclusion** (§4). The
    revert works around it by creating the row itself; the version purge, package and
-   organization purges, the layer-2 retry and the v1 backfill do not. `captureFirstVersion`
+   organization purges, the layer-2 retry and the v1 backfill do not. `createFirstVersion`
    is written for "a resource that was never enqueued" and gives it **version 1 with no
    pipeline row**, so purging that version is a reachable path. Insert-missing-then-claim
    belongs in `claimResources`, held back because a bulk purge would carry hundreds of inserts
-7. **A version superseded before it reached layer 2** can never reach it (§4, known
-   limitation). An ingest replaces the catalog's current contents wholesale, so admitting one
-   would make retracted content what layer 2 serves. Doing it safely needs an
-   ingest-then-roll-back-to-the-previous-snapshot sequence
+7. **A version superseded before it reached layer 2** can never reach it. Eligibility is
+   limited to active versions, and admitting superseded ones would let an ingest **replace the
+   catalog's current contents with that version** (ii-a is a wholesale replace), making
+   retracted content what layer 2 serves. The overtake guard cannot tell the difference — the
+   retracted version carries the higher number. An interpretation or ingest that fails and is
+   then reverted therefore leaves that version's diff permanently `not-ingested`. Admitting
+   them safely needs an ingest-then-roll-back-to-the-previous-snapshot sequence. A version
+   superseded **after** reaching layer 2 — the ordinary path — keeps its snapshot and stays
+   diffable
 
 ## Related ADRs
 

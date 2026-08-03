@@ -69,9 +69,9 @@ const resourceFieldsSchema = z.object({
 })
 
 // `size` and `hash` are deliberately absent: the pipeline measures the stored
-// object and owns both. Version capture gates on the hash and records it
+// object and owns both. Version create gates on the hash and records it
 // against the bytes it copies (ADR-043), so a caller-supplied value would
-// decide whether versions are ever captured.
+// decide whether versions are ever created.
 
 export const createResourceSchema = resourceFieldsSchema.superRefine(refineUrl)
 

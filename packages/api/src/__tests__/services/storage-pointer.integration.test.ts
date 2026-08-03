@@ -598,7 +598,7 @@ describe('the write-ahead record (ADR-045)', () => {
   })
 
   it('pushes the expiry out when the same key is reserved again', async () => {
-    // Version keys are derived from the version number, so a retried capture
+    // Version keys are derived from the version number, so a retried create
     // reserves the one the failed attempt did. Inheriting that attempt's expiry
     // would leave the sweep free to delete the object mid-write.
     const key = getStorageKey(packageId, resourceId, 'retried')

@@ -52,8 +52,8 @@ describe('createResourceSchema', () => {
   })
 
   // size/hash are measured by the pipeline, not accepted from callers (ADR-043):
-  // version capture gates on the hash, so a supplied value would decide whether
-  // versions are ever captured.
+  // version create gates on the hash, so a supplied value would decide whether
+  // versions are ever created.
   it('ignores a caller-supplied size and hash', () => {
     const result = createResourceSchema.safeParse({
       packageId: validUuid,

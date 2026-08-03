@@ -39,7 +39,7 @@ export { publicResourceColumns }
 
 /**
  * Latest version number a resource still serves, per resource (ADR-043); absent
- * until the first capture.
+ * until the first create.
  *
  * Shared with the package detail read, which reports the same number on the
  * same rows — stated twice, the two screens can disagree about a resource the
@@ -431,7 +431,7 @@ export class ResourceService {
    * The pointer moves and the key it replaced is parked in one statement, so
    * the row can never name an object that is already being deleted. `hash` is
    * cleared rather than taken from the caller: the worker measures the stored
-   * bytes, and version capture records what it measured.
+   * bytes, and version create records what it measured.
    *
    * `expectedPendingKey` is the key the caller uploaded to. Promoting whatever
    * happens to be pending would publish a key a concurrent `prepareForUpload`

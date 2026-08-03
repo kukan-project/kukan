@@ -11,6 +11,7 @@ import type { PackageDbState, ResourceSchema } from '@kukan/shared'
 import type { PublishedContent } from '@kukan/api/services/storage-pointer'
 import type { LakeIngestRow } from '@kukan/api/services/lake-ingest'
 import type { ResourceClaim } from '@kukan/api/services/pipeline-claim'
+import type { VersionResult } from './version-gate'
 
 /** Minimal resource data needed by pipeline steps */
 export interface ResourceForPipeline {
@@ -68,48 +69,48 @@ export interface PipelineContext {
    *  No-op when OpenSearch is not configured. */
   deleteContent(resourceId: string): Promise<void>
   /**
-   * Capture the resource's current file as its next version (ADR-043 layer 1).
+   * Create the resource's current file as its next version (ADR-043 layer 1).
    *
-   * The whole sequence — change gate, next number, copy, insert — runs under a
-   * per-resource advisory lock on a single transaction. Serialized, because two
-   * runs would otherwise pick the same N and the second copy would overwrite
-   * the first's file while only one insert survived the unique index. On one
-   * transaction, because a lock held while reaching back to the pool for the
-   * reads and the insert exhausts it.
+   * The whole sequence — change gate, next number, copy, insert — is protected
+   * by the run's claim on the resource, not by a lock of its own (ADR-044 §5).
+   * Nothing else is choosing a version number while the claim is held, so the
+   * reads need no transaction. What the claim does not catch is a run taken over
+   * for being stale and still alive, which the pointer comparison in the gate is
+   * there for.
    */
-  captureVersion(input: {
+  createVersion(input: {
     resourceId: string
     packageId: string
     /**
-     * The key this run wrote, holding the content to capture. Nothing rewrites
+     * The key this run wrote, holding the content to create. Nothing rewrites
      * it, so the copy is the content Fetch measured — the version and its hash
      * cannot come apart.
      */
     currentStorageKey: string
-    /** Hash Fetch measured on that object; gates the capture and is recorded. */
+    /** Hash Fetch measured on that object; gates version creation, and is recorded. */
     contentHash: string
     /** Size Fetch measured on that object. */
     contentSize: number
     /**
-     * This run's claim. The version row is the one thing a capture leaves
+     * This run's claim. The version row is the one thing creating a version leaves
      * behind for the resource rather than for the run, so it is written under
      * the claim like every other durable write (ADR-044 §4).
      */
     claim: ResourceClaim
-  }): Promise<{ captured: false } | { captured: true; version: number }>
+  }): Promise<VersionResult>
   /**
    * The active version holding exactly these bytes, or null (ADR-046).
    *
-   * What Interpret reads. Asked rather than taken from the capture, because a
-   * run that captured nothing still has a version to interpret: the content was
+   * What Interpret reads. Asked rather than taken from the creation, because a
+   * run that created nothing still has a version to interpret: the content was
    * already there under an earlier number, and its earlier interpretation may
    * have failed. The same lookup answers both, and the file it names never
    * changes — which is what makes interpretation re-runnable.
    *
-   * Null means no version holds this run's content: the capture failed, or
+   * Null means no version holds this run's content: the creation failed, or
    * another run moved the pointer and this one is no longer describing the
    * resource. Either way there is nothing to interpret yet, and the run that
-   * does capture these bytes will interpret them.
+   * does create these bytes will interpret them.
    *
    * The format comes back with it, and it is the one Interpret reads by
    * (ADR-046 §6).
@@ -126,7 +127,7 @@ export interface PipelineContext {
   /**
    * Record what Interpret made of a version (ADR-046).
    *
-   * Separate from the capture because the version is settled first: no schema
+   * Separate from the creation because the version is settled first: no schema
    * exists at that point, and one that never arrives is a normal state rather
    * than a lost write. Conditioned on the claim in its own statement, like the
    * insert it follows — the claim comes from the run-scoped context.
@@ -141,14 +142,14 @@ export interface PipelineContext {
    * The active version holding exactly these bytes and not yet in DuckLake, or
    * null (ADR-043 layer 2).
    *
-   * Asked every run, not only when a version was just captured: a Lake step that
+   * Asked every run, not only when a version was just created: a Lake step that
    * failed once would otherwise never retry — the next run finds the content
-   * unchanged, skips the capture, and once a newer version exists the backfill
+   * unchanged, creates none, and once a newer version exists the backfill
    * cannot reach the older one either, leaving that pair permanently undiffable.
    */
   pendingLakeVersion(resourceId: string, contentHash: string): Promise<number | null>
   /**
-   * Layer 2 (ADR-043 Phase ii): load a captured version's tabular content into
+   * Layer 2 (ADR-043 Phase ii): load a created version's tabular content into
    * DuckLake from the table an interpretation produced, and record the snapshot
    * on the version row (ADR-046). Returns null when the context was built
    * without a DuckLake config.

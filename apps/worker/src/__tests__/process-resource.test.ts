@@ -68,7 +68,7 @@ import {
 
 function createMockCtx(): PipelineContextMock {
   const ctx = createPipelineContextMock()
-  ctx.captureVersion.mockResolvedValue({ captured: true, version: 1 })
+  ctx.createVersion.mockResolvedValue({ created: true, version: 1 })
   // What the interpretation reads (ADR-046): the version holding this run's content.
   ctx.versionForContent.mockResolvedValue({
     version: 1,
@@ -135,7 +135,7 @@ describe('processResource', () => {
     mockTracker.updateStatus.mockResolvedValue(undefined)
     mockTracker.updateInterpretResult.mockResolvedValue(null)
 
-    // Version step defaults to capturing a new version (v1).
+    // Version step defaults to creating a new version (v1).
     // Lake step defaults to a no-op (no DuckLake configured in these tests).
     vi.mocked(executeLake).mockResolvedValue({ status: 'skipped' })
   })
@@ -189,7 +189,7 @@ describe('processResource', () => {
     })
   })
 
-  it('interprets a version under the format it was captured with, not the label now (ADR-046)', async () => {
+  it('interprets a version under the format it was created with, not the label now (ADR-046)', async () => {
     // The label moved to TSV after these bytes were settled as a CSV. Reading
     // the current one would parse a settled version by a rule it was never read
     // with, and overwrite its schema with the result.
@@ -271,7 +271,7 @@ describe('processResource', () => {
   })
 
   it('skips the interpretation when no version holds this run’s content', async () => {
-    // The capture failed, or another run moved the pointer. There is nothing
+    // The create failed, or another run moved the pointer. There is nothing
     // immutable to interpret, and the previous preview still describes some
     // content — so it is left alone rather than cleared (ADR-046).
     vi.mocked(executeFetch).mockResolvedValue({
@@ -294,7 +294,7 @@ describe('processResource', () => {
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('complete')
   })
 
-  it('captures the version without a schema (ADR-046)', async () => {
+  it('creates the version without a schema (ADR-046)', async () => {
     vi.mocked(executeFetch).mockResolvedValue({
       storageKey: 'resources/pkg-1/res-1',
       format: 'CSV',
@@ -309,10 +309,10 @@ describe('processResource', () => {
     await processResource('res-1', ctx, db, queue)
 
     // The version is settled from its bytes; nothing has read the content yet.
-    expect(ctx.captureVersion).toHaveBeenCalledWith(
+    expect(ctx.createVersion).toHaveBeenCalledWith(
       expect.not.objectContaining({ schema: expect.anything() })
     )
-    expect(ctx.captureVersion.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(ctx.createVersion.mock.invocationCallOrder[0]).toBeLessThan(
       ctx.versionForContent.mock.invocationCallOrder[0]
     )
   })

@@ -20,7 +20,7 @@ function bufferToStream(buf: Buffer): Readable {
   return Readable.from(buf)
 }
 
-/** Run-scoped text-head key: `previews/{pkg}/{res}.{runToken}.txt`. */
+/** Run-scoped text-head key: `previews/{pkg}/{res}.{writeToken}.txt`. */
 const TEXT_HEAD_KEY = expect.stringMatching(/^previews\/pkg-1\/res-1\.[0-9a-f-]{36}\.txt$/)
 
 function createMockCtx(): PipelineContextMock {

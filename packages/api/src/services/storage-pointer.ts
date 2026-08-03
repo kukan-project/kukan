@@ -33,7 +33,7 @@ export interface PublishedContent {
    *
    * A version is those bytes read under that format, so restoring one restores
    * both — otherwise the resource describes recovered content by a label that
-   * was never applied to it, and the capture gate, which compares the label
+   * was never applied to it, and the version gate, which compares the label
    * against the highest active version's, sees a difference that is not there
    * and files the same bytes again under a new number.
    *
@@ -184,7 +184,7 @@ export const RESERVED_UNTIL = sql`NOW() + INTERVAL '1 hour'`
  * since a missed removal would otherwise cost live data.
  *
  * An existing record has its expiry pushed out rather than left alone: version
- * keys are derived from the version number, so a retried capture reserves the
+ * keys are derived from the version number, so a retried create reserves the
  * same key again, and inheriting the first attempt's expiry would leave the
  * sweep free to delete the object while this write is still going.
  */
@@ -202,7 +202,7 @@ export async function reserveObject(
  * Server-side copy of an object, recorded before it exists (ADR-045).
  *
  * The counterpart to the pipeline's `putObject`, for the writers that copy
- * rather than upload — version capture, the backfill, and the restore a purge
+ * rather than upload — version create, the backfill, and the restore a purge
  * or a revert performs. Here so that reaching for a copy reaches for the
  * recording too; the three of them doing it by hand is three chances to forget,
  * and a fourth call site would have nothing to copy from.

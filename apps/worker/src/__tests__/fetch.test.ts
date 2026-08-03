@@ -98,7 +98,7 @@ describe('executeFetch', () => {
   })
 
   it('recomputes the hash of an upload rather than trusting the stored one', async () => {
-    // Version capture records this value against the bytes it copies (ADR-043),
+    // Version create records this value against the bytes it copies (ADR-043),
     // so a stale or client-supplied one would decide what a version claims.
     const content = 'name,age\nAlice,30\n'
     const expectedHash = `sha256:${createHash('sha256').update(content).digest('hex')}`

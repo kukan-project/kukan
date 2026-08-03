@@ -1,6 +1,6 @@
 /**
  * KUKAN Pipeline — Lake Step (ADR-043 layer 2, Phase ii-a)
- * Loads a newly captured tabular version into DuckLake so later versions can be
+ * Loads a newly created tabular version into DuckLake so later versions can be
  * diffed row by row. Layer 1 (the canonical version file) is already durable by
  * the time this runs, and DuckLake is rebuildable from it, so this step is
  * advisory: skipping or failing it never costs data.
@@ -29,7 +29,7 @@ export type LakeStepResult =
 export interface LakeStepOptions extends Omit<LakeIngestRow, 'version'> {
   /**
    * What Fetch measured on the version this interpreted. The version to ingest
-   * is the one holding it, which is how a run that captured nothing still picks
+   * is the one holding it, which is how a run that created nothing still picks
    * up a version whose earlier ingest failed.
    */
   contentHash: string

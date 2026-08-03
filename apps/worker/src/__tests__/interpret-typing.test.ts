@@ -19,7 +19,7 @@ import {
  * the file back is the stronger check anyway: it covers the types, the values
  * and the null handling in one go.
  */
-/** The captured version the step reads (ADR-046); sized under the interpret cap. */
+/** The created version the step reads (ADR-046); sized under the interpret cap. */
 const version = (storageKey: string, size = 1024) => ({ storageKey, size })
 
 describe('executeInterpret — column typing', () => {

@@ -331,7 +331,7 @@ await queue.process({
     if (!parseJobPayload(job, backfillVersionsJobSchema)) return
     log.info({ jobId: job.id, type: job.type }, 'Backfill versions job started')
     const start = performance.now()
-    const result = await new ResourceVersionService(db).backfillVersions({
+    const result = await new ResourceVersionService(db).createFirstVersions({
       storage,
       queue,
     })

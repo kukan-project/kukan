@@ -102,7 +102,7 @@ async function addTabularResource(
     snapshotId?: number | null
     state?: string
     size?: number
-    /** Defaults to the resource's, the way a capture records it (ADR-046). */
+    /** Defaults to the resource's, the way a version records it (ADR-046). */
     format?: string
   }[],
   opts: {
@@ -172,21 +172,21 @@ describe('countUnversioned', () => {
   })
 })
 
-describe('backfillVersions', () => {
+describe('createFirstVersions', () => {
   it('writes a key of its own attempt, so a retry cannot land on one being swept', async () => {
     // The orphan sweep decides what to delete from a list it read moments
-    // earlier. Derived from the version number alone, a capture that failed and
+    // earlier. Derived from the version number alone, a creation that failed and
     // is retried would reserve, copy and record that same key — and have its
     // object deleted with the row already pointing at it (ADR-045 §3).
     const id = await addResource({ name: 'a' })
 
-    await service.backfillVersions({ storage: mockStorage(), queue: mockQueue() })
+    await service.createFirstVersions({ storage: mockStorage(), queue: mockQueue() })
 
-    const [captured] = await db
+    const [created] = await db
       .select({ storageKey: resourceVersion.storageKey })
       .from(resourceVersion)
       .where(and(eq(resourceVersion.resourceId, id), eq(resourceVersion.version, 1)))
-    expect(captured.storageKey).toMatch(
+    expect(created.storageKey).toMatch(
       new RegExp(`^versions/${packageId}/${id}/v1\\.[0-9a-f-]{36}$`)
     )
   })
@@ -196,10 +196,10 @@ describe('backfillVersions', () => {
     const urlId = await addResource({ name: 'ext', urlType: 'external' })
     const storage = mockStorage()
 
-    const result = await service.backfillVersions({ storage, queue: mockQueue() })
+    const result = await service.createFirstVersions({ storage, queue: mockQueue() })
 
     // Uploads with no format, so nothing for layer 2 to interpret.
-    expect(result).toEqual({ backfilled: 2, skipped: 0, failed: 0, queued: 0, queueFailed: 0 })
+    expect(result).toEqual({ created: 2, skipped: 0, failed: 0, queued: 0, queueFailed: 0 })
     // Copies from the live key to v1 — never a network fetch. The destination
     // carries a per-attempt token (ADR-043), so it is matched by shape.
     expect((storage as { copy: ReturnType<typeof vi.fn> }).copy).toHaveBeenCalledWith(
@@ -218,31 +218,31 @@ describe('backfillVersions', () => {
   })
 
   it('leaves a resource alone while its pipeline is in flight', async () => {
-    // That run captures v1 itself; counting it here would misreport how much
+    // That run creates v1 itself; counting it here would misreport how much
     // migration work is left.
     const id = await addResource({ name: 'a' })
     await db.insert(resourcePipeline).values({ resourceId: id, status: 'processing' })
     const storage = mockStorage()
 
-    const result = await service.backfillVersions({ storage, queue: mockQueue() })
+    const result = await service.createFirstVersions({ storage, queue: mockQueue() })
 
-    expect(result.backfilled).toBe(0)
+    expect(result.created).toBe(0)
     expect(await service.countUnversioned()).toBe(0)
   })
 
   it('skips a resource something else is holding', async () => {
     // A purge holds the claim without moving the pipeline's status, so the
     // status filter above does not see it. The migration steps aside and the
-    // next run of the job picks the resource up — and once the capture lock
+    // next run of the job picks the resource up — and once the version lock
     // goes (ADR-044 §5), this claim is the only thing keeping the two apart.
     const id = await addResource({ name: 'a' })
     await db.insert(resourcePipeline).values({ resourceId: id, status: 'complete' })
     await claimResources(db, [id], randomUUID(), CLAIM_STALE_AFTER_MS, 'run')
     const storage = mockStorage()
 
-    const result = await service.backfillVersions({ storage, queue: mockQueue() })
+    const result = await service.createFirstVersions({ storage, queue: mockQueue() })
 
-    expect(result).toMatchObject({ backfilled: 0, skipped: 1, failed: 0 })
+    expect(result).toMatchObject({ created: 0, skipped: 1, failed: 0 })
     expect((storage as { copy: ReturnType<typeof vi.fn> }).copy).not.toHaveBeenCalled()
     expect(await service.countUnversioned()).toBe(1)
   })
@@ -251,22 +251,22 @@ describe('backfillVersions', () => {
     await addResource({ name: 'a' })
     const storage = mockStorage()
 
-    const first = await service.backfillVersions({ storage, queue: mockQueue() })
-    expect(first.backfilled).toBe(1)
-    const second = await service.backfillVersions({ storage, queue: mockQueue() })
-    expect(second).toEqual({ backfilled: 0, skipped: 0, failed: 0, queued: 0, queueFailed: 0 })
+    const first = await service.createFirstVersions({ storage, queue: mockQueue() })
+    expect(first.created).toBe(1)
+    const second = await service.createFirstVersions({ storage, queue: mockQueue() })
+    expect(second).toEqual({ created: 0, skipped: 0, failed: 0, queued: 0, queueFailed: 0 })
   })
 
   it('completes with more resources in flight than the pool has connections', async () => {
-    // Each capture holds an advisory lock for its whole transaction. If any query
-    // inside reached back to the pool, the chunk would deadlock: BACKFILL_CONCURRENCY
+    // Each create holds an advisory lock for its whole transaction. If any query
+    // inside reached back to the pool, the chunk would deadlock: FIRST_VERSION_CONCURRENCY
     // locks are held at once and the test pool has 5 connections.
     for (let i = 0; i < 12; i++) await addResource({ name: `r${i}` })
     const storage = mockStorage()
 
-    const result = await service.backfillVersions({ storage, queue: mockQueue() })
+    const result = await service.createFirstVersions({ storage, queue: mockQueue() })
 
-    expect(result).toEqual({ backfilled: 12, skipped: 0, failed: 0, queued: 0, queueFailed: 0 })
+    expect(result).toEqual({ created: 12, skipped: 0, failed: 0, queued: 0, queueFailed: 0 })
     expect(await service.countUnversioned()).toBe(0)
   }, 30_000)
 
@@ -278,9 +278,9 @@ describe('backfillVersions', () => {
     const id = await addResource({ name: 'a', content: 'original', hash: 'not-a-real-hash' })
     const storage = mockStorage()
 
-    const result = await service.backfillVersions({ storage, queue: mockQueue() })
+    const result = await service.createFirstVersions({ storage, queue: mockQueue() })
 
-    expect(result).toMatchObject({ backfilled: 1, skipped: 0, failed: 0 })
+    expect(result).toMatchObject({ created: 1, skipped: 0, failed: 0 })
     const [row] = await db.select({ hash: resource.hash }).from(resource).where(eq(resource.id, id))
     expect(row.hash).toBe(hashBuffer(Buffer.from('original')))
     const version = await service.getVersion(id, 1)
@@ -288,7 +288,7 @@ describe('backfillVersions', () => {
     expect(await service.countUnversioned()).toBe(0)
   })
 
-  it('leaves the row describing newer content when a run publishes mid-capture', async () => {
+  it('leaves the row describing newer content when a run publishes mid-create', async () => {
     // The copy takes a key nothing rewrites, so v1 still holds the bytes this
     // row described — that is real history. What must not happen is the row
     // being normalized back to it: `hash` now describes the newer object, and
@@ -306,16 +306,16 @@ describe('backfillVersions', () => {
       await realCopy(src, dest)
     })
 
-    const result = await service.backfillVersions({ storage, queue: mockQueue() })
+    const result = await service.createFirstVersions({ storage, queue: mockQueue() })
 
-    expect(result).toMatchObject({ backfilled: 1, skipped: 0, failed: 0 })
+    expect(result).toMatchObject({ created: 1, skipped: 0, failed: 0 })
     // The key carries a per-attempt token, so it is read back off the row.
     // (The view omits storage pointers — no response carries them, ADR-043.)
-    const [captured] = await db
+    const [created] = await db
       .select({ storageKey: resourceVersion.storageKey })
       .from(resourceVersion)
       .where(and(eq(resourceVersion.resourceId, id), eq(resourceVersion.version, 1)))
-    expect(objects.get(captured.storageKey)?.toString()).toBe('original')
+    expect(objects.get(created.storageKey)?.toString()).toBe('original')
     const [row] = await db.select().from(resource).where(eq(resource.id, id))
     expect(row.hash).toBe('sha256:newer')
   })
@@ -331,8 +331,8 @@ describe('backfillVersions', () => {
       .mockRejectedValueOnce(new Error('missing object'))
       .mockImplementation(realCopy)
 
-    const result = await service.backfillVersions({ storage, queue: mockQueue() })
-    expect(result.backfilled).toBe(1)
+    const result = await service.createFirstVersions({ storage, queue: mockQueue() })
+    expect(result.created).toBe(1)
     expect(result.failed).toBe(1)
   })
 })
@@ -379,8 +379,8 @@ describe('countPendingLakeIngest', () => {
 
   it('reads the format off the version, not the label the resource carries now', async () => {
     // Relabelling a resource must not decide what settled bytes are (ADR-046).
-    // Both directions in one count: a version captured as a PDF stays out under
-    // a CSV label, and one captured as a CSV stays in under a PDF label.
+    // Both directions in one count: a version created as a PDF stays out under
+    // a CSV label, and one created as a CSV stays in under a PDF label.
     await addTabularResource('now-labelled-csv', [{ version: 1, format: 'PDF' }])
     await addTabularResource('now-labelled-pdf', [{ version: 1, format: 'CSV' }], {
       format: 'PDF',

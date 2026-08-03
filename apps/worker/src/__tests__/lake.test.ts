@@ -36,7 +36,7 @@ describe('executeLake', () => {
   it('loads the local table, not the preview in storage', async () => {
     // The whole point of the split (ADR-046): only the load is under the
     // catalog lock, and a local file needs no pointer keeping it alive.
-    // Resolved from the content hash rather than "did this run capture", so a
+    // Resolved from the content hash rather than "did this run create", so a
     // version whose earlier ingest failed is retried on any later run.
     const ctx = createCtx()
 

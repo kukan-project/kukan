@@ -55,7 +55,7 @@ export async function executeFetch(
   // retraction undone by the run queued to finish it (ADR-044 §4).
   if (res.urlType === 'upload' || rebuildOnly) {
     // `upload-complete` moved the pointer; this measures what actually landed
-    // rather than trusting the value the call carried. Version capture records
+    // rather than trusting the value the call carried. Version create records
     // this hash against the bytes it copies (ADR-043), so a client-supplied one
     // would decide what a version claims to hold.
     if (!res.storageKey) {

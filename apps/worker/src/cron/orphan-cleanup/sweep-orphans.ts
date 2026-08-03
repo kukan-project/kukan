@@ -55,7 +55,7 @@ export async function sweepOrphanedObjects(
 
   // What makes the gap between this list, the check below and the delete after
   // it safe: no writer can produce a key that is already on it. Every key a
-  // writer mints carries a token of its own attempt (ADR-043), so a capture or
+  // writer mints carries a token of its own attempt (ADR-043), so a creation or
   // an upload that failed and is retried writes somewhere else — the object
   // this pass decided about is the one it deletes.
   const keys = due.map((r) => r.key)

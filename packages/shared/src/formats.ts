@@ -195,15 +195,15 @@ export const PREVIEW_PREFIX = 'previews/'
 /**
  * Compute storage key for a resource's raw file.
  *
- * @param runToken - makes the key unique to the run that writes it, exactly as
+ * @param writeToken - makes the key unique to the run that writes it, exactly as
  *   {@link getPreviewKey} does. Readers follow `resource.storage_key` instead of
  *   recomputing the key, so the object a run wrote can never be rewritten
- *   underneath it: a version capture copies bytes that cannot have moved since
+ *   underneath it: creating a version copies bytes that cannot have moved since
  *   its own Fetch read them, and a failed write leaves the previous object
  *   untouched because it was never the target.
  */
-export function getStorageKey(packageId: string, resourceId: string, runToken: string): string {
-  return `${RESOURCE_PREFIX}${packageId}/${resourceId}.${runToken}`
+export function getStorageKey(packageId: string, resourceId: string, writeToken: string): string {
+  return `${RESOURCE_PREFIX}${packageId}/${resourceId}.${writeToken}`
 }
 
 /** Storage key prefix for immutable per-version files (ADR-043) */
@@ -212,9 +212,9 @@ export const VERSION_PREFIX = 'versions/'
 /**
  * Compute storage key for a specific version of a resource's canonical file.
  *
- * @param attempt - makes the key unique to the attempt that writes it, as
+ * @param writeToken - makes the key unique to the write that creates it, as
  *   {@link getStorageKey} and {@link getPreviewKey} do. Derived from the version
- *   number alone, a capture that failed and is retried would reserve, copy and
+ *   number alone, a creation that failed and is retried would reserve, copy and
  *   record *the same key* — and the orphan sweep decides what to delete from a
  *   list it read moments earlier, so a retry landing in between would have its
  *   object deleted with the row already pointing at it (ADR-045 §3). Nothing
@@ -224,13 +224,13 @@ export function getVersionKey(
   packageId: string,
   resourceId: string,
   version: number,
-  attempt: string
+  writeToken: string
 ): string {
-  return `${VERSION_PREFIX}${packageId}/${resourceId}/v${version}.${attempt}`
+  return `${VERSION_PREFIX}${packageId}/${resourceId}/v${version}.${writeToken}`
 }
 
 /**
- * How a captured version's content was obtained (ADR-043): an explicit upload,
+ * How a created version's content was obtained (ADR-043): an explicit upload,
  * or a snapshot observed when fetching an external URL.
  */
 export function versionOrigin(urlType: string | null): 'upload' | 'fetch' {
@@ -240,7 +240,7 @@ export function versionOrigin(urlType: string | null): 'upload' | 'fetch' {
 /**
  * Compute storage key for a resource's preview file.
  *
- * @param runToken - makes the key unique to one pipeline run. Readers follow
+ * @param writeToken - makes the key unique to one pipeline run. Readers follow
  *   `resource_pipeline.preview_key` rather than recomputing the key, so a fresh
  *   token per run means the object a reader resolved can never be rewritten
  *   underneath it — which is what lets DuckLake ingest (ADR-043 layer 2) trust
@@ -253,9 +253,9 @@ export function getPreviewKey(
   packageId: string,
   resourceId: string,
   ext: 'parquet' | 'json' | 'txt',
-  runToken: string
+  writeToken: string
 ): string {
-  return `${PREVIEW_PREFIX}${packageId}/${resourceId}.${runToken}.${ext}`
+  return `${PREVIEW_PREFIX}${packageId}/${resourceId}.${writeToken}.${ext}`
 }
 
 const OFFICE_FORMATS = new Set(['xlsx', 'xls', 'doc', 'docx', 'ppt', 'pptx'])
