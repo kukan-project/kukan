@@ -207,12 +207,24 @@ export function PipelineStatusDetail({ resourceId, onSettled }: PipelineStatusDe
         return
       }
       // The two actions that answer with what they left behind. A revert says
-      // whether its cleanup finished; the repair says whether it cleared what an
-      // emptied resource had left, and `queued` alone is never enough — a job on
-      // its way is not a job that ran.
+      // whether its cleanup finished, in one field.
+      //
+      // The repair answers in whichever shape it took, and the other field is
+      // not an answer: an emptied resource reports `cleared` and queues
+      // nothing, one with content reports `queued` and leaves `cleared` null.
+      // Reading `cleared` alone is what let a queue that is down clear the
+      // warning — nothing was cleared and nothing was queued, and the two
+      // falses read as a repair that happened.
       if (action === 'revert' || rebuild) {
-        const result = (await res.json()) as { cleanedUp?: boolean; cleared?: boolean | null }
-        setPartial(result.cleanedUp === false || result.cleared === false)
+        const result = (await res.json()) as {
+          cleanedUp?: boolean
+          queued?: boolean
+          cleared?: boolean | null
+        }
+        const done = rebuild
+          ? (result.cleared ?? result.queued ?? false)
+          : result.cleanedUp !== false
+        setPartial(!done)
       }
       refetch()
     } catch {

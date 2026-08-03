@@ -195,12 +195,48 @@ describe('PipelineStatusDetail', () => {
     )
     await screen.findByRole('alert')
 
-    // The run has stopped, so the repair control is offered.
+    // The run has stopped, so the repair control is offered. It answers in the
+    // repair's own shape, not the revert's: nothing cleared because there was
+    // content to rebuild, and nothing queued because the queue was down.
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ queued: false, cleared: null }),
+    } as Response)
     showing('complete', [])
     rerender(<PipelineStatusDetail resourceId="r1" />)
     fireEvent.click(screen.getByRole('button', { name: /Rebuild preview & index/ }))
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+  })
+
+  it('clears the warning once the repair has a job on its way', async () => {
+    // The counterpart: `queued` is the whole of what the content path does, so
+    // holding the warning past a successful enqueue would leave it up for good
+    // — nothing later in this view retracts it.
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ cleanedUp: false, restored: 1 }),
+    } as Response)
+    showing('processing', [runningStep(5)])
+    const { rerender } = render(<PipelineStatusDetail resourceId="r1" />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Stop and revert/ }))
+    fireEvent.click(
+      screen
+        .getAllByRole('button', { name: /Stop and revert/ })
+        .find((b) => b.closest('[role="dialog"]'))!
+    )
+    await screen.findByRole('alert')
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ queued: true, cleared: null }),
+    } as Response)
+    showing('complete', [])
+    rerender(<PipelineStatusDetail resourceId="r1" />)
+    fireEvent.click(screen.getByRole('button', { name: /Rebuild preview & index/ }))
+
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
   })
 
   it('names the content that was never saved as a version', async () => {
