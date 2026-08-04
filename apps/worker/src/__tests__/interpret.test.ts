@@ -6,7 +6,6 @@ import JSZip from 'jszip'
 import { executeInterpret } from '../pipeline/steps/interpret'
 import { MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
 import { ENCODING_SCAN_LIMIT, MAX_CSV_COLUMNS } from '@/config'
-import { InterpretationFailed } from '../pipeline/interpret/version'
 import {
   captureUpload,
   createPipelineContextMock,
@@ -315,25 +314,27 @@ describe('executeInterpret', () => {
     expect(read).toBeLessThanOrEqual(ENCODING_SCAN_LIMIT + CHUNK)
   })
 
-  it('reports the encoding even when the interpretation then fails', async () => {
-    // Encoding is settled from the bytes before anything heavy runs, so losing
-    // it to a later DuckDB failure throws away an answer that was right. And
-    // the loss is silent: all three readers fall back to UTF-8 and serve
-    // mojibake rather than erroring (#251).
+  it('hands the encoding over before anything that can fail', async () => {
+    // Settled from the bytes before anything heavy runs, so a later failure
+    // must not take it back — losing it is silent, since all three readers fall
+    // back to UTF-8 and serve mojibake rather than erroring (#251).
     ctx.storage.download.mockResolvedValue(Readable.from(shiftJisCsv()))
     ctx.putObject.mockRejectedValueOnce(new Error('storage is down'))
+    const onEncoding = vi.fn()
 
     const failure = await executeInterpret(
       'res-fail',
       'pkg-1',
       version('resources/pkg-1/res-fail'),
       'CSV',
-      ctx
+      ctx,
+      { onEncoding }
     ).catch((err: unknown) => err)
 
-    expect(failure).toBeInstanceOf(InterpretationFailed)
-    expect((failure as InterpretationFailed).encoding).toBe('Shift_JIS')
-    expect((failure as InterpretationFailed).message).toBe('storage is down')
+    // The interpretation failed on its own terms, unwrapped — the caller sees
+    // what actually went wrong rather than a name for where it happened.
+    expect((failure as Error).message).toBe('storage is down')
+    expect(onEncoding).toHaveBeenCalledWith('Shift_JIS')
   })
 
   it('refuses a CSV too wide to preview without leaving it outstanding', async () => {

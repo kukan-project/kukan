@@ -63,6 +63,17 @@ export interface InterpretHooks {
    * the hook, since layer 2 is advisory and rebuildable from layer 1.
    */
   onTable?(parquetPath: string): Promise<void>
+  /**
+   * The encoding, the moment it is settled — before anything that can fail.
+   *
+   * Detection reads the bytes first, so an interpretation that dies later
+   * (DuckDB out of memory, a malformed CSV) used to discard an answer that was
+   * already right. Losing it is invisible: all three readers of
+   * `metadata.encoding` fall back to UTF-8, so it surfaces as mojibake in the
+   * search index, the text endpoint and the material an AI suggestion is built
+   * from — never as an error.
+   */
+  onEncoding?(encoding: string): Promise<void>
 }
 
 /**
@@ -146,7 +157,8 @@ export async function executeInterpret(
       // does with it.
       await hooks.onTable?.(table.parquetPath)
       return { previewKey }
-    }
+    },
+    hooks.onEncoding
   )
 
   // The schema goes back whether or not there was a table. An empty one is not

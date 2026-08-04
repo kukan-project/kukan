@@ -15,7 +15,6 @@ import type { QueueAdapter } from '@kukan/queue-adapter'
 import { LAKE_INGEST_JOB_TYPE, PIPELINE_JOB_TYPE } from '@kukan/shared'
 import { withResourceClaim } from '@kukan/api/services/pipeline-claim'
 import { RunCancelledError, StepTracker } from './step-tracker'
-import { InterpretationFailed } from './interpret/version'
 import { heldContext } from './held-context'
 import { executeFetch } from './steps/fetch'
 import { executeInterpret } from './steps/interpret'
@@ -168,6 +167,10 @@ async function runPipeline(
           version.format,
           ctx,
           {
+            // Persisted here rather than waiting for the result: the
+            // interpretation may not reach one, and this answer is right
+            // whether or not it does.
+            onEncoding: (encoding) => tracker.mergeMetadata({ encoding }),
             onTable: async (parquetPath) => {
               lakeRan = true
               await runLakeStep(tracker, queue, ctx, {
@@ -220,12 +223,6 @@ async function runPipeline(
       // A kill is not this step failing: the orchestrator leaves without
       // recording, because the record belongs to whoever holds the claim now.
       if (err instanceof RunCancelledError) throw err
-      // The encoding was settled before whatever failed, and it is the one part
-      // of the interpretation that is still right. Dropped, the three readers
-      // fall back to UTF-8 and quietly serve mojibake.
-      if (err instanceof InterpretationFailed) {
-        await tracker.mergeMetadata({ encoding: err.encoding })
-      }
       await tracker.failStep(interpretStepId, (err as Error).message)
     }
 

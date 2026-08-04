@@ -176,7 +176,7 @@ describe('processResource', () => {
       { storageKey: 'versions/pkg-1/res-1/v1', size: 42 },
       'CSV',
       held,
-      { onTable: expect.any(Function) }
+      { onEncoding: expect.any(Function), onTable: expect.any(Function) }
     )
     // Fetch + Version + Interpret + Lake + Index = 5 steps
     expect(mockTracker.startStep).toHaveBeenCalledTimes(5)

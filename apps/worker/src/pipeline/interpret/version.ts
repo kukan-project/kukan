@@ -25,7 +25,6 @@ import {
 import { interpretCsv } from './csv'
 import { countTitleRows } from './csv-title-rows'
 import type { PipelineContext } from '../types'
-import { RunCancelledError } from '../step-tracker'
 import { MAX_CSV_COLUMNS } from '@/config'
 
 /** The interpretation, for as long as the callback runs. */
@@ -66,30 +65,6 @@ export type NoTableReason = 'no-columns' | 'too-many-columns'
 const NO_TABLE: ResourceSchema = { rowCount: 0, columns: [] }
 
 /**
- * An interpretation that failed after the encoding was settled.
- *
- * Encoding is decided from the bytes first, before anything heavy runs, so a
- * DuckDB OOM or a malformed CSV throws away an answer that was already right.
- * Losing it is not visible either: all three readers of `metadata.encoding`
- * fall back to UTF-8, so the loss surfaces as mojibake — in the search index,
- * in the text endpoint, and in the material an AI suggestion is built from
- * (ADR-040) — rather than as an error.
- *
- * A cancellation is not wrapped. It is not this step failing (the run has been
- * displaced and the record belongs to whoever holds the claim now), and the
- * orchestrator recognises it by type.
- */
-export class InterpretationFailed extends Error {
-  constructor(
-    readonly encoding: string,
-    cause: unknown
-  ) {
-    super(cause instanceof Error ? cause.message : String(cause), { cause })
-    this.name = 'InterpretationFailed'
-  }
-}
-
-/**
  * Interpret a CSV/TSV version file and hand the table to `use`.
  *
  * @param fmt - lowercased format; the caller has already established that this
@@ -99,7 +74,8 @@ export async function withInterpretedVersion<T>(
   source: { storageKey: string },
   fmt: string,
   ctx: PipelineContext,
-  use: (table: InterpretedTable) => Promise<T>
+  use: (table: InterpretedTable) => Promise<T>,
+  onEncoding?: (encoding: string) => Promise<void>
 ): Promise<InterpretOutcome<T>> {
   // Streamed to disk rather than buffered: DuckDB reads the file from there,
   // and the JS heap never holds the whole table (ADR-046).
@@ -110,39 +86,39 @@ export async function withInterpretedVersion<T>(
     // also up to 50MB on the heap and a second of chardet per megabyte, for an
     // answer `readEncodingSample` reaches with a bound.
     const encoding = detectEncoding(fmt, await readEncodingSample(createReadStream(rawPath)))
+    // Handed over the moment it is settled, like everything else this function
+    // produces. Nothing below can fail in a way that takes it back — which is
+    // the point: a DuckDB OOM used to discard an answer that was already right,
+    // and silently, since all three readers fall back to UTF-8 and serve
+    // mojibake rather than erroring.
+    await onEncoding?.(encoding)
 
-    // Everything past here can fail, and the encoding must not go with it.
-    try {
-      const charset = toCharset(encoding)
-      const csvPath = charset === 'utf-8' ? rawPath : await transcodeToUtf8(rawPath, charset)
-      // Dead the moment it has been transcoded, and up to 50MB of it would
-      // otherwise sit on disk under the whole DuckDB pass.
-      if (csvPath !== rawPath) await rm(rawPath, { force: true })
+    const charset = toCharset(encoding)
+    const csvPath = charset === 'utf-8' ? rawPath : await transcodeToUtf8(rawPath, charset)
+    // Dead the moment it has been transcoded, and up to 50MB of it would
+    // otherwise sit on disk under the whole DuckDB pass.
+    if (csvPath !== rawPath) await rm(rawPath, { force: true })
 
-      const { rows: titleRows, columnCount } = await countTitleRows(csvPath)
-      if (columnCount === 0) return { encoding, schema: NO_TABLE, reason: 'no-columns' }
-      // Too wide to preview (e.g. a pivot table). Reported as an interpretation
-      // that produced no table rather than as a failure: the width is a property
-      // of the file, so retrying reaches it again — and a version with no schema
-      // is one nothing has interpreted yet, which the hourly sweep hands out
-      // every hour for good. The reason is recorded so "no table here" and "too
-      // wide for one" stay distinguishable.
-      if (columnCount > MAX_CSV_COLUMNS) {
-        return { encoding, schema: NO_TABLE, reason: 'too-many-columns' }
-      }
-
-      const parquetPath = `${csvPath}.parquet`
-      const schema = await interpretCsv(csvPath, parquetPath, titleRows)
-      // And the source is dead once it has been interpreted. What the callback
-      // does next — an upload, a wait on the catalog-wide lock — would hold it
-      // for nothing.
-      await rm(csvPath, { force: true })
-
-      return { encoding, schema, used: await use({ parquetPath, schema }) }
-    } catch (err) {
-      if (err instanceof RunCancelledError) throw err
-      throw new InterpretationFailed(encoding, err)
+    const { rows: titleRows, columnCount } = await countTitleRows(csvPath)
+    if (columnCount === 0) return { encoding, schema: NO_TABLE, reason: 'no-columns' }
+    // Too wide to preview (e.g. a pivot table). Reported as an interpretation
+    // that produced no table rather than as a failure: the width is a property
+    // of the file, so retrying reaches it again — and a version with no schema
+    // is one nothing has interpreted yet, which the hourly sweep hands out
+    // every hour for good. The reason is recorded so "no table here" and "too
+    // wide for one" stay distinguishable.
+    if (columnCount > MAX_CSV_COLUMNS) {
+      return { encoding, schema: NO_TABLE, reason: 'too-many-columns' }
     }
+
+    const parquetPath = `${csvPath}.parquet`
+    const schema = await interpretCsv(csvPath, parquetPath, titleRows)
+    // And the source is dead once it has been interpreted. What the callback
+    // does next — an upload, a wait on the catalog-wide lock — would hold it
+    // for nothing.
+    await rm(csvPath, { force: true })
+
+    return { encoding, schema, used: await use({ parquetPath, schema }) }
   } finally {
     // Every file this made lives in the directory this made, so one removal
     // covers whatever a given path left behind.
