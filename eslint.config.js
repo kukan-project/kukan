@@ -23,6 +23,23 @@ export default tseslint.config(
     },
   },
   {
+    // The wrapper adds the Problem Details shaping the raw validator lacks (#285)
+    files: ['packages/api/src/routes/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@hono/zod-validator',
+              message: "Import zValidator from '../middleware/validator' instead.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Lambda handlers: console IS the CloudWatch log sink
     files: ['**/scripts/**', '**/migrate.ts', '**/__tests__/**', 'infra/lib/lambda/**'],
     rules: {

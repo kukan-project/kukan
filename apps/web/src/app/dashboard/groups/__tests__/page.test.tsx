@@ -7,6 +7,19 @@ vi.mock('@/lib/client-api', () => ({
   clientFetch: vi.fn(),
 }))
 
+// Mock useUser — sysadmin by default, mutable per test
+const mockUser = vi.hoisted(() => ({
+  id: 'u1',
+  name: 'Admin',
+  email: 'admin@test.com',
+  displayName: null as string | null,
+  sysadmin: true,
+}))
+
+vi.mock('@/components/dashboard/user-provider', () => ({
+  useUser: () => mockUser,
+}))
+
 function mockFetchResponse(data: unknown) {
   return { ok: true, json: async () => data } as Response
 }
@@ -16,13 +29,26 @@ const sampleGroups = [
   { id: 'g2', name: 'environment', title: 'Environment', datasetCount: 8 },
 ]
 
+/** Routes the category list and the viewer's memberships, which decide which
+ *  row actions are offered (kukan#258). Defaults to admin in every category. */
+function mockFetch(
+  list: Response,
+  memberships = sampleGroups.map((g) => ({ ...g, role: 'admin' }))
+) {
+  vi.mocked(clientFetch).mockImplementation(async (url: string) => {
+    if (url.startsWith('/api/v1/users/me/groups')) return mockFetchResponse({ items: memberships })
+    return list
+  })
+}
+
 describe('GroupsManagePage', () => {
   beforeEach(() => {
     vi.mocked(clientFetch).mockReset()
+    mockUser.sysadmin = true
   })
 
   it('should display groups in table', async () => {
-    vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: sampleGroups, total: 2 }))
+    mockFetch(mockFetchResponse({ items: sampleGroups, total: 2 }))
     render(<GroupsManagePage />)
 
     await waitFor(() => {
@@ -36,7 +62,7 @@ describe('GroupsManagePage', () => {
   })
 
   it('should show empty state when no groups', async () => {
-    vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: [], total: 0 }))
+    mockFetch(mockFetchResponse({ items: [], total: 0 }))
     render(<GroupsManagePage />)
 
     await waitFor(() => {
@@ -45,7 +71,7 @@ describe('GroupsManagePage', () => {
   })
 
   it('should show pagination when total > pageSize', async () => {
-    vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: sampleGroups, total: 50 }))
+    mockFetch(mockFetchResponse({ items: sampleGroups, total: 50 }))
     render(<GroupsManagePage />)
 
     await waitFor(() => {
@@ -55,7 +81,7 @@ describe('GroupsManagePage', () => {
   })
 
   it('should not show pagination when total <= pageSize', async () => {
-    vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: sampleGroups, total: 2 }))
+    mockFetch(mockFetchResponse({ items: sampleGroups, total: 2 }))
     render(<GroupsManagePage />)
 
     await waitFor(() => {
@@ -65,7 +91,7 @@ describe('GroupsManagePage', () => {
   })
 
   it('should show new button', async () => {
-    vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: [], total: 0 }))
+    mockFetch(mockFetchResponse({ items: [], total: 0 }))
     render(<GroupsManagePage />)
 
     await waitFor(() => {
@@ -76,12 +102,20 @@ describe('GroupsManagePage', () => {
     expect(link).toHaveAttribute('href', '/dashboard/groups/new')
   })
 
+  it('should hide the new button from non-sysadmins', async () => {
+    // Creating a category is sysadmin-only server-side (kukan#258)
+    mockUser.sysadmin = false
+    mockFetch(mockFetchResponse({ items: [], total: 0 }))
+    render(<GroupsManagePage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('No categories')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('New')).not.toBeInTheDocument()
+  })
+
   it('should show error state with retry button on fetch failure', async () => {
-    vi.mocked(clientFetch).mockResolvedValue({
-      ok: false,
-      status: 500,
-      json: async () => ({}),
-    } as Response)
+    mockFetch({ ok: false, status: 500, json: async () => ({}) } as Response)
     render(<GroupsManagePage />)
 
     await waitFor(() => {
@@ -91,7 +125,7 @@ describe('GroupsManagePage', () => {
   })
 
   it('should link to edit, members and view pages', async () => {
-    vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: sampleGroups, total: 2 }))
+    mockFetch(mockFetchResponse({ items: sampleGroups, total: 2 }))
     render(<GroupsManagePage />)
 
     await waitFor(() => {
@@ -107,5 +141,23 @@ describe('GroupsManagePage', () => {
     const viewLinks = screen.getAllByText('View')
     const viewLink = viewLinks[0].closest('a')
     expect(viewLink).toHaveAttribute('href', '/group/demographics')
+  })
+
+  // Editing needs admin, the member list any role — offering either to
+  // everyone only produced an API error on use (kukan#258)
+  it('should offer only the member list to a non-admin member', async () => {
+    mockUser.sysadmin = false
+    mockFetch(mockFetchResponse({ items: sampleGroups, total: 2 }), [
+      { ...sampleGroups[0], role: 'member' },
+    ])
+    render(<GroupsManagePage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('demographics')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('Edit')).not.toBeInTheDocument()
+    // Only demographics is the viewer's; environment offers nothing but View
+    expect(screen.getAllByText('Members')).toHaveLength(1)
+    expect(screen.getAllByText('View')).toHaveLength(2)
   })
 })

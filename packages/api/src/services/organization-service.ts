@@ -3,7 +3,7 @@
  * Business logic for organization management
  */
 
-import { eq, ilike, and, or, sql, inArray, getTableColumns } from 'drizzle-orm'
+import { eq, ilike, and, or, sql, asc, desc, inArray, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { organization, userOrgMembership, user, packageTable } from '@kukan/db'
 import {
@@ -33,8 +33,14 @@ const EXTERNALS_CLEANUP_CONCURRENCY = 8
 export class OrganizationService {
   constructor(private db: Database) {}
 
-  async list(params: PaginationParams & { q?: string; state?: 'active' | 'deleted' }) {
-    const { offset = 0, limit = 20, q, state = 'active' } = params
+  async list(
+    params: PaginationParams & {
+      q?: string
+      state?: 'active' | 'deleted'
+      orderBy?: 'name' | 'datasetCount'
+    }
+  ) {
+    const { offset = 0, limit = 20, q, state = 'active', orderBy } = params
 
     const conditions = [eq(organization.state, state)]
 
@@ -50,14 +56,18 @@ export class OrganizationService {
 
     const where = and(...conditions)
 
+    const datasetCount =
+      sql<number>`(SELECT COUNT(*)::int FROM "package" WHERE "package"."owner_org" = "organization"."id" AND "package"."state" = 'active')`.as(
+        'dataset_count'
+      )
+
+    // Ordered before LIMIT: without it PostgreSQL may return rows in any order,
+    // so paging could repeat or skip an organization (#261)
     const rows = await this.db
       .select({
         ...getTableColumns(organization),
         total: sql<number>`COUNT(*) OVER()::int`.as('total'),
-        datasetCount:
-          sql<number>`(SELECT COUNT(*)::int FROM "package" WHERE "package"."owner_org" = "organization"."id" AND "package"."state" = 'active')`.as(
-            'dataset_count'
-          ),
+        datasetCount,
         deletedDatasetCount:
           sql<number>`(SELECT COUNT(*)::int FROM "package" WHERE "package"."owner_org" = "organization"."id" AND "package"."state" = 'deleted')`.as(
             'deleted_dataset_count'
@@ -65,6 +75,7 @@ export class OrganizationService {
       })
       .from(organization)
       .where(where)
+      .orderBy(...(orderBy === 'datasetCount' ? [desc(datasetCount)] : []), asc(organization.name))
       .limit(limit)
       .offset(offset)
 

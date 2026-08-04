@@ -3,9 +3,11 @@
 import Link from 'next/link'
 import { Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
+import { useUser } from '@/components/dashboard/user-provider'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
+import { useMyRoles } from '@/hooks/use-my-roles'
 
 interface GroupItem {
   id: string
@@ -15,16 +17,22 @@ interface GroupItem {
 }
 
 export default function GroupsManagePage() {
+  const user = useUser()
   const t = useTranslations('category')
   const tc = useTranslations('common')
   const { items, loading, error, ...pagination } = usePaginatedFetch<GroupItem>('/api/v1/groups')
+  // The list covers every category; the actions are the viewer's own (#258)
+  const { can } = useMyRoles('groups')
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title={tc('categories')}>
-        <Button asChild>
-          <Link href="/dashboard/groups/new">{tc('new')}</Link>
-        </Button>
+        {/* Creating a category is sysadmin-only, same as organizations */}
+        {user.sysadmin && (
+          <Button asChild>
+            <Link href="/dashboard/groups/new">{tc('new')}</Link>
+          </Button>
+        )}
       </PageHeader>
 
       {loading ? (
@@ -50,7 +58,7 @@ export default function GroupsManagePage() {
                 <TableHead>{tc('urlIdentifier')}</TableHead>
                 <TableHead>{tc('title')}</TableHead>
                 <TableHead className="text-right">{tc('datasets')}</TableHead>
-                <TableHead className="w-[80px]">{tc('actions')}</TableHead>
+                <TableHead className="w-[80px] text-right">{tc('actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -60,13 +68,21 @@ export default function GroupsManagePage() {
                   <TableCell>{grp.title || '-'}</TableCell>
                   <TableCell className="text-right">{grp.datasetCount}</TableCell>
                   <TableCell>
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" asChild>
-                        <Link href={`/dashboard/groups/${grp.name}/edit`}>{tc('edit')}</Link>
-                      </Button>
-                      <Button variant="ghost" size="sm" asChild>
-                        <Link href={`/dashboard/groups/${grp.name}/members`}>{tc('members')}</Link>
-                      </Button>
+                    {/* Right-aligned so the trailing action lines up down the
+                          column when a row offers fewer of them */}
+                    <div className="flex justify-end gap-1">
+                      {can(grp.name, 'admin') && (
+                        <Button variant="ghost" size="sm" asChild>
+                          <Link href={`/dashboard/groups/${grp.name}/edit`}>{tc('edit')}</Link>
+                        </Button>
+                      )}
+                      {can(grp.name, 'member') && (
+                        <Button variant="ghost" size="sm" asChild>
+                          <Link href={`/dashboard/groups/${grp.name}/members`}>
+                            {tc('members')}
+                          </Link>
+                        </Button>
+                      )}
                       <Button variant="ghost" size="sm" asChild>
                         <Link href={`/group/${grp.name}`}>{tc('view')}</Link>
                       </Button>

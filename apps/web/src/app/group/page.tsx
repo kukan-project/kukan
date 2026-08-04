@@ -5,6 +5,7 @@ import type { PaginatedResult } from '@kukan/shared'
 import { serverFetch } from '@/lib/server-api'
 import { SearchForm } from '@/components/search-form'
 import { PaginationNav } from '@/components/pagination-nav'
+import { SortLinks, parseListOrder, orderParam } from '@/components/sort-links'
 import { EntityImage } from '@/components/entity-image'
 
 interface Group {
@@ -17,7 +18,7 @@ interface Group {
 }
 
 interface Props {
-  searchParams: Promise<{ q?: string; offset?: string; limit?: string }>
+  searchParams: Promise<{ q?: string; offset?: string; limit?: string; orderBy?: string }>
 }
 
 export default async function GroupsPage({ searchParams }: Props) {
@@ -26,11 +27,16 @@ export default async function GroupsPage({ searchParams }: Props) {
   const q = params.q || ''
   const offset = Number(params.offset) || 0
   const limit = Number(params.limit) || 20
+  const orderBy = parseListOrder(params.orderBy)
+
+  // Shared by both link builders so they cannot disagree on the URL shape
+  const listParams = { q: q || undefined, orderBy: orderParam(orderBy) }
 
   const query = new URLSearchParams()
   if (q) query.set('q', q)
   query.set('offset', String(offset))
   query.set('limit', String(limit))
+  query.set('orderBy', orderBy)
 
   let data: PaginatedResult<Group> = { items: [], total: 0, offset: 0, limit: 20 }
   try {
@@ -51,6 +57,8 @@ export default async function GroupsPage({ searchParams }: Props) {
         </div>
 
         <SearchForm action="/group" defaultValue={q} placeholder={t('searchPlaceholder')} />
+
+        <SortLinks basePath="/group" params={listParams} active={orderBy} />
 
         <Separator />
 
@@ -85,7 +93,7 @@ export default async function GroupsPage({ searchParams }: Props) {
 
         <PaginationNav
           basePath="/group"
-          params={{ q: q || undefined }}
+          params={listParams}
           offset={offset}
           limit={limit}
           total={data.total}

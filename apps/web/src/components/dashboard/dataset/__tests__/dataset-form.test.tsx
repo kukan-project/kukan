@@ -54,7 +54,10 @@ function findSubmitCall() {
   return mockClientFetch.mock.calls.find((c) => c[1]?.method === 'POST' || c[1]?.method === 'PUT')
 }
 
-const organizations = [{ id: '11111111-1111-4111-8111-111111111111', name: 'org', title: 'Org' }]
+const organizations = [
+  { id: '11111111-1111-4111-8111-111111111111', name: 'org', title: 'Org' },
+  { id: '22222222-2222-4222-8222-222222222222', name: 'org2', title: 'Org 2' },
+]
 
 describe('DatasetForm (draft flows)', () => {
   beforeEach(() => {
@@ -77,6 +80,7 @@ describe('DatasetForm (draft flows)', () => {
 
     it('should POST to /packages/drafts omitting blank name and ownerOrg', async () => {
       setupMocks(jsonResponse({ id: 'draft-1', name: 'untitled-abcd1234' }))
+      // Two organizations, so nothing is preselected and ownerOrg stays blank
       render(<DatasetForm mode="create" organizations={organizations} />)
 
       fireEvent.click(screen.getByRole('button', { name: 'Create Draft' }))
@@ -90,6 +94,21 @@ describe('DatasetForm (draft flows)', () => {
       const body = JSON.parse(init!.body as string)
       expect(body).not.toHaveProperty('name')
       expect(body).not.toHaveProperty('ownerOrg')
+    })
+
+    it('should preselect the organization when the viewer has only one', async () => {
+      setupMocks(jsonResponse({ id: 'draft-1', name: 'untitled-abcd1234' }))
+      // One option is not a choice — sending it spares the user a required
+      // field with a single possible value (kukan#260)
+      render(<DatasetForm mode="create" organizations={[organizations[0]]} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Create Draft' }))
+
+      await waitFor(() => {
+        expect(findSubmitCall()).toBeDefined()
+      })
+      const body = JSON.parse(findSubmitCall()![1]!.body as string)
+      expect(body.ownerOrg).toBe(organizations[0].id)
     })
 
     it('should include name when filled and redirect to the draft edit page', async () => {
@@ -140,6 +159,69 @@ describe('DatasetForm (draft flows)', () => {
         expect(screen.getByRole('alert')).toHaveTextContent('Package name already exists')
       })
       expect(push).not.toHaveBeenCalled()
+    })
+
+    // The new page's drop zone creates its draft through this form rather than
+    // posting its own, which navigated away from everything already typed
+    // (kukan#243)
+    describe('externally triggered submit', () => {
+      /** Renders create mode and returns the trigger the page's drop zone pulls */
+      function renderWithTrigger(onDraftCreated?: (draftId: string) => void) {
+        const props = { mode: 'create' as const, organizations, onDraftCreated }
+        const { rerender } = render(<DatasetForm {...props} submitSignal={0} />)
+        return () => rerender(<DatasetForm {...props} submitSignal={1} />)
+      }
+
+      it('should send what is already typed in the form', async () => {
+        setupMocks(jsonResponse({ id: 'draft-1', name: 'my-dataset' }))
+        const submit = renderWithTrigger()
+
+        fireEvent.change(screen.getByPlaceholderText('my-dataset'), {
+          target: { value: 'my-dataset' },
+        })
+        fireEvent.change(screen.getByPlaceholderText('Dataset display name'), {
+          target: { value: '入力済みタイトル' },
+        })
+        // Tags live outside react-hook-form, so they ride along separately
+        fireEvent.change(screen.getByLabelText('Tags'), { target: { value: '防災, 人口' } })
+        submit()
+
+        await waitFor(() => {
+          expect(findSubmitCall()).toBeDefined()
+        })
+        const body = JSON.parse(findSubmitCall()![1]!.body as string)
+        expect(body.name).toBe('my-dataset')
+        expect(body.title).toBe('入力済みタイトル')
+        expect(body.tags).toEqual([{ name: '防災' }, { name: '人口' }])
+      })
+
+      it('should report the created draft id while the page is still mounted', async () => {
+        setupMocks(jsonResponse({ id: 'draft-1' }))
+        const onDraftCreated = vi.fn()
+        const submit = renderWithTrigger(onDraftCreated)
+
+        submit()
+
+        // The caller's files have nowhere to go until the id exists
+        await waitFor(() => {
+          expect(onDraftCreated).toHaveBeenCalledWith('draft-1')
+        })
+      })
+
+      it('should create nothing when the form does not validate', async () => {
+        setupMocks(jsonResponse({ id: 'draft-1' }))
+        const submit = renderWithTrigger()
+
+        fireEvent.change(screen.getByLabelText('Author Email'), {
+          target: { value: 'not-an-email' },
+        })
+        submit()
+
+        await waitFor(() => {
+          expect(screen.getByLabelText('Author Email')).toBeInvalid()
+        })
+        expect(findSubmitCall()).toBeUndefined()
+      })
     })
   })
 

@@ -1,13 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useRef, useState } from 'react'
 import { Alert, AlertDescription, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { MAX_UPLOAD_SIZE, MAX_UPLOAD_SIZE_MB } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
-import { draftEditPath } from '@/lib/paths'
 import { stashPendingDropFiles } from '@/lib/pending-drop-files'
+import { hasRole } from '@/hooks/use-my-roles'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { DatasetForm } from '@/components/dashboard/dataset/dataset-form'
 import { DropFilesZone } from '@/components/dashboard/dataset/drop-files-zone'
@@ -16,32 +15,36 @@ interface Organization {
   id: string
   name: string
   title?: string
+  role?: string
 }
 
 export default function NewDatasetPage() {
   const t = useTranslations('dataset')
   const tr = useTranslations('resource')
   const tc = useTranslations('common')
-  const router = useRouter()
   const [organizations, setOrganizations] = useState<Organization[]>([])
-  // Draft creation is exclusive page-wide: the drop zone and the form must
-  // not run concurrently, or two drafts get created and race the navigation
-  const [dropCreating, setDropCreating] = useState(false)
   const [formBusy, setFormBusy] = useState(false)
   const [dropError, setDropError] = useState<string | null>(null)
+  // Incremented to submit the form; the form is the only thing that creates a draft
+  const [submitSignal, setSubmitSignal] = useState(0)
+  // Dropped files wait here for the draft they belong to
+  const pendingFiles = useRef<File[] | null>(null)
 
+  // Creating needs editor in the owning organization (kukan#260)
   useEffect(() => {
     clientFetch('/api/v1/users/me/organizations').then(async (res) => {
       if (res.ok) {
         const data = await res.json()
-        setOrganizations(data.items)
+        setOrganizations(data.items.filter((o: Organization) => hasRole(o.role, 'editor')))
       }
     })
   }, [])
 
   // File-first creation (ADR-039): dropping files creates the draft, then the
-  // edit page picks the files up from the stash and uploads them as resources
-  async function handleDropFiles(files: File[]) {
+  // edit page picks the files up from the stash and uploads them as resources.
+  // The draft comes from submitting the form rather than a POST of this page's
+  // own, which navigated away from whatever had already been typed (kukan#243)
+  function handleDropFiles(files: File[]) {
     const oversized = files.filter((f) => f.size > MAX_UPLOAD_SIZE)
     if (oversized.length > 0) {
       // Reject the whole drop: navigation follows immediately, so a partial
@@ -51,37 +54,19 @@ export default function NewDatasetPage() {
       )
       return
     }
-    setDropCreating(true)
     setDropError(null)
-    try {
-      const res = await clientFetch('/api/v1/packages/drafts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        setDropError(data.detail || t('dropCreateFailed'))
-        setDropCreating(false)
-        return
-      }
-      const draft = await res.json()
-      stashPendingDropFiles(draft.id, files)
-      // Stay disabled until unmount: router.push cannot be awaited, and a
-      // second drop or form submit mid-navigation would create another draft
-      router.push(draftEditPath(draft.id))
-    } catch {
-      setDropError(t('dropCreateFailed'))
-      setDropCreating(false)
-    }
+    // Held until the form reports an id: there is nothing to stash them under
+    // before the draft exists, and a failed create leaves them for the retry
+    pendingFiles.current = files
+    setSubmitSignal((n) => n + 1)
   }
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title={t('createDataset')} />
       <DropFilesZone
-        hint={dropCreating ? tc('creating') : t('dropZoneHint')}
-        disabled={dropCreating || formBusy}
+        hint={formBusy ? tc('creating') : t('dropZoneHint')}
+        disabled={formBusy}
         onFiles={handleDropFiles}
       />
       {dropError && (
@@ -97,8 +82,12 @@ export default function NewDatasetPage() {
           <DatasetForm
             mode="create"
             organizations={organizations}
-            disabled={dropCreating}
             onBusyChange={setFormBusy}
+            submitSignal={submitSignal}
+            onDraftCreated={(draftId) => {
+              // Only a drop leaves files behind; an ordinary submit stashes nothing
+              if (pendingFiles.current) stashPendingDropFiles(draftId, pendingFiles.current)
+            }}
           />
         </CardContent>
       </Card>

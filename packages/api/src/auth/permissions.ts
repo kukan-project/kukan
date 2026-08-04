@@ -136,30 +136,56 @@ export async function hasDraftAccess(
   return false
 }
 
+interface PackageOwnership {
+  state: string | null
+  ownerOrg: string | null
+  creatorUserId: string | null
+}
+
+/**
+ * The package write rule, as a reason string or null when allowed. Draft access
+ * is creator-based (ADR-039); org role applies otherwise. 'purging' rows are
+ * drafts whose purge crashed mid-flight, so the same draft rule lets the DELETE
+ * be re-run to finish the cleanup.
+ */
+async function packageWriteDenial(
+  db: Database,
+  user: AuthUser,
+  pkg: PackageOwnership,
+  role: MembershipRole
+): Promise<string | null> {
+  if (pkg.state === 'draft' || pkg.state === 'purging') {
+    return (await hasDraftAccess(db, pkg, user)) ? null : 'No access to this draft package'
+  }
+  if (pkg.ownerOrg) {
+    return (await hasOrgRole(db, user, pkg.ownerOrg, role))
+      ? null
+      : `Requires ${role} role or higher in this organization`
+  }
+  return user.sysadmin ? null : 'Only sysadmin can modify packages without an organization'
+}
+
+/**
+ * Boolean variant of {@link makePackageAuthorize}, for callers that shape a
+ * response rather than reject a request.
+ */
+export async function canWritePackage(
+  db: Database,
+  user: AuthUser,
+  pkg: PackageOwnership,
+  role: MembershipRole
+): Promise<boolean> {
+  return (await packageWriteDenial(db, user, pkg, role)) === null
+}
+
 /**
  * Standard package write authorization, shaped for PackageService's
  * `authorize` callbacks and reused for resource mutations.
  */
 export function makePackageAuthorize(db: Database, user: AuthUser, role: MembershipRole) {
-  return async (existing: {
-    state: string | null
-    ownerOrg: string | null
-    creatorUserId: string | null
-  }): Promise<void> => {
-    // Draft access is creator-based (ADR-039); org role applies otherwise.
-    // 'purging' rows are drafts whose purge crashed mid-flight, so the same
-    // draft-access rule lets the DELETE be re-run to finish the cleanup.
-    if (existing.state === 'draft' || existing.state === 'purging') {
-      if (!(await hasDraftAccess(db, existing, user))) {
-        throw new ForbiddenError('No access to this draft package')
-      }
-      return
-    }
-    if (existing.ownerOrg) {
-      await checkOrgRole(db, user, existing.ownerOrg, role)
-    } else if (!user.sysadmin) {
-      throw new ForbiddenError('Only sysadmin can modify packages without an organization')
-    }
+  return async (existing: PackageOwnership): Promise<void> => {
+    const denial = await packageWriteDenial(db, user, existing, role)
+    if (denial) throw new ForbiddenError(denial)
   }
 }
 

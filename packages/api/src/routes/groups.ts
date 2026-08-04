@@ -4,7 +4,7 @@
  */
 
 import { Hono } from 'hono'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
 import { GroupService } from '../services/group-service'
 import {
@@ -29,6 +29,7 @@ groupsRouter.get(
       offset: z.coerce.number().min(0).default(0),
       limit: z.coerce.number().min(1).max(100).default(20),
       q: z.string().optional(),
+      orderBy: z.enum(['name', 'datasetCount']).default('name'),
     })
   ),
   async (c) => {

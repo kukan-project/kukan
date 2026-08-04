@@ -4,7 +4,7 @@
  */
 
 import { Hono } from 'hono'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
 import {
   createOrganizationSchema,
@@ -30,6 +30,7 @@ organizationsRouter.get(
       limit: z.coerce.number().min(1).max(100).optional(),
       q: z.string().optional(),
       state: z.enum(['active', 'deleted']).optional(),
+      orderBy: z.enum(['name', 'datasetCount']).default('name'),
     })
   ),
   async (c) => {

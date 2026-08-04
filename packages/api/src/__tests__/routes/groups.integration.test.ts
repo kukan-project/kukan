@@ -294,14 +294,14 @@ describe('Groups API Routes', () => {
     })
   })
 
-  describe('GroupService.list ordering', () => {
-    it('orders by dataset count before applying the limit', async () => {
+  describe('list ordering', () => {
+    /** 'aaa-group' sorts first by name but has no datasets; 'zzz-group' has one */
+    async function seedUnevenGroups() {
       const json = (data: Record<string, unknown>) => ({
         method: 'POST' as const,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       })
-      // 'aaa-group' sorts first by name but has no datasets; 'zzz-group' has one
       await app.request('/api/v1/groups', json({ name: 'aaa-group', title: 'A' }))
       await app.request('/api/v1/groups', json({ name: 'zzz-group', title: 'Z' }))
       const orgRes = await app.request('/api/v1/organizations', json({ name: 'order-org' }))
@@ -310,6 +310,10 @@ describe('Groups API Routes', () => {
         '/api/v1/packages',
         json({ name: 'order-pkg', ownerOrg: org.id, groups: [{ name: 'zzz-group' }] })
       )
+    }
+
+    it('orders by dataset count before applying the limit', async () => {
+      await seedUnevenGroups()
 
       const { GroupService } = await import('../../services/group-service')
       const { items } = await new GroupService(db).list({ limit: 1, orderBy: 'datasetCount' })
@@ -318,6 +322,18 @@ describe('Groups API Routes', () => {
       expect(items).toHaveLength(1)
       expect(items[0].name).toBe('zzz-group')
       expect(items[0].datasetCount).toBe(1)
+    })
+
+    // The ordering existed; orderBy makes it reachable over HTTP rather than
+    // being an option only the suggest flow could pass (#261)
+    it('accepts orderBy from the query string', async () => {
+      await seedUnevenGroups()
+
+      const res = await app.request('/api/v1/groups?orderBy=datasetCount&limit=1')
+      expect(res.status).toBe(200)
+      const { items } = await res.json()
+      // The default order would have returned aaa-group here
+      expect(items[0].name).toBe('zzz-group')
     })
   })
 })

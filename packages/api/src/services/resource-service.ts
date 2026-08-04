@@ -13,6 +13,19 @@ import { hasOrgMembership, hasDraftAccess, type AuthUser } from '../auth/permiss
 // Package states whose resources are reachable — drafts hold resources before publish (ADR-039)
 const RESOURCE_PARENT_STATES: PackageDbState[] = ['active', 'draft']
 
+/** The resource plus the parent ownership its visibility check already loaded */
+function withParent(row: {
+  resource: typeof resource.$inferSelect
+  pkgState: string | null
+  pkgOwnerOrg: string | null
+  pkgCreatorUserId: string | null
+}) {
+  return {
+    ...row.resource,
+    pkg: { state: row.pkgState, ownerOrg: row.pkgOwnerOrg, creatorUserId: row.pkgCreatorUserId },
+  }
+}
+
 export class ResourceService {
   constructor(private db: Database) {}
 
@@ -63,6 +76,8 @@ export class ResourceService {
   /**
    * Get resource by ID with parent package visibility check.
    * Throws NotFoundError if the parent package is private and the viewer lacks access.
+   * Returns the parent's ownership alongside it — the join has already read it,
+   * and callers deciding what to show need the same three fields.
    */
   async getByIdWithAccessCheck(id: string, viewer?: AuthUser) {
     const [row] = await this.db
@@ -94,14 +109,14 @@ export class ResourceService {
       if (!(await hasDraftAccess(this.db, pkg, viewer))) {
         throw new NotFoundError('Resource', id)
       }
-      return row.resource
+      return withParent(row)
     }
 
     if (row.pkgPrivate && !(await hasOrgMembership(this.db, row.pkgOwnerOrg, viewer))) {
       throw new NotFoundError('Resource', id)
     }
 
-    return row.resource
+    return withParent(row)
   }
 
   /**

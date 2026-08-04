@@ -72,6 +72,50 @@ describe('Organizations API Routes', () => {
       expect(body.total).toBe(1)
       expect(body.items[0].name).toBe('tokyo-city')
     })
+
+    // Without an ORDER BY the rows come back in whatever order PostgreSQL
+    // finds them, so paging could repeat or skip an organization (#261)
+    describe('ordering', () => {
+      async function createOrgs(...names: string[]) {
+        for (const name of names) {
+          await app.request('/api/v1/organizations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name }),
+          })
+        }
+      }
+
+      it('should order by URL identifier by default', async () => {
+        await createOrgs('org-charlie', 'org-alpha', 'org-bravo')
+
+        const res = await app.request('/api/v1/organizations')
+        const body = await res.json()
+        expect(body.items.map((o: { name: string }) => o.name)).toEqual([
+          'org-alpha',
+          'org-bravo',
+          'org-charlie',
+        ])
+      })
+
+      it('should order by dataset count on request, identifier breaking ties', async () => {
+        await createOrgs('org-empty-b', 'org-empty-a', 'org-busy')
+        const [busy] = await db
+          .select()
+          .from(orgTable)
+          .where(eq(orgTable.name, 'org-busy'))
+          .limit(1)
+        await db.insert(packageTable).values({ name: 'pkg-1', title: 'One', ownerOrg: busy.id })
+
+        const res = await app.request('/api/v1/organizations?orderBy=datasetCount')
+        const body = await res.json()
+        expect(body.items.map((o: { name: string }) => o.name)).toEqual([
+          'org-busy',
+          'org-empty-a',
+          'org-empty-b',
+        ])
+      })
+    })
   })
 
   describe('POST /api/v1/organizations', () => {

@@ -89,6 +89,43 @@ async function createResource(packageId: string, data: Record<string, unknown> =
 }
 
 describe('Resources API Routes', () => {
+  // A rejected request has to say what was wrong: the raw ZodError the
+  // validator used to return carries no `detail`, so clients reading Problem
+  // Details had nothing to show and fell back to "it failed" (kukan#285)
+  describe('validation errors', () => {
+    async function postResource(url: string) {
+      const pkg = await createPackage(`invalid-url-pkg-${url.replace(/\W/g, '')}`)
+      const res = await app.request(`/api/v1/packages/${pkg.id}/resources`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'r', url }),
+      })
+      return { status: res.status, body: await res.json() }
+    }
+
+    it('should report which field failed and why', async () => {
+      const { status, body } = await postResource('example.com')
+
+      expect(status).toBe(400)
+      expect(body.title).toBe('VALIDATION_ERROR')
+      expect(body.detail).toContain('url')
+      expect(body.detail).toContain('Invalid URL')
+      expect(body.details.issues[0].path).toEqual(['url'])
+    })
+
+    it('should report the scheme restriction by name', async () => {
+      const { body } = await postResource('ftp://example.com/data.csv')
+
+      expect(body.detail).toContain('Only http and https URLs are allowed')
+    })
+
+    it('should report a blocked host by name', async () => {
+      const { body } = await postResource('http://169.254.169.254/latest/meta-data/')
+
+      expect(body.detail).toContain('private or reserved')
+    })
+  })
+
   describe('GET /api/v1/resources/:id', () => {
     it('should return resource by ID', async () => {
       const pkg = await createPackage('res-test-pkg')
@@ -910,6 +947,28 @@ describe('Resources API Routes', () => {
       expect(outsiderBody.steps[0].error).toBe('Processing failed')
       expect(JSON.stringify(outsiderBody)).not.toContain('kukan-prod')
       expect(JSON.stringify(outsiderBody)).not.toContain('10.0.1.42')
+    })
+
+    it('should show the reason to someone who may edit the resource', async () => {
+      // They entered the URL, so "Processing failed" leaves them with nothing
+      // to act on — the redaction above is for everyone else (kukan#285)
+      const pkg = await createPackage('pipeline-error-editor-pkg')
+      const resource = await createResource(pkg.id)
+      await app.request(`/api/v1/organizations/${testOrgId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: OUTSIDER_USER_ID, role: 'editor' }),
+      })
+
+      await db.insert(resourcePipeline).values({
+        resourceId: resource.id,
+        status: 'error',
+        error: 'fetch failed: 404 Not Found',
+      })
+
+      const res = await outsiderApp.request(`/api/v1/resources/${resource.id}/pipeline-status`)
+      const body = await res.json()
+      expect(body.error).toBe('fetch failed: 404 Not Found')
     })
 
     it('should return 404 for a draft resource to anonymous users (ADR-039)', async () => {

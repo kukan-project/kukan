@@ -25,22 +25,36 @@ vi.mock('@/components/dashboard/organization/organization-form', () => ({
   ),
 }))
 
+function jsonResponse(data: unknown, ok = true) {
+  return { ok, json: async () => data } as Response
+}
+
+/** Routes the organization fetch and the viewer's memberships, which decide
+ *  whether the editable form or the read-only view renders (kukan#258) */
+function mockFetch(org: unknown, role: string | null = 'admin') {
+  vi.mocked(clientFetch).mockImplementation(async (url: string) => {
+    if (url.startsWith('/api/v1/users/me/organizations')) {
+      return jsonResponse({ items: role ? [{ id: 'o1', name: 'test-org', role }] : [] })
+    }
+    return org as Response
+  })
+}
+
 describe('EditOrganizationPage', () => {
   beforeEach(() => {
     vi.mocked(clientFetch).mockReset()
   })
 
   it('should fetch and render form with edit mode', async () => {
-    vi.mocked(clientFetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    mockFetch(
+      jsonResponse({
         id: 'o1',
         name: 'test-org',
         title: 'Test Organization',
         description: 'A test org',
         imageUrl: null,
-      }),
-    } as Response)
+      })
+    )
 
     render(<EditOrganizationPage />)
 
@@ -53,12 +67,31 @@ describe('EditOrganizationPage', () => {
     expect(form).toHaveAttribute('data-name', 'test-org')
   })
 
+  it.each([
+    ['a non-admin member', 'member'],
+    ['not a member at all', null],
+  ])('should show the organization read-only when the viewer is %s', async (_label, role) => {
+    mockFetch(
+      jsonResponse({ id: 'o1', name: 'test-org', title: 'Test Organization', datasetCount: 0 }),
+      role
+    )
+
+    render(<EditOrganizationPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Test Organization')).toBeInTheDocument()
+    })
+    // Neither the update button (in the form) nor delete — both need admin
+    // and only produced an API error when offered (kukan#258)
+    expect(screen.queryByTestId('organization-form')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete Organization' })).not.toBeInTheDocument()
+    expect(
+      screen.getByText('Editing requires the admin role. This is shown for reference only.')
+    ).toBeInTheDocument()
+  })
+
   it('should show not found when API returns error', async () => {
-    vi.mocked(clientFetch).mockResolvedValue({
-      ok: false,
-      status: 404,
-      json: async () => ({}),
-    } as Response)
+    mockFetch(jsonResponse({}, false))
 
     render(<EditOrganizationPage />)
 
@@ -76,10 +109,7 @@ describe('EditOrganizationPage', () => {
   })
 
   it('should disable delete when active datasets remain', async () => {
-    vi.mocked(clientFetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ id: 'o1', name: 'test-org', title: 'Test', datasetCount: 3 }),
-    } as Response)
+    mockFetch(jsonResponse({ id: 'o1', name: 'test-org', title: 'Test', datasetCount: 3 }))
 
     render(<EditOrganizationPage />)
 
@@ -90,10 +120,7 @@ describe('EditOrganizationPage', () => {
   })
 
   it('should enable delete when no active datasets', async () => {
-    vi.mocked(clientFetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ id: 'o1', name: 'test-org', title: 'Test', datasetCount: 0 }),
-    } as Response)
+    mockFetch(jsonResponse({ id: 'o1', name: 'test-org', title: 'Test', datasetCount: 0 }))
 
     render(<EditOrganizationPage />)
 
@@ -104,10 +131,7 @@ describe('EditOrganizationPage', () => {
 
   it('should keep delete disabled when the active count is unknown (fail-safe)', async () => {
     // Response without datasetCount (e.g. a stale cached body) must not enable delete.
-    vi.mocked(clientFetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ id: 'o1', name: 'test-org', title: 'Test' }),
-    } as Response)
+    mockFetch(jsonResponse({ id: 'o1', name: 'test-org', title: 'Test' }))
 
     render(<EditOrganizationPage />)
 
@@ -117,10 +141,7 @@ describe('EditOrganizationPage', () => {
   })
 
   it('should close the dialog after a successful soft-delete (no purge modal)', async () => {
-    vi.mocked(clientFetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ id: 'o1', name: 'test-org', title: 'Test', datasetCount: 0 }),
-    } as Response)
+    mockFetch(jsonResponse({ id: 'o1', name: 'test-org', title: 'Test', datasetCount: 0 }))
 
     render(<EditOrganizationPage />)
 

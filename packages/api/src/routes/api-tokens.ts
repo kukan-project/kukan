@@ -4,7 +4,7 @@
  */
 
 import { Hono } from 'hono'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
 import { UnauthorizedError } from '@kukan/shared'
 import { ApiTokenService } from '../services/api-token-service'

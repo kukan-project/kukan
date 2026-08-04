@@ -11,6 +11,10 @@ class ResizeObserverStub {
 }
 globalThis.ResizeObserver = globalThis.ResizeObserver ?? ResizeObserverStub
 
+// jsdom has no layout, so Radix Select throws when it scrolls the open item
+// into view — a no-op keeps tests able to open a Select
+Element.prototype.scrollIntoView ??= vi.fn()
+
 // Mock next/link
 vi.mock('next/link', () => ({
   default: ({
