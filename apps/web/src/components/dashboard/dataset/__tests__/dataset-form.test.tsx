@@ -208,6 +208,23 @@ describe('DatasetForm (draft flows)', () => {
         })
       })
 
+      it('should report a rejected request instead of failing silently', async () => {
+        mockClientFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+          if (path.includes('/api/v1/groups')) return jsonResponse({ items: [] })
+          // No response at all — the connection never got there
+          if (init?.method === 'POST') throw new TypeError('Failed to fetch')
+          return jsonResponse({})
+        })
+        const submit = renderWithTrigger()
+
+        submit()
+
+        await waitFor(() => {
+          expect(screen.getByRole('alert')).toHaveTextContent('Failed to create')
+        })
+        expect(push).not.toHaveBeenCalled()
+      })
+
       it('should create nothing when the form does not validate', async () => {
         setupMocks(jsonResponse({ id: 'draft-1' }))
         const submit = renderWithTrigger()
@@ -495,6 +512,39 @@ describe('DatasetForm (draft flows)', () => {
       expect(calls[publishIndex][1]?.method).toBe('POST')
       // Publish success supersedes the plain save notification
       expect(onSaved).not.toHaveBeenCalled()
+    })
+
+    it('should keep a rejected publish request from reading as a failed save', async () => {
+      mockClientFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+        if (path.includes('/api/v1/groups')) return jsonResponse({ items: [] })
+        // The draft was saved; only the publish request never got there
+        if (path.endsWith('/publish')) throw new TypeError('Failed to fetch')
+        if (init?.method === 'PUT') return jsonResponse({ id: 'draft-1', ...publishReady })
+        return jsonResponse({})
+      })
+      const onSaved = vi.fn()
+      const onPublished = vi.fn()
+      render(
+        <DatasetForm
+          mode="edit"
+          isDraft
+          nameOrId="draft-1"
+          defaultValues={publishReady}
+          organizations={organizations}
+          onSaved={onSaved}
+          onPublished={onPublished}
+        />
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save & Publish' }))
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('Saved, but publishing failed: Failed to publish')
+        ).toBeInTheDocument()
+      })
+      expect(onSaved).toHaveBeenCalled()
+      expect(onPublished).not.toHaveBeenCalled()
     })
 
     it('should report a publish-only failure while keeping the saved draft editable', async () => {

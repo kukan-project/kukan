@@ -137,6 +137,19 @@ describe('GroupsPage', () => {
     expect(screen.getByText('0 items')).toBeInTheDocument()
   })
 
+  it('should carry the selected order through the search form', async () => {
+    vi.mocked(serverFetch).mockResolvedValue(
+      mockResponse({ items: sampleGroups, total: 2, offset: 0, limit: 20 })
+    )
+    const jsx = await GroupsPage(makeSearchParams({ orderBy: 'datasetCount' }))
+    const { container } = render(jsx)
+
+    // A GET form submits its own fields only, so searching would drop the order
+    expect(container.querySelector('input[type="hidden"][name="orderBy"]')).toHaveValue(
+      'datasetCount'
+    )
+  })
+
   it('should use name as fallback when title is null', async () => {
     const groupNoTitle = [{ ...sampleGroups[0], title: null }]
     vi.mocked(serverFetch).mockResolvedValue(

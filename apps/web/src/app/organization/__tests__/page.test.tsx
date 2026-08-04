@@ -125,6 +125,19 @@ describe('OrganizationsPage', () => {
     expect(screen.queryByText('Next')).not.toBeInTheDocument()
   })
 
+  it('should carry the selected order through the search form', async () => {
+    vi.mocked(serverFetch).mockResolvedValue(
+      mockResponse({ items: sampleOrgs, total: 2, offset: 0, limit: 20 })
+    )
+    const jsx = await OrganizationsPage(makeSearchParams({ orderBy: 'datasetCount' }))
+    const { container } = render(jsx)
+
+    // A GET form submits its own fields only, so searching would drop the order
+    expect(container.querySelector('input[type="hidden"][name="orderBy"]')).toHaveValue(
+      'datasetCount'
+    )
+  })
+
   it('should pass query parameters to API', async () => {
     vi.mocked(serverFetch).mockResolvedValue(
       mockResponse({ items: [], total: 0, offset: 0, limit: 20 })

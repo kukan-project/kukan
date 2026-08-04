@@ -56,7 +56,12 @@ export default async function GroupsPage({ searchParams }: Props) {
           <p className="text-sm text-muted-foreground">{tc('count', { count: data.total })}</p>
         </div>
 
-        <SearchForm action="/group" defaultValue={q} placeholder={t('searchPlaceholder')} />
+        <SearchForm
+          action="/group"
+          defaultValue={q}
+          placeholder={t('searchPlaceholder')}
+          hiddenParams={{ orderBy: orderParam(orderBy) }}
+        />
 
         <SortLinks basePath="/group" params={listParams} active={orderBy} />
 

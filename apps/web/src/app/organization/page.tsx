@@ -56,7 +56,12 @@ export default async function OrganizationsPage({ searchParams }: Props) {
           <p className="text-sm text-muted-foreground">{tc('count', { count: data.total })}</p>
         </div>
 
-        <SearchForm action="/organization" defaultValue={q} placeholder={t('searchPlaceholder')} />
+        <SearchForm
+          action="/organization"
+          defaultValue={q}
+          placeholder={t('searchPlaceholder')}
+          hiddenParams={{ orderBy: orderParam(orderBy) }}
+        />
 
         <SortLinks basePath="/organization" params={listParams} active={orderBy} />
 

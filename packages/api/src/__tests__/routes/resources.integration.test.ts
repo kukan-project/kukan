@@ -138,6 +138,15 @@ describe('Resources API Routes', () => {
       expect(body.name).toBe('test-resource')
     })
 
+    it('should not expose the parent package ownership the access check loaded', async () => {
+      const pkg = await createPackage('res-no-pkg-leak')
+      const resource = await createResource(pkg.id)
+
+      const res = await app.request(`/api/v1/resources/${resource.id}`)
+      const body = await res.json()
+      expect(body).not.toHaveProperty('pkg')
+    })
+
     it('should return 404 for non-existent', async () => {
       const res = await app.request('/api/v1/resources/550e8400-e29b-41d4-a716-446655440000')
       expect(res.status).toBe(404)

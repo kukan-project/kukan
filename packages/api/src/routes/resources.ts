@@ -373,7 +373,7 @@ resourcesRouter.get('/:id/pipeline-status', async (c) => {
   const db = c.get('db')
   const user = c.get('user')
   // Same visibility check as download/preview/schema — draft/private resources stay hidden
-  const resource = await new ResourceService(db).getByIdWithAccessCheck(id, user)
+  const { pkg } = await new ResourceService(db).getByIdWithOwnership(id, user)
   const pipelineService = new PipelineService(db)
   const status = await pipelineService.getStatus(id)
 
@@ -386,7 +386,7 @@ resourcesRouter.get('/:id/pipeline-status', async (c) => {
   // could be used to probe hosts (kukan#285). Resolved only when there is an
   // error to show, since the dashboard polls this endpoint.
   const hasError = !!status.error || status.steps.some((s) => s.error)
-  const showDetail = hasError && !!user && (await canWritePackage(db, user, resource.pkg, 'editor'))
+  const showDetail = hasError && !!user && (await canWritePackage(db, user, pkg, 'editor'))
   const sanitizeError = (err: string | null) =>
     !err ? null : showDetail ? err : 'Processing failed'
 

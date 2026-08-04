@@ -348,6 +348,20 @@ export function DatasetForm({
     publishAfter = false,
     adopt?: { tagsInput?: string; groups?: string[] }
   ) => {
+    try {
+      await submitValues(values, publishAfter, adopt)
+    } catch {
+      // A rejected fetch (offline, DNS, dropped connection) never reached the
+      // response handling below, so nothing has reported it yet
+      setError(tc('failedToCreate'))
+    }
+  }
+
+  const submitValues = async (
+    values: DatasetFormInput,
+    publishAfter: boolean,
+    adopt?: { tagsInput?: string; groups?: string[] }
+  ) => {
     setError(null)
     setPublishError(null)
     setPublishIntent(publishAfter)
@@ -433,14 +447,25 @@ export function DatasetForm({
       refreshBaseline()
 
       if (publishAfter) {
-        const pubRes = await clientFetch(`/api/v1/packages/${nameOrId}/publish`, {
-          method: 'POST',
-        })
-        if (!pubRes.ok) {
-          // The save itself landed — say so, and keep the draft editable
-          const data = await pubRes.json().catch(() => ({}))
-          setPublishError(t('savedButPublishFailed', { detail: data.detail || t('publishFailed') }))
+        // The save itself landed, so every publish failure — including a
+        // request that never got a response — says so and keeps the draft
+        // editable, rather than reading as a failed save
+        const savedButNotPublished = (detail: string) => {
+          setPublishError(t('savedButPublishFailed', { detail }))
           onSaved?.()
+        }
+        let pubRes: Response
+        try {
+          pubRes = await clientFetch(`/api/v1/packages/${nameOrId}/publish`, {
+            method: 'POST',
+          })
+        } catch {
+          savedButNotPublished(t('publishFailed'))
+          return
+        }
+        if (!pubRes.ok) {
+          const data = await pubRes.json().catch(() => ({}))
+          savedButNotPublished(data.detail || t('publishFailed'))
           return
         }
         onPublished?.()
