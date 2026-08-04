@@ -9,6 +9,8 @@ import { join, dirname } from 'node:path'
 import { Readable, pipeline } from 'node:stream'
 import { promisify } from 'node:util'
 
+import { ENCODING_SAMPLE_SIZE, ENCODING_SCAN_LIMIT } from '@/config'
+
 const pipelineAsync = promisify(pipeline)
 
 /** Collect a Readable stream into a single Buffer, optionally capped at maxBytes.
@@ -29,6 +31,81 @@ export async function streamToBuffer(stream: Readable, maxBytes?: number): Promi
     }
   }
   return Buffer.concat(chunks)
+}
+
+/**
+ * Read as much of a stream as encoding detection needs, and no more.
+ *
+ * A fixed head is not enough. Detection learns only from the **non-ASCII**
+ * bytes, and a file whose first megabyte is ids, dates and numbers holds none —
+ * so a 64KB sample answers from nothing, and the Japanese further down comes
+ * back as mojibake. Measured on a 104KB Shift_JIS text whose first 102KB were
+ * ASCII: the sample said UTF-8, the whole file said Shift_JIS.
+ *
+ * So this reads until a non-ASCII byte turns up, then takes `window` bytes from
+ * there. Everything before it is dropped as it goes: it is not evidence
+ * ({@link detectEncoding} discards it anyway), and keeping it would mean
+ * concatenating up to `limit` to return 64KB.
+ *
+ * A file that is ASCII to `limit` has nothing to find, and the head is returned
+ * — chardet is synchronous and takes ~1s over 8MB where 64KB takes ~16ms, for
+ * the same answer.
+ */
+export async function readEncodingSample(
+  stream: Readable,
+  window = ENCODING_SAMPLE_SIZE,
+  limit = ENCODING_SCAN_LIMIT
+): Promise<Buffer> {
+  const kept: Buffer[] = []
+  let keptBytes = 0
+  let scanned = 0
+  let found = false
+
+  for await (const chunk of stream) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    scanned += buf.length
+
+    if (found) {
+      kept.push(buf)
+      keptBytes += buf.length
+    } else {
+      const at = firstNonAscii(buf)
+      if (at === -1) {
+        // Still nothing. Hold the head in case the whole file is ASCII, and let
+        // the rest go by — it would only be scanned again as filler.
+        if (keptBytes < window) {
+          kept.push(buf)
+          keptBytes += buf.length
+        }
+      } else {
+        found = true
+        kept.length = 0
+        kept.push(buf.subarray(at))
+        keptBytes = buf.length - at
+      }
+    }
+
+    if (scanned >= limit || keptBytes >= window) {
+      stream.destroy()
+      break
+    }
+  }
+  // One chunk is the common case for a small file; concatenating it would copy
+  // for nothing.
+  return kept.length === 1 ? kept[0] : Buffer.concat(kept)
+}
+
+/**
+ * Offset of the first byte the candidate encodings could disagree about.
+ *
+ * A plain loop rather than `findIndex`, whose per-byte JS callback costs ~7x
+ * over the megabytes this scans before giving up on an ASCII file.
+ */
+function firstNonAscii(buf: Buffer): number {
+  for (let i = 0; i < buf.length; i++) {
+    if (buf[i] & 0x80) return i
+  }
+  return -1
 }
 
 /** Yield lines from a UTF-8 stream without loading the entire file into memory.

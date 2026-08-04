@@ -21,13 +21,34 @@ const AUTO_DETECT_FORMATS = new Set(['csv', 'tsv', 'txt', 'text', 'html', 'htm']
  */
 export function detectEncoding(format: string, buffer: Buffer): string {
   if (AUTO_DETECT_FORMATS.has(format)) {
-    const detected = chardet.detect(buffer)
+    const detected = chardet.detect(evidenceIn(buffer))
     return detected ?? 'UTF-8'
   }
   if (format === 'xml') {
     return parseXmlDeclaredEncoding(buffer)
   }
   return 'UTF-8'
+}
+
+/**
+ * The part of a buffer chardet can learn anything from.
+ *
+ * ASCII bytes are the same in every candidate encoding, so they carry no
+ * evidence — and chardet weighs the whole buffer, so they do not merely fail to
+ * help: they outvote what evidence there is. A Shift_JIS body behind 100KB of
+ * ids and dates comes back windows-1252, and the further the non-ASCII sits
+ * from the head, the more confidently wrong the answer.
+ *
+ * So detection starts where the encodings first disagree. A buffer with no such
+ * byte is ASCII, which every candidate decodes identically — the answer is
+ * right either way, and passing megabytes of it costs a second of CPU to reach
+ * (chardet is synchronous and makes a pass per recogniser).
+ */
+function evidenceIn(buffer: Buffer): Buffer {
+  for (let i = 0; i < buffer.length; i++) {
+    if (buffer[i] & 0x80) return buffer.subarray(i)
+  }
+  return buffer
 }
 
 /**

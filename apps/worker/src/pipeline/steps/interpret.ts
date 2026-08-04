@@ -11,7 +11,12 @@
 
 import { randomUUID } from 'crypto'
 import { createReadStream } from 'node:fs'
-import { streamToBuffer, streamToTempFile, cleanupTempFile } from '../node-utils'
+import {
+  streamToBuffer,
+  streamToTempFile,
+  cleanupTempFile,
+  readEncodingSample,
+} from '../node-utils'
 import { detectEncoding } from '@kukan/shared/encoding-node'
 import {
   getPreviewKey,
@@ -21,10 +26,9 @@ import {
   MAX_PARQUET_SOURCE_SIZE,
 } from '@kukan/shared'
 import type { ResourceSchema } from '@kukan/shared'
-import { withInterpretedVersion } from '../interpret/version'
+import { withInterpretedVersion, type NoTableReason } from '../interpret/version'
 import { extractZipManifest } from '../interpret/zip'
 import type { PipelineContext } from '../types'
-import { ENCODING_SAMPLE_SIZE } from '@/config'
 const FIXED_UTF8_FORMATS = new Set(['json', 'geojson', 'md'])
 
 export interface InterpretResult {
@@ -32,6 +36,8 @@ export interface InterpretResult {
   encoding: string
   /** Column schema (CSV/TSV only, when a Parquet preview was generated). */
   schema?: ResourceSchema | null
+  /** Why no table came out, when none did. Persisted for the operator. */
+  reason?: NoTableReason
 }
 
 /** The created version this step interprets. */
@@ -114,28 +120,19 @@ export async function executeInterpret(
     return { previewKey: null, encoding }
   }
 
-  // Non-CSV text (TXT/HTML): only need a sample for encoding detection
-  if (!isCsvFormat(format)) {
-    const sampleStream = await ctx.storage.download(storageKey)
-    const sample = await streamToBuffer(sampleStream, ENCODING_SAMPLE_SIZE)
-    const encoding = detectEncoding(fmt, sample)
-    return { previewKey: null, encoding }
-  }
-
-  // CSV/TSV too large to interpret: labelled from a sample like the other text
-  // formats, and never transferred whole. The version row was measured at
-  // create and the file behind it is immutable, so this needs no download to
-  // decide.
-  if (source.size > MAX_PARQUET_SOURCE_SIZE) {
-    const sampleStream = await ctx.storage.download(storageKey)
-    const sample = await streamToBuffer(sampleStream, ENCODING_SAMPLE_SIZE)
+  // Labelled from a sample, with no table to produce: non-CSV text (TXT/HTML)
+  // has none, and a CSV over the interpret cap is never transferred whole. The
+  // version row was measured at create and the file behind it is immutable, so
+  // the size decides that without a download.
+  if (!isCsvFormat(format) || source.size > MAX_PARQUET_SOURCE_SIZE) {
+    const sample = await readEncodingSample(await ctx.storage.download(storageKey))
     return { previewKey: null, encoding: detectEncoding(fmt, sample) }
   }
 
   // CSV/TSV: publish what the interpretation produced. The interpretation
   // itself is shared with the lake retry, which wants the table and nothing
   // else (ADR-046).
-  const { encoding, schema, used } = await withInterpretedVersion(
+  const { encoding, schema, used, reason } = await withInterpretedVersion(
     source,
     fmt,
     ctx,
@@ -156,5 +153,5 @@ export async function executeInterpret(
   // a missing answer: it records that this version has been interpreted and
   // holds nothing to load, which is what stops the hourly sweep handing it out
   // again for good (ADR-046).
-  return { previewKey: null, encoding, schema, ...used }
+  return { previewKey: null, encoding, schema, reason, ...used }
 }

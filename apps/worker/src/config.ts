@@ -50,8 +50,17 @@ export const INTERPRET_THREADS = 2
 /** Leading rows scanned for the title lines Japanese spreadsheets put above the header */
 export const CSV_TITLE_SCAN_BYTES = 64 * 1024
 
-/** Byte sample size for encoding detection (64 KB) */
+/** Bytes collected once encoding detection finds its first non-ASCII byte (64 KB) */
 export const ENCODING_SAMPLE_SIZE = 64 * 1024
+
+/**
+ * Ceiling on how far encoding detection reads looking for a non-ASCII byte (8 MB).
+ *
+ * A file with none by here is ASCII as far as anything cares — every candidate
+ * encoding decodes it the same way. The bound is what keeps this from
+ * transferring a 100MB text whole to answer a question it already has.
+ */
+export const ENCODING_SCAN_LIMIT = 8 * 1024 * 1024
 
 /** Minimum interval between fetches to the same FQDN (5 s) */
 export const FETCH_RATE_LIMIT_INTERVAL_S = 5

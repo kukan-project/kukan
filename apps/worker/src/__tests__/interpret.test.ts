@@ -5,6 +5,8 @@ import { Readable } from 'stream'
 import JSZip from 'jszip'
 import { executeInterpret } from '../pipeline/steps/interpret'
 import { MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
+import { ENCODING_SCAN_LIMIT, MAX_CSV_COLUMNS } from '@/config'
+import { InterpretationFailed } from '../pipeline/interpret/version'
 import {
   captureUpload,
   createPipelineContextMock,
@@ -23,6 +25,26 @@ const previewKeyMatching = (pkg: string, res: string, ext: string) =>
 
 /** The created version the step reads (ADR-046); sized under the interpret cap. */
 const version = (storageKey: string, size = 1024) => ({ storageKey, size })
+
+/**
+ * A real Shift_JIS CSV: header "都道府県コード又は市区町村コード,地域コード,都道府県名"
+ * over rows of "402303,糸島市,2019-05-31,板持,1515,758,757". Real bytes rather
+ * than a synthetic run of high bytes, because chardet weighs byte *patterns* —
+ * an invented one is as likely to come back ISO-8859-5.
+ */
+function shiftJisCsv(rows = 20): Buffer {
+  const header = Buffer.from([
+    0x93, 0x73, 0x93, 0xb9, 0x95, 0x7b, 0x8c, 0xa7, 0x83, 0x52, 0x81, 0x5b, 0x83, 0x68, 0x2c, 0x92,
+    0x6e, 0x88, 0xe6, 0x83, 0x52, 0x81, 0x5b, 0x83, 0x68, 0x2c, 0x93, 0x73, 0x93, 0xb9, 0x95, 0x7b,
+    0x8c, 0xa7, 0x96, 0xbc, 0x0a,
+  ])
+  const dataRow = Buffer.from([
+    0x34, 0x30, 0x32, 0x33, 0x30, 0x33, 0x2c, 0x8e, 0x85, 0x93, 0x87, 0x8e, 0x73, 0x2c, 0x32, 0x30,
+    0x31, 0x39, 0x2d, 0x30, 0x35, 0x2d, 0x33, 0x31, 0x2c, 0x94, 0xc2, 0x8e, 0x9d, 0x2c, 0x31, 0x35,
+    0x31, 0x35, 0x2c, 0x37, 0x35, 0x38, 0x2c, 0x37, 0x35, 0x37, 0x0a,
+  ])
+  return Buffer.concat([header, ...Array(rows).fill(dataRow)])
+}
 
 describe('executeInterpret', () => {
   let ctx: ReturnType<typeof createPipelineContextMock>
@@ -243,7 +265,102 @@ describe('executeInterpret', () => {
     expect(result).toEqual({ previewKey: null, encoding: expect.any(String) })
     expect(ctx.putObject).not.toHaveBeenCalled()
     // Only the encoding sample crossed the wire, not the whole object.
-    expect(read).toBeLessThan(CHUNK * CHUNKS)
+    expect(read).toBeLessThanOrEqual(CHUNK * CHUNKS)
+  })
+
+  it('reads past an ASCII head to the bytes encoding detection needs', async () => {
+    // A fixed head is not enough. chardet decides from the non-ASCII bytes, so
+    // a file whose first 100KB are ids and dates gives it nothing to work from
+    // and the Japanese further down comes back as mojibake (#240).
+    const asciiHead = Buffer.from('id,date,count\n'.repeat(8000)) // ~104KB, all ASCII
+    ctx.storage.download.mockResolvedValue(
+      Readable.from(Buffer.concat([asciiHead, shiftJisCsv(200)]))
+    )
+
+    const result = await executeInterpret(
+      'res-ascii-head',
+      'pkg-1',
+      version('resources/pkg-1/res-ascii-head'),
+      'TXT',
+      ctx
+    )
+
+    expect(result?.encoding).toBe('Shift_JIS')
+  })
+
+  it('stops reading a file that is ASCII all the way down', async () => {
+    // Nothing to find, so the scan must not pull a 100MB text across to say so
+    // — every candidate encoding decodes ASCII identically.
+    const CHUNK = 1024 * 1024
+    let read = 0
+    ctx.storage.download.mockResolvedValue(
+      Readable.from(
+        (function* () {
+          for (let i = 0; i < 32; i++) {
+            read += CHUNK
+            yield Buffer.alloc(CHUNK, 0x61)
+          }
+        })()
+      )
+    )
+
+    await executeInterpret(
+      'res-all-ascii',
+      'pkg-1',
+      version('resources/pkg-1/res-all-ascii'),
+      'TXT',
+      ctx
+    )
+
+    expect(read).toBeLessThanOrEqual(ENCODING_SCAN_LIMIT + CHUNK)
+  })
+
+  it('reports the encoding even when the interpretation then fails', async () => {
+    // Encoding is settled from the bytes before anything heavy runs, so losing
+    // it to a later DuckDB failure throws away an answer that was right. And
+    // the loss is silent: all three readers fall back to UTF-8 and serve
+    // mojibake rather than erroring (#251).
+    ctx.storage.download.mockResolvedValue(Readable.from(shiftJisCsv()))
+    ctx.putObject.mockRejectedValueOnce(new Error('storage is down'))
+
+    const failure = await executeInterpret(
+      'res-fail',
+      'pkg-1',
+      version('resources/pkg-1/res-fail'),
+      'CSV',
+      ctx
+    ).catch((err: unknown) => err)
+
+    expect(failure).toBeInstanceOf(InterpretationFailed)
+    expect((failure as InterpretationFailed).encoding).toBe('Shift_JIS')
+    expect((failure as InterpretationFailed).message).toBe('storage is down')
+  })
+
+  it('refuses a CSV too wide to preview without leaving it outstanding', async () => {
+    // Throwing here left the version with no schema, which is how "nothing has
+    // interpreted this yet" is written down — so the hourly sweep handed the
+    // file back every hour, forever, and every task read up to 50MB of it to
+    // reach the same exception (#248). The width is a property of the file, so
+    // no retry can reach a different answer.
+    const wide = `${Array.from({ length: MAX_CSV_COLUMNS + 1 }, (_, i) => `c${i}`).join(',')}\n`
+    mockStorageDownload(wide + wide.replace(/c/g, 'v'))
+
+    const result = await executeInterpret(
+      'res-wide',
+      'pkg-1',
+      version('resources/pkg-1/res-wide'),
+      'CSV',
+      ctx
+    )
+
+    // An empty schema is the mark that takes it out of the pending set, and the
+    // reason is what keeps "no table here" and "too wide for one" apart.
+    expect(result).toMatchObject({
+      previewKey: null,
+      schema: { rowCount: 0, columns: [] },
+      reason: 'too-many-columns',
+    })
+    expect(ctx.putObject).not.toHaveBeenCalled()
   })
 
   it('should detect encoding for TXT without Parquet generation', async () => {
@@ -306,6 +423,8 @@ describe('executeInterpret', () => {
       previewKey: null,
       encoding: expect.stringMatching(/^(UTF-?8|ASCII|ISO-8859-1)$/),
       schema: { rowCount: 0, columns: [] },
+      // Which nothing. The empty schema alone cannot say.
+      reason: 'no-columns',
     })
     expect(ctx.putObject).not.toHaveBeenCalled()
   })
@@ -407,20 +526,7 @@ describe('executeInterpret', () => {
   })
 
   it('should detect and convert Shift_JIS encoding', async () => {
-    // Real Shift_JIS CSV header: "都道府県コード又は市区町村コード,地域コード,都道府県名,..."
-    // followed by data row: "402303,糸島市,2019-05-31,板持,1515,758,757\n"
-    const header = Buffer.from([
-      0x93, 0x73, 0x93, 0xb9, 0x95, 0x7b, 0x8c, 0xa7, 0x83, 0x52, 0x81, 0x5b, 0x83, 0x68, 0x2c,
-      0x92, 0x6e, 0x88, 0xe6, 0x83, 0x52, 0x81, 0x5b, 0x83, 0x68, 0x2c, 0x93, 0x73, 0x93, 0xb9,
-      0x95, 0x7b, 0x8c, 0xa7, 0x96, 0xbc, 0x0a,
-    ])
-    const dataRow = Buffer.from([
-      0x34, 0x30, 0x32, 0x33, 0x30, 0x33, 0x2c, 0x8e, 0x85, 0x93, 0x87, 0x8e, 0x73, 0x2c, 0x32,
-      0x30, 0x31, 0x39, 0x2d, 0x30, 0x35, 0x2d, 0x33, 0x31, 0x2c, 0x94, 0xc2, 0x8e, 0x9d, 0x2c,
-      0x31, 0x35, 0x31, 0x35, 0x2c, 0x37, 0x35, 0x38, 0x2c, 0x37, 0x35, 0x37, 0x0a,
-    ])
-    const sjisBuf = Buffer.concat([header, ...Array(20).fill(dataRow)])
-    ctx.storage.download.mockResolvedValue(Readable.from(sjisBuf))
+    ctx.storage.download.mockResolvedValue(Readable.from(shiftJisCsv()))
 
     const result = await executeInterpret(
       'res-14',

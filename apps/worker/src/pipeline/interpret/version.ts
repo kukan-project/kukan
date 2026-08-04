@@ -11,14 +11,21 @@
  * temp directory stays this function's to clean up.
  */
 
-import { rm, stat } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { detectEncoding } from '@kukan/shared/encoding-node'
 import { toCharset } from '@kukan/shared'
 import type { ResourceSchema } from '@kukan/shared'
-import { cleanupTempFile, readHead, streamToTempFile, transcodeToUtf8 } from '../node-utils'
+import {
+  cleanupTempFile,
+  readEncodingSample,
+  streamToTempFile,
+  transcodeToUtf8,
+} from '../node-utils'
 import { interpretCsv } from './csv'
 import { countTitleRows } from './csv-title-rows'
 import type { PipelineContext } from '../types'
+import { RunCancelledError } from '../step-tracker'
 import { MAX_CSV_COLUMNS } from '@/config'
 
 /** The interpretation, for as long as the callback runs. */
@@ -42,10 +49,45 @@ export interface InterpretOutcome<T> {
   schema: ResourceSchema
   /** What the callback returned, absent when there was no table to give it. */
   used?: T
+  /**
+   * Why no table came out, when none did.
+   *
+   * The empty schema says "interpreted, nothing to load" and stops there; this
+   * says which nothing, which is what an operator asking "why is there no
+   * preview?" is after. Absent whenever a table *was* produced.
+   */
+  reason?: NoTableReason
 }
+
+/** Why an interpretation produced no table. */
+export type NoTableReason = 'no-columns' | 'too-many-columns'
 
 /** What an interpretation that found nothing reports. */
 const NO_TABLE: ResourceSchema = { rowCount: 0, columns: [] }
+
+/**
+ * An interpretation that failed after the encoding was settled.
+ *
+ * Encoding is decided from the bytes first, before anything heavy runs, so a
+ * DuckDB OOM or a malformed CSV throws away an answer that was already right.
+ * Losing it is not visible either: all three readers of `metadata.encoding`
+ * fall back to UTF-8, so the loss surfaces as mojibake — in the search index,
+ * in the text endpoint, and in the material an AI suggestion is built from
+ * (ADR-040) — rather than as an error.
+ *
+ * A cancellation is not wrapped. It is not this step failing (the run has been
+ * displaced and the record belongs to whoever holds the claim now), and the
+ * orchestrator recognises it by type.
+ */
+export class InterpretationFailed extends Error {
+  constructor(
+    readonly encoding: string,
+    cause: unknown
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause })
+    this.name = 'InterpretationFailed'
+  }
+}
 
 /**
  * Interpret a CSV/TSV version file and hand the table to `use`.
@@ -63,33 +105,44 @@ export async function withInterpretedVersion<T>(
   // and the JS heap never holds the whole table (ADR-046).
   const rawPath = await streamToTempFile(await ctx.storage.download(source.storageKey), 'csv')
   try {
-    // Detection reads every byte. A 64KB sample is not enough: a CSV whose
-    // first megabyte is ASCII — ids, dates, numbers — is read as UTF-8, and the
-    // Japanese further down comes back as mojibake (measured, ADR-046).
-    const { size } = await stat(rawPath)
-    const encoding = detectEncoding(fmt, await readHead(rawPath, size))
+    // Off disk, and only as far as detection needs. Reading every byte was the
+    // blunt answer to "a 64KB head is not enough" (measured, ADR-046) — it is
+    // also up to 50MB on the heap and a second of chardet per megabyte, for an
+    // answer `readEncodingSample` reaches with a bound.
+    const encoding = detectEncoding(fmt, await readEncodingSample(createReadStream(rawPath)))
 
-    const charset = toCharset(encoding)
-    const csvPath = charset === 'utf-8' ? rawPath : await transcodeToUtf8(rawPath, charset)
-    // Dead the moment it has been transcoded, and up to 50MB of it would
-    // otherwise sit on disk under the whole DuckDB pass.
-    if (csvPath !== rawPath) await rm(rawPath, { force: true })
+    // Everything past here can fail, and the encoding must not go with it.
+    try {
+      const charset = toCharset(encoding)
+      const csvPath = charset === 'utf-8' ? rawPath : await transcodeToUtf8(rawPath, charset)
+      // Dead the moment it has been transcoded, and up to 50MB of it would
+      // otherwise sit on disk under the whole DuckDB pass.
+      if (csvPath !== rawPath) await rm(rawPath, { force: true })
 
-    const { rows: titleRows, columnCount } = await countTitleRows(csvPath)
-    if (columnCount === 0) return { encoding, schema: NO_TABLE }
-    // Reject extremely wide CSVs (e.g. pivot tables) — too many columns to preview
-    if (columnCount > MAX_CSV_COLUMNS) {
-      throw new Error(`Too many columns (${columnCount}), max ${MAX_CSV_COLUMNS}`)
+      const { rows: titleRows, columnCount } = await countTitleRows(csvPath)
+      if (columnCount === 0) return { encoding, schema: NO_TABLE, reason: 'no-columns' }
+      // Too wide to preview (e.g. a pivot table). Reported as an interpretation
+      // that produced no table rather than as a failure: the width is a property
+      // of the file, so retrying reaches it again — and a version with no schema
+      // is one nothing has interpreted yet, which the hourly sweep hands out
+      // every hour for good. The reason is recorded so "no table here" and "too
+      // wide for one" stay distinguishable.
+      if (columnCount > MAX_CSV_COLUMNS) {
+        return { encoding, schema: NO_TABLE, reason: 'too-many-columns' }
+      }
+
+      const parquetPath = `${csvPath}.parquet`
+      const schema = await interpretCsv(csvPath, parquetPath, titleRows)
+      // And the source is dead once it has been interpreted. What the callback
+      // does next — an upload, a wait on the catalog-wide lock — would hold it
+      // for nothing.
+      await rm(csvPath, { force: true })
+
+      return { encoding, schema, used: await use({ parquetPath, schema }) }
+    } catch (err) {
+      if (err instanceof RunCancelledError) throw err
+      throw new InterpretationFailed(encoding, err)
     }
-
-    const parquetPath = `${csvPath}.parquet`
-    const schema = await interpretCsv(csvPath, parquetPath, titleRows)
-    // And the source is dead once it has been interpreted. What the callback
-    // does next — an upload, a wait on the catalog-wide lock — would hold it
-    // for nothing.
-    await rm(csvPath, { force: true })
-
-    return { encoding, schema, used: await use({ parquetPath, schema }) }
   } finally {
     // Every file this made lives in the directory this made, so one removal
     // covers whatever a given path left behind.
