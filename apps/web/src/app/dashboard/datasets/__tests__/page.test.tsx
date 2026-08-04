@@ -37,12 +37,17 @@ const sampleItems = [
   },
 ]
 
+// The memberships carry the role the org filter is built from: the listing is
+// scoped with my_org, which covers the orgs the viewer may write in (kukan#259)
+const myOrgs = [
+  { id: 'o1', name: 'tokyo', title: 'Tokyo', role: 'editor' },
+  { id: 'o2', name: 'osaka', title: 'Osaka', role: 'member' },
+]
+
 // Default mock: org/group options fetch + packages fetch
 function setupDefaultMocks(items = sampleItems, total = items.length) {
   vi.mocked(clientFetch).mockImplementation(async (path: string) => {
-    if (path.includes('/api/v1/organizations')) {
-      return mockFetchResponse({ items: [{ id: 'o1', name: 'tokyo', title: 'Tokyo' }] })
-    }
+    if (path.includes('/users/me/organizations')) return mockFetchResponse({ items: myOrgs })
     if (path.includes('/api/v1/groups')) {
       return mockFetchResponse({ items: [{ id: 'g1', name: 'demo', title: 'Demographics' }] })
     }
@@ -145,11 +150,27 @@ describe('DatasetsManagePage', () => {
     expect(mockPush).toHaveBeenCalledWith('/dashboard/datasets/population-data/edit')
   })
 
+  it('should offer only the organizations the viewer may write in as filters', async () => {
+    setupDefaultMocks()
+    render(<DatasetsManagePage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('population-data')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getAllByRole('combobox')[0])
+
+    // Tokyo is the viewer's as editor; Osaka is member-only, so filtering by it
+    // could only ever come back empty
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Tokyo' })).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('option', { name: 'Osaka' })).not.toBeInTheDocument()
+  })
+
   it('should show error state with retry button on fetch failure', async () => {
     vi.mocked(clientFetch).mockImplementation(async (path: string) => {
-      if (path.includes('/api/v1/organizations')) {
-        return mockFetchResponse({ items: [] })
-      }
+      if (path.includes('/users/me/organizations')) return mockFetchResponse({ items: [] })
       if (path.includes('/api/v1/groups')) {
         return mockFetchResponse({ items: [] })
       }
@@ -192,7 +213,7 @@ describe('DatasetsManagePage', () => {
 
     function setupDraftMocks() {
       vi.mocked(clientFetch).mockImplementation(async (path: string, init?: RequestInit) => {
-        if (path.includes('/api/v1/organizations')) return mockFetchResponse({ items: [] })
+        if (path.includes('/users/me/organizations')) return mockFetchResponse({ items: [] })
         if (path.includes('/api/v1/groups')) return mockFetchResponse({ items: [] })
         if (init?.method === 'DELETE') return mockFetchResponse({})
         if (path.includes('state=draft'))

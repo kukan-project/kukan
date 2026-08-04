@@ -32,6 +32,7 @@ import { DraftsTable } from '@/components/dashboard/dataset/drafts-table'
 import { FormatBadges } from '@/components/format-badges'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
+import { hasRole } from '@/hooks/use-my-roles'
 
 interface PkgItem {
   id: string
@@ -51,6 +52,8 @@ interface OptionItem {
   id: string
   name: string
   title?: string | null
+  /** Present on the memberships endpoint only, used to match the my_org scope */
+  role?: string
 }
 
 const ALL = '__all__'
@@ -104,16 +107,18 @@ export default function DatasetsManagePage() {
   const [organizations, setOrganizations] = useState<OptionItem[]>([])
   const [groups, setGroups] = useState<OptionItem[]>([])
 
-  // Fetch org/group filter options once on mount
+  // Fetch org/group filter options once on mount. The listing is scoped with
+  // my_org, so an organization the viewer cannot write in could only ever come
+  // back empty (kukan#259). Categories need no such filter.
   useEffect(() => {
     Promise.all([
-      clientFetch('/api/v1/organizations?limit=100'),
+      clientFetch('/api/v1/users/me/organizations'),
       clientFetch('/api/v1/groups?limit=100'),
     ])
       .then(async ([orgRes, grpRes]) => {
         if (orgRes.ok) {
           const data = await orgRes.json()
-          setOrganizations(data.items)
+          setOrganizations(data.items.filter((org: OptionItem) => hasRole(org.role, 'editor')))
         }
         if (grpRes.ok) {
           const data = await grpRes.json()

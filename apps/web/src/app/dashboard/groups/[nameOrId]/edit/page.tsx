@@ -7,6 +7,8 @@ import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { GroupForm } from '@/components/dashboard/group/group-form'
+import { EntityDetails } from '@/components/dashboard/entity-details'
+import { useMyRoles } from '@/hooks/use-my-roles'
 import type { CreateGroupInput } from '@kukan/shared'
 
 interface GroupDetail {
@@ -36,6 +38,8 @@ export default function EditGroupPage() {
 
   const [grp, setGrp] = useState<GroupDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  const { can, ready: rolesReady } = useMyRoles('groups')
+  const canEdit = can(nameOrId, 'admin')
 
   const fetchData = useCallback(async () => {
     try {
@@ -50,7 +54,7 @@ export default function EditGroupPage() {
     fetchData()
   }, [fetchData])
 
-  if (loading) {
+  if (loading || !rolesReady) {
     return (
       <div className="flex flex-col gap-6">
         <PageHeader title={t('editCategory')} />
@@ -70,13 +74,25 @@ export default function EditGroupPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={t('editCategory')} />
+      <PageHeader title={canEdit ? t('editCategory') : tc('categories')} />
       <Card>
         <CardHeader>
           <CardTitle>{tc('basicInfo')}</CardTitle>
         </CardHeader>
-        <CardContent>
-          <GroupForm mode="edit" nameOrId={nameOrId} defaultValues={toFormDefaults(grp)} />
+        <CardContent className="flex flex-col gap-4">
+          {canEdit ? (
+            <GroupForm mode="edit" nameOrId={nameOrId} defaultValues={toFormDefaults(grp)} />
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground">{tc('viewOnlyNoAdmin')}</p>
+              <EntityDetails
+                name={grp.name}
+                title={grp.title}
+                description={grp.description}
+                imageUrl={grp.imageUrl}
+              />
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

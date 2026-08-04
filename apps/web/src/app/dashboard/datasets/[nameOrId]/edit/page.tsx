@@ -9,6 +9,7 @@ import { isDraftPlaceholderName, type PackageState } from '@kukan/shared'
 import { Sparkles } from 'lucide-react'
 import { clientFetch } from '@/lib/client-api'
 import { useFetch } from '@/hooks/use-fetch'
+import { hasRole } from '@/hooks/use-my-roles'
 import type { PipelineStatus } from '@/hooks/use-pipeline-status'
 import { useSiteSettings } from '@/hooks/use-site-settings'
 import { PageHeader } from '@/components/dashboard/page-header'
@@ -22,6 +23,7 @@ interface Organization {
   id: string
   name: string
   title?: string
+  role?: string
 }
 
 interface Resource {
@@ -161,7 +163,8 @@ export default function EditDatasetPage() {
 
   // The org options never change with the package — fetch once on mount
   const { data: orgData } = useFetch<{ items: Organization[] }>('/api/v1/users/me/organizations')
-  const organizations = orgData?.items ?? []
+  // Only organizations the viewer may write in (kukan#260)
+  const organizations = (orgData?.items ?? []).filter((o) => hasRole(o.role, 'editor'))
 
   const isDraft = pkg?.state === 'draft'
 

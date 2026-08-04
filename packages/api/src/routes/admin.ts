@@ -4,7 +4,7 @@
  */
 
 import { Hono, type Context } from 'hono'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
 import { eq, ne, and, inArray, isNull, ilike, or, sql, desc } from 'drizzle-orm'
 import {

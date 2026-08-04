@@ -37,6 +37,22 @@ async function insertMembership(userId: string, orgId: string, role = 'admin') {
   `)
 }
 
+async function insertGroup(id: string, name: string) {
+  await db.execute(sql`
+    INSERT INTO "group" (id, name, title, state, created, updated)
+    VALUES (${id}, ${name}, ${name}, 'active', NOW(), NOW())
+    ON CONFLICT (id) DO NOTHING
+  `)
+}
+
+async function insertGroupMembership(userId: string, groupId: string, role = 'admin') {
+  await db.execute(sql`
+    INSERT INTO "user_group_membership" (id, user_id, group_id, role, created)
+    VALUES (gen_random_uuid(), ${userId}, ${groupId}, ${role}, NOW())
+    ON CONFLICT DO NOTHING
+  `)
+}
+
 beforeEach(async () => {
   await cleanDatabase()
   await ensureTestUser()
@@ -94,6 +110,40 @@ describe('Users API', () => {
 
     it('should return 401 for unauthenticated request', async () => {
       const res = await unauthApp.request('/api/v1/users/me/organizations')
+      expect(res.status).toBe(401)
+    })
+  })
+
+  describe('GET /api/v1/users/me/groups', () => {
+    it('should return all active groups for sysadmin', async () => {
+      await insertGroup('20000000-0000-0000-0000-000000000001', 'group-alpha')
+      await insertGroup('20000000-0000-0000-0000-000000000002', 'group-beta')
+
+      const res = await app.request('/api/v1/users/me/groups')
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.items).toHaveLength(2)
+      expect(body.items.every((g: { role: string }) => g.role === 'admin')).toBe(true)
+    })
+
+    it('should return only member groups for regular user', async () => {
+      await insertGroup('20000000-0000-0000-0000-000000000001', 'group-alpha')
+      await insertGroup('20000000-0000-0000-0000-000000000002', 'group-beta')
+      await insertGroupMembership(TEST_USER_ID, '20000000-0000-0000-0000-000000000001', 'member')
+
+      const res = await regularApp.request('/api/v1/users/me/groups')
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.items).toHaveLength(1)
+      expect(body.items[0].name).toBe('group-alpha')
+      // Below admin: the dashboard uses this to hide the edit action
+      expect(body.items[0].role).toBe('member')
+    })
+
+    it('should return 401 for unauthenticated request', async () => {
+      const res = await unauthApp.request('/api/v1/users/me/groups')
       expect(res.status).toBe(401)
     })
   })

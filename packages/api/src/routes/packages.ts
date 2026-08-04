@@ -4,7 +4,7 @@
  */
 
 import { Hono } from 'hono'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
 import { PackageService } from '../services/package-service'
 import { ResourceService } from '../services/resource-service'
@@ -158,11 +158,15 @@ packagesRouter.get(
     // state=deleted is only allowed when my_org=true AND user is authenticated
     const effectiveState = state === 'deleted' && my_org && user ? 'deleted' : 'active'
 
-    // Resolve user's org memberships (for visibility and my_org filters)
+    // Visibility counts every membership — a member may read their org's
+    // private datasets. my_org is the dashboard's management listing, so it
+    // narrows to the orgs the viewer may write in, the same basis the drafts
+    // listing above uses (kukan#259)
     const userOrgIds = await resolveUserOrgIds(db, user)
+    const manageOrgIds = my_org ? await resolveUserOrgIds(db, user, 'editor') : undefined
 
-    // my_org=true with no memberships → guaranteed empty result
-    if (my_org && userOrgIds !== undefined && userOrgIds.length === 0) {
+    // No editor membership → guaranteed empty result
+    if (manageOrgIds?.length === 0) {
       return c.json({ items: [], total: 0, offset: rest.offset, limit: rest.limit })
     }
 
@@ -176,7 +180,7 @@ packagesRouter.get(
       groups: rest.groups,
       ...buildVisibilityFilters(user, userOrgIds),
       // my_org filter
-      ...(my_org && userOrgIds?.length && { ownerOrgIds: userOrgIds }),
+      ...(manageOrgIds?.length && { ownerOrgIds: manageOrgIds }),
       // Explicit filters
       ...(rest.private !== undefined && { isPrivate: rest.private }),
       ...(rest.creator_user_id && { creatorUserId: rest.creator_user_id }),
