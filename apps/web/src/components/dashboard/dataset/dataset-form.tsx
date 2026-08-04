@@ -86,10 +86,12 @@ interface DatasetFormProps {
   onSaved?: () => void
   /** Called after "Save & Publish" successfully published the draft */
   onPublished?: () => void
-  /** Blocks submission from outside (e.g. while the page's drop-create runs) */
-  disabled?: boolean
   /** Reports the form's own in-flight submission for page-level exclusion */
   onBusyChange?: (busy: boolean) => void
+  /** Increment to submit the form from outside (the new page's drop zone) */
+  submitSignal?: number
+  /** Reports the new draft's id while the page is still mounted */
+  onDraftCreated?: (draftId: string) => void
   /** AI metadata suggestions (ADR-040); absent = feature hidden */
   suggest?: {
     /** Site capability (null while loading — button hidden until known) */
@@ -114,8 +116,9 @@ export function DatasetForm({
   isDraft,
   onSaved,
   onPublished,
-  disabled,
   onBusyChange,
+  submitSignal,
+  onDraftCreated,
   suggest,
 }: DatasetFormProps) {
   // Creation always starts as a draft (ADR-039)
@@ -233,6 +236,17 @@ export function DatasetForm({
     }
   }, [openSignal])
 
+  // The new page's drop zone creates its draft by submitting this form, so
+  // what the user already typed goes with it (kukan#243). Same counter
+  // convention as openSignal above.
+  const lastSubmitSignal = useRef(submitSignal)
+  useEffect(() => {
+    if (submitSignal !== lastSubmitSignal.current) {
+      lastSubmitSignal.current = submitSignal
+      if (submitSignal) void handleSubmit((values) => onSubmit(values))()
+    }
+  }, [submitSignal])
+
   const applySuggestion = (selection: SuggestSelection) => {
     if (selection.title !== undefined) setValue('title', selection.title, { shouldDirty: true })
     if (selection.notes !== undefined) setValue('notes', selection.notes, { shouldDirty: true })
@@ -317,12 +331,35 @@ export function DatasetForm({
     license: t('publishRequiresLicense'),
   }
 
+  // A lone organization is not a choice — preselect it (kukan#260). Creation
+  // only: on an existing dataset the stored owner wins, blank or not. An effect,
+  // not a defaultValue: the options arrive from the page after mount.
+  useEffect(() => {
+    if (mode === 'create' && organizations.length === 1 && !liveOwnerOrg) {
+      setValue('ownerOrg', organizations[0].id)
+    }
+  }, [mode, organizations, liveOwnerOrg, setValue])
+
   /** `adopt` marks a save triggered by adopting AI suggestions: it carries the
    *  just-set tags/groups (React state is still stale here) and keeps the user
    *  on the page afterwards */
   const onSubmit = async (
     values: DatasetFormInput,
     publishAfter = false,
+    adopt?: { tagsInput?: string; groups?: string[] }
+  ) => {
+    try {
+      await submitValues(values, publishAfter, adopt)
+    } catch {
+      // A rejected fetch (offline, DNS, dropped connection) never reached the
+      // response handling below, so nothing has reported it yet
+      setError(tc('failedToCreate'))
+    }
+  }
+
+  const submitValues = async (
+    values: DatasetFormInput,
+    publishAfter: boolean,
     adopt?: { tagsInput?: string; groups?: string[] }
   ) => {
     setError(null)
@@ -390,6 +427,7 @@ export function DatasetForm({
     if (mode === 'create') {
       // Continue as a draft: add resources, then publish from the edit page
       const created = await res.json()
+      onDraftCreated?.(created.id)
       setNavigating(true)
       router.push(draftEditPath(created.id))
       return
@@ -409,14 +447,25 @@ export function DatasetForm({
       refreshBaseline()
 
       if (publishAfter) {
-        const pubRes = await clientFetch(`/api/v1/packages/${nameOrId}/publish`, {
-          method: 'POST',
-        })
-        if (!pubRes.ok) {
-          // The save itself landed — say so, and keep the draft editable
-          const data = await pubRes.json().catch(() => ({}))
-          setPublishError(t('savedButPublishFailed', { detail: data.detail || t('publishFailed') }))
+        // The save itself landed, so every publish failure — including a
+        // request that never got a response — says so and keeps the draft
+        // editable, rather than reading as a failed save
+        const savedButNotPublished = (detail: string) => {
+          setPublishError(t('savedButPublishFailed', { detail }))
           onSaved?.()
+        }
+        let pubRes: Response
+        try {
+          pubRes = await clientFetch(`/api/v1/packages/${nameOrId}/publish`, {
+            method: 'POST',
+          })
+        } catch {
+          savedButNotPublished(t('publishFailed'))
+          return
+        }
+        if (!pubRes.ok) {
+          const data = await pubRes.json().catch(() => ({}))
+          savedButNotPublished(data.detail || t('publishFailed'))
           return
         }
         onPublished?.()
@@ -767,7 +816,7 @@ export function DatasetForm({
               type="submit"
               variant="outline"
               className="flex-1"
-              disabled={disabled || isSubmitting || navigating || !hasChanges || applyingResources}
+              disabled={isSubmitting || navigating || !hasChanges || applyingResources}
             >
               {isSubmitting && !publishIntent ? tc('saving') : t('saveDraft')}
             </Button>
@@ -775,11 +824,7 @@ export function DatasetForm({
               type="button"
               className="flex-1"
               disabled={
-                disabled ||
-                isSubmitting ||
-                navigating ||
-                publishBlockers.length > 0 ||
-                applyingResources
+                isSubmitting || navigating || publishBlockers.length > 0 || applyingResources
               }
               onClick={handleSubmit((values) => onSubmit(values, true))}
             >
@@ -793,11 +838,7 @@ export function DatasetForm({
         <Button
           type="submit"
           disabled={
-            disabled ||
-            isSubmitting ||
-            navigating ||
-            (mode === 'edit' && !hasChanges) ||
-            applyingResources
+            isSubmitting || navigating || (mode === 'edit' && !hasChanges) || applyingResources
           }
         >
           {isSubmitting

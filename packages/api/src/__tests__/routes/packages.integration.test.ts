@@ -132,6 +132,49 @@ describe('Packages API Routes', () => {
 
       expect(body.items[0].matchedResources).toBeUndefined()
     })
+
+    // my_org backs the dashboard's management listing, so it covers the orgs
+    // the viewer may write in — a member-only org's datasets would otherwise
+    // be listed for editing and rejected on save (kukan#259)
+    describe('my_org scope', () => {
+      async function grantMembership(role: string) {
+        const orgId = await ensureTestOrg()
+        await db.execute(
+          sql`INSERT INTO user_org_membership (user_id, organization_id, role)
+              VALUES (${OUTSIDER_USER_ID}, ${orgId}, ${role})`
+        )
+      }
+
+      it('should list the org datasets for an editor', async () => {
+        await createPackage({ name: 'editable-pkg' })
+        await grantMembership('editor')
+
+        const res = await outsiderApp.request('/api/v1/packages?my_org=true')
+        const body = await res.json()
+        expect(body.items.map((p: { name: string }) => p.name)).toEqual(['editable-pkg'])
+      })
+
+      it('should list nothing for a member who cannot edit them', async () => {
+        await createPackage({ name: 'read-only-pkg' })
+        await grantMembership('member')
+
+        const res = await outsiderApp.request('/api/v1/packages?my_org=true')
+        const body = await res.json()
+        expect(body.items).toEqual([])
+        expect(body.total).toBe(0)
+      })
+
+      it('should keep private datasets visible to a member outside my_org', async () => {
+        await createPackage({ name: 'members-private-pkg', private: true })
+        await grantMembership('member')
+
+        // Visibility still counts every membership — a member may read the
+        // organization's private datasets, they just cannot change them
+        const res = await outsiderApp.request('/api/v1/packages')
+        const body = await res.json()
+        expect(body.items.map((p: { name: string }) => p.name)).toContain('members-private-pkg')
+      })
+    })
   })
 
   describe('POST /api/v1/packages', () => {
@@ -1337,6 +1380,26 @@ describe('Packages API Routes', () => {
       const formatNames = facets.formats.map((f: { name: string }) => f.name)
       expect(formatNames).toContain('CSV')
       expect(formatNames).not.toContain('PDF')
+    })
+
+    it('should order facets by count, not by name', async () => {
+      // Enriching with every active organization used to drop the counts'
+      // order, leaving an empty organization above a used one (#261)
+      const usedOrg = await ensureTestOrg()
+      await app.request('/api/v1/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // Sorts before the used org by name and by title, so only the count
+        // ordering can put it second
+        body: JSON.stringify({ name: 'aaa-empty-org', title: 'AAA Empty Org' }),
+      })
+      await createPackage({ name: 'facet-order-pkg', ownerOrg: usedOrg })
+
+      const res = await app.request('/api/v1/packages?include_facets=true')
+      const { organizations } = (await res.json()).facets
+
+      expect(organizations[0].count).toBeGreaterThan(0)
+      expect(organizations.at(-1)).toMatchObject({ name: 'aaa-empty-org', count: 0 })
     })
 
     it('should accept resources on a draft and restrict their visibility', async () => {

@@ -3,6 +3,46 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.6] - 2026-08-04
+
+**Highlights**
+
+- **The dashboard now shows only what you can actually act on, and says why when something is refused.** Organization and category management no longer offers edit and member buttons to users without the rights to use them, dataset management lists the datasets you can write in rather than every dataset you can see, and a rejected request now names the field that was wrong instead of failing with an unexplained error (#279).
+
+**Bug Fixes**
+
+- **Dropping a file on the new dataset page keeps what you already typed.** The drop created the draft through a separate path that ignored the form, so a title, description, or tags entered before the drop were discarded. The drop now submits the form itself and every field carries into the draft (#279).
+- **Buttons and dialog close controls show the pointer cursor again.** Tailwind CSS v4's preflight leaves `<button>` at the browser default, so the shared button component and the dialog and sheet close controls set `cursor: pointer` explicitly (#279).
+- **Organization and category management offers actions only where the viewer may use them.** Every signed-in user previously saw edit and member buttons for every organization and category, and the edit pages were reachable regardless of role, so the action failed only on save. Buttons now appear for administrators of that organization or category, and everyone else gets a read-only view of the same details (#279).
+- **Dataset management is scoped to the organizations you can write in.** Datasets belonging to an organization where you are a plain member — visible to you, but not editable — appeared in the management list and could not be saved. The list, the organization filter, and the owner-organization selector on the dataset form now all use organizations where you are an editor or higher, and the selector is preselected when exactly one is available (#279).
+- **Organization and category lists have a stable order.** The organization list had no `ORDER BY`, so rows could shift between requests and paginate inconsistently. Both lists now sort by name by default and accept `orderBy=name|datasetCount` (#279).
+- **Search facets come back in descending count order.** The step that enriches facets with titles rebuilt the list from the database in its own order, discarding the ordering the search backend had computed, so organization and category facets appeared in an arbitrary order (#279).
+- **Rejected requests and failed processing explain themselves.** Request validation answered with a Problem Details response that carried no `detail`, leaving the UI nothing to show but "the request failed" — an invalid resource URL, for example, gave no hint that the URL was the problem. Validation failures now name the field and the reason, and a resource's pipeline error is shown in full to users who may edit that dataset (#279).
+
+**API Changes**
+
+- `GET /api/v1/packages?my_org=true` and the resource count endpoint now mean "organizations where the caller is an editor or higher" rather than "any organization the caller belongs to". Callers relying on the previous behavior to list datasets they can only read should omit `my_org` and filter client-side (#279).
+
+---
+
+**ハイライト**
+
+- **ダッシュボードが「操作できるものだけ」を表示し、拒否された理由を伝えるようになりました。** 組織・カテゴリー管理は権限のないユーザーに編集・メンバーボタンを出さなくなり、データセット管理は閲覧できる全件ではなく編集できるものを一覧し、リクエストが拒否された際は原因不明のエラーではなく問題のあったフィールドを示すようになりました（#279）。
+
+**バグ修正**
+
+- **データセット新規作成でファイルをドロップしても入力済みの内容が保持されます。** ドロップはフォームを参照しない別経路で下書きを作成していたため、ドロップ前に入力したタイトル・説明・タグが破棄されていました。ドロップがフォーム自身を送信するようになり、全フィールドが下書きに引き継がれます（#279）。
+- **ボタンとダイアログの閉じるコントロールにポインターカーソルが戻りました。** Tailwind CSS v4 の preflight は `<button>` をブラウザ既定のカーソルのままにするため、共有ボタンコンポーネントとダイアログ・シートの閉じるコントロールで `cursor: pointer` を明示しました（#279）。
+- **組織・カテゴリー管理は、その操作を行える相手にだけ操作を提示します。** 従来はログインした全ユーザーにすべての組織・カテゴリーの編集・メンバーボタンが表示され、編集画面もロールに関わらず開けたため、保存時に初めて失敗していました。ボタンは当該組織・カテゴリーの管理者にのみ表示し、それ以外のユーザーには同じ内容の読み取り専用ビューを表示します（#279）。
+- **データセット管理を、編集権限のある組織に絞りました。** 閲覧はできるが編集はできない（メンバーとして所属する）組織のデータセットが管理一覧に現れ、保存できない状態でした。一覧・組織フィルター・データセットフォームの所属組織セレクトのいずれも editor 以上の組織を対象とし、候補が 1 件だけの場合は自動選択します（#279）。
+- **組織・カテゴリー一覧の並び順が安定しました。** 組織一覧には `ORDER BY` が無く、リクエストごとに順序が変わってページングが崩れることがありました。どちらの一覧も既定で名前順に並び、`orderBy=name|datasetCount` を受け付けます（#279）。
+- **検索ファセットが件数の降順で返るようになりました。** ファセットにタイトルを付与する処理が独自の順序でリストを再構築し、検索バックエンドが算出した順序を捨てていたため、組織・カテゴリーのファセットが不定の順序で表示されていました（#279）。
+- **拒否されたリクエストと失敗した処理が理由を返します。** リクエストバリデーションの Problem Details に `detail` が無く、UI は「リクエストに失敗しました」としか表示できませんでした（例: 不正なリソース URL でも URL が原因だと分かりませんでした）。バリデーション失敗はフィールド名と理由を返し、リソースのパイプラインエラーは当該データセットを編集できるユーザーにはそのまま表示します（#279）。
+
+**API 変更**
+
+- `GET /api/v1/packages?my_org=true` とリソース件数エンドポイントの `my_org` は、「所属するすべての組織」ではなく「editor 以上のロールを持つ組織」を意味するようになりました。閲覧のみ可能なデータセットを一覧する用途で従来の挙動に依存していた場合は、`my_org` を外してクライアント側で絞り込んでください（#279）。
+
 ## [0.11.5] - 2026-07-21
 
 **Security**

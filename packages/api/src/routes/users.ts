@@ -4,11 +4,11 @@
  */
 
 import { Hono } from 'hono'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
 import { eq, and, sql, ilike, or, getTableColumns } from 'drizzle-orm'
-import { organization, userOrgMembership, user } from '@kukan/db'
-import { escapeLike } from '@kukan/shared'
+import { organization, userOrgMembership, group, userGroupMembership, user } from '@kukan/db'
+import { escapeLike, UnauthorizedError } from '@kukan/shared'
 import type { AppContext } from '../context'
 
 export const usersRouter = new Hono<{ Variables: AppContext }>()
@@ -103,6 +103,43 @@ usersRouter.get('/me/organizations', async (c) => {
       and(eq(userOrgMembership.organizationId, organization.id), eq(organization.state, 'active'))
     )
     .where(eq(userOrgMembership.userId, user.id))
+
+  return c.json({ items: rows })
+})
+
+// GET /api/v1/users/me/groups - Get groups the current user belongs to.
+// The groups list itself is publicly cached, so per-viewer roles have to come
+// from here instead of being mixed into that response. Identity and role only:
+// the dashboard reads its counts and titles from the group list.
+usersRouter.get('/me/groups', async (c) => {
+  const user = c.get('user')
+  if (!user) throw new UnauthorizedError()
+
+  const db = c.get('db')
+
+  if (user.sysadmin) {
+    // Sysadmins manage every group, so they come back as admin everywhere
+    const rows = await db
+      .select({
+        id: group.id,
+        name: group.name,
+        role: sql<string>`'admin'`.as('role'),
+      })
+      .from(group)
+      .where(eq(group.state, 'active'))
+
+    return c.json({ items: rows })
+  }
+
+  const rows = await db
+    .select({
+      id: group.id,
+      name: group.name,
+      role: userGroupMembership.role,
+    })
+    .from(userGroupMembership)
+    .innerJoin(group, and(eq(userGroupMembership.groupId, group.id), eq(group.state, 'active')))
+    .where(eq(userGroupMembership.userId, user.id))
 
   return c.json({ items: rows })
 })

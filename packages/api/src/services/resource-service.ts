@@ -137,6 +137,15 @@ export class ResourceService {
    * Throws NotFoundError if the parent package is private and the viewer lacks access.
    */
   async getByIdWithAccessCheck(id: string, viewer?: AuthUser) {
+    return (await this.getByIdWithOwnership(id, viewer)).resource
+  }
+
+  /**
+   * As {@link getByIdWithAccessCheck}, but also returns the parent's ownership,
+   * which the visibility check has already read. Kept off the plain getter so
+   * the fields stay out of the responses that serialize a resource directly.
+   */
+  async getByIdWithOwnership(id: string, viewer?: AuthUser) {
     const [row] = await this.db
       .select({
         resource,
@@ -160,20 +169,25 @@ export class ResourceService {
       throw new NotFoundError('Resource', id)
     }
 
+    const pkg = {
+      state: row.pkgState,
+      ownerOrg: row.pkgOwnerOrg,
+      creatorUserId: row.pkgCreatorUserId,
+    }
+
     // Draft resources (incl. download/preview, ADR-017/039): draft editors only
     if (row.pkgState === 'draft') {
-      const pkg = { creatorUserId: row.pkgCreatorUserId, ownerOrg: row.pkgOwnerOrg }
       if (!(await hasDraftAccess(this.db, pkg, viewer))) {
         throw new NotFoundError('Resource', id)
       }
-      return row.resource
+      return { resource: row.resource, pkg }
     }
 
     if (row.pkgPrivate && !(await hasOrgMembership(this.db, row.pkgOwnerOrg, viewer))) {
       throw new NotFoundError('Resource', id)
     }
 
-    return row.resource
+    return { resource: row.resource, pkg }
   }
 
   /**

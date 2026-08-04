@@ -24,6 +24,7 @@ import {
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 import { PageHeader } from '@/components/dashboard/page-header'
+import { useMyRoles } from '@/hooks/use-my-roles'
 
 interface Member {
   id: string
@@ -54,6 +55,9 @@ export default function OrgMembersPage() {
   membersRef.current = members
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Any member may read this list, but only an admin may change it
+  const { can, ready: rolesReady } = useMyRoles('organizations')
+  const canManage = can(nameOrId, 'admin')
 
   // Add member state
   const [searchQuery, setSearchQuery] = useState('')
@@ -138,7 +142,7 @@ export default function OrgMembersPage() {
     }
   }
 
-  if (loading) {
+  if (loading || !rolesReady) {
     return <p className="py-12 text-center text-muted-foreground">{tc('loading')}</p>
   }
 
@@ -156,54 +160,55 @@ export default function OrgMembersPage() {
         </Alert>
       )}
 
-      {/* Add member section */}
-      <div className="rounded-lg border p-4">
-        <h3 className="mb-3 text-sm font-medium">{t('addMember')}</h3>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div className="flex-1">
-            <Input
-              placeholder={t('searchPlaceholder')}
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value)
-                setSelectedUserId(null)
-              }}
-            />
-            {searchResults.length > 0 && !selectedUserId && (
-              <div className="mt-1 rounded-md border bg-background shadow-sm">
-                {searchResults.map((u) => (
-                  <button
-                    key={u.id}
-                    type="button"
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-accent"
-                    onClick={() => {
-                      setSelectedUserId(u.id)
-                      setSearchQuery(u.displayName || u.name)
-                      setSearchResults([])
-                    }}
-                  >
-                    <span className="font-medium">{u.displayName || u.name}</span>
-                    <span className="ml-2 text-muted-foreground">{u.email}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+      {canManage && (
+        <div className="rounded-lg border p-4">
+          <h3 className="mb-3 text-sm font-medium">{t('addMember')}</h3>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1">
+              <Input
+                placeholder={t('searchPlaceholder')}
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value)
+                  setSelectedUserId(null)
+                }}
+              />
+              {searchResults.length > 0 && !selectedUserId && (
+                <div className="mt-1 rounded-md border bg-background shadow-sm">
+                  {searchResults.map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-accent"
+                      onClick={() => {
+                        setSelectedUserId(u.id)
+                        setSearchQuery(u.displayName || u.name)
+                        setSearchResults([])
+                      }}
+                    >
+                      <span className="font-medium">{u.displayName || u.name}</span>
+                      <span className="ml-2 text-muted-foreground">{u.email}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <Select value={selectedRole} onValueChange={setSelectedRole}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="member">{t('roleMember')}</SelectItem>
+                <SelectItem value="editor">{t('roleEditor')}</SelectItem>
+                <SelectItem value="admin">{t('roleAdmin')}</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={handleAddMember} disabled={!selectedUserId || adding}>
+              {adding ? tc('adding') : tc('add')}
+            </Button>
           </div>
-          <Select value={selectedRole} onValueChange={setSelectedRole}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="member">{t('roleMember')}</SelectItem>
-              <SelectItem value="editor">{t('roleEditor')}</SelectItem>
-              <SelectItem value="admin">{t('roleAdmin')}</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button onClick={handleAddMember} disabled={!selectedUserId || adding}>
-            {adding ? tc('adding') : tc('add')}
-          </Button>
         </div>
-      </div>
+      )}
 
       {/* Members table */}
       {members.length === 0 ? (
@@ -215,7 +220,7 @@ export default function OrgMembersPage() {
               <TableHead>{tc('user')}</TableHead>
               <TableHead>{tc('email')}</TableHead>
               <TableHead>{tc('role')}</TableHead>
-              <TableHead className="w-[80px]">{tc('actions')}</TableHead>
+              {canManage && <TableHead className="w-[80px]">{tc('actions')}</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -224,22 +229,24 @@ export default function OrgMembersPage() {
                 <TableCell className="font-medium">{m.displayName || m.userName}</TableCell>
                 <TableCell>{m.email}</TableCell>
                 <TableCell>{roleBadge(m.role)}</TableCell>
-                <TableCell>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => {
-                      if (
-                        confirm(t('confirmRemoveFromOrg', { name: m.displayName || m.userName }))
-                      ) {
-                        handleRemoveMember(m.userId)
-                      }
-                    }}
-                  >
-                    {tc('delete')}
-                  </Button>
-                </TableCell>
+                {canManage && (
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => {
+                        if (
+                          confirm(t('confirmRemoveFromOrg', { name: m.displayName || m.userName }))
+                        ) {
+                          handleRemoveMember(m.userId)
+                        }
+                      }}
+                    >
+                      {tc('delete')}
+                    </Button>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>

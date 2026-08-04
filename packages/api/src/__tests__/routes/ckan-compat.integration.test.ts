@@ -164,6 +164,8 @@ describe('CKAN-Compatible API (/api/3/action)', () => {
       const body = await res.json()
       expect(body.success).toBe(true)
       expect(body.result.name).toBe('ckan-resource')
+      // The CKAN contract is a flat resource — internal ownership stays out of it
+      expect(body.result).not.toHaveProperty('pkg')
     })
 
     it('should return 404 for non-existent resource', async () => {

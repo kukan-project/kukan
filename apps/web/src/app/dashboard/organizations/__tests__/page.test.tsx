@@ -40,6 +40,17 @@ const sampleOrgs = [
   { id: 'o2', name: 'osaka', title: 'Osaka City', datasetCount: 12, deletedDatasetCount: 0 },
 ]
 
+/** Routes the organization list and the viewer's memberships, which decide
+ *  which row actions are offered (kukan#258). Defaults to admin everywhere. */
+function mockFetch(list: Response, memberships = sampleOrgs.map((o) => ({ ...o, role: 'admin' }))) {
+  vi.mocked(clientFetch).mockImplementation(async (url: string) => {
+    if (url.startsWith('/api/v1/users/me/organizations')) {
+      return mockFetchResponse({ items: memberships })
+    }
+    return list
+  })
+}
+
 describe('OrganizationsManagePage', () => {
   beforeEach(() => {
     vi.mocked(clientFetch).mockReset()
@@ -48,7 +59,7 @@ describe('OrganizationsManagePage', () => {
   })
 
   it('should display organizations in table', async () => {
-    vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: sampleOrgs, total: 2 }))
+    mockFetch(mockFetchResponse({ items: sampleOrgs, total: 2 }))
     render(<OrganizationsManagePage />)
 
     await waitFor(() => {
@@ -66,7 +77,7 @@ describe('OrganizationsManagePage', () => {
   })
 
   it('should show stat cards for public and deleted', async () => {
-    vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: sampleOrgs, total: 2 }))
+    mockFetch(mockFetchResponse({ items: sampleOrgs, total: 2 }))
     render(<OrganizationsManagePage />)
 
     await waitFor(() => {
@@ -77,7 +88,7 @@ describe('OrganizationsManagePage', () => {
 
   it('should not show deleted card for non-sysadmin', async () => {
     mockUser.sysadmin = false
-    vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: sampleOrgs, total: 2 }))
+    mockFetch(mockFetchResponse({ items: sampleOrgs, total: 2 }))
     render(<OrganizationsManagePage />)
 
     await waitFor(() => {
@@ -88,7 +99,7 @@ describe('OrganizationsManagePage', () => {
   })
 
   it('should switch to deleted list when deleted card is clicked', async () => {
-    vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: sampleOrgs, total: 2 }))
+    mockFetch(mockFetchResponse({ items: sampleOrgs, total: 2 }))
     render(<OrganizationsManagePage />)
 
     await waitFor(() => {
@@ -110,7 +121,7 @@ describe('OrganizationsManagePage', () => {
   })
 
   it('should show empty state when no organizations', async () => {
-    vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: [], total: 0 }))
+    mockFetch(mockFetchResponse({ items: [], total: 0 }))
     render(<OrganizationsManagePage />)
 
     await waitFor(() => {
@@ -119,11 +130,7 @@ describe('OrganizationsManagePage', () => {
   })
 
   it('should show error state with retry button on fetch failure', async () => {
-    vi.mocked(clientFetch).mockResolvedValue({
-      ok: false,
-      status: 500,
-      json: async () => ({}),
-    } as Response)
+    mockFetch({ ok: false, status: 500, json: async () => ({}) } as Response)
     render(<OrganizationsManagePage />)
 
     await waitFor(() => {
@@ -133,7 +140,7 @@ describe('OrganizationsManagePage', () => {
   })
 
   it('should show pagination when total > pageSize', async () => {
-    vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: sampleOrgs, total: 50 }))
+    mockFetch(mockFetchResponse({ items: sampleOrgs, total: 50 }))
     render(<OrganizationsManagePage />)
 
     await waitFor(() => {
@@ -143,7 +150,7 @@ describe('OrganizationsManagePage', () => {
   })
 
   it('should not show pagination when total <= pageSize', async () => {
-    vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: sampleOrgs, total: 2 }))
+    mockFetch(mockFetchResponse({ items: sampleOrgs, total: 2 }))
     render(<OrganizationsManagePage />)
 
     await waitFor(() => {
@@ -153,7 +160,7 @@ describe('OrganizationsManagePage', () => {
   })
 
   it('should show new button for sysadmin', async () => {
-    vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: [], total: 0 }))
+    mockFetch(mockFetchResponse({ items: [], total: 0 }))
     render(<OrganizationsManagePage />)
 
     await waitFor(() => {
@@ -164,7 +171,9 @@ describe('OrganizationsManagePage', () => {
   })
 
   it('opens edit on row click, and links to members and view pages', async () => {
-    vi.mocked(clientFetch).mockResolvedValue(mockFetchResponse({ items: sampleOrgs, total: 2 }))
+    // Through the helper: the row actions are gated on the viewer's membership
+    // now, so the list alone is not enough to render them (#258).
+    mockFetch(mockFetchResponse({ items: sampleOrgs, total: 2 }))
     render(<OrganizationsManagePage />)
 
     await waitFor(() => expect(screen.getByText('tokyo')).toBeInTheDocument())
@@ -178,5 +187,23 @@ describe('OrganizationsManagePage', () => {
     const viewLinks = screen.getAllByText('View')
     const viewLink = viewLinks[0].closest('a')
     expect(viewLink).toHaveAttribute('href', '/organization/tokyo')
+  })
+
+  // Editing needs admin, the member list any role — offering either to
+  // everyone only produced an API error on use (kukan#258)
+  it('should offer only the member list to a non-admin member', async () => {
+    mockUser.sysadmin = false
+    mockFetch(mockFetchResponse({ items: sampleOrgs, total: 2 }), [
+      { ...sampleOrgs[0], role: 'editor' },
+    ])
+    render(<OrganizationsManagePage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('tokyo')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('Edit')).not.toBeInTheDocument()
+    // Only tokyo is the viewer's; osaka offers nothing but View
+    expect(screen.getAllByText('Members')).toHaveLength(1)
+    expect(screen.getAllByText('View')).toHaveLength(2)
   })
 })

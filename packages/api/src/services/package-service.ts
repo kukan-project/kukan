@@ -282,6 +282,11 @@ export class PackageService {
    * all active orgs/groups/tags/formats/licenses (count=0 for missing).
    */
   async enrichFacets(facets: SearchFacets): Promise<FacetCounts> {
+    // The list is rebuilt from the DB below, so the count order has to be
+    // applied here or an empty organization outranks a busy one (#261). Stable
+    // sort, so equal counts keep the DB's order.
+    const byCount = (a: { count: number }, b: { count: number }) => b.count - a.count
+
     const orgCountMap = new Map(facets.organizations.map((o) => [o.name, o.count]))
     const groupCountMap = new Map(facets.groups.map((g) => [g.name, g.count]))
     const tagCountMap = new Map(facets.tags.map((t) => [t.name, t.count]))
@@ -333,34 +338,42 @@ export class PackageService {
     ])
 
     return {
-      organizations: allOrgs.map((o) => ({
-        name: o.name,
-        title: o.title,
-        count: orgCountMap.get(o.name) ?? 0,
-      })),
-      groups: allGroups.map((g) => ({
-        name: g.name,
-        title: g.title,
-        count: groupCountMap.get(g.name) ?? 0,
-      })),
-      tags: allTags.map((t) => ({
-        name: t.name,
-        count: tagCountMap.get(t.name) ?? 0,
-      })),
+      organizations: allOrgs
+        .map((o) => ({
+          name: o.name,
+          title: o.title,
+          count: orgCountMap.get(o.name) ?? 0,
+        }))
+        .sort(byCount),
+      groups: allGroups
+        .map((g) => ({
+          name: g.name,
+          title: g.title,
+          count: groupCountMap.get(g.name) ?? 0,
+        }))
+        .sort(byCount),
+      tags: allTags
+        .map((t) => ({
+          name: t.name,
+          count: tagCountMap.get(t.name) ?? 0,
+        }))
+        .sort(byCount),
       formats: allFormats
         .map((r) => r.format)
         .filter(Boolean)
         .map((f) => ({
           name: f,
           count: formatCountMap.get(f) ?? 0,
-        })),
+        }))
+        .sort(byCount),
       licenses: allLicenses
         .map((l) => l.licenseId!)
         .filter(Boolean)
         .map((l) => ({
           name: l,
           count: licenseCountMap.get(l) ?? 0,
-        })),
+        }))
+        .sort(byCount),
     }
   }
 

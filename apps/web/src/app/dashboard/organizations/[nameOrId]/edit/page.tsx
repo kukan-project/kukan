@@ -15,8 +15,10 @@ import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { OrganizationForm } from '@/components/dashboard/organization/organization-form'
+import { EntityDetails } from '@/components/dashboard/entity-details'
 import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
 import { useUser } from '@/components/dashboard/user-provider'
+import { useMyRoles } from '@/hooks/use-my-roles'
 import type { CreateOrganizationInput } from '@kukan/shared'
 
 interface OrganizationDetail {
@@ -55,6 +57,8 @@ export default function EditOrganizationPage() {
   const [deleting, setDeleting] = useState(false)
   const [restoring, setRestoring] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { can, ready: rolesReady } = useMyRoles('organizations')
+  const canEdit = can(nameOrId, 'admin')
 
   const fetchData = useCallback(async () => {
     // Reset to the loading state so a slower refetch (e.g. navigating between
@@ -119,7 +123,7 @@ export default function EditOrganizationPage() {
     }
   }
 
-  if (loading) {
+  if (loading || !rolesReady) {
     return (
       <div className="flex flex-col gap-6">
         <PageHeader title={t('editOrg')} />
@@ -145,15 +149,31 @@ export default function EditOrganizationPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={t('editOrg')} />
+      <PageHeader title={canEdit ? t('editOrg') : t('manageTitle')} />
 
       {!isDeleted && (
         <Card>
           <CardHeader>
             <CardTitle>{tc('basicInfo')}</CardTitle>
           </CardHeader>
-          <CardContent>
-            <OrganizationForm mode="edit" nameOrId={nameOrId} defaultValues={toFormDefaults(org)} />
+          <CardContent className="flex flex-col gap-4">
+            {canEdit ? (
+              <OrganizationForm
+                mode="edit"
+                nameOrId={nameOrId}
+                defaultValues={toFormDefaults(org)}
+              />
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">{tc('viewOnlyNoAdmin')}</p>
+                <EntityDetails
+                  name={org.name}
+                  title={org.title}
+                  description={org.description}
+                  imageUrl={org.imageUrl}
+                />
+              </>
+            )}
           </CardContent>
         </Card>
       )}
@@ -172,8 +192,10 @@ export default function EditOrganizationPage() {
         </Card>
       )}
 
-      {/* Purge is sysadmin-only; soft-delete is available to org admins on the active page. */}
-      {(!isDeleted || user.sysadmin) && (
+      {/* Purge is sysadmin-only; soft-delete is available to org admins on the
+          active page. A deleted org is absent from the viewer's memberships, so
+          the purge branch stays on the sysadmin flag rather than the role. */}
+      {(isDeleted ? user.sysadmin : canEdit) && (
         <Card className={isDeleted ? 'border-destructive/30' : 'border-warning/40'}>
           <CardHeader>
             <CardTitle className={isDeleted ? 'text-destructive' : 'text-warning-tint-foreground'}>

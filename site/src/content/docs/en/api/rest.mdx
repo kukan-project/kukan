@@ -50,7 +50,7 @@ As an exception, **PUT on a dataset in draft state is a partial update** (see "D
 | `res_format[]`     | Filter by resource format (e.g., `CSV`)                           |
 | `license_id[]`     | Filter by license                                                 |
 | `state`            | `active` / `deleted` / `draft` (`draft` requires auth; see below) |
-| `my_org`           | Limit to user's organizations                                     |
+| `my_org`           | Limit to organizations where the user is `editor` or above        |
 | `private`          | Include private datasets                                          |
 | `sort_by`          | `updated` / `created` / `name`                                    |
 | `sort_order`       | `asc` / `desc`                                                    |

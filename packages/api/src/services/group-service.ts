@@ -17,7 +17,7 @@ import type {
 export class GroupService {
   constructor(private db: Database) {}
 
-  async list(params: PaginationParams & { q?: string; orderBy?: 'datasetCount' }) {
+  async list(params: PaginationParams & { q?: string; orderBy?: 'name' | 'datasetCount' }) {
     const { offset = 0, limit = 20, q, orderBy } = params
 
     const conditions = [eq(group.state, 'active')]

@@ -12,6 +12,7 @@ import { PageHeader } from '@/components/dashboard/page-header'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { StatCard } from '@/components/dashboard/stat-card'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
+import { useMyRoles } from '@/hooks/use-my-roles'
 
 interface OrgItem {
   id: string
@@ -59,6 +60,8 @@ export default function OrganizationsManagePage() {
   const showDeleted = activeCategory === 'deleted'
   const listUrl = showDeleted ? '/api/v1/organizations?state=deleted' : '/api/v1/organizations'
   const { items, loading, error, ...pagination } = usePaginatedFetch<OrgItem>(listUrl)
+  // The list covers every organization; the actions are the viewer's own (#258)
+  const { can } = useMyRoles('organizations')
 
   // Merge active category total from pagination with inactive stats
   const stats: Record<CategoryFilter, number | undefined> = {
@@ -120,7 +123,7 @@ export default function OrganizationsManagePage() {
                 <TableHead>{tc('urlIdentifier')}</TableHead>
                 <TableHead>{tc('title')}</TableHead>
                 <TableHead className="text-right">{tc('datasets')}</TableHead>
-                <TableHead className="w-[80px]">{tc('actions')}</TableHead>
+                <TableHead className="w-[80px] text-right">{tc('actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -128,8 +131,16 @@ export default function OrganizationsManagePage() {
                 const editHref = `/dashboard/organizations/${org.name}/edit${
                   showDeleted ? '?state=deleted' : ''
                 }`
+                // Only an admin has an editor to open, so only their row opens
+                // one (#258). Activating every row would take a viewer who
+                // cannot edit straight into the form they are not allowed to
+                // use — the thing this list was reported for.
+                const canEdit = can(org.name, 'admin')
                 return (
-                  <TableRow key={org.id} {...rowActivateProps(() => router.push(editHref))}>
+                  <TableRow
+                    key={org.id}
+                    {...(canEdit ? rowActivateProps(() => router.push(editHref)) : {})}
+                  >
                     <TableCell className="font-medium">{org.name}</TableCell>
                     <TableCell>{org.title || '-'}</TableCell>
                     <TableCell className="text-right">
@@ -139,19 +150,22 @@ export default function OrganizationsManagePage() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      {/* Row click opens the editor; these nested links act on their own. */}
-                      {!showDeleted && (
-                        <div className="flex gap-1">
+                      {/* Right-aligned so the trailing action lines up down the
+                          column when a row offers fewer of them. The row click
+                          opens the editor for those who have one; these nested
+                          links act on their own. */}
+                      <div className="flex justify-end gap-1">
+                        {!showDeleted && can(org.name, 'member') && (
                           <Button variant="ghost" size="sm" asChild>
                             <Link href={`/dashboard/organizations/${org.name}/members`}>
                               {tc('members')}
                             </Link>
                           </Button>
-                          <Button variant="ghost" size="sm" asChild>
-                            <Link href={`/organization/${org.name}`}>{tc('view')}</Link>
-                          </Button>
-                        </div>
-                      )}
+                        )}
+                        <Button variant="ghost" size="sm" asChild>
+                          <Link href={`/organization/${org.name}`}>{tc('view')}</Link>
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 )

@@ -5,7 +5,7 @@
 
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
 import { lakeConfigFromEnv } from '@kukan/lake'
 import { ResourceService, omitStoragePointers } from '../services/resource-service'
@@ -44,6 +44,7 @@ import {
 } from '../config'
 import { JsonMinifyStream } from '../streams/json-minify-stream'
 import {
+  canWritePackage,
   makePackageAuthorize,
   resolveUserOrgIds,
   buildVisibilityFilters,
@@ -155,18 +156,20 @@ resourcesRouter.get('/count', async (c) => {
   const myOrg = c.req.query('my_org') === 'true'
   const db = c.get('db')
 
-  // Resolve user's org memberships (for visibility and my_org filters)
+  // Visibility counts every membership; my_org narrows to the orgs the viewer
+  // may write in, matching the dashboard listing it accompanies (kukan#259)
   const userOrgIds = await resolveUserOrgIds(db, user)
+  const manageOrgIds = myOrg ? await resolveUserOrgIds(db, user, 'editor') : undefined
 
-  // my_org=true with no memberships → 0
-  if (myOrg && userOrgIds !== undefined && userOrgIds.length === 0) {
+  // No editor membership → 0
+  if (manageOrgIds?.length === 0) {
     return c.json({ count: 0 })
   }
 
   // Build visibility filters (same logic as packages list)
   const filters: SearchFilters = {
     ...buildVisibilityFilters(user, userOrgIds),
-    ...(myOrg && userOrgIds?.length && { ownerOrgIds: userOrgIds }),
+    ...(manageOrgIds?.length && { ownerOrgIds: manageOrgIds }),
   }
 
   // Dashboard (my_org=true) uses PostgreSQL adapter for DB consistency
@@ -404,7 +407,7 @@ resourcesRouter.get('/:id/pipeline-status', async (c) => {
   const db = c.get('db')
   const user = c.get('user')
   // Same visibility check as download/preview/schema — draft/private resources stay hidden
-  await new ResourceService(db).getByIdWithAccessCheck(id, user)
+  const { pkg } = await new ResourceService(db).getByIdWithOwnership(id, user)
   const pipelineService = new PipelineService(db)
   // Where a revert would put the content, and the generation it would be acting
   // on. Served with the status because the revert control lives on it and
@@ -421,9 +424,14 @@ resourcesRouter.get('/:id/pipeline-status', async (c) => {
     return c.json({ id, pipeline_status: null, steps: [], ...revertFields })
   }
 
-  // Only expose raw error details to sysadmin; others get a generic message
+  // Whoever can edit the resource entered the URL, so they get to see why it
+  // failed; everyone else gets a generic message rather than error text that
+  // could be used to probe hosts (kukan#285). Resolved only when there is an
+  // error to show, since the dashboard polls this endpoint.
+  const hasError = !!status.error || status.steps.some((s) => s.error)
+  const showDetail = hasError && !!user && (await canWritePackage(db, user, pkg, 'editor'))
   const sanitizeError = (err: string | null) =>
-    !err ? null : user?.sysadmin ? err : 'Processing failed'
+    !err ? null : showDetail ? err : 'Processing failed'
 
   return c.json({
     id,
