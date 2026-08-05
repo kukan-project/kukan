@@ -25,6 +25,7 @@
     "@kukan/shared": "workspace:*",
     "@kukan/ui": "workspace:*",
     "better-auth": "1.6.25",
+    "fzstd": "^0.1.1",
     "hyparquet": "^1.26.2",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.27.0",

@@ -108,11 +108,18 @@ export async function interpretCsv(
     }
 
     const rowCount = await trimFooter(conn, columns)
-    // Compression left at DuckDB's default (Snappy) on purpose: the preview is
-    // read by hyparquet in the browser, which supports Snappy but neither ZSTD
-    // nor GZIP — asking for either writes a file the preview cannot open.
+    // ZSTD rather than DuckDB's default: measured at 3.25 MB against Snappy's
+    // 8.40 MB on the same input, and a preview page costs a third of the bytes
+    // to fetch — the read is still two ranges, since compression is per page
+    // inside a column chunk, so nothing has to be pulled whole (#242).
+    //
+    // The browser reader was taught ZSTD first (`hooks/parquet-codecs.ts`); the
+    // other two readers, the DuckDB explorer (ADR-016) and the server sandbox,
+    // have always handled it. Files written before this stay Snappy and are
+    // never rewritten (ADR-029 §7), so the reader keeps both.
     await conn.run(
-      `COPY t TO ${sqlLiteral(parquetPath)} (FORMAT parquet, ROW_GROUP_SIZE ${PARQUET_ROW_GROUP_SIZE})`
+      `COPY t TO ${sqlLiteral(parquetPath)} ` +
+        `(FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE ${PARQUET_ROW_GROUP_SIZE})`
     )
 
     return { columns: await describeColumns(conn, columns, rowCount), rowCount }

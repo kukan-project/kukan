@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import type { AsyncBuffer } from 'hyparquet'
+import type { AsyncBuffer, FileMetaData } from 'hyparquet'
 
 interface ParquetMetadata {
   numRows: number
@@ -40,6 +40,8 @@ export function useParquetPreview({
   const [error, setError] = useState<string | null>(null)
   // Cache the AsyncBuffer for reuse across page loads
   const fileRef = useRef<AsyncBuffer | null>(null)
+  /** The footer, kept so page turns do not re-read the tail of the file. */
+  const metaRef = useRef<FileMetaData | null>(null)
 
   const totalPages = metadata ? Math.max(1, Math.ceil(metadata.numRows / pageSize)) : 0
 
@@ -55,9 +57,10 @@ export function useParquetPreview({
         // Server-proxied preview endpoint (same-origin, no CORS issues)
         const proxyUrl = `/api/v1/resources/${encodeURIComponent(resourceId)}/preview`
 
-        // Dynamically import hyparquet
-        const { asyncBufferFromUrl, parquetMetadataAsync, parquetReadObjects } =
-          await import('hyparquet')
+        // Dynamically imported, like the reader: neither belongs in the bundle
+        // of a page that never opens a preview.
+        const [{ asyncBufferFromUrl, parquetMetadataAsync, parquetReadObjects }, zstd] =
+          await Promise.all([import('hyparquet'), import('./parquet-codecs')])
 
         let file: AsyncBuffer
         try {
@@ -70,6 +73,7 @@ export function useParquetPreview({
         fileRef.current = file
 
         const meta = await parquetMetadataAsync(file)
+        metaRef.current = meta
         if (cancelled) return
 
         const numRows = Number(meta.num_rows)
@@ -81,6 +85,8 @@ export function useParquetPreview({
         // Load first page
         const pageRows = await parquetReadObjects({
           file,
+          metadata: meta,
+          compressors: zstd.compressors,
           rowStart: 0,
           rowEnd: Math.min(pageSize, numRows),
         })
@@ -113,12 +119,20 @@ export function useParquetPreview({
 
       try {
         setPageLoading(true)
-        const { parquetReadObjects } = await import('hyparquet')
+        const [{ parquetReadObjects }, zstd] = await Promise.all([
+          import('hyparquet'),
+          import('./parquet-codecs'),
+        ])
 
         const rowStart = clampedPage * pageSize
         const rowEnd = Math.min(rowStart + pageSize, metadata.numRows)
         const pageRows = await parquetReadObjects({
           file: fileRef.current!,
+          // The footer this run already read. Without it every page turn asks
+          // for the tail of the file again — measured at 512 KB against 8 KB of
+          // rows, so the refetch outweighs the data by 60x.
+          metadata: metaRef.current!,
+          compressors: zstd.compressors,
           rowStart,
           rowEnd,
         })
