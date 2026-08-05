@@ -9,6 +9,24 @@ export const MAX_FETCH_SIZE = 100 * 1024 * 1024
 export const FETCH_TIMEOUT_MS = 30_000
 
 /**
+ * How long name resolution may take before the fetch it belongs to gives up.
+ *
+ * c-ares doubles the timeout per try, so these two are a budget of roughly
+ * `DNS_TIMEOUT_MS * (2^DNS_TRIES - 1)` — about six seconds. Kept here beside the
+ * timeouts it has to stay under rather than beside the resolver that applies it:
+ * six seconds only makes sense against {@link FETCH_TIMEOUT_MS} and
+ * {@link HEALTH_CHECK_TIMEOUT_MS}, and a budget that outlives them turns a slow
+ * name into a fetch that reports nothing rather than a failure.
+ *
+ * Left to itself c-ares is far more patient than the `getaddrinfo` it replaced:
+ * measured against a real resolver, `.` took 25.8 s to give up where
+ * `dns.lookup` took 10.0 s — and `http://./x` parses, so a resource URL can ask
+ * for exactly that.
+ */
+export const DNS_TIMEOUT_MS = 2_000
+export const DNS_TRIES = 2
+
+/**
  * Rows per Parquet row group. Far below DuckDB's default: the preview reads the
  * file over HTTP range requests, so a small group is what keeps the first screen
  * of rows to a short read.
