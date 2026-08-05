@@ -68,7 +68,10 @@ CKAN のデータエクスプローラーのような、データの閲覧・フ
 - DuckDB-WASM インスタンスはシングルトンで管理（一度ロードすればページ内遷移で再ダウンロードなし）
 - `httpfs` 拡張は使わず、`fetch` + `registerFileBuffer` でファイルを登録（httpfs の追加 WASM ロードを回避、同一オリジン API で CORS 問題なし）
 - 遅延ロード: 「解析モード」を ON にしたときのみ WASM をロード（`next/dynamic` + `ssr: false`）
-- WASM + Worker ファイルは `public/duckdb/` に配置（`scripts/copy-duckdb-wasm.mjs` で `node_modules` からコピー）
+- WASM + Worker ファイルは `new URL(..., import.meta.url)` でバンドラに emit させ、
+  `/_next/static/media/` からハッシュ付きで配信する。`public/` へコピーする方式は、
+  固定パスゆえに `immutable` を付けられず（付ければ古いバイナリが固定される）、
+  存在しないパスがキャッチオールページの HTML を 200 で返すため取りやめた
 
 ### 2. UI 設計: 解析モード
 
@@ -126,7 +129,9 @@ Extract ステップで CSV パース後、各列のデータ型を推定する:
 ## 影響
 
 - `apps/web` に `@duckdb/duckdb-wasm` 依存を追加（遅延ロード）
-- WASM バイナリ（~35MB）は `public/duckdb/` から静的配信（`.gitignore` 対象）
+- WASM バイナリ（mvp 41MB + eh 36MB。ブラウザはどちらか一方を取得）はビルド成果物として
+  `/_next/static/media/` から配信。他のアセットと同じく `immutable`、存在しないハッシュは
+  Next が `no-store` を付けて返す
 - 型推定追加時: `@kukan/pipeline` の Extract ステップ変更、ADR-014 の「列型: 全列 STRING」を変更、Parquet 再生成が必要
 
 ## 関連 ADR

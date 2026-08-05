@@ -68,7 +68,11 @@ Browser:
 - DuckDB-WASM instance is managed as a singleton (once loaded, no re-download on in-page navigation)
 - `httpfs` extension is not used; files are registered via `fetch` + `registerFileBuffer` (avoids additional WASM loading for httpfs, no CORS issues with same-origin API)
 - Lazy loading: WASM is loaded only when "analysis mode" is turned ON (`next/dynamic` + `ssr: false`)
-- WASM + Worker files are placed in `public/duckdb/` (copied from `node_modules` by `scripts/copy-duckdb-wasm.mjs`)
+- WASM + Worker files are emitted by the bundler through
+  `new URL(..., import.meta.url)` and served content-hashed from
+  `/_next/static/media/`. Copying them into `public/` was dropped: the path is
+  fixed, so it cannot be `immutable` without pinning stale bytes, and a path
+  that does not exist is answered 200 with the catch-all page's HTML
 
 ### 2. UI Design: Analysis Mode
 
@@ -126,7 +130,9 @@ Notes:
 ## Impact
 
 - `@duckdb/duckdb-wasm` dependency added to `apps/web` (lazy-loaded)
-- WASM binary (~35MB) is served statically from `public/duckdb/` (included in `.gitignore`)
+- The WASM binaries (41MB mvp + 36MB eh; a browser fetches one) ship as build
+  assets from `/_next/static/media/` — `immutable` like every other asset, and a
+  hash that does not exist comes back `no-store`
 - When type inference is added: Changes to `@kukan/pipeline` Extract step, ADR-014's "column type: all STRING" is updated, Parquet regeneration required
 
 ## Related ADRs

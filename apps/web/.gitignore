@@ -1,5 +1,2 @@
-# DuckDB-WASM binaries (copied by postinstall)
-public/duckdb/
-
 # Brand public assets (copied from the active brand by copy-brand-assets.mjs)
 public/brand/
