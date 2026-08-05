@@ -18,6 +18,7 @@ import {
   MAX_PARQUET_SOURCE_SIZE,
   versionOrigin,
 } from '@kukan/shared'
+import type { NoTableReason } from '@kukan/shared'
 import type { LakeConfig } from '@kukan/lake'
 import {
   dropLakeTable,
@@ -128,11 +129,18 @@ export async function insertVersionIfHeld(
 export async function setVersionSchemaIfHeld(
   db: Pick<Database, 'execute'>,
   claim: ResourceClaim | null,
-  v: { resourceId: string; version: number; schema: ResourceSchema }
+  v: {
+    resourceId: string
+    version: number
+    schema: ResourceSchema
+    noTableReason: NoTableReason | null
+  }
 ): Promise<boolean> {
   const result = await db.execute(sql`
     UPDATE resource_version
-    SET schema = ${JSON.stringify(v.schema)}::jsonb, updated = NOW()
+    SET schema = ${JSON.stringify(v.schema)}::jsonb,
+        no_table_reason = ${v.noTableReason}::varchar,
+        updated = NOW()
     WHERE resource_id = ${v.resourceId}::uuid
       AND version = ${v.version}
       AND ${stillHeld(claim)}
@@ -198,7 +206,15 @@ const FIRST_VERSION_CONCURRENCY = 2
  *   one, or every PDF and oversized CSV would sit here and be re-enqueued every
  *   hour for good. The version's format, not the resource's: relabelling a
  *   resource must not make bytes that were settled as a PDF eligible to be read
- *   as a table
+ *   as a table.
+ *
+ *   Both are re-read every pass rather than recorded on the row, and that is the
+ *   point for the size: it is a cap, not a property of the bytes, so raising it
+ *   makes what it excluded eligible again for free. Recorded as an empty schema
+ *   instead, a version settled under the old cap would stay settled, and moving
+ *   the cap would need an `UPDATE` nobody would think to run. The interpretation
+ *   refuses over-cap versions too (ADR-046) — that is what makes both callers
+ *   give one answer, not a second gate this one has to agree with
  * - a version a newer one has already overtaken, which the ingest refuses under
  *   its own lock (ii-a replaces the table's contents wholesale)
  * - a version already interpreted to nothing — an empty CSV has no table to
@@ -255,9 +271,13 @@ function pendingLakeIngestQuery(only?: { resourceId: string; version: number }) 
 export async function pendingLakeVersionSource(
   db: Pick<Database, 'execute'>,
   row: { resourceId: string; version: number }
-): Promise<{ storageKey: string; format: string } | null> {
+): Promise<{ storageKey: string; format: string; size: number } | null> {
   const result = await db.execute(pendingLakeIngestQuery(row))
-  const [found] = result.rows as unknown as { storageKey: string; format: string }[]
+  const [found] = result.rows as unknown as {
+    storageKey: string
+    format: string
+    size: number
+  }[]
   return found ?? null
 }
 
@@ -278,9 +298,35 @@ export interface VersionView {
   size: number | null
   hash: string | null
   schema: ResourceSchema | null
+  /**
+   * Why there is no table, when there is none.
+   *
+   * Beside the empty schema it explains: the schema says "interpreted, nothing
+   * to load" and stops there, and that is not what someone asking why there is
+   * no preview wants to know (ADR-046).
+   *
+   * `too-large` is derived here rather than read from the row. It is a fact
+   * about the cap, not about the version — persist it and a version settled
+   * under an old cap keeps saying so after the cap moves. The two the row does
+   * carry are facts about the bytes, and the bytes never change.
+   */
+  noTableReason: NoTableReason | null
   created: Date
   purgedAt: Date | null
   purgeReason: string | null
+}
+
+/**
+ * Why this version has no table — read off the row, or worked out from the cap.
+ *
+ * Nothing interprets an over-cap version, so the row has nothing to say about
+ * it; the size and the cap do, and they answer freshly, which is what lets a
+ * raised cap change the answer without touching a single row.
+ */
+function noTableReason(row: typeof resourceVersion.$inferSelect): NoTableReason | null {
+  if (row.noTableReason) return row.noTableReason
+  const oversized = row.size !== null && row.size > MAX_PARQUET_SOURCE_SIZE
+  return oversized && row.schema === null ? 'too-large' : null
 }
 
 function toView(row: typeof resourceVersion.$inferSelect): VersionView {
@@ -294,6 +340,7 @@ function toView(row: typeof resourceVersion.$inferSelect): VersionView {
     size: purged ? null : row.size,
     hash: purged ? null : row.hash,
     schema: purged ? null : row.schema,
+    noTableReason: purged ? null : noTableReason(row),
     created: row.created,
     purgedAt: row.purgedAt,
     purgeReason: row.purgeReason,

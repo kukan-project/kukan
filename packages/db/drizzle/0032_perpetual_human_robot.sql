@@ -1,0 +1,1 @@
+ALTER TABLE "resource_version" ADD COLUMN "no_table_reason" varchar(32);

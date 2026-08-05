@@ -7,7 +7,7 @@ import type { Readable } from 'node:stream'
 import type { ContentDoc } from '@kukan/search-adapter'
 import type { ObjectMeta } from '@kukan/storage-adapter'
 import type { IngestResult } from '@kukan/lake'
-import type { PackageDbState, ResourceSchema } from '@kukan/shared'
+import type { NoTableReason, PackageDbState, ResourceSchema } from '@kukan/shared'
 import type { PublishedContent } from '@kukan/api/services/storage-pointer'
 import type { LakeIngestRow } from '@kukan/api/services/lake-ingest'
 import type { ResourceClaim } from '@kukan/api/services/pipeline-claim'
@@ -136,6 +136,8 @@ export interface PipelineContext {
     resourceId: string
     version: number
     schema: ResourceSchema
+    /** Why the schema is empty, when it is. Absent once a table came out. */
+    noTableReason?: NoTableReason
     claim?: ResourceClaim
   }): Promise<void>
   /**

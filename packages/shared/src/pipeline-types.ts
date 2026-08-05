@@ -99,6 +99,18 @@ export const resourceSchemaSchema = z.object({
 })
 export type ResourceSchema = z.infer<typeof resourceSchemaSchema>
 
+/**
+ * Why an interpretation produced no table, when it produced none (ADR-046).
+ *
+ * An empty schema records that a version has been interpreted and holds nothing
+ * to load — which is what stops the hourly lake sweep handing the file out
+ * every hour for good. It does not say *which* nothing, and the three are not
+ * the same thing to whoever is asking why there is no preview: a file with no
+ * columns at all, one wider than a preview can carry, and one too large to
+ * interpret.
+ */
+export type NoTableReason = 'no-columns' | 'too-many-columns' | 'too-large'
+
 // ── Queue job types ──
 // Each job carries a validated payload (schemas below) so the worker never trusts
 // an unvalidated queue message body.

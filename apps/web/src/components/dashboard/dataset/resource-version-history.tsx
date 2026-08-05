@@ -22,6 +22,7 @@ import {
 } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
+import type { NoTableReason } from '@kukan/shared'
 import { formatBytes } from '@/lib/format-utils'
 import { useUser } from '@/components/dashboard/user-provider'
 import { VersionDiffPanel } from './version-diff-panel'
@@ -31,6 +32,8 @@ interface VersionView {
   origin: 'upload' | 'fetch'
   state: 'active' | 'purging' | 'purged' | 'superseded'
   size: number | null
+  /** Why this version produced no table, when it produced none (ADR-046). */
+  noTableReason: NoTableReason | null
   created: string
   purgedAt: string | null
   purgeReason: string | null
@@ -134,9 +137,19 @@ export function ResourceVersionHistory({ resourceId }: Props) {
                     {purged ? '—' : (formatBytes(v.size) ?? '—')}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline">
-                      {v.origin === 'upload' ? t('originUpload') : t('originFetch')}
-                    </Badge>
+                    <div className="flex items-center gap-1">
+                      <Badge variant="outline">
+                        {v.origin === 'upload' ? t('originUpload') : t('originFetch')}
+                      </Badge>
+                      {/* Why there is no preview, where the absence is noticed.
+                          The empty schema behind it says only that the version
+                          was interpreted (ADR-046). */}
+                      {!purged && v.noTableReason && (
+                        <span className="text-xs text-muted-foreground">
+                          {t(`noTable.${v.noTableReason}`)}
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-1">

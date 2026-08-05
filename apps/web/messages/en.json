@@ -687,6 +687,11 @@
         "purged": "One of the versions has been purged, so a diff is not available.",
         "no-previous-version": "This is the first version, so there is nothing to compare against.",
         "not-ingested": "This version is not covered by diffs (not tabular, or captured before the feature was introduced)."
+      },
+      "noTable": {
+        "no-columns": "No columns",
+        "too-many-columns": "Too many columns to preview",
+        "too-large": "Too large to preview"
       }
     }
   },

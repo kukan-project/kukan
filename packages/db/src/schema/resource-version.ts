@@ -17,7 +17,7 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
-import type { ResourceSchema } from '@kukan/shared'
+import type { NoTableReason, ResourceSchema } from '@kukan/shared'
 import { resource } from './resource'
 import { user } from './user'
 
@@ -51,6 +51,11 @@ export const resourceVersion = pgTable(
     // Column schema snapshot for this version (ADR-032 shape); null for
     // non-tabular formats or when the interpretation produced none.
     schema: jsonb('schema').$type<ResourceSchema | null>(),
+    // Why an interpretation produced no table, when it produced none. The empty
+    // schema says "interpreted, nothing to load" and stops there; this says
+    // which nothing, which is what someone asking "why is there no preview?"
+    // is after. Null whenever a table *was* produced (ADR-046).
+    noTableReason: varchar('no_table_reason', { length: 32 }).$type<NoTableReason | null>(),
     // DuckLake snapshot this tabular version maps to (ADR-043 layer 2 / Phase ii).
     // Null for non-tabular versions or before layer-2 ingest; nulled on purge.
     ducklakeSnapshotId: bigint('ducklake_snapshot_id', { mode: 'number' }),

@@ -130,7 +130,12 @@ describe('heldContext', () => {
     // on a row the resource keeps, so a displaced run must not reach it.
     const inner = createPipelineContextMock()
     const held = heldContext(inner, claim, db)
-    const opts = { resourceId, version: 1, schema: { rowCount: 0, columns: [] } }
+    const opts = {
+      resourceId,
+      version: 1,
+      schema: { rowCount: 0, columns: [] },
+      noTableReason: 'no-columns' as const,
+    }
 
     await held.recordVersionSchema(opts)
 

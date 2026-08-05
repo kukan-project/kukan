@@ -18,15 +18,9 @@ import {
   readEncodingSample,
 } from '../node-utils'
 import { detectEncoding } from '@kukan/shared/encoding-node'
-import {
-  getPreviewKey,
-  isCsvFormat,
-  isTextFormat,
-  isZipFormat,
-  MAX_PARQUET_SOURCE_SIZE,
-} from '@kukan/shared'
-import type { ResourceSchema } from '@kukan/shared'
-import { withInterpretedVersion, type NoTableReason } from '../interpret/version'
+import { getPreviewKey, isCsvFormat, isTextFormat, isZipFormat } from '@kukan/shared'
+import type { NoTableReason, ResourceSchema } from '@kukan/shared'
+import { withInterpretedVersion } from '../interpret/version'
 import { extractZipManifest } from '../interpret/zip'
 import type { PipelineContext } from '../types'
 const FIXED_UTF8_FORMATS = new Set(['json', 'geojson', 'md'])
@@ -35,7 +29,7 @@ export interface InterpretResult {
   previewKey: string | null
   encoding: string
   /** Column schema (CSV/TSV only, when a Parquet preview was generated). */
-  schema?: ResourceSchema | null
+  schema?: ResourceSchema
   /** Why no table came out, when none did. Persisted for the operator. */
   reason?: NoTableReason
 }
@@ -131,11 +125,10 @@ export async function executeInterpret(
     return { previewKey: null, encoding }
   }
 
-  // Labelled from a sample, with no table to produce: non-CSV text (TXT/HTML)
-  // has none, and a CSV over the interpret cap is never transferred whole. The
-  // version row was measured at create and the file behind it is immutable, so
-  // the size decides that without a download.
-  if (!isCsvFormat(format) || source.size > MAX_PARQUET_SOURCE_SIZE) {
+  // Non-CSV text (TXT/HTML): labelled from a sample, with no table to produce.
+  // No reason to record — the sweep never offers a format an interpretation
+  // makes no table from, so there is nothing here to take out of it.
+  if (!isCsvFormat(format)) {
     const sample = await readEncodingSample(await ctx.storage.download(storageKey))
     return { previewKey: null, encoding: detectEncoding(fmt, sample) }
   }
@@ -165,5 +158,5 @@ export async function executeInterpret(
   // a missing answer: it records that this version has been interpreted and
   // holds nothing to load, which is what stops the hourly sweep handing it out
   // again for good (ADR-046).
-  return { previewKey: null, encoding, schema, reason, ...used }
+  return { previewKey: null, encoding, schema: schema ?? undefined, reason, ...used }
 }

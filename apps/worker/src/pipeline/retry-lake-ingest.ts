@@ -40,7 +40,7 @@ export async function retryLakeIngest(
   // purge in flight is about to move the very version this is loading.
   const outcome = await withResourceClaims(deps.db, [resourceId], async (claims) => {
     const result = await withInterpretedVersion(
-      { storageKey: source.storageKey },
+      { storageKey: source.storageKey, size: source.size },
       source.format.toLowerCase(),
       ctx,
       (t) => ctx.ingestLakeVersion({ resourceId, version, sourcePath: t.parquetPath })
@@ -48,13 +48,19 @@ export async function retryLakeIngest(
     // Written whether or not there was a table. An empty schema is how this
     // version stops being outstanding: without it, an empty CSV is handed back
     // by the hourly sweep every hour, and every task reads the file to find out
-    // there is nothing in it (ADR-046).
-    await ctx.recordVersionSchema({
-      resourceId,
-      version,
-      schema: result.schema,
-      claim: claims[0] ?? undefined,
-    })
+    // there is nothing in it (ADR-046). Null is the other case — nothing was
+    // interpreted, so there is nothing to record.
+    if (result.schema) {
+      await ctx.recordVersionSchema({
+        resourceId,
+        version,
+        schema: result.schema,
+        // The same answer whichever caller ran, or a version interpreted through
+        // this path would carry the empty schema with nothing to say why (#277).
+        noTableReason: result.reason,
+        claim: claims[0] ?? undefined,
+      })
+    }
     return result
   })
 

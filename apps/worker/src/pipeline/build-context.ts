@@ -201,8 +201,13 @@ export function buildPipelineContext(
       return row ? { ...row, size: row.size ?? 0 } : null
     },
 
-    async recordVersionSchema({ resourceId, version, schema, claim }) {
-      await setVersionSchemaIfHeld(db, claim ?? null, { resourceId, version, schema })
+    async recordVersionSchema({ claim, noTableReason, ...v }) {
+      // The column has to be cleared when a re-interpretation finds a table, so
+      // the write spells "nothing" as null; callers spell it as absent.
+      await setVersionSchemaIfHeld(db, claim ?? null, {
+        ...v,
+        noTableReason: noTableReason ?? null,
+      })
     },
 
     async pendingLakeVersion(resourceId: string, contentHash: string): Promise<number | null> {

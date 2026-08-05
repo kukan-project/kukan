@@ -266,6 +266,8 @@ describe('processResource', () => {
       resourceId: 'res-1',
       version: 1,
       schema,
+      // A table came out, so there is nothing to say about why one did not.
+      noTableReason: undefined,
       claim: expect.objectContaining({ owner: 'run-1' }),
     })
   })

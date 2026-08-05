@@ -14,8 +14,8 @@
 import { createReadStream } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { detectEncoding } from '@kukan/shared/encoding-node'
-import { toCharset } from '@kukan/shared'
-import type { ResourceSchema } from '@kukan/shared'
+import { MAX_PARQUET_SOURCE_SIZE, toCharset } from '@kukan/shared'
+import type { NoTableReason, ResourceSchema } from '@kukan/shared'
 import {
   cleanupTempFile,
   readEncodingSample,
@@ -38,14 +38,21 @@ export interface InterpretOutcome<T> {
   /** Detected on the version file; reported whether or not a table came out. */
   encoding: string
   /**
-   * The interpretation, always — with no columns when the file held none.
+   * The interpretation — with no columns when the file held none, and **null
+   * when nothing was interpreted at all**.
    *
-   * Recorded on the version either way (ADR-046). An empty one is the answer
-   * "there is nothing here to load", and it has to be written down: a version
-   * with no schema is one nothing has interpreted yet, and the hourly sweep
-   * would otherwise hand this file out again every hour for good.
+   * An empty one is the answer "there is nothing here to load", and it has to be
+   * written down (ADR-046): a version with no schema is one nothing has
+   * interpreted yet, so without it the hourly sweep hands the file out every
+   * hour for good.
+   *
+   * Null is the other thing — the file was refused, not read. Writing an empty
+   * schema for it would claim an interpretation that never happened, and would
+   * settle a verdict that is not the version's to keep: over-cap is a fact about
+   * the cap, and the sweep re-reads that every pass so raising it is enough on
+   * its own.
    */
-  schema: ResourceSchema
+  schema: ResourceSchema | null
   /** What the callback returned, absent when there was no table to give it. */
   used?: T
   /**
@@ -58,9 +65,6 @@ export interface InterpretOutcome<T> {
   reason?: NoTableReason
 }
 
-/** Why an interpretation produced no table. */
-export type NoTableReason = 'no-columns' | 'too-many-columns'
-
 /** What an interpretation that found nothing reports. */
 const NO_TABLE: ResourceSchema = { rowCount: 0, columns: [] }
 
@@ -68,15 +72,32 @@ const NO_TABLE: ResourceSchema = { rowCount: 0, columns: [] }
  * Interpret a CSV/TSV version file and hand the table to `use`.
  *
  * @param fmt - lowercased format; the caller has already established that this
- *   is one of the tabular ones and that the file is within the interpret cap.
+ *   is one of the tabular ones. Whether it is within the interpret cap is this
+ *   function's to answer, so both callers give one answer.
  */
 export async function withInterpretedVersion<T>(
-  source: { storageKey: string },
+  source: { storageKey: string; size: number },
   fmt: string,
   ctx: PipelineContext,
   use: (table: InterpretedTable) => Promise<T>,
   onEncoding?: (encoding: string) => Promise<void>
 ): Promise<InterpretOutcome<T>> {
+  // Too large to interpret. Answered here rather than by each caller, so the
+  // pipeline and the lake retry give the same answer — and answered as an
+  // interpretation that produced no table, with the reason, rather than as an
+  // absence: a version with no schema is one nothing has interpreted yet, which
+  // the hourly sweep hands out every hour for good.
+  //
+  // Sampled rather than transferred: the version row was measured at create and
+  // the file behind it never changes, so the size decides this before the
+  // download, and the encoding still comes back.
+  if (source.size > MAX_PARQUET_SOURCE_SIZE) {
+    const sample = await readEncodingSample(await ctx.storage.download(source.storageKey))
+    const encoding = detectEncoding(fmt, sample)
+    await onEncoding?.(encoding)
+    return { encoding, schema: null, reason: 'too-large' }
+  }
+
   // Streamed to disk rather than buffered: DuckDB reads the file from there,
   // and the JS heap never holds the whole table (ADR-046).
   const rawPath = await streamToTempFile(await ctx.storage.download(source.storageKey), 'csv')

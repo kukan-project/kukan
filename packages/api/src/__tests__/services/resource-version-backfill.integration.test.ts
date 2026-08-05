@@ -389,10 +389,30 @@ describe('countPendingLakeIngest', () => {
     expect(await service.countPendingLakeIngest()).toBe(1)
   })
 
-  it('ignores a version too large to interpret', async () => {
+  it('ignores a version too large to interpret, and keeps deciding that fresh', async () => {
+    // Read every pass rather than recorded on the row. The cap is configuration,
+    // not a property of the bytes, so raising it has to make what it excluded
+    // eligible again on its own — settle it into an empty schema and the version
+    // stays settled under a cap that no longer exists.
     await addTabularResource('a', [{ version: 1, size: MAX_PARQUET_SOURCE_SIZE + 1 }])
-
     expect(await service.countPendingLakeIngest()).toBe(0)
+
+    // What the pipeline actually leaves behind for an over-cap version: the
+    // reason reaches the operator, and `schema` stays null — an empty one would
+    // exclude it here for good, whatever the cap says afterwards.
+    await db
+      .update(resourceVersion)
+      .set({ noTableReason: 'too-large' })
+      .where(eq(resourceVersion.version, 1))
+    expect(await service.countPendingLakeIngest()).toBe(0)
+
+    // Cap raised: eligible again, with nothing to undo.
+    await db
+      .update(resourceVersion)
+      .set({ size: MAX_PARQUET_SOURCE_SIZE })
+      .where(eq(resourceVersion.version, 1))
+
+    expect(await service.countPendingLakeIngest()).toBe(1)
   })
 
   it('no longer asks anything of the preview', async () => {

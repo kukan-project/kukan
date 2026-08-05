@@ -234,7 +234,35 @@ describe('executeInterpret', () => {
     expect(onTable).not.toHaveBeenCalled()
   })
 
-  it('labels a CSV too large to interpret without transferring it whole', async () => {
+  it('refuses a CSV too large to interpret, without transferring it whole', async () => {
+    // Decided from the version row's size, before the download, and answered as
+    // an interpretation that produced no table rather than as an absence — so
+    // both callers give one answer (#276). The sweep still decides eligibility
+    // from the size itself, because the cap is configuration; this is what puts
+    // the reason on the row for whoever asks why there is no preview.
+    mockStorageDownload('a,b\n1,2\n')
+
+    const result = await executeInterpret(
+      'res-huge',
+      'pkg-1',
+      version('versions/pkg-1/res-huge/v1', MAX_PARQUET_SOURCE_SIZE + 1),
+      'CSV',
+      ctx
+    )
+
+    // No schema at all, not an empty one. An empty schema means "interpreted,
+    // found nothing", and it is what takes a version out of the lake sweep for
+    // good — settle an over-cap version that way and raising the cap no longer
+    // brings it back, because the sweep never looks at it again.
+    expect(result).toEqual({
+      previewKey: null,
+      encoding: expect.any(String),
+      reason: 'too-large',
+    })
+    expect(ctx.putObject).not.toHaveBeenCalled()
+  })
+
+  it('reads only the encoding sample of an oversized CSV, not the object', async () => {
     // The version row carries the size and the file behind it is immutable, so
     // this is decided before the download rather than after it (ADR-046).
     const CHUNK = 64 * 1024
@@ -261,8 +289,7 @@ describe('executeInterpret', () => {
       ctx
     )
 
-    expect(result).toEqual({ previewKey: null, encoding: expect.any(String) })
-    expect(ctx.putObject).not.toHaveBeenCalled()
+    expect(result).toMatchObject({ previewKey: null, reason: 'too-large' })
     // Only the encoding sample crossed the wire, not the whole object.
     expect(read).toBeLessThanOrEqual(CHUNK * CHUNKS)
   })

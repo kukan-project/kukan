@@ -197,7 +197,6 @@ async function runPipeline(
           await tracker.completeStep(interpretStepId)
           await tracker.updateInterpretResult(interpretResult.previewKey, {
             encoding: interpretResult.encoding,
-            noTableReason: interpretResult.reason,
             // Persist the column schema (ADR-032) when one was generated (CSV/TSV).
             ...(interpretResult.schema ? { schema: interpretResult.schema } : {}),
             // Ties the preview to the bytes it was built from, so a later run or
@@ -215,6 +214,7 @@ async function runPipeline(
               resourceId,
               version: version.version,
               schema: interpretResult.schema,
+              noTableReason: interpretResult.reason,
             })
           }
         }

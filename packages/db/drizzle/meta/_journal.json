@@ -225,6 +225,13 @@
       "when": 1785733170757,
       "tag": "0031_pale_molten_man",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1785846738612,
+      "tag": "0032_perpetual_human_robot",
+      "breakpoints": true
     }
   ]
 }

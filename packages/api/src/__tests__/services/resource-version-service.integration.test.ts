@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { eq, and, sql } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
 import { resource, resourcePipeline, resourceVersion } from '@kukan/db'
-import { createLogger, getStorageKey, getVersionKey } from '@kukan/shared'
+import { createLogger, getStorageKey, getVersionKey, MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
 import type { ResourceSchema } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
@@ -553,7 +553,14 @@ describe('insertVersionIfHeld', () => {
       await insertVersionIfHeld(db, claim, { resourceId, ...created })
       expect(((await versions())[0] as { schema: unknown }).schema).toBeNull()
 
-      expect(await setVersionSchemaIfHeld(db, claim, { resourceId, version: 1, schema })).toBe(true)
+      expect(
+        await setVersionSchemaIfHeld(db, claim, {
+          resourceId,
+          version: 1,
+          schema,
+          noTableReason: null,
+        })
+      ).toBe(true)
       expect(((await versions())[0] as { schema: unknown }).schema).toEqual(schema)
     })
 
@@ -564,14 +571,66 @@ describe('insertVersionIfHeld', () => {
       await insertVersionIfHeld(db, claim, { resourceId, ...created })
       await cancelResourceRun(db, resourceId)
 
-      expect(await setVersionSchemaIfHeld(db, claim, { resourceId, version: 1, schema })).toBe(
-        false
-      )
+      expect(
+        await setVersionSchemaIfHeld(db, claim, {
+          resourceId,
+          version: 1,
+          schema,
+          noTableReason: null,
+        })
+      ).toBe(false)
       expect(((await versions())[0] as { schema: unknown }).schema).toBeNull()
     })
 
+    it('records why an empty schema is empty', async () => {
+      // The empty schema takes the version out of the pending set; the reason
+      // is what answers "why is there no preview?" — and it has to sit beside
+      // the fact it explains, on the version, or the answer depends on which
+      // caller happened to interpret it (#277).
+      const claim = await heldClaim()
+      await insertVersionIfHeld(db, claim, { resourceId, ...created })
+
+      expect(
+        await setVersionSchemaIfHeld(db, claim, {
+          resourceId,
+          version: 1,
+          schema: { rowCount: 0, columns: [] },
+          noTableReason: 'too-large',
+        })
+      ).toBe(true)
+      const [row] = await versions()
+      expect((row as { noTableReason: string | null }).noTableReason).toBe('too-large')
+    })
+
+    it('works out "too large" from the cap rather than reading it off the row', async () => {
+      // Nothing interprets an over-cap version, so the row has nothing to say.
+      // Persisting the verdict would settle it: raise the cap and the version
+      // would still claim to be too large, with an UPDATE nobody would run.
+      await addVersion(1, 'sha256:v1')
+      await db
+        .update(resourceVersion)
+        .set({ size: MAX_PARQUET_SOURCE_SIZE + 1 })
+        .where(eq(resourceVersion.version, 1))
+
+      expect((await service.getVersion(resourceId, 1)).noTableReason).toBe('too-large')
+
+      await db
+        .update(resourceVersion)
+        .set({ size: MAX_PARQUET_SOURCE_SIZE })
+        .where(eq(resourceVersion.version, 1))
+
+      expect((await service.getVersion(resourceId, 1)).noTableReason).toBeNull()
+    })
+
     it('reports a version that is not there', async () => {
-      expect(await setVersionSchemaIfHeld(db, null, { resourceId, version: 7, schema })).toBe(false)
+      expect(
+        await setVersionSchemaIfHeld(db, null, {
+          resourceId,
+          version: 7,
+          schema,
+          noTableReason: null,
+        })
+      ).toBe(false)
     })
   })
 })
