@@ -31,6 +31,7 @@ export * from './licenses'
 export * from './logger'
 
 // Validators
+export * from './url'
 export * from './validators/package'
 export * from './validators/organization'
 export * from './validators/group'

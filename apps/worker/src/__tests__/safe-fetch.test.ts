@@ -49,64 +49,7 @@ vi.mock('undici', async (importOriginal) => {
   }
 })
 
-const { safeFetch, isBlockedAddress, ssrfSafeLookup } = await import('../safe-fetch')
-
-describe('isBlockedAddress', () => {
-  describe('IPv4', () => {
-    it.each(['127.0.0.1', '127.255.255.255', '169.254.169.254', '169.254.0.1', '0.0.0.0'])(
-      'should block %s',
-      (ip) => {
-        expect(isBlockedAddress(ip)).toBe(true)
-      }
-    )
-
-    it.each(['10.0.0.1', '172.16.0.1', '192.168.1.1', '8.8.8.8', '203.0.113.1'])(
-      'should allow %s',
-      (ip) => {
-        expect(isBlockedAddress(ip)).toBe(false)
-      }
-    )
-  })
-
-  describe('IPv6', () => {
-    it.each([
-      '::1',
-      '::',
-      '0:0:0:0:0:0:0:1',
-      'fe80::1',
-      'fe90::1',
-      'fea0::1',
-      'febf::1',
-      // Zone identifier — not part of the address, and left on it every
-      // comparison below misses.
-      '::1%lo',
-      // IPv4-mapped. WHATWG normalises `[::ffff:127.0.0.1]` to the hex form, so
-      // the hex branch is the one production actually takes — and it was the
-      // one no test reached.
-      '::ffff:127.0.0.1',
-      '::ffff:7f00:1',
-      '::ffff:169.254.169.254',
-      '::ffff:a9fe:a9fe',
-      // IPv4-compatible: deprecated, and passed both layers all the way to
-      // connect() before this.
-      '::127.0.0.1',
-      '::7f00:1',
-      // AWS IMDS over IPv6, which the ULA allowance below would otherwise let
-      // through.
-      'fd00:ec2::254',
-      'fd00:ec2::23',
-    ])('should block %s', (ip) => {
-      expect(isBlockedAddress(ip)).toBe(true)
-    })
-
-    it.each(['fc00::1', 'fd00::1', '2001:db8::1', '2606:2800:220::1', 'fd12:3456::1'])(
-      'should allow %s',
-      (ip) => {
-        expect(isBlockedAddress(ip)).toBe(false)
-      }
-    )
-  })
-})
+const { safeFetch, ssrfSafeLookup } = await import('../safe-fetch')
 
 describe('ssrfSafeLookup', () => {
   // The shape `net.connect` actually asks for. Every one of these tests passes

@@ -1,96 +1,19 @@
 /**
  * SSRF-safe fetch with URL validation and DNS-pinned connections.
  *
- * Blocks:
- * - Loopback (127.0.0.0/8, ::1)
- * - Link-local / AWS IMDS (169.254.0.0/16, fe80::/10)
- * - Unspecified (0.0.0.0/8, ::)
- * - Known metadata hostnames (localhost, metadata.google.internal)
- *
- * Allows (for intranet/on-premises deployments):
- * - Private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
- * - ULA (fc00::/7)
- *
- * Uses undici Agent with a custom DNS lookup to validate resolved IPs
- * before the TCP connection is established, eliminating DNS rebinding.
+ * Which addresses are refused lives in `@kukan/shared` — the API refuses a URL
+ * at input time from the same list, and two copies of that policy drifted once
+ * already. What is here is the enforcement: an undici Agent whose DNS lookup
+ * checks the resolved addresses before the TCP connection is established, which
+ * is what closes DNS rebinding.
  */
 
 import { promises as dnsPromises, type LookupAddress, type LookupOptions } from 'node:dns'
-import { BlockList, isIP } from 'node:net'
+import { isIP } from 'node:net'
 import { networkInterfaces } from 'node:os'
 import { Agent, fetch as undiciFetch } from 'undici'
+import { checkUrlSafety, isBlockedAddress } from '@kukan/shared'
 import { DNS_TIMEOUT_MS, DNS_TRIES } from '@/config'
-
-// ---------------------------------------------------------------------------
-// Blocklist definitions
-// ---------------------------------------------------------------------------
-
-const BLOCKED_HOSTNAMES = new Set(['localhost', 'metadata.google.internal'])
-
-/**
- * Addresses no resource URL may resolve to.
- *
- * `net.BlockList` rather than matched text: it parses to bytes once, and on its
- * own it covers what four hand-written special cases used to — zone identifiers
- * (`::1%lo`), uncompressed spellings, and IPv4-mapped addresses in both the
- * dotted and the hex form `URL` normalises between. Matching the text is how
- * those gaps arrived in the first place.
- *
- * Private ranges (10/8, 172.16/12, 192.168/16, and the rest of ULA) are
- * deliberately absent: intranet and on-premises deployments keep resources on
- * them.
- */
-const BLOCKED = new BlockList()
-BLOCKED.addSubnet('127.0.0.0', 8, 'ipv4') // loopback
-BLOCKED.addSubnet('169.254.0.0', 16, 'ipv4') // link-local, including AWS IMDS
-BLOCKED.addSubnet('0.0.0.0', 8, 'ipv4') // unspecified
-BLOCKED.addSubnet('::1', 128, 'ipv6') // loopback
-BLOCKED.addSubnet('::', 96, 'ipv6') // unspecified, and IPv4-compatible (`::127.0.0.1`)
-BLOCKED.addSubnet('fe80::', 10, 'ipv6') // link-local
-// AWS IMDS over IPv6 — the counterpart of 169.254.169.254, and it sits inside
-// the ULA range allowed just above, so it has to be named.
-BLOCKED.addSubnet('fd00:ec2::', 32, 'ipv6')
-
-/**
- * Whether this address is off limits.
- *
- * Takes both what the resolver produces and what `URL.hostname` does, so it
- * strips the brackets the latter puts round IPv6 and answers `false` for
- * anything that is not an address at all — which is what lets
- * {@link checkUrlSafety} hand it a bare hostname.
- *
- * Exported for testing, and used by the Agent's lookup to reject private
- * addresses before the connection is made.
- */
-export function isBlockedAddress(address: string): boolean {
-  const bare = address.replace(/^\[|\]$/g, '')
-  const family = isIP(bare.split('%')[0])
-  if (family === 0) return false
-  return BLOCKED.check(bare, family === 4 ? 'ipv4' : 'ipv6')
-}
-
-// ---------------------------------------------------------------------------
-// URL string-level check
-// ---------------------------------------------------------------------------
-
-function checkUrlSafety(url: string): string | null {
-  let parsed: URL
-  try {
-    parsed = new URL(url)
-  } catch {
-    return 'Invalid URL'
-  }
-
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    return `Unsupported protocol: ${parsed.protocol}`
-  }
-
-  const hostname = parsed.hostname.toLowerCase()
-  if (BLOCKED_HOSTNAMES.has(hostname)) return `Blocked hostname: ${hostname}`
-  if (isBlockedAddress(hostname)) return 'URL points to a private or reserved IP address'
-
-  return null
-}
 
 // ---------------------------------------------------------------------------
 // SSRF-safe undici Agent
@@ -384,7 +307,7 @@ function nextHopInit(
 export async function safeFetch(url: string, init?: RequestInit): Promise<Response> {
   const safetyError = checkUrlSafety(url)
   if (safetyError) {
-    throw new Error(`Unsafe URL: ${safetyError}`)
+    throw new Error(`Unsafe URL: ${safetyError.message}`)
   }
 
   let currentUrl = url
@@ -443,7 +366,7 @@ export async function safeFetch(url: string, init?: RequestInit): Promise<Respon
 
     const nextSafetyError = checkUrlSafety(next.href)
     if (nextSafetyError) {
-      throw new Error(`Redirect target is unsafe: ${nextSafetyError}`)
+      throw new Error(`Redirect target is unsafe: ${nextSafetyError.message}`)
     }
 
     currentInit = nextHopInit(currentInit, response.status, from.origin === next.origin)

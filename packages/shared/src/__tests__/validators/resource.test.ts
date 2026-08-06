@@ -73,67 +73,39 @@ describe('createResourceSchema', () => {
     }
   })
 
-  it('should reject loopback and link-local IPv4 URLs', () => {
-    const blockedUrls = ['http://127.0.0.1/', 'http://169.254.169.254/latest/meta-data/']
-    for (const url of blockedUrls) {
-      const result = createResourceSchema.safeParse({ packageId: validUuid, url })
-      expect(result.success, `expected ${url} to be rejected`).toBe(false)
-    }
-  })
-
-  it('should allow private network IPv4 URLs for intranet use', () => {
-    const allowedUrls = ['http://10.0.0.1/data', 'http://192.168.1.1/api', 'http://172.16.0.1/']
-    for (const url of allowedUrls) {
-      const result = createResourceSchema.safeParse({ packageId: validUuid, url })
-      expect(result.success, `expected ${url} to be allowed`).toBe(true)
-    }
-  })
-
-  it('should reject loopback and link-local IPv6 URLs', () => {
-    const blockedUrls = [
-      'http://[::1]/',
-      'http://[fe80::1]/',
-      'http://[fe90::1]/',
-      'http://[febf::1]/',
-    ]
-    for (const url of blockedUrls) {
-      const result = createResourceSchema.safeParse({ packageId: validUuid, url })
-      expect(result.success, `expected ${url} to be rejected`).toBe(false)
-    }
-  })
-
-  it('should allow ULA IPv6 URLs for intranet use', () => {
-    const allowedUrls = ['http://[fc00::1]/', 'http://[fd00::1]/']
-    for (const url of allowedUrls) {
-      const result = createResourceSchema.safeParse({ packageId: validUuid, url })
-      expect(result.success, `expected ${url} to be allowed`).toBe(true)
-    }
-  })
-
-  it('should reject localhost', () => {
+  // The address table lives in `__tests__/url.test.ts`, beside the predicate.
+  // What is left here is only what `refineUrl` adds on top of it: which path the
+  // issue lands on, and which of its two messages a refusal maps to.
+  it('should map an unsafe address to an issue on the url path', () => {
     const result = createResourceSchema.safeParse({
       packageId: validUuid,
-      url: 'http://localhost/data',
+      url: 'http://127.0.0.1/',
     })
+
     expect(result.success).toBe(false)
+    const issue = result.error!.issues[0]
+    expect(issue.path).toEqual(['url'])
+    expect(issue.message).toBe('URL points to a private or reserved address')
   })
 
-  it('should reject non-http(s) URLs', () => {
+  it('should map a refused scheme to its own message', () => {
     const result = createResourceSchema.safeParse({
       packageId: validUuid,
-      url: 'ftp://example.com/data',
+      url: 'ftp://example.com/data.csv',
     })
+
     expect(result.success).toBe(false)
+    expect(result.error!.issues[0].message).toBe('Only http and https URLs are allowed')
   })
 
   it('should allow public URLs', () => {
     const result = createResourceSchema.safeParse({
       packageId: validUuid,
-      url: 'https://data.example.com/dataset.csv',
+      url: 'https://example.com/data.csv',
     })
+
     expect(result.success).toBe(true)
   })
-
   it('should strip state from input', () => {
     const result = createResourceSchema.safeParse({ packageId: validUuid, state: 'deleted' })
     expect(result.success).toBe(true)
