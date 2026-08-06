@@ -10,7 +10,8 @@ import { randomUUID } from 'node:crypto'
 import { Client } from 'pg'
 import { eq, sql } from 'drizzle-orm'
 import { resource, resourcePipeline, resourcePipelineStep } from '@kukan/db'
-import { testDatabaseUrl } from '@kukan/db/testing'
+import { inject } from 'vitest'
+import { testDatabaseName, testDatabaseUrl } from '@kukan/db/testing'
 import {
   CLAIM_STALE_AFTER_MS,
   cancelResourceRun,
@@ -23,7 +24,6 @@ import {
   withResourceClaim,
   withResourceClaims,
 } from '../../services/pipeline-claim'
-import { API_TEST_DB } from '../test-helpers/global-setup'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()
@@ -478,7 +478,9 @@ describe('stillHeld — ordering against the cancel', () => {
   let blocker: Client
 
   beforeEach(async () => {
-    blocker = new Client({ connectionString: testDatabaseUrl(API_TEST_DB) })
+    blocker = new Client({
+      connectionString: testDatabaseUrl(testDatabaseName(inject('testDbPrefix'))),
+    })
     await blocker.connect()
   })
 

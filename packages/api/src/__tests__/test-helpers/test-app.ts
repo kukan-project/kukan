@@ -4,6 +4,8 @@
  * Creates a Hono app with real DB but bypasses Better Auth and adapter initialization.
  * Routes are mounted manually so each test file can pick which routes to test.
  */
+import { inject } from 'vitest'
+import { testDatabaseName, testDatabaseUrl } from '@kukan/db/testing'
 import { vi } from 'vitest'
 import { Hono } from 'hono'
 import type { Database } from '@kukan/db'
@@ -106,7 +108,7 @@ const mockAuth = {
 const testEnv = {
   NODE_ENV: 'test',
   PORT: 3000,
-  DATABASE_URL: 'postgresql://kukan:kukan@localhost:5432/kukan_test',
+  DATABASE_URL: testDatabaseUrl(testDatabaseName(inject('testDbPrefix'))),
   SEARCH_TYPE: 'postgres',
   OPENSEARCH_URL: 'http://localhost:9200',
   SQS_QUEUE_URL: 'http://localhost:9324/000000000000/kukan-pipeline',

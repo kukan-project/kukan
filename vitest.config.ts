@@ -1,6 +1,20 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
+import { availableParallelism } from 'node:os'
 import { resolve } from 'path'
+
+/**
+ * How many integration files run at once.
+ *
+ * Capped for two reasons, both measured. Each fork holds a pool against its own
+ * database, so the count is also a connection budget: uncapped on a 24-core box
+ * that was 23 forks a run, and two runs at once hit the server's ceiling and
+ * both failed with `sorry, too many clients already` — surfacing as unrelated
+ * assertion failures. And more forks was not even faster: 23 ran the API suite
+ * in 41.9s against 37.2s at eight, burning 187s of aggregate CPU against 148s,
+ * because every fork also drives a Postgres backend.
+ */
+const INTEGRATION_FORKS = Math.min(Math.max(availableParallelism() - 1, 1), 8)
 
 export default defineConfig({
   test: {
@@ -86,8 +100,9 @@ export default defineConfig({
           include: ['src/__tests__/**/*.integration.test.ts'],
           environment: 'node',
           globalSetup: ['src/__tests__/test-helpers/global-setup.ts'],
+          setupFiles: ['src/__tests__/test-helpers/setup-integration.ts'],
           pool: 'forks',
-          fileParallelism: false,
+          poolOptions: { forks: { maxForks: INTEGRATION_FORKS } },
         },
         resolve: {
           alias: {
@@ -111,8 +126,9 @@ export default defineConfig({
           include: ['src/__tests__/**/*.integration.test.ts'],
           environment: 'node',
           globalSetup: ['src/__tests__/test-helpers/global-setup.ts'],
+          setupFiles: ['src/__tests__/test-helpers/setup-integration.ts'],
           pool: 'forks',
-          fileParallelism: false,
+          poolOptions: { forks: { maxForks: INTEGRATION_FORKS } },
         },
       },
       {

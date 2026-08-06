@@ -1,11 +1,25 @@
 /**
  * Vitest globalSetup for the worker's integration tests.
  *
- * A database of this project's own: the API's suites truncate the same tables
- * between tests, and vitest runs the two projects concurrently.
+ * The prefix goes through vitest's `provide`, which is scoped to the project —
+ * so both integration projects can name theirs the same thing and neither sees
+ * the other's. An environment variable would not: both projects' setup runs in
+ * one process before any worker forks, so the second would overwrite the first
+ * and put both suites on one database.
  */
+import type { TestProject } from 'vitest/node'
 import { setupTestDatabase } from '@kukan/db/testing'
 
-export const WORKER_TEST_DB = 'kukan_worker_test'
+declare module 'vitest' {
+  interface ProvidedContext {
+    testDbPrefix: string
+  }
+}
 
-export const setup = () => setupTestDatabase(WORKER_TEST_DB)
+/** Returned rather than awaited into nothing: the return value is the teardown
+ *  vitest calls when the run ends. */
+export async function setup(project: TestProject) {
+  const { prefix, teardown } = await setupTestDatabase('worker')
+  project.provide('testDbPrefix', prefix)
+  return teardown
+}
