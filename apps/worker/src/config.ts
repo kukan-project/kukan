@@ -27,6 +27,43 @@ export const DNS_TIMEOUT_MS = 2_000
 export const DNS_TRIES = 2
 
 /**
+ * How long a name's addresses are reused before asking again.
+ *
+ * The link health check is the reason there is one. It reads a batch of
+ * {@link HEALTH_CHECK_BATCH_SIZE} resource URLs that resolve to far fewer
+ * hosts — measured at 458 URLs across 34 — so without this it asks the same
+ * question about ten times per host, every five minutes, and the answers are
+ * someone else's servers to give.
+ *
+ * Comfortably longer than a batch, which is about six seconds at
+ * {@link HEALTH_CHECK_CONCURRENCY}, and far shorter than the five minutes
+ * before the next one — so a host that moves between runs is still followed.
+ *
+ * Zero would not mean "do not cache": `lru-cache` reads it as no expiry at all,
+ * which is a name pinned for the life of the process.
+ */
+export const DNS_CACHE_TTL_MS = 60_000
+
+/**
+ * How many names are held at once.
+ *
+ * Above the 34 distinct hosts a batch was measured to reach, with room for the
+ * pipeline's own fetches alongside it — below that the entries evict each other
+ * and the caching stops happening.
+ */
+export const RESOLUTION_CACHE_MAX = 256
+
+/**
+ * How many addresses are kept for one name.
+ *
+ * `net.connect` races the first few and never looks at the rest, so this costs
+ * nothing real — and without it a hostile nameserver's answer is held for the
+ * whole TTL: five thousand A records measured at 5 MB, times however many names
+ * the attacker registers.
+ */
+export const MAX_ADDRESSES_PER_NAME = 16
+
+/**
  * Rows per Parquet row group. Far below DuckDB's default: the preview reads the
  * file over HTTP range requests, so a small group is what keeps the first screen
  * of rows to a short read.

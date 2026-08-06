@@ -14,12 +14,13 @@
  * on the *reason* load-bearing. Remove the dispatcher and the fetch still
  * fails, but for the wrong reason, and this notices.
  */
-import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { networkInterfaces } from 'node:os'
 
 const answers = new Map<string, string[]>()
+let onResolve: (() => void) | undefined
 vi.mock('node:dns', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>
   const promises = actual.promises as Record<string, unknown>
@@ -31,6 +32,7 @@ vi.mock('node:dns', async (importOriginal) => {
         // Only A records: the suite's names are IPv4, and an unstubbed AAAA
         // would go to the real network.
         resolve4 = async (hostname: string) => {
+          onResolve?.()
           const found = answers.get(hostname)
           if (!found) throw Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' })
           return found
@@ -43,7 +45,7 @@ vi.mock('node:dns', async (importOriginal) => {
   }
 })
 
-const { safeFetch } = await import('../safe-fetch')
+const { safeFetch, forgetResolutions } = await import('../safe-fetch')
 
 let server: Server
 let port: number
@@ -70,6 +72,12 @@ beforeAll(async () => {
 })
 
 afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())))
+
+// Answers are held for a minute, so without this a case naming a host an
+// earlier one asked about is answered from that one's stub — which is how this
+// file's own rebinding case silently stopped testing anything when the cache
+// was added.
+beforeEach(forgetResolutions)
 
 const causeOf = (err: unknown) =>
   ((err as { cause?: Error }).cause?.message ?? String(err)) as string
@@ -176,5 +184,29 @@ describe('following a redirect, end to end', () => {
     )
 
     expect(err).toContain('private address')
+  })
+})
+
+describe('reusing an answer, end to end', () => {
+  it('should resolve a host once across several fetches', async () => {
+    // The health check is the reason the cache exists — 458 URLs across 34
+    // hosts, every five minutes — and nothing else here drives it through the
+    // real Agent.
+    let asked = 0
+    answers.set('reused.test', [privateAddress ?? '127.0.0.1'])
+    onResolve = () => asked++
+    routes = (req, res) => {
+      if (req.url === '/data') {
+        res.end('ok')
+        return true
+      }
+      return false
+    }
+
+    for (let i = 0; i < 4; i++) {
+      await safeFetch(`http://reused.test:${port}/data`).then((r) => r.text())
+    }
+
+    expect(asked).toBe(1)
   })
 })

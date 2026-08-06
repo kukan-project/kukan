@@ -12,8 +12,14 @@ import { promises as dnsPromises, type LookupAddress, type LookupOptions } from 
 import { isIP } from 'node:net'
 import { networkInterfaces } from 'node:os'
 import { Agent, fetch as undiciFetch } from 'undici'
-import { checkUrlSafety, isBlockedAddress } from '@kukan/shared'
-import { DNS_TIMEOUT_MS, DNS_TRIES } from '@/config'
+import { checkUrlSafety, createCache, isBlockedAddress } from '@kukan/shared'
+import {
+  DNS_CACHE_TTL_MS,
+  DNS_TIMEOUT_MS,
+  DNS_TRIES,
+  MAX_ADDRESSES_PER_NAME,
+  RESOLUTION_CACHE_MAX,
+} from '@/config'
 
 // ---------------------------------------------------------------------------
 // SSRF-safe undici Agent
@@ -137,16 +143,8 @@ function reachableFamilies(): { v4: boolean; v6: boolean } {
  * to the same server, so a name answered NXDOMAIN here and left unanswered
  * there put the threadpool back on an attacker-supplied path.
  */
-async function resolveAddresses(hostname: string, family: number): Promise<LookupAddress[]> {
-  const literal = isIP(hostname)
-  if (literal) return [{ address: hostname, family: literal }]
-
-  // A caller that names a family gets exactly that — an explicit request is not
-  // a guess to be second-guessed; otherwise ask for what this host can reach.
-  const reachable = family === 0 ? reachableFamilies() : { v4: false, v6: false }
-  const ask6 = family === 0 ? reachable.v6 : family === 6
-  const ask4 = family === 0 ? reachable.v4 : family === 4
-
+async function resolveAddresses(hostname: string, ask: Families): Promise<LookupAddress[]> {
+  const { v4: ask4, v6: ask6 } = ask
   const queries: Promise<FamilyAnswer>[] = []
   if (ask6) queries.push(settle(resolver.resolve6(hostname), 6))
   if (ask4) queries.push(settle(resolver.resolve4(hostname), 4))
@@ -167,14 +165,95 @@ async function resolveAddresses(hostname: string, family: number): Promise<Looku
     }
   }
 
-  if (answers.length > 0) return answers
+  // Trimmed here rather than at the cache, so an oversized answer is bounded
+  // whether or not it is held.
+  if (answers.length > 0) return answers.slice(0, MAX_ADDRESSES_PER_NAME)
 
   const err: NodeJS.ErrnoException = new Error(`Could not resolve ${hostname}`)
   // Distinguished so a caller can tell "this name does not exist" from "the
   // resolver did not say" — the health check records the first as a dead link
-  // and the second is worth retrying.
+  // and the second is worth retrying. {@link resolveCached} keeps only the
+  // first.
   err.code = unanswered ? 'EAI_AGAIN' : 'ENOTFOUND'
   throw err
+}
+
+/** Which families to ask about. */
+interface Families {
+  v4: boolean
+  v6: boolean
+}
+
+/**
+ * A caller that names a family gets exactly that — an explicit request is not a
+ * guess to be second-guessed; otherwise ask for what this host can reach.
+ */
+function familiesToAsk(family: number): Families {
+  if (family === 4 || family === 6) return { v4: family === 4, v6: family === 6 }
+  return reachableFamilies()
+}
+
+/**
+ * Answers being waited for, and answers recently given.
+ *
+ * The promise goes in before it settles, so the ten lookups the health check
+ * starts at once for one host make one query rather than ten — which is most of
+ * the duplication, since the batch's concurrency is what bunches them.
+ *
+ * Addresses are cached, not verdicts: the whole list is handed back and
+ * {@link isBlockedAddress} runs over all of it on every lookup. Returning a
+ * subset would be the same weakening as skipping the check, because a name that
+ * answers with a public address beside a loopback one is refused only if both
+ * are seen.
+ */
+const resolutions = createCache({ max: RESOLUTION_CACHE_MAX, ttlMs: DNS_CACHE_TTL_MS })
+
+/**
+ * The reachable families are part of the key, not just of the answer.
+ *
+ * `reachableFamilies` is read per lookup on purpose — an interface coming up
+ * should not need a restart to be noticed, and `networkInterfaces()` raising a
+ * system error makes one lookup ask both ways. Caching the answer without the
+ * question would hold that one lookup's mistake for the whole TTL, handing an
+ * AAAA-first list to every URL of a host on a machine with no IPv6 route.
+ */
+function cacheKey(hostname: string, ask: Families): string {
+  return `${ask.v4 ? 4 : ''}${ask.v6 ? 6 : ''}|${hostname}`
+}
+
+function resolveCached(hostname: string, family: number): Promise<LookupAddress[]> {
+  // Literals never reach a resolver, so an entry saves nothing and only takes a
+  // slot another host could use.
+  const literal = isIP(hostname)
+  if (literal) return Promise.resolve([{ address: hostname, family: literal }])
+
+  const ask = familiesToAsk(family)
+  const key = cacheKey(hostname, ask)
+  const pending = resolutions.get(key) as Promise<LookupAddress[]> | undefined
+  if (pending) return pending
+
+  const answer = resolveAddresses(hostname, ask)
+  resolutions.set(key, answer)
+  answer.catch((err: NodeJS.ErrnoException) => {
+    // Only an authoritative "not there" is worth keeping. A resolver that did
+    // not answer has already cost this lookup the full `DNS_TRIES` budget, so
+    // holding it saves nothing a retry would not — and it would take that retry
+    // away from every other URL of the same host, each of which the health
+    // check then writes down as a dead link.
+    if (!isNegativeAnswer(err)) resolutions.delete(key)
+  })
+  return answer
+}
+
+/**
+ * Forget everything resolved so far.
+ *
+ * For tests: the cache is module state and outlives a test case, so without
+ * this a second case naming a host the first already asked about is answered
+ * from the first one's stub.
+ */
+export function forgetResolutions(): void {
+  resolutions.clear()
 }
 
 /**
@@ -198,7 +277,7 @@ export function ssrfSafeLookup(
   // caller, and after this function has already reported success.
   const done = (...args: Parameters<LookupCallback>) => process.nextTick(callback, ...args)
 
-  resolveAddresses(hostname, wantedFamily(options.family)).then(
+  resolveCached(hostname, wantedFamily(options.family)).then(
     (addresses) => {
       const blocked = addresses.find((a) => isBlockedAddress(a.address))
       if (blocked) {

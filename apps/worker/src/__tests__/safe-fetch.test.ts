@@ -1,4 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import {
+  DNS_CACHE_TTL_MS,
+  HEALTH_CHECK_BATCH_SIZE,
+  HEALTH_CHECK_CONCURRENCY,
+  RESOLUTION_CACHE_MAX,
+} from '../config'
 
 // Mock node:dns to control DNS resolution in the Agent's lookup callback.
 // c-ares is the only resolver the lookup uses — there is no `dns.lookup`
@@ -49,7 +55,7 @@ vi.mock('undici', async (importOriginal) => {
   }
 })
 
-const { safeFetch, ssrfSafeLookup } = await import('../safe-fetch')
+const { safeFetch, ssrfSafeLookup, forgetResolutions } = await import('../safe-fetch')
 
 describe('ssrfSafeLookup', () => {
   // The shape `net.connect` actually asks for. Every one of these tests passes
@@ -65,6 +71,9 @@ describe('ssrfSafeLookup', () => {
     })
 
   beforeEach(() => {
+    // Answers are cached across lookups, so a case naming a host an earlier one
+    // asked about would be answered from that one's stub.
+    forgetResolutions()
     mockResolve4.mockReset()
     mockResolve6.mockReset()
     mockInterfaces.mockReset()
@@ -261,6 +270,172 @@ describe('ssrfSafeLookup', () => {
     expect(addresses).toEqual([{ address: '2606:4700::1', family: 6 }])
   })
 
+  it('should ask once for a host it is asked about repeatedly', async () => {
+    // The health check reads a batch of resource URLs that resolve to far fewer
+    // hosts — measured at 458 across 34 — so without this it asks the same
+    // question about ten times a host, every five minutes, of someone else's
+    // servers.
+    mockResolve4.mockResolvedValue(['93.184.216.34'])
+
+    for (let i = 0; i < 5; i++) await lookedUp('repeated.example.com')
+
+    expect(mockResolve4).toHaveBeenCalledTimes(1)
+  })
+
+  it('should ask once for lookups that overlap', async () => {
+    // Concurrency is what bunches them: the batch starts ten at a time, and
+    // caching only settled answers would let all ten miss.
+    mockResolve4.mockReturnValue(
+      new Promise((resolve) => setTimeout(() => resolve(['93.184.216.34']), 20))
+    )
+
+    const answers = await Promise.all(
+      Array.from({ length: 10 }, () => lookedUp('concurrent.example.com'))
+    )
+
+    expect(mockResolve4).toHaveBeenCalledTimes(1)
+    expect(answers.every((a) => a.err === null)).toBe(true)
+  })
+
+  it('should not answer one host from another entry', async () => {
+    // Two lookups, two hosts: without the name in the key the second is
+    // answered with the first's addresses, and every test that looks up one
+    // host at a time passes anyway.
+    mockResolve4.mockResolvedValueOnce(['93.184.216.34']).mockResolvedValueOnce(['198.51.100.7'])
+
+    const first = await lookedUp('one.example.com')
+    const second = await lookedUp('two.example.com')
+
+    expect(first.addresses).toEqual([{ address: '93.184.216.34', family: 4 }])
+    expect(second.addresses).toEqual([{ address: '198.51.100.7', family: 4 }])
+  })
+
+  it('should remember that a host does not exist', async () => {
+    // A name the resolver answered about is worth holding: a dead host has
+    // every one of its URLs in the batch, and each would otherwise wait out the
+    // resolver's deadline to be told the same thing.
+    mockResolve4.mockRejectedValue(dnsError('ENOTFOUND'))
+
+    for (let i = 0; i < 3; i++) await lookedUp('gone.example.com')
+
+    expect(mockResolve4).toHaveBeenCalledTimes(1)
+  })
+
+  it('should hand back the whole list on a cache hit', async () => {
+    // Not a formality. Returning a subset is the same weakening as skipping the
+    // check: a name answering with a public address beside a loopback one is
+    // refused only if both are seen, and an earlier version of this test used a
+    // single-address answer, which every such weakening satisfies.
+    // Both families on purpose: a hit that relabelled every address as IPv4
+    // would be invisible against an all-IPv4 answer.
+    mockResolve4.mockResolvedValue(['93.184.216.34'])
+    mockResolve6.mockResolvedValue(['2606:2800:220::1'])
+
+    const first = await lookedUp('two-addresses.example.com')
+    const second = await lookedUp('two-addresses.example.com')
+
+    expect(second.addresses).toEqual(first.addresses)
+    expect(second.addresses).toEqual([
+      { address: '2606:2800:220::1', family: 6 },
+      { address: '93.184.216.34', family: 4 },
+    ])
+    expect(mockResolve4).toHaveBeenCalledTimes(1)
+  })
+
+  it('should still refuse a mixed answer on the second lookup', async () => {
+    // The rebinding case, through the cache. Seeing only the first address
+    // would allow this for the rest of the TTL with the check still running.
+    mockResolve4.mockResolvedValue(['93.184.216.34', '127.0.0.1'])
+
+    const first = await lookedUp('mixed-cached.example.com')
+    const second = await lookedUp('mixed-cached.example.com')
+
+    expect(first.err!.message).toContain('127.0.0.1')
+    expect(second.err!.message).toContain('127.0.0.1')
+    expect(mockResolve4).toHaveBeenCalledTimes(1)
+  })
+
+  it('should hold answers for longer than a batch and less than the gap between batches', () => {
+    // Expiry itself is not observable here: `lru-cache` reads the `performance`
+    // it captured when it loaded, so vitest's fake clock does not reach it, and
+    // waiting out a real minute is not a test. What is worth pinning is the
+    // constant, because both ends are wrong in ways that look reasonable.
+    //
+    // Zero especially: `lru-cache` reads it as no expiry at all, so a name would
+    // be pinned for the life of the process and a host that moved would never be
+    // followed — the opposite of what the constant is documented to do.
+    const batch = (HEALTH_CHECK_BATCH_SIZE / HEALTH_CHECK_CONCURRENCY) * 300
+    expect(DNS_CACHE_TTL_MS).toBeGreaterThan(batch)
+    expect(DNS_CACHE_TTL_MS).toBeLessThan(5 * 60_000)
+  })
+
+  it('should keep the families asked about out of one entry', async () => {
+    // The reachable families are part of the question, so they belong in the
+    // key: one lookup that asked both ways must not answer a later one that
+    // asked for IPv4 only.
+    mockResolve4.mockResolvedValue(['93.184.216.34'])
+    mockResolve6.mockResolvedValue(['2606:2800:220::1'])
+
+    const both = await lookedUp('families.example.com')
+    const v4 = await lookedUp('families.example.com', { all: true, family: 4 })
+
+    expect(both.addresses).toEqual([
+      { address: '2606:2800:220::1', family: 6 },
+      { address: '93.184.216.34', family: 4 },
+    ])
+    expect(v4.addresses).toEqual([{ address: '93.184.216.34', family: 4 }])
+  })
+
+  it('should not let a machine with no IPv6 inherit an earlier lookups answer', async () => {
+    // `reachableFamilies` is read per lookup on purpose, and `networkInterfaces`
+    // raising once makes that lookup ask both ways. Cached without the question,
+    // that one mistake hands an AAAA-first list to every URL of the host for the
+    // rest of the TTL — the ENETUNREACH this module documents.
+    mockInterfaces.mockImplementationOnce(() => {
+      throw dnsError('ERR_SYSTEM_ERROR')
+    })
+    mockInterfaces.mockReturnValue(IPV4_ONLY)
+    mockResolve4.mockResolvedValue(['93.184.216.34'])
+    mockResolve6.mockResolvedValue(['2606:2800:220::1'])
+
+    const guessed = await lookedUp('addrconfig.example.com')
+    const known = await lookedUp('addrconfig.example.com')
+
+    expect(guessed.addresses).toHaveLength(2)
+    expect(known.addresses).toEqual([{ address: '93.184.216.34', family: 4 }])
+  })
+
+  it('should hold more names than one batch reaches', async () => {
+    // A batch was measured at 34 distinct hosts. Below that the entries evict
+    // each other and the caching silently stops happening — so the filler count
+    // is that number, not one derived from the capacity being tested.
+    const HOSTS_IN_A_BATCH = 34
+    expect(RESOLUTION_CACHE_MAX).toBeGreaterThan(HOSTS_IN_A_BATCH)
+    mockResolve4.mockResolvedValue(['93.184.216.34'])
+
+    await lookedUp('kept.example.com')
+    for (let i = 0; i < HOSTS_IN_A_BATCH; i++) await lookedUp(`filler${i}.example.com`)
+    mockResolve4.mockClear()
+    await lookedUp('kept.example.com')
+
+    expect(mockResolve4).not.toHaveBeenCalled()
+  })
+
+  it('should not hold a name the resolver never answered for', async () => {
+    // It already cost this lookup the full DNS_TRIES budget, so holding it saves
+    // nothing a retry would not — and takes that retry from every other URL of
+    // the host, each of which the health check writes down as a dead link.
+    mockResolve4.mockRejectedValue(dnsError('ETIMEOUT'))
+    mockResolve6.mockRejectedValue(dnsError('ETIMEOUT'))
+
+    const first = await lookedUp('flaky.example.com')
+    mockResolve4.mockResolvedValue(['93.184.216.34'])
+    const second = await lookedUp('flaky.example.com')
+
+    expect((first.err as NodeJS.ErrnoException).code).toBe('EAI_AGAIN')
+    expect(second.err).toBeNull()
+  })
+
   it('should pass an IP literal through without resolving it', async () => {
     const { err, addresses } = await lookedUp('93.184.216.34')
 
@@ -272,6 +447,7 @@ describe('ssrfSafeLookup', () => {
 
 describe('safeFetch', () => {
   beforeEach(() => {
+    forgetResolutions()
     mockUndiciFetch.mockReset()
     mockResolve4.mockReset()
     mockResolve6.mockReset()
