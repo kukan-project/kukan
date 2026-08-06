@@ -202,6 +202,115 @@ describe('the run record', () => {
     expect(steps).toHaveLength(1)
   })
 
+  it('records the step that was open when the run failed', async () => {
+    // Fetch is the one step whose failure ends the run, so it is the one that
+    // used to be abandoned mid-flight: the pipeline read `error` while its step
+    // read `running`, and the UI shows the step.
+    const tracker = new StepTracker(db, claim)
+    await tracker.beginRun()
+    const stepId = await tracker.startStep('fetch')
+
+    await tracker.failOpenStep('Resource has no uploaded file')
+
+    const [step] = await db
+      .select()
+      .from(resourcePipelineStep)
+      .where(eq(resourcePipelineStep.id, stepId))
+    expect(step.status).toBe('error')
+    expect(step.error).toBe('Resource has no uploaded file')
+    expect(step.completedAt).not.toBeNull()
+  })
+
+  it('has nothing to record once the step settled itself', async () => {
+    // The ordinary case: every step after Fetch catches its own failure and
+    // closes its row, so the run-level handler must not reopen it.
+    const tracker = new StepTracker(db, claim)
+    await tracker.beginRun()
+    const stepId = await tracker.startStep('interpret')
+    await tracker.completeStep(stepId)
+
+    await tracker.failOpenStep('something later went wrong')
+
+    const [step] = await db
+      .select()
+      .from(resourcePipelineStep)
+      .where(eq(resourcePipelineStep.id, stepId))
+    expect(step.status).toBe('complete')
+    expect(step.error).toBeNull()
+  })
+
+  it('records a step still open underneath one that settled', async () => {
+    // The Lake step is started from inside the interpretation, while Interpret
+    // is still running. A single slot would be taken by Lake and cleared when
+    // Lake settled, forgetting Interpret — so this only says anything with two
+    // open at once. An earlier version of this test settled the first before
+    // starting the second, which "remember the first" would also have passed.
+    const tracker = new StepTracker(db, claim)
+    await tracker.beginRun()
+    const outer = await tracker.startStep('interpret')
+    const nested = await tracker.startStep('lake')
+    await tracker.completeStep(nested)
+
+    await tracker.failOpenStep('boom')
+
+    const steps = await db
+      .select()
+      .from(resourcePipelineStep)
+      .where(eq(resourcePipelineStep.pipelineId, claim.id))
+    expect(steps.find((s) => s.id === nested)!.status).toBe('complete')
+    expect(steps.find((s) => s.id === outer)!.status).toBe('error')
+  })
+
+  it('settles every step left open, innermost first', async () => {
+    const tracker = new StepTracker(db, claim)
+    await tracker.beginRun()
+    const outer = await tracker.startStep('interpret')
+    const nested = await tracker.startStep('lake')
+
+    await tracker.failOpenStep('boom')
+
+    const steps = await db
+      .select()
+      .from(resourcePipelineStep)
+      .where(eq(resourcePipelineStep.pipelineId, claim.id))
+    expect(steps.map((s) => s.status).sort()).toEqual(['error', 'error'])
+    expect(steps.find((s) => s.id === outer)!.error).toBe('boom')
+    expect(steps.find((s) => s.id === nested)!.error).toBe('boom')
+  })
+
+  it('keeps a step open when settling it threw', async () => {
+    // Clearing before the write would lose it here, and the run's handler would
+    // then find nothing to record — `error` over a step reading `running`,
+    // which is the state this whole mechanism exists to stop.
+    const tracker = new StepTracker(db, claim)
+    await tracker.beginRun()
+    const stepId = await tracker.startStep('fetch')
+
+    let thrown = false
+    const failing = {
+      execute: (query: Parameters<typeof db.execute>[0]) => {
+        if (!thrown) {
+          thrown = true
+          return Promise.reject(new Error('lock timeout'))
+        }
+        return db.execute(query)
+      },
+    } as unknown as typeof db
+    const wobbly = new StepTracker(failing, claim)
+    // Same claim, same pipeline — only the connection is unreliable.
+    Object.assign(wobbly, { openSteps: [stepId] })
+    await expect(wobbly.completeStep(stepId)).rejects.toThrow('lock timeout')
+
+    await wobbly.failOpenStep('Download failed')
+
+    const [step] = await db
+      .select()
+      .from(resourcePipelineStep)
+      .where(eq(resourcePipelineStep.id, stepId))
+    expect(step.status).toBe('error')
+    expect(step.error).toBe('Download failed')
+  })
+
   it('refuses to start a step once the claim is gone', async () => {
     const tracker = new StepTracker(db, claim)
     await releaseResourceClaims(db, [claim.id], claim.owner)

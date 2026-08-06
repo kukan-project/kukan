@@ -24,6 +24,7 @@ const mockTracker = {
   startStep: vi.fn(),
   completeStep: vi.fn(),
   failStep: vi.fn(),
+  failOpenStep: vi.fn(),
   skipStep: vi.fn(),
   updateStatus: vi.fn(),
   updateInterpretResult: vi.fn(),
@@ -386,6 +387,33 @@ describe('processResource', () => {
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('error', 'Download failed')
   })
 
+  it('should close the step it failed in, not just the run', async () => {
+    // Otherwise the row reads `error` while its step reads `running`, and the
+    // UI — which shows the step — calls a failed resource in progress forever.
+    vi.mocked(executeFetch).mockRejectedValue(new Error('Download failed'))
+
+    await processResource('res-1', ctx, db, queue)
+
+    expect(mockTracker.failOpenStep).toHaveBeenCalledWith('Download failed')
+    // The run's record goes first: of the two states a half-done catch can
+    // leave, `error` over a step still reading `running` at least says the run
+    // is over.
+    expect(mockTracker.updateStatus.mock.invocationCallOrder[0]).toBeLessThan(
+      mockTracker.failOpenStep.mock.invocationCallOrder[0]
+    )
+  })
+
+  it('should say something when what was thrown is not an Error', async () => {
+    // `(err as Error).message` is undefined for these, which would record a
+    // failed step with no reason on the row the resource page reads.
+    vi.mocked(executeFetch).mockRejectedValue('just a string')
+
+    await processResource('res-1', ctx, db, queue)
+
+    expect(mockTracker.updateStatus).toHaveBeenCalledWith('error', 'just a string')
+    expect(mockTracker.failOpenStep).toHaveBeenCalledWith('just a string')
+  })
+
   it('should requeue and set queued status when fetch is deferred', async () => {
     vi.mocked(executeFetch).mockResolvedValue({ status: 'deferred' })
 
@@ -484,6 +512,9 @@ describe('processResource', () => {
     await processResource('res-1', ctx, db, queue)
 
     expect(mockTracker.updateStatus).not.toHaveBeenCalled()
+    // The step record too — a killed run records nothing at all, and asserting
+    // only on the row let the early return be moved below the step write.
+    expect(mockTracker.failOpenStep).not.toHaveBeenCalled()
     expect(executeInterpret).not.toHaveBeenCalled()
   })
 

@@ -266,7 +266,19 @@ async function runPipeline(
     // A killed run records nothing: the resource was taken from it, and
     // `cancelled` is already on the row (ADR-044 §4).
     if (err instanceof RunCancelledError) return
-    await tracker.updateStatus('error', (err as Error).message)
+    // `message` rather than `String(err)` where there is one, but a throw that
+    // is not an `Error` still has to say something: the alternative is a step
+    // recorded as failed with no reason, on the row the resource page reads.
+    const message = err instanceof Error ? err.message : String(err)
+    // The run's record first. Both writes can fail, and of the two states a
+    // half-done catch can leave, `error` over a step still reading `running` is
+    // the one that at least says the run is over.
+    await tracker.updateStatus('error', message)
+    // Whichever steps were in flight are the ones that failed. Only Fetch can
+    // reach here today — every later step catches its own and carries on — but
+    // recording from what is open, rather than by naming Fetch, is what makes
+    // the next step to be given the same treatment record itself for free.
+    await tracker.failOpenStep(message)
   }
 }
 

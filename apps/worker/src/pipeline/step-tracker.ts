@@ -37,6 +37,22 @@ export class StepTracker {
     readonly claim: ResourceClaim
   ) {}
 
+  /**
+   * The steps this run has started and not settled, outermost first.
+   *
+   * Held here rather than passed back through the orchestrator because the
+   * caller that needs it is the one that does not have it: a step whose failure
+   * ends the run is abandoned where it stands, and the `catch` that records the
+   * run as failed is several frames above whatever id was in scope.
+   *
+   * A stack rather than a slot because steps nest — the Lake step is started
+   * from inside the interpretation, while the Interpret step is still open. One
+   * slot would have been taken by Lake and cleared when Lake settled, leaving
+   * the enclosing step forgotten while it was still running: the very state
+   * this exists to prevent, reappearing the moment Interpret is made fatal.
+   */
+  private openSteps: string[] = []
+
   /** SQL condition: this row, and this run still holds it. */
   private get held() {
     return heldBy(this.claim)
@@ -52,6 +68,7 @@ export class StepTracker {
    * displaced would clear the steps of the run that displaced it.
    */
   async beginRun() {
+    this.openSteps = []
     await this.db.execute(sql`
       WITH taken AS (
         UPDATE resource_pipeline
@@ -165,6 +182,7 @@ export class StepTracker {
     `)
     const step = result.rows[0] as { id: string } | undefined
     if (!step) throw new RunCancelledError(this.claim.resourceId)
+    this.openSteps.push(step.id)
     return step.id
   }
 
@@ -183,6 +201,15 @@ export class StepTracker {
       FROM resource_pipeline p
       WHERE s.id = ${stepId}::uuid AND s.pipeline_id = p.id AND ${heldBy(this.claim, 'p')}
     `)
+    // After the write, not before: a settle that throws — a lock timeout, a
+    // reset connection — has to leave the step open, or the run's own handler
+    // finds nothing to record and the row reads `error` over a step that reads
+    // `running`. That is the state this file exists to stop.
+    //
+    // A write that matched nothing is a different case and needs no undo here:
+    // it means the claim is gone, and the retry below is blocked by the same
+    // condition.
+    this.openSteps = this.openSteps.filter((id) => id !== stepId)
   }
 
   /** Mark a step as complete. */
@@ -198,5 +225,26 @@ export class StepTracker {
   /** Mark a step as skipped. */
   async skipStep(stepId: string) {
     await this.settleStep(stepId, 'skipped')
+  }
+
+  /**
+   * Record whatever step is still running as the one that failed.
+   *
+   * Every step but Fetch settles its own failure and lets the run continue; a
+   * Fetch that throws ends the run, and until this existed it ended it without
+   * closing its own row. The pipeline then read `error` while its step read
+   * `running`, and the UI — which shows the step — reported a failed resource as
+   * in progress, indefinitely. Every one of the 51 failed rows in the
+   * development database was in that state, so this was the ordinary outcome of
+   * failing rather than an edge case.
+   *
+   * Nothing open is the normal case for the steps that settle themselves, and
+   * this says nothing then.
+   */
+  async failOpenStep(error: string) {
+    // Innermost first, and over a copy: `failStep` settles, which removes.
+    for (const stepId of [...this.openSteps].reverse()) {
+      await this.failStep(stepId, error)
+    }
   }
 }
