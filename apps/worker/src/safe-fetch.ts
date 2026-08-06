@@ -303,8 +303,77 @@ const ssrfSafeAgent = createSsrfSafeAgent()
 // Safe fetch
 // ---------------------------------------------------------------------------
 
+/** The original request is not a hop, so ten redirects means eleven requests. */
 const MAX_REDIRECTS = 10
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
+
+/**
+ * Which methods each status rewrites to GET, and the clause that says so.
+ *
+ * A table rather than a chain of comparisons because the rule is per status and
+ * reads that way in the RFC. 307 and 308 are absent: they exist precisely to be
+ * the ones that keep the method (§15.4.8, §15.4.9).
+ */
+const REWRITES_TO_GET: Record<number, (method: string) => boolean> = {
+  301: (m) => m === 'POST', // §15.4.2 — what clients do, which the RFC acknowledges
+  302: (m) => m === 'POST', // §15.4.3 — likewise
+  303: (m) => m !== 'GET' && m !== 'HEAD', // §15.4.4 — retrieve the result, do not resubmit
+}
+
+/**
+ * Headers a credential lives in, which must not follow a redirect to another
+ * origin: they were granted to the host the caller named, and a redirect is
+ * where an attacker gets to name a different one. This is the Fetch standard's
+ * cross-origin rule, and it is the half of redirect handling with a secret on
+ * the other side of it.
+ */
+const CREDENTIAL_HEADERS = ['authorization', 'proxy-authorization', 'cookie', 'cookie2']
+
+/** Everything that describes a body, for when the body goes. `content-length`
+ *  is derived rather than carried, which is why Fetch omits it from its own
+ *  list and why it has to be named here anyway. */
+const BODY_HEADERS = [
+  'content-encoding',
+  'content-language',
+  'content-location',
+  'content-type',
+  'content-length',
+]
+
+/**
+ * What the next hop is asked with.
+ *
+ * Two rules, and both have to run: the method rewrite above, and stripping
+ * credentials when the origin changes. An earlier version did only the first,
+ * which is worse than doing neither — it reads as though redirect semantics are
+ * handled, so the missing half never gets audited. Measured before the fix: a
+ * cross-origin 302 delivered `authorization`, `cookie` and `proxy-authorization`
+ * verbatim to the second host, where undici's own redirect handling strips all
+ * three.
+ *
+ * Neither caller sends a body or a credential today. That is why this is worth
+ * having rather than why it is not: the next caller here is an authenticated
+ * source fetch, and it would inherit whatever this function does.
+ */
+function nextHopInit(
+  init: RequestInit | undefined,
+  status: number,
+  sameOrigin: boolean
+): RequestInit | undefined {
+  const method = (init?.method ?? 'GET').toUpperCase()
+  const dropsBody = REWRITES_TO_GET[status]?.(method) ?? false
+  // Nothing to rewrite and nothing to strip — the request goes on as it is.
+  if (!dropsBody && sameOrigin) return init
+
+  const { body, headers, ...rest } = init ?? {}
+  const carried = new Headers(headers)
+  if (!sameOrigin) for (const name of CREDENTIAL_HEADERS) carried.delete(name)
+  if (dropsBody) for (const name of BODY_HEADERS) carried.delete(name)
+
+  return dropsBody
+    ? { ...rest, method: 'GET', headers: carried }
+    : { ...rest, body, headers: carried }
+}
 
 /**
  * Fetch a URL with SSRF protection.
@@ -319,10 +388,11 @@ export async function safeFetch(url: string, init?: RequestInit): Promise<Respon
   }
 
   let currentUrl = url
+  let currentInit = init
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
     // undici fetch with SSRF-safe Agent; cast types for compatibility with global Response
     const response = (await undiciFetch(currentUrl, {
-      ...(init as Record<string, unknown>),
+      ...(currentInit as Record<string, unknown>),
       redirect: 'manual',
       dispatcher: ssrfSafeAgent,
     })) as unknown as Response
@@ -332,17 +402,52 @@ export async function safeFetch(url: string, init?: RequestInit): Promise<Respon
     }
 
     const location = response.headers.get('location')
+    // A redirect with nowhere to go is the caller's, body and all.
     if (!location) {
       return response
     }
 
-    const nextUrl = new URL(location, currentUrl).href
-    const nextSafetyError = checkUrlSafety(nextUrl)
+    // Released here, ahead of everything below that can throw. `cancel` aborts
+    // rather than drains — it destroys the connection, so this is not about
+    // keeping it poolable; it is about not leaving a hop body still arriving,
+    // which pins a pooled connection on the Agent every other fetch shares.
+    // The refusal below is the branch an attacker picks, and it used to be the
+    // one that skipped this: measured, 200 held sockets from one health-check
+    // pass against a host redirecting to a blocked address.
+    //
+    // Deliberately not above the two returns. Those responses belong to the
+    // caller, and the pipeline reads the body of the one it gets.
+    await response.body?.cancel().catch(() => undefined)
+
+    // `currentUrl` has already passed `checkUrlSafety`, so it parses.
+    const from = new URL(currentUrl)
+    let next: URL
+    try {
+      // Resolved against the URL this hop was fetched from, because a
+      // `Location` is allowed to be relative and most are.
+      next = new URL(location, from)
+    } catch {
+      // Otherwise this escapes as a bare `TypeError: Invalid URL`, which the
+      // health check records against the resource — pointing at the stored URL
+      // when the broken party is the server that answered.
+      throw new Error(`Redirect target is unusable: Location is not a URL`)
+    }
+
+    // A chain that starts under TLS must not finish outside it. The catalog goes
+    // on showing the `https://` the user entered, so a downgrade publishes bytes
+    // that travelled in the clear — and records a hash over whatever arrived —
+    // with nothing on the resource to say so.
+    if (from.protocol === 'https:' && next.protocol !== 'https:') {
+      throw new Error(`Redirect target is unsafe: https downgraded to ${next.protocol}`)
+    }
+
+    const nextSafetyError = checkUrlSafety(next.href)
     if (nextSafetyError) {
       throw new Error(`Redirect target is unsafe: ${nextSafetyError}`)
     }
 
-    currentUrl = nextUrl
+    currentInit = nextHopInit(currentInit, response.status, from.origin === next.origin)
+    currentUrl = next.href
   }
 
   throw new Error(`Too many redirects (max ${MAX_REDIRECTS})`)

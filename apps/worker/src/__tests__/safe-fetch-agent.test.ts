@@ -15,8 +15,9 @@
  * fails, but for the wrong reason, and this notices.
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
-import { createServer, type Server } from 'node:http'
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { networkInterfaces } from 'node:os'
 
 const answers = new Map<string, string[]>()
 vi.mock('node:dns', async (importOriginal) => {
@@ -46,10 +47,25 @@ const { safeFetch } = await import('../safe-fetch')
 
 let server: Server
 let port: number
+let routes: (req: IncomingMessage, res: ServerResponse) => boolean
+
+/**
+ * A private address of this host. The blocklist allows private ranges on
+ * purpose (intranet deployments), so this is an address a redirect chain is
+ * permitted to reach — unlike loopback, which is what the refusals below use.
+ */
+const privateAddress = Object.values(networkInterfaces())
+  .flatMap((addresses) => addresses ?? [])
+  .find((a) => !a.internal && a.family === 'IPv4')?.address
 
 beforeAll(async () => {
-  server = createServer((_req, res) => res.end('SECRET-LOOPBACK-BODY'))
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  server = createServer((req, res) => {
+    if (routes?.(req, res)) return
+    res.end('SECRET-LOOPBACK-BODY')
+  })
+  // Bound to every interface so the chain below can reach it by the private
+  // address as well as by loopback.
+  await new Promise<void>((resolve) => server.listen(0, resolve))
   port = (server.address() as AddressInfo).port
 })
 
@@ -107,5 +123,58 @@ describe('the SSRF-safe agent, end to end', () => {
     })
 
     expect(err).not.toContain('private address')
+  })
+})
+
+describe('following a redirect, end to end', () => {
+  // The mocked suite stubs `undici.fetch`, so nothing there exercises a real
+  // hop: the Agent — and therefore the address check — never runs on hops 2..n.
+  // A `Location` naming a *hostname* that resolves somewhere blocked is the
+  // realistic shape of SSRF-by-redirect, and it is invisible to a string-level
+  // check, which is the only kind the mocked tests can reach.
+
+  it('should follow a real chain and hand back a readable body', async () => {
+    if (!privateAddress) return // no non-loopback interface to reach the server by
+    answers.set('chain.test', [privateAddress])
+    routes = (req, res) => {
+      if (req.url === '/start') {
+        res.writeHead(302, { location: '/deep/next' }).end('hop body nobody reads')
+        return true
+      }
+      if (req.url === '/deep/next') {
+        res.writeHead(303, { location: '../final' }).end('another hop body')
+        return true
+      }
+      if (req.url === '/final') {
+        res.end('THE RESOURCE')
+        return true
+      }
+      return false
+    }
+
+    const response = await safeFetch(`http://chain.test:${port}/start`, { method: 'POST' })
+
+    // The body has to survive: the pipeline reads it straight into storage, and
+    // a release applied one line too early would leave this empty.
+    await expect(response.text()).resolves.toBe('THE RESOURCE')
+  })
+
+  it('should refuse a Location naming a host that resolves to loopback', async () => {
+    answers.set('start.test', [privateAddress ?? '127.0.0.1'])
+    answers.set('rebind-hop.test', ['127.0.0.1'])
+    routes = (req, res) => {
+      if (req.url === '/go') {
+        res.writeHead(302, { location: `http://rebind-hop.test:${port}/` }).end()
+        return true
+      }
+      return false
+    }
+
+    const err = await safeFetch(`http://start.test:${port}/go`).then(
+      (r) => `REACHED ${r.status}`,
+      (e: unknown) => causeOf(e)
+    )
+
+    expect(err).toContain('private address')
   })
 })

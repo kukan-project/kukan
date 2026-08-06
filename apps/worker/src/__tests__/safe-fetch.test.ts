@@ -367,13 +367,19 @@ describe('safeFetch', () => {
   })
 
   describe('redirect handling', () => {
+    /** Where hop `n` was actually sent. */
+    const hop = (n: number) => mockUndiciFetch.mock.calls[n - 1][0] as string
+    /** What hop `n` was asked with. */
+    const sent = (n: number) => mockUndiciFetch.mock.calls[n - 1][1] as RequestInit
+    const headersOf = (n: number) => new Headers(sent(n).headers)
+    /** A hop, with a body — which is what real undici gives even for a bare
+     *  302, and what makes the release below observable. */
+    const redirect = (status: number, location: string) =>
+      new Response('a body nobody reads', { status, headers: { location } })
+    const ok = () => new Response('ok', { status: 200 })
+
     it('should reject redirect to internal URL', async () => {
-      mockUndiciFetch.mockResolvedValueOnce(
-        new Response(null, {
-          status: 302,
-          headers: { location: 'http://169.254.169.254/latest/meta-data/' },
-        })
-      )
+      mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'http://169.254.169.254/latest/'))
 
       await expect(safeFetch('https://example.com/redirect')).rejects.toThrow(
         'Redirect target is unsafe'
@@ -382,42 +388,311 @@ describe('safeFetch', () => {
     })
 
     it('should follow safe redirects', async () => {
-      mockUndiciFetch
-        .mockResolvedValueOnce(
-          new Response(null, {
-            status: 301,
-            headers: { location: 'https://cdn.example.com/data.csv' },
-          })
-        )
-        .mockResolvedValueOnce(new Response('ok', { status: 200 }))
+      mockUndiciFetch.mockResolvedValueOnce(redirect(301, 'https://cdn.example.com/d.csv'))
+      mockUndiciFetch.mockResolvedValueOnce(ok())
 
       const response = await safeFetch('https://example.com/data')
+
       expect(response.status).toBe(200)
       expect(mockUndiciFetch).toHaveBeenCalledTimes(2)
+      // Which URL the second hop went to, not merely that there was one: a
+      // version that refetched the original passed without this.
+      expect(hop(2)).toBe('https://cdn.example.com/d.csv')
     })
 
-    it('should enforce max redirect limit', async () => {
-      for (let i = 0; i < 12; i++) {
-        mockUndiciFetch.mockResolvedValueOnce(
-          new Response(null, {
-            status: 302,
-            headers: { location: `https://example.com/hop-${i}` },
-          })
-        )
+    it('should resolve a relative Location against the hop it came from', async () => {
+      // Two hops on purpose. With one, the hop and the original URL are the
+      // same string, so resolving against either passes — which is what the
+      // first version of this test did.
+      mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'https://other.example.com/a/b'))
+      mockUndiciFetch.mockResolvedValueOnce(redirect(302, '../c/data.csv'))
+      mockUndiciFetch.mockResolvedValueOnce(ok())
+
+      await safeFetch('https://example.com/start')
+
+      expect(hop(3)).toBe('https://other.example.com/c/data.csv')
+    })
+
+    it('should check a relative Location for safety once resolved', async () => {
+      // The string alone says nothing — only the resolved URL has a host.
+      mockUndiciFetch.mockResolvedValueOnce(redirect(302, '//169.254.169.254/latest/'))
+
+      await expect(safeFetch('https://example.com/data')).rejects.toThrow(
+        'Redirect target is unsafe'
+      )
+    })
+
+    it('should refuse a Location that is not a URL', async () => {
+      // Unguarded this escapes as a bare `TypeError: Invalid URL`, which the
+      // health check records against the resource — naming the stored URL when
+      // the broken party is the server that answered.
+      mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'http://['))
+
+      await expect(safeFetch('https://example.com/data')).rejects.toThrow('Location is not a URL')
+    })
+
+    it('should refuse a downgrade from https to http', async () => {
+      // The catalog goes on showing the https URL the user entered.
+      mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'http://example.com/data'))
+
+      await expect(safeFetch('https://example.com/data')).rejects.toThrow('https downgraded')
+    })
+
+    it('should allow http to stay http', async () => {
+      // The counterweight: refusing every scheme change would pass the above.
+      mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'http://cdn.example.com/data'))
+      mockUndiciFetch.mockResolvedValueOnce(ok())
+
+      await expect(safeFetch('http://example.com/data')).resolves.toMatchObject({ status: 200 })
+    })
+
+    it.each([
+      [301, 'GET', undefined],
+      [302, 'GET', undefined],
+      [303, 'GET', undefined],
+      [307, 'POST', 'a=1'],
+      [308, 'POST', 'a=1'],
+    ])('should send a POST through a %i as %s', async (status, method, body) => {
+      mockUndiciFetch.mockResolvedValueOnce(redirect(status, 'https://example.com/moved'))
+      mockUndiciFetch.mockResolvedValueOnce(ok())
+
+      await safeFetch('https://example.com/submit', { method: 'POST', body: 'a=1' })
+
+      expect(sent(2).method).toBe(method)
+      expect(sent(2).body).toBe(body)
+    })
+
+    it('should leave HEAD alone across a 303', async () => {
+      // The health check sends HEAD. Rewritten to GET, a 303 would start
+      // downloading bodies on every pass (RFC 9110 §15.4.4 exempts HEAD).
+      mockUndiciFetch.mockResolvedValueOnce(redirect(303, 'https://example.com/result'))
+      mockUndiciFetch.mockResolvedValueOnce(ok())
+
+      await safeFetch('https://example.com/data', { method: 'HEAD' })
+
+      expect(sent(2).method).toBe('HEAD')
+    })
+
+    it.each(['PUT', 'DELETE', 'PATCH'])('should leave %s alone across a 301', async (method) => {
+      // Fetch and RFC 9110 rewrite POST and nothing else on 301/302.
+      mockUndiciFetch.mockResolvedValueOnce(redirect(301, 'https://example.com/moved'))
+      mockUndiciFetch.mockResolvedValueOnce(ok())
+
+      await safeFetch('https://example.com/submit', { method, body: 'a=1' })
+
+      expect(sent(2).method).toBe(method)
+      expect(sent(2).body).toBe('a=1')
+    })
+
+    it('should recognise a lowercase method', async () => {
+      // 301 on purpose: its rule names POST exactly, so an unnormalised `post`
+      // matches nothing and the rewrite silently stops happening. Under 303 the
+      // rule is "not GET or HEAD", which `post` satisfies either way — a test
+      // there says nothing about case.
+      mockUndiciFetch.mockResolvedValueOnce(redirect(301, 'https://example.com/moved'))
+      mockUndiciFetch.mockResolvedValueOnce(ok())
+
+      await safeFetch('https://example.com/submit', { method: 'post', body: 'a=1' })
+
+      expect(sent(2).method).toBe('GET')
+    })
+
+    it('should drop every header that describes the body it dropped', async () => {
+      mockUndiciFetch.mockResolvedValueOnce(redirect(303, 'https://example.com/result'))
+      mockUndiciFetch.mockResolvedValueOnce(ok())
+
+      await safeFetch('https://example.com/submit', {
+        method: 'POST',
+        body: 'a=1',
+        headers: {
+          'content-type': 'text/csv',
+          'content-length': '3',
+          'content-encoding': 'gzip',
+          'content-language': 'ja',
+          'content-location': '/orig',
+          accept: 'text/csv',
+        },
+      })
+
+      for (const gone of [
+        'content-type',
+        'content-length',
+        'content-encoding',
+        'content-language',
+        'content-location',
+      ]) {
+        expect(headersOf(2).get(gone)).toBeNull()
+      }
+      // And what survives, so that stripping everything does not pass.
+      expect(headersOf(2).get('accept')).toBe('text/csv')
+    })
+
+    it('should strip credentials when the origin changes', async () => {
+      // Granted to the host the caller named; a redirect is where an attacker
+      // names a different one. Measured before the fix: all three arrived.
+      mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'https://evil.example.net/collect'))
+      mockUndiciFetch.mockResolvedValueOnce(ok())
+
+      await safeFetch('https://example.com/data', {
+        headers: {
+          authorization: 'Bearer SECRET',
+          cookie: 'session=abc',
+          'proxy-authorization': 'Basic P',
+          accept: 'text/csv',
+        },
+      })
+
+      expect(headersOf(2).get('authorization')).toBeNull()
+      expect(headersOf(2).get('cookie')).toBeNull()
+      expect(headersOf(2).get('proxy-authorization')).toBeNull()
+      expect(headersOf(2).get('accept')).toBe('text/csv')
+    })
+
+    it('should keep credentials within the same origin', async () => {
+      mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'https://example.com/elsewhere'))
+      mockUndiciFetch.mockResolvedValueOnce(ok())
+
+      await safeFetch('https://example.com/data', { headers: { authorization: 'Bearer SECRET' } })
+
+      expect(headersOf(2).get('authorization')).toBe('Bearer SECRET')
+    })
+
+    it('should strip credentials on a 307, which keeps the body', async () => {
+      // The worst pairing: body and credentials replayed verbatim to a host the
+      // attacker chose. An earlier version returned `init` by identity here, so
+      // nothing was stripped at all.
+      mockUndiciFetch.mockResolvedValueOnce(redirect(307, 'https://evil.example.net/collect'))
+      mockUndiciFetch.mockResolvedValueOnce(ok())
+
+      await safeFetch('https://example.com/submit', {
+        method: 'POST',
+        body: 'a=1',
+        headers: { authorization: 'Bearer SECRET' },
+      })
+
+      expect(sent(2).method).toBe('POST')
+      expect(sent(2).body).toBe('a=1')
+      expect(headersOf(2).get('authorization')).toBeNull()
+    })
+
+    it('should carry the abort signal across hops', async () => {
+      // Both callers pass `AbortSignal.timeout`, which is the whole chain's
+      // deadline. Dropped, a redirecting host gets unlimited time.
+      const signal = AbortSignal.timeout(5_000)
+      mockUndiciFetch.mockResolvedValueOnce(redirect(303, 'https://example.com/result'))
+      mockUndiciFetch.mockResolvedValueOnce(ok())
+
+      await safeFetch('https://example.com/submit', { method: 'POST', body: 'a=1', signal })
+
+      expect(sent(2).signal).toBe(signal)
+    })
+
+    it('should not modify the init it was given', async () => {
+      const init: RequestInit = { method: 'POST', body: 'a=1', headers: { authorization: 'B' } }
+      mockUndiciFetch.mockResolvedValueOnce(redirect(303, 'https://evil.example.net/r'))
+      mockUndiciFetch.mockResolvedValueOnce(ok())
+
+      await safeFetch('https://example.com/submit', init)
+
+      expect(init).toEqual({ method: 'POST', body: 'a=1', headers: { authorization: 'B' } })
+    })
+
+    it('should rewrite from the previous hop, not the original request', async () => {
+      // Two rewriting hops: the second must see what the first produced. Built
+      // from the original each time, the credential comes back.
+      mockUndiciFetch.mockResolvedValueOnce(redirect(303, 'https://evil.example.net/a'))
+      mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'https://evil.example.net/b'))
+      mockUndiciFetch.mockResolvedValueOnce(ok())
+
+      await safeFetch('https://example.com/submit', {
+        method: 'POST',
+        body: 'a=1',
+        headers: { authorization: 'Bearer SECRET' },
+      })
+
+      expect(sent(3).method).toBe('GET')
+      expect(sent(3).body).toBeUndefined()
+      expect(headersOf(3).get('authorization')).toBeNull()
+    })
+
+    it('should release the body of a hop it follows', async () => {
+      // The Agent is shared by every fetch, and a hop body still arriving pins
+      // its pooled connection.
+      const hopResponse = redirect(302, 'https://example.com/moved')
+      mockUndiciFetch.mockResolvedValueOnce(hopResponse)
+      mockUndiciFetch.mockResolvedValueOnce(ok())
+
+      await safeFetch('https://example.com/start')
+
+      expect(hopResponse.bodyUsed).toBe(true)
+    })
+
+    it('should release the body of a hop it refuses', async () => {
+      // The branch an attacker picks. Measured before the fix: 200 sockets held
+      // from a single health-check pass.
+      const hopResponse = redirect(302, 'http://169.254.169.254/latest/')
+      mockUndiciFetch.mockResolvedValueOnce(hopResponse)
+
+      await expect(safeFetch('https://example.com/start')).rejects.toThrow('unsafe')
+
+      expect(hopResponse.bodyUsed).toBe(true)
+    })
+
+    it('should hand back the body of the response it returns', async () => {
+      // The other side of the release: cancelling before the redirect check
+      // destroys the final body too, and the pipeline reads it.
+      mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'https://example.com/moved'))
+      mockUndiciFetch.mockResolvedValueOnce(new Response('the resource', { status: 200 }))
+
+      const response = await safeFetch('https://example.com/start')
+
+      await expect(response.text()).resolves.toBe('the resource')
+    })
+
+    it('should hand back a 3xx that names nowhere to go, body intact', async () => {
+      const stuck = new Response('no location here', { status: 302 })
+      mockUndiciFetch.mockResolvedValueOnce(stuck)
+
+      const response = await safeFetch('https://example.com/start')
+
+      expect(response.status).toBe(302)
+      await expect(response.text()).resolves.toBe('no location here')
+    })
+
+    it('should follow exactly ten redirects', async () => {
+      // The boundary from the allowed side: the original request is not a
+      // redirect, so ten hops is eleven requests.
+      for (let i = 0; i < 10; i++) {
+        mockUndiciFetch.mockResolvedValueOnce(redirect(302, `https://example.com/hop-${i}`))
+      }
+      mockUndiciFetch.mockResolvedValueOnce(ok())
+
+      const response = await safeFetch('https://example.com/start')
+
+      expect(response.status).toBe(200)
+      expect(mockUndiciFetch).toHaveBeenCalledTimes(11)
+    })
+
+    it('should refuse the eleventh redirect', async () => {
+      // Exactly one more than the limit allows. Queueing extras lets a wrong
+      // limit throw for the wrong reason, which is how 10-vs-11 went unnoticed.
+      for (let i = 0; i < 11; i++) {
+        mockUndiciFetch.mockResolvedValueOnce(redirect(302, `https://example.com/hop-${i}`))
       }
 
       await expect(safeFetch('https://example.com/start')).rejects.toThrow('Too many redirects')
+      expect(mockUndiciFetch).toHaveBeenCalledTimes(11)
     })
 
     it('should pass through RequestInit options with redirect: manual', async () => {
-      mockUndiciFetch.mockResolvedValueOnce(new Response('ok', { status: 200 }))
+      mockUndiciFetch.mockResolvedValueOnce(ok())
 
       await safeFetch('https://example.com/api', { method: 'HEAD' })
 
-      expect(mockUndiciFetch).toHaveBeenCalledWith(
-        'https://example.com/api',
-        expect.objectContaining({ method: 'HEAD', redirect: 'manual' })
-      )
+      // Spread order matters: a caller must not be able to displace either.
+      expect(sent(1).method).toBe('HEAD')
+      expect(sent(1).redirect).toBe('manual')
+      expect((sent(1) as { dispatcher?: unknown }).dispatcher).toBeDefined()
     })
   })
 })
