@@ -105,8 +105,21 @@ are the run's record of itself, not part of the claim: a purge holds the claim w
 being "processing", and that distinction has to survive. The write in which a run resets its
 own record is safe precisely because it happens while holding the claim.
 
-A resource with no pipeline row cannot be taken — and cannot be run against either, so
-there is nothing to exclude and a purge simply proceeds.
+**A resource with no pipeline row gets one from the acquisition, then is taken.** The row
+_is_ the claim, so without minting it there is nothing to take and the caller proceeds with
+no exclusion at all — while a `/run-pipeline` arriving a moment later mints the row and
+starts under it (open issue 6, settled). Minting is `INSERT ... SELECT ... ON CONFLICT DO
+NOTHING`, one statement whatever the count. Selecting from `resource` leaves out an id whose
+resource is already gone rather than failing the whole set on the foreign key. An empty
+result therefore means one thing only: **the resource itself is gone**.
+
+**This one statement does wait, so `ORDER BY id` pins the insertion order.** `ON CONFLICT DO
+NOTHING` blocks on a conflicting row another transaction has inserted and not yet committed,
+until it learns whether that row is going to exist (measured). Two acquisitions over
+overlapping sets inserting in opposite orders **deadlock** there — the one thing this section
+says acquisition cannot do. Left unwritten, the order is whatever the plan plays back (heap
+order, as measured), which agrees between sessions only by accident; the sort makes it agree
+by construction.
 
 ### 3. Releasing the claim — three paths
 
@@ -263,7 +276,8 @@ destination check and "already at the destination" are read before the claim is 
 **A row to claim is created first.** The row _is_ the claim (§1), so a resource without one
 cannot be held and the work proceeds **with no exclusion at all** — a `/run-pipeline` arriving
 a moment later runs alongside it. The row is created, then claimed; a run that got there first
-takes it and this steps aside. **Only the revert path has that guarantee** (open issue 6).
+takes it and this steps aside. The revert path was at one point the only one doing this;
+**it moved into acquisition (§2) so every path has the guarantee** (open issue 6, settled).
 
 That row keeps the column's own default, `pending`, because that is what it is: a row with
 nothing queued and nothing run. `cancelled` would read as a run having been stopped, and a
@@ -512,13 +526,16 @@ leave a hole in.
    generation would close it, but the trigger is narrow (a concurrent job already waiting)
    and resuming does little harm — after a revert it processes the restored content, the
    version gate skips, and it rebuilds the derivatives. Whether to add one is unsettled
-6. **`claimResources` does not create the row**: the row _is_ the claim, so a resource
-   without a pipeline row cannot be claimed and `fn` runs **with no exclusion** (§4). The
-   revert works around it by creating the row itself; the version purge, package and
-   organization purges, the layer-2 retry and the v1 backfill do not. `createFirstVersion`
-   is written for "a resource that was never enqueued" and gives it **version 1 with no
-   pipeline row**, so purging that version is a reachable path. Insert-missing-then-claim
-   belongs in `claimResources`, held back because a bulk purge would carry hundreds of inserts
+6. ~~**`claimResources` does not create the row**~~: settled. Acquisition now mints a missing
+   row before taking it. The reason it was held back — a bulk purge carrying hundreds of
+   inserts — does not hold: `INSERT ... SELECT ... ON CONFLICT DO NOTHING` is one statement
+   whatever the count. Selecting from `resource` keeps an id whose resource is already gone
+   from taking the whole set down with it on the foreign key. The insert is not folded into
+   the take as a CTE beside it, because **the sub-statements of one statement share a
+   snapshot and the UPDATE would not see the inserted rows**; nothing is lost to the gap,
+   since a row taken in between comes back as held. The revert's own `ensureClaimable` moved
+   into the claim layer and was deleted (`claimFromRun` mints the row too). "No pipeline row"
+   is therefore gone: `absent` and a null claim now mean **the resource itself is gone**
 7. **A version superseded before it reached layer 2** can never reach it. Eligibility is
    limited to active versions, and admitting superseded ones would let an ingest **replace the
    catalog's current contents with that version** (ii-a is a wholesale replace), making

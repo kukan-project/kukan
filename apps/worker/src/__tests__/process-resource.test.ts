@@ -434,7 +434,7 @@ describe('processResource', () => {
     expect(mockTracker.startStep).toHaveBeenCalledTimes(1) // Only fetch step
   })
 
-  it('does nothing when the resource has no pipeline row', async () => {
+  it('does nothing when the resource is gone', async () => {
     claim.answer = 'absent'
 
     await processResource('res-1', ctx, db, queue)

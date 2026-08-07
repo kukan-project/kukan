@@ -110,10 +110,21 @@ describe('claimResources', () => {
     expect((await pipelineRow()).claimKind).toBeNull()
   })
 
-  it('reports a resource with no pipeline row as neither taken nor held', async () => {
-    // Nothing can run against it either, so there is nothing to exclude — the
-    // difference between "busy" and "cannot run at all".
+  it('mints a pipeline row for a resource that has none, and takes it', async () => {
+    // Without this the caller got neither a claim nor a refusal and carried on
+    // unexcluded (ADR-044 open issue 6).
     await db.delete(resourcePipeline).where(eq(resourcePipeline.id, pipelineId))
+    const owner = randomUUID()
+
+    const result = await claimResources(db, [resourceId], owner, STALE_AFTER_MS, 'run')
+
+    expect(result.held).toEqual([])
+    expect(result.claimed).toMatchObject([{ resourceId, owner }])
+  })
+
+  it('reports a resource that is gone as neither taken nor held', async () => {
+    // The row goes with it, and there is nothing left to exclude anyone from.
+    await db.delete(resource).where(eq(resource.id, resourceId))
 
     const result = await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS, 'run')
 
@@ -230,15 +241,32 @@ describe('withResourceClaim', () => {
     expect((await pipelineRow()).claimOwner).toBeNull()
   })
 
-  it('tells a held resource from one with no pipeline row', async () => {
+  it('tells a held resource from one that is gone', async () => {
     // Both refuse the run, and only one of them is worth coming back for.
     await hold()
     expect(await withResourceClaim(db, resourceId, async () => 'ran')).toMatchObject({
       status: 'held',
     })
 
-    await db.delete(resourcePipeline).where(eq(resourcePipeline.id, pipelineId))
+    await db.delete(resource).where(eq(resource.id, resourceId))
     expect(await withResourceClaim(db, resourceId, async () => 'ran')).toEqual({ status: 'absent' })
+  })
+
+  it('mints the row and runs when the resource never reached the pipeline', async () => {
+    // The row is the claim, so a resource that was never enqueued used to be
+    // refused outright — nothing to take, nothing to record the run against.
+    await db.delete(resourcePipeline).where(eq(resourcePipeline.id, pipelineId))
+
+    const outcome = await withResourceClaim(db, resourceId, async (claim) => claim.id)
+
+    expect(outcome).toMatchObject({ status: 'ran' })
+    const [minted] = await db
+      .select()
+      .from(resourcePipeline)
+      .where(eq(resourcePipeline.resourceId, resourceId))
+    // Left at the column default: nothing is queued and nothing has run.
+    expect(minted.status).toBe('pending')
+    expect(minted.claimOwner).toBeNull()
   })
 
   it('hands the body the row it claimed', async () => {
@@ -286,14 +314,52 @@ describe('withResourceClaims', () => {
     expect((await pipelineRow()).claimOwner).toBeNull()
   })
 
-  it('runs for resources that have no pipeline row', async () => {
-    // A purge still has to erase a resource that was never processed.
+  it('holds a resource that has no pipeline row instead of running beside it', async () => {
+    // The gap this closes (ADR-044 open issue 6): a purge over a resource that
+    // was never processed took no claim and ran anyway, so a run arriving in
+    // the middle of it wrote the derivatives back after the sweep had passed.
     await db.delete(resourcePipeline).where(eq(resourcePipeline.id, pipelineId))
+    let refusedDuring: Awaited<ReturnType<typeof claimResources>> | undefined
 
-    expect(await withResourceClaims(db, [resourceId], async () => 'purged')).toEqual({
-      status: 'ran',
-      result: 'purged',
+    const outcome = await withResourceClaims(db, [resourceId], async () => {
+      refusedDuring = await claimResources(db, [resourceId], randomUUID(), STALE_AFTER_MS, 'run')
+      return 'purged'
     })
+
+    expect(outcome).toEqual({ status: 'ran', result: 'purged' })
+    expect(refusedDuring?.claimed).toEqual([])
+    expect(refusedDuring?.held).toMatchObject([{ resourceId }])
+  })
+
+  it('takes back the row it minted when the set is refused', async () => {
+    // The mint happens inside the same transaction as the take, so a refusal
+    // leaves nothing behind — not even for a resource it had to create a row
+    // for. Otherwise a purge that never retries would strand a pending row.
+    const second = await addResource()
+    await db.delete(resourcePipeline).where(eq(resourcePipeline.id, pipelineId))
+    await hold(second.resourceId)
+
+    const outcome = await withResourceClaims(db, [resourceId, second.resourceId], async () => {})
+
+    expect(outcome).toMatchObject({ status: 'held' })
+    const rows = await db
+      .select()
+      .from(resourcePipeline)
+      .where(eq(resourcePipeline.resourceId, resourceId))
+    expect(rows).toEqual([])
+  })
+
+  it('leaves out an id whose resource is gone rather than failing the set', async () => {
+    // A purge names what it read a moment ago, and rows do disappear in
+    // between. The foreign key would take the whole set down with it.
+    const second = await addResource()
+    await db.delete(resource).where(eq(resource.id, second.resourceId))
+
+    const outcome = await withResourceClaims(db, [resourceId, second.resourceId], async (claims) =>
+      claims.map((c) => c.resourceId)
+    )
+
+    expect(outcome).toEqual({ status: 'ran', result: [resourceId] })
   })
 
   it('gives the claims back when the body throws', async () => {
@@ -393,10 +459,21 @@ describe('claimFromRun', () => {
     expect(await claimFromRun(db, resourceId)).toMatchObject({ status: 'claimed' })
   })
 
-  it('has nothing to hold for a resource with no pipeline row', async () => {
-    // Not a refusal: a run cannot start without that row either, so the caller
-    // proceeds — with no claim, because there is nothing to claim.
+  it('mints the row for a resource that has none, so the revert runs held', async () => {
+    // The revert used to create this row itself, being the only caller that had
+    // noticed it had to (ADR-044 open issue 6).
     await db.delete(resourcePipeline).where(eq(resourcePipeline.id, pipelineId))
+
+    const takeover = await claimFromRun(db, resourceId)
+
+    expect(takeover).toMatchObject({ status: 'claimed', cancelled: false })
+    expect(takeover).not.toMatchObject({ claim: null })
+  })
+
+  it('has nothing to hold for a resource that is gone', async () => {
+    // Not a refusal: nothing could have been running, so the caller carries on
+    // rather than coming back — with no claim, because there is nothing to hold.
+    await db.delete(resource).where(eq(resource.id, resourceId))
 
     expect(await claimFromRun(db, resourceId)).toEqual({
       status: 'claimed',

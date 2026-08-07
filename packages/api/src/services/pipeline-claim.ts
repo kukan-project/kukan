@@ -83,6 +83,54 @@ export interface ResourceClaim {
 export type ClaimKind = 'run' | 'job'
 
 /**
+ * Mint the pipeline rows an acquisition needs, for the resources that still
+ * exist.
+ *
+ * The row *is* the claim (ADR-044 §1), so a resource without one cannot be held
+ * and the work proceeds with no exclusion at all — while a `/run-pipeline`
+ * arriving a moment later mints the row and starts under it. For an upload that
+ * is undetectable downstream: its fetch republishes the same key, so even the
+ * pointer CAS sees nothing wrong. Every acquisition below does this first,
+ * rather than leaving each caller to remember (ADR-044 open issue 6).
+ *
+ * Set-based, so a purge over hundreds of resources costs one statement — the
+ * cost that had this left to callers is not there. Selected from `resource` so
+ * an id whose resource is already gone stays absent rather than failing the
+ * whole set on the foreign key.
+ *
+ * `ORDER BY` is the part that is not decoration. Unlike the take below, this
+ * *does* wait: `ON CONFLICT DO NOTHING` blocks on a conflicting row another
+ * transaction has inserted and not yet committed, until it learns whether that
+ * row is going to exist (measured, not assumed). Two claims over overlapping
+ * sets that inserted in opposite orders would then deadlock — the one thing
+ * ADR-044 §2 says acquisition cannot do. Without the clause the order is
+ * whatever the plan plays back, which today happens to be heap order and so
+ * happens to agree between sessions; the sort makes it agree by construction.
+ *
+ * `status` stays at the column's own default, `pending`, which is what the row
+ * is: it exists with nothing queued and nothing run. `cancelled` would read as
+ * a run having been stopped, and the screen answers that by offering a
+ * reprocess — which for an external URL fetches the withdrawn content back.
+ * Callers that do queue something overwrite it.
+ *
+ * A statement of its own rather than a CTE beside the take that follows: the
+ * sub-statements of one statement share a snapshot, so the take would not see
+ * rows inserted here. Nothing is lost to the gap — a row someone else takes in
+ * between comes back as held, which is the answer the caller would have got.
+ */
+async function ensureClaimable(
+  db: Pick<Database, 'execute'>,
+  resourceIds: string[]
+): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO resource_pipeline (resource_id)
+    SELECT id FROM resource WHERE id = ANY(${sql.param(resourceIds)}::uuid[])
+    ORDER BY id
+    ON CONFLICT (resource_id) DO NOTHING
+  `)
+}
+
+/**
  * Take every one of these resources for `owner`.
  *
  * One statement for the whole set, which is what makes a job that touches
@@ -90,12 +138,9 @@ export type ClaimKind = 'run' | 'job'
  * nothing to deadlock against, because nothing here waits (ADR-044 open
  * question 2). A resource is either taken or reported held.
  *
- * Resources with no pipeline row appear in neither list — **and that is a gap**.
- * A run cannot start without the row, but `PipelineService.enqueue` creates one
- * and starts under it, so "no row" means "unclaimed, and the next reprocess
- * runs alongside you". A caller that needs the exclusion has to create the row
- * first (ADR-044 §4); the revert does. The rest are named in ADR-044's open
- * issues.
+ * A resource without a pipeline row gets one first ({@link ensureClaimable}),
+ * so the set comes back claimed rather than partly unheld. An id whose resource
+ * is gone is the one case that still appears in neither list.
  *
  * Takeable again once nothing has progressed for `staleAfterMs`, which is what
  * lets a worker that died mid-run (OOM, task replacement, deploy) be recovered
@@ -118,6 +163,8 @@ export async function claimResources(
   kind: ClaimKind
 ): Promise<{ claimed: ResourceClaim[]; held: HeldResource[] }> {
   if (resourceIds.length === 0) return { claimed: [], held: [] }
+
+  await ensureClaimable(db, resourceIds)
 
   const result = await db.execute(sql`
     WITH claimed AS (
@@ -181,16 +228,15 @@ export interface ClaimHeld {
 export type ClaimOutcome<T> =
   | { status: 'ran'; result: T }
   | ClaimHeld
-  /** No pipeline row, so the resource cannot be run at all. */
+  /** No such resource, so there is nothing to run against. */
   | { status: 'absent' }
 
 /**
  * Hold one resource for the duration of `fn` — the shape a pipeline run needs.
  *
- * A missing pipeline row is refused rather than waved through: this is for work
- * that *is* the run, and the run has nowhere to record itself without one. Jobs
- * that merely have to keep runs away from a resource want
- * {@link withResourceClaims}, which treats the same case as nothing to exclude.
+ * Since {@link claimResources} mints a missing row, this reports `absent` only
+ * for a resource that is gone. The caller should stop rather than come back:
+ * unlike a refusal, nothing is going to arrive later.
  */
 export async function withResourceClaim<T>(
   db: Database,
@@ -222,11 +268,11 @@ export async function withResourceClaim<T>(
  * claims already taken are rolled back, because doing half of a purge would
  * leave exactly the objects the claim exists to prevent. The caller retries.
  *
- * Resources with no pipeline row are simply not claimed, and `fn` still runs
- * for a set that has none — **so it runs unclaimed**. Nothing can be running
- * yet, but a reprocess arriving meanwhile mints the row and starts under it.
- * Callers that need the exclusion create the row first (see {@link
- * claimResources}).
+ * Every resource that exists is claimed, {@link claimResources} having minted
+ * any row that was missing — so `fn` runs under a claim covering the whole set,
+ * not merely the part of it that had been through the pipeline before. Ids
+ * whose resource is gone are the only ones left out, and there is nothing to
+ * exclude anyone from there.
  */
 export async function withResourceClaims<T>(
   db: Database,
@@ -347,10 +393,9 @@ export function heldBy(claim: ResourceClaim, table?: 'p') {
  * question. Here so that they ask it in one voice; {@link heldBy} is the form
  * for a statement that already has the row in scope.
  *
- * An absent claim is not a missing one — the writer either takes none (an
- * upload promotion, ADR-044 §6) or works on a resource with no pipeline row —
- * where there is no claim to condition on rather than no risk (see
- * {@link claimResources}). So it reads `TRUE`, decided here rather
+ * An absent claim is not a missing one — the writer takes none, as an upload
+ * promotion does (ADR-044 §6) — where there is no claim to condition on rather
+ * than no risk. So it reads `TRUE`, decided here rather
  * than by a ternary at each site: it is the same answer every time, and a rule
  * about what may be written is not one to restate per caller.
  *
@@ -451,6 +496,11 @@ export async function claimFromRun(
   requireRevision?: string
 ): Promise<ClaimTakeover> {
   const owner = randomUUID()
+  // Minted first for the same reason as in `claimResources`: without a row this
+  // took no claim and returned a null one, and the revert ran alongside any run
+  // that started next. The generation check is unaffected either way — it reads
+  // `resource`, not this row.
+  await ensureClaimable(db, [resourceId])
   // Stopping a run is destructive, so whatever decides the caller may not
   // proceed has to be decided *here* rather than after (ADR-044 §4). Evaluated
   // in the same statement as the takeover: checked before it, a generation that
@@ -481,9 +531,9 @@ export async function claimFromRun(
   `)
   const row = result.rows[0] as
     { id: string; cancelled: boolean; taken: boolean; revision_ok: boolean } | undefined
-  // No pipeline row: nothing could have been running and nothing was stopped.
-  // Callers that need the generation checked create the row first (ADR-044 §4),
-  // so this is only reached by those that do not.
+  // Still no row after minting one: the resource itself is gone. Nothing could
+  // have been running and there is nothing to hold, so the caller is told to
+  // carry on rather than to come back.
   if (!row) return { status: 'claimed', claim: null, cancelled: false }
   if (!row.taken) {
     return row.revision_ok
@@ -495,8 +545,8 @@ export async function claimFromRun(
 
 /**
  * What became of a takeover. `cancelled` reports whether a run was stopped, and
- * a null claim means the resource has no pipeline row — nothing could have been
- * running, and there is nothing to hold.
+ * a null claim means the resource is gone — nothing could have been running,
+ * and there is nothing to hold.
  */
 export type ClaimTakeover =
   | { status: 'claimed'; claim: ResourceClaim | null; cancelled: boolean }

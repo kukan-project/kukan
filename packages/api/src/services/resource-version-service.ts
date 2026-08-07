@@ -557,9 +557,8 @@ export class ResourceVersionService {
     resourceId: string,
     fn: (claim: ResourceClaim | null) => Promise<boolean>
   ): Promise<boolean> {
-    // One resource in, so at most one claim out. None means the resource has no
-    // pipeline row, which is not a refusal: nothing can run against it either,
-    // and a resource that was never enqueued still needs its v1.
+    // One resource in, so at most one claim out. None means the resource is
+    // gone, which is not a refusal — there is nothing left to give a v1 to.
     const outcome = await withResourceClaims(this.db, [resourceId], (claims) =>
       fn(claims[0] ?? null)
     )
@@ -979,10 +978,6 @@ export class ResourceVersionService {
     const settled = await this.settledRevert(resourceId, target, deps, log)
     if (settled) return settled
 
-    // Held for the whole thing, which needs a row to hold (see below). Without
-    // one this ran unclaimed, and a run starting alongside it would carry on
-    // creating and indexing the content being retracted.
-    await this.ensureClaimable(resourceId)
     const { cancelled, restored, cleared } = await withClaimFromRun(
       this.db,
       resourceId,
@@ -1216,7 +1211,6 @@ export class ResourceVersionService {
       return this.discardRetracted(resourceId, deps, log, ifRevision)
     }
 
-    await this.ensureClaimable(resourceId)
     const outcome = await withResourceClaims(this.db, [resourceId], clean)
     // `false` covers being held by a run or another job: the cleanup is simply
     // not this call's to do, and the holder writes its own derivatives.
@@ -1293,30 +1287,6 @@ export class ResourceVersionService {
       }
     }
     return ok
-  }
-
-  /**
-   * Make sure there is a pipeline row to claim, without pretending a run is
-   * coming.
-   *
-   * The row *is* the claim (ADR-044 §1), so a resource without one cannot be
-   * held: `withClaimFromRun` hands back a null claim, and claiming a set that
-   * holds nothing still runs its callback. Either way the work proceeds with no
-   * exclusion at all, and a `/run-pipeline` arriving a moment later runs
-   * alongside it. For an upload that is undetectable downstream — its fetch
-   * republishes the same key, so even the pointer CAS sees nothing wrong.
-   *
-   * Left at the column's own default, `pending`, which is what it is: a row
-   * that exists with nothing queued and nothing run. `cancelled` would read as
-   * a run having been stopped, and the screen answers that by offering a
-   * reprocess — which for an external URL fetches the withdrawn content back.
-   * Callers that do queue something overwrite it.
-   */
-  private async ensureClaimable(resourceId: string): Promise<void> {
-    await this.db
-      .insert(resourcePipeline)
-      .values({ resourceId })
-      .onConflictDoNothing({ target: resourcePipeline.resourceId })
   }
 
   /**
