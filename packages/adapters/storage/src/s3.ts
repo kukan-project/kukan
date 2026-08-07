@@ -16,7 +16,12 @@ import {
 import { Upload } from '@aws-sdk/lib-storage'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { Readable } from 'stream'
-import { type ObjectMeta, type SignedUrlOptions, type StorageAdapter } from './adapter'
+import {
+  type ObjectMeta,
+  type ObjectPage,
+  type SignedUrlOptions,
+  type StorageAdapter,
+} from './adapter'
 
 /** S3's per-request cap for DeleteObjects. */
 const DELETE_BATCH_SIZE = 1000
@@ -202,6 +207,26 @@ export class S3StorageAdapter implements StorageAdapter {
       }),
       { expiresIn }
     )
+  }
+
+  async list(prefix: string, continuationToken?: string): Promise<ObjectPage> {
+    const page = await this.client.send(
+      new ListObjectsV2Command({
+        Bucket: this.bucket,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      })
+    )
+
+    return {
+      // A listing entry without a key or a timestamp is not something to guess
+      // at: the caller decides what to delete from this, and an object it
+      // cannot date is one it cannot tell from a write still in flight.
+      objects: (page.Contents ?? []).flatMap((o) =>
+        o.Key && o.LastModified ? [{ key: o.Key, lastModified: o.LastModified }] : []
+      ),
+      nextToken: page.IsTruncated ? page.NextContinuationToken : undefined,
+    }
   }
 
   async deleteByPrefix(prefix: string): Promise<number> {

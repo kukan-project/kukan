@@ -194,8 +194,44 @@ back. No new mechanism — one column on the ledger and sweep already in place.
 
 ## Open issues
 
-1. **The existing leak**: this protects future writes and **does not reclaim what is already
-   stranded**. A one-off reconciliation (option B, run once by hand) is still needed
+1. ~~**The existing leak**~~: settled. There is a one-off reconciliation
+   (reporting by default, `--commit` to act; invocation below).
+   **It uses option B as a nomination rather than as a standing mechanism**: what the listing
+   finds goes into `orphaned_object`, and the existing sweep does the deleting. Both of
+   option B's costs go away with it:
+   - **No second copy of the pointer list.** It calls the sweep's own `referenced()`. The
+     failure of adding a column and updating only one of the two cannot happen when there is
+     only one
+   - **Nothing is lost to a pointer that commits between the listing and the delete.** The
+     sweep asks again immediately before deleting, so a write that landed in between is kept.
+     Being wrong costs a row, not a file
+
+   Objects newer than a given age (24 hours by default) are not acted on: a write in flight
+   has put its object there without committing a pointer, which from a listing is a leak.
+   **Age is judged after the reference and ledger checks, not before.** Weighed first it
+   would fold these in with every ordinary recent object and drop them from the report, so an
+   untracked leak that merely happened to be young would read as `nominated: 0` — and with
+   nothing scheduled to look again, it would stay for good. Judged last, `tooRecent` means
+   only "unreferenced, unrecorded, and not yet decidable".
+
+   Keys the ledger already holds are counted separately as `alreadyTracked`: ordinary parked
+   keys are unreferenced by construction and old enough to pass the age guard, so folding
+   them in would keep the count off zero for as long as the system is in use.
+
+   `lake/` stays out of scope per §5. **The completion condition is `nominated` and
+   `tooRecent` both zero**, which may take more than one run — while `tooRecent` is non-zero,
+   come back later. At that point the ledger covers everything, so this is not scheduled.
+
+   Run it **from the deployed container**, the only place the production database and bucket
+   are both in reach. That is why it is a second tsup entry rather than a file under
+   `scripts/`: the image carries `dist` and production dependencies, with no `scripts/` and
+   no `tsx` to run one.
+
+   ```
+   node apps/worker/dist/reconcile-orphans.js            # report only
+   node apps/worker/dist/reconcile-orphans.js --commit
+   ```
+
 2. **Measuring the check**: every reference source, against batches of 5000 keys. Expected to
    be fine on indexes, but not measured
 3. **Two kinds of `previews/`**: the preview Parquet and the text head share a prefix and

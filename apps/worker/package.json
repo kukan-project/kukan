@@ -11,7 +11,8 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit && tsc --noEmit -p src/__tests__",
     "lint": "eslint src",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "reconcile-orphans": "tsx src/reconcile-orphans.ts"
   },
   "dependencies": {
     "@duckdb/node-api": "1.5.4-r.1",

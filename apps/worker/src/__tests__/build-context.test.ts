@@ -70,6 +70,7 @@ const mockStorage = {
   getSignedUrl: vi.fn(),
   getSignedUploadUrl: vi.fn(),
   copy: vi.fn(),
+  list: vi.fn(),
   deleteByPrefix: vi.fn(),
   deleteMany: vi.fn(),
   head: vi.fn(),

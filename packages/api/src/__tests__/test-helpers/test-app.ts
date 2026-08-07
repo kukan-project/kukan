@@ -68,6 +68,7 @@ const mockStorage = {
   },
   delete: async () => {},
   copy: async () => {},
+  list: async () => ({ objects: [] }),
   deleteByPrefix: async () => 0,
   getSignedUrl: async () => 'file:///test',
   getSignedUploadUrl: async () => 'https://minio.test/upload?signed=true',

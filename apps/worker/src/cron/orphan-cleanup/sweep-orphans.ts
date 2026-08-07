@@ -26,8 +26,13 @@ import { ORPHAN_CLEANUP_BATCH_SIZE } from '@/config'
  * derive the list, which is the standing cost of asking the question — bounded
  * only by never asking it about anything a writer did not nominate first
  * (ADR-045).
+ *
+ * Exported so the reconciliation that nominates pre-existing objects asks the
+ * same question rather than restating it. A second copy of this list is the
+ * failure ADR-045 named when it weighed reconciliation as an approach: a
+ * pointer column added later, and only one of the two updated.
  */
-function referenced(keys: string[]) {
+export function referenced(keys: string[]) {
   return sql`
     SELECT o.key FROM unnest(${sql.param(keys)}::text[]) AS o(key)
     WHERE EXISTS (SELECT 1 FROM resource r

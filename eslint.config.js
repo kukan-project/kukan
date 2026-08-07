@@ -40,8 +40,18 @@ export default tseslint.config(
     },
   },
   {
-    // Lambda handlers: console IS the CloudWatch log sink
-    files: ['**/scripts/**', '**/migrate.ts', '**/__tests__/**', 'infra/lib/lambda/**'],
+    // Things a person or a log sink reads directly, rather than a service's
+    // structured output: Lambda handlers, where console IS the CloudWatch sink,
+    // and operator entry points, where the point is legible stdout. The
+    // reconciliation is named by its full path so the module it drives — same
+    // basename, under `cron/` — stays held to the rule.
+    files: [
+      '**/scripts/**',
+      '**/migrate.ts',
+      '**/__tests__/**',
+      'infra/lib/lambda/**',
+      'apps/worker/src/reconcile-orphans.ts',
+    ],
     rules: {
       'no-console': 'off',
     },

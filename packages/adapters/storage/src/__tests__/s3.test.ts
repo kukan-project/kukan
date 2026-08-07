@@ -280,6 +280,57 @@ describe('S3StorageAdapter', () => {
     })
   })
 
+  describe('list', () => {
+    it('should return one page and the token for the next', async () => {
+      const at = new Date('2026-01-02T03:04:05Z')
+      mockSend.mockResolvedValueOnce({
+        Contents: [
+          { Key: 'previews/a.parquet', LastModified: at },
+          { Key: 'previews/b.parquet', LastModified: at },
+        ],
+        IsTruncated: true,
+        NextContinuationToken: 'tok-2',
+      })
+
+      const page = await storage.list('previews/')
+
+      expect(page).toEqual({
+        objects: [
+          { key: 'previews/a.parquet', lastModified: at },
+          { key: 'previews/b.parquet', lastModified: at },
+        ],
+        nextToken: 'tok-2',
+      })
+      expect(mockSend.mock.calls[0][0].input).toMatchObject({
+        Bucket: 'test-bucket',
+        Prefix: 'previews/',
+        ContinuationToken: undefined,
+      })
+    })
+
+    it('should report no token on the last page', async () => {
+      mockSend.mockResolvedValueOnce({ Contents: [], IsTruncated: false })
+
+      expect(await storage.list('previews/', 'tok-2')).toEqual({
+        objects: [],
+        nextToken: undefined,
+      })
+      expect(mockSend.mock.calls[0][0].input).toMatchObject({ ContinuationToken: 'tok-2' })
+    })
+
+    it('should drop an entry it cannot date', async () => {
+      // The caller decides what to delete from this. An object with no
+      // timestamp cannot be told from a write still in flight, so it is left
+      // out rather than guessed at.
+      mockSend.mockResolvedValueOnce({
+        Contents: [{ Key: 'previews/undated.parquet' }, { LastModified: new Date() }],
+        IsTruncated: false,
+      })
+
+      expect(await storage.list('previews/')).toEqual({ objects: [], nextToken: undefined })
+    })
+  })
+
   describe('deleteByPrefix', () => {
     it('should list and batch-delete objects matching prefix', async () => {
       mockSend

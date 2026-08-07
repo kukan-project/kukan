@@ -22,6 +22,19 @@ export interface SignedUrlOptions {
   filename?: string
 }
 
+/** One object as a listing reports it. */
+export interface ListedObject {
+  key: string
+  lastModified: Date
+}
+
+/** A page of a listing, with the token to ask for the next one. */
+export interface ObjectPage {
+  objects: ListedObject[]
+  /** Absent when this page is the last one. */
+  nextToken?: string
+}
+
 export interface StorageAdapter {
   /**
    * Upload an object to storage
@@ -74,6 +87,21 @@ export interface StorageAdapter {
     expiresIn?: number,
     meta?: ObjectMeta
   ): Promise<string>
+
+  /**
+   * One page of the objects under a key prefix, newest-agnostic and in whatever
+   * order the backend returns.
+   *
+   * For the reconciliation that finds objects predating the write-ahead ledger
+   * (ADR-045): those are exactly the ones no record names, so a listing is the
+   * only way to see them. Paginated rather than returning everything, because a
+   * production bucket does not fit in a process — the caller decides the batch
+   * and how far to go.
+   *
+   * `lastModified` is here because the caller has to leave recent objects
+   * alone: an object whose pointer has not committed yet looks unreferenced.
+   */
+  list(prefix: string, continuationToken?: string): Promise<ObjectPage>
 
   /**
    * Delete all objects matching a key prefix.

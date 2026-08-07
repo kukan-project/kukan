@@ -1,7 +1,11 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  // The reconciliation is a second entry rather than a `scripts/` file: the
+  // image carries `dist` and production dependencies only, so a script there
+  // would have neither a copy in the container nor a `tsx` to run it (ADR-045
+  // open issue 1). It is the container that can reach the real bucket.
+  entry: ['src/index.ts', 'src/reconcile-orphans.ts'],
   format: ['esm'],
   target: 'node24',
   platform: 'node',
