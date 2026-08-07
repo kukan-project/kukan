@@ -13,7 +13,8 @@ name: CI
 # Pushes to develop run the same suite for one reason beyond the extra signal:
 # GitHub Actions caches are branch-scoped, and a pull request can only read the
 # ones its base branch already has. Without a run on develop, every PR would
-# start cold — pnpm store and DuckDB extensions alike — and pay the download.
+# start cold — pnpm store, DuckDB extensions, and turbo alike — and pay the
+# download.
 
 on:
   pull_request:
@@ -70,6 +71,31 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Turbo keys every task result by an input hash, but the cache lives in
+      # `.turbo/cache` and a runner starts empty — so lint, typecheck, and the
+      # dependency builds `^build` pulls in have always run from scratch.
+      #
+      # Only a push to develop saves. Cache entries are immutable and branch
+      # scoped: one written on a PR branch is readable by that PR alone, so
+      # saving per PR would spend the repository's 10 GB budget — shared with
+      # the pnpm store and the DuckDB extensions below — on entries almost
+      # nobody reads. develop's are readable from every branch, which is the
+      # same reason this workflow runs on `push` at all.
+      #
+      # The two jobs cache separately. Entries are immutable, so a shared key
+      # would collide on a develop push: whichever job saved first wins and the
+      # other's contents are dropped. Their contents are not interchangeable —
+      # `quality` never builds @kukan/web, because the `^build` behind lint and
+      # typecheck builds web's dependencies rather than web itself, which is why
+      # its cache measures under 1 MB against `integration`'s ~55 MB.
+      - name: Restore turbo cache
+        if: steps.changes.outputs.code == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-quality-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-quality-${{ runner.os }}-
+
       - name: Format check
         # No `if:` guard — prettier covers Markdown, so this runs on docs-only PRs too.
         run: pnpm exec prettier --check "**/*.{ts,tsx,js,jsx,json,md,astro}"
@@ -113,6 +139,22 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: pnpm test:unit
 
+      # A restore hands back every entry it held and the save writes them out
+      # again alongside the new ones, so without a bound the entry grows by
+      # every merge forever. Turbo does not touch an entry's mtime when it hits,
+      # so what survives this is an entry nothing has *written* in a week:
+      # dropping it costs one rebuild, after which it is saved fresh.
+      - name: Prune turbo cache
+        if: github.ref == 'refs/heads/develop'
+        run: find .turbo/cache -type f -mtime +7 -delete
+
+      - name: Save turbo cache
+        if: github.ref == 'refs/heads/develop'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-quality-${{ runner.os }}-${{ github.sha }}
+
   # Not part of `quality`, so it is not a required check: it needs a database,
   # and a service container failing should not block a PR the same way a lint
   # error does. It still runs on every code change, which is the point — the raw
@@ -146,11 +188,40 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Restore turbo cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-integration-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-integration-${{ runner.os }}-
+
       # The worker's suites import `@kukan/api` and `@kukan/db` by their package
       # entry points, which resolve to `dist`.
+      #
+      # Only those two packages have integration suites, so filtering the build
+      # down to them would cut it by two thirds. Don't: this is the one place in
+      # pull request CI that runs `next build`. Nothing else does — deploy-site
+      # builds only @kukan/site, CodeQL is build-mode none, and the Dockerfile
+      # runs in the deploy pipeline. `tsc --noEmit` in `quality` does not stand
+      # in for it, since a Next build also rejects server/client boundary
+      # violations and invalid route exports. Filtering would skip web exactly
+      # when web changed, which is when the check is worth having. The turbo
+      # cache above already makes this near-free when web did not change.
       - run: pnpm build
 
       - name: Test (integration)
         env:
           DATABASE_URL: postgresql://kukan:kukan@localhost:5432/kukan
         run: pnpm test:integration
+
+      # See the quality job for why saving is limited to develop.
+      - name: Prune turbo cache
+        if: github.ref == 'refs/heads/develop'
+        run: find .turbo/cache -type f -mtime +7 -delete
+
+      - name: Save turbo cache
+        if: github.ref == 'refs/heads/develop'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-integration-${{ runner.os }}-${{ github.sha }}
