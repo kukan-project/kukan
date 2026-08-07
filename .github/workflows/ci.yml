@@ -67,9 +67,40 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
-          cache: 'pnpm'
+
+      # `cache: 'pnpm'` above would be shorter, but it saves the store from
+      # whatever branch it runs on and offers no way to say otherwise. Because a
+      # cache entry belongs to one ref, that wrote a ~430 MB copy per pull
+      # request of a store develop already held byte for byte — the listing had
+      # the same key under `refs/heads/develop` and `refs/pull/N/merge` several
+      # times over. Twenty of those reached 8.3 GB of the repository's 10 GB,
+      # which evicts by least recent use: the DuckDB extensions and the turbo
+      # caches were being pushed out by duplicates of themselves.
+      #
+      # Restoring by hand costs three steps and saves only on develop, where
+      # every branch can read the result. The key is the lockfile hash rather
+      # than the commit sha, so develop writes a new entry only when a
+      # dependency actually moves; a pull request that moves one restores the
+      # nearest store by prefix and downloads just the difference.
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm store
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Save pnpm store
+        if: github.ref == 'refs/heads/develop'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       # Turbo keys every task result by an input hash, but the cache lives in
       # `.turbo/cache` and a runner starts empty — so lint, typecheck, and the
@@ -184,7 +215,21 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
-          cache: 'pnpm'
+
+      # See the quality job for why the store is cached by hand rather than
+      # through `cache: 'pnpm'`. This job only reads: the two run the same
+      # install from the same lockfile, so the store they would write is
+      # identical and `quality` writing it is enough.
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm store
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
 
       - run: pnpm install --frozen-lockfile
 
