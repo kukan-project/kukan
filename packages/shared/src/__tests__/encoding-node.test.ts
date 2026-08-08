@@ -198,6 +198,83 @@ describe('detectEncoding', () => {
     expect(buf.length).toBeGreaterThan(10_000)
     expect(detectEncoding('csv', buf)).toBe('Shift_JIS')
   })
+
+  // --- Regression: single-byte verdicts over short Japanese ---
+  //
+  // chardet scores single-byte encodings on trigram hits alone, so a handful of
+  // Japanese characters loses to whichever European language the bytes happen to
+  // resemble. Both fixtures are real files from the Tokyo open data portal.
+
+  const bytes = (hex: string) => Buffer.from(hex.replace(/\s+/g, ''), 'hex')
+
+  it('should detect Shift_JIS over Cyrillic for a 38-byte CSV', () => {
+    // "質問,割合(%)/はい,26.1/いいえ,73.9" — came back windows-1251
+    const buf = bytes(`8e bf 96 e2 2c 8a 84 8d 87 28 25 29 0d 0a 82 cd
+                       82 a2 2c 32 36 2e 31 0d 0a 82 a2 82 a2 82 a6 2c
+                       37 33 2e 39 0d 0a`)
+    expect(detectEncoding('csv', buf)).toBe('Shift_JIS')
+  })
+
+  it('should detect Shift_JIS for kanji-only content with no hiragana', () => {
+    // "016,微小粒子状物質,PM2.5,μg/m3" — came back KOI8-R. chardet scores
+    // Shift_JIS off a frequency table that is almost entirely hiragana, so a
+    // line of kanji scores the same as no Japanese at all.
+    const buf = bytes(`30 31 36 2c 94 f7 8f ac 97 b1 8e 71 8f f3 95 a8
+                       8e bf 2c 50 4d 32 2e 35 2c 83 ca 67 2f 6d 33 0d
+                       0a`)
+    expect(detectEncoding('csv', buf)).toBe('Shift_JIS')
+  })
+
+  it('should leave genuinely non-Japanese single-byte content alone', () => {
+    const cases: [string, string][] = [
+      // Russian, windows-1251
+      [
+        `e3 ee f0 ee e4 2c ed e0 f1 e5 eb e5 ed e8 e5 0a
+         cc ee f1 ea e2 e0 2c 31 33 30 31 30 31 31 32 0a
+         d1 e0 ed ea f2 2d cf e5 f2 e5 f0 e1 f3 f0 e3 2c
+         35 36 30 31 39 31 31 0a`,
+        'windows-1251',
+      ],
+      // Russian, KOI8-R — 0xA1-0xDF is half-width katakana in Shift_JIS
+      [
+        `c7 cf d2 cf c4 2c ce c1 d3 c5 cc c5 ce c9 c5 0a
+         ed cf d3 cb d7 c1 2c 31 33 30 31 30 31 31 32 0a`,
+        'KOI8-R',
+      ],
+      // French — "Montréal", "Québec": e-acute + a letter is a legal Shift_JIS pair
+      [
+        `76 69 6c 6c 65 2c 70 6f 70 75 6c 61 74 69 6f 6e
+         0a 4d 6f 6e 74 72 e9 61 6c 2c 31 37 36 32 39 34
+         39 0a 51 75 e9 62 65 63 2c 35 34 39 34 35 39 0a
+         47 65 6e e8 76 65 2c 32 30 33 38 35 36 0a`,
+        'ISO-8859-1',
+      ],
+      // Icelandic — "íbúar" is two consecutive legal Shift_JIS pairs, so the
+      // decode alone cannot reject it; encoding-japanese declines to propose it
+      [
+        `62 6f 72 67 2c ed 62 fa 61 72 0a 52 65 79 6b 6a
+         61 76 ed 6b 2c 31 33 39 38 37 35 0a 41 6b 75 72
+         65 79 72 69 2c 31 39 37 37 31 0a`,
+        'ISO-8859-1',
+      ],
+    ]
+    for (const [hex, expected] of cases) {
+      expect(detectEncoding('csv', bytes(hex))).toBe(expected)
+    }
+  })
+
+  it('should not rewrite other CJK encodings as Japanese', () => {
+    // Kanji is kanji; only chardet can tell which language's. Its multi-byte
+    // verdicts are validators, so they are left as they are.
+    const big5 = bytes(`bf a4 a5 ab 2c a4 48 a4 66 0a bb 4f a5 5f a5 ab
+                        2c 32 34 38 31 30 30 30 0a b7 73 a5 5f a5 ab 2c
+                        34 30 30 34 30 30 30 0a`)
+    const eucKr = bytes(`b5 b5 bd c3 2c c0 ce b1 b8 0a bc ad bf ef c6 af
+                         ba b0 bd c3 2c 39 34 31 31 30 30 30 0a ba ce bb
+                         ea b1 a4 bf aa bd c3 2c 33 33 34 34 30 30 30 0a`)
+    expect(detectEncoding('csv', big5)).not.toBe('Shift_JIS')
+    expect(detectEncoding('csv', eucKr)).toBe('EUC-KR')
+  })
 })
 
 describe('bufferToUtf8', () => {

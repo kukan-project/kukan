@@ -257,10 +257,10 @@ Interpret のみフォーマット別処理を行う。
 
 | フォーマット                   | isTextFormat | エンコーディング検出                         | Parquet 生成 |    プレビュー表示     |
 | ------------------------------ | :----------: | -------------------------------------------- | :----------: | :-------------------: |
-| CSV                            |     Yes      | `Encoding.detect()`                          |     Yes      | テーブル+テキスト切替 |
-| TSV                            |     Yes      | `Encoding.detect()`                          |     Yes      | テーブル+テキスト切替 |
-| TXT                            |     Yes      | `Encoding.detect()`                          |      -       |       テキスト        |
-| HTML/HTM                       |     Yes      | `Encoding.detect()`                          |      -       |       テキスト        |
+| CSV                            |     Yes      | chardet（+ 日本語再検証）                    |     Yes      | テーブル+テキスト切替 |
+| TSV                            |     Yes      | chardet（+ 日本語再検証）                    |     Yes      | テーブル+テキスト切替 |
+| TXT                            |     Yes      | chardet（+ 日本語再検証）                    |      -       |       テキスト        |
+| HTML/HTM                       |     Yes      | chardet（+ 日本語再検証）                    |      -       |       テキスト        |
 | XML                            |     Yes      | `<?xml encoding>` 宣言パース、fallback UTF-8 |      -       |       テキスト        |
 | JSON                           |     Yes      | UTF-8 固定（RFC 8259）                       |      -       |       テキスト        |
 | GeoJSON                        |     Yes      | UTF-8 固定（RFC 7946）                       |      -       |   地図+テキスト切替   |
