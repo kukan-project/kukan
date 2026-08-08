@@ -285,7 +285,7 @@ export function DatasetForm({
               })
             )
           )
-          const failed = results.filter((ok) => !ok).length
+          const failed = results.filter((r) => !r.ok).length
           if (failed > 0)
             setResourceApplyError(t('aiSuggestResourceApplyFailed', { count: failed }))
         } catch {

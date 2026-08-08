@@ -40,7 +40,7 @@ import {
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { clientFetch } from '@/lib/client-api'
+import { clientFetch, problemDetail } from '@/lib/client-api'
 import { takePendingDropFiles } from '@/lib/pending-drop-files'
 import { updateResource } from '@/lib/update-resource'
 import { useFileDrop } from '@/hooks/use-file-drop'
@@ -521,8 +521,12 @@ export function ResourceList({
         description: formState.description || undefined,
       }
       if (formState.urlType !== 'upload') patch.url = formState.url || undefined
-      if (!(await updateResource(editId, patch))) {
-        setFormError(t('failedToUpdate'))
+      const updated = await updateResource(editId, patch)
+      if (!updated.ok) {
+        // The server's reason when it gave one — the create path has always
+        // shown it, and an edit failing for the same cause used to say only
+        // that it failed (kukan#296).
+        setFormError(updated.detail ?? t('failedToUpdate'))
         return
       }
       if (pendingFile) {
@@ -554,10 +558,7 @@ export function ResourceList({
     } catch {
       throw new Error(t('failedToAdd'))
     }
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      throw new Error(data.detail || t('failedToAdd'))
-    }
+    if (!res.ok) throw new Error((await problemDetail(res)) ?? t('failedToAdd'))
     return res.json()
   }
 

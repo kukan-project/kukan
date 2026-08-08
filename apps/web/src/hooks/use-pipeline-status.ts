@@ -29,6 +29,19 @@ export interface PipelineStatusData {
   steps: PipelineStep[]
 }
 
+/**
+ * What to tell someone about a failed run.
+ *
+ * The pipeline's own message, or the first step that carries one: a failure is
+ * recorded on the step that hit it and only sometimes copied up, so reading
+ * just the top would say nothing for the ordinary case. A property of the
+ * payload rather than of any one view, and both the badge and the detail panel
+ * answer it from the same two places.
+ */
+export function failureReason(data: Pick<PipelineStatusData, 'error' | 'steps'>): string | null {
+  return data.error ?? data.steps.find((s) => s.error)?.error ?? null
+}
+
 interface UsePipelineStatusOptions {
   resourceId: string
   /** Set to false to disable polling (default: true) */

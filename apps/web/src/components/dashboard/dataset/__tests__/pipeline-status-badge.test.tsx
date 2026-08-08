@@ -3,7 +3,8 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import { PipelineStatusBadge } from '../pipeline-status-badge'
 
-vi.mock('@/lib/client-api', () => ({
+vi.mock('@/lib/client-api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/client-api')>()),
   clientFetch: vi.fn(),
 }))
 
@@ -52,10 +53,52 @@ describe('PipelineStatusBadge', () => {
     expect(mockClientFetch).not.toHaveBeenCalled()
   })
 
-  it('should show error badge without polling', () => {
+  it('should show error badge and ask once for the reason, without polling', async () => {
+    // The one terminal status that does fetch: the reason lives behind the
+    // status endpoint, which is also what decides who may read it. Asked once
+    // — the difference from polling, which is what this used to assert.
+    mockClientFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({ pipeline_status: 'error', error: 'Failed to fetch: 403', steps: [] })
+      )
+    )
+
     render(<PipelineStatusBadge resourceId="r1" initialStatus="error" />)
+
     expect(screen.getByText('Error')).toBeInTheDocument()
-    expect(mockClientFetch).not.toHaveBeenCalled()
+    expect(await screen.findByText('Failed to fetch: 403')).toBeInTheDocument()
+    expect(mockClientFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('should fall back to the first step that carries an error', async () => {
+    // A failure is recorded on the step that hit it and only sometimes copied
+    // up, so the row would say nothing for the ordinary case.
+    mockClientFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          pipeline_status: 'error',
+          error: null,
+          steps: [
+            { step_name: 'fetch', error: null },
+            { step_name: 'interpret', error: 'Unsupported encoding' },
+          ],
+        })
+      )
+    )
+
+    render(<PipelineStatusBadge resourceId="r1" initialStatus="error" />)
+
+    expect(await screen.findByText('Unsupported encoding')).toBeInTheDocument()
+  })
+
+  it('should still show the badge when the reason cannot be fetched', async () => {
+    // The status is known from the list; a reason nobody could retrieve is not
+    // worth failing the row over.
+    mockClientFetch.mockRejectedValue(new Error('offline'))
+
+    render(<PipelineStatusBadge resourceId="r1" initialStatus="error" />)
+
+    expect(screen.getByText('Error')).toBeInTheDocument()
   })
 
   it('should update from queued to complete via polling', async () => {
@@ -76,6 +119,26 @@ describe('PipelineStatusBadge', () => {
     await waitFor(() => {
       expect(screen.getByText('Complete')).toBeInTheDocument()
     })
+  })
+
+  it('should read the reason from the poll that saw the failure, without asking again', async () => {
+    // A row that fails while the page is open already has the answer: the poll
+    // that observed it read the same body the reason lives in. Asking again
+    // would be a second request for data in hand.
+    mockClientFetch.mockResolvedValue(
+      jsonResponse({
+        id: 'r1',
+        pipeline_status: 'error',
+        error: 'Failed to fetch: 403',
+        steps: [],
+      })
+    )
+
+    render(<PipelineStatusBadge resourceId="r1" initialStatus="queued" />)
+
+    expect(await screen.findByText('Failed to fetch: 403')).toBeInTheDocument()
+    // One poll, and no follow-up for something it already returned.
+    expect(mockClientFetch).toHaveBeenCalledTimes(1)
   })
 
   it('should notify onSettled even when the first poll is already terminal', async () => {

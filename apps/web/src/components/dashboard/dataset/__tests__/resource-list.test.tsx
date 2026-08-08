@@ -6,7 +6,8 @@ import { MAX_UPLOAD_SIZE } from '@kukan/shared'
 import { dropFiles } from '@/__tests__/drag-drop'
 import { ResourceList } from '../resource-list'
 
-vi.mock('@/lib/client-api', () => ({
+vi.mock('@/lib/client-api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/client-api')>()),
   clientFetch: vi.fn(),
 }))
 
