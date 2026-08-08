@@ -108,6 +108,7 @@ function SortableResourceRow({
   onEdit,
   onClose,
   onPipelineSettled,
+  justRan,
 }: {
   resource: Resource
   packageName?: string
@@ -118,6 +119,8 @@ function SortableResourceRow({
   onEdit: (r: Resource) => void
   onClose: () => void
   onPipelineSettled?: () => void
+  /** This row's run was started from here — see the badge's own prop. */
+  justRan?: boolean
 }) {
   const t = useTranslations('resource')
   const tc = useTranslations('common')
@@ -180,6 +183,7 @@ function SortableResourceRow({
             resourceId={r.id}
             initialStatus={r.pipelineStatus}
             onSettled={onPipelineSettled}
+            justRan={justRan}
           />
         )}
       </TableCell>
@@ -250,6 +254,11 @@ export function ResourceList({
   useEffect(() => {
     onUploadingChange?.(uploading)
   }, [uploading, onUploadingChange])
+
+  // Which row's run the user just started. A run with nothing to do settles
+  // before the refetch below sees it, so the badge is handed a finished run and
+  // would say nothing about it (see PipelineStatusBadge.justRan).
+  const [justRan, setJustRan] = useState<string | null>(null)
 
   // Staged order — committed via Save button
   const [items, setItems] = useState<Resource[]>(resources)
@@ -478,6 +487,7 @@ export function ResourceList({
     // refetch timer past cleanup
     if (!mountedRef.current) return
     setDropUploads((list) => list.map((x) => (x.key === u.key ? { ...x, done: true } : x)))
+    if (u.resourceId) setJustRan(u.resourceId)
     scheduleRefetch()
   }
 
@@ -595,7 +605,8 @@ export function ResourceList({
 
   // scheduleRefetch raises the busy gate before resetForm drops the form's
   // uploading state, so consumers never see an idle gap
-  function handleUploadComplete() {
+  function handleUploadComplete(resourceId: string) {
+    setJustRan(resourceId)
     scheduleRefetch()
     // Replacing an existing resource's file keeps its editor open — closing it
     // leaves nothing saying which row was just updated. url/format are set to
@@ -639,7 +650,7 @@ export function ResourceList({
         <FileUploadZone
           resourceId={uploadingResourceId}
           initialFile={pendingFile ?? undefined}
-          onComplete={handleUploadComplete}
+          onComplete={() => handleUploadComplete(uploadingResourceId)}
         />
       )
     }
@@ -837,6 +848,7 @@ export function ResourceList({
                       // A settle means the row's status (and maybe others)
                       // changed — refresh through the retrying gate
                       onPipelineSettled={() => scheduleRefetch()}
+                      justRan={justRan === r.id}
                     />
                     {activeFormId === r.id && (
                       <TableRow>

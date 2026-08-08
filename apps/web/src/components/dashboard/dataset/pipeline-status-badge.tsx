@@ -17,6 +17,13 @@ interface PipelineStatusBadgeProps {
   initialStatus?: PipelineStatus | null
   /** Fires when polling observes the pipeline settling (complete or error) */
   onSettled?: (status: PipelineStatus) => void
+  /**
+   * This row's run is one the user just started. A run that finds nothing to do
+   * settles before the refetch that follows it, so the badge is handed a
+   * finished run and has nothing to watch — asked about, it can still say what
+   * became of it.
+   */
+  justRan?: boolean
 }
 
 const STATUS_CONFIG: Record<
@@ -50,32 +57,34 @@ export const STATUS_KEYS: Record<PipelineStatus, string> = {
 }
 
 /**
- * Why a settled pipeline failed, for a row that arrived already failed.
+ * What a settled run says about itself, for a row nothing polled.
  *
- * The list only ever carried the status, so a failed resource showed a red
- * badge and nothing else — the reason was in the API all along, and reaching it
- * meant leaving the dashboard for the public resource page (kukan#285,
- * kukan#296). Half of what it says is not about the file at all: a site behind
- * an IP allowlist answers the worker with 403, and "403" is the whole
- * explanation.
+ * Two things are read off it, and both were invisible without it. The failure
+ * reason: the list only ever carried the status, so a failed resource showed a
+ * red badge and nothing else, and reaching the reason meant leaving the
+ * dashboard for the public resource page (kukan#285, kukan#296) — half of what
+ * it says is not about the file at all, since a site behind an IP allowlist
+ * answers the worker with 403 and "403" is the whole explanation. And that the
+ * run stored nothing: a run with no work to do settles in tens of milliseconds,
+ * so the refetch that follows an upload finds it already complete and the badge
+ * never watches it at all.
  *
- * Only for rows nothing polled. A row that fails while the page is open has the
- * answer already — the poll that observed the failure read the same body — so
- * asking again would be a second request for data in hand.
+ * A row that settles while the page is open has both already — the poll that
+ * saw it read the same body — so this asks only when nothing polled.
  *
  * Read from the status endpoint because that is where the decision about who
  * may see an error text already lives. Carrying it on the list response would
  * be cheaper still, and is the better home for it; that wants the sanitisation
  * extracted so both routes share one copy, which is more than this change.
  */
-function useFailureReason(resourceId: string, ask: boolean): string | null {
-  const [reason, setReason] = useState<string | null>(null)
+function useSettledRun(resourceId: string, ask: boolean): PipelineStatusData | null {
+  const [data, setData] = useState<PipelineStatusData | null>(null)
 
   useEffect(() => {
-    // Cleared rather than left: the line renders on `reason` alone, so a row
+    // Cleared rather than left: the lines below render on this alone, so a row
     // re-rendered into a different status would keep the old one under it.
     if (!ask) {
-      setReason(null)
+      setData(null)
       return
     }
     const controller = new AbortController()
@@ -85,22 +94,23 @@ function useFailureReason(resourceId: string, ask: boolean): string | null {
           signal: controller.signal,
         })
         if (!res.ok) return
-        setReason(failureReason((await res.json()) as PipelineStatusData))
+        setData((await res.json()) as PipelineStatusData)
       } catch {
-        // The badge is still right without it; a reason nobody could fetch is
+        // The badge is still right without it; a note nobody could fetch is
         // not worth an error of its own.
       }
     })()
     return () => controller.abort()
   }, [resourceId, ask])
 
-  return reason
+  return data
 }
 
 export function PipelineStatusBadge({
   resourceId,
   initialStatus,
   onSettled,
+  justRan,
 }: PipelineStatusBadgeProps) {
   const t = useTranslations('resource')
   const shouldPoll = initialStatus === 'queued' || initialStatus === 'processing'
@@ -143,12 +153,15 @@ export function PipelineStatusBadge({
   // stuck on queued/processing until a reload)
   const displayStatus = shouldPoll ? status : (initialStatus ?? null)
   const failed = displayStatus === 'error'
-  const fetched = useFailureReason(resourceId, failed && !shouldPoll)
+  const settled = useSettledRun(
+    resourceId,
+    !shouldPoll && (failed || (justRan === true && displayStatus === 'complete'))
+  )
   // `data` is seeded from `initialStatus` before anything is polled, so it only
   // answers this once polling has actually run; otherwise the row arrived
-  // failed and the reason had to be asked for.
+  // settled and what became of the run had to be asked for.
   const polled = shouldPoll && data ? failureReason(data) : null
-  const reason = failed ? (polled ?? fetched) : null
+  const reason = failed ? (polled ?? (settled && failureReason(settled))) : null
 
   if (!displayStatus) return null
 
@@ -168,7 +181,7 @@ export function PipelineStatusBadge({
           {reason}
         </span>
       )}
-      {sameContent && (
+      {(sameContent || (settled !== null && storedNoVersion(settled))) && (
         <span className="max-w-[200px] text-xs text-muted-foreground">
           {t('pipelineNoNewVersion')}
         </span>

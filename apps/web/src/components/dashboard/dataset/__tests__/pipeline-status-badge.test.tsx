@@ -200,6 +200,41 @@ describe('PipelineStatusBadge', () => {
     ).toBeInTheDocument()
   })
 
+  it('should say so for a run that was over before the badge saw it', async () => {
+    // A run with nothing to derive settles in tens of milliseconds, so the
+    // refetch after an upload hands the badge a finished run: there is no
+    // queued status to poll from, and the note has to be asked for
+    mockClientFetch.mockResolvedValue(
+      jsonResponse({
+        id: 'r1',
+        pipeline_status: 'complete',
+        steps: [{ step_name: 'version', status: 'skipped' }],
+      })
+    )
+
+    render(<PipelineStatusBadge resourceId="r1" initialStatus="complete" justRan />)
+
+    expect(
+      await screen.findByText('No new version — the file matches the content already stored')
+    ).toBeInTheDocument()
+  })
+
+  it('should not ask about a completed run nobody started here', async () => {
+    // Every row of a listing would otherwise ask, on every load
+    mockClientFetch.mockResolvedValue(
+      jsonResponse({
+        id: 'r1',
+        pipeline_status: 'complete',
+        steps: [{ step_name: 'version', status: 'skipped' }],
+      })
+    )
+
+    render(<PipelineStatusBadge resourceId="r1" initialStatus="complete" />)
+
+    await waitFor(() => expect(screen.getByText('Complete')).toBeInTheDocument())
+    expect(mockClientFetch).not.toHaveBeenCalled()
+  })
+
   it('should not carry the no-new-version note into the next run', async () => {
     mockClientFetch.mockResolvedValue(
       jsonResponse({

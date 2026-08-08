@@ -5,7 +5,7 @@
 import { randomUUID } from 'node:crypto'
 import { eq, and, sql, desc } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { resource, resourceVersion, packageTable } from '@kukan/db'
+import { resource, resourceVersion, resourcePipeline, packageTable } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter, ContentDoc } from '@kukan/search-adapter'
 import type { IngestResult, LakeConfig } from '@kukan/lake'
@@ -15,6 +15,7 @@ import {
   insertVersionIfHeld,
   setVersionSchemaIfHeld,
   objectAlreadyVersioned,
+  pendingLakeVersionSource,
 } from '@kukan/api/services/resource-version-service'
 import { copyObject, publishLiveContent, reserveObject } from '@kukan/api/services/storage-pointer'
 import type { PackageDbState } from '@kukan/shared'
@@ -249,6 +250,30 @@ export function buildPipelineContext(
       // Size is nullable on the table (pre-ADR-043 rows), but a version this
       // run can interpret was created with the measurement Fetch took.
       return row ? { ...row, size: row.size ?? 0 } : null
+    },
+
+    async derivativesDescribe(resourceId: string, contentHash: string, version: number) {
+      const [row] = await db
+        .select({
+          previewKey: resourcePipeline.previewKey,
+          metadata: resourcePipeline.metadata,
+        })
+        .from(resourcePipeline)
+        .where(eq(resourcePipeline.resourceId, resourceId))
+        .limit(1)
+      const metadata = (row?.metadata ?? {}) as Record<string, unknown>
+      if (!row?.previewKey) return false
+      if (metadata.sourceHash !== contentHash) return false
+      if (metadata.contentIndexed !== true) return false
+
+      // A table interpretation whose ingest never landed is asking for the run
+      // this would skip, and the sweep's own predicate is what says whether one
+      // is outstanding — asked here rather than restated, so a format or size
+      // this deployment does not ingest is not read as unfinished work.
+      // Without a lake there is nothing outstanding: the run this skips would
+      // not have ingested either (ADR-043 layer 2).
+      if (!lake) return true
+      return (await pendingLakeVersionSource(db, { resourceId, version })) === null
     },
 
     async recordVersionSchema({ claim, noTableReason, ...v }) {

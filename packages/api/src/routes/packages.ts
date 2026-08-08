@@ -35,6 +35,7 @@ import {
   indexResourceMetadata,
   rebuildPackageSearch,
 } from '../services/search-index'
+import { markContentUnindexed } from '../services/content-index-record'
 import { hybridSearch } from '../services/hybrid-search'
 import { lakeConfigFromEnv } from '@kukan/lake'
 import { MetadataSuggestService } from '../services/metadata-suggest-service'
@@ -367,7 +368,10 @@ packagesRouter.delete('/:nameOrId', async (c) => {
 
   const pkg = await service.delete(nameOrId, makePackageAuthorize(db, user, 'editor'))
 
+  // Takes the resource and content documents with it, so the rows stop saying
+  // their content is indexed — a restore rebuilds from what they claim
   await c.get('search').deletePackage(pkg.id)
+  await markContentUnindexed(db, { packageId: pkg.id })
   return c.json(pkg)
 })
 

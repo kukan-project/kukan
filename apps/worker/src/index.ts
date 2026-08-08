@@ -28,6 +28,7 @@ import { eq, sql } from 'drizzle-orm'
 import { packageTable } from '@kukan/db'
 import type { Job } from '@kukan/queue-adapter'
 import { rebuildMetadataIndex } from '@kukan/api/services/search-index'
+import { markContentUnindexed } from '@kukan/api/services/content-index-record'
 import { PipelineService } from '@kukan/api/services/pipeline-service'
 import { OrganizationService } from '@kukan/api/services/organization-service'
 import { ResourceVersionService } from '@kukan/api/services/resource-version-service'
@@ -241,7 +242,10 @@ await queue.process({
       const jobLogger = osLogger.child({ jobId: job.id, type: job.type })
       await rebuildMetadataIndex(db, search, jobLogger, true)
       if (includeContent) {
+        // The rows have to stop saying their content is indexed, or the runs
+        // enqueued below are the ones that skip and the index stays empty
         await search.deleteAllContents()
+        await markContentUnindexed(db, 'all')
         const pipelineService = new PipelineService(db, queue)
         const { enqueued, failed } = await pipelineService.enqueueAll()
         log.info(

@@ -297,6 +297,85 @@ describe('processResource', () => {
     expect(mockTracker.updateStatus).toHaveBeenCalledWith('complete')
   })
 
+  describe('content that is already derived', () => {
+    /** The same bytes arriving again: Version has nothing to create. */
+    function contentAlreadyHere() {
+      vi.mocked(executeFetch).mockResolvedValue({
+        storageKey: 'resources/pkg-1/res-1',
+        format: 'CSV',
+        packageId: 'pkg-1',
+        hash: 'sha256:abc',
+        size: 42,
+        status: 'fetched',
+      })
+      ctx.createVersion.mockResolvedValue({ created: false })
+      interpretProducesTable()
+      vi.mocked(executeIndexContent).mockResolvedValue(null)
+    }
+
+    it('derives nothing again when the derivatives were made from these bytes', async () => {
+      contentAlreadyHere()
+      ctx.derivativesDescribe.mockResolvedValue(true)
+
+      await processResource('res-1', ctx, db, queue)
+
+      expect(executeInterpret).not.toHaveBeenCalled()
+      expect(executeIndexContent).not.toHaveBeenCalled()
+      expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.interpret)
+      expect(mockTracker.skipStep).toHaveBeenCalledWith(STEP.index)
+      // The row's record of that indexing is not this run's to overwrite
+      expect(mockTracker.mergeMetadata).not.toHaveBeenCalledWith({ contentIndexed: false })
+      expect(mockTracker.updateInterpretResult).not.toHaveBeenCalled()
+      expect(mockTracker.updateStatus).toHaveBeenCalledWith('complete')
+    })
+
+    it('asks about the version holding this run’s content', async () => {
+      contentAlreadyHere()
+      ctx.derivativesDescribe.mockResolvedValue(true)
+
+      await processResource('res-1', ctx, db, queue)
+
+      // The version number, not the resource's latest: what is skipped is the
+      // interpretation of these bytes (ADR-046)
+      expect(ctx.derivativesDescribe).toHaveBeenCalledWith('res-1', 'sha256:abc', 1)
+    })
+
+    it('derives again when the row cannot account for these bytes', async () => {
+      contentAlreadyHere()
+      ctx.derivativesDescribe.mockResolvedValue(false)
+
+      await processResource('res-1', ctx, db, queue)
+
+      expect(executeInterpret).toHaveBeenCalled()
+      expect(executeIndexContent).toHaveBeenCalled()
+    })
+
+    it('derives when asked to rebuild, without asking at all', async () => {
+      // The repair for what the row cannot see (ADR-044 §4) — it must not be
+      // answered by the row saying everything is already there
+      contentAlreadyHere()
+      ctx.derivativesDescribe.mockResolvedValue(true)
+
+      await processResource('res-1', ctx, db, queue, { rebuildOnly: true })
+
+      expect(ctx.derivativesDescribe).not.toHaveBeenCalled()
+      expect(executeInterpret).toHaveBeenCalled()
+      expect(executeIndexContent).toHaveBeenCalled()
+    })
+
+    it('derives when the version was created, without asking at all', async () => {
+      contentAlreadyHere()
+      ctx.createVersion.mockResolvedValue({ created: true, version: 2 })
+      ctx.derivativesDescribe.mockResolvedValue(true)
+
+      await processResource('res-1', ctx, db, queue)
+
+      expect(ctx.derivativesDescribe).not.toHaveBeenCalled()
+      expect(executeInterpret).toHaveBeenCalled()
+      expect(executeIndexContent).toHaveBeenCalled()
+    })
+  })
+
   it('creates the version without a schema (ADR-046)', async () => {
     vi.mocked(executeFetch).mockResolvedValue({
       storageKey: 'resources/pkg-1/res-1',

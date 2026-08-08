@@ -29,6 +29,8 @@ export function createPipelineContextMock(): PipelineContextMock {
     versionForContent: vi
       .fn()
       .mockResolvedValue({ version: 1, storageKey: 'versions/v1', size: 1024, format: 'CSV' }),
+    // Nothing derived yet, so a run does its steps unless a test says otherwise
+    derivativesDescribe: vi.fn().mockResolvedValue(false),
     recordVersionSchema: vi.fn(),
     pendingLakeVersion: vi.fn().mockResolvedValue(null),
     ingestLakeVersion: vi.fn().mockResolvedValue(null),

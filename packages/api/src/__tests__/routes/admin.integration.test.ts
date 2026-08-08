@@ -99,6 +99,44 @@ describe('Admin API Routes', () => {
     })
   })
 
+  describe('POST /api/v1/admin/jobs/enqueue-all', () => {
+    it('should stop the rows claiming the index it just emptied', async () => {
+      // The runs this enqueues rebuild the content it deletes — left claiming
+      // to be indexed, every one of them is a run with nothing to do
+      const orgId = await ensureOrg('enqueue-all-org')
+      const pkg = await (
+        await app.request('/api/v1/packages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'enqueue-all-pkg', ownerOrg: orgId }),
+        })
+      ).json()
+      const res = await (
+        await app.request(`/api/v1/packages/${pkg.id}/resources`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: 'https://example.com/data.csv', format: 'CSV' }),
+        })
+      ).json()
+      await db.execute(
+        sql`UPDATE resource_pipeline SET metadata = '{"contentIndexed": true}'::jsonb
+            WHERE resource_id = ${res.id}`
+      )
+
+      expect((await app.request('/api/v1/admin/jobs/enqueue-all', { method: 'POST' })).status).toBe(
+        200
+      )
+
+      const [row] = (
+        await db.execute(
+          sql`SELECT metadata ->> 'contentIndexed' AS indexed FROM resource_pipeline
+              WHERE resource_id = ${res.id}`
+        )
+      ).rows
+      expect(row).toEqual({ indexed: 'false' })
+    })
+  })
+
   describe('/api/v1/admin/settings/vector-search', () => {
     const SETTINGS_PATH = '/api/v1/admin/settings/vector-search'
     const embedAi = {

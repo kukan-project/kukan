@@ -41,6 +41,7 @@ import {
 } from './pipeline-claim'
 import { publishLiveContent, PARKED_UNTIL, ownedByVersion } from './storage-pointer'
 import { PipelineService } from './pipeline-service'
+import { markContentUnindexed } from './content-index-record'
 
 export type VersionState = 'active' | 'purging' | 'purged' | 'superseded'
 export type VersionOrigin = 'upload' | 'fetch'
@@ -880,6 +881,10 @@ export class ResourceVersionService {
       // immediately, before the (async) pipeline regenerates them.
       await this.discardDerivedArtifacts(resourceId, deps.storage)
       if (deps.search) await deps.search.deleteContent(resourceId)
+      // Said on the row as well: the run below reads it to decide whether it
+      // has anything to derive, and clearing the preview alone leaves that
+      // answer resting on a side effect of another statement.
+      await markContentUnindexed(this.db, { resourceId })
 
       // Regenerate preview/index from the restored content. The Version step's
       // change gate sees the restored hash as the latest active version and
@@ -1314,7 +1319,15 @@ export class ResourceVersionService {
     let ok = true
     for (const [what, run] of [
       ['derivatives', () => this.discardDerivedArtifacts(resourceId, deps.storage, ifRevision)],
-      ['indexed content', () => deps.search?.deleteContent(resourceId)],
+      [
+        'indexed content',
+        async () => {
+          await deps.search?.deleteContent(resourceId)
+          // On the row too, so a later run does not read the retracted content
+          // as still indexed
+          await markContentUnindexed(this.db, { resourceId })
+        },
+      ],
     ] as const) {
       try {
         await run()

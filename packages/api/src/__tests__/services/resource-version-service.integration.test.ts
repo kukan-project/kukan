@@ -89,12 +89,21 @@ function columns(...names: string[]): ResourceSchema {
 }
 
 /** The cached interpretation the resource is carrying right now. */
+/** Only what the row says about the interpretation — the same row carries the
+ *  content-index record, which the cases here are not about. */
 async function cachedInterpretation() {
   const [row] = await db
     .select({ metadata: resourcePipeline.metadata })
     .from(resourcePipeline)
     .where(eq(resourcePipeline.resourceId, resourceId))
-  return row?.metadata as { schema?: ResourceSchema; sourceHash?: string } | null | undefined
+  const { schema, sourceHash } = (row?.metadata ?? {}) as {
+    schema?: ResourceSchema
+    sourceHash?: string
+  }
+  return {
+    ...(schema !== undefined && { schema }),
+    ...(sourceHash !== undefined && { sourceHash }),
+  }
 }
 
 /**
@@ -1514,7 +1523,9 @@ describe('the artifacts derived from retracted content', () => {
     )
     const row = await pipelineRow()
     expect(row.previewKey).toBeNull()
-    expect(row.metadata).toEqual({ contentIndexed: true })
+    // The text head is gone with the rest, and the row stops claiming an index
+    // whose documents this just deleted
+    expect(row.metadata).toEqual({ contentIndexed: false })
   })
 
   it('are destroyed by a revert', async () => {
@@ -1529,7 +1540,7 @@ describe('the artifacts derived from retracted content', () => {
     expect(vi.mocked(deps.storage.deleteMany).mock.calls[0][0].sort()).toEqual(
       [PREVIEW, TEXT_HEAD].sort()
     )
-    expect((await pipelineRow()).metadata).toEqual({ contentIndexed: true })
+    expect((await pipelineRow()).metadata).toEqual({ contentIndexed: false })
   })
 
   it('leaves a pointer another run has moved on', async () => {

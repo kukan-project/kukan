@@ -878,6 +878,32 @@ describe('Packages API Routes', () => {
       }
     })
 
+    it('should stop the rows claiming an index the delete took away', async () => {
+      // The pipeline run a restore enqueues reads that claim to decide it has
+      // nothing to index again — left standing, the resources come back
+      // unsearchable
+      const pkg = await (await createPackage({ name: 'restore-claims-pkg' })).json()
+      const res = await (
+        await createResource(pkg.id, { url: 'https://example.com/data.csv', format: 'CSV' })
+      ).json()
+      await db.execute(
+        sql`UPDATE resource_pipeline
+            SET metadata = '{"sourceHash": "abc", "contentIndexed": true}'::jsonb
+            WHERE resource_id = ${res.id}`
+      )
+
+      // Deleting takes the content documents with it
+      await app.request(`/api/v1/packages/${pkg.id}`, { method: 'DELETE' })
+
+      const [row] = (
+        await db.execute(
+          sql`SELECT metadata ->> 'contentIndexed' AS indexed, metadata ->> 'sourceHash' AS source
+              FROM resource_pipeline WHERE resource_id = ${res.id}`
+        )
+      ).rows
+      expect(row).toEqual({ indexed: 'false', source: 'abc' })
+    })
+
     it('should rebuild from the stored content rather than fetching the url again', async () => {
       const { pkg, resourceId } = await deletedPackageWithStoredResource('restore-no-refetch-pkg')
 

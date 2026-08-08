@@ -116,6 +116,7 @@ async function runPipeline(
     // (ADR-046).
     // Non-critical: a failed version create is recorded but never fails the pipeline.
     const versionStepId = await tracker.startStep('version')
+    let versionCreated = false
     try {
       const versionResult = await ctx.createVersion({
         resourceId,
@@ -125,6 +126,7 @@ async function runPipeline(
         contentSize: fetchResult.size,
         claim: tracker.claim,
       })
+      versionCreated = versionResult.created
       if (versionResult.created) {
         await tracker.completeStep(versionStepId)
       } else {
@@ -152,6 +154,7 @@ async function runPipeline(
     // interpretation — ordered after this one, since steps are read by
     // `started_at`.
     let lakeRan = false
+    let derivativesReused = false
     const interpretStepId = await tracker.startStep('interpret')
     try {
       const version = await ctx.versionForContent(resourceId, fetchResult.hash)
@@ -160,6 +163,19 @@ async function runPipeline(
         // moved and another run is describing the resource now. The previous
         // preview is left in place rather than cleared — it still describes some
         // content, and this run has none to replace it with.
+        await tracker.skipStep(interpretStepId)
+      } else if (
+        // A rebuild is somebody asking for the derivatives to be made again
+        // (ADR-044 §4). It is the lever for the case the row cannot see — a
+        // preview whose object went missing reads here as a preview — so it is
+        // the one run that never takes the row's word for it.
+        !rebuildOnly &&
+        !versionCreated &&
+        (await ctx.derivativesDescribe(resourceId, fetchResult.hash, version.version))
+      ) {
+        // Everything downstream was made from these same bytes — Index too, so
+        // it is skipped with this one: the two are one answer about one content.
+        derivativesReused = true
         await tracker.skipStep(interpretStepId)
       } else {
         interpretResult = await executeInterpret(
@@ -238,29 +254,13 @@ async function runPipeline(
 
     // Step 5: Index — extract text content and index to search engine
     // Non-critical: failures are recorded but don't fail the pipeline
-    const indexStepId = await tracker.startStep('index')
-    try {
-      const indexResult = await executeIndexContent(
-        resourceId,
-        fetchResult.packageId,
-        fetchResult.storageKey,
-        fetchResult.format,
-        interpretResult,
-        ctx
-      )
-      if (indexResult === null) {
-        await tracker.skipStep(indexStepId)
-        await tracker.mergeMetadata({ contentIndexed: false })
-      } else {
-        await tracker.completeStep(indexStepId)
-        await tracker.mergeMetadata({ ...indexResult })
-      }
-    } catch (err) {
-      // A kill is not this step failing: the orchestrator leaves without
-      // recording, because the record belongs to whoever holds the claim now.
-      if (err instanceof RunCancelledError) throw err
-      await tracker.failStep(indexStepId, (err as Error).message)
-      await tracker.mergeMetadata({ contentIndexed: false })
+    if (derivativesReused) {
+      // Indexed from these same bytes already; extracting them again would
+      // write the documents that are there. The metadata is left alone — it is
+      // the record of that indexing, and this run has nothing to add to it.
+      await tracker.skipStep(await tracker.startStep('index'))
+    } else {
+      await runIndexStep(resourceId, tracker, ctx, fetchResult, interpretResult)
     }
 
     await tracker.updateStatus('complete')
@@ -282,6 +282,46 @@ async function runPipeline(
     // the next step to be given the same treatment record itself for free.
     await tracker.failOpenStep(message)
   }
+}
+
+/**
+ * Extract the resource's text and index it, and record the step (ADR-021).
+ *
+ * Non-critical like the interpretation before it: a failure is recorded and the
+ * run carries on. `contentIndexed` is written for anything that did not index,
+ * so the row says which of the two it was rather than leaving the previous
+ * run's answer standing.
+ */
+async function runIndexStep(
+  resourceId: string,
+  tracker: StepTracker,
+  ctx: PipelineContext,
+  fetchResult: { packageId: string; storageKey: string; format: string | null },
+  interpretResult: Awaited<ReturnType<typeof executeInterpret>>
+): Promise<void> {
+  const stepId = await tracker.startStep('index')
+  try {
+    const indexResult = await executeIndexContent(
+      resourceId,
+      fetchResult.packageId,
+      fetchResult.storageKey,
+      fetchResult.format,
+      interpretResult,
+      ctx
+    )
+    if (indexResult) {
+      await tracker.completeStep(stepId)
+      await tracker.mergeMetadata({ ...indexResult })
+      return
+    }
+    await tracker.skipStep(stepId)
+  } catch (err) {
+    // A kill is not this step failing: the orchestrator leaves without
+    // recording, because the record belongs to whoever holds the claim now.
+    if (err instanceof RunCancelledError) throw err
+    await tracker.failStep(stepId, (err as Error).message)
+  }
+  await tracker.mergeMetadata({ contentIndexed: false })
 }
 
 /**

@@ -33,6 +33,7 @@ import {
   userRoleSchema,
 } from '@kukan/shared'
 import { PipelineService } from '../services/pipeline-service'
+import { markContentUnindexed } from '../services/content-index-record'
 import { LAKE_DATA_PREFIX, LAKE_METADATA_SCHEMA } from '@kukan/lake'
 import { ResourceVersionService } from '../services/resource-version-service'
 import { UserService } from '../services/user-service'
@@ -443,7 +444,11 @@ adminRouter.post('/jobs/enqueue-all', async (c) => {
 
   // Clear stale content (deleted resources, format changes) before re-processing.
   // Per-resource content is also cleaned in the pipeline Index step.
+  //
+  // The rows have to stop claiming their content is indexed, or the runs
+  // enqueued below are the ones that skip and the index stays empty.
   await search.deleteAllContents()
+  await markContentUnindexed(db, 'all')
   const result = await pipelineService.enqueueAll()
 
   return c.json(result)

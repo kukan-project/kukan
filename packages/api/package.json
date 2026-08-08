@@ -17,7 +17,8 @@
     "./services/advisory-lock": "./dist/services/advisory-lock.js",
     "./services/storage-pointer": "./dist/services/storage-pointer.js",
     "./services/organization-service": "./dist/services/organization-service.js",
-    "./services/resource-version-service": "./dist/services/resource-version-service.js"
+    "./services/resource-version-service": "./dist/services/resource-version-service.js",
+    "./services/content-index-record": "./dist/services/content-index-record.js"
   },
   "scripts": {
     "dev:standalone": "tsx watch src/server.ts",

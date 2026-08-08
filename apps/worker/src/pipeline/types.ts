@@ -128,6 +128,27 @@ export interface PipelineContext {
     format: string | null
   } | null>
   /**
+   * Whether the derivatives already on the row were made from these bytes.
+   *
+   * Asked by a run that created no version — the same content arriving again.
+   * The version file it would read is immutable (ADR-046), so an interpretation
+   * of it cannot come out differently the second time, and a 50MB CSV would be
+   * downloaded, run through DuckDB, written as Parquet and uploaded to arrive at
+   * the file that is already there.
+   *
+   * A previous run that got partway through must still be finished, so every
+   * part of this is a thing that could be missing: the preview key and a
+   * `sourceHash` naming these bytes, `contentIndexed`, and no lake ingest still
+   * outstanding for the version. The first two are written by the same run —
+   * Interpret replaces the metadata and Index merges into it — so they never
+   * describe two different contents.
+   *
+   * False whenever it cannot be sure. Skipping wrongly is the failure that says
+   * nothing: a stale preview and a missing index both look like a healthy
+   * resource.
+   */
+  derivativesDescribe(resourceId: string, contentHash: string, version: number): Promise<boolean>
+  /**
    * Record what Interpret made of a version (ADR-046).
    *
    * Separate from the creation because the version is settled first: no schema
