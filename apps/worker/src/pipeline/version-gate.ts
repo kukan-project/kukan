@@ -1,7 +1,8 @@
 /**
- * Version create policy (ADR-043, layer 1): whether to snapshot the resource's
- * canonical file as a new version, and as which number. The copy and the insert
- * are `PipelineContext.createVersion`, which runs this under the run's claim.
+ * Version create policy (ADR-043, layer 1): whether the resource's canonical
+ * file becomes a new version, and which number it takes. Owning the object and
+ * recording the row are `PipelineContext.createVersion`, which runs this under
+ * the run's claim.
  */
 
 export type VersionResult = { created: false } | { created: true; version: number }

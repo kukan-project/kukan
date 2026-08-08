@@ -18,7 +18,7 @@ import type { CreateResourceInput, UpdateResourceInput, PackageDbState } from '@
 import type { PendingResourceMetadata } from '@kukan/db'
 import { RESOURCE_POSITION_LOCK, lockInTransaction } from './advisory-lock'
 import { cancelResourceRun } from './pipeline-claim'
-import { PARKED_UNTIL } from './storage-pointer'
+import { PARKED_UNTIL, ownedByVersion } from './storage-pointer'
 import { hasOrgMembership, hasDraftAccess, type AuthUser } from '../auth/permissions'
 
 // Package states whose resources are reachable — drafts hold resources before publish (ADR-039)
@@ -447,6 +447,10 @@ export class ResourceService {
    * cleared rather than taken from the caller: the worker measures the stored
    * bytes, and version create records what it measured.
    *
+   * Except an object a version names, as in {@link publishLiveContent}: live
+   * points straight at the object its version was made from (ADR-043 §1), so
+   * the key an upload replaces is usually the current version's own file.
+   *
    * `expectedPendingKey` is the key the caller uploaded to. Promoting whatever
    * happens to be pending would publish a key a concurrent `prepareForUpload`
    * minted — an object nobody has written yet — and describe it with the size
@@ -496,6 +500,8 @@ export class ResourceService {
         INSERT INTO orphaned_object (key, expires_at)
         SELECT previous_key, ${PARKED_UNTIL} FROM promoted
         WHERE previous_key IS NOT NULL
+          -- A version's object is not garbage (see above).
+          AND NOT ${ownedByVersion(sql`promoted.previous_key`)}
         ON CONFLICT (key) DO NOTHING
       )
       SELECT new_key FROM promoted

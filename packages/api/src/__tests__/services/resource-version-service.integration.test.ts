@@ -174,6 +174,57 @@ describe('claimPurge', () => {
 })
 
 describe('executePurge', () => {
+  it('keeps the object live is standing on when a same-hash version is purged', async () => {
+    // Live and a version share an object now (ADR-043 §1), and the copying path
+    // deliberately produces versions with one hash. Asked by hash, "is live
+    // standing on this version" answers with the newest of them — so purging a
+    // superseded one restored live onto v1's file and then deleted it.
+    const v1Key = getVersionKey(packageId, resourceId, 1, 'v')
+    await addVersion(1, 'sha256:same')
+    await addVersion(2, 'sha256:same', 'superseded', 'TSV')
+    // The state a revert leaves: live back on v1's own object.
+    await db
+      .update(resource)
+      .set({ storageKey: v1Key, hash: 'sha256:same' })
+      .where(eq(resource.id, resourceId))
+    await service.claimPurge(resourceId, 2, userId, 'illegal content')
+
+    const deps = mockDeps()
+    await service.executePurge(resourceId, 2, deps)
+
+    expect(deps.storage.delete).toHaveBeenCalledWith(getVersionKey(packageId, resourceId, 2, 'v'))
+    expect(deps.storage.delete).not.toHaveBeenCalledWith(v1Key)
+    const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
+    expect(res.storageKey).toBe(v1Key)
+  })
+
+  it('rolls back when live is standing on the version being purged, whatever shares its hash', async () => {
+    // The same misreading in the other direction: a newer version with the same
+    // hash made this look like a middle version, so the purge deleted the live
+    // object and skipped the rollback — leaving the retracted content in the
+    // index and the preview.
+    const v1Key = getVersionKey(packageId, resourceId, 1, 'v')
+    const v2Key = getVersionKey(packageId, resourceId, 2, 'v')
+    await addVersion(1, 'sha256:same')
+    await addVersion(2, 'sha256:same', 'active', 'TSV')
+    await db
+      .update(resource)
+      .set({ storageKey: v1Key, hash: 'sha256:same' })
+      .where(eq(resource.id, resourceId))
+    await service.claimPurge(resourceId, 1, userId, 'illegal content')
+
+    const deps = mockDeps()
+    const result = await service.executePurge(resourceId, 1, deps)
+
+    expect(result).toEqual({ purged: true, rolledBack: true })
+    // The derivatives of the retracted content go, which the middle-version
+    // branch would have skipped.
+    expect(deps.search.deleteContent).toHaveBeenCalledWith(resourceId)
+    const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
+    expect(res.storageKey).toBe(v2Key)
+    expect(deps.storage.delete).toHaveBeenCalledWith(v1Key)
+  })
+
   it('rolls the live version back to the previous one', async () => {
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2') // live (matches resource.hash)
@@ -185,13 +236,11 @@ describe('executePurge', () => {
     expect(result).toEqual({ purged: true, rolledBack: true })
     // v2's versioned copy deleted.
     expect(deps.storage.delete).toHaveBeenCalledWith(getVersionKey(packageId, resourceId, 2, 'v'))
-    // v1 restored to a fresh key, and the pointer moved to it.
-    const [restoredTo] = vi.mocked(deps.storage.copy).mock.calls[0].slice(1)
-    expect(deps.storage.copy).toHaveBeenCalledWith(
-      getVersionKey(packageId, resourceId, 1, 'v'),
-      expect.stringMatching(/^resources\/.+\/.+\..+$/)
-    )
-    expect(restoredTo).not.toBe(liveKey)
+    // The pointer moves onto v1's own object — no copy is made to carry it
+    // under the `resources/` prefix (ADR-043 §1).
+    expect(deps.storage.copy).not.toHaveBeenCalled()
+    const [row] = await db.select().from(resource).where(eq(resource.id, resourceId))
+    expect(row.storageKey).toBe(getVersionKey(packageId, resourceId, 1, 'v'))
     // The object that held the purged content is deleted, not parked: a purge
     // is a legal deletion, so an in-flight reader is meant to be cut off.
     expect(deps.storage.delete).toHaveBeenCalledWith(liveKey)
@@ -201,7 +250,6 @@ describe('executePurge', () => {
     // resource hash rolled back to v1, pointing at the restored object.
     const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
     expect(res.hash).toBe('sha256:v1')
-    expect(res.storageKey).toBe(restoredTo)
 
     // v2 is a purged tombstone; content fields withheld via the view.
     const view = await service.getVersion(resourceId, 2)
@@ -647,11 +695,11 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     const result = await revertFromLive(deps)
 
     expect(result).toEqual({ cancelled: true, restored: 1, cleared: true, queued: true })
-    // v1's bytes are copied to a key of this operation's own, never reused.
-    const [, restoredKey] = vi.mocked(deps.storage.copy).mock.calls[0]
-    expect(restoredKey).not.toBe(liveKey)
+    // The pointer lands on v1's own object; nothing is copied to carry it.
+    expect(deps.storage.copy).not.toHaveBeenCalled()
     const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
-    expect(res.storageKey).toBe(restoredKey)
+    expect(res.storageKey).toBe(getVersionKey(packageId, resourceId, 1, 'v'))
+    expect(res.storageKey).not.toBe(liveKey)
     expect(res.hash).toBe('sha256:v1')
     // Derivatives describing the retracted content go now, and are rebuilt.
     expect(deps.search.deleteContent).toHaveBeenCalledWith(resourceId)
@@ -819,22 +867,45 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     expect(result).toMatchObject({ restored: 1, cleared: true, queued: false })
   })
 
-  it('puts the version back in the active set when the restore fails', async () => {
-    // The mark and the pointer cannot be one statement — a storage copy sits
-    // between them. Left behind, the resource serves content whose version is
-    // no longer the highest active one, and nothing re-runs a revert to repair
-    // it.
+  it('leaves the versions active when the restore does not complete', async () => {
+    // The marks and the pointer are one transaction now — the storage copy that
+    // used to sit between them is gone (ADR-043 §1) — so a restore that does not
+    // finish never commits the step-off, rather than putting it back by hand.
+    // Left behind, the resource would serve content whose version is no longer
+    // the highest active one, and nothing re-runs a revert to repair it.
+    //
+    // Failed from a trigger because that window has no seam left in the
+    // application: both writes are the database's, and nothing of ours runs
+    // between them.
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2')
+    const [before] = await db.select().from(resource).where(eq(resource.id, resourceId))
+    await db.execute(sql`
+      CREATE FUNCTION fail_mid_revert() RETURNS trigger AS $$
+      BEGIN RAISE EXCEPTION 'restore interrupted'; END $$ LANGUAGE plpgsql;
+      CREATE TRIGGER fail_mid_revert AFTER UPDATE ON resource_version
+      FOR EACH ROW WHEN (NEW.state = 'superseded') EXECUTE FUNCTION fail_mid_revert();
+    `)
+
     const deps = mockDeps()
-    vi.mocked(deps.storage.copy).mockRejectedValueOnce(new Error('bucket unreachable'))
+    try {
+      // Drizzle wraps the driver error, so the match is on the statement that
+      // failed rather than on the message the trigger raised.
+      await expect(revertFromLive(deps)).rejects.toThrow(/resource_version/)
+    } finally {
+      await db.execute(sql`
+        DROP TRIGGER fail_mid_revert ON resource_version;
+        DROP FUNCTION fail_mid_revert();
+      `)
+    }
 
-    await expect(revertFromLive(deps)).rejects.toThrow(/unreachable/)
-
+    // Rolled back with the transaction, not by a second statement.
     const states = (await service.listByResource(resourceId)).map((v) => v.state)
     expect(states).toEqual(['active', 'active'])
-    const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
-    expect(res.hash).toBe('sha256:v2')
+    const [after] = await db.select().from(resource).where(eq(resource.id, resourceId))
+    expect(after.storageKey).toBe(before.storageKey)
+    // Nothing downstream ran on a retraction that did not happen.
+    expect(deps.search.deleteContent).not.toHaveBeenCalled()
   })
 
   it('lands a resend in the same place instead of stepping back again', async () => {
@@ -1264,22 +1335,93 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     expect((parked.rows as unknown as { key: string }[]).map((r) => r.key)).toContain(liveKey)
   })
 
+  it('does not empty the resource when live stands on a version being purged', async () => {
+    // A claimed purge moves its version to `purging`, and live goes on standing
+    // on that object until the worker runs. Asked "which active version is
+    // live", the answer is none — not the older version that happens to share
+    // the hash, which the copying path makes routine. Told the latter, a revert
+    // computes a destination below it and steps off everything, including the
+    // only version left.
+    const v1Key = getVersionKey(packageId, resourceId, 1, 'v')
+    const v2Key = getVersionKey(packageId, resourceId, 2, 'v')
+    await addVersion(1, 'sha256:same')
+    await addVersion(2, 'sha256:same', 'active', 'TSV')
+    await db
+      .update(resource)
+      .set({ storageKey: v2Key, hash: 'sha256:same' })
+      .where(eq(resource.id, resourceId))
+    await service.claimPurge(resourceId, 2, userId, 'illegal content')
+
+    const { revertTarget, liveRevision } = await service.revertContext(resourceId)
+
+    // No active version is being stood on, so a revert lands on the newest one
+    // there is — v1. Answering "standing on v1" instead puts the destination
+    // below it, which is null: empty the resource, destroying the only content
+    // that would have survived the purge.
+    expect(revertTarget).toBe(1)
+
+    const deps = mockDeps()
+    await service.revertLiveContent(
+      resourceId,
+      { restoreTo: revertTarget, ifLiveRevision: liveRevision },
+      deps
+    )
+
+    const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
+    expect(res.storageKey).toBe(v1Key)
+    expect(res.storageKey).not.toBe(v2Key)
+  })
+
+  it('does not report a restore it lost, nor delete the winner derivatives', async () => {
+    // Uploads take no claim (ADR-044 §6), so the live pointer can move while a
+    // revert runs. Calling that a restore would delete the preview and the
+    // indexed content of whatever won. Driven from a trigger: the pointer move
+    // has to land inside the revert's transaction, and nothing of ours runs
+    // between its two writes.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    await db.execute(sql`
+      CREATE FUNCTION steal_pointer_mid_restore() RETURNS trigger AS $$
+      BEGIN
+        UPDATE resource SET storage_key = 'resources/pkg/winner', hash = 'sha256:winner'
+        WHERE id = NEW.resource_id;
+        RETURN NEW;
+      END $$ LANGUAGE plpgsql;
+      CREATE TRIGGER steal_pointer_mid_restore AFTER UPDATE ON resource_version
+      FOR EACH ROW WHEN (NEW.state = 'superseded') EXECUTE FUNCTION steal_pointer_mid_restore();
+    `)
+
+    const deps = mockDeps()
+    try {
+      await expect(revertFromLive(deps)).rejects.toThrow(/changed/)
+    } finally {
+      await db.execute(sql`
+        DROP TRIGGER steal_pointer_mid_restore ON resource_version;
+        DROP FUNCTION steal_pointer_mid_restore();
+      `)
+    }
+
+    expect(deps.search.deleteContent).not.toHaveBeenCalled()
+  })
+
   it('holds the resource for the whole revert', async () => {
     // Cancelling and then claiming leaves the resource free in between, long
     // enough for a waiting job to start writing over what is being retracted.
     const [pipe] = await db.insert(resourcePipeline).values({ resourceId }).returning()
     await addVersion(1, 'sha256:v1')
 
-    let heldDuringCopy = false
+    let heldDuringRestore = false
     const deps = mockDeps()
-    vi.mocked(deps.storage.copy).mockImplementation(async () => {
+    // Observed where the revert still reaches outside the database — discarding
+    // the derivatives, which runs under the same claim as the restore.
+    vi.mocked(deps.search.deleteContent).mockImplementation(async () => {
       const [row] = await db.select().from(resourcePipeline).where(eq(resourcePipeline.id, pipe.id))
-      heldDuringCopy = row.claimOwner !== null
+      heldDuringRestore = row.claimOwner !== null
     })
 
     await revertFromLive(deps)
 
-    expect(heldDuringCopy).toBe(true)
+    expect(heldDuringRestore).toBe(true)
     const [after] = await db.select().from(resourcePipeline).where(eq(resourcePipeline.id, pipe.id))
     expect(after.claimOwner).toBeNull()
   })
@@ -1290,27 +1432,6 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     await addVersion(1, 'sha256:v1')
 
     await expect(revertFromLive()).rejects.toThrow(/being processed/)
-  })
-
-  it('does not report a restore it lost, nor delete the winner derivatives', async () => {
-    // Uploads do not take the claim (ADR-044 §6), so the live pointer can move
-    // while this runs. Calling that a restore would delete the preview and the
-    // indexed content of whatever won.
-    await addVersion(1, 'sha256:v1')
-
-    const deps = mockDeps()
-    vi.mocked(deps.storage.copy).mockImplementation(async () => {
-      await db
-        .update(resource)
-        .set({ storageKey: 'resources/pkg/newer', hash: 'sha256:newer' })
-        .where(eq(resource.id, resourceId))
-    })
-
-    await expect(revertFromLive(deps)).rejects.toThrow(/changed/)
-
-    expect(deps.search.deleteContent).not.toHaveBeenCalled()
-    const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
-    expect(res.storageKey).toBe('resources/pkg/newer')
   })
 })
 

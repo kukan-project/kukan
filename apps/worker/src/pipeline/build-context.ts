@@ -14,6 +14,7 @@ import { ingestVersionIntoLake, withLakeIngestLock } from '@kukan/api/services/l
 import {
   insertVersionIfHeld,
   setVersionSchemaIfHeld,
+  objectAlreadyVersioned,
 } from '@kukan/api/services/resource-version-service'
 import { copyObject, publishLiveContent, reserveObject } from '@kukan/api/services/storage-pointer'
 import type { PackageDbState } from '@kukan/shared'
@@ -25,6 +26,9 @@ import {
   LAKE_INGEST_MEMORY_LIMIT_MB,
   LAKE_INGEST_THREADS,
 } from '@/config'
+
+/** Displaced mid-create: the claim went, or the pointer did. */
+class LostTheClaim extends Error {}
 
 export function buildPipelineContext(
   db: Database,
@@ -139,8 +143,8 @@ export function buildPipelineContext(
         .limit(1)
 
       // Gated on this run's own measurement, not the row's: the row describes
-      // whichever run published last, while the copy below takes the object
-      // this run wrote and no one rewrites. The pointer comparison is what
+      // whichever run published last, while the object this run wrote is the
+      // one it measured and no one rewrites. The pointer comparison is what
       // establishes that this run is still the one describing the resource.
       const decision = decideVersionCreate({
         hash: contentHash,
@@ -158,23 +162,69 @@ export function buildPipelineContext(
       if (!decision.created) return decision
 
       const { version } = decision
-      const versionKey = getVersionKey(packageId, resourceId, version, randomUUID())
-      await copyObject(db, storage, currentStorageKey, versionKey)
-
-      // Under the claim, so a run that was stopped mid-create does not leave
-      // the resource a version its own step never got to report (ADR-044 §4).
-      const inserted = await insertVersionIfHeld(db, claim, {
+      // What the row will say about itself either way; only the key differs.
+      // The version is settled from its bytes, and Interpret fills the schema in
+      // once it has read the file this row names (ADR-046).
+      const row = {
         resourceId,
         version,
-        storageKey: versionKey,
         size: contentSize,
         hash: contentHash,
         origin: versionOrigin(res!.urlType),
-        // The version is settled from its bytes; Interpret fills this in once it
-        // has read the file this row names (ADR-046).
         schema: null,
-      })
-      if (!inserted) return { created: false }
+      }
+
+      // Taking is the ordinary case, and the copy it replaces was history rather
+      // than necessity: nothing rewrites a live object — every writer mints a
+      // key of its own and moves the pointer — so the bytes a version promises
+      // are as immutable where they already lie. With no new object there is
+      // nothing for a crash to strand, so the write-ahead record goes with the
+      // copy (ADR-045) and this is one statement.
+      if (!(await objectAlreadyVersioned(db, currentStorageKey))) {
+        const inserted = await insertVersionIfHeld(db, claim, {
+          ...row,
+          storageKey: currentStorageKey,
+        })
+        return inserted ? { created: true, version } : { created: false }
+      }
+
+      // Copying is what live not moving leaves: an upload keeps its key across
+      // runs, and a revert puts live back onto a version's own object, so
+      // changing the interpretation of content that did not move would file a
+      // second version against the first one's file. Purging either would then
+      // take the other's bytes, or leave them — the outcome ADR-046 §3 refused.
+      const versionKey = getVersionKey(packageId, resourceId, version, randomUUID())
+      await copyObject(db, storage, currentStorageKey, versionKey)
+
+      // The row and the pointer together or not at all. Everything downstream
+      // reads "live names the newest active version's object" off
+      // `resource.storage_key` — the purge decides what to delete from it — and
+      // a row that landed while the pointer did not is exactly the state that
+      // loses canonical content whichever version is purged next.
+      //
+      // The copy stays outside: its write-ahead record is what reclaims the
+      // object if this does not commit, and a rollback would take the record
+      // with it (ADR-045).
+      try {
+        await db.transaction(async (tx) => {
+          const inserted = await insertVersionIfHeld(tx, claim, { ...row, storageKey: versionKey })
+          if (!inserted) throw new LostTheClaim()
+          const published = await publishLiveContent(tx, resourceId, {
+            key: versionKey,
+            previousKey: currentStorageKey,
+            hash: contentHash,
+            size: contentSize,
+            // Same bytes under a new interpretation, so this is not a content
+            // change: `last_modified` stays where it is.
+            previousHash: contentHash,
+            claim,
+          })
+          if (!published) throw new LostTheClaim()
+        })
+      } catch (err) {
+        if (err instanceof LostTheClaim) return { created: false }
+        throw err
+      }
       return { created: true, version }
     },
 

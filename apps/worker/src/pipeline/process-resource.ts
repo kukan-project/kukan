@@ -109,9 +109,11 @@ async function runPipeline(
 
     await tracker.completeStep(fetchStepId)
 
-    // Step 2: Version — create an immutable copy of the canonical file
-    // (ADR-043). Nothing has read the content yet: the version is settled from
-    // the bytes alone, and what they mean is worked out afterwards (ADR-046).
+    // Step 2: Version — record the canonical file as a version, which usually
+    // means naming the object Fetch just wrote rather than copying it
+    // (ADR-043 §1). Nothing has read the content yet: the version is settled
+    // from the bytes alone, and what they mean is worked out afterwards
+    // (ADR-046).
     // Non-critical: a failed version create is recorded but never fails the pipeline.
     const versionStepId = await tracker.startStep('version')
     try {

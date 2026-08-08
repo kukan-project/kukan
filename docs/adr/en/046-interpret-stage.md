@@ -167,6 +167,13 @@ version = one object is an invariant the purge depends on**. Shared, purging v2 
 destroys v3's bytes or fails to destroy anything — a legal deletion that does not delete. A
 50MB copy is cheap against that.
 
+> This decision was tested by ADR-043 open issue 10 (make live a link to a version). The link
+> removes the copy from the path where content changes, but **a version that differs only in
+> interpretation comes back here**: live does not move, so linking would point it at the
+> previous version's file. The implementation decides by ownership — **a version takes an
+> object nothing owns, and copies one that is already owned.** This section's invariant holds
+> unchanged, and the copy is now confined to that one path.
+
 Two consequences. **The content gate sees only the interpretation conditions settled at
 capture**: `decideVersionCreate` compares the latest active version's hash _and_ format (§6).
 A corrected format therefore makes a version, while a key or type assignment — which does not

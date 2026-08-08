@@ -173,12 +173,13 @@ describe('countUnversioned', () => {
 })
 
 describe('createFirstVersions', () => {
-  it('writes a key of its own attempt, so a retry cannot land on one being swept', async () => {
-    // The orphan sweep decides what to delete from a list it read moments
-    // earlier. Derived from the version number alone, a creation that failed and
-    // is retried would reserve, copy and record that same key — and have its
-    // object deleted with the row already pointing at it (ADR-045 §3).
+  it('names the live object rather than a key of its own', async () => {
+    // v1 is a link to what the resource already holds (ADR-043 §1). The key it
+    // records is therefore the live one, which carries the token of the run
+    // that wrote it — nothing here mints a second key that a retry could
+    // collide with.
     const id = await addResource({ name: 'a' })
+    const [before] = await db.select().from(resource).where(eq(resource.id, id))
 
     await service.createFirstVersions({ storage: mockStorage(), queue: mockQueue() })
 
@@ -186,12 +187,10 @@ describe('createFirstVersions', () => {
       .select({ storageKey: resourceVersion.storageKey })
       .from(resourceVersion)
       .where(and(eq(resourceVersion.resourceId, id), eq(resourceVersion.version, 1)))
-    expect(created.storageKey).toMatch(
-      new RegExp(`^versions/${packageId}/${id}/v1\\.[0-9a-f-]{36}$`)
-    )
+    expect(created.storageKey).toBe(before.storageKey)
   })
 
-  it('snapshots the live key as v1 by server-side copy, no re-fetch', async () => {
+  it('adopts the live key as v1, with neither a copy nor a re-fetch', async () => {
     const uploadId = await addResource({ name: 'up', urlType: 'upload' })
     const urlId = await addResource({ name: 'ext', urlType: 'external' })
     const storage = mockStorage()
@@ -200,12 +199,14 @@ describe('createFirstVersions', () => {
 
     // Uploads with no format, so nothing for layer 2 to interpret.
     expect(result).toEqual({ created: 2, skipped: 0, failed: 0, queued: 0, queueFailed: 0 })
-    // Copies from the live key to v1 — never a network fetch. The destination
-    // carries a per-attempt token (ADR-043), so it is matched by shape.
-    expect((storage as { copy: ReturnType<typeof vi.fn> }).copy).toHaveBeenCalledWith(
-      getStorageKey(packageId, uploadId, 'run'),
-      expect.stringMatching(new RegExp(`^versions/${packageId}/${uploadId}/v1\\.[0-9a-f-]{36}$`))
-    )
+    // The bytes never move: v1 names the object the resource is already
+    // serving, so there is nothing to copy and nothing to fetch.
+    expect((storage as { copy: ReturnType<typeof vi.fn> }).copy).not.toHaveBeenCalled()
+    const [v1] = await db
+      .select({ storageKey: resourceVersion.storageKey })
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, uploadId), eq(resourceVersion.version, 1)))
+    expect(v1.storageKey).toBe(getStorageKey(packageId, uploadId, 'run'))
 
     const upVer = await service.getVersion(uploadId, 1)
     expect(upVer.version).toBe(1)
@@ -289,47 +290,58 @@ describe('createFirstVersions', () => {
   })
 
   it('leaves the row describing newer content when a run publishes mid-create', async () => {
-    // The copy takes a key nothing rewrites, so v1 still holds the bytes this
-    // row described — that is real history. What must not happen is the row
-    // being normalized back to it: `hash` now describes the newer object, and
-    // the run that published it owns that.
+    // The pointer moved while this unit was measuring, so the object it read is
+    // no longer the content and v1 must not be made from it. What must not
+    // happen either way is the row being normalized back: `hash` describes the
+    // newer object, and the run that published it owns that.
     const id = await addResource({ name: 'a', content: 'original', hash: 'sha256:stale' })
     const storage = mockStorage()
-    const realCopy = (storage as { copy: (s: string, d: string) => Promise<void> }).copy
-    ;(storage as { copy: unknown }).copy = vi.fn(async (src: string, dest: string) => {
+    const realDownload = (storage as { download: (k: string) => Promise<unknown> }).download
+    ;(storage as { download: unknown }).download = vi.fn(async (key: string) => {
+      const read = await realDownload(key)
       const newerKey = getStorageKey(packageId, id, 'newer')
       objects.set(newerKey, Buffer.from('published by a pipeline run'))
       await db
         .update(resource)
         .set({ storageKey: newerKey, hash: 'sha256:newer' })
         .where(eq(resource.id, id))
-      await realCopy(src, dest)
+      return read
     })
 
     const result = await service.createFirstVersions({ storage, queue: mockQueue() })
 
     expect(result).toMatchObject({ created: 1, skipped: 0, failed: 0 })
-    // The key carries a per-attempt token, so it is read back off the row.
-    // (The view omits storage pointers — no response carries them, ADR-043.)
+    // v1 names the object it measured — real history, and the bytes are still
+    // there because nothing rewrites a live object once the pointer leaves it.
     const [created] = await db
       .select({ storageKey: resourceVersion.storageKey })
       .from(resourceVersion)
       .where(and(eq(resourceVersion.resourceId, id), eq(resourceVersion.version, 1)))
     expect(objects.get(created.storageKey)?.toString()).toBe('original')
+
+    // The publish parked that key on its way out — v1 did not exist yet for the
+    // parking rule to spare it — so the insert has to take the record back, or
+    // the canonical file of v1 sits on the sweep's list (ADR-045 §4).
+    const parked = await db.execute(
+      sql`SELECT key FROM orphaned_object WHERE key = ${created.storageKey}`
+    )
+    expect(parked.rows).toEqual([])
+
     const [row] = await db.select().from(resource).where(eq(resource.id, id))
     expect(row.hash).toBe('sha256:newer')
   })
 
-  it('counts a copy failure and keeps going', async () => {
+  it('counts a unit that could not read its object and keeps going', async () => {
     await addResource({ name: 'ok' })
     await addResource({ name: 'bad' })
-    // Fail one copy, succeed the rest.
+    // The measurement is the one storage call left in a unit, so it is what
+    // fails now that nothing is copied.
     const storage = mockStorage()
-    const realCopy = (storage as { copy: (s: string, d: string) => Promise<void> }).copy
-    ;(storage as { copy: unknown }).copy = vi
+    const realDownload = (storage as { download: (k: string) => Promise<unknown> }).download
+    ;(storage as { download: unknown }).download = vi
       .fn()
       .mockRejectedValueOnce(new Error('missing object'))
-      .mockImplementation(realCopy)
+      .mockImplementation(realDownload)
 
     const result = await service.createFirstVersions({ storage, queue: mockQueue() })
     expect(result.created).toBe(1)

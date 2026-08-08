@@ -71,8 +71,9 @@ export interface PipelineContext {
   /**
    * Create the resource's current file as its next version (ADR-043 layer 1).
    *
-   * The whole sequence — change gate, next number, copy, insert — is protected
-   * by the run's claim on the resource, not by a lock of its own (ADR-044 §5).
+   * The whole sequence — change gate, next number, own or copy, insert — is
+   * protected by the run's claim on the resource, not a lock of its own
+   * (ADR-044 §5).
    * Nothing else is choosing a version number while the claim is held, so the
    * reads need no transaction. What the claim does not catch is a run taken over
    * for being stale and still alive, which the pointer comparison in the gate is
@@ -80,11 +81,13 @@ export interface PipelineContext {
    */
   createVersion(input: {
     resourceId: string
+    /** Only for the key a copy needs; the ordinary path mints none. */
     packageId: string
     /**
-     * The key this run wrote, holding the content to create. Nothing rewrites
-     * it, so the copy is the content Fetch measured — the version and its hash
-     * cannot come apart.
+     * The key this run wrote, holding the content to create — and the key the
+     * version names when nothing else owns it (ADR-043 §1). Nothing rewrites
+     * it, so the bytes the version promises are the ones Fetch measured; the
+     * two cannot come apart, and no copy has to be made to keep them together.
      */
     currentStorageKey: string
     /** Hash Fetch measured on that object; gates version creation, and is recorded. */

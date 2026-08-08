@@ -30,8 +30,14 @@ export const resourceVersion = pgTable(
       .references(() => resource.id, { onDelete: 'cascade' }),
     // Sequential per resource, assigned at creation time (max + 1).
     version: integer('version').notNull(),
-    // versions/{packageId}/{resourceId}/v{n}.{attempt} — the token is per write,
-    // so a retried create never reuses a key the orphan sweep is deciding about
+    // The object this version owns, and the only version that may delete it
+    // (ADR-046 §3). Usually the live key the content arrived under —
+    // `resources/{packageId}/{resourceId}.{token}` — which the version takes
+    // when nothing else owns it (ADR-043 §1). It is a copy under
+    // `versions/{packageId}/{resourceId}/v{n}.{attempt}` when the object was
+    // already owned, which is what an interpretation change over content that
+    // did not move produces. Either key carries a per-write token, so a retried
+    // create never reuses one the orphan sweep is deciding about.
     storageKey: text('storage_key').notNull(),
     size: bigint('size', { mode: 'number' }),
     hash: text('hash'),

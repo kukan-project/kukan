@@ -8,7 +8,7 @@
  * the query builder cannot express a data-modifying CTE.
  */
 
-import { sql } from 'drizzle-orm'
+import { sql, type SQL } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import { orphanedObject } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
@@ -72,6 +72,21 @@ export interface PublishedContent {
  * did not, and nothing when this run had none. `lastModified` moves only on a
  * genuine content change.
  *
+ * Except an object a version names. Live points straight at the object its
+ * version was made from (ADR-043 §1), so the key a move steps off is usually
+ * the previous version's file, and parking it would put the canonical copy of
+ * that version on the sweep's list. The sweep would spare it, finding a pointer
+ * — but that leaves the survival of a canonical file resting on the reference
+ * check being exhaustive. Cheaper not to ask.
+ *
+ * A purged version does not count: a tombstone keeps its key only because the
+ * column cannot be null, and the object it named is already gone.
+ *
+ * When the move applies, this run's object is referenced and its write-ahead
+ * record has done its job, so the record goes in the same statement (ADR-045).
+ * When it does not, the record stays: the key is garbage, and the row parked
+ * above has already claimed it as such.
+ *
  * @returns whether this run's object became the live content.
  */
 export async function publishLiveContent(
@@ -106,12 +121,13 @@ export async function publishLiveContent(
     ),
     parked AS (
       INSERT INTO orphaned_object (key, expires_at)
-      SELECT key, ${PARKED_UNTIL} FROM orphan WHERE key IS NOT NULL
+      SELECT key, ${PARKED_UNTIL} FROM orphan
+      WHERE key IS NOT NULL
+        -- A version's object is not garbage (see above).
+        AND NOT ${ownedByVersion(sql`orphan.key`)}
       ON CONFLICT (key) DO NOTHING
     ),
-    -- This run's object is referenced now, so its write-ahead record has done
-    -- its job (ADR-045). When the move did not apply, the record stays: the
-    -- key is garbage, and the row above has already claimed it as such.
+    -- The write-ahead record has done its job (see above).
     released AS (
       DELETE FROM orphaned_object o USING outcome WHERE outcome.ok AND o.key = ${key}::text
     )
@@ -158,6 +174,24 @@ export async function expirePendingUploads(
 }
 
 /**
+ * SQL condition: some version that is not a tombstone owns this object.
+ *
+ * A version owns the bytes it names — the purge destroys them (ADR-046 §3) — so
+ * nothing else may park or delete an object while a version still names it. Now
+ * that live points straight at the object its version was made from (ADR-043
+ * §1), that is the ordinary case rather than a corner: the key a pointer steps
+ * off is usually the previous version's file.
+ *
+ * A purged row does not count. It keeps its key because the column cannot be
+ * null, and the object it named is already gone.
+ */
+export function ownedByVersion(key: SQL) {
+  return sql`EXISTS (
+    SELECT 1 FROM resource_version v WHERE v.storage_key = ${key} AND v.state <> 'purged'
+  )`
+}
+
+/**
  * When the sweep may delete a key nothing points at any more: long enough for a
  * request that already resolved it to finish reading, across several Range
  * requests for a Parquet (ADR-043).
@@ -201,11 +235,12 @@ export async function reserveObject(
 /**
  * Server-side copy of an object, recorded before it exists (ADR-045).
  *
- * The counterpart to the pipeline's `putObject`, for the writers that copy
- * rather than upload — version create, the backfill, and the restore a purge
- * or a revert performs. Here so that reaching for a copy reaches for the
- * recording too; the three of them doing it by hand is three chances to forget,
- * and a fourth call site would have nothing to copy from.
+ * The counterpart to the pipeline's `putObject`, for the one writer that still
+ * copies: creating a version out of an object another version already owns
+ * (ADR-043 §1). Everything else names the object it was given. Here so that
+ * reaching for a copy reaches for the recording too — a caller doing it by hand
+ * is a chance to forget, and the next one added would have nothing to copy
+ * from.
  */
 export async function copyObject(
   db: Pick<Database | Transaction, 'insert'>,
