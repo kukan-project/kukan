@@ -71,6 +71,15 @@ interface PackageDetail {
   organization?: { id: string; name: string; title?: string | null } | null
 }
 
+/** What the page holds once loaded. `resources` is settled at the fetch rather
+ *  than at each use: `?? []` in the markup hands a new array identity down on
+ *  every render, which costs the resource list a render it cannot use. */
+type LoadedPackage = PackageDetail & { resources: Resource[] }
+
+/** Stands in for the resources of a package that has not loaded yet, so that
+ *  standing in does not itself produce a new array each render. */
+const EMPTY_RESOURCES: Resource[] = []
+
 /** API response → form defaults */
 function toFormDefaults(pkg: PackageDetail) {
   return {
@@ -104,7 +113,7 @@ export default function EditDatasetPage() {
   const stateParam = searchParams.get('state')
   const isDeleted = stateParam === 'deleted'
 
-  const [pkg, setPkg] = useState<PackageDetail | null>(null)
+  const [pkg, setPkg] = useState<LoadedPackage | null>(null)
   const [loading, setLoading] = useState(true)
   const [showDelete, setShowDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -131,7 +140,7 @@ export default function EditDatasetPage() {
     const apply = (data: PackageDetail) => {
       if (seq > appliedSeq.current) {
         appliedSeq.current = seq
-        setPkg(data)
+        setPkg({ ...data, resources: data.resources ?? [] })
       }
     }
     try {
@@ -181,7 +190,7 @@ export default function EditDatasetPage() {
 
   // Offer suggestions only once every resource settled — a mid-upload
   // resource has no pipeline status yet, so uploads must count as busy too
-  const resources = pkg?.resources ?? []
+  const resources = pkg?.resources ?? EMPTY_RESOURCES
   const resourcesBusy =
     uploading ||
     resources.some((r) => r.pipelineStatus === 'queued' || r.pipelineStatus === 'processing')
@@ -212,7 +221,7 @@ export default function EditDatasetPage() {
         ? {
             ...prev,
             state: 'active',
-            resources: prev.resources?.map((r) =>
+            resources: prev.resources.map((r) =>
               r.url ? { ...r, pipelineStatus: 'queued' as const } : r
             ),
           }
@@ -412,7 +421,7 @@ export default function EditDatasetPage() {
             </CardContent>
           </Card>
 
-          {pkg.resources && pkg.resources.length > 0 && (
+          {pkg.resources.length > 0 && (
             <Card className="opacity-60">
               <CardHeader>
                 <CardTitle>{t('resources')}</CardTitle>
@@ -455,7 +464,7 @@ export default function EditDatasetPage() {
                 suggest={{
                   enabled: metadataSuggestEnabled,
                   localModel: metadataSuggestLocalModel,
-                  resources: pkg.resources ?? [],
+                  resources: pkg.resources,
                   processing: resourcesBusy,
                   openSignal: suggestOpenSignal,
                   onResourcesUpdated: fetchData,
@@ -472,7 +481,7 @@ export default function EditDatasetPage() {
               <ResourceList
                 packageId={pkg.id}
                 packageName={publicName}
-                resources={pkg.resources ?? []}
+                resources={pkg.resources}
                 onUpdated={fetchData}
                 onUploadingChange={setUploading}
               />

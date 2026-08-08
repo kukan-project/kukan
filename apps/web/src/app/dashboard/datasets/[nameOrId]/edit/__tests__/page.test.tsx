@@ -43,27 +43,36 @@ vi.mock('@/components/dashboard/dataset/dataset-form', () => ({
   ),
 }))
 
+// Every `resources` array the list is handed, in order, so a test can ask
+// whether the page kept handing down the same one
+const resourceListProps = vi.hoisted(() => ({ resources: [] as unknown[] }))
+
 vi.mock('@/components/dashboard/dataset/resource-list', () => ({
   ResourceList: ({
     onUpdated,
     onUploadingChange,
+    resources,
   }: {
     onUpdated?: () => void
     onUploadingChange?: (uploading: boolean) => void
-  }) => (
-    <div data-testid="resource-list">
-      ResourceList
-      <button type="button" onClick={() => onUpdated?.()}>
-        MockSettle
-      </button>
-      <button type="button" onClick={() => onUploadingChange?.(true)}>
-        MockUploadStart
-      </button>
-      <button type="button" onClick={() => onUploadingChange?.(false)}>
-        MockUploadEnd
-      </button>
-    </div>
-  ),
+    resources?: unknown
+  }) => {
+    resourceListProps.resources.push(resources)
+    return (
+      <div data-testid="resource-list">
+        ResourceList
+        <button type="button" onClick={() => onUpdated?.()}>
+          MockSettle
+        </button>
+        <button type="button" onClick={() => onUploadingChange?.(true)}>
+          MockUploadStart
+        </button>
+        <button type="button" onClick={() => onUploadingChange?.(false)}>
+          MockUploadEnd
+        </button>
+      </div>
+    )
+  },
 }))
 
 vi.mock('@/components/dashboard/delete-confirm-dialog', () => ({
@@ -108,6 +117,27 @@ describe('EditDatasetPage', () => {
     mockClientFetch.mockReset()
     nav.router.replace.mockReset()
     nav.search = ''
+    resourceListProps.resources.length = 0
+  })
+
+  it('keeps handing the resource list the same array when the package has none', async () => {
+    // A response with no `resources` at all: the field is optional on the wire,
+    // and settling it per-render used to hand down a fresh [] every time.
+    const { resources: _omitted, ...noResources } = samplePackage
+    mockClientFetch.mockImplementation((url: string) =>
+      Promise.resolve(jsonResponse(url.includes('/organizations') ? sampleOrgs : noResources))
+    )
+    render(<EditDatasetPage />)
+    await waitFor(() => expect(screen.getByTestId('resource-list')).toBeInTheDocument())
+
+    const before = resourceListProps.resources.length
+    // Re-render the page without refetching
+    fireEvent.click(screen.getByText('MockUploadStart'))
+    await waitFor(() => expect(resourceListProps.resources.length).toBeGreaterThan(before))
+
+    expect(resourceListProps.resources[0]).toEqual([])
+    const identities = new Set(resourceListProps.resources)
+    expect(identities.size).toBe(1)
   })
 
   it('should render page title', () => {
