@@ -150,6 +150,27 @@ describe('EditDatasetPage', () => {
     expect(screen.getByTestId('resource-list')).toBeInTheDocument()
   })
 
+  it('should link to the public page in a new tab (kukan#286)', async () => {
+    mockClientFetch.mockImplementation(async (path: string) =>
+      jsonResponse(path.includes('/users/me/organizations') ? sampleOrgs : samplePackage)
+    )
+    render(<EditDatasetPage />)
+
+    const view = await screen.findByRole('link', { name: 'View' })
+    expect(view).toHaveAttribute('href', '/dataset/test-dataset')
+    expect(view).toHaveAttribute('target', '_blank')
+  })
+
+  it('should offer no public page for a draft', async () => {
+    mockClientFetch.mockImplementation(async (path: string) =>
+      jsonResponse(path.includes('/users/me/organizations') ? sampleOrgs : sampleDraft)
+    )
+    render(<EditDatasetPage />)
+
+    await waitFor(() => expect(screen.getByTestId('dataset-form')).toBeInTheDocument())
+    expect(screen.queryByRole('link', { name: 'View' })).not.toBeInTheDocument()
+  })
+
   it('should have delete button', async () => {
     mockClientFetch
       .mockResolvedValueOnce(jsonResponse(samplePackage))
@@ -157,7 +178,7 @@ describe('EditDatasetPage', () => {
     render(<EditDatasetPage />)
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Delete Dataset' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Delete This Dataset' })).toBeInTheDocument()
     })
   })
 

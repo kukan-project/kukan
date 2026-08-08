@@ -15,6 +15,7 @@ import { useSiteSettings } from '@/hooks/use-site-settings'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { DatasetForm } from '@/components/dashboard/dataset/dataset-form'
 import { PublishSyncBanner } from '@/components/dashboard/dataset/publish-sync-banner'
+import { ViewPublicLink } from '@/components/dashboard/view-public-link'
 import { ResourceList } from '@/components/dashboard/dataset/resource-list'
 import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
 import { Button } from '@kukan/ui'
@@ -260,6 +261,10 @@ export default function EditDatasetPage() {
     )
   }
 
+  // A draft is unpublished and carries a placeholder name, and a deleted dataset
+  // is gone from the site — neither has a public page to link to
+  const publicName = isDraft || isDeleted ? undefined : pkg.name
+
   // Delete section wording/styling (deleted > draft > active precedence)
   const deleteConfirmText = isDraft ? t('deleteDraftConfirm') : t('deleteDatasetConfirm')
   const deleteUi = isDeleted
@@ -270,6 +275,7 @@ export default function EditDatasetPage() {
         description: null,
         buttonVariant: 'destructive' as const,
         buttonLabel: t('purgeDataset'),
+        dialogTitle: t('purgeDataset'),
         dialogDescription: t('purgeDatasetConfirm'),
         confirmLabel: t('purgeDataset'),
       }
@@ -279,7 +285,9 @@ export default function EditDatasetPage() {
         title: isDraft ? t('deleteDraft') : t('deleteDataset'),
         description: deleteConfirmText,
         buttonVariant: 'outline' as const,
-        buttonLabel: isDraft ? t('deleteDraft') : t('deleteDataset'),
+        // The button names its target ("this dataset"); headings stay generic
+        buttonLabel: isDraft ? t('deleteDraft') : t('deleteThisDataset'),
+        dialogTitle: isDraft ? t('deleteDraft') : t('deleteDataset'),
         dialogDescription: deleteConfirmText,
         confirmLabel: isDraft ? t('purgeDataset') : undefined,
       }
@@ -288,6 +296,9 @@ export default function EditDatasetPage() {
     <div className="flex flex-col gap-6">
       <PageHeader title={t('editDataset')}>
         {isDraft && <Badge variant="secondary">{t('draftBadge')}</Badge>}
+        {publicName && (
+          <ViewPublicLink href={`/dataset/${publicName}`} variant="outline" size="default" />
+        )}
       </PageHeader>
 
       {published && (
@@ -442,6 +453,7 @@ export default function EditDatasetPage() {
             <CardContent className="flex flex-col gap-4">
               <ResourceList
                 packageId={pkg.id}
+                packageName={publicName}
                 resources={pkg.resources ?? []}
                 onUpdated={fetchData}
                 onUploadingChange={setUploading}
@@ -482,7 +494,7 @@ export default function EditDatasetPage() {
       <DeleteConfirmDialog
         open={showDelete}
         onOpenChange={setShowDelete}
-        title={deleteUi.buttonLabel}
+        title={deleteUi.dialogTitle}
         description={deleteUi.dialogDescription}
         onConfirm={handleDelete}
         isDeleting={deleting}

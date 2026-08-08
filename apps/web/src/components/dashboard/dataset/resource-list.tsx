@@ -41,11 +41,13 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { clientFetch, problemDetail } from '@/lib/client-api'
+import { rowActivateProps } from '@/lib/row-activate'
 import { takePendingDropFiles } from '@/lib/pending-drop-files'
 import { updateResource } from '@/lib/update-resource'
 import { useFileDrop } from '@/hooks/use-file-drop'
 import { FormatBadge } from '@/components/format-badge'
 import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
+import { ViewPublicLink } from '@/components/dashboard/view-public-link'
 import { PipelineStatusBadge } from './pipeline-status-badge'
 import { DropFilesZone, dropZoneClass } from './drop-files-zone'
 import { FileUploadZone } from './file-upload-zone'
@@ -86,6 +88,9 @@ interface DropUpload {
 
 interface ResourceListProps {
   packageId: string
+  /** Dataset name for the public resource links; omitted when there is no
+   *  public page to open (a draft is unpublished and has a placeholder name) */
+  packageName?: string
   resources: Resource[]
   /** Refetch the parent's package; return false when the refresh could not
    *  be applied — the list then keeps its busy gate up and retries */
@@ -96,22 +101,22 @@ interface ResourceListProps {
 
 function SortableResourceRow({
   resource: r,
+  packageName,
   isDragDisabled,
   isActionsDisabled,
   isActive,
   onEdit,
   onClose,
-  onDelete,
   onPipelineSettled,
 }: {
   resource: Resource
+  packageName?: string
   isDragDisabled: boolean
   isActionsDisabled: boolean
   /** True when this row's inline editor is open — a row click then closes it. */
   isActive: boolean
   onEdit: (r: Resource) => void
   onClose: () => void
-  onDelete: (id: string) => void
   onPipelineSettled?: () => void
 }) {
   const t = useTranslations('resource')
@@ -129,7 +134,6 @@ function SortableResourceRow({
 
   // Row click toggles the inline editor: open it, or close it if already open.
   const toggleEdit = () => {
-    if (isActionsDisabled) return
     if (isActive) onClose()
     else onEdit(r)
   }
@@ -138,25 +142,13 @@ function SortableResourceRow({
     <TableRow
       ref={setNodeRef}
       style={style}
-      role="button"
-      tabIndex={isActionsDisabled ? undefined : 0}
-      aria-disabled={isActionsDisabled}
-      className={isActionsDisabled ? undefined : 'cursor-pointer hover:bg-muted/50'}
-      onClick={toggleEdit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          toggleEdit()
-        }
-      }}
+      {...rowActivateProps(toggleEdit, { role: 'button', disabled: isActionsDisabled })}
     >
       <TableCell className="w-8 p-2">
         <button
           type="button"
           {...attributes}
           {...listeners}
-          // Drag handle: don't let a click here open the editor.
-          onClick={(e) => e.stopPropagation()}
           className="cursor-grab touch-none p-1 text-muted-foreground hover:text-foreground disabled:cursor-default disabled:opacity-30"
           disabled={isDragDisabled}
           aria-label={tc('reorder')}
@@ -192,18 +184,7 @@ function SortableResourceRow({
         )}
       </TableCell>
       <TableCell>
-        {/* Row click opens the editor; delete stops propagation so it doesn't. */}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={(e) => {
-            e.stopPropagation()
-            onDelete(r.id)
-          }}
-          disabled={isActionsDisabled}
-        >
-          {tc('delete')}
-        </Button>
+        {packageName && <ViewPublicLink href={`/dataset/${packageName}/resource/${r.id}`} />}
       </TableCell>
     </TableRow>
   )
@@ -211,6 +192,7 @@ function SortableResourceRow({
 
 export function ResourceList({
   packageId,
+  packageName,
   resources,
   onUpdated,
   onUploadingChange,
@@ -637,6 +619,8 @@ export function ResourceList({
       const res = await clientFetch(`/api/v1/resources/${deleteId}`, { method: 'DELETE' })
       if (res.ok) {
         setDeleteId(null)
+        // Delete runs from the open editor — close it, its resource is gone
+        resetForm()
         onUpdated()
       }
     } finally {
@@ -661,7 +645,8 @@ export function ResourceList({
     }
 
     const isUploadTab = formState.urlType === 'upload'
-    const isExistingUpload = isEditing && !creating
+    // The form is open on a resource that already exists, not on a new one
+    const isExistingResource = isEditing && !creating
 
     return (
       <>
@@ -697,7 +682,7 @@ export function ResourceList({
                 </div>
               </TabsContent>
               <TabsContent value="upload">
-                {isExistingUpload && !replacing && !pendingFile ? (
+                {isExistingResource && !replacing && !pendingFile ? (
                   <div className="flex items-center gap-2 py-2">
                     <Upload className="size-4 text-muted-foreground" />
                     <span className="text-sm text-muted-foreground">
@@ -770,6 +755,18 @@ export function ResourceList({
             <Button variant="ghost" onClick={resetForm} disabled={saving}>
               {tc('cancel')}
             </Button>
+            {/* Pushed to the far edge, away from Save/Cancel, to keep a
+                destructive action out of misclick range of the routine ones */}
+            {isExistingResource && (
+              <Button
+                variant="destructive"
+                className="ml-auto"
+                onClick={() => setDeleteId(editId)}
+                disabled={saving}
+              >
+                {t('deleteThisResource')}
+              </Button>
+            )}
           </div>
           {isEditing && !creating && editId && (
             <div className="mt-2 border-t pt-4">
@@ -821,7 +818,7 @@ export function ResourceList({
                   <TableHead>{t('versions.version')}</TableHead>
                   <TableHead>{t('source')}</TableHead>
                   <TableHead>{t('status')}</TableHead>
-                  <TableHead className="w-[120px]">{tc('actions')}</TableHead>
+                  <TableHead className="w-[100px]">{tc('actions')}</TableHead>
                 </TableRow>
               </TableHeader>
             )}
@@ -831,12 +828,12 @@ export function ResourceList({
                   <Fragment key={r.id}>
                     <SortableResourceRow
                       resource={r}
+                      packageName={packageName}
                       isDragDisabled={isFormOpen || savingOrder || dropUploads.length > 0}
                       isActionsDisabled={isDirty || savingOrder}
                       isActive={editId === r.id}
                       onEdit={startEdit}
                       onClose={resetForm}
-                      onDelete={setDeleteId}
                       // A settle means the row's status (and maybe others)
                       // changed — refresh through the retrying gate
                       onPipelineSettled={() => scheduleRefetch()}

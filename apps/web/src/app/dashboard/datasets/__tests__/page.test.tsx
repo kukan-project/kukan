@@ -150,6 +150,30 @@ describe('DatasetsManagePage', () => {
     expect(mockPush).toHaveBeenCalledWith('/dashboard/datasets/population-data/edit')
   })
 
+  it('opens the public page in a new tab without opening the editor (kukan#286)', async () => {
+    setupDefaultMocks()
+    render(<DatasetsManagePage />)
+
+    await waitFor(() => expect(screen.getByText('population-data')).toBeInTheDocument())
+    const view = screen.getAllByRole('link', { name: 'View' })[0]
+    expect(view).toHaveAttribute('href', '/dataset/population-data')
+    expect(view).toHaveAttribute('target', '_blank')
+
+    fireEvent.click(view)
+    expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('offers no public page for a deleted dataset', async () => {
+    setupDefaultMocks()
+    render(<DatasetsManagePage />)
+
+    await waitFor(() => expect(screen.getByText('Deleted')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Deleted'))
+
+    await waitFor(() => expect(screen.getByText('population-data')).toBeInTheDocument())
+    expect(screen.queryByRole('link', { name: 'View' })).not.toBeInTheDocument()
+  })
+
   it('should offer only the organizations the viewer may write in as filters', async () => {
     setupDefaultMocks()
     render(<DatasetsManagePage />)

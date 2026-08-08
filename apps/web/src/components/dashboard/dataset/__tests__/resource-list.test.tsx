@@ -234,7 +234,10 @@ describe('ResourceList drop-to-create', () => {
     render(
       <ResourceList {...baseProps} resources={[{ id: 'r1', name: 'weather.csv', format: 'CSV' }]} />
     )
-    fireEvent.click(screen.getByText('Delete'))
+    // Delete only appears once the row's editor is open (kukan#286)
+    expect(screen.queryByRole('button', { name: 'Delete This Resource' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('weather.csv'))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete This Resource' }))
     expect(
       screen.getByText('Are you sure you want to delete the resource "weather.csv"?')
     ).toBeInTheDocument()
@@ -255,6 +258,33 @@ describe('ResourceList drop-to-create', () => {
       />
     )
     expect(screen.queryAllByRole('columnheader').length).toBeGreaterThan(0)
+  })
+
+  it('should link a row to the public resource page without opening its editor (kukan#286)', () => {
+    render(
+      <ResourceList
+        {...baseProps}
+        packageName="weather"
+        resources={[{ id: 'r1', name: 'existing.csv', urlType: 'upload', format: 'CSV' }]}
+      />
+    )
+
+    const view = screen.getByRole('link', { name: 'View' })
+    expect(view).toHaveAttribute('href', '/dataset/weather/resource/r1')
+    expect(view).toHaveAttribute('target', '_blank')
+
+    fireEvent.click(view)
+    expect(screen.queryByLabelText('Description')).not.toBeInTheDocument()
+  })
+
+  it('should offer no public page for a draft dataset (no packageName)', () => {
+    render(
+      <ResourceList
+        {...baseProps}
+        resources={[{ id: 'r1', name: 'existing.csv', urlType: 'upload', format: 'CSV' }]}
+      />
+    )
+    expect(screen.queryByRole('link', { name: 'View' })).not.toBeInTheDocument()
   })
 
   it('should ignore drops while the create form is open but still suppress navigation', () => {

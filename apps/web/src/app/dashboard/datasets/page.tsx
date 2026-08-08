@@ -25,9 +25,11 @@ import { useTranslations } from 'next-intl'
 import type { PackageDbState } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
 import { parseGroups } from '@/lib/parse-groups'
+import { rowActivateProps } from '@/lib/row-activate'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { StatCard } from '@/components/dashboard/stat-card'
+import { ViewPublicLink } from '@/components/dashboard/view-public-link'
 import { DraftsTable } from '@/components/dashboard/dataset/drafts-table'
 import { FormatBadges } from '@/components/format-badges'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
@@ -165,6 +167,8 @@ export default function DatasetsManagePage() {
     return (value: string) => setter(value === ALL ? '' : value)
   }
 
+  const isDeletedView = activeCategory === 'deleted'
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title={t('manageTitle')}>
@@ -282,30 +286,21 @@ export default function DatasetsManagePage() {
                 <TableHead colSpan={2}>{tc('title')}</TableHead>
                 <TableHead className="whitespace-nowrap">{t('visibility')}</TableHead>
                 <TableHead className="whitespace-nowrap">{tc('format')}</TableHead>
+                {/* A deleted dataset has no public page to open */}
+                {!isDeletedView && (
+                  <TableHead className="w-[80px] text-right">{tc('actions')}</TableHead>
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
               {items.map((pkg) => {
                 const pkgGroups = parseGroups(pkg.groups)
                 const pkgTags = pkg.tags?.split(',').filter(Boolean) ?? []
-                const editHref =
-                  activeCategory === 'deleted'
-                    ? `/dashboard/datasets/${pkg.name}/edit?state=deleted`
-                    : `/dashboard/datasets/${pkg.name}/edit`
+                const editHref = isDeletedView
+                  ? `/dashboard/datasets/${pkg.name}/edit?state=deleted`
+                  : `/dashboard/datasets/${pkg.name}/edit`
                 return (
-                  <TableRow
-                    key={pkg.id}
-                    role="link"
-                    tabIndex={0}
-                    className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => router.push(editHref)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        router.push(editHref)
-                      }
-                    }}
-                  >
+                  <TableRow key={pkg.id} {...rowActivateProps(() => router.push(editHref))}>
                     <TableCell className="font-mono text-sm">{pkg.name}</TableCell>
                     <TableCell colSpan={2}>
                       <div className="font-medium">{pkg.title || '-'}</div>
@@ -331,7 +326,7 @@ export default function DatasetsManagePage() {
                       </div>
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
-                      {activeCategory === 'deleted' ? (
+                      {isDeletedView ? (
                         <Badge variant="destructive">{t('tabDeleted')}</Badge>
                       ) : pkg.private ? (
                         <Badge variant="secondary">{tc('private')}</Badge>
@@ -342,6 +337,12 @@ export default function DatasetsManagePage() {
                     <TableCell>
                       <FormatBadges formats={pkg.formats} />
                     </TableCell>
+                    {!isDeletedView && (
+                      <TableCell className="text-right">
+                        {/* The row click opens the editor; this link acts on its own */}
+                        <ViewPublicLink href={`/dataset/${pkg.name}`} />
+                      </TableCell>
+                    )}
                   </TableRow>
                 )
               })}
