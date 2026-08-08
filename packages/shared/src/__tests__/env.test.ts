@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { envSchema, loadEnv } from '../env'
+import { envSchema, loadEnv, databaseUrl } from '../env'
 
 describe('envSchema', () => {
   it('should apply defaults for optional fields', () => {
@@ -52,6 +52,22 @@ describe('envSchema', () => {
     if (!result.success) return
     expect(result.data.POSTGRES_PORT).toBe(5433)
     expect(result.data.PORT).toBe(8080)
+  })
+
+  it('should take a non-default POSTGRES_PORT and reject one no URL can hold', () => {
+    const parse = (POSTGRES_PORT: string) =>
+      envSchema.safeParse({
+        SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
+        BETTER_AUTH_SECRET: 'a'.repeat(32),
+        POSTGRES_PORT,
+      })
+
+    // A second Postgres beside the first is an ordinary thing to test against
+    expect(parse('5433').success).toBe(true)
+    expect(parse('65535').success).toBe(true)
+    // Out of range says POSTGRES_PORT here, rather than `Invalid URL` further down
+    expect(parse('65536').success).toBe(false)
+    expect(parse('0').success).toBe(false)
   })
 
   it('should parse boolean strings correctly', () => {
@@ -178,6 +194,24 @@ describe('loadEnv', () => {
     const env = loadEnv()
 
     expect(env.DATABASE_URL).toBe('postgresql://myuser:mypass@db.example.com:5433/mydb')
+  })
+
+  it('databaseUrl matches what loadEnv builds', () => {
+    process.env.POSTGRES_HOST = 'db.example.com'
+    process.env.POSTGRES_PORT = '5433'
+
+    expect(databaseUrl()).toBe(loadEnv().DATABASE_URL)
+  })
+
+  it('databaseUrl answers without the rest of the environment', () => {
+    // The test bootstrap and drizzle-kit have no queue and no auth secret, and
+    // asking them for one only breaks the migrations over an unrelated gap
+    delete process.env.SQS_QUEUE_URL
+    delete process.env.BETTER_AUTH_SECRET
+    process.env.POSTGRES_HOST = 'db.example.com'
+
+    expect(() => loadEnv()).toThrow()
+    expect(databaseUrl()).toBe('postgresql://kukan:kukan@db.example.com:5432/kukan')
   })
 
   it('should throw on invalid environment', () => {

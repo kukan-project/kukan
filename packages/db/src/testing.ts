@@ -16,6 +16,7 @@
 import { randomBytes } from 'node:crypto'
 import { Client, Pool, type PoolClient } from 'pg'
 import { drizzle } from 'drizzle-orm/node-postgres'
+import { databaseUrl } from '@kukan/shared'
 import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
@@ -26,7 +27,49 @@ const MIGRATIONS = resolve(HERE, '../drizzle')
 
 /** Setup runs before any reporter, so this is the only channel it has. */
 const report = (message: string) => process.stdout.write(`${message}\n`)
-const SERVER_URL = process.env.DATABASE_URL || 'postgresql://kukan:kukan@localhost:5432/kukan'
+
+/**
+ * Where the repo says Postgres is, rather than a reading of `DATABASE_URL` only
+ * this file had. `POSTGRES_*` is the one knob, and pointing the project at a
+ * different server used to leave the tests on localhost without saying so.
+ */
+const SERVER_URL = databaseUrl()
+
+/** Where a Postgres that can be treated as disposable lives. */
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
+
+/**
+ * Refuse to work on a server that is not this machine's.
+ *
+ * This file creates and drops databases, and sweeps every `kukan_test_*` it
+ * finds. That was survivable while it read a `DATABASE_URL` nobody sets: you had
+ * to aim it deliberately. Now that it follows `POSTGRES_*` like the rest of the
+ * repo — which is the point — pointing the project at a shared Postgres aims it
+ * there too, and the first `pnpm test:integration` would be the notice.
+ *
+ * An env var rather than no escape at all: a suite run inside a compose network
+ * reaches Postgres by service name, and is as disposable as any container.
+ *
+ * A guardrail, not a proof. The name is all this can go on, so a shared server
+ * forwarded to a local port reads as local and is let through.
+ *
+ * On each function that reaches the server rather than once on the way in.
+ * `createTestDatabase` runs in the worker processes, where the setup that would
+ * have vouched for the server never ran — the guard held there only because a
+ * refusal in the main process stops the run before a worker starts, which is an
+ * ordering, not an invariant, and not one a new caller inherits.
+ */
+function refuseRemoteServer(): void {
+  if (process.env.KUKAN_TEST_DB_ALLOW_REMOTE === '1') return
+  // `hostname` brackets an IPv6 literal; the set holds bare addresses.
+  const host = new URL(SERVER_URL).hostname.replace(/^\[|\]$/g, '')
+  if (LOCAL_HOSTS.has(host)) return
+  throw new Error(
+    `The integration suites create and drop databases, and sweep every kukan_test_* on the server. ` +
+      `POSTGRES_HOST is "${host}", which is not this machine. ` +
+      `Set KUKAN_TEST_DB_ALLOW_REMOTE=1 if that is intended.`
+  )
+}
 
 /** Migrated once; every slot's database is copied from it. */
 const TEMPLATE = 'kukan_test_template'
@@ -65,7 +108,7 @@ function lockKey(token: string): number {
 }
 
 /**
- * The server from `DATABASE_URL`, with `name` as the database.
+ * The server from the environment, with `name` as the database.
  *
  * One knob points every suite at a Postgres, and the name — which is what keeps
  * two slots off each other's rows — always applies.
@@ -215,6 +258,7 @@ async function dropQuietly(client: PoolClient, name: string): Promise<number> {
  * is the front door for "clear this machine up" and takes the strays too.
  */
 export async function cleanTestDatabases(): Promise<{ dropped: string[]; kept: string[] }> {
+  refuseRemoteServer()
   const admin = new Pool({ connectionString: SERVER_URL })
   const client = await admin.connect()
   const dropped: string[] = []
@@ -277,6 +321,7 @@ export interface TestDatabases {
  * would either waste them or run out.
  */
 export async function setupTestDatabase(suite: string): Promise<TestDatabases> {
+  refuseRemoteServer()
   const token = `${Date.now().toString(36)}${randomBytes(6).toString('hex')}`
   const prefix = `kukan_test_${suite}_${token}`
 
@@ -335,6 +380,7 @@ async function dropRun(prefix: string): Promise<void> {
  * `Hook timed out` and never the reason.
  */
 export async function createTestDatabase(name: string): Promise<void> {
+  refuseRemoteServer()
   const admin = new Pool({ connectionString: SERVER_URL })
   try {
     await admin.query(`CREATE DATABASE ${name} TEMPLATE ${TEMPLATE}`)

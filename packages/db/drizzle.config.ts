@@ -1,6 +1,6 @@
 import { config } from 'dotenv'
 import { defineConfig } from 'drizzle-kit'
-import { loadEnv } from '@kukan/shared'
+import { databaseUrl } from '@kukan/shared'
 
 config({ path: '../../.env' })
 
@@ -9,6 +9,6 @@ export default defineConfig({
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
-    url: loadEnv().DATABASE_URL,
+    url: databaseUrl(),
   },
 })

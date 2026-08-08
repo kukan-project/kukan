@@ -254,9 +254,16 @@ jobs:
       # cache above already makes this near-free when web did not change.
       - run: pnpm build
 
+      # POSTGRES_*, not DATABASE_URL: loadEnv assembles the one from the other
+      # and never reads it directly, so setting it here said nothing. The
+      # credentials have to stay in step with the service container above.
       - name: Test (integration)
         env:
-          DATABASE_URL: postgresql://kukan:kukan@localhost:5432/kukan
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: kukan
+          POSTGRES_USER: kukan
+          POSTGRES_PASSWORD: kukan
         run: pnpm test:integration
 
       # See the quality job for why saving is limited to develop.
