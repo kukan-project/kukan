@@ -182,6 +182,19 @@ export interface UrlSafetyProblem {
 const BLOCKED_HOSTNAMES = new Set(['localhost', 'metadata.google.internal'])
 
 /**
+ * The form of a hostname to compare and to key on.
+ *
+ * `URL` folds case and punycode for us and stops there: a trailing dot is the
+ * same name to a resolver and a different string to everything else. Anything
+ * that decides "have I seen this host" — a blocklist, a rate limit, the set of
+ * hosts a redirect chain has used — has to ask in one form, or `example.com.`
+ * is a second host with a budget of its own.
+ */
+export function normalizeHostname(hostname: string): string {
+  return hostname.toLowerCase().replace(/\.$/, '')
+}
+
+/**
  * Why this URL may not be fetched, or null when it may.
  *
  * String level only: a hostname is judged by the resolver, not here. This is
@@ -199,8 +212,7 @@ export function checkUrlSafety(url: string): UrlSafetyProblem | null {
     return { reason: 'protocol', message: `Unsupported protocol: ${parsed.protocol}` }
   }
 
-  // A trailing dot is the same name to a resolver, and not to a Set.
-  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '')
+  const hostname = normalizeHostname(parsed.hostname)
   if (BLOCKED_HOSTNAMES.has(hostname)) {
     return { reason: 'hostname', message: `Blocked hostname: ${hostname}` }
   }

@@ -1,16 +1,26 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createHash } from 'crypto'
 import { Readable } from 'stream'
 import { executeFetch } from '../pipeline/steps/fetch'
+import { MAX_FETCH_SIZE } from '../config'
 import type { ResourceForPipeline } from '../pipeline/types'
 import {
   createPipelineContextMock,
   type PipelineContextMock,
 } from './test-helpers/pipeline-context'
 
+// The real class, not a copy: `executeFetch` decides on `instanceof`, so a
+// second declaration would let the mapping below pass while production's
+// refusal fell through as an error.
+const { HopRefusedError } = await vi.importActual<typeof import('@/safe-fetch')>('@/safe-fetch')
+
 // Mock safeFetch to use globalThis.fetch directly (SSRF logic tested separately)
-vi.mock('@/safe-fetch', () => ({
-  safeFetch: (...args: unknown[]) => globalThis.fetch(...(args as Parameters<typeof fetch>)),
+const safeFetchImpl = vi.hoisted(() => ({
+  run: (...args: unknown[]) => globalThis.fetch(...(args as Parameters<typeof fetch>)),
+}))
+vi.mock('@/safe-fetch', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/safe-fetch')>()),
+  safeFetch: (...args: unknown[]) => safeFetchImpl.run(...args),
 }))
 
 /** Keys a run mints carry a random token; assertions match on the shape. */
@@ -52,7 +62,16 @@ function createMockCtx(): PipelineContextMock {
   return ctx
 }
 
+/** What `safeFetch` does unless a case replaces it. */
+const passThrough = (...args: unknown[]) => globalThis.fetch(...(args as Parameters<typeof fetch>))
+
 describe('executeFetch', () => {
+  // Restored between cases: a case that swaps the implementation would
+  // otherwise leave it swapped for every case after it.
+  beforeEach(() => {
+    safeFetchImpl.run = passThrough
+  })
+
   it('should throw NotFoundError when resource not found', async () => {
     const ctx = createMockCtx()
     vi.mocked(ctx.getResource).mockResolvedValue(null)
@@ -290,6 +309,68 @@ describe('executeFetch', () => {
     expect(result).toEqual({ status: 'deferred' })
     expect(ctx.acquireFetchSlot).toHaveBeenCalledWith('example.com')
     expect(ctx.putObject).not.toHaveBeenCalled()
+  })
+
+  it('should ask for a slot for every host a redirect reaches', async () => {
+    // The registered host's slot is taken above; the chain's own hosts are
+    // taken as it goes, or the limit only ever sees the host an attacker is
+    // happy for it to see.
+    const ctx = createMockCtx()
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ url: 'https://example.com/data.csv' })
+    )
+    let asked: string[] = []
+    safeFetchImpl.run = async (_url, _init, hooks) => {
+      await (hooks as { onHost?(h: string): Promise<boolean> })?.onHost?.('cdn.example.net')
+      asked = vi.mocked(ctx.acquireFetchSlot).mock.calls.map((c) => c[0])
+      return new Response('data')
+    }
+
+    await executeFetch('res-1', ctx)
+
+    expect(asked).toEqual(['example.com', 'cdn.example.net'])
+  })
+
+  it.each([
+    ['an error status', () => new Response('an error page', { status: 404 })],
+    [
+      'a declared size over the limit',
+      () =>
+        new Response('too much', {
+          status: 200,
+          headers: { 'content-length': String(MAX_FETCH_SIZE + 1) },
+        }),
+    ],
+  ])('should release the body when refusing on %s', async (_label, make) => {
+    // Neither refusal reads the body, and an unread body holds a connection on
+    // the Agent every fetch in the worker shares. The size branch is the one an
+    // attacker reaches deliberately: declare a length nobody accepts, and the
+    // bytes keep arriving on a socket nothing else can have.
+    const ctx = createMockCtx()
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ url: 'https://example.com/data.csv' })
+    )
+    const response = make()
+    safeFetchImpl.run = () => Promise.resolve(response)
+
+    await expect(executeFetch('res-1', ctx)).rejects.toThrow()
+
+    expect(response.bodyUsed).toBe(true)
+  })
+
+  it('should defer when a redirect target is over its own limit', async () => {
+    // Not a broken link: the resource is fine and the run is worth retrying,
+    // which is the same answer the registered host being busy gets.
+    const ctx = createMockCtx()
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ url: 'https://example.com/data.csv' })
+    )
+    safeFetchImpl.run = () => Promise.reject(new HopRefusedError('victim.example.net'))
+
+    const result = await executeFetch('res-1', ctx)
+
+    expect(result).toEqual({ status: 'deferred' })
+    expect(ctx.publishContent).not.toHaveBeenCalled()
   })
 
   it('should not check rate limit for uploads', async () => {

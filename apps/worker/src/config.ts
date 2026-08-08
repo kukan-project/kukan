@@ -5,6 +5,18 @@
 /** Maximum file size for external URL fetches (100 MB) */
 export const MAX_FETCH_SIZE = 100 * 1024 * 1024
 
+/**
+ * How large a redirect's own body may claim to be.
+ *
+ * {@link MAX_FETCH_SIZE} guards the response the caller keeps; a hop's body is
+ * thrown away, so nothing was checking it and each one arrived in full until
+ * the cancel landed. A 3xx carries a courtesy page at most — "Moved", with a
+ * link — so anything approaching this is not a redirect being served, and
+ * generous is the point: the bound has to be obviously above every honest use
+ * before it is worth refusing on.
+ */
+export const MAX_REDIRECT_BODY = 256 * 1024
+
 /** Timeout for fetching external URLs (30 s) */
 export const FETCH_TIMEOUT_MS = 30_000
 

@@ -3,6 +3,7 @@ import {
   DNS_CACHE_TTL_MS,
   HEALTH_CHECK_BATCH_SIZE,
   HEALTH_CHECK_CONCURRENCY,
+  MAX_REDIRECT_BODY,
   RESOLUTION_CACHE_MAX,
 } from '../config'
 
@@ -55,7 +56,8 @@ vi.mock('undici', async (importOriginal) => {
   }
 })
 
-const { safeFetch, ssrfSafeLookup, forgetResolutions } = await import('../safe-fetch')
+const { safeFetch, ssrfSafeLookup, forgetResolutions, HopRefusedError } =
+  await import('../safe-fetch')
 
 describe('ssrfSafeLookup', () => {
   // The shape `net.connect` actually asks for. Every one of these tests passes
@@ -734,6 +736,165 @@ describe('safeFetch', () => {
       expect(headersOf(3).get('authorization')).toBeNull()
     })
 
+    it('should refuse a hop whose body claims to be huge', async () => {
+      // A hop's body is discarded, so `MAX_FETCH_SIZE` never looked at it and
+      // each one arrived until the cancel landed. Nothing legitimate needs a
+      // 3xx to carry megabytes.
+      mockUndiciFetch.mockResolvedValueOnce(
+        new Response('x', {
+          status: 302,
+          headers: {
+            location: 'https://example.com/moved',
+            'content-length': String(MAX_REDIRECT_BODY + 1),
+          },
+        })
+      )
+
+      await expect(safeFetch('https://example.com/start')).rejects.toThrow(
+        'Redirect body too large'
+      )
+      // Refused before the next request, which is the point.
+      expect(mockUndiciFetch).toHaveBeenCalledTimes(1)
+    })
+
+    it('should allow a hop body at the bound', async () => {
+      // The counterweight: refusing every hop with a body would pass the above.
+      mockUndiciFetch.mockResolvedValueOnce(
+        new Response('x', {
+          status: 302,
+          headers: {
+            location: 'https://example.com/moved',
+            'content-length': String(MAX_REDIRECT_BODY),
+          },
+        })
+      )
+      mockUndiciFetch.mockResolvedValueOnce(ok())
+
+      await expect(safeFetch('https://example.com/start')).resolves.toMatchObject({ status: 200 })
+    })
+
+    describe('per-host slots', () => {
+      it('should ask for a slot for each new host the chain reaches', async () => {
+        // The rate limit read the URL a user registered and nothing after it,
+        // so a redirect bought requests to any other host for free.
+        mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'https://second.example.net/a'))
+        mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'https://third.example.org/b'))
+        mockUndiciFetch.mockResolvedValueOnce(ok())
+        const onHost = vi.fn().mockResolvedValue(true)
+
+        await safeFetch('https://example.com/start', undefined, { onHost })
+
+        expect(onHost.mock.calls.map((c) => c[0])).toEqual([
+          'second.example.net',
+          'third.example.org',
+        ])
+      })
+
+      it('should not ask again for a host the chain is already using', async () => {
+        // The pipeline's limit is one request per host per interval, so a
+        // chain redirecting within one host — http to https, a missing trailing
+        // slash — would be refused by the slot its own first request took.
+        mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'https://example.com/a'))
+        mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'https://example.com/b'))
+        mockUndiciFetch.mockResolvedValueOnce(ok())
+        const onHost = vi.fn().mockResolvedValue(true)
+
+        await expect(
+          safeFetch('https://example.com/start', undefined, { onHost })
+        ).resolves.toMatchObject({ status: 200 })
+        expect(onHost).not.toHaveBeenCalled()
+      })
+
+      it('should not ask twice for a host it returns to', async () => {
+        mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'https://second.example.net/a'))
+        mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'https://example.com/back'))
+        mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'https://second.example.net/c'))
+        mockUndiciFetch.mockResolvedValueOnce(ok())
+        const onHost = vi.fn().mockResolvedValue(true)
+
+        await safeFetch('https://example.com/start', undefined, { onHost })
+
+        expect(onHost.mock.calls.map((c) => c[0])).toEqual(['second.example.net'])
+      })
+
+      it('should treat a trailing dot as the same host', async () => {
+        // `URL` folds case and punycode and stops there, so `example.com.` is a
+        // different string and the same name to a resolver. Left alone it is a
+        // second host with a slot of its own — a limit anyone can step around
+        // by alternating the two spellings.
+        mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'https://example.com./a'))
+        mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'https://EXAMPLE.com/b'))
+        mockUndiciFetch.mockResolvedValueOnce(ok())
+        const onHost = vi.fn().mockResolvedValue(true)
+
+        await safeFetch('https://example.com/start', undefined, { onHost })
+
+        expect(onHost).not.toHaveBeenCalled()
+      })
+
+      it('should ask for the normalized name, not the one the server wrote', async () => {
+        mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'https://Second.Example.NET./a'))
+        mockUndiciFetch.mockResolvedValueOnce(ok())
+        const onHost = vi.fn().mockResolvedValue(true)
+
+        await safeFetch('https://example.com/start', undefined, { onHost })
+
+        expect(onHost).toHaveBeenCalledWith('second.example.net')
+      })
+
+      it('should not spend a slot on the hop past the redirect limit', async () => {
+        // The chain ends here, so that request is never sent. Asked anyway, it
+        // spends a host's allowance on nothing — and a busy host answering no
+        // turns "too many redirects" into a `deferred`, which retries a
+        // redirect loop rather than reporting it.
+        for (let i = 0; i < 11; i++) {
+          mockUndiciFetch.mockResolvedValueOnce(redirect(302, `https://hop-${i}.example.net/`))
+        }
+        const onHost = vi.fn().mockResolvedValue(true)
+
+        await expect(safeFetch('https://example.com/start', undefined, { onHost })).rejects.toThrow(
+          'Too many redirects'
+        )
+
+        // Ten hops were followed; the eleventh was not asked about.
+        expect(onHost).toHaveBeenCalledTimes(10)
+        expect(onHost).not.toHaveBeenCalledWith('hop-10.example.net')
+      })
+
+      it('should stop the chain when a host is refused', async () => {
+        mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'https://victim.example.net/a'))
+        const onHost = vi.fn().mockResolvedValue(false)
+
+        await expect(safeFetch('https://example.com/start', undefined, { onHost })).rejects.toThrow(
+          HopRefusedError
+        )
+        // The refused host is never asked for bytes.
+        expect(mockUndiciFetch).toHaveBeenCalledTimes(1)
+      })
+
+      it('should not spend a slot on a target it was going to refuse anyway', async () => {
+        // Safety first: an unsafe target consuming the victim host's slot would
+        // let an attacker exhaust it without ever reaching the host.
+        mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'http://169.254.169.254/latest/'))
+        const onHost = vi.fn().mockResolvedValue(true)
+
+        await expect(safeFetch('https://example.com/start', undefined, { onHost })).rejects.toThrow(
+          'unsafe'
+        )
+        expect(onHost).not.toHaveBeenCalled()
+      })
+
+      it('should follow redirects unchanged when no hook is given', async () => {
+        // The health check passes none, and must keep working.
+        mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'https://second.example.net/a'))
+        mockUndiciFetch.mockResolvedValueOnce(ok())
+
+        await expect(safeFetch('https://example.com/start')).resolves.toMatchObject({
+          status: 200,
+        })
+      })
+    })
+
     it('should release the body of a hop it follows', async () => {
       // The Agent is shared by every fetch, and a hop body still arriving pins
       // its pooled connection.
@@ -757,6 +918,19 @@ describe('safeFetch', () => {
       expect(hopResponse.bodyUsed).toBe(true)
     })
 
+    it('should release the body of a 3xx with nowhere to go', async () => {
+      // Nothing can follow it and no caller reads it — both treat a non-2xx as
+      // an error and throw. Left alone it holds a connection on the shared
+      // Agent, which is what every other release here exists to prevent.
+      const stuck = new Response('a body nobody reads', { status: 302 })
+      mockUndiciFetch.mockResolvedValueOnce(stuck)
+
+      const response = await safeFetch('https://example.com/start')
+
+      expect(response.status).toBe(302)
+      expect(stuck.bodyUsed).toBe(true)
+    })
+
     it('should hand back the body of the response it returns', async () => {
       // The other side of the release: cancelling before the redirect check
       // destroys the final body too, and the pipeline reads it.
@@ -768,14 +942,15 @@ describe('safeFetch', () => {
       await expect(response.text()).resolves.toBe('the resource')
     })
 
-    it('should hand back a 3xx that names nowhere to go, body intact', async () => {
-      const stuck = new Response('no location here', { status: 302 })
-      mockUndiciFetch.mockResolvedValueOnce(stuck)
+    it('should hand back a 3xx that names nowhere to go, so the caller can report it', async () => {
+      // The status is what a caller needs — both record it and treat it as an
+      // error. The body is released rather than handed over (see below): it is
+      // going nowhere, and this is the function that knows that.
+      mockUndiciFetch.mockResolvedValueOnce(new Response('no location here', { status: 302 }))
 
       const response = await safeFetch('https://example.com/start')
 
       expect(response.status).toBe(302)
-      await expect(response.text()).resolves.toBe('no location here')
     })
 
     it('should follow exactly ten redirects', async () => {

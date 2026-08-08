@@ -6,8 +6,14 @@
 
 import { createHash, randomUUID } from 'crypto'
 import { Transform, Readable } from 'stream'
-import { KukanError, NotFoundError, ValidationError, getStorageKey } from '@kukan/shared'
-import { safeFetch } from '@/safe-fetch'
+import {
+  KukanError,
+  NotFoundError,
+  ValidationError,
+  getStorageKey,
+  normalizeHostname,
+} from '@kukan/shared'
+import { HopRefusedError, discardBody, safeFetch } from '@/safe-fetch'
 import { HASH_PREFIX, digestStream } from '@kukan/shared/hash-node'
 import type { PipelineContext } from '../types'
 import { MAX_FETCH_SIZE, FETCH_TIMEOUT_MS } from '@/config'
@@ -70,8 +76,9 @@ export async function executeFetch(
       throw new ValidationError('Resource has no file or URL')
     }
 
-    // Rate limit: max 1 request per interval per FQDN
-    const fqdn = new URL(res.url).hostname
+    // Rate limit: max 1 request per interval per FQDN. Normalized, so that the
+    // slot this takes is the one the chain's own hops compare against.
+    const fqdn = normalizeHostname(new URL(res.url).hostname)
     if (!(await ctx.acquireFetchSlot(fqdn))) {
       return { status: 'deferred' }
     }
@@ -81,7 +88,15 @@ export async function executeFetch(
     // response or a half-written stream leaves the previous content untouched
     // because it was never the target.
     key = getStorageKey(res.packageId, res.id, randomUUID())
-    measured = await downloadToStorage(res.url, key, ctx)
+    try {
+      measured = await downloadToStorage(res.url, key, ctx)
+    } catch (err) {
+      // A host the chain redirected to was over its own limit. The same answer
+      // as the registered host being over its limit: nothing is wrong with the
+      // resource, so come back rather than record a failure against it.
+      if (err instanceof HopRefusedError) return { status: 'deferred' }
+      throw err
+    }
   }
 
   const published = await ctx.publishContent(resourceId, {
@@ -109,16 +124,28 @@ async function downloadToStorage(
   storageKey: string,
   ctx: PipelineContext
 ): Promise<{ hash: string; size: number }> {
-  const response = await safeFetch(url, {
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  })
+  const response = await safeFetch(
+    url,
+    { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
+    // The slot taken above covers the host the user registered. Every host the
+    // chain reaches after it takes one of its own, or the limit is watching the
+    // only host an attacker does not need it to watch.
+    { onHost: (hostname) => ctx.acquireFetchSlot(hostname) }
+  )
 
+  // Both refusals below leave without reading the body, so both have to let go
+  // of it. A 404 pins a pooled connection exactly as a hostile redirect does,
+  // and the oversize branch is the one an attacker reaches on purpose: declare
+  // a length nobody will accept, and the body goes on arriving on a socket the
+  // shared Agent cannot hand to anyone else.
   if (!response.ok || !response.body) {
+    await discardBody(response)
     throw new KukanError(`Failed to fetch ${url}: ${response.status}`, 'BAD_GATEWAY', 502)
   }
 
   const contentLength = response.headers.get('content-length')
   if (contentLength && parseInt(contentLength, 10) > MAX_FETCH_SIZE) {
+    await discardBody(response)
     throw new KukanError(SIZE_LIMIT_MSG, 'PAYLOAD_TOO_LARGE', 413)
   }
 

@@ -2,8 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { executeHeadCheck } from '../../cron/health-check/head-request'
 import type { ResourceForHealthCheck } from '../../cron/health-check/types'
 
-// Mock safeFetch to use globalThis.fetch directly (SSRF logic tested separately)
-vi.mock('@/safe-fetch', () => ({
+// Mock safeFetch to use globalThis.fetch directly (SSRF logic tested separately).
+// `discardBody` is the real one: what it does to the response is the point of
+// the case below, and a stub would assert nothing.
+vi.mock('@/safe-fetch', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/safe-fetch')>()),
   safeFetch: (...args: unknown[]) => globalThis.fetch(...(args as Parameters<typeof fetch>)),
 }))
 
@@ -28,6 +31,19 @@ describe('executeHeadCheck', () => {
 
   afterEach(() => {
     fetchSpy.mockRestore()
+  })
+
+  it('releases a body a HEAD was answered with', async () => {
+    // Nothing here reads one, and servers do send them. Left unread it holds a
+    // connection on the Agent every fetch in the worker shares, and this runs
+    // over 200 URLs a tick.
+    const answered = new Response('a body on a HEAD', { status: 200 })
+    fetchSpy.mockResolvedValue(answered)
+
+    const result = await executeHeadCheck(makeResource())
+
+    expect(result.healthStatus).toBe('ok')
+    expect(answered.bodyUsed).toBe(true)
   })
 
   it('returns ok for 200 response', async () => {

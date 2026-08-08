@@ -12,12 +12,13 @@ import { promises as dnsPromises, type LookupAddress, type LookupOptions } from 
 import { isIP } from 'node:net'
 import { networkInterfaces } from 'node:os'
 import { Agent, fetch as undiciFetch } from 'undici'
-import { checkUrlSafety, createCache, isBlockedAddress } from '@kukan/shared'
+import { checkUrlSafety, createCache, isBlockedAddress, normalizeHostname } from '@kukan/shared'
 import {
   DNS_CACHE_TTL_MS,
   DNS_TIMEOUT_MS,
   DNS_TRIES,
   MAX_ADDRESSES_PER_NAME,
+  MAX_REDIRECT_BODY,
   RESOLUTION_CACHE_MAX,
 } from '@/config'
 
@@ -378,12 +379,66 @@ function nextHopInit(
 }
 
 /**
+ * Let go of a body that is not going to be read.
+ *
+ * `cancel` destroys the connection rather than draining it, so this is not
+ * about keeping it poolable — it is about not leaving bytes arriving on a
+ * socket the shared Agent has pooled. Every fetch in the worker goes through
+ * that one Agent, so a body nobody reads is a connection nobody else can have.
+ *
+ * Every path that ends without reading the body needs this, and the ones that
+ * do are not only the interesting ones: a URL that answers 404 leaks exactly as
+ * a hostile redirect does, and there are more of them. Measured on the branch
+ * that skipped it once already: 200 held sockets from one health-check pass.
+ */
+export async function discardBody(response: Pick<Response, 'body'>): Promise<void> {
+  await response.body?.cancel().catch(() => undefined)
+}
+
+/**
+ * Refused because the chain reached a host the caller would not allow it to.
+ *
+ * Its own type so the pipeline can tell this from a broken link: the URL is
+ * fine and the server answered, this fetch simply may not go on right now, and
+ * the run is worth retrying rather than recording against the resource.
+ */
+export class HopRefusedError extends Error {
+  constructor(readonly hostname: string) {
+    super(`Redirect to ${hostname} refused`)
+    this.name = 'HopRefusedError'
+  }
+}
+
+/** What the caller wants asked at each hop. */
+export interface SafeFetchHooks {
+  /**
+   * Whether the chain may go on to `hostname`, asked once per host it has not
+   * used yet.
+   *
+   * The rate limit was applied to the URL a user registered and to nothing
+   * after it, so a redirect bought requests to any other host for free — the
+   * limit could not see them, and neither could an operator auditing the
+   * resource, since the third-party host appears nowhere on it.
+   *
+   * Asked once per host and not once per hop, because the limit the pipeline
+   * applies is one request per host per interval: a chain that redirects within
+   * one host — `http` to `https`, a missing trailing slash — would otherwise be
+   * refused by the slot its own first request had just taken.
+   */
+  onHost?(hostname: string): Promise<boolean>
+}
+
+/**
  * Fetch a URL with SSRF protection.
  * - Validates URL hostname and protocol (string-level)
  * - Uses undici Agent with DNS-pinning to block private IP resolution
  * - Manually follows redirects with safety checks at each hop
  */
-export async function safeFetch(url: string, init?: RequestInit): Promise<Response> {
+export async function safeFetch(
+  url: string,
+  init?: RequestInit,
+  hooks?: SafeFetchHooks
+): Promise<Response> {
   const safetyError = checkUrlSafety(url)
   if (safetyError) {
     throw new Error(`Unsafe URL: ${safetyError.message}`)
@@ -391,6 +446,11 @@ export async function safeFetch(url: string, init?: RequestInit): Promise<Respon
 
   let currentUrl = url
   let currentInit = init
+  // Seeded with the host the caller named: it acquired that one itself, and
+  // asking again would refuse the chain on its own first request. Normalized,
+  // because this is the Set `normalizeHostname` was written for — untouched,
+  // `example.com.` reads as a host of its own and buys a second slot.
+  const usedHosts = new Set([normalizeHostname(new URL(url).hostname)])
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
     // undici fetch with SSRF-safe Agent; cast types for compatibility with global Response
     const response = (await undiciFetch(currentUrl, {
@@ -404,22 +464,35 @@ export async function safeFetch(url: string, init?: RequestInit): Promise<Respon
     }
 
     const location = response.headers.get('location')
-    // A redirect with nowhere to go is the caller's, body and all.
+    // A redirect with nowhere to go is broken, not a hop: nothing can follow
+    // it, and neither caller reads the body of a response it treats as an
+    // error. Released here rather than left to them, since it is this function
+    // that knows the body is going nowhere.
     if (!location) {
+      await discardBody(response)
       return response
     }
 
-    // Released here, ahead of everything below that can throw. `cancel` aborts
-    // rather than drains — it destroys the connection, so this is not about
-    // keeping it poolable; it is about not leaving a hop body still arriving,
-    // which pins a pooled connection on the Agent every other fetch shares.
-    // The refusal below is the branch an attacker picks, and it used to be the
-    // one that skipped this: measured, 200 held sockets from one health-check
-    // pass against a host redirecting to a blocked address.
+    // Ahead of everything below that can throw. The refusal below is the branch
+    // an attacker picks, and it used to be the one that skipped this.
     //
-    // Deliberately not above the two returns. Those responses belong to the
+    // Deliberately not above the first return: that response belongs to the
     // caller, and the pipeline reads the body of the one it gets.
-    await response.body?.cancel().catch(() => undefined)
+    await discardBody(response)
+
+    // Read after the cancel — the header is already in hand, and the bytes are
+    // what this is about. A hop's body is discarded, so it was measured by
+    // nothing: `MAX_FETCH_SIZE` guards the response the caller keeps, and each
+    // redirect streamed until the cancel took effect. Ten hops of that is real
+    // transfer, on every run of the resource, paid for at the NAT gateway.
+    //
+    // Only what the server declares. A chunked hop states no length and is
+    // still bounded solely by how fast the cancel lands — this refuses the
+    // honest case and shortens nothing else.
+    const declared = Number(response.headers.get('content-length'))
+    if (declared > MAX_REDIRECT_BODY) {
+      throw new Error(`Redirect body too large: ${declared} bytes`)
+    }
 
     // `currentUrl` has already passed `checkUrlSafety`, so it parses.
     const from = new URL(currentUrl)
@@ -446,6 +519,23 @@ export async function safeFetch(url: string, init?: RequestInit): Promise<Respon
     const nextSafetyError = checkUrlSafety(next.href)
     if (nextSafetyError) {
       throw new Error(`Redirect target is unsafe: ${nextSafetyError.message}`)
+    }
+
+    // Before the slot below, because that is the first thing here with an
+    // effect outside this process. Decided after it, the last hop of an
+    // over-long chain spends a host's allowance on a request that is never
+    // sent — and a busy host answering no turns a chain that should end here
+    // into a `deferred`, which retries a redirect loop instead of reporting it.
+    if (i === MAX_REDIRECTS) break
+
+    // After the safety checks, so a refused target never spends a slot, and
+    // before the request, so the slot is held when it goes out.
+    const nextHost = normalizeHostname(next.hostname)
+    if (!usedHosts.has(nextHost)) {
+      if (hooks?.onHost && !(await hooks.onHost(nextHost))) {
+        throw new HopRefusedError(nextHost)
+      }
+      usedHosts.add(nextHost)
     }
 
     currentInit = nextHopInit(currentInit, response.status, from.origin === next.origin)

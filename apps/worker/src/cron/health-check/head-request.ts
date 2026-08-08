@@ -3,7 +3,7 @@
  * Lightweight liveness check + ETag/Last-Modified change detection.
  */
 
-import { safeFetch } from '@/safe-fetch'
+import { discardBody, safeFetch } from '@/safe-fetch'
 import { HEALTH_CHECK_TIMEOUT_MS } from '@/config'
 import type { HeadCheckResult, ResourceForHealthCheck } from './types'
 
@@ -17,6 +17,12 @@ export async function executeHeadCheck(res: ResourceForHealthCheck): Promise<Hea
       method: 'HEAD',
       signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
     })
+
+    // A HEAD has no body to read and this never reads one anyway, so whatever
+    // arrived goes back now. Servers do answer HEAD with a body, and one left
+    // unread holds a connection on the Agent every fetch in the worker shares —
+    // 200 URLs a tick makes that the expensive kind of mistake.
+    await discardBody(response)
 
     const etag = response.headers.get('etag')
     const lastModified = response.headers.get('last-modified')
