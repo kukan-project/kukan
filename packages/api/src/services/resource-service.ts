@@ -4,7 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { eq, and, sql, inArray, notInArray, getTableColumns } from 'drizzle-orm'
+import { eq, and, sql, inArray, notInArray, isNotNull, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, resourceVersion, packageTable } from '@kukan/db'
 import {
@@ -113,6 +113,31 @@ export class ResourceService {
       .orderBy(resource.position)
 
     return resources
+  }
+
+  /**
+   * The package's resources as a search rebuild needs them: enough to build
+   * each doc, plus whether there is content to rebuild from.
+   *
+   * `hasStoredContent` is read from the storage pointer, the same rule
+   * {@link ResourceVersionService.queueRebuild} applies per resource, and not
+   * from the version rows: Version is non-critical, so a resource whose create
+   * failed still holds an object and its content is still indexed. The pointer
+   * itself never leaves this service (ADR-043) — only the boolean does.
+   */
+  async listForSearchRebuild(packageId: string) {
+    return await this.db
+      .select({
+        id: resource.id,
+        packageId: resource.packageId,
+        name: resource.name,
+        description: resource.description,
+        format: resource.format,
+        url: resource.url,
+        hasStoredContent: isNotNull(resource.storageKey),
+      })
+      .from(resource)
+      .where(and(eq(resource.packageId, packageId), eq(resource.state, 'active')))
   }
 
   /**

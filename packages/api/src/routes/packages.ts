@@ -33,7 +33,7 @@ import {
 import {
   syncPackageMetadata,
   indexResourceMetadata,
-  indexResourceDocFromRow,
+  rebuildPackageSearch,
 } from '../services/search-index'
 import { hybridSearch } from '../services/hybrid-search'
 import { lakeConfigFromEnv } from '@kukan/lake'
@@ -384,19 +384,7 @@ packagesRouter.post('/:nameOrId/publish', async (c) => {
 
   const pkg = await service.publish(nameOrId, makePublishAuthorize(db, user))
 
-  // Now-visible package: index metadata + enqueue embedding, index each
-  // resource's metadata, and re-run pipelines for content indexing (the Index
-  // step skipped search indexing for these resources while the package was a
-  // draft — only document text-head artifacts were produced, ADR-040).
-  // Failures propagate as 500: the package is already active and publish is
-  // idempotent, so re-running the same request retries the whole sync
-  const resources = await new ResourceService(db).listByPackage(pkg.id)
-  const pipelineService = new PipelineService(db, c.get('queue'))
-  await Promise.all([
-    syncPackageMetadata(db, c.var, pkg.id),
-    ...resources.map((r) => indexResourceDocFromRow(c.get('search'), r)),
-    ...resources.filter((r) => r.url).map((r) => pipelineService.enqueue(r.id)),
-  ])
+  await rebuildPackageSearch(db, c.var, pkg.id)
   return c.json(pkg)
 })
 
@@ -475,7 +463,7 @@ packagesRouter.post('/:nameOrId/restore', zValidator('json', restorePackageSchem
     makePackageAuthorize(db, user, 'admin')
   )
 
-  await syncPackageMetadata(db, c.var, pkg.id)
+  await rebuildPackageSearch(db, c.var, pkg.id, { fromStoredContent: true })
   return c.json(pkg)
 })
 

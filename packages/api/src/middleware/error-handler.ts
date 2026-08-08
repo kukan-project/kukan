@@ -4,11 +4,28 @@
  */
 
 import type { ErrorHandler } from 'hono'
+import { HTTPException } from 'hono/http-exception'
 import { KukanError, createLogger } from '@kukan/shared'
 
 const fallbackLogger = createLogger({ name: 'api', level: 'error' })
 
-const MAPPABLE_STATUSES = new Set([400, 401, 403, 404, 408, 409, 422, 429, 500, 503])
+/** The KukanError code each refusal status is named by. Hono raises some of
+ *  these itself, without a code — named through here, a client cannot tell who
+ *  refused the request. 500 is deliberately absent: a server error is reported
+ *  by the fallback, which logs it and says nothing about its cause. */
+const REFUSAL_CODES: Record<number, string> = {
+  400: 'VALIDATION_ERROR',
+  401: 'UNAUTHORIZED',
+  403: 'FORBIDDEN',
+  404: 'NOT_FOUND',
+  408: 'REQUEST_TIMEOUT',
+  409: 'CONFLICT',
+  422: 'VALIDATION_ERROR',
+  429: 'TOO_MANY_REQUESTS',
+  503: 'SERVICE_UNAVAILABLE',
+}
+
+const MAPPABLE_STATUSES = new Set([...Object.keys(REFUSAL_CODES).map(Number), 500])
 
 /** A KukanError thrown by another copy of @kukan/shared (e.g. across dev-server
  *  module generations) fails instanceof — recognize it by shape instead.
@@ -26,16 +43,30 @@ function isKukanShaped(err: unknown): err is KukanError {
 }
 
 export const errorHandler: ErrorHandler = (err, c) => {
-  if (err instanceof KukanError || isKukanShaped(err)) {
+  // Hono refuses some requests itself — a malformed JSON body is the common one
+  // — with the right status but not the Problem Details shape. Unmapped, every
+  // one of them reached the fallback below and was reported (and logged) as an
+  // unexpected 500. Translated into the error every other refusal is reported
+  // as, rather than rendered a second way here.
+  let reported: unknown = err
+  if (err instanceof HTTPException) {
+    // A thrower that built its own response has already said what it wants
+    if (err.res) return err.getResponse()
+    const code = REFUSAL_CODES[err.status]
+    // A status this cannot name stays unread, and falls through to the 500
+    if (code) reported = new KukanError(err.message || code, code, err.status)
+  }
+
+  if (reported instanceof KukanError || isKukanShaped(reported)) {
     return c.json(
       {
         type: 'about:blank',
-        title: err.code,
-        status: err.status,
-        detail: err.message,
-        ...(err.details && { details: err.details }),
+        title: reported.code,
+        status: reported.status,
+        detail: reported.message,
+        ...(reported.details && { details: reported.details }),
       },
-      err.status as 400 | 401 | 403 | 404 | 408 | 409 | 422 | 429 | 500 | 503
+      reported.status as 400 | 401 | 403 | 404 | 408 | 409 | 422 | 429 | 500 | 503
     )
   }
 

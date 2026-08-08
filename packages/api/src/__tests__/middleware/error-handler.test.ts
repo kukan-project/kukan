@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { Hono } from 'hono'
+import { HTTPException } from 'hono/http-exception'
 import {
   KukanError,
   NotFoundError,
@@ -103,6 +104,46 @@ describe('errorHandler', () => {
     const body = await res.json()
     expect(body.title).toBe('SERVICE_UNAVAILABLE')
     expect(body.detail).toBe('Search is temporarily unavailable')
+  })
+
+  it("should convert Hono's own refusals to RFC 7807 rather than 500", async () => {
+    const app = createTestApp(() => {
+      throw new HTTPException(400, { message: 'Malformed JSON in request body' })
+    })
+
+    const res = await app.request('/test')
+    expect(res.status).toBe(400)
+
+    const body = await res.json()
+    expect(body).toEqual({
+      type: 'about:blank',
+      title: 'VALIDATION_ERROR',
+      status: 400,
+      detail: 'Malformed JSON in request body',
+    })
+  })
+
+  it('should keep the response an HTTPException carried', async () => {
+    const app = createTestApp(() => {
+      throw new HTTPException(401, {
+        res: new Response('custom', { status: 401, headers: { 'X-Test': '1' } }),
+      })
+    })
+
+    const res = await app.request('/test')
+    expect(res.status).toBe(401)
+    expect(res.headers.get('X-Test')).toBe('1')
+    expect(await res.text()).toBe('custom')
+  })
+
+  it('should report an HTTPException with a status it cannot describe as 500', async () => {
+    const app = createTestApp(() => {
+      throw new HTTPException(418, { message: "I'm a teapot" })
+    })
+
+    const res = await app.request('/test')
+    expect(res.status).toBe(500)
+    expect((await res.json()).detail).toBe('An unexpected error occurred')
   })
 
   it('should convert unknown errors to 500 RFC 7807', async () => {

@@ -738,13 +738,77 @@ describe('Packages API Routes', () => {
       expect((await res.json()).private).toBe(true)
     })
 
-    it('should return 404 for active package', async () => {
-      await createPackage({ name: 'active-restore-pkg' })
+    it('should re-run the sync for an already-active package instead of 404ing', async () => {
+      // The transition commits before the search sync, so re-sending the
+      // request is the only way to retry a sync that failed after it
+      await createPackage({ name: 'active-restore-pkg', private: true })
 
       const res = await app.request('/api/v1/packages/active-restore-pkg/restore', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ private: false }),
       })
-      expect(res.status).toBe(404) // getByNameOrId with state='deleted' throws NotFound
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.state).toBe('active')
+      // A retry is not a way to change the visibility of a package already back
+      expect(body.private).toBe(true)
+    })
+
+    it('should read an empty body as the restore that carries no options', async () => {
+      // How a client that sets the JSON content-type on every POST sends one
+      await createPackage({ name: 'restore-empty-body-pkg' })
+      await app.request('/api/v1/packages/restore-empty-body-pkg', { method: 'DELETE' })
+
+      const res = await app.request('/api/v1/packages/restore-empty-body-pkg/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      expect(res.status).toBe(200)
+      expect((await res.json()).state).toBe('active')
+    })
+
+    it('should answer a body it cannot parse with 400, not 500', async () => {
+      await createPackage({ name: 'restore-bad-body-pkg' })
+      await app.request('/api/v1/packages/restore-bad-body-pkg', { method: 'DELETE' })
+
+      const res = await app.request('/api/v1/packages/restore-bad-body-pkg/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{',
+      })
+      expect(res.status).toBe(400)
+      expect((await res.json()).title).toBe('VALIDATION_ERROR')
+    })
+
+    /**
+     * A deleted package whose resource holds an object but never got a version:
+     * Version is non-critical, and the content of such a resource is indexed all
+     * the same — the rebuild has to cover it.
+     */
+    async function deletedPackageWithStoredResource(name: string) {
+      const pkg = await (await createPackage({ name })).json()
+      const res = await (
+        await createResource(pkg.id, { url: 'https://example.com/data.csv', format: 'CSV' })
+      ).json()
+      await db.execute(sql`UPDATE resource SET storage_key = 'resources/x' WHERE id = ${res.id}`)
+      await app.request(`/api/v1/packages/${pkg.id}`, { method: 'DELETE' })
+      return { pkg, resourceId: res.id as string }
+    }
+
+    it('should retry the rebuild after the enqueue failed', async () => {
+      const { pkg } = await deletedPackageWithStoredResource('restore-retry-pkg')
+
+      const enqueueMock = vi.mocked(mockQueue.enqueue)
+      enqueueMock.mockRejectedValueOnce(new Error('queue unavailable'))
+      const failed = await app.request(`/api/v1/packages/${pkg.id}/restore`, { method: 'POST' })
+      expect(failed.status).toBe(500)
+
+      // The restore itself committed — the same request is the retry path
+      enqueueMock.mockClear()
+      const retried = await app.request(`/api/v1/packages/${pkg.id}/restore`, { method: 'POST' })
+      expect(retried.status).toBe(200)
+      expect(enqueueMock).toHaveBeenCalled()
     })
 
     it('should reject restore when the owner org is not active (purge claim race)', async () => {
@@ -783,6 +847,51 @@ describe('Packages API Routes', () => {
       const searchAfter = await app.request('/api/v1/packages?q=reindex-restore-pkg')
       const afterBody = await searchAfter.json()
       expect(afterBody.items.length).toBeGreaterThan(0)
+    })
+
+    it('should bring the resource docs back too, not just the package', async () => {
+      const pkgRes = await createPackage({ name: 'reindex-resources-restore-pkg' })
+      const pkg = await pkgRes.json()
+      const resRes = await createResource(pkg.id, {
+        url: 'https://example.com/data.csv',
+        format: 'CSV',
+        name: 'linked data',
+      })
+      const res = await resRes.json()
+
+      // Delete takes the package's resource and content docs with it, so the
+      // restore has to rebuild them — the metadata sync alone would leave the
+      // dataset searchable with none of its resources
+      await app.request(`/api/v1/packages/${pkg.id}`, { method: 'DELETE' })
+
+      const indexSpy = vi.spyOn(search, 'bulkIndexResources')
+      const enqueueMock = vi.mocked(mockQueue.enqueue)
+      enqueueMock.mockClear()
+      try {
+        const restored = await app.request(`/api/v1/packages/${pkg.id}/restore`, { method: 'POST' })
+        expect(restored.status).toBe(200)
+        expect(indexSpy).toHaveBeenCalledWith([expect.objectContaining({ id: res.id })])
+        // This one never produced content, so there is nothing to rebuild from
+        expect(enqueueMock).not.toHaveBeenCalled()
+      } finally {
+        indexSpy.mockRestore()
+      }
+    })
+
+    it('should rebuild from the stored content rather than fetching the url again', async () => {
+      const { pkg, resourceId } = await deletedPackageWithStoredResource('restore-no-refetch-pkg')
+
+      const enqueueMock = vi.mocked(mockQueue.enqueue)
+      enqueueMock.mockClear()
+      const restored = await app.request(`/api/v1/packages/${pkg.id}/restore`, { method: 'POST' })
+      expect(restored.status).toBe(200)
+
+      // Restoring must not republish whatever the source serves now (ADR-044 §4)
+      const runs = enqueueMock.mock.calls.filter(
+        (call) => (call[1] as { resourceId?: string })?.resourceId === resourceId
+      )
+      expect(runs).toHaveLength(1)
+      expect(runs[0][1]).toMatchObject({ rebuildOnly: true })
     })
   })
 

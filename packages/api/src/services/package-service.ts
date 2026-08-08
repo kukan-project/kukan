@@ -801,11 +801,22 @@ export class PackageService {
   /**
    * Restore a soft-deleted package back to active state. An omitted
    * `input.private` keeps the visibility the package was deleted with.
+   *
+   * Idempotent, like {@link publish} and for the same reason: the transition
+   * commits before the caller's search sync runs, so re-sending the request is
+   * what retries a sync that failed. Answering 404 for a package already back
+   * would leave that failure with no way to recover.
    */
   async restore(nameOrId: string, input: RestorePackageInput = {}, authorize?: PackageAuthorize) {
     return await this.db.transaction(async (tx) => {
-      const existing = await this.getByNameOrId(nameOrId, 'deleted', { tx, forUpdate: true })
+      const existing = await this.getByNameOrId(nameOrId, ['deleted', 'active'], {
+        tx,
+        forUpdate: true,
+      })
       if (authorize) await authorize(existing)
+      // The input is ignored: a retry must not become a way to change the
+      // visibility of a package that is no longer in the trash
+      if (existing.state === 'active') return existing
 
       // Closes a purge race: restoring a package under a 'purging' org would let the
       // in-flight org purge delete the just-restored package and wipe its files.

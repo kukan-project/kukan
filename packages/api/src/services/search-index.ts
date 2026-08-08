@@ -20,6 +20,8 @@ import type { SearchAdapter, DatasetDoc, ResourceDoc } from '@kukan/search-adapt
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import { EMBED_JOB_TYPE, type Logger } from '@kukan/shared'
+import { ResourceService } from './resource-service'
+import { PipelineService } from './pipeline-service'
 
 /** The adapters every package-metadata sync needs — a structural subset of the
  *  route context vars, so routes can pass `c.var` directly. */
@@ -46,6 +48,45 @@ export async function syncPackageMetadata(
   if (indexed) {
     await enqueuePackageEmbed(deps.queue, deps.ai, packageId, deps.logger)
   }
+}
+
+/**
+ * Rebuild everything a package has in the search index: its own doc and
+ * embedding, its resources' docs, and — via the pipeline, the only thing that
+ * can — the resource contents.
+ *
+ * For the two transitions that make a package searchable at once: publishing a
+ * draft, whose resources the Index step deliberately skipped (ADR-039/ADR-040),
+ * and restoring a soft-deleted one, whose children `deletePackage` took with it.
+ *
+ * `fromStoredContent` runs the pipeline over the object each resource already
+ * holds instead of fetching its URL again (ADR-044 §4). Restore uses it: putting
+ * a dataset back must not republish whatever the source serves now — least of
+ * all when it comes back private precisely to be reviewed first. Publishing a
+ * draft is the opposite case: its resources are being fetched as they go up.
+ *
+ * Failures propagate: publish and restore are both idempotent, so re-sending
+ * the same request retries the whole sync.
+ */
+export async function rebuildPackageSearch(
+  db: Database,
+  deps: PackageSyncDeps,
+  packageId: string,
+  opts: { fromStoredContent?: boolean } = {}
+): Promise<void> {
+  const resources = await new ResourceService(db).listForSearchRebuild(packageId)
+  const pipeline = new PipelineService(db, deps.queue)
+  // Resources with no object have nothing to rebuild from, and no content in
+  // the index either
+  const runs = opts.fromStoredContent
+    ? resources.filter((r) => r.hasStoredContent).map((r) => ({ id: r.id, rebuildOnly: true }))
+    : resources.filter((r) => r.url).map((r) => ({ id: r.id, rebuildOnly: false }))
+
+  await Promise.all([
+    syncPackageMetadata(db, deps, packageId),
+    deps.search.bulkIndexResources(resources.map(buildResourceDoc)),
+    ...runs.map((r) => pipeline.enqueue(r.id, { rebuildOnly: r.rebuildOnly })),
+  ])
 }
 
 /**
