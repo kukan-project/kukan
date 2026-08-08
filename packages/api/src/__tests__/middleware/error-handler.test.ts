@@ -4,6 +4,7 @@ import {
   KukanError,
   NotFoundError,
   ValidationError,
+  RequestAbandonedError,
   RequestTimeoutError,
   TooManyRequestsError,
   ServiceUnavailableError,
@@ -181,6 +182,31 @@ describe('errorHandler', () => {
 
     const res = await app.request('/test')
     expect(res.status).toBe(500)
+  })
+
+  it('should convert RequestAbandonedError to 408 without logging a fault', async () => {
+    // A request its caller withdrew is answered by the class, not by reading
+    // the request: a genuine crash that coincides with someone navigating away
+    // must still be a logged 500.
+    const logged: unknown[] = []
+    const app = new Hono()
+    app.use('*', async (c, next) => {
+      c.set('logger', {
+        ...createLogger({ name: 'test', level: 'silent' }),
+        error: (...args: unknown[]) => logged.push(args),
+      })
+      await next()
+    })
+    app.onError(errorHandler)
+    app.get('/test', () => {
+      throw new RequestAbandonedError()
+    })
+
+    const res = await app.request('/test')
+
+    expect(res.status).toBe(408)
+    expect((await res.json()).title).toBe('REQUEST_ABANDONED')
+    expect(logged).toHaveLength(0)
   })
 
   it('should use fallback logger when context logger is not set', async () => {

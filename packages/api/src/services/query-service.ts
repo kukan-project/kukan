@@ -52,8 +52,17 @@ export class QueryService {
    * Execute `sql` against the resource's preview Parquet (queryable as table `data`).
    * Throws NotFoundError (visibility), ValidationError (not queryable / bad SQL /
    * timeout), or TooManyRequestsError (concurrency).
+   *
+   * `signal` is the request's own, where there is one: a query whose caller hung
+   * up stops and gives up the shared DuckDB slot instead of running to the end
+   * for nobody.
    */
-  async query(resourceId: string, sql: string, user?: AuthUser): Promise<QueryResult> {
+  async query(
+    resourceId: string,
+    sql: string,
+    user?: AuthUser,
+    signal?: AbortSignal
+  ): Promise<QueryResult> {
     // Validate the SQL before any expensive work (download + DuckDB materialize). The REST
     // route bounds length via zValidator, but the MCP tool does not — enforce both here.
     if (sql.length > QUERY_MAX_SQL_LENGTH) {
@@ -88,6 +97,7 @@ export class QueryService {
           timeoutMs: QUERY_TIMEOUT_MS,
           memoryLimitMb: QUERY_MEMORY_LIMIT_MB,
           threads: QUERY_THREADS,
+          signal,
         })
 
         const elapsedMs = Date.now() - startedAt
@@ -106,6 +116,6 @@ export class QueryService {
       } finally {
         await unlink(tmpPath).catch(() => {})
       }
-    })
+    }, signal)
   }
 }

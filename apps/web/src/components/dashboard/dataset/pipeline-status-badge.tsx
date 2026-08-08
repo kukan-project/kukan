@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 import {
   failureReason,
+  storedNoVersion,
   usePipelineStatus,
   type PipelineStatus,
   type PipelineStatusData,
@@ -113,6 +114,29 @@ export function PipelineStatusBadge({
     onSettled,
   })
 
+  /**
+   * A run that finished without storing a version, said where the user is
+   * watching — otherwise re-uploading unchanged content looks like nothing
+   * happened at all.
+   *
+   * Held in state rather than read from `data`: the parent's refetch settles
+   * the row, which stops the polling that observed this, and the answer has to
+   * outlive the observation. The next run clears it on its transition, because
+   * until that run's first response lands the poller still holds the previous
+   * one's data — which says complete.
+   */
+  const [sameContent, setSameContent] = useState(false)
+  const wasPolling = useRef(shouldPoll)
+  useEffect(() => {
+    const started = shouldPoll && !wasPolling.current
+    wasPolling.current = shouldPoll
+    if (started) {
+      setSameContent(false)
+      return
+    }
+    if (shouldPoll && data) setSameContent(storedNoVersion(data))
+  }, [shouldPoll, data])
+
   // When a parent refetch flips initialStatus to a terminal state, polling is
   // disabled before the hook's last-polled data catches up — the prop is the
   // fresher source then, so prefer it (a bulk upload otherwise leaves badges
@@ -142,6 +166,11 @@ export function PipelineStatusBadge({
         // all of it for anyone who needs to read it.
         <span className="max-w-[200px] truncate text-xs text-destructive" title={reason}>
           {reason}
+        </span>
+      )}
+      {sameContent && (
+        <span className="max-w-[200px] text-xs text-muted-foreground">
+          {t('pipelineNoNewVersion')}
         </span>
       )}
     </div>

@@ -51,6 +51,14 @@ export class RequestTimeoutError extends KukanError {
   }
 }
 
+/** The caller hung up before the work finished. 408 as the nearest standard
+ *  status; the code is what says whose decision it was. */
+export class RequestAbandonedError extends KukanError {
+  constructor(message = 'The client closed the request') {
+    super(message, 'REQUEST_ABANDONED', 408)
+  }
+}
+
 export class TooManyRequestsError extends KukanError {
   constructor(message = 'Too many requests') {
     super(message, 'TOO_MANY_REQUESTS', 429)

@@ -339,15 +339,21 @@ export function ResourceList({
 
   // --- Helpers ---
 
-  function resetForm() {
-    setEditId(null)
-    setCreating(false)
-    setFormState(emptyForm)
+  /** Everything the file half of the form carries, cleared in one place so a
+   *  form opening or finishing never leaves part of it behind. */
+  function clearUploadState() {
     setFormError(null)
     setReplacing(false)
     setPendingFile(null)
     setUploadingResourceId(null)
     setDragOver(false)
+  }
+
+  function resetForm() {
+    setEditId(null)
+    setCreating(false)
+    setFormState(emptyForm)
+    clearUploadState()
   }
 
   function startEdit(r: Resource) {
@@ -360,20 +366,14 @@ export function ResourceList({
       format: r.format ?? '',
       description: r.description ?? '',
     })
-    setFormError(null)
-    setReplacing(false)
-    setPendingFile(null)
-    setUploadingResourceId(null)
+    clearUploadState()
   }
 
   function startCreate() {
     setEditId(null)
     setCreating(true)
     setFormState(emptyForm)
-    setFormError(null)
-    setReplacing(false)
-    setPendingFile(null)
-    setUploadingResourceId(null)
+    clearUploadState()
   }
 
   function handleTabChange(tab: string) {
@@ -615,6 +615,16 @@ export function ResourceList({
   // uploading state, so consumers never see an idle gap
   function handleUploadComplete() {
     scheduleRefetch()
+    // Replacing an existing resource's file keeps its editor open — closing it
+    // leaves nothing saying which row was just updated. url/format are set to
+    // what the promoted upload wrote server-side (`prepareForUpload` derives
+    // them from the same file), so the form names the new file right away.
+    if (editId && pendingFile) {
+      const detected = detectFormat(pendingFile.name)
+      setFormState((s) => ({ ...s, url: pendingFile.name, format: detected || s.format }))
+      clearUploadState()
+      return
+    }
     resetForm()
   }
 
@@ -763,7 +773,12 @@ export function ResourceList({
           </div>
           {isEditing && !creating && editId && (
             <div className="mt-2 border-t pt-4">
-              <ResourceVersionHistory resourceId={editId} />
+              {/* Moves exactly when a run stored a version, so the open history
+                  reloads then and not on every refresh of the package. */}
+              <ResourceVersionHistory
+                resourceId={editId}
+                reloadKey={resources.find((r) => r.id === editId)?.latestVersion ?? 0}
+              />
             </div>
           )}
         </div>

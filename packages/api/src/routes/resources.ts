@@ -474,7 +474,7 @@ resourcesRouter.post(
     const id = c.req.param('id')
     const { sql } = c.req.valid('json')
     const service = new QueryService(c.get('db'), c.get('storage'), c.get('logger'))
-    const result = await service.query(id, sql, c.get('user'))
+    const result = await service.query(id, sql, c.get('user'), c.req.raw.signal)
     return c.json({ id, ...result })
   }
 )
@@ -518,7 +518,10 @@ resourcesRouter.get('/:id/versions/:v/diff', async (c) => {
   if (!user) throw new UnauthorizedError()
   await checkResourcePermission(db, user, new ResourceService(db), id)
   const service = new VersionDiffService(db, lakeConfigFromEnv(c.get('env')))
-  const view = await service.diff(id, version, from)
+  // The request's own signal: a browser that hangs up (a page left, or dev's
+  // double-fired fetch discarding its first attempt) must not keep scanning
+  // both snapshots and holding the one DuckDB slot the live request needs.
+  const view = await service.diff(id, version, from, c.req.raw.signal)
   // A computed diff is immutable — both snapshots are written once and never
   // change — and it is the most expensive GET here, so a re-expand in the UI
   // must not re-run it. An unavailable answer is not cached that way: a version

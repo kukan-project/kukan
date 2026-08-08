@@ -42,6 +42,19 @@ export function failureReason(data: Pick<PipelineStatusData, 'error' | 'steps'>)
   return data.error ?? data.steps.find((s) => s.error)?.error ?? null
 }
 
+/**
+ * Whether a finished run stored nothing.
+ *
+ * The Version step skips when the content matches what the resource already
+ * holds (ADR-043 layer 1), so an upload of unchanged bytes completes without
+ * moving the history. Which step name and which status say so is the payload's
+ * business, not any one view's — the same reason `failureReason` lives here.
+ */
+export function storedNoVersion(data: Pick<PipelineStatusData, 'pipeline_status' | 'steps'>) {
+  if (data.pipeline_status !== 'complete') return false
+  return data.steps.some((s) => s.step_name === 'version' && s.status === 'skipped')
+}
+
 interface UsePipelineStatusOptions {
   resourceId: string
   /** Set to false to disable polling (default: true) */

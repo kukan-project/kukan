@@ -41,10 +41,13 @@ interface VersionView {
 
 interface Props {
   resourceId: string
-  /** Download filename base (resource name/url), used only for the link label. */
+  /** Any change reloads the table in place. The owner passes whatever tells it
+   *  the resource gained a version — a replaced file's run finishing — which a
+   *  remount would also do, at the cost of closing an open diff. */
+  reloadKey?: number
 }
 
-export function ResourceVersionHistory({ resourceId }: Props) {
+export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
   const t = useTranslations('resource.versions')
   const { sysadmin } = useUser()
   const [versions, setVersions] = useState<VersionView[] | null>(null)
@@ -54,21 +57,28 @@ export function ResourceVersionHistory({ resourceId }: Props) {
   const [purging, setPurging] = useState(false)
   const [openDiff, setOpenDiff] = useState<number | null>(null)
 
-  const load = useCallback(async () => {
-    setError(null)
-    try {
-      const res = await clientFetch(`/api/v1/resources/${resourceId}/versions`)
-      if (!res.ok) throw new Error(String(res.status))
-      const data = await res.json()
-      setVersions(data.versions)
-    } catch {
-      setError(t('loadError'))
-    }
-  }, [resourceId, t])
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
+      setError(null)
+      try {
+        const res = await clientFetch(`/api/v1/resources/${resourceId}/versions`, { signal })
+        if (!res.ok) throw new Error(String(res.status))
+        const data = await res.json()
+        if (!signal?.aborted) setVersions(data.versions)
+      } catch {
+        if (!signal?.aborted) setError(t('loadError'))
+      }
+    },
+    [resourceId, t]
+  )
 
+  // A reload supersedes the one before it, so the older request is cancelled
+  // rather than left to land last and put the table back a version.
   useEffect(() => {
-    void load()
-  }, [load])
+    const controller = new AbortController()
+    void load(controller.signal)
+    return () => controller.abort()
+  }, [load, reloadKey])
 
   async function handlePurge() {
     if (purgeTarget === null) return

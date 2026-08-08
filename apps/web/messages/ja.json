@@ -577,6 +577,7 @@
     "pipelineComplete": "完了",
     "pipelineError": "エラー",
     "pipelineCancelled": "中止",
+    "pipelineNoNewVersion": "内容が同じため、新しい版は作成されていません",
     "pipelineStuck": "処理停止",
     "pipelineStepFetch": "取得",
     "pipelineStepInterpret": "解釈",

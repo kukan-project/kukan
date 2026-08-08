@@ -577,6 +577,7 @@
     "pipelineComplete": "Complete",
     "pipelineError": "Error",
     "pipelineCancelled": "Stopped",
+    "pipelineNoNewVersion": "No new version — the file matches the content already stored",
     "pipelineStuck": "Stalled",
     "pipelineStepFetch": "Fetch",
     "pipelineStepInterpret": "Interpret",

@@ -12,7 +12,12 @@
  * interrupts the connection (DuckDB has no statement_timeout).
  */
 
-import { ValidationError, RequestTimeoutError, ServiceUnavailableError } from '@kukan/shared'
+import {
+  ValidationError,
+  RequestAbandonedError,
+  RequestTimeoutError,
+  ServiceUnavailableError,
+} from '@kukan/shared'
 import { sqlLiteral } from '@kukan/lake'
 import { assertReadOnlySql } from './sql-guard'
 
@@ -22,6 +27,9 @@ export interface SandboxLimits {
   timeoutMs: number
   memoryLimitMb: number
   threads: number
+  /** The caller's request. Aborting it interrupts the query the same way the
+   *  timeout does — an answer nobody will read is not worth the shared slot. */
+  signal?: AbortSignal
 }
 
 export interface SandboxResult {
@@ -57,11 +65,21 @@ export async function runSandboxedQuery(
   if (!duckdb) {
     throw new ServiceUnavailableError('DuckDB native library is not available in this environment')
   }
+  // A signal already aborted never fires a listener, so the caller that left
+  // while the Parquet was being fetched has to be caught here.
+  if (limits.signal?.aborted) throw new RequestAbandonedError()
+
   const instance = await duckdb.DuckDBInstance.create(':memory:')
   const conn = await instance.connect()
   let timer: NodeJS.Timeout | undefined
   let timedOut = false
+  let abandoned = false
   const timeoutMessage = `Query exceeded the time limit of ${limits.timeoutMs} ms`
+  const onAbort = () => {
+    abandoned = true
+    conn.interrupt()
+  }
+  limits.signal?.addEventListener('abort', onAbort, { once: true })
 
   try {
     // The timeout also covers materialization: a huge or pathological Parquet must not
@@ -83,6 +101,7 @@ export async function runSandboxedQuery(
       await conn.run('SET lock_configuration = true')
     } catch (err) {
       // Setup faults → 500; a timeout during setup → 408.
+      if (abandoned) throw new RequestAbandonedError()
       if (timedOut) throw new RequestTimeoutError(timeoutMessage)
       throw err
     }
@@ -94,6 +113,9 @@ export async function runSandboxedQuery(
       // Read one past the cap so truncation is detectable without scanning everything.
       reader = await conn.runAndReadUntil(userSql, limits.maxRows + 1)
     } catch (err) {
+      // An interrupted statement fails with a DuckDB error; which of the two
+      // interrupts it was decides whether this is a timeout or nobody's query.
+      if (abandoned) throw new RequestAbandonedError()
       if (timedOut) throw new RequestTimeoutError(timeoutMessage)
       throw new ValidationError(`Query failed: ${firstLine(err)}`)
     }
@@ -114,6 +136,7 @@ export async function runSandboxedQuery(
     return { columns, rows, rowCount: rows.length, truncated }
   } finally {
     if (timer) clearTimeout(timer)
+    limits.signal?.removeEventListener('abort', onAbort)
     conn.disconnectSync()
     instance.closeSync()
   }

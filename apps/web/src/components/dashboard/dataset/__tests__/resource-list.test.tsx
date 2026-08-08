@@ -482,6 +482,34 @@ describe('ResourceList drop-to-create', () => {
     await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true))
   })
 
+  it('should keep the editor open on the row whose file was replaced', async () => {
+    mockClientFetch.mockResolvedValue(jsonResponse({ id: 'r1' }))
+    const { container } = render(
+      <ResourceList
+        {...baseProps}
+        resources={[
+          { id: 'r1', name: 'data.csv', url: 'data.csv', urlType: 'upload', format: 'CSV' },
+        ]}
+      />
+    )
+
+    fireEvent.click(screen.getByText('data.csv'))
+    fireEvent.click(screen.getByText('Replace file'))
+    const input = container.querySelector('input[type="file"]:not([multiple])')!
+    fireEvent.change(input, {
+      target: { files: [new File(['a'], 'new.csv', { type: 'text/csv' })] },
+    })
+    fireEvent.click(screen.getByText('Save'))
+
+    await waitFor(() => expect(screen.getByTestId('file-upload-zone')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('complete-upload'))
+
+    // Still open, and naming the file that replaced the old one — closing it
+    // would leave nothing saying which row was just updated
+    await waitFor(() => expect(screen.getByText('Replace file')).toBeInTheDocument())
+    expect(screen.getByText('new.csv')).toBeInTheDocument()
+  })
+
   it('should not clear the gate when the newest of overlapping refetches failed', async () => {
     const onUploadingChange = vi.fn()
     const resolvers: Array<(ok: boolean) => void> = []

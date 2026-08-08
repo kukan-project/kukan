@@ -174,6 +174,73 @@ describe('PipelineStatusBadge', () => {
     await waitFor(() => expect(onSettled).toHaveBeenCalledWith('error'), { timeout: 3000 })
   })
 
+  it('should say when a completed run stored no new version', async () => {
+    // Re-uploading the same bytes completes with the Version step skipped, so
+    // the history does not move — without the note, the run looks like it did
+    // nothing at all
+    mockClientFetch.mockResolvedValue(
+      jsonResponse({
+        id: 'r1',
+        pipeline_status: 'complete',
+        steps: [{ step_name: 'version', status: 'skipped' }],
+      })
+    )
+
+    const { rerender } = render(<PipelineStatusBadge resourceId="r1" initialStatus="queued" />)
+
+    expect(
+      await screen.findByText('No new version — the file matches the content already stored')
+    ).toBeInTheDocument()
+
+    // The note has to survive the parent's refetch, which settles the row and
+    // stops the polling that observed the skip
+    rerender(<PipelineStatusBadge resourceId="r1" initialStatus="complete" />)
+    expect(
+      screen.getByText('No new version — the file matches the content already stored')
+    ).toBeInTheDocument()
+  })
+
+  it('should not carry the no-new-version note into the next run', async () => {
+    mockClientFetch.mockResolvedValue(
+      jsonResponse({
+        id: 'r1',
+        pipeline_status: 'complete',
+        steps: [{ step_name: 'version', status: 'skipped' }],
+      })
+    )
+    const { rerender } = render(<PipelineStatusBadge resourceId="r1" initialStatus="queued" />)
+    await screen.findByText('No new version — the file matches the content already stored')
+    rerender(<PipelineStatusBadge resourceId="r1" initialStatus="complete" />)
+
+    // A new run starts. The poller still holds the previous run's data, so the
+    // note has to be dropped on the transition rather than on what it reads.
+    mockClientFetch.mockResolvedValue(
+      jsonResponse({ id: 'r1', pipeline_status: 'processing', steps: [] })
+    )
+    rerender(<PipelineStatusBadge resourceId="r1" initialStatus="queued" />)
+
+    expect(
+      screen.queryByText('No new version — the file matches the content already stored')
+    ).not.toBeInTheDocument()
+  })
+
+  it('should not say anything when the run did store a version', async () => {
+    mockClientFetch.mockResolvedValue(
+      jsonResponse({
+        id: 'r1',
+        pipeline_status: 'complete',
+        steps: [{ step_name: 'version', status: 'complete' }],
+      })
+    )
+
+    render(<PipelineStatusBadge resourceId="r1" initialStatus="queued" />)
+
+    await waitFor(() => expect(screen.getByText('Complete')).toBeInTheDocument())
+    expect(
+      screen.queryByText('No new version — the file matches the content already stored')
+    ).not.toBeInTheDocument()
+  })
+
   it('should show the prop status when a parent refetch settles before polling does', async () => {
     // Bulk-upload regression: the parent list refetches and passes a terminal
     // initialStatus while the poller still holds queued/processing — polling

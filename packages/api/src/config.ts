@@ -34,8 +34,19 @@ export const QUERY_MEMORY_LIMIT_MB = 256
 /** Per-query DuckDB thread count. */
 export const QUERY_THREADS = 2
 
-/** Maximum concurrent queries; excess is rejected with 429. */
+/** Maximum concurrent queries; excess queues (see below) rather than failing. */
 export const QUERY_MAX_CONCURRENT = 1
+
+// Both bounds are on the waiting, not the work: with a concurrency of 1,
+// refusing on contention makes a 429 out of two ordinary requests.
+
+/** Callers that may queue for a slot; beyond this, 429 immediately. */
+export const QUERY_QUEUE_MAX = 8
+
+/** How long one caller waits for a slot before giving up with 429 (ms). A full
+ *  query timeout, so a wait never expires while the caller ahead of it is still
+ *  inside its own budget. */
+export const QUERY_QUEUE_WAIT_MS = QUERY_TIMEOUT_MS
 
 /** Maximum length of a user-supplied SQL string. */
 export const QUERY_MAX_SQL_LENGTH = 10_000
