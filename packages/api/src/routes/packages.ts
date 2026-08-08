@@ -13,6 +13,7 @@ import {
   createPackageSchema,
   createDraftPackageSchema,
   updatePackageSchema,
+  restorePackageSchema,
   createResourceBodySchema,
   reorderResourcesSchema,
   suggestMetadataRequestSchema,
@@ -459,7 +460,8 @@ packagesRouter.post('/:nameOrId/purge', async (c) => {
 })
 
 // POST /api/v1/packages/:nameOrId/restore - Restore a soft-deleted package (org admin+)
-packagesRouter.post('/:nameOrId/restore', async (c) => {
+// The body is optional: `{ private: true }` brings it back off the site
+packagesRouter.post('/:nameOrId/restore', zValidator('json', restorePackageSchema), async (c) => {
   const user = c.get('user')
   if (!user) throw new UnauthorizedError()
 
@@ -467,7 +469,11 @@ packagesRouter.post('/:nameOrId/restore', async (c) => {
   const nameOrId = c.req.param('nameOrId')
   const service = new PackageService(db)
 
-  const pkg = await service.restore(nameOrId, makePackageAuthorize(db, user, 'admin'))
+  const pkg = await service.restore(
+    nameOrId,
+    c.req.valid('json'),
+    makePackageAuthorize(db, user, 'admin')
+  )
 
   await syncPackageMetadata(db, c.var, pkg.id)
   return c.json(pkg)

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import DatasetsManagePage from '../page'
 
@@ -23,6 +23,7 @@ const sampleItems = [
     title: 'Population Data',
     private: false,
     formats: 'CSV',
+    orgName: 'tokyo',
     orgTitle: 'Tokyo',
     tags: 'statistics,population',
     groups: 'demographics:Demographics',
@@ -33,14 +34,16 @@ const sampleItems = [
     title: 'Budget Report',
     private: true,
     formats: 'PDF,XLSX',
+    orgName: 'osaka',
     orgTitle: 'Osaka',
   },
 ]
 
 // The memberships carry the role the org filter is built from: the listing is
-// scoped with my_org, which covers the orgs the viewer may write in (kukan#259)
+// scoped with my_org, which covers the orgs the viewer may write in (kukan#259).
+// The same roles gate purging, which needs admin in the owning org
 const myOrgs = [
-  { id: 'o1', name: 'tokyo', title: 'Tokyo', role: 'editor' },
+  { id: 'o1', name: 'tokyo', title: 'Tokyo', role: 'admin' },
   { id: 'o2', name: 'osaka', title: 'Osaka', role: 'member' },
 ]
 
@@ -174,6 +177,38 @@ describe('DatasetsManagePage', () => {
     expect(screen.queryByRole('link', { name: 'View' })).not.toBeInTheDocument()
   })
 
+  it('purges a deleted dataset from the list after confirmation', async () => {
+    setupDefaultMocks()
+    render(<DatasetsManagePage />)
+
+    await waitFor(() => expect(screen.getByText('Deleted')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Deleted'))
+
+    await waitFor(() => expect(screen.getByText('population-data')).toBeInTheDocument())
+    // Only the dataset whose org the viewer administers is purgeable — the
+    // Osaka one is member-only and offers nothing
+    const purgeButtons = screen.getAllByRole('button', { name: 'Purge' })
+    expect(purgeButtons).toHaveLength(1)
+    expect(screen.getByText('budget-report').closest('tr')).not.toContainElement(purgeButtons[0])
+    fireEvent.click(purgeButtons[0])
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          'This dataset and all its resources will be permanently removed from the database. This action cannot be undone.'
+        )
+      ).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Purge Dataset' }))
+
+    await waitFor(() => {
+      expect(vi.mocked(clientFetch)).toHaveBeenCalledWith(
+        '/api/v1/packages/population-data/purge',
+        { method: 'POST' }
+      )
+    })
+  })
+
   it('should offer only the organizations the viewer may write in as filters', async () => {
     setupDefaultMocks()
     render(<DatasetsManagePage />)
@@ -221,8 +256,9 @@ describe('DatasetsManagePage', () => {
         id: 'd2',
         name: 'my-draft',
         title: 'My Draft',
-        private: false,
+        private: true,
         updated: '2026-07-02T00:00:00Z',
+        formats: 'CSV,PDF',
       },
       // A draft whose deletion crashed mid-flight (ADR-039)
       {
@@ -264,6 +300,16 @@ describe('DatasetsManagePage', () => {
       expect(screen.getByText('Untitled')).toBeInTheDocument()
       expect(screen.queryByText('untitled-0123abcd')).not.toBeInTheDocument()
       expect(screen.getByText('my-draft')).toBeInTheDocument()
+    })
+
+    it('should carry the same columns as the other tabs, with draft for the visibility', async () => {
+      setupDraftMocks()
+      await openDraftsTab()
+
+      const row = screen.getByText('my-draft').closest('tr')!
+      expect(within(row).getByText('Draft')).toBeInTheDocument()
+      expect(within(row).getByText('CSV')).toBeInTheDocument()
+      expect(within(row).getByText('PDF')).toBeInTheDocument()
     })
 
     it('should not send unsupported filters to the draft listing', async () => {
@@ -328,7 +374,7 @@ describe('DatasetsManagePage', () => {
       setupDraftMocks()
       await openDraftsTab()
 
-      fireEvent.click(screen.getAllByText('Delete')[1])
+      fireEvent.click(screen.getAllByText('Purge')[1])
       await waitFor(() => {
         expect(
           screen.getByText(

@@ -16,6 +16,7 @@ export function hasRole(role: string | undefined, required: MembershipRole): boo
 interface MembershipItem {
   id: string
   name: string
+  title?: string | null
   role: MembershipRole
 }
 
@@ -24,6 +25,8 @@ interface UseMyRolesResult {
   can: (nameOrId: string, required: MembershipRole) => boolean
   /** False until the memberships are known — do not offer actions before then */
   ready: boolean
+  /** The memberships themselves, for callers that also list them (filter options) */
+  items: MembershipItem[]
 }
 
 /**
@@ -38,18 +41,21 @@ interface UseMyRolesResult {
 export function useMyRoles(kind: 'organizations' | 'groups'): UseMyRolesResult {
   const { data, loading } = useFetch<{ items: MembershipItem[] }>(`/api/v1/users/me/${kind}`)
 
+  const items = useMemo(() => data?.items ?? [], [data])
+
   // Keyed by both, since routes address entities by either (`/[nameOrId]/edit`)
   const roles = useMemo(() => {
     const map = new Map<string, MembershipRole>()
-    for (const item of data?.items ?? []) {
+    for (const item of items) {
       map.set(item.id, item.role)
       map.set(item.name, item.role)
     }
     return map
-  }, [data])
+  }, [items])
 
   return {
     can: (nameOrId, required) => hasRole(roles.get(nameOrId), required),
     ready: !loading,
+    items,
   }
 }

@@ -35,7 +35,12 @@ import type {
 } from '@kukan/shared'
 import type { SearchFacets, MatchedResource, SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
-import type { CreatePackageInput, CreateDraftPackageInput, UpdatePackageInput } from '@kukan/shared'
+import type {
+  CreatePackageInput,
+  CreateDraftPackageInput,
+  UpdatePackageInput,
+  RestorePackageInput,
+} from '@kukan/shared'
 import { hasOrgMembership, hasDraftAccess, type AuthUser } from '../auth/permissions'
 import { deleteOrphanFreeTags } from './tag-service'
 import { latestLiveVersionAgg, publicResourceColumns } from './resource-service'
@@ -793,8 +798,11 @@ export class PackageService {
     if (!activeOrg) throw error
   }
 
-  /** Restore a soft-deleted package back to active state. */
-  async restore(nameOrId: string, authorize?: PackageAuthorize) {
+  /**
+   * Restore a soft-deleted package back to active state. An omitted
+   * `input.private` keeps the visibility the package was deleted with.
+   */
+  async restore(nameOrId: string, input: RestorePackageInput = {}, authorize?: PackageAuthorize) {
     return await this.db.transaction(async (tx) => {
       const existing = await this.getByNameOrId(nameOrId, 'deleted', { tx, forUpdate: true })
       if (authorize) await authorize(existing)
@@ -811,10 +819,7 @@ export class PackageService {
 
       const [restored] = await tx
         .update(packageTable)
-        .set({
-          state: 'active',
-          updated: sql`NOW()`,
-        })
+        .set({ state: 'active', ...input, updated: sql`NOW()` })
         .where(eq(packageTable.id, existing.id))
         .returning(packageColumns)
 

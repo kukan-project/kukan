@@ -12,18 +12,18 @@ import {
   TableHeader,
   TableRow,
 } from '@kukan/ui'
-import { useLocale, useTranslations } from 'next-intl'
+import { useTranslations } from 'next-intl'
 import { isDraftPlaceholderName, type PackageDbState } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
 import { draftEditPath } from '@/lib/paths'
-import { formatDateTimeCompact } from '@/components/date-time'
+import { FormatBadges } from '@/components/format-badges'
 import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
 
 interface DraftItem {
   id: string
   name: string
   title?: string | null
-  updated?: string
+  formats?: string
   // 'purging' marks a draft whose deletion crashed mid-flight (ADR-039);
   // it stays listed so the user can retry the DELETE
   state?: PackageDbState
@@ -39,7 +39,6 @@ interface DraftsTableProps {
 export function DraftsTable({ items, onDeleted }: DraftsTableProps) {
   const t = useTranslations('dataset')
   const tc = useTranslations('common')
-  const locale = useLocale()
   const router = useRouter()
 
   // Draft deletion (ADR-039): skips the trash, permanently removed
@@ -65,9 +64,10 @@ export function DraftsTable({ items, onDeleted }: DraftsTableProps) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>{tc('title')}</TableHead>
             <TableHead>{tc('urlIdentifier')}</TableHead>
-            <TableHead className="whitespace-nowrap">{t('updatedShort')}</TableHead>
+            <TableHead>{tc('title')}</TableHead>
+            <TableHead className="whitespace-nowrap">{t('visibility')}</TableHead>
+            <TableHead className="whitespace-nowrap">{tc('format')}</TableHead>
             <TableHead className="w-[140px] whitespace-nowrap">{tc('actions')}</TableHead>
           </TableRow>
         </TableHeader>
@@ -90,6 +90,14 @@ export function DraftsTable({ items, onDeleted }: DraftsTableProps) {
                   }
                 }}
               >
+                <TableCell className="font-mono text-sm">
+                  {/* Auto-generated placeholder names are not user data — hide them */}
+                  {isDraftPlaceholderName(pkg.name) ? (
+                    <span className="text-muted-foreground">-</span>
+                  ) : (
+                    pkg.name
+                  )}
+                </TableCell>
                 <TableCell>
                   {pkg.title ? (
                     <span className="font-medium">{pkg.title}</span>
@@ -105,16 +113,13 @@ export function DraftsTable({ items, onDeleted }: DraftsTableProps) {
                     </Badge>
                   )}
                 </TableCell>
-                <TableCell className="font-mono text-sm">
-                  {/* Auto-generated placeholder names are not user data — hide them */}
-                  {isDraftPlaceholderName(pkg.name) ? (
-                    <span className="text-muted-foreground">-</span>
-                  ) : (
-                    pkg.name
-                  )}
+                {/* A draft is never on the site, so the visibility the other
+                    tabs name here says nothing yet (ADR-039) */}
+                <TableCell className="whitespace-nowrap">
+                  <Badge variant="secondary">{t('draftBadge')}</Badge>
                 </TableCell>
-                <TableCell className="whitespace-nowrap text-sm">
-                  {pkg.updated ? formatDateTimeCompact(pkg.updated, locale) : '-'}
+                <TableCell>
+                  <FormatBadges formats={pkg.formats} />
                 </TableCell>
                 <TableCell className="whitespace-nowrap">
                   {/* Row click opens the editor; the delete button stops propagation
@@ -128,7 +133,7 @@ export function DraftsTable({ items, onDeleted }: DraftsTableProps) {
                       setDraftToDelete(pkg)
                     }}
                   >
-                    {isPurging ? t('retryDelete') : tc('delete')}
+                    {isPurging ? t('retryDelete') : t('purgeAction')}
                   </Button>
                 </TableCell>
               </TableRow>

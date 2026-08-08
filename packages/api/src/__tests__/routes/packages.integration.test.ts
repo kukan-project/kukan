@@ -712,6 +712,32 @@ describe('Packages API Routes', () => {
       expect(getRes.status).toBe(200)
     })
 
+    it('should restore off the site when asked, so it can be fixed before publishing', async () => {
+      await createPackage({ name: 'restore-private-pkg' })
+      await app.request('/api/v1/packages/restore-private-pkg', { method: 'DELETE' })
+
+      const res = await app.request('/api/v1/packages/restore-private-pkg/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ private: true }),
+      })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.state).toBe('active')
+      expect(body.private).toBe(true)
+    })
+
+    it('should keep the deleted visibility when the restore says nothing', async () => {
+      await createPackage({ name: 'restore-keeps-visibility-pkg', private: true })
+      await app.request('/api/v1/packages/restore-keeps-visibility-pkg', { method: 'DELETE' })
+
+      const res = await app.request('/api/v1/packages/restore-keeps-visibility-pkg/restore', {
+        method: 'POST',
+      })
+      expect(res.status).toBe(200)
+      expect((await res.json()).private).toBe(true)
+    })
+
     it('should return 404 for active package', async () => {
       await createPackage({ name: 'active-restore-pkg' })
 

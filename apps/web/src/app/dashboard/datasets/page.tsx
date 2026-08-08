@@ -30,11 +30,12 @@ import { PageHeader } from '@/components/dashboard/page-header'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { StatCard } from '@/components/dashboard/stat-card'
 import { ViewPublicLink } from '@/components/dashboard/view-public-link'
+import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
 import { DraftsTable } from '@/components/dashboard/dataset/drafts-table'
 import { FormatBadges } from '@/components/format-badges'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
-import { hasRole } from '@/hooks/use-my-roles'
+import { hasRole, useMyRoles } from '@/hooks/use-my-roles'
 
 interface PkgItem {
   id: string
@@ -106,26 +107,23 @@ export default function DatasetsManagePage() {
   }, [])
 
   // Filter options
-  const [organizations, setOrganizations] = useState<OptionItem[]>([])
   const [groups, setGroups] = useState<OptionItem[]>([])
 
-  // Fetch org/group filter options once on mount. The listing is scoped with
-  // my_org, so an organization the viewer cannot write in could only ever come
-  // back empty (kukan#259). Categories need no such filter.
+  // The memberships answer both what to offer as an org filter and who may
+  // purge (admin in the owning org — the API enforces the same, kukan#258)
+  const { can: canInOrg, items: memberships } = useMyRoles('organizations')
+  // The listing is scoped with my_org, so an organization the viewer cannot
+  // write in could only ever come back empty (kukan#259)
+  const organizations = useMemo(
+    () => memberships.filter((org) => hasRole(org.role, 'editor')),
+    [memberships]
+  )
+
+  // Fetch the group filter options once on mount. Categories need no such filter.
   useEffect(() => {
-    Promise.all([
-      clientFetch('/api/v1/users/me/organizations'),
-      clientFetch('/api/v1/groups?limit=100'),
-    ])
-      .then(async ([orgRes, grpRes]) => {
-        if (orgRes.ok) {
-          const data = await orgRes.json()
-          setOrganizations(data.items.filter((org: OptionItem) => hasRole(org.role, 'editor')))
-        }
-        if (grpRes.ok) {
-          const data = await grpRes.json()
-          setGroups(data.items)
-        }
+    clientFetch('/api/v1/groups?limit=100')
+      .then(async (res) => {
+        if (res.ok) setGroups((await res.json()).items)
       })
       .catch(() => {})
   }, [])
@@ -168,6 +166,27 @@ export default function DatasetsManagePage() {
   }
 
   const isDeletedView = activeCategory === 'deleted'
+
+  // The same POST the editor's danger zone sends, so a soft-deleted dataset
+  // can be erased without opening it
+  const [purgeTarget, setPurgeTarget] = useState<PkgItem | null>(null)
+  const [purging, setPurging] = useState(false)
+
+  async function handlePurge() {
+    if (!purgeTarget) return
+    setPurging(true)
+    try {
+      const res = await clientFetch(`/api/v1/packages/${purgeTarget.name}/purge`, {
+        method: 'POST',
+      })
+      if (res.ok) {
+        setPurgeTarget(null)
+        pagination.fetchPage(0)
+      }
+    } finally {
+      setPurging(false)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -286,10 +305,7 @@ export default function DatasetsManagePage() {
                 <TableHead colSpan={2}>{tc('title')}</TableHead>
                 <TableHead className="whitespace-nowrap">{t('visibility')}</TableHead>
                 <TableHead className="whitespace-nowrap">{tc('format')}</TableHead>
-                {/* A deleted dataset has no public page to open */}
-                {!isDeletedView && (
-                  <TableHead className="w-[80px] text-right">{tc('actions')}</TableHead>
-                )}
+                <TableHead className="w-[120px] text-right">{tc('actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -299,6 +315,7 @@ export default function DatasetsManagePage() {
                 const editHref = isDeletedView
                   ? `/dashboard/datasets/${pkg.name}/edit?state=deleted`
                   : `/dashboard/datasets/${pkg.name}/edit`
+                const canPurge = isDeletedView && !!pkg.orgName && canInOrg(pkg.orgName, 'admin')
                 return (
                   <TableRow key={pkg.id} {...rowActivateProps(() => router.push(editHref))}>
                     <TableCell className="font-mono text-sm">{pkg.name}</TableCell>
@@ -337,12 +354,21 @@ export default function DatasetsManagePage() {
                     <TableCell>
                       <FormatBadges formats={pkg.formats} />
                     </TableCell>
-                    {!isDeletedView && (
-                      <TableCell className="text-right">
-                        {/* The row click opens the editor; this link acts on its own */}
-                        <ViewPublicLink href={`/dataset/${pkg.name}`} />
-                      </TableCell>
-                    )}
+                    {/* A deleted dataset has no public page to open — it gets
+                        the purge its editor's danger zone offers instead */}
+                    <TableCell className="text-right">
+                      {!isDeletedView && <ViewPublicLink href={`/dataset/${pkg.name}`} />}
+                      {canPurge && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => setPurgeTarget(pkg)}
+                        >
+                          {t('purgeAction')}
+                        </Button>
+                      )}
+                    </TableCell>
                   </TableRow>
                 )
               })}
@@ -351,6 +377,18 @@ export default function DatasetsManagePage() {
           <PaginationControls {...pagination} onPageChange={pagination.fetchPage} />
         </>
       )}
+
+      <DeleteConfirmDialog
+        open={purgeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setPurgeTarget(null)
+        }}
+        title={t('purgeDataset')}
+        description={t('purgeDatasetConfirm')}
+        onConfirm={handlePurge}
+        isDeleting={purging}
+        confirmLabel={t('purgeDataset')}
+      />
     </div>
   )
 }

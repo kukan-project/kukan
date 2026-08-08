@@ -208,6 +208,61 @@ describe('EditDatasetPage', () => {
     expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/packages/test-entity?state=draft')
   })
 
+  describe('deleted package', () => {
+    function mockDeletedFetch(pkg = { ...samplePackage, state: 'deleted' }) {
+      nav.search = 'state=deleted'
+      mockClientFetch.mockImplementation(async (path: string) => {
+        if (path.includes('/users/me/organizations')) return jsonResponse(sampleOrgs)
+        return jsonResponse(pkg)
+      })
+    }
+
+    it('should restore with the visibility it was deleted with by default', async () => {
+      mockDeletedFetch()
+      render(<EditDatasetPage />)
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Restore Dataset' })).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Restore Dataset' }))
+
+      await waitFor(() => {
+        expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/packages/test-entity/restore', {
+          method: 'POST',
+        })
+      })
+    })
+
+    it('should restore off the site when asked to', async () => {
+      mockDeletedFetch()
+      render(<EditDatasetPage />)
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Restore as private/)).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByLabelText(/Restore as private/))
+      fireEvent.click(screen.getByRole('button', { name: 'Restore Dataset' }))
+
+      await waitFor(() => {
+        expect(mockClientFetch).toHaveBeenCalledWith('/api/v1/packages/test-entity/restore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ private: true }),
+        })
+      })
+    })
+
+    it('should not offer the choice for a dataset that was already private', async () => {
+      mockDeletedFetch({ ...samplePackage, state: 'deleted', private: true })
+      render(<EditDatasetPage />)
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Restore Dataset' })).toBeInTheDocument()
+      })
+      expect(screen.queryByLabelText(/Restore as private/)).not.toBeInTheDocument()
+    })
+  })
+
   describe('draft package', () => {
     function mockDraftFetch(draft: typeof sampleDraft) {
       mockClientFetch.mockImplementation(async (path: string, init?: RequestInit) => {

@@ -90,6 +90,13 @@ export const updatePackageSchema = createPackageSchema
  */
 export const createDraftPackageSchema = updatePackageSchema
 
+/**
+ * Restore (POST /packages/:nameOrId/restore): the body is optional. Deletion is
+ * an emergency measure, so `private` brings the dataset back off the site, to be
+ * fixed and then published through the ordinary visibility flag.
+ */
+export const restorePackageSchema = z.object({ private: z.boolean().optional() })
+
 /** Placeholder name auto-assigned to drafts; publishing requires replacing it (ADR-039) */
 export const DRAFT_NAME_PLACEHOLDER_RE = /^untitled-[0-9a-f]{8}$/
 
@@ -119,4 +126,5 @@ export function draftPublishBlockers(pkg: {
 
 export type CreatePackageInput = z.infer<typeof createPackageSchema>
 export type UpdatePackageInput = z.infer<typeof updatePackageSchema>
+export type RestorePackageInput = z.infer<typeof restorePackageSchema>
 export type CreateDraftPackageInput = z.infer<typeof createDraftPackageSchema>

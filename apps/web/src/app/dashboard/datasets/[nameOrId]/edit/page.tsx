@@ -3,7 +3,17 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { Alert, AlertDescription, Badge, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Label,
+  Switch,
+} from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { isDraftPlaceholderName, type PackageState } from '@kukan/shared'
 import { Sparkles } from 'lucide-react'
@@ -230,11 +240,19 @@ export default function EditDatasetPage() {
   }
 
   const [restoring, setRestoring] = useState(false)
+  const [restorePrivate, setRestorePrivate] = useState(false)
 
   async function handleRestore() {
     setRestoring(true)
     try {
-      const res = await clientFetch(`/api/v1/packages/${nameOrId}/restore`, { method: 'POST' })
+      // Only when asked — a plain restore keeps the visibility it was deleted with
+      const res = await clientFetch(`/api/v1/packages/${nameOrId}/restore`, {
+        method: 'POST',
+        ...(restorePrivate && {
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ private: true }),
+        }),
+      })
       if (res.ok) {
         router.push(`/dashboard/datasets/${nameOrId}/edit`)
       }
@@ -470,6 +488,19 @@ export default function EditDatasetPage() {
           </CardHeader>
           <CardContent>
             <p className="mb-3 text-sm text-muted-foreground">{t('restoreDatasetConfirm')}</p>
+            {/* A dataset that was private is already off the site */}
+            {!pkg.private && (
+              <div className="mb-4 flex items-center gap-2">
+                <Switch
+                  id="restore-private"
+                  checked={restorePrivate}
+                  onCheckedChange={setRestorePrivate}
+                />
+                <Label htmlFor="restore-private" className="cursor-pointer font-normal">
+                  {t('restoreAsPrivate')}
+                </Label>
+              </div>
+            )}
             <Button onClick={handleRestore} disabled={restoring}>
               {restoring ? tc('loading') : t('restoreDataset')}
             </Button>
