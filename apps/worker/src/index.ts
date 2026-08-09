@@ -44,7 +44,10 @@ import { retryLakeIngest } from './pipeline/retry-lake-ingest'
 import { startCronJob } from './cron/start-cron-job'
 import { sweepOrphanedObjects } from './cron/orphan-cleanup/sweep-orphans'
 import { sweepLakeOrphans } from './cron/orphan-cleanup/sweep-lake-orphans'
-import { expirePendingUploads } from '@kukan/api/services/storage-pointer'
+import {
+  expirePendingUploads,
+  markUploadsThatNeverArrived,
+} from '@kukan/api/services/storage-pointer'
 import { LAKE_INGEST_SWEEP_CRON, ORPHAN_CLEANUP_CRON, PENDING_UPLOAD_TTL_MS } from '@/config'
 import { checkBatch } from './cron/health-check/check-batch'
 import { embedPackage, enqueueAllPackageEmbeds } from './embed/embed-package'
@@ -157,6 +160,10 @@ const orphanCleanupJob = startCronJob({
     // before it is deleted.
     const expired = await expirePendingUploads(db, PENDING_UPLOAD_TTL_MS)
     if (expired > 0) orphanSweepLog.info({ expired }, 'Expired abandoned upload URLs')
+    // After the expiry, so a key cleared just now is one of the resources this
+    // asks about rather than waiting an hour to be seen.
+    const marked = await markUploadsThatNeverArrived(db, PENDING_UPLOAD_TTL_MS)
+    if (marked > 0) orphanSweepLog.info({ marked }, 'Marked uploads that never arrived')
     await sweepOrphanedObjects(db, storage, orphanSweepLog)
     // Layer 2's orphans are the ones no writer could park: a Parquet written
     // but never committed to the catalog (ADR-043).

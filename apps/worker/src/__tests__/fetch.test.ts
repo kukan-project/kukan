@@ -86,6 +86,20 @@ describe('executeFetch', () => {
     await expect(executeFetch('res-1', ctx)).rejects.toThrow('no file or URL')
   })
 
+  it('says only that there is no file, whatever emptied the resource', async () => {
+    // Reverting to nothing and purging the last version both leave an
+    // upload-type resource with no object — the same shape as an upload that
+    // never came. Which of the three it is takes the version history, which the
+    // sweep that marks these reads and this does not; claiming the upload never
+    // completed would be false of two of them.
+    const ctx = createMockCtx()
+    vi.mocked(ctx.getResource).mockResolvedValue(
+      makeResource({ urlType: 'upload', storageKey: null })
+    )
+
+    await expect(executeFetch('res-1', ctx)).rejects.toThrow('Resource has no uploaded file')
+  })
+
   it('should compute hash for upload resources when missing', async () => {
     const content = 'name,age\nAlice,30\n'
     const expectedHash = `sha256:${createHash('sha256').update(content).digest('hex')}`

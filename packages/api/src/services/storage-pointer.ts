@@ -137,6 +137,9 @@ export async function publishLiveContent(
   return (result.rows[0] as { published: boolean } | undefined)?.published === true
 }
 
+/** What a resource is left saying when its only upload never arrived. */
+export const UPLOAD_NEVER_COMPLETED = 'The upload was never completed'
+
 /**
  * Park the objects of upload URLs that were never completed (ADR-043).
  *
@@ -169,6 +172,63 @@ export async function expirePendingUploads(
     SELECT key, ${PARKED_UNTIL} FROM cleared
     ON CONFLICT (key) DO NOTHING
     RETURNING key
+  `)
+  return result.rows.length
+}
+
+/**
+ * Say so on the resources whose upload never arrived.
+ *
+ * An upload leaves a resource row before it leaves a file: the row is created,
+ * then a URL is asked for, then the bytes are written. Give up anywhere along
+ * that and the row stays — listed, undownloadable, answering every reprocess
+ * with a failure, and saying nothing about any of it. Deleting was the only way
+ * out, and nothing said that either.
+ *
+ * Asked of the resource rather than of the sweep that expires upload URLs, which
+ * is where this began. That sweep only ever sees rows that got as far as asking
+ * for a URL; a client that dies between creating the row and asking would never
+ * be seen by it at all. What the state is — an upload-type resource, no object,
+ * nothing on its way — is the whole of the question, and asking it directly also
+ * reaches everything that reached this state before there was anything to ask.
+ *
+ * Left alone: a resource any version has held — emptied rather than unfilled,
+ * whether by a revert or by purging the last one (ADR-044 §4, ADR-046 §3).
+ * Tombstones count, unlike the ownership question elsewhere in this file: that
+ * one asks who owns bytes, this one whether content ever arrived, and a purged
+ * version records that it did. Also left alone: one already carrying this, so an
+ * hourly pass does not keep rewriting the same row; one a run or a job holds,
+ * being mid-sentence about it; and a deleted one, since deleting was the way out
+ * this signposts.
+ *
+ * @param olderThanMs - how long a resource may sit empty before this is said of
+ *   it. The same window the upload URL gets, so nothing is called abandoned
+ *   while its upload could still land.
+ */
+export async function markUploadsThatNeverArrived(
+  db: Pick<Database, 'execute'>,
+  olderThanMs: number
+): Promise<number> {
+  const result = await db.execute(sql`
+    INSERT INTO resource_pipeline (resource_id, status, error)
+    SELECT r.id, 'error', ${UPLOAD_NEVER_COMPLETED}
+    FROM resource r
+    WHERE r.url_type = 'upload'
+      AND r.storage_key IS NULL
+      AND r.pending_storage_key IS NULL
+      AND r.state <> 'deleted'
+      AND r.created < NOW() - ${`${Math.trunc(olderThanMs)} milliseconds`}::interval
+      -- Tombstones included (see above).
+      AND NOT EXISTS (SELECT 1 FROM resource_version v WHERE v.resource_id = r.id)
+      AND NOT EXISTS (
+        SELECT 1 FROM resource_pipeline p
+        WHERE p.resource_id = r.id
+          AND (p.claim_owner IS NOT NULL OR p.error = ${UPLOAD_NEVER_COMPLETED})
+      )
+    ON CONFLICT (resource_id) DO UPDATE
+      SET status = 'error', error = EXCLUDED.error, updated = NOW()
+      WHERE resource_pipeline.claim_owner IS NULL
+    RETURNING resource_id
   `)
   return result.rows.length
 }

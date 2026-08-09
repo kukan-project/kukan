@@ -8,12 +8,14 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { eq, sql } from 'drizzle-orm'
-import { resource, resourcePipeline } from '@kukan/db'
+import { resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import { getStorageKey } from '@kukan/shared'
 import {
   expirePendingUploads,
+  markUploadsThatNeverArrived,
   publishLiveContent,
   reserveObject,
+  UPLOAD_NEVER_COMPLETED,
 } from '../../services/storage-pointer'
 import { ResourceService } from '../../services/resource-service'
 import { cancelResourceRun } from '../../services/pipeline-claim'
@@ -337,6 +339,150 @@ describe('promoteUpload', () => {
     expect(await parkedKeys()).toEqual([first])
   })
 
+  /** Move the pending window into the past so the next sweep collects it. */
+  async function ageOutPendingUpload() {
+    await db
+      .update(resource)
+      .set({ pendingStorageKeyAt: sql`NOW() - interval '2 days'` })
+      .where(eq(resource.id, resourceId))
+  }
+
+  const pipelineRow = async () =>
+    (await db.select().from(resourcePipeline).where(eq(resourcePipeline.resourceId, resourceId)))[0]
+
+  /** Make the resource old enough to be judged abandoned. */
+  async function ageOutResource() {
+    await db
+      .update(resource)
+      .set({ created: sql`NOW() - interval '2 days'` })
+      .where(eq(resource.id, resourceId))
+  }
+
+  it('says so on a resource whose only upload never arrived', async () => {
+    // Otherwise it is listed, cannot be downloaded, answers every reprocess
+    // with the same failure, and nothing says deleting it is the way out
+    // The create path records the kind up front; the URL is asked for after
+    const service = new ResourceService(db)
+    await db
+      .update(resource)
+      .set({ urlType: 'upload', url: 'data.csv' })
+      .where(eq(resource.id, resourceId))
+    await service.prepareForUpload(resourceId, { filename: 'data.csv', contentType: 'text/csv' })
+    await ageOutPendingUpload()
+    await expirePendingUploads(db, 60_000)
+    await ageOutResource()
+
+    expect(await markUploadsThatNeverArrived(db, 60_000)).toBe(1)
+
+    const p = await pipelineRow()
+    expect(p.status).toBe('error')
+    expect(p.error).toBe(UPLOAD_NEVER_COMPLETED)
+  })
+
+  it('says so even when no upload URL was ever asked for', async () => {
+    // The row is created first and the URL asked for after, so a client that
+    // dies in between leaves a resource the expiry sweep can never see
+    await db
+      .update(resource)
+      .set({ urlType: 'upload', url: 'data.csv' })
+      .where(eq(resource.id, resourceId))
+    await ageOutResource()
+
+    expect(await markUploadsThatNeverArrived(db, 60_000)).toBe(1)
+    expect((await pipelineRow()).error).toBe(UPLOAD_NEVER_COMPLETED)
+  })
+
+  it('says nothing about a resource that already serves a file', async () => {
+    const service = new ResourceService(db)
+    await db.update(resource).set({ urlType: 'upload' }).where(eq(resource.id, resourceId))
+    const first = await service.prepareForUpload(resourceId, {
+      filename: 'data.csv',
+      contentType: 'text/csv',
+    })
+    await service.promoteUpload(resourceId, first, { size: 42 })
+    await ageOutResource()
+
+    expect(await markUploadsThatNeverArrived(db, 60_000)).toBe(0)
+    expect(await pipelineRow()).toBeUndefined()
+  })
+
+  it('says nothing about a resource a version emptied', async () => {
+    // Reverting to nothing leaves the same empty row, but its upload did
+    // arrive — the history is the proof, and the message would be false
+    const service = new ResourceService(db)
+    await db.update(resource).set({ urlType: 'upload' }).where(eq(resource.id, resourceId))
+    const key = await service.prepareForUpload(resourceId, {
+      filename: 'data.csv',
+      contentType: 'text/csv',
+    })
+    await service.promoteUpload(resourceId, key, { size: 42 })
+    await db.insert(resourceVersion).values({
+      resourceId,
+      version: 1,
+      storageKey: key,
+      size: 42,
+      hash: 'sha256:a',
+      origin: 'upload',
+    })
+    await db.update(resource).set({ storageKey: null }).where(eq(resource.id, resourceId))
+    await ageOutResource()
+
+    expect(await markUploadsThatNeverArrived(db, 60_000)).toBe(0)
+  })
+
+  it('says nothing about one whose only version was purged', async () => {
+    // Purging the last version empties the resource and leaves a tombstone, so
+    // the shape is identical to an upload that never came — except this one did,
+    // and was published, and was taken back on purpose
+    await db.update(resource).set({ urlType: 'upload' }).where(eq(resource.id, resourceId))
+    await db.insert(resourceVersion).values({
+      resourceId,
+      version: 1,
+      storageKey: getStorageKey(packageId, resourceId, 'gone'),
+      size: 42,
+      hash: 'sha256:a',
+      origin: 'upload',
+      state: 'purged',
+      purgedAt: sql`NOW()`,
+    })
+    await ageOutResource()
+
+    expect(await markUploadsThatNeverArrived(db, 60_000)).toBe(0)
+  })
+
+  it('says nothing about one still young enough for its upload to land', async () => {
+    await db
+      .update(resource)
+      .set({ urlType: 'upload', url: 'data.csv' })
+      .where(eq(resource.id, resourceId))
+
+    expect(await markUploadsThatNeverArrived(db, 60_000)).toBe(0)
+  })
+
+  it('does not write over a run that holds the resource', async () => {
+    // The sweep's aside must not become the conclusion of somebody's sentence
+    await db
+      .update(resource)
+      .set({ urlType: 'upload', url: 'data.csv' })
+      .where(eq(resource.id, resourceId))
+    await ageOutResource()
+    await runInFlight(resourceId)
+
+    expect(await markUploadsThatNeverArrived(db, 60_000)).toBe(0)
+    expect((await pipelineRow()).error).not.toBe(UPLOAD_NEVER_COMPLETED)
+  })
+
+  it('says it once, not every hour', async () => {
+    await db
+      .update(resource)
+      .set({ urlType: 'upload', url: 'data.csv' })
+      .where(eq(resource.id, resourceId))
+    await ageOutResource()
+
+    expect(await markUploadsThatNeverArrived(db, 60_000)).toBe(1)
+    expect(await markUploadsThatNeverArrived(db, 60_000)).toBe(0)
+  })
+
   it('parks an upload URL nobody used, once its window has passed', async () => {
     const service = new ResourceService(db)
     const pending = await service.prepareForUpload(resourceId, {
@@ -349,10 +495,7 @@ describe('promoteUpload', () => {
     expect(await parkedKeys()).toEqual([])
     expect((await row()).pendingStorageKey).toBe(pending)
 
-    await db
-      .update(resource)
-      .set({ pendingStorageKeyAt: sql`NOW() - interval '2 days'` })
-      .where(eq(resource.id, resourceId))
+    await ageOutPendingUpload()
 
     expect(await expirePendingUploads(db, 60_000)).toBe(1)
     expect(await parkedKeys()).toEqual([pending])
@@ -453,10 +596,7 @@ describe('promoteUpload', () => {
       filename: 'data.csv',
       contentType: 'text/csv',
     })
-    await db
-      .update(resource)
-      .set({ pendingStorageKeyAt: sql`NOW() - interval '2 days'` })
-      .where(eq(resource.id, resourceId))
+    await ageOutPendingUpload()
 
     expect(await expirePendingUploads(db, 60_000)).toBe(1)
     expect((await row()).pendingMetadata).toBeNull()

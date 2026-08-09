@@ -65,6 +65,10 @@ export async function executeFetch(
     // this hash against the bytes it copies (ADR-043), so a client-supplied one
     // would decide what a version claims to hold.
     if (!res.storageKey) {
+      // Says only what is true from here. Whether nothing ever arrived or the
+      // content was taken back is a question about the version history, which
+      // the sweep asks and this does not — and it puts its answer back on the
+      // row within the hour, since this message is not the one it looks for.
       throw new ValidationError(
         rebuildOnly ? 'Resource has no content to rebuild from' : 'Resource has no uploaded file'
       )
