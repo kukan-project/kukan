@@ -183,7 +183,7 @@ export default function EditDatasetPage() {
 
   // The org options never change with the package — fetch once on mount
   const { data: orgData } = useFetch<{ items: Organization[] }>('/api/v1/users/me/organizations')
-  // Only organizations the viewer may write in (kukan#260)
+  // Only organizations the viewer may write in
   const organizations = (orgData?.items ?? []).filter((o) => hasRole(o.role, 'editor'))
 
   const isDraft = pkg?.state === 'draft'

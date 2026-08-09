@@ -9,8 +9,8 @@ vi.mock('@/lib/client-api', () => ({
   clientFetch: vi.fn(),
 }))
 
-// The form owns draft creation (kukan#243) — the stub exposes the submit
-// counter and lets a test play back the id the real form would report
+// The form owns draft creation — the stub exposes the submit counter and
+// lets a test play back the id the real form would report
 const form = vi.hoisted(() => ({ draftCreated: null as ((draftId: string) => void) | null }))
 vi.mock('@/components/dashboard/dataset/dataset-form', () => ({
   DatasetForm: ({
@@ -81,7 +81,7 @@ describe('NewDatasetPage', () => {
 
   it('should drop organizations the viewer cannot create datasets in', async () => {
     // Creating needs editor in the owning org, so a member-only one would only
-    // be rejected on save (kukan#260)
+    // be rejected on save
     mockClientFetch.mockResolvedValue(
       jsonResponse({
         items: [

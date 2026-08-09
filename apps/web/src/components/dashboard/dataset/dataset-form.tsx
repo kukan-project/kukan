@@ -237,8 +237,8 @@ export function DatasetForm({
   }, [openSignal])
 
   // The new page's drop zone creates its draft by submitting this form, so
-  // what the user already typed goes with it (kukan#243). Same counter
-  // convention as openSignal above.
+  // what the user already typed goes with it. Same counter convention as
+  // openSignal above.
   const lastSubmitSignal = useRef(submitSignal)
   useEffect(() => {
     if (submitSignal !== lastSubmitSignal.current) {
@@ -331,7 +331,7 @@ export function DatasetForm({
     license: t('publishRequiresLicense'),
   }
 
-  // A lone organization is not a choice — preselect it (kukan#260). Creation
+  // A lone organization is not a choice — preselect it. Creation
   // only: on an existing dataset the stored owner wins, blank or not. An effect,
   // not a defaultValue: the options arrive from the page after mount.
   useEffect(() => {

@@ -180,7 +180,7 @@ describe('EditDatasetPage', () => {
     expect(screen.getByTestId('resource-list')).toBeInTheDocument()
   })
 
-  it('should link to the public page in a new tab (kukan#286)', async () => {
+  it('should link to the public page in a new tab', async () => {
     mockClientFetch.mockImplementation(async (path: string) =>
       jsonResponse(path.includes('/users/me/organizations') ? sampleOrgs : samplePackage)
     )

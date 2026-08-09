@@ -30,7 +30,7 @@ function jsonResponse(data: unknown, ok = true) {
 }
 
 /** Routes the organization fetch and the viewer's memberships, which decide
- *  whether the editable form or the read-only view renders (kukan#258) */
+ *  whether the editable form or the read-only view renders */
 function mockFetch(org: unknown, role: string | null = 'admin') {
   vi.mocked(clientFetch).mockImplementation(async (url: string) => {
     if (url.startsWith('/api/v1/users/me/organizations')) {
@@ -82,7 +82,7 @@ describe('EditOrganizationPage', () => {
       expect(screen.getByText('Test Organization')).toBeInTheDocument()
     })
     // Neither the update button (in the form) nor delete — both need admin
-    // and only produced an API error when offered (kukan#258)
+    // and only produced an API error when offered
     expect(screen.queryByTestId('organization-form')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Delete Organization' })).not.toBeInTheDocument()
     expect(

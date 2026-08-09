@@ -36,7 +36,7 @@ interface UseMyRolesResult {
  *
  * The dashboard lists every organization and category, but editing one needs
  * admin in it and its member list needs any role at all — without this the
- * actions were offered to everyone and only failed at the API (kukan#258).
+ * actions were offered to everyone and only failed at the API.
  */
 export function useMyRoles(kind: 'organizations' | 'groups'): UseMyRolesResult {
   const { data, loading } = useFetch<{ items: MembershipItem[] }>(`/api/v1/users/me/${kind}`)

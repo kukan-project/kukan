@@ -35,7 +35,7 @@ const sampleGroups = [
 ]
 
 /** Routes the category list and the viewer's memberships, which decide which
- *  row actions are offered (kukan#258). Defaults to admin in every category. */
+ *  row actions are offered. Defaults to admin in every category. */
 function mockFetch(
   list: Response,
   memberships = sampleGroups.map((g) => ({ ...g, role: 'admin' }))
@@ -109,7 +109,7 @@ describe('GroupsManagePage', () => {
   })
 
   it('should hide the new button from non-sysadmins', async () => {
-    // Creating a category is sysadmin-only server-side (kukan#258)
+    // Creating a category is sysadmin-only server-side
     mockUser.sysadmin = false
     mockFetch(mockFetchResponse({ items: [], total: 0 }))
     render(<GroupsManagePage />)
@@ -150,7 +150,7 @@ describe('GroupsManagePage', () => {
   })
 
   // Editing needs admin, the member list any role — offering either to
-  // everyone only produced an API error on use (kukan#258)
+  // everyone only produced an API error on use
   it('should offer only the member list to a non-admin member', async () => {
     mockUser.sysadmin = false
     mockFetch(mockFetchResponse({ items: sampleGroups, total: 2 }), [

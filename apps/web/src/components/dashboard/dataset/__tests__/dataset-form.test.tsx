@@ -99,7 +99,7 @@ describe('DatasetForm (draft flows)', () => {
     it('should preselect the organization when the viewer has only one', async () => {
       setupMocks(jsonResponse({ id: 'draft-1', name: 'untitled-abcd1234' }))
       // One option is not a choice — sending it spares the user a required
-      // field with a single possible value (kukan#260)
+      // field with a single possible value
       render(<DatasetForm mode="create" organizations={[organizations[0]]} />)
 
       fireEvent.click(screen.getByRole('button', { name: 'Create Draft' }))
@@ -163,7 +163,6 @@ describe('DatasetForm (draft flows)', () => {
 
     // The new page's drop zone creates its draft through this form rather than
     // posting its own, which navigated away from everything already typed
-    // (kukan#243)
     describe('externally triggered submit', () => {
       /** Renders create mode and returns the trigger the page's drop zone pulls */
       function renderWithTrigger(onDraftCreated?: (draftId: string) => void) {

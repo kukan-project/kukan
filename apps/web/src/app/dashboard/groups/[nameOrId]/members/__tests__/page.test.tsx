@@ -24,7 +24,7 @@ const members = [
 ]
 
 /** Routes the member list and the viewer's memberships, which decide whether
- *  the add/remove controls are offered (kukan#258) */
+ *  the add/remove controls are offered */
 function mockFetch(items: unknown[] = [], role: string | null = null) {
   mockClientFetch.mockImplementation(async (url: string) => {
     if (url.startsWith('/api/v1/users/me/groups')) {
@@ -68,7 +68,7 @@ describe('GroupMembersPage', () => {
   })
 
   it('should show a non-admin member the list without the add and remove controls', async () => {
-    // Reading the list needs any role, changing it needs admin (kukan#258)
+    // Reading the list needs any role, changing it needs admin
     mockFetch(members, 'member')
     render(<GroupMembersPage />)
 

@@ -41,7 +41,7 @@ const sampleOrgs = [
 ]
 
 /** Routes the organization list and the viewer's memberships, which decide
- *  which row actions are offered (kukan#258). Defaults to admin everywhere. */
+ *  which row actions are offered. Defaults to admin everywhere. */
 function mockFetch(list: Response, memberships = sampleOrgs.map((o) => ({ ...o, role: 'admin' }))) {
   vi.mocked(clientFetch).mockImplementation(async (url: string) => {
     if (url.startsWith('/api/v1/users/me/organizations')) {
@@ -190,7 +190,7 @@ describe('OrganizationsManagePage', () => {
   })
 
   // Editing needs admin, the member list any role — offering either to
-  // everyone only produced an API error on use (kukan#258)
+  // everyone only produced an API error on use
   it('should offer only the member list to a non-admin member', async () => {
     mockUser.sysadmin = false
     mockFetch(mockFetchResponse({ items: sampleOrgs, total: 2 }), [

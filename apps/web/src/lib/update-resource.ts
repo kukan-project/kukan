@@ -8,7 +8,7 @@ export interface UpdateResourceResult {
    *
    * A boolean was all this used to return, so the API's Problem Details went
    * nowhere and every failed edit read "could not update" — including the ones
-   * where the API had named the field and the reason (kukan#296). The create
+   * where the API had named the field and the reason. The create
    * path already reads `detail`, which is why adding a resource explained
    * itself and editing the same resource did not.
    */

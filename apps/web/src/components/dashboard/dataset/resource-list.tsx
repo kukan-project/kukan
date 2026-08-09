@@ -538,7 +538,7 @@ export function ResourceList({
       if (!updated.ok) {
         // The server's reason when it gave one — the create path has always
         // shown it, and an edit failing for the same cause used to say only
-        // that it failed (kukan#296).
+        // that it failed.
         setFormError(updated.detail ?? t('failedToUpdate'))
         return
       }

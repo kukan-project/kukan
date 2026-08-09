@@ -110,10 +110,10 @@ export default function DatasetsManagePage() {
   const [groups, setGroups] = useState<OptionItem[]>([])
 
   // The memberships answer both what to offer as an org filter and who may
-  // purge (admin in the owning org — the API enforces the same, kukan#258)
+  // purge (admin in the owning org — the API enforces the same)
   const { can: canInOrg, items: memberships } = useMyRoles('organizations')
   // The listing is scoped with my_org, so an organization the viewer cannot
-  // write in could only ever come back empty (kukan#259)
+  // write in could only ever come back empty
   const organizations = useMemo(
     () => memberships.filter((org) => hasRole(org.role, 'editor')),
     [memberships]

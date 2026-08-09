@@ -11,7 +11,7 @@ interface EntityDetailsProps {
 
 /**
  * Read-only counterpart of OrganizationForm / GroupForm — the same fields with
- * no controls, shown to viewers who lack admin in the entity (kukan#258).
+ * no controls, shown to viewers who lack admin in the entity.
  */
 export function EntityDetails({ name, title, description, imageUrl }: EntityDetailsProps) {
   const tc = useTranslations('common')

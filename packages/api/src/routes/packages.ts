@@ -163,7 +163,7 @@ packagesRouter.get(
     // Visibility counts every membership — a member may read their org's
     // private datasets. my_org is the dashboard's management listing, so it
     // narrows to the orgs the viewer may write in, the same basis the drafts
-    // listing above uses (kukan#259)
+    // listing above uses
     const userOrgIds = await resolveUserOrgIds(db, user)
     const manageOrgIds = my_org ? await resolveUserOrgIds(db, user, 'editor') : undefined
 

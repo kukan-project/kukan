@@ -40,7 +40,7 @@ const sampleItems = [
 ]
 
 // The memberships carry the role the org filter is built from: the listing is
-// scoped with my_org, which covers the orgs the viewer may write in (kukan#259).
+// scoped with my_org, which covers the orgs the viewer may write in.
 // The same roles gate purging, which needs admin in the owning org
 const myOrgs = [
   { id: 'o1', name: 'tokyo', title: 'Tokyo', role: 'admin' },
@@ -153,7 +153,7 @@ describe('DatasetsManagePage', () => {
     expect(mockPush).toHaveBeenCalledWith('/dashboard/datasets/population-data/edit')
   })
 
-  it('opens the public page in a new tab without opening the editor (kukan#286)', async () => {
+  it('opens the public page in a new tab without opening the editor', async () => {
     setupDefaultMocks()
     render(<DatasetsManagePage />)
 

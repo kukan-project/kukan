@@ -42,7 +42,7 @@ export default function NewDatasetPage() {
   // (scheme, SSRF), and a second copy of it would only be the one that is wrong
   const [sourceUrl, setSourceUrl] = useState('')
 
-  // Creating needs editor in the owning organization (kukan#260)
+  // Creating needs editor in the owning organization
   useEffect(() => {
     clientFetch('/api/v1/users/me/organizations').then(async (res) => {
       if (res.ok) {
@@ -55,7 +55,7 @@ export default function NewDatasetPage() {
   // File-first creation (ADR-039): dropping files creates the draft, then the
   // edit page picks the files up from the stash and uploads them as resources.
   // The draft comes from submitting the form rather than a POST of this page's
-  // own, which navigated away from whatever had already been typed (kukan#243)
+  // own, which navigated away from whatever had already been typed
   function handleDropFiles(files: File[]) {
     const oversized = files.filter((f) => f.size > MAX_UPLOAD_SIZE)
     if (oversized.length > 0) {

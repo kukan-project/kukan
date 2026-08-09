@@ -135,7 +135,7 @@ describe('Packages API Routes', () => {
 
     // my_org backs the dashboard's management listing, so it covers the orgs
     // the viewer may write in — a member-only org's datasets would otherwise
-    // be listed for editing and rejected on save (kukan#259)
+    // be listed for editing and rejected on save
     describe('my_org scope', () => {
       async function grantMembership(role: string) {
         const orgId = await ensureTestOrg()

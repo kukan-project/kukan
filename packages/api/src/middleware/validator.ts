@@ -24,9 +24,9 @@ function raise(error: z.core.$ZodError): never {
 /**
  * The upstream validator answers a failed parse with the raw ZodError and no
  * `detail`, so clients reading Problem Details saw nothing to show and fell
- * back to "the request failed" — hiding which field was wrong and why
- * (kukan#285). Raising ValidationError instead routes it through errorHandler
- * like every other error the API reports.
+ * back to "the request failed" — hiding which field was wrong and why. Raising
+ * ValidationError instead routes it through errorHandler like every other error
+ * the API reports.
  *
  * A json body is also validated when it is absent: clients that set the JSON
  * content-type on every POST send a route whose body is optional an empty one,

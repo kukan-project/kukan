@@ -157,7 +157,7 @@ resourcesRouter.get('/count', async (c) => {
   const db = c.get('db')
 
   // Visibility counts every membership; my_org narrows to the orgs the viewer
-  // may write in, matching the dashboard listing it accompanies (kukan#259)
+  // may write in, matching the dashboard listing it accompanies
   const userOrgIds = await resolveUserOrgIds(db, user)
   const manageOrgIds = myOrg ? await resolveUserOrgIds(db, user, 'editor') : undefined
 
@@ -426,8 +426,8 @@ resourcesRouter.get('/:id/pipeline-status', async (c) => {
 
   // Whoever can edit the resource entered the URL, so they get to see why it
   // failed; everyone else gets a generic message rather than error text that
-  // could be used to probe hosts (kukan#285). Resolved only when there is an
-  // error to show, since the dashboard polls this endpoint.
+  // could be used to probe hosts. Resolved only when there is an error to
+  // show, since the dashboard polls this endpoint.
   const hasError = !!status.error || status.steps.some((s) => s.error)
   const showDetail = hasError && !!user && (await canWritePackage(db, user, pkg, 'editor'))
   const sanitizeError = (err: string | null) =>

@@ -33,7 +33,7 @@ function jsonResponse(data: unknown, ok = true) {
 }
 
 /** Routes the group fetch and the viewer's memberships, which decide whether
- *  the editable form or the read-only view renders (kukan#258) */
+ *  the editable form or the read-only view renders */
 function mockFetch(role: string | null, groupResponse = jsonResponse(group)) {
   vi.mocked(clientFetch).mockImplementation(async (url: string) => {
     if (url.startsWith('/api/v1/users/me/groups')) {
@@ -74,7 +74,7 @@ describe('EditGroupPage', () => {
       expect(screen.getByText('Test Category')).toBeInTheDocument()
     })
     // The update button lives in the form — offering it only produced a
-    // "Requires admin role or higher in this group" error (kukan#258)
+    // "Requires admin role or higher in this group" error
     expect(screen.queryByTestId('group-form')).not.toBeInTheDocument()
     expect(
       screen.getByText('Editing requires the admin role. This is shown for reference only.')

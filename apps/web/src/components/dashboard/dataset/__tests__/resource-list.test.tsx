@@ -265,7 +265,7 @@ describe('ResourceList drop-to-create', () => {
     render(
       <ResourceList {...baseProps} resources={[{ id: 'r1', name: 'weather.csv', format: 'CSV' }]} />
     )
-    // Delete only appears once the row's editor is open (kukan#286)
+    // Delete only appears once the row's editor is open
     expect(screen.queryByRole('button', { name: 'Delete This Resource' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByText('weather.csv'))
     fireEvent.click(screen.getByRole('button', { name: 'Delete This Resource' }))
@@ -291,7 +291,7 @@ describe('ResourceList drop-to-create', () => {
     expect(screen.queryAllByRole('columnheader').length).toBeGreaterThan(0)
   })
 
-  it('should link a row to the public resource page without opening its editor (kukan#286)', () => {
+  it('should link a row to the public resource page without opening its editor', () => {
     render(
       <ResourceList
         {...baseProps}

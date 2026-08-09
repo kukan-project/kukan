@@ -62,12 +62,12 @@ export const STATUS_KEYS: Record<PipelineStatus, string> = {
  * Two things are read off it, and both were invisible without it. The failure
  * reason: the list only ever carried the status, so a failed resource showed a
  * red badge and nothing else, and reaching the reason meant leaving the
- * dashboard for the public resource page (kukan#285, kukan#296) — half of what
- * it says is not about the file at all, since a site behind an IP allowlist
- * answers the worker with 403 and "403" is the whole explanation. And that the
- * run stored nothing: a run with no work to do settles in tens of milliseconds,
- * so the refetch that follows an upload finds it already complete and the badge
- * never watches it at all.
+ * dashboard for the public resource page — half of what it says is not about
+ * the file at all, since a site behind an IP allowlist answers the worker with
+ * 403 and "403" is the whole explanation. And that the run stored nothing: a
+ * run with no work to do settles in tens of milliseconds, so the refetch that
+ * follows an upload finds it already complete and the badge never watches it
+ * at all.
  *
  * A row that settles while the page is open has both already — the poll that
  * saw it read the same body — so this asks only when nothing polled.

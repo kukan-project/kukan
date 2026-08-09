@@ -103,7 +103,7 @@ async function createResource(packageId: string, data: Record<string, unknown> =
 describe('Resources API Routes', () => {
   // A rejected request has to say what was wrong: the raw ZodError the
   // validator used to return carries no `detail`, so clients reading Problem
-  // Details had nothing to show and fell back to "it failed" (kukan#285)
+  // Details had nothing to show and fell back to "it failed"
   describe('validation errors', () => {
     async function postResource(url: string) {
       const pkg = await createPackage(`invalid-url-pkg-${url.replace(/\W/g, '')}`)
@@ -994,7 +994,7 @@ describe('Resources API Routes', () => {
 
     it('should show the reason to someone who may edit the resource', async () => {
       // They entered the URL, so "Processing failed" leaves them with nothing
-      // to act on — the redaction above is for everyone else (kukan#285)
+      // to act on — the redaction above is for everyone else
       const pkg = await createPackage('pipeline-error-editor-pkg')
       const resource = await createResource(pkg.id)
       await app.request(`/api/v1/organizations/${testOrgId}/members`, {

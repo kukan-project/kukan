@@ -60,7 +60,7 @@ describe('updateResource', () => {
   it("carries back the server's reason when the PUT fails", async () => {
     // The point of the whole return shape: the API names the field and the
     // reason, and a boolean threw that away, so every failed edit read "could
-    // not update" (kukan#296).
+    // not update".
     mockClientFetch
       .mockResolvedValueOnce(jsonResponse({ id: 'r1', name: 'old' }))
       .mockResolvedValueOnce(jsonResponse({ detail: 'url: Invalid URL' }, false))
