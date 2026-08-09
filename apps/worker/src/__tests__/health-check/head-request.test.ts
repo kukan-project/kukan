@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { executeHeadCheck } from '../../cron/health-check/head-request'
+import { HopRefusedError } from '../../safe-fetch'
 import type { ResourceForHealthCheck } from '../../cron/health-check/types'
 
 // Mock safeFetch to use globalThis.fetch directly (SSRF logic tested separately).
@@ -22,6 +23,11 @@ function makeResource(overrides: Partial<ResourceForHealthCheck> = {}): Resource
   }
 }
 
+/** Answers null only when a redirect target is out of the batch's budget,
+ *  which is arranged by exactly one case below. */
+const check = async (...args: Parameters<typeof executeHeadCheck>) =>
+  (await executeHeadCheck(...args))!
+
 describe('executeHeadCheck', () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>
 
@@ -40,7 +46,7 @@ describe('executeHeadCheck', () => {
     const answered = new Response('a body on a HEAD', { status: 200 })
     fetchSpy.mockResolvedValue(answered)
 
-    const result = await executeHeadCheck(makeResource())
+    const result = await check(makeResource())
 
     expect(result.healthStatus).toBe('ok')
     expect(answered.bodyUsed).toBe(true)
@@ -54,7 +60,7 @@ describe('executeHeadCheck', () => {
       })
     )
 
-    const result = await executeHeadCheck(makeResource())
+    const result = await check(makeResource())
 
     expect(result.healthStatus).toBe('ok')
     expect(result.httpStatus).toBe(200)
@@ -67,7 +73,7 @@ describe('executeHeadCheck', () => {
   it('detects change when ETag differs', async () => {
     fetchSpy.mockResolvedValue(new Response(null, { status: 200, headers: { etag: '"v2"' } }))
 
-    const result = await executeHeadCheck(makeResource({ extras: { healthEtag: '"v1"' } }))
+    const result = await check(makeResource({ extras: { healthEtag: '"v1"' } }))
 
     expect(result.healthStatus).toBe('ok')
     expect(result.changed).toBe(true)
@@ -81,7 +87,7 @@ describe('executeHeadCheck', () => {
       })
     )
 
-    const result = await executeHeadCheck(
+    const result = await check(
       makeResource({ extras: { healthLastModified: 'Mon, 01 Jan 2024 00:00:00 GMT' } })
     )
 
@@ -92,7 +98,7 @@ describe('executeHeadCheck', () => {
   it('returns no change when headers match', async () => {
     fetchSpy.mockResolvedValue(new Response(null, { status: 200, headers: { etag: '"v1"' } }))
 
-    const result = await executeHeadCheck(makeResource({ extras: { healthEtag: '"v1"' } }))
+    const result = await check(makeResource({ extras: { healthEtag: '"v1"' } }))
 
     expect(result.changed).toBe(false)
   })
@@ -100,7 +106,7 @@ describe('executeHeadCheck', () => {
   it('returns no change when no headers to compare', async () => {
     fetchSpy.mockResolvedValue(new Response(null, { status: 200 }))
 
-    const result = await executeHeadCheck(makeResource())
+    const result = await check(makeResource())
 
     expect(result.healthStatus).toBe('ok')
     expect(result.etag).toBeNull()
@@ -111,7 +117,7 @@ describe('executeHeadCheck', () => {
   it('returns error for 404 response', async () => {
     fetchSpy.mockResolvedValue(new Response(null, { status: 404, statusText: 'Not Found' }))
 
-    const result = await executeHeadCheck(makeResource())
+    const result = await check(makeResource())
 
     expect(result.healthStatus).toBe('error')
     expect(result.httpStatus).toBe(404)
@@ -124,7 +130,7 @@ describe('executeHeadCheck', () => {
       new Response(null, { status: 500, statusText: 'Internal Server Error' })
     )
 
-    const result = await executeHeadCheck(makeResource())
+    const result = await check(makeResource())
 
     expect(result.healthStatus).toBe('error')
     expect(result.httpStatus).toBe(500)
@@ -133,7 +139,7 @@ describe('executeHeadCheck', () => {
   it('returns error on network failure', async () => {
     fetchSpy.mockRejectedValue(new Error('getaddrinfo ENOTFOUND example.com'))
 
-    const result = await executeHeadCheck(makeResource())
+    const result = await check(makeResource())
 
     expect(result.healthStatus).toBe('error')
     expect(result.httpStatus).toBeNull()
@@ -149,7 +155,7 @@ describe('executeHeadCheck', () => {
       new TypeError('fetch failed', { cause: new Error('connect ECONNREFUSED 10.0.3.17:443') })
     )
 
-    const result = await executeHeadCheck(makeResource())
+    const result = await check(makeResource())
 
     expect(result.errorMessage).toBe('fetch failed')
     expect(result.errorDetail).toBe('connect ECONNREFUSED 10.0.3.17:443')
@@ -158,7 +164,7 @@ describe('executeHeadCheck', () => {
   it('returns error on timeout', async () => {
     fetchSpy.mockRejectedValue(new DOMException('The operation was aborted', 'AbortError'))
 
-    const result = await executeHeadCheck(makeResource())
+    const result = await check(makeResource())
 
     expect(result.healthStatus).toBe('error')
     expect(result.httpStatus).toBeNull()
@@ -168,11 +174,22 @@ describe('executeHeadCheck', () => {
   it('uses HEAD method', async () => {
     fetchSpy.mockResolvedValue(new Response(null, { status: 200 }))
 
-    await executeHeadCheck(makeResource())
+    await check(makeResource())
 
-    expect(fetchSpy).toHaveBeenCalledWith('https://example.com/data.csv', {
-      method: 'HEAD',
-      signal: expect.any(AbortSignal),
-    })
+    // The third argument is the hooks `safeFetch` asks at each redirect hop;
+    // the stub above forwards everything it is given.
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://example.com/data.csv',
+      { method: 'HEAD', signal: expect.any(AbortSignal) },
+      undefined
+    )
+  })
+
+  it('reports a refused redirect target as nothing rather than as a dead link', async () => {
+    // `safeFetch` throws this when a hop's host is refused. The resource is
+    // fine; it simply was not asked, so the row must not be written.
+    fetchSpy.mockRejectedValue(new HopRefusedError('cdn.example'))
+
+    expect(await executeHeadCheck(makeResource())).toBeNull()
   })
 })

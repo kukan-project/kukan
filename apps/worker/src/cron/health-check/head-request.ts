@@ -4,20 +4,28 @@
  */
 
 import { rootCauseMessage } from '@kukan/shared'
-import { discardBody, safeFetch } from '@/safe-fetch'
+import { HopRefusedError, discardBody, safeFetch } from '@/safe-fetch'
+import type { SafeFetchHooks } from '@/safe-fetch'
 import { HEALTH_CHECK_TIMEOUT_MS } from '@/config'
 import type { HeadCheckResult, ResourceForHealthCheck } from './types'
 
 /**
  * Perform a HEAD request to the resource URL.
- * Never throws — always returns a structured result.
+ *
+ * Never throws — always returns a structured result, or null when a host the
+ * chain redirected to would not have it inside the batch's budget. That is not
+ * a fact about the resource, so it is not recorded against it.
  */
-export async function executeHeadCheck(res: ResourceForHealthCheck): Promise<HeadCheckResult> {
+export async function executeHeadCheck(
+  res: ResourceForHealthCheck,
+  hooks?: SafeFetchHooks
+): Promise<HeadCheckResult | null> {
   try {
-    const response = await safeFetch(res.url, {
-      method: 'HEAD',
-      signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
-    })
+    const response = await safeFetch(
+      res.url,
+      { method: 'HEAD', signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS) },
+      hooks
+    )
 
     // A HEAD has no body to read and this never reads one anyway, so whatever
     // arrived goes back now. Servers do answer HEAD with a body, and one left
@@ -61,6 +69,9 @@ export async function executeHeadCheck(res: ResourceForHealthCheck): Promise<Hea
       errorDetail: null,
     }
   } catch (err) {
+    // The chain reached a host whose turn was past the batch's budget. Nothing
+    // is wrong with the resource — it simply was not asked.
+    if (err instanceof HopRefusedError) return null
     const message = err instanceof Error ? err.message : String(err)
     // `fetch` says only `fetch failed` and leaves the reason underneath. It
     // goes to the log and not to the row: `extras` is rendered whole on the

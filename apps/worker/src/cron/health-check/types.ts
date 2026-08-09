@@ -38,4 +38,10 @@ export interface BatchSummary {
   error: number
   changed: number
   enqueuedForFullFetch: number
+  /**
+   * Selected but never started, because its turn fell outside the batch's
+   * budget. The row keeps the `healthCheckedAt` it had, so the next tick reads
+   * it first and the batch goes on from where it stopped.
+   */
+  deferred: number
 }

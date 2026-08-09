@@ -47,9 +47,11 @@ export const DNS_TRIES = 2
  * question about ten times per host, every five minutes, and the answers are
  * someone else's servers to give.
  *
- * Comfortably longer than a batch, which is about six seconds at
- * {@link HEALTH_CHECK_CONCURRENCY}, and far shorter than the five minutes
- * before the next one — so a host that moves between runs is still followed.
+ * No longer longer than a batch: once {@link HEALTH_CHECK_PER_HOST_INTERVAL_MS}
+ * paces the requests, a crowded host takes minutes rather than the six seconds
+ * this was sized against, so its name is asked again a few times on the way
+ * through. Still a few rather than once per URL, which is what this is for, and
+ * still short enough that a host which moves between runs is followed.
  *
  * Zero would not mean "do not cache": `lru-cache` reads it as no expiry at all,
  * which is a name pinned for the life of the process.
@@ -163,6 +165,67 @@ export const HEALTH_CHECK_CONCURRENCY = 10
 
 /** Timeout for HEAD requests (10 s) */
 export const HEALTH_CHECK_TIMEOUT_MS = 10_000
+
+/**
+ * How many of a batch's checks may be in flight against one host.
+ *
+ * {@link HEALTH_CHECK_CONCURRENCY} alone counts requests and not who they go
+ * to, and a catalog's URLs are not spread evenly across hosts. Measured on a
+ * live site: 477 of 481 external URLs were one host, and 305 of them were
+ * recorded as dead links answering HTTP 403 — every one of which returned 200
+ * when asked on its own, seconds apart. The batch was sending 200 requests to
+ * that host in 3.4 seconds. On a second catalog, 452 URLs over 32 hosts, the
+ * median host had 4 and the largest had 222; read in staleness order the first
+ * 200 rows were 35% one host and 66% three.
+ *
+ * It also bounds what one unresponsive host can take from the batch. A host
+ * that accepts connections and answers nothing holds a slot for
+ * {@link HEALTH_CHECK_TIMEOUT_MS}; without this it can hold every slot, and the
+ * URL is one any user can register.
+ */
+export const HEALTH_CHECK_PER_HOST_CONCURRENCY = 2
+
+/**
+ * The shortest gap between two of a batch's requests to one host.
+ *
+ * The concurrency cap above is not a rate: at the 170ms per request a batch was
+ * measured at, two in flight is still around twelve requests a second to one
+ * server. This is what makes it one.
+ *
+ * Affordable because the work is nothing like the budget. A day's staleness
+ * window against a five-minute tick is 288 chances to check a few hundred URLs,
+ * so the batch that was measured at 3.4 seconds is free to take two hundred.
+ *
+ * Not the pipeline's {@link FETCH_RATE_LIMIT_INTERVAL_S}, which is a row in the
+ * database and holds across every process where this holds only within the
+ * batch that made it. Sharing that row would put health checks and real fetches
+ * in one 5s-per-host queue, where a large catalog's checks would crowd out the
+ * fetches a user is waiting on.
+ *
+ * Which is the bound this does not have: the worker runs as more than one task
+ * and each has a scheduler of its own, so the rate a host sees is this one
+ * multiplied by however many are up. Ticks are not divided between them either
+ * — that is a batch a task claims, and there is no claim yet.
+ */
+export const HEALTH_CHECK_PER_HOST_INTERVAL_MS = 1_000
+
+/**
+ * How long a batch may go on starting checks.
+ *
+ * The bounds above are per host, and a host that answers nothing turns its own
+ * share into `ceil(n / concurrency) * timeout` — a thousand seconds for the
+ * largest host measured.
+ *
+ * Inside the default five-minute tick, so a batch that spends the whole of it
+ * still ends before the next would begin. `HEALTH_CHECK_CRON` can be set
+ * tighter, and nothing checks the two against each other: overlap is refused
+ * rather than queued (croner's `protect`), so a tick shorter than this budget
+ * silently costs every tick it overlaps — which is why the
+ * budget bounds the *turn* a row waits for rather than the wait itself. Tested
+ * after the wait, every row the budget rejects would still cost an interval to
+ * reject, and the batch would run past the tick precisely when it is behind.
+ */
+export const HEALTH_CHECK_BATCH_BUDGET_MS = 240_000
 
 /**
  * How long a job waits before trying a resource someone else is holding.
