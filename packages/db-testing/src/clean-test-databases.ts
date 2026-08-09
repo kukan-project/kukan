@@ -11,7 +11,7 @@
  * advisory lock they hold — so this is safe to run while someone else is
  * testing.
  */
-import { cleanTestDatabases } from './testing'
+import { cleanTestDatabases } from './index'
 
 const { dropped, kept } = await cleanTestDatabases()
 process.stdout.write(

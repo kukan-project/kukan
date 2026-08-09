@@ -8,11 +8,11 @@
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { sql } from 'drizzle-orm'
 import { Pool } from 'pg'
-import * as schema from '@kukan/db/schema/index'
+import * as schema from '@kukan/db/schema'
 import { inject } from 'vitest'
-import { createTestDatabase, testDatabaseName, testDatabaseUrl } from '@kukan/db/testing'
+import { createTestDatabase, testDatabaseName, testDatabaseUrl } from '@kukan/db-testing'
 
-/** This pool slot's own database — see `@kukan/db/testing` for the naming. */
+/** This pool slot's own database — see `@kukan/db-testing` for the naming. */
 const name = () => testDatabaseName(inject('testDbPrefix'))
 
 /**

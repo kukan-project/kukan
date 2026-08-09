@@ -5,7 +5,7 @@
  * Routes are mounted manually so each test file can pick which routes to test.
  */
 import { inject } from 'vitest'
-import { testDatabaseName, testDatabaseUrl } from '@kukan/db/testing'
+import { testDatabaseName, testDatabaseUrl } from '@kukan/db-testing'
 import { vi } from 'vitest'
 import { Hono } from 'hono'
 import type { Database } from '@kukan/db'

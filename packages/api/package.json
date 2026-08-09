@@ -7,6 +7,9 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": "./dist/index.js",
     "./adapters": "./dist/adapters.js",
@@ -37,9 +40,9 @@
     "@hono/zod-validator": "^0.9.0",
     "@kukan/ai-adapter": "workspace:*",
     "@kukan/db": "workspace:*",
+    "@kukan/lake": "workspace:*",
     "@kukan/queue-adapter": "workspace:*",
     "@kukan/search-adapter": "workspace:*",
-    "@kukan/lake": "workspace:*",
     "@kukan/shared": "workspace:*",
     "@kukan/storage-adapter": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -52,6 +55,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@kukan/db-testing": "workspace:*",
     "@types/node": "^24.12.2",
     "@types/pg": "^8.20.0",
     "js-yaml": "^5.2.2",

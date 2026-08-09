@@ -1,9 +1,11 @@
 /**
  * Creating and clearing up the databases an integration suite runs against.
  *
- * Here because this package owns the migrations: the folder they live in is a
- * path relative to this file, and a suite that had to know it would be one more
- * place to fix when it moves.
+ * Its own package, and one nothing is built from: this drops databases, and
+ * @kukan/db carried it as far as the worker's production node_modules, where
+ * `pnpm deploy --prod` left both the compiled copy and the source. A vitest
+ * devDependency cannot go there. @kukan/db still owns the migrations, and hands
+ * over their folder — the one thing about them that is a path.
  *
  * One database per pool slot, not per suite. Every test truncates between
  * cases, so two slots on one database clear each other's rows mid-test — which
@@ -19,11 +21,8 @@ import { drizzle } from 'drizzle-orm/node-postgres'
 import { databaseUrl } from '@kukan/shared'
 import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { readFileSync } from 'node:fs'
-import { resolve, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const HERE = dirname(fileURLToPath(import.meta.url))
-const MIGRATIONS = resolve(HERE, '../drizzle')
+import { resolve } from 'node:path'
+import { MIGRATIONS_FOLDER as MIGRATIONS } from '@kukan/db'
 
 /** Setup runs before any reporter, so this is the only channel it has. */
 const report = (message: string) => process.stdout.write(`${message}\n`)

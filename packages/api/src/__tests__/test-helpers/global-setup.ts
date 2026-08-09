@@ -8,7 +8,7 @@
  * and put both suites on one database.
  */
 import type { TestProject } from 'vitest/node'
-import { setupTestDatabase } from '@kukan/db/testing'
+import { setupTestDatabase } from '@kukan/db-testing'
 
 declare module 'vitest' {
   interface ProvidedContext {

@@ -11,7 +11,7 @@ import { Client } from 'pg'
 import { eq, sql } from 'drizzle-orm'
 import { resource, resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import { inject } from 'vitest'
-import { testDatabaseName, testDatabaseUrl } from '@kukan/db/testing'
+import { testDatabaseName, testDatabaseUrl } from '@kukan/db-testing'
 import {
   CLAIM_STALE_AFTER_MS,
   cancelResourceRun,
