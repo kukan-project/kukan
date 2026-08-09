@@ -133,7 +133,7 @@ describe('NewDatasetPage', () => {
 
   it('should stash a typed url under the draft the form created', () => {
     // Data that lives elsewhere used to mean creating an empty dataset and
-    // then editing it (kukan#295)
+    // then editing it
     render(<NewDatasetPage />)
 
     fireEvent.change(screen.getByLabelText('External URL'), {

@@ -87,8 +87,8 @@ export default function NewDatasetPage() {
         </Alert>
       )}
       {/* Data that sits elsewhere, which until now meant creating the dataset
-          empty and then editing it (kukan#295). Submitted with the form rather
-          than at once like a drop: a url is typed, a keystroke at a time. */}
+          empty and then editing it. Submitted with the form rather than at once
+          like a drop: a url is typed, a keystroke at a time. */}
       <div className="flex flex-col gap-2">
         <Label htmlFor="source-url">{tr('sourceUrl')}</Label>
         <Input
