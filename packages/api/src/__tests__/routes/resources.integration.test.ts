@@ -1234,6 +1234,38 @@ describe('Resources API Routes', () => {
       expect(res.status).toBe(200)
       // Resolved without ever opening a lake session.
       expect(await res.json()).toMatchObject({ available: false, reason: 'no-previous-version' })
+      // An answer that can change the moment the backfill runs is not cached.
+      expect(res.headers.get('Cache-Control')).toBeNull()
+    })
+
+    it('should not cache the answer a purge leaves behind', async () => {
+      // The end of the story this route got wrong: it promised a computed diff
+      // was `immutable` for a day, and purging a version destroys the snapshot
+      // it was read from — so a legally deleted version's rows stayed on screen,
+      // past a reload, for anyone who had opened that diff. What a purge leaves
+      // is this, and it must not be held at all.
+      const pkg = await createPackage('diff-purged-pkg')
+      const resource = await createResource(pkg.id)
+      await db.insert(resourceVersion).values({
+        resourceId: resource.id,
+        version: 1,
+        storageKey: `versions/${pkg.id}/${resource.id}/v1`,
+        hash: 'sha256:v1',
+        origin: 'upload',
+        state: 'purged',
+      })
+      await db.insert(resourceVersion).values({
+        resourceId: resource.id,
+        version: 2,
+        storageKey: `versions/${pkg.id}/${resource.id}/v2`,
+        hash: 'sha256:v2',
+        origin: 'upload',
+      })
+
+      const res = await app.request(`/api/v1/resources/${resource.id}/versions/2/diff`)
+
+      expect(await res.json()).toMatchObject({ available: false, reason: 'purged' })
+      expect(res.headers.get('Cache-Control')).toBeNull()
     })
   })
 })

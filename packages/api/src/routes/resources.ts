@@ -522,11 +522,17 @@ resourcesRouter.get('/:id/versions/:v/diff', async (c) => {
   // double-fired fetch discarding its first attempt) must not keep scanning
   // both snapshots and holding the one DuckDB slot the live request needs.
   const view = await service.diff(id, version, from, c.req.raw.signal)
-  // A computed diff is immutable — both snapshots are written once and never
-  // change — and it is the most expensive GET here, so a re-expand in the UI
-  // must not re-run it. An unavailable answer is not cached that way: a version
-  // reported as not-ingested becomes ingestable the moment the backfill runs.
-  if (view.available) c.header('Cache-Control', 'private, max-age=86400, immutable')
+  // Held briefly, because this is the most expensive GET here and the UI
+  // re-expands the same diff as the user works. Not `immutable` for a day, which
+  // is what it was: a snapshot is written once and never changes, but purging a
+  // version destroys it (ADR-043 §5), and `immutable` is a promise not even a
+  // reload will re-check — so legally deleted rows stayed on screen for the rest
+  // of the day for anyone who had opened that diff. A minute covers the
+  // re-expand and bounds the other thing to a minute.
+  //
+  // An unavailable answer is not cached at all: a version reported as
+  // not-ingested becomes ingestable the moment the backfill runs.
+  if (view.available) c.header('Cache-Control', 'private, max-age=60, must-revalidate')
   return c.json(view)
 })
 
