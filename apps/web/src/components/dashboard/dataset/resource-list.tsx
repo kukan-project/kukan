@@ -42,7 +42,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { clientFetch, problemDetail } from '@/lib/client-api'
 import { rowActivateProps } from '@/lib/row-activate'
-import { takePendingDropFiles } from '@/lib/pending-drop-files'
+import { takePendingResources } from '@/lib/pending-resources'
 import { updateResource } from '@/lib/update-resource'
 import { useFileDrop } from '@/hooks/use-file-drop'
 import { FormatBadge } from '@/components/format-badge'
@@ -235,10 +235,14 @@ export function ResourceList({
     }
   }, [])
 
-  // Files dropped on the new-dataset page ride along to this draft's edit
-  // page — consume the stash once on mount (see lib/pending-drop-files.ts)
+  // What was dropped or typed on the new-dataset page rides along to this
+  // draft's edit page — consume the stash once on mount (see
+  // lib/pending-resources.ts)
+  const [handoffError, setHandoffError] = useState<string | null>(null)
   useEffect(() => {
-    for (const file of takePendingDropFiles(packageId)) startDropUpload(file)
+    const { files, url } = takePendingResources(packageId)
+    for (const file of files) startDropUpload(file)
+    if (url) void addHandedOverUrl(url)
   }, [packageId])
 
   // Report in-flight uploads for the page-level AI-suggest gating (ADR-040);
@@ -407,6 +411,23 @@ export function ResourceList({
       for (const file of files) startDropUpload(file)
     },
   })
+
+  // No card of its own, unlike a dropped file: there is nothing to watch, and
+  // only a failure needs saying — in the server's words, since the rule is its
+  async function addHandedOverUrl(url: string) {
+    setPipelineOps((n) => n + 1)
+    try {
+      const body: Record<string, string> = { url }
+      const format = detectFormat(url)
+      if (format) body.format = format
+      await enqueueCreate(body)
+      scheduleRefetch()
+    } catch (err) {
+      setHandoffError(err instanceof Error ? err.message : t('failedToAdd'))
+    } finally {
+      setPipelineOps((n) => n - 1)
+    }
+  }
 
   async function startDropUpload(file: File) {
     const key = crypto.randomUUID()
@@ -796,6 +817,11 @@ export function ResourceList({
 
   return (
     <div className="flex flex-col gap-4" {...dropHandlers}>
+      {handoffError && (
+        <Alert variant="destructive" className="mb-2">
+          <AlertDescription>{handoffError}</AlertDescription>
+        </Alert>
+      )}
       {reorderError && (
         <Alert variant="destructive" className="mb-2">
           <AlertDescription>{reorderError}</AlertDescription>

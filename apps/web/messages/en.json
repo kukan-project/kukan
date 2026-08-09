@@ -135,6 +135,7 @@
     "dangerZone": "Danger Zone",
     "createDataset": "Create Dataset",
     "dropZoneHint": "Drag and drop files here, or click to select — a draft is created and the files are added as resources",
+    "resourceUrlHint": "If the data lives elsewhere, give its URL. You can leave this empty and add resources later",
     "visibility": "Visibility",
     "titlePlaceholder": "Dataset display name",
     "descriptionPlaceholder": "Dataset description",

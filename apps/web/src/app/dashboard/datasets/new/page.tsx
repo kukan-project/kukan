@@ -1,11 +1,20 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Alert, AlertDescription, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
+import {
+  Alert,
+  AlertDescription,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Input,
+  Label,
+} from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { MAX_UPLOAD_SIZE, MAX_UPLOAD_SIZE_MB } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
-import { stashPendingDropFiles } from '@/lib/pending-drop-files'
+import { stashPendingResources } from '@/lib/pending-resources'
 import { hasRole } from '@/hooks/use-my-roles'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { DatasetForm } from '@/components/dashboard/dataset/dataset-form'
@@ -29,6 +38,9 @@ export default function NewDatasetPage() {
   const [submitSignal, setSubmitSignal] = useState(0)
   // Dropped files wait here for the draft they belong to
   const pendingFiles = useRef<File[] | null>(null)
+  // Not validated here: what a resource url may be is the server's rule
+  // (scheme, SSRF), and a second copy of it would only be the one that is wrong
+  const [sourceUrl, setSourceUrl] = useState('')
 
   // Creating needs editor in the owning organization (kukan#260)
   useEffect(() => {
@@ -74,6 +86,22 @@ export default function NewDatasetPage() {
           <AlertDescription>{dropError}</AlertDescription>
         </Alert>
       )}
+      {/* Data that sits elsewhere, which until now meant creating the dataset
+          empty and then editing it (kukan#295). Submitted with the form rather
+          than at once like a drop: a url is typed, a keystroke at a time. */}
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="source-url">{tr('sourceUrl')}</Label>
+        <Input
+          id="source-url"
+          type="url"
+          inputMode="url"
+          placeholder="https://example.com/data.csv"
+          value={sourceUrl}
+          onChange={(e) => setSourceUrl(e.target.value)}
+          disabled={formBusy}
+        />
+        <p className="text-sm text-muted-foreground">{t('resourceUrlHint')}</p>
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>{tc('basicInfo')}</CardTitle>
@@ -85,8 +113,10 @@ export default function NewDatasetPage() {
             onBusyChange={setFormBusy}
             submitSignal={submitSignal}
             onDraftCreated={(draftId) => {
-              // Only a drop leaves files behind; an ordinary submit stashes nothing
-              if (pendingFiles.current) stashPendingDropFiles(draftId, pendingFiles.current)
+              const files = pendingFiles.current ?? []
+              const url = sourceUrl.trim() || null
+              // Neither leaves the draft empty, as an ordinary submit always did
+              if (files.length > 0 || url) stashPendingResources(draftId, { files, url })
             }}
           />
         </CardContent>
