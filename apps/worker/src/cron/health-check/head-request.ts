@@ -3,6 +3,7 @@
  * Lightweight liveness check + ETag/Last-Modified change detection.
  */
 
+import { rootCauseMessage } from '@kukan/shared'
 import { discardBody, safeFetch } from '@/safe-fetch'
 import { HEALTH_CHECK_TIMEOUT_MS } from '@/config'
 import type { HeadCheckResult, ResourceForHealthCheck } from './types'
@@ -35,6 +36,7 @@ export async function executeHeadCheck(res: ResourceForHealthCheck): Promise<Hea
         lastModified,
         changed: false,
         errorMessage: `HTTP ${response.status} ${response.statusText}`,
+        errorDetail: null,
       }
     }
 
@@ -56,15 +58,23 @@ export async function executeHeadCheck(res: ResourceForHealthCheck): Promise<Hea
       lastModified,
       changed,
       errorMessage: null,
+      errorDetail: null,
     }
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    // `fetch` says only `fetch failed` and leaves the reason underneath. It
+    // goes to the log and not to the row: `extras` is rendered whole on the
+    // public dataset page, and the reason names the address that was tried and
+    // the hosts on the certificate that was rejected.
+    const detail = rootCauseMessage(err)
     return {
       httpStatus: null,
       healthStatus: 'error',
       etag: null,
       lastModified: null,
       changed: false,
-      errorMessage: err instanceof Error ? err.message : String(err),
+      errorMessage: message,
+      errorDetail: detail === message ? null : detail,
     }
   }
 }

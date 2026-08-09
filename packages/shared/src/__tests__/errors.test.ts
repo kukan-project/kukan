@@ -9,6 +9,7 @@ import {
   RequestTimeoutError,
   TooManyRequestsError,
   ServiceUnavailableError,
+  rootCauseMessage,
 } from '../errors'
 
 describe('KukanError', () => {
@@ -155,5 +156,53 @@ describe('ServiceUnavailableError', () => {
   it('should be an instance of KukanError', () => {
     const error = new ServiceUnavailableError()
     expect(error).toBeInstanceOf(KukanError)
+  })
+})
+
+describe('rootCauseMessage', () => {
+  it('should read the reason fetch left in the cause', () => {
+    const err = new TypeError('fetch failed', {
+      cause: new Error('Could not resolve example.com'),
+    })
+    expect(rootCauseMessage(err)).toBe('Could not resolve example.com')
+  })
+
+  it('should follow the chain to the innermost reason', () => {
+    const inner = new Error('connect ECONNREFUSED 93.184.216.34:443')
+    const err = new TypeError('fetch failed', { cause: new Error('', { cause: inner }) })
+    expect(rootCauseMessage(err)).toBe('connect ECONNREFUSED 93.184.216.34:443')
+  })
+
+  it('should read the addresses tried when several were', () => {
+    // What `net.connect` produces for a host with more than one A record, which
+    // is most of them: an AggregateError whose own message is empty and whose
+    // `cause` is undefined.
+    const tried = new AggregateError(
+      [new Error('connect ETIMEDOUT 93.184.216.34:443'), new Error('connect ENETUNREACH 2606::1')],
+      ''
+    )
+    expect(rootCauseMessage(new TypeError('fetch failed', { cause: tried }))).toBe(
+      'connect ETIMEDOUT 93.184.216.34:443'
+    )
+  })
+
+  it('should keep the message when there is no cause', () => {
+    expect(rootCauseMessage(new Error('Redirect body too large'))).toBe('Redirect body too large')
+  })
+
+  it('should keep the outer message when the innermost has none', () => {
+    const err = new Error('Redirect body too large', { cause: new Error('') })
+    expect(rootCauseMessage(err)).toBe('Redirect body too large')
+  })
+
+  it('should return rather than follow a chain that points back at itself', () => {
+    const a = new Error('a')
+    const b = new Error('b', { cause: a })
+    a.cause = b
+    expect(rootCauseMessage(b)).toBeTruthy()
+  })
+
+  it('should say something for a throw that is not an Error', () => {
+    expect(rootCauseMessage('boom')).toBe('boom')
   })
 })

@@ -195,6 +195,19 @@ export function normalizeHostname(hostname: string): string {
 }
 
 /**
+ * A name refused whatever it resolves to.
+ *
+ * Separate from {@link checkUrlSafety} so the connection layer can ask it too:
+ * the address check below cannot make this judgement for `localhost`, because
+ * the worker resolves through c-ares, which never reads `/etc/hosts`. Without
+ * this the name is refused only where the resolver happens to answer NXDOMAIN
+ * or 127.0.0.1, which is not a property to rest a blocklist on.
+ */
+export function isBlockedHostname(hostname: string): boolean {
+  return BLOCKED_HOSTNAMES.has(normalizeHostname(hostname))
+}
+
+/**
  * Why this URL may not be fetched, or null when it may.
  *
  * String level only: a hostname is judged by the resolver, not here. This is
@@ -213,7 +226,7 @@ export function checkUrlSafety(url: string): UrlSafetyProblem | null {
   }
 
   const hostname = normalizeHostname(parsed.hostname)
-  if (BLOCKED_HOSTNAMES.has(hostname)) {
+  if (isBlockedHostname(hostname)) {
     return { reason: 'hostname', message: `Blocked hostname: ${hostname}` }
   }
   if (isBlockedAddress(hostname)) {

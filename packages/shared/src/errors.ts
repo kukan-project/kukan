@@ -70,3 +70,19 @@ export class ServiceUnavailableError extends KukanError {
     super(message, 'SERVICE_UNAVAILABLE', 503)
   }
 }
+
+/** The most specific message in an error's chain. `fetch` reports every network
+ *  failure as `TypeError: fetch failed` and leaves the reason under it — in
+ *  `cause`, or in `errors` when a host was tried at several addresses. */
+export function rootCauseMessage(err: unknown): string {
+  if (!(err instanceof Error)) return String(err)
+  let message = err.message
+  let link: unknown = err
+  // Bounded: this runs in the catch that records a failure, so a chain that
+  // points back at itself would leave the run with nothing written at all.
+  for (let depth = 0; link instanceof Error && depth < 8; depth++) {
+    if (link.message) message = link.message
+    link = link instanceof AggregateError ? link.errors[0] : link.cause
+  }
+  return message
+}

@@ -12,7 +12,13 @@ import { promises as dnsPromises, type LookupAddress, type LookupOptions } from 
 import { isIP } from 'node:net'
 import { networkInterfaces } from 'node:os'
 import { Agent, fetch as undiciFetch } from 'undici'
-import { checkUrlSafety, createCache, isBlockedAddress, normalizeHostname } from '@kukan/shared'
+import {
+  checkUrlSafety,
+  createCache,
+  isBlockedAddress,
+  isBlockedHostname,
+  normalizeHostname,
+} from '@kukan/shared'
 import {
   DNS_CACHE_TTL_MS,
   DNS_TIMEOUT_MS,
@@ -266,6 +272,9 @@ export function forgetResolutions(): void {
  * the rebinding this is here to stop, and picking the survivors would let it
  * through. `net.connect` asks for every address at once (`all`) so that it can
  * race the families, which is why this cannot check a single one and stop.
+ *
+ * Blocked names are refused here as well as at the URL, so that the guarantee
+ * belongs to the connection rather than to whoever remembered to check first.
  */
 export function ssrfSafeLookup(
   hostname: string,
@@ -277,6 +286,11 @@ export function ssrfSafeLookup(
   // rejection — fatal in Node 24, but attributed here rather than to the
   // caller, and after this function has already reported success.
   const done = (...args: Parameters<LookupCallback>) => process.nextTick(callback, ...args)
+
+  if (isBlockedHostname(hostname)) {
+    done(new Error(`Blocked hostname: ${hostname}`), [])
+    return
+  }
 
   resolveCached(hostname, wantedFamily(options.family)).then(
     (addresses) => {

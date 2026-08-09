@@ -141,6 +141,20 @@ describe('executeHeadCheck', () => {
     expect(result.changed).toBe(false)
   })
 
+  it('keeps the address it tried out of the row and puts it in the detail', async () => {
+    // `extras` is rendered whole on the public dataset page, so what the row
+    // says is what an anonymous visitor reads. A split-horizon name would
+    // otherwise publish the internal address it resolved to.
+    fetchSpy.mockRejectedValue(
+      new TypeError('fetch failed', { cause: new Error('connect ECONNREFUSED 10.0.3.17:443') })
+    )
+
+    const result = await executeHeadCheck(makeResource())
+
+    expect(result.errorMessage).toBe('fetch failed')
+    expect(result.errorDetail).toBe('connect ECONNREFUSED 10.0.3.17:443')
+  })
+
   it('returns error on timeout', async () => {
     fetchSpy.mockRejectedValue(new DOMException('The operation was aborted', 'AbortError'))
 

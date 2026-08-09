@@ -12,7 +12,7 @@
 
 import type { Database } from '@kukan/db'
 import type { QueueAdapter } from '@kukan/queue-adapter'
-import { LAKE_INGEST_JOB_TYPE, PIPELINE_JOB_TYPE } from '@kukan/shared'
+import { LAKE_INGEST_JOB_TYPE, PIPELINE_JOB_TYPE, rootCauseMessage } from '@kukan/shared'
 import { withResourceClaim } from '@kukan/api/services/pipeline-claim'
 import { RunCancelledError, StepTracker } from './step-tracker'
 import { heldContext } from './held-context'
@@ -268,10 +268,10 @@ async function runPipeline(
     // A killed run records nothing: the resource was taken from it, and
     // `cancelled` is already on the row (ADR-044 §4).
     if (err instanceof RunCancelledError) return
-    // `message` rather than `String(err)` where there is one, but a throw that
-    // is not an `Error` still has to say something: the alternative is a step
-    // recorded as failed with no reason, on the row the resource page reads.
-    const message = err instanceof Error ? err.message : String(err)
+    // Whatever was thrown has to say something: this is the row the resource
+    // page reads, and the alternative is a step recorded as failed with no
+    // reason. Editors see it in full; everyone else gets a generic message.
+    const message = rootCauseMessage(err)
     // The run's record first. Both writes can fail, and of the two states a
     // half-done catch can leave, `error` over a step still reading `running` is
     // the one that at least says the run is over.

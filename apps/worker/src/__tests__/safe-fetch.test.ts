@@ -108,6 +108,27 @@ describe('ssrfSafeLookup', () => {
     expect(err!.message).toContain('127.0.0.1')
   })
 
+  it('should refuse a blocked name without asking the resolver', async () => {
+    // Answering with a public address is what a resolver that has been made to
+    // lie does. The trailing dot is the same name to it, and a different string
+    // to a Set.
+    mockResolve4.mockResolvedValue(['93.184.216.34'])
+
+    const { err } = await lookedUp('localhost.')
+
+    expect(err!.message).toContain('Blocked hostname')
+    expect(mockResolve4).not.toHaveBeenCalled()
+  })
+
+  it('should refuse a blocked name whatever its case', async () => {
+    mockResolve4.mockResolvedValue(['93.184.216.34'])
+
+    const { err } = await lookedUp('Metadata.Google.Internal')
+
+    expect(err!.message).toContain('Blocked hostname')
+    expect(mockResolve4).not.toHaveBeenCalled()
+  })
+
   it('should allow safe public IPs', async () => {
     mockResolve4.mockResolvedValue(['93.184.216.34'])
 

@@ -26,6 +26,8 @@ export interface HeadCheckResult {
   changed: boolean
   /** Error message if request failed */
   errorMessage: string | null
+  /** The transport reason behind it, for the log rather than the row */
+  errorDetail: string | null
 }
 
 /** Summary of a batch run */

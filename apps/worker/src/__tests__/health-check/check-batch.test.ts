@@ -23,6 +23,7 @@ function makeHeadResult(overrides: Partial<HeadCheckResult> = {}): HeadCheckResu
     lastModified: null,
     changed: false,
     errorMessage: null,
+    errorDetail: null,
     ...overrides,
   }
 }

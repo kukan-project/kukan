@@ -103,6 +103,12 @@ export async function checkBatch(
         summary.ok++
       } else {
         summary.error++
+        if (result.errorDetail) {
+          log.warn(
+            { resourceId: res.id, url: res.url, detail: result.errorDetail },
+            'Health check failed'
+          )
+        }
       }
 
       // 3. Update DB: healthStatus, healthCheckedAt, extras (jsonb merge)
