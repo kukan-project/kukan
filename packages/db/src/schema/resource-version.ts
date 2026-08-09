@@ -75,6 +75,15 @@ export const resourceVersion = pgTable(
   },
   (table) => [
     uniqueIndex('idx_resource_version_res_ver').on(table.resourceId, table.version),
+    // At most one purge in flight per resource. A live purge restores the
+    // pointer, moves layer 2 and asks for a rebuild, all naming a version
+    // another purge could be taking away underneath them — and the rebuild
+    // copies content on its way out into a version that purge will not
+    // recognise. Enforced here so that nothing sets the state without meeting
+    // it.
+    uniqueIndex('idx_resource_version_one_purging')
+      .on(table.resourceId)
+      .where(sql`${table.state} = 'purging'`),
     index('idx_resource_version_state').on(table.state),
     // As above: the orphan sweep's reference check reads this column.
     index('idx_resource_version_storage_key').on(table.storageKey),

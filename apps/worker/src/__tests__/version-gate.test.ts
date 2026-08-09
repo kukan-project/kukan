@@ -6,8 +6,8 @@ const KEY = 'resources/pkg-1/res-1.run-a'
 
 /**
  * The gate's inputs, defaulting to a run that published CSV bytes to a resource
- * with no versions yet. Each case states only what it is about — five of the
- * seven fields are constant noise in most of them.
+ * with no versions yet. Each case states only what it is about — the rest are
+ * constant noise in most of them.
  */
 function decide(overrides: Partial<Parameters<typeof decideVersionCreate>[0]> = {}) {
   return decideVersionCreate({
@@ -18,6 +18,7 @@ function decide(overrides: Partial<Parameters<typeof decideVersionCreate>[0]> = 
     maxVersion: null,
     latestActiveHash: null,
     latestActiveFormat: null,
+    keyOwnedByPurgingVersion: false,
     ...overrides,
   })
 }
@@ -87,5 +88,27 @@ describe('decideVersionCreate', () => {
     // A purge that emptied the resource clears the pointer; nothing this run
     // published is the content any more.
     expect(decide({ currentKey: null })).toEqual({ created: false })
+  })
+
+  it('does not file content whose owning version is being purged', () => {
+    // A purge restores the pointer onto an older version's own object and asks
+    // for the derivatives to be rebuilt from it. That version can be claimed for
+    // purging before the rebuild runs, which takes it out of the active set — so
+    // the comparison below would find a difference and copy the content being
+    // purged into a version the purge that follows does not recognise as its
+    // own, leaving it live under a new number.
+    expect(
+      decide({ keyOwnedByPurgingVersion: true, latestActiveHash: 'sha256:older', maxVersion: 3 })
+    ).toEqual({ created: false })
+  })
+
+  it('files content whose owner is staying, so a stored file can still be repaired', () => {
+    // An upload that landed and stopped before its version was created: the
+    // repair queues a rebuild, and there is nothing to interpret until this
+    // files the version that owns the bytes.
+    expect(decide({ keyOwnedByPurgingVersion: false, maxVersion: 3 })).toEqual({
+      created: true,
+      version: 4,
+    })
   })
 })

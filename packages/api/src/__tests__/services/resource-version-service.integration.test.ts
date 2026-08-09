@@ -234,6 +234,147 @@ describe('executePurge', () => {
     expect(deps.storage.delete).toHaveBeenCalledWith(v1Key)
   })
 
+  it('refuses a second purge while one is running on the same resource', async () => {
+    // Three steps of a live purge name a version another purge could be taking
+    // away underneath them — the lake's restore target, the pointer's, and the
+    // rebuild's. The rebuild is the worst: handed a version on its way out, it
+    // copies that content into a new one and moves live onto the copy, which the
+    // purge it came from will not recognise as its own. The purged content comes
+    // back under a number nothing is going to remove.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    await addVersion(3, 'sha256:v3')
+    await service.claimPurge(resourceId, 3, userId, 'illegal content')
+
+    await expect(service.claimPurge(resourceId, 2, userId, 'also illegal')).rejects.toThrow(
+      /being purged/
+    )
+
+    const [v2row] = await db
+      .select({ state: resourceVersion.state })
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 2)))
+    expect(v2row.state).toBe('active')
+  })
+
+  it('lets only one claim through when two arrive together', async () => {
+    // Two claims for different versions take different rows, so a look-then-write
+    // check would let both through. The index answers for rows neither of them
+    // thought to lock.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    await addVersion(3, 'sha256:v3')
+
+    const results = await Promise.allSettled([
+      service.claimPurge(resourceId, 3, userId, 'illegal content'),
+      service.claimPurge(resourceId, 2, userId, 'also illegal'),
+    ])
+
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1)
+    const purging = await db
+      .select()
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.state, 'purging')))
+    expect(purging).toHaveLength(1)
+  })
+
+  it('restores the pointer onto the version layer 2 was set to', async () => {
+    // The lake's target is settled once and handed to the pointer, rather than
+    // looked up a second time after the lake work — the two must land on the
+    // same version.
+    const v2Key = getVersionKey(packageId, resourceId, 2, 'v')
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    await addVersion(3, 'sha256:v3')
+    await db
+      .update(resource)
+      .set({ storageKey: getVersionKey(packageId, resourceId, 3, 'v'), hash: 'sha256:v3' })
+      .where(eq(resource.id, resourceId))
+    await service.claimPurge(resourceId, 3, userId, 'illegal content')
+
+    await service.executePurge(resourceId, 3, mockDeps())
+
+    const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
+    expect(res.storageKey).toBe(v2Key)
+  })
+
+  it('rebuilds from the restored file rather than re-fetching the URL', async () => {
+    // The URL a resource is purged over is the one still serving what was
+    // purged. An ordinary run starts with Fetch, which would read it again and
+    // publish it straight back as a new version.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2') // live
+    await service.claimPurge(resourceId, 2, userId, 'illegal content')
+
+    const deps = mockDeps()
+    await service.executePurge(resourceId, 2, deps)
+
+    expect(deps.queue.enqueue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ resourceId, rebuildOnly: true })
+    )
+  })
+
+  it('leaves the live resource derivatives alone when a historical version is purged', async () => {
+    // The middle-version branch touches content this purge has nothing to do
+    // with: the preview and the index describe whatever is live, which is a
+    // different version entirely
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2') // live
+    await db.insert(resourcePipeline).values({
+      resourceId,
+      status: 'complete',
+      previewKey: 'previews/pkg/res.live.parquet',
+    })
+    await service.claimPurge(resourceId, 1, userId, 'illegal content')
+
+    const deps = mockDeps()
+    await service.executePurge(resourceId, 1, deps)
+
+    expect(deps.search.deleteContent).not.toHaveBeenCalled()
+    expect(deps.storage.deleteMany).not.toHaveBeenCalled()
+    const [pipe] = await db
+      .select()
+      .from(resourcePipeline)
+      .where(eq(resourcePipeline.resourceId, resourceId))
+    expect(pipe.previewKey).toBe('previews/pkg/res.live.parquet')
+  })
+
+  it('finishes the regeneration a retry finds already half done', async () => {
+    // Die after the rollback and the pointer has moved, so the retry reads
+    // itself as a middle version. The invalidation ran before the rollback, so
+    // nothing purged is still being served — but the resource is left with no
+    // preview and out of the index, and this attempt is the only one that will
+    // ever put them back.
+    const v1Key = getVersionKey(packageId, resourceId, 1, 'v')
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    await service.claimPurge(resourceId, 2, userId, 'illegal content')
+    // What the interrupted attempt left: derivatives already discarded, and the
+    // pointer already back on v1.
+    await db.insert(resourcePipeline).values({
+      resourceId,
+      status: 'complete',
+      metadata: { contentIndexed: false, purgeRebuildPending: true },
+    })
+    await db
+      .update(resource)
+      .set({ storageKey: v1Key, hash: 'sha256:v1' })
+      .where(eq(resource.id, resourceId))
+
+    const deps = mockDeps()
+    const result = await service.executePurge(resourceId, 2, deps)
+
+    expect(result.purged).toBe(true)
+    expect(deps.queue.enqueue).toHaveBeenCalled()
+    const [v2] = await db
+      .select()
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 2)))
+    expect(v2.state).toBe('purged')
+  })
+
   it('rolls the live version back to the previous one', async () => {
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2') // live (matches resource.hash)
@@ -415,6 +556,31 @@ describe('executePurge — the resource claim (ADR-044)', () => {
 })
 
 describe('executePurge — layer 2 (DuckLake)', () => {
+  it('moves layer 2 while the pointer still says the work is owed', async () => {
+    // The lake rollback used to run after the pointer moved, so a failure there
+    // left a retry reading itself as a middle version: it reclaimed the purged
+    // snapshot without restoring the contents, and the pipeline's Lake step
+    // skipped because the restored version already had a snapshot id — the
+    // purged rows stayed the lake's current contents under a tombstone.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2') // live
+    await db
+      .update(resourceVersion)
+      .set({ ducklakeSnapshotId: 9 })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 2)))
+    await service.claimPurge(resourceId, 2, userId, 'test')
+    const [before] = await db.select().from(resource).where(eq(resource.id, resourceId))
+
+    await expect(
+      service.executePurge(resourceId, 2, { ...mockDeps(), lake: unreachableLake })
+    ).rejects.toThrow()
+
+    // The pointer has not moved, so the redelivered job still knows this was
+    // the live version and repeats the whole rollback.
+    const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
+    expect(res.storageKey).toBe(before.storageKey)
+  }, 60_000)
+
   it('clears the snapshot reference on the tombstone', async () => {
     await addVersion(1, 'sha256:v1')
     await db
@@ -1525,7 +1691,7 @@ describe('the artifacts derived from retracted content', () => {
     expect(row.previewKey).toBeNull()
     // The text head is gone with the rest, and the row stops claiming an index
     // whose documents this just deleted
-    expect(row.metadata).toEqual({ contentIndexed: false })
+    expect(row.metadata).toMatchObject({ contentIndexed: false })
   })
 
   it('are destroyed by a revert', async () => {

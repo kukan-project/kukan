@@ -35,6 +35,14 @@ export type VersionResult = { created: false } | { created: true; version: numbe
  *   Distinct from maxVersion because a tombstone can sit above the live version
  *   (e.g. after a latest-version purge + rollback); gating on the max row would
  *   then re-create content that is already the live version.
+ * @param keyOwnedByPurgingVersion - whether the version that owns the object
+ *   being published is on its way out. A version that owns it and is staying is
+ *   the ordinary case, and `createVersion` copies the object so the two do not
+ *   share one file. Copying content that is being purged is the thing to avoid:
+ *   the copy is a version of its own, which the purge does not recognise, so
+ *   what someone asked to have destroyed stays live under a new number. The
+ *   active-set comparison below cannot see it — a claimed version has already
+ *   left that set.
  * @param latestActiveFormat - format that same version was created under.
  *   Compared as stored: `normalizeFormat` has already settled the case on the
  *   way in, so a difference here is a difference a reader would act on.
@@ -47,8 +55,10 @@ export function decideVersionCreate(input: {
   maxVersion: number | null
   latestActiveHash: string | null
   latestActiveFormat: string | null
+  keyOwnedByPurgingVersion: boolean
 }): VersionResult {
   if (input.currentKey !== input.publishedKey) return { created: false }
+  if (input.keyOwnedByPurgingVersion) return { created: false }
   if (input.latestActiveHash === input.hash && input.latestActiveFormat === input.format) {
     return { created: false }
   }

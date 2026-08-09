@@ -147,6 +147,19 @@ export function buildPipelineContext(
       // whichever run published last, while the object this run wrote is the
       // one it measured and no one rewrites. The pointer comparison is what
       // establishes that this run is still the one describing the resource.
+      // Whether the version owning this object is on its way out — see the
+      // gate's own note on what that means.
+      const [purgingOwner] = await db
+        .select({ id: resourceVersion.id })
+        .from(resourceVersion)
+        .where(
+          and(
+            eq(resourceVersion.storageKey, currentStorageKey),
+            eq(resourceVersion.state, 'purging')
+          )
+        )
+        .limit(1)
+
       const decision = decideVersionCreate({
         hash: contentHash,
         // The insert reads the label again for itself, so an edit landing in
@@ -159,6 +172,7 @@ export function buildPipelineContext(
         maxVersion: maxRow?.version ?? null,
         latestActiveHash: activeRow?.hash ?? null,
         latestActiveFormat: activeRow?.format ?? null,
+        keyOwnedByPurgingVersion: purgingOwner !== undefined,
       })
       if (!decision.created) return decision
 
@@ -208,6 +222,21 @@ export function buildPipelineContext(
       // with it (ADR-045).
       try {
         await db.transaction(async (tx) => {
+          // The gate's reading of who owns the source object is only good while
+          // nothing can change it, and claiming a purge takes no pipeline claim.
+          // So the owner's own row is locked and read again here: between the
+          // gate and this, the version this copy came from can have been
+          // claimed, and filing the copy then leaves the purge unable to
+          // recognise its own content. The row rather than the resource, so this
+          // takes its locks in the order everything else touching versions does.
+          const [owner] = await tx
+            .select({ state: resourceVersion.state })
+            .from(resourceVersion)
+            .where(eq(resourceVersion.storageKey, currentStorageKey))
+            .limit(1)
+            .for('update')
+          if (owner?.state === 'purging') throw new LostTheClaim()
+
           const inserted = await insertVersionIfHeld(tx, claim, { ...row, storageKey: versionKey })
           if (!inserted) throw new LostTheClaim()
           const published = await publishLiveContent(tx, resourceId, {

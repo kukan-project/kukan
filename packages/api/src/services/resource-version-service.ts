@@ -369,6 +369,20 @@ function toView(row: typeof resourceVersion.$inferSelect): VersionView {
   }
 }
 
+/**
+ * The one-purge-per-resource index refusing a second claim.
+ *
+ * Read through `cause` as well: the driver's error is what carries the code, and
+ * the query builder wraps it.
+ */
+function isOnePurgingViolation(err: unknown): boolean {
+  for (let e = err; e; e = (e as { cause?: unknown }).cause) {
+    const { code, constraint } = e as { code?: string; constraint?: string }
+    if (code === '23505' && (constraint ?? '').includes('one_purging')) return true
+  }
+  return false
+}
+
 export class ResourceVersionService {
   constructor(private db: Database) {}
 
@@ -751,16 +765,32 @@ export class ResourceVersionService {
         return { claimed: false, view: toView(row) }
       }
 
-      const [updated] = await tx
-        .update(resourceVersion)
-        .set({
-          state: 'purging',
-          purgedBy: userId,
-          purgeReason: reason,
-          updated: sql`NOW()`,
-        })
-        .where(eq(resourceVersion.id, row.id))
-        .returning()
+      // One at a time per resource, refused by the partial unique index rather
+      // than by looking first: a look and a write are two steps, and two claims
+      // for different versions take different rows, so both would look before
+      // either wrote. Refused rather than queued — a purge is a rare and
+      // deliberate act, and "another version of this resource is being purged"
+      // is something the person asking can act on.
+      let updated: typeof resourceVersion.$inferSelect | undefined
+      try {
+        ;[updated] = await tx
+          .update(resourceVersion)
+          .set({
+            state: 'purging',
+            purgedBy: userId,
+            purgeReason: reason,
+            updated: sql`NOW()`,
+          })
+          .where(eq(resourceVersion.id, row.id))
+          .returning()
+      } catch (err) {
+        if (isOnePurgingViolation(err)) {
+          throw new ConflictError(
+            `Another version of ${resourceId} is being purged; retry when it has finished`
+          )
+        }
+        throw err
+      }
 
       await tx.insert(auditLog).values({
         entityType: 'resource_version',
@@ -770,7 +800,7 @@ export class ResourceVersionService {
         changes: { version, reason },
       })
 
-      return { claimed: true, view: toView(updated) }
+      return { claimed: true, view: toView(updated!) }
     })
   }
 
@@ -847,19 +877,34 @@ export class ResourceVersionService {
 
     let rolledBack = false
     if (isLive && pkgRow) {
-      // Newest surviving version to restore as the live content. This row is
-      // already out of the active set (`purging`), so it cannot restore
-      // itself.
-      const prev = await this.restoreLiveFromVersions(this.db, resourceId, pkgRow)
-      rolledBack = prev !== null
+      // Everything this purge owes about the content happens before the pointer
+      // moves. The pointer is what `isLive` reads, so moving it is what hides
+      // that any of it is still owed: a purge interrupted after came back
+      // reading itself as a middle version and took the branch that does none of
+      // it — leaving the preview, the search index and the lake's current
+      // contents serving what had just been legally deleted, under a row that
+      // then said 'purged'. Done first, an interruption can only leave work
+      // already finished.
+      await this.discardDerivedArtifacts(resourceId, deps.storage)
+      if (deps.search) await deps.search.deleteContent(resourceId)
+      // Said on the row as well: the regeneration reads it to decide whether it
+      // has anything to derive, and clearing the preview alone leaves that
+      // answer resting on a side effect of another statement.
+      await markContentUnindexed(this.db, { resourceId })
+      await this.setPurgeRebuildPending(resourceId, true)
 
-      if (prev) {
-        // Layer 2 must follow the rollback: otherwise the lake's current
-        // contents would still be the purged rows (ADR-043 §5).
-        await this.purgeFromLake(resourceId, deps.lake, row.ducklakeSnapshotId, {
-          toSnapshot: prev.ducklakeSnapshotId,
-        })
-      }
+      // Read rather than taken from the restore, so layer 2 can be moved off the
+      // purged snapshot while the pointer still says this is outstanding. Null
+      // empties the resource, and takes the lake table with it. This row is
+      // already out of the active set (`purging`), so it cannot restore itself.
+      const prev = await this.newestActiveVersion(this.db, resourceId)
+      await this.purgeFromLake(resourceId, deps.lake, row.ducklakeSnapshotId, {
+        toSnapshot: prev?.ducklakeSnapshotId ?? null,
+      })
+
+      // The same row layer 2 was just set to, handed over rather than looked up
+      // again — see the parameter for what a second look can find instead.
+      rolledBack = (await this.restoreLiveFromVersions(this.db, resourceId, pkgRow, prev)) !== null
 
       // The object the purged content was being served from, deleted now rather
       // than left to the sweep: a purge is a legal deletion, so cutting off a
@@ -871,31 +916,32 @@ export class ResourceVersionService {
       if (pkgRow.storageKey && pkgRow.storageKey !== row.storageKey) {
         await deps.storage.delete(pkgRow.storageKey)
       }
-      // No version survives, so the lake table goes with it.
-      if (!prev)
-        await this.purgeFromLake(resourceId, deps.lake, row.ducklakeSnapshotId, {
-          toSnapshot: null,
-        })
-
-      // Invalidate derivatives so the purged content stops being served
-      // immediately, before the (async) pipeline regenerates them.
-      await this.discardDerivedArtifacts(resourceId, deps.storage)
-      if (deps.search) await deps.search.deleteContent(resourceId)
-      // Said on the row as well: the run below reads it to decide whether it
-      // has anything to derive, and clearing the preview alone leaves that
-      // answer resting on a side effect of another statement.
-      await markContentUnindexed(this.db, { resourceId })
-
-      // Regenerate preview/index from the restored content. The Version step's
-      // change gate sees the restored hash as the latest active version and
-      // skips, so no spurious version is created.
-      if (rolledBack) {
-        await new PipelineService(this.db, deps.queue).enqueue(resourceId)
-      }
     } else {
-      // A middle version: the live contents are already free of it, but its own
+      // A middle version: the live contents are already free of it, and its
+      // derivatives describe content this purge does not touch. Only its own
       // snapshot still holds the rows and must be reclaimed (ADR-043 §5).
       await this.purgeFromLake(resourceId, deps.lake, row.ducklakeSnapshotId)
+    }
+
+    // Regenerate preview/index from whatever the resource serves now. The
+    // Version step's change gate sees that content as the latest active version
+    // and skips, so no spurious version is created.
+    //
+    // A rebuild, never an ordinary run: Fetch re-reads an external URL, and the
+    // URL a resource is purged over is the one still serving what was purged —
+    // an ordinary run would publish it straight back and file it as a new
+    // version. ADR-044 §4 makes the same point about reverts.
+    //
+    // Asked of the row rather than of this attempt: the one that has to finish
+    // an interrupted purge is a later one, which rolled nothing back and would
+    // conclude it owes nothing. Its own marker rather than `contentIndexed`,
+    // which an unsupported format or a failed Index sets for reasons that have
+    // nothing to do with a purge.
+    if (await this.purgeRebuildPending(resourceId)) {
+      if (await this.hasLiveContent(resourceId)) {
+        await new PipelineService(this.db, deps.queue).enqueue(resourceId, { rebuildOnly: true })
+      }
+      await this.setPurgeRebuildPending(resourceId, false)
     }
 
     await this.db
@@ -1468,17 +1514,75 @@ export class ResourceVersionService {
    *   the derivatives of the content that won. Uploads do not take the claim
    *   (ADR-044 §6), which is what leaves this reachable while one is held.
    */
-  private async restoreLiveFromVersions(
-    db: Database | Transaction,
-    resourceId: string,
-    current: { storageKey: string | null; hash?: string | null }
-  ): Promise<typeof resourceVersion.$inferSelect | null> {
+  /**
+   * A purge's own note that it has discarded the derivatives and not yet asked
+   * for them back.
+   *
+   * Its own key because nothing else means the same thing. `contentIndexed` is
+   * the nearest existing one, and it is set whenever indexing did not happen —
+   * an unsupported format, a draft, a step that failed — none of which is a
+   * purge owing a rebuild.
+   */
+  private async setPurgeRebuildPending(resourceId: string, pending: boolean): Promise<void> {
+    await this.db.execute(sql`
+      UPDATE resource_pipeline
+      SET metadata = COALESCE(metadata, '{}'::jsonb) ||
+            ${JSON.stringify({ purgeRebuildPending: pending })}::jsonb
+      WHERE resource_id = ${resourceId}
+    `)
+  }
+
+  private async purgeRebuildPending(resourceId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({
+        pending: sql<boolean | null>`${resourcePipeline.metadata} -> 'purgeRebuildPending'`,
+      })
+      .from(resourcePipeline)
+      .where(eq(resourcePipeline.resourceId, resourceId))
+      .limit(1)
+    return row?.pending === true
+  }
+
+  /** Whether the resource still serves an object — read after a purge, which
+   *  may have left it with nothing to derive from. */
+  private async hasLiveContent(resourceId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ storageKey: resource.storageKey })
+      .from(resource)
+      .where(eq(resource.id, resourceId))
+      .limit(1)
+    return !!row?.storageKey
+  }
+
+  /** Newest version still standing, which a purge of the live one falls back to. */
+  private async newestActiveVersion(db: Database | Transaction, resourceId: string) {
     const [prev] = await db
       .select()
       .from(resourceVersion)
       .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.state, 'active')))
       .orderBy(desc(resourceVersion.version))
       .limit(1)
+    return prev ?? null
+  }
+
+  private async restoreLiveFromVersions(
+    db: Database | Transaction,
+    resourceId: string,
+    current: { storageKey: string | null; hash?: string | null },
+    /**
+     * The version to restore onto, when the caller has already settled it.
+     *
+     * A purge moves layer 2 onto this version before moving the pointer, and the
+     * two must land on the same one — the lake left holding a version nothing
+     * points at is a version the next purge reads as a middle one and never
+     * takes out. One purge at a time per resource means a second reading would
+     * agree; handing the row over says so here, rather than leaving it resting
+     * on an index in another file.
+     */
+    restoreTo?: typeof resourceVersion.$inferSelect | null
+  ): Promise<typeof resourceVersion.$inferSelect | null> {
+    const prev =
+      restoreTo !== undefined ? restoreTo : await this.newestActiveVersion(db, resourceId)
 
     if (!prev) {
       // Through the mover like every other pointer move: unconditional, this

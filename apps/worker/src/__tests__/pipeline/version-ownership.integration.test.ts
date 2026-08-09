@@ -109,6 +109,35 @@ describe('createVersion', () => {
     expect(new Set(keys).size).toBe(keys.length)
   })
 
+  it('files nothing when the version it copied from was claimed for purging', async () => {
+    // Claiming a purge takes no pipeline claim — only the resource row — so it
+    // can land between the gate reading who owns the source object and this
+    // filing the copy. Filed anyway, the copy is a version the purge does not
+    // recognise, and the content someone asked to have destroyed stays live
+    // under a new number.
+    const { storage } = fakeStorage()
+    await createVersionOnce(storage)
+    await db.update(resource).set({ format: 'TSV' }).where(eq(resource.id, resourceId))
+    // The copy runs after the gate has read the owner and before the row is
+    // filed — the window the claim can land in.
+    vi.mocked(storage.copy).mockImplementationOnce(async () => {
+      await db
+        .update(resourceVersion)
+        .set({ state: 'purging' })
+        .where(eq(resourceVersion.resourceId, resourceId))
+    })
+
+    expect(await createVersionOnce(storage)).toEqual({ created: false })
+
+    const rows = await db
+      .select()
+      .from(resourceVersion)
+      .where(eq(resourceVersion.resourceId, resourceId))
+    expect(rows).toHaveLength(1)
+    const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
+    expect(res.storageKey).toBe(LIVE_KEY)
+  })
+
   it('moves live onto the copy, so the newest version is what it names', async () => {
     // The purge decides what to delete from the live pointer. Left on v1's
     // object, purging v1 deletes what live is serving, and purging v2 deletes
