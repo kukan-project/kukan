@@ -11,8 +11,6 @@ describe('purgePackageExternals', () => {
     expect(search.deletePackage).toHaveBeenCalledWith('pkg-1')
     expect(storage.deleteByPrefix).toHaveBeenCalledWith('resources/pkg-1/')
     expect(storage.deleteByPrefix).toHaveBeenCalledWith('previews/pkg-1/')
-    // Retained versions must go too, or they outlive the rows referencing them.
-    expect(storage.deleteByPrefix).toHaveBeenCalledWith('versions/pkg-1/')
   })
 
   it('skips search cleanup when search is undefined but still clears storage', async () => {
@@ -20,6 +18,6 @@ describe('purgePackageExternals', () => {
 
     await purgePackageExternals('pkg-1', { storage: storage as never })
 
-    expect(storage.deleteByPrefix).toHaveBeenCalledTimes(3)
+    expect(storage.deleteByPrefix).toHaveBeenCalledTimes(2)
   })
 })

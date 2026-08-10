@@ -19,7 +19,7 @@
 import { inArray, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource } from '@kukan/db'
-import { RESOURCE_PREFIX, PREVIEW_PREFIX, VERSION_PREFIX } from '@kukan/shared'
+import { RESOURCE_PREFIX, PREVIEW_PREFIX } from '@kukan/shared'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 
@@ -65,9 +65,5 @@ export async function purgePackageExternals(
   await Promise.all([
     deps.storage.deleteByPrefix(`${RESOURCE_PREFIX}${packageId}/`),
     deps.storage.deleteByPrefix(`${PREVIEW_PREFIX}${packageId}/`),
-    // Retained versions (ADR-043 layer 1) sit under their own prefix. Without
-    // this they outlive the rows that reference them — unreachable, unbilled to
-    // anyone, and still holding the content the purge was meant to destroy.
-    deps.storage.deleteByPrefix(`${VERSION_PREFIX}${packageId}/`),
   ])
 }

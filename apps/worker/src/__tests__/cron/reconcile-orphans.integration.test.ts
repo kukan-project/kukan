@@ -100,7 +100,7 @@ describe('reconcileOrphanedObjects', () => {
     const live = {
       storageKey: 'resources/live-current',
       pendingStorageKey: 'resources/live-pending',
-      versionKey: 'versions/live-version',
+      versionKey: 'resources/live-version',
       previewKey: 'previews/live-preview',
       textHeadKey: 'previews/live-text-head',
     }
@@ -126,7 +126,6 @@ describe('reconcileOrphanedObjects', () => {
     const { storage, asked } = fakeBucket([
       ...Object.values(live).map((k) => obj(k)),
       obj('resources/leaked'),
-      obj('versions/leaked'),
       obj('previews/leaked'),
     ])
 
@@ -135,11 +134,11 @@ describe('reconcileOrphanedObjects', () => {
       dryRun: false,
     })
 
-    expect(result).toMatchObject({ listed: 8, referenced: 5, nominated: 3, tooRecent: 0 })
-    expect(await tracked()).toEqual(['previews/leaked', 'resources/leaked', 'versions/leaked'])
+    expect(result).toMatchObject({ listed: 7, referenced: 5, nominated: 2, tooRecent: 0 })
+    expect(await tracked()).toEqual(['previews/leaked', 'resources/leaked'])
     // `lake/` is DuckLake's to reclaim, and ADR-045 §5 declined to build a
     // second thing that thinks it knows that layout.
-    expect(asked).toEqual(['resources/', 'previews/', 'versions/'])
+    expect(asked).toEqual(['resources/', 'previews/'])
   })
 
   it('writes nothing in a dry run, but reports what it would do', async () => {

@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed**
+**Accepted** — implemented 2026-08-03
 
 Limit a resource to one running operation at a time, expressed as a claim on its
 `resource_pipeline` row. Pipeline runs and purges share the same claim.

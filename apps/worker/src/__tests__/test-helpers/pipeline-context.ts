@@ -11,6 +11,7 @@
  * quietly answers.
  */
 import { vi, type Mocked } from 'vitest'
+import { getStorageKey } from '@kukan/shared'
 import type { Readable } from 'node:stream'
 import type { PipelineContext } from '../../pipeline/types'
 import { streamToBuffer } from '../../pipeline/node-utils'
@@ -26,9 +27,12 @@ export function createPipelineContextMock(): PipelineContextMock {
     putObject: vi.fn(),
     acquireFetchSlot: vi.fn().mockResolvedValue(true),
     createVersion: vi.fn().mockResolvedValue({ created: false }),
-    versionForContent: vi
-      .fn()
-      .mockResolvedValue({ version: 1, storageKey: 'versions/v1', size: 1024, format: 'CSV' }),
+    versionForContent: vi.fn().mockResolvedValue({
+      version: 1,
+      storageKey: getStorageKey('pkg-1', 'res-1', 'v1'),
+      size: 1024,
+      format: 'CSV',
+    }),
     // Nothing derived yet, so a run does its steps unless a test says otherwise
     derivativesDescribe: vi.fn().mockResolvedValue(false),
     recordVersionSchema: vi.fn(),

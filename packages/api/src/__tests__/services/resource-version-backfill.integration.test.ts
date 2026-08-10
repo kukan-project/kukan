@@ -7,7 +7,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { resource, resourceVersion, resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import { Readable } from 'node:stream'
 import type { QueueAdapter } from '@kukan/queue-adapter'
-import { getStorageKey, getVersionKey, MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
+import { getStorageKey, MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
 import { hashBuffer } from '@kukan/shared/hash-node'
 import { randomUUID } from 'node:crypto'
 import { ResourceVersionService } from '../../services/resource-version-service'
@@ -139,7 +139,7 @@ async function addTabularResource(
     await db.insert(resourceVersion).values({
       resourceId: id,
       version: v.version,
-      storageKey: getVersionKey(packageId, id, v.version, 'v'),
+      storageKey: getStorageKey(packageId, id, `v${v.version}`),
       size: v.size ?? 10,
       hash: `sha256:v${v.version}`,
       origin: 'upload',
@@ -164,7 +164,7 @@ describe('countUnversioned', () => {
     await db.insert(resourceVersion).values({
       resourceId: id,
       version: 1,
-      storageKey: getVersionKey(packageId, id, 1, 'v'),
+      storageKey: getStorageKey(packageId, id, 'v1'),
       hash: 'sha256:a',
       origin: 'upload',
     })

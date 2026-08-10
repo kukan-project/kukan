@@ -193,40 +193,24 @@ export const RESOURCE_PREFIX = 'resources/'
 export const PREVIEW_PREFIX = 'previews/'
 
 /**
- * Compute storage key for a resource's raw file.
+ * Compute storage key for a resource's canonical bytes — the object a fetch or
+ * an upload lands in, and the object a version copy is written to.
  *
- * @param writeToken - makes the key unique to the run that writes it, exactly as
- *   {@link getPreviewKey} does. Readers follow `resource.storage_key` instead of
- *   recomputing the key, so the object a run wrote can never be rewritten
- *   underneath it: creating a version copies bytes that cannot have moved since
- *   its own Fetch read them, and a failed write leaves the previous object
- *   untouched because it was never the target.
+ * One shape for all of them, because nothing reads the key to learn what an
+ * object is: every reader follows a pointer, and what an object is only becomes
+ * true after it is written — content fetched unchanged never becomes a version
+ * at all.
+ *
+ * @param writeToken - makes the key unique to the write that produces it,
+ *   exactly as {@link getPreviewKey} does. Derived from anything stable instead
+ *   — a version number, say — a creation that failed and is retried would
+ *   reserve, copy and record *the same key*, and the orphan sweep decides what
+ *   to delete from a list it read moments earlier, so a retry landing in
+ *   between would have its object deleted with the row already pointing at it
+ *   (ADR-045 §3).
  */
 export function getStorageKey(packageId: string, resourceId: string, writeToken: string): string {
   return `${RESOURCE_PREFIX}${packageId}/${resourceId}.${writeToken}`
-}
-
-/** Storage key prefix for immutable per-version files (ADR-043) */
-export const VERSION_PREFIX = 'versions/'
-
-/**
- * Compute storage key for a specific version of a resource's canonical file.
- *
- * @param writeToken - makes the key unique to the write that creates it, as
- *   {@link getStorageKey} and {@link getPreviewKey} do. Derived from the version
- *   number alone, a creation that failed and is retried would reserve, copy and
- *   record *the same key* — and the orphan sweep decides what to delete from a
- *   list it read moments earlier, so a retry landing in between would have its
- *   object deleted with the row already pointing at it (ADR-045 §3). Nothing
- *   recomputes this: every reader follows `resource_version.storage_key`.
- */
-export function getVersionKey(
-  packageId: string,
-  resourceId: string,
-  version: number,
-  writeToken: string
-): string {
-  return `${VERSION_PREFIX}${packageId}/${resourceId}/v${version}.${writeToken}`
 }
 
 /**
@@ -245,9 +229,9 @@ export function versionOrigin(urlType: string | null): 'upload' | 'fetch' {
  *   token per run means the object a reader resolved can never be rewritten
  *   underneath it — which is what lets DuckLake ingest (ADR-043 layer 2) trust
  *   that the Parquet it reads is the version it was told to record. Required, as
- *   in {@link getStorageKey} and {@link getVersionKey}: omitting it yields a key
- *   a retry would reuse, and the orphan sweep decides what to delete from a list
- *   it read moments earlier (ADR-045 §3).
+ *   in {@link getStorageKey}: omitting it yields a key a retry would reuse, and
+ *   the orphan sweep decides what to delete from a list it read moments earlier
+ *   (ADR-045 §3).
  */
 export function getPreviewKey(
   packageId: string,

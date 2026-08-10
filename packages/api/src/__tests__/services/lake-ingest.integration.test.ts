@@ -13,12 +13,14 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { eq, and, sql } from 'drizzle-orm'
 import { resource, resourceVersion } from '@kukan/db'
 import type { LakeSession } from '@kukan/lake'
+import { getStorageKey } from '@kukan/shared'
 import { ingestVersionIntoLake } from '../../services/lake-ingest'
 import { reclaimLakeStorage } from '../../services/lake-reclaim'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
 const db = getTestDb()
 
+let packageId: string
 let resourceId: string
 
 /**
@@ -49,7 +51,7 @@ async function addVersion(version: number, snapshotId: number | null) {
   await db.insert(resourceVersion).values({
     resourceId,
     version,
-    storageKey: `versions/${resourceId}/v${version}`,
+    storageKey: getStorageKey(packageId, resourceId, `v${version}`),
     size: 10,
     hash: `sha256:v${version}`,
     origin: 'upload',
@@ -62,7 +64,7 @@ beforeEach(async () => {
   const pkg = await db.execute(sql`
     INSERT INTO package (name, state) VALUES ('test-pkg-lake-ingest', 'active') RETURNING id
   `)
-  const packageId = (pkg.rows[0] as { id: string }).id
+  packageId = (pkg.rows[0] as { id: string }).id
   const [res] = await db
     .insert(resource)
     .values({ packageId, name: 'r', urlType: 'upload' })

@@ -19,7 +19,7 @@ import {
 } from '@kukan/api/services/resource-version-service'
 import { copyObject, publishLiveContent, reserveObject } from '@kukan/api/services/storage-pointer'
 import type { PackageDbState } from '@kukan/shared'
-import { getVersionKey, versionOrigin } from '@kukan/shared'
+import { getStorageKey, versionOrigin } from '@kukan/shared'
 import { decideVersionCreate } from './version-gate'
 import type { PipelineContext, ResourceForPipeline } from './types'
 import {
@@ -208,7 +208,7 @@ export function buildPipelineContext(
       // changing the interpretation of content that did not move would file a
       // second version against the first one's file. Purging either would then
       // take the other's bytes, or leave them — the outcome ADR-046 §3 refused.
-      const versionKey = getVersionKey(packageId, resourceId, version, randomUUID())
+      const versionKey = getStorageKey(packageId, resourceId, randomUUID())
       await copyObject(db, storage, currentStorageKey, versionKey)
 
       // The row and the pointer together or not at all. Everything downstream

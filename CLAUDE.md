@@ -207,7 +207,7 @@ pnpm format        # Prettier フォーマット
 - Web=ECS Fargate+ALB, Worker=Fargate → `docs/adr/jp/020-ecs-fargate-alb-migration.md`
 - ロギング戦略 → `docs/adr/jp/019-logging-strategy.md`
 - リソースコンテンツ全文検索 → `docs/adr/jp/021-resource-content-indexing.md`
-- DB ポーリングによる SQS 代替（提案） → `docs/adr/jp/022-db-polling-queue.md`
+- DB ポーリングによる SQS 代替（取り下げ） → `docs/adr/jp/022-db-polling-queue.md`
 - ブランドオーバーライドレイヤー → `docs/adr/jp/023-brand-override-layer.md`
 - GA4 アクセス統計 → `docs/adr/jp/024-ga4-access-analytics.md`
 - OpenSearch parent-child 統合 → `docs/adr/jp/025-opensearch-parent-child-index.md`
@@ -219,7 +219,7 @@ pnpm format        # Prettier フォーマット
 - マルチ環境（dev/prd）デプロイ設計（CDK Stage） → `docs/adr/jp/031-multi-environment-deploy.md`
 - MCP データクエリ基盤（スキーマ永続化 + サーバーサイド DuckDB） → `docs/adr/jp/032-mcp-data-query.md`
 - 外部 SQL データソース（スナップショット/ライブ proxy 両論 + connector 拡張、提案） → `docs/adr/jp/033-external-sql-data-source.md`
-- メタデータのベクトル検索（セマンティック検索・AI 向け発見、提案） → `docs/adr/jp/034-metadata-vector-search.md`
+- メタデータのベクトル検索（セマンティック検索・AI 向け発見） → `docs/adr/jp/034-metadata-vector-search.md`
 - セマンティックバージョニングとリリースノート → `docs/adr/jp/035-semver-release-notes.md`
 - DB バックエンドのランタイムシステム設定（初適用: ベクトルしきい値の目盛り調整） → `docs/adr/jp/036-runtime-system-settings.md`
 - スケール連動バックアップ戦略（S3 バージョニング + AWS Backup + DB 保持期間） → `docs/adr/jp/037-backup-strategy.md`
@@ -227,10 +227,10 @@ pnpm format        # Prettier フォーマット
 - データセット下書き状態（draft、作成と公開の分離） → `docs/adr/jp/039-package-draft-state.md`
 - AI メタデータ提案（提案型・オンデマンド生成） → `docs/adr/jp/040-ai-metadata-suggest.md`
 - マルチサイトデプロイ（共用インフラ + サイト単位の論理分離、ADR-031 拡張） → `docs/adr/jp/041-multi-site-deploy.md`
-- マルチブランドビルド（`KUKAN_BRAND` によるブランド選択、ADR-023 拡張、提案） → `docs/adr/jp/042-multi-brand-build.md`
-- リソースバージョニングと行レベル差分（DuckLake、提案） → `docs/adr/jp/043-resource-versioning-ducklake.md`
-- リソース単位の実行 claim（同時実行の排他、提案） → `docs/adr/jp/044-resource-execution-claim.md`
-- ストレージオブジェクトの先行記録（クラッシュ由来のリーク、提案） → `docs/adr/jp/045-object-write-ahead.md`
+- マルチブランドビルド（`KUKAN_BRAND` によるブランド選択、ADR-023 拡張） → `docs/adr/jp/042-multi-brand-build.md`
+- リソースバージョニングと行レベル差分（DuckLake、層 1・ii-a 実装済み） → `docs/adr/jp/043-resource-versioning-ducklake.md`
+- リソース単位の実行 claim（同時実行の排他） → `docs/adr/jp/044-resource-execution-claim.md`
+- ストレージオブジェクトの先行記録（クラッシュ由来のリーク） → `docs/adr/jp/045-object-write-ahead.md`
 - 正本の確定と、その解釈の分離（Version 先行 + DuckDB の Interpret ステージ） → `docs/adr/jp/046-interpret-stage.md`
 - 取得内容が宣言と食い違うとき正本を差し替えない（サイト閉鎖時の一括転送、提案） → `docs/adr/jp/047-fetched-content-mismatch.md`
 

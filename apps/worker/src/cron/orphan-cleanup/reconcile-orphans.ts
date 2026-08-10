@@ -31,7 +31,7 @@
 import { inArray } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { orphanedObject } from '@kukan/db'
-import { RESOURCE_PREFIX, PREVIEW_PREFIX, VERSION_PREFIX } from '@kukan/shared'
+import { RESOURCE_PREFIX, PREVIEW_PREFIX } from '@kukan/shared'
 import type { Logger } from '@kukan/shared'
 import { RESERVED_UNTIL } from '@kukan/api/services/storage-pointer'
 import type { ListedObject, StorageAdapter } from '@kukan/storage-adapter'
@@ -42,7 +42,7 @@ import { referenced } from './sweep-orphans'
  * layout and reclaims its own files, and ADR-045 §5 declined to build a second
  * thing that thinks it does.
  */
-const PREFIXES = [RESOURCE_PREFIX, PREVIEW_PREFIX, VERSION_PREFIX]
+const PREFIXES = [RESOURCE_PREFIX, PREVIEW_PREFIX]
 
 /**
  * How much of the bucket to hold before asking about it. The question is one

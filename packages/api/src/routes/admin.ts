@@ -27,7 +27,6 @@ import {
   BACKFILL_VERSIONS_JOB_TYPE,
   RESOURCE_PREFIX,
   PREVIEW_PREFIX,
-  VERSION_PREFIX,
   escapeLike,
   userNameSchema,
   userRoleSchema,
@@ -566,14 +565,13 @@ adminRouter.delete('/data', async (c) => {
   // 3. Clear storage files (best-effort)
   let storageObjects = 0
   try {
-    const [r, p, v, l] = await Promise.all([
+    const [r, p, l] = await Promise.all([
       storage.deleteByPrefix(RESOURCE_PREFIX),
       storage.deleteByPrefix(PREVIEW_PREFIX),
-      // Retained versions and DuckLake data files belong to the deleted rows too.
-      storage.deleteByPrefix(VERSION_PREFIX),
+      // DuckLake data files belong to the deleted rows too.
       storage.deleteByPrefix(LAKE_DATA_PREFIX),
     ])
-    storageObjects = r + p + v + l
+    storageObjects = r + p + l
   } catch {
     // Storage cleanup is best-effort
   }

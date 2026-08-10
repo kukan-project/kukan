@@ -12,6 +12,7 @@ import { sql } from 'drizzle-orm'
 import { resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { LakeConfig } from '@kukan/lake'
+import { getStorageKey } from '@kukan/shared'
 import { buildPipelineContext } from '../../pipeline/build-context'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
@@ -39,7 +40,7 @@ async function versionExists(opts: { format?: string; snapshot?: number | null }
   await db.insert(resourceVersion).values({
     resourceId,
     version: 1,
-    storageKey: 'versions/pkg/res/v1',
+    storageKey: getStorageKey(packageId, resourceId, 'v1'),
     origin: 'upload',
     state: 'active',
     hash: HASH,

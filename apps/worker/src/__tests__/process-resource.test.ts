@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { processResource } from '../pipeline/process-resource'
 import type { Database } from '@kukan/db'
 import type { QueueAdapter } from '@kukan/queue-adapter'
+import { getStorageKey } from '@kukan/shared'
 
 // Mock all step modules
 vi.mock('../pipeline/steps/fetch', () => ({
@@ -73,7 +74,7 @@ function createMockCtx(): PipelineContextMock {
   // What the interpretation reads (ADR-046): the version holding this run's content.
   ctx.versionForContent.mockResolvedValue({
     version: 1,
-    storageKey: 'versions/pkg-1/res-1/v1',
+    storageKey: getStorageKey('pkg-1', 'res-1', 'v1'),
     size: 42,
     format: 'CSV',
   })
@@ -174,7 +175,7 @@ describe('processResource', () => {
     expect(executeInterpret).toHaveBeenCalledWith(
       'res-1',
       'pkg-1',
-      { storageKey: 'versions/pkg-1/res-1/v1', size: 42 },
+      { storageKey: getStorageKey('pkg-1', 'res-1', 'v1'), size: 42 },
       'CSV',
       held,
       { onEncoding: expect.any(Function), onTable: expect.any(Function) }
@@ -214,7 +215,7 @@ describe('processResource', () => {
     expect(executeInterpret).toHaveBeenCalledWith(
       'res-1',
       'pkg-1',
-      { storageKey: 'versions/pkg-1/res-1/v1', size: 42 },
+      { storageKey: getStorageKey('pkg-1', 'res-1', 'v1'), size: 42 },
       'CSV',
       expect.anything(),
       expect.anything()

@@ -2,7 +2,7 @@
 
 ## ステータス
 
-**提案（Proposed）**
+**承認済み（Accepted）** — 実装完了（2026-07-30）
 
 オブジェクトを作る前にその鍵を台帳へ記録し、参照が確定したら消す。異常終了で残った
 記録をスイープが回収する。削除は「どのポインタからも参照されていない」ことを確認してから
@@ -10,7 +10,7 @@
 
 ## コンテキスト
 
-オブジェクトを**作ってから**台帳に記録する順序になっている箇所が 7 つある。その窓で
+オブジェクトを**作ってから**台帳に記録する順序になっている箇所が 6 つある。その窓で
 プロセスが落ちると、**どこからも参照されず、回収経路も持たない**オブジェクトが残る。
 
 | 書き込み                          | prefix       | 参照先                                   |
@@ -19,8 +19,7 @@
 | Interpret のプレビュー Parquet    | `previews/`  | `resource_pipeline.preview_key`          |
 | Interpret の ZIP マニフェスト     | `previews/`  | `resource_pipeline.preview_key`          |
 | Index のテキストヘッド（ADR-040） | `previews/`  | `resource_pipeline.metadata.textHeadKey` |
-| Version の版コピー                | `versions/`  | `resource_version.storage_key`           |
-| 移行（v1 付与）の版コピー         | `versions/`  | `resource_version.storage_key`           |
+| Version の版コピー                | `resources/` | `resource_version.storage_key`           |
 | 版パージのロールバック復元        | `resources/` | `resource.storage_key`                   |
 
 いずれも「コピー／アップロードが成功し、DB 更新の前に落ちる」窓を持つ。現在のスイープは
@@ -36,7 +35,7 @@
 
 **先行記録（write-ahead）— ブラウザアップロードのみ**。`prepareForUpload` は
 `resource.pending_storage_key` を**書いてから** `storage.upload` する。放置された鍵は
-`expirePendingUploads` が TTL 経過後に回収する。**7 つのうち唯一この窓を持たない経路**が、
+`expirePendingUploads` が TTL 経過後に回収する。**唯一この窓を持たない書き込み経路**が、
 既にこの方式で守られている。
 
 **事後の回収予約 — `orphaned_object`**。書き手が**置き換えた**鍵を積む台帳で、
@@ -139,7 +138,7 @@ ADR-044 が `CLAIM_STALE_AFTER_MS` を全 claimer で 1 つに揃えたのは、
 ポインタを動かす文に相乗りさせる。それらの文は既に `orphaned_object` へ INSERT しており
 （置き換えた鍵の回収予約）、同じ文に DELETE を足すだけで済む。**新しい往復は増えない。**
 
-版定義の insert（パイプライン・移行）だけは現在 `orphaned_object` に触れていないため、
+版定義の insert だけは現在 `orphaned_object` に触れていないため、
 そこには DELETE を足す必要がある。
 
 ### 5. `lake/` は対象外
@@ -152,7 +151,7 @@ DuckLake の組み込み手続きが既に同じ役割を果たしている（AD
 
 **`pending_storage_key` は残る。**
 
-一見すると本 ADR の先行記録と同じ機構に見える — 実際、ブラウザアップロードが 7 つの窓に
+一見すると本 ADR の先行記録と同じ機構に見える — 実際、ブラウザアップロードが 6 つの窓に
 含まれないのはこの列のおかげである。しかしこの列は 4 つの仕事をしており、重なるのは
 1 つ目だけである。
 
@@ -174,8 +173,8 @@ DuckLake の組み込み手続きが既に同じ役割を果たしている（AD
 - **DB**: `orphaned_object` に `expires_at` を追加（マイグレーション 1 本。既存行は
   `orphaned_at + 1 時間` で埋める）。スイープの述語にポインタ照合が入るため、
   `metadata->>'textHeadKey'` に式インデックスが要る
-- **Worker / API**: オブジェクトを作る 7 箇所に INSERT が 1 回ずつ増える。消す側は既存の文に
-  相乗り（版定義の insert 2 箇所だけ新規）
+- **Worker / API**: オブジェクトを作る 6 箇所に INSERT が 1 回ずつ増える。消す側は既存の文に
+  相乗り（版定義の insert 1 箇所だけ新規）
 - **運用**: リークが恒久的に残らなくなる。スイープのログに「参照されていたので記録を消した」
   件数が出るため、先行記録の消し忘れが起きていれば観測できる
 

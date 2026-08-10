@@ -7,7 +7,7 @@ import {
   resourcePipelineStep,
   resourceVersion,
 } from '@kukan/db'
-import { MAX_UPLOAD_SIZE } from '@kukan/shared'
+import { getStorageKey, MAX_UPLOAD_SIZE } from '@kukan/shared'
 import { createTestApp, mockSearch } from '../test-helpers/test-app'
 import {
   getTestDb,
@@ -1225,7 +1225,7 @@ describe('Resources API Routes', () => {
       await db.insert(resourceVersion).values({
         resourceId: resource.id,
         version: 1,
-        storageKey: `versions/${pkg.id}/${resource.id}/v1`,
+        storageKey: getStorageKey(pkg.id, resource.id, 'v1'),
         hash: 'sha256:v1',
         origin: 'upload',
       })
@@ -1249,7 +1249,7 @@ describe('Resources API Routes', () => {
       await db.insert(resourceVersion).values({
         resourceId: resource.id,
         version: 1,
-        storageKey: `versions/${pkg.id}/${resource.id}/v1`,
+        storageKey: getStorageKey(pkg.id, resource.id, 'v1'),
         hash: 'sha256:v1',
         origin: 'upload',
         state: 'purged',
@@ -1257,7 +1257,7 @@ describe('Resources API Routes', () => {
       await db.insert(resourceVersion).values({
         resourceId: resource.id,
         version: 2,
-        storageKey: `versions/${pkg.id}/${resource.id}/v2`,
+        storageKey: getStorageKey(pkg.id, resource.id, 'v2'),
         hash: 'sha256:v2',
         origin: 'upload',
       })

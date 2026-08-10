@@ -336,8 +336,9 @@ await queue.process({
       log: log.child({ jobId: job.id, type: job.type }),
     })
   },
-  // One-time migration: snapshot every unversioned resource's live file as v1
-  // (ADR-043). No re-fetch/re-index — just server-side copies.
+  // One-time migration: name every unversioned resource's live file as v1
+  // (ADR-043). Nothing is fetched, re-indexed or copied — the object is
+  // already there and nothing owns it yet.
   [BACKFILL_VERSIONS_JOB_TYPE]: async (job: Job) => {
     if (!parseJobPayload(job, backfillVersionsJobSchema)) return
     log.info({ jobId: job.id, type: job.type }, 'Backfill versions job started')

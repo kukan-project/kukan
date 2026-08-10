@@ -137,7 +137,7 @@ describe('executeInterpret', () => {
     const result = await executeInterpret(
       'res-nonl',
       'pkg-1',
-      version('versions/pkg-1/res-nonl/v1'),
+      version('resources/pkg-1/res-nonl.v1'),
       'CSV',
       ctx
     )
@@ -154,7 +154,7 @@ describe('executeInterpret', () => {
     const result = await executeInterpret(
       'res-title-nonl',
       'pkg-1',
-      version('versions/pkg-1/res-title-nonl/v1'),
+      version('resources/pkg-1/res-title-nonl.v1'),
       'CSV',
       ctx
     )
@@ -201,7 +201,7 @@ describe('executeInterpret', () => {
     mockStorageDownload('name,age\nAlice,30\n')
     let seen: { magic: string; path: string; leftInDir: string[] } | undefined
 
-    await executeInterpret('res-t', 'pkg-1', version('versions/pkg-1/res-t/v1'), 'CSV', ctx, {
+    await executeInterpret('res-t', 'pkg-1', version('resources/pkg-1/res-t.v1'), 'CSV', ctx, {
       onTable: async (parquetPath) => {
         // Still there, and a real Parquet: layer 2 loads from here rather
         // than from the preview in storage (ADR-046).
@@ -227,7 +227,7 @@ describe('executeInterpret', () => {
     mockStorageDownload('Hello, world!')
     const onTable = vi.fn()
 
-    await executeInterpret('res-u', 'pkg-1', version('versions/pkg-1/res-u/v1'), 'TXT', ctx, {
+    await executeInterpret('res-u', 'pkg-1', version('resources/pkg-1/res-u.v1'), 'TXT', ctx, {
       onTable,
     })
 
@@ -245,7 +245,7 @@ describe('executeInterpret', () => {
     const result = await executeInterpret(
       'res-huge',
       'pkg-1',
-      version('versions/pkg-1/res-huge/v1', MAX_PARQUET_SOURCE_SIZE + 1),
+      version('resources/pkg-1/res-huge.v1', MAX_PARQUET_SOURCE_SIZE + 1),
       'CSV',
       ctx
     )
@@ -284,7 +284,7 @@ describe('executeInterpret', () => {
     const result = await executeInterpret(
       'res-big',
       'pkg-1',
-      version('versions/pkg-1/res-big/v1', MAX_PARQUET_SOURCE_SIZE + 1),
+      version('resources/pkg-1/res-big.v1', MAX_PARQUET_SOURCE_SIZE + 1),
       'CSV',
       ctx
     )

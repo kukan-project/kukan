@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed**
+**Accepted** — implemented 2026-07-30
 
 Record a key in the ledger before the object is created, and remove the record once something
 points at it. A sweep reclaims whatever a crash left behind. Deletion happens only after
@@ -11,7 +11,7 @@ object. The writer declares when its record may be reclaimed.
 
 ## Context
 
-Seven writes create an object **before** recording it. If the process dies in that window,
+Six writes create an object **before** recording it. If the process dies in that window,
 the object is left **referenced by nothing, with no path that reclaims it**.
 
 | Write                              | Prefix       | Reference                                |
@@ -20,8 +20,7 @@ the object is left **referenced by nothing, with no path that reclaims it**.
 | Interpret's preview Parquet        | `previews/`  | `resource_pipeline.preview_key`          |
 | Interpret's ZIP manifest           | `previews/`  | `resource_pipeline.preview_key`          |
 | Index's text head (ADR-040)        | `previews/`  | `resource_pipeline.metadata.textHeadKey` |
-| Version capture's copy             | `versions/`  | `resource_version.storage_key`           |
-| The backfill's copy                | `versions/`  | `resource_version.storage_key`           |
+| Version capture's copy             | `resources/` | `resource_version.storage_key`           |
 | A version purge's rollback restore | `resources/` | `resource.storage_key`                   |
 
 Each has the same window: the copy or upload succeeds, and the process dies before the
@@ -148,8 +147,8 @@ On the statement that moves the pointer. Those statements already insert into
 `orphaned_object` (parking the key they replace), so this is a DELETE in the same statement.
 **No extra round trip.**
 
-The two version inserts (pipeline and backfill) are the exception — they do not touch
-`orphaned_object` today, so the DELETE is new there.
+The version insert is the exception — it does not touch `orphaned_object` today, so the
+DELETE is new there.
 
 ### 5. `lake/` stays out
 
@@ -161,7 +160,7 @@ generalized per-prefix reconciliation job.**
 
 **`pending_storage_key` stays.**
 
-It looks like the same mechanism — and it is why browser uploads are not among the seven
+It looks like the same mechanism — and it is why browser uploads are not among the six
 windows. But the column does four jobs, and only the first overlaps.
 
 | Job                                                                     | Replaced by this ADR? |
@@ -183,8 +182,8 @@ writer declare `expires_at` (§2) is what keeps differences like that out of a s
 - **DB**: `expires_at` added to `orphaned_object` (one migration; existing rows backfilled as
   `orphaned_at + 1 hour`). The sweep's predicate adds the pointer check, which needs an
   expression index on `metadata->>'textHeadKey'`
-- **Worker / API**: one INSERT added at each of the seven creation sites; removal rides on
-  existing statements (new only at the two version inserts)
+- **Worker / API**: one INSERT added at each of the six creation sites; removal rides on
+  existing statements (new only at the version insert)
 - **Operations**: leaks stop being permanent. The sweep logs how many records it dropped
   because something still referenced the key, so a missed removal is observable rather than
   silent

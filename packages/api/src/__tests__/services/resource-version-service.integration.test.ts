@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { eq, and, sql } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
 import { resource, resourcePipeline, resourceVersion } from '@kukan/db'
-import { createLogger, getStorageKey, getVersionKey, MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
+import { createLogger, getStorageKey, MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
 import type { ResourceSchema } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
@@ -65,7 +65,7 @@ async function addVersion(
   await db.insert(resourceVersion).values({
     resourceId,
     version,
-    storageKey: getVersionKey(packageId, resourceId, version, 'v'),
+    storageKey: getStorageKey(packageId, resourceId, `v${version}`),
     size: 100 + version,
     hash,
     origin: 'upload',
@@ -188,7 +188,7 @@ describe('executePurge', () => {
     // deliberately produces versions with one hash. Asked by hash, "is live
     // standing on this version" answers with the newest of them — so purging a
     // superseded one restored live onto v1's file and then deleted it.
-    const v1Key = getVersionKey(packageId, resourceId, 1, 'v')
+    const v1Key = getStorageKey(packageId, resourceId, 'v1')
     await addVersion(1, 'sha256:same')
     await addVersion(2, 'sha256:same', 'superseded', 'TSV')
     // The state a revert leaves: live back on v1's own object.
@@ -201,7 +201,7 @@ describe('executePurge', () => {
     const deps = mockDeps()
     await service.executePurge(resourceId, 2, deps)
 
-    expect(deps.storage.delete).toHaveBeenCalledWith(getVersionKey(packageId, resourceId, 2, 'v'))
+    expect(deps.storage.delete).toHaveBeenCalledWith(getStorageKey(packageId, resourceId, 'v2'))
     expect(deps.storage.delete).not.toHaveBeenCalledWith(v1Key)
     const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
     expect(res.storageKey).toBe(v1Key)
@@ -212,8 +212,8 @@ describe('executePurge', () => {
     // hash made this look like a middle version, so the purge deleted the live
     // object and skipped the rollback — leaving the retracted content in the
     // index and the preview.
-    const v1Key = getVersionKey(packageId, resourceId, 1, 'v')
-    const v2Key = getVersionKey(packageId, resourceId, 2, 'v')
+    const v1Key = getStorageKey(packageId, resourceId, 'v1')
+    const v2Key = getStorageKey(packageId, resourceId, 'v2')
     await addVersion(1, 'sha256:same')
     await addVersion(2, 'sha256:same', 'active', 'TSV')
     await db
@@ -283,13 +283,13 @@ describe('executePurge', () => {
     // The lake's target is settled once and handed to the pointer, rather than
     // looked up a second time after the lake work — the two must land on the
     // same version.
-    const v2Key = getVersionKey(packageId, resourceId, 2, 'v')
+    const v2Key = getStorageKey(packageId, resourceId, 'v2')
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2')
     await addVersion(3, 'sha256:v3')
     await db
       .update(resource)
-      .set({ storageKey: getVersionKey(packageId, resourceId, 3, 'v'), hash: 'sha256:v3' })
+      .set({ storageKey: getStorageKey(packageId, resourceId, 'v3'), hash: 'sha256:v3' })
       .where(eq(resource.id, resourceId))
     await service.claimPurge(resourceId, 3, userId, 'illegal content')
 
@@ -347,7 +347,7 @@ describe('executePurge', () => {
     // nothing purged is still being served — but the resource is left with no
     // preview and out of the index, and this attempt is the only one that will
     // ever put them back.
-    const v1Key = getVersionKey(packageId, resourceId, 1, 'v')
+    const v1Key = getStorageKey(packageId, resourceId, 'v1')
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2')
     await service.claimPurge(resourceId, 2, userId, 'illegal content')
@@ -385,12 +385,12 @@ describe('executePurge', () => {
 
     expect(result).toEqual({ purged: true, rolledBack: true })
     // v2's versioned copy deleted.
-    expect(deps.storage.delete).toHaveBeenCalledWith(getVersionKey(packageId, resourceId, 2, 'v'))
+    expect(deps.storage.delete).toHaveBeenCalledWith(getStorageKey(packageId, resourceId, 'v2'))
     // The pointer moves onto v1's own object — no copy is made to carry it
     // under the `resources/` prefix (ADR-043 §1).
     expect(deps.storage.copy).not.toHaveBeenCalled()
     const [row] = await db.select().from(resource).where(eq(resource.id, resourceId))
-    expect(row.storageKey).toBe(getVersionKey(packageId, resourceId, 1, 'v'))
+    expect(row.storageKey).toBe(getStorageKey(packageId, resourceId, 'v1'))
     // The object that held the purged content is deleted, not parked: a purge
     // is a legal deletion, so an in-flight reader is meant to be cut off.
     expect(deps.storage.delete).toHaveBeenCalledWith(liveKey)
@@ -434,7 +434,7 @@ describe('executePurge', () => {
     const result = await service.executePurge(resourceId, 1, deps)
 
     expect(result).toEqual({ purged: true, rolledBack: false })
-    expect(deps.storage.delete).toHaveBeenCalledWith(getVersionKey(packageId, resourceId, 1, 'v'))
+    expect(deps.storage.delete).toHaveBeenCalledWith(getStorageKey(packageId, resourceId, 'v1'))
     // No rollback / current-key touch for a non-live version.
     expect(deps.storage.copy).not.toHaveBeenCalled()
     const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
@@ -486,7 +486,7 @@ describe('executePurge — after a revert (ADR-044 §4)', () => {
       purged: true,
       rolledBack: false,
     })
-    expect(deps.storage.delete).toHaveBeenCalledWith(getVersionKey(packageId, resourceId, 2, 'v'))
+    expect(deps.storage.delete).toHaveBeenCalledWith(getStorageKey(packageId, resourceId, 'v2'))
     // v1's content is live; the version being destroyed is not, so nothing moves.
     expect(deps.storage.copy).not.toHaveBeenCalled()
     const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
@@ -644,7 +644,7 @@ describe('executePurge — layer 2 (DuckLake)', () => {
 describe('insertVersionIfHeld', () => {
   const created = {
     version: 1,
-    storageKey: 'versions/pkg/res/v1',
+    storageKey: 'resources/pkg/res.v1',
     size: 10,
     hash: 'sha256:v1',
     origin: 'upload' as const,
@@ -682,7 +682,7 @@ describe('insertVersionIfHeld', () => {
         resourceId,
         ...created,
         version: 2,
-        storageKey: 'versions/pkg/res/v2',
+        storageKey: 'resources/pkg/res.v2',
         hash: 'sha256:v2',
       })
     ).toBe(true)
@@ -873,7 +873,7 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     // The pointer lands on v1's own object; nothing is copied to carry it.
     expect(deps.storage.copy).not.toHaveBeenCalled()
     const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
-    expect(res.storageKey).toBe(getVersionKey(packageId, resourceId, 1, 'v'))
+    expect(res.storageKey).toBe(getStorageKey(packageId, resourceId, 'v1'))
     expect(res.storageKey).not.toBe(liveKey)
     expect(res.hash).toBe('sha256:v1')
     // Derivatives describing the retracted content go now, and are rebuilt.
@@ -1517,8 +1517,8 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     // the hash, which the copying path makes routine. Told the latter, a revert
     // computes a destination below it and steps off everything, including the
     // only version left.
-    const v1Key = getVersionKey(packageId, resourceId, 1, 'v')
-    const v2Key = getVersionKey(packageId, resourceId, 2, 'v')
+    const v1Key = getStorageKey(packageId, resourceId, 'v1')
+    const v2Key = getStorageKey(packageId, resourceId, 'v2')
     await addVersion(1, 'sha256:same')
     await addVersion(2, 'sha256:same', 'active', 'TSV')
     await db

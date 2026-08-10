@@ -56,7 +56,7 @@ vi.mock('../pipeline/interpret/version', () => ({
 
 import { withInterpretedVersion } from '../pipeline/interpret/version'
 
-const VERSION_KEY = 'versions/pkg-1/res-1/v2'
+const VERSION_KEY = 'resources/pkg-1/res-1.v2'
 const job = { resourceId: 'res-1', version: 2 }
 
 let deps: { ctx: PipelineContextMock; db: Database; queue: QueueAdapter; log: Logger }
