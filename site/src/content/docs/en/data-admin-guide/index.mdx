@@ -127,7 +127,7 @@ Use this when the content itself has to go — personal data that should never h
 published, for example. **Only site administrators** can purge, **a reason is required**, and it
 is recorded in the audit log.
 
-- The canonical file and the row data kept for diffs are deleted immediately
+- The canonical file, and **the row data no other version holds**, are deleted immediately
 - **Content another version holds is not erased.** Each version keeps its own copy, so purging
   one leaves the others serving that content — and if purging the live version falls back onto
   a version holding the same content, **the resource serves it again**. The confirmation dialog
