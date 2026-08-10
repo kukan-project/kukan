@@ -20,6 +20,7 @@ import {
   INTERPRET_MEMORY_LIMIT_MB,
   INTERPRET_THREADS,
   PARQUET_ROW_GROUP_SIZE,
+  STATS_COLUMNS_PER_QUERY,
 } from '@/config'
 
 /** A DuckDB type name, folded to the semantic type persisted on the schema. */
@@ -226,21 +227,27 @@ async function describeColumns(
   columns: Column[],
   rowCount: number
 ): Promise<ResourceColumn[]> {
-  // Aliased by position — see oversizeIntegerColumns.
-  const selects = columns.flatMap((c, i) => {
-    const col = sqlIdentifier(c.name)
-    const numeric = ['integer', 'float'].includes(semanticType(c.duckType))
-    return [
-      `count(*) FILTER (WHERE ${col} IS NULL) AS c${i}_null`,
-      `count(DISTINCT ${col}) AS c${i}_distinct`,
-      ...(numeric
-        ? [`min(${col})::VARCHAR AS c${i}_min`, `max(${col})::VARCHAR AS c${i}_max`]
-        : []),
-    ]
-  })
-  const [row] = (
-    await conn.runAndReadAll(`SELECT ${selects.join(', ')} FROM t`)
-  ).getRowObjectsJson() as Record<string, unknown>[]
+  const row: Record<string, unknown> = {}
+  for (let start = 0; start < columns.length; start += STATS_COLUMNS_PER_QUERY) {
+    // Aliased by the column's global position, so the batches merge into one
+    // row (batched at all: see STATS_COLUMNS_PER_QUERY).
+    const selects = columns.slice(start, start + STATS_COLUMNS_PER_QUERY).flatMap((c, j) => {
+      const i = start + j
+      const col = sqlIdentifier(c.name)
+      const numeric = ['integer', 'float'].includes(semanticType(c.duckType))
+      return [
+        `count(*) FILTER (WHERE ${col} IS NULL) AS c${i}_null`,
+        `count(DISTINCT ${col}) AS c${i}_distinct`,
+        ...(numeric
+          ? [`min(${col})::VARCHAR AS c${i}_min`, `max(${col})::VARCHAR AS c${i}_max`]
+          : []),
+      ]
+    })
+    const [batch] = (
+      await conn.runAndReadAll(`SELECT ${selects.join(', ')} FROM t`)
+    ).getRowObjectsJson() as Record<string, unknown>[]
+    Object.assign(row, batch)
+  }
 
   return columns.map((c, i) => {
     const type = semanticType(c.duckType)

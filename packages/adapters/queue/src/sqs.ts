@@ -152,8 +152,10 @@ export class SQSQueueAdapter implements QueueAdapter {
             await this.deleteMessage(message.ReceiptHandle!)
           } catch (err) {
             this.processingJobSince = null
-            // Message returns to queue after visibility timeout
-            this.log.error({ err, jobId }, 'Handler error')
+            // Message returns to queue after visibility timeout. Payload
+            // included: some handlers log nothing of their own before throwing,
+            // leaving this as the only record of which job it was.
+            this.log.error({ err, jobId, type: job.type, data: job.data }, 'Handler error')
           }
         }
       } catch (err) {

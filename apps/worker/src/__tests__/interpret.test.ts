@@ -364,6 +364,32 @@ describe('executeInterpret', () => {
     expect(onEncoding).toHaveBeenCalledWith('Shift_JIS')
   })
 
+  it('describes a CSV as wide as the limit allows', async () => {
+    // Width alone used to exhaust the memory limit, so the declared ceiling was
+    // never reachable — see STATS_COLUMNS_PER_QUERY for why.
+    const header = Array.from({ length: MAX_CSV_COLUMNS }, (_, i) => `c${i}`).join(',')
+    const row = Array.from({ length: MAX_CSV_COLUMNS }, (_, i) => String(i)).join(',')
+    mockStorageDownload(`${header}\n${row}\n${row}\n`)
+
+    const result = await executeInterpret(
+      'res-max',
+      'pkg-1',
+      version('resources/pkg-1/res-max'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.schema?.columns).toHaveLength(MAX_CSV_COLUMNS)
+    expect(result?.schema?.rowCount).toBe(2)
+    // Every column holds its own index, so the statistics are asserted against
+    // it rather than against a shape they all share: batches merge into one row
+    // by alias, and a fixture whose columns are indistinguishable cannot tell a
+    // correct merge from one that shifted every value by a batch.
+    expect(result?.schema?.columns.map((c) => c.stats?.min)).toEqual(
+      Array.from({ length: MAX_CSV_COLUMNS }, (_, i) => String(i))
+    )
+  })
+
   it('refuses a CSV too wide to preview without leaving it outstanding', async () => {
     // Throwing here left the version with no schema, which is how "nothing has
     // interpreted this yet" is written down — so the hourly sweep handed the

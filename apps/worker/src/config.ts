@@ -116,6 +116,22 @@ export const CSV_FOOTER_PREFIXES = [
 export const INTERPRET_MEMORY_LIMIT_MB = 512
 export const INTERPRET_THREADS = 2
 
+/**
+ * How many columns one per-column statistics query covers (ADR-046).
+ *
+ * The bound above is on data, and the statistics pass does not spend it on
+ * data: `count(DISTINCT ...)` costs DuckDB a hash table per aggregate, ~2.6MB
+ * taken up front whatever the row count. Asking for every column at once
+ * therefore fails on width alone — a 14KB, 21-row, 253-column CSV exhausted the
+ * limit after 189 of them, and no amount of memory headroom fixes the shape,
+ * only moves where it breaks. Batching pays the aggregate cost per batch.
+ *
+ * 32 keeps a batch under 100MB with room to spare. The extra round trips are
+ * not the cost they look like: the table is already materialized, and the whole
+ * 253-column pass measured 99ms this way.
+ */
+export const STATS_COLUMNS_PER_QUERY = 32
+
 /** Leading rows scanned for the title lines Japanese spreadsheets put above the header */
 export const CSV_TITLE_SCAN_BYTES = 64 * 1024
 
