@@ -38,6 +38,8 @@ type DiffView =
         }
       | {
           schemaChanged: false
+          /** False while rows are compared whole; ii-b's keyed diff adds edits. */
+          keyed: false
           addedRows: number
           removedRows: number
           sampleAdded: Record<string, unknown>[]

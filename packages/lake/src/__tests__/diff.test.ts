@@ -76,7 +76,10 @@ describe('buildDiffQuery', () => {
       ]
     )
 
-    expect(result).toMatchObject({ addedRows: 1, removedRows: 1 })
+    // `keyed` asserted with the counts it qualifies: without it, a reader of a
+    // later release cannot tell "no edits" from "edits not measured", and this
+    // answer means the second (ii-a compares whole rows).
+    expect(result).toMatchObject({ keyed: false, addedRows: 1, removedRows: 1 })
     expect(result.schemaChanged).toBe(false)
     if (result.schemaChanged) return
     expect(result.sampleAdded).toEqual([{ id: 3, name: 'c' }])

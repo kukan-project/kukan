@@ -40,6 +40,17 @@ export type VersionDiff =
   | { schemaChanged: true; schemaDiff: SchemaDiff }
   | {
       schemaChanged: false
+      /**
+       * Whether rows were identified by a declared primary key.
+       *
+       * Always false here: ii-a compares whole rows, so an edited row is one
+       * addition and one removal and no count of edits exists. Stated rather
+       * than left to be inferred from an absent `changedRows`, which ii-b will
+       * add — absence would then mean both "not measured" and "measured zero",
+       * and a reader picking the wrong one reports edits that did not happen or
+       * none where there were some.
+       */
+      keyed: false
       /** Rows in `to` that are absent from `from`, and the converse. */
       addedRows: number
       removedRows: number
@@ -176,6 +187,7 @@ export async function diffVersions(
 export function splitDiffRows(rows: LakeRow[], net: string, total: string): VersionDiff {
   const diff = {
     schemaChanged: false as const,
+    keyed: false as const,
     addedRows: 0,
     removedRows: 0,
     sampleAdded: [] as LakeRow[],
