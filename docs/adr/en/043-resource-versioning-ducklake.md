@@ -408,6 +408,25 @@ normal deletion (resource delete).
    On-prem (MinIO without versioning), deletion is immediate and no residue exists (note
    that backup handling depends on the deploying organization's operations).
 
+**A purge can only destroy the copy its own version holds.** A version is settled from its
+bytes _and_ the reading they are settled under (ADR-046 §3/§6), so correcting the format
+label of content that did not move leaves the same bytes present as two objects, one owned
+by each version. Sharing a single object between two versions would let a purge of either
+carry off the other's content — that is why the key differs per write (ADR-045). The price
+is that **purged content can stay retrievable under another version number.**
+
+Whether those versions should go too is a judgement about a separate canonical record, so
+nothing destroys them automatically. What was missing was not a deletion mechanism but the
+information the decision needs, so **the purge confirmation dialog names the other versions
+holding the same content.** It names only `active` and `superseded` ones: a tombstone holds
+no content, and a version already `purging` is being destroyed as well — offering it as a
+survivor would send the operator after a second purge the resource refuses while the first
+is in flight.
+
+**That notice depends on the version list being complete.** Sameness is decided by comparing
+the `hash` the list already returns for each version, so it costs no extra query and no
+index. Paginating the list means moving the decision to the server (open issue 13).
+
 **What layer 2's current contents follow is the newest version ingested, not the live
 content.** A purge that destroys the live version rewinds the table to the previous one; a
 revert (ADR-044 §4) leaves the version records standing and so does not rewind — after a revert,
@@ -713,6 +732,13 @@ competing with keeping purges cheap.
     and what a killed run leaves behind). The price is cleanup after an unchanged re-fetch:
     Fetch writes a fresh key every time, so a key that did not become a version has to be
     dropped or the saving is spent. **Independent of the link**, which is why it is separate
+13. **Paginating the version list means moving the same-content notice with it** (§5): the
+    purge dialog can name the versions holding the same content because the list returns all
+    of them. Once there are enough versions to paginate, the page holds only part of the
+    resource's history and a twin on another page goes unnamed. The decision then belongs on
+    the server, with an index on resource and hash. **A miss is silent — the dialog simply
+    says there are no others** — and it surfaces as a failed legal deletion, so whoever adds
+    the pagination moves the notice too
 
 ## Related ADRs
 

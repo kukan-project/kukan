@@ -120,6 +120,11 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
   // already claimed for purging is being destroyed too, so naming it would
   // promise a survivor and send the operator after a second purge the resource
   // refuses while the first is in flight.
+  //
+  // Answered from the table rather than the server, which is what makes it
+  // free — and what it rests on: the list carries every version of the
+  // resource. Paginate it and this reads one page and reports the rest as
+  // nothing, so the decision moves server-side with it (ADR-043 open issue 13).
   const targetHash = versions.find((v) => v.version === purgeTarget)?.hash
   const sameContent = targetHash
     ? versions
