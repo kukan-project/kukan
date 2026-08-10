@@ -32,6 +32,8 @@ interface VersionView {
   origin: 'upload' | 'fetch'
   state: 'active' | 'purging' | 'purged' | 'superseded'
   size: number | null
+  /** Content hash, withheld for a tombstone — which no longer holds content. */
+  hash: string | null
   /** Why this version produced no table, when it produced none (ADR-046). */
   noTableReason: NoTableReason | null
   created: string
@@ -104,11 +106,31 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
     }
   }
 
+  if (!versions || versions.length === 0) return null
+
   // Purging the only remaining version leaves the resource with no file at all,
   // so the dialog warns about that instead of promising a rollback.
-  const isLastActiveVersion = versions?.filter((v) => v.state === 'active').length === 1
+  const isLastActiveVersion = versions.filter((v) => v.state === 'active').length === 1
 
-  if (!versions || versions.length === 0) return null
+  // Versions that will still be holding these bytes afterwards. Each version
+  // owns its own copy, so purging one leaves theirs served (ADR-046 §3) — the
+  // dialog names them rather than widening the purge.
+  //
+  // Only the ones that survive: a tombstone has no hash to match, and one
+  // already claimed for purging is being destroyed too, so naming it would
+  // promise a survivor and send the operator after a second purge the resource
+  // refuses while the first is in flight.
+  const targetHash = versions.find((v) => v.version === purgeTarget)?.hash
+  const sameContent = targetHash
+    ? versions
+        .filter(
+          (v) =>
+            v.version !== purgeTarget &&
+            v.hash === targetHash &&
+            (v.state === 'active' || v.state === 'superseded')
+        )
+        .map((v) => v.version)
+    : []
 
   return (
     <div className="flex flex-col gap-2">
@@ -230,6 +252,15 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
               {isLastActiveVersion ? t('purgeWarningLastVersion') : t('purgeWarning')}
             </DialogDescription>
           </DialogHeader>
+          {sameContent.length > 0 && (
+            <Alert variant="warning">
+              <AlertDescription>
+                {t('purgeWarningSameContent', {
+                  versions: sameContent.map((v) => `v${v}`).join(', '),
+                })}
+              </AlertDescription>
+            </Alert>
+          )}
           <Textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}

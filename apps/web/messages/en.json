@@ -689,6 +689,7 @@
       "diffSampleRemoved": "Removed rows (sample)",
       "diffSchemaChanged": "The columns changed, so a row-level diff is not available.",
       "purgeWarningLastVersion": "This permanently destroys the content of this version (legal deletion). No earlier version remains to restore, so the resource will be left with no file (its metadata stays). This cannot be undone.",
+      "purgeWarningSameContent": "Other versions hold the same content ({versions}). Purging this one does not erase it, and the resource may go back to serving that version’s copy. Purge them individually if they must go too.",
       "diffUnavailable": {
         "purged": "One of the versions has been purged, so a diff is not available.",
         "no-previous-version": "This is the first version, so there is nothing to compare against.",
