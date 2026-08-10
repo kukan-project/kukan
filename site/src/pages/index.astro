@@ -30,6 +30,12 @@ const t = {
       link: '詳しく見る',
       hash: 'ai-によるメタデータ提案',
     },
+    spotlight3: {
+      title: 'バージョン管理と行レベル差分',
+      desc: 'リソースを差し替えるたびに、前の内容を版として保存。過去の版はいつでもダウンロードでき、CSV/TSV なら版と版の間で増えた行・減った行を画面で確認できます。個人情報の混入など内容そのものを消す必要があるときは、版単位の完全削除にも対応します。',
+      link: '詳しく見る',
+      hash: 'バージョン管理',
+    },
     spotlight2: {
       title: 'マルチサイトデプロイ',
       desc: '1 つのインフラで複数のデータカタログサイトを運用。データベース・検索インデックス・ストレージはサイトごとに分離したまま、コストのかかる基盤を共有し、サイトを増やしても費用を最小限に抑えます。',
@@ -106,6 +112,12 @@ const t = {
       link: 'Learn more',
       hash: 'ai-metadata-suggestions',
     },
+    spotlight3: {
+      title: 'Version History and Row-Level Diffs',
+      desc: 'Replacing a file keeps the content it replaced as a version. Download any past version, and for CSV/TSV see exactly which rows were added and removed between two of them. When content itself has to go — personal data that should never have been published — a single version can be purged.',
+      link: 'Learn more',
+      hash: 'version-history',
+    },
     spotlight2: {
       title: 'Multi-Site Deployment',
       desc: 'Run multiple data catalog sites on one shared infrastructure. Databases, search indices, and storage stay isolated per site while the costly backbone is shared — keeping each additional site inexpensive.',
@@ -163,14 +175,22 @@ const t = {
 
 const techStack = [
   'TypeScript',
+  'Zod',
   'Next.js 16',
+  'Tailwind CSS 4',
   'Hono',
+  'Better Auth',
   'Drizzle ORM',
   'PostgreSQL',
+  'pgvector',
   'OpenSearch',
+  'DuckDB',
+  'Parquet',
+  'DuckLake',
   'Turborepo',
+  'Vitest',
+  'Playwright',
   'AWS CDK',
-  'Better Auth',
 ]
 ---
 
@@ -246,6 +266,22 @@ const techStack = [
 
     <section class="spotlight">
       <div class="container">
+        <div class="spotlight-card">
+          <div class="spotlight-body">
+            <div class="spotlight-header">
+              <span class="spotlight-icon">🕒</span>
+              <h2 class="spotlight-title" data-i18n="spotlight3.title">{t.en.spotlight3.title}</h2>
+              <span class="spotlight-badge">NEW</span>
+            </div>
+            <p class="spotlight-desc" data-i18n="spotlight3.desc">{t.en.spotlight3.desc}</p>
+          </div>
+          <a
+            href={`${base}en/data-admin-guide/#${t.en.spotlight3.hash}`}
+            class="btn-outline spotlight-link"
+            data-i18n="spotlight3.link"
+            id="spotlight3-link">{t.en.spotlight3.link}</a
+          >
+        </div>
         <div class="spotlight-card">
           <div class="spotlight-body">
             <div class="spotlight-header">
@@ -371,6 +407,9 @@ const techStack = [
           var spotlightLink = document.getElementById('spotlight-link')
           if (spotlightLink)
             spotlightLink.href = docsBase + 'data-admin-guide/#' + tr.spotlight.hash
+          var spotlight3Link = document.getElementById('spotlight3-link')
+          if (spotlight3Link)
+            spotlight3Link.href = docsBase + 'data-admin-guide/#' + tr.spotlight3.hash
           var spotlight2Link = document.getElementById('spotlight2-link')
           if (spotlight2Link)
             spotlight2Link.href = docsBase + 'system-admin-guide/multi-site/'
