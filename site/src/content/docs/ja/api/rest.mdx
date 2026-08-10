@@ -273,6 +273,7 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
   "from": 1,
   "to": 2,
   "schemaChanged": false,
+  "keyed": false,
   "addedRows": 42,
   "removedRows": 3,
   "sampleAdded": [{ "市区町村": "足立区", "件数": "117" }],
@@ -280,6 +281,8 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
 }
 ```
 
+- **`keyed` は現在つねに `false`** です。行を同定する主キーを持たないため変更行を数えておらず、
+  主キー指定に対応した時点で `true` と `changedRows` が返るようになります
 - **行の「変更」は返しません。** 行を同定する主キーを持たないため、1 行の書き換えは追加 1 行 +
   削除 1 行として現れます
 - 列構成が変わった版どうしは `{"schemaChanged": true, "schemaDiff": {"added": [], "removed": [], "retyped": []}}`

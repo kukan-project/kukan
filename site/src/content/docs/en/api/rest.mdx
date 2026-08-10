@@ -278,6 +278,7 @@ not a public endpoint.
   "from": 1,
   "to": 2,
   "schemaChanged": false,
+  "keyed": false,
   "addedRows": 42,
   "removedRows": 3,
   "sampleAdded": [{ "city": "Adachi", "count": "117" }],
@@ -285,6 +286,8 @@ not a public endpoint.
 }
 ```
 
+- **`keyed` is always `false` today.** Rows are not identified by a primary key, so edits are
+  not counted; declaring one will make it `true` and add `changedRows`
 - **Changed rows are not reported.** Without a primary key identifying rows, editing one row
   appears as one addition plus one removal
 - Versions whose columns differ return
