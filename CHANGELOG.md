@@ -3,6 +3,120 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.12.0] - 2026-08-10
+
+**Required After Upgrading**
+
+- **Run the one-time version backfill.** Resources created before this release have no version, and until they have one they are outside everything this release adds: no history, no downloadable past version, no row-level diff. Nothing backfills them on its own, and it is the only manual step this release asks for. Sign in as a site administrator and use the **Version backfill** prompt on the dashboard — it records each resource's current file as v1 and loads tabular versions into the row-level diff. Nothing is re-fetched, re-indexed, or copied, and the prompt disappears once the migration is complete (#157).
+
+**Highlights**
+
+- **Resources keep their history.** Replacing a resource's file no longer discards what was there. The previous file is retained as a numbered version, and every version can be downloaded exactly as it was. A version is only created when the content actually changed, so re-fetching an unchanged external URL adds nothing and says so. When the law requires it, a version can be permanently destroyed — and the erasure reaches the derived layers too: its Parquet preview, its row-level diff snapshot, and the extracted text held for search (#155, #177, #193, #233).
+- **CSV and TSV resources show what changed between two versions, row by row.** The row-level diff is computed in DuckLake and reports rows added and removed. Without a declared primary key an edited row necessarily reads as one removal and one addition, and the diff states that it was computed without a key rather than leaving you to guess (#167, #370).
+- **A pipeline run can be stopped, and its content put back.** A resource being fetched or interpreted can be interrupted from the dashboard, the content reverted to the version before it, and a resource left half-done now says so instead of looking finished (#212, #213, #214).
+- **CSV interpretation now runs on DuckDB.** Column types, previews, and per-column statistics all come from one pass over the file, so the schema and the Parquet preview can no longer describe different things, and leading-zero codes and over-long integers keep their digits. A version's format is settled from its own bytes rather than inherited (#241, #254).
+
+**Features**
+
+- **Create a dataset from a URL, not only from a file.** The new-dataset page accepts an external URL as the first resource, so a catalog that links to files hosted elsewhere no longer has to upload them first (#351).
+- **Delete and restore a dataset from the dashboard.** A deleted dataset now leaves the public listings immediately, and a restore puts it back (#341).
+- **Reach the public page from the dashboard.** Dashboard listings and editors link to the page a visitor sees (#340).
+- **Rows open their editor.** Clicking a dataset, resource, organization, category, announcement, or user row opens its editor rather than requiring the action menu (#156, #158).
+- **The dashboard says why a resource failed.** A resource whose pipeline errored shows the reason to users who may edit that dataset, instead of reporting only that something went wrong (#334).
+- **A one-time version backfill for resources that predate versioning.** A site administrator sees a prompt on the dashboard and can record each existing resource's current file as v1, and load tabular versions into the row-level diff. Nothing is re-fetched or re-indexed, and the prompt disappears once the migration is done (#157).
+
+**Bug Fixes**
+
+- **Japanese single-byte encodings are re-checked.** When the detector settled on a single-byte encoding, a Japanese file could be decoded as something else; a Japanese-specific detector now gets the final say (#345).
+- **Replacing a resource's file keeps its editor open** instead of closing it out from under you (#339).
+- **A dataset's resource list settles once, not on every render,** which was causing needless refetching in the dashboard (#348).
+- **A restored dataset is rebuilt in the search index,** and a refused request is reported as itself rather than as a generic failure (#342).
+- **Redirect hops obey the limits the first request obeys,** and a redirect no longer carries credentials or downgrades the scheme (#314, #330).
+- **An upload's promotion is bound to the key it was written to,** and a replacement's metadata is held until its bytes land rather than describing content that has not arrived (#185, #187).
+- **Objects left behind by earlier crashed runs are reclaimed.** Storage objects are now recorded before they are written, and a reconciliation pass names the ones that leaked before that ledger existed so they can be cleaned up (#215, #328).
+- **The health checker gets a column of its own** instead of sharing the metadata column, and a per-host budget instead of only an overall one (#359, #368).
+
+**Performance**
+
+- **Preview Parquet is compressed with ZSTD,** measured at 3.25 MB against Snappy's 8.40 MB on the same input, so a preview page costs about a third of the bytes to fetch. Files written before this stay Snappy and are still read (#303).
+- **The DuckDB-WASM binaries are emitted as build assets,** retiring the copy step that staged them beside the build (#301).
+- **A host is resolved once per batch, not once per URL,** during link health checks (#324).
+- **Content that is already derived is not derived again** when a run re-runs over unchanged bytes (#343).
+
+**Security**
+
+- **DNS resolution goes through c-ares, restoring the SSRF address check** that the platform resolver had bypassed (#309).
+- **Blocked names are refused at the connection,** and a refused fetch says why (#357).
+- **One SSRF blocklist, called by both the API and the worker,** rather than two that could drift apart (#318).
+
+**Maintenance**
+
+- Updated `openai` to 7.x, `jsdom` to 30.x, `js-yaml` to 5.x, and `@testing-library/jest-dom` to 7.x, and cleared the remaining dependency advisories (#211, #282, #283, #377, #380).
+- Tests in the API, worker, and lake packages are now type-checked (#217, #218, #347).
+- Integration tests run in parallel with one database per pool slot (#322), and CI carries the turbo and pnpm caches between runs (#325, #326).
+
+**Deployment**
+
+- This release adds migrations 0017–0035, introducing the version, orphaned-object, and pipeline-claim tables and adding columns to `resource`. The worker applies them at startup, so no manual step is needed. Changes to tables introduced within this release are self-contained; no pre-existing table loses a column.
+- Container images now ship the DuckDB extensions (`httpfs`, `aws`, `postgres`, `ducklake`), installed at build time. A closed-network deployment therefore needs no egress to `extensions.duckdb.org`, at the cost of a larger image.
+
+---
+
+**アップグレード後に必要な作業**
+
+- **一度きりのバージョン補完を実行してください。** 本リリース以前に作成されたリソースには版がありません。版が付くまで、そのリソースは本リリースで追加された機能の外側にあります（履歴なし・過去版のダウンロード不可・行レベル差分なし）。自動では補完されず、本リリースで手動作業が必要なのはこれだけです。サイト管理者でサインインし、ダッシュボードに表示される「**バージョンの補完**」を実行してください。各リソースの現在のファイルが v1 として記録され、表形式の版が行レベル差分に取り込まれます。再取得・再インデックス・コピーは行われず、完了すると案内は表示されなくなります（#157）。
+
+**ハイライト**
+
+- **リソースが履歴を保持するようになりました。** リソースのファイルを差し替えても、それまでの内容は破棄されません。差し替え前のファイルは版番号付きで保持され、各版は当時のままダウンロードできます。版が作られるのは内容が実際に変わったときだけなので、外部 URL を再取得しても中身が同じなら版は増えず、その旨が表示されます。法的な要請がある場合は特定の版を完全に消去でき、消去は派生層にも及びます（Parquet プレビュー、行レベル差分のスナップショット、検索用に保持している抽出テキスト）（#155、#177、#193、#233）。
+- **CSV / TSV リソースは、版と版の間で何が変わったかを行単位で表示します。** 行レベル差分は DuckLake 上で計算され、追加・削除された行を報告します。主キーの指定がない状態では編集された行は「削除 1 行 + 追加 1 行」として現れますが、差分自体が「主キーなしで計算した」と明示するので、読み手が推測する必要はありません（#167、#370）。
+- **パイプラインの実行を停止し、内容を元に戻せます。** 取得中・解釈中のリソースをダッシュボードから中断し、直前の版へ内容を戻せます。中途半端な状態で終わったリソースは、完了しているように見せるのではなく、その旨を表示します（#212、#213、#214）。
+- **CSV の解釈が DuckDB 上で動くようになりました。** 列の型・プレビュー・列ごとの統計をファイル 1 回の走査からまとめて得るため、スキーマと Parquet プレビューが食い違うことがなくなり、先頭ゼロのコードや桁数の多い整数も桁を落としません。版のフォーマットは、引き継ぐのではなく、その版自身のバイト列から確定します（#241、#254）。
+
+**新機能**
+
+- **ファイルだけでなく URL からもデータセットを作成できます。** データセット新規作成画面が最初のリソースとして外部 URL を受け付けるため、外部でホストされたファイルを参照するカタログでも、いったんアップロードする必要がなくなりました（#351）。
+- **ダッシュボードからデータセットを削除・復元できます。** 削除したデータセットは公開一覧から即座に消え、復元すれば戻ります（#341）。
+- **ダッシュボードから公開ページへ移動できます。** 一覧と編集画面から、来訪者が見るページへのリンクを張りました（#340）。
+- **行のクリックで編集画面が開きます。** データセット・リソース・組織・カテゴリー・お知らせ・ユーザーの各行をクリックすると、アクションメニューを経由せず編集画面が開きます（#156、#158）。
+- **リソースが失敗した理由をダッシュボードが表示します。** パイプラインがエラーになったリソースについて、「失敗した」ことだけでなくその理由を、当該データセットを編集できるユーザーに表示します（#334）。
+- **バージョン管理導入前のリソース向けに、一度きりの補完機能を追加しました。** サイト管理者のダッシュボードに案内が表示され、実行すると既存リソースの現在のファイルを v1 として記録し、表形式の版を行レベル差分に取り込みます。再取得・再インデックスは行わず、完了すると案内は表示されなくなります（#157）。
+
+**バグ修正**
+
+- **日本語のシングルバイト系エンコーディングを再判定します。** 検出器がシングルバイトのエンコーディングに落ち着いた場合、日本語のファイルが別の文字コードとして解釈されることがありました。日本語向けの検出器が最終判断を下すようにしました（#345）。
+- **リソースのファイルを差し替えても編集画面が開いたままになります。** 従来は操作の途中で編集画面が閉じてしまっていました（#339）。
+- **データセットのリソース一覧が、レンダーのたびではなく一度だけ確定します。** ダッシュボードで不要な再取得が発生していました（#348）。
+- **復元したデータセットが検索インデックスに再構築され、**拒否されたリクエストは汎用エラーではなくそれ自身として報告されます（#342）。
+- **リダイレクト先も最初のリクエストと同じ上限に従い、**リダイレクトが認証情報を持ち越したりスキームを降格したりしなくなりました（#314、#330）。
+- **アップロードの昇格が書き込み先のキーに束縛され、**差し替えのメタデータは、まだ到着していない内容を説明してしまわないよう、バイト列が着地するまで保留されます（#185、#187）。
+- **過去にクラッシュした実行が残したオブジェクトを回収します。** ストレージオブジェクトを書き込み前に台帳へ記録するようにし、台帳が無かった時代にリークしたものは突合処理が指名するので、片付けられるようになりました（#215、#328）。
+- **ヘルスチェッカーがメタデータ列を間借りせず専用の列を持ち、**全体だけでなくホストごとの予算を持つようになりました（#359、#368）。
+
+**パフォーマンス**
+
+- **プレビュー Parquet を ZSTD で圧縮するようにしました。** 同一入力で Snappy の 8.40 MB に対し 3.25 MB という実測で、プレビュー 1 ページの取得バイト数がおよそ 1/3 になります。これ以前に書かれたファイルは Snappy のままで、引き続き読めます（#303）。
+- **DuckDB-WASM のバイナリをビルド成果物として出力するようにし、**ビルド脇へ配置していたコピー手順を廃止しました（#301）。
+- **リンク切れチェックで、ホスト名の解決を URL ごとではなくバッチごとに 1 回**にしました（#324）。
+- **既に派生済みの内容から再度派生しません**（#343）。
+
+**セキュリティ**
+
+- **DNS 解決を c-ares 経由にし、SSRF のアドレス検査を復旧しました。** プラットフォームのリゾルバ経由では検査を迂回していました（#309）。
+- **ブロック対象のホスト名を接続の時点で拒否し、**拒否された取得はその理由を返します（#357）。
+- **SSRF ブロックリストを API と Worker で 1 つに統一しました。** 2 つに分かれていると内容が乖離しうるためです（#318）。
+
+**保守**
+
+- `openai` を 7 系、`jsdom` を 30 系、`js-yaml` を 5 系、`@testing-library/jest-dom` を 7 系へ更新し、残っていた依存関係の脆弱性勧告を解消しました（#211、#282、#283、#377、#380）。
+- API・Worker・lake パッケージのテストを型検査の対象にしました（#217、#218、#347）。
+- 統合テストをプールスロットごとに 1 データベースで並列実行し（#322）、CI が turbo と pnpm のキャッシュを実行間で持ち越すようにしました（#325、#326）。
+
+**デプロイ**
+
+- 本リリースはマイグレーション 0017〜0035 を追加し、バージョン・孤立オブジェクト・パイプライン claim のテーブルを新設して `resource` に列を追加します。Worker が起動時に適用するため、手動での実行は不要です。本リリース内で追加されたテーブルへの変更は自己完結しており、既存テーブルから列が失われることはありません。
+- コンテナイメージが DuckDB 拡張（`httpfs` / `aws` / `postgres` / `ducklake`）を同梱するようになりました。ビルド時にインストールするため、閉域網デプロイでも `extensions.duckdb.org` への通信は不要です。その分イメージサイズは増加します。
+
 ## [0.11.6] - 2026-08-04
 
 **Highlights**
