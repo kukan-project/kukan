@@ -241,12 +241,23 @@ pnpm format        # Prettier フォーマット
 
 ## 現在のフェーズ
 
-**Phase 4: AWS デプロイ & CDK 基盤**（実装仕様書: `docs/specs/phase4-deploy.md`）
-**Phase 5a: メタデータベクトル検索**（Phase 4 と依存なし・並行実装、実装仕様書: `docs/specs/phase5-vector-search.md`）
+**Versioning ii-a までを実装済み・未リリース。** リリース済みの最新は v0.11.6 で、版管理・
+行レベル差分は develop にのみ入っている。
+
+**次: Phase Versioning-ii-b — 主キー指定による変更行追跡**
+（実装仕様書: `docs/specs/phase-versioning-2-ducklake.md`）。
+着手前に同 §14.0 を読むこと — **ii-a が例外的に成立していた前提が 3 つ落ちる**ので、後追いでは
+なく前提として解く必要がある。§6 も着手前の設計メモとして更新済み。
 
 - Phase 1: Foundation ✅ 完了
 - Phase 2: フロントエンド ✅ 完了（実装仕様書: `docs/specs/phase2-frontend.md`）
 - Phase 3: リソース処理 & ファイルストレージ ✅ 完了（実装仕様書: `docs/specs/phase3-pipeline.md`）
+- Phase 4: AWS デプロイ & CDK 基盤 ✅ 完了（`docs/specs/phase4-deploy.md`、ADR-030 / ADR-031）
+- Phase 5a: メタデータベクトル検索 ✅ 完了（`docs/specs/phase5-vector-search.md`、ADR-034）
+- Phase Versioning-i: 正本バージョン保持 & パージ ✅ 完了
+  （`docs/specs/phase-versioning-1-file-retention.md`、ADR-043 層 1）
+- Phase Versioning-ii-a: DuckLake 行レベル差分（主キーなし）✅ 完了
+  （`docs/specs/phase-versioning-2-ducklake.md`、ADR-043 層 2）
 
 ## パイプライン フォーマット別処理マトリクス
 
