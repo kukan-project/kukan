@@ -77,8 +77,9 @@ preview directly** rather than loading data into dedicated tables.
 
 1. In the Interpret step (`apps/worker/src/pipeline/steps/interpret.ts`), while generating the Parquet,
    assemble each column's `{ name, type, nullable, nullCount, stats? }` plus `rowCount` and store it
-   in `resource_pipeline.metadata.schema`. `type` reuses the ADR-029 inferred types
-   (`integer` / `float` / `boolean` / `string`). `stats` holds min/max for numeric columns
+   in `resource_pipeline.metadata.schema`. `type` reuses the inferred column types
+   (`integer` / `float` / `boolean` / `string`; `date` and `timestamp` joined them when
+   ADR-046 moved interpretation onto DuckDB). `stats` holds min/max for numeric columns
    (`integer` / `float`, only when there is at least one non-null value), computed in the same pass as
    cell conversion (no extra scan). Integer bounds are decimal strings (INT64 can exceed JS Number's safe range); float
    bounds are numbers. Distinct/sum/avg are out of scope for Parquet statistics and are left to Part B

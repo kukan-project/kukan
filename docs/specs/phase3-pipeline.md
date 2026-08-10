@@ -1,5 +1,9 @@
 # Phase 3a: リソース処理 & ファイルストレージ — 実装仕様書
 
+> **完了フェーズの記録である。** 以降の ADR が実装を変えている箇所があるため、現在の姿は
+> `CLAUDE.md` のフェーズ一覧と `docs/pipeline.md` を参照。以下のファイルパス・ステップ名は
+> 当時のものである。
+
 > **目標**: ファイルアップロード（Presigned URL）、リソース処理パイプライン（CSV/TSV + 外部 URL 対応）、OpenSearch 検索を実装し、開発環境（Docker Compose + ElasticMQ + MinIO）で E2E 動作する状態にする
 
 ## 1. 前提

@@ -74,8 +74,9 @@ search_datasets → get_dataset → get_resource_schema → query_resource
 
 1. Interpret ステップ（`apps/worker/src/pipeline/steps/interpret.ts`）で Parquet を生成する際、
    各列の `{ name, type, nullable, nullCount, stats? }` と `rowCount` を**スキーマとして組み立て**、
-   `resource_pipeline.metadata.schema` に保存する。`type` は ADR-029 の推論型
-   （`integer` / `float` / `boolean` / `string`）をそのまま用いる。
+   `resource_pipeline.metadata.schema` に保存する。`type` は列の推論型をそのまま用いる
+   （`integer` / `float` / `boolean` / `string`。ADR-046 が解釈を DuckDB へ移した際に
+   `date` / `timestamp` が加わった）。
    `stats` は数値列（`integer` / `float`）の min/max（非 null 値が 1 つ以上ある場合のみ）で、
    セル変換と同一パスで（追加スキャンなしに）算出する。整数の min/max は INT64 が JS Number の安全域を超えうるため
    **十進文字列**、float は数値で保存する。distinct・合計・平均等は Parquet 統計の対象外のため

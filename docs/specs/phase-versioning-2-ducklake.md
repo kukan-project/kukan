@@ -6,7 +6,7 @@
 > （`Fetch → Version → Interpret → Lake → Index`、型推定は DuckDB）。現在の姿は
 > `docs/pipeline.md` を参照。以下のファイルパスとステップ名は当時のものである。
 >
-> **§6 と §14 は着手前の設計メモである。** ii-a の実装と運用で分かったことを反映してあり、
+> **§6・§8・§14 は着手前の設計メモである。** ii-a の実装と運用で分かったことを反映してあり、
 > ii-b はここから始めてよい。
 
 > **目標**: 表形式リソース（CSV/TSV）を DuckLake テーブルとして ingest し、版間の
@@ -373,7 +373,8 @@ Phase i で作った版履歴 `apps/web/src/components/dashboard/dataset/resourc
 
 ## 8. Step 5 — 型判定と「型の降格」の選択肢提示（ii-c）
 
-既存の型推論（ADR-029）は各版で `integer`/`float`/`boolean`/`string` を保守的に推論する。
+解釈は各版で列の型を推論する（`integer` / `float` / `boolean` / `string` / `date` /
+`timestamp`。ADR-046 以降は DuckDB の sniffer が担い、`date` / `timestamp` はそこで加わった）。
 版をまたぐと推論型が変わることがある（例: v1 で全行整数だった列 `amount` に、v2 で `"N/A"` や
 桁区切り `"1,234"` が混入 → v2 は `string`）。これは**列の型降格**（integer → string）であり、
 DuckLake 上はスキーマ変化 = §7-3 の「差分放棄・新版」に落ちる。
