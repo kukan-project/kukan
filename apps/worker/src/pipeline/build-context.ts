@@ -3,7 +3,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { eq, and, sql, desc } from 'drizzle-orm'
+import { eq, and, ne, sql, desc } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, resourceVersion, resourcePipeline, packageTable } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
@@ -229,10 +229,19 @@ export function buildPipelineContext(
           // claimed, and filing the copy then leaves the purge unable to
           // recognise its own content. The row rather than the resource, so this
           // takes its locks in the order everything else touching versions does.
+          // Asked with the predicate the gate asked, so this reads the owner
+          // rather than whichever row came first: tombstones keep their key,
+          // and one picked here would report no purge in flight while the
+          // owner is being taken away.
           const [owner] = await tx
             .select({ state: resourceVersion.state })
             .from(resourceVersion)
-            .where(eq(resourceVersion.storageKey, currentStorageKey))
+            .where(
+              and(
+                eq(resourceVersion.storageKey, currentStorageKey),
+                ne(resourceVersion.state, 'purged')
+              )
+            )
             .limit(1)
             .for('update')
           if (owner?.state === 'purging') throw new LostTheClaim()

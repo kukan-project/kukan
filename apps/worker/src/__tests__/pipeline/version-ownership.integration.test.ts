@@ -48,6 +48,16 @@ async function createVersionOnce(storage: StorageAdapter) {
   })
 }
 
+/** Which constraint refused a write. The driver's error names it, under the
+ *  wrapper the query builder throws — whose own message says only that a query
+ *  failed. Undefined when the write was accepted. */
+async function refusedBy(write: Promise<unknown>): Promise<string | undefined> {
+  return write.then(
+    () => undefined,
+    (err: { cause?: { constraint?: string } }) => err.cause?.constraint
+  )
+}
+
 async function versionKeys(): Promise<string[]> {
   const rows = await db
     .select({ storageKey: resourceVersion.storageKey })
@@ -215,7 +225,9 @@ describe('createVersion', () => {
 
   it('does not count a purged version as owning its old object', async () => {
     // A tombstone keeps its key because the column cannot be null, and the
-    // object it named is already deleted — so it is not a reason to copy.
+    // object it named is already deleted — so it is not a reason to copy. This
+    // is also what pins the `<> 'purged'` half of the uniqueness rule: the
+    // second version files against a key a row already carries.
     const { storage, copied } = fakeStorage()
     await createVersionOnce(storage)
     await db
@@ -228,5 +240,23 @@ describe('createVersion', () => {
 
     expect(copied).toEqual([])
     expect((await versionKeys())[1]).toBe(LIVE_KEY)
+  })
+
+  it('refuses a second version on one object, whatever reached past the gate', async () => {
+    // The gate is an argument; this is the rule.
+    const { storage } = fakeStorage()
+    await createVersionOnce(storage)
+
+    const refusal = await refusedBy(
+      db.insert(resourceVersion).values({
+        resourceId,
+        version: 2,
+        storageKey: LIVE_KEY,
+        hash: 'sha256:same',
+        origin: 'upload',
+      })
+    )
+
+    expect(refusal).toBe('idx_resource_version_owns_object')
   })
 })

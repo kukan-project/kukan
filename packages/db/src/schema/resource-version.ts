@@ -82,7 +82,17 @@ export const resourceVersion = pgTable(
       .on(table.resourceId)
       .where(sql`${table.state} = 'purging'`),
     index('idx_resource_version_state').on(table.state),
-    // As above: the orphan sweep's reference check reads this column.
+    // At most one version owns an object (ADR-046 §3): two rows on one key means
+    // a purge either takes the other's content or leaves what it was asked to
+    // erase. `createVersion`'s gate and the resource claim (ADR-044) already
+    // arrange this — enforced here because those are arguments and this is the
+    // rule. Same predicate as `ownedByVersion`: a tombstone owns nothing.
+    uniqueIndex('idx_resource_version_owns_object')
+      .on(table.storageKey)
+      .where(sql`${table.state} <> 'purged'`),
+    // Kept alongside the unique index above rather than replaced by it: the
+    // orphan sweep's reference check counts tombstones too, and a partial index
+    // cannot serve a query that does not carry its predicate.
     index('idx_resource_version_storage_key').on(table.storageKey),
     // Drives the dashboard's pending-ingest count. Partial, but no longer
     // near-empty: a version of a non-tabular resource never gets a snapshot, so
