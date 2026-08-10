@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { scrubbedExtras } from '@kukan/db'
 import { checkBatch } from '../../cron/health-check/check-batch'
 import * as headRequest from '../../cron/health-check/head-request'
 import type { HeadCheckResult } from '../../cron/health-check/types'
@@ -53,7 +54,7 @@ function makeMockDb(rows: Record<string, unknown>[] = []) {
     }),
   }
 
-  return db
+  return Object.assign(db, { updateSet })
 }
 
 function makeMockQueue() {
@@ -106,7 +107,7 @@ describe('checkBatch', () => {
         hash: null,
         healthStatus: 'unknown',
         healthCheckedAt: null,
-        extras: {},
+        healthCheckState: {},
       },
     ]
     const db = makeMockDb(rows)
@@ -133,7 +134,7 @@ describe('checkBatch', () => {
         hash: null,
         healthStatus: 'ok',
         healthCheckedAt: new Date(),
-        extras: { healthEtag: '"v1"' },
+        healthCheckState: { etag: '"v1"' },
       },
     ]
     const db = makeMockDb(rows)
@@ -148,6 +149,28 @@ describe('checkBatch', () => {
     expect(queue.enqueue).toHaveBeenCalledWith('resource-pipeline', { resourceId: 'res-1' })
   })
 
+  it('takes the keys it used to write off extras as it writes', async () => {
+    // What an overlapping old worker puts back, and why every check is a chance
+    // to clear it: `LEGACY_HEALTH_EXTRAS_KEYS` in @kukan/db.
+    const rows = [
+      {
+        id: 'res-1',
+        url: 'https://example.com/data.csv',
+        hash: null,
+        healthStatus: 'unknown',
+        healthCheckedAt: null,
+        healthCheckState: {},
+      },
+    ]
+    const db = makeMockDb(rows)
+
+    mockExecuteHeadCheck.mockResolvedValue(makeHeadResult())
+
+    await checkBatch(db as never, makeMockQueue(), 24, 168, makeMockLogger() as never)
+
+    expect(db.updateSet.mock.calls[0][0].extras).toBe(scrubbedExtras)
+  })
+
   it('enqueues no-header resources for periodic full fetch', async () => {
     const rows = [
       {
@@ -156,7 +179,7 @@ describe('checkBatch', () => {
         hash: null,
         healthStatus: 'ok',
         healthCheckedAt: new Date(),
-        extras: {},
+        healthCheckState: {},
       },
     ]
     const db = makeMockDb(rows)
@@ -179,7 +202,7 @@ describe('checkBatch', () => {
         hash: null,
         healthStatus: 'ok',
         healthCheckedAt: new Date(),
-        extras: { healthLastFullFetchAt: Date.now() },
+        healthCheckState: { lastFullFetchAt: Date.now() },
       },
     ]
     const db = makeMockDb(rows)
@@ -214,7 +237,7 @@ describe('checkBatch', () => {
       hash: null,
       healthStatus: 'unknown',
       healthCheckedAt: null,
-      extras: {},
+      healthCheckState: {},
     }))
 
     const startedAt = Date.now()
@@ -241,7 +264,7 @@ describe('checkBatch', () => {
         hash: null,
         healthStatus: 'unknown',
         healthCheckedAt: null,
-        extras: {},
+        healthCheckState: {},
       },
     ]
     const db = makeMockDb(rows)
@@ -263,7 +286,7 @@ describe('checkBatch', () => {
         hash: null,
         healthStatus: 'ok',
         healthCheckedAt: new Date(),
-        extras: {},
+        healthCheckState: {},
       },
     ]
     const db = makeMockDb(rows)
@@ -295,7 +318,7 @@ describe('checkBatch', () => {
         hash: null,
         healthStatus: 'unknown',
         healthCheckedAt: null,
-        extras: {},
+        healthCheckState: {},
       },
     ]
     const db = makeMockDb(rows)
@@ -328,7 +351,7 @@ describe('checkBatch', () => {
         hash: null,
         healthStatus: 'unknown',
         healthCheckedAt: null,
-        extras: {},
+        healthCheckState: {},
       }))
 
     it('keeps one host under the per-host limit however long the batch is', async () => {
@@ -659,7 +682,7 @@ describe('checkBatch', () => {
         hash: null,
         healthStatus: 'unknown',
         healthCheckedAt: null,
-        extras: {},
+        healthCheckState: {},
       }))
       let checks = 0
       mockExecuteHeadCheck.mockImplementation(async () => {
@@ -714,7 +737,7 @@ describe('checkBatch', () => {
         hash: null,
         healthStatus: 'unknown',
         healthCheckedAt: null,
-        extras: {},
+        healthCheckState: {},
       }))
       mockExecuteHeadCheck.mockImplementation(async (_res, hooks) => {
         if (hooks?.onHost && !(await hooks.onHost('cdn.example'))) return null
@@ -756,7 +779,7 @@ describe('checkBatch', () => {
       hash: null,
       healthStatus: 'unknown',
       healthCheckedAt: null,
-      extras: {},
+      healthCheckState: {},
     }))
     mockExecuteHeadCheck.mockResolvedValue(makeHeadResult())
 

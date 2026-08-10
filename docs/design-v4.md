@@ -1046,6 +1046,7 @@ CREATE TABLE resource (
   -- Quality Monitor（品質監視）
   health_status      VARCHAR(20) DEFAULT 'unknown',  -- 'ok' | 'warning' | 'error' | 'unknown'
   health_checked_at  TIMESTAMPTZ,
+  health_check_state JSONB DEFAULT '{}',              -- チェッカーの作業状態（非公開、admin のみ）
   quality_issues     JSONB DEFAULT '[]',              -- 最新の品質問題リスト
 
   created         TIMESTAMPTZ DEFAULT NOW(),

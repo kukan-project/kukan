@@ -631,7 +631,7 @@ adminRouter.get('/health', async (c) => {
       name: resource.name,
       healthStatus: resource.healthStatus,
       healthCheckedAt: resource.healthCheckedAt,
-      extras: resource.extras,
+      healthCheckState: resource.healthCheckState,
       packageId: resource.packageId,
       packageName: packageTable.name,
       packageTitle: packageTable.title,

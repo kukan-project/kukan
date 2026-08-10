@@ -14,6 +14,7 @@ import {
   timestamp,
   index,
 } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 import { packageTable } from './package'
 
 /**
@@ -27,6 +28,49 @@ export interface PendingResourceMetadata {
   format: string | null
   mimetype: string
 }
+
+/**
+ * What the health checker carries between its runs, plus what it reports to
+ * operators. Deliberately not called metadata: nothing here describes the
+ * resource, and the column it was moved out of — `extras`, which CKAN defines
+ * as caller-supplied metadata — is rendered whole on the public dataset page.
+ *
+ * `error` and `httpStatus` are read by the sysadmin health screen; the rest is
+ * the checker talking to itself. Neither is public, so both live here and the
+ * column stays off the public projection.
+ */
+export interface HealthCheckState {
+  etag?: string
+  lastModified?: string
+  /** Null when the last check succeeded — the checker clears it explicitly. */
+  error?: string | null
+  httpStatus?: number
+  /** Epoch ms. Absent reads as overdue, so a lost value re-fetches the body. */
+  lastFullFetchAt?: number
+}
+
+/**
+ * What the health checker called these before it had a column of its own.
+ *
+ * Migration 0035 took them off `extras`, but a deploy runs the new worker beside
+ * the old one, and the old one writes them back — onto a column CKAN defines as
+ * caller-supplied metadata, which every public read returns. Worse, it stamps
+ * `healthCheckedAt` doing so, which puts the row outside the staleness window
+ * the new worker selects on: the row would carry them, publicly, until it comes
+ * round again a day later. So the checker's write takes them off, and so does
+ * the public projection.
+ *
+ * Named rather than matched on `health%` so neither eats a key someone else
+ * chose. Both go once nothing writes them: the old worker, or an `extras` opened
+ * to callers, whichever comes first.
+ */
+export const LEGACY_HEALTH_EXTRAS_KEYS = [
+  'healthEtag',
+  'healthLastModified',
+  'healthError',
+  'healthHttpStatus',
+  'healthLastFullFetchAt',
+] as const
 
 export const resource = pgTable(
   'resource',
@@ -66,11 +110,16 @@ export const resource = pgTable(
     position: integer('position').default(0).notNull(),
     state: varchar('state', { length: 20 }).default('active'),
     resourceType: varchar('resource_type', { length: 50 }),
+    // Caller-supplied metadata, as CKAN defines it, and rendered whole on the
+    // public dataset page. Nothing internal goes here: the health checker did,
+    // and every reader had to be taught to look away — see {@link
+    // HealthCheckState}, which is what a column for internal state looks like.
     extras: jsonb('extras').$type<Record<string, unknown>>().default({}),
 
     // Quality Monitor
     healthStatus: varchar('health_status', { length: 20 }).default('unknown'),
     healthCheckedAt: timestamp('health_checked_at', { withTimezone: true }),
+    healthCheckState: jsonb('health_check_state').$type<HealthCheckState>().default({}),
     qualityIssues: jsonb('quality_issues').$type<unknown[]>().default([]),
 
     created: timestamp('created', { withTimezone: true }).defaultNow().notNull(),
@@ -90,3 +139,12 @@ export const resource = pgTable(
     index('idx_resource_pending_storage_key').on(table.pendingStorageKey),
   ]
 )
+
+/**
+ * `extras` with {@link LEGACY_HEALTH_EXTRAS_KEYS} taken off — the scrub, spelled
+ * once. Both the public projection and the checker's own write apply it, and
+ * both go together, so neither owns it.
+ */
+export const scrubbedExtras = sql<
+  Record<string, unknown>
+>`COALESCE(${resource.extras}, '{}'::jsonb) - ${sql.param(LEGACY_HEALTH_EXTRAS_KEYS)}::text[]`

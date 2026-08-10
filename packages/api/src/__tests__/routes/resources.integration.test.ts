@@ -159,6 +159,50 @@ describe('Resources API Routes', () => {
       expect(body).not.toHaveProperty('pkg')
     })
 
+    it('should not expose what the health checker recorded for itself', async () => {
+      // It names the address a URL resolved to and the reason a certificate was
+      // rejected. Sysadmins read it on the health screen; this response is
+      // anonymous, and a sysadmin asking is still asking as a reader.
+      const pkg = await createPackage('res-no-health-state')
+      const resource = await createResource(pkg.id)
+      await db
+        .update(resourceTable)
+        .set({ healthCheckState: { error: 'connect ECONNREFUSED 10.0.3.17:443' } })
+        .where(eq(resourceTable.id, resource.id))
+
+      const res = await app.request(`/api/v1/resources/${resource.id}`)
+      const body = await res.json()
+      expect(body).not.toHaveProperty('healthCheckState')
+      expect(JSON.stringify(body)).not.toContain('10.0.3.17')
+    })
+
+    it('should scrub the keys the checker used to write onto extras', async () => {
+      // Why the row can still have them after 0035, and why the read has to
+      // scrub rather than wait for the checker: `LEGACY_HEALTH_EXTRAS_KEYS`.
+      const pkg = await createPackage('res-legacy-health-extras')
+      const resource = await createResource(pkg.id)
+      await db
+        .update(resourceTable)
+        .set({
+          extras: { healthEtag: '"v1"', healthError: 'HTTP 404', theirs: 'keep me' },
+        })
+        .where(eq(resourceTable.id, resource.id))
+
+      // Reads the whole table, so this one is scrubbed in JS.
+      const res = await app.request(`/api/v1/resources/${resource.id}`)
+      expect((await res.json()).extras).toEqual({ theirs: 'keep me' })
+
+      // Same, by way of the CKAN action the reviewer of #358 named.
+      const ckan = await app.request(`/api/3/action/resource_show?id=${resource.id}`)
+      expect((await ckan.json()).result.extras).toEqual({ theirs: 'keep me' })
+
+      // And the projected read, which scrubs in SQL.
+      const listed = await app.request(`/api/v1/packages/${pkg.id}`)
+      const pkgBody = await listed.json()
+      const listedResource = pkgBody.resources.find((r: { id: string }) => r.id === resource.id)
+      expect(listedResource.extras).toEqual({ theirs: 'keep me' })
+    })
+
     it('should return 404 for non-existent', async () => {
       const res = await app.request('/api/v1/resources/550e8400-e29b-41d4-a716-446655440000')
       expect(res.status).toBe(404)

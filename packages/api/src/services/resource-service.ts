@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto'
 import { eq, and, sql, inArray, notInArray, isNotNull, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { resource, resourceVersion, packageTable } from '@kukan/db'
+import { resource, resourceVersion, packageTable, scrubbedExtras } from '@kukan/db'
 import {
   NotFoundError,
   ValidationError,
@@ -26,16 +26,22 @@ const RESOURCE_PARENT_STATES: PackageDbState[] = ['active', 'draft']
 
 // Public column set — the storage pointers name objects in the bucket so the
 // server can resolve content for a request; no response includes them
-// (ADR-043). Projected here rather than scrubbed per route, so an endpoint
-// cannot leak them by forgetting.
+// (ADR-043). `healthCheckState` is the health checker's own working state, read
+// by the sysadmin health screen and by nothing else. `healthStatus` and
+// `healthCheckedAt` stay in on purpose, though nothing public renders them yet:
+// they are a verdict on a URL anyone can fetch, and a broken-link badge is a
+// thing a catalog may want to show its readers. Projected here rather than
+// scrubbed per route, so an endpoint cannot leak them by forgetting.
 const {
   storageKey: _storageKey,
   pendingStorageKey: _pendingStorageKey,
   pendingMetadata: _pendingMetadata,
-  ...publicResourceColumns
+  healthCheckState: _healthCheckState,
+  ...projectedResourceColumns
 } = getTableColumns(resource)
 
-export { publicResourceColumns }
+// `extras` last, so the scrub wins over the column of the same name.
+export const publicResourceColumns = { ...projectedResourceColumns, extras: scrubbedExtras }
 
 /**
  * Latest version number a resource still serves, per resource (ADR-043); absent
@@ -65,7 +71,8 @@ export function latestLiveVersionAgg(db: Database) {
 /**
  * Scrub the pointers off a row from {@link ResourceService.getByIdWithAccessCheck}
  * — the one read that must carry them, because the content endpoints resolve
- * the live object from it. Everything else is projected above.
+ * the live object from it. Everything else that read returns comes through
+ * {@link publicResourceColumns}, so this has only the pointers to take off.
  */
 export function omitStoragePointers<T extends object>(
   row: T
@@ -173,7 +180,15 @@ export class ResourceService {
   async getByIdWithOwnership(id: string, viewer?: AuthUser) {
     const [row] = await this.db
       .select({
-        resource,
+        // The public projection plus the pointers the content endpoints resolve
+        // from — rather than the table, which would carry every column added
+        // after this line was written straight into whatever serializes it.
+        resource: {
+          ...publicResourceColumns,
+          storageKey: resource.storageKey,
+          pendingStorageKey: resource.pendingStorageKey,
+          pendingMetadata: resource.pendingMetadata,
+        },
         pkgState: packageTable.state,
         pkgPrivate: packageTable.private,
         pkgOwnerOrg: packageTable.ownerOrg,

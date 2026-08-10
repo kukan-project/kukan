@@ -29,7 +29,7 @@ interface HealthItem {
   name: string | null
   healthStatus: string | null
   healthCheckedAt: string | null
-  extras: Record<string, unknown> | null
+  healthCheckState: { error?: string | null } | null
   packageId: string
   packageName: string
   packageTitle: string | null
@@ -166,7 +166,7 @@ export default function AdminHealthPage() {
             </TableHeader>
             <TableBody>
               {items.map((item) => {
-                const errorMsg = (item.extras?.healthError as string) ?? null
+                const errorMsg = item.healthCheckState?.error ?? null
                 return (
                   <TableRow key={item.id}>
                     <TableCell>

@@ -18,7 +18,7 @@ function makeResource(overrides: Partial<ResourceForHealthCheck> = {}): Resource
     hash: 'sha256:abc123',
     healthStatus: 'unknown',
     healthCheckedAt: null,
-    extras: {},
+    healthCheckState: {},
     ...overrides,
   }
 }
@@ -73,7 +73,7 @@ describe('executeHeadCheck', () => {
   it('detects change when ETag differs', async () => {
     fetchSpy.mockResolvedValue(new Response(null, { status: 200, headers: { etag: '"v2"' } }))
 
-    const result = await check(makeResource({ extras: { healthEtag: '"v1"' } }))
+    const result = await check(makeResource({ healthCheckState: { etag: '"v1"' } }))
 
     expect(result.healthStatus).toBe('ok')
     expect(result.changed).toBe(true)
@@ -88,7 +88,7 @@ describe('executeHeadCheck', () => {
     )
 
     const result = await check(
-      makeResource({ extras: { healthLastModified: 'Mon, 01 Jan 2024 00:00:00 GMT' } })
+      makeResource({ healthCheckState: { lastModified: 'Mon, 01 Jan 2024 00:00:00 GMT' } })
     )
 
     expect(result.healthStatus).toBe('ok')
@@ -98,7 +98,7 @@ describe('executeHeadCheck', () => {
   it('returns no change when headers match', async () => {
     fetchSpy.mockResolvedValue(new Response(null, { status: 200, headers: { etag: '"v1"' } }))
 
-    const result = await check(makeResource({ extras: { healthEtag: '"v1"' } }))
+    const result = await check(makeResource({ healthCheckState: { etag: '"v1"' } }))
 
     expect(result.changed).toBe(false)
   })
@@ -148,9 +148,9 @@ describe('executeHeadCheck', () => {
   })
 
   it('keeps the address it tried out of the row and puts it in the detail', async () => {
-    // `extras` is rendered whole on the public dataset page, so what the row
-    // says is what an anonymous visitor reads. A split-horizon name would
-    // otherwise publish the internal address it resolved to.
+    // The row keeps what it says until the URL is checked again, and a
+    // split-horizon name resolves to an address that is nobody's business but
+    // this process's. The log ages out; the row does not.
     fetchSpy.mockRejectedValue(
       new TypeError('fetch failed', { cause: new Error('connect ECONNREFUSED 10.0.3.17:443') })
     )

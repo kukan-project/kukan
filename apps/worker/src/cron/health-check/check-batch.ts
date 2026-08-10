@@ -10,8 +10,8 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import pLimit, { type LimitFunction } from 'p-limit'
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
-import type { Database } from '@kukan/db'
-import { resource } from '@kukan/db'
+import type { Database, HealthCheckState } from '@kukan/db'
+import { resource, scrubbedExtras } from '@kukan/db'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { Logger } from '@kukan/shared'
 import { PIPELINE_JOB_TYPE, checkUrlSafety, normalizeHostname } from '@kukan/shared'
@@ -271,7 +271,7 @@ export async function checkBatch(
       hash: resource.hash,
       healthStatus: resource.healthStatus,
       healthCheckedAt: resource.healthCheckedAt,
-      extras: resource.extras,
+      healthCheckState: resource.healthCheckState,
     })
     .from(resource)
     .where(
@@ -315,7 +315,7 @@ export async function checkBatch(
       // Bounded all the same, though it asks nothing of the network: two
       // hundred of these are two hundred writes at once against a pool of
       // three.
-      await overall(() => updateHealthStatus(db, row.id, 'error', { healthError: unsafe.message }))
+      await overall(() => updateHealthStatus(db, row.id, 'error', { error: unsafe.message }))
       summary.checked++
       summary.error++
       return
@@ -329,7 +329,7 @@ export async function checkBatch(
       hash: row.hash,
       healthStatus: row.healthStatus,
       healthCheckedAt: row.healthCheckedAt,
-      extras: (row.extras as Record<string, unknown>) ?? {},
+      healthCheckState: row.healthCheckState ?? {},
     }
 
     // The writes are inside the budget with the request, not after it: they go
@@ -363,16 +363,16 @@ export async function checkBatch(
         }
       }
 
-      // 3. Update DB: healthStatus, healthCheckedAt, extras (jsonb merge)
-      const healthMeta: Record<string, unknown> = {}
-      if (result.etag !== null) healthMeta.healthEtag = result.etag
-      if (result.lastModified !== null) healthMeta.healthLastModified = result.lastModified
-      healthMeta.healthError = result.errorMessage
-      if (result.httpStatus !== null) healthMeta.healthHttpStatus = result.httpStatus
+      // 3. Update DB: healthStatus, healthCheckedAt, healthCheckState (jsonb merge)
+      const state: HealthCheckState = {}
+      if (result.etag !== null) state.etag = result.etag
+      if (result.lastModified !== null) state.lastModified = result.lastModified
+      state.error = result.errorMessage
+      if (result.httpStatus !== null) state.httpStatus = result.httpStatus
 
       const hasHeaders = result.etag !== null || result.lastModified !== null
 
-      await updateHealthStatus(db, res.id, result.healthStatus, healthMeta)
+      await updateHealthStatus(db, res.id, result.healthStatus, state)
 
       // 4a. Enqueue changed resources to pipeline for re-fetch
       if (result.changed) {
@@ -387,7 +387,7 @@ export async function checkBatch(
 
       // 4b. No-header resources: periodic full fetch for hash comparison
       if (result.healthStatus === 'ok' && !hasHeaders) {
-        const lastFullFetch = res.extras.healthLastFullFetchAt as number | undefined
+        const lastFullFetch = res.healthCheckState.lastFullFetchAt
         const needsFullFetch =
           lastFullFetch === undefined || Date.now() - lastFullFetch > fullFetchThreshold
 
@@ -396,7 +396,7 @@ export async function checkBatch(
           log.info({ resourceId: res.id }, 'No change headers, enqueueing periodic full fetch')
           await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: res.id })
           // Record the enqueue time so we don't re-enqueue until next interval
-          await updateHealthStatus(db, res.id, null, { healthLastFullFetchAt: Date.now() })
+          await updateHealthStatus(db, res.id, null, { lastFullFetchAt: Date.now() })
         }
       }
       return true
@@ -424,19 +424,26 @@ export async function checkBatch(
   return summary
 }
 
-/** Update resource health extras, and optionally healthStatus + healthCheckedAt */
+/**
+ * Update resource health check state, and optionally healthStatus + healthCheckedAt.
+ *
+ * Writing {@link scrubbedExtras} back is how a row an overlapping old worker
+ * wrote this checker's old keys onto gets cleaned — see {@link
+ * LEGACY_HEALTH_EXTRAS_KEYS}.
+ */
 async function updateHealthStatus(
   db: Database,
   resourceId: string,
   healthStatus: 'ok' | 'error' | null,
-  healthMeta: Record<string, unknown>
+  state: HealthCheckState
 ): Promise<void> {
-  const metaJson = JSON.stringify(healthMeta)
+  const stateJson = JSON.stringify(state)
   await db
     .update(resource)
     .set({
       ...(healthStatus !== null && { healthStatus, healthCheckedAt: sql`NOW()` }),
-      extras: sql`COALESCE(${resource.extras}, '{}'::jsonb) || ${metaJson}::jsonb`,
+      healthCheckState: sql`COALESCE(${resource.healthCheckState}, '{}'::jsonb) || ${stateJson}::jsonb`,
+      extras: scrubbedExtras,
     })
     .where(eq(resource.id, resourceId))
 }

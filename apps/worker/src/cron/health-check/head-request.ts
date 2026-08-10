@@ -48,9 +48,9 @@ export async function executeHeadCheck(
       }
     }
 
-    // Change detection: compare with stored values in extras
-    const prevEtag = (res.extras.healthEtag as string) ?? null
-    const prevLastModified = (res.extras.healthLastModified as string) ?? null
+    // Change detection: compare with what the last check stored
+    const prevEtag = res.healthCheckState.etag ?? null
+    const prevLastModified = res.healthCheckState.lastModified ?? null
 
     let changed = false
     if (etag && prevEtag && etag !== prevEtag) {
@@ -74,9 +74,9 @@ export async function executeHeadCheck(
     if (err instanceof HopRefusedError) return null
     const message = err instanceof Error ? err.message : String(err)
     // `fetch` says only `fetch failed` and leaves the reason underneath. It
-    // goes to the log and not to the row: `extras` is rendered whole on the
-    // public dataset page, and the reason names the address that was tried and
-    // the hosts on the certificate that was rejected.
+    // goes to the log and not to the row: the reason names the address that was
+    // tried and the hosts on the certificate that was rejected, and the log
+    // ages out where a row keeps it until the URL is checked again.
     const detail = rootCauseMessage(err)
     return {
       httpStatus: null,

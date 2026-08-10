@@ -2,6 +2,8 @@
  * Health check type definitions
  */
 
+import type { HealthCheckState } from '@kukan/db'
+
 /** Resource data needed for health check */
 export interface ResourceForHealthCheck {
   id: string
@@ -9,7 +11,7 @@ export interface ResourceForHealthCheck {
   hash: string | null
   healthStatus: string | null
   healthCheckedAt: Date | null
-  extras: Record<string, unknown>
+  healthCheckState: HealthCheckState
 }
 
 /** Result of a single HEAD request */
