@@ -32,6 +32,15 @@ git checkout vX.Y.Z   # the new release
 docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 ```
 
+Database migrations are applied automatically when the worker starts.
+
+:::note[Upgrading to the release that introduces version history]
+After the upgrade, a **Backfill versions** item appears on the site administrator's dashboard.
+Until you run it, resources that existed beforehand keep no version of their previous content
+when a file is replaced (see the
+[Data Admin Guide](/en/data-admin-guide/#one-time-migration)).
+:::
+
 On-premises deployments use the following alternative services:
 
 | AWS Service | On-Premises Alternative     |
@@ -79,6 +88,31 @@ Data-protection settings are integrated into the `scale` presets:
 | AWS Backup (isolated custody, long-term)          |   —   |   —    | daily 35d + monthly 12mo |
 
 Uploaded files are stored in S3 and automatically replicated across multiple availability zones in the region (11-nines design durability). With versioning enabled, accidental deletes and overwrites are also recoverable. AWS Backup keeps copies of S3 and the database in an isolated Backup Vault, covering incidents that take out the resource itself and generations beyond 35 days. Tune per environment via `overrides.backup` in `environments.ts` (enabling `awsBackup` requires `s3Versioning: true`).
+
+Objects in storage are separated by prefix according to how they are written. They all live in
+the same bucket, so one backup configuration covers them.
+
+| Prefix       | What gets written there                                         |
+| ------------ | --------------------------------------------------------------- |
+| `resources/` | A resource's canonical bytes; a new object on every replacement |
+| `previews/`  | Preview Parquet and the text used by the search index           |
+| `lake/`      | Data files behind row diffs (DuckLake)                          |
+
+**The prefix does not decide an object's role.** Which object is the current content and which
+is a past version is decided by the database pointers (`resource.storage_key` /
+`resource_version.storage_key`). At the moment an object is written it is not yet known whether
+it will become a version at all — content fetched unchanged produces none.
+
+- **The current file and every past version's file are all under `resources/`.** That is where
+  storage grows, by one object per replacement
+- `resources/` also holds uploads that never completed, and objects awaiting reclamation
+
+The catalog behind row diffs lives in a `ducklake` schema of the same PostgreSQL database (no
+additional environment variables).
+
+**Do not exclude any of these prefixes from backups.** `previews/` and `lake/` are derived data
+that can be rebuilt from the canonical files, but there is currently no supported procedure for
+regenerating derived data that has been lost.
 
 #### Setup (one-time manual; after that, pushes deploy automatically)
 
@@ -241,6 +275,45 @@ KUKAN automatically monitors the health of external URL resources.
 - Periodic automated checks via scheduler
 - View health check results from the admin dashboard
 - Identify and address failing resources
+
+## Reclaiming storage
+
+Objects that nothing points at any more — a file that was replaced, for instance — are recorded
+in a ledger, and **an hourly sweep deletes them once their retention period elapses**. The sweep
+re-checks whether anything still points at each key immediately before deleting it, so normal
+operation needs no intervention.
+
+The ledger arrived in the same release as version history. **Objects stranded by an interrupted
+operation before that are named by no record and no pointer.** This affects only deployments that
+were running before this release, and finding them means listing the bucket, so it is a manual
+tool rather than a scheduled job.
+
+Run it inside the deployed container, which is where the production database and bucket are in
+reach:
+
+```bash
+node apps/worker/dist/reconcile-orphans.js            # report only
+node apps/worker/dist/reconcile-orphans.js --commit   # record in the ledger
+```
+
+From a checkout:
+
+```bash
+pnpm --filter @kukan/worker reconcile-orphans
+pnpm --filter @kukan/worker reconcile-orphans -- --commit
+```
+
+- **It reports without acting by default.** The keys it would nominate are listed, so read them
+  before running with `--commit`
+- **`--commit` deletes nothing either.** It writes ledger rows; the hourly sweep does the
+  deleting, and re-checks each key against the live pointers first. An object whose pointer landed
+  between the listing and the sweep is kept, so a run that turns out to have been wrong costs a
+  row rather than a file
+- **Objects written in the last 24 hours are out of scope.** A write still in flight is
+  indistinguishable from a leak in a listing, so these are reported as `tooRecent` instead
+- **Repeat until both `nominated` and `tooRecent` report zero.** One pass may not be enough
+- It covers `resources/` and `previews/`. Not `lake/` — DuckLake knows its own layout and
+  reclaims its own files
 
 ## Environment variables
 

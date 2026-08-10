@@ -131,8 +131,23 @@ the listing.
 | POST   | `/resources/{id}/upload`          | Server-proxied upload                                                | Org editor |
 | POST   | `/resources/{id}/upload-complete` | Notify completion, enqueue pipeline                                  | Org editor |
 | POST   | `/resources/{id}/run-pipeline`    | Manually trigger pipeline                                            | Org editor |
+| POST   | `/resources/{id}/cancel-pipeline` | Stop the running job (content is left alone)                         | Org editor |
+| POST   | `/resources/{id}/revert`          | Stop the job and put the content back on a given version             | Org editor |
 | PUT    | `/resources/{id}`                 | Update resource (full replacement; extras is system-managed)         | Org editor |
 | DELETE | `/resources/{id}`                 | Delete resource                                                      | Org editor |
+
+### Versions
+
+| Method | Path                                    | Description                                                 | Auth       |
+| ------ | --------------------------------------- | ----------------------------------------------------------- | ---------- |
+| GET    | `/resources/{id}/versions`              | List versions (newest first; purged ones remain as records) | Public     |
+| GET    | `/resources/{id}/versions/{v}`          | Version details                                             | Public     |
+| GET    | `/resources/{id}/versions/{v}/diff`     | Row diff against the preceding version. CSV/TSV only        | Org editor |
+| GET    | `/resources/{id}/versions/{v}/download` | Download that version's file                                | Public     |
+| POST   | `/resources/{id}/versions/{v}/purge`    | Permanently erase a version's content                       | Sysadmin   |
+
+The public endpoints apply the same visibility check as download and preview (a private dataset
+still requires permission).
 
 ### Schema and data query
 
@@ -163,8 +178,9 @@ tools offer the same capability for AI agents.
 ```
 
 Resources that cannot be queried (unsupported format, not yet processed) return
-`queryable: false`, `schema: null`. `type` is one of `integer` / `float` / `boolean` / `string`;
-`stats` is present only for numeric columns, and integer min/max are decimal strings.
+`queryable: false`, `schema: null`. `type` is one of `integer` / `float` / `boolean` / `string` /
+`date` / `timestamp`; `stats` is present only for numeric columns, and integer min/max are
+decimal strings.
 
 **Query data** — `POST /resources/{id}/query`:
 
@@ -210,6 +226,116 @@ Limits and errors:
 | `404` | Resource not found / private without access                     |
 | `408` | Execution timeout                                               |
 | `429` | Concurrent query limit                                          |
+
+### Versions and diffs
+
+When a resource's file is replaced, the content it replaced is kept as a **version**. No version
+is added while the content stays the same.
+
+**List versions** — `GET /resources/{id}/versions` (newest first):
+
+```json
+{
+  "id": "…",
+  "versions": [
+    {
+      "version": 2,
+      "origin": "upload",
+      "state": "active",
+      "format": "CSV",
+      "size": 20481,
+      "hash": "…",
+      "schema": { "rowCount": 1688, "columns": [] },
+      "noTableReason": null,
+      "created": "2026-08-01T09:12:44.000Z",
+      "purgedAt": null,
+      "purgeReason": null
+    }
+  ]
+}
+```
+
+| Field           | Description                                                                             |
+| --------------- | --------------------------------------------------------------------------------------- |
+| `origin`        | `upload` (an explicit replacement) or `fetch` (observed when the external URL was read) |
+| `state`         | `active` / `superseded` (stepped off by a revert) / `purging` / `purged`                |
+| `format`        | The format this version settled as. Relabeling the resource does not change it          |
+| `schema`        | The version's column schema (tabular only), frozen per version                          |
+| `noTableReason` | Why no table was produced (`no-columns` / `too-many-columns` / `too-large`)             |
+
+A purged version stays in the list as a record, but `size` / `hash` / `schema` become `null` and
+`purgedAt` / `purgeReason` are filled in. Downloading it returns `404`.
+
+**Diff** — `GET /resources/{id}/versions/{v}/diff?from={v'}` (`from` defaults to the preceding
+version):
+
+Requires **editor permission** on the owning dataset — it scans both snapshots in full, so it is
+not a public endpoint.
+
+```json
+{
+  "available": true,
+  "from": 1,
+  "to": 2,
+  "schemaChanged": false,
+  "addedRows": 42,
+  "removedRows": 3,
+  "sampleAdded": [{ "city": "Adachi", "count": "117" }],
+  "sampleRemoved": []
+}
+```
+
+- **Changed rows are not reported.** Without a primary key identifying rows, editing one row
+  appears as one addition plus one removal
+- Versions whose columns differ return
+  `{"schemaChanged": true, "schemaDiff": {"added": [], "removed": [], "retyped": []}}` and no row
+  comparison is attempted
+- When no diff can be produced, the response is
+  `{"available": false, "reason": "…", "from": …, "to": …}`, where `reason` is
+  `no-previous-version` / `not-ingested` / `purged`
+- The SQL is composed server-side from version numbers alone. This is a separate path from the
+  `POST /resources/{id}/query` sandbox; user SQL never reaches it
+- Responses carry `Cache-Control: private, max-age=60, must-revalidate`. An unavailable answer is
+  not cached at all
+
+| Error | Condition                                           |
+| ----- | --------------------------------------------------- |
+| `401` | Not authenticated                                   |
+| `403` | No editor permission on the owning dataset          |
+| `404` | Resource or version not found                       |
+| `408` | Diff timed out                                      |
+| `429` | DuckDB concurrency limit (shared with data queries) |
+
+**Purge a version** — `POST /resources/{id}/versions/{v}/purge` (sysadmin only):
+
+A reason is required and is recorded in the audit log. The version is claimed and `202` is
+returned; a worker erases the content asynchronously. Repeating the call for the same version is
+idempotent.
+
+```bash
+curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"reason": "Personal data was included"}'
+```
+
+**Revert** — `POST /resources/{id}/revert`:
+
+Stops the running job and puts the resource's content back on a given version.
+
+```json
+{ "restoreTo": 2, "ifLiveRevision": "018f…-…-…" }
+```
+
+- `restoreTo` is the **destination version number**, not how many rungs to step back. `null`
+  leaves the resource with no file
+- `ifLiveRevision` is the `live_revision` served by `GET /resources/{id}/pipeline-status`. It
+  stops a request delayed past a newer upload from reverting content it never saw
+- The same `pipeline-status` also returns `revert_target`, the default destination
+
+After a revert the preview and the search index can still describe the old content. Rebuild them
+with `POST /resources/{id}/run-pipeline` and `{"rebuildOnly": true}`, which regenerates from the
+object the resource already holds rather than re-fetching the external URL.
 
 ## Organizations
 
@@ -270,25 +396,27 @@ Member roles are one of `admin` / `editor` / `member`.
 
 All sysadmin only.
 
-| Method | Path                             | Description                                                       |
-| ------ | -------------------------------- | ----------------------------------------------------------------- |
-| GET    | `/admin/search/stats`            | Search index statistics (doc count, size, DB counts)              |
-| GET    | `/admin/search/doc/{index}/{id}` | Get index document (index: `packages` / `resources` / `contents`) |
-| GET    | `/admin/search/browse/{index}`   | Browse index documents (pagination, search)                       |
-| POST   | `/admin/reindex-metadata`        | Rebuild search index (async via SQS)                              |
-| POST   | `/admin/jobs/enqueue-all`        | Enqueue pipeline for all resources                                |
-| GET    | `/admin/jobs/stats`              | Pipeline job statistics                                           |
-| GET    | `/admin/jobs`                    | List pipeline jobs                                                |
-| DELETE | `/admin/data`                    | Delete all data (preserves users)                                 |
-| GET    | `/admin/health/stats`            | Health check statistics                                           |
-| GET    | `/admin/health`                  | Health check results                                              |
-| GET    | `/admin/users/stats`             | User statistics                                                   |
-| GET    | `/admin/users`                   | List users                                                        |
-| POST   | `/admin/users`                   | Create user                                                       |
-| PATCH  | `/admin/users/{userId}`          | Update user                                                       |
-| DELETE | `/admin/users/{userId}`          | Soft-delete user (revokes sessions/tokens)                        |
-| POST   | `/admin/users/{userId}/restore`  | Restore user                                                      |
-| POST   | `/admin/users/{userId}/purge`    | Permanently delete user                                           |
+| Method | Path                             | Description                                                              |
+| ------ | -------------------------------- | ------------------------------------------------------------------------ |
+| GET    | `/admin/search/stats`            | Search index statistics (doc count, size, DB counts)                     |
+| GET    | `/admin/search/doc/{index}/{id}` | Get index document (index: `packages` / `resources` / `contents`)        |
+| GET    | `/admin/search/browse/{index}`   | Browse index documents (pagination, search)                              |
+| POST   | `/admin/reindex-metadata`        | Rebuild search index (async via SQS)                                     |
+| GET    | `/admin/version-backfill-status` | Backfill work outstanding (layer 1: unversioned / layer 2: not ingested) |
+| POST   | `/admin/backfill-versions`       | Enqueue the one-time version backfill (via SQS, async)                   |
+| POST   | `/admin/jobs/enqueue-all`        | Enqueue pipeline for all resources                                       |
+| GET    | `/admin/jobs/stats`              | Pipeline job statistics                                                  |
+| GET    | `/admin/jobs`                    | List pipeline jobs                                                       |
+| DELETE | `/admin/data`                    | Delete all data (preserves users)                                        |
+| GET    | `/admin/health/stats`            | Health check statistics                                                  |
+| GET    | `/admin/health`                  | Health check results                                                     |
+| GET    | `/admin/users/stats`             | User statistics                                                          |
+| GET    | `/admin/users`                   | List users                                                               |
+| POST   | `/admin/users`                   | Create user                                                              |
+| PATCH  | `/admin/users/{userId}`          | Update user                                                              |
+| DELETE | `/admin/users/{userId}`          | Soft-delete user (revokes sessions/tokens)                               |
+| POST   | `/admin/users/{userId}/restore`  | Restore user                                                             |
+| POST   | `/admin/users/{userId}/purge`    | Permanently delete user                                                  |
 
 ## Other
 

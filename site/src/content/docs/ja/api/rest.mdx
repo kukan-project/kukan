@@ -128,8 +128,23 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 | POST   | `/resources/{id}/upload`          | サーバー経由アップロード                                  | 組織 editor |
 | POST   | `/resources/{id}/upload-complete` | アップロード完了通知・パイプライン投入                    | 組織 editor |
 | POST   | `/resources/{id}/run-pipeline`    | パイプライン手動実行                                      | 組織 editor |
+| POST   | `/resources/{id}/cancel-pipeline` | 実行中の処理を中止（内容はそのまま）                      | 組織 editor |
+| POST   | `/resources/{id}/revert`          | 処理を中止し、内容を指定の版へ戻す                        | 組織 editor |
 | PUT    | `/resources/{id}`                 | リソース更新（全フィールド置換、extras はシステム管理）   | 組織 editor |
 | DELETE | `/resources/{id}`                 | リソース削除                                              | 組織 editor |
+
+### バージョン (versions)
+
+| Method | Path                                    | 説明                                           | 認証        |
+| ------ | --------------------------------------- | ---------------------------------------------- | ----------- |
+| GET    | `/resources/{id}/versions`              | 版の一覧（新しい順。削除済みも記録として残る） | 公開        |
+| GET    | `/resources/{id}/versions/{v}`          | 版の詳細                                       | 公開        |
+| GET    | `/resources/{id}/versions/{v}/diff`     | 直前の版との行差分。CSV/TSV のみ               | 組織 editor |
+| GET    | `/resources/{id}/versions/{v}/download` | その版のファイルをダウンロード                 | 公開        |
+| POST   | `/resources/{id}/versions/{v}/purge`    | 版の内容を完全削除（法的削除）                 | sysadmin    |
+
+公開エンドポイントの可視性判定はダウンロード・プレビューと同じです（非公開データセットは
+権限が必要）。
 
 ### スキーマとデータクエリ
 
@@ -160,7 +175,8 @@ CSV/TSV リソース（パイプラインでプレビュー Parquet を生成済
 ```
 
 クエリ不可のリソース（非対応フォーマット・未処理）は `queryable: false`, `schema: null` を返します。
-`type` は `integer` / `float` / `boolean` / `string`。`stats` は数値列のみで、整数の min/max は十進文字列です。
+`type` は `integer` / `float` / `boolean` / `string` / `date` / `timestamp`。`stats` は数値列のみで、
+整数の min/max は十進文字列です。
 
 **データクエリ** — `POST /resources/{id}/query`:
 
@@ -206,6 +222,113 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
 | `404`  | リソース不存在 / 非公開で権限なし                 |
 | `408`  | 実行タイムアウト                                  |
 | `429`  | 同時クエリ上限                                    |
+
+### バージョンと差分
+
+リソースのファイルが差し替わると、差し替え前の内容が**版**として保存されます。内容が変わらない
+限り版は増えません。
+
+**版の一覧** — `GET /resources/{id}/versions`（新しい順）:
+
+```json
+{
+  "id": "…",
+  "versions": [
+    {
+      "version": 2,
+      "origin": "upload",
+      "state": "active",
+      "format": "CSV",
+      "size": 20481,
+      "hash": "…",
+      "schema": { "rowCount": 1688, "columns": [] },
+      "noTableReason": null,
+      "created": "2026-08-01T09:12:44.000Z",
+      "purgedAt": null,
+      "purgeReason": null
+    }
+  ]
+}
+```
+
+| フィールド      | 説明                                                                       |
+| --------------- | -------------------------------------------------------------------------- |
+| `origin`        | `upload`（明示的な差し替え） / `fetch`（外部 URL の取得時点）              |
+| `state`         | `active` / `superseded`（巻き戻しで外れた） / `purging` / `purged`         |
+| `format`        | その版が確定した時点のフォーマット。リソースのラベルを変えても変わりません |
+| `schema`        | その版の列スキーマ（表形式のみ）。版ごとに凍結されます                     |
+| `noTableReason` | 表が作れなかった理由（`no-columns` / `too-many-columns` / `too-large`）    |
+
+完全削除済み（`purged`）の版は記録として残りますが、`size` / `hash` / `schema` は `null` になり、
+`purgedAt` と `purgeReason` が入ります。ダウンロードは `404` を返します。
+
+**差分** — `GET /resources/{id}/versions/{v}/diff?from={v'}`（既定の `from` は直前の版）:
+
+対象データセットの **editor 権限**が必要です（両方のスナップショットを全走査するため、公開
+エンドポイントにはしていません）。
+
+```json
+{
+  "available": true,
+  "from": 1,
+  "to": 2,
+  "schemaChanged": false,
+  "addedRows": 42,
+  "removedRows": 3,
+  "sampleAdded": [{ "市区町村": "足立区", "件数": "117" }],
+  "sampleRemoved": []
+}
+```
+
+- **行の「変更」は返しません。** 行を同定する主キーを持たないため、1 行の書き換えは追加 1 行 +
+  削除 1 行として現れます
+- 列構成が変わった版どうしは `{"schemaChanged": true, "schemaDiff": {"added": [], "removed": [], "retyped": []}}`
+  を返し、行差分は行いません
+- 差分を出せない場合は `{"available": false, "reason": "…", "from": …, "to": …}` を返します。
+  `reason` は `no-previous-version` / `not-ingested` / `purged`
+- SQL はサーバーが版番号だけから組み立てます。`POST /resources/{id}/query` のサンドボックスとは
+  別経路で、利用者の SQL がこの領域に到達することはありません
+- 応答は `Cache-Control: private, max-age=60, must-revalidate`。取得できなかった応答は
+  キャッシュされません
+
+| エラー | 状況                                  |
+| ------ | ------------------------------------- |
+| `401`  | 未認証                                |
+| `403`  | 対象データセットの editor 権限が無い  |
+| `404`  | リソースまたは版が存在しない          |
+| `408`  | 差分の実行タイムアウト                |
+| `429`  | DuckDB の同時実行上限（クエリと共用） |
+
+**版の完全削除** — `POST /resources/{id}/versions/{v}/purge`（sysadmin 限定）:
+
+理由が必須で、監査ログに記録されます。版を確保して `202` を返し、実際の消去はワーカーが
+非同期に行います。同じ版への再実行は冪等です。
+
+```bash
+curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"reason": "個人情報の混入"}'
+```
+
+**巻き戻し** — `POST /resources/{id}/revert`:
+
+処理を中止し、リソースの内容を指定の版へ戻します。
+
+```json
+{ "restoreTo": 2, "ifLiveRevision": "018f…-…-…" }
+```
+
+- `restoreTo` は**戻し先の版番号**です（何段戻すかではありません）。`null` はリソースを
+  ファイルの無い状態にします
+- `ifLiveRevision` は `GET /resources/{id}/pipeline-status` が返す `live_revision` です。
+  これにより、応答を組み立てている間に別のアップロードが入った場合、その内容を巻き戻して
+  しまうことがありません
+- 同じ `pipeline-status` が `revert_target`（戻し先の既定値）も返します
+
+巻き戻した後、プレビューと検索索引が古いままになることがあります。その場合は
+`POST /resources/{id}/run-pipeline` に `{"rebuildOnly": true}` を付けて再構築します
+（外部 URL からの再取得は行われません）。
 
 ## 組織 (organizations)
 
@@ -272,6 +395,8 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
 | GET    | `/admin/search/doc/{index}/{id}` | インデックスドキュメント取得（index: `packages` / `resources` / `contents`） |
 | GET    | `/admin/search/browse/{index}`   | インデックスドキュメント一覧（ページング・検索対応）                         |
 | POST   | `/admin/reindex-metadata`        | 検索インデックス再構築（SQS 経由、非同期）                                   |
+| GET    | `/admin/version-backfill-status` | 版の補完の残件数（層1: 版なし / 層2: 差分未取り込み）                        |
+| POST   | `/admin/backfill-versions`       | 一度きりの版の補完を予約（SQS 経由、非同期）                                 |
 | POST   | `/admin/jobs/enqueue-all`        | 全リソースのパイプライン一括予約                                             |
 | GET    | `/admin/jobs/stats`              | パイプラインジョブ統計                                                       |
 | GET    | `/admin/jobs`                    | パイプラインジョブ一覧                                                       |

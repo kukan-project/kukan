@@ -63,6 +63,94 @@ Uploaded files are automatically processed through the pipeline:
 - CSV/TSV to Parquet conversion (for table preview)
 - ZIP file manifest generation
 
+## Version history
+
+Every time a resource's file is replaced, the content it replaced is kept as a **version**.
+You can download any past version, and for CSV/TSV you can see how many rows were added or
+removed between two versions.
+
+A version is created only when the content **actually changed**. Re-fetching an external URL
+that still serves the same bytes adds no version, and the resource's processing status says
+"No new version — the file matches the content already stored".
+
+### Viewing the version history
+
+The resource edit page has a **Version history** section. Versions are listed newest first,
+each row showing the version number, creation time, size, and origin (**Upload** or
+**Fetched**).
+
+Every version can be downloaded exactly as it was. The version number is added to the filename.
+
+### Viewing a diff
+
+The **Diff** control on a version's row fetches the diff against the preceding version. It is
+computed when you open it, so simply listing the versions does not run anything.
+
+- Shows **N rows added / N rows removed**, with a few representative rows from each side
+- **It does not show "N rows changed".** Without a primary key to identify rows, editing one
+  row appears as one addition plus one removal. KUKAN does not guess a correspondence and
+  present it as change history
+- When the **columns changed** (added, removed, retyped, or reordered), the rows cannot be
+  lined up and the panel says so instead
+
+Diffs are available between **CSV/TSV versions of 50 MB or less**. When one is unavailable,
+the reason is shown.
+
+| Message                                                                                            | Meaning                                                      |
+| -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| This is the first version, so there is nothing to compare against.                                 | v1 has no predecessor                                        |
+| This version is not covered by diffs (not tabular, or captured before the feature was introduced). | A PDF and similar, or a version created before the migration |
+| One of the versions has been purged, so a diff is not available.                                   | Either side was purged                                       |
+
+### Stopping and reverting
+
+For when the wrong file was uploaded, there are three operations of increasing destructiveness.
+Each is chosen explicitly.
+
+| Operation              | Current content                                               | Versions                                  | Auth       |
+| ---------------------- | ------------------------------------------------------------- | ----------------------------------------- | ---------- |
+| **Stop**               | Left alone                                                    | Left alone                                | Org editor |
+| **Stop and revert**    | Restored to the newest saved version                          | Versions above the target stay in history | Org editor |
+| **Purge This Version** | Falls back to the preceding version, if this was the live one | Content erased, the record remains        | Sysadmin   |
+
+**Stop and revert** puts the live content back on the most recent saved version. If there is no
+earlier version, the resource is left with no file (its metadata remains).
+
+The preview and the search index are **discarded as part of the revert and rebuilt automatically
+from the restored content** (the rebuild runs in the background, so it takes a moment to appear).
+A warning appears only when discarding them, or starting the rebuild, did not succeed — then
+"Rebuild preview & index" finishes the job.
+
+### Purging a version
+
+Use this when the content itself has to go — personal data that should never have been
+published, for example. **Only site administrators** can purge, **a reason is required**, and it
+is recorded in the audit log.
+
+- The canonical file and the row data kept for diffs are deleted immediately
+- **Content another version holds is not erased.** Each version keeps its own copy, so purging
+  one leaves the others serving that content — and if purging the live version falls back onto
+  a version holding the same content, **the resource serves it again**. The confirmation dialog
+  names those versions; purge them individually if they must go too
+- Where storage versioning is in use, the superseded objects disappear once their retention
+  period (30 days by default) elapses
+- Purging the live version puts the resource back on the preceding one. With no earlier
+  version, the resource is left with no file
+- The history keeps a "Purged" row and the reason. **This cannot be undone**
+
+### One-time migration
+
+Right after version history is enabled, resources that existed beforehand have no versions yet.
+A **Backfill versions** item appears on the site administrator's dashboard — run it.
+
+- **Layer 1**: records each unversioned resource's current file as v1 (nothing is re-fetched or
+  re-indexed)
+- **Layer 2**: loads the current version of each tabular resource into the diff store, so diffs
+  become available from the next update onwards
+
+The item disappears once both counts reach zero. **Replacing a file before running it loses the
+previous content — it is never kept as a version.**
+
 ## AI metadata suggestions
 
 Once you add resources and their pipeline processing completes, the **"Let AI suggest metadata"** button on the edit page can propose a title, notes, tags, and per-resource names and descriptions (only when AI is enabled for the site — see the [System Administrator Guide](/en/system-admin-guide/#site-settings-runtime)).
