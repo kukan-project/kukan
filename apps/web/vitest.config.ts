@@ -14,10 +14,10 @@ export default defineConfig({
     alias: {
       // Brand resolves to the default brand for tests; must precede '@' so
       // '@/brand/*' is not swallowed by the general '@' → src mapping (ADR-042).
-      '@/brand': resolve(__dirname, 'brands/default'),
-      '@': resolve(__dirname, 'src'),
-      '@kukan/ui': resolve(__dirname, '../../packages/ui/src'),
-      '@kukan/shared': resolve(__dirname, '../../packages/shared/src'),
+      '@/brand': resolve(import.meta.dirname, 'brands/default'),
+      '@': resolve(import.meta.dirname, 'src'),
+      '@kukan/ui': resolve(import.meta.dirname, '../../packages/ui/src'),
+      '@kukan/shared': resolve(import.meta.dirname, '../../packages/shared/src'),
     },
   },
 })

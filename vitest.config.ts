@@ -93,7 +93,7 @@ export default defineConfig({
         },
         resolve: {
           alias: {
-            '@': resolve(__dirname, 'apps/worker/src'),
+            '@': resolve(import.meta.dirname, 'apps/worker/src'),
           },
         },
       },
@@ -114,7 +114,7 @@ export default defineConfig({
         },
         resolve: {
           alias: {
-            '@': resolve(__dirname, 'apps/worker/src'),
+            '@': resolve(import.meta.dirname, 'apps/worker/src'),
           },
         },
       },
@@ -154,10 +154,10 @@ export default defineConfig({
           alias: {
             // Brand resolves to the default brand; must precede '@' so '@/brand/*'
             // is not swallowed by the general '@' → src mapping (ADR-042).
-            '@/brand': resolve(__dirname, 'apps/web/brands/default'),
-            '@': resolve(__dirname, 'apps/web/src'),
-            '@kukan/ui': resolve(__dirname, 'packages/ui/src'),
-            '@kukan/shared': resolve(__dirname, 'packages/shared/src'),
+            '@/brand': resolve(import.meta.dirname, 'apps/web/brands/default'),
+            '@': resolve(import.meta.dirname, 'apps/web/src'),
+            '@kukan/ui': resolve(import.meta.dirname, 'packages/ui/src'),
+            '@kukan/shared': resolve(import.meta.dirname, 'packages/shared/src'),
           },
         },
       },
