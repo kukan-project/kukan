@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { useLocale, useTranslations } from 'next-intl'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch, type Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Trash2, RotateCcw, XCircle } from 'lucide-react'
@@ -38,7 +38,10 @@ import { PageHeader } from '@/components/dashboard/page-header'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { StatCard } from '@/components/dashboard/stat-card'
 import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
-import { userNameSchema, userRoleSchema, type UserRole } from '@kukan/shared'
+import { userNameSchema, userRoleSchema, passwordLengthSchema, type UserRole } from '@kukan/shared'
+import { PASSWORD_LENGTH_KEYS, passwordLengthArgs } from '@/lib/password-messages'
+import { PasswordField } from '@/components/password-field'
+import { PasswordStrengthMeter } from '@/components/password-strength-meter'
 import { clientFetch } from '@/lib/client-api'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
 import { formatDateTimeCompact } from '@/components/date-time'
@@ -62,8 +65,8 @@ interface UserItem {
 
 const createUserSchema = z.object({
   name: userNameSchema,
-  email: z.string().email().max(200),
-  password: z.string().min(8),
+  email: z.email().max(200),
+  password: passwordLengthSchema(PASSWORD_LENGTH_KEYS),
   displayName: z.string().max(200).optional(),
   role: userRoleSchema,
 })
@@ -78,11 +81,24 @@ const editUserSchema = z.object({
 
 type EditUserValues = z.infer<typeof editUserSchema>
 
+/**
+ * The meter's own subscriber: `watch` on the page would re-render the table and
+ * every dialog on each keystroke in the create form.
+ */
+function CreateUserStrength({ control }: { control: Control<CreateUserValues> }) {
+  const [password, name, email, displayName] = useWatch({
+    control,
+    name: ['password', 'name', 'email', 'displayName'],
+  })
+  return <PasswordStrengthMeter password={password ?? ''} account={{ name, email, displayName }} />
+}
+
 export default function AdminUsersPage() {
   const user = useUser()
   const locale = useLocale()
   const t = useTranslations('dashboard.adminUsers')
   const tc = useTranslations('common')
+  const tp = useTranslations('password')
 
   // Stats
   const [stats, setStats] = useState<UserStatsResponse | null>(null)
@@ -125,6 +141,7 @@ export default function AdminUsersPage() {
     handleSubmit,
     reset,
     setValue,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<CreateUserValues>({
     resolver: zodResolver(createUserSchema),
@@ -140,7 +157,11 @@ export default function AdminUsersPage() {
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      setCreateError(data.detail || data.message || t('createError'))
+      setCreateError(
+        data.title === 'PASSWORD_TOO_WEAK'
+          ? tp('tooWeak')
+          : data.detail || data.message || t('createError')
+      )
       return
     }
     setDialogOpen(false)
@@ -456,19 +477,20 @@ export default function AdminUsersPage() {
               )}
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="create-password">{t('fieldPassword')}</Label>
-              <Input
+              <PasswordField
                 id="create-password"
-                type="password"
+                label={t('fieldPassword')}
+                autoComplete="new-password"
+                error={
+                  errors.password &&
+                  tp(
+                    errors.password.message ?? PASSWORD_LENGTH_KEYS.tooShort,
+                    passwordLengthArgs(errors.password.message)
+                  )
+                }
                 {...register('password')}
-                aria-invalid={!!errors.password}
-                aria-describedby={errors.password ? 'create-password-error' : undefined}
               />
-              {errors.password && (
-                <p id="create-password-error" className="text-sm text-destructive">
-                  {t('fieldPasswordError')}
-                </p>
-              )}
+              <CreateUserStrength control={control} />
             </div>
             <div className="flex flex-col gap-2">
               <Label>{t('fieldRole')}</Label>

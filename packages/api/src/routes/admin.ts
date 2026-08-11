@@ -30,6 +30,7 @@ import {
   escapeLike,
   userNameSchema,
   userRoleSchema,
+  passwordLengthSchema,
 } from '@kukan/shared'
 import { PipelineService } from '../services/pipeline-service'
 import { markContentUnindexed } from '../services/content-index-record'
@@ -718,7 +719,7 @@ adminRouter.post(
     z.object({
       name: userNameSchema,
       email: z.email().max(200),
-      password: z.string().min(8),
+      password: passwordLengthSchema(),
       displayName: z.string().max(200).optional(),
       role: userRoleSchema.default('user'),
     })
@@ -727,6 +728,8 @@ adminRouter.post(
     const auth = c.get('auth')
     const body = c.req.valid('json')
 
+    // The strength policy is the auth hook's; its APIError is translated to
+    // Problem Details by the error handler, refusal code and all
     const result = await auth.api.createUser({
       body: {
         name: body.name,

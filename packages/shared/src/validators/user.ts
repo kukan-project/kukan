@@ -4,6 +4,11 @@
  */
 
 import { z } from 'zod'
+import {
+  passwordLengthSchema,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_MAX_LENGTH,
+} from '../password-strength'
 
 /** Reusable slug-style name schema (lowercase alphanumeric, hyphens, underscores, periods) */
 export const userNameSchema = z
@@ -24,7 +29,12 @@ export const createUserSchema = z.object({
   name: userNameSchema,
   email: z.email().max(200),
   displayName: z.string().optional(),
-  password: z.string().min(8).optional(), // Optional for OIDC users
+  // Optional for OIDC users. Length only — guessability needs the dictionaries,
+  // so it is scored where the password is set (see `evaluatePassword`)
+  password: passwordLengthSchema({
+    tooShort: `Password must be at least ${PASSWORD_MIN_LENGTH} characters`,
+    tooLong: `Password must be at most ${PASSWORD_MAX_LENGTH} characters`,
+  }).optional(),
 })
 
 export const updateUserSchema = createUserSchema.omit({ password: true }).partial()

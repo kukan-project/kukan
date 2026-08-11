@@ -19,30 +19,39 @@ import {
   CardContent,
   CardFooter,
 } from '@kukan/ui'
-import { userNameSchema } from '@kukan/shared'
+import { userNameSchema, passwordLengthSchema } from '@kukan/shared'
 import { signUp } from '@/lib/auth-client'
+import { PASSWORD_LENGTH_KEYS, passwordLengthArgs } from '@/lib/password-messages'
+import { PasswordField } from '@/components/password-field'
+import { PasswordStrengthMeter } from '@/components/password-strength-meter'
 import { useSiteSettings } from '@/hooks/use-site-settings'
 
 const signUpSchema = z.object({
   name: userNameSchema,
-  email: z.string().email(),
-  password: z.string().min(8),
+  email: z.email(),
+  password: passwordLengthSchema(PASSWORD_LENGTH_KEYS),
 })
 
 type SignUpValues = z.infer<typeof signUpSchema>
 
 export default function SignUpPage() {
   const t = useTranslations('auth')
+  const tp = useTranslations('password')
   const [error, setError] = useState<string | null>(null)
   const { registrationEnabled } = useSiteSettings()
 
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<SignUpValues>({
     resolver: zodResolver(signUpSchema),
   })
+
+  const account = { name: watch('name'), email: watch('email') }
+  // Mounting the meter costs a settings request, so it waits for a keystroke
+  const password = watch('password') ?? ''
 
   const onSubmit = async (values: SignUpValues) => {
     setError(null)
@@ -52,7 +61,9 @@ export default function SignUpPage() {
       password: values.password,
     })
     if (result.error) {
-      setError(t('signUpFailed'))
+      // The strength policy is the server's call — its threshold is deployment
+      // specific, so the meter advises but never blocks the submit
+      setError(result.error.code === 'PASSWORD_TOO_WEAK' ? tp('tooWeak') : t('signUpFailed'))
       return
     }
     window.location.href = '/dashboard'
@@ -137,20 +148,20 @@ export default function SignUpPage() {
               )}
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="password">{t('password')}</Label>
-              <Input
+              <PasswordField
                 id="password"
-                type="password"
+                label={t('password')}
                 autoComplete="new-password"
+                error={
+                  errors.password &&
+                  tp(
+                    errors.password.message ?? PASSWORD_LENGTH_KEYS.tooShort,
+                    passwordLengthArgs(errors.password.message)
+                  )
+                }
                 {...register('password')}
-                aria-invalid={!!errors.password}
-                aria-describedby={errors.password ? 'password-error' : undefined}
               />
-              {errors.password && (
-                <p id="password-error" className="text-sm text-destructive">
-                  {t('passwordMinLength')}
-                </p>
-              )}
+              {password && <PasswordStrengthMeter password={password} account={account} />}
             </div>
             <Button type="submit" className="w-full" disabled={isSubmitting}>
               {isSubmitting ? t('signingUp') : t('signUpButton')}

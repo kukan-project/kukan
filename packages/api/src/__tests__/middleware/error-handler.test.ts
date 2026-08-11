@@ -225,6 +225,36 @@ describe('errorHandler', () => {
     expect(res.status).toBe(500)
   })
 
+  it('should report a Better Auth refusal under the code the auth API answers with', async () => {
+    // Unmapped, every refusal from auth.api — a weak password, an email
+    // already taken — was reported and logged as an unexpected 500
+    const app = createTestApp(() => {
+      throw Object.assign(new Error('Password is too easy to guess'), {
+        name: 'APIError',
+        statusCode: 400,
+        body: { code: 'PASSWORD_TOO_WEAK', message: 'Password is too easy to guess' },
+      })
+    })
+
+    const res = await app.request('/test')
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({
+      title: 'PASSWORD_TOO_WEAK',
+      status: 400,
+      detail: 'Password is too easy to guess',
+    })
+  })
+
+  it('should leave an APIError with a status it cannot describe to the 500 fallback', async () => {
+    const app = createTestApp(() => {
+      throw Object.assign(new Error('teapot'), { name: 'APIError', statusCode: 418 })
+    })
+
+    const res = await app.request('/test')
+    expect(res.status).toBe(500)
+    expect((await res.json()).detail).toBe('An unexpected error occurred')
+  })
+
   it('should convert RequestAbandonedError to 408 without logging a fault', async () => {
     // A request its caller withdrew is answered by the class, not by reading
     // the request: a genuine crash that coincides with someone navigating away

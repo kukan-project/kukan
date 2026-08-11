@@ -4,17 +4,15 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import { user, auditLog } from '@kukan/db'
-import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
+import { getTestDb, cleanDatabase, cleanUsers, closeTestDb } from '../test-helpers/test-db'
 import { createAuth } from '../../auth/auth'
 import { resetBootstrapCache } from '../../services/bootstrap'
-
-process.env.BETTER_AUTH_SECRET ??= 'test-secret-that-is-at-least-32-characters-long!'
 
 const db = getTestDb()
 
 beforeEach(async () => {
   await cleanDatabase()
-  await db.execute(sql`TRUNCATE TABLE "user" CASCADE`)
+  await cleanUsers()
   resetBootstrapCache()
 })
 
@@ -27,7 +25,7 @@ describe('first-user bootstrap', () => {
     const auth = createAuth(db)
 
     await auth.api.signUpEmail({
-      body: { email: 'first@example.com', password: 'password123', name: 'first-user' },
+      body: { email: 'first@example.com', password: 'harbor-lantern-quiet-42', name: 'first-user' },
     })
     const [first] = await db.select().from(user).where(eq(user.email, 'first@example.com'))
     expect(first.role).toBe('sysadmin')
@@ -46,7 +44,11 @@ describe('first-user bootstrap', () => {
     })
 
     await auth.api.signUpEmail({
-      body: { email: 'second@example.com', password: 'password123', name: 'second-user' },
+      body: {
+        email: 'second@example.com',
+        password: 'harbor-lantern-quiet-42',
+        name: 'second-user',
+      },
     })
     const [second] = await db.select().from(user).where(eq(user.email, 'second@example.com'))
     expect(second.role).toBe('user')
@@ -60,7 +62,11 @@ describe('first-user bootstrap', () => {
     const results = await Promise.allSettled(
       Array.from({ length: 5 }, (_, i) =>
         auth.api.signUpEmail({
-          body: { email: `race-${i}@example.com`, password: 'password123', name: `race-${i}` },
+          body: {
+            email: `race-${i}@example.com`,
+            password: 'harbor-lantern-quiet-42',
+            name: `race-${i}`,
+          },
         })
       )
     )
@@ -83,7 +89,7 @@ describe('first-user bootstrap', () => {
 
     const auth = createAuth(db)
     await auth.api.signUpEmail({
-      body: { email: 'retry@example.com', password: 'password123', name: 'retry-user' },
+      body: { email: 'retry@example.com', password: 'harbor-lantern-quiet-42', name: 'retry-user' },
     })
     const [retried] = await db.select().from(user).where(eq(user.email, 'retry@example.com'))
     expect(retried.role).toBe('sysadmin')
@@ -100,7 +106,7 @@ describe('first-user bootstrap', () => {
     const auth = createAuth(db)
     await expect(
       auth.api.signUpEmail({
-        body: { email: 'late@example.com', password: 'password123', name: 'late-user' },
+        body: { email: 'late@example.com', password: 'harbor-lantern-quiet-42', name: 'late-user' },
       })
     ).rejects.toThrow()
 

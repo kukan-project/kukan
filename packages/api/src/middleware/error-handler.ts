@@ -42,6 +42,21 @@ function isKukanShaped(err: unknown): err is KukanError {
   )
 }
 
+/** Better Auth refuses through its own `APIError`, which is neither a
+ *  `KukanError` nor an `HTTPException`. Unmapped, every refusal it raises —
+ *  a weak password, an email already taken — reached the fallback and was
+ *  reported as an unexpected 500. Its `body.code` is the same vocabulary the
+ *  auth endpoints answer with, so it names the refusal directly. */
+function isAuthApiError(
+  err: unknown
+): err is Error & { statusCode: number; body?: { code?: string; message?: string } } {
+  return (
+    err instanceof Error &&
+    err.name === 'APIError' &&
+    MAPPABLE_STATUSES.has((err as { statusCode?: number }).statusCode as number)
+  )
+}
+
 export const errorHandler: ErrorHandler = (err, c) => {
   // Hono refuses some requests itself — a malformed JSON body is the common one
   // — with the right status but not the Problem Details shape. Unmapped, every
@@ -55,6 +70,9 @@ export const errorHandler: ErrorHandler = (err, c) => {
     const code = REFUSAL_CODES[err.status]
     // A status this cannot name stays unread, and falls through to the 500
     if (code) reported = new KukanError(err.message || code, code, err.status)
+  } else if (isAuthApiError(err)) {
+    const code = err.body?.code ?? REFUSAL_CODES[err.statusCode]
+    if (code) reported = new KukanError(err.body?.message ?? err.message, code, err.statusCode)
   }
 
   if (reported instanceof KukanError || isKukanShaped(reported)) {

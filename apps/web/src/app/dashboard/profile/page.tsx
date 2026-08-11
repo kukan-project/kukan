@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, Label } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { useUser } from '@/components/dashboard/user-provider'
 import { PageHeader } from '@/components/dashboard/page-header'
+import { PasswordChangeCard } from '@/components/dashboard/password-change-card'
 
 export default function ProfilePage() {
   const user = useUser()
@@ -35,6 +36,7 @@ export default function ProfilePage() {
           </div>
         </CardContent>
       </Card>
+      <PasswordChangeCard />
     </div>
   )
 }

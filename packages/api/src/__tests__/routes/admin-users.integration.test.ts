@@ -194,7 +194,7 @@ describe('Admin Users API', () => {
     const validBody = {
       name: 'new-user',
       email: 'new@example.com',
-      password: 'password123',
+      password: 'harbor-lantern-quiet-42',
       role: 'user',
     }
 
@@ -229,7 +229,7 @@ describe('Admin Users API', () => {
         body: {
           name: 'new-user',
           email: 'new@example.com',
-          password: 'password123',
+          password: 'harbor-lantern-quiet-42',
         },
       })
     })
@@ -263,7 +263,7 @@ describe('Admin Users API', () => {
         body: {
           name: 'new-user',
           email: 'new@example.com',
-          password: 'password123',
+          password: 'harbor-lantern-quiet-42',
           data: { displayName: '新規 太郎' },
         },
       })
@@ -280,7 +280,7 @@ describe('Admin Users API', () => {
         body: {
           name: 'new-user',
           email: 'new@example.com',
-          password: 'password123',
+          password: 'harbor-lantern-quiet-42',
           role: 'sysadmin',
         },
       })
@@ -302,6 +302,40 @@ describe('Admin Users API', () => {
         body: JSON.stringify({ name: 'test' }),
       })
       expect(res.status).toBe(400)
+    })
+
+    it("should answer an auth refusal in this API's shape, keeping its code", async () => {
+      // The strength policy lives in the auth hook (see the password-policy
+      // suite); what this route owes the caller is the refusal in Problem
+      // Details rather than the 500 an unmapped APIError used to produce
+      mockCreateUser.mockRejectedValueOnce(
+        Object.assign(new Error('Password is too easy to guess'), {
+          name: 'APIError',
+          statusCode: 400,
+          body: { code: 'PASSWORD_TOO_WEAK', message: 'Password is too easy to guess' },
+        })
+      )
+
+      const res = await app.request('/api/v1/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(validBody),
+      })
+      expect(res.status).toBe(400)
+      expect(await res.json()).toMatchObject({
+        title: 'PASSWORD_TOO_WEAK',
+        detail: 'Password is too easy to guess',
+      })
+    })
+
+    it('should reject a password that fails the length rule', async () => {
+      const res = await app.request('/api/v1/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...validBody, password: 'password123' }),
+      })
+      expect(res.status).toBe(400)
+      expect(mockCreateUser).not.toHaveBeenCalled()
     })
 
     it('should return 400 when auth.api.createUser fails', async () => {

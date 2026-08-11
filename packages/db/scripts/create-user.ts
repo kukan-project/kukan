@@ -7,7 +7,7 @@ import { parseArgs } from 'node:util'
 import { randomBytes, scrypt } from 'node:crypto'
 import { config } from 'dotenv'
 import { and, eq, or, count } from 'drizzle-orm'
-import { loadEnv } from '@kukan/shared'
+import { loadEnv, checkPasswordGuessability, normalizePassword } from '@kukan/shared'
 import { createUserSchema, userRoleSchema, type UserRole } from '@kukan/shared/validators/user'
 import { createDb, closePool } from '../src/client'
 import { user, account } from '../src/schema'
@@ -31,13 +31,13 @@ Usage: pnpm db:create-user --email <email> --name <name> --password <password> [
 Options:
   --email     User email address (required)
   --name      Username, lowercase alphanumeric with hyphens/underscores/periods (required)
-  --password  Password, minimum 8 characters (required)
+  --password  Password, minimum 15 characters and hard enough to guess (required)
   --role      User role: 'user' or 'sysadmin' (default: 'user')
   --help      Show this help message
 
 Examples:
-  pnpm db:create-user --email admin@example.com --name admin --password secret123 --role sysadmin
-  pnpm db:create-user --email user@example.com --name taro --password secret123
+  pnpm db:create-user --email admin@example.com --name admin --password 'harbor-lantern-quiet-42' --role sysadmin
+  pnpm db:create-user --email user@example.com --name taro --password 'harbor-lantern-quiet-42'
 `)
 }
 
@@ -106,7 +106,7 @@ function hashPassword(password: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const salt = randomBytes(16).toString('hex')
     scrypt(
-      password.normalize('NFKC'),
+      normalizePassword(password),
       salt,
       64,
       { N: 16384, r: 16, p: 1, maxmem: 128 * 16384 * 16 * 2 },
@@ -118,7 +118,18 @@ function hashPassword(password: string): Promise<string> {
   })
 }
 
+/** Same policy the API enforces — this script writes the credential row directly. */
+async function assertPasswordStrength(args: CreateUserArgs): Promise<void> {
+  const strength = await checkPasswordGuessability(args.password, args)
+  if (!strength || strength.acceptable) return
+  console.error('Error: password is too easy to guess.')
+  if (strength.warning) console.error(`  ${strength.warning}`)
+  for (const suggestion of strength.suggestions) console.error(`  - ${suggestion}`)
+  process.exit(1)
+}
+
 async function createUser(args: CreateUserArgs): Promise<void> {
+  await assertPasswordStrength(args)
   const { DATABASE_URL } = loadEnv()
   const db = createDb(DATABASE_URL, { max: 1 })
 

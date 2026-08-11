@@ -5,6 +5,7 @@
 
 import { Hono } from 'hono'
 import { isLocalAIProvider } from '@kukan/shared/ai'
+import { passwordMinScore } from '@kukan/shared'
 import { publicCache } from '../middleware/cache-control'
 import { isRegistrationAllowed } from '../services/bootstrap'
 import { SEMANTIC_SEARCH_ENABLED_KEY, SEARCH_EXAMPLE_QUERIES_KEY } from '../services/system-setting'
@@ -40,5 +41,8 @@ siteRouter.get('/settings', publicCache(), async (c) => {
     metadataSuggestEnabled,
     // Local models get a quality caveat in edit UIs (ADR-040 evaluation)
     metadataSuggestLocalModel: isLocalAIProvider(suggestAvailability?.provider),
+    // The strength meter judges by the number this deployment enforces, so it
+    // cannot pass a password the sign-up endpoint is about to refuse
+    passwordMinScore: passwordMinScore(),
   })
 })

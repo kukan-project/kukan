@@ -10,7 +10,9 @@ import { admin } from 'better-auth/plugins'
 import { adminAc } from 'better-auth/plugins/admin/access'
 import type { Database } from '@kukan/db'
 import { auditLog } from '@kukan/db'
+import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '@kukan/shared'
 import { claimBootstrapPromotion } from '../services/bootstrap'
+import { enforcePasswordPolicy } from './password-policy'
 
 export function createAuth(db: Database) {
   // Links the before-hook promotion decision to the after-hook audit write.
@@ -23,6 +25,24 @@ export function createAuth(db: Database) {
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: false,
+      // Stated rather than left to the default, because the strength hook skips
+      // anything longer and relies on this check to refuse it
+      minPasswordLength: PASSWORD_MIN_LENGTH,
+      maxPasswordLength: PASSWORD_MAX_LENGTH,
+    },
+    hooks: {
+      before: enforcePasswordPolicy,
+    },
+    user: {
+      additionalFields: {
+        // Better Auth drops columns it was not told about, so a displayName
+        // handed to createUser never reached the row without this. `input:
+        // false` keeps the declaration from also opening /api/auth/update-user,
+        // where any signed-in user could otherwise name themselves anything;
+        // KUKAN's own admin API decides who may set it. Server-side creation is
+        // unaffected.
+        displayName: { type: 'string', required: false, input: false },
+      },
     },
     databaseHooks: {
       user: {

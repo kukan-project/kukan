@@ -30,6 +30,9 @@ export * from './licenses'
 // Logger factory
 export * from './logger'
 
+// Password strength policy
+export * from './password-strength'
+
 // Validators
 export * from './url'
 export * from './validators/package'

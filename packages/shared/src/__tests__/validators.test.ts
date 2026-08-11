@@ -3,7 +3,7 @@ import { createUserSchema } from '../validators/user'
 
 describe('createUserSchema', () => {
   const valid = (name: string) =>
-    createUserSchema.safeParse({ name, email: 'a@b.com', password: '12345678' })
+    createUserSchema.safeParse({ name, email: 'a@b.com', password: 'harbor-lantern-quiet-42' })
 
   describe('name validation', () => {
     it('should accept lowercase alphanumeric with hyphens and underscores', () => {
@@ -56,15 +56,18 @@ describe('createUserSchema', () => {
         createUserSchema.safeParse({
           name: 'test',
           email: 'user@example.com',
-          password: '12345678',
+          password: 'harbor-lantern-quiet-42',
         }).success
       ).toBe(true)
     })
 
     it('should reject invalid emails', () => {
       expect(
-        createUserSchema.safeParse({ name: 'test', email: 'not-an-email', password: '12345678' })
-          .success
+        createUserSchema.safeParse({
+          name: 'test',
+          email: 'not-an-email',
+          password: 'harbor-lantern-quiet-42',
+        }).success
       ).toBe(false)
     })
   })
@@ -72,13 +75,18 @@ describe('createUserSchema', () => {
   describe('password validation', () => {
     it('should accept passwords of 8+ characters', () => {
       expect(
-        createUserSchema.safeParse({ name: 'test', email: 'a@b.com', password: '12345678' }).success
+        createUserSchema.safeParse({
+          name: 'test',
+          email: 'a@b.com',
+          password: 'harbor-lantern-quiet-42',
+        }).success
       ).toBe(true)
     })
 
     it('should reject passwords shorter than 8 characters', () => {
       expect(
-        createUserSchema.safeParse({ name: 'test', email: 'a@b.com', password: '1234567' }).success
+        createUserSchema.safeParse({ name: 'test', email: 'a@b.com', password: 'short-one' })
+          .success
       ).toBe(false)
     })
 

@@ -9,6 +9,8 @@ interface SiteSettings {
   metadataSuggestEnabled: boolean
   /** Suggestions run on a local model — edit UIs show a quality caveat */
   metadataSuggestLocalModel: boolean
+  /** zxcvbn score this deployment requires of a new password */
+  passwordMinScore: number
 }
 
 export function useSiteSettings() {
@@ -23,6 +25,9 @@ export function useSiteSettings() {
     // Conservative on error: the button triggers paid LLM calls, so hide it
     metadataSuggestEnabled: error ? false : (data?.metadataSuggestEnabled ?? null),
     metadataSuggestLocalModel: data?.metadataSuggestLocalModel ?? false,
+    // null until known: the meter judges nothing rather than judging by a
+    // default the server may not share
+    passwordMinScore: data?.passwordMinScore ?? null,
     loading,
   }
 }

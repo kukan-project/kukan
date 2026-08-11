@@ -384,10 +384,19 @@ export async function createTestDatabase(name: string): Promise<void> {
   try {
     await admin.query(`CREATE DATABASE ${name} TEMPLATE ${TEMPLATE}`)
   } catch (err) {
-    // Already there: this slot's second file, or another slot won the race.
-    if ((err as { code?: string }).code === '42P04') return
+    // Already there: this slot's second file, or a file that started at the
+    // same moment and finished the copy first.
+    //
+    // Asked of the server rather than read off the error code, because the
+    // race is lost in more than one place — `42P04` from the existence check
+    // CREATE DATABASE does up front, `23505` on the catalog insert when a copy
+    // started after that check and won — and a code this does not recognize
+    // fails the whole file, which, since a slot's database is reused, takes
+    // unrelated suites with it. The state is the question; the code is trivia.
+    const existing = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [name])
+    if (existing.rowCount && existing.rowCount > 0) return
     throw new Error(
-      `Could not copy ${TEMPLATE} into ${name}. ` +
+      `Could not copy ${TEMPLATE} into ${name} (pid ${process.pid}). ` +
         `Anything connected to ${TEMPLATE} — a psql session, a database GUI — blocks this.`,
       { cause: err }
     )

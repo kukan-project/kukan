@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod'
+import { passwordMinScoreSchema } from './password-strength'
 
 const booleanString = z.preprocess(
   (v) => (typeof v === 'string' ? v : String(v)),
@@ -89,6 +90,7 @@ export const envSchema = z.object({
 
   // Auth
   BETTER_AUTH_SECRET: z.string().min(32),
+  PASSWORD_MIN_SCORE: passwordMinScoreSchema,
   BETTER_AUTH_URL: z
     .url()
     .default(

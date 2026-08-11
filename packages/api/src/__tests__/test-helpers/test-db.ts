@@ -68,6 +68,18 @@ export async function cleanDatabase() {
   `)
 }
 
+/**
+ * Clear the user table, which {@link cleanDatabase} leaves alone.
+ *
+ * Rows, not `TRUNCATE ... CASCADE`: the cascade reaches every table with a user
+ * reference — packages included — and a suite that only needs the accounts gone
+ * would take its neighbours' fixtures with it. Call `cleanDatabase()` first;
+ * audit rows reference `user.id` with no ON DELETE action.
+ */
+export async function cleanUsers() {
+  await getTestDb().execute(sql`DELETE FROM "user"`)
+}
+
 /** Default test user ID (matches test-app.ts defaultTestUser) */
 export const TEST_USER_ID = '00000000-0000-0000-0000-000000000001'
 

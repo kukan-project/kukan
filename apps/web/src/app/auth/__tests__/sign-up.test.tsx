@@ -11,7 +11,12 @@ vi.mock('@/lib/auth-client', () => ({
 
 let mockRegistrationEnabled: boolean | null = true
 vi.mock('@/hooks/use-site-settings', () => ({
-  useSiteSettings: () => ({ registrationEnabled: mockRegistrationEnabled, loading: false }),
+  useSiteSettings: () => ({
+    registrationEnabled: mockRegistrationEnabled,
+    // As the real hook reads it before the settings land — the meter stays quiet
+    passwordMinScore: null,
+    loading: false,
+  }),
 }))
 
 import SignUpPage from '../sign-up/page'
@@ -66,7 +71,7 @@ describe('SignUpPage', () => {
       target: { value: 'user@example.com' },
     })
     fireEvent.change(screen.getByLabelText('Password'), {
-      target: { value: 'password123' },
+      target: { value: 'harbor-lantern-quiet-42' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Create Account' }))
 
@@ -74,7 +79,7 @@ describe('SignUpPage', () => {
       expect(mockSignUpEmail).toHaveBeenCalledWith({
         name: 'testuser',
         email: 'user@example.com',
-        password: 'password123',
+        password: 'harbor-lantern-quiet-42',
       })
     })
   })
@@ -91,7 +96,7 @@ describe('SignUpPage', () => {
       target: { value: 'user@example.com' },
     })
     fireEvent.change(screen.getByLabelText('Password'), {
-      target: { value: 'password123' },
+      target: { value: 'harbor-lantern-quiet-42' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Create Account' }))
 
@@ -105,5 +110,26 @@ describe('SignUpPage', () => {
   it('should show sign-in link', () => {
     render(<SignUpPage />)
     expect(screen.getByText('Sign In')).toBeInTheDocument()
+  })
+
+  it('should report a password the server rejects as too weak', async () => {
+    mockSignUpEmail.mockResolvedValue({
+      error: { code: 'PASSWORD_TOO_WEAK', message: 'Password is too easy to guess' },
+    })
+
+    render(<SignUpPage />)
+
+    fireEvent.change(screen.getByLabelText('Username'), {
+      target: { value: 'testuser' },
+    })
+    fireEvent.change(screen.getByLabelText('Email'), {
+      target: { value: 'user@example.com' },
+    })
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'passwordpassword' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Create Account' }))
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('too easy to guess'))
   })
 })

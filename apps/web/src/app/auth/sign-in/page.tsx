@@ -20,11 +20,14 @@ import {
   CardFooter,
 } from '@kukan/ui'
 import { signIn } from '@/lib/auth-client'
+import { PasswordField } from '@/components/password-field'
 import { useSiteSettings } from '@/hooks/use-site-settings'
 
 const signInSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
+  email: z.email(),
+  // Presence only. What length the account's password has to be was decided
+  // when it was set; guessing it here would refuse a sign-in the server accepts
+  password: z.string().min(1),
 })
 
 type SignInValues = z.infer<typeof signInSchema>
@@ -86,22 +89,13 @@ export default function SignInPage() {
                 </p>
               )}
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="password">{t('password')}</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                {...register('password')}
-                aria-invalid={!!errors.password}
-                aria-describedby={errors.password ? 'password-error' : undefined}
-              />
-              {errors.password && (
-                <p id="password-error" className="text-sm text-destructive">
-                  {t('passwordMinLength')}
-                </p>
-              )}
-            </div>
+            <PasswordField
+              id="password"
+              label={t('password')}
+              autoComplete="current-password"
+              error={errors.password && t('passwordRequired')}
+              {...register('password')}
+            />
             <Button type="submit" className="w-full" disabled={isSubmitting}>
               {isSubmitting ? t('signingIn') : t('signIn')}
             </Button>
