@@ -37,10 +37,17 @@ describe('PasswordField', () => {
       />
     )
     const input = screen.getByLabelText('New password')
+    const group = input.closest('[data-slot=input-group]')
 
-    // The caller's class is kept, and so is the room the toggle stands in
-    expect(input.className).toContain('w-64')
-    expect(input.className).toContain('pr-10')
+    // The caller's class sizes the control, which is the bordered group — on
+    // the input it would only shrink what sits inside the border
+    expect(group?.className).toContain('w-64')
+    expect(input.className).not.toContain('w-64')
+    // The room the toggle stands in comes from that same group, not from
+    // padding this component has to add
+    expect(
+      screen.getByRole('button', { name: 'Show password' }).closest('[data-slot=input-group]')
+    ).toBe(group)
     // `type` is not in the prop type at all, so masking cannot be turned off
     expect(input).toHaveAttribute('type', 'password')
     // Both descriptions are true at once, and the attribute takes a list

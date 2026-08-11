@@ -16,21 +16,23 @@ import {
   Alert,
   AlertDescription,
   Button,
+  Field,
+  FieldControl,
+  FieldLabel,
   Input,
-  Label,
   Textarea,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Switch,
   badgeVariants,
   cn,
 } from '@kukan/ui'
 import { Sparkles } from 'lucide-react'
 import { z } from 'zod'
 import { useTranslations } from 'next-intl'
+import { SwitchField } from '@/components/switch-field'
 import { clientFetch } from '@/lib/client-api'
 import { draftEditPath } from '@/lib/paths'
 import { updateResource } from '@/lib/update-resource'
@@ -549,55 +551,43 @@ export function DatasetForm({
         />
       )}
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="name">{isDraftMode ? tc('urlIdentifier') : tc('nameRequired')}</Label>
-        <Input
-          id="name"
-          placeholder="my-dataset"
-          {...register('name')}
-          aria-invalid={!!errors.name}
-          aria-describedby={errors.name ? 'name-help name-error' : 'name-help'}
-          disabled={!isDraftMode}
-        />
-        <p id="name-help" className="text-xs text-muted-foreground">
-          {tc('nameHelp')}
-          {isDraftMode && ` ${t('draftNameHelp')}`}
-        </p>
-        {errors.name && (
-          <p id="name-error" className="text-sm text-destructive">
-            {errors.name.message}
-          </p>
-        )}
-      </div>
+      <Field
+        id="name"
+        description={isDraftMode ? `${tc('nameHelp')} ${t('draftNameHelp')}` : tc('nameHelp')}
+        error={errors.name?.message}
+      >
+        <FieldLabel>{isDraftMode ? tc('urlIdentifier') : tc('nameRequired')}</FieldLabel>
+        <FieldControl>
+          <Input placeholder="my-dataset" {...register('name')} disabled={!isDraftMode} />
+        </FieldControl>
+      </Field>
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="title">{tc('title')}</Label>
-        <Input id="title" placeholder={t('titlePlaceholder')} {...register('title')} />
-      </div>
+      <Field id="title">
+        <FieldLabel>{tc('title')}</FieldLabel>
+        <FieldControl>
+          <Input placeholder={t('titlePlaceholder')} {...register('title')} />
+        </FieldControl>
+      </Field>
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="notes">{tc('description')}</Label>
-        <Textarea
-          id="notes"
-          placeholder={t('descriptionPlaceholder')}
-          rows={4}
-          {...register('notes')}
-        />
-      </div>
+      <Field id="notes">
+        <FieldLabel>{tc('description')}</FieldLabel>
+        <FieldControl>
+          <Textarea placeholder={t('descriptionPlaceholder')} rows={4} {...register('notes')} />
+        </FieldControl>
+      </Field>
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="ownerOrg">{isDraftMode ? tc('organization') : t('orgRequired')}</Label>
+      <Field id="ownerOrg" error={errors.ownerOrg && tc('required')}>
+        <FieldLabel>{isDraftMode ? tc('organization') : t('orgRequired')}</FieldLabel>
         <Controller
           name="ownerOrg"
           control={control}
           render={({ field }) => (
             <Select value={field.value ?? ''} onValueChange={field.onChange}>
-              <SelectTrigger
-                aria-invalid={!!errors.ownerOrg}
-                aria-describedby={errors.ownerOrg ? 'ownerOrg-error' : undefined}
-              >
-                <SelectValue placeholder={t('orgSelect')} />
-              </SelectTrigger>
+              <FieldControl>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('orgSelect')} />
+                </SelectTrigger>
+              </FieldControl>
               <SelectContent>
                 {organizations.map((org) => (
                   <SelectItem key={org.id} value={org.id}>
@@ -608,78 +598,72 @@ export function DatasetForm({
             </Select>
           )}
         />
-        {errors.ownerOrg && (
-          <p id="ownerOrg-error" className="text-sm text-destructive">
-            {tc('required')}
-          </p>
+      </Field>
+
+      <Controller
+        name="private"
+        control={control}
+        render={({ field }) => (
+          <SwitchField
+            id="private"
+            label={tc('private')}
+            labelClassName="font-medium"
+            checked={field.value}
+            onCheckedChange={field.onChange}
+          />
         )}
-      </div>
+      />
 
-      <div className="flex items-center gap-3">
-        <Controller
-          name="private"
-          control={control}
-          render={({ field }) => (
-            <Switch id="private" checked={field.value} onCheckedChange={field.onChange} />
-          )}
-        />
-        <Label htmlFor="private">{tc('private')}</Label>
-      </div>
+      <Field id="tags" description={t('tagsHelp')}>
+        <FieldLabel>{t('tags')}</FieldLabel>
+        <FieldControl>
+          <Input
+            placeholder={t('tagsPlaceholder')}
+            value={tagsInput}
+            onChange={(e) => setTagsInput(e.target.value)}
+          />
+        </FieldControl>
+      </Field>
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="tags">{t('tags')}</Label>
-        <Input
-          id="tags"
-          placeholder={t('tagsPlaceholder')}
-          value={tagsInput}
-          onChange={(e) => setTagsInput(e.target.value)}
-        />
-        <p className="text-xs text-muted-foreground">{t('tagsHelp')}</p>
-      </div>
+      {/* A title, not a label: the categories are a set of toggles, so the
+          group is named rather than a control pointed at */}
+      <Field
+        title={t('categories')}
+        description={groupOptions.length === 0 ? t('noCategoriesAvailable') : t('categoriesHelp')}
+      >
+        <div className="flex flex-wrap gap-2">
+          {groupOptions.map((g) => {
+            const selected = selectedGroups.includes(g.name)
+            return (
+              <button
+                key={g.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => toggleGroup(g.name)}
+                className={cn(
+                  badgeVariants({ variant: selected ? 'default' : 'outline' }),
+                  'cursor-pointer'
+                )}
+              >
+                {g.title || g.name}
+              </button>
+            )
+          })}
+        </div>
+      </Field>
 
-      <div className="flex flex-col gap-2">
-        <Label>{t('categories')}</Label>
-        {groupOptions.length === 0 ? (
-          <p className="text-xs text-muted-foreground">{t('noCategoriesAvailable')}</p>
-        ) : (
-          <>
-            <div className="flex flex-wrap gap-2">
-              {groupOptions.map((g) => {
-                const selected = selectedGroups.includes(g.name)
-                return (
-                  <button
-                    key={g.id}
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => toggleGroup(g.name)}
-                    className={cn(
-                      badgeVariants({ variant: selected ? 'default' : 'outline' }),
-                      'cursor-pointer'
-                    )}
-                  >
-                    {g.title || g.name}
-                  </button>
-                )
-              })}
-            </div>
-            <p className="text-xs text-muted-foreground">{t('categoriesHelp')}</p>
-          </>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label>{isDraftMode ? tc('license') : t('licenseRequired')}</Label>
+      <Field id="licenseId" error={errors.licenseId && tc('required')}>
+        <FieldLabel>{isDraftMode ? tc('license') : t('licenseRequired')}</FieldLabel>
         <Controller
           name="licenseId"
           control={control}
           render={({ field }) => (
             <Select value={field.value ?? ''} onValueChange={field.onChange}>
-              <SelectTrigger
-                aria-invalid={!!errors.licenseId}
-                aria-describedby={errors.licenseId ? 'licenseId-error' : undefined}
-              >
-                <SelectValue placeholder={t('licenseSelect')} />
-              </SelectTrigger>
+              <FieldControl>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('licenseSelect')} />
+                </SelectTrigger>
+              </FieldControl>
               <SelectContent>
                 {LICENSES.map((l) => (
                   <SelectItem key={l.id} value={l.id}>
@@ -690,83 +674,54 @@ export function DatasetForm({
             </Select>
           )}
         />
-        {errors.licenseId && (
-          <p id="licenseId-error" className="text-sm text-destructive">
-            {tc('required')}
-          </p>
-        )}
+      </Field>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field id="author">
+          <FieldLabel>{t('author')}</FieldLabel>
+          <FieldControl>
+            <Input {...register('author')} />
+          </FieldControl>
+        </Field>
+        <Field id="authorEmail" error={errors.authorEmail?.message}>
+          <FieldLabel>{t('authorEmail')}</FieldLabel>
+          <FieldControl>
+            <Input type="email" {...register('authorEmail')} />
+          </FieldControl>
+        </Field>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="author">{t('author')}</Label>
-          <Input id="author" {...register('author')} />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="authorEmail">{t('authorEmail')}</Label>
-          <Input
-            id="authorEmail"
-            type="email"
-            {...register('authorEmail')}
-            aria-invalid={!!errors.authorEmail}
-            aria-describedby={errors.authorEmail ? 'authorEmail-error' : undefined}
-          />
-          {errors.authorEmail && (
-            <p id="authorEmail-error" className="text-sm text-destructive">
-              {errors.authorEmail.message}
-            </p>
-          )}
-        </div>
+        <Field id="maintainer">
+          <FieldLabel>{t('maintainerLabel')}</FieldLabel>
+          <FieldControl>
+            <Input {...register('maintainer')} />
+          </FieldControl>
+        </Field>
+        <Field id="maintainerEmail" error={errors.maintainerEmail?.message}>
+          <FieldLabel>{t('maintainerEmail')}</FieldLabel>
+          <FieldControl>
+            <Input type="email" {...register('maintainerEmail')} />
+          </FieldControl>
+        </Field>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="maintainer">{t('maintainerLabel')}</Label>
-          <Input id="maintainer" {...register('maintainer')} />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="maintainerEmail">{t('maintainerEmail')}</Label>
-          <Input
-            id="maintainerEmail"
-            type="email"
-            {...register('maintainerEmail')}
-            aria-invalid={!!errors.maintainerEmail}
-            aria-describedby={errors.maintainerEmail ? 'maintainerEmail-error' : undefined}
-          />
-          {errors.maintainerEmail && (
-            <p id="maintainerEmail-error" className="text-sm text-destructive">
-              {errors.maintainerEmail.message}
-            </p>
-          )}
-        </div>
+        <Field id="url" error={errors.url?.message}>
+          <FieldLabel>URL</FieldLabel>
+          <FieldControl>
+            <Input type="url" placeholder="https://example.com" {...register('url')} />
+          </FieldControl>
+        </Field>
+        <Field id="version">
+          <FieldLabel>{t('version')}</FieldLabel>
+          <FieldControl>
+            <Input placeholder="1.0" {...register('version')} />
+          </FieldControl>
+        </Field>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="url">URL</Label>
-          <Input
-            id="url"
-            type="url"
-            placeholder="https://example.com"
-            {...register('url')}
-            aria-invalid={!!errors.url}
-            aria-describedby={errors.url ? 'url-error' : undefined}
-          />
-          {errors.url && (
-            <p id="url-error" className="text-sm text-destructive">
-              {errors.url.message}
-            </p>
-          )}
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="version">{t('version')}</Label>
-          <Input id="version" placeholder="1.0" {...register('version')} />
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label>{t('extras')}</Label>
-        <p className="text-xs text-muted-foreground">{t('extrasHelp')}</p>
+      <Field title={t('extras')} description={t('extrasHelp')} error={extrasError}>
         {extrasRows.map((row) => (
           <div key={row.id} className="flex gap-2">
             <Input
@@ -794,8 +749,7 @@ export function DatasetForm({
         <Button type="button" variant="outline" size="sm" className="w-fit" onClick={addExtrasRow}>
           {t('extrasAdd')}
         </Button>
-        {extrasError && <p className="text-sm text-destructive">{extrasError}</p>}
-      </div>
+      </Field>
 
       {isDraftEdit ? (
         <div className="flex flex-col gap-3">

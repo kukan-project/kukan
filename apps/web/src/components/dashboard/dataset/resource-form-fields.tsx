@@ -1,8 +1,8 @@
-import { Input, Label, Textarea } from '@kukan/ui'
+import { Field, FieldControl, FieldLabel, Input, Textarea } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 
 interface ResourceFormFieldsProps {
-  /** Unique prefix for htmlFor ids (e.g. "res", "edit") */
+  /** Unique prefix for the field ids (e.g. "res", "edit") */
   idPrefix: string
   name: string
   onNameChange: (value: string) => void
@@ -29,35 +29,38 @@ export function ResourceFormFields({
 
   return (
     <>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={`${idPrefix}-name`}>{tc('name')}</Label>
-        <Input
-          id={`${idPrefix}-name`}
-          value={name}
-          onChange={(e) => onNameChange(e.target.value)}
-          placeholder={t('namePlaceholder')}
-        />
-      </div>
+      <Field id={`${idPrefix}-name`}>
+        <FieldLabel>{tc('name')}</FieldLabel>
+        <FieldControl>
+          <Input
+            value={name}
+            onChange={(e) => onNameChange(e.target.value)}
+            placeholder={t('namePlaceholder')}
+          />
+        </FieldControl>
+      </Field>
       {children}
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={`${idPrefix}-description`}>{tc('description')}</Label>
-        <Textarea
-          id={`${idPrefix}-description`}
-          value={description}
-          onChange={(e) => onDescriptionChange(e.target.value)}
-          rows={2}
-          placeholder={t('descriptionPlaceholder')}
-        />
-      </div>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={`${idPrefix}-format`}>{tc('format')}</Label>
-        <Input
-          id={`${idPrefix}-format`}
-          value={format}
-          onChange={(e) => onFormatChange(e.target.value)}
-          placeholder={t('formatAutoDetected')}
-        />
-      </div>
+      <Field id={`${idPrefix}-description`}>
+        <FieldLabel>{tc('description')}</FieldLabel>
+        <FieldControl>
+          <Textarea
+            value={description}
+            onChange={(e) => onDescriptionChange(e.target.value)}
+            rows={2}
+            placeholder={t('descriptionPlaceholder')}
+          />
+        </FieldControl>
+      </Field>
+      <Field id={`${idPrefix}-format`}>
+        <FieldLabel>{tc('format')}</FieldLabel>
+        <FieldControl>
+          <Input
+            value={format}
+            onChange={(e) => onFormatChange(e.target.value)}
+            placeholder={t('formatAutoDetected')}
+          />
+        </FieldControl>
+      </Field>
     </>
   )
 }

@@ -10,8 +10,10 @@ import {
   Alert,
   AlertDescription,
   Button,
+  Field,
+  FieldControl,
+  FieldLabel,
   Input,
-  Label,
   Card,
   CardHeader,
   CardTitle,
@@ -72,23 +74,17 @@ export default function SignInPage() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="email">{t('email')}</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="name@example.com"
-                autoComplete="email"
-                {...register('email')}
-                aria-invalid={!!errors.email}
-                aria-describedby={errors.email ? 'email-error' : undefined}
-              />
-              {errors.email && (
-                <p id="email-error" className="text-sm text-destructive">
-                  {t('invalidEmail')}
-                </p>
-              )}
-            </div>
+            <Field id="email" error={errors.email && t('invalidEmail')}>
+              <FieldLabel>{t('email')}</FieldLabel>
+              <FieldControl>
+                <Input
+                  type="email"
+                  placeholder="name@example.com"
+                  autoComplete="email"
+                  {...register('email')}
+                />
+              </FieldControl>
+            </Field>
             <PasswordField
               id="password"
               label={t('password')}

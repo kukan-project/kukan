@@ -5,7 +5,16 @@ import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { createGroupSchema, type CreateGroupInput } from '@kukan/shared'
-import { Alert, AlertDescription, Button, Input, Label, Textarea } from '@kukan/ui'
+import {
+  Alert,
+  AlertDescription,
+  Button,
+  Field,
+  FieldControl,
+  FieldLabel,
+  Input,
+  Textarea,
+} from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
 
@@ -59,54 +68,34 @@ export function GroupForm({ mode = 'create', defaultValues, nameOrId }: GroupFor
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="name">{tc('nameRequired')}</Label>
-        <Input
-          id="name"
-          placeholder="my-group"
-          {...register('name')}
-          aria-invalid={!!errors.name}
-          aria-describedby={errors.name ? 'name-help name-error' : 'name-help'}
-          disabled={mode === 'edit'}
-        />
-        <p id="name-help" className="text-xs text-muted-foreground">
-          {tc('nameHelp')}
-        </p>
-        {errors.name && (
-          <p id="name-error" className="text-sm text-destructive">
-            {errors.name.message}
-          </p>
-        )}
-      </div>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="title">{tc('title')}</Label>
-        <Input id="title" placeholder={t('titlePlaceholder')} {...register('title')} />
-      </div>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="description">{tc('description')}</Label>
-        <Textarea
-          id="description"
-          placeholder={t('descriptionPlaceholder')}
-          rows={4}
-          {...register('description')}
-        />
-      </div>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="imageUrl">{tc('imageUrl')}</Label>
-        <Input
-          id="imageUrl"
-          type="url"
-          placeholder="https://example.com/logo.png"
-          {...register('imageUrl')}
-          aria-invalid={!!errors.imageUrl}
-          aria-describedby={errors.imageUrl ? 'imageUrl-error' : undefined}
-        />
-        {errors.imageUrl && (
-          <p id="imageUrl-error" className="text-sm text-destructive">
-            {errors.imageUrl.message}
-          </p>
-        )}
-      </div>
+      <Field id="name" description={tc('nameHelp')} error={errors.name?.message}>
+        <FieldLabel>{tc('nameRequired')}</FieldLabel>
+        <FieldControl>
+          <Input placeholder="my-group" {...register('name')} disabled={mode === 'edit'} />
+        </FieldControl>
+      </Field>
+      <Field id="title">
+        <FieldLabel>{tc('title')}</FieldLabel>
+        <FieldControl>
+          <Input placeholder={t('titlePlaceholder')} {...register('title')} />
+        </FieldControl>
+      </Field>
+      <Field id="description">
+        <FieldLabel>{tc('description')}</FieldLabel>
+        <FieldControl>
+          <Textarea
+            placeholder={t('descriptionPlaceholder')}
+            rows={4}
+            {...register('description')}
+          />
+        </FieldControl>
+      </Field>
+      <Field id="imageUrl" error={errors.imageUrl?.message}>
+        <FieldLabel>{tc('imageUrl')}</FieldLabel>
+        <FieldControl>
+          <Input type="url" placeholder="https://example.com/logo.png" {...register('imageUrl')} />
+        </FieldControl>
+      </Field>
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? submitLabels.loading : submitLabels.idle}
       </Button>

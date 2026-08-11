@@ -3,20 +3,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import {
-  Alert,
-  AlertDescription,
-  Badge,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Label,
-  Switch,
-} from '@kukan/ui'
+import { Alert, AlertDescription, Badge, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { isDraftPlaceholderName, type PackageState } from '@kukan/shared'
 import { Sparkles } from 'lucide-react'
+import { SwitchField } from '@/components/switch-field'
 import { clientFetch } from '@/lib/client-api'
 import { useFetch } from '@/hooks/use-fetch'
 import { hasRole } from '@/hooks/use-my-roles'
@@ -499,16 +490,12 @@ export default function EditDatasetPage() {
             <p className="mb-3 text-sm text-muted-foreground">{t('restoreDatasetConfirm')}</p>
             {/* A dataset that was private is already off the site */}
             {!pkg.private && (
-              <div className="mb-4 flex items-center gap-2">
-                <Switch
-                  id="restore-private"
-                  checked={restorePrivate}
-                  onCheckedChange={setRestorePrivate}
-                />
-                <Label htmlFor="restore-private" className="cursor-pointer font-normal">
-                  {t('restoreAsPrivate')}
-                </Label>
-              </div>
+              <SwitchField
+                className="mb-4"
+                label={t('restoreAsPrivate')}
+                checked={restorePrivate}
+                onCheckedChange={setRestorePrivate}
+              />
             )}
             <Button onClick={handleRestore} disabled={restoring}>
               {restoring ? tc('loading') : t('restoreDataset')}

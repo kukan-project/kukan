@@ -13,7 +13,9 @@ import {
   TableRow,
   Badge,
   Input,
-  Label,
+  Field,
+  FieldControl,
+  FieldLabel,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -703,15 +705,16 @@ export function ResourceList({
                 <TabsTrigger value="upload">{t('sourceUpload')}</TabsTrigger>
               </TabsList>
               <TabsContent value="url">
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor={`${isEditing ? 'edit' : 'create'}-url`}>URL</Label>
-                  <Input
-                    id={`${isEditing ? 'edit' : 'create'}-url`}
-                    value={formState.url}
-                    onChange={(e) => handleUrlChange(e.target.value)}
-                    placeholder="https://example.com/data.csv"
-                  />
-                </div>
+                <Field id={`${isEditing ? 'edit' : 'create'}-url`}>
+                  <FieldLabel>URL</FieldLabel>
+                  <FieldControl>
+                    <Input
+                      value={formState.url}
+                      onChange={(e) => handleUrlChange(e.target.value)}
+                      placeholder="https://example.com/data.csv"
+                    />
+                  </FieldControl>
+                </Field>
               </TabsContent>
               <TabsContent value="upload">
                 {isExistingResource && !replacing && !pendingFile ? (

@@ -9,7 +9,9 @@ import {
   CardHeader,
   CardTitle,
   Input,
-  Label,
+  Field,
+  FieldControl,
+  FieldLabel,
 } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { MAX_UPLOAD_SIZE, MAX_UPLOAD_SIZE_MB } from '@kukan/shared'
@@ -89,19 +91,19 @@ export default function NewDatasetPage() {
       {/* Data that sits elsewhere, which until now meant creating the dataset
           empty and then editing it. Submitted with the form rather than at once
           like a drop: a url is typed, a keystroke at a time. */}
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="source-url">{tr('sourceUrl')}</Label>
-        <Input
-          id="source-url"
-          type="url"
-          inputMode="url"
-          placeholder="https://example.com/data.csv"
-          value={sourceUrl}
-          onChange={(e) => setSourceUrl(e.target.value)}
-          disabled={formBusy}
-        />
-        <p className="text-sm text-muted-foreground">{t('resourceUrlHint')}</p>
-      </div>
+      <Field id="source-url" description={t('resourceUrlHint')}>
+        <FieldLabel>{tr('sourceUrl')}</FieldLabel>
+        <FieldControl>
+          <Input
+            type="url"
+            inputMode="url"
+            placeholder="https://example.com/data.csv"
+            value={sourceUrl}
+            onChange={(e) => setSourceUrl(e.target.value)}
+            disabled={formBusy}
+          />
+        </FieldControl>
+      </Field>
       <Card>
         <CardHeader>
           <CardTitle>{tc('basicInfo')}</CardTitle>

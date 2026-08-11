@@ -1,11 +1,19 @@
 'use client'
 
-import { useId, useState, type ComponentProps } from 'react'
+import { useState, type ComponentProps } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import { Button, Input, Label, cn } from '@kukan/ui'
+import {
+  Field,
+  FieldControl,
+  FieldLabel,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from '@kukan/ui'
 
-type Props = Omit<ComponentProps<typeof Input>, 'type' | 'id'> & {
+type Props = Omit<ComponentProps<typeof InputGroupInput>, 'type' | 'id'> & {
   label: string
   /** Rendered under the field when set; also marks the input invalid */
   error?: string
@@ -23,52 +31,36 @@ export function PasswordField({
   id,
   className,
   'aria-describedby': describedBy,
-  'aria-invalid': invalid,
   ...inputProps
 }: Props) {
   const t = useTranslations('password')
-  const generatedId = useId()
-  const fieldId = id ?? generatedId
-  const errorId = `${fieldId}-error`
   const [revealed, setRevealed] = useState(false)
 
-  // Both readings are true at once: a field can have requirements described
-  // elsewhere and an error of its own, and aria-describedby takes a list
-  const described = [describedBy, error ? errorId : null].filter(Boolean).join(' ')
-
   return (
-    <div className="flex flex-col gap-2">
-      <Label htmlFor={fieldId}>{label}</Label>
-      <div className="relative">
-        {/* Caller props first: what this composes — the room the toggle needs,
-            and the masking — is not the caller's to drop */}
-        <Input
-          {...inputProps}
-          id={fieldId}
-          type={revealed ? 'text' : 'password'}
-          className={cn('pr-10', className)}
-          aria-invalid={error ? true : invalid}
-          aria-describedby={described || undefined}
-        />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          onClick={() => setRevealed((shown) => !shown)}
-          // Revealing is the user's own call about their surroundings, so the
-          // state is announced rather than the field's contents
-          aria-pressed={revealed}
-          aria-label={revealed ? t('hide') : t('show')}
-          className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
-        >
-          {revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-        </Button>
-      </div>
-      {error && (
-        <p id={errorId} className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
-    </div>
+    // A field can have requirements described elsewhere and an error of its
+    // own; the caller's ids stay ahead of the one this field generates
+    <Field id={id} describedBy={describedBy} error={error}>
+      <FieldLabel>{label}</FieldLabel>
+      {/* The caller's class sizes the control, which is the bordered group —
+          on the input it would only shrink what sits inside the border */}
+      <InputGroup className={className}>
+        {/* Caller props first: the masking this composes is not theirs to drop */}
+        <FieldControl>
+          <InputGroupInput {...inputProps} type={revealed ? 'text' : 'password'} />
+        </FieldControl>
+        <InputGroupAddon align="inline-end">
+          <InputGroupButton
+            size="icon-sm"
+            onClick={() => setRevealed((shown) => !shown)}
+            // Revealing is the user's own call about their surroundings, so the
+            // state is announced rather than the field's contents
+            aria-pressed={revealed}
+            aria-label={revealed ? t('hide') : t('show')}
+          >
+            {revealed ? <EyeOff /> : <Eye />}
+          </InputGroupButton>
+        </InputGroupAddon>
+      </InputGroup>
+    </Field>
   )
 }

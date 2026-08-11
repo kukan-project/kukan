@@ -13,8 +13,10 @@ import {
   Alert,
   AlertDescription,
   Button,
+  Field,
+  FieldControl,
+  FieldLabel,
   Input,
-  Label,
   Select,
   SelectContent,
   SelectItem,
@@ -106,27 +108,20 @@ export function AnnouncementForm({ mode = 'create', defaultValues, id }: Announc
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="title">{t('title')}</Label>
-        <Input
-          id="title"
-          placeholder={t('titlePlaceholder')}
-          {...register('title')}
-          aria-invalid={!!errors.title}
-          aria-describedby={errors.title ? 'title-error' : undefined}
-        />
-        {errors.title && (
-          <p id="title-error" className="text-sm text-destructive">
-            {errors.title.message}
-          </p>
-        )}
-      </div>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="category">{t('category')}</Label>
+      <Field id="title" error={errors.title?.message}>
+        <FieldLabel>{t('title')}</FieldLabel>
+        <FieldControl>
+          <Input placeholder={t('titlePlaceholder')} {...register('title')} />
+        </FieldControl>
+      </Field>
+      <Field id="category">
+        <FieldLabel>{t('category')}</FieldLabel>
         <Select value={category} onValueChange={(v) => setValue('category', v as typeof category)}>
-          <SelectTrigger id="category">
-            <SelectValue />
-          </SelectTrigger>
+          <FieldControl>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+          </FieldControl>
           <SelectContent>
             {announcementCategories.map((cat) => (
               <SelectItem key={cat} value={cat}>
@@ -135,36 +130,26 @@ export function AnnouncementForm({ mode = 'create', defaultValues, id }: Announc
             ))}
           </SelectContent>
         </Select>
-      </div>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="link">{t('link')}</Label>
-        <Input
-          id="link"
-          type="url"
-          placeholder={t('linkPlaceholder')}
-          {...register('link')}
-          aria-invalid={!!errors.link}
-          aria-describedby={errors.link ? 'link-error' : undefined}
-        />
-        {errors.link && (
-          <p id="link-error" className="text-sm text-destructive">
-            {errors.link.message}
-          </p>
-        )}
-      </div>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="publishedAt">
+      </Field>
+      <Field id="link" error={errors.link?.message}>
+        <FieldLabel>{t('link')}</FieldLabel>
+        <FieldControl>
+          <Input type="url" placeholder={t('linkPlaceholder')} {...register('link')} />
+        </FieldControl>
+      </Field>
+      <Field id="publishedAt" description={t('publishedAtHelp')}>
+        <FieldLabel>
           {t('publishedAt')}
           {timezone && ` (${timezone})`}
-        </Label>
-        <Input
-          id="publishedAt"
-          type="datetime-local"
-          value={publishedAtStr}
-          onChange={(e) => setPublishedAtStr(e.target.value)}
-        />
-        <p className="text-xs text-muted-foreground">{t('publishedAtHelp')}</p>
-      </div>
+        </FieldLabel>
+        <FieldControl>
+          <Input
+            type="datetime-local"
+            value={publishedAtStr}
+            onChange={(e) => setPublishedAtStr(e.target.value)}
+          />
+        </FieldControl>
+      </Field>
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? submitLabels.loading : submitLabels.idle}
       </Button>

@@ -8,7 +8,9 @@ import {
   CardHeader,
   CardTitle,
   Input,
-  Label,
+  Field,
+  FieldControl,
+  FieldLabel,
   Table,
   TableBody,
   TableCell,
@@ -178,21 +180,24 @@ export default function ApiTokensPage() {
             <DialogTitle>{t('createToken')}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="token-name">{t('nameOptional')}</Label>
-              <Input
-                id="token-name"
-                value={tokenName}
-                onChange={(e) => setTokenName(e.target.value)}
-                placeholder={t('namePlaceholder')}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="expires">{t('expiresIn')}</Label>
+            <Field id="token-name">
+              <FieldLabel>{t('nameOptional')}</FieldLabel>
+              <FieldControl>
+                <Input
+                  value={tokenName}
+                  onChange={(e) => setTokenName(e.target.value)}
+                  placeholder={t('namePlaceholder')}
+                />
+              </FieldControl>
+            </Field>
+            <Field id="expires">
+              <FieldLabel>{t('expiresIn')}</FieldLabel>
               <Select value={expiresDays} onValueChange={setExpiresDays}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <FieldControl>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                </FieldControl>
                 <SelectContent>
                   <SelectItem value="30">{t('days30')}</SelectItem>
                   <SelectItem value="90">{t('days90')}</SelectItem>
@@ -201,7 +206,7 @@ export default function ApiTokensPage() {
                   <SelectItem value="none">{t('noExpiry')}</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
+            </Field>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreate(false)}>

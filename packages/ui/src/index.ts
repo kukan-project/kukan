@@ -4,6 +4,27 @@ export { Button, buttonVariants } from './components/ui/button'
 export { Input } from './components/ui/input'
 export { Label } from './components/ui/label'
 export {
+  Field,
+  FieldControl,
+  FieldLabel,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLegend,
+  FieldSeparator,
+  FieldSet,
+  FieldContent,
+  FieldTitle,
+} from './components/ui/field'
+export {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupText,
+  InputGroupInput,
+  InputGroupTextarea,
+} from './components/ui/input-group'
+export {
   Card,
   CardHeader,
   CardTitle,

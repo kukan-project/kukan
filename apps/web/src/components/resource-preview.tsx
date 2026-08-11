@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useId, useState, useSyncExternalStore } from 'react'
-import { Card, CardContent, Skeleton, Badge, Switch, Label } from '@kukan/ui'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { Card, CardContent, Skeleton, Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import dynamic from 'next/dynamic'
 import {
@@ -14,6 +14,7 @@ import {
   isGeoJsonFormat,
   isImageFormat,
 } from '@kukan/shared'
+import { SwitchField } from '@/components/switch-field'
 import { clientFetch } from '@/lib/client-api'
 import { ParquetPreview } from './parquet-preview'
 import { GeoJsonPreview } from './geojson-preview'
@@ -104,7 +105,6 @@ function TextOnlyPreview({ resourceId }: { resourceId: string }) {
 
 function TablePreview({ resourceId }: { resourceId: string }) {
   const t = useTranslations('resource')
-  const switchId = useId()
   const [source, setSource] = useState<PreviewSource>('parquet')
   const [analysisMode, setAnalysisMode] = useAnalysisMode()
 
@@ -129,12 +129,11 @@ function TablePreview({ resourceId }: { resourceId: string }) {
           ))}
         </div>
         {source === 'parquet' && (
-          <div className="flex items-center gap-2">
-            <Switch id={switchId} checked={analysisMode} onCheckedChange={setAnalysisMode} />
-            <Label htmlFor={switchId} className="cursor-pointer text-sm">
-              {t('analysisMode')}
-            </Label>
-          </div>
+          <SwitchField
+            label={t('analysisMode')}
+            checked={analysisMode}
+            onCheckedChange={setAnalysisMode}
+          />
         )}
       </div>
       {source === 'parquet' &&

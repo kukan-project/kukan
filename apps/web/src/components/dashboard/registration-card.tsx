@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { Button, Card, CardContent, CardHeader, CardTitle, Label, Switch } from '@kukan/ui'
+import { Button, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
+import { SwitchField } from '@/components/switch-field'
 import { clientFetch } from '@/lib/client-api'
 
 const SETTING_KEY = 'registration-enabled'
@@ -11,7 +12,6 @@ const SETTING_KEY = 'registration-enabled'
 export function RegistrationCard() {
   const t = useTranslations('dashboard.adminSite')
   const tc = useTranslations('common')
-  const toggleId = useId()
 
   const [loaded, setLoaded] = useState(false)
   const [enabled, setEnabled] = useState(false)
@@ -65,19 +65,14 @@ export function RegistrationCard() {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <p className="text-sm text-muted-foreground">{t('registrationDescription')}</p>
-        <div className="flex items-center gap-2">
-          <Switch
-            id={toggleId}
-            checked={selected}
-            onCheckedChange={(checked) => {
-              setSelected(checked)
-              setSaved(false)
-            }}
-          />
-          <Label htmlFor={toggleId} className="text-sm font-normal">
-            {t('registrationLabel')}
-          </Label>
-        </div>
+        <SwitchField
+          label={t('registrationLabel')}
+          checked={selected}
+          onCheckedChange={(checked) => {
+            setSelected(checked)
+            setSaved(false)
+          }}
+        />
         <div className="flex items-center gap-4">
           <Button onClick={save} disabled={saving || selected === enabled}>
             {tc('save')}

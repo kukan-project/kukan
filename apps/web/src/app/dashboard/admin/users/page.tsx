@@ -13,7 +13,9 @@ import {
   Badge,
   Button,
   Input,
-  Label,
+  Field,
+  FieldControl,
+  FieldLabel,
   Table,
   TableBody,
   TableCell,
@@ -437,45 +439,27 @@ export default function AdminUsersPage() {
                 <AlertDescription>{createError}</AlertDescription>
               </Alert>
             )}
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="create-name">{t('fieldName')}</Label>
-              <Input
-                id="create-name"
-                placeholder={t('fieldNamePlaceholder')}
-                {...register('name')}
-                aria-invalid={!!errors.name}
-                aria-describedby={errors.name ? 'create-name-error' : undefined}
-              />
-              {errors.name && (
-                <p id="create-name-error" className="text-sm text-destructive">
-                  {t('fieldNameError')}
-                </p>
-              )}
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="create-displayName">{t('fieldDisplayName')}</Label>
-              <Input
-                id="create-displayName"
-                placeholder={t('fieldDisplayNamePlaceholder')}
-                {...register('displayName')}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="create-email">{t('fieldEmail')}</Label>
-              <Input
-                id="create-email"
-                type="email"
-                placeholder="user@example.com"
-                {...register('email')}
-                aria-invalid={!!errors.email}
-                aria-describedby={errors.email ? 'create-email-error' : undefined}
-              />
-              {errors.email && (
-                <p id="create-email-error" className="text-sm text-destructive">
-                  {t('fieldEmailError')}
-                </p>
-              )}
-            </div>
+            <Field id="create-name" error={errors.name && t('fieldNameError')}>
+              <FieldLabel>{t('fieldName')}</FieldLabel>
+              <FieldControl>
+                <Input placeholder={t('fieldNamePlaceholder')} {...register('name')} />
+              </FieldControl>
+            </Field>
+            <Field id="create-displayName">
+              <FieldLabel>{t('fieldDisplayName')}</FieldLabel>
+              <FieldControl>
+                <Input
+                  placeholder={t('fieldDisplayNamePlaceholder')}
+                  {...register('displayName')}
+                />
+              </FieldControl>
+            </Field>
+            <Field id="create-email" error={errors.email && t('fieldEmailError')}>
+              <FieldLabel>{t('fieldEmail')}</FieldLabel>
+              <FieldControl>
+                <Input type="email" placeholder="user@example.com" {...register('email')} />
+              </FieldControl>
+            </Field>
             <div className="flex flex-col gap-2">
               <PasswordField
                 id="create-password"
@@ -492,18 +476,20 @@ export default function AdminUsersPage() {
               />
               <CreateUserStrength control={control} />
             </div>
-            <div className="flex flex-col gap-2">
-              <Label>{t('fieldRole')}</Label>
+            <Field>
+              <FieldLabel>{t('fieldRole')}</FieldLabel>
               <Select defaultValue="user" onValueChange={(v) => setValue('role', v as UserRole)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <FieldControl>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                </FieldControl>
                 <SelectContent>
                   <SelectItem value="user">{t('roleUser')}</SelectItem>
                   <SelectItem value="sysadmin">{t('roleSysadmin')}</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
+            </Field>
             <DialogFooter>
               <Button type="submit" disabled={isSubmitting}>
                 {isSubmitting ? tc('creating') : tc('create')}
@@ -526,44 +512,38 @@ export default function AdminUsersPage() {
                 <AlertDescription>{editError}</AlertDescription>
               </Alert>
             )}
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="edit-name">{t('fieldName')}</Label>
-              <Input
-                id="edit-name"
-                placeholder={t('fieldNamePlaceholder')}
-                {...editForm.register('name')}
-                aria-invalid={!!editForm.formState.errors.name}
-                aria-describedby={editForm.formState.errors.name ? 'edit-name-error' : undefined}
-              />
-              {editForm.formState.errors.name && (
-                <p id="edit-name-error" className="text-sm text-destructive">
-                  {t('fieldNameError')}
-                </p>
-              )}
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="edit-displayName">{t('fieldDisplayName')}</Label>
-              <Input
-                id="edit-displayName"
-                placeholder={t('fieldDisplayNamePlaceholder')}
-                {...editForm.register('displayName')}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label>{t('fieldRole')}</Label>
+            <Field id="edit-name" error={editForm.formState.errors.name && t('fieldNameError')}>
+              <FieldLabel>{t('fieldName')}</FieldLabel>
+              <FieldControl>
+                <Input placeholder={t('fieldNamePlaceholder')} {...editForm.register('name')} />
+              </FieldControl>
+            </Field>
+            <Field id="edit-displayName">
+              <FieldLabel>{t('fieldDisplayName')}</FieldLabel>
+              <FieldControl>
+                <Input
+                  placeholder={t('fieldDisplayNamePlaceholder')}
+                  {...editForm.register('displayName')}
+                />
+              </FieldControl>
+            </Field>
+            <Field>
+              <FieldLabel>{t('fieldRole')}</FieldLabel>
               <Select
                 value={editForm.watch('role')}
                 onValueChange={(v) => editForm.setValue('role', v as UserRole)}
               >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <FieldControl>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                </FieldControl>
                 <SelectContent>
                   <SelectItem value="user">{t('roleUser')}</SelectItem>
                   <SelectItem value="sysadmin">{t('roleSysadmin')}</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
+            </Field>
             <DialogFooter>
               <Button type="submit" disabled={editForm.formState.isSubmitting}>
                 {editForm.formState.isSubmitting ? t('saving') : tc('save')}

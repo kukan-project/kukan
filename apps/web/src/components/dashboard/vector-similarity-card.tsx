@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Label, Switch } from '@kukan/ui'
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
+import { SwitchField } from '@/components/switch-field'
 import { clientFetch } from '@/lib/client-api'
 
 interface VectorSearchSettings {
@@ -22,7 +23,6 @@ interface VectorSearchSettings {
 export function VectorSimilarityCard() {
   const t = useTranslations('dashboard.adminSite')
   const tc = useTranslations('common')
-  const toggleId = useId()
 
   const [settings, setSettings] = useState<VectorSearchSettings | null>(null)
   const [selected, setSelected] = useState(0)
@@ -116,19 +116,14 @@ export function VectorSimilarityCard() {
           </Badge>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Switch
-            id={toggleId}
-            checked={selectedEnabled}
-            onCheckedChange={(checked) => {
-              setSelectedEnabled(checked)
-              setSaved(false)
-            }}
-          />
-          <Label htmlFor={toggleId} className="text-sm font-normal">
-            {t('vectorSemanticEnabled')}
-          </Label>
-        </div>
+        <SwitchField
+          label={t('vectorSemanticEnabled')}
+          checked={selectedEnabled}
+          onCheckedChange={(checked) => {
+            setSelectedEnabled(checked)
+            setSaved(false)
+          }}
+        />
 
         <div className={`flex flex-wrap items-center gap-2 ${selectedEnabled ? '' : 'opacity-50'}`}>
           <span className="w-12 text-right text-xs text-muted-foreground">{t('vectorLooser')}</span>

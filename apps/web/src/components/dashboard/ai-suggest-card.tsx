@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Loader2, PlugZap } from 'lucide-react'
 import {
@@ -12,16 +12,18 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  Field,
+  FieldControl,
+  FieldLabel,
   Input,
-  Label,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Switch,
 } from '@kukan/ui'
 import { isLocalAIProvider } from '@kukan/shared/ai'
+import { SwitchField } from '@/components/switch-field'
 import { clientFetch } from '@/lib/client-api'
 
 interface AiSuggestSettings {
@@ -61,8 +63,6 @@ const HINT_KEYS: Record<string, string> = {
 export function AiSuggestCard() {
   const t = useTranslations('dashboard.adminSite')
   const tc = useTranslations('common')
-  const toggleId = useId()
-  const modelId = useId()
 
   const [settings, setSettings] = useState<AiSuggestSettings | null>(null)
   const [selectedModel, setSelectedModel] = useState('')
@@ -188,22 +188,23 @@ export function AiSuggestCard() {
             <span className="font-mono text-xs">{settings.effectiveModel}</span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Switch
-              id={toggleId}
-              checked={selectedEnabled}
-              onCheckedChange={(checked) => {
-                setSelectedEnabled(checked)
-                setSaved(false)
-              }}
-            />
-            <Label htmlFor={toggleId} className="text-sm font-normal">
-              {t('aiSuggestEnabled')}
-            </Label>
-          </div>
+          <SwitchField
+            label={t('aiSuggestEnabled')}
+            checked={selectedEnabled}
+            onCheckedChange={(checked) => {
+              setSelectedEnabled(checked)
+              setSaved(false)
+            }}
+          />
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={modelId}>{t('aiSuggestModelLabel')}</Label>
+          <Field
+            // Only the free-text input has an empty state; the picker offers
+            // an explicit "provider default" option instead.
+            description={
+              settings.availableModels.length === 0 ? t('aiSuggestModelHint') : undefined
+            }
+          >
+            <FieldLabel>{t('aiSuggestModelLabel')}</FieldLabel>
             {settings.availableModels.length > 0 ? (
               <Select
                 value={selectedModel || DEFAULT_MODEL_VALUE}
@@ -212,9 +213,11 @@ export function AiSuggestCard() {
                   setSaved(false)
                 }}
               >
-                <SelectTrigger id={modelId} className="max-w-2xl font-mono text-sm">
-                  <SelectValue />
-                </SelectTrigger>
+                <FieldControl>
+                  <SelectTrigger className="max-w-2xl font-mono text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                </FieldControl>
                 <SelectContent>
                   <SelectItem value={DEFAULT_MODEL_VALUE}>
                     {t('aiSuggestModelDefaultOption', { model: settings.defaultModel ?? '' })}
@@ -227,9 +230,8 @@ export function AiSuggestCard() {
                 </SelectContent>
               </Select>
             ) : (
-              <>
+              <FieldControl>
                 <Input
-                  id={modelId}
                   value={selectedModel}
                   onChange={(e) => {
                     setSelectedModel(e.target.value)
@@ -238,12 +240,9 @@ export function AiSuggestCard() {
                   placeholder={settings.defaultModel ?? ''}
                   className="max-w-2xl font-mono text-sm"
                 />
-                {/* Only the free-text input has an empty state; the picker offers
-                    an explicit "provider default" option instead. */}
-                <p className="text-xs text-muted-foreground">{t('aiSuggestModelHint')}</p>
-              </>
+              </FieldControl>
             )}
-          </div>
+          </Field>
 
           <div className="flex flex-wrap items-center gap-4">
             <Button onClick={handleSave} disabled={saving || !dirty}>

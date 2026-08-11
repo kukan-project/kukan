@@ -10,8 +10,10 @@ import {
   Alert,
   AlertDescription,
   Button,
+  Field,
+  FieldControl,
+  FieldLabel,
   Input,
-  Label,
   Card,
   CardHeader,
   CardTitle,
@@ -113,40 +115,28 @@ export default function SignUpPage() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="name">{t('name')}</Label>
-              <Input
-                id="name"
-                type="text"
-                placeholder={t('namePlaceholder')}
-                autoComplete="username"
-                {...register('name')}
-                aria-invalid={!!errors.name}
-                aria-describedby={errors.name ? 'name-error' : undefined}
-              />
-              {errors.name && (
-                <p id="name-error" className="text-sm text-destructive">
-                  {t('nameError')}
-                </p>
-              )}
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="email">{t('email')}</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="name@example.com"
-                autoComplete="email"
-                {...register('email')}
-                aria-invalid={!!errors.email}
-                aria-describedby={errors.email ? 'email-error' : undefined}
-              />
-              {errors.email && (
-                <p id="email-error" className="text-sm text-destructive">
-                  {t('invalidEmail')}
-                </p>
-              )}
-            </div>
+            <Field id="name" error={errors.name && t('nameError')}>
+              <FieldLabel>{t('name')}</FieldLabel>
+              <FieldControl>
+                <Input
+                  type="text"
+                  placeholder={t('namePlaceholder')}
+                  autoComplete="username"
+                  {...register('name')}
+                />
+              </FieldControl>
+            </Field>
+            <Field id="email" error={errors.email && t('invalidEmail')}>
+              <FieldLabel>{t('email')}</FieldLabel>
+              <FieldControl>
+                <Input
+                  type="email"
+                  placeholder="name@example.com"
+                  autoComplete="email"
+                  {...register('email')}
+                />
+              </FieldControl>
+            </Field>
             <div className="flex flex-col gap-2">
               <PasswordField
                 id="password"

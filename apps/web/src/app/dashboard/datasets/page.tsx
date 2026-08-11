@@ -7,7 +7,9 @@ import {
   Button,
   Badge,
   Input,
-  Label,
+  Field,
+  FieldControl,
+  FieldLabel,
   Select,
   SelectContent,
   SelectItem,
@@ -227,12 +229,14 @@ export default function DatasetsManagePage() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-end gap-2">
-        <div className="flex flex-col gap-1">
-          <Label className="text-xs text-muted-foreground">{tc('organizations')}</Label>
+        <Field className="w-fit gap-1">
+          <FieldLabel className="text-xs text-muted-foreground">{tc('organizations')}</FieldLabel>
           <Select value={orgFilter || ALL} onValueChange={handleSelect(setOrgFilter)}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
+            <FieldControl>
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+            </FieldControl>
             <SelectContent>
               <SelectItem value={ALL}>{tc('showAll')}</SelectItem>
               {organizations.map((org) => (
@@ -242,15 +246,17 @@ export default function DatasetsManagePage() {
               ))}
             </SelectContent>
           </Select>
-        </div>
+        </Field>
         {/* Group filter is not supported by the draft listing (ADR-039) */}
         {activeCategory !== 'drafts' && (
-          <div className="flex flex-col gap-1">
-            <Label className="text-xs text-muted-foreground">{tc('categories')}</Label>
+          <Field className="w-fit gap-1">
+            <FieldLabel className="text-xs text-muted-foreground">{tc('categories')}</FieldLabel>
             <Select value={groupFilter || ALL} onValueChange={handleSelect(setGroupFilter)}>
-              <SelectTrigger className="w-40">
-                <SelectValue />
-              </SelectTrigger>
+              <FieldControl>
+                <SelectTrigger className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+              </FieldControl>
               <SelectContent>
                 <SelectItem value={ALL}>{tc('showAll')}</SelectItem>
                 {groups.map((g) => (
@@ -260,20 +266,24 @@ export default function DatasetsManagePage() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </Field>
         )}
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <Label className="text-xs text-muted-foreground">{tc('urlIdentifier')}</Label>
-          <Input
-            value={nameFilter}
-            onChange={(e) => setNameFilter(e.target.value)}
-            className="font-mono text-sm"
-          />
-        </div>
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <Label className="text-xs text-muted-foreground">{tc('title')}</Label>
-          <Input value={keyword} onChange={(e) => setKeyword(e.target.value)} />
-        </div>
+        <Field className="min-w-0 flex-1 gap-1">
+          <FieldLabel className="text-xs text-muted-foreground">{tc('urlIdentifier')}</FieldLabel>
+          <FieldControl>
+            <Input
+              value={nameFilter}
+              onChange={(e) => setNameFilter(e.target.value)}
+              className="font-mono text-sm"
+            />
+          </FieldControl>
+        </Field>
+        <Field className="min-w-0 flex-1 gap-1">
+          <FieldLabel className="text-xs text-muted-foreground">{tc('title')}</FieldLabel>
+          <FieldControl>
+            <Input value={keyword} onChange={(e) => setKeyword(e.target.value)} />
+          </FieldControl>
+        </Field>
       </div>
 
       {loading ? (

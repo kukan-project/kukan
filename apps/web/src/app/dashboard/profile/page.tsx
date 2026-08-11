@@ -1,6 +1,6 @@
 'use client'
 
-import { Card, CardContent, CardHeader, CardTitle, Label } from '@kukan/ui'
+import { Card, CardContent, CardHeader, CardTitle, Field, FieldTitle } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { useUser } from '@/components/dashboard/user-provider'
 import { PageHeader } from '@/components/dashboard/page-header'
@@ -18,22 +18,22 @@ export default function ProfilePage() {
           <CardTitle>{t('accountInfo')}</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <div className="grid gap-1">
-            <Label className="text-muted-foreground">{t('username')}</Label>
+          <Field className="gap-1">
+            <FieldTitle className="text-muted-foreground">{t('username')}</FieldTitle>
             <p>{user.name}</p>
-          </div>
-          <div className="grid gap-1">
-            <Label className="text-muted-foreground">{t('displayName')}</Label>
+          </Field>
+          <Field className="gap-1">
+            <FieldTitle className="text-muted-foreground">{t('displayName')}</FieldTitle>
             <p>{user.displayName || '-'}</p>
-          </div>
-          <div className="grid gap-1">
-            <Label className="text-muted-foreground">{t('email')}</Label>
+          </Field>
+          <Field className="gap-1">
+            <FieldTitle className="text-muted-foreground">{t('email')}</FieldTitle>
             <p>{user.email}</p>
-          </div>
-          <div className="grid gap-1">
-            <Label className="text-muted-foreground">{t('role')}</Label>
+          </Field>
+          <Field className="gap-1">
+            <FieldTitle className="text-muted-foreground">{t('role')}</FieldTitle>
             <p>{user.sysadmin ? t('sysadmin') : t('user')}</p>
-          </div>
+          </Field>
         </CardContent>
       </Card>
       <PasswordChangeCard />

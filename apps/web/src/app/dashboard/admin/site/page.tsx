@@ -11,8 +11,10 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  Field,
+  FieldControl,
+  FieldLabel,
   Input,
-  Label,
 } from '@kukan/ui'
 import { AiSuggestCard } from '@/components/dashboard/ai-suggest-card'
 import { PageHeader } from '@/components/dashboard/page-header'
@@ -85,17 +87,18 @@ export default function AdminSitePage() {
             <AlertTriangle />
             <AlertDescription>{t('warning')}</AlertDescription>
           </Alert>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="confirm-input">{t('confirmLabel')}</Label>
-            <Input
-              id="confirm-input"
-              value={confirmText}
-              onChange={(e) => setConfirmText(e.target.value)}
-              placeholder={t('confirmPlaceholder')}
-              disabled={executing}
-              className="max-w-xs font-mono"
-            />
-          </div>
+          <Field id="confirm-input">
+            <FieldLabel>{t('confirmLabel')}</FieldLabel>
+            <FieldControl>
+              <Input
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder={t('confirmPlaceholder')}
+                disabled={executing}
+                className="max-w-xs font-mono"
+              />
+            </FieldControl>
+          </Field>
           <Button
             variant="destructive"
             onClick={handleReset}
