@@ -13,11 +13,15 @@ import type {
   CreateGroupInput,
   UpdateGroupInput,
 } from '@kukan/shared'
+import { groupMemberCountSql, type AuthUser } from '../auth/permissions'
 
 export class GroupService {
   constructor(private db: Database) {}
 
-  async list(params: PaginationParams & { q?: string; orderBy?: 'name' | 'datasetCount' }) {
+  async list(
+    params: PaginationParams & { q?: string; orderBy?: 'name' | 'datasetCount' },
+    viewer?: AuthUser
+  ) {
     const { offset = 0, limit = 20, q, orderBy } = params
 
     const conditions = [eq(group.state, 'active')]
@@ -48,6 +52,7 @@ export class GroupService {
         ...getTableColumns(group),
         total: sql<number>`COUNT(*) OVER()::int`.as('total'),
         datasetCount,
+        memberCount: groupMemberCountSql(viewer).as('member_count'),
       })
       .from(group)
       .where(where)

@@ -2,7 +2,14 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { packageTable, organization as orgTable } from '@kukan/db'
 import { createTestApp, mockSearch } from '../test-helpers/test-app'
-import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
+import {
+  getTestDb,
+  cleanDatabase,
+  closeTestDb,
+  ensureTestUser,
+  ensureOutsiderUser,
+  OUTSIDER_USER_ID,
+} from '../test-helpers/test-db'
 import { OrganizationService } from '../../services/organization-service'
 
 // Simulates the worker draining the purge-organization job the route enqueues.
@@ -114,6 +121,60 @@ describe('Organizations API Routes', () => {
           'org-empty-a',
           'org-empty-b',
         ])
+      })
+    })
+
+    // The roster behind GET /:nameOrId/members is member-only, so the count
+    // that summarises it must not reach a caller who cannot open it.
+    describe('member counts', () => {
+      const outsiderApp = createTestApp(db, {
+        user: {
+          id: OUTSIDER_USER_ID,
+          email: 'outsider@example.com',
+          name: 'outsider',
+          sysadmin: false,
+        },
+      })
+
+      beforeEach(async () => {
+        await ensureOutsiderUser()
+        for (const name of ['org-joined', 'org-other']) {
+          await app.request('/api/v1/organizations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name }),
+          })
+        }
+        await app.request('/api/v1/organizations/org-joined/members', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: OUTSIDER_USER_ID, role: 'member' }),
+        })
+      })
+
+      async function listAs(client: typeof app) {
+        const body = await (await client.request('/api/v1/organizations')).json()
+        return Object.fromEntries(
+          body.items.map((o: { name: string; memberCount: number | null }) => [
+            o.name,
+            o.memberCount,
+          ])
+        )
+      }
+
+      it('should omit counts for anonymous callers', async () => {
+        expect(await listAs(createTestApp(db, { user: null }))).toEqual({
+          'org-joined': null,
+          'org-other': null,
+        })
+      })
+
+      it('should count only the organizations the viewer belongs to', async () => {
+        expect(await listAs(outsiderApp)).toEqual({ 'org-joined': 1, 'org-other': null })
+      })
+
+      it('should count every organization for a sysadmin', async () => {
+        expect(await listAs(app)).toEqual({ 'org-joined': 1, 'org-other': 0 })
       })
     })
   })

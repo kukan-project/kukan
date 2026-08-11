@@ -25,6 +25,7 @@ import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { LakeConfig } from '@kukan/lake'
 import { dropResourceTables } from '@kukan/lake'
+import { orgMemberCountSql, type AuthUser } from '../auth/permissions'
 import { reclaimLakeStorage } from './lake-reclaim'
 import { listPurgeTargets, purgePackageExternals } from './package-cleanup'
 import { withResourceClaimsOrConflict } from './pipeline-claim'
@@ -42,7 +43,8 @@ export class OrganizationService {
       q?: string
       state?: 'active' | 'deleted'
       orderBy?: 'name' | 'datasetCount'
-    }
+    },
+    viewer?: AuthUser
   ) {
     const { offset = 0, limit = 20, q, state = 'active', orderBy } = params
 
@@ -76,6 +78,7 @@ export class OrganizationService {
           sql<number>`(SELECT COUNT(*)::int FROM "package" WHERE "package"."owner_org" = "organization"."id" AND "package"."state" = 'deleted')`.as(
             'deleted_dataset_count'
           ),
+        memberCount: orgMemberCountSql(viewer).as('member_count'),
       })
       .from(organization)
       .where(where)

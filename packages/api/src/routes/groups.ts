@@ -13,7 +13,7 @@ import {
   ForbiddenError,
   UnauthorizedError,
 } from '@kukan/shared'
-import { checkGroupRole } from '../auth/permissions'
+import { checkGroupRole, ROSTER_ROLE } from '../auth/permissions'
 import { publicCache } from '../middleware/cache-control'
 import type { AppContext } from '../context'
 
@@ -35,7 +35,9 @@ groupsRouter.get(
   async (c) => {
     const params = c.req.valid('query')
     const service = new GroupService(c.get('db'))
-    const result = await service.list(params)
+    // The viewer decides which rows carry a member count; publicCache() keeps
+    // only the anonymous response (no counts) in the shared cache.
+    const result = await service.list(params, c.get('user'))
     return c.json(result)
   }
 )
@@ -131,7 +133,7 @@ groupsRouter.get('/:nameOrId/members', async (c) => {
 
   const service = new GroupService(db)
   const grp = await service.getByNameOrId(c.req.param('nameOrId'))
-  await checkGroupRole(db, user, grp.id, 'member')
+  await checkGroupRole(db, user, grp.id, ROSTER_ROLE)
 
   const members = await service.listMembers(grp.id)
   return c.json({ items: members })

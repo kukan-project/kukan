@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { createTestApp } from '../test-helpers/test-app'
-import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
+import {
+  getTestDb,
+  cleanDatabase,
+  closeTestDb,
+  ensureTestUser,
+  ensureOutsiderUser,
+  OUTSIDER_USER_ID,
+} from '../test-helpers/test-db'
 
 const db = getTestDb()
 const app = createTestApp(db)
@@ -23,6 +30,60 @@ describe('Groups API Routes', () => {
       const body = await res.json()
       expect(body.items).toEqual([])
       expect(body.total).toBe(0)
+    })
+
+    // The roster behind GET /:nameOrId/members is member-only, so the count
+    // that summarises it must not reach a caller who cannot open it.
+    describe('member counts', () => {
+      const outsiderApp = createTestApp(db, {
+        user: {
+          id: OUTSIDER_USER_ID,
+          email: 'outsider@example.com',
+          name: 'outsider',
+          sysadmin: false,
+        },
+      })
+
+      beforeEach(async () => {
+        await ensureOutsiderUser()
+        for (const name of ['group-joined', 'group-other']) {
+          await app.request('/api/v1/groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name }),
+          })
+        }
+        await app.request('/api/v1/groups/group-joined/members', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: OUTSIDER_USER_ID, role: 'member' }),
+        })
+      })
+
+      async function listAs(client: typeof app) {
+        const body = await (await client.request('/api/v1/groups')).json()
+        return Object.fromEntries(
+          body.items.map((g: { name: string; memberCount: number | null }) => [
+            g.name,
+            g.memberCount,
+          ])
+        )
+      }
+
+      it('should omit counts for anonymous callers', async () => {
+        expect(await listAs(createTestApp(db, { user: null }))).toEqual({
+          'group-joined': null,
+          'group-other': null,
+        })
+      })
+
+      it('should count only the categories the viewer belongs to', async () => {
+        expect(await listAs(outsiderApp)).toEqual({ 'group-joined': 1, 'group-other': null })
+      })
+
+      it('should count every category for a sysadmin', async () => {
+        expect(await listAs(app)).toEqual({ 'group-joined': 1, 'group-other': 0 })
+      })
     })
   })
 

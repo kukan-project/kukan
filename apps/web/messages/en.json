@@ -52,6 +52,7 @@
     "user": "User",
     "role": "Role",
     "members": "Members",
+    "membersWithCount": "Members ({count})",
     "failedToCreate": "Failed to create",
     "failedToAdd": "Failed to add",
     "urlIdentifier": "URL Identifier",

@@ -52,6 +52,7 @@
     "user": "ユーザー",
     "role": "役割",
     "members": "メンバー",
+    "membersWithCount": "メンバー ({count})",
     "failedToCreate": "作成に失敗しました",
     "failedToAdd": "追加に失敗しました",
     "urlIdentifier": "URL識別子",

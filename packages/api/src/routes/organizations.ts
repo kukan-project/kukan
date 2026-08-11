@@ -13,7 +13,7 @@ import {
   UnauthorizedError,
 } from '@kukan/shared'
 import { OrganizationService } from '../services/organization-service'
-import { checkOrgRole } from '../auth/permissions'
+import { checkOrgRole, ROSTER_ROLE } from '../auth/permissions'
 import { publicCache } from '../middleware/cache-control'
 import type { AppContext } from '../context'
 
@@ -40,6 +40,7 @@ organizationsRouter.get(
     const params = c.req.valid('query')
 
     // Listing soft-deleted orgs (the trash view) is sysadmin-only and uncached.
+    // No viewer is passed: the trash view offers no member action to count for.
     if (params.state === 'deleted') {
       if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can list deleted organizations')
       return c.json(await service.list(params))
@@ -47,7 +48,8 @@ organizationsRouter.get(
 
     // publicCache() middleware caches this for anonymous callers only; signed-in
     // dashboard users fall through to `private, no-cache` for immediate freshness.
-    return c.json(await service.list({ ...params, state: 'active' }))
+    // The viewer also decides which rows carry a member count.
+    return c.json(await service.list({ ...params, state: 'active' }, user))
   }
 )
 
@@ -162,7 +164,7 @@ organizationsRouter.get('/:nameOrId/members', async (c) => {
 
   const service = new OrganizationService(db)
   const org = await service.getByNameOrId(c.req.param('nameOrId'))
-  await checkOrgRole(db, user, org.id, 'member')
+  await checkOrgRole(db, user, org.id, ROSTER_ROLE)
 
   const members = await service.listMembers(org.id)
   return c.json({ items: members })

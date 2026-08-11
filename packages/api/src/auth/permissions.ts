@@ -3,9 +3,10 @@
  * Helpers for authorization logic
  */
 
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and, inArray, sql, getTableName, type SQL } from 'drizzle-orm'
+import type { PgColumn } from 'drizzle-orm/pg-core'
 import type { Database } from '@kukan/db'
-import { userOrgMembership, userGroupMembership } from '@kukan/db'
+import { organization, group, userOrgMembership, userGroupMembership } from '@kukan/db'
 import { ForbiddenError } from '@kukan/shared'
 
 export type MembershipRole = 'admin' | 'editor' | 'member'
@@ -105,6 +106,70 @@ export async function checkGroupRole(
   requiredRole: MembershipRole
 ): Promise<void> {
   return checkMembershipRole(db, user, groupId, requiredRole, GROUP_MEMBERSHIP)
+}
+
+/**
+ * Role that reading a member roster requires. The count summarising that roster
+ * on a list is gated on the same constant, so raising the gate moves both.
+ */
+export const ROSTER_ROLE: MembershipRole = 'member'
+
+/** The roles that satisfy `required`, read off ROLE_HIERARCHY so a role added
+ *  above admin qualifies without every caller having to name it. */
+function rolesSatisfying(required: MembershipRole): string[] {
+  return Object.keys(ROLE_HIERARCHY).filter(
+    (role) => (ROLE_HIERARCHY[role] ?? 0) >= (ROLE_HIERARCHY[required] ?? 0)
+  )
+}
+
+/**
+ * `"table"."column"` spelled out. Drizzle drops the table qualifier from a bare
+ * column that sits directly in a select projection, which would uncorrelate the
+ * subqueries below — they would compare a membership row to itself and count
+ * zero rather than fail.
+ */
+function qualified(column: PgColumn): SQL {
+  return sql`${sql.identifier(getTableName(column.table))}.${sql.identifier(column.name)}`
+}
+
+/**
+ * Per-row member count for a list query, gated the way {@link hasMembershipRole}
+ * gates the roster it summarises: null unless the viewer holds `requiredRole` in
+ * that row's entity, with sysadmins bypassing as they do everywhere else.
+ * Anonymous callers get null throughout, so a shared cache only ever holds the
+ * countless variant.
+ */
+function memberCountSql(
+  config: MembershipConfig,
+  entityId: PgColumn,
+  viewer: AuthUser | undefined,
+  requiredRole: MembershipRole
+): SQL<number | null> {
+  if (!viewer) return sql<number | null>`NULL::int`
+
+  const membership = sql.identifier(getTableName(config.table))
+  const correlated = sql`${qualified(config.entityIdCol)} = ${qualified(entityId)}`
+  const count = sql<number>`(SELECT COUNT(*)::int FROM ${membership} WHERE ${correlated})`
+  if (viewer.sysadmin) return count
+
+  const roles = sql.join(
+    rolesSatisfying(requiredRole).map((role) => sql`${role}`),
+    sql`, `
+  )
+
+  return sql<
+    number | null
+  >`CASE WHEN EXISTS (SELECT 1 FROM ${membership} WHERE ${correlated} AND ${qualified(config.userIdCol)} = ${viewer.id} AND ${qualified(config.roleCol)} IN (${roles})) THEN ${count} END`
+}
+
+/** {@link memberCountSql} for a row of the organization list. */
+export function orgMemberCountSql(viewer?: AuthUser): SQL<number | null> {
+  return memberCountSql(ORG_MEMBERSHIP, organization.id, viewer, ROSTER_ROLE)
+}
+
+/** {@link memberCountSql} for a row of the group list. */
+export function groupMemberCountSql(viewer?: AuthUser): SQL<number | null> {
+  return memberCountSql(GROUP_MEMBERSHIP, group.id, viewer, ROSTER_ROLE)
 }
 
 /**

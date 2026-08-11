@@ -20,6 +20,8 @@ interface OrgItem {
   title?: string
   datasetCount: number
   deletedDatasetCount: number
+  /** Absent unless the viewer may read the roster — the same gate as the action */
+  memberCount?: number | null
 }
 
 type CategoryFilter = 'public' | 'deleted'
@@ -158,7 +160,9 @@ export default function OrganizationsManagePage() {
                         {!showDeleted && can(org.name, 'member') && (
                           <Button variant="ghost" size="sm" asChild>
                             <Link href={`/dashboard/organizations/${org.name}/members`}>
-                              {tc('members')}
+                              {typeof org.memberCount === 'number'
+                                ? tc('membersWithCount', { count: org.memberCount })
+                                : tc('members')}
                             </Link>
                           </Button>
                         )}

@@ -36,8 +36,16 @@ const sampleOrgs = [
     title: 'Tokyo Metropolitan',
     datasetCount: 24,
     deletedDatasetCount: 3,
+    memberCount: 5,
   },
-  { id: 'o2', name: 'osaka', title: 'Osaka City', datasetCount: 12, deletedDatasetCount: 0 },
+  {
+    id: 'o2',
+    name: 'osaka',
+    title: 'Osaka City',
+    datasetCount: 12,
+    deletedDatasetCount: 0,
+    memberCount: 2,
+  },
 ]
 
 /** Routes the organization list and the viewer's memberships, which decide
@@ -180,8 +188,7 @@ describe('OrganizationsManagePage', () => {
     fireEvent.click(screen.getByText('tokyo'))
     expect(mockPush).toHaveBeenCalledWith('/dashboard/organizations/tokyo/edit')
 
-    const memberLinks = screen.getAllByText('Members')
-    const memberLink = memberLinks[0].closest('a')
+    const memberLink = screen.getByText('Members (5)').closest('a')
     expect(memberLink).toHaveAttribute('href', '/dashboard/organizations/tokyo/members')
 
     const viewLinks = screen.getAllByText('View')
@@ -203,7 +210,23 @@ describe('OrganizationsManagePage', () => {
     })
     expect(screen.queryByText('Edit')).not.toBeInTheDocument()
     // Only tokyo is the viewer's; osaka offers nothing but View
-    expect(screen.getAllByText('Members')).toHaveLength(1)
+    expect(screen.getAllByText(/^Members/)).toHaveLength(1)
+    expect(screen.getByText('Members (5)')).toBeInTheDocument()
     expect(screen.getAllByText('View')).toHaveLength(2)
+  })
+
+  // The count comes from the list API only for the viewer's own organizations;
+  // the action itself is gated the same way, so a missing count still links out
+  it('should label the member action without a count when the API withholds it', async () => {
+    mockFetch(
+      mockFetchResponse({
+        items: sampleOrgs.map((o) => ({ ...o, memberCount: null })),
+        total: 2,
+      })
+    )
+    render(<OrganizationsManagePage />)
+
+    await waitFor(() => expect(screen.getByText('tokyo')).toBeInTheDocument())
+    expect(screen.getAllByText('Members')).toHaveLength(2)
   })
 })

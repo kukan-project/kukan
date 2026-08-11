@@ -30,8 +30,8 @@ function mockFetchResponse(data: unknown) {
 }
 
 const sampleGroups = [
-  { id: 'g1', name: 'demographics', title: 'Demographics', datasetCount: 12 },
-  { id: 'g2', name: 'environment', title: 'Environment', datasetCount: 8 },
+  { id: 'g1', name: 'demographics', title: 'Demographics', datasetCount: 12, memberCount: 4 },
+  { id: 'g2', name: 'environment', title: 'Environment', datasetCount: 8, memberCount: 1 },
 ]
 
 /** Routes the category list and the viewer's memberships, which decide which
@@ -140,8 +140,7 @@ describe('GroupsManagePage', () => {
     fireEvent.click(screen.getByText('demographics'))
     expect(mockPush).toHaveBeenCalledWith('/dashboard/groups/demographics/edit')
 
-    const memberLinks = screen.getAllByText('Members')
-    const memberLink = memberLinks[0].closest('a')
+    const memberLink = screen.getByText('Members (4)').closest('a')
     expect(memberLink).toHaveAttribute('href', '/dashboard/groups/demographics/members')
 
     const viewLinks = screen.getAllByText('View')
@@ -163,7 +162,23 @@ describe('GroupsManagePage', () => {
     })
     expect(screen.queryByText('Edit')).not.toBeInTheDocument()
     // Only demographics is the viewer's; environment offers nothing but View
-    expect(screen.getAllByText('Members')).toHaveLength(1)
+    expect(screen.getAllByText(/^Members/)).toHaveLength(1)
+    expect(screen.getByText('Members (4)')).toBeInTheDocument()
     expect(screen.getAllByText('View')).toHaveLength(2)
+  })
+
+  // The count comes from the list API only for the viewer's own categories; the
+  // action itself is gated the same way, so a missing count still links out
+  it('should label the member action without a count when the API withholds it', async () => {
+    mockFetch(
+      mockFetchResponse({
+        items: sampleGroups.map((g) => ({ ...g, memberCount: null })),
+        total: 2,
+      })
+    )
+    render(<GroupsManagePage />)
+
+    await waitFor(() => expect(screen.getByText('demographics')).toBeInTheDocument())
+    expect(screen.getAllByText('Members')).toHaveLength(2)
   })
 })

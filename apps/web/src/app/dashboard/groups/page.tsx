@@ -16,6 +16,8 @@ interface GroupItem {
   name: string
   title?: string
   datasetCount: number
+  /** Absent unless the viewer may read the roster — the same gate as the action */
+  memberCount?: number | null
 }
 
 export default function GroupsManagePage() {
@@ -88,7 +90,9 @@ export default function GroupsManagePage() {
                       {can(grp.name, 'member') && (
                         <Button variant="ghost" size="sm" asChild>
                           <Link href={`/dashboard/groups/${grp.name}/members`}>
-                            {tc('members')}
+                            {typeof grp.memberCount === 'number'
+                              ? tc('membersWithCount', { count: grp.memberCount })
+                              : tc('members')}
                           </Link>
                         </Button>
                       )}
