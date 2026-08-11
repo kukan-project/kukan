@@ -16,6 +16,13 @@ import { resolve } from 'path'
  */
 const INTEGRATION_FORKS = Math.min(Math.max(availableParallelism() - 1, 1), 8)
 
+/**
+ * A group of their own, since `maxWorkers` belongs to the group: sharing one
+ * with the uncapped unit projects refuses to start. Both in it rather than one
+ * each, so the two suites share the budget instead of taking it apiece.
+ */
+const INTEGRATION_GROUP = 1
+
 export default defineConfig({
   test: {
     exclude: ['**/node_modules/**', '**/cdk.out/**', '**/dist/**', '**/.next/**', '**/site/**'],
@@ -102,7 +109,8 @@ export default defineConfig({
           globalSetup: ['src/__tests__/test-helpers/global-setup.ts'],
           setupFiles: ['src/__tests__/test-helpers/setup-integration.ts'],
           pool: 'forks',
-          poolOptions: { forks: { maxForks: INTEGRATION_FORKS } },
+          maxWorkers: INTEGRATION_FORKS,
+          sequence: { groupOrder: INTEGRATION_GROUP },
         },
         resolve: {
           alias: {
@@ -128,7 +136,8 @@ export default defineConfig({
           globalSetup: ['src/__tests__/test-helpers/global-setup.ts'],
           setupFiles: ['src/__tests__/test-helpers/setup-integration.ts'],
           pool: 'forks',
-          poolOptions: { forks: { maxForks: INTEGRATION_FORKS } },
+          maxWorkers: INTEGRATION_FORKS,
+          sequence: { groupOrder: INTEGRATION_GROUP },
         },
       },
       {
