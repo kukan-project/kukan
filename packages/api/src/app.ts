@@ -14,6 +14,7 @@ import { createAuth } from './auth/auth'
 import { isRegistrationAllowed } from './services/bootstrap'
 import { SystemSettingService } from './services/system-setting'
 import { optionalAuth } from './middleware/auth'
+import { authSurface } from './middleware/auth-surface'
 import { cacheControl, noCache } from './middleware/cache-control'
 import { errorHandler } from './middleware/error-handler'
 import { logger } from './middleware/logger'
@@ -91,6 +92,7 @@ export async function createApp() {
 
   // Better Auth endpoints - handle all /api/auth/** routes
   // Must be registered BEFORE optionalAuth to avoid body stream consumption
+  app.use('/api/auth/*', authSurface)
   app.on(['GET', 'POST'], '/api/auth/*', async (c) => {
     // Block self-registration when disabled — forced on while the user table
     // is empty so the first sign-up can bootstrap the instance (ADR-038)
@@ -106,25 +108,6 @@ export async function createApp() {
           403
         )
       }
-    }
-    // Disable the Better Auth admin-plugin HTTP endpoints (impersonate-user,
-    // ban-user, set-role, set-user-password, list-users, remove-user, ...).
-    // KUKAN manages users, roles, and account lifecycle through its own
-    // /api/v1/admin API; these endpoints are unused and would otherwise let a
-    // compromised sysadmin session impersonate any user or reset passwords with
-    // no audit trail. The admin plugin stays configured for its schema fields
-    // (role/banned) and defaultRole — only the routes are blocked. Respond 404
-    // so the surface is not advertised.
-    if (c.req.path.startsWith('/api/auth/admin/')) {
-      return c.json(
-        {
-          type: 'about:blank',
-          title: 'NOT_FOUND',
-          status: 404,
-          detail: 'The requested resource was not found',
-        },
-        404
-      )
     }
     return auth.handler(c.req.raw)
   })
