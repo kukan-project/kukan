@@ -42,7 +42,7 @@
     "@kukan/db-testing": "workspace:*",
     "@types/node": "^24.12.2",
     "@types/papaparse": "^5.5.2",
-    "@types/pg": "^8.20.4",
+    "@types/pg": "^8.21.0",
     "@types/yauzl": "^3.4.0",
     "jszip": "^3.10.1",
     "pino-pretty": "^13.1.3",
