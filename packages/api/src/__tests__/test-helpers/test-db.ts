@@ -12,13 +12,13 @@ import * as schema from '@kukan/db/schema'
 import { inject } from 'vitest'
 import { createTestDatabase, testDatabaseName, testDatabaseUrl } from '@kukan/db-testing'
 
-/** This pool slot's own database — see `@kukan/db-testing` for the naming. */
+/** This process's own database — see `@kukan/db-testing` for the naming. */
 const name = () => testDatabaseName(inject('testDbPrefix'))
 
 /**
- * Two per slot, not five.
+ * Two per process, not five.
  *
- * Parallel files multiply this by however many slots vitest opens — 23 on a
+ * Parallel files multiply this by however many processes vitest opens — 23 on a
  * 24-core box — and a second run on the same machine doubles it again. At five
  * that was 115 potential connections a run against a server offering 97:
  * measured, two concurrent runs hit the ceiling and both failed with
@@ -31,7 +31,7 @@ let pool: Pool | null = null
 let db: ReturnType<typeof drizzle<typeof schema>> | null = null
 
 /**
- * Make this slot's database if it is not there.
+ * Make this process's database if it is not there.
  *
  * Called from a `beforeAll` the project installs, so it happens before anything
  * queries — `getTestDb` hands back a lazy pool, so a first query would

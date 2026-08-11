@@ -7,13 +7,21 @@
  * devDependency cannot go there. @kukan/db still owns the migrations, and hands
  * over their folder — the one thing about them that is a path.
  *
- * One database per pool slot, not per suite. Every test truncates between
- * cases, so two slots on one database clear each other's rows mid-test — which
- * is why the integration projects ran serially and dominated the test run.
+ * One database per process, not per suite. Every test truncates between cases,
+ * so two files on one database clear each other's rows mid-test — which is why
+ * the integration projects ran serially and dominated the test run.
+ *
+ * Per process rather than per pool slot, which is what this used to key on:
+ * `VITEST_POOL_ID` is not unique among the processes running at any one moment.
+ * Measured by tagging each pool's connections with its pid and asking
+ * `pg_stat_activity` at every truncate — over two full runs, 197 truncates
+ * found another live process on the same slot database, one of them active
+ * while the other cleared the tables. It surfaced as unrelated suites failing
+ * on rows they had just written, in whichever file lost the race.
  *
  * Names carry the run that made them, so two people — or two agents — on one
- * machine do not clear each other's rows. `VITEST_POOL_ID` alone would not do
- * it: both runs would call their first slot's database `_1`.
+ * machine do not clear each other's rows. The pid alone would not do it: pids
+ * are reused, and two runs would collide the moment one did.
  */
 import { randomBytes } from 'node:crypto'
 import { Client, Pool, type PoolClient } from 'pg'
@@ -70,11 +78,11 @@ function refuseRemoteServer(): void {
   )
 }
 
-/** Migrated once; every slot's database is copied from it. */
+/** Migrated once; every process's database is copied from it. */
 const TEMPLATE = 'kukan_test_template'
 
 /**
- * `kukan_test_<suite>_<token>_<slot>`, where the token is 8 base-36 characters
+ * `kukan_test_<suite>_<token>_<pid>`, where the token is 8 base-36 characters
  * of creation time and 12 hex of randomness — a fixed twenty.
  *
  * Fixed-width on purpose. An earlier pattern allowed any length, and
@@ -110,7 +118,7 @@ function lockKey(token: string): number {
  * The server from the environment, with `name` as the database.
  *
  * One knob points every suite at a Postgres, and the name — which is what keeps
- * two slots off each other's rows — always applies.
+ * two files off each other's rows — always applies.
  */
 export function testDatabaseUrl(name: string): string {
   const url = new URL(SERVER_URL)
@@ -118,16 +126,22 @@ export function testDatabaseUrl(name: string): string {
   return url.toString()
 }
 
-/** This slot's database, from the prefix its project provided. */
+/**
+ * This process's database, from the prefix its project provided.
+ *
+ * A file gets a process of its own under `isolate: true`, so this is a database
+ * per file — and a process that vitest reuses for a second file simply reuses
+ * the database, which is safe because that is sequential.
+ */
 export function testDatabaseName(prefix: string): string {
-  return `${prefix}_${process.env.VITEST_POOL_ID ?? '1'}`
+  return `${prefix}_${process.pid}`
 }
 
 /**
  * Whether the template still describes the migrations on disk.
  *
  * `migrate` only moves forward, so a template built on a branch with newer
- * migrations survives a checkout backwards and hands every slot a schema the
+ * migrations survives a checkout backwards and hands every file a schema the
  * tests were not written against — silently, and with no way to reset it short
  * of dropping the database by hand.
  */
@@ -143,7 +157,7 @@ function templateIsAhead(applied: number): boolean {
  * together migrate it once rather than twice.
  *
  * Migrating rather than rebuilding: a copy costs ~20ms against ~440ms for a
- * fresh migration run, and every slot pays the copy.
+ * fresh migration run, and every file pays the copy.
  */
 async function ensureTemplate(client: PoolClient): Promise<void> {
   await client.query('SELECT pg_advisory_lock($1, $2)', [LOCK_NAMESPACE, TEMPLATE_LOCK])
@@ -306,7 +320,7 @@ export async function cleanTestDatabases(): Promise<{ dropped: string[]; kept: s
 
 /** What a suite's `globalSetup` hands back. */
 export interface TestDatabases {
-  /** The name every slot builds its own database name from. */
+  /** The name every process builds its own database name from. */
   prefix: string
   /** Vitest calls this when the run ends — though not when it is interrupted. */
   teardown: () => Promise<void>
@@ -315,7 +329,7 @@ export interface TestDatabases {
 /**
  * Prepare `suite` for this run.
  *
- * The slot databases themselves are made on demand: how many slots vitest uses
+ * The databases themselves are made on demand: how many processes vitest opens
  * is its decision and it varies with the file count, so a fixed number here
  * would either waste them or run out.
  */
@@ -370,7 +384,7 @@ async function dropRun(prefix: string): Promise<void> {
 }
 
 /**
- * This slot's database, copied from the template if it is not there yet.
+ * This process's database, copied from the template if it is not there yet.
  *
  * No retry: `CREATE DATABASE … TEMPLATE` does not fail while another session is
  * on the source — Postgres waits five seconds for it to leave — so a failure
@@ -384,15 +398,15 @@ export async function createTestDatabase(name: string): Promise<void> {
   try {
     await admin.query(`CREATE DATABASE ${name} TEMPLATE ${TEMPLATE}`)
   } catch (err) {
-    // Already there: this slot's second file, or a file that started at the
-    // same moment and finished the copy first.
+    // Already there: this process's second file, or — before the name carried
+    // the pid — a file that started at the same moment and won the copy.
     //
     // Asked of the server rather than read off the error code, because the
     // race is lost in more than one place — `42P04` from the existence check
     // CREATE DATABASE does up front, `23505` on the catalog insert when a copy
     // started after that check and won — and a code this does not recognize
-    // fails the whole file, which, since a slot's database is reused, takes
-    // unrelated suites with it. The state is the question; the code is trivia.
+    // fails the whole file for no reason it can act on. The state is the
+    // question; the code is trivia.
     const existing = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [name])
     if (existing.rowCount && existing.rowCount > 0) return
     throw new Error(
