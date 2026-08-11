@@ -208,9 +208,23 @@ export const HEALTH_CHECK_PER_HOST_CONCURRENCY = 2
  * measured at, two in flight is still around twelve requests a second to one
  * server. This is what makes it one.
  *
- * Affordable because the work is nothing like the budget. A day's staleness
- * window against a five-minute tick is 288 chances to check a few hundred URLs,
- * so the batch that was measured at 3.4 seconds is free to take two hundred.
+ * Two seconds rather than one, because one was measured against the same host
+ * and still refused. Paced at a second, 121 of that batch's first 165 URLs were
+ * served and the rest were not; the 305 that followed over the next ten minutes
+ * were refused outright and written down as dead links, as they had been every
+ * day before the pacing existed. The host states what it expects in
+ * `robots.txt`: its server is configured at 1r/s, and the crawlers it names by
+ * hand are asked for a two-second delay — the slower of the two, and the one a
+ * checker that names itself nowhere has no claim to be measured against.
+ * Sitting exactly on a limit also leaves nothing for the jitter either side.
+ *
+ * Affordable because the work is nothing like the budget: a day's staleness
+ * window against a five-minute tick is 288 chances to check a few hundred URLs.
+ * What it costs is that a batch whose rows are one host no longer fits inside
+ * {@link HEALTH_CHECK_BATCH_BUDGET_MS} — two hundred rows want four hundred
+ * seconds — so its tail is deferred rather than checked. Deferred rows keep the
+ * `healthCheckedAt` they arrived with and the batch is read in that order, so
+ * they are the front of the next tick rather than a set that starves.
  *
  * Not the pipeline's {@link FETCH_RATE_LIMIT_INTERVAL_S}, which is a row in the
  * database and holds across every process where this holds only within the
@@ -223,7 +237,7 @@ export const HEALTH_CHECK_PER_HOST_CONCURRENCY = 2
  * multiplied by however many are up. Ticks are not divided between them either
  * — that is a batch a task claims, and there is no claim yet.
  */
-export const HEALTH_CHECK_PER_HOST_INTERVAL_MS = 1_000
+export const HEALTH_CHECK_PER_HOST_INTERVAL_MS = 2_000
 
 /**
  * How long a batch may go on starting checks.
