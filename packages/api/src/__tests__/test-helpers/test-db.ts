@@ -52,6 +52,23 @@ export function getTestDb() {
 }
 
 /**
+ * A second handle on this process's pool that records the SQL it emits.
+ *
+ * The logger reports each statement with its placeholders still in it, which is
+ * what {@link ../services/sql-shape.integration.test.ts} pins — the bound values
+ * carry generated ids and timestamps and would not repeat between runs.
+ */
+export function createQueryRecorder() {
+  getTestDb()
+  const queries: string[] = []
+  const recorder = drizzle(pool!, {
+    schema,
+    logger: { logQuery: (query) => queries.push(query) },
+  })
+  return { db: recorder, queries }
+}
+
+/**
  * Truncate all application tables (FK-safe with CASCADE).
  * Call in beforeEach() to ensure test isolation.
  */
