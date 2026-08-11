@@ -3,9 +3,9 @@
  * Business logic for group management
  */
 
-import { eq, ilike, and, or, sql, asc, desc, getTableColumns } from 'drizzle-orm'
+import { eq, ilike, and, or, sql, asc, desc, count, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { group, userGroupMembership, user } from '@kukan/db'
+import { group, userGroupMembership, user, packageTable, packageGroup } from '@kukan/db'
 import { NotFoundError, ValidationError, isUuid, escapeLike } from '@kukan/shared'
 import type {
   PaginationParams,
@@ -39,10 +39,16 @@ export class GroupService {
     const where = and(...conditions)
 
     // Active packages only — draft/deleted links must not inflate the count (ADR-039)
-    const datasetCount =
-      sql<number>`(SELECT COUNT(*)::int FROM "package_group" JOIN "package" ON "package"."id" = "package_group"."package_id" AND "package"."state" = 'active' WHERE "package_group"."group_id" = "group"."id")`.as(
-        'dataset_count'
+    const datasetCount = sql`${this.db
+      .select({ count: count() })
+      .from(packageGroup)
+      .innerJoin(
+        packageTable,
+        and(eq(packageTable.id, packageGroup.packageId), eq(packageTable.state, 'active'))
       )
+      .where(eq(packageGroup.groupId, group.id))}`
+      .mapWith(Number)
+      .as('dataset_count')
 
     // Ordered before LIMIT: by usage for the suggest candidates (a capped
     // fetch keeps the most-used groups), by URL identifier as the default
@@ -50,7 +56,7 @@ export class GroupService {
     const rows = await this.db
       .select({
         ...getTableColumns(group),
-        total: sql<number>`COUNT(*) OVER()::int`.as('total'),
+        total: sql`${count()} over ()`.mapWith(Number).as('total'),
         datasetCount,
         memberCount: groupMemberCountSql(viewer).as('member_count'),
       })

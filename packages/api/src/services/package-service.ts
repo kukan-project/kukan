@@ -4,7 +4,7 @@
  */
 
 import { randomBytes } from 'node:crypto'
-import { eq, and, or, sql, getTableColumns, inArray, asc, desc, ilike } from 'drizzle-orm'
+import { eq, and, or, sql, count, getTableColumns, inArray, asc, desc, ilike } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import {
@@ -211,22 +211,33 @@ export class PackageService {
 
     const selectFields = {
       ...packageColumns,
-      total: sql<number>`COUNT(*) OVER()::int`.as('total'),
-      formats:
-        sql<string>`(SELECT COALESCE(string_agg(DISTINCT UPPER("resource"."format"), ',' ORDER BY UPPER("resource"."format")), '') FROM "resource" WHERE "resource"."package_id" = "package"."id" AND "resource"."state" = 'active')`.as(
-          'formats'
-        ),
-      resourceCount:
-        sql<number>`(SELECT COUNT(*)::int FROM "resource" WHERE "resource"."package_id" = "package"."id" AND "resource"."state" = 'active')`.as(
-          'resource_count'
-        ),
-      tags: sql<string>`(SELECT COALESCE(string_agg("tag"."name", ',' ORDER BY "tag"."name"), '') FROM "package_tag" JOIN "tag" ON "tag"."id" = "package_tag"."tag_id" WHERE "package_tag"."package_id" = "package"."id")`.as(
-        'tags_agg'
+      total: sql`${count()} over ()`.mapWith(Number).as('total'),
+      formats: sql<string>`${this.db
+        .select({
+          agg: sql`COALESCE(string_agg(DISTINCT UPPER(${resource.format}), ',' ORDER BY UPPER(${resource.format})), '')`,
+        })
+        .from(resource)
+        .where(and(eq(resource.packageId, packageTable.id), eq(resource.state, 'active')))}`.as(
+        'formats'
       ),
-      groups:
-        sql<string>`(SELECT COALESCE(string_agg("group"."name" || ':' || COALESCE("group"."title", "group"."name"), ',' ORDER BY "group"."title"), '') FROM "package_group" JOIN "group" ON "group"."id" = "package_group"."group_id" WHERE "package_group"."package_id" = "package"."id")`.as(
-          'groups_agg'
-        ),
+      resourceCount: this.db
+        .$count(
+          resource,
+          and(eq(resource.packageId, packageTable.id), eq(resource.state, 'active'))
+        )
+        .as('resource_count'),
+      tags: sql<string>`${this.db
+        .select({ agg: sql`COALESCE(string_agg(${tag.name}, ',' ORDER BY ${tag.name}), '')` })
+        .from(packageTag)
+        .innerJoin(tag, eq(tag.id, packageTag.tagId))
+        .where(eq(packageTag.packageId, packageTable.id))}`.as('tags_agg'),
+      groups: sql<string>`${this.db
+        .select({
+          agg: sql`COALESCE(string_agg(${group.name} || ':' || COALESCE(${group.title}, ${group.name}), ',' ORDER BY ${group.title}), '')`,
+        })
+        .from(packageGroup)
+        .innerJoin(group, eq(group.id, packageGroup.groupId))
+        .where(eq(packageGroup.packageId, packageTable.id))}`.as('groups_agg'),
       orgName: organization.name,
       orgTitle: organization.title,
     }

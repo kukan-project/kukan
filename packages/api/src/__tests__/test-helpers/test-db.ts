@@ -59,6 +59,7 @@ export function getTestDb() {
  * carry generated ids and timestamps and would not repeat between runs.
  */
 export function createQueryRecorder() {
+  // Shares the pool rather than opening one, so the ceiling above still holds
   getTestDb()
   const queries: string[] = []
   const recorder = drizzle(pool!, {

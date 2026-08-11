@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { eq, and, sql, ilike, or, getTableColumns } from 'drizzle-orm'
 import { organization, userOrgMembership, group, userGroupMembership, user } from '@kukan/db'
 import { escapeLike, UnauthorizedError } from '@kukan/shared'
+import { orgPackageCount } from '../services/organization-service'
 import type { AppContext } from '../context'
 
 export const usersRouter = new Hono<{ Variables: AppContext }>()
@@ -71,23 +72,16 @@ usersRouter.get('/me/organizations', async (c) => {
 
   const db = c.get('db')
 
-  const datasetCountSql =
-    sql<number>`(SELECT COUNT(*)::int FROM "package" WHERE "package"."owner_org" = "organization"."id" AND "package"."state" = 'active')`.as(
-      'dataset_count'
-    )
+  const datasetCountSql = orgPackageCount(db, 'active').as('dataset_count')
 
   if (user.sysadmin) {
     // Sysadmin sees all active organizations
     const rows = await db
-      .select({
-        ...getTableColumns(organization),
-        role: sql<string>`'admin'`.as('role'),
-        datasetCount: datasetCountSql,
-      })
+      .select({ ...getTableColumns(organization), datasetCount: datasetCountSql })
       .from(organization)
       .where(eq(organization.state, 'active'))
 
-    return c.json({ items: rows })
+    return c.json({ items: rows.map((row) => ({ ...row, role: 'admin' })) })
   }
 
   // Regular user: organizations they belong to
@@ -120,15 +114,11 @@ usersRouter.get('/me/groups', async (c) => {
   if (user.sysadmin) {
     // Sysadmins manage every group, so they come back as admin everywhere
     const rows = await db
-      .select({
-        id: group.id,
-        name: group.name,
-        role: sql<string>`'admin'`.as('role'),
-      })
+      .select({ id: group.id, name: group.name })
       .from(group)
       .where(eq(group.state, 'active'))
 
-    return c.json({ items: rows })
+    return c.json({ items: rows.map((row) => ({ ...row, role: 'admin' })) })
   }
 
   const rows = await db

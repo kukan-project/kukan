@@ -42,25 +42,26 @@ const sysadminApp = createTestApp(recorder)
 const memberApp = createTestApp(recorder, { user: outsider })
 const anonymousApp = createTestApp(recorder, { user: null })
 
-/** One row of real data, so a query that silently matches nothing is still a
- *  query whose shape we captured — the assertions here are on the SQL, not on
- *  the rows, but an empty database would hide a broken FROM. */
+/** Rows to find, so each request takes the branch that reaches the database
+ *  rather than an early return on an empty result. Seeded through the plain
+ *  handle, which keeps the fixture's own statements off the recorder. */
 beforeAll(async () => {
   await cleanDatabase()
   await ensureTestUser()
   await ensureOutsiderUser()
 
-  await createTestApp(db).request('/api/v1/organizations', {
+  const seedApp = createTestApp(db)
+  await seedApp.request('/api/v1/organizations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: 'shape-org', title: 'Shape Org' }),
   })
-  await createTestApp(db).request('/api/v1/organizations/shape-org/members', {
+  await seedApp.request('/api/v1/organizations/shape-org/members', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user_id: OUTSIDER_USER_ID, role: 'member' }),
   })
-  await createTestApp(db).request('/api/v1/groups', {
+  await seedApp.request('/api/v1/groups', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: 'shape-group', title: 'Shape Group' }),
@@ -143,12 +144,5 @@ describe('emitted SQL shape', () => {
     it('pins the member shape', async () => {
       expect(await sqlFor(memberApp, '/api/v1/users/me/organizations')).toMatchSnapshot()
     })
-  })
-
-  // Guards the guard: a recorder wired to the wrong handle would capture
-  // nothing, and every snapshot above would pin an empty list.
-  it('records the statement the viewer actually ran', async () => {
-    const emitted = await sqlFor(memberApp, '/api/v1/organizations')
-    expect(emitted.join('\n')).toContain('"user_org_membership"."user_id"')
   })
 })

@@ -3,7 +3,7 @@
  * Business logic for organization management
  */
 
-import { eq, ilike, and, or, sql, asc, desc, inArray, getTableColumns } from 'drizzle-orm'
+import { eq, ilike, and, or, sql, asc, desc, count, inArray, getTableColumns } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { organization, userOrgMembership, user, packageTable } from '@kukan/db'
 import {
@@ -35,6 +35,18 @@ import { deleteOrphanFreeTags } from './tag-service'
  *  OpenSearch/S3 from being hammered while still finishing a large org promptly. */
 const EXTERNALS_CLEANUP_CONCURRENCY = 8
 
+/**
+ * An organization's packages in one state, counted per row of a list query.
+ * Exported because the dashboard lists the viewer's own organizations from a
+ * second route (routes/users.ts), and the two counts must not drift apart.
+ */
+export function orgPackageCount(db: Database, packageState: 'active' | 'deleted') {
+  return db.$count(
+    packageTable,
+    and(eq(packageTable.ownerOrg, organization.id), eq(packageTable.state, packageState))
+  )
+}
+
 export class OrganizationService {
   constructor(private db: Database) {}
 
@@ -62,22 +74,16 @@ export class OrganizationService {
 
     const where = and(...conditions)
 
-    const datasetCount =
-      sql<number>`(SELECT COUNT(*)::int FROM "package" WHERE "package"."owner_org" = "organization"."id" AND "package"."state" = 'active')`.as(
-        'dataset_count'
-      )
+    const datasetCount = orgPackageCount(this.db, 'active').as('dataset_count')
 
     // Ordered before LIMIT: without it PostgreSQL may return rows in any order,
     // so paging could repeat or skip an organization (#261)
     const rows = await this.db
       .select({
         ...getTableColumns(organization),
-        total: sql<number>`COUNT(*) OVER()::int`.as('total'),
+        total: sql`${count()} over ()`.mapWith(Number).as('total'),
         datasetCount,
-        deletedDatasetCount:
-          sql<number>`(SELECT COUNT(*)::int FROM "package" WHERE "package"."owner_org" = "organization"."id" AND "package"."state" = 'deleted')`.as(
-            'deleted_dataset_count'
-          ),
+        deletedDatasetCount: orgPackageCount(this.db, 'deleted').as('deleted_dataset_count'),
         memberCount: orgMemberCountSql(viewer).as('member_count'),
       })
       .from(organization)
@@ -123,12 +129,10 @@ export class OrganizationService {
    * proactively disable the delete action instead of relying on a failed request.
    */
   async countActivePackages(orgId: string): Promise<number> {
-    const [row] = await this.db
-      .select({ count: sql<number>`COUNT(*)::int` })
-      .from(packageTable)
-      .where(and(eq(packageTable.ownerOrg, orgId), eq(packageTable.state, 'active')))
-
-    return row?.count ?? 0
+    return this.db.$count(
+      packageTable,
+      and(eq(packageTable.ownerOrg, orgId), eq(packageTable.state, 'active'))
+    )
   }
 
   async create(input: CreateOrganizationInput) {
