@@ -26,6 +26,10 @@ import { KukanError } from '@kukan/shared'
  *  exact paths only, so it would need all 15 admin routes named and would miss
  *  whatever a future version adds, and it answers bare text rather than Problem
  *  Details. A prefix here covers the plugin as it grows.
+ *
+ *  A denylist fails open on upgrade, so `__tests__/auth/route-surface.test.ts`
+ *  classifies every path Better Auth mounts and fails when one is unaccounted
+ *  for. A path added here belongs in that file's `BLOCKED` too.
  */
 function isBlocked(path: string): boolean {
   return path.startsWith('/api/auth/admin/') || path === '/api/auth/update-user'
