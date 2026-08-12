@@ -420,11 +420,7 @@ export class ResourceVersionService {
    * for a one-time backfill (ADR-043). Zero means the migration is complete.
    */
   async countUnversioned(): Promise<number> {
-    const [row] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(resource)
-      .where(this.unversionedWhere())
-    return row?.count ?? 0
+    return this.db.$count(resource, this.unversionedWhere())
   }
 
   /**

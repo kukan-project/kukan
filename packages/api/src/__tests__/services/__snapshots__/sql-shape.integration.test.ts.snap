@@ -86,6 +86,15 @@ exports[`emitted SQL shape > PackageService.list > pins the list shape 1`] = `
 ]
 `;
 
+exports[`emitted SQL shape > ResourceVersionService.countUnversioned > pins the shape 1`] = `
+[
+  "select count(*) as count from "resource" where ("resource"."state" = $1 and "resource"."hash" IS NOT NULL and NOT EXISTS (SELECT 1 FROM "resource_version" rv WHERE rv.resource_id = "resource"."id") and NOT EXISTS (
+        SELECT 1 FROM "resource_pipeline" rp
+        WHERE rp.resource_id = "resource"."id" AND rp.status IN ('queued', 'processing')
+      ));",
+]
+`;
+
 exports[`emitted SQL shape > ResourceVersionService.createFirstVersions > pins the scan shape 1`] = `
 [
   "select "resource"."id", "resource"."package_id", "resource"."url_type", "resource"."hash", "resource"."size", "resource"."storage_key", "resource_pipeline"."metadata" -> 'schema', (

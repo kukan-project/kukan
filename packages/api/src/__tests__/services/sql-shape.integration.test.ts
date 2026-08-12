@@ -169,6 +169,16 @@ describe('emitted SQL shape', () => {
     })
   })
 
+  // The count and the scan share `unversionedWhere`, whose NOT EXISTS pair is
+  // still written out. They are WHERE fragments, where the qualifier survives —
+  // pinned so that stays a fact rather than a memory.
+  describe('ResourceVersionService.countUnversioned', () => {
+    it('pins the shape', async () => {
+      await new ResourceVersionService(recorder).countUnversioned()
+      expect(recorded()).toMatchSnapshot()
+    })
+  })
+
   // The scan that feeds the backfill. Its correlated EXISTS keeps its qualifier
   // because the FROM has a join in it — an incidental property of a query whose
   // shape nothing else was watching.
