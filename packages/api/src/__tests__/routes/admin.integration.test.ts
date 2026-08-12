@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { sql } from 'drizzle-orm'
+import { packageTable, resource, resourcePipeline } from '@kukan/db'
 import { createTestApp, mockCompletionAi } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import type { SearchAdapter } from '@kukan/search-adapter'
@@ -472,6 +473,44 @@ describe('Admin API Routes', () => {
       const body = await res.json()
       expect(body.db.packages).toBe(1)
       expect(body.db.resources).toBe(1)
+    })
+  })
+
+  describe('GET /api/v1/admin/jobs/stats', () => {
+    it('should reject non-sysadmin requests', async () => {
+      const res = await nonAdminApp.request('/api/v1/admin/jobs/stats')
+      expect(res.status).toBe(403)
+    })
+
+    it('should count pipeline rows by status', async () => {
+      const orgId = await ensureOrg('jobs-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'jobs-pkg', ownerOrg: orgId, state: 'active' })
+        .returning({ id: packageTable.id })
+      // One pipeline row per resource — resource_id is unique on that table
+      const rows = await db
+        .insert(resource)
+        .values(
+          ['jobs-a', 'jobs-b', 'jobs-c'].map((name) => ({
+            packageId: pkg.id,
+            name,
+            state: 'active' as const,
+          }))
+        )
+        .returning({ id: resource.id })
+      await db.insert(resourcePipeline).values([
+        { resourceId: rows[0].id, status: 'complete' },
+        { resourceId: rows[1].id, status: 'complete' },
+        { resourceId: rows[2].id, status: 'error' },
+      ])
+
+      const res = await app.request('/api/v1/admin/jobs/stats')
+      expect(res.status).toBe(200)
+      const body = await res.json()
+
+      // Numbers, not bigint strings — the count no longer carries an ::int cast.
+      expect(body.jobs).toEqual({ complete: 2, error: 1 })
     })
   })
 

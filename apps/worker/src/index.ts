@@ -24,7 +24,7 @@ import {
   lakeIngestJobSchema,
   embedJobSchema,
 } from '@kukan/shared'
-import { eq, sql } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { packageTable } from '@kukan/db'
 import type { Job } from '@kukan/queue-adapter'
 import { rebuildMetadataIndex } from '@kukan/api/services/search-index'
@@ -367,10 +367,7 @@ if (search) {
       if (osCount !== 0) return // Non-empty or error — no action needed
 
       // OS index is empty — check DB to confirm data loss (avoid Aurora wake for normal state)
-      const [{ count: dbCount }] = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(packageTable)
-        .where(eq(packageTable.state, 'active'))
+      const dbCount = await db.$count(packageTable, eq(packageTable.state, 'active'))
 
       if (dbCount > 0 && Date.now() - lastRebuildEnqueuedAt > REBUILD_COOLDOWN_MS) {
         osLogger.warn({ dbCount, osCount }, 'Index out of sync — enqueuing auto-recovery')

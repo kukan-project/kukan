@@ -1,5 +1,31 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`emitted SQL shape > GET /api/v1/admin/health/stats > pins the sysadmin shape 1`] = `
+[
+  "select "health_status", count(*) from "resource" where ("resource"."url_type" is null and "resource"."state" = $1 and "resource"."url" IS NOT NULL) group by "resource"."health_status"",
+]
+`;
+
+exports[`emitted SQL shape > GET /api/v1/admin/jobs/stats > pins the sysadmin shape 1`] = `
+[
+  "select "status", count(*) from "resource_pipeline" group by "resource_pipeline"."status"",
+  "select "resource_pipeline"."resource_id", "resource"."name", "resource_pipeline"."error", "resource_pipeline"."updated" from "resource_pipeline" inner join "resource" on "resource_pipeline"."resource_id" = "resource"."id" where "resource_pipeline"."status" = $1 order by "resource_pipeline"."updated" desc limit $2",
+]
+`;
+
+exports[`emitted SQL shape > GET /api/v1/admin/search/stats > pins the sysadmin shape 1`] = `
+[
+  "select count(*) as count from "package" where "package"."state" = $1;",
+  "select count(*) from "resource" inner join "package" on "resource"."package_id" = "package"."id" where ("resource"."state" = $1 and "package"."state" = $2)",
+]
+`;
+
+exports[`emitted SQL shape > GET /api/v1/admin/users/stats > pins the sysadmin shape 1`] = `
+[
+  "select "state", "role", count(*) from "user" group by "user"."state", "user"."role"",
+]
+`;
+
 exports[`emitted SQL shape > GET /api/v1/groups > pins the anonymous shape 1`] = `
 [
   "select "id", "name", "title", "description", "image_url", "state", "extras", "created", "updated", count(*) over () as "total", (select count(*) from "package_group" inner join "package" on ("package"."id" = "package_group"."package_id" and "package"."state" = $1) where "package_group"."group_id" = "group"."id") as "dataset_count", NULL::int as "member_count" from "group" where "group"."state" = $2 order by "group"."name" asc limit $3",

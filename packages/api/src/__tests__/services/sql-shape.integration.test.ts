@@ -1,18 +1,19 @@
 /**
- * The SQL the list endpoints emit, pinned.
+ * The SQL these endpoints emit, pinned ahead of the queries being rewritten.
  *
- * These queries count and aggregate related rows with correlated subqueries, and
- * several of them are still written as raw strings. Rewriting one to typed
- * references is not a refactor a type check can vouch for: drizzle drops the
- * table qualifier from a bare column placed directly in a select projection, so
- * `WHERE "package"."owner_org" = "organization"."id"` becomes `WHERE "owner_org"
- * = "id"` — a subquery that compares a row to itself, counts zero, and raises
- * nothing. Row-count assertions pass through it too, whenever the fixture's
- * expected count happens to be zero.
+ * Moving a query from a raw string to typed references is not a refactor a type
+ * check can vouch for, and the failure is silent rather than loud. The sharpest
+ * case is the correlated subquery: drizzle drops the table qualifier from a bare
+ * column placed directly in a select projection, so `WHERE "package"."owner_org"
+ * = "organization"."id"` becomes `WHERE "owner_org" = "id"` — a subquery that
+ * compares a row to itself, counts zero, and raises nothing. Row-count
+ * assertions pass through it too, whenever the fixture's expected count happens
+ * to be zero. A query that merely counts can lose its join or its filter the
+ * same way, and return a plausible number.
  *
  * So the shape itself is the thing under test. A rewrite that changes nothing
- * shows an empty diff here; one that uncorrelates a subquery shows the missing
- * qualifier in review.
+ * shows an empty diff here; one that drops a qualifier, a join or a condition
+ * shows what it dropped, in review.
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { createTestApp } from '../test-helpers/test-app'
@@ -143,6 +144,30 @@ describe('emitted SQL shape', () => {
 
     it('pins the member shape', async () => {
       expect(await sqlFor(memberApp, '/api/v1/users/me/organizations')).toMatchSnapshot()
+    })
+  })
+
+  describe('GET /api/v1/admin/search/stats', () => {
+    it('pins the sysadmin shape', async () => {
+      expect(await sqlFor(sysadminApp, '/api/v1/admin/search/stats')).toMatchSnapshot()
+    })
+  })
+
+  describe('GET /api/v1/admin/jobs/stats', () => {
+    it('pins the sysadmin shape', async () => {
+      expect(await sqlFor(sysadminApp, '/api/v1/admin/jobs/stats')).toMatchSnapshot()
+    })
+  })
+
+  describe('GET /api/v1/admin/health/stats', () => {
+    it('pins the sysadmin shape', async () => {
+      expect(await sqlFor(sysadminApp, '/api/v1/admin/health/stats')).toMatchSnapshot()
+    })
+  })
+
+  describe('GET /api/v1/admin/users/stats', () => {
+    it('pins the sysadmin shape', async () => {
+      expect(await sqlFor(sysadminApp, '/api/v1/admin/users/stats')).toMatchSnapshot()
     })
   })
 })

@@ -6,7 +6,7 @@
 import { Hono, type Context } from 'hono'
 import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
-import { eq, ne, and, inArray, isNull, ilike, or, sql, desc } from 'drizzle-orm'
+import { eq, ne, and, count, inArray, isNull, ilike, or, sql, desc } from 'drizzle-orm'
 import {
   packageTable,
   resource,
@@ -105,16 +105,13 @@ const externalUrlConditions = [
 adminRouter.get('/search/stats', async (c) => {
   const db = c.get('db')
 
-  const [stats, pkgCountRows, resCountRows] = await Promise.all([
+  const [stats, packages, [resources]] = await Promise.all([
     c.get('search').getIndexStats(),
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(packageTable)
-      .where(eq(packageTable.state, 'active')),
+    db.$count(packageTable, eq(packageTable.state, 'active')),
     // Resources under draft packages are excluded to match what the search
     // index holds (ADR-039)
     db
-      .select({ count: sql<number>`count(*)::int` })
+      .select({ count: count() })
       .from(resource)
       .innerJoin(packageTable, eq(resource.packageId, packageTable.id))
       .where(and(eq(resource.state, 'active'), eq(packageTable.state, 'active'))),
@@ -123,7 +120,7 @@ adminRouter.get('/search/stats', async (c) => {
   return c.json({
     enabled: stats !== null,
     stats,
-    db: { packages: pkgCountRows[0]?.count ?? 0, resources: resCountRows[0]?.count ?? 0 },
+    db: { packages, resources: resources.count },
   })
 })
 
@@ -466,7 +463,7 @@ adminRouter.get('/jobs/stats', async (c) => {
     db
       .select({
         status: resourcePipeline.status,
-        count: sql<number>`count(*)::int`,
+        count: count(),
       })
       .from(resourcePipeline)
       .groupBy(resourcePipeline.status),
@@ -595,7 +592,7 @@ adminRouter.get('/health/stats', async (c) => {
   const rows = await db
     .select({
       status: resource.healthStatus,
-      count: sql<number>`count(*)::int`,
+      count: count(),
     })
     .from(resource)
     .where(and(...externalUrlConditions))
@@ -660,7 +657,7 @@ adminRouter.get('/users/stats', async (c) => {
     .select({
       state: user.state,
       role: user.role,
-      count: sql<number>`count(*)::int`,
+      count: count(),
     })
     .from(user)
     .groupBy(user.state, user.role)
