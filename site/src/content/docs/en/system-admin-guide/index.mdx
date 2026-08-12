@@ -334,4 +334,18 @@ Key environment variables are listed below. See `.env.example` for the full list
 | `SQS_ENDPOINT`       | SQS endpoint (ElasticMQ: `http://localhost:9324`, AWS: omit) | -                       |
 | `BETTER_AUTH_SECRET` | Auth session secret (32+ characters)                         | -                       |
 | `BETTER_AUTH_URL`    | Public URL                                                   | `http://localhost:3000` |
+| `PASSWORD_MIN_SCORE` | Password strength floor (zxcvbn score 0–4) — see below       | `3`                     |
 | `LOG_LEVEL`          | Log level (`trace`–`fatal`)                                  | `info`                  |
+
+### Password strength policy
+
+Every route that sets a password — sign-up, a user changing their own, an administrator creating one, `pnpm db:create-user` — is held to the same two conditions:
+
+- **at least 15 characters** (not configurable), and
+- **a zxcvbn score of at least `PASSWORD_MIN_SCORE`** (default `3`, "safely unguessable").
+
+Lowering `PASSWORD_MIN_SCORE` lets common word sequences and keyboard patterns through. Setting it to `0` disables the guessability check altogether.
+
+:::caution
+`PASSWORD_MIN_SCORE` is a development setting. **Do not set it in production.** It exists so that throwaway passwords stay usable on a local machine, and lowering it lowers the strength of your authentication by exactly that much. The length minimum applies regardless.
+:::

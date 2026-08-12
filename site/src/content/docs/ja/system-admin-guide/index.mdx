@@ -322,4 +322,22 @@ pnpm --filter @kukan/worker reconcile-orphans -- --commit
 | `SQS_ENDPOINT`       | SQS エンドポイント（ElasticMQ: `http://localhost:9324`、AWS: 省略） | -                       |
 | `BETTER_AUTH_SECRET` | 認証セッション秘密鍵（32 文字以上）                                 | -                       |
 | `BETTER_AUTH_URL`    | 公開 URL                                                            | `http://localhost:3000` |
+| `PASSWORD_MIN_SCORE` | パスワード強度の下限（zxcvbn スコア 0〜4）— 下記                    | `3`                     |
 | `LOG_LEVEL`          | ログレベル（`trace`〜`fatal`）                                      | `info`                  |
+
+### パスワード強度ポリシー
+
+パスワードを設定するすべての経路 — サインアップ、利用者自身による変更、管理画面での
+ユーザー作成、`pnpm db:create-user` — に同じ条件が適用されます。
+
+- **15 文字以上**（変更不可）
+- **zxcvbn スコアが `PASSWORD_MIN_SCORE` 以上**（既定値 `3` =「安全に推測困難」）
+
+`PASSWORD_MIN_SCORE` を下げると、よく使われる単語の並びやキーボード上の並びが通るように
+なります。`0` では推測困難性の判定そのものが無効になります。
+
+:::caution
+`PASSWORD_MIN_SCORE` は開発環境向けの設定です。**本番環境では設定しないでください。**
+ローカルで使い捨てのパスワードを使い続けるためのもので、値を下げることは
+そのまま認証の強度を下げることを意味します。文字数の下限はこの設定に関わらず適用されます。
+:::
