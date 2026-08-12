@@ -85,3 +85,49 @@ exports[`emitted SQL shape > PackageService.list > pins the list shape 1`] = `
   "select "package"."id", "package"."name", "package"."title", "package"."notes", "package"."url", "package"."version", "package"."license_id", "package"."author", "package"."author_email", "package"."maintainer", "package"."maintainer_email", "package"."state", "package"."type", "package"."owner_org", "package"."private", "package"."creator_user_id", "package"."extras", "package"."quality_score", "package"."ai_summary", "package"."ai_tags", "package"."created", "package"."updated", count(*) over () as "total", (select COALESCE(string_agg(DISTINCT UPPER("format"), ',' ORDER BY UPPER("format")), '') from "resource" where ("resource"."package_id" = "package"."id" and "resource"."state" = $1)) as "formats", (select count(*) from "resource" where ("resource"."package_id" = "package"."id" and "resource"."state" = $2)) as "resource_count", (select COALESCE(string_agg("tag"."name", ',' ORDER BY "tag"."name"), '') from "package_tag" inner join "tag" on "tag"."id" = "package_tag"."tag_id" where "package_tag"."package_id" = "package"."id") as "tags_agg", (select COALESCE(string_agg("group"."name" || ':' || COALESCE("group"."title", "group"."name"), ',' ORDER BY "group"."title"), '') from "package_group" inner join "group" on "group"."id" = "package_group"."group_id" where "package_group"."package_id" = "package"."id") as "groups_agg", "organization"."name", "organization"."title" from "package" left join "organization" on "package"."owner_org" = "organization"."id" where "package"."state" = $3 order by "package"."updated" desc limit $4",
 ]
 `;
+
+exports[`emitted SQL shape > ResourceVersionService.createFirstVersions > pins the scan shape 1`] = `
+[
+  "select "resource"."id", "resource"."package_id", "resource"."url_type", "resource"."hash", "resource"."size", "resource"."storage_key", "resource_pipeline"."metadata" -> 'schema', (
+          "resource_pipeline"."metadata"->>'sourceHash' = "resource"."hash"
+          OR (
+            "resource_pipeline"."metadata"->>'sourceHash' IS NULL
+            AND "resource_pipeline"."status" = 'complete'
+            AND exists (select 1 from "resource_pipeline_step" where ("resource_pipeline_step"."pipeline_id" = "resource_pipeline"."id" and "resource_pipeline_step"."step_name" = $1 and "resource_pipeline_step"."status" = $2))
+          )
+        ) from "resource" left join "resource_pipeline" on "resource_pipeline"."resource_id" = "resource"."id" where ("resource"."state" = $3 and "resource"."hash" IS NOT NULL and NOT EXISTS (SELECT 1 FROM "resource_version" rv WHERE rv.resource_id = "resource"."id") and NOT EXISTS (
+        SELECT 1 FROM "resource_pipeline" rp
+        WHERE rp.resource_id = "resource"."id" AND rp.status IN ('queued', 'processing')
+      ))",
+  "SELECT rv.resource_id AS "resourceId", rv.version, rv.storage_key AS "storageKey", rv.size,
+         rv.format
+  FROM resource_version rv
+  JOIN resource r ON r.id = rv.resource_id
+  WHERE r.state = 'active'
+    
+    AND rv.state = 'active'
+    AND rv.ducklake_snapshot_id IS NULL
+    AND lower(rv.format) IN ('csv', 'tsv')
+    AND rv.size IS NOT NULL
+    AND rv.size <= $1
+    AND (rv.schema IS NULL OR jsonb_array_length(rv.schema -> 'columns') > 0)
+    AND NOT EXISTS (
+      SELECT 1 FROM resource_version newer
+      WHERE newer.resource_id = rv.resource_id
+        AND newer.version > rv.version
+        AND newer.ducklake_snapshot_id IS NOT NULL
+    )",
+]
+`;
+
+exports[`emitted SQL shape > listPurgeTargets > pins the shape 1`] = `
+[
+  "select "id", exists (select 1 from "resource_version" where ("resource_version"."resource_id" = "resource"."id" and "resource_version"."ducklake_snapshot_id" is not null)) from "resource" where "resource"."package_id" in ($1)",
+]
+`;
+
+exports[`emitted SQL shape > readBeforeFirstVersion > pins the shape 1`] = `
+[
+  "select "storage_key", exists (select 1 from "resource_version" where "resource_version"."resource_id" = "resource"."id") from "resource" where "resource"."id" = $1 limit $2",
+]
+`;

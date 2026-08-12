@@ -151,6 +151,16 @@ pnpm format        # Prettier フォーマット
 - 論理削除は使わない（`state` カラムで管理: package は `draft` / `active` / `deleted`、organization / group は `active` / `deleted`。
   package と organization は purge 遷移中に一時値 `purging` を取る — ADR-028 / ADR-039）
 - マイグレーションは Drizzle Kit で管理
+- **投影内の相関サブクエリを生 SQL で書かない。** `exists()` / `db.$count()` を使い、
+  相関は WHERE 側に置く。FROM が単一テーブルのとき、Drizzle は投影に置かれた裸のカラム
+  参照からテーブル修飾を落とす。`WHERE rv.resource_id = ${resource.id}` は
+  `WHERE rv.resource_id = "id"` になり、内側スコープに解決されて**エラーを出さず常に
+  false / 0 を返す**。型検査も、期待値が 0 のアサーションも素通りする。
+  WHERE 句と JOIN のある select では修飾は保たれるので、危険なのは投影だけ。
+  この種のクエリは `packages/api/src/__tests__/services/sql-shape.integration.test.ts`
+  で発行 SQL を pin してから書き換える。ESLint の
+  `kukan/no-raw-subquery-in-projection` が機械的に落とす。
+  上流未修正（drizzle-team/drizzle-orm#5734、修正 PR #5795 も取りこぼしあり）
 
 ### テスト
 

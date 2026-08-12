@@ -1,5 +1,6 @@
 import eslint from '@eslint/js'
 import tseslint from 'typescript-eslint'
+import { noRawSubqueryInProjection } from './eslint-rules/no-raw-subquery-in-projection.js'
 
 export default tseslint.config(
   eslint.configs.recommended,
@@ -9,7 +10,9 @@ export default tseslint.config(
       ecmaVersion: 2022,
       sourceType: 'module',
     },
+    plugins: { kukan: { rules: { 'no-raw-subquery-in-projection': noRawSubqueryInProjection } } },
     rules: {
+      'kukan/no-raw-subquery-in-projection': 'error',
       'no-console': 'error',
       '@typescript-eslint/no-unused-vars': [
         'error',

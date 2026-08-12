@@ -5,9 +5,15 @@
  */
 
 import { digestStream } from '@kukan/shared/hash-node'
-import { eq, and, desc, inArray, sql } from 'drizzle-orm'
+import { eq, and, desc, exists, inArray, sql } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
-import { resource, resourceVersion, resourcePipeline, auditLog } from '@kukan/db'
+import {
+  resource,
+  resourceVersion,
+  resourcePipeline,
+  resourcePipelineStep,
+  auditLog,
+} from '@kukan/db'
 import {
   ConflictError,
   LAKE_INGEST_JOB_TYPE,
@@ -109,6 +115,32 @@ export async function insertVersionIfHeld(
     SELECT id FROM inserted
   `)
   return result.rows.length > 0
+}
+
+/**
+ * The resource as it stands right now, for the backfill to re-check before it
+ * makes a v1 — whether anything has versioned it since the scan, and which
+ * object it points at.
+ *
+ * Its own function so the emitted SQL can be pinned: the correlation is the
+ * kind drizzle drops the qualifier from when it is written out by hand, and
+ * this query is otherwise reachable only from inside a claimed,
+ * storage-backed path.
+ */
+export function readBeforeFirstVersion(db: Database, resourceId: string) {
+  return db
+    .select({
+      storageKey: resource.storageKey,
+      versioned: exists(
+        db
+          .select({ one: sql`1` })
+          .from(resourceVersion)
+          .where(eq(resourceVersion.resourceId, resource.id))
+      ),
+    })
+    .from(resource)
+    .where(eq(resource.id, resourceId))
+    .limit(1)
 }
 
 /**
@@ -476,11 +508,18 @@ export class ResourceVersionService {
           OR (
             ${resourcePipeline.metadata}->>'sourceHash' IS NULL
             AND ${resourcePipeline.status} = 'complete'
-            AND EXISTS (
-              SELECT 1 FROM resource_pipeline_step s
-              WHERE s.pipeline_id = ${resourcePipeline.id}
-                AND s.step_name = 'extract' AND s.status = 'complete'
-            )
+            AND ${exists(
+              this.db
+                .select({ one: sql`1` })
+                .from(resourcePipelineStep)
+                .where(
+                  and(
+                    eq(resourcePipelineStep.pipelineId, resourcePipeline.id),
+                    eq(resourcePipelineStep.stepName, 'extract'),
+                    eq(resourcePipelineStep.status, 'complete')
+                  )
+                )
+            )}
           )
         )`,
       })
@@ -535,22 +574,12 @@ export class ResourceVersionService {
     storage: StorageAdapter
   ): Promise<boolean> {
     return this.withClaimOrSkip(r.id, async (claim) => {
-      // Re-checked against the row as it is *now*: the scan happened earlier,
-      // and since then a pipeline run may have created v1, or a newer run may
-      // have moved the pointer — which means the object this row described is
-      // no longer the content, and v1 must not be made to name it.
-      const [current] = await this.db
-        .select({
-          storageKey: resource.storageKey,
-          versions: sql<number>`(
-            SELECT count(*)::int FROM ${resourceVersion} rv
-            WHERE rv.resource_id = ${resource.id}
-          )`,
-        })
-        .from(resource)
-        .where(eq(resource.id, r.id))
-        .limit(1)
-      if (!current || current.versions > 0) return false
+      // Against the row as it is *now*: the scan happened earlier, and since
+      // then a pipeline run may have created v1, or a newer run may have moved
+      // the pointer — which means the object this row described is no longer
+      // the content, and v1 must not be made to name it.
+      const [current] = await readBeforeFirstVersion(this.db, r.id)
+      if (!current || current.versioned) return false
       if (!current.storageKey || current.storageKey !== r.storageKey) return false
 
       // Measured rather than taken from the row: this is pre-existing data,

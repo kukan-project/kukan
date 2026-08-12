@@ -16,9 +16,9 @@
  * `dropResourceTables` (ADR-043 layer 2).
  */
 
-import { inArray, sql } from 'drizzle-orm'
+import { and, eq, exists, inArray, isNotNull, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { resource } from '@kukan/db'
+import { resource, resourceVersion } from '@kukan/db'
 import { RESOURCE_PREFIX, PREVIEW_PREFIX } from '@kukan/shared'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
@@ -31,6 +31,10 @@ import type { StorageAdapter } from '@kukan/storage-adapter'
  *
  * One query for both. They are the same rows read two ways, and a purge that
  * read them separately could see a resource enter the lake in between.
+ *
+ * Correlated through drizzle rather than written out — see CLAUDE.md; this
+ * query is the reason the rule is there. Shape pinned in
+ * `__tests__/services/sql-shape.integration.test.ts`.
  */
 export async function listPurgeTargets(
   db: Database,
@@ -41,10 +45,17 @@ export async function listPurgeTargets(
   const rows = await db
     .select({
       id: resource.id,
-      inLake: sql<boolean>`EXISTS (
-        SELECT 1 FROM resource_version rv
-        WHERE rv.resource_id = ${resource.id} AND rv.ducklake_snapshot_id IS NOT NULL
-      )`,
+      inLake: exists(
+        db
+          .select({ one: sql`1` })
+          .from(resourceVersion)
+          .where(
+            and(
+              eq(resourceVersion.resourceId, resource.id),
+              isNotNull(resourceVersion.ducklakeSnapshotId)
+            )
+          )
+      ),
     })
     .from(resource)
     .where(inArray(resource.packageId, packageIds))

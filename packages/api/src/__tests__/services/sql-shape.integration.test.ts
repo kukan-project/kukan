@@ -18,6 +18,11 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { createTestApp } from '../test-helpers/test-app'
 import { PackageService } from '../../services/package-service'
+import { listPurgeTargets } from '../../services/package-cleanup'
+import {
+  readBeforeFirstVersion,
+  ResourceVersionService,
+} from '../../services/resource-version-service'
 import {
   getTestDb,
   createQueryRecorder,
@@ -144,6 +149,36 @@ describe('emitted SQL shape', () => {
 
     it('pins the member shape', async () => {
       expect(await sqlFor(memberApp, '/api/v1/users/me/organizations')).toMatchSnapshot()
+    })
+  })
+
+  // No endpoint reaches these two — a purge and the backfill correlate to the
+  // row they are reading, from a select the service builds itself. Both lost
+  // that correlation once.
+  describe('listPurgeTargets', () => {
+    it('pins the shape', async () => {
+      await listPurgeTargets(recorder, ['00000000-0000-0000-0000-0000000000ff'])
+      expect(recorded()).toMatchSnapshot()
+    })
+  })
+
+  describe('readBeforeFirstVersion', () => {
+    it('pins the shape', async () => {
+      await readBeforeFirstVersion(recorder, '00000000-0000-0000-0000-0000000000ff')
+      expect(recorded()).toMatchSnapshot()
+    })
+  })
+
+  // The scan that feeds the backfill. Its correlated EXISTS keeps its qualifier
+  // because the FROM has a join in it — an incidental property of a query whose
+  // shape nothing else was watching.
+  describe('ResourceVersionService.createFirstVersions', () => {
+    it('pins the scan shape', async () => {
+      await new ResourceVersionService(recorder).createFirstVersions({
+        storage: {} as never,
+        queue: { enqueue: async () => 'queued' } as never,
+      })
+      expect(recorded()).toMatchSnapshot()
     })
   })
 

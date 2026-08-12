@@ -37,6 +37,14 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'tooling',
+          root: './eslint-rules',
+          include: ['__tests__/**/*.test.js'],
+          environment: 'node',
+        },
+      },
+      {
+        test: {
           name: 'infra',
           root: './infra',
           include: ['lib/**/__tests__/**/*.test.ts'],
