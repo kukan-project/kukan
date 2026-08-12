@@ -34,7 +34,7 @@ exports[`emitted SQL shape > GET /api/v1/groups > pins the anonymous shape 1`] =
 
 exports[`emitted SQL shape > GET /api/v1/groups > pins the member shape 1`] = `
 [
-  "select "id", "name", "title", "description", "image_url", "state", "extras", "created", "updated", count(*) over () as "total", (select count(*) from "package_group" inner join "package" on ("package"."id" = "package_group"."package_id" and "package"."state" = $1) where "package_group"."group_id" = "group"."id") as "dataset_count", CASE WHEN exists (select 1 from "user_group_membership" where ("user_group_membership"."group_id" = "group"."id" and "user_group_membership"."user_id" = $2 and "user_group_membership"."role" in ($3, $4, $5))) THEN (select count(*) from "user_group_membership" where "user_group_membership"."group_id" = "group"."id")::int END as "member_count" from "group" where "group"."state" = $6 order by "group"."name" asc limit $7",
+  "select "id", "name", "title", "description", "image_url", "state", "extras", "created", "updated", count(*) over () as "total", (select count(*) from "package_group" inner join "package" on ("package"."id" = "package_group"."package_id" and "package"."state" = $1) where "package_group"."group_id" = "group"."id") as "dataset_count", CASE WHEN exists (select  from "user_group_membership" where ("user_group_membership"."group_id" = "group"."id" and "user_group_membership"."user_id" = $2 and "user_group_membership"."role" in ($3, $4, $5))) THEN (select count(*) from "user_group_membership" where "user_group_membership"."group_id" = "group"."id")::int END as "member_count" from "group" where "group"."state" = $6 order by "group"."name" asc limit $7",
 ]
 `;
 
@@ -58,7 +58,7 @@ exports[`emitted SQL shape > GET /api/v1/organizations > pins the dataset-count 
 
 exports[`emitted SQL shape > GET /api/v1/organizations > pins the member shape 1`] = `
 [
-  "select "id", "name", "title", "description", "image_url", "state", "extras", "created", "updated", count(*) over () as "total", (select count(*) from "package" where ("package"."owner_org" = "organization"."id" and "package"."state" = $1)) as "dataset_count", (select count(*) from "package" where ("package"."owner_org" = "organization"."id" and "package"."state" = $2)) as "deleted_dataset_count", CASE WHEN exists (select 1 from "user_org_membership" where ("user_org_membership"."organization_id" = "organization"."id" and "user_org_membership"."user_id" = $3 and "user_org_membership"."role" in ($4, $5, $6))) THEN (select count(*) from "user_org_membership" where "user_org_membership"."organization_id" = "organization"."id")::int END as "member_count" from "organization" where "organization"."state" = $7 order by "organization"."name" asc limit $8",
+  "select "id", "name", "title", "description", "image_url", "state", "extras", "created", "updated", count(*) over () as "total", (select count(*) from "package" where ("package"."owner_org" = "organization"."id" and "package"."state" = $1)) as "dataset_count", (select count(*) from "package" where ("package"."owner_org" = "organization"."id" and "package"."state" = $2)) as "deleted_dataset_count", CASE WHEN exists (select  from "user_org_membership" where ("user_org_membership"."organization_id" = "organization"."id" and "user_org_membership"."user_id" = $3 and "user_org_membership"."role" in ($4, $5, $6))) THEN (select count(*) from "user_org_membership" where "user_org_membership"."organization_id" = "organization"."id")::int END as "member_count" from "organization" where "organization"."state" = $7 order by "organization"."name" asc limit $8",
 ]
 `;
 
@@ -93,7 +93,7 @@ exports[`emitted SQL shape > ResourceVersionService.createFirstVersions > pins t
           OR (
             "resource_pipeline"."metadata"->>'sourceHash' IS NULL
             AND "resource_pipeline"."status" = 'complete'
-            AND exists (select 1 from "resource_pipeline_step" where ("resource_pipeline_step"."pipeline_id" = "resource_pipeline"."id" and "resource_pipeline_step"."step_name" = $1 and "resource_pipeline_step"."status" = $2))
+            AND exists (select  from "resource_pipeline_step" where ("resource_pipeline_step"."pipeline_id" = "resource_pipeline"."id" and "resource_pipeline_step"."step_name" = $1 and "resource_pipeline_step"."status" = $2))
           )
         ) from "resource" left join "resource_pipeline" on "resource_pipeline"."resource_id" = "resource"."id" where ("resource"."state" = $3 and "resource"."hash" IS NOT NULL and NOT EXISTS (SELECT 1 FROM "resource_version" rv WHERE rv.resource_id = "resource"."id") and NOT EXISTS (
         SELECT 1 FROM "resource_pipeline" rp
@@ -122,12 +122,12 @@ exports[`emitted SQL shape > ResourceVersionService.createFirstVersions > pins t
 
 exports[`emitted SQL shape > listPurgeTargets > pins the shape 1`] = `
 [
-  "select "id", exists (select 1 from "resource_version" where ("resource_version"."resource_id" = "resource"."id" and "resource_version"."ducklake_snapshot_id" is not null)) from "resource" where "resource"."package_id" in ($1)",
+  "select "id", exists (select  from "resource_version" where ("resource_version"."resource_id" = "resource"."id" and "resource_version"."ducklake_snapshot_id" is not null)) from "resource" where "resource"."package_id" in ($1)",
 ]
 `;
 
 exports[`emitted SQL shape > readBeforeFirstVersion > pins the shape 1`] = `
 [
-  "select "storage_key", exists (select 1 from "resource_version" where "resource_version"."resource_id" = "resource"."id") from "resource" where "resource"."id" = $1 limit $2",
+  "select "storage_key", exists (select  from "resource_version" where "resource_version"."resource_id" = "resource"."id") from "resource" where "resource"."id" = $1 limit $2",
 ]
 `;

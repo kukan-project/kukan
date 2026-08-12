@@ -155,7 +155,7 @@ function memberCountSql(
   // its own, so nothing in it can lose a qualifier.
   return sql<number | null>`CASE WHEN ${exists(
     qb
-      .select({ one: sql`1` })
+      .select({})
       .from(config.table)
       .where(
         and(

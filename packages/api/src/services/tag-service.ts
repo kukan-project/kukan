@@ -18,17 +18,14 @@ type DbOrTx = Database | Parameters<Parameters<Database['transaction']>[0]>[0]
  * Call inside the same transaction as the operation that removes tag links.
  */
 export async function deleteOrphanFreeTags(db: DbOrTx): Promise<void> {
-  await db.delete(tag).where(
-    and(
-      isNull(tag.vocabularyId),
-      notExists(
-        db
-          .select({ one: sql`1` })
-          .from(packageTag)
-          .where(eq(packageTag.tagId, tag.id))
+  await db
+    .delete(tag)
+    .where(
+      and(
+        isNull(tag.vocabularyId),
+        notExists(db.select({}).from(packageTag).where(eq(packageTag.tagId, tag.id)))
       )
     )
-  )
 }
 
 export class TagService {

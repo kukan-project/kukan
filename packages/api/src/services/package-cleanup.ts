@@ -16,7 +16,7 @@
  * `dropResourceTables` (ADR-043 layer 2).
  */
 
-import { and, eq, exists, inArray, isNotNull, sql } from 'drizzle-orm'
+import { and, eq, exists, inArray, isNotNull } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource, resourceVersion } from '@kukan/db'
 import { RESOURCE_PREFIX, PREVIEW_PREFIX } from '@kukan/shared'
@@ -47,7 +47,7 @@ export async function listPurgeTargets(
       id: resource.id,
       inLake: exists(
         db
-          .select({ one: sql`1` })
+          .select({})
           .from(resourceVersion)
           .where(
             and(

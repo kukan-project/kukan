@@ -132,10 +132,7 @@ export function readBeforeFirstVersion(db: Database, resourceId: string) {
     .select({
       storageKey: resource.storageKey,
       versioned: exists(
-        db
-          .select({ one: sql`1` })
-          .from(resourceVersion)
-          .where(eq(resourceVersion.resourceId, resource.id))
+        db.select({}).from(resourceVersion).where(eq(resourceVersion.resourceId, resource.id))
       ),
     })
     .from(resource)
@@ -510,7 +507,7 @@ export class ResourceVersionService {
             AND ${resourcePipeline.status} = 'complete'
             AND ${exists(
               this.db
-                .select({ one: sql`1` })
+                .select({})
                 .from(resourcePipelineStep)
                 .where(
                   and(

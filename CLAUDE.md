@@ -161,6 +161,10 @@ pnpm format        # Prettier フォーマット
   で発行 SQL を pin してから書き換える。ESLint の
   `kukan/no-raw-subquery-in-projection` が機械的に落とす。
   上流未修正（drizzle-team/drizzle-orm#5734、修正 PR #5795 も取りこぼしあり）
+- `exists()` / `notExists()` の副問い合わせは `db.select({})` と書く。空の投影は
+  `SELECT FROM t` を生み、PostgreSQL で有効。`select 1` は select リストが評価された
+  時代の名残で、`select()`（引数なし）は全カラムを列挙するため、無関係なカラム追加で
+  スナップショットが動く
 
 ### テスト
 
