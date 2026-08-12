@@ -3,6 +3,54 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.13.0] - 2026-08-12
+
+**Highlights**
+
+- **Change your own password.** Signing in with a password no longer means asking an administrator to change it. The profile page now carries a password form, and every place a password is set — sign-up, the admin user screen, the `db:create-user` script — is held to the same strength policy: at least 15 characters, and a zxcvbn guessability score of 3 out of 4. `PASSWORD_MIN_SCORE` can lower the score requirement for local development; the length minimum applies regardless (#397).
+- **Member counts on the organization and category lists.** The dashboard lists now show how many people belong to each organization and category, without opening it. The count appears only for a viewer who is a member of that organization or category — everyone else sees the list unchanged (#409).
+- **A purge now removes the row data it left behind.** Purging a dataset was leaving its row-level tables in DuckLake: the query that decides which resources have row data was comparing a row to itself and finding none. The data was gone from every interface but still resident in the lake, and no error was raised. Purges run from this release remove it. Data purged before it may still be present, and re-purging is not possible once the dataset is gone — please contact us if this matters for your deployment (#414).
+
+**Features**
+
+- feat: self-service password change, gated by a strength policy (#397)
+- feat: show member counts on the organization and category lists (#409)
+
+**Bug Fixes**
+
+- fix(api): correlate the purge and backfill subqueries through drizzle (#414)
+- fix(api): stop self-service renames through Better Auth's update-user (#400)
+- fix(worker): pace one host's health checks at the rate it asks for (#403)
+
+**Internal**
+
+- Raw SQL that Drizzle can express natively has been swept out of the query layer, and a lint rule now rejects the pattern behind #414 — a hand-written correlated subquery in a select projection, which Drizzle silently strips the table qualifier from (#410, #412, #413, #414, #416, #417, #418).
+- refactor(ui): adopt shadcn Field and InputGroup so forms stop hand-rolling aria wiring (#408)
+
+---
+
+**ハイライト**
+
+- **自分でパスワードを変更できるようになりました。** パスワードでサインインしている場合、変更のたびに管理者へ依頼する必要がなくなります。プロフィールページにパスワード変更フォームを追加し、サインアップ・管理者のユーザー画面・`db:create-user` スクリプトを含め、パスワードを設定するすべての箇所に同じ強度ポリシーを適用しました（15 文字以上、zxcvbn の推測困難性スコア 4 段階中 3 以上）。`PASSWORD_MIN_SCORE` でスコア要件を下げられますが、開発用途向けです。文字数の下限は設定に関わらず適用されます（#397）。
+- **組織・カテゴリ一覧にメンバー数を表示。** ダッシュボードの一覧で、各組織・カテゴリの所属人数が開かずに分かるようになりました。表示されるのはその組織・カテゴリのメンバーに対してのみで、それ以外の利用者には従来どおりの表示です（#409）。
+- **パージがデータ本体を残していた問題を修正。** データセットのパージ後も、行レベルのテーブルが DuckLake に残っていました。どのリソースが行データを持つかを判定するクエリが、行を自分自身と比較して常に該当なしと答えていたためです。画面上はすべて削除されているのにデータ本体は残り、エラーも出ない状態でした。本リリース以降のパージでは削除されます。**本リリース以前にパージしたデータは残っている可能性があり、データセットが消えているため再パージはできません。** 該当する場合はご連絡ください（#414）。
+
+**機能**
+
+- 強度ポリシー付きのセルフサービスなパスワード変更（#397）
+- 組織・カテゴリ一覧へのメンバー数表示（#409）
+
+**バグ修正**
+
+- パージと backfill の相関サブクエリを Drizzle で組み立てるよう修正（#414）
+- Better Auth の update-user 経由での自己名称変更を遮断（#400）
+- ヘルスチェックを相手ホストが求める間隔に合わせて実行（#403）
+
+**内部**
+
+- Drizzle でそのまま表現できる生 SQL をクエリ層から一掃し、#414 の原因となったパターン（投影内に手書きした相関サブクエリ。Drizzle がテーブル修飾を静かに落とす）を lint で機械的に弾くようにしました（#410, #412, #413, #414, #416, #417, #418）。
+- フォームの aria 属性の手組みをやめ、shadcn の Field / InputGroup を採用（#408）
+
 ## [0.12.0] - 2026-08-10
 
 **Required After Upgrading**
