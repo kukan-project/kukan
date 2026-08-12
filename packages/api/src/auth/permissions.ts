@@ -3,8 +3,8 @@
  * Helpers for authorization logic
  */
 
-import { eq, and, inArray, sql, getTableName, type SQL } from 'drizzle-orm'
-import type { PgColumn } from 'drizzle-orm/pg-core'
+import { eq, and, inArray, sql, count, exists, type SQL } from 'drizzle-orm'
+import { QueryBuilder, type PgColumn } from 'drizzle-orm/pg-core'
 import type { Database } from '@kukan/db'
 import { organization, group, userOrgMembership, userGroupMembership } from '@kukan/db'
 import { ForbiddenError } from '@kukan/shared'
@@ -123,14 +123,10 @@ function rolesSatisfying(required: MembershipRole): string[] {
 }
 
 /**
- * `"table"."column"` spelled out. Drizzle drops the table qualifier from a bare
- * column that sits directly in a select projection, which would uncorrelate the
- * subqueries below — they would compare a membership row to itself and count
- * zero rather than fail.
+ * Builds the subqueries below without a connection — they are composed into a
+ * caller's projection, never run on their own.
  */
-function qualified(column: PgColumn): SQL {
-  return sql`${sql.identifier(getTableName(column.table))}.${sql.identifier(column.name)}`
-}
+const qb = new QueryBuilder()
 
 /**
  * Per-row member count for a list query, gated the way {@link hasMembershipRole}
@@ -147,19 +143,28 @@ function memberCountSql(
 ): SQL<number | null> {
   if (!viewer) return sql<number | null>`NULL::int`
 
-  const membership = sql.identifier(getTableName(config.table))
-  const correlated = sql`${qualified(config.entityIdCol)} = ${qualified(entityId)}`
-  const count = sql<number>`(SELECT COUNT(*)::int FROM ${membership} WHERE ${correlated})`
-  if (viewer.sysadmin) return count
+  const correlated = eq(config.entityIdCol, entityId)
+  // Cast kept: a subquery embedded in a projection carries no decoder of its
+  // own, so without it the count arrives as the bigint string node-postgres
+  // reads. `mapWith(Number)` is not the fix — the gated variant returns SQL
+  // NULL for a viewer who may not see the roster, and Number(null) is 0.
+  const roster = sql<number>`${qb.select({ n: count() }).from(config.table).where(correlated)}::int`
+  if (viewer.sysadmin) return roster
 
-  const roles = sql.join(
-    rolesSatisfying(requiredRole).map((role) => sql`${role}`),
-    sql`, `
-  )
-
-  return sql<
-    number | null
-  >`CASE WHEN EXISTS (SELECT 1 FROM ${membership} WHERE ${correlated} AND ${qualified(config.userIdCol)} = ${viewer.id} AND ${qualified(config.roleCol)} IN (${roles})) THEN ${count} END`
+  // CASE WHEN is the one part with no drizzle syntax. It carries no column of
+  // its own, so nothing in it can lose a qualifier.
+  return sql<number | null>`CASE WHEN ${exists(
+    qb
+      .select({ one: sql`1` })
+      .from(config.table)
+      .where(
+        and(
+          correlated,
+          eq(config.userIdCol, viewer.id),
+          inArray(config.roleCol, rolesSatisfying(requiredRole))
+        )
+      )
+  )} THEN ${roster} END`
 }
 
 /** {@link memberCountSql} for a row of the organization list. */
