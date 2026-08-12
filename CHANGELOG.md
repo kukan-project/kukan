@@ -3,6 +3,22 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.13.1] - 2026-08-12
+
+Documentation only. No change to the application.
+
+**Documentation**
+
+- The password change added in 0.13.0 is now documented. The user guide says where the form is and what a password has to satisfy — 15 characters and a zxcvbn score of 3 out of 4, and that length alone will not carry a password built out of your own email address, username or display name. The system administrator guide gains `PASSWORD_MIN_SCORE`, what it applies to, and why not to lower it outside development (#420).
+
+---
+
+ドキュメントのみの更新です。アプリケーションに変更はありません。
+
+**ドキュメント**
+
+- 0.13.0 で追加したパスワード変更のドキュメントを整備しました。利用者ガイドにフォームの場所と条件（15 文字以上、zxcvbn スコア 4 段階中 3 以上、および自分のメールアドレス・ユーザー名・表示名から作ったものは長さを満たしても通らないこと）を追記し、システム管理者ガイドに `PASSWORD_MIN_SCORE` の適用範囲と、開発環境以外で下げるべきでない理由を追加しました（#420）。
+
 ## [0.13.0] - 2026-08-12
 
 **Highlights**
