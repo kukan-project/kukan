@@ -371,6 +371,19 @@ describe('countPendingLakeIngest', () => {
     expect(await service.countPendingLakeIngest()).toBe(0)
   })
 
+  it('counts a version whose overtaker a revert stepped off', async () => {
+    // Only active versions overtake. A revert steps the ones above its
+    // destination off and does not load the destination itself, so counting a
+    // superseded overtaker would leave the lake standing on the retracted rows
+    // with nothing that ever queues the restored version again.
+    await addTabularResource('a', [
+      { version: 1 },
+      { version: 2, snapshotId: 7, state: 'superseded' },
+    ])
+
+    expect(await service.countPendingLakeIngest()).toBe(1)
+  })
+
   it('counts every un-ingested version, not just the latest', async () => {
     // What changed with ADR-046: the ingest reads the version file, which is
     // there for every version — so an older one that never made it in is real

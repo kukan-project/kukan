@@ -12,17 +12,11 @@
 import { describeColumns, sameColumns } from './columns'
 import type { LakeSession } from './connection'
 import { sqlLiteral } from './sql'
-import { lakeTableExists, lakeTableRef } from './table'
+import { currentSnapshotId, lakeTableExists, lakeTableRef } from './table'
 
 export interface IngestResult {
   /** Snapshot to record on the version; reading it reproduces this content. */
   snapshotId: number
-}
-
-/** Snapshot id to record for the ingest that just committed. */
-async function currentSnapshotId(session: LakeSession): Promise<number> {
-  const [row] = await session.rows(`SELECT max(snapshot_id) AS id FROM ducklake_snapshots('lake')`)
-  return Number(row.id)
 }
 
 /**

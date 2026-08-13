@@ -124,6 +124,7 @@ exports[`emitted SQL shape > ResourceVersionService.createFirstVersions > pins t
       SELECT 1 FROM resource_version newer
       WHERE newer.resource_id = rv.resource_id
         AND newer.version > rv.version
+        AND newer.state = 'active'
         AND newer.ducklake_snapshot_id IS NOT NULL
     )",
 ]

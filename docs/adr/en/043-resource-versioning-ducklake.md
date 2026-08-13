@@ -427,12 +427,38 @@ is in flight.
 the `hash` the list already returns for each version, so it costs no extra query and no
 index. Paginating the list means moving the decision to the server (open issue 13).
 
-**What layer 2's current contents follow is the newest version ingested, not the live
-content.** A purge that destroys the live version rewinds the table to the previous one; a
-revert (ADR-044 §4) leaves the version records standing and so does not rewind — after a revert,
-layer 2 still holds the retracted version's rows. That follows from layer 2 being an image of
-layer 1's version history, and is not an inconsistency. To destroy those contents too, purge
-the version: that is the rung above on the ladder.
+**Layer 2's current contents follow the live version.** Both a purge and a revert
+(ADR-044 §4) put the table back onto the snapshot of whichever version became live. What
+differs is only what happens to the _version_ — a purge destroys its contents, a revert
+leaves it standing as `superseded` — not where the table's current contents point.
+
+The original decision was the opposite: that layer 2 follows the newest version ingested
+rather than the live content, and so may keep the retracted version's rows after a revert.
+**ii-b overturns that.** The `MERGE` targets the table's current contents themselves, so
+without following through the merge base is a retracted version (open issue 7). What made
+this harmless under ii-a was not that every ingest replaces every row, but that its only
+reader — the diff — never looks at the current contents (it resolves both sides to their own
+snapshots). That is a property of having one reader, not a guarantee.
+
+Following through takes two paths. If the destination reached the lake, **roll back to its
+snapshot**. If it did not, roll nowhere and leave it to the **outstanding-ingest sweep** —
+only an `active` newer version counts as having overtaken one, so the moment a revert makes
+the versions above it `superseded`, the destination is outstanding again. The sweep's listing
+and the ingest's own ordering check **must carry the same condition**: relaxing one alone
+produces a version queued every hour and refused every time.
+
+**The snapshot a rollback lands on is recorded against the destination version.** A rollback
+restores the contents under a _new_ snapshot, so without recording it the version rows cannot
+say whether the table already stands on the right version. Recorded, the question is just
+"does any version carry a snapshot above the live one's", and it answers no once a reconcile
+has run — so a resend, a repair, and the standing repair can all ask without rewriting a table
+that is already where it should be.
+
+**A revert that empties the resource does not drop the table.** The versions stepped off are
+`superseded`, not `purged`, and their diffs are read by resolving each to its own snapshot
+(§6-4); dropping the table takes that away. With nothing live, no reader resolves to the
+table's current contents either. To destroy a version's contents too, purge it: that is the
+rung above on the ladder.
 
 #### 5.1 The container principle
 
@@ -672,17 +698,19 @@ competing with keeping purges cheap.
      built from `resource_version.ducklake_snapshot_id` alone misses some.
    - DuckLake supports no PRIMARY KEY / UNIQUE constraint; the primary key is a logical one
      used in the MERGE condition.
-   - **A revert does not follow through to layer 2.** Only a purge calls `purgeFromLake`; a
-     revert does not. After stepping back from v3 to v2, the table's current contents are
-     still v3's rows. Harmless under ii-a — not because every ingest replaces every row, but
-     because **the diff never looks at the current contents** (it resolves both sides to
-     their own snapshots and describes the columns per snapshot). Under ii-b the `MERGE`
-     targets the current contents themselves, so **the merge base is a retracted version**;
-     if the schema changed between them, even the columns are wrong.
+   - ~~**A revert does not follow through to layer 2.**~~ **Resolved** (§5). A revert now
+     rolls the table back to the destination's snapshot; where the destination never reached
+     the lake, the outstanding-ingest sweep loads it — only an `active` newer version counts
+     as having overtaken one, so making the versions above it `superseded` puts the
+     destination back on the sweep. ii-b's `MERGE` targets the current contents, so it
+     depends on this.
    - For the same reason, ingest deciding "did the columns move?" **against the table's
      current contents** does not hold under ii-b. ii-a survives only because both branches
      write every row, so a wrongly chosen branch still lands correct contents — the basis
-     for the choice is already wrong after a revert.
+     for the choice is already wrong after a revert. **A revert following through is not
+     enough on its own**: while a destination that never reached the lake waits on the
+     sweep, the current contents are still the retracted version's. The base has to be
+     resolved from the previous active version's snapshot rather than from current contents.
 8. **IAM hardening**: Explicitly deny `s3:GetObjectVersion` / `s3:DeleteObjectVersion` on
    task roles so that noncurrent versions during the purge residual window are blocked at
    the IAM level too (currently blocked only by the absence of code paths)

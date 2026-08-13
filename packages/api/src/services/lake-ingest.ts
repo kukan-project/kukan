@@ -49,13 +49,20 @@ export async function withLakeIngestLock<T>(
  * second pass would append every row again — and the retry path exists
  * precisely to run this after something else may have succeeded.
  *
- * Or a newer version is already in: ingesting replaces the table's contents, so
- * loading an older version now would leave the lake serving content the
- * resource no longer has, under a snapshot id above the newer version's. A
+ * Or a newer *active* version is already in: ingesting replaces the table's
+ * contents, so loading an older version now would leave the lake serving content
+ * the resource no longer has, under a snapshot id above the newer version's. A
  * retry that waited while the next version went in is exactly how that happens.
  * The version stays un-ingested and its diffs stay unavailable, which is the
  * lesser harm — layer 2 is rebuildable from layer 1, a rewound table is not
  * detectable from it.
+ *
+ * Active, because a revert steps the versions above its destination off and the
+ * destination is then exactly what the table has to hold (ADR-043 §5). Counting
+ * a superseded one would refuse the version the sweep queued for that very
+ * reason, every hour, forever. This has to agree with `pendingLakeIngestQuery`:
+ * disagreeing means either work that is listed and always turned away, or work
+ * that is done without ever being listed.
  */
 export async function ingestVersionIntoLake(
   tx: Transaction,
@@ -82,6 +89,7 @@ export async function ingestVersionIntoLake(
       and(
         eq(resourceVersion.resourceId, row.resourceId),
         gt(resourceVersion.version, row.version),
+        eq(resourceVersion.state, 'active'),
         isNotNull(resourceVersion.ducklakeSnapshotId)
       )
     )

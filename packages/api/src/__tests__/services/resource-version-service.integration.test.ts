@@ -110,7 +110,7 @@ async function cachedInterpretation() {
  * Revert from wherever the content is standing. Most cases are about what a
  * revert does, not about naming the version — that is its own case below.
  */
-async function revertFromLive(deps = mockDeps()) {
+async function revertFromLive(deps: Parameters<typeof service.revertLiveContent>[2] = mockDeps()) {
   const { revertTarget, liveRevision } = await service.revertContext(resourceId)
   return service.revertLiveContent(
     resourceId,
@@ -1607,6 +1607,145 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
     await addVersion(1, 'sha256:v1')
 
     await expect(revertFromLive()).rejects.toThrow(/being processed/)
+  })
+})
+
+describe('a revert that layer 2 has to follow (ADR-043 layer 2)', () => {
+  async function setSnapshot(version: number, snapshot: number) {
+    await db
+      .update(resourceVersion)
+      .set({ ducklakeSnapshotId: snapshot })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, version)))
+  }
+
+  /**
+   * v1 and v2, with the live content standing on v2 so a revert lands on v1.
+   * Tabular, so the sweep's predicate can see them.
+   */
+  async function twoVersions() {
+    await addVersion(1, 'sha256:v1', 'active', 'csv')
+    await addVersion(2, 'sha256:v2', 'active', 'csv')
+    await db.update(resource).set({ hash: 'sha256:v2' }).where(eq(resource.id, resourceId))
+  }
+
+  /** Both versions loaded, so a revert to v1 has somewhere to roll back to. */
+  async function bothIngested() {
+    await twoVersions()
+    await setSnapshot(1, 5)
+    await setSnapshot(2, 9)
+  }
+
+  it('leaves the restored version to the sweep when it never reached the lake', async () => {
+    // Nothing to roll back to, and stepping v2 off makes v1 outstanding again —
+    // an unusable config proves no session is opened to find that out.
+    await twoVersions()
+    await setSnapshot(2, 9)
+
+    const result = await revertFromLive({ ...mockDeps(), lake: unreachableLake })
+
+    expect(result).toMatchObject({ restored: 1, cleared: true })
+    expect(await service.countPendingLakeIngest()).toBe(1)
+  })
+
+  it('leaves the lake alone when nothing was ingested above the restore point', async () => {
+    // The table is already standing on v1's snapshot: rolling back would rewrite
+    // its files to the contents they already hold.
+    await twoVersions()
+    await setSnapshot(1, 5)
+
+    const result = await revertFromLive({ ...mockDeps(), lake: unreachableLake })
+
+    expect(result).toMatchObject({ restored: 1, cleared: true })
+  })
+
+  it('reports a completed revert whose lake still holds the retracted rows', async () => {
+    // v2 reached the lake, so its rows are what the table currently holds —
+    // and ii-b would merge the next version onto them.
+    await bothIngested()
+
+    const result = await revertFromLive({
+      ...mockDeps(),
+      lake: unreachableLake,
+      logger: silentLogger,
+    })
+
+    // Past the pointer move the retraction has happened, so only the half that
+    // says something outlived it moves.
+    expect(result).toMatchObject({ restored: 1, cleared: false, queued: true })
+    const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
+    expect(res.hash).toBe('sha256:v1')
+  }, 60_000)
+
+  it('is put right by the repair, which the rebuild cannot do', async () => {
+    // The rebuild creates no version — the change gate reads the restored one
+    // — so the Lake step has nothing outstanding and the table stays put.
+    await bothIngested()
+    await revertFromLive({ ...mockDeps(), lake: unreachableLake, logger: silentLogger })
+
+    const repair = { ...mockDeps(), lake: unreachableLake, logger: silentLogger }
+
+    expect(await service.repairDerivatives(resourceId, repair)).toEqual({
+      queued: true,
+      cleared: false,
+    })
+  }, 60_000)
+
+  /** The state a revert leaves behind, without paying for one. */
+  async function reverted() {
+    await bothIngested()
+    await db
+      .update(resourceVersion)
+      .set({ state: 'superseded' })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 2)))
+  }
+
+  it('keeps the repair on offer when a run holds the resource', async () => {
+    // The run holding it may be the rebuild a previous press queued, which makes
+    // no version and so writes nothing to the lake. Answering "nothing owed"
+    // would take the warning off the screen with the table still on v2's rows.
+    await reverted()
+    await db.insert(resourcePipeline).values({ resourceId })
+    await claimResources(db, [resourceId], randomUUID(), CLAIM_STALE_AFTER_MS, 'run')
+
+    const repair = { ...mockDeps(), lake: unreachableLake, logger: silentLogger }
+
+    expect(await service.repairDerivatives(resourceId, repair)).toEqual({
+      queued: true,
+      cleared: false,
+    })
+  })
+
+  it('asks for nothing once the table stands where it should', async () => {
+    // What a successful reconcile records: the destination carries the snapshot
+    // the rollback landed on, which is above every stepped-off version's. Read
+    // any other way this would stay owed forever and every press would rewrite.
+    await reverted()
+    await setSnapshot(1, 13)
+    await db.insert(resourcePipeline).values({ resourceId })
+    await claimResources(db, [resourceId], randomUUID(), CLAIM_STALE_AFTER_MS, 'run')
+
+    const repair = { ...mockDeps(), lake: unreachableLake, logger: silentLogger }
+
+    expect(await service.repairDerivatives(resourceId, repair)).toEqual({
+      queued: true,
+      cleared: null,
+    })
+  })
+
+  it('reports the lake a resend cannot put back itself', async () => {
+    // The first attempt moved the pointer and died before the reconcile. The
+    // resend is settled, so it takes no claim and cannot reconcile — but the
+    // rebuild it queues makes no version, so the Lake step will not either.
+    await reverted()
+    await db.update(resource).set({ hash: 'sha256:v1' }).where(eq(resource.id, resourceId))
+
+    const resent = await service.revertLiveContent(
+      resourceId,
+      { restoreTo: 1, ifLiveRevision: (await service.revertContext(resourceId)).liveRevision },
+      { ...mockDeps(), lake: unreachableLake, logger: silentLogger }
+    )
+
+    expect(resent).toMatchObject({ restored: 1, cleared: false, queued: true })
   })
 })
 

@@ -30,16 +30,36 @@ export async function dropLakeTable(session: LakeSession, table: string): Promis
   await session.run(`DROP TABLE IF EXISTS ${lakeTableRef(table)}`)
 }
 
-/** Replace a table's contents with an earlier snapshot's (purge rollback). */
+/**
+ * Snapshot id for the write that just committed.
+ *
+ * The catalog-wide maximum, which only identifies one caller's commit while
+ * writes are serialized — every caller must hold the ingest lock.
+ */
+export async function currentSnapshotId(session: LakeSession): Promise<number> {
+  const [row] = await session.rows(`SELECT max(snapshot_id) AS id FROM ducklake_snapshots('lake')`)
+  return Number(row.id)
+}
+
+/**
+ * Replace a table's contents with an earlier snapshot's, and return the
+ * snapshot that lands them.
+ *
+ * The contents are the old snapshot's, the snapshot is a new one — nothing
+ * rewinds a catalog. Recording the returned id against the version whose rows
+ * these are is what tells a later reader the table is already standing on it,
+ * which neither the old snapshot id nor the version rows can say by themselves.
+ */
 export async function rollbackLakeTable(
   session: LakeSession,
   table: string,
   snapshot: number
-): Promise<void> {
+): Promise<number> {
   const ref = lakeTableRef(table)
   await session.run(
     `CREATE OR REPLACE TABLE ${ref} AS SELECT * FROM ${ref} AT (VERSION => ${Math.trunc(snapshot)})`
   )
+  return currentSnapshotId(session)
 }
 
 /**
