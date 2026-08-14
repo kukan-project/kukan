@@ -5,7 +5,7 @@
  */
 
 import { digestStream } from '@kukan/shared/hash-node'
-import { eq, and, desc, exists, gt, inArray, sql } from 'drizzle-orm'
+import { eq, and, desc, exists, inArray, sql } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import {
   resource,
@@ -22,20 +22,14 @@ import {
   versionOrigin,
 } from '@kukan/shared'
 import type { NoTableReason } from '@kukan/shared'
-import type { LakeConfig, LakeSession } from '@kukan/lake'
-import {
-  dropLakeTable,
-  lakeTableExists,
-  lakeTableName,
-  rollbackLakeTable,
-  withLakeSession,
-} from '@kukan/lake'
+import type { LakeConfig } from '@kukan/lake'
+import { dropLakeTable, lakeTableExists, lakeTableName, withLakeSession } from '@kukan/lake'
 import type { Logger, ResourceSchema } from '@kukan/shared'
 import { createLogger } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
-import { withLakeIngestLock } from './lake-ingest'
+import { lakeStandsAhead, standLakeTableOn, withLakeIngestLock } from './lake-ingest'
 import { reclaimInSession } from './lake-reclaim'
 import {
   onRevision,
@@ -651,7 +645,7 @@ export class ResourceVersionService {
     resourceId: string,
     lake: LakeConfig | undefined,
     purgedSnapshot: number | null,
-    restore?: { toSnapshot: number | null }
+    restore?: { version: number; snapshot: number } | null
   ): Promise<void> {
     // Never ingested: the lake holds nothing of this version, so there is
     // neither anything to roll back nor anything to free. Opening a session
@@ -663,66 +657,22 @@ export class ResourceVersionService {
       // Nothing to move for a middle version: the live contents already
       // describe a version that survives. The reclaim below still runs — another
       // resource's purge may have left snapshots behind when it failed partway.
-      if (restore) await this.putLakeTableOn(session, table, restore.toSnapshot)
+      if (restore !== undefined) {
+        await withLakeIngestLock(this.db, async (tx) => {
+          if (restore === null) {
+            if (await lakeTableExists(session, table)) await dropLakeTable(session, table)
+            return
+          }
+          // Recorded against the version it now holds, like every other move of
+          // this table — an ingest that read the old id would rebase off it.
+          await standLakeTableOn(tx, session, { resourceId, ...restore })
+        })
+      }
       // The row being purged is `purging`, which the reclaim's retained set
       // excludes along with `purged` — so its snapshot reads as unreferenced
       // without needing a special case.
       await reclaimInSession(this.db, session)
     })
-  }
-
-  /**
-   * Stand a resource's lake table on one snapshot, or drop it when no version
-   * is left to stand on.
-   *
-   * Under the catalog-wide ingest lock, because both of these commit a snapshot
-   * of their own and an ingest running alongside reads the maximum id back as
-   * its. A table that was never created is not an error — the resource is not
-   * tabular, or its ingest is still outstanding.
-   *
-   * `record` runs inside that lock with the snapshot the rollback landed on, for
-   * a caller that has a version row to point at it. Same sequence as an ingest
-   * (write, read the snapshot back, record it) and for the same reason: the id
-   * only identifies this commit while writes are serialized.
-   */
-  private async putLakeTableOn(
-    session: LakeSession,
-    table: string,
-    toSnapshot: number | null,
-    record?: (tx: Transaction, snapshotId: number) => Promise<void>
-  ): Promise<void> {
-    await withLakeIngestLock(this.db, async (tx) => {
-      if (!(await lakeTableExists(session, table))) return
-      if (toSnapshot === null) {
-        await dropLakeTable(session, table)
-        return
-      }
-      const landed = await rollbackLakeTable(session, table, toSnapshot)
-      await record?.(tx, landed)
-    })
-  }
-
-  /**
-   * Does the lake table still hold rows of a version the resource stepped off?
-   *
-   * Answered from the recorded snapshots alone, and only because a reconcile
-   * writes the snapshot it landed on back onto the version: without that, "some
-   * version's id is above the live one's" would stay true forever after a revert
-   * and every asking would rewrite the table.
-   */
-  private async lakeStandsAhead(resourceId: string, liveSnapshot: number | null): Promise<boolean> {
-    if (liveSnapshot === null) return false
-    const [ahead] = await this.db
-      .select({ version: resourceVersion.version })
-      .from(resourceVersion)
-      .where(
-        and(
-          eq(resourceVersion.resourceId, resourceId),
-          gt(resourceVersion.ducklakeSnapshotId, liveSnapshot)
-        )
-      )
-      .limit(1)
-    return ahead !== undefined
   }
 
   /**
@@ -732,7 +682,9 @@ export class ResourceVersionService {
   private async lakeOwed(resourceId: string, deps: { lake?: LakeConfig }): Promise<false | null> {
     if (!deps.lake) return null
     const live = await this.newestActiveVersion(this.db, resourceId)
-    return (await this.lakeStandsAhead(resourceId, live?.ducklakeSnapshotId ?? null)) ? false : null
+    return (await lakeStandsAhead(this.db, resourceId, live?.ducklakeSnapshotId ?? null))
+      ? false
+      : null
   }
 
   /**
@@ -788,22 +740,16 @@ export class ResourceVersionService {
     // pointer move, where throwing would fail a revert that has already
     // happened and leave the resend answering from `settledRevert`.
     try {
-      if (!(await this.lakeStandsAhead(resourceId, toSnapshot))) return null
+      if (!(await lakeStandsAhead(this.db, resourceId, toSnapshot))) return null
 
-      const table = lakeTableName(resourceId)
       await withLakeSession(lake, (session) =>
-        this.putLakeTableOn(session, table, toSnapshot, (tx, landed) =>
-          tx
-            .update(resourceVersion)
-            .set({ ducklakeSnapshotId: landed })
-            .where(
-              and(
-                eq(resourceVersion.resourceId, resourceId),
-                eq(resourceVersion.version, live.version)
-              )
-            )
-            .then(() => undefined)
-        )
+        withLakeIngestLock(this.db, async (tx) => {
+          await standLakeTableOn(tx, session, {
+            resourceId,
+            version: live.version,
+            snapshot: toSnapshot,
+          })
+        })
       )
       return true
     } catch (err) {
@@ -1059,9 +1005,14 @@ export class ResourceVersionService {
       // empties the resource, and takes the lake table with it. This row is
       // already out of the active set (`purging`), so it cannot restore itself.
       const prev = await this.newestActiveVersion(this.db, resourceId)
-      await this.purgeFromLake(resourceId, deps.lake, row.ducklakeSnapshotId, {
-        toSnapshot: prev?.ducklakeSnapshotId ?? null,
-      })
+      await this.purgeFromLake(
+        resourceId,
+        deps.lake,
+        row.ducklakeSnapshotId,
+        prev?.ducklakeSnapshotId == null
+          ? null
+          : { version: prev.version, snapshot: prev.ducklakeSnapshotId }
+      )
 
       // The same row layer 2 was just set to, handed over rather than looked up
       // again — see the parameter for what a second look can find instead.

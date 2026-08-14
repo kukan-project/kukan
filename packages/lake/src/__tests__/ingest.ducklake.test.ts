@@ -22,6 +22,7 @@ import type { LakeRow, LakeSession } from '../connection'
 import { ingestParquetVersion } from '../ingest'
 import { diffVersions } from '../diff'
 import { describeColumns } from '../columns'
+import { rollbackLakeTable } from '../table'
 
 let dir: string
 let conn: DuckDBConnection
@@ -122,6 +123,80 @@ describe('ingestParquetVersion — a version whose columns moved', () => {
       toSnapshot: v2.snapshotId,
     })
 
+    expect(diff).toMatchObject({ schemaChanged: false, addedRows: 1, removedRows: 0 })
+  })
+})
+
+/**
+ * The other half of the arrangement `standOnBase` rests on (ADR-043 §5).
+ *
+ * The Postgres side — which version is the base, and whether the table stands
+ * ahead of it — is settled against a real database elsewhere, with these calls
+ * stubbed. What only a running catalog can answer is what the rollback leaves
+ * behind for the ingest that follows it: the reported snapshot has to read back
+ * as the restored contents, the table has to *describe* as the restored shape
+ * (that is the input to the column check, and to ii-b's `MERGE`), and the
+ * snapshots the rollback stepped over have to survive it.
+ */
+describe('a table stood back on an earlier version, then ingested onto', () => {
+  it('is what the next ingest reads, not the version it stepped off', async () => {
+    const v1 = await ingest(await version('v1', `SELECT 1 AS id, 'a' AS name`))
+    // A column appears, so the table now holds a shape v1 never had.
+    const v2 = await ingest(await version('v2', `SELECT 1 AS id, 'a' AS name, 'x' AS note`))
+
+    const landed = await rollbackLakeTable(session, TABLE, v1.snapshotId)
+
+    // A new snapshot carrying old contents — the id recorded on the version row,
+    // and what every later reader resolves to.
+    expect(landed).toBeGreaterThan(v2.snapshotId)
+    expect(
+      await session.rows(`SELECT * FROM lake.${TABLE} AT (VERSION => ${landed}) ORDER BY id`)
+    ).toEqual([{ id: 1, name: 'a' }])
+    // The shape an ingest would now compare against is v1's. Reading v2's here
+    // is exactly the failure the rebase exists to prevent.
+    expect((await describeColumns(session, `lake.${TABLE}`)).map((c) => c.name)).toEqual([
+      'id',
+      'name',
+    ])
+
+    // And loading the next version onto it lands its contents, not a merge of
+    // the two shapes.
+    const v3 = await ingest(
+      await version('v3', `SELECT 1 AS id, 'a' AS name UNION ALL SELECT 2, 'b'`)
+    )
+    expect(await session.rows(`SELECT * FROM lake.${TABLE} ORDER BY id`)).toEqual([
+      { id: 1, name: 'a' },
+      { id: 2, name: 'b' },
+    ])
+
+    // The stepped-over version is still readable at its own snapshot: the
+    // rollback replaced contents, it did not rewind the catalog. The diff and
+    // the purge's reclaim both depend on that.
+    expect(
+      await session.rows(`SELECT * FROM lake.${TABLE} AT (VERSION => ${v2.snapshotId}) ORDER BY id`)
+    ).toEqual([{ id: 1, name: 'a', note: 'x' }])
+    expect(v3.snapshotId).toBeGreaterThan(landed)
+  })
+
+  it('diffs against the version it was stood back on', async () => {
+    // What an administrator sees after a revert followed by a new upload: the
+    // change is measured from the restored version, not from the retracted one.
+    const v1 = await ingest(await version('v1', `SELECT 1 AS id, 'a' AS name`))
+    await ingest(await version('v2', `SELECT 1 AS id, 'a' AS name UNION ALL SELECT 9, 'z'`))
+    const landed = await rollbackLakeTable(session, TABLE, v1.snapshotId)
+
+    const v3 = await ingest(
+      await version('v3', `SELECT 1 AS id, 'a' AS name UNION ALL SELECT 2, 'b'`)
+    )
+
+    const diff = await diffVersions(session, {
+      table: TABLE,
+      fromSnapshot: landed,
+      toSnapshot: v3.snapshotId,
+    })
+
+    // One row added. Measured from v2 instead, the retracted row would show as
+    // removed and the answer would be 1 added / 1 removed.
     expect(diff).toMatchObject({ schemaChanged: false, addedRows: 1, removedRows: 0 })
   })
 })

@@ -447,6 +447,19 @@ the versions above it `superseded`, the destination is outstanding again. The sw
 and the ingest's own ordering check **must carry the same condition**: relaxing one alone
 produces a version queued every hour and refused every time.
 
+**An ingest applies to a table standing on the previous active version.** ii-a survives
+without this — every branch writes every row, so the contents land right whatever was there
+before — but the decision it makes on the way, "did the columns move?", is read off whatever
+the table happens to hold, and after a revert that is a version the resource stepped off.
+ii-b's `MERGE` takes those same contents as its base, so the answer stops being cosmetic.
+So **before an ingest, if the table stands ahead of its base, it is put back on it** — which
+also repairs a revert whose own reconcile could not run.
+
+The first sketch was to resolve only the _comparison_ from the base's snapshot. That does not
+work: the write side (`DELETE` + `INSERT`) still runs against the table's current columns, so
+a head that disagrees with the base fails the insert. What has to move is the head, not the
+comparison.
+
 **The snapshot a rollback lands on is recorded against the destination version.** A rollback
 restores the contents under a _new_ snapshot, so without recording it the version rows cannot
 say whether the table already stands on the right version. Recorded, the question is just

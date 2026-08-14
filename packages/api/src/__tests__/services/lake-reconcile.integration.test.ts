@@ -19,9 +19,16 @@ import { createLogger, getStorageKey } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
-import { withLakeSession, lakeTableExists, rollbackLakeTable, lakeTableName } from '@kukan/lake'
+import {
+  withLakeSession,
+  lakeTableExists,
+  rollbackLakeTable,
+  ingestParquetVersion,
+  lakeTableName,
+} from '@kukan/lake'
 import type { LakeSession } from '@kukan/lake'
 import { ResourceVersionService } from '../../services/resource-version-service'
+import { ingestVersionIntoLake, withLakeIngestLock } from '../../services/lake-ingest'
 import { unreachableLake } from '../test-helpers/fixtures'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 
@@ -32,6 +39,7 @@ vi.mock('@kukan/lake', async (importOriginal) => {
     withLakeSession: vi.fn(actual.withLakeSession),
     lakeTableExists: vi.fn(actual.lakeTableExists),
     rollbackLakeTable: vi.fn(actual.rollbackLakeTable),
+    ingestParquetVersion: vi.fn(actual.ingestParquetVersion),
   }
 })
 
@@ -98,6 +106,9 @@ beforeEach(async () => {
     .set({ storageKey: getStorageKey(packageId, resourceId, 'v2') })
     .where(eq(resource.id, resourceId))
 
+  // Call history as well as implementations: a stub set here keeps the calls
+  // the last case made, and every assertion below counts them.
+  vi.clearAllMocks()
   // A session object is never dereferenced: every call that would take one is
   // stubbed, so its only job is to be the same reference the assertions expect.
   const session = {} as LakeSession
@@ -165,5 +176,82 @@ describe('reconciling DuckLake with the restored version (ADR-043 §5)', () => {
     // Still v1's own, so the next caller does the rollback again rather than
     // reading a table that never moved as settled.
     expect(await snapshotOf(1)).toBe(5)
+  })
+})
+
+describe('an ingest builds on the previous active version (ADR-043 §5)', () => {
+  /** v3 outstanding, over a v2 the resource stepped off. */
+  async function outstandingV3() {
+    await db
+      .update(resourceVersion)
+      .set({ state: 'superseded' })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 2)))
+    await db.insert(resourceVersion).values({
+      resourceId,
+      version: 3,
+      storageKey: getStorageKey(packageId, resourceId, 'v3'),
+      size: 103,
+      hash: 'sha256:v3',
+      origin: 'upload',
+      state: 'active',
+      format: 'csv',
+    })
+    vi.mocked(ingestParquetVersion).mockResolvedValue({ snapshotId: 20 })
+  }
+
+  const ingestV3 = () =>
+    withLakeIngestLock(db, (tx) =>
+      ingestVersionIntoLake(tx, {} as LakeSession, {
+        resourceId,
+        version: 3,
+        sourcePath: '/tmp/v3.parquet',
+      })
+    )
+
+  it('stands the table back on the base when a revert left it ahead', async () => {
+    // v2 reached the lake and was then stepped off; its reconcile never ran, so
+    // the table still holds v2's rows. ii-a would write over them either way —
+    // but the shape check it makes on the way, and ii-b's MERGE, read them.
+    await outstandingV3()
+
+    await ingestV3()
+
+    expect(rollbackLakeTable).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      expect.any(String),
+      5
+    )
+    expect(await snapshotOf(1)).toBe(LANDED)
+    expect(ingestParquetVersion).toHaveBeenCalledOnce()
+  })
+
+  it('moves nothing when the table already stands on the base', async () => {
+    await outstandingV3()
+    // The reconcile ran: v1 carries where the rollback landed, above every
+    // stepped-off version's.
+    await db
+      .update(resourceVersion)
+      .set({ ducklakeSnapshotId: LANDED })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+
+    await ingestV3()
+
+    expect(rollbackLakeTable).not.toHaveBeenCalled()
+    expect(ingestParquetVersion).toHaveBeenCalledOnce()
+  })
+
+  it('moves nothing when no active version below reached the lake', async () => {
+    // Nothing to build on: whatever the table holds, the ingest replaces it
+    // wholesale and there is no base to rebase onto.
+    await outstandingV3()
+    await db
+      .update(resourceVersion)
+      .set({ ducklakeSnapshotId: null })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+
+    await ingestV3()
+
+    expect(rollbackLakeTable).not.toHaveBeenCalled()
+    expect(ingestParquetVersion).toHaveBeenCalledOnce()
   })
 })

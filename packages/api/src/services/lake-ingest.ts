@@ -1,15 +1,22 @@
 /**
- * DuckLake ingest under the catalog-wide lock (ADR-043 layer 2 / Phase ii-a).
+ * DuckLake writes under the catalog-wide lock (ADR-043 layer 2 / Phase ii-a).
  *
- * Shared by the pipeline's Lake step and the one-time backfill so the sequence
- * whose correctness depends on the lock — write, read the snapshot back, record
- * it on the version row — has exactly one implementation.
+ * The sequence whose correctness depends on the lock — write, read the snapshot
+ * back, record it on the version row — has exactly one implementation here, and
+ * so does the question that reads those records back ({@link lakeStandsAhead}).
+ * Four callers depend on them: the pipeline's Lake step, the one-time backfill,
+ * a revert's reconcile, and a purge that rolls the live version back.
  */
-import { and, eq, gt, isNotNull } from 'drizzle-orm'
+import { and, desc, eq, gt, isNotNull, lt } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import { resourceVersion } from '@kukan/db'
 import type { IngestResult, LakeSession } from '@kukan/lake'
-import { ingestParquetVersion, lakeTableName } from '@kukan/lake'
+import {
+  ingestParquetVersion,
+  lakeTableExists,
+  lakeTableName,
+  rollbackLakeTable,
+} from '@kukan/lake'
 import { LAKE_INGEST_LOCK, withGlobalAdvisoryLock } from './advisory-lock'
 
 /** A version, and where its rows are read from. */
@@ -33,6 +40,116 @@ export async function withLakeIngestLock<T>(
   fn: (tx: Transaction) => Promise<T>
 ): Promise<T> {
   return withGlobalAdvisoryLock(db, LAKE_INGEST_LOCK, fn)
+}
+
+/**
+ * Stand a resource's table on one version's rows, and record where that landed.
+ *
+ * The rollback restores the contents under a *new* snapshot, so the id is
+ * written back against the version whose rows these now are. That is what lets a
+ * later caller tell the table is already standing on it — neither the old id nor
+ * the version rows say so by themselves. Must run inside `withLakeIngestLock`,
+ * which is what makes the id read back identify this commit.
+ *
+ * Returns the snapshot it landed on, or null when there was no table to move.
+ */
+export async function standLakeTableOn(
+  tx: Transaction,
+  session: LakeSession,
+  on: { resourceId: string; version: number; snapshot: number }
+): Promise<number | null> {
+  const table = lakeTableName(on.resourceId)
+  if (!(await lakeTableExists(session, table))) return null
+  const landed = await rollbackLakeTable(session, table, on.snapshot)
+  await tx
+    .update(resourceVersion)
+    .set({ ducklakeSnapshotId: landed })
+    .where(
+      and(eq(resourceVersion.resourceId, on.resourceId), eq(resourceVersion.version, on.version))
+    )
+  return landed
+}
+
+/**
+ * Does the table hold rows of a version that is no longer where it should
+ * stand — some row carrying a snapshot above `snapshot`?
+ *
+ * Answered from the recorded ids alone, and only because every move of the
+ * table writes the snapshot it landed on back onto the version whose rows those
+ * now are ({@link standLakeTableOn}). Without that, this would stay true forever
+ * after a revert and every asking would rewrite the table.
+ */
+export async function lakeStandsAhead(
+  db: Pick<Database | Transaction, 'select'>,
+  resourceId: string,
+  snapshot: number | null
+): Promise<boolean> {
+  if (snapshot === null) return false
+  const [ahead] = await db
+    .select({ version: resourceVersion.version })
+    .from(resourceVersion)
+    .where(
+      and(
+        eq(resourceVersion.resourceId, resourceId),
+        gt(resourceVersion.ducklakeSnapshotId, snapshot)
+      )
+    )
+    .limit(1)
+  return ahead !== undefined
+}
+
+/**
+ * The version an ingest of `version` builds on: the newest active one below it
+ * that reached the lake, or null when none did.
+ */
+async function lakeBaseBelow(
+  tx: Transaction,
+  resourceId: string,
+  version: number
+): Promise<{ version: number; snapshot: number } | null> {
+  const [base] = await tx
+    .select({ version: resourceVersion.version, snapshot: resourceVersion.ducklakeSnapshotId })
+    .from(resourceVersion)
+    .where(
+      and(
+        eq(resourceVersion.resourceId, resourceId),
+        lt(resourceVersion.version, version),
+        eq(resourceVersion.state, 'active'),
+        isNotNull(resourceVersion.ducklakeSnapshotId)
+      )
+    )
+    .orderBy(desc(resourceVersion.version))
+    .limit(1)
+  return base?.snapshot == null ? null : { version: base.version, snapshot: base.snapshot }
+}
+
+/**
+ * Put the table where the ingest has to start from, and say so (ADR-043 §5).
+ *
+ * **An ingest applies to a table standing on the previous active version.** ii-a
+ * gets away without it — every branch writes every row, so the contents land
+ * right whatever they were before — but the *decision* it makes on the way,
+ * "did the columns move?", is read off whatever the table happens to hold. After
+ * a revert that is a version the resource stepped off. ii-b's `MERGE` takes the
+ * same contents as its base, so the answer stops being cosmetic.
+ *
+ * The table stands ahead when some version carries a snapshot above the base's,
+ * which a revert leaves behind whenever its own reconcile could not run. Reading
+ * it here means the ingest repairs that rather than building on it.
+ */
+async function standOnBase(
+  tx: Transaction,
+  session: LakeSession,
+  row: LakeIngestRow
+): Promise<void> {
+  const base = await lakeBaseBelow(tx, row.resourceId, row.version)
+  if (!base) return
+  if (!(await lakeStandsAhead(tx, row.resourceId, base.snapshot))) return
+  await standLakeTableOn(tx, session, {
+    resourceId: row.resourceId,
+    version: base.version,
+    snapshot: base.snapshot,
+  })
 }
 
 /**
@@ -97,6 +214,8 @@ export async function ingestVersionIntoLake(
   // No later pass can change the answer, and the pending query stops listing
   // this version the moment a newer one is in.
   if (newer) return null
+
+  await standOnBase(tx, session, row)
 
   const result = await ingestParquetVersion(session, {
     table: lakeTableName(row.resourceId),
