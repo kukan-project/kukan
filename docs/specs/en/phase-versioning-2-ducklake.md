@@ -2447,14 +2447,27 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
      `purged`. Printing them one per line repeats the same information and even lets one read off
      "from when to when the removed content was published". Group them as `v10–v60 withdrawn`. The API
      does not need grouping (§9.6), but display is a different matter
-   - **Drop `purgeReason` from the version view** (issue #425). This is **current exposure** and does
-     not wait for ii-b. `toView` hides size/hash/schema on tombstones yet lets `purgeReason` through,
-     and `GET /resources/:id/versions` is readable anonymously for a public resource. When responding
-     to a deletion request, **the very information that was supposed to be erased can survive in the
-     reason field**. The UI does not display it (only a `purged` badge) and accountability is served
-     by the audit log (`auditLog` carries who, why and when), so rather than gating it by permission,
-     **drop it**. Keep `purgedAt` — it is needed to explain the gap in version numbers, and a
-     timestamp alone leaks no content
+   - ✅ **[implemented] `purgeReason` is off the version view** (issue #425). The reasoning lives on
+     `VersionView`'s doc. `purgedAt` stays — it explains the gap in version numbers and leaks no
+     content. **It left silently, so its absence is pinned** at both levels: the service (a
+     tombstone's view) and **the route** (an anonymous `GET /resources/:id/versions`, where the
+     assertion also checks the reason's text appears nowhere in the body). The admin guide's "the
+     history keeps the reason" was corrected with it — **that is the page read before typing into the
+     field**, so leaving it stale invites restating there what had to be removed
+   - **The reason text itself remains, though: what was dropped is the exposure, not the record.**
+     `resource_version.purge_reason` is the durable place the reason lives between the claim and the
+     completion (the ADR-028 claim pattern; the completion's audit entry reads `row.purgeReason`), and
+     the audit log carries the same text. So **there is no path for "erase what I typed into the
+     reason field"** — an operator would have to clear the column and the matching audit entries, and
+     no tool does that (the same class of gap as open issue 15). **Prevention is the only means, so
+     the operational procedure says "do not type into the reason field what has to be erased"** (it is
+     in the admin guide). Dropping the column itself would mean accepting that the completion's audit
+     entry loses the reason (the claim's entry keeps it), and entails a migration
+   - **And the audit log has no read path.** `auditLog` is only ever inserted into; no API and no
+     screen reads it. "Accountability is served by the audit log" therefore holds **only for whoever
+     can reach the database**, and an operator-facing way to look a purge reason up is separate work —
+     when it is built it must be sysadmin-only and say so, since it is the place that shows exactly
+     what was dropped here
 
 7. **Sweep parked objects immediately at purge time** (§9.8). A preview created by an intermediate run
    is merely parked in `orphaned_object` when replaced, and the purge does not hurry it along. For an

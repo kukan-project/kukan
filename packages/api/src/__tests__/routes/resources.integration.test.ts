@@ -1243,6 +1243,39 @@ describe('Resources API Routes', () => {
     })
   })
 
+  describe('GET /api/v1/resources/:id/versions', () => {
+    it('should not hand a purge reason to a reader of the resource', async () => {
+      // The list is gated on the resource's visibility alone, so on a public
+      // dataset this is an anonymous read. A purge reason is free text about
+      // content that was destroyed — for a takedown it can describe the very
+      // thing that had to go — so it is not on the view at all (#425). Asserted
+      // on the response, because that is the surface the issue was about.
+      const pkg = await createPackage('versions-reason-pkg')
+      const resource = await createResource(pkg.id)
+      await db.insert(resourceVersion).values({
+        resourceId: resource.id,
+        version: 1,
+        storageKey: getStorageKey(pkg.id, resource.id, 'v1'),
+        hash: 'sha256:v1',
+        origin: 'upload',
+        state: 'purged',
+        purgedAt: new Date(),
+        purgeReason: 'names the complainant',
+      })
+
+      const res = await unauthApp.request(`/api/v1/resources/${resource.id}/versions`)
+
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.versions).toHaveLength(1)
+      expect(body.versions[0]).not.toHaveProperty('purgeReason')
+      // Not by serialising to nothing, either: the whole body must not carry it.
+      expect(JSON.stringify(body)).not.toContain('complainant')
+      // The date stays — it explains the gap in version numbers.
+      expect(body.versions[0].purgedAt).not.toBeNull()
+    })
+  })
+
   // ADR-043 layer 2. The diff scans both snapshots in full, so unlike the other
   // version routes it is gated on edit rights rather than visibility — ii-a puts
   // it in the dashboard, and public diffs are Phase iii.

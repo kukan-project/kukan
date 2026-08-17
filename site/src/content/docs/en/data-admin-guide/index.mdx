@@ -136,7 +136,10 @@ is recorded in the audit log.
   period (30 days by default) elapses
 - Purging the live version puts the resource back on the preceding one. With no earlier
   version, the resource is left with no file
-- The history keeps a "Purged" row and the reason. **This cannot be undone**
+- The history keeps a "Purged" row and the date. The reason you type is **not** shown there and is
+  not returned by the API — it goes to the audit log, which today is only readable in the database.
+  Treat it as a note to the operators, and **do not restate in it what had to be removed**
+- **This cannot be undone**
 
 ### One-time migration
 

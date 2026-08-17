@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { eq, and, sql } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
-import { resource, resourcePipeline, resourceVersion } from '@kukan/db'
+import { auditLog, resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import { createLogger, getStorageKey, MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
 import type { ResourceSchema } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
@@ -166,6 +166,13 @@ describe('claimPurge', () => {
     expect(row.state).toBe('purging')
     expect(row.purgedBy).toBe(userId)
     expect(row.purgeReason).toBe('contains PII')
+    // Where the reason lives instead of the view (#425): accountability is the
+    // audit log's, which is what makes dropping it from the response lossless.
+    const [logged] = await db
+      .select({ changes: auditLog.changes })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityId, resourceId), eq(auditLog.action, 'purge_request')))
+    expect(logged.changes).toMatchObject({ version: 1, reason: 'contains PII' })
   })
 
   it('keeps calling the claimed version live, and the highest active one not', async () => {
@@ -425,10 +432,12 @@ describe('executePurge', () => {
     const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
     expect(res.hash).toBe('sha256:v1')
 
-    // v2 is a purged tombstone; content fields withheld via the view.
+    // v2 is a purged tombstone; content fields withheld via the view, and the
+    // reason withheld outright — it can describe what was destroyed (#425).
     const view = await service.getVersion(resourceId, 2)
-    expect(view.state).toBe('purged')
-    expect(view.hash).toBeNull()
+    expect(view).toMatchObject({ state: 'purged', hash: null, size: null })
+    expect(view.purgedAt).not.toBeNull()
+    expect(view).not.toHaveProperty('purgeReason')
   })
 
   it('empties the resource when no previous active version remains', async () => {

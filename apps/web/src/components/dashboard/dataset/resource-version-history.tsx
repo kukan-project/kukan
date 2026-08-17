@@ -42,7 +42,6 @@ interface VersionView {
   noTableReason: NoTableReason | null
   created: string
   purgedAt: string | null
-  purgeReason: string | null
 }
 
 interface Props {

@@ -343,8 +343,23 @@ interface PendingLakeIngest {
   version: number
 }
 
-/** A version as exposed through the API. Purged versions are tombstones: their
- *  content-bearing fields (storageKey/hash/size/schema) are withheld. */
+/**
+ * A version as exposed through the API. Purged versions are tombstones: their
+ * content-bearing fields (storageKey/hash/size/schema) are withheld.
+ *
+ * **`purgeReason` is not here at all** (issue #425). It is free text an
+ * administrator writes about why content had to go, so for a takedown it can
+ * describe — or quote — the very thing the purge was destroying, and this view is
+ * readable by anyone who can read the resource. Withholding the content while
+ * publishing the account of it is the wrong way round.
+ *
+ * Nothing is lost: the audit log records who purged what, when and why, and
+ * accountability lives there. Dropped rather than gated on permission, because no
+ * screen reads it — passing a viewer into {@link toView} to keep a value nobody
+ * displays would be API surface for its own sake. `purgedAt` stays: version
+ * numbers skip where a purge happened and that needs explaining, which a date
+ * alone does without leaking anything.
+ */
 export interface VersionView {
   version: number
   origin: VersionOrigin
@@ -408,8 +423,9 @@ export interface VersionView {
    */
   noTableReason: NoTableReason | null
   created: Date
+  /** When the version was retracted — the whole of what a tombstone says about it,
+   *  since the reason is not exposed (see above). */
   purgedAt: Date | null
-  purgeReason: string | null
 }
 
 /**
@@ -454,8 +470,8 @@ function toView(
     schema: purged ? null : row.schema,
     noTableReason: purged ? null : noTableReason(row),
     created: row.created,
+    // No `purgeReason`: the row carries one, this view deliberately does not.
     purgedAt: row.purgedAt,
-    purgeReason: row.purgeReason,
   }
 }
 

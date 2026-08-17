@@ -246,8 +246,7 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
       "schema": { "rowCount": 1688, "columns": [] },
       "noTableReason": null,
       "created": "2026-08-01T09:12:44.000Z",
-      "purgedAt": null,
-      "purgeReason": null
+      "purgedAt": null
     }
   ]
 }
@@ -264,7 +263,9 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
 | `noTableReason`    | 表が作れなかった理由（`no-columns` / `too-many-columns` / `too-large`）                                 |
 
 完全削除済み（`purged`）の版は記録として残りますが、`size` / `hash` / `schema` は `null` になり、
-`purgedAt` と `purgeReason` が入ります。ダウンロードは `404` を返します。
+`purgedAt` が入ります。ダウンロードは `404` を返します。**パージの理由は返しません** — 消した内容に
+ついての自由記述であり、このエンドポイントはリソースと同じ範囲で読めるためです。誰が何をいつどんな
+理由でパージしたかは監査ログにあります。
 
 **差分** — `GET /resources/{id}/versions/{v}/diff?from={v'}`（既定の `from` は直前の版）:
 

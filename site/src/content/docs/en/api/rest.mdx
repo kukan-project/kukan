@@ -250,8 +250,7 @@ is added while the content stays the same.
       "schema": { "rowCount": 1688, "columns": [] },
       "noTableReason": null,
       "created": "2026-08-01T09:12:44.000Z",
-      "purgedAt": null,
-      "purgeReason": null
+      "purgedAt": null
     }
   ]
 }
@@ -268,7 +267,9 @@ is added while the content stays the same.
 | `noTableReason`    | Why no table was produced (`no-columns` / `too-many-columns` / `too-large`)                                                    |
 
 A purged version stays in the list as a record, but `size` / `hash` / `schema` become `null` and
-`purgedAt` / `purgeReason` are filled in. Downloading it returns `404`.
+`purgedAt` is filled in. Downloading it returns `404`. **The reason it was purged is not returned** —
+it is free text about content that has been destroyed, and this endpoint is as readable as the
+resource; who purged what, when and why is in the audit log.
 
 **Diff** — `GET /resources/{id}/versions/{v}/diff?from={v'}` (`from` defaults to the preceding
 version):
