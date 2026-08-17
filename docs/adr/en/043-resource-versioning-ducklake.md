@@ -471,10 +471,10 @@ is that **purged content can stay retrievable under another version number.**
 Whether those versions should go too is a judgement about a separate canonical record, so
 nothing destroys them automatically. What was missing was not a deletion mechanism but the
 information the decision needs, so **the purge confirmation dialog names the other versions
-holding the same content.** It names only `active` ones: a tombstone holds
-no content, and a version already `purging` is being destroyed as well — offering it as a
+holding the same content.** It names the ones that survive — `active` and `superseded`: a tombstone
+holds no content, and a version already `purging` is being destroyed as well, so offering it as a
 survivor would send the operator after a second purge the resource refuses while the first
-is in flight.
+is in flight. `superseded` counts because a version a revert stepped off still holds its content.
 
 **That notice depends on the version list being complete.** Sameness is decided by comparing
 the `hash` the list already returns for each version, so it costs no extra query and no

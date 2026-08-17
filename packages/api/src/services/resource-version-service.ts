@@ -349,6 +349,45 @@ export interface VersionView {
   version: number
   origin: VersionOrigin
   state: VersionState
+  /**
+   * Whether this is the version the resource is serving right now.
+   *
+   * **Answered here because a client cannot answer it.** The live pointer names
+   * an object, not a version, and two shapes defeat the rules a client would
+   * reach for instead (spec §9.6, with an integration test each):
+   *
+   * - **"the highest version"** — a revert leaves the live content below rows that
+   *   outrank it, so this is wrong in both directions at once
+   * - **"the highest `active` version"** — which survives a revert, because
+   *   stepping the higher versions off is what keeps it true, but not a purge in
+   *   flight: live stands on a `purging` version until the worker moves the
+   *   pointer, and every active version is then something else
+   *
+   * It is what a purge acts on, so the confirmation screen needs it to say what a
+   * purge will do rather than describing every branch.
+   *
+   * **True now, not a promise about later.** Live can move between a read of this
+   * and anything done about it — another run publishing, a concurrent revert — so
+   * a screen that names the case still says it conditionally.
+   */
+  isLive: boolean
+  /**
+   * The version serving would land on if this one were purged.
+   *
+   * **Set only when {@link isLive}**, because only that purge moves serving at
+   * all: taking any other version leaves the pointer, the preview and the index
+   * where they are. Null therefore means either "not the version being served" or
+   * "nothing would be left to serve" — the difference is `isLive`, which a caller
+   * reading this has already.
+   *
+   * The other half of what the confirmation screen says, and here for the same
+   * reason as {@link isLive}: it is a rule about which versions a restore may
+   * stand on ({@link ResourceVersionService.newestActiveVersion}), and a client
+   * that re-derived it would go stale the moment that rule changed — while its
+   * own tests kept passing. It also stops depending on the client holding every
+   * version, which a paginated list would break (spec §14.1 open issue 13).
+   */
+  purgeFallsBackTo: number | null
   /** What this version was read as (ADR-046 §6). Kept on a tombstone: it
    *  describes how the content was interpreted, not the content itself. */
   format: string | null
@@ -386,12 +425,28 @@ function noTableReason(row: typeof resourceVersion.$inferSelect): NoTableReason 
   return oversized && row.schema === null ? 'too-large' : null
 }
 
-function toView(row: typeof resourceVersion.$inferSelect): VersionView {
+/**
+ * @param serving - what the resource is standing on and where it would fall to,
+ * both read once per snapshot and handed in rather than derived per row: see
+ * {@link VersionView.isLive}. `standing` is the surviving versions a restore may
+ * land on, newest first ({@link ResourceVersionService.newestActiveVersion}'s
+ * rule over the same rows).
+ */
+function toView(
+  row: typeof resourceVersion.$inferSelect,
+  serving: { live: number | null; standing: readonly number[] }
+): VersionView {
   const purged = row.state === 'purged'
+  const isLive = row.version === serving.live
   return {
     version: row.version,
     origin: row.origin as VersionOrigin,
     state: row.state as VersionState,
+    isLive,
+    // Only for the version being served: purging any other one leaves serving
+    // where it is, so an answer there would name a move that does not happen.
+    // Excluding this version itself, which is the one on its way out.
+    purgeFallsBackTo: isLive ? (serving.standing.find((v) => v !== row.version) ?? null) : null,
     format: row.format,
     // Withhold content metadata for purged tombstones.
     size: purged ? null : row.size,
@@ -403,6 +458,17 @@ function toView(row: typeof resourceVersion.$inferSelect): VersionView {
     purgeReason: row.purgeReason,
   }
 }
+
+/**
+ * The states in which a version can be the one being served.
+ *
+ * Every state but `purged`, and `purging` is the one worth naming: a purge in
+ * flight is still what the resource is serving until the worker moves the
+ * pointer, so a reader that left it out would answer "something else is live"
+ * for the whole of a purge. Shared so the view and the purge cannot drift into
+ * two answers (spec §9.6).
+ */
+const SERVING_STATES: VersionState[] = ['active', 'superseded', 'purging']
 
 /**
  * The one-purge-per-resource index refusing a second claim.
@@ -831,18 +897,94 @@ export class ResourceVersionService {
 
   /** List a resource's versions, newest first. */
   async listByResource(resourceId: string): Promise<VersionView[]> {
-    const rows = await this.db
-      .select()
-      .from(resourceVersion)
-      .where(eq(resourceVersion.resourceId, resourceId))
-      .orderBy(desc(resourceVersion.version))
-    return rows.map(toView)
+    return this.readSnapshot(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(resourceVersion)
+        .where(eq(resourceVersion.resourceId, resourceId))
+        .orderBy(desc(resourceVersion.version))
+      // The standing versions are in `rows` already, in the order this needs.
+      const serving = {
+        live: await this.liveVersionNumber(tx, resourceId),
+        standing: rows.filter((r) => r.state === 'active').map((r) => r.version),
+      }
+      return rows.map((row) => toView(row, serving))
+    })
   }
 
   /** Get a single version (tombstone view when purged). */
   async getVersion(resourceId: string, version: number): Promise<VersionView> {
-    const row = await this.getRow(resourceId, version)
-    return toView(row)
+    return this.readSnapshot(async (tx) => {
+      const row = await this.getRow(tx, resourceId, version)
+      return toView(row, await this.serving(tx, resourceId))
+    })
+  }
+
+  /**
+   * What the resource is standing on, and what it could stand on instead.
+   *
+   * For the paths that hold one row rather than the list: `standing` is read as
+   * the two newest versions a restore may land on, which is all a fallback can
+   * ever be — the newest that is not the row in hand.
+   */
+  private async serving(
+    db: Database | Transaction,
+    resourceId: string
+  ): Promise<{ live: number | null; standing: number[] }> {
+    const standing = await db
+      .select({ version: resourceVersion.version })
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.state, 'active')))
+      .orderBy(desc(resourceVersion.version))
+      .limit(2)
+    return {
+      live: await this.liveVersionNumber(db, resourceId),
+      standing: standing.map((r) => r.version),
+    }
+  }
+
+  /**
+   * Read the rows and the pointer as one snapshot.
+   *
+   * **A view has to answer from one moment.** The two halves — which versions
+   * there are, and which of them is live — are separate statements, and a revert
+   * committing between them yields a list from before it with a pointer from
+   * after: the version it stepped off still reads `active`, so the screen names
+   * it as where serving will land while the purge would land on the one below.
+   * `repeatable read` is what makes both statements read the same instant;
+   * `read only` says the transaction exists for that and nothing else.
+   */
+  private async readSnapshot<T>(fn: (tx: Transaction) => Promise<T>): Promise<T> {
+    return this.db.transaction(fn, { isolationLevel: 'repeatable read', accessMode: 'read only' })
+  }
+
+  /**
+   * Which version the resource is serving, or null when no version owns the live
+   * object — content uploaded but never versioned, or every version purged.
+   *
+   * The pointer's owner, which is the only thing that answers it: see
+   * {@link VersionView.isLive}. Every non-purged state counts, `purging`
+   * included — a purge in flight is still what is being served until it moves the
+   * pointer, and this is exactly the read `executePurge` decides from.
+   *
+   * **Where no version owns the live object it is a guess, and the purge shares
+   * it.** Rows from before a version owned its bytes leave the pointer named by
+   * nobody, and {@link liveVersion} then falls back to the newest version whose
+   * hash matches — which is not necessarily the one the content came from. The
+   * answer is still the right one to show, because it is the answer the purge
+   * acts on: the screen describes what will happen, not what ought to.
+   */
+  private async liveVersionNumber(
+    db: Database | Transaction,
+    resourceId: string
+  ): Promise<number | null> {
+    const [row] = await db
+      .select({ storageKey: resource.storageKey, hash: resource.hash })
+      .from(resource)
+      .where(eq(resource.id, resourceId))
+      .limit(1)
+    if (!row) return null
+    return (await this.liveVersion(db, resourceId, row, SERVING_STATES)) ?? null
   }
 
   /**
@@ -853,7 +995,7 @@ export class ResourceVersionService {
     resourceId: string,
     version: number
   ): Promise<{ storageKey: string; size: number | null }> {
-    const row = await this.getRow(resourceId, version)
+    const row = await this.getRow(this.db, resourceId, version)
     if (row.state === 'purged') {
       throw new NotFoundError('Resource version', `${resourceId}/v${version}`)
     }
@@ -879,7 +1021,14 @@ export class ResourceVersionService {
     userId: string,
     reason: string
   ): Promise<{ claimed: boolean; view: VersionView }> {
-    return this.db.transaction(async (tx) => {
+    // Two steps on purpose. The claim is a write and takes only the row it
+    // changes, so reading the rest of the resource inside it reads whatever
+    // commits alongside — a revert moves the pointer and steps versions off
+    // without touching this row, and its `FOR UPDATE` does not hold that back.
+    // The view is therefore built afterwards, from one snapshot
+    // ({@link readSnapshot}), which is the only way its halves agree; it includes
+    // this claim, since that has committed by then.
+    const claimed = await this.db.transaction(async (tx) => {
       const [row] = await tx
         .select()
         .from(resourceVersion)
@@ -891,9 +1040,7 @@ export class ResourceVersionService {
 
       if (!row) throw new NotFoundError('Resource version', `${resourceId}/v${version}`)
 
-      if (row.state !== 'active' && row.state !== 'superseded') {
-        return { claimed: false, view: toView(row) }
-      }
+      if (row.state !== 'active' && row.state !== 'superseded') return false
 
       // One at a time per resource, refused by the partial unique index rather
       // than by looking first: a look and a write are two steps, and two claims
@@ -901,9 +1048,8 @@ export class ResourceVersionService {
       // either wrote. Refused rather than queued — a purge is a rare and
       // deliberate act, and "another version of this resource is being purged"
       // is something the person asking can act on.
-      let updated: typeof resourceVersion.$inferSelect | undefined
       try {
-        ;[updated] = await tx
+        await tx
           .update(resourceVersion)
           .set({
             state: 'purging',
@@ -912,7 +1058,6 @@ export class ResourceVersionService {
             updated: sql`NOW()`,
           })
           .where(eq(resourceVersion.id, row.id))
-          .returning()
       } catch (err) {
         if (isOnePurgingViolation(err)) {
           throw new ConflictError(
@@ -930,8 +1075,13 @@ export class ResourceVersionService {
         changes: { version, reason },
       })
 
-      return { claimed: true, view: toView(updated!) }
+      return true
     })
+
+    // Read back rather than returned from the write: the row this reports is the
+    // one the claim left, and it has to be described by the same snapshot as the
+    // rest of the resource.
+    return { claimed, view: await this.getVersion(resourceId, version) }
   }
 
   /**
@@ -998,7 +1148,7 @@ export class ResourceVersionService {
     // versions that were not live and no for ones that were.
     const isLive =
       pkgRow !== undefined &&
-      (await this.liveVersion(resourceId, pkgRow, ['active', 'superseded', 'purging'])) === version
+      (await this.liveVersion(this.db, resourceId, pkgRow, SERVING_STATES)) === version
 
     // The object this version owns, destroyed before the pointer is moved off
     // it. A purge falls the safe way round: interrupted here, live names an
@@ -1306,6 +1456,7 @@ export class ResourceVersionService {
       .where(eq(resource.id, resourceId))
       .limit(1)
     const standing = await this.liveVersion(
+      this.db,
       resourceId,
       { storageKey: row?.storageKey ?? null, hash: row?.hash ?? null },
       ['active']
@@ -1366,7 +1517,7 @@ export class ResourceVersionService {
     if (!current) return null
 
     const standing = current.storageKey
-      ? ((await this.liveVersion(resourceId, current, ['active'])) ?? null)
+      ? ((await this.liveVersion(this.db, resourceId, current, ['active'])) ?? null)
       : null
     const settled =
       standing === target.restoreTo && (current.storageKey !== null) === (standing !== null)
@@ -1629,6 +1780,7 @@ export class ResourceVersionService {
    * back from, and the newest version is the right place to land.
    */
   private async liveVersion(
+    db: Database | Transaction,
     resourceId: string,
     live: { storageKey: string | null; hash: string | null },
     states: VersionState[]
@@ -1640,7 +1792,7 @@ export class ResourceVersionService {
     // versions while live stands on a `purging` one is told it is standing
     // somewhere older, and steps off everything down to and including it.
     if (live.storageKey) {
-      const [owner] = await this.db
+      const [owner] = await db
         .select({ version: resourceVersion.version, state: resourceVersion.state })
         .from(resourceVersion)
         .where(
@@ -1660,7 +1812,7 @@ export class ResourceVersionService {
     // object under a key of their own, so no version names what live names.
     // Hash is all there is to go on, and the newest match is the one stood on.
     if (!live.hash) return undefined
-    const [row] = await this.db
+    const [row] = await db
       .select({ version: resourceVersion.version })
       .from(resourceVersion)
       .where(
@@ -1923,8 +2075,8 @@ export class ResourceVersionService {
     await storage.deleteMany(keys)
   }
 
-  private async getRow(resourceId: string, version: number) {
-    const [row] = await this.db
+  private async getRow(db: Database | Transaction, resourceId: string, version: number) {
+    const [row] = await db
       .select()
       .from(resourceVersion)
       .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, version)))

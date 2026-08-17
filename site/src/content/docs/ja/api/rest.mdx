@@ -238,6 +238,8 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
       "version": 2,
       "origin": "upload",
       "state": "active",
+      "isLive": true,
+      "purgeFallsBackTo": 1,
       "format": "CSV",
       "size": 20481,
       "hash": "…",
@@ -251,13 +253,15 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
 }
 ```
 
-| フィールド      | 説明                                                                       |
-| --------------- | -------------------------------------------------------------------------- |
-| `origin`        | `upload`（明示的な差し替え） / `fetch`（外部 URL の取得時点）              |
-| `state`         | `active` / `superseded`（巻き戻しで外れた） / `purging` / `purged`         |
-| `format`        | その版が確定した時点のフォーマット。リソースのラベルを変えても変わりません |
-| `schema`        | その版の列スキーマ（表形式のみ）。版ごとに凍結されます                     |
-| `noTableReason` | 表が作れなかった理由（`no-columns` / `too-many-columns` / `too-large`）    |
+| フィールド         | 説明                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------- |
+| `origin`           | `upload`（明示的な差し替え） / `fetch`（外部 URL の取得時点）                                           |
+| `state`            | `active` / `superseded`（巻き戻しで外れた） / `purging` / `purged`                                      |
+| `isLive`           | そのリソースが今配信している版か。`version` や `state` からは決まりません                               |
+| `purgeFallsBackTo` | この版をパージしたとき配信が戻る版。`isLive` の版だけに入ります（他の版のパージでは配信が動かないため） |
+| `format`           | その版が確定した時点のフォーマット。リソースのラベルを変えても変わりません                              |
+| `schema`           | その版の列スキーマ（表形式のみ）。版ごとに凍結されます                                                  |
+| `noTableReason`    | 表が作れなかった理由（`no-columns` / `too-many-columns` / `too-large`）                                 |
 
 完全削除済み（`purged`）の版は記録として残りますが、`size` / `hash` / `schema` は `null` になり、
 `purgedAt` と `purgeReason` が入ります。ダウンロードは `404` を返します。

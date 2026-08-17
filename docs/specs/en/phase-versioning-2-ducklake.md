@@ -1158,7 +1158,8 @@ product). The procedure for replacing content that was published by mistake is:
 
 The confirmation screen covers: the version that disappears, where live falls back to (or that it
 becomes empty), prompting the user to download the current content first if they need it, **the fact
-that rows remain in layer 2**, and the later-version check of §9.3 (the N → N+1 diff).
+that rows remain in layer 2**, and the later-version check of §9.3 (the N → N+1 diff). **Only the
+last of those is unimplemented; it is open issue 14.**
 
 **The wording is decided by "is the target live", not by the number or the order of versions.** As
 in step 3, derivatives are discarded only when purging the live version; for an intermediate version
@@ -1170,18 +1171,40 @@ neither the preview nor the search index is touched.
 | live, the only version     | Same. With no rollback target the resource ends up with no file                                             |
 | not live                   | Delete only the canonical copy. The preview and search represent the current version, so they are untouched |
 
-🔴 **However, "is the target live" cannot be answered on the client.** The live pointer names an
-object, not a version, so **it cannot be decided from the ordering of version numbers** — a rollback
-puts live's content below a higher version, so "the highest active version" answers yes for a
-non-live version and no for the live one (the server decides by who owns the pointer, and there are
-integration tests in both directions). **Choosing by the total number of active versions is wrong for
-the same reason.**
+**However, "is the target live" cannot be answered on the client.** The live pointer names an
+object, not a version. There are two rules a client would reach for instead, and **each has a shape
+that breaks it** (the server decides by who owns the pointer, and there is an integration test for
+each shape).
 
-**The current wording therefore does not name the case but states both branches conditionally** —
-"if this version is the content currently being served… otherwise…". Besides avoiding guesswork, this
-is the only form that survives **live moving between opening the confirmation screen and confirming
-it**. To name the case as in the table above, the list API needs to return an authoritative `isLive`
-(§14.1).
+| Rule                           | Where it breaks                                                                           |
+| ------------------------------ | ----------------------------------------------------------------------------------------- |
+| "the highest version"          | after a revert: live's content sits below a higher version, so it is wrong **both ways**  |
+| "the highest `active` version" | while a purge is in flight: live stands on a `purging` version, and no active one is live |
+
+**A revert does not break the second one** — `stepOffAbove` marks the higher versions `superseded`,
+which keeps "live is the highest active version" true across it. What breaks it is the state before
+the pointer moves, and a purge claim creates exactly that (the pointer moves when the worker runs).
+**Choosing by the count of active versions breaks in the same shape.**
+
+**The list API therefore returns `isLive` per version, and the confirmation names the case from it.**
+It costs no extra logic — `liveVersion()` (which reads the pointer's owner) is what the purge itself
+decides from — and it counts `purging` as well: **a purge in flight is still what is being served
+until it moves the pointer.**
+
+**Named, and still said conditionally.** Live can move between opening the confirmation screen and
+confirming it (another run publishing, a concurrent revert). The three cases **show what is coming,
+they do not promise it** — and the wording says so (`purgeCaseMayMove`).
+
+**The server answers the fallback's version number too** (`purgeFallsBackTo`). A client could work it
+out — it is a question about states — but the rule it would be writing is the server's rule for
+**which versions a restore may stand on** (`newestActiveVersion`), so a change there leaves the screen
+quietly stale while the client's own tests keep passing. §7.2 contemplates exactly such a change
+(`superseded` becoming restorable), so **the rule stays in one place**. It also stops depending on the
+list being unpaginated (open issue 13's original note).
+
+**The choice of wording is pinned by tests.** `resource-version-history.test.tsx` has one test per
+case, and each asserts **the other branch's sentence is absent** — the choice was made wrongly three
+times over four rounds and nothing failed, because no test looked at which sentence appeared.
 
 In every case, "rows may remain in layer 2" is stated.
 
@@ -2335,8 +2358,8 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
 
 ### 14.1 Subsequent issues
 
-> 🔴 **One item needs implementing before release, 13** (on the purge path; it does not wait for
-> ii-b). The numbering is not compacted because the existing cross-references are live.
+> ✅ **Nothing is left that release requires** (0 and 13 are done). What follows is for alongside
+> ii-b or after it. The numbering is not compacted because the existing cross-references are live.
 
 0. ✅ **[implemented] Layer 2's rollback target on a purge is looked up separately from layer 1's.**
 
@@ -2527,24 +2550,52 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
     If it is built, it will take the shape of **"rebuild layer 2 per resource with the key as of this
     point"**, which keeps the key scheme aligned better than picking versions one by one.
 
-13. 🔴 **[required before release, implementation] The purge confirmation screen cannot answer "is the
-    target live".** The three branches of §9.6 do not hold today, and the wording papers over it by
-    stating both branches conditionally.
+13. ✅ **[implemented] The purge confirmation screen answers "is the target live".** The three
+    branches of §9.6 did not hold, and the wording papered over it by stating both conditionally.
 
-    **The list API must return an authoritative `isLive` per version.** The server already decides it
-    from the pointer's owner in `liveVersion(resourceId, pkgRow, …)`, so it is no extra computation.
-    The client must not guess from version numbers or the total number of active versions — **both are
-    actually wrong** (§9.6; there are integration tests in both directions).
+    The version view (`VersionView`) carries **`isLive`** and **`purgeFallsBackTo`** (the version
+    serving would land on if this one were purged, **set only for the live version** — purging any
+    other one does not move serving, so an answer there would name a move that never happens), so
+    **the screen picks its branch by reading two facts** — neither rule exists client-side. `isLive` is decided by
+    `liveVersion()` — the read of
+    the pointer's owner that the purge itself decides from — counting `active` / `superseded` /
+    `purging`. The list, the single-version view and the purge claim's response all carry the same
+    answer. **The client must not guess from version numbers or the count of active versions**
+    (§9.6). Integration tests pin **two shapes**: after a revert (v2 highest and not live, v1 live
+    and not highest) and **with a claim taken on the live version** (`purging` v2 live, `active` v1
+    not) — the second is the only shape that breaks "the highest active version", and the first alone
+    would not have caught it.
 
-    **Even with `isLive`, keep the conditional phrasing.** live can move between opening the
-    confirmation screen and confirming (another run's publish, a concurrent rollback). What the API
-    answers is "which is live now", not "which will be live at the moment of confirmation". **The
-    three branches exist to show what will happen in advance; they are not a guarantee.**
+    **The rows and the pointer are read as one snapshot** (a `repeatable read`, read-only
+    transaction). Read separately, a concurrent revert interleaves them — a list from before it, a
+    pointer from after — and the screen names a fallback the purge will not use. **The claim's
+    response is built from the same kind of read**, after the claim commits: a claim is a write and
+    locks only its own row, so reading the rest of the resource inside it does not hold back a revert
+    moving the pointer and stepping other versions off.
 
-    **Add a test that verifies the wording selection across the three branches.** This screen has
-    `resource-version-history.test.tsx`, but **not one of its cases looks at which warning is
-    displayed** — the wording was chosen wrongly three times over four rounds and it never once
-    failed.
+    **Where no version owns the pointer, on older data, the answer is a guess** (`liveVersion`'s
+    hash fallback). It is still the right thing to show: **the purge acts on the same answer**, so the
+    screen states what will happen.
+
+    **A resource serving nothing has no box among the three cases.** Every version reads
+    `isLive: false`, so the screen says "not what is being served" when nothing is being served (after
+    a revert that emptied the resource). The wording is not false; whether §9.6's table gains a fourth
+    row is undecided.
+
+    **The conditional phrasing stayed.** Live can move between opening the confirmation screen and
+    confirming (another run's publish, a concurrent revert). What the API answers is "which is live
+    now", not "which will be live at the moment of confirmation": the three branches show what is
+    coming, they do not promise it, and the wording says as much (`purgeCaseMayMove`).
+
+    **The choice of wording is pinned.** `resource-version-history.test.tsx` has a test per branch,
+    each asserting the other branches' sentences are **absent**, plus one for the shared text (the
+    caveat, download-first, layer-2 rows may remain). **The fallback rule is held by the integration
+    tests**: `superseded` and `purging` rows are not candidates, and with two standing versions each
+    names the highest that is not itself. The E2E
+    suite (`resource-versions.e2e.ts`) carries the post-revert shape: live on v2 with v3
+    `superseded`, where v3 must read "not what is being served" and v2 "serving falls back to v1".
+    **Version order answers the opposite there** (the `active`-filtered rule is broken by the claim
+    shape above, which the integration tests hold).
 
 14. **The confirmation screen's later-version check (the N → N+1 diff) is unimplemented.** §9.3 asks
     for it as "a firmer brake than a warning message", but all today's dialog has is a warning and a

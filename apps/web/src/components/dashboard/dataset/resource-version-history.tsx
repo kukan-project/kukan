@@ -31,6 +31,10 @@ interface VersionView {
   version: number
   origin: 'upload' | 'fetch'
   state: 'active' | 'purging' | 'purged' | 'superseded'
+  /** Whether the resource is serving this version, and where serving would land
+   *  if it were purged. Both from the server: see the dialog below. */
+  isLive: boolean
+  purgeFallsBackTo: number | null
   size: number | null
   /** Content hash, withheld for a tombstone — which no longer holds content. */
   hash: string | null
@@ -108,19 +112,23 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
 
   if (!versions || versions.length === 0) return null
 
-  // **The warning does not say which case this is, because the client cannot
-  // tell.** A purge moves the live pointer, the preview and the search index
-  // only when it takes the version those describe, and whether this is that
-  // version is a question about the pointer, not about version order: a revert
-  // leaves the live content below rows that outrank it, so "the highest active
-  // version" answers yes for versions that are not live and no for ones that
-  // are (`resource-version-service.ts`, and an integration test for each
-  // direction). Counting active versions was wrong for the same reason.
+  // **Which of the three cases this is** (spec §9.6). Both inputs come from the
+  // server — `isLive`, because the live pointer names an object rather than a
+  // version, and `purgeFallsBackTo`, because where a restore may land is its rule
+  // to change. Deriving either here is what the field exists to stop; the reasons
+  // each attempt fails are on `VersionView` in `resource-version-service.ts`.
   //
-  // So the wording states both branches conditionally, which is also the only
-  // form that survives the live pointer moving between opening this dialog and
-  // confirming it. Naming the case needs an authoritative `isLive` from the
-  // list API — spec §14.1, with the component tests that go with it.
+  // **Named, but still said conditionally.** Live can move between opening this
+  // dialog and confirming it, so the case is what will happen if it does not, not
+  // a promise — `purgeCaseMayMove` says so, in every branch.
+  const target = versions.find((v) => v.version === purgeTarget) ?? null
+  const purgeCase = !target
+    ? null
+    : !target.isLive
+      ? 'purgeCaseNotLive'
+      : target.purgeFallsBackTo === null
+        ? 'purgeCaseLiveLast'
+        : 'purgeCaseLive'
 
   // Versions that will still be holding these bytes afterwards. Each version
   // owns its own copy, so purging one leaves theirs served (ADR-046 §3) — the
@@ -135,7 +143,7 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
   // free — and what it rests on: the list carries every version of the
   // resource. Paginate it and this reads one page and reports the rest as
   // nothing, so the decision moves server-side with it (ADR-043 open issue 13).
-  const targetHash = versions.find((v) => v.version === purgeTarget)?.hash
+  const targetHash = target?.hash
   const sameContent = targetHash
     ? versions
         .filter(
@@ -265,6 +273,15 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
             <DialogTitle>{t('purgeTitle', { version: purgeTarget ?? 0 })}</DialogTitle>
             <DialogDescription>{t('purgeWarning')}</DialogDescription>
           </DialogHeader>
+          <div className="text-muted-foreground flex flex-col gap-2 text-sm">
+            {/* A string, not the number: ICU groups digits, so v1000 would read
+                "v1,000". */}
+            {purgeCase && (
+              <p>{t(purgeCase, { fallback: String(target?.purgeFallsBackTo ?? '') })}</p>
+            )}
+            <p>{t('purgeCaseMayMove')}</p>
+            <p>{t('purgeWarningTail')}</p>
+          </div>
           {sameContent.length > 0 && (
             <Alert variant="warning">
               <AlertDescription>

@@ -82,13 +82,13 @@ test.beforeAll(async () => {
   })
   resourceId = (await resRes.json()).id
 
-  await withDb((client) =>
-    client.query(
+  await withDb(async (client) => {
+    await client.query(
       `INSERT INTO resource_version
          (resource_id, version, storage_key, size, hash, origin, format, state)
        VALUES ($1, 1, $2, 10, $5, 'upload', 'CSV', 'active'),
               ($1, 2, $3, 20, $5, 'upload', 'CSV', 'active'),
-              ($1, 3, $4, 30, 'sha256:e2e-its-own', 'fetch', 'CSV', 'active')`,
+              ($1, 3, $4, 30, 'sha256:e2e-its-own', 'fetch', 'CSV', 'superseded')`,
       [
         resourceId,
         `resources/e2e/${resourceId}.v1`,
@@ -97,7 +97,15 @@ test.beforeAll(async () => {
         SHARED_HASH,
       ]
     )
-  )
+    // Live stands on **v2** while v3 outranks it and is stepped off: what a revert
+    // leaves, and where version order answers "which version is being served"
+    // wrong in both directions (spec §9.6).
+    await client.query(`UPDATE resource SET storage_key = $2, hash = $3 WHERE id = $1`, [
+      resourceId,
+      `resources/e2e/${resourceId}.v2`,
+      SHARED_HASH,
+    ])
+  })
 })
 
 test.afterAll(async () => {
@@ -148,6 +156,28 @@ test.describe('Resource versions', () => {
     const warning = page.getByRole('alert')
     await expect(warning).toContainText('v1')
     await expect(warning).not.toContainText('v3')
+  })
+
+  test('names what a purge will do from the server, not from version order', async ({ page }) => {
+    // Purging v3 touches no derivative; purging v2 takes the preview and the search
+    // index with it and moves serving to v1. Reading version order gives the
+    // opposite of both, which is why the screen reads the server's answer.
+    await openHistory(page)
+
+    await versionRow(page, 3)
+      .getByRole('button', { name: /purge|パージ/i })
+      .click()
+    await expect(page.getByRole('dialog')).toContainText(
+      /is not what the resource is serving|現在配信されている内容ではありません/i
+    )
+    await page.getByRole('button', { name: /^(cancel|キャンセル)$/i }).click()
+
+    await versionRow(page, 2)
+      .getByRole('button', { name: /purge|パージ/i })
+      .click()
+    await expect(page.getByRole('dialog')).toContainText(
+      /serving falls back to v1|配信は v1 へ戻り/i
+    )
   })
 
   test('says nothing about other versions when the content is this one’s alone', async ({

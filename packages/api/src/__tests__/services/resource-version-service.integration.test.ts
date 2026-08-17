@@ -168,6 +168,30 @@ describe('claimPurge', () => {
     expect(row.purgeReason).toBe('contains PII')
   })
 
+  it('keeps calling the claimed version live, and the highest active one not', async () => {
+    // The shape no state-based rule gets right (spec §9.6): live stands on a
+    // version that is `purging`, so "the highest active version" and "the only
+    // active version" both name v1 — which is not being served. The pointer does
+    // not move until the worker runs, which is why `purging` counts as live.
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+    await db
+      .update(resource)
+      .set({ storageKey: getStorageKey(packageId, resourceId, 'v2'), hash: 'sha256:v2' })
+      .where(eq(resource.id, resourceId))
+
+    const { view } = await service.claimPurge(resourceId, 2, userId, 'contains PII')
+
+    // Read back once the claim has committed, so the state it reports and the
+    // pointer it reports come from one snapshot.
+    expect(view).toMatchObject({ version: 2, state: 'purging', isLive: true })
+    const listed = await service.listByResource(resourceId)
+    expect(listed.map((v) => [v.version, v.isLive])).toEqual([
+      [2, true],
+      [1, false],
+    ])
+  })
+
   it('is idempotent — a version already being purged is not re-claimed', async () => {
     await addVersion(1, 'sha256:v1', 'purging')
     const { claimed } = await service.claimPurge(resourceId, 1, userId, 'again')
@@ -1435,6 +1459,62 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
 
     const [res] = await db.select().from(resource).where(eq(resource.id, resourceId))
     expect(res.hash).toBe('sha256:v2')
+  })
+
+  it('says where serving would land, counting only versions a restore can stand on', async () => {
+    // The other fact the confirmation screen needs, and the rule the client used
+    // to re-derive: the fallback is the highest version a restore may stand on
+    // (`newestActiveVersion`), which is not simply the next one down. Stepped-off
+    // and purging rows are not candidates, so purging live v3 here empties the
+    // resource — and the versions that are not live carry no answer at all,
+    // because purging one of those does not move serving.
+    await addVersion(1, 'sha256:v1', 'superseded')
+    await addVersion(2, 'sha256:v2', 'purging')
+    await addVersion(3, 'sha256:v3')
+    await db
+      .update(resource)
+      .set({ storageKey: getStorageKey(packageId, resourceId, 'v3'), hash: 'sha256:v3' })
+      .where(eq(resource.id, resourceId))
+
+    const emptied = await service.listByResource(resourceId)
+    expect(emptied.map((v) => [v.version, v.isLive, v.purgeFallsBackTo])).toEqual([
+      [3, true, null],
+      [2, false, null],
+      [1, false, null],
+    ])
+
+    // v1 standing again: live v3's purge now has somewhere to land.
+    await db
+      .update(resourceVersion)
+      .set({ state: 'active' })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+    const views = await service.listByResource(resourceId)
+    expect(views.map((v) => [v.version, v.purgeFallsBackTo])).toEqual([
+      [3, 1],
+      [2, null],
+      [1, null],
+    ])
+  })
+
+  it('marks the restored version live and the stepped-off one not, against version order', async () => {
+    // Half of why `isLive` is on the view (spec §9.6): after a revert the pointer
+    // stands on a version *below* one that outranks it, so "the highest version"
+    // is wrong in both directions — v2 outranks v1 and is not live, v1 is live and
+    // is not the highest. ("The highest *active* version" survives this shape,
+    // because stepping off is what keeps it true; the case below is the one that
+    // breaks it.)
+    await addVersion(1, 'sha256:v1')
+    await addVersion(2, 'sha256:v2')
+
+    await revertFromLive()
+
+    const views = await service.listByResource(resourceId)
+    expect(views.map((v) => [v.version, v.isLive])).toEqual([
+      [2, false],
+      [1, true],
+    ])
+    // And the single-version view agrees, since the dialog can read either.
+    expect((await service.getVersion(resourceId, 1)).isLive).toBe(true)
   })
 
   it('marks the version it stepped off as superseded', async () => {

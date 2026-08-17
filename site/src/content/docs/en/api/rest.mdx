@@ -242,6 +242,8 @@ is added while the content stays the same.
       "version": 2,
       "origin": "upload",
       "state": "active",
+      "isLive": true,
+      "purgeFallsBackTo": 1,
       "format": "CSV",
       "size": 20481,
       "hash": "…",
@@ -255,13 +257,15 @@ is added while the content stays the same.
 }
 ```
 
-| Field           | Description                                                                             |
-| --------------- | --------------------------------------------------------------------------------------- |
-| `origin`        | `upload` (an explicit replacement) or `fetch` (observed when the external URL was read) |
-| `state`         | `active` / `superseded` (stepped off by a revert) / `purging` / `purged`                |
-| `format`        | The format this version settled as. Relabeling the resource does not change it          |
-| `schema`        | The version's column schema (tabular only), frozen per version                          |
-| `noTableReason` | Why no table was produced (`no-columns` / `too-many-columns` / `too-large`)             |
+| Field              | Description                                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `origin`           | `upload` (an explicit replacement) or `fetch` (observed when the external URL was read)                                        |
+| `state`            | `active` / `superseded` (stepped off by a revert) / `purging` / `purged`                                                       |
+| `isLive`           | Whether the resource is serving this version. Not derivable from `version` or `state`                                          |
+| `purgeFallsBackTo` | Where serving would land if this version were purged. Set only when `isLive` — purging any other version does not move serving |
+| `format`           | The format this version settled as. Relabeling the resource does not change it                                                 |
+| `schema`           | The version's column schema (tabular only), frozen per version                                                                 |
+| `noTableReason`    | Why no table was produced (`no-columns` / `too-many-columns` / `too-large`)                                                    |
 
 A purged version stays in the list as a record, but `size` / `hash` / `schema` become `null` and
 `purgedAt` / `purgeReason` are filled in. Downloading it returns `404`.
