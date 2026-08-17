@@ -41,6 +41,40 @@ export async function currentSnapshotId(session: LakeSession): Promise<number> {
   return Number(row.id)
 }
 
+/** Every snapshot the catalog holds, across all tables — the ids are one sequence. */
+export async function snapshotIds(session: LakeSession): Promise<number[]> {
+  const rows = await session.rows(`SELECT snapshot_id FROM ducklake_snapshots('lake')`)
+  return rows.map((r) => Number(r.snapshot_id))
+}
+
+/**
+ * Which of these snapshots the catalog can still read a table as.
+ *
+ * Asked before standing a table on a recorded id, which a version row can carry
+ * long after `ducklake_expire_snapshots` took the snapshot away — a restore of
+ * an older catalog, or a reclaim that ran while the row was mid-write (spec
+ * §11-5). Rolling onto one of those fails, and the caller's alternative to
+ * failing is a version further down.
+ *
+ * The whole set in one read, rather than a query per id: `ducklake_snapshots` is
+ * a table function, and a predicate on it is a filter over its full output — so
+ * asking about one id costs what asking about all of them does, and the cost
+ * tracks the catalog rather than the caller's list (measured: ~5ms at 400
+ * snapshots, ~10ms at 1600, either way).
+ *
+ * Catalog resolution only. A snapshot whose Parquet has been deleted underneath
+ * it resolves here and fails on the read; that is reconciliation's to repair,
+ * not something to pick a restore target by.
+ */
+export async function resolvableSnapshots(
+  session: LakeSession,
+  snapshots: readonly number[]
+): Promise<Set<number>> {
+  if (snapshots.length === 0) return new Set()
+  const held = new Set(await snapshotIds(session))
+  return new Set(snapshots.filter((id) => held.has(id)))
+}
+
 /**
  * Replace a table's contents with an earlier snapshot's, and return the
  * snapshot that lands them.

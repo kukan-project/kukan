@@ -12,6 +12,8 @@ export {
   dropResourceTables,
   rollbackLakeTable,
   currentSnapshotId,
+  snapshotIds,
+  resolvableSnapshots,
 } from './table'
 export { sqlLiteral, sqlIdentifier } from './sql'
 export { openLakeSession, withLakeSession, closeLakeInstances } from './connection'

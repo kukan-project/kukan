@@ -14,6 +14,7 @@
  * this resource's files (spec §9.2). No file is ever rewritten either way.
  */
 import type { LakeSession } from './connection'
+import { snapshotIds } from './table'
 
 export interface ReclaimResult {
   expired: number
@@ -37,9 +38,7 @@ export async function reclaimUnreferencedSnapshots(
   session: LakeSession,
   retain: readonly number[]
 ): Promise<ReclaimResult> {
-  const all = (await session.rows(`SELECT snapshot_id FROM ducklake_snapshots('lake')`)).map((r) =>
-    Number(r.snapshot_id)
-  )
+  const all = await snapshotIds(session)
   if (all.length === 0) return { expired: 0, filesDeleted: 0 }
 
   const keep = new Set(retain)

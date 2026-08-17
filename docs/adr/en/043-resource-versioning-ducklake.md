@@ -487,16 +487,27 @@ version — not where the table's current contents point.
 
 > **Not "the live version", and layer 1 and layer 2 fall back to different places.**
 >
-> |                            | Falls back to                                                      |
-> | -------------------------- | ------------------------------------------------------------------ |
-> | Layer 1 (the live pointer) | the newest version that has not been purged                        |
-> | Layer 2                    | the newest non-purged version **that has a snapshot and resolves** |
+> |                            | Falls back to                                                        |
+> | -------------------------- | -------------------------------------------------------------------- |
+> | Layer 1 (the live pointer) | the newest version that has not been purged                          |
+> | Layer 2                    | the newest **`active`** version **that has a snapshot and resolves** |
 >
 > A live version need not be in layer 2: one too large, one that is not tabular, and under
 > ii-b one whose primary key is invalid all stay without a snapshot while being live. **Stand
 > layer 2 down using layer 1's destination and it reads as "nowhere to go" and drops the
 > table** (spec §9.1 has the v1/v2/v3 case). Recovery keys off the same definition
 > (spec §11-5).
+>
+> **A `superseded` version is readable, but not somewhere to stand.** A reclaim's retained set
+> keeps their snapshots so their diffs still read (`lake-reclaim.ts`), but putting their rows
+> back as the contents is restoring rows the resource stepped off — the very thing
+> `standOnBase` and the revert's reconcile undo.
+>
+> **With no `active` target left, only a purge drops the table.** A purge owes unfetchability, and
+> **a `DROP` costs the current contents only — the retained snapshots stay readable through it**
+> (measured; pinned in `maintenance.ducklake.test.ts`). A revert in the same state does not drop,
+> because it owes nothing of the kind; that line is drawn under "a revert that empties the
+> resource" above.
 
 > **ii-b changed _how_ they move.** The original read "roll the table back to that snapshot,
 > and record the snapshot it lands on against the destination version". That means
@@ -562,11 +573,18 @@ the table stands in the right place is answered by "is the newest version ingest
 version's snapshot was written once, at issue. Writing back was only needed because contents
 moved without the version numbers moving with them.
 
-**A revert that empties the resource does not drop the table.** The versions stepped down from
-live are not `purged`, and their diffs are read by resolving each to its own snapshot
-(§6-4); dropping the table takes that away. With nothing live, no reader resolves to the
-table's current contents either. To destroy a version's contents too, purge it: that is the
-rung above on the ladder.
+**A revert that empties the resource does not drop the table.** With nothing live, no reader
+resolves to the table's current contents, and a revert carries **no obligation to make anything
+unfetchable** — the versions it stepped down from live are not `purged`, so their contents may
+still be read through a diff. To destroy a version's contents too, purge it: that is the rung
+above on the ladder.
+
+> **Not because it cannot.** The original reason was that dropping the table would take the
+> stepped-off versions' diffs with it, but **a `DROP` does not cost the retained snapshots their
+> readability** (measured; spec §9.1). It is not dropped because nothing requires it, not because
+> it could not be. **ii-b gains one premise from this**: the head after an emptying revert still
+> holds retracted rows, so its `MERGE` needs the rule "with no base, start from empty"
+> (spec §14.1-16).
 
 #### 5.1 The container principle
 
@@ -720,7 +738,7 @@ bytes: consolidate freely (§6-2).**
    purged** (`state` of `active`) minus the newest snapshot. A time-based `older_than` cannot
    be used — the ids are one catalog-wide sequence, so an age cutoff sweeps up snapshots
    belonging to resources that simply have not changed. The newest is always kept because a
-   purge that stood a table down onto the previous version's content has just created one that
+   purge that stood a table down onto layer 2's rollback target has just created one that
    no version record points at yet.
 
    **The set is "versions not purged", not "current versions".** A diff resolves both endpoints

@@ -26,6 +26,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { LakeRow, LakeSession } from '../connection'
 import { deleteOrphanedFiles, reclaimUnreferencedSnapshots } from '../maintenance'
+import { resolvableSnapshots, rollbackLakeTable } from '../table'
 
 let dir: string
 let conn: DuckDBConnection
@@ -172,6 +173,56 @@ describe('reclaimUnreferencedSnapshots — real catalog', () => {
     await session.run(`CALL ducklake_cleanup_old_files('lake', cleanup_all => true)`)
 
     expect(await doomedRowsOnStorage()).toBe(1)
+  })
+})
+
+describe('DROP TABLE — real catalog', () => {
+  it('costs the current contents, not the retained snapshots', async () => {
+    // What a purge weighs when no surviving version can be stood on. Dropping is
+    // the answer only because the history is not in the table: the versions
+    // either side of it still read, and still diff against each other, which is
+    // what lets `versionsLakeCanStandOn` stay `active`-only rather than standing
+    // the contents back on rows the resource stepped off (spec §9.1).
+    await attach(false)
+    await conn.run(`CREATE TABLE lake.t AS SELECT * FROM (VALUES (1, 'a')) v(id, name)`)
+    const v1 = await snapshot()
+    const v2 = await writeVersion(`(1, 'a'), (2, 'b')`)
+
+    await conn.run(`DROP TABLE lake.t`)
+
+    await expect(session.rows(`SELECT count(*) AS n FROM lake.t`)).rejects.toThrow()
+    const rows = await session.rows(
+      `SELECT (SELECT count(*) FROM lake.t AT (VERSION => ${v1})) AS at1,
+              (SELECT count(*) FROM lake.t AT (VERSION => ${v2})) AS at2,
+              (SELECT count(*) FROM (SELECT * FROM lake.t AT (VERSION => ${v2})
+                 EXCEPT ALL SELECT * FROM lake.t AT (VERSION => ${v1}))) AS diff`
+    )
+    expect(rows[0]).toMatchObject({ at1: '1', at2: '2', diff: '1' })
+
+    // And the next ingest takes the name back without disturbing them.
+    await conn.run(`CREATE TABLE lake.t AS SELECT * FROM (VALUES (9, 'z')) v(id, name)`)
+    const after = await session.rows(`SELECT count(*) AS n FROM lake.t AT (VERSION => ${v2})`)
+    expect(Number(after[0].n)).toBe(2)
+  })
+})
+
+describe('resolvableSnapshots — real catalog', () => {
+  it('drops an expired snapshot from the set, which is what standing on one costs', async () => {
+    // A version row outlives the snapshot it names: expiry is driven by the
+    // retained set, and a restore of an older catalog or a reclaim that ran
+    // mid-write leaves an id behind (spec §11-5). Callers that pick a table's
+    // restore target off those ids have to ask before rolling.
+    await attach(false)
+    await conn.run(`CREATE TABLE lake.t AS SELECT * FROM (VALUES (1, 'a')) v(id, name)`)
+    const v1 = await snapshot()
+    const v2 = await writeVersion(`(1, 'a'), (2, 'b')`)
+
+    await reclaimUnreferencedSnapshots(session, [v2])
+
+    expect(await resolvableSnapshots(session, [v1, v2])).toEqual(new Set([v2]))
+    // What trusting the recorded id does instead of asking: the roll fails, and
+    // for a purge that is a table left holding what it retracted.
+    await expect(rollbackLakeTable(session, 't', v1)).rejects.toThrow()
   })
 })
 
