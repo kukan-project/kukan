@@ -391,8 +391,8 @@ describe('executePurge', () => {
     expect(deps.storage.copy).not.toHaveBeenCalled()
     const [row] = await db.select().from(resource).where(eq(resource.id, resourceId))
     expect(row.storageKey).toBe(getStorageKey(packageId, resourceId, 'v1'))
-    // The object that held the purged content is deleted, not parked: a purge
-    // is a legal deletion, so an in-flight reader is meant to be cut off.
+    // The object that held the purged content is deleted, not parked: an
+    // in-flight reader is meant to be cut off.
     expect(deps.storage.delete).toHaveBeenCalledWith(liveKey)
     // Pipeline re-enqueued to regenerate derivatives.
     expect(deps.queue.enqueue).toHaveBeenCalled()
@@ -497,8 +497,8 @@ describe('executePurge — after a revert (ADR-044 §4)', () => {
     // Liveness read from version order — "nothing active sits above this" —
     // answers no here, because the revert left v3 numbered above the content it
     // restored. The purge then deleted v2's version file and left the live
-    // object still serving those very bytes: a legal deletion that does not
-    // delete.
+    // object still serving those very bytes: a purge that leaves the content
+    // being served.
     await addVersion(1, 'sha256:v1')
     await addVersion(2, 'sha256:v2')
     await addVersion(3, 'sha256:v3')
@@ -612,7 +612,7 @@ describe('executePurge — layer 2 (DuckLake)', () => {
     // v2 stays live, so the contents do not change — but v1's snapshot still
     // holds its rows and has to be reclaimed, so the lake is contacted anyway
     // (ADR-043 §5). An unusable config proves it: the purge fails rather than
-    // reporting a legal deletion it did not carry out.
+    // reporting a purge it did not carry out.
     await expect(
       service.executePurge(resourceId, 1, { ...mockDeps(), lake: unreachableLake })
     ).rejects.toThrow()

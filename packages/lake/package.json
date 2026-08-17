@@ -17,15 +17,17 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p src/__tests__",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts && tsc --noEmit -p src/__tests__",
     "lint": "eslint src",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "bench:compaction": "tsx scripts/bench-compaction.ts"
   },
   "dependencies": {
     "@duckdb/node-api": "1.5.4-r.1",
     "@kukan/shared": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^24.12.2"
+    "@types/node": "^24.12.2",
+    "tsx": "^4.23.11"
   }
 }

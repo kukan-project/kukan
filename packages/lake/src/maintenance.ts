@@ -1,11 +1,17 @@
 /**
  * DuckLake snapshot reclamation (ADR-043 §5, layer 2).
  *
- * A purge is a legal deletion, so it is not enough to stop referencing the
- * rows — the Parquet holding them has to go. Every version owns its files
- * (Phase ii-a replaces the whole table, and data inlining is off), so expiring
- * a version's snapshot leaves its files referenced by nothing and cleanup
- * deletes them whole. No file is ever rewritten.
+ * **Reclaims capacity; does not erase.** What puts a purged version out of
+ * reach is nulling its `ducklake_snapshot_id`, not anything here — this frees
+ * whatever the retained set no longer holds, and the purge completes whether or
+ * not it reaches the bytes (spec §9).
+ *
+ * Under ii-a it happens to reach all of them: a keyless load replaces the whole
+ * table, so a version's files are referenced by that version alone and expiring
+ * its snapshot leaves them unreferenced. **Neither ii-b's keyed load nor a
+ * catalog holding more than one table keeps that true** — rows from several
+ * versions share a file, and a snapshot retained for another resource holds
+ * this resource's files (spec §9.2). No file is ever rewritten either way.
  */
 import type { LakeSession } from './connection'
 

@@ -108,9 +108,19 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
 
   if (!versions || versions.length === 0) return null
 
-  // Purging the only remaining version leaves the resource with no file at all,
-  // so the dialog warns about that instead of promising a rollback.
-  const isLastActiveVersion = versions.filter((v) => v.state === 'active').length === 1
+  // **The warning does not say which case this is, because the client cannot
+  // tell.** A purge moves the live pointer, the preview and the search index
+  // only when it takes the version those describe, and whether this is that
+  // version is a question about the pointer, not about version order: a revert
+  // leaves the live content below rows that outrank it, so "the highest active
+  // version" answers yes for versions that are not live and no for ones that
+  // are (`resource-version-service.ts`, and an integration test for each
+  // direction). Counting active versions was wrong for the same reason.
+  //
+  // So the wording states both branches conditionally, which is also the only
+  // form that survives the live pointer moving between opening this dialog and
+  // confirming it. Naming the case needs an authoritative `isLive` from the
+  // list API — spec §14.1, with the component tests that go with it.
 
   // Versions that will still be holding these bytes afterwards. Each version
   // owns its own copy, so purging one leaves theirs served (ADR-046 §3) — the
@@ -253,9 +263,7 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('purgeTitle', { version: purgeTarget ?? 0 })}</DialogTitle>
-            <DialogDescription>
-              {isLastActiveVersion ? t('purgeWarningLastVersion') : t('purgeWarning')}
-            </DialogDescription>
+            <DialogDescription>{t('purgeWarning')}</DialogDescription>
           </DialogHeader>
           {sameContent.length > 0 && (
             <Alert variant="warning">

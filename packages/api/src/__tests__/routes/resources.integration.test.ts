@@ -1285,8 +1285,8 @@ describe('Resources API Routes', () => {
     it('should not cache the answer a purge leaves behind', async () => {
       // The end of the story this route got wrong: it promised a computed diff
       // was `immutable` for a day, and purging a version destroys the snapshot
-      // it was read from — so a legally deleted version's rows stayed on screen,
-      // past a reload, for anyone who had opened that diff. What a purge leaves
+      // it was read from — so a purged version's rows stayed on screen, past a
+      // reload, for anyone who had opened that diff. What a purge leaves
       // is this, and it must not be held at all.
       const pkg = await createPackage('diff-purged-pkg')
       const resource = await createResource(pkg.id)

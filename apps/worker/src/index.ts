@@ -302,8 +302,11 @@ await queue.process({
       purged ? 'Purge organization job completed' : 'Purge organization job skipped (not deleted)'
     )
   },
-  // Legal deletion: destroy one resource version's content (ADR-043). Rolls the
-  // live version back to the previous one when the purged version was live.
+  // Make one resource version unobtainable (ADR-043 §5): its file goes, and
+  // layer 2 is put out of reach rather than erased. When the purged version is
+  // the one being served, the preview and the search index go with it and the
+  // live version rolls back to the previous one; for any other version they
+  // describe content this purge does not touch and are left alone.
   [PURGE_VERSION_JOB_TYPE]: async (job: Job) => {
     const data = parseJobPayload(job, purgeVersionJobSchema)
     if (!data) return

@@ -526,8 +526,8 @@ resourcesRouter.get('/:id/versions/:v/diff', async (c) => {
   // re-expands the same diff as the user works. Not `immutable` for a day, which
   // is what it was: a snapshot is written once and never changes, but purging a
   // version destroys it (ADR-043 §5), and `immutable` is a promise not even a
-  // reload will re-check — so legally deleted rows stayed on screen for the rest
-  // of the day for anyone who had opened that diff. A minute covers the
+  // reload will re-check — so rows from a purged version stayed on screen for
+  // the rest of the day for anyone who had opened that diff. A minute covers the
   // re-expand and bounds the other thing to a minute.
   //
   // An unavailable answer is not cached at all: a version reported as
@@ -562,9 +562,10 @@ resourcesRouter.get('/:id/versions/:v/download', async (c) => {
   return new Response(Readable.toWeb(nodeStream) as ReadableStream, { headers })
 })
 
-// POST /api/v1/resources/:id/versions/:v/purge - Legal deletion of one version.
+// POST /api/v1/resources/:id/versions/:v/purge - make one version unobtainable.
 // Sysadmin only; a reason is required and recorded. Claims the version (async),
 // then a worker job destroys the content (rolling back the live version if needed).
+// Layer 2 keeps rows a purge cannot free — ADR-043 §5.
 resourcesRouter.post(
   '/:id/versions/:v/purge',
   zValidator('json', z.object({ reason: z.string().trim().min(1) })),

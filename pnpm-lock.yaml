@@ -537,6 +537,9 @@ importers:
       '@types/node':
         specifier: ^24.12.2
         version: 24.13.3
+      tsx:
+        specifier: ^4.23.11
+        version: 4.23.11
 
   packages/shared:
     dependencies:

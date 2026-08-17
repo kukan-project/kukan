@@ -1,11 +1,19 @@
 /**
  * Reclamation against a real DuckLake catalog.
  *
- * `maintenance.test.ts` pins which snapshots get expired; this pins that
- * expiring them actually erases the bytes. That distinction is the whole point
- * of ADR-043 §5 — a purge is a legal deletion, so "no longer referenced" is not
- * the guarantee, "no longer on storage" is — and it is invisible to a fake
- * session, which cannot show that `cleanup_old_files` deletes anything.
+ * `maintenance.test.ts` pins which snapshots get expired; this pins what that
+ * frees on storage, which is invisible to a fake session — it cannot show that
+ * `cleanup_old_files` deletes anything.
+ *
+ * **These cases are ii-a's arithmetic, and ii-a's alone.** A keyless load
+ * replaces the whole table, so each version's file is referenced by that
+ * version and nothing else, and expiring it frees the file whole. `writeVersion`
+ * below is that shape (`DELETE` then `INSERT`). Under ii-b's keyed load a file
+ * carries rows from several versions and this stops holding — see
+ * `purge.ducklake.test.ts`, where the same arrangement frees nothing, and spec
+ * §9, where the purge stops claiming erasure at all. Nothing here is a claim
+ * about what a purge guarantees; it is a claim about what reclamation reaches
+ * when files and versions line up.
  *
  * The catalog is a local DuckDB file and the data path a temp directory, so
  * this needs neither PostgreSQL nor S3 and runs in the unit suite (the same
@@ -13,7 +21,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api'
-import { mkdtempSync, rmSync, readdirSync, copyFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, rmSync, readdirSync, copyFileSync, existsSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { LakeRow, LakeSession } from '../connection'
@@ -23,7 +31,7 @@ let dir: string
 let conn: DuckDBConnection
 let session: LakeSession
 
-/** The rows a purge is supposed to erase carry this, so a scan can find them. */
+/** The rows reclamation should free carry this, so a scan can find them. */
 const DOOMED = 'PURGE_ME'
 
 async function attach(inlining: boolean) {
@@ -82,7 +90,7 @@ afterEach(() => {
 })
 
 describe('reclaimUnreferencedSnapshots — real catalog', () => {
-  it('erases a purged version and leaves the survivors diffable', async () => {
+  it('frees a keylessly written version and leaves the survivors diffable', async () => {
     await attach(false)
     await conn.run(`CREATE TABLE lake.t AS SELECT * FROM (VALUES (1, 'a'), (2, 'b')) v(id, name)`)
     const v1 = await snapshot()
@@ -117,14 +125,14 @@ describe('reclaimUnreferencedSnapshots — real catalog', () => {
     expect(Number(rows[0].n)).toBe(2)
   })
 
-  it('has nothing to erase while data inlining is on', async () => {
+  it('has nothing to free while data inlining is on', async () => {
     // Why `disableDataInlining` exists (ADR-043 §6-1). Inlined rows live in the
     // catalog rather than in Parquet, so reclamation — which only ever deletes
-    // files — has nothing to act on, and a purge would report a legal deletion
-    // having erased nothing.
+    // files — has nothing to act on, and the rows stay reachable to anyone with
+    // the catalog even after every snapshot naming them is gone.
     //
-    // Asserted as "the table owns no files", which is what makes erasure
-    // impossible, rather than by reading DuckLake's internal inlined table:
+    // Asserted as "the table owns no files", which is what puts them out of
+    // reclamation's reach, rather than by reading DuckLake's internal inlined table:
     // that name is private and would tie the test to it. A failure here means
     // small writes stopped being inlined, at which point the ADR's note about
     // revisiting this decision applies.
@@ -140,6 +148,30 @@ describe('reclaimUnreferencedSnapshots — real catalog', () => {
       `SELECT file_count FROM ducklake_table_info('lake') WHERE table_name = 't'`
     )
     expect(Number(info.file_count)).toBe(0)
+  })
+
+  it('puts an expired version back onto storage if the inlined rows are flushed', async () => {
+    // The other half of why inlining stays off. `flush_inlined_data` reads as
+    // the way out — move the rows into Parquet, where reclamation can reach them
+    // — and does the opposite: it writes them out **with their history**, so a
+    // version whose snapshot was already expired reappears on storage. Neither
+    // order helps. Flushing first puts the history in a file every surviving
+    // version needs, and expiry then frees nothing.
+    //
+    // So an inlined row is unreachable and undeleted for good: reclamation only
+    // deletes files, and the one call that would make files out of it undoes
+    // the deletion. That is the decision, not the file count above.
+    await attach(true)
+    await conn.run(`CREATE TABLE lake.t AS SELECT * FROM (VALUES (1, '${DOOMED}')) v(id, name)`)
+    await writeVersion(`(1, 'clean')`)
+
+    await reclaimUnreferencedSnapshots(session, [])
+    expect(await doomedRowsOnStorage()).toBe(0)
+
+    await session.run(`CALL ducklake_flush_inlined_data('lake')`)
+    await session.run(`CALL ducklake_cleanup_old_files('lake', cleanup_all => true)`)
+
+    expect(await doomedRowsOnStorage()).toBe(1)
   })
 })
 
@@ -163,6 +195,29 @@ describe('deleteOrphanedFiles — real catalog', () => {
     expect(Number(rows[0].n)).toBe(100)
   })
 
+  it('spares a live file whose creating snapshot has been expired', async () => {
+    // [ducklake#815](https://github.com/duckdb/ducklake/issues/815): after an
+    // expiry, an active file (`end_snapshot IS NULL`) whose `begin_snapshot` was
+    // gone got reported as orphaned and deleted — losing live data. Fixed in
+    // #863, which was a `DATA_PATH` separator bug rather than a metadata one.
+    //
+    // Pinned because both halves run here on a schedule — a purge expires, the
+    // cron sweeps — and our `DATA_PATH` carries the trailing slash the fix was
+    // about. This passes on the version we build against; it is a guard against
+    // going backwards, not a live defect.
+    await attach(false)
+    await conn.run(`CREATE TABLE lake.t AS SELECT i AS id, 'v' || i AS name FROM range(100) t(i)`)
+    const created = await snapshot()
+    await writeVersion(`(1, 'later')`)
+    await session.run(`CALL ducklake_expire_snapshots('lake', versions => [${created}])`)
+
+    const deleted = await deleteOrphanedFiles(session, new Date())
+
+    expect(deleted).toEqual([])
+    const rows = await session.rows(`SELECT count(*) AS n FROM lake.t`)
+    expect(Number(rows[0].n)).toBe(1)
+  })
+
   it('spares an untracked file younger than the window', async () => {
     // The guard that keeps a write in flight from being read as an orphan.
     await attach(false)
@@ -175,6 +230,73 @@ describe('deleteOrphanedFiles — real catalog', () => {
     const deleted = await deleteOrphanedFiles(session, new Date(Date.now() - 60 * 60 * 1000))
 
     expect(deleted).toEqual([])
+  })
+
+  it('repairs a head whose files are gone from a version whose files remain', async () => {
+    // **The restore contract's load-bearing behaviour (spec §11-5).**
+    //
+    // A table's current head is often a snapshot no version row names —
+    // `standOnBase` and a purge standing the table down both leave one. Being
+    // unnamed it is what the retained set does not hold, so a later reclaim
+    // takes its files. Restore a catalog from before that reclaim and the
+    // catalog still names those files: every version row resolves, the head
+    // alone does not. Reconciliation finds nothing to null and the sweep, which
+    // looks for a null snapshot, never fires — so dropping the table here would
+    // lose it for good.
+    //
+    // The repair is to rewrite the head from a version whose snapshot still
+    // resolves. It touches no version row, so write-once holds, and the history
+    // survives — which is why the procedure rewrites rather than drops.
+    //
+    // The missing file is produced by deleting it rather than by restoring a
+    // catalog: the end state is the same one cleanup leaves behind (catalog
+    // names it, storage does not), and it does not depend on when DuckDB
+    // chooses to flush a catalog file.
+    await attach(false)
+    const parquet = () =>
+      readdirSync(join(dir, 'data'), { recursive: true })
+        .map(String)
+        .filter((f) => f.endsWith('.parquet'))
+
+    await conn.run(`CREATE TABLE lake.t AS SELECT i AS id, 'v1_' || i AS name FROM range(20) t(i)`)
+    const named = await snapshot()
+    const versionFiles = parquet()
+
+    // Stand the table down onto v1's content, the way `standOnBase` does.
+    await conn.run(
+      `CREATE OR REPLACE TABLE lake.t AS SELECT * FROM lake.t AT (VERSION => ${named})`
+    )
+    expect(await snapshot()).toBeGreaterThan(named)
+    const headFile = parquet().find((f) => !versionFiles.includes(f))
+    expect(headFile).toBeDefined()
+
+    // What a reclaim did while the restored catalog was not looking.
+    unlinkSync(join(dir, 'data', headFile!))
+
+    const readable = async (sql: string) => {
+      try {
+        await session.rows(sql)
+        return true
+      } catch {
+        return false
+      }
+    }
+    // The head is broken and the version is not — the state nothing detects.
+    expect(await readable(`SELECT name FROM lake.t`)).toBe(false)
+    expect(await readable(`SELECT name FROM lake.t AT (VERSION => ${named})`)).toBe(true)
+    // And `count(*)` answers from catalog statistics, so it cannot be the check.
+    expect(await readable(`SELECT count(*) FROM lake.t`)).toBe(true)
+
+    await conn.run(
+      `CREATE OR REPLACE TABLE lake.t AS SELECT * FROM lake.t AT (VERSION => ${named})`
+    )
+
+    const [head] = await session.rows(`SELECT count(*) AS n FROM lake.t WHERE name LIKE 'v1_%'`)
+    expect(Number(head.n)).toBe(20)
+    const [history] = await session.rows(
+      `SELECT count(*) AS n FROM lake.t AT (VERSION => ${named})`
+    )
+    expect(Number(history.n)).toBe(20)
   })
 
   it('reports without deleting on a dry run', async () => {

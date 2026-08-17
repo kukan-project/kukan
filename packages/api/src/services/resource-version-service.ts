@@ -639,7 +639,9 @@ export class ResourceVersionService {
    * only for the live version.
    *
    * Failures propagate: the version stays in `purging` and the worker retries,
-   * rather than a legal deletion silently completing with data left in the lake.
+   * rather than the purge completing while the version is still reachable
+   * through layer 2. Reachability is what this closes — the bytes may stay
+   * (ADR-043 §5).
    */
   private async purgeFromLake(
     resourceId: string,
@@ -932,8 +934,8 @@ export class ResourceVersionService {
     // another already owns copies it before inserting the row; a run inside
     // either window would write those
     // objects back *after* this purge had swept them, with no row left to make
-    // them reachable and nothing to reclaim them. A legal deletion cannot end
-    // with the content still in the bucket. A refusal leaves the version in
+    // them reachable and nothing to reclaim them. A purge cannot end with the
+    // content still in the bucket. A refusal leaves the version in
     // 'purging', so the redelivered job finishes it.
     return withResourceClaimsOrConflict(this.db, [resourceId], () =>
       this.purgeVersion(resourceId, version, deps)
@@ -978,8 +980,8 @@ export class ResourceVersionService {
       (await this.liveVersion(resourceId, pkgRow, ['active', 'superseded', 'purging'])) === version
 
     // The object this version owns, destroyed before the pointer is moved off
-    // it. A legal deletion falls the safe way round: interrupted here, live
-    // names an object that is gone — unservable — rather than one that is not.
+    // it. A purge falls the safe way round: interrupted here, live names an
+    // object that is gone — unservable — rather than one that is not.
     await deps.storage.delete(row.storageKey)
 
     let rolledBack = false
@@ -989,8 +991,8 @@ export class ResourceVersionService {
       // that any of it is still owed: a purge interrupted after came back
       // reading itself as a middle version and took the branch that does none of
       // it — leaving the preview, the search index and the lake's current
-      // contents serving what had just been legally deleted, under a row that
-      // then said 'purged'. Done first, an interruption can only leave work
+      // contents serving what the purge had just made unobtainable, under a row
+      // that then said 'purged'. Done first, an interruption can only leave work
       // already finished.
       await this.discardDerivedArtifacts(resourceId, deps.storage)
       if (deps.search) await deps.search.deleteContent(resourceId)
@@ -1019,8 +1021,8 @@ export class ResourceVersionService {
       rolledBack = (await this.restoreLiveFromVersions(this.db, resourceId, pkgRow, prev)) !== null
 
       // The object the purged content was being served from, deleted now rather
-      // than left to the sweep: a purge is a legal deletion, so cutting off a
-      // reader that already resolved that key is the point.
+      // than left to the sweep: cutting off a reader that already resolved that
+      // key is the point.
       //
       // Unless it is the version file already deleted above: live standing on
       // the version being purged is exactly what `isLive` means now that the
@@ -1842,8 +1844,8 @@ export class ResourceVersionService {
    * (ADR-040) lives in `metadata`, and being referenced there the sweep would
    * never take it either — so a purge that dropped only the preview left an
    * extract of the purged content in the bucket, still readable through the
-   * suggestion path. A legal deletion cannot end with the content still
-   * readable, which is the whole of ADR-043 §5.
+   * suggestion path. A purge cannot end with the content still readable, which
+   * is the whole of ADR-043 §5.
    *
    * Destroyed immediately for both callers: a purge because destroying it is
    * the point, a revert because the artifacts describe the very file the caller

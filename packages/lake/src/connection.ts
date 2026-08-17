@@ -75,12 +75,17 @@ function isInstanceLost(err: unknown): boolean {
  *
  * Inlined rows are never reclaimed: once every snapshot that could observe one
  * is expired, it is unreachable through DuckLake yet still sits in PostgreSQL,
- * and neither `expire_snapshots` nor `cleanup_old_files` removes it. A purge
- * could then report a legal deletion having erased nothing. With inlining off
- * each version owns its files, so expiring it frees them whole.
+ * and neither `expire_snapshots` nor `cleanup_old_files` removes it. With
+ * inlining off the rows are in Parquet, where reclamation can at least reach
+ * them — under ii-a's whole-table writes it frees a version's files whole, and
+ * under ii-b it frees whatever the retained set stops holding (spec §9).
+ *
+ * **Not a guarantee that a purge erases anything.** What makes a purged version
+ * unobtainable is nulling its `ducklake_snapshot_id`; this only keeps capacity
+ * reclaimable at all, which inlined rows are not.
  *
  * Stored on the catalog rather than passed to ATTACH, which would only bind
- * this session: the guarantee must not depend on who opened the connection.
+ * this session: the setting must not depend on who opened the connection.
  * Read first so the steady state costs no catalog write.
  */
 async function disableDataInlining(conn: DuckDBConnection): Promise<void> {

@@ -1,0 +1,11 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    // The package root, not `scripts`: the benchmark issues the same SQL the
+    // ingest will (`src/keyed-load`), which is the point of it.
+    "rootDir": "..",
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["*.ts"]
+}

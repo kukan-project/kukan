@@ -698,7 +698,7 @@
       "purging": "Purging",
       "superseded": "Reverted",
       "purgeTitle": "Purge version v{version}",
-      "purgeWarning": "This permanently destroys the content of this version (legal deletion). The version file, and the row data no other version holds, are deleted immediately. Where storage versioning is enabled, the superseded object expires after its retention window (30 days by default). If it is the latest version, the resource rolls back to the previous one. This cannot be undone.",
+      "purgeWarning": "This makes the version unobtainable. Its file is deleted. If this version is what the resource is currently serving, the preview and the search index go with it — serving falls back to the previous surviving version and they are rebuilt from that. If there is no version to fall back to, the resource is left with no file and nothing is rebuilt. If this version is not what is being served, what is being served and everything derived from it are unchanged. Either way, rows may remain in versioning’s internal storage, where deletion is not guaranteed (history retained for other resources can reference the same files). Where storage versioning is enabled, the superseded object expires after its retention window (30 days by default). This cannot be undone.",
       "reasonPlaceholder": "Reason for the purge (recorded in the audit log)",
       "purgeConfirm": "Purge",
       "cancel": "Cancel",
@@ -715,7 +715,6 @@
       "diffSampleAdded": "Added rows (sample)",
       "diffSampleRemoved": "Removed rows (sample)",
       "diffSchemaChanged": "The columns changed, so a row-level diff is not available.",
-      "purgeWarningLastVersion": "This permanently destroys the content of this version (legal deletion). No earlier version remains to restore, so the resource will be left with no file (its metadata stays). This cannot be undone.",
       "purgeWarningSameContent": "Other versions hold the same content ({versions}). Purging this one does not erase it, and the resource may go back to serving that version’s copy. Purge them individually if they must go too.",
       "diffUnavailable": {
         "purged": "One of the versions has been purged, so a diff is not available.",

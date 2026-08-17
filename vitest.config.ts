@@ -89,6 +89,14 @@ export default defineConfig({
           root: './packages/lake',
           include: ['src/__tests__/**/*.test.ts'],
           environment: 'node',
+          // The `.ducklake.test.ts` cases drive a real catalog and a real data
+          // directory — hundreds of Parquet writes, expiry and compaction — and
+          // the whole file runs well inside 5s alone. Under the other projects
+          // it does not, and the default turned a slow machine into a failure
+          // that passed on rerun. Raised rather than skipped: what these pin is
+          // someone else's implementation, so losing them to flakiness would
+          // lose the only thing holding the design's measurements.
+          testTimeout: 30_000,
         },
       },
       {

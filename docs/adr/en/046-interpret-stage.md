@@ -164,7 +164,7 @@ UI to fill it.
 **The bytes are copied.** A version that differs only in interpretation still gets a version
 file of its own. Sharing one object between two versions would avoid the copy, but **one
 version = one object is an invariant the purge depends on**. Shared, purging v2 either
-destroys v3's bytes or fails to destroy anything — a legal deletion that does not delete. A
+destroys v3's bytes or fails to destroy anything — **either way, not what the purge named**. A
 50MB copy is cheap against that.
 
 > This decision was tested by ADR-043 open issue 10 (make live a link to a version). The link

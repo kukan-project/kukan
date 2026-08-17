@@ -29,6 +29,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,astro}\"",
     "eval:search": "pnpm --filter @kukan/api run eval:search",
     "eval:suggest": "pnpm --filter @kukan/api run eval:suggest",
+    "bench:lake": "pnpm --filter @kukan/lake run bench:compaction",
     "test:clean": "pnpm --filter @kukan/db-testing test:clean"
   },
   "devDependencies": {

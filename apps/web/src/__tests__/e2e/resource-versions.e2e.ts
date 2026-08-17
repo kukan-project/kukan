@@ -1,8 +1,8 @@
 /**
  * E2E: Resource version history, diff and purge (ADR-043).
  *
- * The history is the one screen where a legal deletion is started, so what it
- * says about a version has to survive a refactor. ii-b changes this UI, and
+ * The history is the one screen where a purge is started, so what it says
+ * about a version has to survive a refactor. ii-b changes this UI, and
  * these are the claims it must not quietly drop.
  *
  * Versions are seeded straight into the database rather than produced by a
@@ -142,7 +142,7 @@ test.describe('Resource versions', () => {
     // is gone when it is not.
     await openHistory(page)
     await versionRow(page, 2)
-      .getByRole('button', { name: /purge|完全削除/i })
+      .getByRole('button', { name: /purge|パージ/i })
       .click()
 
     const warning = page.getByRole('alert')
@@ -155,7 +155,7 @@ test.describe('Resource versions', () => {
   }) => {
     await openHistory(page)
     await versionRow(page, 3)
-      .getByRole('button', { name: /purge|完全削除/i })
+      .getByRole('button', { name: /purge|パージ/i })
       .click()
 
     await expect(page.getByRole('dialog')).toBeVisible()

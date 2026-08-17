@@ -127,7 +127,7 @@ export const PURGE_ORG_JOB_TYPE = 'purge-organization' as const
 /** Semantic search: (re)generate the embedding vector for one package (ADR-034). */
 export const EMBED_JOB_TYPE = 'embed-package' as const
 
-/** Legal deletion: permanently erase one resource version's content (ADR-043). */
+/** Make one resource version unobtainable; layer 2 may keep its rows (ADR-043 §5). */
 export const PURGE_VERSION_JOB_TYPE = 'purge-resource-version' as const
 
 /** One-time migration: snapshot the current file of every unversioned resource

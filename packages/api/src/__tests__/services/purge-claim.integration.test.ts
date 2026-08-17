@@ -5,8 +5,8 @@
  * database hears of it, and version create copies the file before inserting
  * the row. A purge crossing either window sweeps the bucket, and the run then
  * writes the content back — with no row left that names it, no entry in
- * `orphaned_object`, and no sweep that looks there. A legal deletion that ends
- * with the content still in the bucket.
+ * `orphaned_object`, and no sweep that looks there. A purge that ends with the
+ * content still in the bucket.
  */
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'

@@ -7,6 +7,12 @@
 Limit a resource to one running operation at a time, expressed as a claim on its
 `resource_pipeline` row. Pipeline runs and purges share the same claim.
 
+> **The ii-b design revised §4's revert contract on 2026-08-17 (not built).** The version state
+> `superseded` is dropped, and **a revert now issues the destination's content as a new
+> version**. `restoreTo` and `ifLiveRevision` stay; the rule that a `superseded` version cannot
+> be named as a destination goes. The claim mechanism itself (§1–§3, §5, §6) is unchanged.
+> Reasoning and measurements in `docs/specs/phase-versioning-2-ducklake.md` §7.2.
+
 ## Context
 
 Four concurrency defects surfaced in quick succession while implementing ADR-043.
@@ -68,7 +74,7 @@ must exclude each other. "No new version until the purge finishes" follows from 
 and package and organization purges. That looks heavy-handed until you check what happens
 without it; at least two of the outcomes do real damage.
 
-**Purge against a pipeline run — a hole in legal deletion.** Extract writes the preview to
+**Purge against a pipeline run — a hole in the purge.** Extract writes the preview to
 storage **before** returning, and the DB write happens afterwards; version capture likewise
 copies the object before inserting its row. If a package purge lands in that window, the
 pipeline writes the preview and the version file **after** the purge has finished cleaning
@@ -195,29 +201,51 @@ exists: sysadmin only, a required reason, an audit log entry.
 > implementation** — which statement carries which predicate, and where it lives — is in
 > `docs/pipeline.md` §2, §3 and §6.
 
-#### A revert deletes no versions — `superseded`
+#### A revert deletes no versions — it re-issues the content
 
-Leaving the version stepped off active leaves it **the highest active version**, which breaks
-the invariant "the live content is the highest active version". Both of the places that read
-that invariant break with it: the capture gate captures a spurious version (and a second
-revert steps off that one and lands on **exactly what the first revert retracted**), and the
-purge moves no pointer — destroying the version file while the live object keeps serving a
-copy of those same bytes, **a legal deletion that does not delete**.
+> **ii-b rewrote this section (2026-08-17, not built).** It originally added a fourth state,
+> `superseded`, and dropped every version above the destination into it. **The shape is now to
+> move versions forward, and `superseded` is dropped.** Reasoning and measurements in
+> `docs/specs/phase-versioning-2-ducklake.md` §7.2; the state diagram is in ADR-043 §1.1.
 
-So there is a fourth state. `superseded` destroys nothing; destroying is the purge's job. What
-it takes away is only candidacy for being live. **The transition diagram, and what each state
-is still entitled to, are in ADR-043 §1.1.**
+**A revert does not restore, it issues a new version holding the destination's content.** An
+operator names a version and that content stands as v(N+1). Layer 1 needs nothing new — the
+rule "a version takes an object nobody owns, and copies one that is already owned" already
+covers this (ADR-043 §1-2).
 
-**A revert lands not on "the newest version" but on "the newest version below the one the
-content is standing on".** A stopped run may have captured the very file being retracted, and
-going back to that is going nowhere. "The newest version that is not the content being
-retracted" is not enough either: no version record is deleted, so after one revert the version it
-stepped off is still active and still newest, and the next revert would **put back what the
-last one retracted**. The landing point follows from where the resource is standing. And where
-it is standing is found by hash, because the live pointer names an object and not a version —
+**Liveness becomes one sentence — the newest version that has not been purged.** With no set to
+narrow, the "step off everything above the destination" preamble disappears with it.
+
+**What the original was, and why it broke.** Leaving the version stepped off active leaves it
+**the highest active version**, which breaks the invariant "the live content is the highest
+active version", so everything above the destination was dropped into `superseded`. **That was
+never "a record that was rolled back" but a working variable that made the search for "the
+newest active version" answer with the destination** — and if versions move forward there is no
+search, so there is no set to narrow.
+
+**Then layer 2's write path ruled out `CREATE OR REPLACE`.** The original revert rewrote the
+table wholesale and overwrote the destination version row's snapshot id. A whole rewrite is the
+write path ii-b rejected (315x on append-mostly data); going through the ingest path writes
+deltas. Once a version row's snapshot is written once and never again, moving contents can only
+be done by issuing a version.
+
+> **This originally read "the order inverts and the diff silently returns nothing". It no
+> longer holds** — the diff compares endpoints and does not depend on snapshot order (measured
+> in spec §7.2). **The two reasons left are the write path above and open issue 7 below, and
+> both are weaker than the one they replace.**
+
+**Two prices.** Each revert adds a version number and a layer-1 object (a round trip grows them
+linearly). And **the purge's fallback destination changes** — revert v5 → v2, issue v6, then
+purge v6, and live returns to **v5**, not v2. Read the history as the append-only log it is and
+"remove the top and you are back at the previous published state" is the honest reading.
+**Content set aside can come back as current** either way, so rather than encoding it in a
+state, **the purge confirmation screen says so**.
+
+**Finding where the resource stands is unchanged.** The operator names a version, but "where it
+is standing now" is found by hash, because the live pointer names an object and not a version —
 **the newest version holding those bytes**. A plain hash match will not do: several versions
 may legitimately hold one hash (ADR-046 decision 3), so that answers yes for any of them. The
-purge's liveness test asks the same question, differing only in the states it counts.
+purge's liveness test asks the same question.
 
 The format the version was captured under goes back with its content (ADR-046 §6). A version
 is those bytes read under that format, so restoring only the bytes restores half of it —
@@ -251,17 +279,18 @@ writer of the live pointer. The storage key would identify it too, but naming in
 in a response is what `publicResourceColumns` exists to prevent, so the generation is its own
 opaque value.
 
-**The destination is validated.** Left unchecked, naming a superseded or missing version
-supersedes everything above it and then restores whichever is newest active — a different
-version, or none — and reports success. Superseded is refused rather than resolved: stepping
-back onto content an earlier revert set aside is redo, which this ladder does not have. **A
-revert walks the history backwards, so going forward is always a new version** — otherwise a
-second revert would hand back what the first one retracted (above).
+**The destination is validated.** Left unchecked, naming a missing or `purged` version moves
+the contents and then restores a different version, or none, and reports success.
 
-**The content is not lost, though.** A superseded version keeps its file and stays
-downloadable (only `purged` is refused). Someone who reverted by mistake can download that
-version and upload it again — what comes back is **a new version**, not the one that was set
-aside.
+> **The rule refusing a `superseded` destination goes with the state.** Stepping back onto
+> content an earlier revert set aside used to be refused as redo, but that constraint existed
+> only because a revert **renumbered** versions. Once versions move forward, "issue that
+> content again" is unambiguous and there is nothing to refuse. **Any surviving version can be
+> named.**
+
+**The content is not lost.** A version stepped down from live keeps its file and stays
+downloadable (only `purged` is refused). Someone who reverted by mistake just names the right
+version again — what comes back is **a new version**, not the old one standing back up.
 
 #### When the claim is taken
 
@@ -340,7 +369,7 @@ confirmation opens, not when it is confirmed: read again at confirm time, pollin
 onto content the user was never shown. They are held through an unknown outcome too — a freshly
 read pair is the _next_ rung down, not this operation again.
 
-**Known limitation: a version superseded before it reached layer 2 can never reach it**
+**Known limitation: a version stepped down before it reached layer 2 can never reach it**
 (open issue 7).
 
 #### Getting the kill through to the run
@@ -478,7 +507,9 @@ different property, and not removable.
 
 **Uploads do not take the claim.** Everything from `prepareForUpload` to `promoteUpload` runs
 on an API request, outside it. So this condition still fires under a claim — when **a user
-replaces the file while a run is in flight**. That is what Fetch's `superseded` now means.
+replaces the file while a run is in flight**. That is what Fetch's `superseded` now means
+(**a `FetchResult` status, not a version state**. The version state of the same name is dropped
+in §4; this one stays).
 
 Without the condition, the overtaken run's publish would pull the resource back to its own,
 older bytes. There is a real counterparty, so keeping it is not a secondary call. The
@@ -536,15 +567,19 @@ leave a hole in.
    since a row taken in between comes back as held. The revert's own `ensureClaimable` moved
    into the claim layer and was deleted (`claimFromRun` mints the row too). "No pipeline row"
    is therefore gone: `absent` and a null claim now mean **the resource itself is gone**
-7. **A version superseded before it reached layer 2** can never reach it. Eligibility is
-   limited to active versions, and admitting superseded ones would let an ingest **replace the
-   catalog's current contents with that version** (ii-a is a wholesale replace), making
-   retracted content what layer 2 serves. The overtake guard cannot tell the difference — the
-   retracted version carries the higher number. An interpretation or ingest that fails and is
-   then reverted therefore leaves that version's diff permanently `not-ingested`. Admitting
-   them safely needs an ingest-then-roll-back-to-the-previous-snapshot sequence. A version
-   superseded **after** reaching layer 2 — the ordinary path — keeps its snapshot and stays
-   diffable
+7. ~~**A version superseded before it reached layer 2**~~: **resolved by the ii-b design
+   (2026-08-17, not built).**
+
+   Eligibility is limited to active versions, and admitting superseded ones would let an ingest
+   **replace the catalog's current contents with that version**, making retracted content what
+   layer 2 serves. The overtake guard cannot tell the difference — the retracted version
+   carries the higher number. An interpretation or ingest that failed and was then reverted
+   therefore left that version's diff permanently `not-ingested`.
+
+   **Dropping `superseded` leaves no room for the state to arise** (§4). A revert issues a new
+   version instead of stepping one down, so a version awaiting ingest stays `active` and waits
+   its turn, and the sweep picks it up in version order. The
+   ingest-then-roll-back-to-the-previous-snapshot column is not needed either
 
 ## Related ADRs
 
