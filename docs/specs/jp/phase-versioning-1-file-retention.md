@@ -36,7 +36,7 @@
   - 正本ファイルは固定キー `resources/{packageId}/{resourceId}`（`getStorageKey()`）へ**上書き**保存
   - アップロードは presigned PUT で現行キーに 1 回書かれ、旧版は残らない
   - 外部 URL は Fetch ステップが現行キーへダウンロードし、`hash !== res.hash` のときのみ
-    `resource.hash`/`size` を更新（[fetch.ts](../../apps/worker/src/pipeline/steps/fetch.ts)、既存のハッシュゲート）
+    `resource.hash`/`size` を更新（[fetch.ts](../../../apps/worker/src/pipeline/steps/fetch.ts)、既存のハッシュゲート）
   - `resource` テーブルに `hash`（`sha256:...`）/`size`/`urlType`（`upload` | 外部）/`state`
   - `resource_pipeline`（resource と 1:1）に `previewKey`/`metadata.schema`（最新版のみ、ADR-032）
   - `audit_log` テーブルあり（`entityType`/`entityId`/`action`/`userId`/`changes`）

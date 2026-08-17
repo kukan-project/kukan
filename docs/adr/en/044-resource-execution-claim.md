@@ -11,7 +11,7 @@ Limit a resource to one running operation at a time, expressed as a claim on its
 > `superseded` is dropped, and **a revert now issues the destination's content as a new
 > version**. `restoreTo` and `ifLiveRevision` stay; the rule that a `superseded` version cannot
 > be named as a destination goes. The claim mechanism itself (§1–§3, §5, §6) is unchanged.
-> Reasoning and measurements in `docs/specs/phase-versioning-2-ducklake.md` §7.2.
+> Reasoning and measurements in `docs/specs/en/phase-versioning-2-ducklake.md` §7.2.
 
 ## Context
 
@@ -206,7 +206,7 @@ exists: sysadmin only, a required reason, an audit log entry.
 > **ii-b rewrote this section (2026-08-17, not built).** It originally added a fourth state,
 > `superseded`, and dropped every version above the destination into it. **The shape is now to
 > move versions forward, and `superseded` is dropped.** Reasoning and measurements in
-> `docs/specs/phase-versioning-2-ducklake.md` §7.2; the state diagram is in ADR-043 §1.1.
+> `docs/specs/en/phase-versioning-2-ducklake.md` §7.2; the state diagram is in ADR-043 §1.1.
 
 **A revert does not restore, it issues a new version holding the destination's content.** An
 operator names a version and that content stands as v(N+1). Layer 1 needs nothing new — the

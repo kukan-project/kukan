@@ -8,7 +8,7 @@
 # 実行: pnpm eval:search（対象環境は -- --base で指定、既定 http://localhost:3000）
 # 計測: Recall@10 / nDCG@10 を semantic ON / OFF で比較（同ディレクトリの eval-search.ts）
 #
-# 記入ガイド（ADR-034 §5 / docs/specs/phase5-vector-search.md §9）:
+# 記入ガイド（ADR-034 §5 / docs/specs/jp/phase5-vector-search.md §9）:
 # - 20〜50 問を目標に、実データを知る人が「利用者が実際に打ちそうなクエリ」を起こす
 # - type は 3 種を必ず混在させる:
 #     synonym : 語彙が一致しない言い換え（ベクトル検索の効果測定）

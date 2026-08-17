@@ -91,7 +91,7 @@ export const environments = {
 > （現行 bootstrap は `ImageTagMutability: IMMUTABLE` で作成）へ同一タグを push して競合し得る。
 > **transient かつ retry-safe**（`cdk-assets` が既存ダイジェストをスキップするため再実行で解消）で、
 > 恒久対策は当該リポジトリの MUTABLE 化。別アカウント運用ならリポジトリが分かれるため無関係。
-> 詳細と MUTABLE 化手順は `docs/specs/phase4-deploy.md` を参照。
+> 詳細と MUTABLE 化手順は `docs/specs/jp/phase4-deploy.md` を参照。
 
 ### 固定の物理名の扱い
 
@@ -144,7 +144,7 @@ env エントリ（`scale` + `overrides`）　＞　スケール既定（`config
 - `infra/lib/config.ts`: `loadConfig` が env エントリ＋`overrides` をマージ、`bucketName` 既定を自動命名へ
 - `infra/lib/constructs/*`: 固定物理名の除去/サフィックス化（cluster / service / queue / cf-function / bucket）
 - `.gitignore`: `infra/config/environments.ts` と `cdk.context.json` は **ignore しない**（フォークがコミット）
-- ドキュメント: `docs/specs/phase4-deploy.md` / `README.md` に env 切替手順を追記
+- ドキュメント: `docs/specs/jp/phase4-deploy.md` / `README.md` に env 切替手順を追記
 
 ## 関連
 
@@ -152,4 +152,4 @@ env エントリ（`scale` + `overrides`）　＞　スケール既定（`config
 - ADR-030（CDK Pipelines による自動デプロイ）: `docs/adr/jp/030-cdk-pipelines-deploy.md`
 - ADR-020（ECS Fargate + ALB）: `docs/adr/jp/020-ecs-fargate-alb-migration.md`
 - ADR-027（CloudFront 再導入・2 スタック構成）: `docs/adr/jp/027-cloudfront-reintroduction.md`
-- デプロイ仕様: `docs/specs/phase4-deploy.md`
+- デプロイ仕様: `docs/specs/jp/phase4-deploy.md`

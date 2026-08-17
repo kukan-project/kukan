@@ -72,7 +72,7 @@ new CodePipeline(this, 'Pipeline', {
 - **廃止**: `infra/lib/constructs/ci-oidc.ts`、`.github/workflows/deploy.yml`（GitHub Actions + OIDC 案の撤回。`kukan-stack.ts` の `CiOidc` 配線も除去）
 - `infra/bin/app.ts`: パイプラインスタックを生成（ローカル直接デプロイ用に Stage 単体生成も併設可）
 - 設定: CodeConnections の Connection ARN を環境設定（ADR-031 の `environments.ts`）または context に追加
-- ドキュメント: `docs/specs/phase4-deploy.md` / `README.md` / `site` を CDK Pipelines 手順へ更新
+- ドキュメント: `docs/specs/jp/phase4-deploy.md` / `README.md` / `site` を CDK Pipelines 手順へ更新
 
 ## 関連
 

@@ -119,4 +119,4 @@ an infrastructure-side setting. The admin UI only displays model information
 ## Related
 
 - ADR-034: Metadata vector search (measured floors and resolution order)
-- Implementation spec: `docs/specs/phase5-vector-search.md`
+- Implementation spec: `docs/specs/en/phase5-vector-search.md`

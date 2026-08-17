@@ -74,7 +74,7 @@ new CodePipeline(this, 'Pipeline', {
 - **Removed**: `infra/lib/constructs/ci-oidc.ts`, `.github/workflows/deploy.yml` (withdrawing the GitHub Actions + OIDC option; the `CiOidc` wiring in `kukan-stack.ts` is also removed)
 - `infra/bin/app.ts`: instantiate the pipeline stack (optionally also a standalone Stage for local direct deploys)
 - Config: add the CodeConnections Connection ARN to the environment config (ADR-031's `environments.ts`) or context
-- Docs: update `docs/specs/phase4-deploy.md` / `README.md` / `site` to the CDK Pipelines procedure
+- Docs: update `docs/specs/en/phase4-deploy.md` / `README.md` / `site` to the CDK Pipelines procedure
 
 ## Related
 

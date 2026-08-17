@@ -8,7 +8,7 @@ ii-b（主キー指定による変更行追跡）以降は残課題
 > **ii-b の設計で §5（パージ）と §6（運用）を改訂した（2026-08-17、未実装）。** 最も大きいのは
 > **パージが層 2 のバイト列消去を保証しなくなった**ことで、「法的削除」という語も本 ADR から
 > 落としている。変更の要点は §5 冒頭の注記にあり、決定の一覧と実測は
-> `docs/specs/phase-versioning-2-ducklake.md` §0 にある。
+> `docs/specs/jp/phase-versioning-2-ducklake.md` §0 にある。
 
 リソースの正本データに「版」を導入し、表形式リソースについては版間の行レベル差分・
 タイムトラベル・列スキーマ変更履歴を提供する設計。テーブルフォーマットとして
@@ -730,7 +730,7 @@ expire も cleanup もインライン行に届かず、回収手段は `DROP TAB
      ii-b では成立しない。ii-a は枝の選択を誤っても全行を書くので結果が正しくなるだけで、
      判定根拠は巻き戻し後に既に間違っている。土台は現在内容ではなく最上位の版から解決する。
 
-   残りの決定と実測は `docs/specs/phase-versioning-2-ducklake.md` §0。
+   残りの決定と実測は `docs/specs/jp/phase-versioning-2-ducklake.md` §0。
 
 8. **IAM の厳密化**: タスクロールの `s3:GetObjectVersion` / `s3:DeleteObjectVersion` を
    明示 Deny し、パージ残置期間中の noncurrent 版アクセスを IAM レベルでも遮断する

@@ -230,8 +230,8 @@ Precedence: CLI `-c` > env entry > scale defaults. Override ad hoc:
 npx cdk deploy -c env=dev -c scale=medium 'Dev/**'
 ```
 
-See [docs/specs/phase4-deploy.md](docs/specs/phase4-deploy.md) for full details.
-詳細は上記リンクを参照。
+See [docs/specs/en/phase4-deploy.md](docs/specs/en/phase4-deploy.md) for full details.
+詳細は [docs/specs/jp/phase4-deploy.md](docs/specs/jp/phase4-deploy.md)（正本）を参照。
 
 ### CI/CD (CDK Pipelines + CodeConnections) / 自動デプロイ
 
@@ -361,7 +361,8 @@ docker compose logs -f web worker
 ## Documentation / ドキュメント
 
 - [Design Document / 設計書](docs/design-v4.md)
-- [AWS Deployment Spec / デプロイ仕様](docs/specs/phase4-deploy.md)
+- AWS Deployment Spec / デプロイ仕様: [日本語 (正本)](docs/specs/jp/phase4-deploy.md) | [English](docs/specs/en/phase4-deploy.md)
+- Implementation Specs / 実装仕様書: [日本語 (正本)](docs/specs/jp/) | [English](docs/specs/en/)
 - ADR (Architecture Decision Records / 設計判断記録): [日本語 (正本)](docs/adr/jp/) | [English](docs/adr/en/)
 
 ## License / ライセンス

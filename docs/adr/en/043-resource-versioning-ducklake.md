@@ -9,7 +9,7 @@ ii-b (changed-row tracking via a declared primary key) onwards remain open issue
 > largest change is that **a purge no longer guarantees the erasure of layer 2's bytes**, and
 > the phrase "legal deletion" has been dropped from this ADR with it. What changed is noted at
 > the head of §5; the full list of decisions and the measurements behind them are in
-> `docs/specs/phase-versioning-2-ducklake.md` §0.
+> `docs/specs/en/phase-versioning-2-ducklake.md` §0.
 
 Introduces versions for canonical resource data and, for tabular resources, provides
 row-level diffs between versions, time travel, and column schema change history.
@@ -831,7 +831,7 @@ bytes: consolidate freely (§6-2).**
      rather than from current contents.
 
    The remaining decisions and measurements are in
-   `docs/specs/phase-versioning-2-ducklake.md` §0.
+   `docs/specs/en/phase-versioning-2-ducklake.md` §0.
 
 8. **IAM hardening**: Explicitly deny `s3:GetObjectVersion` / `s3:DeleteObjectVersion` on
    task roles so that noncurrent versions during the purge residual window are blocked at

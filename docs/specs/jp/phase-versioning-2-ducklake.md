@@ -49,7 +49,7 @@
 ## 1. 前提
 
 - **Phase i（層1）完成済み**: `resource_version` テーブル、版ファイル保持（全フォーマット）、
-  パージ、移行（v1 付与。`docs/specs/phase-versioning-1-file-retention.md`）
+  パージ、移行（v1 付与。`docs/specs/jp/phase-versioning-1-file-retention.md`）
 - **既存の型推論（ADR-029）**: `apps/worker/src/pipeline/type-inference.ts` の `inferColumnType()`
   が列を `integer` / `float` / `boolean` / `string` に推論し、Extract が
   `ResourceSchema`（`packages/shared`）として組み立て、Phase i で **版ごとにスナップショット**

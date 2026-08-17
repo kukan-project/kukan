@@ -95,7 +95,7 @@ export const environments = {
 > `ImageTagMutability: IMMUTABLE`). The conflict is **transient and retry-safe**
 > (`cdk-assets` skips an existing digest, so re-running resolves it); the durable
 > fix is to make that repository MUTABLE. Separate accounts avoid it entirely since
-> the repositories are distinct. See `docs/specs/phase4-deploy.md` for details and
+> the repositories are distinct. See `docs/specs/en/phase4-deploy.md` for details and
 > the MUTABLE procedure.
 
 ### Handling fixed physical names
@@ -149,7 +149,7 @@ env entry (`scale` + `overrides`) > scale defaults (`config.ts`) > built-in defa
 - `infra/lib/config.ts`: `loadConfig` merges the env entry + `overrides`; change the `bucketName` default to auto-naming
 - `infra/lib/constructs/*`: remove/suffix fixed physical names (cluster / service / queue / cf-function / bucket)
 - `.gitignore`: do **not** ignore `infra/config/environments.ts` or `cdk.context.json` (forks commit them)
-- Docs: add env-switching steps to `docs/specs/phase4-deploy.md` / `README.md`
+- Docs: add env-switching steps to `docs/specs/en/phase4-deploy.md` / `README.md`
 
 ## Related
 
@@ -157,4 +157,4 @@ env entry (`scale` + `overrides`) > scale defaults (`config.ts`) > built-in defa
 - ADR-030 (Automated deployment via CDK Pipelines): `docs/adr/en/030-cdk-pipelines-deploy.md`
 - ADR-020 (ECS Fargate + ALB): `docs/adr/en/020-ecs-fargate-alb-migration.md`
 - ADR-027 (CloudFront reintroduction / 2-stack setup): `docs/adr/en/027-cloudfront-reintroduction.md`
-- Deployment spec: `docs/specs/phase4-deploy.md`
+- Deployment spec: `docs/specs/en/phase4-deploy.md`

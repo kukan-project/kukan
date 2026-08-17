@@ -132,7 +132,7 @@ This ADR does not force existing single-site environments to migrate.
 - `packages/shared/src/env.ts`: add `OPENSEARCH_INDEX_PREFIX`
 - `packages/api/src/adapters.ts`: wire `indexPrefix`
 - `compose.yml` / `docker/`: shared/site compose split template, `container_name` cleanup, multi-site support in the ElasticMQ conf and MinIO init
-- `docs/specs/phase4-deploy.md`: add multi-site setup steps
+- `docs/specs/en/phase4-deploy.md`: add multi-site setup steps
 - Multiple brands are handled in ADR-042
 
 ## Related

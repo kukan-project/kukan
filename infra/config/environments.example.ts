@@ -17,14 +17,14 @@
  * IAM boundary — ADR-031). Same-account is fully supported for evaluation / small
  * / cost-conscious setups, with one caveat: deploying the same commit to two envs
  * in one account near-simultaneously can hit an ECR asset-tag push conflict
- * (transient and retry-safe — see docs/specs/phase4-deploy.md).
+ * (transient and retry-safe — see docs/specs/en/phase4-deploy.md).
  *
  * This example presents the multi-site shape only (ADR-041): every environment
  * declares `sites`, starting with a single entry, because `sites` cannot be
  * added to an already-deployed single-site environment later (that path is a
  * blue/green migration). An environment without `sites` still synthesizes the
  * classic all-in-one single-site stack — the site-scoped fields below then
- * live on the environment entry (see docs/specs/phase4-deploy.md).
+ * live on the environment entry (see docs/specs/en/phase4-deploy.md).
  *
  * Where each field goes:
  *   - Environment entry ONLY (the shared boxes + CI/CD):

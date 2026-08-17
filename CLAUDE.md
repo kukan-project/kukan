@@ -62,6 +62,8 @@ KUKAN/
 │   │   ├── jp/             # 日本語（正本）
 │   │   └── en/             # English（機械翻訳・参考）
 │   └── specs/              # Phase別 実装仕様書
+│       ├── jp/             # 日本語（正本）
+│       └── en/             # English（機械翻訳・参考）
 ├── Dockerfile              # マルチターゲット Docker ビルド（web / worker）
 ├── .dockerignore
 ├── compose.yml             # Docker Compose（開発 / オンプレ本番）
@@ -259,19 +261,22 @@ pnpm format        # Prettier フォーマット
 行レベル差分は develop にのみ入っている。
 
 **次: Phase Versioning-ii-b — 主キー指定による変更行追跡**
-（実装仕様書: `docs/specs/phase-versioning-2-ducklake.md`）。
+（実装仕様書: `docs/specs/jp/phase-versioning-2-ducklake.md`）。
 着手前に同 §14.0 を読むこと — **ii-a が例外的に成立していた前提が 3 つ落ちる**ので、後追いでは
 なく前提として解く必要がある。§6 も着手前の設計メモとして更新済み。
 
 - Phase 1: Foundation ✅ 完了
-- Phase 2: フロントエンド ✅ 完了（実装仕様書: `docs/specs/phase2-frontend.md`）
-- Phase 3: リソース処理 & ファイルストレージ ✅ 完了（実装仕様書: `docs/specs/phase3-pipeline.md`）
-- Phase 4: AWS デプロイ & CDK 基盤 ✅ 完了（`docs/specs/phase4-deploy.md`、ADR-030 / ADR-031）
-- Phase 5a: メタデータベクトル検索 ✅ 完了（`docs/specs/phase5-vector-search.md`、ADR-034）
+- Phase 2: フロントエンド ✅ 完了（実装仕様書: `docs/specs/jp/phase2-frontend.md`）
+- Phase 3: リソース処理 & ファイルストレージ ✅ 完了（実装仕様書: `docs/specs/jp/phase3-pipeline.md`）
+- Phase 4: AWS デプロイ & CDK 基盤 ✅ 完了（`docs/specs/jp/phase4-deploy.md`、ADR-030 / ADR-031）
+- Phase 5a: メタデータベクトル検索 ✅ 完了（`docs/specs/jp/phase5-vector-search.md`、ADR-034）
 - Phase Versioning-i: 正本バージョン保持 & パージ ✅ 完了
-  （`docs/specs/phase-versioning-1-file-retention.md`、ADR-043 層 1）
+  （`docs/specs/jp/phase-versioning-1-file-retention.md`、ADR-043 層 1）
 - Phase Versioning-ii-a: DuckLake 行レベル差分（主キーなし）✅ 完了
-  （`docs/specs/phase-versioning-2-ducklake.md`、ADR-043 層 2）
+  （`docs/specs/jp/phase-versioning-2-ducklake.md`、ADR-043 層 2）
+
+実装仕様書も ADR と同様に日本語を正本とし、`docs/specs/jp/` と `docs/specs/en/` の
+両方に置く（英語版は機械翻訳・参考）。仕様書を追加・更新したら両方を更新する。
 
 ## パイプライン フォーマット別処理マトリクス
 
@@ -336,7 +341,7 @@ pnpm typecheck                  # TypeScript 型チェック
 
 環境は `infra/config/environments.ts` で定義（`environments.example.ts` をコピー）。
 通常は CDK Pipelines（push 起点）でデプロイ。合成パスが standalone と pipeline で異なり
-物理リソース名が変わるため、**その環境を作った側の合成方法で手動操作する**（ADR-030 / ADR-031、`docs/specs/phase4-deploy.md`）。
+物理リソース名が変わるため、**その環境を作った側の合成方法で手動操作する**（ADR-030 / ADR-031、`docs/specs/jp/phase4-deploy.md`）。
 
 ```bash
 cd infra

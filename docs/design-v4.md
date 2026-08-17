@@ -617,7 +617,7 @@ ECS タスクは Public サブネット構成（NAT Gateway 不要）、CloudFro
 
 **small — 小規模（最小コスト）**
 
-※ 詳細は `docs/specs/phase4-deploy.md` のコスト試算セクションを参照。
+※ 詳細は `docs/specs/jp/phase4-deploy.md` のコスト試算セクションを参照。
 ※ ap-northeast-1（東京）リージョン基準。税別。
 
 | 構成要素                                | 月額概算     |

@@ -145,7 +145,7 @@ CDK のイメージアセットはコンテンツハッシュ管理のため、*
 - `packages/shared/src/env.ts`: `OPENSEARCH_INDEX_PREFIX` の追加
 - `packages/api/src/adapters.ts`: `indexPrefix` の配線
 - `compose.yml` / `docker/`: 共有 / サイトの compose 分割テンプレート、`container_name` の整理、ElasticMQ conf・MinIO init の複数サイト対応
-- `docs/specs/phase4-deploy.md`: マルチサイト構成手順の追記
+- `docs/specs/jp/phase4-deploy.md`: マルチサイト構成手順の追記
 - ブランドの複数化は ADR-042 で扱う
 
 ## 関連

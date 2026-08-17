@@ -111,4 +111,4 @@ Marketplace モデルは購読手順が必要、切り替えると全件再埋�
 ## 関連
 
 - ADR-034: メタデータのベクトル検索（しきい値の実測と解決順）
-- 実装仕様書: `docs/specs/phase5-vector-search.md`
+- 実装仕様書: `docs/specs/jp/phase5-vector-search.md`

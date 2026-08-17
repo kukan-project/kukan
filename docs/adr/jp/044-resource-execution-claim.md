@@ -11,7 +11,7 @@ claim として表現する。パイプライン実行とパージを同じ clai
 > 廃止し、**巻き戻しは対象版の内容を新しい版として発行する**形にした。`restoreTo` と
 > `ifLiveRevision` は残るが、「`superseded` な版を行き先に指定できない」規則は落ちる。
 > claim の機構そのもの（§1〜§3、§5、§6）は無変更。理由と実測は
-> `docs/specs/phase-versioning-2-ducklake.md` §7.2。
+> `docs/specs/jp/phase-versioning-2-ducklake.md` §7.2。
 
 ## コンテキスト
 
@@ -187,7 +187,7 @@ CSV 50MB まで、Version は S3 のサーバサイド copy、Index はチャン
 
 > **ii-b がこの節を書き換えた（2026-08-17、未実装）。** 当初は 4 つ目の状態 `superseded` を足し、
 > 戻り先より上の版をそこへ落とす設計だった。**版を前へ進める形に変え、`superseded` は廃止する。**
-> 経緯と実測は `docs/specs/phase-versioning-2-ducklake.md` §7.2、状態遷移は ADR-043 §1.1。
+> 経緯と実測は `docs/specs/jp/phase-versioning-2-ducklake.md` §7.2、状態遷移は ADR-043 §1.1。
 
 **巻き戻しは「戻す」のではなく、対象版の内容を持つ新しい版を発行する。** 運用者が版を名指し、
 その内容が v(N+1) として立つ。層 1 に新しい仕組みは要らない — 「版は誰も持っていないオブジェクトを
