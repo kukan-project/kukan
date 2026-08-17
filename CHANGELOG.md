@@ -3,6 +3,66 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.14.0] - 2026-08-17
+
+**Breaking Changes**
+
+- A version's API response no longer carries `purgeReason`. The reason an administrator types when purging a version was readable by anyone who could read the resource — anonymously, on a public dataset — and for a takedown that text can describe the very content being removed. There is nothing to migrate unless a client was reading the field; who purged what, when and why is still recorded in the audit log (#429).
+
+**Highlights**
+
+- **A purge no longer destroys a resource's row history.** Purging the newest version could drop the resource's row-level table outright: whenever the version serving underneath had never been ingested — too large for the row store, or not tabular — the purge read "nothing to fall back to" and dropped the whole table, including the versions that did have rows. Nothing put it back afterwards. Purges from this release step the table back onto the newest version that actually holds rows, and drop it only when no version does (#427).
+- **The purge confirmation now says what will happen.** Instead of describing every branch conditionally, it names the case: whether this is the version currently being served, which version serving falls back to afterwards, or that nothing being served and nothing derived from it changes. Both answers come from the server, because neither can be worked out from the version list — after a revert, the version being served is not the newest one, and while a purge is in flight it is not the newest active one either (#428).
+- **A revert now takes the row history with it.** Reverting a resource's content left the row-level table holding exactly the rows the revert had retracted, and the next update built on top of them. A revert now moves the table back as well, and an ingest begins from the version it builds on rather than from whatever the table happened to be holding (#422, #423).
+- **What a purge claims is what a purge does.** The confirmation no longer promises that row data is erased. Row-level storage keeps history for every resource in one shared series, so a purge can make a version unobtainable without being able to free its bytes — the wording now says that plainly, and says what is guaranteed instead (#424).
+
+**Features**
+
+- feat(api): tell the purge screen which version is live (#428)
+
+**Bug Fixes**
+
+- fix(api): stand a purged table on layer 2's own version (#427)
+- fix(api): stop handing a purge reason to everyone who can read the resource (#429)
+- fix(api): follow a revert through into the DuckLake table (#422)
+- fix(api): stand the lake table on its base before an ingest (#423)
+- fix(web): correct what a version purge claims (#424)
+
+**Documentation**
+
+- The administrator guide said the version history keeps the reason you type when purging. It does not, and the guide now says so — the field is a note for the operators, not a place to restate what had to be removed (#429).
+- The implementation specifications are split into `docs/specs/jp/` and `docs/specs/en/`, the way the ADRs already were. Japanese remains authoritative (#426).
+
+---
+
+**破壊的変更**
+
+- 版の API 応答から `purgeReason` を削除しました。版をパージするときに管理者が入力する理由は、そのリソースを読める人すべて — 公開データセットなら匿名でも — が読める状態でした。削除要請への対応では、その文面が消すはずだった内容そのものを記述していることがありえます。このフィールドを読んでいたクライアントがなければ移行は不要です。誰が何をいつどんな理由でパージしたかは、引き続き監査ログに記録されます（#429）。
+
+**ハイライト**
+
+- **パージがリソースの行履歴を壊さなくなりました。** 最新版をパージすると、リソースの行レベルテーブルごと落ちることがありました。その下で配信されていた版が行ストアに入っていない場合 — サイズ超過、または表形式でない場合 — パージが「戻り先が無い」と読み、行を持っていた過去の版まで含めてテーブル全体を落としていました。その後それを戻す仕組みもありませんでした。本リリース以降のパージは、実際に行を持っている最新の版までテーブルを戻し、そういう版が1つも無いときにだけ落とします（#427）。
+- **パージ確認画面が「何が起きるか」を明示します。** すべての分岐を条件付きで並べるのをやめ、場合を名指しします — この版が現在配信されている内容か、配信がどの版へ戻るか、あるいは配信中の内容とその派生物は何も変わらないか。どちらの答えもサーバーが返します。版一覧からは決められないためです（巻き戻しの後は配信中の版が最新版ではなく、パージ実行中は最新の有効な版でもありません）（#428）。
+- **巻き戻しが行履歴も一緒に戻します。** リソースの内容を巻き戻しても、行レベルテーブルは撤回したはずの行を保持したままで、次の更新はその上に積まれていました。巻き戻しはテーブルも戻すようになり、取り込みは「テーブルにたまたま入っていた内容」ではなく「その版が積む土台」から始まります（#422、#423）。
+- **パージの説明が実際の動作と一致しました。** 確認画面は「行データを消去する」とは言わなくなりました。行レベルのストレージは全リソースの履歴を1つの系列で保持するため、パージは版を取得できなくすることはできても、そのバイト列を解放できるとは限りません。文面はその事実と、代わりに何を保証するのかを述べるようになりました（#424）。
+
+**機能**
+
+- feat(api): パージ画面へ「どの版が配信中か」を返す（#428）
+
+**バグ修正**
+
+- fix(api): パージ後のテーブルを層 2 自身の戻り先に立てる（#427）
+- fix(api): リソースを読める全員にパージ理由を渡すのをやめる（#429）
+- fix(api): 巻き戻しを DuckLake テーブルまで追随させる（#422）
+- fix(api): 取り込みの前にテーブルを土台へ立てる（#423）
+- fix(web): 版のパージが主張する内容を訂正（#424）
+
+**ドキュメント**
+
+- 管理者ガイドに「版履歴にはパージ理由が残る」と書かれていましたが、実際には残りません。ガイドを訂正しました — 理由欄は運用者向けのメモであって、消すべき内容を書き写す場所ではありません（#429）。
+- 実装仕様書を ADR と同じように `docs/specs/jp/` と `docs/specs/en/` へ分割しました。日本語が正本です（#426）。
+
 ## [0.13.1] - 2026-08-12
 
 Documentation only. No change to the application.
