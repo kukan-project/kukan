@@ -213,7 +213,14 @@ operator names a version and that content stands as v(N+1). Layer 1 needs nothin
 rule "a version takes an object nobody owns, and copies one that is already owned" already
 covers this (ADR-043 §1-2).
 
-**Liveness becomes one sentence — the newest version that has not been purged.** With no set to
+**What becomes one sentence is layer 1's automatic fallback after a purge — the newest `active`
+version**, not the definition of live. New history never produces `superseded`, so it **coincides**
+with "the newest version not purged"; retained old rows part the two (the three questions below).
+
+**Live itself is not that sentence.** Live is **the version owning the object the live pointer
+names**, which mid-purge can be a `purging` one — and then no `active` version is live at all (the
+`isLive` rule, spec §9.6). **Calling both by one name makes the purge confirmation say something
+other than what happens.** With no set to
 narrow, the "step off everything above the destination" preamble disappears with it.
 
 **What the original was, and why it broke.** Leaving the version stepped off active leaves it
@@ -267,11 +274,64 @@ its caller never saw. Idempotency does not give that: "have I already done this"
 still the thing I was shown" are different questions, and answering only the first turns a stale
 request into a silent overwrite.
 
-| State                  | Answer                                                           |
-| ---------------------- | ---------------------------------------------------------------- |
-| already at `restoreTo` | the content does not move, and **nothing is cleaned up** (below) |
-| the generation matches | do the work                                                      |
-| otherwise              | 409                                                              |
+| State                            | Answer                                                           |
+| -------------------------------- | ---------------------------------------------------------------- |
+| already at `restoreTo`'s content | the content does not move, and **nothing is cleaned up** (below) |
+| the generation matches           | do the work                                                      |
+| otherwise                        | 409                                                              |
+
+**"Already at the destination" is asked of the content, not the version number.** Now that a revert
+issues a version, live stands on the version carrying the destination's content and never on the
+destination itself — asked by number, a resend always finds work to do, takes the claim, and is then
+refused over **a generation its own first attempt moved**. What `restoreTo` asks for is bytes and an
+interpretation, and comparing those is **the same comparison the version gate makes**: issued again
+they would create no version, so there is no change left to record.
+
+**The comparison uses the version gate's own function.** There is one definition of what a version
+is (ADR-046 §3). Today its inputs are the hash and the format; in ii-b **the primary key columns
+become a third** (spec §6.4 — the key is part of the interpretation, so changing it makes a
+version). Writing settled against a fixed list of columns means that on that day **a version
+differing only in its key can no longer be restored**: the content matches, settled says so, and
+the interpretation never comes back. Grow the gate, and settled grows with it.
+
+**What is restored includes the interpretation.** A version is "those bytes, read this way", so
+the version issued **copies the destination's interpretation** — `format` already works that way
+(ADR-046 §6), and ii-b's primary key joins it. The resource's current setting moves to the
+destination's in the same transaction. **Otherwise settled can never hold**: the issued version
+freezes the current reading, which does not match the destination's, and every resend issues
+another version (spec §6.4).
+
+**What is restored includes the interpretation.** A version is "those bytes, read this way", so the
+version issued **copies the destination's interpretation** — `format` already works that way
+(ADR-046 §6), and ii-b's primary key joins it. The resource's current setting moves to the
+destination's in the same transaction. **Otherwise settled can never hold**: the issued version
+freezes the current reading, which does not match the destination's, and every resend issues another
+version (spec §6.4).
+
+**Matching content is not sufficient on its own.** Content repeats (ADR-046 §3), so live can hold
+the destination's bytes while standing on **another version's object** — and if that version is
+being purged, the object is about to be destroyed. Settled there would leave the resource pointing
+at content that is going away, with the revert that would have moved it off told there was nothing
+to do. So settled is "the content matches **and** the object live stands on does not belong to a
+version being purged".
+
+**No idempotency key, no operation ledger.** Those answer "have I run this operation", where the
+question to answer is "is what was asked for what is being served" — and the second is readable
+straight off the data. Repeated content is normal (ADR-046 §3), so a resend naming a different
+version holding the same bytes also answers "already there", which is right: what was asked for is
+what is out.
+
+**A resend does not report the version that was issued.** It issued none, and the number the first
+attempt issued need not still be the newest. A caller that wants version numbers reads the history.
+
+| Field       | Type             | First success   | Resend (already there) | Emptying revert |
+| ----------- | ---------------- | --------------- | ---------------------- | --------------- |
+| `restored`  | `number \| null` | the destination | the destination        | `null`          |
+| `published` | `number \| null` | the new version | `null`                 | `null`          |
+
+**`published` is "the version this call issued", not "the version holding the destination's
+content".** That is why a resend does not answer with the first attempt's number: a caller would
+read it as the newest, and another publication in between makes it not.
 
 A version number cannot serve as the generation: **content can be live with no version holding
 it** — an upload no run has captured — so `resource.content_revision` is re-minted by every
@@ -287,6 +347,43 @@ the contents and then restores a different version, or none, and reports success
 > only because a revert **renumbered** versions. Once versions move forward, "issue that
 > content again" is unambiguous and there is nothing to refuse. **Any surviving version can be
 > named.**
+
+**"Restore target" is three different questions and must not be folded into one word.** A retained
+`superseded` row belongs to the first and the third, not the second:
+
+| Question                                                    | Predicate                        | A retained row |
+| ----------------------------------------------------------- | -------------------------------- | -------------- |
+| Can an operator name it in `restoreTo`?                     | `state NOT IN (purged, purging)` | Yes            |
+| Is it an automatic purge fallback, or where layer 2 stands? | `state = 'active'`               | No             |
+| Does it survive (retention, purge, history, diff)?          | `state NOT IN (purged, purging)` | Yes            |
+
+**Folded together, a resource whose highest `active` version is purged with a retained row above it
+admits two readings** — emptying the resource, and serving the set-aside content again. The answer
+is the first: nothing returns automatically. An operator who wants that content out names it.
+
+**The response keeps answering "the destination that was named".** A revert already returns the
+destination's version number, and that meaning does not change. What changes is that a **published**
+version now exists alongside the destination, so its number is added as a separate field. Making the
+same response shape point at a different number is something an older caller cannot notice.
+
+**Existing `superseded` rows stay as they are, keeping the meaning the old scheme gave them.**
+Returning them to `active` would **move live** on any resource whose set-aside content is the
+highest version — not migrating is not moving what is served.
+
+**Keeping them is not treating them as versions of the new scheme.** A retained row is **never an
+automatic target**: the purge fallback and layer 2's stand both read `active`, so what the old
+scheme set aside does not come back on its own. That does not conflict with new reverts never
+producing `superseded` — with no setting-aside operation left, `active` and "can be an automatic
+target" coincide.
+
+**Everything a surviving version is entitled to, they keep.** They are downloadable, they appear in
+the history, they are endpoints of a diff, they **can be purged, and an operator can name them in
+`restoreTo`**. The questions are the three in the table above, and they do not fold into one.
+
+**Confusing them breaks quietly.** Writing the survival side as `active` expires a retained row's
+snapshot — its diffs go — and refuses to purge it, making the version most likely to need
+destroying the one that cannot be. Writing the restore side as "not a tombstone" lets set-aside
+content return to being served on any purge.
 
 **The content is not lost.** A version stepped down from live keeps its file and stays
 downloadable (only `purged` is refused). Someone who reverted by mistake just names the right

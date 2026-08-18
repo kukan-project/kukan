@@ -35,7 +35,12 @@ not taken (history)" (§9.7 / §11-7) and blocks headed "evidence (measured)" ar
 | Diffs are produced by **matching the content at both ends on the primary key**. `table_changes` is not used                                     | §7      |
 | The first stage applies **only when `lake_key_columns` matches at both ends**. Otherwise it degrades to keyless                                 | §7      |
 | A version row's `ducklake_snapshot_id` is **written once**. Moving content is done by issuing a version                                         | §7.2    |
-| **`superseded` is abolished.** live is "the highest version that has not been purged"                                                           | §7.2    |
+| **`superseded` is abolished.** Layer 1's automatic fallback after a purge is **the highest `active` version**                                   | §7.2    |
+| Existing `superseded` rows are **left alone**: never an automatic target, but nameable and surviving                                            | §7.2    |
+| A resend decides "already at the destination" **by content**, not by version number                                                             | §7.2    |
+| The revert response keeps `restored` (the destination named); the published version number is added separately                                  | §7.2    |
+| Content is moved from a **source reading that version's snapshot**; the method has three branches                                               | §7.2    |
+| The settled layer (primary-key setting) lives in **`resource.column_settings`** (jsonb). No dedicated table                                     | §6.2    |
 | Run `merge_adjacent_files` at the end of an ingest. The threshold is the live file count, default **50**                                        | §11-2.1 |
 | `rewrite_data_files` is not used                                                                                                                | §11-2.3 |
 | `CHECKPOINT` must not be run against the lake catalog                                                                                           | §11-2.2 |
@@ -306,7 +311,7 @@ and there is no path for a human to settle or override it:
 | Layer                             | Stored in                                                                                          | Written by                  | Overwrite rule                                   |
 | --------------------------------- | -------------------------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------ |
 | **Inferred** (system)             | `resource_pipeline.metadata -> 'schema'` (latest) / `resource_version.schema` (frozen per version) | worker (Extract, Version)   | Recomputed and overwritten on every rerun        |
-| **Settled** (human) ★ new in ii-b | `resource_column` (settled metadata per column)                                                    | administrators (via the UI) | A human decision. The pipeline does not touch it |
+| **Settled** (human) ★ new in ii-b | `resource.column_settings` (what a human settled about the columns, §6.2)                          | administrators (via the UI) | A human decision. The pipeline does not touch it |
 
 **A primary key is not a product of inference but schema information settled by a human**, and the
 settled type an administrator chooses in ii-c has the same nature. Putting both in the same settled
@@ -322,11 +327,11 @@ created" (see the comment on `resource_version.format`, ADR-046 §6 — a resour
 editable, so interpreting settled bytes with the current label means **reading them with a rule
 that was never applied**).
 
-|                        | Where                                                                            | What                                                         |
-| ---------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| The setting (current)  | On the resource (below)                                                          | The primary key and settled types to apply to later versions |
-| The rule that was used | One extra column on `resource_version` (e.g. `lake_key_columns`, null = keyless) | The key columns **frozen when the version was created**      |
-| The interpretation     | `resource_version.schema` (existing)                                             | Frozen per version                                           |
+|                        | Where                                                       | What                                                         |
+| ---------------------- | ----------------------------------------------------------- | ------------------------------------------------------------ |
+| The setting (current)  | `resource.column_settings` (jsonb, §6.2)                    | The primary key and settled types to apply to later versions |
+| The rule that was used | `resource_version.lake_key_columns` (jsonb, null = keyless) | The key columns **frozen when the version was created**      |
+| The interpretation     | `resource_version.schema` (existing)                        | Frozen per version                                           |
 
 **There are three reasons the version side is needed.** (a) A diff can only produce changed rows
 when both ends were ingested with the same key, so if the key specification changes in between the
@@ -335,13 +340,14 @@ side can record how each version was ingested (one resource being keyless for v1
 v6 is perfectly ordinary). (c) The history of key-specification changes itself.
 
 **Settled types do not need to be added to the version side.** Once a settled type becomes the
-third input to the gate (see below), changing it stands up a new version and that version's
+an input to version identity (§6.5, the fourth after ii-b's key), changing it stands up a new
+version and that version's
 `resource_version.schema` is frozen as the interpretation result including the settled type. Only
 the primary key needs its own record, because `schema` carries no declaration of a primary key
 (`ResourceColumn.unique` is a computed value for "can this be offered as a candidate", not whether
 a human specified it).
 
-### 6.2 Where the setting lives (decided in ii-b)
+### 6.2 Where the setting lives
 
 Per column, it holds only the information a human has settled (inferred values are not duplicated —
 inference is read from the inferred layer above):
@@ -352,27 +358,60 @@ inference is read from the inferred layer above):
 - Future: a home for column metadata given by humans — descriptions, aliases, sensitivity flags and
   so on
 
-**The name is not decided.** `resource_column` is the natural choice, but `ResourceColumn` in
-`packages/shared` is already the type of an **inferred** column (an element of the jsonb in
-`resource_version.schema`), and side by side the type reads as a row of that table. The name would
-merge exactly the inferred and settled layers that §6.1 is trying to separate.
-`resource_column_setting` and others are candidates to decide when work starts.
+**It goes in `resource.column_settings` (jsonb). No dedicated table.** By the "settle operations are
+batched into one version" constraint below, writes are batched from the start, and reading the
+primary key means reading the whole set of columns at ingest time. Nothing is read or written
+independently per column, so there is no one in ii-b to pay for what a table buys (per-column unique
+constraints, cross-cutting queries). Move it when settled types, descriptions and sensitivity flags
+have grown in ii-c and columns actually need to be queried across resources — that migration will
+rest on column metadata having grown, rather than on the expectation that it will.
+
+**The name `resource_column` is not used.** `ResourceColumn` in `packages/shared` is already the
+type of an **inferred** column (an element of the jsonb in `resource_version.schema`), and side by
+side the type reads as a row of that table. The name would merge exactly the inferred and settled
+layers that §6.1 is trying to separate.
 
 Candidates and where the thinking stands:
 
-| Option                                     | Assessment                                                                                                                                                                                        |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **A dedicated table**                      | The per-column unique constraint can be enforced in the DB and cross-cutting queries are natural. The right answer if column metadata will grow                                                   |
-| **A dedicated jsonb column on `resource`** | Enough if it is 1:1, read whole and written whole. Only humans write it so nothing mixes in (there is precedent in `pending_metadata` etc.)                                                       |
-| ~~`resource_pipeline.metadata`~~           | **There is no row until the pipeline has run**, so it cannot be set. Putting human decisions in an area the worker merges into with `\|\|` risks destroying them when the products are recomputed |
-| ~~`resource.extras`~~                      | Mixes with the cron health-check operational values and cannot have per-column granularity                                                                                                        |
+| Option                                               | Assessment                                                                                                                                                                                        |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A dedicated jsonb column on `resource`** (adopted) | Enough if it is 1:1, read whole and written whole. Only humans write it so nothing mixes in (there is precedent in `pending_metadata` etc.)                                                       |
+| A dedicated table                                    | The per-column unique constraint can be enforced in the DB and cross-cutting queries are natural. **A bet on the column metadata of ii-c and beyond**; nothing in ii-b's requirements pays for it |
+| ~~`resource_pipeline.metadata`~~                     | **There is no row until the pipeline has run**, so it cannot be set. Putting human decisions in an area the worker merges into with `\|\|` risks destroying them when the products are recomputed |
+| ~~`resource.extras`~~                                | Mixes with the cron health-check operational values and cannot have per-column granularity                                                                                                        |
 
-**The deciding factor is "will it be read and written independently per column".** And the
-constraint below — "settle operations are batched into one version" — removes one of the arguments
-for the table side: writes are batched from the start, and
-reading the primary key means reading the whole set of columns at ingest time anyway. For nothing
-more than what ii-b needs a jsonb column suffices, and a table is a bet on the column metadata of
-ii-c and beyond.
+**The deciding factor is "will it be read and written independently per column".**
+
+#### The shape
+
+```
+resource.column_settings   jsonb NOT NULL DEFAULT '{}'::jsonb
+  { "primaryKey": ["order_no", "line_no"] }        <- the only key ii-b reads
+  { "primaryKey": [...], "types": { ... } }         <- what ii-c adds to the same object
+
+resource_version.lake_key_columns   jsonb NULL     <- frozen when the version is created; null = keyless
+  ["order_no", "line_no"]
+```
+
+**An object, not an array.** ii-c's settled types sit beside `primaryKey`, so it grows without a
+second column. A top-level array (a list of per-column settings) would build nesting ii-b does not
+need in order to reach the same place.
+
+**The empty array is never written.** "No key set" and "an empty key" mean the same thing, so there
+is one way to say it: `[]` is normalized to the key's absence on write, and readers only ask whether
+`primaryKey` is there. Two spellings would add a keyless branch to every reader.
+
+**Validation happens when the key is set** (the top row of §6.4's table):
+
+| Rule                                        | When broken                                                              |
+| ------------------------------------------- | ------------------------------------------------------------------------ |
+| Names exist in the current version's schema | Error. A name that does not simply becomes `key-missing` at ingest time  |
+| No duplicates                               | Error. The `ON` predicate would compare one column twice, saying nothing |
+| No empty strings                            | Error                                                                    |
+| Order is kept as given                      | — (composite keys display and freeze in a stable order)                  |
+
+**Only humans write `column_settings`.** The pipeline does not (§6.1), so it never contends with the
+worker's `||` merges — the same reason `resource_pipeline.metadata` was ruled out.
 
 ### 6.3 Impact on the display paths once settled types are introduced (an ii-c question)
 
@@ -417,9 +456,31 @@ in ii-a/ii-b, which have no settled types).
 the resource side exactly as it was at the moment the version row was created, and Lake **reads it
 from the version row**. It does not look at the current value on the resource side.
 
-**There are two ways a version is born, and this one rule covers both**: when content arrives (the
-key is the setting at that moment) and when the key specification changes (the key is the new
-setting).
+**There are three ways a version is born.** That one rule covers the first two: content arriving
+(the key is the setting at that moment) and the key specification changing (the key is the new
+setting). **The third is a revert issuing one, and there the rule points the other way.**
+
+#### The version a revert issues copies the destination's key
+
+**Not the resource's current setting.** A revert "issues that version's content again" (§7.2), and a
+version is "those bytes, read this way". If the destination was read under an older key A, so is the
+version issued for it — freezing the current setting B produces a version whose **bytes came back
+and whose reading did not**.
+
+**`resource.column_settings.primaryKey` goes back to the destination's value in the same transaction
+as the pointer move.** This is what `format` already does (ADR-046 §6 — left behind, the resource
+describes recovered content by a rule never applied to it); without it the resource's current
+setting and the live version's interpretation disagree, and the next fetch records that disagreement
+as a new version.
+
+**Without it, versions grow without bound.** Settled compares the key too (§7.2 decision 5), so a
+version that froze B never matches destination A and **every resend issues another version**. Half
+of the change is no better than none, so these two land together:
+
+| What lands                                      | What happens if only that half does                                                |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------- |
+| The key joins settled's comparison              | Every resend issues another version (the issued one freezes the current setting)   |
+| The issued version copies the destination's key | A destination differing only in its key cannot be restored (old settled passes it) |
 
 **The current value must not be read at Lake time.** Version and Lake are asynchronous, and a
 failed ingest is retried later by the sweep (§14.1). A key change creates a version, so **if the key
@@ -502,15 +563,20 @@ is more honest.
   (deterministically compute each column's uniqueness and null rate → present candidates, without
   asserting). A human always makes the final call.
 
-### 6.5 A settled type becomes the third input to the version gate (ii-c, read before starting)
+### 6.5 A settled type becomes the fourth input to the version gate (ii-c, read before starting)
 
-A version is "**these bytes, read this way**" (ADR-046 §3 / §6). What `decideVersionCreate`
-currently looks at is **two things, the hash and the format**; the settled type is not included.
+A version is "**these bytes, read this way**" (ADR-046 §3 / §6). The inputs to version identity grow
+in steps — today the hash and the format, **the primary key columns third in ii-b** (§6.4), and the
+settled type **fourth**.
 
 **Adding settled types as-is would break the record.** Changing a settled type moves neither the
 hash nor the format, so no version stands up, only `resource_version.schema` is overwritten, and the
 version can no longer answer "what was this read as". A settled type is a human-decided way of
-reading, with the same nature as the format, so it needs to become **the third input to the gate**.
+reading, with the same nature as the format, so it needs to become **an input to the gate**.
+
+**There is one place to add it**: `sameVersionIdentity` (`@kukan/shared`). The version gate and a
+revert's settled test go through the same function (§7.2 decision 5), so neither can be left
+comparing the old set.
 
 #### Settle operations must be batched into one version
 
@@ -718,17 +784,33 @@ the diff next to the version is the most natural path, and it reuses the Phase i
 **A version row's `ducklake_snapshot_id` is written once.** It points at the snapshot that holds
 that version's content, and no operation rewrites it afterwards.
 
-There are four decisions. **The reasoning has been replaced since the original** (below).
+There are six decisions. **The reasoning has been replaced since the original** (below).
 
 1. **A version row's `ducklake_snapshot_id` is written once.** No operation rewrites it
 2. **A rollback does not "go back"; it "publishes that content again".** It creates a new version
    holding the target version's content
-3. **Operations that move content go through the ingest path.** They do not move it with
-   `CREATE OR REPLACE`, and they do not write the destination back onto a version row. The same
-   applies to the step-down of a purge and to `standOnBase` (neither is a publication, so neither
-   creates a version)
-4. **`superseded` is abolished.** live is "the highest version that has not been purged". The rule
-   where `restoreTo` refuses a `superseded` version (no redo) falls away at the same time
+3. **Operations that move content go through the ingest path.** They do not write the destination
+   back onto a version row. The same applies to the step-down of a purge and to `standOnBase`
+   (neither is a publication, so neither creates a version). The method has the three branches below
+4. **`superseded` is abolished**, and the rule where `restoreTo` refuses a `superseded` version (no
+   redo) falls away with it. **What goes is the "step off everything above the destination"
+   computation, not the definition of live** — live is still **the version owning the object the
+   live pointer names**, which during a purge can be a `purging` one (`isLive`, §9.6). What the
+   change moves is **layer 1's automatic fallback after a purge**, and that is **the highest
+   `active` version** (decision 6). For new history it coincides with "the highest not purged"
+5. **A resend asks "already at the destination" of the content** (ADR-044 §4). Since a revert
+   issues a version, live never stands on the version that was named, so asking by number makes
+   every resend a 409. **What is compared is every input the version gate takes** — today hash and
+   format, in ii-b the key columns as well. **Not a fixed list of columns but the gate's own
+   function** (`@kukan/shared`): written separately, the day an input is added to the gate leaves
+   settled comparing the old set, and **a version differing only in its interpretation can no
+   longer be restored**. No idempotency key, no operation ledger. Matching content is also not
+   enough on its own — live standing on the object of a version being purged is not settled, since
+   the bytes it serves are about to be destroyed
+6. **Existing `superseded` rows are left alone and are never an automatic target.** Layer 1's
+   fallback and layer 2's stand both read `active`, while an operator can still name one in
+   `restoreTo`, and retention, purge, history and diffs ask "not a tombstone" — **three questions,
+   and they do not fold into one** (the table in ADR-044 §4)
 
 Those are the decisions. What follows is the reasoning, and you can implement without reading it.
 
@@ -790,8 +872,7 @@ object this version owns, copied if another version already owns it" (ADR-046 §
 already used when an interpretation change did not move the content.
 
 **The rule is not limited to rollbacks.** Two other operations move a table's current content, and
-both are treated the same way — **do not move it with `CREATE OR REPLACE`, and do not write the
-destination back onto a version row.**
+both are treated the same way — **do not write the destination back onto a version row.**
 
 - **Purge** (§9.1 step 4): remove the version layer 2 stands on and step down to layer 2's rollback
   target. Re-load the content of the step-down target through the ingest path. It is not a version
@@ -799,6 +880,39 @@ destination back onto a version row.**
   **§11-3 already covers this case with "always keep the newest snapshot"**
 - **`standOnBase`** (self-repair before an ingest): likewise a re-load; it does not touch the base
   version's record
+
+#### A re-load has three branches, and one of them uses `CREATE OR REPLACE`
+
+**The source is always the table itself read at that version's snapshot** (`t AT (VERSION => n)`).
+Rebuilding the Parquet out of layer 1 would be a re-interpretation, and not a price a purge's
+step-down should pay. Which method applies is decided by **the two questions the ingest already
+asks** (did the columns move, do both ends share a key):
+
+| Base and destination                                | Method                                                       | Written   |
+| --------------------------------------------------- | ------------------------------------------------------------ | --------- |
+| Same schema, **the same non-null key at both ends** | Two predicated `MERGE` statements in one transaction         | A delta   |
+| Same schema, different keys or either keyless       | `DELETE` + `INSERT ... AT (VERSION => n)` in one transaction | Every row |
+| Different column sets                               | `CREATE OR REPLACE TABLE ... AT (VERSION => n)`              | Every row |
+
+**Different keys do not get a `MERGE` because the validation only covers one side.** Key
+uniqueness is checked against **the incoming version** and nothing else (§6.6), so a base loaded
+under a different key may hold duplicates under this one. The `MERGE` would then touch one target
+row twice — silently dropping one today, a cardinality error after the DuckDB update (§14.0).
+**This is the same rule §7 applies to diffs — use the key only when both ends agree on it — so the
+move and the diff share one question.**
+
+**The third is unavoidable.** With different column sets there is nothing to match rows on and
+nothing to insert into, and the `INSERT` fails rather than quietly doing something else.
+**This section originally forbade `CREATE OR REPLACE` for every content move, which that branch
+cannot satisfy.** The prohibition is a rule about the first two.
+
+**What it costs is the change feed, not the history.** Across a whole-table replace a change reads
+as every row inserted (§14.0), but time travel to either side of it still answers — and the diff
+API compares endpoints, so it is unaffected.
+
+All three branches sit as assertions in `merge.ducklake.test.ts` (the content comes back, it folds
+into one snapshot, and the snapshot stepped off stays readable). They are claims about someone
+else's implementation, so left in prose they would go quietly stale on a DuckLake release.
 
 **`superseded` becomes unnecessary.** Not as a reduction in states, but because **the computation
 that state was carrying disappears**. The current rollback (v1..v5 `active`, live = v5, going back
@@ -821,8 +935,15 @@ newest `active` version at or below the destination, so everything above it must
 set". If versions move forward, that search does not exist at all. The operator names v2 and its
 content is simply issued as a new version, so **there is no set to narrow.**
 
-**The rule for live therefore becomes a single sentence — the highest version that has not been
-purged.** `stepOffAbove` disappears and `newestActiveVersion` merely excludes `purged` / `purging`.
+**What becomes a single sentence is layer 1's automatic fallback after a purge — the highest
+`active` version.** `stepOffAbove` disappears. **Since new history never produces `superseded`, that
+coincides with "the highest version that has not been purged"** — coincides, not the same predicate.
+Retained old rows part the two, so **automatic targets are read as `active`** (decision 6, the table
+in ADR-044 §4).
+
+**Live itself is not that sentence.** Live is the version owning the object the live pointer names,
+and mid-purge that version is `purging` while no `active` version is live at all (the shape `isLive`
+pins, §9.6). **Under one name, the confirmation screen misstates what happens.**
 
 **The price is that the restore target of a purge changes.** After rolling v5 back to v2 and
 issuing v6, purging v6 returns live to **v5, not v2** (today v3..v5 are `superseded`, so it jumps
@@ -936,7 +1057,7 @@ surviving version".
 
 |                                        | Definition of the rollback target                                                                  |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| **Layer 1 (step 5, the live pointer)** | The highest version that has not been purged                                                       |
+| **Layer 1 (step 5, the live pointer)** | The highest **`active`** version                                                                   |
 | **Layer 2 (step 4)**                   | Among **`active`** versions, the highest whose **`ducklake_snapshot_id` is non-null and resolves** |
 
 **Confusing them permanently loses layer 2's current contents on an ordinary purge.** With v1
@@ -958,9 +1079,12 @@ rows carrying unresolvable ids, which the sweep (conditioned on `IS NULL`) passe
 repair it. §11-5's repair (nulling unresolvable ids) is not implemented, so leaving the version in
 `purging` for the operator to see is the correct answer (open issue 15).
 
-**A `superseded` version is not a rollback target.** A reclaim's retained set keeps their snapshots,
-so **their diffs still read**, but putting their rows back as the contents is restoring rows the
-resource stepped off — the very thing `standOnBase` and the revert's reconcile undo.
+**A retained `superseded` version is neither automatic rollback target.** New history never produces
+one, so **for new data "the highest `active`" and "the highest not purged" coincide** — they part
+only on old data, where the former wins. A reclaim's retained set keeps their snapshots, so **their
+diffs still read**. **An operator can still name one explicitly** (`restoreTo`): not restoring
+automatically and refusing to be named are different things (the three questions are in ADR-044
+§4).
 
 **With no target left, only a purge drops the table.** A purge owes unfetchability, so it drops, and
 the empty table states the fact that layer 2 has no current contents. **A revert in the same state
@@ -985,8 +1109,9 @@ reclaim re-derives the retained set from **the version rows that are still alive
 is naturally read as unreferenced (the same goes for `purged`). The set is defined as "**versions
 that have not been purged**", not "current versions" — a diff resolves the versions at both ends
 into snapshots to read them, so dropping non-current versions would break comparisons
-(`lake-reclaim.ts` implements this set and currently takes `active` and `superseded`; once §7.2
-lands and `superseded` disappears it becomes just `active`).
+(`lake-reclaim.ts` implements this set as **anything that is not a tombstone** — everything but
+`purged` / `purging` — which is where a retained `superseded` row keeps its snapshot; §7.2
+decision 6).
 
 **expire does not necessarily reach the layer-2 bytes. There are two reasons, and both are design
 properties.**
@@ -1129,6 +1254,37 @@ are "not current", but they are displayed differently. Once §7.2 lands, a rollb
 of a new version, so this distinction is held not as a state but as **that version's provenance**
 ("v8 is a re-publication of v5's content").
 
+**Provenance is recorded on the row; it cannot be derived.** Versions with the same bytes and the
+same interpretation can repeat (ADR-046 §3), so hash, format and key do not settle _which_ version
+was re-published — an implementation picking the oldest match and one picking the newest are equally
+correct and display different numbers. So the version row carries two columns:
+
+| Column          | Value                                                       |
+| --------------- | ----------------------------------------------------------- |
+| `origin`        | **`revert`** joins `upload` / `fetch`                       |
+| `restored_from` | The version number a revert named; null on every other path |
+
+**`restored_from` is a record for display, not a mechanism.** Nothing reads it to decide anything —
+not the purge, not the diff, not the revert itself. It is recorded because **leaving it out cannot
+be undone**, and with no read path for the audit log (open issue 6) the history is the only place
+that answers it.
+
+**It is not shown when either end is a tombstone.** The rule above hides the hash so content
+identity cannot be checked, and "v8 re-published v5" **says the two had identical content** — the
+same check by another route. **And the route runs both ways**:
+
+| The purged side         | What the number reveals                                   |
+| ----------------------- | --------------------------------------------------------- |
+| The re-publication (v8) | The erased v8 held the same content as v5                 |
+| The source (v5)         | The erased v5 held the same content as v8, which is alive |
+
+**The second leaks more** — v8 is downloadable, so the erased content is simply obtainable. So
+`VersionView.restoredFrom` is **null whenever either row is `purged`**. Unlike `hash` / `size` /
+`schema`, which are settled by their own row's state, **this one is settled by two rows**.
+
+**The column on the row stays**: this is exposure, not erasure (the same shape as `purgeReason`,
+open issue 6).
+
 ### 9.5 Semantics
 
 "Rows written by the purged version remain in layer 2 if they are still current in a later version"
@@ -1199,7 +1355,8 @@ they do not promise it** — and the wording says so (`purgeCaseMayMove`).
 out — it is a question about states — but the rule it would be writing is the server's rule for
 **which versions a restore may stand on** (`newestActiveVersion`), so a change there leaves the screen
 quietly stale while the client's own tests keep passing. §7.2 contemplates exactly such a change
-(`superseded` becoming restorable), so **the rule stays in one place**. It also stops depending on the
+(a retained `superseded` row must not be counted), so **the rule stays in one place** (§7.2
+decision 6). It also stops depending on the
 list being unpaginated (open issue 13's original note).
 
 **The choice of wording is pinned by tests.** `resource-version-history.test.tsx` has one test per
@@ -1964,7 +2121,7 @@ bites as versions × table size.
   referenced by **version rows that have not been purged** − the newest snapshot. **The criterion is
   not "is it current" but "has it been purged"** — a diff resolves the versions at both ends into
   snapshots to read them, so dropping a non-current version breaks comparisons against it
-  (`lake-reclaim.ts` currently takes `active` and `superseded`; once §7.2 lands it becomes just
+  (`lake-reclaim.ts` takes everything that is not `purged` / `purging`; once §7.2 lands that is just
   `active`).
   The newest snapshot is always kept because, right after a purge steps a table down, the newest
   snapshot referenced by no version row is the current content.
@@ -2539,22 +2696,29 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
     layer 2
 
 11. **Revising ADR-044** (§7.2). Changing rollback from "go back" to "publish that content again"
-    moves the revert contract (`restoreTo` + `ifLiveRevision`) and the position of `superseded`. Three
-    things to decide:
+    moves the revert contract (`restoreTo` + `ifLiveRevision`) and the position of `superseded`. The
+    ADR has been revised, and the three remaining points are settled:
 
-    - **Abolish `superseded`** (§7.2). Remove `stepOffAbove` and consolidate live as "the highest
-      version that has not been purged". **A migration is needed** — how to reinterpret existing
-      `superseded` rows. Simply returning them to `active` moves live if previously rolled-back
-      content is now the highest. **The safe default is the form that does not move it** (leave
-      existing rows as they are; the new scheme applies from new rollbacks), but that leaves two
-      states side by side, so decide it against real data. The rule where `restoreTo` refuses a
-      `superseded` version (no redo) falls away at the same time
-    - **Handling existing data.** ADR-044 shipped in v0.11.x, so there may be versions whose snapshots
-      have already been rewritten. **Endpoint comparison reads those correctly too** (measured in
-      §7.2), so no migration is needed for diffs. All that remains is "a rewritten version does not
-      satisfy the new write-once invariant", and **it can simply be left alone** — once rewrites stop
-      happening, that version's ID stops moving too
-    - **`restoreTo`'s response.** It will return a new version number, so check API compatibility
+    - **Abolish `superseded`** (§7.2). Remove `stepOffAbove` and consolidate **layer 1's automatic
+      fallback after a purge** as "the highest `active` version" — not the definition of live,
+      which is the owner of the object the pointer names and mid-purge can be a `purging` version
+      (§9.6). The rule where `restoreTo` refuses a `superseded` version (no redo) falls
+      away at the same time. **Existing `superseded` rows are left alone** — simply returning them
+      to `active` moves live on any resource whose previously rolled-back content is the highest
+      version. **Not migrating is not moving what is served**, which decides it; the price of two
+      states side by side is smaller. **A retained row is never an automatic target** — purging
+      everything above it does not make it live, and the resource empties. An operator who wants
+      that content out names it in `restoreTo` (the three questions in ADR-044 §4)
+    - **Rewritten snapshots are left alone too.** ADR-044 shipped in v0.11.x, so there may be versions
+      whose snapshots have already been rewritten. **Endpoint comparison reads those correctly**
+      (measured in §7.2), so no migration is needed for diffs. All that remains is "a rewritten
+      version does not satisfy the new write-once invariant", and once rewrites stop happening that
+      version's ID stops moving too
+    - **`restoreTo`'s response keeps `restored`.** What it returns today is "the destination version
+      that was named", and that meaning does not change. **What changes is that a published version
+      exists alongside the destination**, so its number is added as a separate field. Moving
+      `restored` to mean "the published version" would make the same response shape point at a
+      different number, which an older caller cannot notice
 
 12. **Explicit re-ingest of rejected versions** (§6.6). A version carrying a `lake_ingest_reason` stays
     out of the sweep's scope and does not return automatically even after the key setting is fixed,

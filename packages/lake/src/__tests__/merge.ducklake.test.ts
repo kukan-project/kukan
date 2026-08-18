@@ -151,6 +151,108 @@ describe('MERGE INTO on DuckLake', () => {
     ])
   })
 
+  it('stands a keyed table back on an older snapshot from a time-travelled source', async () => {
+    // The two operations that move contents without publishing — a purge coming
+    // off the version it retracted, and an ingest repairing the base it builds
+    // on — read the table's own earlier snapshot as their source rather than
+    // rebuilding that version's Parquet out of layer 1, which would be a
+    // re-interpretation (spec §7.2 decision 3).
+    //
+    // **This is one of three branches, and the only one that writes a delta.**
+    // The two below are what a keyless table and a schema change get, because
+    // neither can be expressed as a `MERGE`. Which branch a move takes is
+    // decided by the same two questions the ingest asks.
+    const v1 = await latestSnapshot()
+    await session.run('BEGIN TRANSACTION')
+    await session.run(UPSERT)
+    await session.run(DELETE_MISSING)
+    await session.run('COMMIT')
+    const v2 = await latestSnapshot()
+
+    const back = { ...shape(), source: `(SELECT * FROM lake.t AT (VERSION => ${v1}))` }
+    await session.run('BEGIN TRANSACTION')
+    await session.run(keyedUpsertSql(back))
+    await session.run(keyedDeleteSql(back))
+    await session.run('COMMIT')
+
+    expect(await contents()).toEqual([
+      { id: 1, name: 'a' },
+      { id: 2, name: 'b' },
+    ])
+    // One snapshot, like any other load: the move is a version's worth of
+    // writes, not a rewrite of the table.
+    expect(await latestSnapshot()).toBe(v2 + 1)
+    // And the snapshot it stepped off stays readable, which is what keeps the
+    // diffs of the versions it passes over available (spec §9.1).
+    expect(await session.rows(`SELECT * FROM lake.t AT (VERSION => ${v2}) ORDER BY id`)).toEqual([
+      { id: 1, name: 'A' },
+      { id: 3, name: 'c' },
+    ])
+  })
+
+  it('stands a keyless table back with DELETE and INSERT in one transaction', async () => {
+    // A version with no declared key — every version before ii-b, and every
+    // resource that never gets one — has nothing to match rows on, so the move
+    // takes the shape ii-a's ingest already uses. Still one snapshot, still no
+    // `CREATE OR REPLACE`: what it gives up is only the delta, since every row
+    // is rewritten.
+    const v1 = await latestSnapshot()
+    await session.run('BEGIN TRANSACTION')
+    await session.run(UPSERT)
+    await session.run(DELETE_MISSING)
+    await session.run('COMMIT')
+    const v2 = await latestSnapshot()
+
+    await session.run('BEGIN TRANSACTION')
+    await session.run(`DELETE FROM lake.t`)
+    await session.run(`INSERT INTO lake.t SELECT * FROM lake.t AT (VERSION => ${v1})`)
+    await session.run('COMMIT')
+
+    expect(await contents()).toEqual([
+      { id: 1, name: 'a' },
+      { id: 2, name: 'b' },
+    ])
+    expect(await latestSnapshot()).toBe(v2 + 1)
+    // The `DELETE` does not take the snapshot it is reading from with it: the
+    // statement reads `v1` and writes the current contents, and time travel to
+    // either end still answers.
+    expect(await session.rows(`SELECT * FROM lake.t AT (VERSION => ${v2}) ORDER BY id`)).toEqual([
+      { id: 1, name: 'A' },
+      { id: 3, name: 'c' },
+    ])
+  })
+
+  it('needs a whole-table replace when the columns moved', async () => {
+    // The third branch, and the one the spec's "never `CREATE OR REPLACE`" was
+    // too strong for: across a column change there is nothing to match rows on
+    // *and* nothing to insert into, so neither of the two above can be
+    // composed. `INSERT` fails rather than silently doing something else, which
+    // is what makes the branch decidable from the column lists alone.
+    const v1 = await latestSnapshot()
+    await session.run(`ALTER TABLE lake.t ADD COLUMN note VARCHAR`)
+    await session.run(`UPDATE lake.t SET note = 'n' || id`)
+    const v2 = await latestSnapshot()
+
+    await expect(
+      session.run(`INSERT INTO lake.t SELECT * FROM lake.t AT (VERSION => ${v1})`)
+    ).rejects.toThrow()
+
+    await session.run(
+      `CREATE OR REPLACE TABLE lake.t AS SELECT * FROM lake.t AT (VERSION => ${v1})`
+    )
+    expect(await contents()).toEqual([
+      { id: 1, name: 'a' },
+      { id: 2, name: 'b' },
+    ])
+    // Time travel across the replace still answers, which is what keeps the
+    // diffs either side of it available — the change feed is what the replace
+    // costs (spec §14.0), not the history.
+    expect(await session.rows(`SELECT * FROM lake.t AT (VERSION => ${v2}) ORDER BY id`)).toEqual([
+      { id: 1, name: 'a', note: 'n1' },
+      { id: 2, name: 'b', note: 'n2' },
+    ])
+  })
+
   it('reports a keyed change as a preimage/postimage pair', async () => {
     // What the row-level diff needs and the keyless ii-a cannot give: a changed
     // row read as one change rather than as an add and a remove.
