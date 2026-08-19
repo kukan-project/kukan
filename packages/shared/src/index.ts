@@ -24,6 +24,9 @@ export * from './formats'
 // Pipeline types (shared between API and Worker)
 export * from './pipeline-types'
 
+// Version identity (ADR-046 §3): the one definition of "the same version's content"
+export * from './version-identity'
+
 // Licenses
 export * from './licenses'
 

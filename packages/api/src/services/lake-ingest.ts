@@ -121,13 +121,12 @@ export interface LakeStand {
  * surviving rows still carry their snapshot ids, and the sweep only looks for
  * versions without one.
  *
- * **`active` only, where the retained set of a reclaim is wider** — it keeps
- * `superseded` snapshots too, so their diffs survive (`lake-reclaim.ts`). Those
- * versions are readable, not standable: a revert stepped the resource off them,
- * and putting their rows back as the contents is what `standOnBase` and the
- * revert's reconcile exist to undo. With no active version left to stand on, an
- * empty table says what is true — layer 2 has no current contents — where
- * retracted rows would be the base ii-b's `MERGE` builds the next version on.
+ * **`active` only**, which since ADR-044's revert became a publish is every
+ * version but a tombstone: content a revert moved off keeps its state, and the
+ * version published above it is what layer 2 follows. With no active version
+ * left to stand on, an empty table says what is true — layer 2 has no current
+ * contents — where retracted rows would be the base ii-b's `MERGE` builds the
+ * next version on.
  *
  * @param opts.below - only versions under this one, for an ingest asking what it
  * builds on rather than where the table should stand.
@@ -266,12 +265,9 @@ async function standOnBase(
  * lesser harm — layer 2 is rebuildable from layer 1, a rewound table is not
  * detectable from it.
  *
- * Active, because a revert steps the versions above its destination off and the
- * destination is then exactly what the table has to hold (ADR-043 §5). Counting
- * a superseded one would refuse the version the sweep queued for that very
- * reason, every hour, forever. This has to agree with `pendingLakeIngestQuery`:
- * disagreeing means either work that is listed and always turned away, or work
- * that is done without ever being listed.
+ * Active, which is every version a purge has not taken. This has to agree with
+ * `pendingLakeIngestQuery`: disagreeing means either work that is listed and
+ * always turned away, or work that is done without ever being listed.
  */
 export async function ingestVersionIntoLake(
   tx: Transaction,

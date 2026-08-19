@@ -215,7 +215,8 @@ covers this (ADR-043 §1-2).
 
 **What becomes one sentence is layer 1's automatic fallback after a purge — the newest `active`
 version**, not the definition of live. New history never produces `superseded`, so it **coincides**
-with "the newest version not purged"; retained old rows part the two (the three questions below).
+with "the newest version not purged"; rows the old scheme left part the two until the conversion
+below has run.
 
 **Live itself is not that sentence.** Live is **the version owning the object the live pointer
 names**, which mid-purge can be a `purging` one — and then no `active` version is live at all (the
@@ -294,13 +295,6 @@ version). Writing settled against a fixed list of columns means that on that day
 differing only in its key can no longer be restored**: the content matches, settled says so, and
 the interpretation never comes back. Grow the gate, and settled grows with it.
 
-**What is restored includes the interpretation.** A version is "those bytes, read this way", so
-the version issued **copies the destination's interpretation** — `format` already works that way
-(ADR-046 §6), and ii-b's primary key joins it. The resource's current setting moves to the
-destination's in the same transaction. **Otherwise settled can never hold**: the issued version
-freezes the current reading, which does not match the destination's, and every resend issues
-another version (spec §6.4).
-
 **What is restored includes the interpretation.** A version is "those bytes, read this way", so the
 version issued **copies the destination's interpretation** — `format` already works that way
 (ADR-046 §6), and ii-b's primary key joins it. The resource's current setting moves to the
@@ -348,42 +342,106 @@ the contents and then restores a different version, or none, and reports success
 > content again" is unambiguous and there is nothing to refuse. **Any surviving version can be
 > named.**
 
-**"Restore target" is three different questions and must not be folded into one word.** A retained
-`superseded` row belongs to the first and the third, not the second:
+**Existing `superseded` rows are converted, not left alone.** Now that a revert issues a version,
+the rows the old scheme left behind are **moved to the shape a new-scheme revert would have
+produced** — the versions it set aside go back to `active`, and the live content is issued as a new
+version. One claim per resource.
 
-| Question                                                    | Predicate                        | A retained row |
-| ----------------------------------------------------------- | -------------------------------- | -------------- |
-| Can an operator name it in `restoreTo`?                     | `state NOT IN (purged, purging)` | Yes            |
-| Is it an automatic purge fallback, or where layer 2 stands? | `state = 'active'`               | No             |
-| Does it survive (retention, purge, history, diff)?          | `state NOT IN (purged, purging)` | Yes            |
+**The unit is the resource, not the version, and there are no exceptions.** Every resource holding
+even one `superseded` row is processed. Exclude one shape and its `superseded` rows stay forever,
+and the condition for collapsing to three states is never met. What happens is decided by one
+thing: **who owns the live object** (the flip does not change that answer, so it can be asked
+either side of the issue).
 
-**Folded together, a resource whose highest `active` version is purged with a retained row above it
-admits two readings** — emptying the resource, and serving the set-aside content again. The answer
-is the first: nothing returns automatically. An operator who wants that content out names it.
+| The live object              | What the conversion issues                   |
+| ---------------------------- | -------------------------------------------- |
+| Owned by the topmost version | Nothing                                      |
+| Owned by a lower version     | A **copy** of its content, as a new version  |
+| Owned by no version          | **That object, taken over by a new version** |
+| The pointer is empty         | Nothing (there is nothing to issue)          |
+
+**The third row was excluded at first.** The reason given was that there is no version to issue
+from; what an issue needs is not a source **version** but its **bytes**, and the live pointer names
+them.
+
+**Not copying when nobody owns it is what the rule already says** — "a version takes an object
+nobody owns, and copies one that is already owned" (ADR-043 §1-2). The pointer does not move
+either. That version's `restored_from` cannot be written — several versions can hold the same
+bytes, so the hash does not settle which one this content came from — so it is null, and the
+history shows it as a restore with no version number.
+
+**This shape cannot be excluded because it coexists with the old rows.** An unchanged re-fetch
+writes a fresh key every time and creates no version, so a resource holding `superseded` rows
+**reaches this shape by being left alone**.
+
+**That is what makes the conversion terminate.** A converted resource holds no `superseded` row and
+its topmost version owns live. A later unchanged re-fetch leaves live unowned again — a permanent
+normal state, not a defect — but every version is `active` by then, so the hash guess answers the
+topmost version, which is the version that content is. **Both defects that run through old rows
+need a `superseded` row above live**, so they become unreachable at the same moment.
+
+**Leaving them alone was the first answer, and its reason was wrong.** It said returning them to
+`active` moves live; live is **the owner of the object the pointer names**, not a version's rank, so
+changing the state does not move the pointer. What moves is the purge fallback — **the change this
+same section already accepted**.
+
+**And leaving them alone puts a permanent two-regime burden on every reader.** A predicate over
+version state then has to be right about the new world and the old one at once, and in
+implementation the count of fixes equalled the count of new holes:
+
+| Predicate tried                        | The hole it opened                                          |
+| -------------------------------------- | ----------------------------------------------------------- |
+| Widen to "not a tombstone"             | A retained row becomes the latest-version label, and live   |
+| Exclude `superseded`                   | It returns the moment a claim moves it to `purging`         |
+| A different set per caller             | The purge over-includes, the revert under-includes          |
+| The claim records liveness             | The record goes stale and deletes a freshly uploaded object |
+| Fence the record by pointer generation | `READ COMMITTED` puts the two reads in different snapshots  |
+| A compat branch for rows without one   | Reopens a mis-identification already closed                 |
+
+**And the readers keep coming** (ii-b's key, ii-c's settled types), so the shape does not converge.
+**It is a property of the data, not of the predicate.**
+
+**The conversion cannot be written in SQL.** Issuing content as a new version needs an object copy,
+so it is a backfill like ADR-043's v1 pass (claims each resource, idempotent, resumable).
+
+**The issue goes first and the flip second.** This first said the two go in one transaction, which
+was true of the order it assumed. **Reverse them and the broken window never opens** — once the
+content is issued, the topmost version owns live, and both the label and what is served point at
+it. `superseded` rows still present are merely counted as content being served, which is not wrong.
+"Label says the higher version, serving says the lower" is what the _flip-first_ order shows.
+
+**Whether to issue is a question the flip does not change, which is what lets them be split.** It
+asks whether the topmost version not purged owns the live object, and the flip moves neither
+version numbers nor tombstones. A conversion cut off partway resumes by asking again: with the
+content issued the answer is no, and only the flip is left.
+
+**And issuing closes both old-data defects for that resource on its own.** Both need the hash guess
+to be in play, and it is not once an issued version owns live. The flip is then only tidying the
+state away.
+
+**Copying an interpretation into the taking-over branch needs proof it was built from the bytes
+that are live now** (a matching `sourceHash`, the same condition as the v1 pass). A failed
+interpretation keeps the previous result, so an unchecked copy pins another content's columns onto
+this version. **With a zero-column schema the damage is permanent**: that version leaves the
+layer-2 sweep for good. Without the proof it goes in empty and an ordinary re-interpretation fills
+it.
+
+**Until the conversion has run, the readers keep the old predicates.** Code written for three states
+counts a retained row as content being served, so the order cannot be reversed.
+
+**Afterwards the questions collapse into one**: live is the pointer's owner, a purge falls back to
+the highest `active`, and there are three states. No exceptions left.
 
 **The response keeps answering "the destination that was named".** A revert already returns the
 destination's version number, and that meaning does not change. What changes is that a **published**
 version now exists alongside the destination, so its number is added as a separate field. Making the
 same response shape point at a different number is something an older caller cannot notice.
 
-**Existing `superseded` rows stay as they are, keeping the meaning the old scheme gave them.**
-Returning them to `active` would **move live** on any resource whose set-aside content is the
-highest version — not migrating is not moving what is served.
-
-**Keeping them is not treating them as versions of the new scheme.** A retained row is **never an
-automatic target**: the purge fallback and layer 2's stand both read `active`, so what the old
-scheme set aside does not come back on its own. That does not conflict with new reverts never
-producing `superseded` — with no setting-aside operation left, `active` and "can be an automatic
-target" coincide.
-
-**Everything a surviving version is entitled to, they keep.** They are downloadable, they appear in
-the history, they are endpoints of a diff, they **can be purged, and an operator can name them in
-`restoreTo`**. The questions are the three in the table above, and they do not fold into one.
-
-**Confusing them breaks quietly.** Writing the survival side as `active` expires a retained row's
-snapshot — its diffs go — and refuses to purge it, making the version most likely to need
-destroying the one that cannot be. Writing the restore side as "not a tombstone" lets set-aside
-content return to being served on any purge.
+**How they read until then, for the record.** While retained, a `superseded` row is **not an
+automatic target** (the purge fallback and layer 2's stand both read `active`) and **keeps every
+other right** — downloadable, listed in the history, an endpoint of a diff, purgeable, and nameable
+in `restoreTo`. Writing the survival side as `active` expires its snapshot — its diffs go — and
+refuses to purge it, making the version most likely to need destroying the one that cannot be.
 
 **The content is not lost.** A version stepped down from live keeps its file and stays
 downloadable (only `purged` is refused). Someone who reverted by mistake just names the right

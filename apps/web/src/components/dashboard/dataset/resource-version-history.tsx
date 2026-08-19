@@ -29,7 +29,12 @@ import { VersionDiffPanel } from './version-diff-panel'
 
 interface VersionView {
   version: number
-  origin: 'upload' | 'fetch'
+  origin: 'upload' | 'fetch' | 'revert'
+  /** The version this one re-published, for `revert` origins (ADR-044 §4).
+   *  From the server: repeated content makes it underivable here. */
+  restoredFrom: number | null
+  /** `superseded` only on rows written before a revert published forward
+   *  (ADR-044 §4); they are ordinary versions and render as such. */
   state: 'active' | 'purging' | 'purged' | 'superseded'
   /** Whether the resource is serving this version, and where serving would land
    *  if it were purged. Both from the server: see the dialog below. */
@@ -43,6 +48,22 @@ interface VersionView {
   created: string
   purgedAt: string | null
 }
+
+/**
+ * Flat keys, because `origin` is already the column heading.
+ *
+ * `revert` maps to the **number-less** message. The one carrying the version is
+ * rendered separately, because this entry is what a revert without a number
+ * falls back to — rows written before it was recorded, and, on current data,
+ * a version whose provenance the server withholds because one end is a
+ * tombstone (ADR-044 §4). Pointed at the parameterized message instead, that
+ * branch renders the translation key.
+ */
+const ORIGIN_LABEL = {
+  upload: 'originUpload',
+  fetch: 'originFetch',
+  revert: 'originRevertUnknown',
+} as const
 
 interface Props {
   resourceId: string
@@ -149,7 +170,9 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
           (v) =>
             v.version !== purgeTarget &&
             v.hash === targetHash &&
-            (v.state === 'active' || v.state === 'superseded')
+            // A version on its way out does not keep this content either.
+            v.state !== 'purged' &&
+            v.state !== 'purging'
         )
         .map((v) => v.version)
     : []
@@ -193,7 +216,9 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <Badge variant="outline">
-                        {v.origin === 'upload' ? t('originUpload') : t('originFetch')}
+                        {v.origin === 'revert' && v.restoredFrom !== null
+                          ? t('originRevert', { version: v.restoredFrom })
+                          : t(ORIGIN_LABEL[v.origin])}
                       </Badge>
                       {/* Why there is no preview, where the absence is noticed.
                           The empty schema behind it says only that the version
@@ -207,12 +232,6 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-1">
-                      {/* Superseded still has its content, so it keeps the
-                          diff, download and purge actions — the badge only says
-                          it is not what the resource serves. */}
-                      {v.state === 'superseded' && (
-                        <Badge variant="secondary">{t('superseded')}</Badge>
-                      )}
                       {purged ? (
                         <Badge variant="secondary">{t('purged')}</Badge>
                       ) : purging ? (

@@ -11,7 +11,7 @@
  * it inside one of them made the guarantee a property of that call site rather
  * than of deletion.
  */
-import { and, inArray, isNotNull } from 'drizzle-orm'
+import { and, isNotNull, notInArray } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resourceVersion } from '@kukan/db'
 import type { LakeConfig, LakeSession, ReclaimResult } from '@kukan/lake'
@@ -48,10 +48,15 @@ export async function reclaimInSession(db: Database, session: LakeSession): Prom
     // connection, and reaching back for another while holding several
     // deadlocks. Under the lock, which is what stops this from expiring a
     // snapshot an ingest has committed but not yet recorded on its version row.
-    // What a surviving version still names — which is more than the active
-    // ones. A snapshot outlives being the current contents: a diff resolves two
-    // versions to their snapshots and reads both, so expiring the one a revert
-    // stepped off would break comparing against it.
+    // What a surviving version still names, which is wider than the versions
+    // layer 2 can be stood on. A snapshot outlives being the current contents:
+    // a diff resolves two versions to their snapshots and reads both, so
+    // expiring the one a revert moved off would break comparing against it.
+    //
+    // Written as an exclusion rather than `active`, so a row still saying
+    // `superseded` — the scheme before a revert published forward (ADR-044 §4)
+    // — keeps its snapshot. Those versions are readable and diffable like any
+    // other; they are only not where layer 2 stands.
     //
     // `purging` is excluded with `purged`, and that exclusion is load-bearing:
     // a version purge calls this from inside its own run, before it can set the
@@ -63,7 +68,7 @@ export async function reclaimInSession(db: Database, session: LakeSession): Prom
       .from(resourceVersion)
       .where(
         and(
-          inArray(resourceVersion.state, ['active', 'superseded']),
+          notInArray(resourceVersion.state, ['purged', 'purging']),
           isNotNull(resourceVersion.ducklakeSnapshotId)
         )
       )

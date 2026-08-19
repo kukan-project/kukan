@@ -4,6 +4,7 @@
  * Purge *execution* (file deletion, state → purged) runs in the worker via executePurge.
  */
 
+import { randomUUID } from 'node:crypto'
 import { digestStream } from '@kukan/shared/hash-node'
 import { eq, and, desc, exists, inArray, sql } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
@@ -16,12 +17,14 @@ import {
 } from '@kukan/db'
 import {
   ConflictError,
+  getStorageKey,
+  sameVersionIdentity,
   LAKE_INGEST_JOB_TYPE,
   NotFoundError,
   MAX_PARQUET_SOURCE_SIZE,
   versionOrigin,
 } from '@kukan/shared'
-import type { NoTableReason } from '@kukan/shared'
+import type { NoTableReason, VersionIdentity, VersionOrigin } from '@kukan/shared'
 import type { LakeConfig } from '@kukan/lake'
 import { dropLakeTable, lakeTableExists, lakeTableName, withLakeSession } from '@kukan/lake'
 import type { Logger, ResourceSchema } from '@kukan/shared'
@@ -45,12 +48,19 @@ import {
   withResourceClaimsOrConflict,
   type ResourceClaim,
 } from './pipeline-claim'
-import { publishLiveContent, PARKED_UNTIL, ownedByVersion } from './storage-pointer'
+import { copyObject, publishLiveContent, PARKED_UNTIL, ownedByVersion } from './storage-pointer'
 import { PipelineService } from './pipeline-service'
 import { markContentUnindexed } from './content-index-record'
 
+/**
+ * `superseded` is legacy only: a revert publishes forward and never writes it
+ * (ADR-044 §4), but rows from before that change keep it and are left alone.
+ * Named here because the view carries whatever the row says — dropped from the
+ * union, `toView`'s cast would assert something false, and a reader switching
+ * exhaustively would miss the case the database can still hand it.
+ */
 export type VersionState = 'active' | 'purging' | 'purged' | 'superseded'
-export type VersionOrigin = 'upload' | 'fetch'
+export type { VersionOrigin }
 
 /** The row creating a version adds, minus everything the table fills in. */
 export interface CreatedVersion {
@@ -67,6 +77,11 @@ export interface CreatedVersion {
    * interpreted, and carries that interpretation across.
    */
   schema: ResourceSchema | null
+  /**
+   * The version a revert named, for the one creator whose content comes from
+   * inside the resource (ADR-044 §4). Omitted by the other two.
+   */
+  restoredFrom?: number | null
 }
 
 /**
@@ -101,10 +116,12 @@ export async function insertVersionIfHeld(
 ): Promise<boolean> {
   const result = await db.execute(sql`
     WITH inserted AS (
-      INSERT INTO resource_version (resource_id, version, storage_key, size, hash, origin, format, schema)
+      INSERT INTO resource_version (resource_id, version, storage_key, size, hash, origin, format,
+                                    schema, restored_from)
       SELECT ${v.resourceId}::uuid, ${v.version}, ${v.storageKey}::text, ${v.size}::bigint,
              ${v.hash}::text, ${v.origin}, r.format,
-             ${v.schema ? JSON.stringify(v.schema) : null}::jsonb
+             ${v.schema ? JSON.stringify(v.schema) : null}::jsonb,
+             ${v.restoredFrom ?? null}::integer
       FROM resource r
       WHERE r.id = ${v.resourceId}::uuid AND ${stillHeld(claim)}
       RETURNING id, storage_key
@@ -162,6 +179,32 @@ export async function objectAlreadyVersioned(
 ): Promise<boolean> {
   const result = await db.execute(sql`SELECT ${ownedByVersion(sql`${key}::text`)} AS owned`)
   return (result.rows[0] as { owned: boolean } | undefined)?.owned === true
+}
+
+/**
+ * Whether the version owning this object is on its way out.
+ *
+ * Not answerable with {@link objectAlreadyVersioned}: that one asks whether
+ * anything owns the object, and its predicate counts a `purging` owner as an
+ * owner — the opposite of the question here.
+ *
+ * Two callers, and they have to agree by construction, because both are asking
+ * whether the bytes under this key are about to be destroyed. The version gate
+ * asks before copying an object into a new version (copying content someone
+ * asked to have destroyed files it under a number the purge does not
+ * recognise), and a revert asks before answering that a resend is already where
+ * it wanted to be.
+ */
+export async function objectOwnerIsPurging(
+  db: Pick<Database | Transaction, 'select'>,
+  key: string
+): Promise<boolean> {
+  const [owner] = await db
+    .select({ id: resourceVersion.id })
+    .from(resourceVersion)
+    .where(and(eq(resourceVersion.storageKey, key), eq(resourceVersion.state, 'purging')))
+    .limit(1)
+  return owner !== undefined
 }
 
 /**
@@ -225,6 +268,24 @@ export interface LadderOutcome {
   queued: boolean | null
   /** The derivatives are gone, or null when none needed to go. */
   cleared: boolean | null
+}
+
+/**
+ * What a revert answers with, on top of the ladder's own halves.
+ *
+ * Two version numbers, because a revert now names one and creates another
+ * (ADR-044 §4). `restored` is the destination the caller asked for and keeps
+ * the meaning it has always had; `published` is the version carrying that
+ * content forward, which did not exist before. Moving `restored` onto the new
+ * number instead would leave the same response shape pointing at a different
+ * version, with nothing for an older caller to notice.
+ */
+export interface RevertOutcome extends LadderOutcome {
+  cancelled: boolean
+  /** The version whose content is now live, as the caller named it. */
+  restored: number | null
+  /** The version issued to carry it, or null when nothing was issued. */
+  published: number | null
 }
 
 /** What a purge needs to reach: layer 1, the search index, the queue, layer 2. */
@@ -371,12 +432,12 @@ export interface VersionView {
    * an object, not a version, and two shapes defeat the rules a client would
    * reach for instead (spec §9.6, with an integration test each):
    *
-   * - **"the highest version"** — a revert leaves the live content below rows that
-   *   outrank it, so this is wrong in both directions at once
-   * - **"the highest `active` version"** — which survives a revert, because
-   *   stepping the higher versions off is what keeps it true, but not a purge in
-   *   flight: live stands on a `purging` version until the worker moves the
-   *   pointer, and every active version is then something else
+   * - **"the highest version"** — purging the newest leaves its tombstone on top
+   *   with live below it, and a row an old-style revert set aside outranks live
+   *   for as long as it is unconverted (ADR-044 §4)
+   * - **"the highest `active` version"** — not during a purge: live stands on a
+   *   `purging` version until the worker moves the pointer, and every active
+   *   version is then something else
    *
    * It is what a purge acts on, so the confirmation screen needs it to say what a
    * purge will do rather than describing every branch.
@@ -422,6 +483,20 @@ export interface VersionView {
    * carry are facts about the bytes, and the bytes never change.
    */
   noTableReason: NoTableReason | null
+  /**
+   * The version this one re-published, for the ones a revert issued (ADR-044
+   * §4). Null everywhere else.
+   *
+   * On the view because the history is the only place that answers it: content
+   * and its reading repeat by design (ADR-046 §3), so a client comparing hashes
+   * would name whichever match it happened to pick.
+   *
+   * **Withheld on a tombstone**, like the hash it would otherwise reconstruct:
+   * saying a purged version re-published v5 states that its content was
+   * identical to v5, which is the check hiding the hash exists to prevent
+   * (spec §9.4). The column stays on the row — this is exposure, not erasure.
+   */
+  restoredFrom: number | null
   created: Date
   /** When the version was retracted — the whole of what a tombstone says about it,
    *  since the reason is not exposed (see above). */
@@ -447,10 +522,15 @@ function noTableReason(row: typeof resourceVersion.$inferSelect): NoTableReason 
  * {@link VersionView.isLive}. `standing` is the surviving versions a restore may
  * land on, newest first ({@link ResourceVersionService.newestActiveVersion}'s
  * rule over the same rows).
+ * @param sourcePurged - whether the version this one re-published is a
+ * tombstone. Its own parameter and required, unlike the redactions above it:
+ * those are settled by the row in hand, this one by another row, and a default
+ * would make a new call site disclose it by saying nothing.
  */
 function toView(
   row: typeof resourceVersion.$inferSelect,
-  serving: { live: number | null; standing: readonly number[] }
+  serving: { live: number | null; standing: readonly number[] },
+  sourcePurged: boolean
 ): VersionView {
   const purged = row.state === 'purged'
   const isLive = row.version === serving.live
@@ -469,6 +549,11 @@ function toView(
     hash: purged ? null : row.hash,
     schema: purged ? null : row.schema,
     noTableReason: purged ? null : noTableReason(row),
+    // Withheld when *either* end is a tombstone, unlike the fields above, which
+    // are settled by this row alone. "v8 re-published v5" states the two held
+    // identical content — and with v5 purged and v8 alive, that hands over the
+    // erased content, since v8 can still be downloaded (spec §9.4).
+    restoredFrom: purged || sourcePurged ? null : row.restoredFrom,
     created: row.created,
     // No `purgeReason`: the row carries one, this view deliberately does not.
     purgedAt: row.purgedAt,
@@ -483,6 +568,12 @@ function toView(
  * pointer, so a reader that left it out would answer "something else is live"
  * for the whole of a purge. Shared so the view and the purge cannot drift into
  * two answers (spec §9.6).
+ *
+ * `superseded` is here because the state still exists in old rows: a revert
+ * publishes forward and never writes it (ADR-044 §4), but nothing has migrated
+ * what the scheme before wrote. **Reading it out is the migration's job, not a
+ * predicate's** — every attempt to encode the difference here got one case or
+ * another wrong.
  */
 const SERVING_STATES: VersionState[] = ['active', 'superseded', 'purging']
 
@@ -924,7 +1015,11 @@ export class ResourceVersionService {
         live: await this.liveVersionNumber(tx, resourceId),
         standing: rows.filter((r) => r.state === 'active').map((r) => r.version),
       }
-      return rows.map((row) => toView(row, serving))
+      // Which sources are tombstones, read off the list rather than per row.
+      const purgedVersions = new Set(rows.filter((r) => r.state === 'purged').map((r) => r.version))
+      return rows.map((row) =>
+        toView(row, serving, row.restoredFrom !== null && purgedVersions.has(row.restoredFrom))
+      )
     })
   }
 
@@ -932,8 +1027,34 @@ export class ResourceVersionService {
   async getVersion(resourceId: string, version: number): Promise<VersionView> {
     return this.readSnapshot(async (tx) => {
       const row = await this.getRow(tx, resourceId, version)
-      return toView(row, await this.serving(tx, resourceId))
+      return toView(
+        row,
+        await this.serving(tx, resourceId),
+        await this.sourceIsPurged(tx, resourceId, row.restoredFrom)
+      )
     })
+  }
+
+  /**
+   * Whether the version a revert re-published has since been purged.
+   *
+   * Its own read because the single-version paths hold one row: the list
+   * answers it from the rows it already has.
+   */
+  private async sourceIsPurged(
+    db: Database | Transaction,
+    resourceId: string,
+    restoredFrom: number | null
+  ): Promise<boolean> {
+    if (restoredFrom === null) return false
+    const [row] = await db
+      .select({ state: resourceVersion.state })
+      .from(resourceVersion)
+      .where(
+        and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, restoredFrom))
+      )
+      .limit(1)
+    return row?.state === 'purged'
   }
 
   /**
@@ -986,9 +1107,11 @@ export class ResourceVersionService {
    * **Where no version owns the live object it is a guess, and the purge shares
    * it.** Rows from before a version owned its bytes leave the pointer named by
    * nobody, and {@link liveVersion} then falls back to the newest version whose
-   * hash matches — which is not necessarily the one the content came from. The
-   * answer is still the right one to show, because it is the answer the purge
-   * acts on: the screen describes what will happen, not what ought to.
+   * hash matches — which is not necessarily the one the content came from. It
+   * is still the right answer to show, but only half of what the screen says
+   * survives it: **what the purge will do** is right, since it acts on this
+   * same answer, while **"this version is what is being served"** can land on
+   * another version holding the same bytes.
    */
   private async liveVersionNumber(
     db: Database | Transaction,
@@ -1019,15 +1142,15 @@ export class ResourceVersionService {
   }
 
   /**
-   * Claim a version for purge: active or superseded → purging, recording who/why
-   * durably on the row (ADR-028 pattern). Idempotent — a version already
-   * purging/purged is returned unchanged and should not be re-enqueued.
+   * Claim a version for purge: active → purging, recording who/why durably on
+   * the row (ADR-028 pattern). Idempotent — a version already purging/purged is
+   * returned unchanged and should not be re-enqueued.
    *
-   * Superseded counts because a revert does not destroy anything: content
-   * created from a file that should never have been served survives it, and
-   * purging that version on its own is the rung above (ADR-044 §4). Refusing
-   * here would make the one version most likely to need destroying the one
-   * version that cannot be.
+   * Every surviving version can be claimed, including one a revert moved off. A
+   * revert destroys nothing: content from a file that should never have been
+   * served outlives it as an ordinary version, and purging that version is the
+   * rung above (ADR-044 §4). Refusing it would make the version most likely to
+   * need destroying the one that cannot be.
    *
    * Returns { claimed } so the route knows whether to enqueue the worker job.
    */
@@ -1056,7 +1179,11 @@ export class ResourceVersionService {
 
       if (!row) throw new NotFoundError('Resource version', `${resourceId}/v${version}`)
 
-      if (row.state !== 'active' && row.state !== 'superseded') return false
+      // Refused by what is already gone or going, not by what is `active`: a
+      // row still saying `superseded` from before a revert published forward
+      // (ADR-044 §4) holds content like any other, and is the version most
+      // likely to be the one someone needs destroyed.
+      if (row.state === 'purging' || row.state === 'purged') return false
 
       // One at a time per resource, refused by the partial unique index rather
       // than by looking first: a look and a write are two steps, and two claims
@@ -1308,11 +1435,20 @@ export class ResourceVersionService {
    * - the generation matches → do the work
    * - otherwise → 409
    *
-   * @returns the version restored, `null` when the resource is empty, plus the
-   *   {@link LadderOutcome} halves — `cleared: false` when the content was
-   *   retracted but its derivatives outlived it, `queued: false` when the
-   *   rebuild that puts them back never reached the queue. Either is repaired by
-   *   {@link repairDerivatives}, never by reverting again.
+   * **It goes forward.** The destination's content is issued as a new version
+   * rather than the versions above it being taken out of the running (ADR-044
+   * §4). The history only grows, so "live is the highest surviving version"
+   * needs no state to arrange it, and the content the resource steps off stays
+   * an ordinary version — purgeable, downloadable, and reachable by naming it
+   * again. What it costs is a version number and a copy of the bytes per
+   * revert.
+   *
+   * @returns the destination and the version issued to carry it — see
+   *   {@link RevertOutcome} — plus the {@link LadderOutcome} halves:
+   *   `cleared: false` when the content was retracted but its derivatives
+   *   outlived it, `queued: false` when the rebuild that puts them back never
+   *   reached the queue. Either is repaired by {@link repairDerivatives}, never
+   *   by reverting again.
    */
   async revertLiveContent(
     resourceId: string,
@@ -1324,37 +1460,36 @@ export class ResourceVersionService {
       lake?: LakeConfig
       logger?: Logger
     }
-  ): Promise<LadderOutcome & { cancelled: boolean; restored: number | null }> {
+  ): Promise<RevertOutcome> {
     const log = deps.logger ?? createLogger({ name: 'api' })
 
     // Everything that can end in "do not proceed" is settled before the claim,
     // because taking it stops whatever is running (ADR-044 §4). A refusal that
     // waits until after has already cost a run its work.
     //
-    // The destination has to be a version the resource can stand on. Left
-    // unchecked, naming a superseded or missing one supersedes whatever is above
-    // it and then restores some *other* version — or empties the resource — and
-    // reports success. Superseded is refused rather than resolved: stepping back
-    // onto content an earlier revert set aside is redo, which this ladder does
-    // not have. Nothing can slip in behind this: making it superseded is itself
-    // a revert, which moves the generation the takeover is conditioned on.
+    // The destination has to be a version whose content still exists. Naming a
+    // missing or purged one would otherwise move the pointer and then publish
+    // nothing — or somebody else's bytes — and report success. **Any surviving
+    // version qualifies, including one an earlier revert stepped off**: going
+    // forward, "issue that content again" says exactly one thing, so there is
+    // no redo to refuse (ADR-044 §4).
+    //
+    // Read again under the claim before anything is written: a purge takes the
+    // row in its own transaction, so the destination can be claimed between
+    // here and there.
+    // Through `getRow` so the "which version" predicate and its not-found error
+    // have one spelling. The key it reads is what the copy below is made from:
+    // a version file never changes, so reading it here rather than again later
+    // costs nothing and saves a round trip.
+    let sourceKey: string | null = null
     if (target.restoreTo !== null) {
-      const [row] = await this.db
-        .select({ state: resourceVersion.state })
-        .from(resourceVersion)
-        .where(
-          and(
-            eq(resourceVersion.resourceId, resourceId),
-            eq(resourceVersion.version, target.restoreTo)
-          )
-        )
-        .limit(1)
-      if (!row) throw new NotFoundError('Resource version', `${resourceId}/v${target.restoreTo}`)
-      if (row.state !== 'active') {
+      const row = await this.getRow(this.db, resourceId, target.restoreTo)
+      if (row.state === 'purged' || row.state === 'purging') {
         throw new ConflictError(
           `Version ${target.restoreTo} of ${resourceId} is ${row.state}; it cannot be restored`
         )
       }
+      sourceKey = row.storageKey
     }
 
     // A resend can land while the rebuild its own first attempt queued is still
@@ -1362,11 +1497,11 @@ export class ResourceVersionService {
     const settled = await this.settledRevert(resourceId, target, deps, log)
     if (settled) return settled
 
-    const { cancelled, restored, cleared } = await withClaimFromRun(
+    const { cancelled, published, cleared } = await withClaimFromRun(
       this.db,
       resourceId,
       'revert',
-      async (_claim, cancelled) => {
+      async (claim, cancelled) => {
         // Read as the generation the caller named, not just by id. The takeover
         // checked it, but an upload takes no claim (ADR-044 §6) and can publish
         // in the moment after — and then this would read the new object as the
@@ -1389,61 +1524,51 @@ export class ResourceVersionService {
           )
         }
 
-        // Step off before stepping back: the restore lands on the newest active
-        // version at or below the destination, so everything above it has to
-        // leave that set first (ADR-044 §4).
-        //
-        // One transaction, because the marks and the pointer are both database
-        // writes now. They used to have a storage copy between them, so a
-        // restore that failed had to put the marks back by hand — and the state
-        // it was undoing is the one this whole rung exists to prevent: the
-        // resource serving content whose version is no longer the highest
-        // active one, with nothing that re-runs a revert to repair it. With the
-        // copy gone (ADR-043 §1) there is nothing to put back; a failure never
-        // committed the marks.
-        const restored = await this.db.transaction(async (tx) => {
-          await this.stepOffAbove(tx, resourceId, target.restoreTo)
-          return this.restoreLiveFromVersions(tx, resourceId, current)
-        })
+        const published =
+          target.restoreTo === null
+            ? await this.db.transaction((tx) =>
+                this.clearLiveContent(tx, resourceId, current, claim)
+              )
+            : await this.publishVersionContent(
+                resourceId,
+                claim,
+                { version: target.restoreTo, storageKey: sourceKey! },
+                current,
+                deps.storage
+              )
 
-        // The retraction has happened: the pointer names the restored content
-        // and the versions stepped off are out of the active set. Both of these
-        // destroy what described it and touch nothing the other does, and both
-        // report rather than throw — so neither waits on the other, and the
-        // request pays the slower one instead of the sum. The lake is safe here
-        // because the claim is still held: no run of this resource can ingest
-        // between the pointer landing and the lake following it.
-        const [cleared, followed] = await Promise.all([
-          this.discardRetracted(resourceId, deps, log),
-          this.reconcileLakeToLive(resourceId, deps.lake, log),
-        ])
+        // The retraction has happened: the pointer names the published content.
+        // Layer 2 is not moved from here — the version just issued is
+        // outstanding work for the Lake step like any other, and following the
+        // pointer by hand would be the whole-table rewrite ii-b's write path
+        // exists to avoid (spec §7.2).
+        const cleared = await this.discardRetracted(resourceId, deps, log)
 
-        return {
-          cancelled,
-          restored: restored?.version ?? null,
-          // One field, because both halves say the same thing: something that
-          // described the retracted content outlived it.
-          cleared: cleared && followed !== false,
-        }
+        return { cancelled, published, cleared }
       },
       // Refused inside the takeover statement rather than after it: told no
       // here, this call has already stopped whatever was running.
       target.ifLiveRevision
     )
 
-    // Rebuild the derivatives from the restored content, once the claim is
+    // Rebuild the derivatives from the published content, once the claim is
     // back: enqueued inside it, the run that picks the job up finds the
     // resource held and puts itself back on the queue for another 30 seconds.
     //
-    // The Version step's change gate reads the highest *active* version, which
-    // the step-off above made the restored one, so it matches and no spurious
-    // version is created. Nothing to rebuild from when the resource was
-    // emptied.
-    // Null rather than false when the resource was emptied: there is no content
-    // for a run to rebuild from, so nothing was owed.
-    const queued = restored ? await this.queueRebuild(resourceId, deps, log) : null
+    // The Version step's change gate compares against the highest active
+    // version, which is now the one this just published — same bytes, same
+    // format — so it matches and no second version is filed for the same
+    // content. Null rather than false when the resource was emptied: there is
+    // no content for a run to rebuild from, so nothing was owed.
+    const queued = published ? await this.queueRebuild(resourceId, deps, log) : null
 
-    return { cancelled, restored, cleared, queued }
+    return {
+      cancelled,
+      restored: target.restoreTo,
+      published,
+      cleared,
+      queued,
+    }
   }
 
   /**
@@ -1509,6 +1634,19 @@ export class ResourceVersionService {
    * asked. That is the repair path for an emptying revert whose search delete
    * failed, which has no other — reprocessing cannot rebuild from no content,
    * and for an external URL it would fetch the retracted file back.
+   *
+   * **Settled is asked of the content, not of the version number.** A revert
+   * publishes the destination's bytes as a new version (ADR-044 §4), so live
+   * stands on that new version and never on the one that was named — asked by
+   * number, a resend would always find work to do, take the claim, and then be
+   * refused over a generation its own first attempt moved. The bytes and the
+   * format are what `restoreTo` asked for, and comparing those is the same
+   * comparison the version gate makes: published again, they would create no
+   * version, because there is nothing about the content left to record.
+   *
+   * That also answers settled for a resend naming a *different* version holding
+   * the same bytes, which is right rather than merely tolerable — repeated
+   * content is normal (ADR-046 §3), and what was asked for is what is served.
    */
   private async settledRevert(
     resourceId: string,
@@ -1520,11 +1658,12 @@ export class ResourceVersionService {
       lake?: LakeConfig
     },
     log: Logger
-  ): Promise<(LadderOutcome & { cancelled: boolean; restored: number | null }) | null> {
+  ): Promise<RevertOutcome | null> {
     const [current] = await this.db
       .select({
         storageKey: resource.storageKey,
         hash: resource.hash,
+        format: resource.format,
         revision: resource.contentRevision,
       })
       .from(resource)
@@ -1532,11 +1671,19 @@ export class ResourceVersionService {
       .limit(1)
     if (!current) return null
 
-    const standing = current.storageKey
-      ? ((await this.liveVersion(this.db, resourceId, current, ['active'])) ?? null)
-      : null
     const settled =
-      standing === target.restoreTo && (current.storageKey !== null) === (standing !== null)
+      target.restoreTo === null
+        ? current.storageKey === null
+        : current.storageKey !== null &&
+          (await this.liveIsVersionContent(resourceId, target.restoreTo, current)) &&
+          // The second half of "already at the destination", and not implied by
+          // the first. Content repeats (ADR-046 §3), so live can hold exactly
+          // the destination's bytes while standing on **another version's
+          // object** — and if that version is being purged, the object is about
+          // to be destroyed under it. Answering settled there leaves the
+          // resource pointing at content that will be gone, with the revert
+          // that would have moved it off already told there was nothing to do.
+          !(await objectOwnerIsPurging(this.db, current.storageKey))
     if (!settled) return null
     if (current.storageKey !== null) {
       // Settled, but "the content is in the right place" does not say the
@@ -1546,15 +1693,19 @@ export class ResourceVersionService {
       // and index that never came back.
       return {
         cancelled: false,
-        restored: standing,
+        restored: target.restoreTo,
+        // Null rather than a number: nothing was published this time, and the
+        // version an earlier attempt published is not this call's to report —
+        // it may not even be the newest by now.
+        published: null,
         // Nothing left to clear — the attempt that moved the content took the
         // derivatives with it, which is why this one is settled at all. Layer 2
         // is the exception: the attempt may have died between the pointer move
-        // and the reconcile, and the rebuild queued below cannot stand in for it
-        // — it makes no version, so the Lake step finds nothing outstanding.
-        // Only reported here, never done: the reconcile needs the claim, and
-        // taking it is exactly what this path exists to avoid. `false` puts it
-        // on `repairDerivatives`, which does take one.
+        // and the ingest of what it published, and the rebuild queued below
+        // cannot stand in for it — it makes no version, so the Lake step finds
+        // nothing outstanding. Only reported here, never done: the repair needs
+        // the claim, and taking it is exactly what this path exists to avoid.
+        // `false` puts it on `repairDerivatives`, which does take one.
         cleared: await this.lakeOwed(resourceId, deps),
         queued: await this.queueRebuild(resourceId, deps, log),
       }
@@ -1564,7 +1715,7 @@ export class ResourceVersionService {
     // Filled up in between: no longer settled, and the caller's generation is
     // stale with it. The path below is where that is answered.
     if (cleaned === null) return null
-    return { cancelled: false, restored: null, cleared: cleaned, queued: null }
+    return { cancelled: false, restored: null, published: null, cleared: cleaned, queued: null }
   }
 
   /**
@@ -1742,36 +1893,35 @@ export class ResourceVersionService {
   }
 
   /**
-   * Take every active version above a restore destination out of the active
-   * set, and report which ones moved.
+   * Whether what the resource serves is already the content of `version`.
    *
-   * Everything a restore to `below` steps off, because the restore lands on the
-   * newest active version at or below it — left in that set, one of these would
-   * be what it landed on. Null means "empty the resource", and everything
-   * active is above that.
+   * Answered through {@link sameVersionIdentity}, the definition the pipeline's
+   * create gate uses (ADR-046 §3). The two ask one question — is this content,
+   * read this way, already what is recorded — and a second spelling here stops
+   * agreeing the day the identity gains a field. In ii-b that field is the
+   * primary key, and the disagreement would be a destination differing only in
+   * its key answered as already restored, with its interpretation never coming
+   * back and nothing failing.
    *
-   * Chosen and moved in one statement rather than read and then updated. The
-   * `active` condition is a compare-and-swap: a purge claim takes a row lock in
-   * its own transaction rather than this resource's claim, so it can move one
-   * of these rows to `purging` in between. Read first, that row would be listed
-   * as stepped off, silently fail to move, and then be put back on a rollback —
-   * dragging it out of `purging`. Here it is simply not in the answer.
+   * A purged version answers false whatever its row still says: the hash stays
+   * on the tombstone, the content does not.
    */
-  private async stepOffAbove(
-    db: Pick<Database | Transaction, 'update'>,
+  private async liveIsVersionContent(
     resourceId: string,
-    below: number | null
-  ): Promise<void> {
-    await db
-      .update(resourceVersion)
-      .set({ state: 'superseded', updated: sql`NOW()` })
-      .where(
-        and(
-          eq(resourceVersion.resourceId, resourceId),
-          eq(resourceVersion.state, 'active'),
-          below === null ? sql`TRUE` : sql`${resourceVersion.version} > ${below}`
-        )
-      )
+    version: number,
+    live: VersionIdentity
+  ): Promise<boolean> {
+    const [row] = await this.db
+      .select({
+        hash: resourceVersion.hash,
+        format: resourceVersion.format,
+        state: resourceVersion.state,
+      })
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, version)))
+      .limit(1)
+    if (!row || row.state === 'purged') return false
+    return sameVersionIdentity(row, live)
   }
 
   /**
@@ -1779,10 +1929,17 @@ export class ResourceVersionService {
    *
    * Where the live pointer is standing. The pointer names an object and a
    * version owns one (ADR-043 §1), so the answer is the version that owns the
-   * live key — and only where nothing owns it, for rows written before versions
-   * owned their objects, is it the newest version sharing the live hash.
-   * Content can repeat (ADR-046 §3), so hash alone would answer yes for any
-   * version holding those bytes.
+   * live key — and only where nothing owns it is it the newest version sharing
+   * the live hash. Content can repeat (ADR-046 §3), so hash alone would answer
+   * yes for any version holding those bytes.
+   *
+   * **The fallback is not a legacy branch.** Fetch publishes a fresh key even
+   * for content that did not change, and the gate then creates no version, so
+   * an object nobody owns is the ordinary outcome of re-fetching an unchanged
+   * URL (ADR-044 §4). It answers correctly there — no version was created
+   * precisely because the content matched the latest active one, so the newest
+   * match is that version. What defeats it is a row an old-style revert set
+   * aside above live holding the same hash, which the conversion removes.
    *
    * `states` is the caller's, because the two ask it from different places. A
    * revert asks among active versions: it is looking for what to step off, and
@@ -1791,9 +1948,10 @@ export class ResourceVersionService {
    * everything not yet purged, because the row it is asking about is its own
    * and has already left `active`.
    *
-   * Undefined when no version holds the live content — a file uploaded but
-   * never created, or a creation the kill cut off. There is nothing to step
-   * back from, and the newest version is the right place to land.
+   * Undefined when no version holds the live content and no hash matches it —
+   * a file uploaded but never created, or a creation the kill cut off. There is
+   * nothing to step back from, and the newest version is the right place to
+   * land.
    */
   private async liveVersion(
     db: Database | Transaction,
@@ -1824,9 +1982,9 @@ export class ResourceVersionService {
       }
     }
 
-    // Nothing owns it: rows from before this change hold a copy of the live
-    // object under a key of their own, so no version names what live names.
-    // Hash is all there is to go on, and the newest match is the one stood on.
+    // Nothing owns it: an unchanged re-fetch published a fresh key the gate
+    // created no version for, so no version names what live names. Hash is all
+    // there is to go on, and the newest match is the one stood on.
     if (!live.hash) return undefined
     const [row] = await db
       .select({ version: resourceVersion.version })
@@ -1847,22 +2005,18 @@ export class ResourceVersionService {
    * Put the live pointer back on the newest surviving version's content, or
    * empty the resource when none survives.
    *
-   * Shared by the two things that retract live content: a purge of the live
-   * version (ADR-043 §5) and a revert (ADR-044 §4). They differ in what happens
-   * to the object left behind — a purge destroys it, a revert lets the sweep
-   * take it — not in how the pointer moves.
+   * **A purge's way of retracting content, and no longer a revert's** (ADR-043
+   * §5). A purge destroys the object it steps off and cannot publish a version
+   * carrying it forward — there would be nothing to carry — so it steps down,
+   * where a revert issues the destination as a new version (ADR-044 §4).
    *
    * Restored through the same mover as every other writer (ADR-043), onto the
    * version's own object: nothing rewrites a version file, so there is nothing
-   * to copy out first, and the move is the whole restore. That is what lets the
-   * caller step versions off in the same transaction — the two used to have a
-   * storage copy between them.
+   * to copy out first, and the move is the whole restore.
    *
-   * Where it lands needs no bound from the caller: the version being retracted
-   * has already left the active set by the time this runs — a purge marked it
-   * `purging`, a revert `superseded` — so "the newest active version" is the
-   * one below it. That is also what stops a second revert stepping *forward*
-   * into a version an earlier one stepped off.
+   * Where it lands needs no bound from the caller: the version being purged has
+   * already left the active set by the time this runs, marked `purging`, so
+   * "the newest active version" is the one below it.
    *
    * @returns the version restored, or null when the resource was emptied.
    * @throws ConflictError when the pointer moved while this was running. Both
@@ -1922,6 +2076,151 @@ export class ResourceVersionService {
     return prev ?? null
   }
 
+  /**
+   * Issue a version's content as the newest version, and serve it (ADR-044 §4).
+   *
+   * The whole of a revert's write. The destination keeps its row untouched; a
+   * copy of its bytes becomes a version of its own, and the pointer moves onto
+   * that copy. Copied rather than shared because a version owns the object it
+   * names (ADR-046 §3) — two rows on one key would leave a purge of either
+   * taking the other's content.
+   *
+   * The copy is made before the transaction and stays outside it: its
+   * write-ahead record is what reclaims the object when the rest does not
+   * commit, and a rollback would take the record with it (ADR-045).
+   *
+   * Inside, the pointer moves before the row is inserted. The insert reads the
+   * format off the resource, and the format belonging to this version is the
+   * destination's — a version is those bytes under that label (ADR-046 §6), so
+   * with the writes the other way round the new row would record whichever
+   * label the retracted content was carrying.
+   *
+   * @returns the version number issued.
+   * @throws ConflictError when the destination was claimed for purge, or the
+   *   pointer moved, while this was running. Both leave the copy to the sweep.
+   */
+  private async publishVersionContent(
+    resourceId: string,
+    claim: ResourceClaim | null,
+    destination: { version: number; storageKey: string },
+    current: { packageId: string; storageKey: string | null; hash: string | null },
+    storage: StorageAdapter
+  ): Promise<number> {
+    const versionKey = getStorageKey(current.packageId, resourceId, randomUUID())
+    await copyObject(this.db, storage, destination.storageKey, versionKey)
+
+    return this.db.transaction(async (tx) => {
+      // Locked and read again: the pre-claim check is only good while nothing
+      // can change the row, and claiming a purge takes no pipeline claim. A
+      // destination claimed in between would have this publishing bytes someone
+      // asked to have destroyed, under a number the purge does not recognise.
+      const [row] = await tx
+        .select()
+        .from(resourceVersion)
+        .where(
+          and(
+            eq(resourceVersion.resourceId, resourceId),
+            eq(resourceVersion.version, destination.version)
+          )
+        )
+        .limit(1)
+        .for('update')
+      if (!row || row.state === 'purged' || row.state === 'purging') {
+        throw new ConflictError(
+          `Version ${destination.version} of ${resourceId} is ${row?.state ?? 'gone'}; ` +
+            `it cannot be restored`
+        )
+      }
+
+      const [maxRow] = await tx
+        .select({ version: resourceVersion.version })
+        .from(resourceVersion)
+        .where(eq(resourceVersion.resourceId, resourceId))
+        .orderBy(desc(resourceVersion.version))
+        .limit(1)
+      const version = (maxRow?.version ?? 0) + 1
+
+      const published = await publishLiveContent(tx, resourceId, {
+        key: versionKey,
+        previousKey: current.storageKey,
+        hash: row.hash,
+        size: row.size,
+        previousHash: current.hash,
+        format: row.format,
+        claim,
+      })
+      if (!published) {
+        throw new ConflictError(`Resource ${resourceId} changed while being restored; retry`)
+      }
+
+      const inserted = await insertVersionIfHeld(tx, claim, {
+        resourceId,
+        version,
+        storageKey: versionKey,
+        size: row.size!,
+        hash: row.hash!,
+        origin: 'revert',
+        // Where this content came from, which nothing can work out later.
+        restoredFrom: destination.version,
+        // Carried across rather than left for the rebuild to work out again: a
+        // version file never changes, so its interpretation cannot have, and
+        // the copy is the same file. The rebuild would reach the same answer
+        // minutes later and only if it completes.
+        schema: row.schema,
+      })
+      if (!inserted) {
+        throw new ConflictError(`Resource ${resourceId} changed while being restored; retry`)
+      }
+
+      await this.adoptVersionInterpretation(tx, resourceId, row)
+      return version
+    })
+  }
+
+  /**
+   * Leave the resource serving nothing — the two callers that retract content
+   * with nothing to put in its place.
+   *
+   * A revert with no destination named reaches it in its own transaction and
+   * under the claim; a purge of the only surviving version reaches it inside
+   * the purge's own work. No version is issued either way: there is no content
+   * to carry forward, and a version of nothing is not a thing the history can
+   * hold.
+   *
+   * **The claim is the difference, and it belongs to the revert.** Its sibling
+   * branch moves the pointer only while the claim is held, and this is the more
+   * destructive of the two — a revert taken over mid-flight must not be the
+   * thing that empties the resource. A purge has already claimed the resource
+   * by other means (ADR-028) and passes none.
+   *
+   * **The revert's use of it is not covered by a test.** Losing the claim has
+   * to happen between the revert taking it and this statement, and there is
+   * nothing of ours in between to hang a trigger on.
+   */
+  private async clearLiveContent(
+    db: Database | Transaction,
+    resourceId: string,
+    current: { storageKey: string | null; hash?: string | null },
+    claim?: ResourceClaim | null
+  ): Promise<null> {
+    // Through the mover like every other pointer move: unconditional, this
+    // would clear a pointer an upload had moved since (uploads take no claim,
+    // ADR-044 §6) and leave the retracted object tracked by nothing.
+    const emptied = await publishLiveContent(db, resourceId, {
+      key: null,
+      previousKey: current.storageKey,
+      hash: null,
+      size: null,
+      previousHash: current.hash ?? null,
+      claim,
+    })
+    if (!emptied) {
+      throw new ConflictError(`Resource ${resourceId} changed while being emptied; retry`)
+    }
+    await this.adoptVersionInterpretation(db, resourceId, null)
+    return null
+  }
+
   private async restoreLiveFromVersions(
     db: Database | Transaction,
     resourceId: string,
@@ -1929,23 +2228,7 @@ export class ResourceVersionService {
   ): Promise<typeof resourceVersion.$inferSelect | null> {
     const prev = await this.newestActiveVersion(db, resourceId)
 
-    if (!prev) {
-      // Through the mover like every other pointer move: unconditional, this
-      // would clear a pointer an upload had moved since (uploads take no claim,
-      // ADR-044 §6) and leave the retracted object tracked by nothing.
-      const emptied = await publishLiveContent(db, resourceId, {
-        key: null,
-        previousKey: current.storageKey,
-        hash: null,
-        size: null,
-        previousHash: current.hash ?? null,
-      })
-      if (!emptied) {
-        throw new ConflictError(`Resource ${resourceId} changed while being emptied; retry`)
-      }
-      await this.adoptVersionInterpretation(db, resourceId, null)
-      return null
-    }
+    if (!prev) return this.clearLiveContent(db, resourceId, current)
 
     // Straight at the version's own object, rather than a copy of it made to
     // carry the `resources/` prefix (ADR-043 §1). The bytes are the same either

@@ -97,9 +97,12 @@ test.beforeAll(async () => {
         SHARED_HASH,
       ]
     )
-    // Live stands on **v2** while v3 outranks it and is stepped off: what a revert
-    // leaves, and where version order answers "which version is being served"
-    // wrong in both directions (spec §9.6).
+    // Live stands on **v2** while v3 outranks it and carries the state the
+    // scheme before a revert published forward wrote (ADR-044 §4). Two things
+    // at once: version order answers "which version is being served" wrong in
+    // both directions (spec §9.6), and **a row left saying `superseded` renders
+    // and behaves as the ordinary version it now is** — listed, diffable,
+    // purgeable, with no badge of its own.
     await client.query(`UPDATE resource SET storage_key = $2, hash = $3 WHERE id = $1`, [
       resourceId,
       `resources/e2e/${resourceId}.v2`,

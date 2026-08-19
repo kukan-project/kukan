@@ -36,7 +36,7 @@ not taken (history)" (§9.7 / §11-7) and blocks headed "evidence (measured)" ar
 | The first stage applies **only when `lake_key_columns` matches at both ends**. Otherwise it degrades to keyless                                 | §7      |
 | A version row's `ducklake_snapshot_id` is **written once**. Moving content is done by issuing a version                                         | §7.2    |
 | **`superseded` is abolished.** Layer 1's automatic fallback after a purge is **the highest `active` version**                                   | §7.2    |
-| Existing `superseded` rows are **left alone**: never an automatic target, but nameable and surviving                                            | §7.2    |
+| Existing `superseded` rows are **converted** by a backfill; left alone, every predicate carries two regimes                                     | §7.2    |
 | A resend decides "already at the destination" **by content**, not by version number                                                             | §7.2    |
 | The revert response keeps `restored` (the destination named); the published version number is added separately                                  | §7.2    |
 | Content is moved from a **source reading that version's snapshot**; the method has three branches                                               | §7.2    |
@@ -807,10 +807,20 @@ There are six decisions. **The reasoning has been replaced since the original** 
    longer be restored**. No idempotency key, no operation ledger. Matching content is also not
    enough on its own — live standing on the object of a version being purged is not settled, since
    the bytes it serves are about to be destroyed
-6. **Existing `superseded` rows are left alone and are never an automatic target.** Layer 1's
-   fallback and layer 2's stand both read `active`, while an operator can still name one in
-   `restoreTo`, and retention, purge, history and diffs ask "not a tombstone" — **three questions,
-   and they do not fold into one** (the table in ADR-044 §4)
+6. **Existing `superseded` rows are converted.** The rows the old scheme left behind are moved to
+   the shape a new-scheme revert would have produced (back to `active`, live's content issued as a
+   new version). **Left alone, every predicate over version state carries two regimes at once** —
+   in implementation the count of fixes equalled the count of new holes (the table in ADR-044 §4).
+   It needs an object copy, so it is a backfill like the v1 pass, not SQL. **Until it has run the
+   readers keep the old predicates** (the order cannot be reversed). **The unit is the resource and
+   there are no exceptions** — resources where no version owns live are included, and there the
+   object is **taken over by a new version** rather than copied (`restored_from` is null). Exclude a
+   shape and its `superseded` rows stay forever, leaving the three states unreachable (the table in
+   ADR-044 §4). **The issue goes first and the flip second** — once issued, the topmost version owns
+   live, so no broken window opens, and the question ("does the topmost version not purged own
+   live?") is unchanged by the flip, so the two can be split and still resume. **The taking-over
+   branch copies an interpretation only on a matching `sourceHash`** (the v1 pass's condition): a
+   stale zero-column schema would drop that version out of the layer-2 sweep for good
 
 Those are the decisions. What follows is the reasoning, and you can implement without reading it.
 
@@ -1079,12 +1089,11 @@ rows carrying unresolvable ids, which the sweep (conditioned on `IS NULL`) passe
 repair it. §11-5's repair (nulling unresolvable ids) is not implemented, so leaving the version in
 `purging` for the operator to see is the correct answer (open issue 15).
 
-**A retained `superseded` version is neither automatic rollback target.** New history never produces
-one, so **for new data "the highest `active`" and "the highest not purged" coincide** — they part
-only on old data, where the former wins. A reclaim's retained set keeps their snapshots, so **their
-diffs still read**. **An operator can still name one explicitly** (`restoreTo`): not restoring
-automatically and refusing to be named are different things (the three questions are in ADR-044
-§4).
+**A retained `superseded` version is neither automatic rollback target until it is converted.** New
+history never produces one, and the rows that remain are moved to the new shape by a backfill (§7.2
+decision 6). Until then a reclaim's retained set keeps their snapshots, so **their diffs still
+read**, and **an operator can still name one explicitly** (`restoreTo`): not restoring automatically
+and refusing to be named are different things (ADR-044 §4).
 
 **With no target left, only a purge drops the table.** A purge owes unfetchability, so it drops, and
 the empty table states the fact that layer 2 has no current contents. **A revert in the same state
@@ -1334,13 +1343,30 @@ each shape).
 
 | Rule                           | Where it breaks                                                                           |
 | ------------------------------ | ----------------------------------------------------------------------------------------- |
-| "the highest version"          | after a revert: live's content sits below a higher version, so it is wrong **both ways**  |
+| "the highest version"          | after the newest version is purged: the tombstone stays on top and live is below it       |
 | "the highest `active` version" | while a purge is in flight: live stands on a `purging` version, and no active one is live |
 
-**A revert does not break the second one** — `stepOffAbove` marks the higher versions `superseded`,
-which keeps "live is the highest active version" true across it. What breaks it is the state before
-the pointer moves, and a purge claim creates exactly that (the pointer moves when the worker runs).
-**Choosing by the count of active versions breaks in the same shape.**
+**A revert breaks neither.** It moves versions forward, so after one live _is_ the highest version
+(§7.2). What breaks them is a purge: its claim creates the state before the pointer moves (the
+pointer moves when the worker runs). **Choosing by the count of active versions breaks in the same
+shape.**
+
+**Unconverted `superseded` rows break the first one only** — the old revert left versions above
+live — and that shape goes away with the conversion (§7.2 decision 6). They do not break the second:
+the versions it set aside are not `active`, so "the highest `active` version" stayed live, which is
+**why the state was there**.
+
+**In that shape the server's own answer is not assured either.** Where no version owns the live
+object the server falls back from the owner to a hash guess (`liveVersion`), and an unconverted
+`superseded` row above live holding the same hash takes it, so **`isLive` lands on another version**.
+That is the known defect the conversion makes unreachable. **The prediction still holds** — the purge
+acts on the same guess — but **the identification, "this is what is being served", does not**.
+
+**What misleads it is not the guess but the unconverted row above live that takes it.** The guess
+outlives the conversion — an unowned live object is a permanently normal state (ADR-044 §4) — but
+with every version `active` it answers the topmost one, and **the unowned live an unchanged
+re-fetch leaves is that version's content** (no version was created precisely because it matched
+the latest active one, §7).
 
 **The list API therefore returns `isLive` per version, and the confirmation names the case from it.**
 It costs no extra logic — `liveVersion()` (which reads the pointer's owner) is what the purge itself
@@ -2703,12 +2729,11 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
       fallback after a purge** as "the highest `active` version" — not the definition of live,
       which is the owner of the object the pointer names and mid-purge can be a `purging` version
       (§9.6). The rule where `restoreTo` refuses a `superseded` version (no redo) falls
-      away at the same time. **Existing `superseded` rows are left alone** — simply returning them
-      to `active` moves live on any resource whose previously rolled-back content is the highest
-      version. **Not migrating is not moving what is served**, which decides it; the price of two
-      states side by side is smaller. **A retained row is never an automatic target** — purging
-      everything above it does not make it live, and the resource empties. An operator who wants
-      that content out names it in `restoreTo` (the three questions in ADR-044 §4)
+      away at the same time. **Existing `superseded` rows are converted** — leaving them alone was
+      the first answer, on the reasoning that returning them to `active` moves live. **Live is the
+      owner of the object the pointer names**, not a version's rank, so the state change does not
+      move the pointer; what moves is the purge fallback, which this same §7.2 already accepted.
+      Left alone, the readers carry two regimes for good (the table in ADR-044 §4)
     - **Rewritten snapshots are left alone too.** ADR-044 shipped in v0.11.x, so there may be versions
       whose snapshots have already been rewritten. **Endpoint comparison reads those correctly**
       (measured in §7.2), so no migration is needed for diffs. All that remains is "a rewritten
@@ -2750,9 +2775,15 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
     locks only its own row, so reading the rest of the resource inside it does not hold back a revert
     moving the pointer and stepping other versions off.
 
-    **Where no version owns the pointer, on older data, the answer is a guess** (`liveVersion`'s
-    hash fallback). It is still the right thing to show: **the purge acts on the same answer**, so the
-    screen states what will happen.
+    **Where no version owns the pointer the answer is a guess** (`liveVersion`'s hash fallback).
+    It is still the right thing to show, but **the part that holds and the part that can be wrong
+    are different**: **the prediction holds** — the purge acts on the same guess, so what happens
+    to the version named is what the screen said — while **the identification, "this version is
+    what is being served", can be wrong**, landing on another version whenever several hold the
+    same bytes. **The guess survives the conversion** (§7.2 decision 6) — an unowned live object is
+    a permanently normal state (ADR-044 §4). What the conversion removes is the `superseded` row
+    above live that takes the guess; with every version `active` it answers the topmost one, which
+    is the version that content is.
 
     **A resource serving nothing has no box among the three cases.** Every version reads
     `isLive: false`, so the screen says "not what is being served" when nothing is being served (after

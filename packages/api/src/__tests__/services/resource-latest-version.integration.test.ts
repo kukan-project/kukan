@@ -57,6 +57,19 @@ describe('listByPackage latestVersion', () => {
     expect(byId.get(unversioned)?.latestVersion).toBeNull()
   })
 
+  it('ignores a retained superseded row, which is not what the resource serves', async () => {
+    // Legacy data: the scheme before a revert published forward left the
+    // versions it stepped off numbered above live (ADR-044 §4). Counting one
+    // labels the resource with a version it stopped handing out.
+    const r = await addResource('legacy-superseded')
+    await addVersion(r, 1)
+    await addVersion(r, 2)
+    await addVersion(r, 5, 'superseded')
+
+    const rows = await service.listByPackage(packageId)
+    expect(rows.find((x) => x.id === r)?.latestVersion).toBe(2)
+  })
+
   it('ignores purged tombstones when computing the latest version', async () => {
     const r = await addResource('rolled-back')
     await addVersion(r, 1)

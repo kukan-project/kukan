@@ -26,11 +26,14 @@ function version(
     state?: string
     isLive?: boolean
     purgeFallsBackTo?: number | null
+    origin?: string
+    restoredFrom?: number | null
   } = {}
 ) {
   return {
     version: n,
     origin: 'upload',
+    restoredFrom: null,
     state: 'active',
     isLive: false,
     purgeFallsBackTo: null,
@@ -60,6 +63,32 @@ describe('ResourceVersionHistory', () => {
     // must show the version it produced without being remounted
     rerender(<ResourceVersionHistory resourceId="r1" reloadKey={2} />)
     await waitFor(() => expect(screen.getByText('v2')).toBeInTheDocument())
+  })
+
+  it('says which version a reverted one re-published', async () => {
+    // The history is the only place that answers it: content and its reading
+    // repeat by design (ADR-046 §3), so nothing here could work the number out
+    // by comparing hashes — it comes off the row (ADR-044 §4).
+    mockClientFetch.mockResolvedValueOnce(
+      versionsResponse([version(3, { origin: 'revert', restoredFrom: 1 }), version(2), version(1)])
+    )
+    render(<ResourceVersionHistory resourceId="r1" />)
+
+    expect(await screen.findByText(/Re-published v1/)).toBeInTheDocument()
+  })
+
+  it('names a revert with no number rather than rendering the message key', async () => {
+    // The server withholds the number when either end is a tombstone (ADR-044
+    // §4), so `origin: 'revert'` with no `restoredFrom` is reachable on current
+    // data — and the parameterized message would render its own key there.
+    mockClientFetch.mockResolvedValueOnce(
+      versionsResponse([version(3, { origin: 'revert', restoredFrom: null, state: 'purged' })])
+    )
+    render(<ResourceVersionHistory resourceId="r1" />)
+
+    const badge = await screen.findByText('Re-published')
+    expect(badge).toBeInTheDocument()
+    expect(screen.queryByText(/originRevert/)).not.toBeInTheDocument()
   })
 
   it('names the versions a purge will leave holding the same content', async () => {

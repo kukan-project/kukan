@@ -189,46 +189,36 @@ afterAll(async () => {
   vi.restoreAllMocks()
 })
 
-describe('reconciling DuckLake with the restored version (ADR-043 §5)', () => {
-  it('rolls the table onto the restored version and records where it landed', async () => {
+describe('a revert leaves DuckLake to the ingest (ADR-044 §4)', () => {
+  it('moves no table and rewrites no version row', async () => {
+    // **The reconcile a revert used to run is gone.** Publishing forward makes
+    // the restored content an ordinary outstanding version, and the Lake step
+    // merges it onto whatever the table holds — which is what the write path
+    // ii-b adopted does anyway (spec §7.2). Rolling the table here would be the
+    // whole-table rewrite that path exists to avoid, and it would have to write
+    // the landing snapshot onto a version row that is supposed to be
+    // write-once.
     const result = await revertTo(1)
 
-    expect(result).toMatchObject({ restored: 1, cleared: true })
-    expect(rollbackLakeTable).toHaveBeenCalledExactlyOnceWith(
-      expect.anything(),
-      lakeTableName(resourceId),
-      // v1's own snapshot: the contents to put back, not where they land.
-      5
-    )
-    // Recorded on the restored version, not the one stepped off — this is what
-    // later readers use to tell the table is already standing where it should.
-    expect(await snapshotOf(1)).toBe(LANDED)
-    expect(await snapshotOf(2)).toBe(9)
-  })
-
-  it('rolls nothing back the second time', async () => {
-    await revertTo(1)
-    vi.mocked(rollbackLakeTable).mockClear()
-
-    // The repair is the other caller, and the one a failed reconcile lands on.
-    const repair = await service.repairDerivatives(resourceId, mockDeps())
-
-    // Null, not true: there was nothing owed, so a caller reading the outcome
-    // does not take this for a repair that ran.
-    expect(repair).toEqual({ queued: true, cleared: null })
+    expect(result).toMatchObject({ restored: 1, published: 3, cleared: true })
     expect(rollbackLakeTable).not.toHaveBeenCalled()
+    // Both rows keep the snapshots their own content landed under.
+    expect(await snapshotOf(1)).toBe(5)
+    expect(await snapshotOf(2)).toBe(9)
+    // And the version it published is what the sweep will pick up.
+    expect(await snapshotOf(3)).toBeNull()
   })
 
-  it('leaves the recorded snapshot alone when the rollback fails', async () => {
-    vi.mocked(rollbackLakeTable).mockRejectedValueOnce(new Error('catalog is down'))
+  it('asks the repair for nothing afterwards', async () => {
+    await revertTo(1)
 
-    const result = await revertTo(1)
-
-    // Reported, not thrown: the retraction has already happened.
-    expect(result).toMatchObject({ restored: 1, cleared: false })
-    // Still v1's own, so the next caller does the rollback again rather than
-    // reading a table that never moved as settled.
-    expect(await snapshotOf(1)).toBe(5)
+    // Null, not true: nothing was owed, so a caller reading the outcome does
+    // not take it for a repair that ran.
+    expect(await service.repairDerivatives(resourceId, mockDeps())).toEqual({
+      queued: true,
+      cleared: null,
+    })
+    expect(rollbackLakeTable).not.toHaveBeenCalled()
   })
 })
 
@@ -414,38 +404,30 @@ describe('a purge comes off the version layer 2 stands on (spec §9.1)', () => {
   })
 })
 
-describe('the revert reconcile stands below the destination when it must', () => {
-  it('rolls onto the newest version the lake took, not the destination', async () => {
-    // The destination has no snapshot to roll onto, and the sweep will load it
-    // later — but leaving the table meanwhile means the retracted rows stay its
-    // contents, which for a destination the lake can never take is forever.
-    await v2NeverTaken()
-
-    const result = await revertTo(2)
-
-    expect(result).toMatchObject({ restored: 2, cleared: true })
-    expect(rollbackLakeTable).toHaveBeenCalledExactlyOnceWith(
-      expect.anything(),
-      lakeTableName(resourceId),
-      5
-    )
-    expect(await snapshotOf(1)).toBe(LANDED)
-  })
-
+describe('the repair still answers for a table standing ahead', () => {
   it('offers the repair until it runs, and stops offering once it has', async () => {
-    // What `lakeOwed` answers has to be what the reconcile does. Reading the
-    // pointer's version, as it used to, found no snapshot on the destination and
-    // answered "owed nothing" with the table still on the retracted rows.
+    // A revert no longer leaves this, but a purge whose step-down failed does,
+    // and so does a row left `superseded` by the scheme before (ADR-044 §4).
+    // What `lakeOwed` answers still has to be what the repair does: reading the
+    // pointer's version, as it used to, found no snapshot on the destination
+    // and answered "owed nothing" with the table on retracted rows.
     await v2NeverTaken()
-    vi.mocked(rollbackLakeTable).mockRejectedValueOnce(new Error('catalog is down'))
-
-    expect(await revertTo(2)).toMatchObject({ restored: 2, cleared: false })
+    await db
+      .update(resourceVersion)
+      .set({ state: 'superseded' })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 3)))
+    await liveOn(1)
 
     // Offered, and it clears: same target, same question.
     expect(await service.repairDerivatives(resourceId, mockDeps())).toEqual({
       queued: true,
       cleared: true,
     })
+    expect(rollbackLakeTable).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      lakeTableName(resourceId),
+      5
+    )
     expect(await service.repairDerivatives(resourceId, mockDeps())).toEqual({
       queued: true,
       cleared: null,

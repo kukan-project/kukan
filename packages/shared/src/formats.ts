@@ -214,10 +214,19 @@ export function getStorageKey(packageId: string, resourceId: string, writeToken:
 }
 
 /**
- * How a created version's content was obtained (ADR-043): an explicit upload,
- * or a snapshot observed when fetching an external URL.
+ * How a created version's content was obtained (ADR-043): an explicit upload, a
+ * snapshot observed when fetching an external URL, or a revert issuing the
+ * content of an earlier version again (ADR-044 §4).
+ *
+ * `revert` is named rather than carried over from the version the content came
+ * from. Both other values say someone put those bytes there; a revert says the
+ * resource went back to bytes it already had, and the history is where that is
+ * read.
  */
-export function versionOrigin(urlType: string | null): 'upload' | 'fetch' {
+export type VersionOrigin = 'upload' | 'fetch' | 'revert'
+
+/** The origin of a version a pipeline run creates, from how the content arrives. */
+export function versionOrigin(urlType: string | null): VersionOrigin {
   return urlType === 'upload' ? 'upload' : 'fetch'
 }
 

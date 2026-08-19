@@ -15,6 +15,7 @@ import {
   insertVersionIfHeld,
   setVersionSchemaIfHeld,
   objectAlreadyVersioned,
+  objectOwnerIsPurging,
   pendingLakeVersionSource,
 } from '@kukan/api/services/resource-version-service'
 import { copyObject, publishLiveContent, reserveObject } from '@kukan/api/services/storage-pointer'
@@ -148,17 +149,9 @@ export function buildPipelineContext(
       // one it measured and no one rewrites. The pointer comparison is what
       // establishes that this run is still the one describing the resource.
       // Whether the version owning this object is on its way out — see the
-      // gate's own note on what that means.
-      const [purgingOwner] = await db
-        .select({ id: resourceVersion.id })
-        .from(resourceVersion)
-        .where(
-          and(
-            eq(resourceVersion.storageKey, currentStorageKey),
-            eq(resourceVersion.state, 'purging')
-          )
-        )
-        .limit(1)
+      // gate's own note on what that means. Through the shared question, which
+      // a revert asks too: both are "are these bytes about to be destroyed".
+      const purgingOwner = await objectOwnerIsPurging(db, currentStorageKey)
 
       const decision = decideVersionCreate({
         hash: contentHash,
@@ -172,7 +165,7 @@ export function buildPipelineContext(
         maxVersion: maxRow?.version ?? null,
         latestActiveHash: activeRow?.hash ?? null,
         latestActiveFormat: activeRow?.format ?? null,
-        keyOwnedByPurgingVersion: purgingOwner !== undefined,
+        keyOwnedByPurgingVersion: purgingOwner,
       })
       if (!decision.created) return decision
 

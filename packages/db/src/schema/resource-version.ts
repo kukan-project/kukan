@@ -38,18 +38,27 @@ export const resourceVersion = pgTable(
     storageKey: text('storage_key').notNull(),
     size: bigint('size', { mode: 'number' }),
     hash: text('hash'),
-    // 'upload' = explicit replacement, 'fetch' = observed at fetch time (external URL).
+    // 'upload' = explicit replacement, 'fetch' = observed at fetch time
+    // (external URL), 'revert' = an earlier version's content issued again
+    // (ADR-044 §4).
     origin: varchar('origin', { length: 10 }).notNull(),
+    // The version a revert named, for the versions a revert issues; null on
+    // every other path. Recorded rather than derived: content and its reading
+    // repeat by design (ADR-046 §3), so no comparison settles *which* version
+    // was re-published — the oldest match and the newest are equally correct
+    // and disagree. Nothing branches on it — it is read to say where this
+    // content came from, and to withhold that once the version it names has
+    // been purged.
+    restoredFrom: integer('restored_from'),
     // The format the resource carried at creation — the condition this version's
     // interpretation is made under (ADR-046 §6). Held here because the
     // resource's label is user-editable, and reading the current one would
     // interpret settled bytes by a rule never applied to them.
     format: varchar('format', { length: 100 }),
     // active → purging → purged (ADR-028 durable-claim pattern), plus
-    // `superseded`: content a revert stepped off. It stays in the history and
-    // can still be purged, but it is not the live content and never becomes it
-    // again, which is what keeps "the live content is the highest active
-    // version" true across a revert (ADR-044 §4).
+    // `superseded` on rows the scheme before ADR-044 §4 wrote: a revert now
+    // publishes what it goes back to as a new version and never writes it, but
+    // the old rows are still here until the migration converts them.
     state: varchar('state', { length: 20 }).notNull().default('active'),
     // Column schema snapshot for this version (ADR-032 shape); null for
     // non-tabular formats or when the interpretation produced none.

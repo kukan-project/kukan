@@ -52,9 +52,10 @@ export const publicResourceColumns = { ...projectedResourceColumns, extras: scru
  * moment a state is added or reclassified.
  *
  * Purged and superseded are both excluded, for the same reason: neither is what
- * the resource serves. A revert leaves the content it stepped off numbered
- * above what is live (ADR-044 §4), so counting it would label the resource with
- * a version it has stopped handing out.
+ * the resource serves. The scheme before a revert published forward left the
+ * content it stepped off numbered above live (ADR-044 §4), and those rows are
+ * still here — **taking them out of the data is the migration's job**, not this
+ * predicate's.
  */
 export function latestLiveVersionAgg(db: Database) {
   return db

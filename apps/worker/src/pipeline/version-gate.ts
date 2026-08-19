@@ -5,6 +5,8 @@
  * the run's claim.
  */
 
+import { sameVersionIdentity } from '@kukan/shared'
+
 export type VersionResult = { created: false } | { created: true; version: number }
 
 /**
@@ -59,8 +61,13 @@ export function decideVersionCreate(input: {
 }): VersionResult {
   if (input.currentKey !== input.publishedKey) return { created: false }
   if (input.keyOwnedByPurgingVersion) return { created: false }
-  if (input.latestActiveHash === input.hash && input.latestActiveFormat === input.format) {
-    return { created: false }
-  }
+  // Through the shared definition, because a revert asks the same question of
+  // the same two values to decide whether a resend has anything left to do
+  // (ADR-044 §4). Two spellings drift the day the identity gains a field.
+  const settled = sameVersionIdentity(
+    { hash: input.latestActiveHash, format: input.latestActiveFormat },
+    { hash: input.hash, format: input.format }
+  )
+  if (settled) return { created: false }
   return { created: true, version: (input.maxVersion ?? 0) + 1 }
 }
