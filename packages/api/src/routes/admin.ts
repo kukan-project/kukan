@@ -25,6 +25,7 @@ import {
   UnauthorizedError,
   REINDEX_JOB_TYPE,
   BACKFILL_VERSIONS_JOB_TYPE,
+  CONVERT_SET_ASIDE_JOB_TYPE,
   RESOURCE_PREFIX,
   PREVIEW_PREFIX,
   escapeLike,
@@ -413,23 +414,35 @@ adminRouter.post(
 
 // GET /api/v1/admin/version-backfill-status — Migration work still outstanding.
 // Drives the one-time "backfill versions" control (ADR-043): the UI shows the
-// action while either count is above zero. `unversionedCount` is layer 1
+// action while any count is above zero. `unversionedCount` is layer 1
 // (resources with no version at all), `pendingLakeIngestCount` is layer 2
-// (tabular current versions not yet in DuckLake).
+// (tabular current versions not yet in DuckLake), `unconvertedRevertCount` is
+// resources still holding versions an old-style revert set aside (ADR-044 §4).
 adminRouter.get('/version-backfill-status', async (c) => {
   const service = new ResourceVersionService(c.get('db'))
-  const [unversionedCount, pendingLakeIngestCount] = await Promise.all([
+  const [unversionedCount, pendingLakeIngestCount, unconvertedRevertCount] = await Promise.all([
     service.countUnversioned(),
     service.countPendingLakeIngest(),
+    service.countUnconvertedReverts(),
   ])
-  return c.json({ unversionedCount, pendingLakeIngestCount })
+  return c.json({ unversionedCount, pendingLakeIngestCount, unconvertedRevertCount })
 })
 
-// POST /api/v1/admin/backfill-versions — Enqueue the one-time version backfill.
-// Snapshots each unversioned resource's live file as v1 and loads current
-// tabular versions into DuckLake (no re-fetch/re-index).
+// POST /api/v1/admin/backfill-versions — Enqueue the one-time migrations.
+// Snapshots each unversioned resource's live file as v1, loads current tabular
+// versions into DuckLake (no re-fetch/re-index), and converts the versions an
+// old-style revert set aside.
+//
+// One control for all of them: they are the same thing to whoever presses it —
+// migration work the install has left — and each is a no-op once its own count
+// is zero, so pressing it with only one outstanding costs the scans of the
+// others.
 adminRouter.post('/backfill-versions', async (c) => {
-  await c.get('queue').enqueue(BACKFILL_VERSIONS_JOB_TYPE, {})
+  const queue = c.get('queue')
+  await Promise.all([
+    queue.enqueue(BACKFILL_VERSIONS_JOB_TYPE, {}),
+    queue.enqueue(CONVERT_SET_ASIDE_JOB_TYPE, {}),
+  ])
   return c.json({ queued: true })
 })
 

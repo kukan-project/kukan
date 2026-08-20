@@ -16,6 +16,7 @@
  * shows what it dropped, in review.
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
+import { packageTable, resource, resourceVersion } from '@kukan/db'
 import { createTestApp } from '../test-helpers/test-app'
 import { PackageService } from '../../services/package-service'
 import { listPurgeTargets } from '../../services/package-cleanup'
@@ -185,6 +186,40 @@ describe('emitted SQL shape', () => {
   describe('ResourceVersionService.createFirstVersions', () => {
     it('pins the scan shape', async () => {
       await new ResourceVersionService(recorder).createFirstVersions({
+        storage: {} as never,
+        queue: { enqueue: async () => 'queued' } as never,
+      })
+      expect(recorded()).toMatchSnapshot()
+    })
+  })
+
+  // The conversion reads the same correlated EXISTS in its projection, and for
+  // the same reason keeps its qualifier: the FROM joins the pipeline row. Drop
+  // that join and the fragment resolves to the inner scope, answering "the
+  // schema describes the live content" for every resource — which is how a
+  // stale schema would reach a version (ADR-044 §4).
+  describe('ResourceVersionService.convertSetAsideVersions', () => {
+    it('pins the shape', async () => {
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'shape-pkg-convert', state: 'active' })
+        .returning()
+      const [r] = await db
+        .insert(resource)
+        .values({ packageId: pkg.id, name: 'shape-converted', urlType: 'upload' })
+        .returning()
+      await db.insert(resourceVersion).values({
+        resourceId: r.id,
+        version: 1,
+        storageKey: 'shape/converted/v1',
+        size: 1,
+        hash: 'sha256:shape',
+        origin: 'upload',
+        state: 'superseded',
+      })
+      queries.length = 0
+
+      await new ResourceVersionService(recorder).convertSetAsideVersions({
         storage: {} as never,
         queue: { enqueue: async () => 'queued' } as never,
       })

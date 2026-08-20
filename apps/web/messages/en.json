@@ -516,7 +516,8 @@
       "backfill": "Backfill versions",
       "backfilling": "Running…",
       "backfillQueued": "Backfill queued. This section disappears once it completes.",
-      "lakeIngestDescription": "{count} resources have a current version that is not yet loaded for diffing. Loading them lets you see added and removed rows from the next update onward."
+      "lakeIngestDescription": "{count} resources have a current version that is not yet loaded for diffing. Loading them lets you see added and removed rows from the next update onward.",
+      "convertRevertsDescription": "{count} resources still hold versions an earlier revert set aside. Converting them makes the latest-version label agree with what is being served."
     }
   },
   "profile": {

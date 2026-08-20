@@ -6,7 +6,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { digestStream } from '@kukan/shared/hash-node'
-import { eq, and, desc, exists, inArray, sql } from 'drizzle-orm'
+import { eq, and, countDistinct, desc, exists, inArray, ne, sql } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import {
   resource,
@@ -82,6 +82,19 @@ export interface CreatedVersion {
    * inside the resource (ADR-044 §4). Omitted by the other two.
    */
   restoredFrom?: number | null
+  /**
+   * The format {@link schema} was produced under, when the schema comes from
+   * another version's row.
+   *
+   * **A version is those bytes read that way** (ADR-046 §6), and this row takes
+   * its own format off the resource as it stands. Carrying a schema across
+   * those two is only right while the readings agree: a resource relabelled
+   * since the schema was settled would otherwise record "today's format,
+   * yesterday's columns", and relabelled to something non-tabular it also
+   * leaves the layer-2 sweep, so nothing corrects it. Given, the schema is
+   * written only where the formats match; omitted, it is written as passed.
+   */
+  schemaFormat?: string | null
 }
 
 /**
@@ -120,7 +133,12 @@ export async function insertVersionIfHeld(
                                     schema, restored_from)
       SELECT ${v.resourceId}::uuid, ${v.version}, ${v.storageKey}::text, ${v.size}::bigint,
              ${v.hash}::text, ${v.origin}, r.format,
-             ${v.schema ? JSON.stringify(v.schema) : null}::jsonb,
+             ${
+               'schemaFormat' in v
+                 ? sql`CASE WHEN r.format IS NOT DISTINCT FROM ${v.schemaFormat}::varchar
+                            THEN ${v.schema ? JSON.stringify(v.schema) : null}::jsonb END`
+                 : sql`${v.schema ? JSON.stringify(v.schema) : null}::jsonb`
+             },
              ${v.restoredFrom ?? null}::integer
       FROM resource r
       WHERE r.id = ${v.resourceId}::uuid AND ${stillHeld(claim)}
@@ -305,7 +323,87 @@ interface PurgeDeps {
  * pool reservation — since the version lock went (ADR-044 §5) a unit holds a
  * connection only for each statement, not across the object it measures.
  */
-const FIRST_VERSION_CONCURRENCY = 2
+const MIGRATION_CONCURRENCY = 2
+
+/**
+ * The interpretation the pipeline recorded, as the row holds it.
+ *
+ * A function, though it takes nothing and the fragment it builds is immutable:
+ * as a `const` it reads `resourcePipeline` while this module is being imported,
+ * and a unit test that mocks `@kukan/db` without that table then fails on the
+ * import rather than on anything it meant to exercise.
+ */
+function pipelineSchema() {
+  return sql<ResourceSchema | null>`${resourcePipeline.metadata} -> 'schema'`
+}
+
+/**
+ * The number the next version of this resource takes.
+ *
+ * Counted across **all** rows, tombstones included: a purged version keeps its
+ * number, and reusing it collides on the unique index. Read inside the caller's
+ * transaction, which is what makes it good by the time the insert lands — the
+ * resource claim keeps other writers off, and the two callers here hold one.
+ */
+async function nextVersionNumber(tx: Transaction, resourceId: string): Promise<number> {
+  const [maxRow] = await tx
+    .select({ version: resourceVersion.version })
+    .from(resourceVersion)
+    .where(eq(resourceVersion.resourceId, resourceId))
+    .orderBy(desc(resourceVersion.version))
+    .limit(1)
+  return (maxRow?.version ?? 0) + 1
+}
+
+/**
+ * Versions the revert before ADR-044 §4 stepped off, in one place.
+ *
+ * The count, the scan and the flip all ask for them, and the count is what the
+ * dashboard reads: let it drift from the scan and the migration reports itself
+ * finished with rows still to convert.
+ */
+function setAside() {
+  return eq(resourceVersion.state, 'superseded')
+}
+
+/**
+ * Whether {@link pipelineSchema} was built from the bytes the resource holds
+ * now.
+ *
+ * **A failed interpretation keeps the previous preview and schema without
+ * failing the run**, so a migration copying it unchecked pins an older
+ * content's columns onto a version of different bytes. Worse where the stale
+ * value is a schema with no columns: the layer-2 sweep passes over those for
+ * good (`pendingLakeIngestQuery`), so the version would never be loaded and
+ * nothing would say why. Unproven, a migration writes no schema and leaves it
+ * to the ordinary re-interpretation, which is a path that exists.
+ *
+ * `'extract'` deliberately: this reads rows already written, and the fallback
+ * only applies to previews from before the source hash existed — all of which
+ * predate the rename (ADR-046). Matching `'interpret'` here would find none of
+ * them.
+ */
+function schemaDescribesLiveContent(db: Database) {
+  return sql<boolean>`(
+    ${resourcePipeline.metadata}->>'sourceHash' = ${resource.hash}
+    OR (
+      ${resourcePipeline.metadata}->>'sourceHash' IS NULL
+      AND ${resourcePipeline.status} = 'complete'
+      AND ${exists(
+        db
+          .select({})
+          .from(resourcePipelineStep)
+          .where(
+            and(
+              eq(resourcePipelineStep.pipelineId, resourcePipeline.id),
+              eq(resourcePipelineStep.stepName, 'extract'),
+              eq(resourcePipelineStep.status, 'complete')
+            )
+          )
+      )}
+    )
+  )`
+}
 
 /**
  * Versions that layer 2 has not loaded yet (ADR-043 layer 2, ADR-046).
@@ -349,18 +447,23 @@ const FIRST_VERSION_CONCURRENCY = 2
  *
  * @param only - narrow to one version, for the handler's own pre-check.
  */
-function pendingLakeIngestQuery(only?: { resourceId: string; version: number }) {
+function pendingLakeIngestQuery(only?: { resourceId: string; version?: number }) {
   const forVersion =
     only === undefined
       ? sql``
-      : sql`AND rv.resource_id = ${only.resourceId}::uuid AND rv.version = ${only.version}`
+      : sql`
+    AND rv.resource_id = ${only.resourceId}::uuid${
+      only.version === undefined ? sql`` : sql` AND rv.version = ${only.version}`
+    }`
+  // Interpolated at the end of a line, not on one of its own: empty, a line of
+  // its own leaves the indentation behind as trailing whitespace in the SQL
+  // this pins.
   return sql`
   SELECT rv.resource_id AS "resourceId", rv.version, rv.storage_key AS "storageKey", rv.size,
          rv.format
   FROM resource_version rv
   JOIN resource r ON r.id = rv.resource_id
-  WHERE r.state = 'active'
-    ${forVersion}
+  WHERE r.state = 'active'${forVersion}
     AND rv.state = 'active'
     AND rv.ducklake_snapshot_id IS NULL
     AND lower(rv.format) IN ('csv', 'tsv')
@@ -635,6 +738,22 @@ export class ResourceVersionService {
   }
 
   /**
+   * Count resources still holding versions the revert before ADR-044 §4 set
+   * aside. Zero is what lets `superseded` leave the language: while any remain,
+   * code written for three states counts them as content being served.
+   *
+   * By resource rather than by row, because that is the unit converted — one
+   * resource is one claim, one issue and one flip however many rows it holds.
+   */
+  async countUnconvertedReverts(): Promise<number> {
+    const [row] = await this.db
+      .select({ count: countDistinct(resourceVersion.resourceId) })
+      .from(resourceVersion)
+      .where(setAside())
+    return row?.count ?? 0
+  }
+
+  /**
    * One-time migration: give every unversioned resource a v1 naming the file it
    * already holds (ADR-043 §1). Nothing is copied, fetched, re-indexed or
    * re-embedded — the live key is the content, and no other version owns it.
@@ -665,62 +784,51 @@ export class ResourceVersionService {
         hash: resource.hash,
         size: resource.size,
         storageKey: resource.storageKey,
-        schema: sql<ResourceSchema | null>`${resourcePipeline.metadata} -> 'schema'`,
-        // Whether that schema was built from the bytes the resource holds now.
-        // A failed interpretation keeps the previous preview and schema without
-        // failing the run, so an unchecked copy would pin an older content's
-        // columns onto v1. The version's own bytes are what settle it.
-        //
-        // `'extract'` deliberately: this reads rows already written, and the
-        // fallback only applies to previews from before the source hash existed
-        // — all of which predate the rename (ADR-046). Matching `'interpret'`
-        // here would find none of them.
-        schemaTrusted: sql<boolean>`(
-          ${resourcePipeline.metadata}->>'sourceHash' = ${resource.hash}
-          OR (
-            ${resourcePipeline.metadata}->>'sourceHash' IS NULL
-            AND ${resourcePipeline.status} = 'complete'
-            AND ${exists(
-              this.db
-                .select({})
-                .from(resourcePipelineStep)
-                .where(
-                  and(
-                    eq(resourcePipelineStep.pipelineId, resourcePipeline.id),
-                    eq(resourcePipelineStep.stepName, 'extract'),
-                    eq(resourcePipelineStep.status, 'complete')
-                  )
-                )
-            )}
-          )
-        )`,
+        schema: pipelineSchema(),
+        schemaTrusted: schemaDescribesLiveContent(this.db),
       })
       .from(resource)
       .leftJoin(resourcePipeline, eq(resourcePipeline.resourceId, resource.id))
       .where(this.unversionedWhere())
 
-    let created = 0
+    // Skipped: something created, replaced or is holding the resource.
+    const { done, skipped, failed } = await this.runMigrationUnits(rows, (r) =>
+      this.createFirstVersion(r, deps.storage)
+    )
+
+    const { queued, failed: queueFailed } = await this.queuePendingLakeIngests(deps.queue)
+    return { created: done, skipped, failed, queued, queueFailed }
+  }
+
+  /**
+   * Run one unit per row, bounded, and tally the outcome.
+   *
+   * The protocol every migration unit here speaks: **true** did the work,
+   * **false** left it for the next pass (something else holds the resource, or
+   * moved it under this one), **throwing** failed. Per row rather than one
+   * batched statement, so one unconvertible resource costs only itself.
+   *
+   * Shared because the accounting is the part that has to mean the same thing
+   * across migrations — the dashboard reads "outstanding" from a count, and a
+   * unit tallied as done when it was skipped shows an install as migrated when
+   * it is not.
+   */
+  private async runMigrationUnits<T>(
+    rows: T[],
+    unit: (row: T) => Promise<boolean>
+  ): Promise<{ done: number; skipped: number; failed: number }> {
+    let done = 0
     let skipped = 0
     let failed = 0
-    // Per-resource measure+insert, bounded concurrency. Kept per-row (not one
-    // batched INSERT) so one bad object fails only its own resource, not the
-    // whole chunk.
-    for (let i = 0; i < rows.length; i += FIRST_VERSION_CONCURRENCY) {
-      const results = await Promise.allSettled(
-        rows
-          .slice(i, i + FIRST_VERSION_CONCURRENCY)
-          .map((r) => this.createFirstVersion(r, deps.storage))
-      )
+    for (let i = 0; i < rows.length; i += MIGRATION_CONCURRENCY) {
+      const results = await Promise.allSettled(rows.slice(i, i + MIGRATION_CONCURRENCY).map(unit))
       for (const res of results) {
         if (res.status === 'rejected') failed++
-        else if (res.value) created++
-        // Skipped: something created, replaced or is holding the resource.
+        else if (res.value) done++
         else skipped++
       }
     }
-
-    const { queued, failed: queueFailed } = await this.queuePendingLakeIngests(deps.queue)
-    return { created, skipped, failed, queued, queueFailed }
+    return { done, skipped, failed }
   }
 
   /**
@@ -801,6 +909,254 @@ export class ResourceVersionService {
       fn(claims[0] ?? null)
     )
     return outcome.status === 'ran' ? outcome.result : false
+  }
+
+  /**
+   * Convert what the revert before ADR-044 §4 left behind (that section).
+   *
+   * That revert set the versions above its destination aside as `superseded`
+   * and pointed live at the destination's own object. A revert now issues the
+   * destination's content as a new version and moves no other row, so those
+   * rows are the only place the old shape still exists — and every predicate
+   * over version state has to be right about both worlds for as long as they
+   * do. Six attempts at such a predicate opened six holes: it is a property of
+   * the data, not of the predicate.
+   *
+   * **Every resource holding one is converted, with no shape left out.** One
+   * exclusion keeps its rows for good, and the three states never arrive. That
+   * includes deleted resources, whose rows are just as much rows.
+   *
+   * Idempotent and resumable: what to do is read off the rows as they stand, so
+   * a converted resource asks for nothing and an interrupted pass resumes by
+   * looking again.
+   */
+  async convertSetAsideVersions(deps: { storage: StorageAdapter; queue: QueueAdapter }): Promise<{
+    /** Reached the new shape, whether or not that took issuing a version. */
+    converted: number
+    /** Held by a run, or overtaken mid-way — the next pass finds it again. */
+    skipped: number
+    failed: number
+    /** Versions this pass issued, handed to the worker to load (ADR-046). */
+    queued: number
+    /** Versions the queue refused; the hourly sweep finds them again. */
+    queueFailed: number
+  }> {
+    const rows = await this.db
+      .selectDistinct({ resourceId: resourceVersion.resourceId })
+      .from(resourceVersion)
+      .where(setAside())
+
+    const { done, skipped, failed } = await this.runMigrationUnits(rows, (r) =>
+      this.convertSetAside(r.resourceId, deps.storage)
+    )
+
+    // The versions issued above are tabular content layer 2 has never seen, and
+    // the flip makes set-aside rows candidates as well. Queued here rather than
+    // left to the hourly sweep, and by this job rather than the backfill's own
+    // call: the two run side by side, so a backfill that finished its scan
+    // first would leave this pass's versions for the next hour.
+    const { queued, failed: queueFailed } = await this.queuePendingLakeIngests(deps.queue)
+    return { converted: done, skipped, failed, queued, queueFailed }
+  }
+
+  /**
+   * Convert one resource: issue what it is serving as a version, then flip.
+   *
+   * **The issue goes first**, in a transaction of its own. The other order
+   * shows the resource as "the label says the higher version, the content says
+   * the lower" until the second write lands — the very breakage being removed.
+   * This order opens no such window: once the content is issued the topmost
+   * version owns live, and rows still saying `superseded` are only counted as
+   * content being served, which is true of them.
+   *
+   * Nothing is re-read between the two. The question the issue answered — does
+   * the topmost version own the live object — is one the flip cannot change,
+   * since it moves neither version numbers nor tombstones, so a pass cut off in
+   * between resumes by asking it again and finds only the flip outstanding.
+   */
+  private async convertSetAside(resourceId: string, storage: StorageAdapter): Promise<boolean> {
+    return this.withClaimOrSkip(resourceId, async (claim) => {
+      if (!(await this.issueLiveAsVersion(resourceId, claim, storage))) return false
+
+      const flipped = await this.db
+        .update(resourceVersion)
+        .set({ state: 'active', updated: sql`NOW()` })
+        .where(and(eq(resourceVersion.resourceId, resourceId), setAside(), stillHeld(claim)))
+        .returning({ version: resourceVersion.version })
+      // Nothing flipped means the claim went stale and was taken between the
+      // issue and here — the rows are still set aside. Reported as work not
+      // done, so the count the dashboard reads and the number this returns do
+      // not disagree about the same resource.
+      return flipped.length > 0
+    })
+  }
+
+  /**
+   * Put the live object under the newest version, whichever way it takes.
+   *
+   * Which way is decided by **who owns the live object**, and by nothing else:
+   *
+   * - the topmost version owns it, or nothing is being served — already the
+   *   shape a revert leaves, so the flip is the whole conversion
+   * - a lower version owns it — its content is issued as a new version, the
+   *   same write a revert makes, by the same function
+   * - no version owns it — the new version **takes that object** rather than
+   *   copying it, which is what the rule says to do with an object nobody owns
+   *   (ADR-043 §1-2). The pointer does not move either
+   *
+   * The third is the ordinary outcome of re-fetching an unchanged URL, so it is
+   * not a legacy shape and cannot be skipped: leaving it out would leave the
+   * `superseded` rows of every resource that reaches it, which is any of them
+   * given time.
+   *
+   * @returns false when the resource was taken out from under this — the next
+   *   pass converts it.
+   */
+  private async issueLiveAsVersion(
+    resourceId: string,
+    claim: ResourceClaim | null,
+    storage: StorageAdapter
+  ): Promise<boolean> {
+    const [current] = await this.db
+      .select({
+        packageId: resource.packageId,
+        storageKey: resource.storageKey,
+        hash: resource.hash,
+        size: resource.size,
+        urlType: resource.urlType,
+        schema: pipelineSchema(),
+        schemaTrusted: schemaDescribesLiveContent(this.db),
+      })
+      .from(resource)
+      .leftJoin(resourcePipeline, eq(resourcePipeline.resourceId, resource.id))
+      .where(eq(resource.id, resourceId))
+      .limit(1)
+    // Serving nothing has nothing to issue — the shape an emptying revert
+    // leaves, where flipping the rows back is the whole of it.
+    if (!current?.storageKey) return true
+
+    // Ownership is asked of the object, never of the hash: several versions can
+    // hold the same bytes (ADR-046 §3), and the one that owns the object is the
+    // one whose purge would destroy it. Tombstones own nothing, so they neither
+    // answer this nor stand as the topmost row.
+    const [topmost] = await this.db
+      .select({ version: resourceVersion.version, storageKey: resourceVersion.storageKey })
+      .from(resourceVersion)
+      .where(and(eq(resourceVersion.resourceId, resourceId), ne(resourceVersion.state, 'purged')))
+      .orderBy(desc(resourceVersion.version))
+      .limit(1)
+    // Already the shape a revert leaves.
+    if (topmost?.storageKey === current.storageKey) return true
+
+    const [owner] = await this.db
+      .select({ version: resourceVersion.version })
+      .from(resourceVersion)
+      .where(
+        and(
+          eq(resourceVersion.resourceId, resourceId),
+          eq(resourceVersion.storageKey, current.storageKey),
+          ne(resourceVersion.state, 'purged')
+        )
+      )
+      .limit(1)
+
+    if (owner) {
+      try {
+        // The destination's object is the live one — the same key by the WHERE
+        // above, which is why it is not read back off the row.
+        const destination = { version: owner.version, storageKey: current.storageKey }
+        // Not retracting: the destination already owns what is served, so the
+        // bytes do not change and neither may the resource's label or its
+        // interpretation.
+        await this.publishVersionContent(resourceId, claim, destination, current, storage, false)
+        return true
+      } catch (error) {
+        // The destination was claimed for purge, or the pointer moved, while
+        // this ran. Both leave the copy to the sweep and the resource to the
+        // next pass — neither is a failure of the migration.
+        if (error instanceof ConflictError) return false
+        throw error
+      }
+    }
+
+    // Measured, not taken from the row, for the reason the v1 pass gives: this
+    // is pre-existing data, `upload-complete` used to accept any string as a
+    // hash, and `promoteUpload` writes the size the client claimed. **There is
+    // no copy to read instead** — this branch files the live object itself, and
+    // the numbers it records are what `sameVersionIdentity` and the live guess
+    // then compare against.
+    const measured = await digestStream(await storage.download(current.storageKey))
+
+    return this.adoptLiveObject(resourceId, claim, {
+      storageKey: current.storageKey,
+      ...measured,
+      stale: measured.hash !== current.hash || measured.size !== current.size,
+      origin: versionOrigin(current.urlType),
+      schema: current.schemaTrusted ? (current.schema ?? null) : null,
+    })
+  }
+
+  /**
+   * Record the live object as the newest version, without copying it.
+   *
+   * The pointer is locked and re-read first. An upload takes no claim (ADR-044
+   * §4), so it is the one write that can move the pointer while this holds the
+   * resource, and this version would then name content the resource no longer
+   * serves. Locking the row puts the two in an order, since moving the pointer
+   * updates it. **The object itself is not at risk either way**: the sweep asks
+   * `resource_version.storage_key` before deleting anything (ADR-045), so a
+   * version that lands takes the key back off the reclamation list whatever
+   * order the two committed in.
+   *
+   * `stale` says the measurement disagreed with the row. The row is then
+   * corrected under the same lock: the live hash is what the version gate and
+   * the live guess compare against, so leaving the version truthful and the
+   * resource wrong would answer "different content" forever.
+   */
+  private async adoptLiveObject(
+    resourceId: string,
+    claim: ResourceClaim | null,
+    live: {
+      storageKey: string
+      hash: string
+      size: number
+      stale: boolean
+      origin: VersionOrigin
+      schema: ResourceSchema | null
+    }
+  ): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ storageKey: resource.storageKey })
+        .from(resource)
+        .where(eq(resource.id, resourceId))
+        .limit(1)
+        .for('update')
+      if (locked?.storageKey !== live.storageKey) return false
+
+      if (live.stale) {
+        await tx
+          .update(resource)
+          .set({ hash: live.hash, size: live.size })
+          .where(eq(resource.id, resourceId))
+      }
+
+      return insertVersionIfHeld(tx, claim, {
+        resourceId,
+        version: await nextVersionNumber(tx, resourceId),
+        storageKey: live.storageKey,
+        size: live.size,
+        hash: live.hash,
+        // How the bytes got here, which is what `origin` records — a fetch or
+        // an upload published this object, and the migration only gives it a
+        // number. Calling it a revert would put a claim in the history that
+        // nothing supports: `restoredFrom` has to stay null here, because
+        // repeated bytes mean no comparison says which version this content
+        // came from.
+        origin: live.origin,
+        schema: live.schema,
+      })
+    })
   }
 
   /**
@@ -975,7 +1331,17 @@ export class ResourceVersionService {
    * handler answers the same question again before it interprets anything.
    */
   async queuePendingLakeIngests(queue: QueueAdapter): Promise<{ queued: number; failed: number }> {
-    const result = await this.db.execute(pendingLakeIngestQuery())
+    // **One version per resource, the oldest.** A resource can have several
+    // outstanding at once — the conversion flips rows into the eligible set and
+    // issues a version above them in the same pass (ADR-044 §4) — and the queue
+    // is not ordered. Handed out together, whichever the worker takes first
+    // wins: ingest a newer one and the older ones are overtaken, which the
+    // ingest refuses for good, so they keep no snapshot and drop out of this
+    // very query. Oldest first, and the next pass hands out the next.
+    const result = await this.db.execute(sql`
+      SELECT DISTINCT ON ("resourceId") * FROM (${pendingLakeIngestQuery()}) pending
+      ORDER BY "resourceId", version
+    `)
     const pending = result.rows as unknown as PendingLakeIngest[]
 
     // Batched-concurrent like `PipelineService.enqueueAll`: a sequential loop
@@ -1000,6 +1366,39 @@ export class ResourceVersionService {
       }
     }
     return { queued, failed }
+  }
+
+  /**
+   * Queue the next version of one resource layer 2 has not loaded.
+   *
+   * **What keeps a backlog draining.** A sweep hands out one version per
+   * resource (see {@link queuePendingLakeIngests}), so without this the rest
+   * wait an hour each — long enough for ordinary content to arrive, take a
+   * snapshot above them, and overtake the lot for good. Called when an ingest
+   * finishes, it walks a resource's backlog in seconds instead.
+   *
+   * Self-terminating, and `handled` is what makes that true rather than nearly
+   * true. An attempt usually leaves its version holding a snapshot or an empty
+   * schema, either of which takes it out of the set — but one that interpreted
+   * nothing records neither, and chaining would then hand the same version
+   * straight back, forever. Excluded here, it waits for the sweep instead.
+   *
+   * @param handled - the version this attempt dealt with, whatever came of it.
+   * @returns whether anything was queued.
+   */
+  async queueNextPendingLakeIngest(
+    queue: QueueAdapter,
+    resourceId: string,
+    handled: number
+  ): Promise<boolean> {
+    const result = await this.db.execute(sql`
+      SELECT * FROM (${pendingLakeIngestQuery({ resourceId })}) pending
+      WHERE version <> ${handled} ORDER BY version LIMIT 1
+    `)
+    const [next] = result.rows as unknown as PendingLakeIngest[]
+    if (!next) return false
+    await queue.enqueue(LAKE_INGEST_JOB_TYPE, { resourceId, version: next.version })
+    return true
   }
 
   /** List a resource's versions, newest first. */
@@ -2095,6 +2494,17 @@ export class ResourceVersionService {
    * with the writes the other way round the new row would record whichever
    * label the retracted content was carrying.
    *
+   * **`retracting` is what separates the two callers.** A revert is retracting
+   * content: the resource stops being what it was and becomes the destination,
+   * so its label and its interpretation move to the destination's along with
+   * the bytes. The conversion (ADR-044 §4) is not — the destination already
+   * owns the live object, so the served bytes do not change and nothing about
+   * how the resource describes itself may either. Told it was a revert, it
+   * relabels a resource the user has since renamed, and wipes the live
+   * interpretation to match a destination row that has none (the vintage with
+   * set-aside rows predates versions recording a schema), with no rebuild
+   * queued to put it back.
+   *
    * @returns the version number issued.
    * @throws ConflictError when the destination was claimed for purge, or the
    *   pointer moved, while this was running. Both leave the copy to the sweep.
@@ -2104,7 +2514,8 @@ export class ResourceVersionService {
     claim: ResourceClaim | null,
     destination: { version: number; storageKey: string },
     current: { packageId: string; storageKey: string | null; hash: string | null },
-    storage: StorageAdapter
+    storage: StorageAdapter,
+    retracting: boolean = true
   ): Promise<number> {
     const versionKey = getStorageKey(current.packageId, resourceId, randomUUID())
     await copyObject(this.db, storage, destination.storageKey, versionKey)
@@ -2132,13 +2543,7 @@ export class ResourceVersionService {
         )
       }
 
-      const [maxRow] = await tx
-        .select({ version: resourceVersion.version })
-        .from(resourceVersion)
-        .where(eq(resourceVersion.resourceId, resourceId))
-        .orderBy(desc(resourceVersion.version))
-        .limit(1)
-      const version = (maxRow?.version ?? 0) + 1
+      const version = await nextVersionNumber(tx, resourceId)
 
       const published = await publishLiveContent(tx, resourceId, {
         key: versionKey,
@@ -2146,7 +2551,10 @@ export class ResourceVersionService {
         hash: row.hash,
         size: row.size,
         previousHash: current.hash,
-        format: row.format,
+        // Omitted entirely when not retracting, which leaves the column alone —
+        // passing the resource's own value back would still mint a generation
+        // for a label nobody changed.
+        ...(retracting ? { format: row.format } : {}),
         claim,
       })
       if (!published) {
@@ -2165,14 +2573,17 @@ export class ResourceVersionService {
         // Carried across rather than left for the rebuild to work out again: a
         // version file never changes, so its interpretation cannot have, and
         // the copy is the same file. The rebuild would reach the same answer
-        // minutes later and only if it completes.
+        // minutes later and only if it completes. Guarded on the label it was
+        // read under, which a retracting caller has just written and a
+        // converting one has not.
         schema: row.schema,
+        schemaFormat: row.format,
       })
       if (!inserted) {
         throw new ConflictError(`Resource ${resourceId} changed while being restored; retry`)
       }
 
-      await this.adoptVersionInterpretation(tx, resourceId, row)
+      if (retracting) await this.adoptVersionInterpretation(tx, resourceId, row)
       return version
     })
   }

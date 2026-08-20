@@ -13,7 +13,10 @@ import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { Logger } from '@kukan/shared'
 import { LAKE_INGEST_JOB_TYPE } from '@kukan/shared'
 import { withResourceClaims } from '@kukan/api/services/pipeline-claim'
-import { pendingLakeVersionSource } from '@kukan/api/services/resource-version-service'
+import {
+  pendingLakeVersionSource,
+  ResourceVersionService,
+} from '@kukan/api/services/resource-version-service'
 import { withInterpretedVersion } from './interpret/version'
 import type { PipelineContext } from './types'
 import { CLAIM_RETRY_DELAY_S } from '@/config'
@@ -33,6 +36,12 @@ export async function retryLakeIngest(
   const source = await pendingLakeVersionSource(deps.db, job)
   if (!source) {
     log.info({ resourceId, version }, 'Lake ingest retry skipped (nothing outstanding)')
+    // Still hand on. This is where a redelivery lands after the chain's own
+    // enqueue failed: the version is already done, so without asking again the
+    // backlog stops until the hourly sweep — the wait the chain exists to
+    // remove. Duplicate messages reach it too and answer with the same next
+    // version, which costs a redelivery of something already queued.
+    await chainToNext(deps, resourceId, version, log)
     return
   }
 
@@ -82,4 +91,25 @@ export async function retryLakeIngest(
     { resourceId, version, snapshotId: ingested?.snapshotId },
     ingested ? 'Lake ingest retry completed' : 'Lake ingest retry skipped (already ingested)'
   )
+
+  await chainToNext(deps, resourceId, version, log)
+}
+
+/**
+ * Hand on to the next version this resource owes layer 2.
+ *
+ * The sweep gives out one version per resource per hour, which is long enough
+ * for new content to arrive above a backlog and overtake the rest of it for
+ * good; chained, a resource drains in seconds.
+ */
+async function chainToNext(
+  deps: { db: Database; queue: QueueAdapter },
+  resourceId: string,
+  handled: number,
+  log: Logger
+): Promise<void> {
+  const service = new ResourceVersionService(deps.db)
+  if (await service.queueNextPendingLakeIngest(deps.queue, resourceId, handled)) {
+    log.info({ resourceId }, 'Queued the next version this resource owes layer 2')
+  }
 }

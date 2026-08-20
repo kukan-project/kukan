@@ -1,3 +1,5 @@
+import { Readable } from 'node:stream'
+import { vi } from 'vitest'
 import type { LakeConfig } from '@kukan/lake'
 import { randomUUID } from 'crypto'
 
@@ -112,4 +114,34 @@ export const unreachableLake: LakeConfig = {
   bucket: 'nope',
   region: 'us-east-1',
   s3UseSsl: false,
+}
+
+/**
+ * Storage backed by a map, for tests that care what an object holds.
+ *
+ * The copy is the part worth having real: a version owns the object it names
+ * (ADR-046 §3), so "was this copied or taken over" is a question about keys and
+ * bytes, and a stub that forgets the bytes cannot answer it. Reading a key
+ * nothing wrote throws rather than yielding empty, since a caller reaching for
+ * an object that was never written is the bug under test.
+ *
+ * @param objects - the map to work in, so the test can seed and inspect it.
+ */
+export function mapStorage(objects: Map<string, Buffer>, overrides: Record<string, unknown> = {}) {
+  return {
+    copy: vi.fn(async (src: string, dest: string) => {
+      const body = objects.get(src)
+      if (!body) throw new Error(`missing object: ${src}`)
+      objects.set(dest, body)
+    }),
+    download: vi.fn(async (key: string) => {
+      const body = objects.get(key)
+      if (!body) throw new Error(`missing object: ${key}`)
+      return Readable.from(body)
+    }),
+    delete: vi.fn(async (key: string) => {
+      objects.delete(key)
+    }),
+    ...overrides,
+  } as never
 }

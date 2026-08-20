@@ -11,13 +11,15 @@ interface BackfillStatus {
   unversionedCount: number
   /** Layer 2: tabular current versions not yet loaded into DuckLake. */
   pendingLakeIngestCount: number
+  /** Resources still holding versions an old-style revert set aside (ADR-044 §4). */
+  unconvertedRevertCount: number
 }
 
 /**
  * One-time version-backfill prompt (ADR-043). Sysadmin-only. Shows only while
- * migration work remains — versions to create, or current versions to load into
- * DuckLake for row-level diff — and disappears once both are done, so it never
- * lingers as permanent clutter.
+ * migration work remains — versions to create, current versions to load into
+ * DuckLake for row-level diff, or old-style reverts to convert — and disappears
+ * once all are done, so it never lingers as permanent clutter.
  */
 export function VersionBackfillNotice() {
   const { sysadmin } = useUser()
@@ -44,8 +46,17 @@ export function VersionBackfillNotice() {
   }
 
   if (!sysadmin || status === null) return null
-  const { unversionedCount, pendingLakeIngestCount } = status
-  if (unversionedCount === 0 && pendingLakeIngestCount === 0) return null
+  // One line per migration with work left. As a list rather than a conjunction
+  // plus a block each: the next migration is then one entry, not three edits in
+  // two places.
+  const outstanding = (
+    [
+      ['backfillDescription', status.unversionedCount],
+      ['lakeIngestDescription', status.pendingLakeIngestCount],
+      ['convertRevertsDescription', status.unconvertedRevertCount],
+    ] as const
+  ).filter(([, count]) => count > 0)
+  if (outstanding.length === 0) return null
 
   return (
     <Card className="border-primary/40 bg-primary/5">
@@ -54,10 +65,9 @@ export function VersionBackfillNotice() {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-          {unversionedCount > 0 && <p>{t('backfillDescription', { count: unversionedCount })}</p>}
-          {pendingLakeIngestCount > 0 && (
-            <p>{t('lakeIngestDescription', { count: pendingLakeIngestCount })}</p>
-          )}
+          {outstanding.map(([key, count]) => (
+            <p key={key}>{t(key, { count })}</p>
+          ))}
         </div>
         <div className="flex items-center gap-4">
           <Button onClick={handleBackfill} disabled={backfilling || queued}>

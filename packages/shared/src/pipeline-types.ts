@@ -134,6 +134,10 @@ export const PURGE_VERSION_JOB_TYPE = 'purge-resource-version' as const
  *  as v1 (ADR-043). No re-fetch/re-index — just copies the live key. */
 export const BACKFILL_VERSIONS_JOB_TYPE = 'backfill-resource-versions' as const
 
+/** One-time migration: convert the versions the revert before ADR-044 §4 set
+ *  aside, so `superseded` can leave the language. */
+export const CONVERT_SET_ASIDE_JOB_TYPE = 'convert-set-aside-versions' as const
+
 /** Retry a DuckLake ingest the pipeline's advisory Lake step failed (ADR-043). */
 export const LAKE_INGEST_JOB_TYPE = 'lake-ingest-version' as const
 
@@ -159,6 +163,7 @@ export const purgeVersionJobSchema = z.object({
   version: z.number().int().positive(),
 })
 export const backfillVersionsJobSchema = z.object({})
+export const convertSetAsideJobSchema = z.object({})
 // Ids only, like every other job. What to read is settled by the version row —
 // the handler interprets its file again (ADR-046) — so a message carrying
 // anything else could only come to disagree with it. Messages queued before

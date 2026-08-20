@@ -5,7 +5,6 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { and, eq, sql } from 'drizzle-orm'
 import { resource, resourceVersion, resourcePipeline, resourcePipelineStep } from '@kukan/db'
-import { Readable } from 'node:stream'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import { getStorageKey, MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
 import { hashBuffer } from '@kukan/shared/hash-node'
@@ -13,6 +12,7 @@ import { randomUUID } from 'node:crypto'
 import { ResourceVersionService } from '../../services/resource-version-service'
 import { CLAIM_STALE_AFTER_MS, claimResources } from '../../services/pipeline-claim'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
+import { mapStorage } from '../test-helpers/fixtures'
 
 const db = getTestDb()
 const service = new ResourceVersionService(db)
@@ -28,24 +28,7 @@ function mockQueue() {
   return { enqueue: vi.fn(), getStats: vi.fn(), process: vi.fn(), stop: vi.fn() } as QueueAdapter
 }
 
-function mockStorage(overrides: Record<string, unknown> = {}) {
-  return {
-    copy: vi.fn(async (src: string, dest: string) => {
-      const body = objects.get(src)
-      if (!body) throw new Error(`missing object: ${src}`)
-      objects.set(dest, body)
-    }),
-    download: vi.fn(async (key: string) => {
-      const body = objects.get(key)
-      if (!body) throw new Error(`missing object: ${key}`)
-      return Readable.from(body)
-    }),
-    delete: vi.fn(async (key: string) => {
-      objects.delete(key)
-    }),
-    ...overrides,
-  } as never
-}
+const mockStorage = (overrides: Record<string, unknown> = {}) => mapStorage(objects, overrides)
 
 /**
  * @param hash - the hash the row records. Defaults to the real hash of the

@@ -14,6 +14,7 @@ import {
   PURGE_ORG_JOB_TYPE,
   PURGE_VERSION_JOB_TYPE,
   BACKFILL_VERSIONS_JOB_TYPE,
+  CONVERT_SET_ASIDE_JOB_TYPE,
   LAKE_INGEST_JOB_TYPE,
   EMBED_JOB_TYPE,
   pipelineJobSchema,
@@ -21,6 +22,7 @@ import {
   purgeOrgJobSchema,
   purgeVersionJobSchema,
   backfillVersionsJobSchema,
+  convertSetAsideJobSchema,
   lakeIngestJobSchema,
   embedJobSchema,
 } from '@kukan/shared'
@@ -354,6 +356,29 @@ await queue.process({
     log.info(
       { jobId: job.id, type: job.type, ...result, elapsed },
       'Backfill versions job completed'
+    )
+  },
+  // One-time migration: convert the versions the revert before ADR-044 §4 set
+  // aside — issue what each resource serves as its newest version, then flip
+  // the set-aside rows back to `active`.
+  //
+  // Its own job rather than another call inside the backfill above, though one
+  // control enqueues both: each walks every resource it finds, and the queue
+  // does not extend a message's visibility mid-job, so joining them doubles the
+  // time one message has to finish in. Separate, each is redelivered on its own
+  // terms — and both are idempotent, so a redelivery costs a re-scan.
+  [CONVERT_SET_ASIDE_JOB_TYPE]: async (job: Job) => {
+    if (!parseJobPayload(job, convertSetAsideJobSchema)) return
+    log.info({ jobId: job.id, type: job.type }, 'Convert set-aside versions job started')
+    const start = performance.now()
+    const result = await new ResourceVersionService(db).convertSetAsideVersions({
+      storage,
+      queue,
+    })
+    const elapsed = Math.round(performance.now() - start)
+    log.info(
+      { jobId: job.id, type: job.type, ...result, elapsed },
+      'Convert set-aside versions job completed'
     )
   },
 })

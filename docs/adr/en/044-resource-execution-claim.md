@@ -7,11 +7,15 @@
 Limit a resource to one running operation at a time, expressed as a claim on its
 `resource_pipeline` row. Pipeline runs and purges share the same claim.
 
-> **The ii-b design revised §4's revert contract on 2026-08-17 (not built).** The version state
+> **The ii-b design revised §4's revert contract on 2026-08-17.** The version state
 > `superseded` is dropped, and **a revert now issues the destination's content as a new
 > version**. `restoreTo` and `ifLiveRevision` stay; the rule that a `superseded` version cannot
 > be named as a destination goes. The claim mechanism itself (§1–§3, §5, §6) is unchanged.
 > Reasoning and measurements in `docs/specs/en/phase-versioning-2-ducklake.md` §7.2.
+>
+> **The publishing revert and the conversion of the rows the old scheme left are built
+> (2026-08-19).** Dropping `superseded` from the language of states waits until the conversion
+> has nothing left to do.
 
 ## Context
 
@@ -203,7 +207,7 @@ exists: sysadmin only, a required reason, an audit log entry.
 
 #### A revert deletes no versions — it re-issues the content
 
-> **ii-b rewrote this section (2026-08-17, not built).** It originally added a fourth state,
+> **ii-b rewrote this section (2026-08-17, built).** It originally added a fourth state,
 > `superseded`, and dropped every version above the destination into it. **The shape is now to
 > move versions forward, and `superseded` is dropped.** Reasoning and measurements in
 > `docs/specs/en/phase-versioning-2-ducklake.md` §7.2; the state diagram is in ADR-043 §1.1.
@@ -353,12 +357,12 @@ and the condition for collapsing to three states is never met. What happens is d
 thing: **who owns the live object** (the flip does not change that answer, so it can be asked
 either side of the issue).
 
-| The live object              | What the conversion issues                   |
-| ---------------------------- | -------------------------------------------- |
-| Owned by the topmost version | Nothing                                      |
-| Owned by a lower version     | A **copy** of its content, as a new version  |
-| Owned by no version          | **That object, taken over by a new version** |
-| The pointer is empty         | Nothing (there is nothing to issue)          |
+| The live object              | What the conversion issues                             |
+| ---------------------------- | ------------------------------------------------------ |
+| Owned by the topmost version | Nothing                                                |
+| Owned by a lower version     | A **copy** of its content, as a new version            |
+| Owned by no version          | **That object, taken over by a new version** (no copy) |
+| The pointer is empty         | Nothing (there is nothing to issue)                    |
 
 **The third row was excluded at first.** The reason given was that there is no version to issue
 from; what an issue needs is not a source **version** but its **bytes**, and the live pointer names
@@ -367,18 +371,30 @@ them.
 **Not copying when nobody owns it is what the rule already says** — "a version takes an object
 nobody owns, and copies one that is already owned" (ADR-043 §1-2). The pointer does not move
 either. That version's `restored_from` cannot be written — several versions can hold the same
-bytes, so the hash does not settle which one this content came from — so it is null, and the
-history shows it as a restore with no version number.
+bytes, so the hash does not settle which one this content came from — so it is null. **`origin`
+records how the bytes got here**, so it stays the fetch or upload that published the object;
+calling it a revert puts a claim in the history that nothing supports.
 
 **This shape cannot be excluded because it coexists with the old rows.** An unchanged re-fetch
 writes a fresh key every time and creates no version, so a resource holding `superseded` rows
 **reaches this shape by being left alone**.
 
-**That is what makes the conversion terminate.** A converted resource holds no `superseded` row and
-its topmost version owns live. A later unchanged re-fetch leaves live unowned again — a permanent
-normal state, not a defect — but every version is `active` by then, so the hash guess answers the
-topmost version, which is the version that content is. **Both defects that run through old rows
-need a `superseded` row above live**, so they become unreachable at the same moment.
+**The hash and the size are measured, not taken from the row.** `upload-complete` accepted any
+string as a hash for a time, and `size` can be a number the client claimed. This is the branch with
+**no copy to read instead**, and what it records becomes what version identity and the live guess
+compare against; a disagreement is settled by correcting the resource row.
+
+**The conversion puts an end to `superseded`.** A converted resource holds no such row and its
+topmost version owns live, which makes the misidentification that runs through old rows — a
+retained row above live stealing the guess for an unowned live object — unreachable. What can
+outrank live afterwards is `active`, or the single `purging` row a resource may hold, and that one
+is the version being purged, so the guess lands on it correctly.
+
+**It does not follow that the guess is always right for an unowned live object.** The gate is not
+the only path that creates no version: **a failed version create** leaves live unowned too, since
+it does not fail the run. Should those bytes coincide with an older version's, the guess names that
+older version and a purge of it changes what is served. **The conversion does not address this** —
+only the shape where a retained row takes the guess.
 
 **Leaving them alone was the first answer, and its reason was wrong.** It said returning them to
 `active` moves live; live is **the owner of the object the pointer names**, not a version's rank, so
@@ -425,6 +441,18 @@ interpretation keeps the previous result, so an unchecked copy pins another cont
 this version. **With a zero-column schema the damage is permanent**: that version leaves the
 layer-2 sweep for good. Without the proof it goes in empty and an ordinary re-interpretation fills
 it.
+
+**Two shapes never finish converting.** Both are operational rather than structural and both show
+in the outstanding count: a destination wedged in `purging` (the issue goes on raising
+`ConflictError`), and a live object missing from storage (the measurement throws). **Nor does one
+run necessarily reach zero** — a resource a run was holding is skipped and not revisited in that
+pass, and nothing re-enqueues, so the operator presses again.
+
+**The flip also changes what layer 2 can see.** Both the ingest predicate and the set a table may
+stand on filter on `active`, so a set-aside version becomes a candidate the moment it flips. Just
+after a conversion the newest active version holding a snapshot can be one of those, while live is
+the version just issued and not yet ingested — layer 2 standing, briefly, on content the resource
+does not serve. The next ingest settles it.
 
 **Until the conversion has run, the readers keep the old predicates.** Code written for three states
 counts a retained row as content being served, so the order cannot be reversed.
@@ -723,7 +751,7 @@ leave a hole in.
    into the claim layer and was deleted (`claimFromRun` mints the row too). "No pipeline row"
    is therefore gone: `absent` and a null claim now mean **the resource itself is gone**
 7. ~~**A version superseded before it reached layer 2**~~: **resolved by the ii-b design
-   (2026-08-17, not built).**
+   (2026-08-17, built).**
 
    Eligibility is limited to active versions, and admitting superseded ones would let an ingest
    **replace the catalog's current contents with that version**, making retracted content what

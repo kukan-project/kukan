@@ -86,34 +86,48 @@ exports[`emitted SQL shape > PackageService.list > pins the list shape 1`] = `
 ]
 `;
 
-exports[`emitted SQL shape > ResourceVersionService.countUnversioned > pins the shape 1`] = `
+exports[`emitted SQL shape > ResourceVersionService.convertSetAsideVersions > pins the shape 1`] = `
 [
-  "select count(*) as count from "resource" where ("resource"."state" = $1 and "resource"."hash" IS NOT NULL and NOT EXISTS (SELECT 1 FROM "resource_version" rv WHERE rv.resource_id = "resource"."id") and NOT EXISTS (
-        SELECT 1 FROM "resource_pipeline" rp
-        WHERE rp.resource_id = "resource"."id" AND rp.status IN ('queued', 'processing')
-      ));",
-]
-`;
-
-exports[`emitted SQL shape > ResourceVersionService.createFirstVersions > pins the scan shape 1`] = `
-[
-  "select "resource"."id", "resource"."package_id", "resource"."url_type", "resource"."hash", "resource"."size", "resource"."storage_key", "resource_pipeline"."metadata" -> 'schema', (
-          "resource_pipeline"."metadata"->>'sourceHash' = "resource"."hash"
-          OR (
-            "resource_pipeline"."metadata"->>'sourceHash' IS NULL
-            AND "resource_pipeline"."status" = 'complete'
-            AND exists (select  from "resource_pipeline_step" where ("resource_pipeline_step"."pipeline_id" = "resource_pipeline"."id" and "resource_pipeline_step"."step_name" = $1 and "resource_pipeline_step"."status" = $2))
-          )
-        ) from "resource" left join "resource_pipeline" on "resource_pipeline"."resource_id" = "resource"."id" where ("resource"."state" = $3 and "resource"."hash" IS NOT NULL and NOT EXISTS (SELECT 1 FROM "resource_version" rv WHERE rv.resource_id = "resource"."id") and NOT EXISTS (
-        SELECT 1 FROM "resource_pipeline" rp
-        WHERE rp.resource_id = "resource"."id" AND rp.status IN ('queued', 'processing')
-      ))",
-  "SELECT rv.resource_id AS "resourceId", rv.version, rv.storage_key AS "storageKey", rv.size,
+  "select distinct "resource_id" from "resource_version" where "resource_version"."state" = $1",
+  "begin",
+  "INSERT INTO resource_pipeline (resource_id)
+    SELECT id FROM resource WHERE id = ANY($1::uuid[])
+    ORDER BY id
+    ON CONFLICT (resource_id) DO NOTHING",
+  "WITH claimed AS (
+      UPDATE resource_pipeline p
+      SET claim_owner = $1::uuid, claim_owner_at = NOW(), claim_kind = $2
+      WHERE p.resource_id = ANY($3::uuid[])
+        AND (p.claim_owner IS NULL OR GREATEST(
+    p.claim_owner_at,
+    (SELECT MAX(s.started_at) FROM resource_pipeline_step s WHERE s.pipeline_id = p.id)
+  ) < NOW() - $4::interval)
+      RETURNING p.id
+    )
+    SELECT p.id, p.resource_id AS "resourceId", (c.id IS NOT NULL) AS taken
+    FROM resource_pipeline p
+    LEFT JOIN claimed c ON c.id = p.id
+    WHERE p.resource_id = ANY($5::uuid[])",
+  "commit",
+  "select "resource"."package_id", "resource"."storage_key", "resource"."hash", "resource"."size", "resource"."url_type", "resource_pipeline"."metadata" -> 'schema', (
+    "resource_pipeline"."metadata"->>'sourceHash' = "resource"."hash"
+    OR (
+      "resource_pipeline"."metadata"->>'sourceHash' IS NULL
+      AND "resource_pipeline"."status" = 'complete'
+      AND exists (select  from "resource_pipeline_step" where ("resource_pipeline_step"."pipeline_id" = "resource_pipeline"."id" and "resource_pipeline_step"."step_name" = $1 and "resource_pipeline_step"."status" = $2))
+    )
+  ) from "resource" left join "resource_pipeline" on "resource_pipeline"."resource_id" = "resource"."id" where "resource"."id" = $3 limit $4",
+  "update "resource_version" set "state" = $1, "updated" = NOW() where ("resource_version"."resource_id" = $2 and "resource_version"."state" = $3 and EXISTS (SELECT 1 FROM resource_pipeline p WHERE p.id = $4::uuid AND p.claim_owner = $5::uuid FOR SHARE)) returning "version"",
+  "UPDATE resource_pipeline
+    SET claim_owner = NULL, claim_owner_at = NULL, claim_kind = NULL
+    WHERE id = ANY($1::uuid[]) AND claim_owner = $2::uuid
+    RETURNING id",
+  "SELECT DISTINCT ON ("resourceId") * FROM (
+  SELECT rv.resource_id AS "resourceId", rv.version, rv.storage_key AS "storageKey", rv.size,
          rv.format
   FROM resource_version rv
   JOIN resource r ON r.id = rv.resource_id
   WHERE r.state = 'active'
-    
     AND rv.state = 'active'
     AND rv.ducklake_snapshot_id IS NULL
     AND lower(rv.format) IN ('csv', 'tsv')
@@ -126,7 +140,55 @@ exports[`emitted SQL shape > ResourceVersionService.createFirstVersions > pins t
         AND newer.version > rv.version
         AND newer.state = 'active'
         AND newer.ducklake_snapshot_id IS NOT NULL
-    )",
+    )
+) pending
+      ORDER BY "resourceId", version",
+]
+`;
+
+exports[`emitted SQL shape > ResourceVersionService.countUnversioned > pins the shape 1`] = `
+[
+  "select count(*) as count from "resource" where ("resource"."state" = $1 and "resource"."hash" IS NOT NULL and NOT EXISTS (SELECT 1 FROM "resource_version" rv WHERE rv.resource_id = "resource"."id") and NOT EXISTS (
+        SELECT 1 FROM "resource_pipeline" rp
+        WHERE rp.resource_id = "resource"."id" AND rp.status IN ('queued', 'processing')
+      ));",
+]
+`;
+
+exports[`emitted SQL shape > ResourceVersionService.createFirstVersions > pins the scan shape 1`] = `
+[
+  "select "resource"."id", "resource"."package_id", "resource"."url_type", "resource"."hash", "resource"."size", "resource"."storage_key", "resource_pipeline"."metadata" -> 'schema', (
+    "resource_pipeline"."metadata"->>'sourceHash' = "resource"."hash"
+    OR (
+      "resource_pipeline"."metadata"->>'sourceHash' IS NULL
+      AND "resource_pipeline"."status" = 'complete'
+      AND exists (select  from "resource_pipeline_step" where ("resource_pipeline_step"."pipeline_id" = "resource_pipeline"."id" and "resource_pipeline_step"."step_name" = $1 and "resource_pipeline_step"."status" = $2))
+    )
+  ) from "resource" left join "resource_pipeline" on "resource_pipeline"."resource_id" = "resource"."id" where ("resource"."state" = $3 and "resource"."hash" IS NOT NULL and NOT EXISTS (SELECT 1 FROM "resource_version" rv WHERE rv.resource_id = "resource"."id") and NOT EXISTS (
+        SELECT 1 FROM "resource_pipeline" rp
+        WHERE rp.resource_id = "resource"."id" AND rp.status IN ('queued', 'processing')
+      ))",
+  "SELECT DISTINCT ON ("resourceId") * FROM (
+  SELECT rv.resource_id AS "resourceId", rv.version, rv.storage_key AS "storageKey", rv.size,
+         rv.format
+  FROM resource_version rv
+  JOIN resource r ON r.id = rv.resource_id
+  WHERE r.state = 'active'
+    AND rv.state = 'active'
+    AND rv.ducklake_snapshot_id IS NULL
+    AND lower(rv.format) IN ('csv', 'tsv')
+    AND rv.size IS NOT NULL
+    AND rv.size <= $1
+    AND (rv.schema IS NULL OR jsonb_array_length(rv.schema -> 'columns') > 0)
+    AND NOT EXISTS (
+      SELECT 1 FROM resource_version newer
+      WHERE newer.resource_id = rv.resource_id
+        AND newer.version > rv.version
+        AND newer.state = 'active'
+        AND newer.ducklake_snapshot_id IS NOT NULL
+    )
+) pending
+      ORDER BY "resourceId", version",
 ]
 `;
 

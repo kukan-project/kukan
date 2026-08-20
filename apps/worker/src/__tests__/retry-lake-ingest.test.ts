@@ -30,7 +30,15 @@ const pending = vi.hoisted(() => ({
 
 vi.mock('@kukan/api/services/resource-version-service', () => ({
   pendingLakeVersionSource: vi.fn(async () => pending.source),
+  // The chain that drains a resource's backlog rather than leaving it to the
+  // hourly sweep. Stubbed to answer "nothing more", so each case here ends with
+  // the one version it is about.
+  ResourceVersionService: class {
+    queueNextPendingLakeIngest = chained.next
+  },
 }))
+
+const chained = vi.hoisted(() => ({ next: vi.fn(async () => false) }))
 
 /** The interpretation itself belongs to `interpret/version`; here it is a stub
  *  that hands over a table so the retry's own decisions are what is tested. */
@@ -135,6 +143,28 @@ describe('retryLakeIngest', () => {
 
     expect(withInterpretedVersion).not.toHaveBeenCalled()
     expect(deps.ctx.ingestLakeVersion).not.toHaveBeenCalled()
+  })
+
+  it('hands on to the next version the resource still owes layer 2', async () => {
+    // The sweep gives out one version per resource per hour, which is long
+    // enough for new content to arrive above a backlog and overtake it for
+    // good. Chained here, a resource drains in seconds.
+    chained.next.mockResolvedValueOnce(true)
+
+    await retryLakeIngest(job, deps)
+
+    expect(chained.next).toHaveBeenCalledWith(deps.queue, job.resourceId, job.version)
+  })
+
+  it('hands on even when this version turns out to be done', async () => {
+    // Where a redelivery lands after the chain's own enqueue failed. Without
+    // asking again here, the backlog stops until the hourly sweep — the wait
+    // the chain exists to remove.
+    pending.source = null
+
+    await retryLakeIngest(job, deps)
+
+    expect(chained.next).toHaveBeenCalledWith(deps.queue, job.resourceId, job.version)
   })
 
   it('does not requeue when the interpretation produced no table', async () => {
