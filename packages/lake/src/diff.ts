@@ -12,7 +12,7 @@ import type { LakeColumn } from './columns'
 import { describeColumns, sameColumns } from './columns'
 import type { LakeRow, LakeSession } from './connection'
 import { sqlIdentifier } from './sql'
-import { lakeTableRef } from './table'
+import { lakeTableAt as at, lakeTableRef } from './table'
 
 /** Rows shown from each side; enough to recognize the change, not to browse it. */
 const SAMPLE_LIMIT = 5
@@ -57,11 +57,6 @@ export type VersionDiff =
       sampleAdded: LakeRow[]
       sampleRemoved: LakeRow[]
     }
-
-/** `FROM` clause reading the table as of one snapshot. */
-function at(ref: string, snapshot: number): string {
-  return `${ref} AT (VERSION => ${Math.trunc(snapshot)})`
-}
 
 /**
  * Projection that trims wide cells. Only VARCHAR is unbounded — ADR-029 infers

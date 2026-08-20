@@ -19,6 +19,11 @@ export function lakeTableRef(table: string): string {
   return `lake.${assertSafeIdentifier(table)}`
 }
 
+/** `FROM` clause reading a table as of one snapshot. */
+export function lakeTableAt(ref: string, snapshot: number): string {
+  return `${ref} AT (VERSION => ${Math.trunc(snapshot)})`
+}
+
 export async function lakeTableExists(session: LakeSession, table: string): Promise<boolean> {
   const rows = await session.rows(
     `SELECT 1 FROM duckdb_tables() WHERE database_name = 'lake' AND table_name = ${sqlLiteral(table)}`
@@ -73,27 +78,6 @@ export async function resolvableSnapshots(
   if (snapshots.length === 0) return new Set()
   const held = new Set(await snapshotIds(session))
   return new Set(snapshots.filter((id) => held.has(id)))
-}
-
-/**
- * Replace a table's contents with an earlier snapshot's, and return the
- * snapshot that lands them.
- *
- * The contents are the old snapshot's, the snapshot is a new one — nothing
- * rewinds a catalog. Recording the returned id against the version whose rows
- * these are is what tells a later reader the table is already standing on it,
- * which neither the old snapshot id nor the version rows can say by themselves.
- */
-export async function rollbackLakeTable(
-  session: LakeSession,
-  table: string,
-  snapshot: number
-): Promise<number> {
-  const ref = lakeTableRef(table)
-  await session.run(
-    `CREATE OR REPLACE TABLE ${ref} AS SELECT * FROM ${ref} AT (VERSION => ${Math.trunc(snapshot)})`
-  )
-  return currentSnapshotId(session)
 }
 
 /**

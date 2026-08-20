@@ -510,17 +510,23 @@ is in flight. `superseded` counts because a version a revert stepped off still h
 the `hash` the list already returns for each version, so it costs no extra query and no
 index. Paginating the list means moving the decision to the server (open issue 13).
 
-**Layer 2's current contents follow the newest successfully ingested version.** Both a purge
-and a revert (ADR-044 §4) move the table's current contents there. What differs is only what
-happens to the _version_ — a purge makes it unobtainable, a revert issues its content as a new
-version — not where the table's current contents point.
+**Layer 2's current contents follow the version loaded last** — the highest recorded snapshot, not
+the highest version number. Two paths move
+them there: the ingest of a new version, and a purge's step-down. A revert (ADR-044 §4) is the
+former — it issues its content as a new version, so layer 2 catches up through an ordinary
+ingest. **The purge's step-down is the only path that exists solely to move the contents.**
 
 > **Not "the live version", and layer 1 and layer 2 fall back to different places.**
 >
-> |                            | Falls back to                                                        |
-> | -------------------------- | -------------------------------------------------------------------- |
-> | Layer 1 (the live pointer) | the newest **`active`** version                                      |
-> | Layer 2                    | the newest **`active`** version **that has a snapshot and resolves** |
+> |                            | Falls back to                                                       |
+> | -------------------------- | ------------------------------------------------------------------- |
+> | Layer 1 (the live pointer) | the newest **`active`** version                                     |
+> | Layer 2                    | the **`active`** version whose **snapshot is highest and resolves** |
+>
+> **Layer 2's side is read off the snapshot, not the version number** — what the table holds is
+> the contents of the version loaded last, and the highest recorded id is what names it. The two
+> coincide for write-once data and differ only where an id the old scheme rewrote survives (spec
+> §9.1 has the case where taking the version number puts the next purge out of step).
 >
 > A live version need not be in layer 2: one too large, one that is not tabular, and under
 > ii-b one whose primary key is invalid all stay without a snapshot while being live. **Stand
@@ -530,8 +536,7 @@ version — not where the table's current contents point.
 >
 > **A `superseded` version is readable, but not somewhere to stand.** A reclaim's retained set
 > keeps their snapshots so their diffs still read (`lake-reclaim.ts`), but putting their rows
-> back as the contents is restoring rows the resource stepped off — the very thing
-> `standOnBase` and the revert's reconcile undo.
+> back as the contents is restoring rows the resource stepped off.
 >
 > **With no `active` target left, only a purge drops the table.** A purge owes unfetchability, and
 > **a `DROP` costs the current contents only — the retained snapshots stay readable through it**
@@ -553,9 +558,10 @@ version — not where the table's current contents point.
 >
 > - **A version row's `ducklake_snapshot_id` is written once.** Nothing overwrites it
 > - **Operations that move contents re-load from a source reading that version's snapshot**,
->   and where they land is not written back — the same holds for a purge standing the table
->   down, whose landing snapshot is named by no version row at all ("always keep the newest
->   snapshot", §6-4, already covers that case). **The method has three branches, and only a
+>   and where they land is not written back — the landing snapshot is named by no version row
+>   at all ("always keep the newest snapshot", §6-4, already covers that case). **Once a revert
+>   issues a version, a purge's step-down is the only operation that moves contents.**
+>   **The method has three branches, and only a
 >   changed column set becomes `CREATE OR REPLACE`** (spec §7.2) — there is nothing to match
 >   rows on and nothing to insert into, so no delta write can be composed there
 > - **A revert does not restore, it re-issues.** It creates a new version holding the
@@ -585,13 +591,23 @@ hour and refused every time.
 > one — there is no need to ask whether the destination was ingested, because **an issued
 > version is always outstanding**.
 
-**An ingest applies to a table standing on the previous active version.** ii-a survives
+**An ingest applies to a table holding the contents of the `active` version loaded last.** ii-a survives
 without this — every branch writes every row, so the contents land right whatever was there
 before — but the decision it makes on the way, "did the columns move?", is read off whatever
-the table happens to hold, and after a revert that is a version the resource stepped off.
-ii-b's `MERGE` takes those same contents as its base, so the answer stops being cosmetic.
-So **before an ingest, if the table stands ahead of its base, it is put back on it** — which
-also repairs a revert whose own reconcile could not run.
+the table happens to hold. ii-b's `MERGE` takes those same contents as its base, so the answer
+stops being cosmetic.
+
+**This is not something the ingest arranges, though; it follows from the other rules.** An
+ingest refuses to load while a higher ingested `active` version exists, a revert issues a
+version, and a purge makes its step-down target the head — so the head always holds **the contents
+of the `active` version loaded last**, which is the base itself. A step that put the head back on
+the base ran here for a while, but what it repaired was a revert whose own follow-up could not run,
+and the follow-up itself is gone.
+
+**"Loaded last" is the version whose recorded snapshot is highest, not the highest version
+number** — they coincide only for write-once data, and part company where an id the old scheme
+rewrote survives. **Resolving a base for ii-b as "the preceding `active` version" would load onto
+contents the table does not hold** (spec §9.1, §14.0).
 
 The first sketch was to resolve only the _comparison_ from the base's snapshot. That does not
 work: the write side (`DELETE` + `INSERT`) still runs against the table's current columns, so
@@ -875,10 +891,10 @@ bytes: consolidate freely (§6-2).**
      the destination's content as a new version, and that version follows through by going
      through the ordinary ingest.
    - For the same reason, ingest deciding "did the columns move?" **against the table's
-     current contents** does not hold under ii-b. ii-a survives only because both branches
-     write every row, so a wrongly chosen branch still lands correct contents — the basis for
-     the choice is already wrong after a revert. The base is resolved from the newest version
-     rather than from current contents.
+     current contents** did not hold while a separate path moved those contents. ii-a survives
+     only because both branches write every row, so a wrongly chosen branch still lands correct
+     contents. **With the follow mechanism gone, the current contents are those of the `active`
+     version loaded last**, so the basis for the choice agrees with the base (§5).
 
    The remaining decisions and measurements are in
    `docs/specs/en/phase-versioning-2-ducklake.md` §0.

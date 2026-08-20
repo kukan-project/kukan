@@ -24,37 +24,37 @@
 each section, and you can implement without reading them.** Sections titled "shapes considered and
 not taken (history)" (§9.7 / §11-7) and blocks headed "evidence (measured)" are not decisions.
 
-| Decision                                                                                                                                        | Where   |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| **Changing the primary key creates a version** (it is part of the interpretation; ADR-046 decision 3)                                           | §6.4    |
-| Key columns must not contain NULL. A version that breaks this is not ingested, nor demoted to keyless                                           | §6.4    |
-| The key columns used are **frozen when the version is created** (written by the Version step, not at Lake time)                                 | §6.4    |
-| The reason it was not ingested is recorded in **`lake_ingest_reason`** (written once)                                                           | §6.6    |
-| There are three such reasons: **`key-missing`** / `key-null` / `key-not-unique`                                                                 | §6.6    |
-| Keyed ingest is **two predicated `MERGE` statements in one transaction** (the diff approach)                                                    | §11-2.4 |
-| Diffs are produced by **matching the content at both ends on the primary key**. `table_changes` is not used                                     | §7      |
-| The first stage applies **only when `lake_key_columns` matches at both ends**. Otherwise it degrades to keyless                                 | §7      |
-| A version row's `ducklake_snapshot_id` is **written once**. Moving content is done by issuing a version                                         | §7.2    |
-| **`superseded` is abolished.** Layer 1's automatic fallback after a purge is **the highest `active` version**                                   | §7.2    |
-| Existing `superseded` rows are **converted** by a backfill; left alone, every predicate carries two regimes                                     | §7.2    |
-| A resend decides "already at the destination" **by content**, not by version number                                                             | §7.2    |
-| The revert response keeps `restored` (the destination named); the published version number is added separately                                  | §7.2    |
-| Content is moved from a **source reading that version's snapshot**; the method has three branches                                               | §7.2    |
-| The settled layer (primary-key setting) lives in **`resource.column_settings`** (jsonb). No dedicated table                                     | §6.2    |
-| Run `merge_adjacent_files` at the end of an ingest. The threshold is the live file count, default **50**                                        | §11-2.1 |
-| `rewrite_data_files` is not used                                                                                                                | §11-2.3 |
-| `CHECKPOINT` must not be run against the lake catalog                                                                                           | §11-2.2 |
-| Data inlining is disabled (`data_inlining_row_limit = 0`)                                                                                       | §11-1   |
-| `parquet_compression` is set to `zstd`                                                                                                          | §11-4   |
-| expire uses the explicit-list form. `older_than` is not used                                                                                    | §11-3   |
-| **A purge claims only "making it unfetchable"; erasing the bytes in layer 2 is not guaranteed**                                                 | §9      |
-| Deleting a prefix in the data directory outside DuckLake's management is forbidden                                                              | §9      |
-| Do not use the words "physically deleted" or "legal deletion" in the spec, the UI or the audit log                                              | §9.5    |
-| Restoration is PG-only. Reconciliation **checks that the files actually exist**                                                                 | §11-5   |
-| A table that has become unreadable has its **head rewritten from the newest healthy layer-2 version** (it is not `DROP`ped)                     | §11-5   |
-| **The rollback targets for layer 1 and layer 2 are looked up separately** (layer 2 uses "the highest version that has a snapshot and resolves") | §9.1    |
-| Whether layer 2 is stepped down is decided by **whether layer 2 stands on that version**, not by whether it is live                             | §9.1    |
-| The wording of the purge confirmation depends on **whether the target is live**, not on the total number of versions                            | §9.6    |
+| Decision                                                                                                                                               | Where   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| **Changing the primary key creates a version** (it is part of the interpretation; ADR-046 decision 3)                                                  | §6.4    |
+| Key columns must not contain NULL. A version that breaks this is not ingested, nor demoted to keyless                                                  | §6.4    |
+| The key columns used are **frozen when the version is created** (written by the Version step, not at Lake time)                                        | §6.4    |
+| The reason it was not ingested is recorded in **`lake_ingest_reason`** (written once)                                                                  | §6.6    |
+| There are three such reasons: **`key-missing`** / `key-null` / `key-not-unique`                                                                        | §6.6    |
+| Keyed ingest is **two predicated `MERGE` statements in one transaction** (the diff approach)                                                           | §11-2.4 |
+| Diffs are produced by **matching the content at both ends on the primary key**. `table_changes` is not used                                            | §7      |
+| The first stage applies **only when `lake_key_columns` matches at both ends**. Otherwise it degrades to keyless                                        | §7      |
+| A version row's `ducklake_snapshot_id` is **written once**. Moving content is done by issuing a version                                                | §7.2    |
+| **`superseded` is abolished.** Layer 1's automatic fallback after a purge is **the highest `active` version**                                          | §7.2    |
+| Existing `superseded` rows are **converted** by a backfill; left alone, every predicate carries two regimes                                            | §7.2    |
+| A resend decides "already at the destination" **by content**, not by version number                                                                    | §7.2    |
+| The revert response keeps `restored` (the destination named); the published version number is added separately                                         | §7.2    |
+| Content is moved from a **source reading that version's snapshot**; the method has three branches                                                      | §7.2    |
+| The settled layer (primary-key setting) lives in **`resource.column_settings`** (jsonb). No dedicated table                                            | §6.2    |
+| Run `merge_adjacent_files` at the end of an ingest. The threshold is the live file count, default **50**                                               | §11-2.1 |
+| `rewrite_data_files` is not used                                                                                                                       | §11-2.3 |
+| `CHECKPOINT` must not be run against the lake catalog                                                                                                  | §11-2.2 |
+| Data inlining is disabled (`data_inlining_row_limit = 0`)                                                                                              | §11-1   |
+| `parquet_compression` is set to `zstd`                                                                                                                 | §11-4   |
+| expire uses the explicit-list form. `older_than` is not used                                                                                           | §11-3   |
+| **A purge claims only "making it unfetchable"; erasing the bytes in layer 2 is not guaranteed**                                                        | §9      |
+| Deleting a prefix in the data directory outside DuckLake's management is forbidden                                                                     | §9      |
+| Do not use the words "physically deleted" or "legal deletion" in the spec, the UI or the audit log                                                     | §9.5    |
+| Restoration is PG-only. Reconciliation **checks that the files actually exist**                                                                        | §11-5   |
+| A table that has become unreadable has its **head rewritten from the highest-recorded healthy layer-2 version** (it is not `DROP`ped)                  | §11-5   |
+| **The rollback targets for layer 1 and layer 2 are looked up separately** (layer 2 uses "the version whose recorded snapshot is highest and resolves") | §9.1    |
+| Whether layer 2 is stepped down is decided by **whether layer 2 stands on that version**, not by whether it is live                                    | §9.1    |
+| The wording of the purge confirmation depends on **whether the target is live**, not on the total number of versions                                   | §9.6    |
 
 ## 1. Prerequisites
 
@@ -183,7 +183,7 @@ api=read / worker=write may touch DuckLake).
      passes). And **the current head is sometimes not named by any version row**, so checking every
      version row will not find a broken head — **this check is performed against the table, not
      against versions**. There are two ways to fix an unreadable table, and which one applies
-     depends on **whether there is a newest healthy layer-2 version** (§11-5; not the live version)
+     depends on **whether there is a healthy layer-2 version at all** (§11-5; not the live version)
 
    Why the last two are needed, with measurements, is in §11-5.
 
@@ -790,8 +790,8 @@ There are six decisions. **The reasoning has been replaced since the original** 
 2. **A rollback does not "go back"; it "publishes that content again".** It creates a new version
    holding the target version's content
 3. **Operations that move content go through the ingest path.** They do not write the destination
-   back onto a version row. The same applies to the step-down of a purge and to `standOnBase`
-   (neither is a publication, so neither creates a version). The method has the three branches below
+   back onto a version row. The same applies to the step-down of a purge (not a publication, so it
+   creates no version). The method has the three branches below
 4. **`superseded` is abolished**, and the rule where `restoreTo` refuses a `superseded` version (no
    redo) falls away with it. **What goes is the "step off everything above the destination"
    computation, not the definition of live** — live is still **the version owning the object the
@@ -881,15 +881,25 @@ measured both ways (a 3-row table, v3 = a re-publication of v1's content):
 object this version owns, copied if another version already owns it" (ADR-046 §3), the same shape
 already used when an interpretation change did not move the content.
 
-**The rule is not limited to rollbacks.** Two other operations move a table's current content, and
-both are treated the same way — **do not write the destination back onto a version row.**
+**The rule is not limited to rollbacks.** Once a rollback issues a version, **the purge's step-down
+is the only operation left that moves a table's current content** (§9.1 step 4): it removes the
+version layer 2 stands on and re-loads the content of layer 2's own step-down target through the
+ingest path. It is not a version issue (a purge is not a publication), so **the landing snapshot is
+named by no version row** — **§11-3 already covers this case with "always keep the newest
+snapshot"**.
 
-- **Purge** (§9.1 step 4): remove the version layer 2 stands on and step down to layer 2's rollback
-  target. Re-load the content of the step-down target through the ingest path. It is not a version
-  issue (a purge is not a publication), so the landing snapshot is named by no version row —
-  **§11-3 already covers this case with "always keep the newest snapshot"**
-- **`standOnBase`** (self-repair before an ingest): likewise a re-load; it does not touch the base
-  version's record
+> **The self-repair before an ingest (the former `standOnBase`) is no longer needed.** A table's
+> head diverged from its base because moving content was a path of its own, separate from issuing a
+> version. Once a rollback issues a version, and an ingest refuses to load while a higher ingested
+> `active` version exists, the head always holds **the contents of the `active` version loaded last**
+> — which is exactly the base of the next ingest. A purge's step-down lands there too. The only
+> divergence left is a purge that failed partway, and what repairs that is the retry of that purge
+> (§14.1-16).
+>
+> **"Loaded last" is the version whose recorded snapshot is highest, not the highest version
+> number.** They coincide for write-once data and part company where an id the old scheme rewrote
+> survives (§9.1). **Reading the base as "the preceding `active` version" there loads onto contents
+> the table does not hold.**
 
 #### A re-load has three branches, and one of them uses `CREATE OR REPLACE`
 
@@ -903,6 +913,11 @@ asks** (did the columns move, do both ends share a key):
 | Same schema, **the same non-null key at both ends** | Two predicated `MERGE` statements in one transaction         | A delta   |
 | Same schema, different keys or either keyless       | `DELETE` + `INSERT ... AT (VERSION => n)` in one transaction | Every row |
 | Different column sets                               | `CREATE OR REPLACE TABLE ... AT (VERSION => n)`              | Every row |
+
+**Every branch reads that version's contents out before it writes.** A `DELETE` inside the
+transaction takes the same table's `AT (VERSION => n)` with it (measured, §14.0), so reading while
+deleting **silently empties the table** whenever the current contents and `n` share files. ii-a
+replaces wholesale and never shares, so it does not bite there; ii-b's keyed load always shares.
 
 **Different keys do not get a `MERGE` because the validation only covers one side.** Key
 uniqueness is checked against **the incoming version** and nothing else (§6.6), so a base loaded
@@ -1055,8 +1070,7 @@ would hit dangling references. **The only write path into layer 2 is DuckLake.**
 4. **Step layer 2 down** (`purgeFromLake`) — **only when layer 2 stands on that version**, **re-load
    the content of the layer-2 rollback target through the ingest path**; `DROP TABLE` if there is no
    target. **The landing snapshot is not written back onto a version row** (§7.2; a step-down is not
-   a publication so no new version is created either — that newest snapshot is kept by §11-3. **It is
-   still written back today**, because implementing §7.2 is ii-b's work). Then run
+   a publication so no new version is created either — that newest snapshot is kept by §11-3). Then run
    **`reclaimInSession`** (expire snapshots that no surviving version names →
    `cleanup_old_files(cleanup_all => true)`)
 5. Move the live pointer to the **layer-1 rollback target**
@@ -1065,10 +1079,22 @@ would hit dangling references. **The only write path into layer 2 is DuckLake.**
 **The rollback targets of steps 4 and 5 are different things.** They are not the same "preceding
 surviving version".
 
-|                                        | Definition of the rollback target                                                                  |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| **Layer 1 (step 5, the live pointer)** | The highest **`active`** version                                                                   |
-| **Layer 2 (step 4)**                   | Among **`active`** versions, the highest whose **`ducklake_snapshot_id` is non-null and resolves** |
+|                                        | Definition of the rollback target                                                 |
+| -------------------------------------- | --------------------------------------------------------------------------------- |
+| **Layer 1 (step 5, the live pointer)** | The highest **`active`** version                                                  |
+| **Layer 2 (step 4)**                   | the **`active`** version whose **`ducklake_snapshot_id` is highest and resolves** |
+
+**Layer 2's "highest" is read off the recorded snapshot, not the version number.** What the table
+holds is the contents of the version that was **loaded last**, and the highest snapshot is what names
+it. The two coincide for write-once data and part company wherever an id the old scheme rewrote
+survives the conversion — and taking the version number there **puts the step-down and the next
+purge's question out of step**. With v1@13 and v2@9 active, purging v3@14 would come down onto v2
+while v1 still records the higher id, so the following purge of v2 reads "something was loaded after
+me" and leaves the purged rows as the current contents. **Stepping to the highest id keeps that from
+arising**: after a step-down the head still holds the rows of the highest-recorded surviving version,
+which is exactly what the next purge asks about, and an ingest maintains the same relation because
+its snapshot is the catalog's newest. **The one state that escapes it** is an unresolvable id left
+above the version stood on, which belongs to §11-5 and open issue 15.
 
 **Confusing them permanently loses layer 2's current contents on an ordinary purge.** With v1
 ingested, v2 live but not ingested (too large, not tabular, or in ii-b an invalid key) and v3
@@ -1105,8 +1131,11 @@ not** (a `DROP` costs no history). What is left of it is a ii-b premise, in open
 successfully ingested, so that version and live **diverge in both directions** — a live version may
 not be in layer 2, and if no version above it reached the lake then **an intermediate version is the
 top of layer 2**. Not stepping down in the latter case leaves the purged rows as the table's current
-contents, and ii-b's `MERGE` loads the next version on top of them. The question is "does no other
-version carry a snapshot above this version's", not a question put to the pointer.
+contents, and ii-b's `MERGE` loads the next version on top of them. The question is "was no other
+`active` version loaded after this one", not a question put to the pointer. **It is asked of the
+recorded snapshots** — what the table holds is the contents of the version loaded last, and the
+highest recorded id is what names it. Asked of the version numbers it parts company with the
+step-down target wherever an id the old scheme rewrote survives (see "Layer 2's 'highest'" above).
 
 **expire is performed, but it is not what carries "making it unfetchable".** That is carried by
 nulling `ducklake_snapshot_id`: both diffs and time travel resolve snapshots from version rows, so
@@ -2231,9 +2260,12 @@ SELECT name    FROM lake.t    → IO Error: Cannot open file "…-8050-….parqu
 that counts rows reports "healthy" while every actual read fails.** If you are going to verify, read a
 column.
 
-**The recovery source is "the newest healthy layer-2 version". Not the live version.** The definition
-is **"the newest version, among those not purged, whose `ducklake_snapshot_id` is non-null and
-actually resolves"**.
+**The recovery source is "the healthy layer-2 version with the highest recorded snapshot". Not the
+live version.** The definition is **"among versions that are not purged and whose
+`ducklake_snapshot_id` is non-null and actually resolves, the one whose recorded snapshot is
+highest"**. **Not the highest version number** — this rewrites the head, so reading it in any other
+order than the step-down's breaks §9.1's invariant (the head holds the contents of the
+highest-recorded version) and the next purge misreads where the table stands.
 
 **The live version must not be used as the reference.** The live version is not necessarily in
 layer 2 — if the key is invalid the ingest refuses it (§6.6), its snapshot stays null and
@@ -2256,7 +2288,7 @@ already determined to have an invalid key and to be unable to enter layer 2, and
 before the restore. The table stays empty until the next ingestible version arrives.
 
 **The first row is the default case.** The current head is sometimes a snapshot no version row names
-(`standOnBase`, a purge's step-down). **Anything unnamed is subject to reclaim, so it disappears later
+(a purge's step-down). **Anything unnamed is subject to reclaim, so it disappears later
 to expire + cleanup** — restoring a PG containing that state gives **every version row resolving and
 only the head failing**. Measured:
 
@@ -2413,53 +2445,63 @@ The mechanical difference against `merge_adjacent_files` is in §11-2.3.
 
 ADR-043 open issue 7 is the main one. **Three premises under which ii-a exceptionally held now fall
 away.** All three are resolved (ADR-043 §5 was updated), but the shape of the solutions constrains
-ii-b's design, so read it before starting.
+ii-b's design, so read it before starting. **1 and 2 were settled by dropping the follow mechanism
+altogether, and that is implemented** (below).
 
-1. **revert follows into layer 2.** `revertLiveContent` rolls back to the snapshot of layer 2's own
-   rollback target — **not necessarily the restore target**. If the restore target has not been
-   ingested it steps down to the newest version that was (the same definition as §9.1; it previously
-   did nothing and left it to the sweep, which leaves the table holding the retracted rows whenever
-   the restore target can never be ingested). The restore target is still picked up by the sweep —
-   because `pendingLakeIngestQuery` now treats only `active` higher versions as an overtake, the
-   restore target reappears as unprocessed the moment revert marks the higher versions `superseded`.
-   A revert that empties the resource does not drop the table — the versions it retracted are not
-   `purged`, so it owes no unfetchability, and **not because dropping would stop the diffs resolving**
-   (that was the original reason; a `DROP` does not cost the retained snapshots their readability,
-   measured in §9.1). The head is therefore left holding retracted rows (open issue 16).
+1. **A rollback tells layer 2 nothing.** For a while `revertLiveContent` rolled the table back to
+   layer 2's own step-down target (not the restore target itself, but the newest ingested version at
+   or below it). **Landing §7.2 removed that whole mechanism** — once a rollback issues a version,
+   layer 2 catches up through that version's ordinary ingest, so there is no separate "follow" path.
+   `superseded`, `stepOffAbove` and `lakeMoveOwed` are all gone.
 
-   **Once §7.2 lands this whole mechanism becomes unnecessary.** If revert issues a new version,
-   following into layer 2 is just an ordinary ingest and there is no separate "follow" path. Both
-   `superseded` and `stepOffAbove` disappear.
+   What remains is the rule that **a rollback that empties the resource does not drop the table**.
+   The versions it retracted are not `purged`, so it owes no unfetchability — and **not because
+   dropping would stop the diffs resolving** (that was the original reason; a `DROP` does not cost
+   the retained snapshots their readability, measured in §9.1). The head is therefore left holding
+   retracted rows (open issue 16).
 
-2. **An ingest stands on a base before loading** (`standOnBase`). The original idea was "point the
-   check for whether columns moved at the preceding active version's snapshot", but that breaks ii-a
-   — pointing only the check at the base still leaves the write side's `DELETE` + `INSERT` running
-   against the columns of the table's current content, so if head and base disagree the INSERT fails.
-   Rather than the check, **align head itself with the base**. What ii-b's `MERGE` needs is also the
-   base itself rather than a check, so this is the right line. An old head left behind by a failure
-   of 1 also self-repairs, because the next ingest returns to the base before loading.
+2. **An ingest's base is the contents of the `active` version loaded last.** That is not something
+   the ingest arranges for itself; it follows from three other rules — an ingest refuses to load
+   while a higher ingested `active` version exists, a rollback issues a version, and a purge makes
+   its step-down target the head. So **there is no separate step that returns the head to the base**
+   (the former `standOnBase`). One existed for a while, but what it repaired was a failure of 1's
+   follow-up, and the follow-up itself is gone.
+
+   **The base is read off the recorded snapshot, not the version number** (§9.1). Do not get this
+   wrong when ii-b resolves a base in code: with v1@13 and v2@9 active, what the table holds is v1's
+   contents, not "the preceding `active` version" v2. A purge's step-down (`lakeStandDown`) answers
+   the same question off the same order.
+
+   Note that the original idea — "point only the check for whether columns moved at the preceding
+   active version's snapshot" — does not work: pointing only the check at the base still leaves the
+   write side's `DELETE` + `INSERT` running against the columns of the table's current content, so if
+   head and base disagree the INSERT fails. **What ii-b's `MERGE` needs is the head itself, not a
+   check.** The only divergence left is a purge that failed partway through its step-down, and what
+   repairs that is the retry of that purge (open issue 16).
+
 3. **Purges are per version, but the range is an operator's judgement.** Under diff application, one
    file holds history-only rows alongside current rows, so a version purge does not necessarily reach
    the layer-2 bytes. **A version purge claims "making it unfetchable" and does not guarantee erasure
    of layer-2 bytes.** The decisions and the procedure are in **§9**.
 
-#### What to land in the ii-b implementation
+#### What the ii-b implementation landed (done)
 
-**Make version rows' snapshots write-once** (§7.2). Remove the write-back of the ID onto version rows
-from all three callers of `standLakeTableOn` (rollback, a purge's step-down, `standOnBase`). Rollback
-is replaced by **issuing a version**, so the path that uses `rollbackLakeTable` disappears entirely.
-**ADR-044 needs revising** (§14.1). **This item originally gave "a version whose ID was rewritten even
-once cannot be an endpoint for `table_changes`, and the failure surfaces as an empty diff" as the
-reason it could not be done afterwards. Now that diffs are endpoint comparisons, that reason is
-gone** (see the note in §7.2). The reasons to land it are replaced by the two in §7.2, and **whether
-it can be deferred changes too** — making rollback issue a version is a contract change to ADR-044,
-so it is merely placed first in the order of work.
+**Version rows' snapshots are write-once** (§7.2). A rollback is replaced by **issuing a version**
+(ADR-044 revised), the `superseded` rows the old scheme left behind have been converted, and
+`standLakeTableOn` / `lakeStandsAhead` / `lakeMoveOwed` / `standOnBase` are gone. **The purge's
+step-down is the only thing that moves a table's current content**; it goes through
+`restandLakeTable` (§7.2's three branches) and the landing snapshot is named by no version row.
+**This item originally gave "a version whose ID was rewritten even once cannot be an endpoint for
+`table_changes`, and the failure surfaces as an empty diff" as the reason it could not be done
+afterwards. Now that diffs are endpoint comparisons, that reason is gone** (see the note in §7.2).
+The reasons it was landed are the two in §7.2.
 
-**Fold `standOn` into the signature of `ingestParquetVersion`.** Today the invariant of 2 is upheld by
-the caller (`ingestVersionIntoLake`), not by `ingestParquetVersion`. With only one caller it is safe
-today, but folding it into the function's own first step while rewriting the signature for `MERGE`
-would make "load without standing on a base" unwritable in the type system. `packages/lake` works
-without ever looking at version rows (it just receives and returns snapshot numbers).
+**`packages/lake` never looks at version rows**: it receives snapshot numbers, and the caller does
+the recording. The invariant about the base, however, is upheld by **`ingestVersionIntoLake`'s
+refusal** (do not load while a higher ingested `active` version exists), not by
+`ingestParquetVersion`. When the signature is rewritten for `MERGE`, check that this refusal and
+`pendingLakeIngestQuery` still state the same condition — loosen one and you get versions queued
+hourly and refused every time.
 
 #### Properties of `MERGE` settled against a real catalog
 
@@ -2521,23 +2563,32 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
 - ✅ **Time travel over a table with delete vectors is transparent.** A keyed ingest produces row
   deletions rather than file replacement, but `AT (VERSION => …)` returns both the before and after
   versions correctly. The purge reclaim and the diff both depend on this
-- ⚠️ **Rewriting a version row's snapshot makes `table_changes` silently return empty.**
-  `standLakeTableOn` overwrites the rollback target version with a new ID, inverting it against the
+- 🔴 **A `DELETE` inside a transaction takes the time-travel read of the same table with it.**
+  `BEGIN; DELETE FROM t; INSERT INTO t SELECT * FROM t AT (VERSION => n); COMMIT` **inserts zero rows
+  and empties the table whenever the current contents and `n` share files** (measured; no error). It
+  returns the rows correctly when they do not — ii-a's loads replace the contents wholesale, so the
+  head's files and an earlier version's never intersect and **this shape does not bite under ii-a**.
+  **ii-b's keyed load updates rows in place, so it always shares.** A re-load therefore **reads the
+  snapshot out into a temp table before deleting anything** (`restandLakeTable`). Measured in
+  `merge.ducklake.test.ts`
+- ⚠️ **Rewriting a version row's snapshot makes `table_changes` silently return empty.** The former
+  `standLakeTableOn` overwrote the rollback target version with a new ID, inverting it against the
   version-number order, and `table_changes(6, 5)` returns **0 rows** (measured). Not an error.
   **Diffs do not hit this, though** — an endpoint comparison does not depend on the ordering of
   snapshot IDs and answers correctly even with an overwritten ID (measured in §7.2). At the time this
   was marked 🔴 and used as the basis of §7.2, but **it became unreachable the moment diffs became
-  endpoint comparisons**. It still applies when reading events to verify an ingest
-- ⚠️ **`CREATE OR REPLACE TABLE` looks like "all rows inserted" in the change feed.** The rollback
-  follow-up (`rollbackLakeTable`) has this shape, so **when ii-b's row-level diff spans a
-  reconciliation snapshot, every row appears as an addition** (measured `insert=3`). Time travel and
+  endpoint comparisons**. Write-once means the rewrite no longer happens at all, but it still applies
+  when reading events to verify an ingest
+- ⚠️ **`CREATE OR REPLACE TABLE` looks like "all rows inserted" in the change feed.** A diff spanning
+  one shows every row as an addition (measured `insert=3`). Time travel and
   the diffs of later versions are untouched, so the damage is confined to that one snapshot. ii-a's
   diff uses `AT (VERSION => …)` + `EXCEPT ALL` and is unaffected.
   It is the flip side of the behavior a maintainer described as "it is treated as a different table"
   in [ducklake#330](https://github.com/duckdb/ducklake/issues/330) (closed). The close was about
   conformance to the change feed specification, and this appearance is unchanged in the current
   version (the measurement above is `d318a545`).
-  **Adopting §7.2 makes rollback go through the ingest path, so this path disappears entirely**
+  **A rollback now issues a version, so it never takes this shape.** What is left is the third of
+  §7.2's three branches (a re-load whose column set differs), where nothing else can be composed
 
 ### 14.1 Subsequent issues
 
@@ -2555,7 +2606,8 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
    (conditioned on `ducklake_snapshot_id IS NULL`) did not pick it up — the same permanent loss as
    the one found in the restore of §11-5.
 
-   The target is now read by `versionsLakeCanStandOn` (`active`, snapshot non-null, newest first),
+   The target is now read by `versionsLakeCanStandOn` (`active`, snapshot non-null, newest load
+   first),
    and **snapshots the catalog no longer resolves are skipped** (the §11-5 measurement is pinned in
    `maintenance.ducklake.test.ts`). `DROP` happens only when there is no candidate at all; **with
    candidates that none of which resolve, the purge fails** (§9.1 — dropping there leaves nobody able
@@ -2565,12 +2617,11 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
    it"** (§9.1). The old condition was wrong in both directions, and where an intermediate version
    was the top of layer 2 it moved nothing — leaving the purged rows as the table's current contents.
 
-   `lakeOwed`, the revert's reconcile and the ingest's `standOnBase` now ask through one function
-   (`lakeMoveOwed`). **They must not disagree**:
-   the old `lakeOwed` read layer 1's version, so a live version the lake never took made it
-   **under-report** — "nothing owed" while retracted rows were still the table's contents, with no
-   warning and no control to put it right. The other direction, over-reporting, is a repair button
-   that never clears. The tests are in `lake-reconcile.integration.test.ts`.
+   At the time, "where should layer 2 be standing now" was asked in three places — the revert's
+   reconcile, the repair button and the ingest — so they were made to **ask through one function**
+   (disagree, and either retracted rows stay with no warning shown, or the repair button never
+   clears). **Now that §7.2 has landed, the purge is the only one that asks** — the other two went
+   with the follow mechanism. The tests are in `lake-restand.integration.test.ts`.
 
    **A `DROP` costs the current contents only** (measured, §9.1). The earlier claim that it took
    "v1's history with it" was wrong: the retained snapshots read through a `DROP`. What is permanent
@@ -2823,25 +2874,26 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
     - **Nulling version rows that do not resolve.** The only operation that puts them back in front
       of the sweep. Versions carrying a `lake_ingest_reason` stay excluded, and that is correct
       (§11-5)
-    - **Decide whether the revert and `standOnBase` also check resolution.** Only the purge walks
-      today; the other two ride the recorded id as-is. In the §11-5 state the revert's repair throws
-      while `lakeOwed` keeps answering "owed", which is **a repair button that never clears** (it does
-      log). Either give them the purge's walk, or leave it to the nulling tool
+    - ~~**Decide whether the revert and `standOnBase` also check resolution.**~~ **Gone** — the
+      purge's step-down is the only operation left that rides a recorded id to move contents, and it
+      walks resolution already (§9.1)
 
-16. **After a revert that empties the resource, the head still holds the retracted rows.**
-    `lakeMoveOwed` answers null for both "already standing right" and "nothing left to stand on", and
-    **a revert does nothing in either case** — which follows from owing no drop (§9.1) and is harmless
+16. **The head can be left disagreeing with the surviving versions' content.** Two paths lead there —
+    **a revert that empties the resource** (the retracted rows stay, which follows from owing no drop,
+    §9.1) and **a purge that failed partway through its step-down** (the purged version's rows stay,
+    and while that version is `purging` it is not a step-down target either). Both are harmless
     today: no product path resolves to the head, and ii-a's ingest replaces the contents wholesale.
     **ii-b needs two things:**
 
-    - **`MERGE` must have the rule "with no base, start from empty".** `standOnBase` does nothing when
-      there is nothing to stand on, so left alone it loads the next version on top of retracted rows
+    - **`MERGE` must have the rule "with no base, start from empty".** With nothing to stand on the
+      table is left as it is, so left alone it loads the next version on top of retracted rows
     - **If the decision flips to dropping, the repair path needs it too.** `repairDerivatives` goes to
       `clearEmptied` for an emptied resource and never looks at layer 2, so dropping inside the revert
       alone leaves no way in when that one attempt fails
 
-17. **"Which version layer 2 stands on" rests on what the version rows record.** `lakeStandsAhead`
-    answers it as "no other version carries a snapshot above this one's", so it is wrong for a table
+17. **"Which version layer 2 stands on" rests on what the version rows record.** The purge
+    answers it from the recorded snapshots, as "no `active` version was loaded after this one", so it
+    is wrong for a table
     left by a crash **between the DuckLake commit and the write of the id onto the version row**
     (`ingestVersionIntoLake`). The purge falls the safe way — reading "it stands here" when it does
     not costs the contents, and the sweep re-ingests from layer 1 — but **the answer is never stronger

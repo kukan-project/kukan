@@ -1820,7 +1820,7 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
   })
 })
 
-describe('a revert that layer 2 has to follow (ADR-043 layer 2)', () => {
+describe('a revert layer 2 follows by ordinary ingest (ADR-043 layer 2)', () => {
   async function setSnapshot(version: number, snapshot: number) {
     await db
       .update(resourceVersion)
@@ -1846,12 +1846,13 @@ describe('a revert that layer 2 has to follow (ADR-043 layer 2)', () => {
   }
 
   it('leaves the restored version to the sweep when it never reached the lake', async () => {
-    // Nothing to roll back to, and stepping v2 off makes v1 outstanding again —
-    // an unusable config proves no session is opened to find that out.
+    // Nothing to move, and publishing v1's content forward makes a version the
+    // sweep has to load — the revert takes no lake config at all to find that
+    // out (spec §7.2).
     await twoVersions()
     await setSnapshot(2, 9)
 
-    const result = await revertFromLive({ ...mockDeps(), lake: unreachableLake })
+    const result = await revertFromLive(mockDeps())
 
     expect(result).toMatchObject({ restored: 1, cleared: true })
     expect(await service.countPendingLakeIngest()).toBe(1)
@@ -1863,7 +1864,7 @@ describe('a revert that layer 2 has to follow (ADR-043 layer 2)', () => {
     await twoVersions()
     await setSnapshot(1, 5)
 
-    const result = await revertFromLive({ ...mockDeps(), lake: unreachableLake })
+    const result = await revertFromLive(mockDeps())
 
     expect(result).toMatchObject({ restored: 1, cleared: true })
   })
@@ -1871,16 +1872,12 @@ describe('a revert that layer 2 has to follow (ADR-043 layer 2)', () => {
   it('leaves the lake to the ordinary ingest of the version it published', async () => {
     // **The follow-up path a revert used to need is gone.** v2's rows are what
     // the table holds, and the version this revert published is outstanding
-    // work for the Lake step like any other — so nothing is owed, no session is
-    // opened (an unusable config proves it), and the next ingest merges onto
-    // v2's rows exactly as it would after an upload (spec §7.2).
+    // work for the Lake step like any other — so nothing is owed, and the next
+    // ingest merges onto v2's rows exactly as it would after an upload (spec
+    // §7.2). The revert no longer takes a lake config to reach any of it.
     await bothIngested()
 
-    const result = await revertFromLive({
-      ...mockDeps(),
-      lake: unreachableLake,
-      logger: silentLogger,
-    })
+    const result = await revertFromLive({ ...mockDeps(), logger: silentLogger })
 
     expect(result).toMatchObject({ restored: 1, published: 3, cleared: true, queued: true })
     expect(await service.countPendingLakeIngest()).toBe(1)
@@ -1893,9 +1890,9 @@ describe('a revert that layer 2 has to follow (ADR-043 layer 2)', () => {
     // repair to report either. `cleared: null` is "nothing needed to go", which
     // is what the screen shows as done.
     await bothIngested()
-    await revertFromLive({ ...mockDeps(), lake: unreachableLake, logger: silentLogger })
+    await revertFromLive({ ...mockDeps(), logger: silentLogger })
 
-    const repair = { ...mockDeps(), lake: unreachableLake, logger: silentLogger }
+    const repair = { ...mockDeps(), logger: silentLogger }
 
     expect(await service.repairDerivatives(resourceId, repair)).toEqual({
       queued: true,
@@ -1903,63 +1900,12 @@ describe('a revert that layer 2 has to follow (ADR-043 layer 2)', () => {
     })
   })
 
-  /**
-   * Layer 2 standing above where it should — the table on v2's rows with only
-   * v1 to stand on.
-   *
-   * **A revert no longer produces this**, since it publishes forward and the
-   * lake follows by ordinary ingest. It is reached two other ways: a purge
-   * whose step-down failed, and a row left `superseded` by the scheme before
-   * (ADR-044 §4), which is what this writes.
-   */
-  async function standingAhead() {
+  it('leaves a resend nothing to report about the lake', async () => {
+    // A resend is settled, so it takes no claim and could not move the table
+    // anyway. There is nothing for it to report either: whatever the first
+    // attempt published is an outstanding version, and the sweep queues it
+    // whether or not that attempt's own Lake step ran (spec §7.2).
     await bothIngested()
-    await db
-      .update(resourceVersion)
-      .set({ state: 'superseded' })
-      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 2)))
-  }
-
-  it('keeps the repair on offer when a run holds the resource', async () => {
-    // The run holding it may be the rebuild a previous press queued, which makes
-    // no version and so writes nothing to the lake. Answering "nothing owed"
-    // would take the warning off the screen with the table still on v2's rows.
-    await standingAhead()
-    await db.insert(resourcePipeline).values({ resourceId })
-    await claimResources(db, [resourceId], randomUUID(), CLAIM_STALE_AFTER_MS, 'run')
-
-    const repair = { ...mockDeps(), lake: unreachableLake, logger: silentLogger }
-
-    expect(await service.repairDerivatives(resourceId, repair)).toEqual({
-      queued: true,
-      cleared: false,
-    })
-  })
-
-  it('asks for nothing once the table stands where it should', async () => {
-    // What a successful reconcile records: the destination carries the snapshot
-    // the rollback landed on, which is above every stepped-off version's. Read
-    // any other way this would stay owed forever and every press would rewrite.
-    await standingAhead()
-    await setSnapshot(1, 13)
-    await db.insert(resourcePipeline).values({ resourceId })
-    await claimResources(db, [resourceId], randomUUID(), CLAIM_STALE_AFTER_MS, 'run')
-
-    const repair = { ...mockDeps(), lake: unreachableLake, logger: silentLogger }
-
-    expect(await service.repairDerivatives(resourceId, repair)).toEqual({
-      queued: true,
-      cleared: null,
-    })
-  })
-
-  it('reports the lake a resend cannot put back itself', async () => {
-    // A resend is settled, so it takes no claim and cannot move the table — but
-    // it can say so. Here the table stands ahead for a reason a revert no
-    // longer causes, and reporting it is what puts the repair on the screen;
-    // answering "done" would leave the table on rows the resource retracted
-    // with nothing pointing at it.
-    await standingAhead()
     // The state the first attempt left: v1's content *and* its format are what
     // the resource serves. Settled compares both (ADR-046 §3), so leaving the
     // label behind would make this a fresh revert rather than a resend.
@@ -1971,10 +1917,10 @@ describe('a revert that layer 2 has to follow (ADR-043 layer 2)', () => {
     const resent = await service.revertLiveContent(
       resourceId,
       { restoreTo: 1, ifLiveRevision: (await service.revertContext(resourceId)).liveRevision },
-      { ...mockDeps(), lake: unreachableLake, logger: silentLogger }
+      { ...mockDeps(), logger: silentLogger }
     )
 
-    expect(resent).toMatchObject({ restored: 1, published: null, cleared: false, queued: true })
+    expect(resent).toMatchObject({ restored: 1, published: null, cleared: null, queued: true })
   })
 })
 

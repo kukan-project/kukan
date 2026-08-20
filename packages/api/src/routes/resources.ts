@@ -749,7 +749,6 @@ resourcesRouter.post(
         storage: c.get('storage'),
         search: c.get('search'),
         queue: c.get('queue'),
-        lake: lakeConfigFromEnv(c.get('env')),
         logger: c.get('logger'),
       })
       return c.json({ id, ...result }, 200)
@@ -792,7 +791,6 @@ resourcesRouter.post('/:id/revert', zValidator('json', revertResourceSchema), as
     storage: c.get('storage'),
     search: c.get('search'),
     queue: c.get('queue'),
-    lake: lakeConfigFromEnv(c.get('env')),
     logger: c.get('logger'),
   })
   return c.json({ id, ...result })

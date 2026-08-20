@@ -1,23 +1,18 @@
 /**
- * DuckLake writes under the catalog-wide lock (ADR-043 layer 2 / Phase ii-a).
+ * What the version rows say about layer 2, under the catalog-wide lock (ADR-043
+ * layer 2 / Phase ii-a).
  *
- * The sequence whose correctness depends on the lock — write, read the snapshot
- * back, record it on the version row — has exactly one implementation here, and
- * so does the question that reads those records back ({@link lakeStandsAhead}).
- * Four callers depend on them: the pipeline's Lake step, the one-time backfill,
- * a revert's reconcile, and a purge coming off the version it retracted.
+ * Two things need the lock and both live here. **Loading a version**: write, read
+ * the snapshot back, record it on the version row — the pipeline's Lake step is
+ * the caller, and the sweep's retries reach it through the same step. **Standing
+ * the table down**: where the table is and where a purge can take it, which is
+ * read off the same rows and records nothing (spec §7.2).
  */
-import { and, desc, eq, gt, isNotNull, lt } from 'drizzle-orm'
+import { and, desc, eq, gt, isNotNull } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import { resourceVersion } from '@kukan/db'
 import type { IngestResult, LakeSession } from '@kukan/lake'
-import {
-  ingestParquetVersion,
-  lakeTableExists,
-  lakeTableName,
-  resolvableSnapshots,
-  rollbackLakeTable,
-} from '@kukan/lake'
+import { ingestParquetVersion, lakeTableName, resolvableSnapshots } from '@kukan/lake'
 import { LAKE_INGEST_LOCK, withGlobalAdvisoryLock } from './advisory-lock'
 
 /** A version, and where its rows are read from. */
@@ -41,62 +36,6 @@ export async function withLakeIngestLock<T>(
   fn: (tx: Transaction) => Promise<T>
 ): Promise<T> {
   return withGlobalAdvisoryLock(db, LAKE_INGEST_LOCK, fn)
-}
-
-/**
- * Stand a resource's table on one version's rows, and record where that landed.
- *
- * The rollback restores the contents under a *new* snapshot, so the id is
- * written back against the version whose rows these now are. That is what lets a
- * later caller tell the table is already standing on it — neither the old id nor
- * the version rows say so by themselves. Must run inside `withLakeIngestLock`,
- * which is what makes the id read back identify this commit.
- *
- * Returns the snapshot it landed on, or null when there was no table to move.
- */
-export async function standLakeTableOn(
-  tx: Transaction,
-  session: LakeSession,
-  on: { resourceId: string; version: number; snapshot: number }
-): Promise<number | null> {
-  const table = lakeTableName(on.resourceId)
-  if (!(await lakeTableExists(session, table))) return null
-  const landed = await rollbackLakeTable(session, table, on.snapshot)
-  await tx
-    .update(resourceVersion)
-    .set({ ducklakeSnapshotId: landed })
-    .where(
-      and(eq(resourceVersion.resourceId, on.resourceId), eq(resourceVersion.version, on.version))
-    )
-  return landed
-}
-
-/**
- * Does the table hold rows of a version that is no longer where it should
- * stand — some row carrying a snapshot above `snapshot`?
- *
- * Answered from the recorded ids alone, and only because every move of the
- * table writes the snapshot it landed on back onto the version whose rows those
- * now are ({@link standLakeTableOn}). Without that, this would stay true forever
- * after a revert and every asking would rewrite the table.
- */
-export async function lakeStandsAhead(
-  db: Pick<Database | Transaction, 'select'>,
-  resourceId: string,
-  snapshot: number | null
-): Promise<boolean> {
-  if (snapshot === null) return false
-  const [ahead] = await db
-    .select({ version: resourceVersion.version })
-    .from(resourceVersion)
-    .where(
-      and(
-        eq(resourceVersion.resourceId, resourceId),
-        gt(resourceVersion.ducklakeSnapshotId, snapshot)
-      )
-    )
-    .limit(1)
-  return ahead !== undefined
 }
 
 /** A version, and the snapshot layer 2 holds its rows under. */
@@ -128,86 +67,90 @@ export interface LakeStand {
  * contents — where retracted rows would be the base ii-b's `MERGE` builds the
  * next version on.
  *
- * @param opts.below - only versions under this one, for an ingest asking what it
- * builds on rather than where the table should stand.
+ * **Ordered by the recorded snapshot, newest load first — not by version
+ * number.** The two agree for everything write-once recorded, and disagree
+ * wherever a row the old scheme rewrote before the conversion survives
+ * (ADR-044 §4). The load order is the one that answers both of
+ * {@link lakeStandDown}'s questions, and asking them in different orders is what
+ * left a purged version's rows as the table's contents.
  */
 export async function versionsLakeCanStandOn(
   db: Pick<Database | Transaction, 'select'>,
-  resourceId: string,
-  opts: { below?: number; limit?: number } = {}
+  resourceId: string
 ): Promise<LakeStand[]> {
-  const query = db
+  const rows = await db
     .select({ version: resourceVersion.version, snapshot: resourceVersion.ducklakeSnapshotId })
     .from(resourceVersion)
     .where(
       and(
         eq(resourceVersion.resourceId, resourceId),
         eq(resourceVersion.state, 'active'),
-        isNotNull(resourceVersion.ducklakeSnapshotId),
-        opts.below === undefined ? undefined : lt(resourceVersion.version, opts.below)
+        isNotNull(resourceVersion.ducklakeSnapshotId)
       )
     )
-    .orderBy(desc(resourceVersion.version))
-  const rows = await (opts.limit === undefined ? query : query.limit(opts.limit))
+    .orderBy(desc(resourceVersion.ducklakeSnapshotId))
   return rows.flatMap((row) =>
     row.snapshot === null ? [] : [{ version: row.version, snapshot: row.snapshot }]
   )
 }
 
-/**
- * The version layer 2 should be standing on but is not, or null when there is
- * nothing for the caller to do.
- *
- * **The one place that pairs the two halves of that question**, because the three
- * callers that ask it have to agree: a revert's reconcile does the move,
- * {@link ResourceVersionService.lakeOwed} decides whether the screen still offers
- * it, and an ingest repairs the base it is about to build on. Two of them reading
- * different halves is what left a table on retracted rows with nothing saying so.
- *
- * **Null covers two states deliberately** — the table already stands right, and no
- * surviving version can be stood on. All three callers want the same thing of
- * both: nothing. A revert that empties a resource therefore leaves the table on
- * the rows it retracted, which it owes no better (spec §9.1) and nothing resolves
- * to (spec §14.1-16). A purge is the caller that has to tell them apart, because
- * it owes unfetchability — it asks {@link resolvedLakeStand} and drops the table
- * on a null of the second kind.
- */
-export async function lakeMoveOwed(
-  db: Pick<Database | Transaction, 'select'>,
-  resourceId: string,
-  opts: { below?: number } = {}
-): Promise<LakeStand | null> {
-  const [stand] = await versionsLakeCanStandOn(db, resourceId, { ...opts, limit: 1 })
-  if (!stand) return null
-  return (await lakeStandsAhead(db, resourceId, stand.snapshot)) ? stand : null
-}
+/** Where a purge has to leave the table, once it has taken its version out. */
+export type LakeStandDown =
+  /** On rows loaded after the purged version's — another version's, so untouched. */
+  | { move: 'stays' }
+  /** Nowhere left to stand: the table says so by holding nothing. */
+  | { move: 'drop' }
+  /** Onto this snapshot's contents, through the ingest path (spec §7.2). */
+  | { move: 'onto'; snapshot: number }
 
 /**
- * The newest version the table can be stood on *and* the catalog still resolves.
- * Null only when no version could be stood on at all.
+ * Where the table stands and where the purge can take it — **one answer, off one
+ * order**, because the two halves have to agree about what the table holds.
  *
- * The recorded ids are not enough by themselves: a version can carry a snapshot
- * the catalog has expired away (spec §11-5), and rolling onto one of those fails
- * — leaving a purge stuck on a table that still serves what it retracted.
- * Stepping down to one that resolves costs only history no reader could reach.
+ * Both are read from the recorded snapshots: the table holds the rows of whichever
+ * version was loaded last, so *where it stands* is the highest recorded id and
+ * *where it goes* is the highest that is left. **Version numbers cannot answer
+ * either.** They agree with the load order for everything write-once recorded, and
+ * disagree wherever a row the old scheme rewrote survives the conversion (ADR-044
+ * §4) — and picking the target by version there is what breaks the next purge:
+ * with v1@13 and v2@9 both active, standing the table down onto v2 leaves the head
+ * holding v2's rows while v1 still records the higher id, so purging v2 reads
+ * "something was loaded after me" and leaves the purged rows as the contents.
  *
- * **Throws rather than answering null when every recorded id is unresolvable.**
- * Null tells the caller nothing survives, and dropping a table in that state is
+ * **Stepping to the highest id keeps that from arising**: after every step-down the
+ * head holds the rows of the highest-recorded surviving version, which is what the
+ * next purge asks about. An ingest maintains the same thing, since its snapshot is
+ * the catalog's newest. The one state that still escapes it is a version whose id
+ * the catalog cannot resolve staying above the one stood on (spec §11-5, §14.1-15).
+ *
+ * The recorded ids are not enough by themselves for the target: a version can
+ * carry a snapshot the catalog has expired away (spec §11-5), and standing on one
+ * of those fails — leaving a purge stuck on a table that still serves what it
+ * retracted. Stepping down to one that resolves costs only history no reader could
+ * reach.
+ *
+ * **Throws rather than answering `drop` when every recorded id is unresolvable.**
+ * `drop` tells the caller nothing survives, and dropping a table in that state is
  * permanent: those versions keep their ids, so the sweep — which looks for
  * versions *without* one — passes over them, and §11-5's repair (null the
  * unresolvable ids, let the sweep re-ingest from layer 1) is not implemented.
  * Failing leaves the work outstanding, visible and retried.
  */
-export async function resolvedLakeStand(
+export async function lakeStandDown(
   db: Pick<Database | Transaction, 'select'>,
   session: LakeSession,
-  resourceId: string
-): Promise<LakeStand | null> {
+  resourceId: string,
+  purgedSnapshot: number
+): Promise<LakeStandDown> {
+  // Newest load first, so the head is the first entry and the target is the
+  // first one that still resolves — the same walk answers both.
   const stands = await versionsLakeCanStandOn(db, resourceId)
-  if (stands.length === 0) return null
+  if (stands[0] !== undefined && stands[0].snapshot > purgedSnapshot) return { move: 'stays' }
+  if (stands.length === 0) return { move: 'drop' }
+
   const resolvable = await resolvableSnapshots(
     session,
-    stands.map((s) => s.snapshot)
+    stands.map((stand) => stand.snapshot)
   )
   const stand = stands.find((s) => resolvable.has(s.snapshot))
   if (!stand) {
@@ -216,31 +159,7 @@ export async function resolvedLakeStand(
         `(${stands.map((s) => `v${s.version}@${s.snapshot}`).join(', ')})`
     )
   }
-  return stand
-}
-
-/**
- * Put the table where the ingest has to start from, and say so (ADR-043 §5).
- *
- * **An ingest applies to a table standing on the previous active version.** ii-a
- * gets away without it — every branch writes every row, so the contents land
- * right whatever they were before — but the *decision* it makes on the way,
- * "did the columns move?", is read off whatever the table happens to hold. After
- * a revert that is a version the resource stepped off. ii-b's `MERGE` takes the
- * same contents as its base, so the answer stops being cosmetic.
- *
- * The table stands ahead when some version carries a snapshot above the base's,
- * which a revert leaves behind whenever its own reconcile could not run. Reading
- * it here means the ingest repairs that rather than building on it.
- */
-async function standOnBase(
-  tx: Transaction,
-  session: LakeSession,
-  row: LakeIngestRow
-): Promise<void> {
-  const base = await lakeMoveOwed(tx, row.resourceId, { below: row.version })
-  if (!base) return
-  await standLakeTableOn(tx, session, { resourceId: row.resourceId, ...base })
+  return { move: 'onto', snapshot: stand.snapshot }
 }
 
 /**
@@ -268,6 +187,25 @@ async function standOnBase(
  * Active, which is every version a purge has not taken. This has to agree with
  * `pendingLakeIngestQuery`: disagreeing means either work that is listed and
  * always turned away, or work that is done without ever being listed.
+ *
+ * **The table it loads onto holds the contents of the version loaded last**,
+ * which nothing here has to arrange: the refusal above keeps an older version
+ * from replacing a newer one's contents, a revert publishes forward instead of
+ * moving contents (spec §7.2), and a purge stands the table down as it goes.
+ * Every load commits above everything recorded, so the version it loads becomes
+ * the last one in turn.
+ *
+ * **That is the version carrying the highest recorded snapshot, which is not
+ * always the highest version number.** They agree for everything write-once
+ * recorded; where an id the old scheme rewrote survives the conversion
+ * (ADR-044 §4), an older version's rows are what the table holds — reading the
+ * base as "the previous active version" there would stand it on contents the
+ * table does not have. {@link lakeStandDown} answers the same question for a
+ * purge, off the same order.
+ *
+ * ii-a would not notice either way — every branch writes every row — but the
+ * decision it makes on the way, "did the columns move?", is read off whatever
+ * the table holds, and ii-b's `MERGE` takes those contents as its base.
  */
 export async function ingestVersionIntoLake(
   tx: Transaction,
@@ -302,8 +240,6 @@ export async function ingestVersionIntoLake(
   // No later pass can change the answer, and the pending query stops listing
   // this version the moment a newer one is in.
   if (newer) return null
-
-  await standOnBase(tx, session, row)
 
   const result = await ingestParquetVersion(session, {
     table: lakeTableName(row.resourceId),

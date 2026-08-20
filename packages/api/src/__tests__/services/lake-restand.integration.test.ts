@@ -1,15 +1,13 @@
 /**
- * Every move of a DuckLake table onto a version's rows (ADR-043 §5) — a
- * revert's reconcile, an ingest standing on its base, a purge coming off the
- * version it retracted — against real PostgreSQL with the DuckLake calls
- * stubbed.
+ * The one operation left that moves a DuckLake table's contents without
+ * publishing a version — a purge coming off the version it retracted (spec §9.1
+ * step 4) — against real PostgreSQL with the DuckLake calls stubbed.
  *
- * What the stubs are for: the sequence under test is "roll back, read the
- * snapshot it landed on, record it against the version" — and it is the
- * recording that makes a second pass a no-op. DuckLake's own behaviour is
- * covered where it lives; what a running catalog cannot show here is *which*
- * version each caller picks, which is the whole of what these three disagree
- * about.
+ * What the stubs are for: which version the purge stands the table on, and that
+ * it stands it there without writing anything back. Every version row keeps the
+ * snapshot its own ingest wrote (spec §7.2), so the assertions are as much about
+ * the rows left alone as about the call made. DuckLake's own behaviour is
+ * covered where it lives.
  *
  * A file of its own because the module mock is hoisted over the whole file, and
  * the neighbouring revert and purge cases prove the opposite thing — that an
@@ -25,8 +23,7 @@ import type { QueueAdapter } from '@kukan/queue-adapter'
 import {
   withLakeSession,
   lakeTableExists,
-  rollbackLakeTable,
-  ingestParquetVersion,
+  restandLakeTable,
   lakeTableName,
   dropLakeTable,
   resolvableSnapshots,
@@ -34,7 +31,6 @@ import {
 } from '@kukan/lake'
 import type { LakeSession } from '@kukan/lake'
 import { ResourceVersionService } from '../../services/resource-version-service'
-import { ingestVersionIntoLake, withLakeIngestLock } from '../../services/lake-ingest'
 import { unreachableLake } from '../test-helpers/fixtures'
 import {
   getTestDb,
@@ -50,8 +46,7 @@ vi.mock('@kukan/lake', async (importOriginal) => {
     ...actual,
     withLakeSession: vi.fn(actual.withLakeSession),
     lakeTableExists: vi.fn(actual.lakeTableExists),
-    rollbackLakeTable: vi.fn(actual.rollbackLakeTable),
-    ingestParquetVersion: vi.fn(actual.ingestParquetVersion),
+    restandLakeTable: vi.fn(actual.restandLakeTable),
     dropLakeTable: vi.fn(actual.dropLakeTable),
     resolvableSnapshots: vi.fn(actual.resolvableSnapshots),
     reclaimUnreferencedSnapshots: vi.fn(actual.reclaimUnreferencedSnapshots),
@@ -61,9 +56,6 @@ vi.mock('@kukan/lake', async (importOriginal) => {
 const db = getTestDb()
 const silentLogger = createLogger({ name: 'test', level: 'silent' })
 const service = new ResourceVersionService(db)
-
-/** The snapshot the stubbed rollback lands on — above every recorded one. */
-const LANDED = 13
 
 let packageId: string
 let resourceId: string
@@ -172,7 +164,7 @@ beforeEach(async () => {
   const session = {} as LakeSession
   vi.mocked(withLakeSession).mockImplementation((_config, fn) => fn(session))
   vi.mocked(lakeTableExists).mockResolvedValue(true)
-  vi.mocked(rollbackLakeTable).mockResolvedValue(LANDED)
+  vi.mocked(restandLakeTable).mockResolvedValue(undefined)
   vi.mocked(dropLakeTable).mockResolvedValue(undefined)
   vi.mocked(resolvableSnapshots).mockImplementation(async (_session, ids) => new Set(ids))
   vi.mocked(reclaimUnreferencedSnapshots).mockResolvedValue({ expired: 0, filesDeleted: 0 })
@@ -194,14 +186,14 @@ describe('a revert leaves DuckLake to the ingest (ADR-044 §4)', () => {
     // **The reconcile a revert used to run is gone.** Publishing forward makes
     // the restored content an ordinary outstanding version, and the Lake step
     // merges it onto whatever the table holds — which is what the write path
-    // ii-b adopted does anyway (spec §7.2). Rolling the table here would be the
+    // ii-b adopted does anyway (spec §7.2). Moving the table here would be the
     // whole-table rewrite that path exists to avoid, and it would have to write
     // the landing snapshot onto a version row that is supposed to be
     // write-once.
     const result = await revertTo(1)
 
     expect(result).toMatchObject({ restored: 1, published: 3, cleared: true })
-    expect(rollbackLakeTable).not.toHaveBeenCalled()
+    expect(restandLakeTable).not.toHaveBeenCalled()
     // Both rows keep the snapshots their own content landed under.
     expect(await snapshotOf(1)).toBe(5)
     expect(await snapshotOf(2)).toBe(9)
@@ -218,84 +210,7 @@ describe('a revert leaves DuckLake to the ingest (ADR-044 §4)', () => {
       queued: true,
       cleared: null,
     })
-    expect(rollbackLakeTable).not.toHaveBeenCalled()
-  })
-})
-
-describe('an ingest builds on the previous active version (ADR-043 §5)', () => {
-  /** v3 outstanding, over a v2 the resource stepped off. */
-  async function outstandingV3() {
-    await db
-      .update(resourceVersion)
-      .set({ state: 'superseded' })
-      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 2)))
-    await db.insert(resourceVersion).values({
-      resourceId,
-      version: 3,
-      storageKey: getStorageKey(packageId, resourceId, 'v3'),
-      size: 103,
-      hash: 'sha256:v3',
-      origin: 'upload',
-      state: 'active',
-      format: 'csv',
-    })
-    vi.mocked(ingestParquetVersion).mockResolvedValue({ snapshotId: 20 })
-  }
-
-  const ingestV3 = () =>
-    withLakeIngestLock(db, (tx) =>
-      ingestVersionIntoLake(tx, {} as LakeSession, {
-        resourceId,
-        version: 3,
-        sourcePath: '/tmp/v3.parquet',
-      })
-    )
-
-  it('stands the table back on the base when a revert left it ahead', async () => {
-    // v2 reached the lake and was then stepped off; its reconcile never ran, so
-    // the table still holds v2's rows. ii-a would write over them either way —
-    // but the shape check it makes on the way, and ii-b's MERGE, read them.
-    await outstandingV3()
-
-    await ingestV3()
-
-    expect(rollbackLakeTable).toHaveBeenCalledExactlyOnceWith(
-      expect.anything(),
-      expect.any(String),
-      5
-    )
-    expect(await snapshotOf(1)).toBe(LANDED)
-    expect(ingestParquetVersion).toHaveBeenCalledOnce()
-  })
-
-  it('moves nothing when the table already stands on the base', async () => {
-    await outstandingV3()
-    // The reconcile ran: v1 carries where the rollback landed, above every
-    // stepped-off version's.
-    await db
-      .update(resourceVersion)
-      .set({ ducklakeSnapshotId: LANDED })
-      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
-
-    await ingestV3()
-
-    expect(rollbackLakeTable).not.toHaveBeenCalled()
-    expect(ingestParquetVersion).toHaveBeenCalledOnce()
-  })
-
-  it('moves nothing when no active version below reached the lake', async () => {
-    // Nothing to build on: whatever the table holds, the ingest replaces it
-    // wholesale and there is no base to rebase onto.
-    await outstandingV3()
-    await db
-      .update(resourceVersion)
-      .set({ ducklakeSnapshotId: null })
-      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
-
-    await ingestV3()
-
-    expect(rollbackLakeTable).not.toHaveBeenCalled()
-    expect(ingestParquetVersion).toHaveBeenCalledOnce()
+    expect(restandLakeTable).not.toHaveBeenCalled()
   })
 })
 
@@ -315,14 +230,16 @@ describe('a purge comes off the version layer 2 stands on (spec §9.1)', () => {
 
     await purge(3)
 
-    expect(rollbackLakeTable).toHaveBeenCalledExactlyOnceWith(
-      expect.anything(),
-      lakeTableName(resourceId),
+    expect(restandLakeTable).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
+      table: lakeTableName(resourceId),
       // v1's own snapshot, two versions below where the pointer lands.
-      5
-    )
+      snapshot: 5,
+    })
     expect(dropLakeTable).not.toHaveBeenCalled()
-    expect(await snapshotOf(1)).toBe(LANDED)
+    // And v1 still records where its *own* ingest landed. Writing the move back
+    // here is what ii-b's `table_changes` and the whole of §7.2 rule out; the
+    // landing snapshot is named by no version row, which §11-3 already covers.
+    expect(await snapshotOf(1)).toBe(5)
   })
 
   it('drops the table when no surviving version reached the lake', async () => {
@@ -332,12 +249,86 @@ describe('a purge comes off the version layer 2 stands on (spec §9.1)', () => {
     await purge(3)
 
     expect(dropLakeTable).toHaveBeenCalledOnce()
-    expect(rollbackLakeTable).not.toHaveBeenCalled()
+    expect(restandLakeTable).not.toHaveBeenCalled()
+  })
+
+  it('reads where the table stands from the snapshots, not the version numbers', async () => {
+    // What the conversion (ADR-044 §4) leaves behind: v1 carries an id the old
+    // scheme's reconcile wrote, above v2's, so the table holds **v1's** rows
+    // while v2 is the higher version. Purging v1 therefore has to step down —
+    // going by version number it reads as "v2 is above me, nothing to do" and
+    // leaves the purged rows as the table's current contents.
+    await db
+      .update(resourceVersion)
+      .set({ ducklakeSnapshotId: 13 })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+
+    await purge(1)
+
+    expect(restandLakeTable).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
+      table: lakeTableName(resourceId),
+      snapshot: 9,
+    })
+  })
+
+  it('keeps answering after a step-down, purging down a rewritten history', async () => {
+    // **Two purges in a row over converted rows.** v1 carries an id the old
+    // scheme wrote, above v2's, and v3 is an ordinary later load. Purging v3
+    // stands the table down; purging v2 then has to know where that left it.
+    //
+    // Reading the target by version number is what breaks here: v3 would come
+    // down onto v2 (the higher version), leaving the head on v2's rows while v1
+    // still records the higher id — and the second purge, asking "was anything
+    // loaded after me", would read v1@13 and leave the rows it just purged as
+    // the table's contents. Stepping to the highest id instead keeps the head
+    // and the question on the same version.
+    await db
+      .update(resourceVersion)
+      .set({ ducklakeSnapshotId: 13 })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+    await addVersion(3, 'sha256:v3', 14)
+    await liveOn(3)
+
+    await purge(3)
+
+    expect(restandLakeTable).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
+      table: lakeTableName(resourceId),
+      snapshot: 13,
+    })
+
+    vi.mocked(restandLakeTable).mockClear()
+    await purge(2)
+
+    // v2's rows are not what the table holds, so there is nothing to come off.
+    expect(restandLakeTable).not.toHaveBeenCalled()
+    expect(dropLakeTable).not.toHaveBeenCalled()
+
+    // And the version the head does hold is where the last purge goes.
+    vi.mocked(restandLakeTable).mockClear()
+    await purge(1)
+
+    expect(restandLakeTable).not.toHaveBeenCalled()
+    expect(dropLakeTable).toHaveBeenCalledOnce()
+  })
+
+  it('leaves a table that is already gone alone', async () => {
+    // Dropped by an earlier purge with nowhere to stand, or by a restore, while
+    // the surviving versions keep their recorded ids. There is nothing to move
+    // and nothing to make unfetchable — and standing a table that is not there
+    // only fails, which would leave the purge stuck in `purging` for good.
+    await v3LiveAndIngested()
+    vi.mocked(lakeTableExists).mockResolvedValue(false)
+
+    await purge(3)
+
+    expect(restandLakeTable).not.toHaveBeenCalled()
+    expect(dropLakeTable).not.toHaveBeenCalled()
+    expect(await stateOf(3)).toBe('purged')
   })
 
   it('steps past a recorded snapshot the catalog no longer resolves', async () => {
     // v2's id outlives the snapshot when a reclaim runs against an older catalog
-    // (spec §11-5). Rolling onto it fails, and a failed purge is one left holding
+    // (spec §11-5). Standing on it fails, and a failed purge is one left holding
     // what it retracted — so the walk goes down to a version that resolves.
     await v3LiveAndIngested()
     vi.mocked(resolvableSnapshots).mockImplementation(
@@ -346,11 +337,10 @@ describe('a purge comes off the version layer 2 stands on (spec §9.1)', () => {
 
     await purge(3)
 
-    expect(rollbackLakeTable).toHaveBeenCalledExactlyOnceWith(
-      expect.anything(),
-      expect.any(String),
-      5
-    )
+    expect(restandLakeTable).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
+      table: lakeTableName(resourceId),
+      snapshot: 5,
+    })
   })
 
   it('comes off a middle version the lake is still standing on', async () => {
@@ -364,20 +354,21 @@ describe('a purge comes off the version layer 2 stands on (spec §9.1)', () => {
 
     await purge(2)
 
-    expect(rollbackLakeTable).toHaveBeenCalledExactlyOnceWith(
-      expect.anything(),
-      lakeTableName(resourceId),
-      5
-    )
+    expect(restandLakeTable).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
+      table: lakeTableName(resourceId),
+      snapshot: 5,
+    })
     expect(dropLakeTable).not.toHaveBeenCalled()
   })
 
   it('leaves the contents alone for a middle version the lake has moved past', async () => {
     // v2 is live and in the lake, so the table already holds rows this purge does
-    // not touch. The reclaim still runs — v1's own snapshot holds its rows.
+    // not touch. Read off the version numbers, which order the snapshots now that
+    // each is written once. The reclaim still runs — v1's own snapshot holds its
+    // rows.
     await purge(1)
 
-    expect(rollbackLakeTable).not.toHaveBeenCalled()
+    expect(restandLakeTable).not.toHaveBeenCalled()
     expect(dropLakeTable).not.toHaveBeenCalled()
     expect(reclaimUnreferencedSnapshots).toHaveBeenCalledOnce()
   })
@@ -394,43 +385,12 @@ describe('a purge comes off the version layer 2 stands on (spec §9.1)', () => {
     await expect(purge(3, deps)).rejects.toThrow(/resolves/)
 
     expect(dropLakeTable).not.toHaveBeenCalled()
-    expect(rollbackLakeTable).not.toHaveBeenCalled()
+    expect(restandLakeTable).not.toHaveBeenCalled()
     expect(await stateOf(3)).toBe('purging')
     // And the derivatives went first. A lake this purge cannot finish is the one
     // failure that leaves the preview and the search index as the last readable
     // copy of content whose layer-1 object is already deleted — so they must be
     // gone before it is attempted, not after (spec §9.1 steps 3 and 4).
     expect(deps.search.deleteContent).toHaveBeenCalledWith(resourceId)
-  })
-})
-
-describe('the repair still answers for a table standing ahead', () => {
-  it('offers the repair until it runs, and stops offering once it has', async () => {
-    // A revert no longer leaves this, but a purge whose step-down failed does,
-    // and so does a row left `superseded` by the scheme before (ADR-044 §4).
-    // What `lakeOwed` answers still has to be what the repair does: reading the
-    // pointer's version, as it used to, found no snapshot on the destination
-    // and answered "owed nothing" with the table on retracted rows.
-    await v2NeverTaken()
-    await db
-      .update(resourceVersion)
-      .set({ state: 'superseded' })
-      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 3)))
-    await liveOn(1)
-
-    // Offered, and it clears: same target, same question.
-    expect(await service.repairDerivatives(resourceId, mockDeps())).toEqual({
-      queued: true,
-      cleared: true,
-    })
-    expect(rollbackLakeTable).toHaveBeenCalledExactlyOnceWith(
-      expect.anything(),
-      lakeTableName(resourceId),
-      5
-    )
-    expect(await service.repairDerivatives(resourceId, mockDeps())).toEqual({
-      queued: true,
-      cleared: null,
-    })
   })
 })

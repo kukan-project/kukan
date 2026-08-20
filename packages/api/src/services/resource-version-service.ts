@@ -26,19 +26,19 @@ import {
 } from '@kukan/shared'
 import type { NoTableReason, VersionIdentity, VersionOrigin } from '@kukan/shared'
 import type { LakeConfig } from '@kukan/lake'
-import { dropLakeTable, lakeTableExists, lakeTableName, withLakeSession } from '@kukan/lake'
+import {
+  dropLakeTable,
+  lakeTableExists,
+  lakeTableName,
+  restandLakeTable,
+  withLakeSession,
+} from '@kukan/lake'
 import type { Logger, ResourceSchema } from '@kukan/shared'
 import { createLogger } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
-import {
-  lakeMoveOwed,
-  lakeStandsAhead,
-  resolvedLakeStand,
-  standLakeTableOn,
-  withLakeIngestLock,
-} from './lake-ingest'
+import { lakeStandDown, withLakeIngestLock } from './lake-ingest'
 import { reclaimInSession } from './lake-reclaim'
 import {
   onRevision,
@@ -1164,16 +1164,21 @@ export class ResourceVersionService {
    *
    * **Moves the contents only when the table is standing on the purged version**,
    * which is when they would otherwise still hold its rows. That is asked of the
-   * snapshot order rather than of the pointer, and answered under the same lock as
-   * the target it moves to: layer 2 stands on the newest version it took, which is
-   * not the live one as soon as a version the lake could not take — too large, not
-   * tabular, in ii-b an unusable key — sits above it. Both directions occur, so a
-   * middle version can be the top of layer 2 and a live one can be below it.
+   * recorded snapshots rather than of the pointer: layer 2 stands on the newest
+   * version it took, which is not the live one as soon as a version the lake could
+   * not take — too large, not tabular, in ii-b an unusable key — sits above it.
+   * Both directions occur, so a middle version can be the top of layer 2 and a
+   * live one can be below it.
    *
    * The table is then stood on layer 2's own restore target — **not the
-   * pointer's** (spec §9.1, {@link versionsLakeCanStandOn}) — and dropped only
-   * when no version is left whose rows it can hold. A drop costs the contents
-   * alone; the retained snapshots read through it (spec §9.1).
+   * pointer's** (spec §9.1, {@link lakeStandDown}) — and dropped only when no
+   * version is left whose rows it can hold. A drop costs the contents alone; the
+   * retained snapshots read through it (spec §9.1).
+   *
+   * **The only operation left that moves contents without publishing** (spec
+   * §7.2). It goes through the ingest path and records nothing: the version it
+   * lands on keeps the snapshot its own ingest wrote, and the landing snapshot is
+   * named by no version row, which is the state §11-3 already keeps.
    *
    * Either way the snapshot has to be expired and its Parquet deleted, or the
    * rows remain readable straight from the catalog. That runs for every purge
@@ -1191,123 +1196,38 @@ export class ResourceVersionService {
     purgedSnapshot: number | null
   ): Promise<void> {
     // Never ingested: the lake holds nothing of this version, so there is
-    // neither anything to roll back nor anything to free. Opening a session
-    // costs extension loads and a catalog ATTACH — not worth it to find that
-    // out, and most resources are not tabular.
+    // neither anything to stand down from nor anything to free. Opening a
+    // session costs extension loads and a catalog ATTACH — not worth it to find
+    // that out, and most resources are not tabular.
     if (!lake || purgedSnapshot === null) return
     const table = lakeTableName(resourceId)
     await withLakeSession(lake, async (session) => {
       await withLakeIngestLock(this.db, async (tx) => {
-        // Standing somewhere else, those contents describe a version this purge
-        // does not touch. The reclaim below still runs — another resource's purge
-        // may have left snapshots behind when it failed partway.
-        if (await lakeStandsAhead(tx, resourceId, purgedSnapshot)) return
         // Read under the lock, like the ingest reads its base: a run committing
-        // between the read and the rollback would have its snapshot stood off
-        // with nothing left to queue it again.
-        const target = await resolvedLakeStand(tx, session, resourceId)
-        if (!target) {
-          if (await lakeTableExists(session, table)) await dropLakeTable(session, table)
+        // between the read and the move would have its snapshot stood off with
+        // nothing left to queue it again.
+        const down = await lakeStandDown(tx, session, resourceId, purgedSnapshot)
+        // Those contents describe a version this purge does not touch. The
+        // reclaim below still runs — another resource's purge may have left
+        // snapshots behind when it failed partway.
+        if (down.move === 'stays') return
+        // Gone already — dropped by an earlier purge that had nowhere to stand,
+        // or by a restore. There is nothing to move and nothing to make
+        // unfetchable. Asked after the target, so a resource whose recorded ids
+        // no longer resolve still fails rather than reading as one with nothing
+        // to do.
+        if (!(await lakeTableExists(session, table))) return
+        if (down.move === 'drop') {
+          await dropLakeTable(session, table)
           return
         }
-        // Recorded against the version it now holds, like every other move of
-        // this table — an ingest that read the old id would rebase off it.
-        await standLakeTableOn(tx, session, { resourceId, ...target })
+        await restandLakeTable(session, { table, snapshot: down.snapshot })
       })
       // The row being purged is `purging`, which the reclaim's retained set
       // excludes along with `purged` — so its snapshot reads as unreferenced
       // without needing a special case.
       await reclaimInSession(this.db, session)
     })
-  }
-
-  /**
-   * `false` when the lake is owed a reconcile this call could not do, `null`
-   * when it is owed nothing — the two halves of a refused repair.
-   *
-   * The same question {@link reconcileLakeToLive} acts on, through the one helper
-   * that asks it ({@link lakeMoveOwed}) — this used to read the pointer's version
-   * instead, which under-reports: a live version the lake never took has no
-   * snapshot, "is anything above nothing" is false, and the answer is "owed
-   * nothing" while the table still holds rows the resource stepped off, with no
-   * warning and no control to put it right.
-   */
-  private async lakeOwed(resourceId: string, deps: { lake?: LakeConfig }): Promise<false | null> {
-    if (!deps.lake) return null
-    return (await lakeMoveOwed(this.db, resourceId)) ? false : null
-  }
-
-  /**
-   * Bring the lake table back in line with the version layer 1 now points at
-   * (ADR-043 layer 2).
-   *
-   * A revert moves layer 1 back without touching layer 2, so the table is left
-   * holding the rows of a version nothing points at any more. Nothing reads it
-   * today — the diff resolves both sides to their own snapshots, which is why
-   * ii-a never noticed — but that is a property of the one reader there happens
-   * to be, not a guarantee. ii-b's `MERGE` takes the table's current contents as
-   * its base, so leaving it means merging the next version onto retracted rows.
-   *
-   * Reported rather than thrown, like the rest of what follows the pointer move:
-   * past it the retraction has happened, and failing the revert here invites a
-   * retry of the one step that is not safe to repeat. `repairDerivatives` runs
-   * this again.
-   *
-   * **Idempotent, and that is what the recorded snapshot buys.** The rollback
-   * lands the destination's rows under a *new* snapshot, which is written back
-   * onto the destination's row. "Is any version's snapshot above the live one's"
-   * then answers "does the table still hold something the resource stepped off",
-   * and answers it no once this has run — so a resend, a repair, and the standing
-   * repair can all ask without rewriting a table that already stands where it
-   * should. Recorded after the rollback and inside the same lock, so a failure in
-   * between leaves the old id and the next caller does it again.
-   *
-   * **The destination is not necessarily where the table goes.** Layer 2 stands
-   * on the newest version it took, and a revert can land the pointer on one the
-   * lake never took (too large, not tabular) — so the target is read as layer 2's
-   * own (spec §9.1, {@link lakeMoveOwed}) and can sit below the pointer. Standing
-   * on it still leaves the destination outstanding for the sweep, which loads it
-   * onto that base later; the alternative was leaving the table on the retracted
-   * rows until an ingest that may never be possible.
-   *
-   * Null when there is nothing this can put back, which is two cases:
-   *
-   * - no lake configured
-   * - no surviving version carries a snapshot, so there is nothing to stand on.
-   *   A resource emptied by the revert keeps the last ingested version's rows
-   *   rather than being dropped — **not because dropping would cost the stepped-off
-   *   versions their diffs** (it would not; they resolve their own snapshots, which
-   *   read through a drop) but because a revert owes no unfetchability, and nothing
-   *   resolves to the table's head. What that leaves for ii-b's `MERGE` is spec
-   *   §14.1-16
-   *
-   * The caller must hold the resource's claim: the target is read outside the
-   * catalog lock, and a run that ingests a newer version in between would
-   * otherwise have its work rolled away with nothing left to queue it again.
-   */
-  private async reconcileLakeToLive(
-    resourceId: string,
-    lake: LakeConfig | undefined,
-    log: Logger
-  ): Promise<boolean | null> {
-    if (!lake) return null
-    // Inside the reporting `try` along with the rollback: this runs past the
-    // pointer move, where throwing would fail a revert that has already
-    // happened and leave the resend answering from `settledRevert`.
-    try {
-      const stand = await lakeMoveOwed(this.db, resourceId)
-      if (!stand) return null
-
-      await withLakeSession(lake, (session) =>
-        withLakeIngestLock(this.db, async (tx) => {
-          await standLakeTableOn(tx, session, { resourceId, ...stand })
-        })
-      )
-      return true
-    } catch (err) {
-      log.error({ err, resourceId }, 'Content reverted, but the lake still holds its rows')
-      return false
-    }
   }
 
   /**
@@ -1728,8 +1648,8 @@ export class ResourceVersionService {
       // nothing left to stand on empties the resource. Layer 2 used to be handed
       // the same row to keep the two on one version — the lake left on a version
       // nothing pointed at was a version the next purge read as a middle one and
-      // never took out. The snapshot order answers that now, whether or not the
-      // two agree.
+      // never took out. Layer 2 reads its own target now, whether or not the two
+      // agree.
       rolledBack = (await this.restoreLiveFromVersions(this.db, resourceId, pkgRow)) !== null
 
       // The object the purged content was being served from, deleted now rather
@@ -1747,7 +1667,7 @@ export class ResourceVersionService {
       // derivatives describe content this purge does not touch. Layer 2 need not
       // be — it stands on the newest version it took, which is this one whenever
       // nothing above it reached the lake — so the same call runs, and decides for
-      // itself from the snapshot order (spec §9.1).
+      // itself from the recorded snapshots (spec §9.1).
       await this.purgeFromLake(resourceId, deps.lake, row.ducklakeSnapshotId)
     }
 
@@ -1856,7 +1776,6 @@ export class ResourceVersionService {
       storage: StorageAdapter
       search?: SearchAdapter
       queue: QueueAdapter
-      lake?: LakeConfig
       logger?: Logger
     }
   ): Promise<RevertOutcome> {
@@ -2054,7 +1973,6 @@ export class ResourceVersionService {
       storage: StorageAdapter
       search?: SearchAdapter
       queue: QueueAdapter
-      lake?: LakeConfig
     },
     log: Logger
   ): Promise<RevertOutcome | null> {
@@ -2099,13 +2017,9 @@ export class ResourceVersionService {
         published: null,
         // Nothing left to clear — the attempt that moved the content took the
         // derivatives with it, which is why this one is settled at all. Layer 2
-        // is the exception: the attempt may have died between the pointer move
-        // and the ingest of what it published, and the rebuild queued below
-        // cannot stand in for it — it makes no version, so the Lake step finds
-        // nothing outstanding. Only reported here, never done: the repair needs
-        // the claim, and taking it is exactly what this path exists to avoid.
-        // `false` puts it on `repairDerivatives`, which does take one.
-        cleared: await this.lakeOwed(resourceId, deps),
+        // included: what that attempt published is an outstanding version, and
+        // the sweep queues it whether or not its own Lake step ran (spec §7.2).
+        cleared: null,
         queued: await this.queueRebuild(resourceId, deps, log),
       }
     }
@@ -2209,7 +2123,6 @@ export class ResourceVersionService {
       storage: StorageAdapter
       search?: SearchAdapter
       queue: QueueAdapter
-      lake?: LakeConfig
       logger?: Logger
     }
   ): Promise<LadderOutcome> {
@@ -2222,28 +2135,15 @@ export class ResourceVersionService {
     if (!current) throw new NotFoundError('Resource', resourceId)
 
     if (current.storageKey !== null) {
-      // The rebuild cannot do this one: no new version comes of it, so the Lake
-      // step has nothing outstanding to ingest and the table stays where the
-      // revert left it.
+      // Layer 2 is not this rung's to put right, and there is nothing here for it
+      // to do: the only operations that move the table are its own ingests and a
+      // purge standing it down (spec §7.2). `null` rather than `false` — nothing
+      // is owed, so the screen reads this as done.
       //
-      // Under the claim, and the target read under it too: a run publishing a
-      // newer version between the read and the catalog lock would have its
-      // ingest rolled away, and its row already carries a snapshot so nothing
-      // queues it again.
-      const held = await withResourceClaims(this.db, [resourceId], () =>
-        this.reconcileLakeToLive(resourceId, deps.lake, log)
-      )
-      // Refused means a run holds the resource — and the one holding it may well
-      // be the rebuild a previous press queued, which creates no version and so
-      // writes nothing to the lake. Answering `null` there would take the warning
-      // off the screen with the table still on retracted rows and no control left
-      // to say so, so what was owed is asked again: owed and undone is `false`,
-      // which keeps the repair on offer. The reconcile is idempotent, so pressing
-      // it once more costs nothing when it has already run.
-      const followed = held.status === 'ran' ? held.result : await this.lakeOwed(resourceId, deps)
-      // Queued outside the claim, or the run that picks the job up finds the
-      // resource held and puts itself back on the queue for another 30 seconds.
-      return { queued: await this.queueRebuild(resourceId, deps, log), cleared: followed }
+      // No claim taken either: the rebuild is queued outside one, or the run that
+      // picks the job up finds the resource held and puts itself back on the
+      // queue for another 30 seconds.
+      return { queued: await this.queueRebuild(resourceId, deps, log), cleared: null }
     }
     return {
       queued: null,

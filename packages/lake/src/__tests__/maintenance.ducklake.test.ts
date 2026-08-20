@@ -26,7 +26,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { LakeRow, LakeSession } from '../connection'
 import { deleteOrphanedFiles, reclaimUnreferencedSnapshots } from '../maintenance'
-import { resolvableSnapshots, rollbackLakeTable } from '../table'
+import { resolvableSnapshots } from '../table'
+import { restandLakeTable } from '../ingest'
 
 let dir: string
 let conn: DuckDBConnection
@@ -220,9 +221,9 @@ describe('resolvableSnapshots — real catalog', () => {
     await reclaimUnreferencedSnapshots(session, [v2])
 
     expect(await resolvableSnapshots(session, [v1, v2])).toEqual(new Set([v2]))
-    // What trusting the recorded id does instead of asking: the roll fails, and
+    // What trusting the recorded id does instead of asking: the move fails, and
     // for a purge that is a table left holding what it retracted.
-    await expect(rollbackLakeTable(session, 't', v1)).rejects.toThrow()
+    await expect(restandLakeTable(session, { table: 't', snapshot: v1 })).rejects.toThrow()
   })
 })
 
@@ -286,8 +287,8 @@ describe('deleteOrphanedFiles — real catalog', () => {
   it('repairs a head whose files are gone from a version whose files remain', async () => {
     // **The restore contract's load-bearing behaviour (spec §11-5).**
     //
-    // A table's current head is often a snapshot no version row names —
-    // `standOnBase` and a purge standing the table down both leave one. Being
+    // A table's current head is often a snapshot no version row names — a purge
+    // standing the table down leaves one, and nothing records it. Being
     // unnamed it is what the retained set does not hold, so a later reclaim
     // takes its files. Restore a catalog from before that reclaim and the
     // catalog still names those files: every version row resolves, the head
@@ -313,7 +314,11 @@ describe('deleteOrphanedFiles — real catalog', () => {
     const named = await snapshot()
     const versionFiles = parquet()
 
-    // Stand the table down onto v1's content, the way `standOnBase` does.
+    // Stand the table down onto v1's content, the way a purge does when the
+    // columns moved. Written out rather than calling `restandLakeTable` because
+    // the branch matters here: the same-shape branch refills the table and
+    // leaves the head sharing the version's files, so there is no unnamed file
+    // to take away and nothing to repair.
     await conn.run(
       `CREATE OR REPLACE TABLE lake.t AS SELECT * FROM lake.t AT (VERSION => ${named})`
     )

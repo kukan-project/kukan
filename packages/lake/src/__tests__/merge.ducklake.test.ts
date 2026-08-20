@@ -152,11 +152,10 @@ describe('MERGE INTO on DuckLake', () => {
   })
 
   it('stands a keyed table back on an older snapshot from a time-travelled source', async () => {
-    // The two operations that move contents without publishing — a purge coming
-    // off the version it retracted, and an ingest repairing the base it builds
-    // on — read the table's own earlier snapshot as their source rather than
-    // rebuilding that version's Parquet out of layer 1, which would be a
-    // re-interpretation (spec §7.2 decision 3).
+    // The one operation that moves contents without publishing — a purge coming
+    // off the version it retracted — reads the table's own earlier snapshot as
+    // its source rather than rebuilding that version's Parquet out of layer 1,
+    // which would be a re-interpretation (spec §7.2 decision 3).
     //
     // **This is one of three branches, and the only one that writes a delta.**
     // The two below are what a keyless table and a schema change get, because
@@ -213,12 +212,50 @@ describe('MERGE INTO on DuckLake', () => {
       { id: 2, name: 'b' },
     ])
     expect(await latestSnapshot()).toBe(v2 + 1)
-    // The `DELETE` does not take the snapshot it is reading from with it: the
-    // statement reads `v1` and writes the current contents, and time travel to
-    // either end still answers.
+    // Time travel to either end still answers afterwards.
     expect(await session.rows(`SELECT * FROM lake.t AT (VERSION => ${v2}) ORDER BY id`)).toEqual([
       { id: 1, name: 'A' },
       { id: 3, name: 'c' },
+    ])
+    // **And it only works because the write in between replaced the contents.**
+    // The case below is the same statements over a table whose head still holds
+    // the target's files.
+  })
+
+  it('empties the table when the DELETE and the time travel share files', async () => {
+    // 🔴 **The trap under the branch above.** Inside the transaction, `DELETE`
+    // takes the time-travel read of the same table with it: `t AT (VERSION => n)`
+    // answers **zero rows** once the files that snapshot resolves through are the
+    // ones just deleted, so the `INSERT` writes nothing and the move empties the
+    // table. No error, and the contents are gone.
+    //
+    // Sharing is what decides it. ii-a's loads replace the contents wholesale,
+    // so the head's files and an earlier version's are disjoint and the case
+    // above passes. **A keyed load updates in place, so ii-b always shares** —
+    // which is why `restandLakeTable` reads the snapshot out into a temp table
+    // before it deletes anything, rather than relying on the branch above.
+    const v1 = await latestSnapshot()
+    // An append, so v1's file is still part of the current contents.
+    await session.run(`INSERT INTO lake.t SELECT * FROM (VALUES (3, 'c')) v(id, name)`)
+
+    await session.run('BEGIN TRANSACTION')
+    await session.run(`DELETE FROM lake.t`)
+    await session.run(`INSERT INTO lake.t SELECT * FROM lake.t AT (VERSION => ${v1})`)
+    await session.run('COMMIT')
+
+    expect(await contents()).toEqual([])
+    // Reading it out first is the whole difference: same target, same statements.
+    await session.run(
+      `CREATE OR REPLACE TEMP TABLE src2 AS SELECT * FROM lake.t AT (VERSION => ${v1})`
+    )
+    await session.run('BEGIN TRANSACTION')
+    await session.run(`DELETE FROM lake.t`)
+    await session.run(`INSERT INTO lake.t SELECT * FROM src2`)
+    await session.run('COMMIT')
+
+    expect(await contents()).toEqual([
+      { id: 1, name: 'a' },
+      { id: 2, name: 'b' },
     ])
   })
 
