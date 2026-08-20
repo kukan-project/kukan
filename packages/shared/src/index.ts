@@ -27,6 +27,9 @@ export * from './pipeline-types'
 // Version identity (ADR-046 §3): the one definition of "the same version's content"
 export * from './version-identity'
 
+// Settled column layer (primary key today, settled types in ii-c)
+export * from './column-settings'
+
 // Licenses
 export * from './licenses'
 

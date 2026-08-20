@@ -130,6 +130,7 @@ exports[`emitted SQL shape > ResourceVersionService.convertSetAsideVersions > pi
   WHERE r.state = 'active'
     AND rv.state = 'active'
     AND rv.ducklake_snapshot_id IS NULL
+    AND rv.lake_ingest_reason IS NULL
     AND lower(rv.format) IN ('csv', 'tsv')
     AND rv.size IS NOT NULL
     AND rv.size <= $1
@@ -176,6 +177,7 @@ exports[`emitted SQL shape > ResourceVersionService.createFirstVersions > pins t
   WHERE r.state = 'active'
     AND rv.state = 'active'
     AND rv.ducklake_snapshot_id IS NULL
+    AND rv.lake_ingest_reason IS NULL
     AND lower(rv.format) IN ('csv', 'tsv')
     AND rv.size IS NOT NULL
     AND rv.size <= $1

@@ -354,6 +354,20 @@ describe('countPendingLakeIngest', () => {
     expect(await service.countPendingLakeIngest()).toBe(0)
   })
 
+  it('ignores a version the ingest refused over its key', async () => {
+    // The reason is what takes it out (spec §6.6): the key is not something the
+    // sweep can decide from the row — a composite key's uniqueness is not in the
+    // frozen schema — so without this the pair queues and refuses every hour for
+    // ever, which is the accident `lake_ingest_reason` exists to stop.
+    await addTabularResource('a', [{ version: 1 }])
+    await db
+      .update(resourceVersion)
+      .set({ lakeIngestReason: 'key-not-unique' })
+      .where(eq(resourceVersion.version, 1))
+
+    expect(await service.countPendingLakeIngest()).toBe(0)
+  })
+
   it('counts a version whose overtaker a revert stepped off', async () => {
     // Only active versions overtake. A revert steps the ones above its
     // destination off and does not load the destination itself, so counting a

@@ -17,7 +17,7 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
-import type { NoTableReason, ResourceSchema } from '@kukan/shared'
+import type { LakeIngestReason, NoTableReason, ResourceSchema } from '@kukan/shared'
 import { resource } from './resource'
 import { user } from './user'
 
@@ -71,6 +71,19 @@ export const resourceVersion = pgTable(
     // DuckLake snapshot this tabular version maps to (ADR-043 layer 2 / Phase ii).
     // Null for non-tabular versions or before layer-2 ingest; nulled on purge.
     ducklakeSnapshotId: bigint('ducklake_snapshot_id', { mode: 'number' }),
+    // The key this version was read under, frozen when it was created — the
+    // resource's setting at that moment, not its current one (spec §6.4). Null
+    // is keyless, which is every version before ii-b and every resource that
+    // never gets a key. A diff can match rows only where both ends carry the
+    // same list, so "how was this version read" has to live on the version.
+    lakeKeyColumns: jsonb('lake_key_columns').$type<string[] | null>(),
+    // Why the key stopped this version reaching layer 2 (spec §6.6). Written
+    // once by the Lake step and never cleared — re-reading the same bytes under
+    // the same key reaches the same answer — and it is what takes the version
+    // out of the sweep, which would otherwise offer it every hour for ever.
+    lakeIngestReason: varchar('lake_ingest_reason', {
+      length: 32,
+    }).$type<LakeIngestReason | null>(),
     // Purge audit trail, retained on the tombstone row after content is destroyed.
     purgedAt: timestamp('purged_at', { withTimezone: true }),
     purgedBy: text('purged_by').references(() => user.id),
@@ -108,8 +121,18 @@ export const resourceVersion = pgTable(
     // it stays in here for good and the pending query filters it out by format
     // (ADR-046). Worth an expression index on `lower(format)` if the count
     // starts costing anything.
+    //
+    // A refused key is in the predicate rather than left to the query, because
+    // that one *can* leave: the reason is written once and never cleared (spec
+    // §6.6), so a version refused over its key would otherwise sit here for good
+    // and be re-read on every pass. Every query carrying this index's predicate
+    // carries the clause too — `pendingLakeVersion` in the worker does not use
+    // this index.
     index('idx_resource_version_pending_lake')
       .on(table.resourceId, table.version)
-      .where(sql`${table.state} = 'active' AND ${table.ducklakeSnapshotId} IS NULL`),
+      .where(
+        sql`${table.state} = 'active' AND ${table.ducklakeSnapshotId} IS NULL
+            AND ${table.lakeIngestReason} IS NULL`
+      ),
   ]
 )

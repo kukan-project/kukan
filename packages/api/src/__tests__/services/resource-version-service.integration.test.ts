@@ -1820,6 +1820,177 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
   })
 })
 
+describe('the key a version is read under (spec §6.4)', () => {
+  /** The key the resource is set to apply to versions from here on. */
+  async function setKey(primaryKey: string[] | null) {
+    await db
+      .update(resource)
+      .set({
+        columnSettings: primaryKey ? { primaryKey: [primaryKey[0], ...primaryKey.slice(1)] } : {},
+      })
+      .where(eq(resource.id, resourceId))
+  }
+
+  const keyOf = async (version: number) =>
+    (
+      await db
+        .select({ key: resourceVersion.lakeKeyColumns })
+        .from(resourceVersion)
+        .where(
+          and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, version))
+        )
+    )[0]?.key ?? null
+
+  const resourceKey = async () =>
+    (
+      await db
+        .select({ s: resource.columnSettings })
+        .from(resource)
+        .where(eq(resource.id, resourceId))
+    )[0]?.s.primaryKey ?? null
+
+  /** A version created the way every creator but a revert creates one. */
+  const create = (version: number) =>
+    insertVersionIfHeld(db, null, {
+      resourceId,
+      version,
+      storageKey: getStorageKey(packageId, resourceId, `v${version}`),
+      size: 100,
+      hash: `sha256:v${version}`,
+      origin: 'upload',
+      schema: null,
+    })
+
+  it('freezes the resource setting as it stood when the version was created', async () => {
+    // The same rule the format follows (ADR-046 §6): the setting moves on, and
+    // a version that read its bytes under the old one has to keep saying so —
+    // the sweep can load it hours later, and the diff either side of the change
+    // means nothing if both ends answer with today's value.
+    await setKey(['order', 'line'])
+    await create(1)
+    await setKey(['id'])
+    await create(2)
+
+    expect(await keyOf(1)).toEqual(['order', 'line'])
+    expect(await keyOf(2)).toEqual(['id'])
+  })
+
+  it('freezes no key when the resource has none', async () => {
+    await create(1)
+
+    expect(await keyOf(1)).toBeNull()
+  })
+
+  it('reads the setting at the insert, not from a value the caller carried', async () => {
+    // Read inside the statement like the format is, because nothing stops a
+    // change landing between a caller's read and here.
+    await create(1)
+    await setKey(['id'])
+    await create(2)
+
+    expect(await keyOf(2)).toEqual(['id'])
+  })
+
+  it('issues a revert under the destination key, and puts the setting back', async () => {
+    // A revert re-issues content *and the reading it was settled under*. Left
+    // on the resource, the current setting and what live is now read under
+    // disagree — and the resend, which compares the key, would never settle.
+    await addVersion(1, 'sha256:v1', 'active', 'csv')
+    await db
+      .update(resourceVersion)
+      .set({ lakeKeyColumns: ['order', 'line'] })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+    await addVersion(2, 'sha256:v2', 'active', 'csv')
+    await db.update(resource).set({ hash: 'sha256:v2' }).where(eq(resource.id, resourceId))
+    await setKey(['id'])
+
+    const result = await revertFromLive()
+
+    expect(result).toMatchObject({ restored: 1, published: 3 })
+    expect(await keyOf(3)).toEqual(['order', 'line'])
+    expect(await resourceKey()).toEqual(['order', 'line'])
+    // v1 keeps its own record: nothing rewrites what a version was read under.
+    expect(await keyOf(1)).toEqual(['order', 'line'])
+  })
+
+  it('brings the key back when a purge moves live onto another version', async () => {
+    // The same argument the format has here (a version is those bytes read that
+    // way), and the same failure if only half of it moves: the resource would
+    // describe recovered content by a key never applied to it, and the next run
+    // would file those bytes again as a version the gate thinks differs.
+    await addVersion(1, 'sha256:v1', 'active', 'csv')
+    await db
+      .update(resourceVersion)
+      .set({ lakeKeyColumns: ['order'] })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+    await addVersion(2, 'sha256:v2', 'active', 'csv')
+    await db.update(resource).set({ hash: 'sha256:v2' }).where(eq(resource.id, resourceId))
+    await setKey(['id'])
+
+    await service.claimPurge(resourceId, 2, userId, 'test')
+    await service.executePurge(resourceId, 2, { ...mockDeps(), lake: unreachableLake })
+
+    expect(await resourceKey()).toEqual(['order'])
+  })
+
+  it('takes the key off the resource when the destination had none', async () => {
+    await addVersion(1, 'sha256:v1', 'active', 'csv')
+    await addVersion(2, 'sha256:v2', 'active', 'csv')
+    await db.update(resource).set({ hash: 'sha256:v2' }).where(eq(resource.id, resourceId))
+    await setKey(['id'])
+
+    await revertFromLive()
+
+    expect(await keyOf(3)).toBeNull()
+    expect(await resourceKey()).toBeNull()
+  })
+
+  it('leaves a resend nothing to do once the key is back', async () => {
+    // The pair §6.4 requires: the settled comparison reads the key, and the
+    // issued version freezes the destination's. With only the first, every
+    // resend would publish another version; with only the second, a destination
+    // differing solely in its key would answer "already there".
+    await addVersion(1, 'sha256:v1', 'active', 'csv')
+    await addVersion(2, 'sha256:v2', 'active', 'csv')
+    await db.update(resource).set({ hash: 'sha256:v2' }).where(eq(resource.id, resourceId))
+    await setKey(['id'])
+
+    await revertFromLive()
+    const resent = await service.revertLiveContent(
+      resourceId,
+      { restoreTo: 1, ifLiveRevision: (await service.revertContext(resourceId)).liveRevision },
+      { ...mockDeps(), logger: silentLogger }
+    )
+
+    expect(resent).toMatchObject({ restored: 1, published: null })
+  })
+
+  it('reports a resend as unsettled while the key still differs', async () => {
+    // Same bytes, different reading: the content is v1's but the resource is
+    // set to read it another way, so there is a revert left to do.
+    await addVersion(1, 'sha256:v1', 'active', 'csv')
+    await db
+      .update(resourceVersion)
+      .set({ lakeKeyColumns: ['order'] })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+    await addVersion(2, 'sha256:v2', 'active', 'csv')
+    await db
+      .update(resource)
+      .set({ hash: 'sha256:v1', format: 'csv' })
+      .where(eq(resource.id, resourceId))
+    await setKey(['id'])
+
+    const result = await service.revertLiveContent(
+      resourceId,
+      { restoreTo: 1, ifLiveRevision: (await service.revertContext(resourceId)).liveRevision },
+      { ...mockDeps(), logger: silentLogger }
+    )
+
+    expect(result).toMatchObject({ restored: 1, published: 3 })
+    expect(await resourceKey()).toEqual(['order'])
+  })
+})
+
 describe('a revert layer 2 follows by ordinary ingest (ADR-043 layer 2)', () => {
   async function setSnapshot(version: number, snapshot: number) {
     await db

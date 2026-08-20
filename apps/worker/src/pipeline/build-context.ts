@@ -20,7 +20,7 @@ import {
 } from '@kukan/api/services/resource-version-service'
 import { copyObject, publishLiveContent, reserveObject } from '@kukan/api/services/storage-pointer'
 import type { PackageDbState } from '@kukan/shared'
-import { getStorageKey, versionOrigin } from '@kukan/shared'
+import { getStorageKey, primaryKeyOf, versionOrigin } from '@kukan/shared'
 import { decideVersionCreate } from './version-gate'
 import type { PipelineContext, ResourceForPipeline } from './types'
 import {
@@ -126,6 +126,7 @@ export function buildPipelineContext(
           urlType: resource.urlType,
           storageKey: resource.storageKey,
           format: resource.format,
+          columnSettings: resource.columnSettings,
         })
         .from(resource)
         .where(eq(resource.id, resourceId))
@@ -138,7 +139,11 @@ export function buildPipelineContext(
         .orderBy(desc(resourceVersion.version))
         .limit(1)
       const [activeRow] = await db
-        .select({ hash: resourceVersion.hash, format: resourceVersion.format })
+        .select({
+          hash: resourceVersion.hash,
+          format: resourceVersion.format,
+          keyColumns: resourceVersion.lakeKeyColumns,
+        })
         .from(resourceVersion)
         .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.state, 'active')))
         .orderBy(desc(resourceVersion.version))
@@ -154,17 +159,26 @@ export function buildPipelineContext(
       const purgingOwner = await objectOwnerIsPurging(db, currentStorageKey)
 
       const decision = decideVersionCreate({
-        hash: contentHash,
-        // The insert reads the label again for itself, so an edit landing in
-        // between can make the two differ. Harmless either way: the row records
-        // the newer label, which is the one to compare against next time, and a
-        // run this gate skips is re-enqueued by the edit that skipped it.
-        format: res?.format ?? null,
+        identity: {
+          hash: contentHash,
+          // The insert reads the label and the key again for itself, so an edit
+          // landing in between can make the two differ. Harmless either way: the
+          // row records the newer reading, which is the one to compare against
+          // next time, and a run this gate skips is re-enqueued by the edit that
+          // skipped it.
+          format: res?.format ?? null,
+          keyColumns: primaryKeyOf(res?.columnSettings),
+        },
+        latestActive: activeRow
+          ? {
+              hash: activeRow.hash,
+              format: activeRow.format,
+              keyColumns: activeRow.keyColumns,
+            }
+          : null,
         publishedKey: currentStorageKey,
         currentKey: res?.storageKey ?? null,
         maxVersion: maxRow?.version ?? null,
-        latestActiveHash: activeRow?.hash ?? null,
-        latestActiveFormat: activeRow?.format ?? null,
         keyOwnedByPurgingVersion: purgingOwner,
       })
       if (!decision.created) return decision
@@ -325,7 +339,12 @@ export function buildPipelineContext(
             eq(resourceVersion.resourceId, resourceId),
             eq(resourceVersion.state, 'active'),
             eq(resourceVersion.hash, contentHash),
-            sql`${resourceVersion.ducklakeSnapshotId} IS NULL`
+            sql`${resourceVersion.ducklakeSnapshotId} IS NULL`,
+            // The same condition the sweep states (spec §6.6): a version the
+            // ingest has refused over its key has no work outstanding, and
+            // disagreeing here would run the Lake step on every pass to be
+            // refused again.
+            sql`${resourceVersion.lakeIngestReason} IS NULL`
           )
         )
         .orderBy(desc(resourceVersion.version))

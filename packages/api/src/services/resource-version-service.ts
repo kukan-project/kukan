@@ -18,6 +18,7 @@ import {
 import {
   ConflictError,
   getStorageKey,
+  primaryKeyOf,
   sameVersionIdentity,
   LAKE_INGEST_JOB_TYPE,
   NotFoundError,
@@ -130,7 +131,7 @@ export async function insertVersionIfHeld(
   const result = await db.execute(sql`
     WITH inserted AS (
       INSERT INTO resource_version (resource_id, version, storage_key, size, hash, origin, format,
-                                    schema, restored_from)
+                                    schema, restored_from, lake_key_columns)
       SELECT ${v.resourceId}::uuid, ${v.version}, ${v.storageKey}::text, ${v.size}::bigint,
              ${v.hash}::text, ${v.origin}, r.format,
              ${
@@ -139,7 +140,8 @@ export async function insertVersionIfHeld(
                             THEN ${v.schema ? JSON.stringify(v.schema) : null}::jsonb END`
                  : sql`${v.schema ? JSON.stringify(v.schema) : null}::jsonb`
              },
-             ${v.restoredFrom ?? null}::integer
+             ${v.restoredFrom ?? null}::integer,
+             r.column_settings -> 'primaryKey'
       FROM resource r
       WHERE r.id = ${v.resourceId}::uuid AND ${stillHeld(claim)}
       RETURNING id, storage_key
@@ -435,6 +437,12 @@ function schemaDescribesLiveContent(db: Database) {
  * - a version already interpreted to nothing — an empty CSV has no table to
  *   load and never will, and its schema says so (ADR-046). Absent, rather than
  *   empty, means nothing has interpreted it yet
+ * - a version the ingest has already refused over its key (`lake_ingest_reason`,
+ *   spec §6.6). The reasons are the answer to reading the content, not a
+ *   predicate over the row — a composite key's uniqueness is not in the frozen
+ *   schema — so the refusal is recorded where this can see it. Written once and
+ *   never cleared: the same bytes under the same key reach the same answer, and
+ *   changing the key makes a version of its own for this to pick up
  *
  * What it replaces is two disjoint branches over `lake_source_key` and the
  * resource's current preview, plus a proof that the preview described *that*
@@ -466,6 +474,7 @@ function pendingLakeIngestQuery(only?: { resourceId: string; version?: number })
   WHERE r.state = 'active'${forVersion}
     AND rv.state = 'active'
     AND rv.ducklake_snapshot_id IS NULL
+    AND rv.lake_ingest_reason IS NULL
     AND lower(rv.format) IN ('csv', 'tsv')
     AND rv.size IS NOT NULL
     AND rv.size <= ${MAX_PARQUET_SOURCE_SIZE}
@@ -1981,18 +1990,24 @@ export class ResourceVersionService {
         storageKey: resource.storageKey,
         hash: resource.hash,
         format: resource.format,
+        // The reading live is served under, of which the key is a part (spec
+        // §6.4). A destination differing only in its key is a revert with work
+        // to do, and comparing without it answers "already there" while the
+        // interpretation stays where the retraction left it.
+        columnSettings: resource.columnSettings,
         revision: resource.contentRevision,
       })
       .from(resource)
       .where(eq(resource.id, resourceId))
       .limit(1)
     if (!current) return null
+    const live = { ...current, keyColumns: primaryKeyOf(current.columnSettings) }
 
     const settled =
       target.restoreTo === null
         ? current.storageKey === null
         : current.storageKey !== null &&
-          (await this.liveIsVersionContent(resourceId, target.restoreTo, current)) &&
+          (await this.liveIsVersionContent(resourceId, target.restoreTo, live)) &&
           // The second half of "already at the destination", and not implied by
           // the first. Content repeats (ADR-046 §3), so live can hold exactly
           // the destination's bytes while standing on **another version's
@@ -2214,6 +2229,7 @@ export class ResourceVersionService {
       .select({
         hash: resourceVersion.hash,
         format: resourceVersion.format,
+        keyColumns: resourceVersion.lakeKeyColumns,
         state: resourceVersion.state,
       })
       .from(resourceVersion)
@@ -2451,10 +2467,10 @@ export class ResourceVersionService {
         hash: row.hash,
         size: row.size,
         previousHash: current.hash,
-        // Omitted entirely when not retracting, which leaves the column alone —
-        // passing the resource's own value back would still mint a generation
+        // Omitted entirely when not retracting, which leaves the columns alone —
+        // passing the resource's own values back would still mint a generation
         // for a label nobody changed.
-        ...(retracting ? { format: row.format } : {}),
+        ...(retracting ? { format: row.format, keyColumns: row.lakeKeyColumns } : {}),
         claim,
       })
       if (!published) {
@@ -2556,8 +2572,9 @@ export class ResourceVersionService {
       // those bytes read under that format (ADR-046 §6), so putting the content
       // back and leaving the label is putting back half of it. It is also what
       // stops the version gate seeing a difference and filing these bytes again
-      // under a new number.
+      // under a new number. The key is the same argument (spec §6.4).
       format: prev.format,
+      keyColumns: prev.lakeKeyColumns,
     })
     // The mover parked this operation's own object on the way out, so nothing
     // is stranded by leaving.

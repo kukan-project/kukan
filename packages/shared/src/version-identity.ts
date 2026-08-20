@@ -1,3 +1,5 @@
+import { sameKeyColumns } from './column-settings'
+
 /**
  * What settles a version, in one place (ADR-046 §3).
  *
@@ -10,12 +12,12 @@
  * - a revert, deciding whether a resend is already at the destination it named
  *   (ADR-044 §4)
  *
- * **Spelled as a field list, the second one goes stale silently.** ii-b adds the
- * primary key as a third input — the key is part of the interpretation, so
- * changing it makes a version (spec §6.4) — and a settled rule still comparing
- * hash and format would then answer "already there" for a destination that
- * differs only in its key, leaving the interpretation unrestored with nothing
- * failing. Adding the field here changes both answers at once.
+ * **Spelled as a field list, the second one goes stale silently.** The primary
+ * key is the third input — the key is part of the interpretation, so changing it
+ * makes a version (spec §6.4) — and a settled rule still comparing hash and
+ * format would answer "already there" for a destination that differs only in its
+ * key, leaving the interpretation unrestored with nothing failing. The field is
+ * here so both answers change at once.
  */
 export interface VersionIdentity {
   hash: string | null
@@ -25,6 +27,15 @@ export interface VersionIdentity {
    * would act on.
    */
   format: string | null
+  /**
+   * The columns the rows are identified by, in the order they were chosen, or
+   * null for none (spec §6.4).
+   *
+   * **A version's own frozen list on one side, the resource's current setting on
+   * the other** — which is what makes a key change land as a version. Order is
+   * part of it, for the reason {@link sameKeyColumns} gives.
+   */
+  keyColumns: string[] | null
 }
 
 /**
@@ -36,15 +47,15 @@ export interface VersionIdentity {
  * ignoring it — the stale comparison this module exists to prevent, in one
  * place instead of two. Here a new field is a missing key, which is an error.
  *
- * It also leaves room for the fields that cannot use `===`: ii-b's key columns
- * are an array, and comparing those by reference would answer "different" for
- * every version.
+ * It also holds the fields that cannot use `===`: the key columns are an array,
+ * and comparing those by reference would answer "different" for every version.
  */
 const COMPARE: {
   [K in keyof VersionIdentity]-?: (a: VersionIdentity[K], b: VersionIdentity[K]) => boolean
 } = {
   hash: (a, b) => a === b,
   format: (a, b) => a === b,
+  keyColumns: sameKeyColumns,
 }
 
 /** Whether two readings of content describe the same version's worth of it. */

@@ -46,6 +46,25 @@ export interface PublishedContent {
    */
   format?: string | null
   /**
+   * Key columns to put back on the resource, for the same writers and the same
+   * reason as {@link PublishedContent.format} (spec §6.4).
+   *
+   * A version is those bytes read that way, and the key is the other half of
+   * "that way": restoring the content and leaving the setting describes
+   * recovered content by a key never applied to it, and the version gate — which
+   * compares the setting against the highest active version's frozen list —
+   * files the same bytes again under a new number.
+   *
+   * Written here rather than beside, so it lands only where the move applied,
+   * and *before* the row a revert then inserts: that insert reads the resource
+   * for its own frozen copy (`insertVersionIfHeld`), so the two agree by
+   * construction rather than by both being handed the same value.
+   *
+   * Null takes the key off. Omitted by the writers publishing content the
+   * resource's own setting already describes.
+   */
+  keyColumns?: string[] | null
+  /**
    * The claim the writer holds, when it has one (ADR-044 §4).
    *
    * The live pointer is the second thing a run writes that outlives it — the
@@ -58,6 +77,19 @@ export interface PublishedContent {
    * takes none (§6), and a resource with no pipeline row cannot be run against.
    */
   claim?: ResourceClaim | null
+}
+
+/**
+ * The settled key as `column_settings` holds it — set, or taken off.
+ *
+ * The one place the shape `@kukan/shared` defines is spelled in SQL. Empty
+ * normalizes to absent here, because "no key" has one spelling (spec §6.2) and a
+ * second one would reach every reader.
+ */
+function keySetting(keyColumns: string[] | null | undefined) {
+  return keyColumns?.length
+    ? sql`jsonb_set(column_settings, '{primaryKey}', ${JSON.stringify(keyColumns)}::jsonb, true)`
+    : sql`column_settings - 'primaryKey'`
 }
 
 /**
@@ -106,6 +138,7 @@ export async function publishLiveContent(
           -- Every move is a new generation.
           content_revision = gen_random_uuid()
           ${'format' in content ? sql`, format = ${content.format}::varchar` : sql``}
+          ${'keyColumns' in content ? sql`, column_settings = ${keySetting(content.keyColumns)}` : sql``}
           ${changed ? sql`, last_modified = NOW()` : sql``}
       WHERE id = ${resourceId}::uuid
         AND storage_key IS NOT DISTINCT FROM ${previousKey}::text

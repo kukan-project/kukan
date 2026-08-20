@@ -15,6 +15,7 @@ import {
   index,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
+import type { ColumnSettings } from '@kukan/shared'
 import { packageTable } from './package'
 
 /**
@@ -115,6 +116,13 @@ export const resource = pgTable(
     // and every reader had to be taught to look away — see {@link
     // HealthCheckState}, which is what a column for internal state looks like.
     extras: jsonb('extras').$type<Record<string, unknown>>().default({}),
+    // What a person settled about this resource's columns — the primary key
+    // today, settled types in ii-c (ADR-043 layer 2, spec §6.2). Separate from
+    // everything the interpretation infers, which a re-run rewrites; only a
+    // person writes here, so the worker's metadata merges cannot reach it.
+    // Applies to versions created from here on; each version freezes the value
+    // it was created under.
+    columnSettings: jsonb('column_settings').$type<ColumnSettings>().notNull().default({}),
 
     // Quality Monitor
     healthStatus: varchar('health_status', { length: 20 }).default('unknown'),

@@ -111,6 +111,23 @@ export type ResourceSchema = z.infer<typeof resourceSchemaSchema>
  */
 export type NoTableReason = 'no-columns' | 'too-many-columns' | 'too-large'
 
+/**
+ * Why a version was not loaded into layer 2, when the key is what stopped it
+ * (spec §6.6).
+ *
+ * **Written once, never cleared**, and deliberately not folded into
+ * `no_table_reason`: that column belongs to the interpretation and is cleared
+ * whenever a re-interpretation finds a table, which would take this reason with
+ * it every hour. What this stops is the sweep offering a version that can never
+ * be loaded — the ingest refuses it, the sweep has no way to know, and the pair
+ * queues and refuses for ever.
+ *
+ * `key-missing` is separate because it is the one answered before the content is
+ * read: the version's frozen schema either has the columns or it does not, and
+ * issuing the `MERGE` without them is a binder error rather than a refusal.
+ */
+export type LakeIngestReason = 'key-missing' | 'key-null' | 'key-not-unique'
+
 // ── Queue job types ──
 // Each job carries a validated payload (schemas below) so the worker never trusts
 // an unvalidated queue message body.
