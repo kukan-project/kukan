@@ -17,7 +17,7 @@ export {
 export { sqlLiteral, sqlIdentifier } from './sql'
 export { openLakeSession, withLakeSession, closeLakeInstances } from './connection'
 export type { LakeSession, LakeRow } from './connection'
-export { ingestParquetVersion, restandLakeTable } from './ingest'
+export { ingestParquetVersion, keyFault, restandLakeTable } from './ingest'
 export type { IngestResult } from './ingest'
 export { diffVersions } from './diff'
 export type { VersionDiff } from './diff'

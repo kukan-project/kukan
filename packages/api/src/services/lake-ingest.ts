@@ -12,7 +12,8 @@ import { and, desc, eq, gt, isNotNull } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
 import { resourceVersion } from '@kukan/db'
 import type { IngestResult, LakeSession } from '@kukan/lake'
-import { ingestParquetVersion, lakeTableName, resolvableSnapshots } from '@kukan/lake'
+import { ingestParquetVersion, keyFault, lakeTableName, resolvableSnapshots } from '@kukan/lake'
+import { sameKeyColumns } from '@kukan/shared'
 import { LAKE_INGEST_LOCK, withGlobalAdvisoryLock } from './advisory-lock'
 
 /** A version, and where its rows are read from. */
@@ -42,6 +43,13 @@ export async function withLakeIngestLock<T>(
 export interface LakeStand {
   version: number
   snapshot: number
+  /**
+   * The key it was loaded under (spec §6.4). Read by whoever is about to write
+   * onto these contents and has to ask whether both ends are identified the same
+   * way — an ingest today, a purge's keyed step-down when §7.2's first branch
+   * lands there too.
+   */
+  keyColumns: string[] | null
 }
 
 /**
@@ -70,16 +78,24 @@ export interface LakeStand {
  * **Ordered by the recorded snapshot, newest load first — not by version
  * number.** The two agree for everything write-once recorded, and disagree
  * wherever a row the old scheme rewrote before the conversion survives
- * (ADR-044 §4). The load order is the one that answers both of
- * {@link lakeStandDown}'s questions, and asking them in different orders is what
- * left a purged version's rows as the table's contents.
+ * (ADR-044 §4).
+ *
+ * **This is where the table can stand, not what it holds.** `active` leaves out
+ * the version a purge has claimed and not yet stepped the table down from, which
+ * is exactly the row that can be holding the contents — {@link lakeHead} is that
+ * question, and confusing the two is how an ingest would match its rows against
+ * contents identified some other way.
  */
 export async function versionsLakeCanStandOn(
   db: Pick<Database | Transaction, 'select'>,
   resourceId: string
 ): Promise<LakeStand[]> {
   const rows = await db
-    .select({ version: resourceVersion.version, snapshot: resourceVersion.ducklakeSnapshotId })
+    .select({
+      version: resourceVersion.version,
+      snapshot: resourceVersion.ducklakeSnapshotId,
+      keyColumns: resourceVersion.lakeKeyColumns,
+    })
     .from(resourceVersion)
     .where(
       and(
@@ -90,8 +106,60 @@ export async function versionsLakeCanStandOn(
     )
     .orderBy(desc(resourceVersion.ducklakeSnapshotId))
   return rows.flatMap((row) =>
-    row.snapshot === null ? [] : [{ version: row.version, snapshot: row.snapshot }]
+    row.snapshot === null
+      ? []
+      : [{ version: row.version, snapshot: row.snapshot, keyColumns: row.keyColumns }]
   )
+}
+
+/** What the table holds, and whether the row saying so can still be trusted. */
+export interface LakeHead extends LakeStand {
+  /**
+   * Its version is being purged, which makes the recorded id **indeterminate**:
+   * the step-down commits in DuckLake before the purge nulls the id (spec §9.1
+   * steps 4 and 6), so between those the row names a snapshot whose contents the
+   * table may already have stepped off — and nothing in the row says which side
+   * of that it is on. A reader that has to know what the contents are identified
+   * by cannot use it.
+   */
+  purging: boolean
+}
+
+/**
+ * The version whose rows the table holds, or null when it holds none.
+ *
+ * **Not "where it can stand" ({@link versionsLakeCanStandOn}), and not `active`
+ * only.** A purge takes its version out of the active set the moment it is
+ * claimed and steps the table down later, in a worker; in between the rows are
+ * still that version's. Read from the active set, this answers with a version
+ * the table stepped off long ago — and an ingest would then match its rows
+ * against contents identified some other way, which is the one thing the shared
+ * key exists to prevent (spec §6.6).
+ *
+ * The highest recorded snapshot, whatever state the row is in now: every load
+ * commits above everything recorded, so that is the one written last, and a
+ * tombstone cannot appear because a purge nulls the id as it completes.
+ */
+export async function lakeHead(
+  db: Pick<Database | Transaction, 'select'>,
+  resourceId: string
+): Promise<LakeHead | null> {
+  const [head] = await db
+    .select({
+      version: resourceVersion.version,
+      snapshot: resourceVersion.ducklakeSnapshotId,
+      keyColumns: resourceVersion.lakeKeyColumns,
+      state: resourceVersion.state,
+    })
+    .from(resourceVersion)
+    .where(
+      and(eq(resourceVersion.resourceId, resourceId), isNotNull(resourceVersion.ducklakeSnapshotId))
+    )
+    .orderBy(desc(resourceVersion.ducklakeSnapshotId))
+    .limit(1)
+  if (head?.snapshot == null) return null
+  const { state, ...stand } = head
+  return { ...stand, snapshot: head.snapshot, purging: state === 'purging' }
 }
 
 /** Where a purge has to leave the table, once it has taken its version out. */
@@ -108,8 +176,9 @@ export type LakeStandDown =
  * order**, because the two halves have to agree about what the table holds.
  *
  * Both are read from the recorded snapshots: the table holds the rows of whichever
- * version was loaded last, so *where it stands* is the highest recorded id and
- * *where it goes* is the highest that is left. **Version numbers cannot answer
+ * version was loaded last, so *where it stands* is the highest recorded id
+ * ({@link lakeHead}, whatever state that row is in now) and *where it goes* is
+ * the highest still standing. **Version numbers cannot answer
  * either.** They agree with the load order for everything write-once recorded, and
  * disagree wherever a row the old scheme rewrote survives the conversion (ADR-044
  * §4) — and picking the target by version there is what breaks the next purge:
@@ -142,10 +211,14 @@ export async function lakeStandDown(
   resourceId: string,
   purgedSnapshot: number
 ): Promise<LakeStandDown> {
-  // Newest load first, so the head is the first entry and the target is the
-  // first one that still resolves — the same walk answers both.
+  // Asked of what the table holds, which a version already claimed for purge can
+  // be: two of a resource's versions can be on their way out at once, and the one
+  // loaded last is whose rows would be stepped off.
+  const head = await lakeHead(db, resourceId)
+  if (head !== null && head.snapshot > purgedSnapshot) return { move: 'stays' }
+  // Where it can go is the other question, and that one is `active` only: a
+  // version being purged is not somewhere to put the contents back.
   const stands = await versionsLakeCanStandOn(db, resourceId)
-  if (stands[0] !== undefined && stands[0].snapshot > purgedSnapshot) return { move: 'stays' }
   if (stands.length === 0) return { move: 'drop' }
 
   const resolvable = await resolvableSnapshots(
@@ -170,11 +243,12 @@ export async function lakeStandDown(
  * backfill can re-check its preconditions under the same lock and reuse one
  * session across the whole pass.
  *
- * Returns null when there is nothing to do, for either of two reasons.
+ * Returns null when there is nothing to do, for three reasons — and the last
+ * one writes a row on the way out.
  *
- * The version already carries a snapshot: ii-a ingests whole versions, so a
- * second pass would append every row again — and the retry path exists
- * precisely to run this after something else may have succeeded.
+ * The version already carries a snapshot: a load applies or replaces whole
+ * versions, so a second pass would write the same rows again — and the retry
+ * path exists precisely to run this after something else may have succeeded.
  *
  * Or a newer *active* version is already in: ingesting replaces the table's
  * contents, so loading an older version now would leave the lake serving content
@@ -187,6 +261,12 @@ export async function lakeStandDown(
  * Active, which is every version a purge has not taken. This has to agree with
  * `pendingLakeIngestQuery`: disagreeing means either work that is listed and
  * always turned away, or work that is done without ever being listed.
+ *
+ * Or its key cannot identify its rows. That one is recorded on the version
+ * (spec §6.6) and takes it out of the sweep, because nothing about the fault is
+ * answerable from the row — a composite key's uniqueness is not in the frozen
+ * schema, so a version listed without it would be handed out and turned away for
+ * ever.
  *
  * **The table it loads onto holds the contents of the version loaded last**,
  * which nothing here has to arrange: the refusal above keeps an older version
@@ -203,9 +283,9 @@ export async function lakeStandDown(
  * table does not have. {@link lakeStandDown} answers the same question for a
  * purge, off the same order.
  *
- * ii-a would not notice either way — every branch writes every row — but the
+ * A keyless load would not notice either way — it writes every row — but the
  * decision it makes on the way, "did the columns move?", is read off whatever
- * the table holds, and ii-b's `MERGE` takes those contents as its base.
+ * the table holds, and a keyed one matches its rows against them.
  */
 export async function ingestVersionIntoLake(
   tx: Transaction,
@@ -213,7 +293,10 @@ export async function ingestVersionIntoLake(
   row: LakeIngestRow
 ): Promise<IngestResult | null> {
   const [pending] = await tx
-    .select({ snapshot: resourceVersion.ducklakeSnapshotId })
+    .select({
+      snapshot: resourceVersion.ducklakeSnapshotId,
+      keyColumns: resourceVersion.lakeKeyColumns,
+    })
     .from(resourceVersion)
     .where(
       and(
@@ -241,9 +324,45 @@ export async function ingestVersionIntoLake(
   // this version the moment a newer one is in.
   if (newer) return null
 
+  const keyColumns = pending.keyColumns?.length ? pending.keyColumns : null
+  // The key both ends are identified by, or null when they are not the same —
+  // the question §7.2 has the ingest, the purge's step-down and the diff share.
+  // Asked only of a keyed version: for every other the answer is null, and this
+  // is a query on the locked connection.
+  let key: string[] | null = null
+  if (keyColumns) {
+    // Refused before anything is written, and recorded where the sweep can see
+    // it (spec §6.6): the alternative is a version listed as outstanding for
+    // ever and turned away every hour. Written once — the same bytes under the
+    // same key reach the same answer — and a key change makes a version of its
+    // own to try.
+    const fault = await keyFault(session, { parquetUrl: row.sourcePath, keys: keyColumns })
+    if (fault) {
+      await tx
+        .update(resourceVersion)
+        .set({ lakeIngestReason: fault })
+        .where(
+          and(
+            eq(resourceVersion.resourceId, row.resourceId),
+            eq(resourceVersion.version, row.version)
+          )
+        )
+      return null
+    }
+    const head = await lakeHead(tx, row.resourceId)
+    // A head being purged cannot say what the contents are identified by: its id
+    // is recorded until the purge's last step, while the step-down that moved
+    // the contents off it committed earlier. Keyless is sound either way, and
+    // this version keeps its own key for the load after it.
+    if (head !== null && !head.purging && sameKeyColumns(head.keyColumns, keyColumns)) {
+      key = keyColumns
+    }
+  }
+
   const result = await ingestParquetVersion(session, {
     table: lakeTableName(row.resourceId),
     parquetUrl: row.sourcePath,
+    key,
   })
   // The DuckLake commit is on its own connection, so a failure here leaves an
   // unreferenced snapshot — harmless, and reclaimed by expire.

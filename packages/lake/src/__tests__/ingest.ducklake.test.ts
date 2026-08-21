@@ -19,7 +19,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { LakeRow, LakeSession } from '../connection'
-import { ingestParquetVersion, restandLakeTable } from '../ingest'
+import { ingestParquetVersion, keyFault, restandLakeTable } from '../ingest'
 import { diffVersions } from '../diff'
 import { describeColumns } from '../columns'
 import { currentSnapshotId } from '../table'
@@ -127,6 +127,108 @@ describe('ingestParquetVersion — a version whose columns moved', () => {
     })
 
     expect(diff).toMatchObject({ schemaChanged: false, addedRows: 1, removedRows: 0 })
+  })
+})
+
+describe('a keyed version load', () => {
+  /** `key` is what both ends share, which the caller resolves (spec §7.2). */
+  const keyed = (parquetUrl: string, key: string[] | null) =>
+    ingestParquetVersion(session, { table: TABLE, parquetUrl, key })
+
+  it('writes the rows that moved and leaves the rest alone', async () => {
+    // What ii-b buys over replacing the contents: the version's own rows are
+    // what the diff reads, and the files the load writes are the delta rather
+    // than the table (spec §11-2.4).
+    const v1 = await keyed(
+      await version('v1', `SELECT * FROM (VALUES (1,'a'),(2,'b')) v(id, name)`),
+      null
+    )
+    const v2 = await keyed(
+      await version('v2', `SELECT * FROM (VALUES (1,'A'),(3,'c')) v(id, name)`),
+      ['id']
+    )
+
+    expect(await session.rows(`SELECT * FROM lake.${TABLE} ORDER BY id`)).toEqual([
+      { id: 1, name: 'A' },
+      { id: 3, name: 'c' },
+    ])
+    // One version, one snapshot: two statements inside one transaction, which
+    // is what every version-to-version diff resolves through.
+    expect(v2.snapshotId).toBe(v1.snapshotId + 1)
+    // And the version it stepped over still reads as itself.
+    expect(
+      await session.rows(`SELECT * FROM lake.${TABLE} AT (VERSION => ${v1.snapshotId}) ORDER BY id`)
+    ).toEqual([
+      { id: 1, name: 'a' },
+      { id: 2, name: 'b' },
+    ])
+  })
+
+  it('replaces the contents when the base was loaded under another key', async () => {
+    // The uniqueness of a key is checked on the incoming version alone, so
+    // under any other key the contents may hold duplicates of it — where
+    // `MERGE` drops a row without saying so (spec §6.6, §7.2).
+    await keyed(await version('v1', `SELECT * FROM (VALUES (1,'a'),(2,'a')) v(id, name)`), null)
+
+    // The caller resolved "no shared key" — the base is identified by `id` and
+    // the version by `name`.
+    await keyed(await version('v2', `SELECT * FROM (VALUES (9,'a')) v(id, name)`), null)
+
+    // Replaced, not merged onto the two rows that share `name`.
+    expect(await session.rows(`SELECT * FROM lake.${TABLE} ORDER BY id`)).toEqual([
+      { id: 9, name: 'a' },
+    ])
+  })
+
+  it('replaces the contents when the columns moved under it', async () => {
+    await keyed(await version('v1', `SELECT 1 AS id, 'a' AS name`), null)
+
+    await keyed(await version('v2', `SELECT 1 AS id, 'a' AS name, 'x' AS note`), ['id'])
+
+    expect(await session.rows(`SELECT * FROM lake.${TABLE}`)).toEqual([
+      { id: 1, name: 'a', note: 'x' },
+    ])
+  })
+})
+
+describe('keyFault', () => {
+  const refusal = async (select: string, keys: string[]) =>
+    keyFault(session, { parquetUrl: await version('v', select), keys })
+
+  it('takes a key that identifies every row', async () => {
+    expect(await refusal(`SELECT * FROM (VALUES (1,'a'),(2,'b')) v(id, name)`, ['id'])).toBeNull()
+  })
+
+  it('names a column the version does not have', async () => {
+    // The publisher dropped or renamed it after the key was settled. Issuing the
+    // `MERGE` anyway is a binder error, with no reason recorded and the sweep
+    // handing the version out again every hour (spec §6.6).
+    expect(await refusal(`SELECT 1 AS id`, ['order_no'])).toBe('key-missing')
+  })
+
+  it('refuses a key column holding a null', async () => {
+    // `=` never matches a null, so those rows would be re-inserted every version
+    // and the key would stop being one inside the table (spec §6.4).
+    expect(await refusal(`SELECT * FROM (VALUES (1),(NULL)) v(id)`, ['id'])).toBe('key-null')
+  })
+
+  it('refuses a key that repeats', async () => {
+    expect(await refusal(`SELECT * FROM (VALUES (1,'a'),(1,'b')) v(id, name)`, ['id'])).toBe(
+      'key-not-unique'
+    )
+  })
+
+  it('asks about nulls before uniqueness', async () => {
+    // `count(DISTINCT)` does not count nulls, so a key of nothing but nulls
+    // reads as perfectly unique — the two questions are not independent.
+    expect(await refusal(`SELECT * FROM (VALUES (NULL),(NULL)) v(id)`, ['id'])).toBe('key-null')
+  })
+
+  it('takes a composite key, and reads the pair rather than each column', async () => {
+    const rows = `SELECT * FROM (VALUES (1,'x'),(1,'y')) v(a, b)`
+
+    expect(await refusal(rows, ['a', 'b'])).toBeNull()
+    expect(await refusal(rows, ['a'])).toBe('key-not-unique')
   })
 })
 

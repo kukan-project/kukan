@@ -1,11 +1,10 @@
 /**
- * The SQL a keyed (ii-b) version load will use, in one place.
+ * The SQL a keyed (ii-b) version load uses, in one place.
  *
- * Not wired into {@link ingestParquetVersion} yet — ii-b is unimplemented. It
- * lives here rather than in the tests because the spike tests, the purge tests
- * and the compaction benchmark all have to exercise *this* shape: measuring one
- * form and shipping another is how §11-2.1's numbers came to describe a write
- * path we had decided against (spec §11-2.4).
+ * It lives here rather than in the tests because the spike tests, the purge
+ * tests and the compaction benchmark all have to exercise *this* shape:
+ * measuring one form and shipping another is how §11-2.1's numbers came to
+ * describe a write path we had decided against (spec §11-2.4).
  *
  * Two properties are load-bearing and neither is obvious from the text:
  *

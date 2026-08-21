@@ -361,6 +361,25 @@ describe('a purge comes off the version layer 2 stands on (spec §9.1)', () => {
     expect(dropLakeTable).not.toHaveBeenCalled()
   })
 
+  it('leaves the contents alone when a version outside the active set loaded after it', async () => {
+    // What the table holds is whichever version loaded last, whatever state its
+    // row is in now — a row the old scheme set aside (ADR-044 §4) among them.
+    // Stepping v1 down here would take those rows off with it, and they are not
+    // what this purge owes anything about. (A second *purging* version cannot
+    // arise: the database allows one per resource.)
+    await addVersion(3, 'sha256:v3', 11)
+    await db
+      .update(resourceVersion)
+      .set({ state: 'superseded' })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 3)))
+    await liveOn(1)
+
+    await purge(1)
+
+    expect(restandLakeTable).not.toHaveBeenCalled()
+    expect(dropLakeTable).not.toHaveBeenCalled()
+  })
+
   it('leaves the contents alone for a middle version the lake has moved past', async () => {
     // v2 is live and in the lake, so the table already holds rows this purge does
     // not touch. Read off the version numbers, which order the snapshots now that

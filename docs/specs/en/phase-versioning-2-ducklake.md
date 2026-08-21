@@ -1132,7 +1132,18 @@ successfully ingested, so that version and live **diverge in both directions** �
 not be in layer 2, and if no version above it reached the lake then **an intermediate version is the
 top of layer 2**. Not stepping down in the latter case leaves the purged rows as the table's current
 contents, and ii-b's `MERGE` loads the next version on top of them. The question is "was no other
-`active` version loaded after this one", not a question put to the pointer. **It is asked of the
+version loaded after this one", not a question put to the pointer. **Whatever state that row is in
+now** — a purge takes its version out of the active set when it is claimed and steps the table down
+later, in a worker, so in between the contents belong to a row that is not `active`. Only the
+_destination_ may be restricted to `active`.
+
+**And when the highest snapshot belongs to a `purging` version, the record cannot say which side of
+the step-down it is on**: step 4 commits in DuckLake, step 6 nulls the id, and a failure between them
+releases the claim with the row unchanged. **A reader asking whether both ends share a key treats
+that as "they do not"** — replacing the contents is sound either way, and the version keeps its own
+key for the load after it.
+
+**It is asked of the
 recorded snapshots** — what the table holds is the contents of the version loaded last, and the
 highest recorded id is what names it. Asked of the version numbers it parts company with the
 step-down target wherever an id the old scheme rewrote survives (see "Layer 2's 'highest'" above).
@@ -2460,7 +2471,8 @@ altogether, and that is implemented** (below).
    the retained snapshots their readability, measured in §9.1). The head is therefore left holding
    retracted rows (open issue 16).
 
-2. **An ingest's base is the contents of the `active` version loaded last.** That is not something
+2. **An ingest's base is the contents of the version loaded last** (whatever state that row is in
+   now — §9.1). That is not something
    the ingest arranges for itself; it follows from three other rules — an ingest refuses to load
    while a higher ingested `active` version exists, a rollback issues a version, and a purge makes
    its step-down target the head. So **there is no separate step that returns the head to the base**
