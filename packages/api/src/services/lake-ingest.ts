@@ -13,7 +13,7 @@ import type { Database, Transaction } from '@kukan/db'
 import { resourceVersion } from '@kukan/db'
 import type { IngestResult, LakeSession } from '@kukan/lake'
 import { ingestParquetVersion, keyFault, lakeTableName, resolvableSnapshots } from '@kukan/lake'
-import { sameKeyColumns } from '@kukan/shared'
+import { sharedKeyColumns } from '@kukan/shared'
 import { LAKE_INGEST_LOCK, withGlobalAdvisoryLock } from './advisory-lock'
 
 /** A version, and where its rows are read from. */
@@ -43,13 +43,6 @@ export async function withLakeIngestLock<T>(
 export interface LakeStand {
   version: number
   snapshot: number
-  /**
-   * The key it was loaded under (spec §6.4). Read by whoever is about to write
-   * onto these contents and has to ask whether both ends are identified the same
-   * way — an ingest today, a purge's keyed step-down when §7.2's first branch
-   * lands there too.
-   */
-  keyColumns: string[] | null
 }
 
 /**
@@ -94,7 +87,6 @@ export async function versionsLakeCanStandOn(
     .select({
       version: resourceVersion.version,
       snapshot: resourceVersion.ducklakeSnapshotId,
-      keyColumns: resourceVersion.lakeKeyColumns,
     })
     .from(resourceVersion)
     .where(
@@ -106,14 +98,19 @@ export async function versionsLakeCanStandOn(
     )
     .orderBy(desc(resourceVersion.ducklakeSnapshotId))
   return rows.flatMap((row) =>
-    row.snapshot === null
-      ? []
-      : [{ version: row.version, snapshot: row.snapshot, keyColumns: row.keyColumns }]
+    row.snapshot === null ? [] : [{ version: row.version, snapshot: row.snapshot }]
   )
 }
 
 /** What the table holds, and whether the row saying so can still be trusted. */
 export interface LakeHead extends LakeStand {
+  /**
+   * The key those contents were loaded under (spec §6.4) — what an ingest has to
+   * match against before it can apply rows rather than replace them. Only the
+   * head carries it: where the table *can* stand says nothing about how its
+   * current rows are identified.
+   */
+  keyColumns: string[] | null
   /**
    * Its version is being purged, which makes the recorded id **indeterminate**:
    * the step-down commits in DuckLake before the purge nulls the id (spec §9.1
@@ -354,9 +351,7 @@ export async function ingestVersionIntoLake(
     // is recorded until the purge's last step, while the step-down that moved
     // the contents off it committed earlier. Keyless is sound either way, and
     // this version keeps its own key for the load after it.
-    if (head !== null && !head.purging && sameKeyColumns(head.keyColumns, keyColumns)) {
-      key = keyColumns
-    }
+    if (head !== null && !head.purging) key = sharedKeyColumns(head.keyColumns, keyColumns)
   }
 
   const result = await ingestParquetVersion(session, {

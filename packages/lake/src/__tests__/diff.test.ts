@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api'
-import { buildDiffQuery, splitDiffRows } from '../diff'
+import { buildDiffQuery, buildKeyedDiffQuery, splitDiffRows, splitKeyedDiffRows } from '../diff'
 import type { LakeColumn } from '../columns'
 import type { LakeRow } from '../connection'
 
@@ -173,5 +173,87 @@ describe('buildDiffQuery', () => {
     expect(diffResult).toMatchObject({ addedRows: 1, removedRows: 1 })
     if (diffResult.schemaChanged) return
     expect(diffResult.sampleAdded).toEqual([{ __net: 2, __total: 'b' }])
+  })
+})
+
+/** The keyed side of the same file: rows matched by a key rather than whole. */
+async function keyedDiff(
+  from: [number | null, string | null][],
+  to: [number | null, string | null][],
+  key: string[] = ['id'],
+  columns: LakeColumn[] = COLUMNS
+) {
+  const values = (rows: (number | null | string)[][]) =>
+    rows.length === 0
+      ? `SELECT * FROM (VALUES (NULL::INTEGER, NULL::VARCHAR)) t(id, name) WHERE false`
+      : rows
+          .map(
+            (r) =>
+              `SELECT ${r[0] === null ? 'NULL::INTEGER' : r[0]} AS id, ` +
+              `${r[1] === null ? 'NULL::VARCHAR' : `'${r[1]}'`} AS name`
+          )
+          .join(' UNION ALL ')
+
+  const { sql, kind, total } = buildKeyedDiffQuery(
+    `(${values(from)})`,
+    `(${values(to)})`,
+    columns,
+    key
+  )
+  const result = await connection.runAndReadAll(sql)
+  return splitKeyedDiffRows(result.getRowObjects() as LakeRow[], kind, total)
+}
+
+describe('buildKeyedDiffQuery', () => {
+  it('reports nothing when the two sides hold the same rows', async () => {
+    const rows: [number, string][] = [
+      [1, 'a'],
+      [2, 'b'],
+    ]
+    expect(await keyedDiff(rows, rows)).toMatchObject({
+      addedRows: 0,
+      removedRows: 0,
+      changedRows: 0,
+      sampleChangedAfter: [],
+    })
+  })
+
+  it('takes a column named like its own bookkeeping', async () => {
+    // CSV headers become column names, so `__kind` is not off-limits to a
+    // dataset — the same collision the keyless query renames around.
+    const columns: LakeColumn[] = [
+      { name: 'id', type: 'INTEGER' },
+      { name: '__kind', type: 'VARCHAR' },
+    ]
+    const values = (name: string) => `SELECT 1 AS id, '${name}' AS __kind`
+    const { sql, kind, total } = buildKeyedDiffQuery(
+      `(${values('a')})`,
+      `(${values('b')})`,
+      columns,
+      ['id']
+    )
+    const result = await connection.runAndReadAll(sql)
+
+    expect(splitKeyedDiffRows(result.getRowObjects() as LakeRow[], kind, total)).toMatchObject({
+      changedRows: 1,
+      sampleChangedAfter: [{ id: 1, __kind: 'b' }],
+    })
+  })
+
+  it('bounds the sample while counting every row', async () => {
+    const many = Array.from({ length: 12 }, (_, i): [number, string] => [i, 'x'])
+    const result = await keyedDiff([], many)
+
+    expect(result).toMatchObject({ addedRows: 12 })
+    if (result.schemaChanged || !result.keyed) throw new Error('expected a keyed diff')
+    expect(result.sampleAdded).toHaveLength(5)
+  })
+
+  it('trims a wide cell in the sample, as the keyless query does', async () => {
+    const wide = 'x'.repeat(600)
+    const result = await keyedDiff([[1, 'a']], [[1, wide]])
+
+    if (result.schemaChanged || !result.keyed) throw new Error('expected a keyed diff')
+    expect(String(result.sampleChangedAfter[0].name)).toHaveLength(513)
   })
 })

@@ -326,3 +326,122 @@ describe('a table stood back on an earlier snapshot, then ingested onto', () => 
     expect(diff).toMatchObject({ schemaChanged: false, addedRows: 1, removedRows: 0 })
   })
 })
+
+describe('a keyed diff', () => {
+  /**
+   * Two versions of one table: the first creates it (no base to share a key
+   * with), the second is applied under `key`.
+   */
+  async function twoVersions(v1: string, v2: string, key: string[] = ['id']) {
+    const from = await ingestParquetVersion(session, {
+      table: TABLE,
+      parquetUrl: await version('d1', v1),
+      key: null,
+    })
+    const to = await ingestParquetVersion(session, {
+      table: TABLE,
+      parquetUrl: await version('d2', v2),
+      key,
+    })
+    return { from: from.snapshotId, to: to.snapshotId }
+  }
+
+  it('reads an edit as one changed row, not an add and a remove', async () => {
+    // The whole of what the key buys: keyless, this is `added 1 / removed 1`,
+    // which says the same rows moved and nothing about what happened (spec §7).
+    const { from, to } = await twoVersions(
+      `SELECT * FROM (VALUES (1,'a'),(2,'b')) v(id, name)`,
+      `SELECT * FROM (VALUES (1,'A'),(2,'b')) v(id, name)`
+    )
+
+    const diff = await diffVersions(session, {
+      table: TABLE,
+      fromSnapshot: from,
+      toSnapshot: to,
+      key: ['id'],
+    })
+
+    expect(diff).toMatchObject({
+      schemaChanged: false,
+      keyed: true,
+      addedRows: 0,
+      removedRows: 0,
+      changedRows: 1,
+    })
+    if (diff.schemaChanged || !diff.keyed) return
+    // Shown as `to` holds it: what the row became.
+    expect(diff.sampleChangedAfter).toEqual([{ id: 1, name: 'A' }])
+  })
+
+  it('tells the three apart in one pass', async () => {
+    const { from, to } = await twoVersions(
+      `SELECT * FROM (VALUES (1,'a'),(2,'b'),(3,'c')) v(id, name)`,
+      `SELECT * FROM (VALUES (1,'A'),(3,'c'),(4,'d')) v(id, name)`
+    )
+
+    const diff = await diffVersions(session, {
+      table: TABLE,
+      fromSnapshot: from,
+      toSnapshot: to,
+      key: ['id'],
+    })
+
+    expect(diff).toMatchObject({ keyed: true, addedRows: 1, removedRows: 1, changedRows: 1 })
+    if (diff.schemaChanged || !diff.keyed) return
+    expect(diff.sampleAdded).toEqual([{ id: 4, name: 'd' }])
+    expect(diff.sampleRemoved).toEqual([{ id: 2, name: 'b' }])
+  })
+
+  it('counts a value that became null as a change', async () => {
+    // `IS DISTINCT FROM`, not `<>`: an unknown is not a reason to report
+    // nothing happened.
+    const { from, to } = await twoVersions(
+      `SELECT * FROM (VALUES (1,'a')) v(id, name)`,
+      // Typed, or DuckDB reads a bare NULL as INTEGER and the columns stop
+      // lining up — which is the schema-change branch, not this one.
+      `SELECT 1 AS id, NULL::VARCHAR AS name`
+    )
+
+    const diff = await diffVersions(session, {
+      table: TABLE,
+      fromSnapshot: from,
+      toSnapshot: to,
+      key: ['id'],
+    })
+
+    expect(diff).toMatchObject({ keyed: true, changedRows: 1, addedRows: 0, removedRows: 0 })
+  })
+
+  it('says the same edit two ways, depending on whether it can match rows', async () => {
+    // The pair the fallback rests on: with no key to match by, the edit is an
+    // addition and a removal and there is no count of edits to give (spec §7).
+    // *Which* of the two a request gets is the service's decision, tested there.
+    const { from, to } = await twoVersions(
+      `SELECT * FROM (VALUES (1,'a')) v(id, name)`,
+      `SELECT * FROM (VALUES (1,'A')) v(id, name)`
+    )
+    const diff = (key: string[] | null) =>
+      diffVersions(session, { table: TABLE, fromSnapshot: from, toSnapshot: to, key })
+
+    expect(await diff(['id'])).toMatchObject({ keyed: true, changedRows: 1, addedRows: 0 })
+    expect(await diff(null)).toMatchObject({ keyed: false, addedRows: 1, removedRows: 1 })
+  })
+
+  it('takes a table whose every column is part of the key', async () => {
+    // Nothing an edit could carry, so a row can only be added or removed —
+    // and the `MERGE` builder leaves out the update branch for the same reason.
+    const { from, to } = await twoVersions(
+      `SELECT * FROM (VALUES (1),(2)) v(id)`,
+      `SELECT * FROM (VALUES (1),(3)) v(id)`
+    )
+
+    const diff = await diffVersions(session, {
+      table: TABLE,
+      fromSnapshot: from,
+      toSnapshot: to,
+      key: ['id'],
+    })
+
+    expect(diff).toMatchObject({ keyed: true, addedRows: 1, removedRows: 1, changedRows: 0 })
+  })
+})

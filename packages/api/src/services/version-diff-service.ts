@@ -11,7 +11,12 @@ import type { Database } from '@kukan/db'
 import { resourceVersion } from '@kukan/db'
 import type { LakeConfig, LakeSession, VersionDiff } from '@kukan/lake'
 import { diffVersions, lakeTableName, openLakeSession } from '@kukan/lake'
-import { NotFoundError, RequestAbandonedError, RequestTimeoutError } from '@kukan/shared'
+import {
+  NotFoundError,
+  RequestAbandonedError,
+  RequestTimeoutError,
+  sharedKeyColumns,
+} from '@kukan/shared'
 import { withDuckdbSlot } from './query/semaphore'
 import { QUERY_MEMORY_LIMIT_MB, QUERY_THREADS, QUERY_TIMEOUT_MS } from '../config'
 
@@ -32,12 +37,14 @@ const VERSION_COLUMNS = {
   version: resourceVersion.version,
   state: resourceVersion.state,
   snapshotId: resourceVersion.ducklakeSnapshotId,
+  keyColumns: resourceVersion.lakeKeyColumns,
 }
 
 interface VersionRow {
   version: number
   state: string
   snapshotId: number | null
+  keyColumns: string[] | null
 }
 
 export class VersionDiffService {
@@ -113,6 +120,9 @@ export class VersionDiffService {
       lakeTableName(resourceId),
       from.snapshotId,
       to.snapshotId,
+      // **Only when both ends were loaded under the same key** (spec §7), through
+      // the function the ingest asks the same question with.
+      sharedKeyColumns(from.keyColumns, to.keyColumns),
       signal
     )
     return { available: true, from: from.version, to: to.version, ...diff }
@@ -132,6 +142,7 @@ export class VersionDiffService {
     table: string,
     fromSnapshot: number,
     toSnapshot: number,
+    key: string[] | null,
     signal?: AbortSignal
   ): Promise<VersionDiff> {
     return withDuckdbSlot(async () => {
@@ -173,7 +184,7 @@ export class VersionDiffService {
 
       try {
         await Promise.race([opening, stopped])
-        scanning = diffVersions(session!, { table, fromSnapshot, toSnapshot })
+        scanning = diffVersions(session!, { table, fromSnapshot, toSnapshot, key })
         return await Promise.race([scanning, stopped])
       } catch (err) {
         throw haltReason() ?? err

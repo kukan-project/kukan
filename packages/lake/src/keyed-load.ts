@@ -34,6 +34,33 @@ export interface KeyedLoadShape {
 const q = (c: string) => `"${c.replace(/"/g, '""')}"`
 
 /**
+ * The rows are the same row: every key column equal, on the two aliases the
+ * caller gave them.
+ *
+ * **Shared with the diff** (`diff.ts`), which has to match rows exactly as the
+ * load did — a `changedRows` count is by construction the set the load's
+ * `WHEN MATCHED` would have updated, and two spellings of "the same row" make
+ * that agreement a coincidence rather than a fact.
+ */
+export function keyMatchSql(keys: string[], left: string, right: string): string {
+  return keys.map((k) => `${left}.${q(k)} = ${right}.${q(k)}`).join(' AND ')
+}
+
+/**
+ * Something other than the key moved, or null when nothing could have: with no
+ * value columns a row can only be added or removed, never changed.
+ *
+ * `IS DISTINCT FROM`, so a value that became null (or stopped being one) is a
+ * change rather than an unknown — and, on the load side, so a matched row whose
+ * values are unchanged is not rewritten, which is what keeps a five-row change
+ * to five rows written (spec §11-2.4).
+ */
+export function valuesDifferSql(values: string[], left: string, right: string): string | null {
+  if (values.length === 0) return null
+  return values.map((c) => `${left}.${q(c)} IS DISTINCT FROM ${right}.${q(c)}`).join(' OR ')
+}
+
+/**
  * The upsert half. Updates only rows whose values actually differ, so a version
  * that changes five rows writes five rows.
  *
@@ -45,13 +72,12 @@ const q = (c: string) => `"${c.replace(/"/g, '""')}"`
  * (spec §7).
  */
 export function keyedUpsertSql({ table, source, keys, values }: KeyedLoadShape): string {
-  const on = keys.map((k) => `t.${q(k)} = s.${q(k)}`).join(' AND ')
+  const on = keyMatchSql(keys, 't', 's')
   const cols = [...keys, ...values]
   const insert = `WHEN NOT MATCHED THEN INSERT (${cols.map(q).join(', ')})
     VALUES (${cols.map((c) => `s.${q(c)}`).join(', ')})`
-  if (values.length === 0)
-    return `MERGE INTO ${table} AS t USING ${source} AS s ON ${on}\n  ${insert}`
-  const changed = values.map((c) => `t.${q(c)} IS DISTINCT FROM s.${q(c)}`).join(' OR ')
+  const changed = valuesDifferSql(values, 't', 's')
+  if (changed === null) return `MERGE INTO ${table} AS t USING ${source} AS s ON ${on}\n  ${insert}`
   const set = values.map((c) => `${q(c)} = s.${q(c)}`).join(', ')
   return `MERGE INTO ${table} AS t USING ${source} AS s ON ${on}
   WHEN MATCHED AND (${changed}) THEN UPDATE SET ${set}
@@ -60,7 +86,7 @@ export function keyedUpsertSql({ table, source, keys, values }: KeyedLoadShape):
 
 /** The delete half: rows the incoming version no longer carries. */
 export function keyedDeleteSql({ table, source, keys }: KeyedLoadShape): string {
-  const on = keys.map((k) => `t.${q(k)} = s.${q(k)}`).join(' AND ')
+  const on = keyMatchSql(keys, 't', 's')
   return `MERGE INTO ${table} AS t USING ${source} AS s ON ${on}
   WHEN NOT MATCHED BY SOURCE THEN DELETE`
 }

@@ -59,3 +59,21 @@ export function sameKeyColumns(a: string[] | null, b: string[] | null): boolean 
   if (a === null || b === null) return a === b
   return a.length === b.length && a.every((column, i) => column === b[i])
 }
+
+/**
+ * The key two versions were **both** read under, or null when they were not
+ * read under the same one.
+ *
+ * The question every operation that puts one version's rows against another's
+ * has to ask before it can match them: the ingest, of the contents it writes
+ * onto (spec §6.6), and the diff, of the two ends it compares (spec §7). Rows
+ * matched under one rule and counted against rows identified by another give a
+ * number belonging to neither, so both degrade to comparing whole rows instead.
+ *
+ * One function because the two must not answer differently, and because
+ * "compare, then pick a side" is the step that is easy to write as "pick a
+ * side" — which is a keyed comparison across a key change.
+ */
+export function sharedKeyColumns(a: string[] | null, b: string[] | null): string[] | null {
+  return sameKeyColumns(a, b) ? a : null
+}

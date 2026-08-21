@@ -38,12 +38,28 @@ type DiffView =
         }
       | {
           schemaChanged: false
-          /** False while rows are compared whole; ii-b's keyed diff adds edits. */
+          /**
+           * Whether the rows were matched by a key. False means they were
+           * compared whole, so an edit is one addition and one removal and
+           * there is no count of edits to show — the absence is the point, not
+           * a missing number (spec §7.1).
+           */
           keyed: false
           addedRows: number
           removedRows: number
           sampleAdded: Record<string, unknown>[]
           sampleRemoved: Record<string, unknown>[]
+        }
+      | {
+          schemaChanged: false
+          keyed: true
+          addedRows: number
+          removedRows: number
+          changedRows: number
+          sampleAdded: Record<string, unknown>[]
+          sampleRemoved: Record<string, unknown>[]
+          /** The changed rows as the newer version holds them. */
+          sampleChangedAfter: Record<string, unknown>[]
         }
     ))
 
@@ -139,12 +155,23 @@ export function VersionDiffPanel({ resourceId, version }: { resourceId: string; 
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">{t('diffAdded', { count: diff.addedRows })}</Badge>
             <Badge variant="outline">{t('diffRemoved', { count: diff.removedRows })}</Badge>
+            {/* Only where rows were matched by a key. Without one an edit is an
+                addition and a removal, and "changed 0" would read as "nothing
+                was edited" rather than "this cannot be told" (spec §7.1). */}
+            {diff.keyed && (
+              <Badge variant="outline">{t('diffChanged', { count: diff.changedRows })}</Badge>
+            )}
           </div>
-          {diff.addedRows === 0 && diff.removedRows === 0 && (
-            <p className="text-sm text-muted-foreground">{t('diffNoRowChanges')}</p>
-          )}
+          {diff.addedRows === 0 &&
+            diff.removedRows === 0 &&
+            (!diff.keyed || diff.changedRows === 0) && (
+              <p className="text-sm text-muted-foreground">{t('diffNoRowChanges')}</p>
+            )}
           <SampleRows rows={diff.sampleAdded} label={t('diffSampleAdded')} />
           <SampleRows rows={diff.sampleRemoved} label={t('diffSampleRemoved')} />
+          {diff.keyed && (
+            <SampleRows rows={diff.sampleChangedAfter} label={t('diffSampleChanged')} />
+          )}
         </>
       )}
     </div>
