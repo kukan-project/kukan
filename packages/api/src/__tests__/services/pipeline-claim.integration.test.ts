@@ -572,6 +572,41 @@ describe('stillHeld — ordering against the cancel', () => {
       RETURNING id
     `)
 
+  /**
+   * Resolve once `count` of this database's sessions are waiting on a lock.
+   *
+   * The order under test is made by two statements reaching their locks in
+   * turn, so each has to be there before the next is issued. Waiting a fixed
+   * time for that is a guess the runner decides: under load a statement takes
+   * longer than any number chosen here to reach its lock, the cancel gets there
+   * first, and the order comes out reversed. The wait is visible from the
+   * server, so it is observed rather than assumed.
+   *
+   * Asked over the blocker's connection: the pool holds two, and both are taken
+   * by the statements being waited for. Only this file's sessions are in this
+   * database — one per worker process — so a count is enough to tell which
+   * statements they are.
+   *
+   * That connection is mid-transaction, though, and a session reads its first
+   * look at `pg_stat_activity` for the rest of the transaction — so polling
+   * without discarding it first watches the moment the poll began, forever.
+   */
+  async function waitForBlocked(count: number) {
+    const deadline = Date.now() + 2_000
+    for (;;) {
+      await blocker.query('SELECT pg_stat_clear_snapshot()')
+      const { rows } = await blocker.query<{ blocked: number }>(`
+        SELECT count(*)::int AS blocked FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock'
+      `)
+      if (rows[0].blocked >= count) return
+      if (Date.now() >= deadline) {
+        throw new Error(`waited for ${count} blocked sessions, saw ${rows[0].blocked}`)
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+  }
+
   it('finishes the write before the cancel it raced, not after', async () => {
     // Without the lock the writer reads the claim from a snapshot taken before
     // the cancel, waits on the row it is updating, and then lands anyway — so
@@ -589,12 +624,14 @@ describe('stillHeld — ordering against the cancel', () => {
       order.push('write')
       return r.rows.length
     })
-    await settle()
+    await waitForBlocked(1)
     const cancelled = cancelResourceRun(db, resourceId).then((c) => {
       order.push('cancel')
       return c
     })
-    await settle()
+    // The cancel is behind the write's `FOR SHARE` now, which is the order the
+    // release below plays out.
+    await waitForBlocked(2)
 
     await blocker.query('COMMIT')
     const [rows, stopped] = await Promise.all([written, cancelled])
@@ -613,6 +650,3 @@ describe('stillHeld — ordering against the cancel', () => {
     expect((await writeAsRun({ id: pipelineId, owner })).rows.length).toBe(0)
   })
 })
-
-/** Long enough for a blocked statement to have reached the lock it waits on. */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 300))
