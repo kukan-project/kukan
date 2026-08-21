@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { createUserSchema } from '../validators/user'
+import { columnSettingsBodySchema } from '../validators/resource'
 
 describe('createUserSchema', () => {
   const valid = (name: string) =>
@@ -93,5 +94,31 @@ describe('createUserSchema', () => {
     it('should allow password to be omitted (OIDC users)', () => {
       expect(createUserSchema.safeParse({ name: 'test', email: 'a@b.com' }).success).toBe(true)
     })
+  })
+})
+
+describe('columnSettingsBodySchema', () => {
+  it('normalizes an empty key to no key at all', () => {
+    // One spelling reaches storage (spec §6.2), so the transform is what every
+    // reader past the boundary is entitled to assume.
+    expect(columnSettingsBodySchema.parse({ primaryKey: [] })).toEqual({})
+    expect(columnSettingsBodySchema.parse({ primaryKey: null })).toEqual({})
+    expect(columnSettingsBodySchema.parse({ primaryKey: ['id'] })).toEqual({ primaryKey: ['id'] })
+  })
+
+  it('refuses a repeated column', () => {
+    // Not deduplicated: `ON t.a = s.a AND t.a = s.a` compares a column with
+    // itself, and what was meant by naming it twice is not recoverable.
+    expect(columnSettingsBodySchema.safeParse({ primaryKey: ['id', 'id'] }).success).toBe(false)
+  })
+
+  it('refuses an empty column name', () => {
+    expect(columnSettingsBodySchema.safeParse({ primaryKey: [''] }).success).toBe(false)
+  })
+
+  it('refuses a body that leaves the key out', () => {
+    // The body is the whole settled layer, so "not mentioned" cannot be a second
+    // way of saying "no key".
+    expect(columnSettingsBodySchema.safeParse({}).success).toBe(false)
   })
 })

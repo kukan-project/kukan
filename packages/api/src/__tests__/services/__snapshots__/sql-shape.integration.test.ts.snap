@@ -194,6 +194,23 @@ exports[`emitted SQL shape > ResourceVersionService.createFirstVersions > pins t
 ]
 `;
 
+exports[`emitted SQL shape > ResourceVersionService.setColumnSettings > pins the pending-run shape 1`] = `
+[
+  "select "column_settings" from "resource" where "resource"."id" = $1 limit $2",
+  "select "id", "resource_id", "version", "storage_key", "size", "hash", "origin", "restored_from", "format", "state", "schema", "no_table_reason", "ducklake_snapshot_id", "lake_key_columns", "lake_ingest_reason", "purged_at", "purged_by", "purge_reason", "created_by", "created", "updated" from "resource_version" where ("resource_version"."resource_id" = $1 and "resource_version"."state" = $2) order by "resource_version"."version" desc limit $3",
+  "select "id" from "resource_pipeline" where ("resource_pipeline"."resource_id" = $1 and CASE "resource_pipeline"."status"
+                WHEN 'queued' THEN "resource_pipeline"."updated" >
+                  NOW() - $2::interval
+                WHEN 'processing' THEN NOT (GREATEST(
+    resource_pipeline.claim_owner_at,
+    (SELECT MAX(s.started_at) FROM resource_pipeline_step s WHERE s.pipeline_id = resource_pipeline.id)
+  ) < NOW() - $3::interval)
+                ELSE false
+              END) limit $4",
+  "insert into "resource_pipeline" ("id", "resource_id", "status", "claim_owner", "claim_kind", "claim_owner_at", "error", "preview_key", "metadata", "created", "updated") values (default, $1, $2, default, default, default, $3, $4, $5, default, default) on conflict ("resource_id") do update set "status" = $6, "error" = $7, "updated" = NOW() returning "id", "resource_id", "status", "claim_owner", "claim_kind", "claim_owner_at", "error", "preview_key", "metadata", "created", "updated"",
+]
+`;
+
 exports[`emitted SQL shape > listPurgeTargets > pins the shape 1`] = `
 [
   "select "id", exists (select  from "resource_version" where ("resource_version"."resource_id" = "resource"."id" and "resource_version"."ducklake_snapshot_id" is not null)) from "resource" where "resource"."package_id" in ($1)",

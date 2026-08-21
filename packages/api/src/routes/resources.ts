@@ -19,6 +19,7 @@ import {
   updateResourceSchema,
   uploadUrlSchema,
   uploadCompleteSchema,
+  columnSettingsBodySchema,
   revertResourceSchema,
   runPipelineSchema,
   UnauthorizedError,
@@ -795,6 +796,33 @@ resourcesRouter.post('/:id/revert', zValidator('json', revertResourceSchema), as
   })
   return c.json({ id, ...result })
 })
+
+// PUT /api/v1/resources/:id/column-settings - Settle what a person decided about
+// this resource's columns (spec §6.2). Today that is the primary key; ii-c adds
+// settled types to the same body, because one apply has to be one version
+// (§6.5). Editor+, like every other write to the resource.
+//
+// The version carrying the new reading is created by the rebuild this queues,
+// not here — `queued` says a job is on its way and nothing more, the same two
+// values the revert ladder answers with.
+resourcesRouter.put(
+  '/:id/column-settings',
+  zValidator('json', columnSettingsBodySchema),
+  async (c) => {
+    const user = c.get('user')
+    if (!user) throw new UnauthorizedError()
+
+    const db = c.get('db')
+    const id = c.req.param('id')
+    await checkResourcePermission(db, user, new ResourceService(db), id)
+
+    const result = await new ResourceVersionService(db).setColumnSettings(id, c.req.valid('json'), {
+      queue: c.get('queue'),
+      logger: c.get('logger'),
+    })
+    return c.json({ id, ...result })
+  }
+)
 
 // --- CRUD endpoints ---
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { Readable } from 'stream'
+import { randomUUID } from 'node:crypto'
 import {
   resource as resourceTable,
   resourcePipeline,
@@ -8,7 +9,8 @@ import {
   resourceVersion,
 } from '@kukan/db'
 import { getStorageKey, MAX_UPLOAD_SIZE } from '@kukan/shared'
-import { createTestApp, mockSearch } from '../test-helpers/test-app'
+import { createTestApp, mockQueue, mockSearch } from '../test-helpers/test-app'
+import { CLAIM_STALE_AFTER_MS } from '../../services/pipeline-claim'
 import {
   getTestDb,
   cleanDatabase,
@@ -1344,5 +1346,252 @@ describe('Resources API Routes', () => {
       expect(await res.json()).toMatchObject({ available: false, reason: 'purged' })
       expect(res.headers.get('Cache-Control')).toBeNull()
     })
+  })
+})
+
+describe('PUT /api/v1/resources/:id/column-settings', () => {
+  /**
+   * A resource whose live version records these columns — the artifact the
+   * check reads, and the one the ingest will read later (spec §6.4).
+   */
+  async function withColumns(name: string, columns: string[]) {
+    const pkg = await createPackage(name)
+    const resource = await createResource(pkg.id)
+    const [live] = await db
+      .select({ storageKey: resourceTable.storageKey })
+      .from(resourceTable)
+      .where(eq(resourceTable.id, resource.id))
+    await db.insert(resourceVersion).values({
+      resourceId: resource.id,
+      version: 1,
+      storageKey: live.storageKey!,
+      size: 100,
+      hash: 'sha256:v1',
+      origin: 'upload',
+      format: 'csv',
+      schema: {
+        rowCount: 2,
+        columns: columns.map((column) => ({
+          name: column,
+          type: 'string' as const,
+          nullable: false,
+          nullCount: 0,
+        })),
+      },
+    })
+    return resource
+  }
+
+  const setKey = (id: string, primaryKey: string[] | null) =>
+    app.request(`/api/v1/resources/${id}/column-settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ primaryKey }),
+    })
+
+  const storedSettings = async (id: string) =>
+    (
+      await db
+        .select({ settings: resourceTable.columnSettings })
+        .from(resourceTable)
+        .where(eq(resourceTable.id, id))
+    )[0].settings
+
+  it('settles the key and queues the run that carries it into a version', async () => {
+    // The version is the gate's to create — this says a job is on its way and
+    // nothing more (spec §6.4).
+    const resource = await withColumns('key-set-pkg', ['order', 'line'])
+
+    const res = await setKey(resource.id, ['order', 'line'])
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ primaryKey: ['order', 'line'], queued: true })
+    expect(await storedSettings(resource.id)).toEqual({ primaryKey: ['order', 'line'] })
+  })
+
+  it('queues nothing once a version carries the key', async () => {
+    // A picker sends back what it was shown. What settles it is the version, not
+    // the setting: the run this queued would create no version, since the gate
+    // would find nothing to tell apart.
+    const resource = await withColumns('key-same-pkg', ['id'])
+    await setKey(resource.id, ['id'])
+    await db
+      .update(resourceVersion)
+      .set({ lakeKeyColumns: ['id'] })
+      .where(eq(resourceVersion.resourceId, resource.id))
+
+    const res = await setKey(resource.id, ['id'])
+
+    expect(await res.json()).toMatchObject({ primaryKey: ['id'], queued: null })
+  })
+
+  it('queues once when the same settle is sent twice before the version exists', async () => {
+    // The version cannot carry the key until the run reaches its Version step,
+    // so "not carried yet" is true of a resend seconds later. The job already on
+    // its way is what settles it — a second one would arrive to find the version
+    // made and the gate with nothing to tell apart.
+    const resource = await withColumns('key-double-send-pkg', ['id'])
+    vi.mocked(mockQueue.enqueue).mockClear()
+
+    expect(await (await setKey(resource.id, ['id'])).json()).toMatchObject({ queued: true })
+    expect(await (await setKey(resource.id, ['id'])).json()).toMatchObject({ queued: null })
+
+    expect(mockQueue.enqueue).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for a long run whose current step has just started', async () => {
+    // `startStep` dates the run on the step row, not on `resource_pipeline`, and
+    // the claim's own liveness is judged from the newer of the claim and the
+    // last step start. Read by `updated` alone, a run past the window but still
+    // working would look dead here — and the second rebuild would arrive behind
+    // it, after `enqueue` had already put the row back to `queued`.
+    const resource = await withColumns('key-long-run-pkg', ['id'])
+    await setKey(resource.id, ['id'])
+    const [pipeline] = await db
+      .update(resourcePipeline)
+      .set({
+        status: 'processing',
+        updated: new Date(Date.now() - CLAIM_STALE_AFTER_MS - 1000),
+        claimOwner: randomUUID(),
+        claimKind: 'run',
+        claimOwnerAt: new Date(Date.now() - CLAIM_STALE_AFTER_MS - 1000),
+      })
+      .where(eq(resourcePipeline.resourceId, resource.id))
+      .returning({ id: resourcePipeline.id })
+    await db.insert(resourcePipelineStep).values({
+      pipelineId: pipeline.id,
+      stepName: 'interpret',
+      status: 'running',
+      startedAt: new Date(),
+    })
+    vi.mocked(mockQueue.enqueue).mockClear()
+
+    expect(await (await setKey(resource.id, ['id'])).json()).toMatchObject({ queued: null })
+    expect(mockQueue.enqueue).not.toHaveBeenCalled()
+  })
+
+  it('re-queues once a row left `queued` is too old to be waiting for', async () => {
+    // The crash window `PipelineService.enqueue` leaves: the row is written
+    // before the message is sent, so a process that dies in between leaves
+    // `queued` with nothing in the queue. Trusted bare, that row would suppress
+    // every resend and the setting would have no way of reaching a version.
+    const resource = await withColumns('key-stale-queued-pkg', ['id'])
+    await setKey(resource.id, ['id'])
+    await db
+      .update(resourcePipeline)
+      .set({ updated: new Date(Date.now() - CLAIM_STALE_AFTER_MS - 1000) })
+      .where(eq(resourcePipeline.resourceId, resource.id))
+    vi.mocked(mockQueue.enqueue).mockClear()
+
+    expect(await (await setKey(resource.id, ['id'])).json()).toMatchObject({ queued: true })
+    expect(mockQueue.enqueue).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-queues on a resend when the first enqueue failed', async () => {
+    // The setting is saved either way, so a resend finds nothing to write — and
+    // nothing sweeps up a resource whose setting and newest version disagree.
+    // Asking the version rather than the setting is what makes the resend the
+    // repair.
+    const resource = await withColumns('key-requeue-pkg', ['id'])
+    // The enqueue puts the row back to `error` when the queue refuses it, so the
+    // "a run is already on its way" guard does not catch this resend.
+    vi.mocked(mockQueue.enqueue).mockRejectedValueOnce(new Error('queue is down'))
+
+    expect(await (await setKey(resource.id, ['id'])).json()).toMatchObject({ queued: false })
+
+    expect(await (await setKey(resource.id, ['id'])).json()).toMatchObject({ queued: true })
+  })
+
+  it('queues nothing for a resource with no versions to carry the key', async () => {
+    // The first version it gets freezes the setting at its own creation, so
+    // there is no run owed — and repeated calls do not pile up jobs that can
+    // only fail on a resource with nothing to rebuild from.
+    const pkg = await createPackage('key-no-versions-pkg')
+    const resource = await createResource(pkg.id)
+
+    expect(await (await setKey(resource.id, null)).json()).toMatchObject({ queued: null })
+  })
+
+  it('moves the resource timestamp, because a person changed it', async () => {
+    const resource = await withColumns('key-updated-pkg', ['id'])
+    const [before] = await db
+      .select({ updated: resourceTable.updated })
+      .from(resourceTable)
+      .where(eq(resourceTable.id, resource.id))
+
+    await setKey(resource.id, ['id'])
+
+    const [after] = await db
+      .select({ updated: resourceTable.updated })
+      .from(resourceTable)
+      .where(eq(resourceTable.id, resource.id))
+    expect(after.updated.getTime()).toBeGreaterThan(before.updated.getTime())
+  })
+
+  it('takes the key off, and treats an empty list as taking it off', async () => {
+    const resource = await withColumns('key-unset-pkg', ['id'])
+    await setKey(resource.id, ['id'])
+    // The run landed: the newest version carries the key that is now being
+    // taken off, so going keyless is a change a version still has to record.
+    await db
+      .update(resourceVersion)
+      .set({ lakeKeyColumns: ['id'] })
+      .where(eq(resourceVersion.resourceId, resource.id))
+
+    expect(await (await setKey(resource.id, [])).json()).toMatchObject({
+      primaryKey: null,
+      queued: true,
+    })
+    expect(await storedSettings(resource.id)).toEqual({})
+  })
+
+  it('refuses a column the live version does not have', async () => {
+    // Refused now rather than left to become a `lake_ingest_reason` hours later
+    // (spec §6.6) — though the columns can still move under a key that was valid
+    // when it was set, which is what that reason records.
+    const resource = await withColumns('key-missing-col-pkg', ['id'])
+
+    const res = await setKey(resource.id, ['nope'])
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).detail).toContain('nope')
+  })
+
+  it('reads the live version, not the cached interpretation', async () => {
+    // The cached one is the worker's to rewrite, and a run whose Interpret
+    // failed leaves it describing the content before this one. A key picked off
+    // that stale list would pass here and reach the ingest as `key-missing`.
+    const resource = await withColumns('key-stale-cache-pkg', ['id'])
+    await db.insert(resourcePipeline).values({
+      resourceId: resource.id,
+      metadata: {
+        schema: {
+          rowCount: 1,
+          columns: [{ name: 'gone', type: 'string', nullable: false, nullCount: 0 }],
+        },
+      },
+    })
+
+    expect((await setKey(resource.id, ['gone'])).status).toBe(400)
+    expect((await setKey(resource.id, ['id'])).status).toBe(200)
+  })
+
+  it('refuses a key on a resource with no interpreted columns', async () => {
+    const pkg = await createPackage('key-no-schema-pkg')
+    const resource = await createResource(pkg.id)
+
+    expect((await setKey(resource.id, ['id'])).status).toBe(400)
+  })
+
+  it('returns 401 for unauthenticated users', async () => {
+    const resource = await withColumns('key-unauth-pkg', ['id'])
+
+    const res = await unauthApp.request(`/api/v1/resources/${resource.id}/column-settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ primaryKey: ['id'] }),
+    })
+
+    expect(res.status).toBe(401)
   })
 })

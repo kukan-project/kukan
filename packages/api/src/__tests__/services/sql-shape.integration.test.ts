@@ -227,6 +227,41 @@ describe('emitted SQL shape', () => {
     })
   })
 
+  // Settling a key asks whether a run is already on its way, and the
+  // `processing` half of that is the claim's own liveness expression — a
+  // correlated subquery over the step rows. It sits in the predicate, where the
+  // qualifier survives; in the projection it would resolve to the inner scope
+  // and answer "alive" for every row, which is a second rebuild never queued.
+  describe('ResourceVersionService.setColumnSettings', () => {
+    it('pins the pending-run shape', async () => {
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'shape-pkg-settings', state: 'active' })
+        .returning()
+      const [r] = await db
+        .insert(resource)
+        .values({ packageId: pkg.id, name: 'shape-settings', urlType: 'upload' })
+        .returning()
+      await db.insert(resourceVersion).values({
+        resourceId: r.id,
+        version: 1,
+        storageKey: 'shape/settings/v1',
+        size: 1,
+        hash: 'sha256:shape',
+        origin: 'upload',
+        lakeKeyColumns: ['other'],
+      })
+      queries.length = 0
+
+      await new ResourceVersionService(recorder).setColumnSettings(
+        r.id,
+        {},
+        { queue: { enqueue: async () => 'queued' } as never }
+      )
+      expect(recorded()).toMatchSnapshot()
+    })
+  })
+
   describe('GET /api/v1/admin/search/stats', () => {
     it('pins the sysadmin shape', async () => {
       expect(await sqlFor(sysadminApp, '/api/v1/admin/search/stats')).toMatchSnapshot()

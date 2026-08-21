@@ -14,6 +14,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { sql } from 'drizzle-orm'
+import type { SQL } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { ConflictError } from '@kukan/shared'
 
@@ -47,11 +48,15 @@ export const CLAIM_STALE_AFTER_MS = 15 * 60 * 1000
  *
  * One expression for everyone who asks, for the same reason there is one
  * constant: two answers to "is this claim alive" is two writers.
+ *
+ * @param row - how the pipeline row is spelled where this lands. The claimers
+ *   write it inside a statement that aliases the table `p`; a reader selecting
+ *   from the table itself passes its name.
  */
-function staleClaim(staleAfterMs: number) {
+export function staleClaim(staleAfterMs: number, row: SQL = sql`p`) {
   return sql`GREATEST(
-    p.claim_owner_at,
-    (SELECT MAX(s.started_at) FROM resource_pipeline_step s WHERE s.pipeline_id = p.id)
+    ${row}.claim_owner_at,
+    (SELECT MAX(s.started_at) FROM resource_pipeline_step s WHERE s.pipeline_id = ${row}.id)
   ) < NOW() - ${`${Math.trunc(staleAfterMs)} milliseconds`}::interval`
 }
 

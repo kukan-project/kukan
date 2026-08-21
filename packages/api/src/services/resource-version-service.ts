@@ -19,13 +19,15 @@ import {
   ConflictError,
   getStorageKey,
   primaryKeyOf,
+  sameKeyColumns,
   sameVersionIdentity,
   LAKE_INGEST_JOB_TYPE,
   NotFoundError,
+  ValidationError,
   MAX_PARQUET_SOURCE_SIZE,
   versionOrigin,
 } from '@kukan/shared'
-import type { NoTableReason, VersionIdentity, VersionOrigin } from '@kukan/shared'
+import type { ColumnSettings, NoTableReason, VersionIdentity, VersionOrigin } from '@kukan/shared'
 import type { LakeConfig } from '@kukan/lake'
 import {
   dropLakeTable,
@@ -42,7 +44,9 @@ import type { QueueAdapter } from '@kukan/queue-adapter'
 import { lakeStandDown, withLakeIngestLock } from './lake-ingest'
 import { reclaimInSession } from './lake-reclaim'
 import {
+  CLAIM_STALE_AFTER_MS,
   onRevision,
+  staleClaim,
   stillHeld,
   withClaimFromRun,
   withResourceClaims,
@@ -2044,6 +2048,180 @@ export class ResourceVersionService {
     // stale with it. The path below is where that is answered.
     if (cleaned === null) return null
     return { cancelled: false, restored: null, published: null, cleared: cleaned, queued: null }
+  }
+
+  /**
+   * Settle what a person decided about this resource's columns, from here on
+   * (spec §6.2 / §6.4).
+   *
+   * **The whole settled layer, one apply.** ii-c adds settled types to the same
+   * object, and §6.5's rule is that one confirm is one version and one copy of
+   * the bytes — so the unit is the settings, not a field, and the rule lives
+   * here rather than in the shape of a route. Written as a whole object for the
+   * same reason: a partial write would leave a field standing that the caller
+   * meant to clear.
+   *
+   * **Here rather than with the resource's other writes**, because what it
+   * settles is the reading a version freezes, and it answers against the live
+   * version's own record.
+   *
+   * **The setting, not the version.** What this writes applies to versions
+   * created after it; the version that carries it is made by the run queued
+   * below, where the create gate compares the setting against what the highest
+   * active version froze (`version-gate`). Issuing one here would put a second
+   * creator of ordinary versions beside the gate, and the useful end of the
+   * change — that version interpreted and loaded into layer 2 under the new key
+   * — is the worker's either way.
+   *
+   * **A rebuild, not an ordinary run.** The bytes must not move: a key change is
+   * the same content read another way, and a run that re-fetched an external URL
+   * would file whatever it serves now under the new key, with the boundary
+   * between the two changes lost (ADR-044 §4). A whole run rather than a
+   * lake-only pass because layer 2 has nothing to load until the version exists
+   * and only the gate creates one — the preview and the search document are
+   * rebuilt identically on the way past, which is what that costs.
+   *
+   * **What is written and what is queued are decided separately.** The write is
+   * owed when the stored settings differ; the run is owed when the highest
+   * active version does not already carry them. Folding the two would make a
+   * failed enqueue unrecoverable — the setting is saved, so a resend finds
+   * nothing to write and queues nothing, and no sweep looks for a resource whose
+   * setting and newest version disagree. Asked this way, a resend after a queue
+   * that was down is the repair, which is the shape a settled revert already
+   * takes (it re-queues the rebuild it cannot prove ran).
+   *
+   * **A resource with no versions is owed nothing**: the first version it gets
+   * freezes whatever the setting says at its own creation, so there is no run to
+   * queue and repeated calls do not pile up jobs that can only fail.
+   *
+   * **Nor is one already on its way**, while there is reason to believe it is
+   * still coming ({@link runPending}). A run reads the setting when it reaches
+   * its Version step, so a resend made while the first run is still queued would
+   * only add a job that arrives to find the version already made. **Only when
+   * the setting did not change**: one that just did cannot be carried by a run
+   * that may already be past its Version step.
+   *
+   * @returns the settings as stored, and whether a run is on its way — `null`
+   *   when none was needed. Never whether a version was created: that is the
+   *   gate's answer, minutes later.
+   */
+  async setColumnSettings(
+    resourceId: string,
+    settings: ColumnSettings,
+    deps: { queue: QueueAdapter; logger?: Logger }
+  ): Promise<{ primaryKey: string[] | null; queued: boolean | null }> {
+    const log = deps.logger ?? createLogger({ name: 'api' })
+    // "No key" has one spelling from here on (spec §6.2).
+    const key = primaryKeyOf(settings)
+
+    const [current] = await this.db
+      .select({ settings: resource.columnSettings })
+      .from(resource)
+      .where(eq(resource.id, resourceId))
+      .limit(1)
+    if (!current) throw new NotFoundError('Resource', resourceId)
+
+    if (key) await this.assertColumnsExist(resourceId, key)
+
+    const settled = sameKeyColumns(primaryKeyOf(current.settings), key)
+    if (!settled) {
+      await this.db
+        .update(resource)
+        .set({
+          columnSettings: key ? { primaryKey: key as [string, ...string[]] } : {},
+          // A person's edit, so it moves the resource's own timestamp — that is
+          // what the screens and the API mean by "updated".
+          updated: sql`NOW()`,
+        })
+        .where(eq(resource.id, resourceId))
+    }
+
+    const latest = await this.newestActiveVersion(this.db, resourceId)
+    const carried = latest === null || sameKeyColumns(latest.lakeKeyColumns, key)
+    if (carried || (settled && (await this.runPending(resourceId)))) {
+      return { primaryKey: key, queued: null }
+    }
+    return { primaryKey: key, queued: await this.queueRebuild(resourceId, deps, log) }
+  }
+
+  /**
+   * Whether a run is on its way, or in the middle of one — and recently enough
+   * that it is still worth waiting for.
+   *
+   * **`queued` alone is not evidence that a job exists.** `PipelineService.enqueue`
+   * writes the row first and sends the message second, so a process that dies in
+   * between leaves the row saying `queued` with nothing in the queue. Trusted
+   * bare, that row would suppress every later resend and the settings a version
+   * never carried would have no way back — the endpoint's whole recovery story
+   * rests on a resend being able to queue again.
+   *
+   * So the row also has to be recent. The window is the one the claim uses, for
+   * the same reason it has one value: after it, everything else in the system
+   * considers a run dead, and this cannot be the one place that goes on waiting.
+   *
+   * **The two states are dated differently, because they leave different marks.**
+   * A run in flight is judged by {@link staleClaim}, the expression every other
+   * claimer asks — its steps date it, and `updated` does not move when one
+   * starts, so a long run whose current step is minutes old would otherwise read
+   * as dead here alone and have a second rebuild queued behind it (which
+   * `enqueue` would also put the row back to `queued` for, while it is still
+   * running).
+   *
+   * A queued job has neither a claim nor a step to date it from, so the
+   * enqueue's own write to `updated` is the only mark there is — the column the
+   * schema warns against for judging *claim* liveness. What that borrows is
+   * bounded: another writer refreshing the row delays a recovery by the window,
+   * where mis-judging a claim would extend a dead run for ever.
+   */
+  private async runPending(resourceId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: resourcePipeline.id })
+      .from(resourcePipeline)
+      .where(
+        and(
+          eq(resourcePipeline.resourceId, resourceId),
+          // In the predicate rather than the projection, which is where a
+          // correlated subquery keeps its table qualification (CLAUDE.md).
+          sql`CASE ${resourcePipeline.status}
+                WHEN 'queued' THEN ${resourcePipeline.updated} >
+                  NOW() - ${`${CLAIM_STALE_AFTER_MS} milliseconds`}::interval
+                WHEN 'processing' THEN NOT (${staleClaim(CLAIM_STALE_AFTER_MS, sql`resource_pipeline`)})
+                ELSE false
+              END`
+        )
+      )
+      .limit(1)
+    return row !== undefined
+  }
+
+  /**
+   * Refuse a key naming columns the resource does not have.
+   *
+   * **Against the live version's frozen schema**, not the resource's cached
+   * interpretation: that one is the worker's to rewrite, and a run whose
+   * Interpret failed leaves it describing the content before this one
+   * (`schemaDescribesLiveContent` exists for that reason). A key picked off a
+   * stale list would pass here and reach the ingest as `key-missing` — the exact
+   * outcome this check is meant to pre-empt. It also answers for a resource that
+   * has versions but no pipeline row, which layer 1's backfill leaves behind.
+   *
+   * A courtesy, not a guarantee: columns move under keys that were valid when
+   * they were set, and recording that is `lake_ingest_reason`'s job (spec §6.6).
+   */
+  private async assertColumnsExist(resourceId: string, key: string[]): Promise<void> {
+    const version = await this.liveVersionNumber(this.db, resourceId)
+    const schema =
+      version === null ? null : (await this.getRow(this.db, resourceId, version)).schema
+    if (!schema) {
+      throw new ValidationError(
+        `Resource ${resourceId} has no interpreted columns to identify rows by`
+      )
+    }
+    const columns = new Set(schema.columns.map((column) => column.name))
+    const missing = key.filter((column) => !columns.has(column))
+    if (missing.length > 0) {
+      throw new ValidationError(`No such column in this resource: ${missing.join(', ')}`)
+    }
   }
 
   /**

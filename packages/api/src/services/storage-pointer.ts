@@ -82,9 +82,11 @@ export interface PublishedContent {
 /**
  * The settled key as `column_settings` holds it — set, or taken off.
  *
- * The one place the shape `@kukan/shared` defines is spelled in SQL. Empty
- * normalizes to absent here, because "no key" has one spelling (spec §6.2) and a
- * second one would reach every reader.
+ * A partial write on purpose: the pointer move restores one field of a reading
+ * and must leave whatever else the settled layer holds alone. Settling the layer
+ * from the API writes the whole object instead, which is what its `PUT` says.
+ * Empty normalizes to absent, because "no key" has one spelling (spec §6.2) and
+ * a second one would reach every reader.
  */
 function keySetting(keyColumns: string[] | null | undefined) {
   return keyColumns?.length

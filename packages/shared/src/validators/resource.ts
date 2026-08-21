@@ -3,6 +3,7 @@
  */
 
 import { z } from 'zod'
+import type { ColumnSettings } from '../column-settings'
 import { checkUrlSafety } from '../url'
 
 /** Validate that url is a valid http(s) URL when urlType is not 'upload' */
@@ -114,6 +115,41 @@ export const runPipelineSchema = z.object({
 })
 
 export type RunPipelineInput = z.infer<typeof runPipelineSchema>
+
+/**
+ * The settled column layer, as a request (spec §6.2).
+ *
+ * One apply, whatever it settles: §6.5's rule is that a confirm is one version
+ * and one copy of the bytes, so the columns a person decided about arrive
+ * together rather than one call each. ii-c adds settled types to this same
+ * body, which is why it is an object rather than a bare list.
+ *
+ * **`primaryKey` is required and nullable, not optional.** The body is the whole
+ * settled layer — a `PUT` — so "not mentioned" cannot be allowed to mean "leave
+ * it alone": that would be a second spelling of "no key" beside `null`, which
+ * §6.2 spent a rule removing.
+ *
+ * **Normalized on the way in**, so what leaves here is already the stored shape:
+ * `[]` becomes no key at all, and every reader past this point has one state to
+ * handle.
+ */
+export const columnSettingsBodySchema = z
+  .object({
+    primaryKey: z
+      .array(z.string().min(1, 'A key column name cannot be empty'))
+      .nullable()
+      .refine((columns) => columns === null || new Set(columns).size === columns.length, {
+        // Duplicates are refused rather than deduplicated: `ON t.a = s.a AND
+        // t.a = s.a` is a predicate comparing one column with itself, and what
+        // the person meant by naming it twice is not recoverable (spec §6.2).
+        message: 'Key columns must not repeat',
+      }),
+  })
+  .transform(({ primaryKey }): ColumnSettings =>
+    primaryKey?.length ? { primaryKey: primaryKey as [string, ...string[]] } : {}
+  )
+
+export type ColumnSettingsInput = z.infer<typeof columnSettingsBodySchema>
 
 export const reorderResourcesSchema = z.object({
   resourceIds: z.array(z.uuid()).min(1),
