@@ -12,6 +12,7 @@ import {
   TableRow,
 } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
+import type { DiffUnavailableReason } from '@kukan/shared'
 import { useFetch } from '@/hooks/use-fetch'
 
 interface DiffColumn {
@@ -23,9 +24,13 @@ interface DiffColumn {
 type DiffView =
   | {
       available: false
-      reason: 'no-previous-version' | 'not-ingested' | 'purged'
+      reason: DiffUnavailableReason
       from: number | null
       to: number
+      /** Which of the two the reason is about, when it is about one of them.
+       *  From the server: a version is as often blocked on the predecessor's
+       *  side as on the opened one's, and the message names which. */
+      reasonVersion: number | null
     }
   | ({ available: true; from: number; to: number } & (
       | {
@@ -119,7 +124,13 @@ export function VersionDiffPanel({ resourceId, version }: { resourceId: string; 
   if (!diff) return <p className="text-sm text-muted-foreground">{t('diffLoading')}</p>
 
   if (!diff.available) {
-    return <p className="text-sm text-muted-foreground">{t(`diffUnavailable.${diff.reason}`)}</p>
+    return (
+      <p className="text-sm text-muted-foreground">
+        {/* A string, not the number: ICU groups digits, so v1000 would read
+            "v1,000". Unused by the reasons that name no version. */}
+        {t(`diffUnavailable.${diff.reason}`, { version: String(diff.reasonVersion ?? '') })}
+      </p>
+    )
   }
 
   return (

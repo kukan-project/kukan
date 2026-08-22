@@ -123,15 +123,49 @@ describe('VersionDiffPanel', () => {
     expect(screen.queryByText(/rows added/)).not.toBeInTheDocument()
   })
 
+  it('names the version a key fault is about, which is often not the one opened', async () => {
+    // The repair path: the key was fixed, v2 took the fix, and the reader opens
+    // v2 — whose predecessor is the version that was refused. Without the
+    // number the sentence reads as a verdict on v2.
+    mockDiff({
+      available: false,
+      reason: 'key-null',
+      from: 1,
+      to: 2,
+      reasonVersion: 1,
+    })
+    render(<VersionDiffPanel resourceId="r1" version={2} />)
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'A key column of v1 has empty values, so its rows cannot be identified and no diff is available. Correcting the key applies from the next version on.'
+        )
+      ).toBeInTheDocument()
+    )
+  })
+
+  it('says which end is not covered, when it is the one not opened', async () => {
+    // v2 loaded fine and v1 predates the feature. "This version is not covered"
+    // would be a verdict on the version in front of the reader, where nothing
+    // is wrong — the same misattribution a key fault makes, one reason over.
+    mockDiff({ available: false, reason: 'not-ingested', from: 1, to: 2, reasonVersion: 1 })
+    render(<VersionDiffPanel resourceId="r1" version={2} />)
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'v1 has no row-level snapshot, so there is nothing to compare against. Where a reason was recorded, the version list shows it.'
+        )
+      ).toBeInTheDocument()
+    )
+  })
+
   it.each([
     ['purged', 'One of the versions has been purged, so a diff is not available.'],
-    [
-      'not-ingested',
-      'This version is not covered by diffs (not tabular, or captured before the feature was introduced).',
-    ],
     ['no-previous-version', 'This is the first version, so there is nothing to compare against.'],
   ])('explains why a diff is unavailable (%s)', async (reason, message) => {
-    mockDiff({ available: false, reason, from: 1, to: 2 })
+    mockDiff({ available: false, reason, from: 1, to: 2, reasonVersion: null })
 
     render(<VersionDiffPanel resourceId="r1" version={2} />)
 

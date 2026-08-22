@@ -249,6 +249,7 @@ is added while the content stays the same.
       "hash": "…",
       "schema": { "rowCount": 1688, "columns": [] },
       "noTableReason": null,
+      "keyColumns": ["order_no", "line_no"],
       "created": "2026-08-01T09:12:44.000Z",
       "purgedAt": null
     }
@@ -256,20 +257,23 @@ is added while the content stays the same.
 }
 ```
 
-| Field              | Description                                                                                                                    |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| `origin`           | `upload` (an explicit replacement) or `fetch` (observed when the external URL was read)                                        |
-| `state`            | `active` / `superseded` (stepped off by a revert) / `purging` / `purged`                                                       |
-| `isLive`           | Whether the resource is serving this version. Not derivable from `version` or `state`                                          |
-| `purgeFallsBackTo` | Where serving would land if this version were purged. Set only when `isLive` — purging any other version does not move serving |
-| `format`           | The format this version settled as. Relabeling the resource does not change it                                                 |
-| `schema`           | The version's column schema (tabular only), frozen per version                                                                 |
-| `noTableReason`    | Why no table was produced (`no-columns` / `too-many-columns` / `too-large`)                                                    |
+| Field              | Description                                                                                                                                                                                              |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `origin`           | `upload` (an explicit replacement) or `fetch` (observed when the external URL was read)                                                                                                                  |
+| `state`            | `active` / `superseded` (stepped off by a revert) / `purging` / `purged`                                                                                                                                 |
+| `isLive`           | Whether the resource is serving this version. Not derivable from `version` or `state`                                                                                                                    |
+| `purgeFallsBackTo` | Where serving would land if this version were purged. Set only when `isLive` — purging any other version does not move serving                                                                           |
+| `format`           | The format this version settled as. Relabeling the resource does not change it                                                                                                                           |
+| `schema`           | The version's column schema (tabular only), frozen per version                                                                                                                                           |
+| `noTableReason`    | Why no table was produced (`no-columns` / `too-many-columns` / `too-large`)                                                                                                                              |
+| `keyColumns`       | The primary key this version's rows were identified by, `null` for a version read without one. The resource's current setting is a different question — it is what the _next_ version will be read under |
 
-A purged version stays in the list as a record, but `size` / `hash` / `schema` become `null` and
-`purgedAt` is filled in. Downloading it returns `404`. **The reason it was purged is not returned** —
-it is free text about content that has been destroyed, and this endpoint is as readable as the
-resource; who purged what, when and why is in the audit log.
+A purged version stays in the list as a record, but `size` / `hash` / `schema` / `keyColumns`
+become `null` and `purgedAt` is filled in. Downloading it returns `404`. `keyColumns` goes with them
+because a primary key is only settable over columns the content has, so its names are a subset of
+the withheld `schema` (a `format` is a closed vocabulary, and stays). **The reason it was purged is
+not returned** — it is free text about content that has been destroyed, and this endpoint is as
+readable as the resource; who purged what, when and why is in the audit log.
 
 **Diff** — `GET /resources/{id}/versions/{v}/diff?from={v'}` (`from` defaults to the preceding
 version):
@@ -291,16 +295,26 @@ not a public endpoint.
 }
 ```
 
-- **`keyed` is always `false` today.** Rows are not identified by a primary key, so edits are
-  not counted; declaring one will make it `true` and add `changedRows`
-- **Changed rows are not reported.** Without a primary key identifying rows, editing one row
-  appears as one addition plus one removal
+- **`keyed` is `true` only when both ends were read under the same primary key**, and adds
+  `changedRows` and `sampleChangedAfter` when it is. With no key declared, or a different key at
+  each end, it is `false` and **editing one row appears as one addition plus one removal** —
+  nothing identifies the row as the same one
 - Versions whose columns differ return
   `{"schemaChanged": true, "schemaDiff": {"added": [], "removed": [], "retyped": []}}` and no row
   comparison is attempted
 - When no diff can be produced, the response is
-  `{"available": false, "reason": "…", "from": …, "to": …}`, where `reason` is
-  `no-previous-version` / `not-ingested` / `purged`
+  `{"available": false, "reason": "…", "from": …, "to": …, "reasonVersion": …}`, where `reason` is
+  `no-previous-version` / `not-ingested` / `purged` / `key-missing` / `key-null` /
+  `key-not-unique`. The last three mean the declared primary key did not identify that version's
+  rows, so it was never loaded. `not-ingested` is not a cause: one side has no row-level snapshot
+  and no key fault to name, which includes the ordinary window between a version being created and
+  the load running for it. A cause may still be recorded on the version and still give this reason
+  — `noTableReason` settles three of them, and the version is where they are answered
+- `reasonVersion` says **which of the two the reason is about**, and it is **not necessarily the
+  one asked for**: opening the version after a corrected key puts the refused one on the other end,
+  and `not-ingested` is a property of one end just as easily. It is `null` only where no single
+  version is the subject — nothing to compare against, and a purge, which stops the comparison the
+  same way from either end
 - The SQL is composed server-side from version numbers alone. This is a separate path from the
   `POST /resources/{id}/query` sandbox; user SQL never reaches it
 - Responses carry `Cache-Control: private, max-age=60, must-revalidate`. An unavailable answer is

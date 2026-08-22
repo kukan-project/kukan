@@ -28,6 +28,7 @@ function version(
     purgeFallsBackTo?: number | null
     origin?: string
     restoredFrom?: number | null
+    keyColumns?: string[] | null
   } = {}
 ) {
   return {
@@ -40,6 +41,7 @@ function version(
     size: 10,
     hash: `sha256:v${n}`,
     noTableReason: null,
+    keyColumns: null,
     created: '2026-08-08T00:00:00.000Z',
     purgedAt: null,
     ...overrides,
@@ -63,6 +65,19 @@ describe('ResourceVersionHistory', () => {
     // must show the version it produced without being remounted
     rerender(<ResourceVersionHistory resourceId="r1" reloadKey={2} />)
     await waitFor(() => expect(screen.getByText('v2')).toBeInTheDocument())
+  })
+
+  it('says what each version was read under', async () => {
+    // Recorded per version because the resource's own setting answers a
+    // different question: it is what the *next* version will be read under
+    // (spec §6.4). A keyless version says nothing rather than "none".
+    mockClientFetch.mockResolvedValue(
+      versionsResponse([version(2, { keyColumns: ['order', 'line'] }), version(1)])
+    )
+    render(<ResourceVersionHistory resourceId="r1" />)
+
+    await waitFor(() => expect(screen.getByText('Key: order, line')).toBeInTheDocument())
+    expect(screen.queryAllByText(/^Key: /)).toHaveLength(1)
   })
 
   it('says which version a reverted one re-published', async () => {

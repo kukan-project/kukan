@@ -728,13 +728,17 @@
       "diffUnavailable": {
         "purged": "One of the versions has been purged, so a diff is not available.",
         "no-previous-version": "This is the first version, so there is nothing to compare against.",
-        "not-ingested": "This version is not covered by diffs (not tabular, or captured before the feature was introduced)."
+        "not-ingested": "v{version} has no row-level snapshot, so there is nothing to compare against. Where a reason was recorded, the version list shows it.",
+        "key-missing": "A key column is not in v{version}, so its rows cannot be identified and no diff is available. Correcting the key applies from the next version on.",
+        "key-null": "A key column of v{version} has empty values, so its rows cannot be identified and no diff is available. Correcting the key applies from the next version on.",
+        "key-not-unique": "The key of v{version} does not identify a row, so no diff is available. Correcting the key applies from the next version on."
       },
       "noTable": {
         "no-columns": "No columns",
         "too-many-columns": "Too many columns to preview",
         "too-large": "Too large to preview"
-      }
+      },
+      "keyColumns": "Key: {columns}"
     }
   },
   "apiToken": {

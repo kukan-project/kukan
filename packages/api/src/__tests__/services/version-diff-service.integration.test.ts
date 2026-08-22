@@ -22,7 +22,11 @@ let resourceId: string
 
 async function addVersion(
   version: number,
-  opts: { state?: string; snapshotId?: number | null } = {}
+  opts: {
+    state?: string
+    snapshotId?: number | null
+    ingestReason?: 'key-missing' | 'key-null' | 'key-not-unique'
+  } = {}
 ) {
   await db.insert(resourceVersion).values({
     resourceId,
@@ -33,6 +37,7 @@ async function addVersion(
     origin: 'upload',
     state: opts.state ?? 'active',
     ducklakeSnapshotId: opts.snapshotId ?? null,
+    lakeIngestReason: opts.ingestReason ?? null,
   })
 }
 
@@ -65,6 +70,7 @@ describe('VersionDiffService.diff', () => {
       reason: 'no-previous-version',
       from: null,
       to: 1,
+      reasonVersion: null,
     })
   })
 
@@ -77,13 +83,99 @@ describe('VersionDiffService.diff', () => {
     expect(result).toMatchObject({ available: false, reason: 'not-ingested', from: 1, to: 2 })
   })
 
-  it('reports not-ingested when only one side has a snapshot', async () => {
+  it('reports not-ingested against the side that has no snapshot', async () => {
+    // The opened version loaded fine; it is its predecessor that is not
+    // covered. Unnamed, the sentence reads as a verdict on v2.
     await addVersion(1)
     await addVersion(2, { snapshotId: 20 })
 
-    const result = await service.diff(resourceId, 2)
+    expect(await service.diff(resourceId, 2)).toMatchObject({
+      available: false,
+      reason: 'not-ingested',
+      reasonVersion: 1,
+    })
+  })
 
-    expect(result).toMatchObject({ available: false, reason: 'not-ingested' })
+  it('names the key fault rather than calling a refused version not ingested', async () => {
+    // `not-ingested` says "not tabular, or from before the feature" — both false
+    // here, and the difference matters: this is the one cause the operator can
+    // fix (spec §6.6). The reason is recorded on the version and nothing else
+    // shows it, so without this the screen states a cause that is not the one.
+    await addVersion(1, { snapshotId: 10 })
+    await addVersion(2, { ingestReason: 'key-not-unique' })
+
+    expect(await service.diff(resourceId, 2)).toMatchObject({
+      available: false,
+      reason: 'key-not-unique',
+      from: 1,
+      to: 2,
+      reasonVersion: 2,
+    })
+  })
+
+  it("names the predecessor when the fault is the predecessor's", async () => {
+    // The repair path, and the reason `reasonVersion` exists: the key was
+    // corrected, v2 took the correction and loaded, and the reader opens v2's
+    // diff — whose other end is the version that was refused. An answer that
+    // did not name v1 reads as a verdict on v2 and undoes a fix that worked.
+    await addVersion(1, { ingestReason: 'key-null' })
+    await addVersion(2, { snapshotId: 20 })
+
+    expect(await service.diff(resourceId, 2)).toMatchObject({
+      reason: 'key-null',
+      reasonVersion: 1,
+    })
+  })
+
+  it('answers with the end that was asked about when both were refused', async () => {
+    await addVersion(1, { ingestReason: 'key-null' })
+    await addVersion(2, { ingestReason: 'key-missing' })
+
+    expect(await service.diff(resourceId, 2)).toMatchObject({
+      reason: 'key-missing',
+      reasonVersion: 2,
+    })
+  })
+
+  it('names this end when neither was ingested', async () => {
+    await addVersion(1)
+    await addVersion(2)
+
+    expect(await service.diff(resourceId, 2)).toMatchObject({
+      reason: 'not-ingested',
+      reasonVersion: 2,
+    })
+  })
+
+  it('prefers a recorded refusal to the plain absence of a snapshot', async () => {
+    // Both ends are missing from layer 2, but only one of them says why, and
+    // that one is the only thing an operator can act on (spec §6.6).
+    await addVersion(1, { ingestReason: 'key-not-unique' })
+    await addVersion(2)
+
+    expect(await service.diff(resourceId, 2)).toMatchObject({
+      reason: 'key-not-unique',
+      reasonVersion: 1,
+    })
+  })
+
+  it('names no version where no single version is the subject', async () => {
+    await addVersion(1, { snapshotId: 10 })
+
+    expect(await service.diff(resourceId, 1)).toMatchObject({
+      reason: 'no-previous-version',
+      reasonVersion: null,
+    })
+  })
+
+  it('says only that a version is purged, never why its key failed', async () => {
+    // The reason is a statement about content the tombstone no longer holds —
+    // that a key column was null, that the key repeated (spec §9.4). The purge
+    // branch is ahead of the refusal branch so it cannot be reached for one.
+    await addVersion(1, { snapshotId: 10 })
+    await addVersion(2, { state: 'purged', ingestReason: 'key-null' })
+
+    expect(await service.diff(resourceId, 2)).toMatchObject({ reason: 'purged' })
   })
 
   it('reports purged versions rather than comparing them', async () => {

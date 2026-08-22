@@ -1861,6 +1861,68 @@ describe('the key a version is read under (spec §6.4)', () => {
       schema: null,
     })
 
+  it('reports it on the history, and normalizes a hand-written empty key away', async () => {
+    // The history is the only place that answers "what was *this* version read
+    // under" — the resource's own setting is about the next one (spec §6.4).
+    // `[]` is the same state as no key and has one spelling (`keyColumnsOf`);
+    // the schema refuses it but a `$type` is a cast, so the read normalizes.
+    await setKey(['order'])
+    await create(1)
+    await create(2)
+    await db
+      .update(resourceVersion)
+      .set({ lakeKeyColumns: [] })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+
+    const listed = await service.listByResource(resourceId)
+    expect(listed.map((v) => [v.version, v.keyColumns])).toEqual([
+      [2, ['order']],
+      [1, null],
+    ])
+  })
+
+  it('withholds the key from a tombstone, though the format survives', async () => {
+    // A key is only settable over columns the content has, so its names are a
+    // subset of the schema the tombstone withholds — publisher-authored
+    // strings, where a format is a closed vocabulary (spec §9.4). This list is
+    // readable by anyone who can see the resource, which is who it is withheld
+    // from. The revert channel below is the second reason.
+    await setKey(['order'])
+    await create(1)
+    await db
+      .update(resourceVersion)
+      .set({ state: 'purged', purgedAt: new Date(), format: 'csv' })
+      .where(eq(resourceVersion.resourceId, resourceId))
+
+    const [view] = await service.listByResource(resourceId)
+    expect(view).toMatchObject({ keyColumns: null, hash: null, schema: null, format: 'csv' })
+  })
+
+  it('does not let a revert-issued version name the tombstone it came from', async () => {
+    // `restoredFrom` is nulled when either end is a tombstone, because "v2
+    // re-published v1" hands over erased content through a version that can
+    // still be downloaded (spec §9.4). A revert copies its destination's key,
+    // so a surviving key on the tombstone would say the same thing: only one
+    // version carries this key, and v2 is standing on it.
+    await setKey(['order'])
+    await create(1)
+    await create(2)
+    await db
+      .update(resourceVersion)
+      .set({ origin: 'revert', restoredFrom: 1 })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 2)))
+    await db
+      .update(resourceVersion)
+      .set({ state: 'purged', purgedAt: new Date() })
+      .where(and(eq(resourceVersion.resourceId, resourceId), eq(resourceVersion.version, 1)))
+
+    const listed = await service.listByResource(resourceId)
+    expect(listed.map((v) => [v.version, v.keyColumns, v.restoredFrom])).toEqual([
+      [2, ['order'], null],
+      [1, null, null],
+    ])
+  })
+
   it('freezes the resource setting as it stood when the version was created', async () => {
     // The same rule the format follows (ADR-046 §6): the setting moves on, and
     // a version that read its bytes under the old one has to keep saying so —

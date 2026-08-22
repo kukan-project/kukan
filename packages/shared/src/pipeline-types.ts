@@ -128,6 +128,46 @@ export type NoTableReason = 'no-columns' | 'too-many-columns' | 'too-large'
  */
 export type LakeIngestReason = 'key-missing' | 'key-null' | 'key-not-unique'
 
+/**
+ * Why two versions could not be compared row by row (spec §7).
+ *
+ * Here rather than beside the service that produces it because the screen that
+ * renders it needs the same list: the panel used to restate the union as string
+ * literals, which is a set of cases that goes stale silently — a reason added
+ * server-side renders as its own translation key.
+ */
+export type DiffUnavailableReason =
+  /** The version has no predecessor (it is the first). */
+  | 'no-previous-version'
+  /**
+   * One side has no row-level snapshot, and no key fault to name as what
+   * stopped it.
+   *
+   * **Not a cause.** A version reaches this from every direction the
+   * interpretation and the load can fail or decline, and from the ordinary gap
+   * between the two: the load runs after the version exists, so a version
+   * opened in that window is here and will leave it. Naming causes ("not
+   * tabular, or from before the feature") reads as a diagnosis, and is wrong
+   * for most of them.
+   *
+   * **A cause can still be recorded and still be this reason.** `noTableReason`
+   * settles three of them at interpretation, and a version carrying one answers
+   * here all the same — this is what is left once a `LakeIngestReason` is ruled
+   * out, not "nothing is known". The version is where the rest is answered,
+   * beside the version it belongs to.
+   */
+  | 'not-ingested'
+  /** One side's content was purged, so it can no longer be compared. */
+  | 'purged'
+  /**
+   * One side's key stopped it being loaded (spec §6.6) — reported as the reason
+   * itself rather than folded into `not-ingested`, because it is the only one of
+   * these an operator can act on: the key can be corrected, and the next version
+   * takes the correction. Told "not covered by diffs", they would go looking for
+   * a cause that is not there.
+   */
+  | LakeIngestReason
+
 // ── Queue job types ──
 // Each job carries a validated payload (schemas below) so the worker never trusts
 // an unvalidated queue message body.

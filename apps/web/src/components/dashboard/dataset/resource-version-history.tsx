@@ -45,6 +45,10 @@ interface VersionView {
   hash: string | null
   /** Why this version produced no table, when it produced none (ADR-046). */
   noTableReason: NoTableReason | null
+  /** What the version's rows were identified by, null for a keyless one. From
+   *  the server: the resource's current setting answers a different question
+   *  while a queued run has not landed (spec §6.4). */
+  keyColumns: string[] | null
   created: string
   purgedAt: string | null
 }
@@ -227,6 +231,15 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
                         <span className="text-xs text-muted-foreground">
                           {t(`noTable.${v.noTableReason}`)}
                         </span>
+                      )}
+                      {/* What the rows were identified by — the version's own
+                          answer, since the resource's setting is about the next
+                          one (spec §6.4). Why a version was *refused* is the
+                          diff panel's to say, where it is asked for. */}
+                      {v.keyColumns && (
+                        <Badge variant="outline" className="font-normal">
+                          {t('keyColumns', { columns: v.keyColumns.join(', ') })}
+                        </Badge>
                       )}
                     </div>
                   </TableCell>

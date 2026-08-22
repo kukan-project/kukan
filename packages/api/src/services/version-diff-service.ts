@@ -11,20 +11,35 @@ import type { Database } from '@kukan/db'
 import { resourceVersion } from '@kukan/db'
 import type { LakeConfig, VersionDiff } from '@kukan/lake'
 import { diffVersions, lakeTableName } from '@kukan/lake'
-import { NotFoundError, sharedKeyColumns } from '@kukan/shared'
+import type { DiffUnavailableReason, LakeIngestReason } from '@kukan/shared'
+import { keyColumnsOf, NotFoundError, sharedKeyColumns } from '@kukan/shared'
 import { scanLake } from './query/lake-scan'
 
-/** Why a diff could not be produced. Distinguished so the UI can explain it. */
-export type DiffUnavailableReason =
-  /** The version has no predecessor (it is the first). */
-  | 'no-previous-version'
-  /** One side isn't in DuckLake: not tabular, oversize, or created pre-Phase-ii. */
-  | 'not-ingested'
-  /** One side's content was purged, so it can no longer be compared. */
-  | 'purged'
-
 export type VersionDiffView =
-  | { available: false; reason: DiffUnavailableReason; from: number | null; to: number }
+  | {
+      available: false
+      reason: DiffUnavailableReason
+      from: number | null
+      to: number
+      /**
+       * The version the `reason` is about, when it is about one of the two.
+       *
+       * A diff has two ends, and every reason but `no-previous-version` belongs
+       * to whichever end carries it — routinely **not** the one the reader
+       * opened. For a key fault the repair path makes that the common case: the
+       * key is corrected, the next version takes the correction and loads, and
+       * the reader opens *that* version's diff, whose other end is the refused
+       * one. It happens to `not-ingested` just as easily, since a resource
+       * gains snapshots from the version it was first keyed on. Unnamed, the
+       * sentence reads as a verdict on the version in front of the reader —
+       * which is the one where nothing is wrong.
+       *
+       * Null only where no single version is the subject: no predecessor to
+       * compare against, and a purge, which the answer states of the pair
+       * because either end being a tombstone stops the comparison the same way.
+       */
+      reasonVersion: number | null
+    }
   | ({ available: true; from: number; to: number } & VersionDiff)
 
 const VERSION_COLUMNS = {
@@ -32,6 +47,7 @@ const VERSION_COLUMNS = {
   state: resourceVersion.state,
   snapshotId: resourceVersion.ducklakeSnapshotId,
   keyColumns: resourceVersion.lakeKeyColumns,
+  ingestReason: resourceVersion.lakeIngestReason,
 }
 
 interface VersionRow {
@@ -39,6 +55,7 @@ interface VersionRow {
   state: string
   snapshotId: number | null
   keyColumns: string[] | null
+  ingestReason: LakeIngestReason | null
 }
 
 export class VersionDiffService {
@@ -97,18 +114,36 @@ export class VersionDiffService {
     } else {
       from = await this.getPreviousVersion(resourceId, toVersion)
       if (!from) {
-        return { available: false, reason: 'no-previous-version', from: null, to: to.version }
+        return {
+          available: false,
+          reason: 'no-previous-version',
+          from: null,
+          to: to.version,
+          reasonVersion: null,
+        }
       }
     }
 
-    const unavailable = (reason: DiffUnavailableReason): VersionDiffView => ({
+    const unavailable = (
+      reason: DiffUnavailableReason,
+      reasonVersion: number | null = null
+    ): VersionDiffView => ({
       available: false,
       reason,
       from: from.version,
       to: to.version,
+      reasonVersion,
     })
+    // Before the reasons below, so a tombstone never explains itself with a
+    // statement about the content it no longer holds (spec §9.4).
     if (to.state === 'purged' || from.state === 'purged') return unavailable('purged')
-    if (to.snapshotId === null || from.snapshotId === null) return unavailable('not-ingested')
+    if (to.snapshotId === null || from.snapshotId === null) {
+      // A recorded refusal wherever it is, before the end that simply has no
+      // snapshot: it is the only one of these an operator can act on. This end
+      // before the other when both qualify — it is the one the reader opened.
+      const blocked = [to, from].find((v) => v.ingestReason) ?? (to.snapshotId === null ? to : from)
+      return unavailable(blocked.ingestReason ?? 'not-ingested', blocked.version)
+    }
 
     const diff = await this.runDiff(
       lakeTableName(resourceId),
@@ -116,7 +151,7 @@ export class VersionDiffService {
       to.snapshotId,
       // **Only when both ends were loaded under the same key** (spec §7), through
       // the function the ingest asks the same question with.
-      sharedKeyColumns(from.keyColumns, to.keyColumns),
+      sharedKeyColumns(keyColumnsOf(from.keyColumns), keyColumnsOf(to.keyColumns)),
       signal
     )
     return { available: true, from: from.version, to: to.version, ...diff }

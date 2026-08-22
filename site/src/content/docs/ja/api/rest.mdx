@@ -245,6 +245,7 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
       "hash": "…",
       "schema": { "rowCount": 1688, "columns": [] },
       "noTableReason": null,
+      "keyColumns": ["注文番号", "明細番号"],
       "created": "2026-08-01T09:12:44.000Z",
       "purgedAt": null
     }
@@ -252,20 +253,24 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
 }
 ```
 
-| フィールド         | 説明                                                                                                    |
-| ------------------ | ------------------------------------------------------------------------------------------------------- |
-| `origin`           | `upload`（明示的な差し替え） / `fetch`（外部 URL の取得時点）                                           |
-| `state`            | `active` / `superseded`（巻き戻しで外れた） / `purging` / `purged`                                      |
-| `isLive`           | そのリソースが今配信している版か。`version` や `state` からは決まりません                               |
-| `purgeFallsBackTo` | この版をパージしたとき配信が戻る版。`isLive` の版だけに入ります（他の版のパージでは配信が動かないため） |
-| `format`           | その版が確定した時点のフォーマット。リソースのラベルを変えても変わりません                              |
-| `schema`           | その版の列スキーマ（表形式のみ）。版ごとに凍結されます                                                  |
-| `noTableReason`    | 表が作れなかった理由（`no-columns` / `too-many-columns` / `too-large`）                                 |
+| フィールド         | 説明                                                                                                                              |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `origin`           | `upload`（明示的な差し替え） / `fetch`（外部 URL の取得時点）                                                                     |
+| `state`            | `active` / `superseded`（巻き戻しで外れた） / `purging` / `purged`                                                                |
+| `isLive`           | そのリソースが今配信している版か。`version` や `state` からは決まりません                                                         |
+| `purgeFallsBackTo` | この版をパージしたとき配信が戻る版。`isLive` の版だけに入ります（他の版のパージでは配信が動かないため）                           |
+| `format`           | その版が確定した時点のフォーマット。リソースのラベルを変えても変わりません                                                        |
+| `schema`           | その版の列スキーマ（表形式のみ）。版ごとに凍結されます                                                                            |
+| `noTableReason`    | 表が作れなかった理由（`no-columns` / `too-many-columns` / `too-large`）                                                           |
+| `keyColumns`       | その版の行を同定した主キー列。主キーなしで読まれた版は `null`。リソースの現在の設定は「**次の**版が何で読まれるか」なので別物です |
 
-完全削除済み（`purged`）の版は記録として残りますが、`size` / `hash` / `schema` は `null` になり、
-`purgedAt` が入ります。ダウンロードは `404` を返します。**パージの理由は返しません** — 消した内容に
-ついての自由記述であり、このエンドポイントはリソースと同じ範囲で読めるためです。誰が何をいつどんな
-理由でパージしたかは監査ログにあります。
+完全削除済み（`purged`）の版は記録として残りますが、`size` / `hash` / `schema` / `keyColumns` は
+`null` になり、
+`purgedAt` が入ります。ダウンロードは `404` を返します。`keyColumns` を伏せるのは、主キーが内容の
+持つ列にしか設定できず、その名前が伏せた `schema` の部分集合になるためです（`format` は閉じた語彙
+なので残ります）。**パージの理由は返しません** — 消した内容についての自由記述であり、この
+エンドポイントはリソースと同じ範囲で読めるためです。誰が何をいつどんな理由でパージしたかは監査
+ログにあります。
 
 **差分** — `GET /resources/{id}/versions/{v}/diff?from={v'}`（既定の `from` は直前の版）:
 
@@ -286,14 +291,23 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
 }
 ```
 
-- **`keyed` は現在つねに `false`** です。行を同定する主キーを持たないため変更行を数えておらず、
-  主キー指定に対応した時点で `true` と `changedRows` が返るようになります
-- **行の「変更」は返しません。** 行を同定する主キーを持たないため、1 行の書き換えは追加 1 行 +
-  削除 1 行として現れます
+- **`keyed` は両端が同じ主キーで読まれたときだけ `true`** になり、そのとき `changedRows` と
+  `sampleChangedAfter` が加わります。主キーが指定されていない・両端で違う場合は `false` で、
+  **1 行の書き換えは追加 1 行 + 削除 1 行として現れます**（行を同定できないため）
 - 列構成が変わった版どうしは `{"schemaChanged": true, "schemaDiff": {"added": [], "removed": [], "retyped": []}}`
   を返し、行差分は行いません
-- 差分を出せない場合は `{"available": false, "reason": "…", "from": …, "to": …}` を返します。
-  `reason` は `no-previous-version` / `not-ingested` / `purged`
+- 差分を出せない場合は
+  `{"available": false, "reason": "…", "from": …, "to": …, "reasonVersion": …}` を返します。
+  `reason` は `no-previous-version` / `not-ingested` / `purged` / `key-missing` / `key-null` /
+  `key-not-unique`。後ろの 3 つは**指定した主キーがその版の行を同定できず取り込まれなかった**ことを
+  意味します。`not-ingested` は原因ではありません — 片端に行レベルのスナップショットが
+  無く、主キー由来の理由も無い、というだけで、版の作成から取り込みが走るまでの通常の待ち時間も
+  含みます。**原因が版側に記録されていてもこの理由になります** — 解釈が決める 3 つは
+  `noTableReason` にあり、そちらが答えます
+- `reasonVersion` は **その理由がどちらの版についてのものか**です。**開いた版とは限りません** —
+  主キーを直した次の版を開けば断られたのは直前の版ですし、`not-ingested` も片端の性質です。
+  比較対象が無い（`no-previous-version`）場合と、どちらの端が墓標でも同じく比較が成立しない
+  パージの場合だけ `null` になります
 - SQL はサーバーが版番号だけから組み立てます。`POST /resources/{id}/query` のサンドボックスとは
   別経路で、利用者の SQL がこの領域に到達することはありません
 - 応答は `Cache-Control: private, max-age=60, must-revalidate`。取得できなかった応答は

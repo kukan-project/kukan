@@ -13,7 +13,7 @@ import type { Database, Transaction } from '@kukan/db'
 import { resourceVersion } from '@kukan/db'
 import type { IngestResult, LakeSession } from '@kukan/lake'
 import { ingestParquetVersion, keyFault, lakeTableName, resolvableSnapshots } from '@kukan/lake'
-import { sharedKeyColumns } from '@kukan/shared'
+import { keyColumnsOf, sharedKeyColumns } from '@kukan/shared'
 import { LAKE_INGEST_LOCK, withGlobalAdvisoryLock } from './advisory-lock'
 
 /** A version, and where its rows are read from. */
@@ -321,7 +321,7 @@ export async function ingestVersionIntoLake(
   // this version the moment a newer one is in.
   if (newer) return null
 
-  const keyColumns = pending.keyColumns?.length ? pending.keyColumns : null
+  const keyColumns = keyColumnsOf(pending.keyColumns)
   // The key both ends are identified by, or null when they are not the same —
   // the question §7.2 has the ingest, the purge's step-down and the diff share.
   // Asked only of a keyed version: for every other the answer is null, and this

@@ -36,15 +36,26 @@ export const columnSettingsSchema = z.object({
 export type ColumnSettings = z.infer<typeof columnSettingsSchema>
 
 /**
- * The key columns a setting names, or null when it names none.
+ * A stored key column list, in the one spelling readers may assume: a list with
+ * entries, or null.
  *
  * The empty check is against what the database holds, not what the schema
  * allows: `$type` is a cast, and a row written before the schema or by hand can
- * still carry `[]`.
+ * still carry `[]`. Every reader downstream of here — {@link sameKeyColumns},
+ * the keyed load, the keyed diff — is written against "null or a real key", and
+ * an `[]` that reaches them is a key with no columns: a `MERGE` with an empty
+ * `ON`, or two versions declared to share a key they do not have.
+ *
+ * So the two representations collapse where the value is read out of a row,
+ * once, rather than in each reader's own guard.
  */
+export function keyColumnsOf(columns: string[] | null | undefined): string[] | null {
+  return columns === undefined || columns === null || columns.length === 0 ? null : columns
+}
+
+/** The key columns a setting names, or null when it names none. */
 export function primaryKeyOf(settings: ColumnSettings | null | undefined): string[] | null {
-  const key = settings?.primaryKey
-  return key === undefined || key.length === 0 ? null : key
+  return keyColumnsOf(settings?.primaryKey)
 }
 
 /**

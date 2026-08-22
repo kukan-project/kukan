@@ -18,6 +18,7 @@ import {
 import {
   ConflictError,
   getStorageKey,
+  keyColumnsOf,
   primaryKeyOf,
   sameKeyColumns,
   sameVersionIdentity,
@@ -604,6 +605,31 @@ export interface VersionView {
   /** What this version was read as (ADR-046 §6). Kept on a tombstone: it
    *  describes how the content was interpreted, not the content itself. */
   format: string | null
+  /**
+   * The columns this version's rows were identified by, or null for a version
+   * read without a key (spec §6.4).
+   *
+   * The other half of "these bytes, read this way". The resource's own setting
+   * says what the *next* version will be read under, which is a different
+   * question for as long as a queued run has not landed — so the history is the
+   * only place that answers this one.
+   *
+   * **Withheld on a tombstone, unlike {@link format}**, though both are the
+   * operator's decision rather than the content. A key is only settable over
+   * columns the content has ({@link ResourceVersionService.checkPrimaryKey}),
+   * so the names are a subset of the {@link schema} withheld two lines below —
+   * publisher-authored strings, where a format is a closed vocabulary. That is
+   * enough on its own, and there is a second channel: a revert copies its
+   * destination's key, so an alive `revert` version showing a key that only one
+   * tombstone carries reconstructs the {@link restoredFrom} this view nulls for
+   * exactly that pair (spec §9.4).
+   *
+   * Why the version was *refused* is not here at all: it is a statement about
+   * the content, and it belongs where someone asks for the diff it explains
+   * (`DiffUnavailableReason`), which is behind the editor permission its
+   * audience implies.
+   */
+  keyColumns: string[] | null
   size: number | null
   hash: string | null
   schema: ResourceSchema | null
@@ -681,7 +707,9 @@ function toView(
     // Excluding this version itself, which is the one on its way out.
     purgeFallsBackTo: isLive ? (serving.standing.find((v) => v !== row.version) ?? null) : null,
     format: row.format,
-    // Withhold content metadata for purged tombstones.
+    // Withhold content metadata for purged tombstones — the key among it, for
+    // the reason on the field: its columns are the content's.
+    keyColumns: purged ? null : keyColumnsOf(row.lakeKeyColumns),
     size: purged ? null : row.size,
     hash: purged ? null : row.hash,
     schema: purged ? null : row.schema,
