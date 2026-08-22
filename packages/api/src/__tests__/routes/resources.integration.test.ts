@@ -1354,7 +1354,11 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
    * A resource whose live version records these columns — the artifact the
    * check reads, and the one the ingest will read later (spec §6.4).
    */
-  async function withColumns(name: string, columns: string[]) {
+  async function withColumns(
+    name: string,
+    columns: string[],
+    stats: { rowCount?: number; distinctCount?: number; nullCount?: number } = {}
+  ) {
     const pkg = await createPackage(name)
     const resource = await createResource(pkg.id)
     const [live] = await db
@@ -1370,12 +1374,13 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
       origin: 'upload',
       format: 'csv',
       schema: {
-        rowCount: 2,
+        rowCount: stats.rowCount ?? 2,
         columns: columns.map((column) => ({
           name: column,
           type: 'string' as const,
           nullable: false,
-          nullCount: 0,
+          nullCount: stats.nullCount ?? 0,
+          ...(stats.distinctCount === undefined ? {} : { distinctCount: stats.distinctCount }),
         })),
       },
     })
@@ -1581,6 +1586,102 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
     const resource = await createResource(pkg.id)
 
     expect((await setKey(resource.id, ['id'])).status).toBe(400)
+  })
+
+  it('answers before the key is applied, without reading content for a missing column', async () => {
+    // The half the picker gets wrong most easily, and the one that needs no
+    // scan: a column the live version does not have. Answered here rather than
+    // becoming a `lake_ingest_reason` hours later on a version created
+    // regardless (spec §6.4) — and the unusable lake config proves no session
+    // was opened to find it out.
+    const resource = await withColumns('key-check-missing-pkg', ['id'])
+
+    const res = await app.request(`/api/v1/resources/${resource.id}/column-settings/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ primaryKey: ['nope'] }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ primaryKey: ['nope'], fault: 'key-missing' })
+  })
+
+  it('answers that taking the key off always applies', async () => {
+    const resource = await withColumns('key-check-none-pkg', ['id'])
+
+    const res = await app.request(`/api/v1/resources/${resource.id}/column-settings/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ primaryKey: null }),
+    })
+
+    expect(await res.json()).toMatchObject({ primaryKey: null, fault: null })
+  })
+
+  it('says a single-column key is fine from what the version already recorded', async () => {
+    // The interpretation counted nulls and whether the values identify a row,
+    // and froze both (ADR-046) — the same numbers the picker offers candidates
+    // from. No scan, and the unusable lake config proves none was opened.
+    const resource = await withColumns('key-check-unique-pkg', ['id'], { distinctCount: 2 })
+
+    const res = await app.request(`/api/v1/resources/${resource.id}/column-settings/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ primaryKey: ['id'] }),
+    })
+
+    expect(await res.json()).toMatchObject({ checked: true, fault: null })
+  })
+
+  it('says which of the two a recorded non-unique column fails on', async () => {
+    const resource = await withColumns('key-check-dupes-pkg', ['id'], {
+      distinctCount: 1,
+      nullCount: 0,
+    })
+
+    const res = await app.request(`/api/v1/resources/${resource.id}/column-settings/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ primaryKey: ['id'] }),
+    })
+
+    expect(await res.json()).toMatchObject({ checked: true, fault: 'key-not-unique' })
+  })
+
+  it('accepts a key on an empty table, because the ingest would', async () => {
+    // A header-only CSV interprets to rowCount 0, and `unique` false with it —
+    // there is nothing to be distinct. But `keyFault` counts, and 0 distinct
+    // keys over 0 rows is no fault. The two have to agree, or the check refuses
+    // what the load then accepts.
+    const resource = await withColumns('key-check-empty-pkg', ['id'], {
+      rowCount: 0,
+      distinctCount: 0,
+    })
+
+    const res = await app.request(`/api/v1/resources/${resource.id}/column-settings/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ primaryKey: ['id'] }),
+    })
+
+    expect(await res.json()).toMatchObject({ checked: true, fault: null })
+  })
+
+  it('says it could not check rather than refusing, when there is no preview', async () => {
+    // A composite key has to be read out of the content, and a revert clears the
+    // preview until the rebuild lands. The apply asks nothing of the content, so
+    // answering 400 here would block an operation the server accepts — the
+    // screen has to be able to tell "will not work" from "cannot be told".
+    const resource = await withColumns('key-check-no-preview-pkg', ['id', 'line'])
+
+    const res = await app.request(`/api/v1/resources/${resource.id}/column-settings/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ primaryKey: ['id', 'line'] }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ checked: false, reason: 'no-preview' })
   })
 
   it('returns 401 for unauthenticated users', async () => {

@@ -797,6 +797,33 @@ resourcesRouter.post('/:id/revert', zValidator('json', revertResourceSchema), as
   return c.json({ id, ...result })
 })
 
+// POST /api/v1/resources/:id/column-settings/check - Would this key identify the
+// resource's rows? Asked by the confirm screen before the settings are applied,
+// because a key the content cannot be identified by is otherwise refused hours
+// later at the ingest, on a version created regardless (spec §6.4).
+resourcesRouter.post(
+  '/:id/column-settings/check',
+  zValidator('json', columnSettingsBodySchema),
+  async (c) => {
+    const user = c.get('user')
+    if (!user) throw new UnauthorizedError()
+
+    const db = c.get('db')
+    const id = c.req.param('id')
+    await checkResourcePermission(db, user, new ResourceService(db), id)
+
+    const result = await new ResourceVersionService(db).checkPrimaryKey(
+      id,
+      c.req.valid('json'),
+      // The caller's own abort, like a query and a diff: a picker that changes
+      // re-fires this, and the abandoned scan must not hold the one slot the
+      // live request needs.
+      { lake: lakeConfigFromEnv(c.get('env')), signal: c.req.raw.signal }
+    )
+    return c.json({ id, ...result })
+  }
+)
+
 // PUT /api/v1/resources/:id/column-settings - Settle what a person decided about
 // this resource's columns (spec §6.2). Today that is the primary key; ii-c adds
 // settled types to the same body, because one apply has to be one version

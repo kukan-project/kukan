@@ -9,16 +9,10 @@
 import { and, desc, eq, lt } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resourceVersion } from '@kukan/db'
-import type { LakeConfig, LakeSession, VersionDiff } from '@kukan/lake'
-import { diffVersions, lakeTableName, openLakeSession } from '@kukan/lake'
-import {
-  NotFoundError,
-  RequestAbandonedError,
-  RequestTimeoutError,
-  sharedKeyColumns,
-} from '@kukan/shared'
-import { withDuckdbSlot } from './query/semaphore'
-import { QUERY_MEMORY_LIMIT_MB, QUERY_THREADS, QUERY_TIMEOUT_MS } from '../config'
+import type { LakeConfig, VersionDiff } from '@kukan/lake'
+import { diffVersions, lakeTableName } from '@kukan/lake'
+import { NotFoundError, sharedKeyColumns } from '@kukan/shared'
+import { scanLake } from './query/lake-scan'
 
 /** Why a diff could not be produced. Distinguished so the UI can explain it. */
 export type DiffUnavailableReason =
@@ -129,14 +123,10 @@ export class VersionDiffService {
   }
 
   /**
-   * Run the diff under the same bounds as an ADR-032 query: one shared
-   * concurrency slot, a DuckDB memory/thread cap, and a wall-clock interrupt.
-   * The comparison scans both snapshots in full, so without them a handful of
-   * requests would take the container's memory with them.
-   *
-   * The slot is released in an outer `finally` that covers session setup too:
-   * with a cap of one, a single failed ATTACH would otherwise wedge every
-   * later diff *and* every ADR-032 query at 429 for the process's lifetime.
+   * Run the diff under the bounds every lake read from this container takes
+   * (see {@link scanLake}). The comparison scans both snapshots in full, so
+   * without them a handful of requests would take the container's memory with
+   * them.
    */
   private async runDiff(
     table: string,
@@ -145,62 +135,11 @@ export class VersionDiffService {
     key: string[] | null,
     signal?: AbortSignal
   ): Promise<VersionDiff> {
-    return withDuckdbSlot(async () => {
-      let session: LakeSession | null = null
-      let scanning: Promise<VersionDiff> | null = null
-
-      // Two reasons to stop, one mechanism: the run outlived its budget, or its
-      // caller did not wait for it. The deadline covers session setup too — the
-      // extension load and catalog ATTACH are network work, and with a cap of
-      // one slot a hung setup would hold every later query behind it.
-      const deadline = AbortSignal.timeout(QUERY_TIMEOUT_MS)
-      const halt = signal ? AbortSignal.any([signal, deadline]) : deadline
-      const timeout = () =>
-        new RequestTimeoutError(`Diff exceeded the time limit of ${QUERY_TIMEOUT_MS} ms`)
-      /** Why the scan was stopped, if it was: the interrupt makes the scan
-       *  itself reject too, and that can win the race with `stopped`. */
-      const haltReason = () =>
-        deadline.aborted ? timeout() : signal?.aborted ? new RequestAbandonedError() : null
-
-      let stop!: (err: Error) => void
-      const stopped = new Promise<never>((_, reject) => {
-        stop = reject
-      })
-      halt.addEventListener(
-        'abort',
-        () => {
-          session?.interrupt()
-          stop(haltReason()!)
-        },
-        { once: true }
-      )
-
-      // Held separately from `session` so a setup that lands after the deadline
-      // is still closed rather than leaked.
-      const opening = openLakeSession(this.lake, {
-        memoryLimitMb: QUERY_MEMORY_LIMIT_MB,
-        threads: QUERY_THREADS,
-      }).then((s) => (session = s))
-
-      try {
-        await Promise.race([opening, stopped])
-        scanning = diffVersions(session!, { table, fromSnapshot, toSnapshot, key })
-        return await Promise.race([scanning, stopped])
-      } catch (err) {
-        throw haltReason() ?? err
-      } finally {
-        // Not awaited: a setup that hung past the deadline must not hold the
-        // response or the shared slot. It is closed whenever it lands — after
-        // the interrupted scan unwinds, because disconnecting in the same tick
-        // as the interrupt leaves its promise pending forever (measured against
-        // the driver). Interrupted alone it rejects at once, so this is free.
-        void opening
-          .then(async (s) => {
-            await scanning?.catch(() => {})
-            await s.close()
-          })
-          .catch(() => {})
-      }
-    }, signal)
+    return scanLake(
+      this.lake,
+      'Diff',
+      (session) => diffVersions(session, { table, fromSnapshot, toSnapshot, key }),
+      signal
+    )
   }
 }

@@ -27,10 +27,18 @@ import {
   MAX_PARQUET_SOURCE_SIZE,
   versionOrigin,
 } from '@kukan/shared'
-import type { ColumnSettings, NoTableReason, VersionIdentity, VersionOrigin } from '@kukan/shared'
+import type {
+  ColumnSettings,
+  LakeIngestReason,
+  NoTableReason,
+  VersionIdentity,
+  VersionOrigin,
+} from '@kukan/shared'
 import type { LakeConfig } from '@kukan/lake'
 import {
   dropLakeTable,
+  keyFault,
+  lakeStorageUrl,
   lakeTableExists,
   lakeTableName,
   restandLakeTable,
@@ -55,6 +63,7 @@ import {
 } from './pipeline-claim'
 import { copyObject, publishLiveContent, PARKED_UNTIL, ownedByVersion } from './storage-pointer'
 import { PipelineService } from './pipeline-service'
+import { scanLake } from './query/lake-scan'
 import { markContentUnindexed } from './content-index-record'
 
 /**
@@ -311,6 +320,18 @@ export interface RevertOutcome extends LadderOutcome {
   /** The version issued to carry it, or null when nothing was issued. */
   published: number | null
 }
+
+/**
+ * What a key check can say (spec §6.4).
+ *
+ * Three states, not two: "it will work", "this is what would stop it", and
+ * "this cannot be established" — the last because the apply asks nothing of the
+ * content, so a resource whose preview is missing can still be settled and a
+ * screen must not read "cannot check" as "do not apply".
+ */
+export type KeyCheck =
+  | { checked: true; primaryKey: string[] | null; fault: LakeIngestReason | null }
+  | { checked: false; primaryKey: string[]; reason: 'no-preview' | 'preview-stale' }
 
 /** What a purge needs to reach: layer 1, the search index, the queue, layer 2. */
 interface PurgeDeps {
@@ -2195,6 +2216,139 @@ export class ResourceVersionService {
   }
 
   /**
+   * Whether this key could identify the resource's rows as they stand
+   * (spec §6.4).
+   *
+   * **Asked before the setting is applied, because after is too late to say
+   * anything useful.** A key the content cannot be identified by is refused at
+   * the ingest and recorded as a `lake_ingest_reason` (spec §6.6) — hours later,
+   * on a version that was created regardless, which to whoever applied it is
+   * indistinguishable from "it did not take".
+   *
+   * **Three answers, not two.** A screen deciding whether to let someone apply
+   * has to tell "this key will not work" from "this cannot be established" —
+   * they lead to different sentences and only one of them should stop the apply.
+   * `checked: false` is the second: the apply itself asks nothing of the
+   * content, so a resource whose preview is missing (a revert clears it until
+   * the rebuild lands) can still be settled, and refusing there would block an
+   * operation the server accepts.
+   *
+   * **A single-column key needs no scan.** The interpretation already counted
+   * the column's nulls and its distinct values, and froze both on the version
+   * (ADR-046, spec §6.4) — the same numbers the picker offers its candidates
+   * from. Only a composite key has to be read out of the content, because the
+   * frozen counts say nothing about a combination's uniqueness.
+   *
+   * That read goes through {@link keyFault}, so what it answers is what the
+   * ingest will: the same two questions, of the same shape of file. It is
+   * guarded on the preview describing the live bytes, for the reason
+   * {@link assertColumnsExist} gives about the cached schema — a run whose
+   * Interpret failed leaves the previous content's preview in place.
+   *
+   * **Not a promise about later.** The publisher can move the columns under a
+   * key that answered here, which is what the recorded reason exists for.
+   */
+  async checkPrimaryKey(
+    resourceId: string,
+    settings: ColumnSettings,
+    deps: { lake: LakeConfig; signal?: AbortSignal }
+  ): Promise<KeyCheck> {
+    const key = primaryKeyOf(settings)
+    // Taking the key off always applies: there is nothing left to identify rows
+    // by, which every load can do.
+    if (!key) return { checked: true, primaryKey: null, fault: null }
+
+    const schema = await this.liveSchema(resourceId)
+    const columns = new Map(schema.columns.map((column) => [column.name, column]))
+    const missing = key.filter((column) => !columns.has(column))
+    if (missing.length > 0) return { checked: true, primaryKey: key, fault: 'key-missing' }
+
+    if (key.length === 1) {
+      const column = columns.get(key[0])!
+      // The counts the interpretation recorded, asked in `keyFault`'s order and
+      // by its arithmetic, so the two cannot answer differently — including for
+      // an empty table, which has no repeated key and so passes both.
+      // Schemas from before ADR-046 carry no counts, and read the content.
+      if (column.distinctCount !== undefined) {
+        return {
+          checked: true,
+          primaryKey: key,
+          fault:
+            column.nullCount > 0
+              ? 'key-null'
+              : column.distinctCount === schema.rowCount
+                ? null
+                : 'key-not-unique',
+        }
+      }
+    }
+
+    return this.checkKeyAgainstPreview(resourceId, key, deps)
+  }
+
+  /**
+   * The remaining half of {@link checkPrimaryKey}, read out of the live
+   * interpretation's Parquet — a composite key, or a version too old to carry
+   * the counts.
+   *
+   * Read under the bounds a version diff takes and for the same reason
+   * ({@link scanLake}): a scan over content this process did not choose the
+   * size of otherwise holds the only slot, and every query and diff behind it
+   * waits it out and then fails.
+   */
+  private async checkKeyAgainstPreview(
+    resourceId: string,
+    key: string[],
+    deps: { lake: LakeConfig; signal?: AbortSignal }
+  ): Promise<KeyCheck> {
+    const [row] = await this.db
+      .select({
+        previewKey: resourcePipeline.previewKey,
+        metadata: resourcePipeline.metadata,
+        hash: resource.hash,
+      })
+      .from(resource)
+      .leftJoin(resourcePipeline, eq(resourcePipeline.resourceId, resource.id))
+      .where(eq(resource.id, resourceId))
+      .limit(1)
+    if (!row?.previewKey) return { checked: false, primaryKey: key, reason: 'no-preview' }
+    // The proof the preview describes what is live, which every reader that has
+    // to be sure uses: a run whose Interpret failed keeps the previous content's
+    // preview, and answering off that is answering about other bytes.
+    if ((row.metadata as { sourceHash?: string })?.sourceHash !== row.hash) {
+      return { checked: false, primaryKey: key, reason: 'preview-stale' }
+    }
+
+    const fault = await scanLake(
+      deps.lake,
+      'Key check',
+      (session) =>
+        keyFault(session, { parquetUrl: lakeStorageUrl(deps.lake, row.previewKey!), keys: key }),
+      deps.signal
+    )
+    return { checked: true, primaryKey: key, fault }
+  }
+
+  /**
+   * The live version's columns, by name.
+   *
+   * One read for both callers, because the rule it carries is one rule: the
+   * columns are the ones the live *version* froze, never the resource's cached
+   * interpretation (see {@link assertColumnsExist}).
+   */
+  private async liveSchema(resourceId: string): Promise<ResourceSchema> {
+    const version = await this.liveVersionNumber(this.db, resourceId)
+    const schema =
+      version === null ? null : (await this.getRow(this.db, resourceId, version)).schema
+    if (!schema) {
+      throw new ValidationError(
+        `Resource ${resourceId} has no interpreted columns to identify rows by`
+      )
+    }
+    return schema
+  }
+
+  /**
    * Refuse a key naming columns the resource does not have.
    *
    * **Against the live version's frozen schema**, not the resource's cached
@@ -2209,16 +2363,8 @@ export class ResourceVersionService {
    * they were set, and recording that is `lake_ingest_reason`'s job (spec §6.6).
    */
   private async assertColumnsExist(resourceId: string, key: string[]): Promise<void> {
-    const version = await this.liveVersionNumber(this.db, resourceId)
-    const schema =
-      version === null ? null : (await this.getRow(this.db, resourceId, version)).schema
-    if (!schema) {
-      throw new ValidationError(
-        `Resource ${resourceId} has no interpreted columns to identify rows by`
-      )
-    }
-    const columns = new Set(schema.columns.map((column) => column.name))
-    const missing = key.filter((column) => !columns.has(column))
+    const names = new Set((await this.liveSchema(resourceId)).columns.map((c) => c.name))
+    const missing = key.filter((column) => !names.has(column))
     if (missing.length > 0) {
       throw new ValidationError(`No such column in this resource: ${missing.join(', ')}`)
     }
