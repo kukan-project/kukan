@@ -194,14 +194,9 @@ async function keyedDiff(
           )
           .join(' UNION ALL ')
 
-  const { sql, kind, total } = buildKeyedDiffQuery(
-    `(${values(from)})`,
-    `(${values(to)})`,
-    columns,
-    key
-  )
+  const { sql, markers } = buildKeyedDiffQuery(`(${values(from)})`, `(${values(to)})`, columns, key)
   const result = await connection.runAndReadAll(sql)
-  return splitKeyedDiffRows(result.getRowObjects() as LakeRow[], kind, total)
+  return splitKeyedDiffRows(result.getRowObjects() as LakeRow[], markers)
 }
 
 describe('buildKeyedDiffQuery', () => {
@@ -226,17 +221,63 @@ describe('buildKeyedDiffQuery', () => {
       { name: '__kind', type: 'VARCHAR' },
     ]
     const values = (name: string) => `SELECT 1 AS id, '${name}' AS __kind`
-    const { sql, kind, total } = buildKeyedDiffQuery(
-      `(${values('a')})`,
-      `(${values('b')})`,
-      columns,
-      ['id']
-    )
+    const { sql, markers } = buildKeyedDiffQuery(`(${values('a')})`, `(${values('b')})`, columns, [
+      'id',
+    ])
     const result = await connection.runAndReadAll(sql)
 
-    expect(splitKeyedDiffRows(result.getRowObjects() as LakeRow[], kind, total)).toMatchObject({
+    expect(splitKeyedDiffRows(result.getRowObjects() as LakeRow[], markers)).toMatchObject({
       changedRows: 1,
       sampleChangedAfter: [{ id: 1, __kind: 'b' }],
+      sampleChangedBefore: [{ __kind: 'a' }],
+    })
+  })
+
+  it('carries what a changed row held before, for the columns that can differ', async () => {
+    // The new values alone say a row changed and nothing to read them against,
+    // which is the one thing "changed" is supposed to say. The key is not
+    // repeated: it matched, so both sides hold it.
+    expect(await keyedDiff([[1, 'a']], [[1, 'b']])).toMatchObject({
+      changedRows: 1,
+      sampleChangedAfter: [{ id: 1, name: 'b' }],
+      sampleChangedBefore: [{ name: 'a' }],
+    })
+  })
+
+  it("carries a null the row actually held, not the guard's null", async () => {
+    // The before side is nulled out for added and removed rows, and a value
+    // that *was* null has to survive that — the panel tells them apart by
+    // whether the column is present at all, so a changed row must carry the
+    // key even when its value is null.
+    const diff = await keyedDiff([[1, null]], [[1, 'b']])
+    expect(diff).toMatchObject({ changedRows: 1, sampleChangedAfter: [{ id: 1, name: 'b' }] })
+    expect((diff as { sampleChangedBefore: LakeRow[] }).sampleChangedBefore[0]).toEqual({
+      name: null,
+    })
+  })
+
+  it('leaves the before side empty for a row that only ever had one', async () => {
+    // An added row has no `from` and a removed one no `to`; the half that
+    // exists is already in the sample it belongs to.
+    const diff = await keyedDiff([[1, 'a']], [[2, 'b']])
+    expect(diff).toMatchObject({ addedRows: 1, removedRows: 1, sampleChangedBefore: [] })
+  })
+
+  it('takes a column named like the prefix its own before-side uses', async () => {
+    const columns: LakeColumn[] = [
+      { name: 'id', type: 'INTEGER' },
+      { name: '__before_id', type: 'VARCHAR' },
+    ]
+    const values = (name: string) => `SELECT 1 AS id, '${name}' AS __before_id`
+    const { sql, markers } = buildKeyedDiffQuery(`(${values('a')})`, `(${values('b')})`, columns, [
+      'id',
+    ])
+    const result = await connection.runAndReadAll(sql)
+
+    expect(splitKeyedDiffRows(result.getRowObjects() as LakeRow[], markers)).toMatchObject({
+      changedRows: 1,
+      sampleChangedAfter: [{ id: 1, __before_id: 'b' }],
+      sampleChangedBefore: [{ __before_id: 'a' }],
     })
   })
 
@@ -255,5 +296,38 @@ describe('buildKeyedDiffQuery', () => {
 
     if (result.schemaChanged || !result.keyed) throw new Error('expected a keyed diff')
     expect(String(result.sampleChangedAfter[0].name)).toHaveLength(513)
+  })
+
+  it('carries the before side of a cell that moved past where the sample is cut', async () => {
+    // Both values trim to the same 512 characters, so the two sides of the
+    // sample arrive equal — a reader deciding from what it was sent would call
+    // the one cell that moved unmoved. Whether it moved is answered here, over
+    // the whole value.
+    const shared = 'x'.repeat(600)
+    const result = await keyedDiff([[1, `${shared}a`]], [[1, `${shared}b`]])
+
+    if (result.schemaChanged || !result.keyed) throw new Error('expected a keyed diff')
+    expect(result.changedRows).toBe(1)
+    expect(result.sampleChangedBefore[0]).toHaveProperty('name')
+    expect(result.sampleChangedAfter[0].name).toEqual(result.sampleChangedBefore[0].name)
+  })
+
+  it('leaves a column that held still out of the before side', async () => {
+    // What the panel marks is what this row carries, so a column that did not
+    // move must not be in it — otherwise every column of a changed row is shown
+    // as changed.
+    const columns: LakeColumn[] = [
+      { name: 'id', type: 'INTEGER' },
+      { name: 'moved', type: 'VARCHAR' },
+      { name: 'held', type: 'VARCHAR' },
+    ]
+    const row = (moved: string) => `SELECT 1 AS id, '${moved}' AS moved, 'same' AS held`
+    const { sql, markers } = buildKeyedDiffQuery(`(${row('a')})`, `(${row('b')})`, columns, ['id'])
+    const result = await connection.runAndReadAll(sql)
+    const diff = splitKeyedDiffRows(result.getRowObjects() as LakeRow[], markers)
+
+    expect(diff).toMatchObject({ changedRows: 1 })
+    if (diff.schemaChanged || !diff.keyed) throw new Error('expected a keyed diff')
+    expect(diff.sampleChangedBefore[0]).toEqual({ moved: 'a' })
   })
 })

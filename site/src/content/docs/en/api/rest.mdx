@@ -116,25 +116,28 @@ the listing.
 
 ## Resources
 
-| Method | Path                              | Description                                                          | Auth       |
-| ------ | --------------------------------- | -------------------------------------------------------------------- | ---------- |
-| GET    | `/resources/count`                | Active resource count                                                | Public     |
-| GET    | `/resources/formats`              | List used formats                                                    | Public     |
-| GET    | `/resources/{id}`                 | Resource details                                                     | Public     |
-| GET    | `/resources/{id}/text`            | Text content (preview-size limited)                                  | Public     |
-| GET    | `/resources/{id}/download`        | Download file (302 redirect for external URLs)                       | Public     |
-| GET    | `/resources/{id}/preview`         | Server-proxied preview (Range supported)                             | Public     |
-| GET    | `/resources/{id}/pipeline-status` | Pipeline job status                                                  | Public     |
-| GET    | `/resources/{id}/schema`          | Column schema (names, types, row count, numeric stats). CSV/TSV only | Public     |
-| POST   | `/resources/{id}/query`           | Server-side DuckDB query (SELECT only). CSV/TSV only                 | Public     |
-| POST   | `/resources/{id}/upload-url`      | Issue presigned upload URL                                           | Org editor |
-| POST   | `/resources/{id}/upload`          | Server-proxied upload                                                | Org editor |
-| POST   | `/resources/{id}/upload-complete` | Notify completion, enqueue pipeline                                  | Org editor |
-| POST   | `/resources/{id}/run-pipeline`    | Manually trigger pipeline                                            | Org editor |
-| POST   | `/resources/{id}/cancel-pipeline` | Stop the running job (content is left alone)                         | Org editor |
-| POST   | `/resources/{id}/revert`          | Stop the job and put the content back on a given version             | Org editor |
-| PUT    | `/resources/{id}`                 | Update resource (full replacement; extras is system-managed)         | Org editor |
-| DELETE | `/resources/{id}`                 | Delete resource                                                      | Org editor |
+| Method | Path                                    | Description                                                               | Auth       |
+| ------ | --------------------------------------- | ------------------------------------------------------------------------- | ---------- |
+| GET    | `/resources/count`                      | Active resource count                                                     | Public     |
+| GET    | `/resources/formats`                    | List used formats                                                         | Public     |
+| GET    | `/resources/{id}`                       | Resource details                                                          | Public     |
+| GET    | `/resources/{id}/text`                  | Text content (preview-size limited)                                       | Public     |
+| GET    | `/resources/{id}/download`              | Download file (302 redirect for external URLs)                            | Public     |
+| GET    | `/resources/{id}/preview`               | Server-proxied preview (Range supported)                                  | Public     |
+| GET    | `/resources/{id}/pipeline-status`       | Pipeline job status                                                       | Public     |
+| GET    | `/resources/{id}/schema`                | Column schema (names, types, row count, numeric stats). CSV/TSV only      | Public     |
+| POST   | `/resources/{id}/query`                 | Server-side DuckDB query (SELECT only). CSV/TSV only                      | Public     |
+| POST   | `/resources/{id}/upload-url`            | Issue presigned upload URL                                                | Org editor |
+| POST   | `/resources/{id}/upload`                | Server-proxied upload                                                     | Org editor |
+| POST   | `/resources/{id}/upload-complete`       | Notify completion, enqueue pipeline                                       | Org editor |
+| POST   | `/resources/{id}/run-pipeline`          | Manually trigger pipeline                                                 | Org editor |
+| POST   | `/resources/{id}/cancel-pipeline`       | Stop the running job (content is left alone)                              | Org editor |
+| POST   | `/resources/{id}/revert`                | Stop the job and put the content back on a given version                  | Org editor |
+| GET    | `/resources/{id}/column-settings`       | What has been settled about the columns, and what there is to settle over | Org editor |
+| POST   | `/resources/{id}/column-settings/check` | Would this primary key identify the rows?                                 | Org editor |
+| PUT    | `/resources/{id}/column-settings`       | Settle the primary key                                                    | Org editor |
+| PUT    | `/resources/{id}`                       | Update resource (full replacement; extras is system-managed)              | Org editor |
+| DELETE | `/resources/{id}`                       | Delete resource                                                           | Org editor |
 
 ### Versions
 
@@ -296,7 +299,11 @@ not a public endpoint.
 ```
 
 - **`keyed` is `true` only when both ends were read under the same primary key**, and adds
-  `changedRows` and `sampleChangedAfter` when it is. With no key declared, or a different key at
+  `changedRows`, `sampleChangedAfter` and `sampleChangedBefore` when it is — the two samples
+  aligned by position, the older side carrying **only the columns whose value actually moved**
+  (the key matched, so both sides hold it, and a column that held still is left out). Sampled
+  cells are trimmed for display, so comparing the two sides does not answer whether a cell
+  changed; presence in the older side does. With no key declared, or a different key at
   each end, it is `false` and **editing one row appears as one addition plus one removal** —
   nothing identifies the row as the same one
 - Versions whose columns differ return
@@ -358,6 +365,66 @@ Stops the running job and puts the resource's content back on a given version.
 After a revert the preview and the search index can still describe the old content. Rebuild them
 with `POST /resources/{id}/run-pipeline` and `{"rebuildOnly": true}`, which regenerates from the
 object the resource already holds rather than re-fetching the external URL.
+
+### Column settings
+
+The primary key a resource's rows are identified by. Declaring one makes the version diff report
+edits (`keyed: true`) rather than an addition and a removal per changed row. All three require
+**editor permission** — this is what a person settled about the columns, not a description of the
+data.
+
+**Read** — `GET /resources/{id}/column-settings`:
+
+```json
+{
+  "id": "…",
+  "primaryKey": ["order_no"],
+  "carried": false,
+  "schema": {
+    "rowCount": 1688,
+    "columns": [{ "name": "order_no", "type": "string", "nullCount": 0, "unique": true }]
+  }
+}
+```
+
+- `schema` is the **live version's** frozen interpretation — the same columns a `PUT` is validated
+  against, so a key chosen from this list cannot be refused for naming a column that is not there
+- `unique` marks the columns that identify a row on their own, so choosing one of those needs no
+  check. It says nothing about a combination — a composite key has to be read out of the content
+- `carried` is `false` while the newest standing version has not been read under `primaryKey` yet.
+  That is the ordinary state between settling a key and the rebuild landing, not a fault
+
+**Check** — `POST /resources/{id}/column-settings/check`, body `{"primaryKey": [...]}`:
+
+```json
+{ "id": "…", "checked": true, "primaryKey": ["order_no"], "fault": "key-not-unique" }
+```
+
+- `fault` is `null` when the key would work, or `key-missing` / `key-null` / `key-not-unique`
+- `{"checked": false, "reason": "no-preview" | "preview-stale"}` means the question could not be
+  answered — there is no current interpretation to read. **Not an error**: the `PUT` asks nothing
+  of the content, so a key can still be settled
+- Answered from the frozen per-column counts for a single-column key, and by reading the
+  interpretation's Parquet for a composite one
+
+**Settle** — `PUT /resources/{id}/column-settings`, body `{"primaryKey": [...] | null}`:
+
+```json
+{ "id": "…", "primaryKey": ["order_no"], "queued": true }
+```
+
+- `[]` and `null` both mean "no key"; the body normalizes to one spelling
+- Columns are kept **in the order given**, and rows are matched regardless of it: every use of a
+  key ands its columns together. The order is part of the recorded key all the same, so the same
+  columns in another order count as a different key and issue a version
+- **Settling a key creates a version**, because a version is these bytes read this way and the key
+  is part of the reading. The bytes do not move, so the new version owns a copy of them. `queued`
+  says the rebuild that issues it is on its way; `null` means none was owed; **`false` means the
+  setting was stored and the rebuild could not be queued** — the two are decided separately so that
+  **re-sending the same body is the repair**. Nothing sweeps for a resource whose setting and newest
+  version disagree, so a caller that ignores `false` leaves a key no version is ever read under
+- Versions already in layer 2 are not re-read under the new key. The boundary is the version
+  itself, and diffs across it fall back to comparing whole rows
 
 ## Organizations
 

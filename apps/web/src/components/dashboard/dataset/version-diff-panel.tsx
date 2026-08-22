@@ -63,13 +63,36 @@ type DiffView =
           changedRows: number
           sampleAdded: Record<string, unknown>[]
           sampleRemoved: Record<string, unknown>[]
-          /** The changed rows as the newer version holds them. */
+          /** The changed rows as the newer version holds them, and as the older
+           *  one did — aligned by position, the older side carrying **only the
+           *  columns whose value moved**. Which those are is the server's to
+           *  say: cells arrive trimmed for display, so two long values that
+           *  differ past the trim are equal here (spec §7.1). */
           sampleChangedAfter: Record<string, unknown>[]
+          sampleChangedBefore: Record<string, unknown>[]
         }
     ))
 
-/** Compact preview of a few rows from one side of the diff. */
-function SampleRows({ rows, label }: { rows: Record<string, unknown>[]; label: string }) {
+/** How a cell reads, with `null` distinguished from an empty string. */
+const cell = (value: unknown) => (value === null || value === undefined ? '—' : String(value))
+
+/**
+ * Compact preview of a few rows from one side of the diff.
+ *
+ * With `before`, the changed rows: each cell that moved is shown as what it
+ * was and what it became. Showing only the new values says a row changed and
+ * gives nothing to read that against, which is the one thing "changed" is
+ * supposed to say.
+ */
+function SampleRows({
+  rows,
+  before,
+  label,
+}: {
+  rows: Record<string, unknown>[]
+  before?: Record<string, unknown>[]
+  label: string
+}) {
   if (rows.length === 0) return null
   const columns = Object.keys(rows[0])
   return (
@@ -89,11 +112,27 @@ function SampleRows({ rows, label }: { rows: Record<string, unknown>[]; label: s
           <TableBody>
             {rows.map((row, i) => (
               <TableRow key={i}>
-                {columns.map((col) => (
-                  <TableCell key={col} className="py-1">
-                    {row[col] === null ? '—' : String(row[col])}
-                  </TableCell>
-                ))}
+                {columns.map((col) => {
+                  // Presence, not comparison: the older side is aligned by
+                  // position and holds exactly the columns whose value moved.
+                  // The values here are trimmed for display, so comparing them
+                  // would call a cell that moved past the trim unmoved — and an
+                  // absent column is either a key column or one that held
+                  // still, both of which read once.
+                  const was = before?.[i]?.[col]
+                  const moved = before?.[i] !== undefined && col in before[i]
+                  return (
+                    <TableCell key={col} className="py-1">
+                      {moved && (
+                        <>
+                          <span className="text-muted-foreground line-through">{cell(was)}</span>
+                          <span className="text-muted-foreground mx-1">→</span>
+                        </>
+                      )}
+                      {cell(row[col])}
+                    </TableCell>
+                  )
+                })}
               </TableRow>
             ))}
           </TableBody>
@@ -181,7 +220,11 @@ export function VersionDiffPanel({ resourceId, version }: { resourceId: string; 
           <SampleRows rows={diff.sampleAdded} label={t('diffSampleAdded')} />
           <SampleRows rows={diff.sampleRemoved} label={t('diffSampleRemoved')} />
           {diff.keyed && (
-            <SampleRows rows={diff.sampleChangedAfter} label={t('diffSampleChanged')} />
+            <SampleRows
+              rows={diff.sampleChangedAfter}
+              before={diff.sampleChangedBefore}
+              label={t('diffSampleChanged')}
+            />
           )}
         </>
       )}

@@ -76,8 +76,38 @@ describe('ResourceVersionHistory', () => {
     )
     render(<ResourceVersionHistory resourceId="r1" />)
 
-    await waitFor(() => expect(screen.getByText('Key: order, line')).toBeInTheDocument())
-    expect(screen.queryAllByText(/^Key: /)).toHaveLength(1)
+    await waitFor(() =>
+      expect(screen.getByRole('columnheader', { name: 'Primary key' })).toBeInTheDocument()
+    )
+    expect(screen.getByText('order → line (composite)')).toBeInTheDocument()
+    // A keyless version says so rather than leaving the column blank, and a
+    // single-column key is named as one — the two are not the same thing to
+    // the check that has to answer for them.
+    expect(screen.getByText('—')).toBeInTheDocument()
+  })
+
+  it('keeps a long key name from widening the table it is listed in', async () => {
+    // A column name is a CSV header — arbitrary text, and where the delimiter
+    // was not found, one column named after the whole line (#449). Rendered as
+    // it comes it widens this table, then the editor row it sits in, then the
+    // page, and the horizontal scrollbar belongs to the screen.
+    const wide = 'x'.repeat(4000)
+    mockClientFetch.mockResolvedValue(versionsResponse([version(1, { keyColumns: [wide] })]))
+    render(<ResourceVersionHistory resourceId="r1" />)
+
+    const shown = await screen.findByTitle(`${wide} (single)`)
+    expect(shown).toHaveClass('truncate')
+    expect(shown.className).toMatch(/max-w-/)
+  })
+
+  it('names a single-column key as one', async () => {
+    // Single and composite are not the same thing to the check that answers for
+    // them: one is read off counts the version already froze, the other has to
+    // be read out of the content.
+    mockClientFetch.mockResolvedValue(versionsResponse([version(1, { keyColumns: ['order'] })]))
+    render(<ResourceVersionHistory resourceId="r1" />)
+
+    await waitFor(() => expect(screen.getByText('order (single)')).toBeInTheDocument())
   })
 
   it('says which version a reverted one re-published', async () => {
@@ -115,7 +145,7 @@ describe('ResourceVersionHistory', () => {
     render(<ResourceVersionHistory resourceId="r1" />)
     await waitFor(() => expect(screen.getByText('v3')).toBeInTheDocument())
 
-    fireEvent.click(screen.getAllByRole('button', { name: /purge/i })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: /delete/i })[0])
 
     const warning = await screen.findByRole('alert')
     expect(warning).toHaveTextContent('v1')
@@ -127,7 +157,7 @@ describe('ResourceVersionHistory', () => {
     render(<ResourceVersionHistory resourceId="r1" />)
     await waitFor(() => expect(screen.getByText('v2')).toBeInTheDocument())
 
-    fireEvent.click(screen.getAllByRole('button', { name: /purge/i })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: /delete/i })[0])
 
     await screen.findByRole('dialog')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
@@ -147,9 +177,9 @@ describe('ResourceVersionHistory', () => {
       mockClientFetch.mockResolvedValueOnce(versionsResponse(versions))
       render(<ResourceVersionHistory resourceId="r1" />)
       await waitFor(() =>
-        expect(screen.getAllByRole('button', { name: /purge/i })).not.toHaveLength(0)
+        expect(screen.getAllByRole('button', { name: /delete/i })).not.toHaveLength(0)
       )
-      fireEvent.click(screen.getAllByRole('button', { name: /purge/i })[0])
+      fireEvent.click(screen.getAllByRole('button', { name: /delete/i })[0])
       return screen.findByRole('dialog')
     }
 
@@ -204,7 +234,7 @@ describe('ResourceVersionHistory', () => {
     render(<ResourceVersionHistory resourceId="r1" />)
     await waitFor(() => expect(screen.getByText('v2')).toBeInTheDocument())
 
-    fireEvent.click(screen.getAllByRole('button', { name: /purge/i })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: /delete/i })[0])
 
     await screen.findByRole('dialog')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()

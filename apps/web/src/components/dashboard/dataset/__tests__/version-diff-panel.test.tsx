@@ -43,12 +43,99 @@ describe('VersionDiffPanel', () => {
       sampleAdded: [],
       sampleRemoved: [],
       sampleChangedAfter: [{ id: 1, name: 'A' }],
+      sampleChangedBefore: [{ name: 'a' }],
     })
 
     render(<VersionDiffPanel resourceId="r1" version={2} />)
 
     await waitFor(() => expect(screen.getByText('2 rows changed')).toBeInTheDocument())
-    expect(screen.getByText('Changed rows (sample, as they now are)')).toBeInTheDocument()
+    expect(screen.getByText('Changed rows (sample, before → after)')).toBeInTheDocument()
+  })
+
+  it('shows a changed cell as what it was and what it became', async () => {
+    // The new values alone say a row changed and give nothing to read them
+    // against, which is the one thing "changed" is supposed to say.
+    mockDiff({
+      available: true,
+      from: 1,
+      to: 2,
+      keyed: true,
+      addedRows: 0,
+      removedRows: 0,
+      changedRows: 1,
+      schemaChanged: false,
+      schemaDiff: { added: [], removed: [], retyped: [] },
+      sampleAdded: [],
+      sampleRemoved: [],
+      sampleChangedAfter: [{ id: 109, level: '-0.14', flag: '0' }],
+      // `flag` held still, so the server leaves it out — the older side carries
+      // the columns that moved and nothing else.
+      sampleChangedBefore: [{ level: '-0.15' }],
+    })
+
+    render(<VersionDiffPanel resourceId="r1" version={2} />)
+
+    await waitFor(() => expect(screen.getByText('-0.15')).toBeInTheDocument())
+    expect(screen.getByText('-0.15')).toHaveClass('line-through')
+    // The key matched, so it is equal on both sides and shown once; a value
+    // that did not move is not dressed up as a change either.
+    expect(screen.getByText('109')).not.toHaveClass('line-through')
+    expect(screen.getAllByText('0')).toHaveLength(1)
+  })
+
+  it('marks a cell the server says moved even where both sides read the same', async () => {
+    // Cells are trimmed for display, so a value that differs past the trim
+    // arrives identical on both sides. Deciding from what was sent would show
+    // the one cell that moved as one that held still; the older side carries
+    // the column exactly when it moved, so presence is the answer.
+    const trimmed = `${'x'.repeat(512)}\u2026`
+    mockDiff({
+      available: true,
+      from: 1,
+      to: 2,
+      keyed: true,
+      addedRows: 0,
+      removedRows: 0,
+      changedRows: 1,
+      schemaChanged: false,
+      schemaDiff: { added: [], removed: [], retyped: [] },
+      sampleAdded: [],
+      sampleRemoved: [],
+      sampleChangedAfter: [{ id: 1, note: trimmed }],
+      sampleChangedBefore: [{ note: trimmed }],
+    })
+
+    render(<VersionDiffPanel resourceId="r1" version={2} />)
+
+    await waitFor(() =>
+      expect(screen.getByText(trimmed, { selector: 'span.line-through' })).toBeInTheDocument()
+    )
+  })
+
+  it('reads a value that became null as a change, not as an absent column', async () => {
+    // The older side carries only the columns that moved, so "not there" means
+    // a column shown once — a key, or one that held still. A null it really
+    // held is a different thing, and it is a change.
+    mockDiff({
+      available: true,
+      from: 1,
+      to: 2,
+      keyed: true,
+      addedRows: 0,
+      removedRows: 0,
+      changedRows: 1,
+      schemaChanged: false,
+      schemaDiff: { added: [], removed: [], retyped: [] },
+      sampleAdded: [],
+      sampleRemoved: [],
+      sampleChangedAfter: [{ id: 1, note: 'set' }],
+      sampleChangedBefore: [{ note: null }],
+    })
+
+    render(<VersionDiffPanel resourceId="r1" version={2} />)
+
+    await waitFor(() => expect(screen.getByText('—')).toBeInTheDocument())
+    expect(screen.getByText('—')).toHaveClass('line-through')
   })
 
   it('shows no changed count where the rows were compared whole', async () => {
@@ -162,7 +249,7 @@ describe('VersionDiffPanel', () => {
   })
 
   it.each([
-    ['purged', 'One of the versions has been purged, so a diff is not available.'],
+    ['purged', 'One of the versions has been deleted, so a diff is not available.'],
     ['no-previous-version', 'This is the first version, so there is nothing to compare against.'],
   ])('explains why a diff is unavailable (%s)', async (reason, message) => {
     mockDiff({ available: false, reason, from: 1, to: 2, reasonVersion: null })

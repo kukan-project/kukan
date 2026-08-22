@@ -330,9 +330,46 @@ export interface RevertOutcome extends LadderOutcome {
  * content, so a resource whose preview is missing can still be settled and a
  * screen must not read "cannot check" as "do not apply".
  */
+/** What the primary-key picker reads before it offers anything (spec §6.4). */
+export interface ColumnSettingsView {
+  /** What the resource is set to read versions under from here on (spec §6.2). */
+  primaryKey: string[] | null
+  /**
+   * Whether the newest standing version was already read under {@link primaryKey}.
+   *
+   * False means a rebuild is owed and the setting has not reached a version
+   * yet — which is a state the screen has to be able to name, because the
+   * setting and the version disagreeing is normal for as long as the run has
+   * not landed, not a fault.
+   */
+  carried: boolean
+  /**
+   * The columns a key may be chosen from — the live version's frozen
+   * interpretation. Null before anything has been interpreted.
+   *
+   * Every column, not only the ones that could stand alone: a composite key is
+   * built out of columns that individually repeat, and `unique` on each column
+   * is what marks the ones that need no checking (ADR-046).
+   */
+  schema: ResourceSchema | null
+  /**
+   * Whether the interpretation's Parquet can be shown as a sample of what the
+   * columns hold.
+   *
+   * Answered here because it is the same predicate the key check reports as
+   * `checked: false` ({@link livePreview}), and the two must not disagree about
+   * whether the preview is about the live bytes — a picker showing rows the
+   * resource does not serve is choosing a key over the wrong content.
+   */
+  preview: 'ready' | PreviewUnusable
+}
+
+/** Why the interpretation's Parquet cannot be read for this resource. */
+export type PreviewUnusable = 'no-preview' | 'preview-stale'
+
 export type KeyCheck =
   | { checked: true; primaryKey: string[] | null; fault: LakeIngestReason | null }
-  | { checked: false; primaryKey: string[]; reason: 'no-preview' | 'preview-stale' }
+  | { checked: false; primaryKey: string[]; reason: PreviewUnusable }
 
 /** What a purge needs to reach: layer 1, the search index, the queue, layer 2. */
 interface PurgeDeps {
@@ -2154,6 +2191,40 @@ export class ResourceVersionService {
    *   when none was needed. Never whether a version was created: that is the
    *   gate's answer, minutes later.
    */
+  /**
+   * What a picker needs to offer a key and say where the current one stands
+   * (spec §6.4).
+   *
+   * **The columns come from the live version's frozen interpretation**, because
+   * that is what {@link setColumnSettings} validates against — offered from the
+   * resource's cached one instead, a picker would list columns the apply then
+   * refuses, and the rule about which schema is authoritative would have a
+   * second implementation on the other side of the network.
+   *
+   * A read rather than a derivation on the client for the same reason
+   * {@link VersionView.isLive} is: `carried` is the question the apply asks to
+   * decide whether a rebuild is owed, and two answers to it would be two
+   * behaviours.
+   */
+  async columnSettings(resourceId: string): Promise<ColumnSettingsView> {
+    const [current] = await this.db
+      .select({ settings: resource.columnSettings })
+      .from(resource)
+      .where(eq(resource.id, resourceId))
+      .limit(1)
+    if (!current) throw new NotFoundError('Resource', resourceId)
+
+    const key = primaryKeyOf(current.settings)
+    const latest = await this.newestActiveVersion(this.db, resourceId)
+    const preview = await this.livePreview(resourceId)
+    return {
+      primaryKey: key,
+      carried: latest === null || sameKeyColumns(latest.lakeKeyColumns, key),
+      schema: await this.liveSchemaOrNull(resourceId),
+      preview: typeof preview === 'string' ? preview : 'ready',
+    }
+  }
+
   async setColumnSettings(
     resourceId: string,
     settings: ColumnSettings,
@@ -2329,45 +2400,65 @@ export class ResourceVersionService {
     key: string[],
     deps: { lake: LakeConfig; signal?: AbortSignal }
   ): Promise<KeyCheck> {
-    const [row] = await this.db
-      .select({
-        previewKey: resourcePipeline.previewKey,
-        metadata: resourcePipeline.metadata,
-        hash: resource.hash,
-      })
-      .from(resource)
-      .leftJoin(resourcePipeline, eq(resourcePipeline.resourceId, resource.id))
-      .where(eq(resource.id, resourceId))
-      .limit(1)
-    if (!row?.previewKey) return { checked: false, primaryKey: key, reason: 'no-preview' }
-    // The proof the preview describes what is live, which every reader that has
-    // to be sure uses: a run whose Interpret failed keeps the previous content's
-    // preview, and answering off that is answering about other bytes.
-    if ((row.metadata as { sourceHash?: string })?.sourceHash !== row.hash) {
-      return { checked: false, primaryKey: key, reason: 'preview-stale' }
-    }
+    const preview = await this.livePreview(resourceId)
+    if (typeof preview === 'string') return { checked: false, primaryKey: key, reason: preview }
 
     const fault = await scanLake(
       deps.lake,
       'Key check',
       (session) =>
-        keyFault(session, { parquetUrl: lakeStorageUrl(deps.lake, row.previewKey!), keys: key }),
+        keyFault(session, { parquetUrl: lakeStorageUrl(deps.lake, preview.key), keys: key }),
       deps.signal
     )
     return { checked: true, primaryKey: key, fault }
   }
 
   /**
-   * The live version's columns, by name.
+   * The interpretation's Parquet, when there is one and it describes the bytes
+   * the resource is serving — otherwise which of those two is not true.
    *
-   * One read for both callers, because the rule it carries is one rule: the
+   * **The proof every reader that has to be sure uses.** A run whose Interpret
+   * failed keeps the previous content's preview in place, and both the key check
+   * and the picker's sample would then be about other bytes: one would answer
+   * "unique" for a file nobody will load, the other would show rows the resource
+   * does not serve.
+   *
+   * Through {@link schemaDescribesLiveContent}, which is that proof — including
+   * the half a bare hash comparison misses: **a preview from before the source
+   * hash existed has no hash to compare**, and is trusted on the run having
+   * completed instead. Written out here as `sourceHash !== hash`, every
+   * interpretation predating ADR-046 reads as stale for good, and the rebuild
+   * the screen then offers cannot settle it.
+   */
+  private async livePreview(resourceId: string): Promise<{ key: string } | PreviewUnusable> {
+    const [row] = await this.db
+      .select({
+        previewKey: resourcePipeline.previewKey,
+        describesLiveContent: schemaDescribesLiveContent(this.db),
+      })
+      .from(resource)
+      .leftJoin(resourcePipeline, eq(resourcePipeline.resourceId, resource.id))
+      .where(eq(resource.id, resourceId))
+      .limit(1)
+    if (!row?.previewKey) return 'no-preview'
+    return row.describesLiveContent ? { key: row.previewKey } : 'preview-stale'
+  }
+
+  /**
+   * The live version's columns, or null where nothing has been interpreted yet.
+   *
+   * One read for every caller, because the rule it carries is one rule: the
    * columns are the ones the live *version* froze, never the resource's cached
    * interpretation (see {@link assertColumnsExist}).
    */
-  private async liveSchema(resourceId: string): Promise<ResourceSchema> {
+  private async liveSchemaOrNull(resourceId: string): Promise<ResourceSchema | null> {
     const version = await this.liveVersionNumber(this.db, resourceId)
-    const schema =
-      version === null ? null : (await this.getRow(this.db, resourceId, version)).schema
+    return version === null ? null : (await this.getRow(this.db, resourceId, version)).schema
+  }
+
+  /** {@link liveSchemaOrNull} for the callers that cannot proceed without it. */
+  private async liveSchema(resourceId: string): Promise<ResourceSchema> {
+    const schema = await this.liveSchemaOrNull(resourceId)
     if (!schema) {
       throw new ValidationError(
         `Resource ${resourceId} has no interpreted columns to identify rows by`

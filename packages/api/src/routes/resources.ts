@@ -797,6 +797,22 @@ resourcesRouter.post('/:id/revert', zValidator('json', revertResourceSchema), as
   return c.json({ id, ...result })
 })
 
+// GET /api/v1/resources/:id/column-settings - What a person has settled about
+// this resource's columns, and what there is to settle it over (spec §6.4).
+// Editor+, matching the two writes below: this is the settings screen's read,
+// not a description of the data.
+resourcesRouter.get('/:id/column-settings', async (c) => {
+  const user = c.get('user')
+  if (!user) throw new UnauthorizedError()
+
+  const db = c.get('db')
+  const id = c.req.param('id')
+  await checkResourcePermission(db, user, new ResourceService(db), id)
+
+  const view = await new ResourceVersionService(db).columnSettings(id)
+  return c.json({ id, ...view })
+})
+
 // POST /api/v1/resources/:id/column-settings/check - Would this key identify the
 // resource's rows? Asked by the confirm screen before the settings are applied,
 // because a key the content cannot be identified by is otherwise refused hours

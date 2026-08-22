@@ -24,7 +24,7 @@ import {
 } from '@kukan/ui'
 import { Upload, X, Plus, GripVertical } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import { detectFormat, MAX_UPLOAD_SIZE } from '@kukan/shared'
+import { detectFormat, isCsvFormat, MAX_UPLOAD_SIZE } from '@kukan/shared'
 import {
   DndContext,
   closestCenter,
@@ -54,6 +54,7 @@ import { PipelineStatusBadge } from './pipeline-status-badge'
 import { DropFilesZone, dropZoneClass } from './drop-files-zone'
 import { FileUploadZone } from './file-upload-zone'
 import { ResourceFormFields } from './resource-form-fields'
+import { PrimaryKeyPicker } from './primary-key-picker'
 import { ResourceVersionHistory } from './resource-version-history'
 import type { PipelineStatus } from '@/hooks/use-pipeline-status'
 
@@ -209,6 +210,14 @@ export function ResourceList({
   // Delete
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  /** Runs that settled on the row whose editor is open.
+   *
+   *  A rebuild re-reads bytes that are already published, so unless the reading
+   *  changed the create gate makes no version (`sameVersionIdentity`) and
+   *  Interpret writes over the standing one's schema and preview in place.
+   *  `latestVersion` does not move then, and the panels below have no other way
+   *  to hear that what they are showing was rewritten. */
+  const [editedRunsSettled, setEditedRunsSettled] = useState(0)
 
   // Edit / Create shared state
   const [editId, setEditId] = useState<string | null>(null)
@@ -681,6 +690,15 @@ export function ResourceList({
     const isUploadTab = formState.urlType === 'upload'
     // The form is open on a resource that already exists, not on a new one
     const isExistingResource = isEditing && !creating
+    /** The row being edited, as the last refetch found it — the panels below
+     *  are about the resource the server holds, not about the open form. */
+    const edited = resources.find((r) => r.id === editId)
+    /** What tells the two panels below their inputs moved. Two things do: a run
+     *  storing a version, and a run rewriting the standing version's
+     *  interpretation without storing one. Composed rather than summed — a
+     *  purge lowers `latestVersion`, and a sum would sit still across a settle
+     *  that happens to offset it. */
+    const panelKey = `${edited?.latestVersion ?? 0}:${editedRunsSettled}`
 
     return (
       <>
@@ -804,14 +822,41 @@ export function ResourceList({
             )}
           </div>
           {isEditing && !creating && editId && (
-            <div className="mt-2 border-t pt-4">
-              {/* Moves exactly when a run stored a version, so the open history
-                  reloads then and not on every refresh of the package. */}
-              <ResourceVersionHistory
-                resourceId={editId}
-                reloadKey={resources.find((r) => r.id === editId)?.latestVersion ?? 0}
-              />
-            </div>
+            <>
+              {/* Only where rows exist to identify. A key is what a diff
+                  matches rows by, and nothing but CSV/TSV is loaded row by row
+                  — the same gate the preview uses to decide whether to offer a
+                  table at all. Offered on a PDF it can only ever say there are
+                  no columns, which is not news about a PDF.
+                  The stored format, not the form's: everything below acts on
+                  the resource as the server holds it, so a format being typed
+                  and not yet saved must not make the section come and go. */}
+              {isCsvFormat(edited?.format) && (
+                <div className="mt-2 border-t pt-4">
+                  {/* Above the history because settling a key creates a version:
+                      what it does shows up in the list below it. */}
+                  <PrimaryKeyPicker
+                    resourceId={editId}
+                    reloadKey={panelKey}
+                    // A queued run reaches this screen the long way round: the
+                    // refetch puts the row back as queued, the badge polls it,
+                    // and its settling refetches again — which is what finally
+                    // moves `latestVersion` and reloads the two panels below.
+                    // Bumping them here instead would reload them while the run
+                    // that changes them has not started.
+                    onRunQueued={() => {
+                      setJustRan(editId)
+                      scheduleRefetch()
+                    }}
+                  />
+                </div>
+              )}
+              <div className="mt-2 border-t pt-4">
+                {/* Moves when a run changed what is listed here, and not on
+                    every refresh of the package. */}
+                <ResourceVersionHistory resourceId={editId} reloadKey={panelKey} />
+              </div>
+            </>
           )}
         </div>
       </>
@@ -876,7 +921,10 @@ export function ResourceList({
                       onClose={resetForm}
                       // A settle means the row's status (and maybe others)
                       // changed — refresh through the retrying gate
-                      onPipelineSettled={() => scheduleRefetch()}
+                      onPipelineSettled={() => {
+                        scheduleRefetch()
+                        if (r.id === editId) setEditedRunsSettled((n) => n + 1)
+                      }}
                       justRan={justRan === r.id}
                     />
                     {activeFormId === r.id && (

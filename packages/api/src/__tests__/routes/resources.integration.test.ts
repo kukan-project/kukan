@@ -1648,6 +1648,92 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
     expect(await res.json()).toMatchObject({ checked: true, fault: 'key-not-unique' })
   })
 
+  it('offers the columns the apply will validate against, and where the key stands', async () => {
+    // From the live version's frozen interpretation, not the resource's cached
+    // one: offered from the cache, a picker would list columns the apply then
+    // refuses with 400, and "which schema is authoritative" would have a second
+    // implementation on the browser's side of the network.
+    const resource = await withColumns('key-read-pkg', ['id', 'name'], { distinctCount: 2 })
+    await setKey(resource.id, ['id'])
+
+    const res = await app.request(`/api/v1/resources/${resource.id}/column-settings`)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({
+      id: resource.id,
+      primaryKey: ['id'],
+      // No version was read under it yet, so a rebuild is owed — a state the
+      // screen names rather than treating as a fault.
+      carried: false,
+      schema: {
+        rowCount: 2,
+        columns: [
+          { name: 'id', distinctCount: 2 },
+          { name: 'name', distinctCount: 2 },
+        ],
+      },
+    })
+  })
+
+  it('says the sample cannot be shown when the preview describes other bytes', async () => {
+    // The same predicate the check reports as `preview-stale`: a run whose
+    // Interpret failed leaves the previous content's preview in place, and a
+    // picker showing rows off it would be choosing a key over content the
+    // resource does not serve.
+    const resource = await withColumns('key-read-stale-pkg', ['id'], { distinctCount: 2 })
+    await db.insert(resourcePipeline).values({
+      resourceId: resource.id,
+      previewKey: 'previews/pkg/res.parquet',
+      metadata: { sourceHash: 'sha256:something-else' },
+    })
+
+    const res = await app.request(`/api/v1/resources/${resource.id}/column-settings`)
+
+    expect(await res.json()).toMatchObject({ preview: 'preview-stale' })
+  })
+
+  it('trusts a preview from before the source hash existed', async () => {
+    // Nothing to compare a hash against, so the completed run is the proof —
+    // the fallback `schemaDescribesLiveContent` carries and a bare
+    // `sourceHash !== hash` misses. Without it every interpretation predating
+    // ADR-046 reads as stale for good, and the rebuild offered beside the
+    // message cannot settle it.
+    const resource = await withColumns('key-read-prehash-pkg', ['id'], { distinctCount: 2 })
+    const [pipeline] = await db
+      .insert(resourcePipeline)
+      .values({
+        resourceId: resource.id,
+        previewKey: 'previews/pkg/res.parquet',
+        status: 'complete',
+        metadata: {},
+      })
+      .returning()
+    await db
+      .insert(resourcePipelineStep)
+      .values({ pipelineId: pipeline.id, stepName: 'extract', status: 'complete' })
+
+    const res = await app.request(`/api/v1/resources/${resource.id}/column-settings`)
+
+    expect(await res.json()).toMatchObject({ preview: 'ready' })
+  })
+
+  it('answers for a resource with nothing interpreted yet', async () => {
+    // The picker has nothing to offer, which is not the same as an error: the
+    // resource exists and its setting is readable.
+    const pkg = await createPackage('key-read-empty-pkg')
+    const resource = await createResource(pkg.id)
+
+    const res = await app.request(`/api/v1/resources/${resource.id}/column-settings`)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({
+      primaryKey: null,
+      carried: true,
+      schema: null,
+      preview: 'no-preview',
+    })
+  })
+
   it('accepts a key on an empty table, because the ingest would', async () => {
     // A header-only CSV interprets to rowCount 0, and `unique` false with it —
     // there is nothing to be distinct. But `keyFault` counts, and 0 distinct
@@ -1692,6 +1778,17 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ primaryKey: ['id'] }),
     })
+
+    expect(res.status).toBe(401)
+  })
+
+  it('does not read the settings out to an unauthenticated caller', async () => {
+    // The read goes with the writes, not with the resource: it is the settings
+    // screen's, and a public resource's version list already says what each
+    // version was read under.
+    const resource = await withColumns('key-read-unauth-pkg', ['id'])
+
+    const res = await unauthApp.request(`/api/v1/resources/${resource.id}/column-settings`)
 
     expect(res.status).toBe(401)
   })

@@ -113,25 +113,28 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 
 ## リソース (resources)
 
-| Method | Path                              | 説明                                                      | 認証        |
-| ------ | --------------------------------- | --------------------------------------------------------- | ----------- |
-| GET    | `/resources/count`                | アクティブなリソース数                                    | 公開        |
-| GET    | `/resources/formats`              | 使われているフォーマット一覧                              | 公開        |
-| GET    | `/resources/{id}`                 | リソース詳細                                              | 公開        |
-| GET    | `/resources/{id}/text`            | テキストコンテンツ取得（プレビューサイズ制限）            | 公開        |
-| GET    | `/resources/{id}/download`        | ファイルダウンロード（外部 URL は 302 リダイレクト）      | 公開        |
-| GET    | `/resources/{id}/preview`         | サーバー経由プレビュー（Range 対応）                      | 公開        |
-| GET    | `/resources/{id}/pipeline-status` | パイプライン処理状態                                      | 公開        |
-| GET    | `/resources/{id}/schema`          | 列スキーマ（列名・型・行数・数値統計）。CSV/TSV のみ      | 公開        |
-| POST   | `/resources/{id}/query`           | サーバーサイド DuckDB クエリ（SELECT 限定）。CSV/TSV のみ | 公開        |
-| POST   | `/resources/{id}/upload-url`      | プリサインドアップロード URL 発行                         | 組織 editor |
-| POST   | `/resources/{id}/upload`          | サーバー経由アップロード                                  | 組織 editor |
-| POST   | `/resources/{id}/upload-complete` | アップロード完了通知・パイプライン投入                    | 組織 editor |
-| POST   | `/resources/{id}/run-pipeline`    | パイプライン手動実行                                      | 組織 editor |
-| POST   | `/resources/{id}/cancel-pipeline` | 実行中の処理を中止（内容はそのまま）                      | 組織 editor |
-| POST   | `/resources/{id}/revert`          | 処理を中止し、内容を指定の版へ戻す                        | 組織 editor |
-| PUT    | `/resources/{id}`                 | リソース更新（全フィールド置換、extras はシステム管理）   | 組織 editor |
-| DELETE | `/resources/{id}`                 | リソース削除                                              | 組織 editor |
+| Method | Path                                    | 説明                                                      | 認証        |
+| ------ | --------------------------------------- | --------------------------------------------------------- | ----------- |
+| GET    | `/resources/count`                      | アクティブなリソース数                                    | 公開        |
+| GET    | `/resources/formats`                    | 使われているフォーマット一覧                              | 公開        |
+| GET    | `/resources/{id}`                       | リソース詳細                                              | 公開        |
+| GET    | `/resources/{id}/text`                  | テキストコンテンツ取得（プレビューサイズ制限）            | 公開        |
+| GET    | `/resources/{id}/download`              | ファイルダウンロード（外部 URL は 302 リダイレクト）      | 公開        |
+| GET    | `/resources/{id}/preview`               | サーバー経由プレビュー（Range 対応）                      | 公開        |
+| GET    | `/resources/{id}/pipeline-status`       | パイプライン処理状態                                      | 公開        |
+| GET    | `/resources/{id}/schema`                | 列スキーマ（列名・型・行数・数値統計）。CSV/TSV のみ      | 公開        |
+| POST   | `/resources/{id}/query`                 | サーバーサイド DuckDB クエリ（SELECT 限定）。CSV/TSV のみ | 公開        |
+| POST   | `/resources/{id}/upload-url`            | プリサインドアップロード URL 発行                         | 組織 editor |
+| POST   | `/resources/{id}/upload`                | サーバー経由アップロード                                  | 組織 editor |
+| POST   | `/resources/{id}/upload-complete`       | アップロード完了通知・パイプライン投入                    | 組織 editor |
+| POST   | `/resources/{id}/run-pipeline`          | パイプライン手動実行                                      | 組織 editor |
+| POST   | `/resources/{id}/cancel-pipeline`       | 実行中の処理を中止（内容はそのまま）                      | 組織 editor |
+| POST   | `/resources/{id}/revert`                | 処理を中止し、内容を指定の版へ戻す                        | 組織 editor |
+| GET    | `/resources/{id}/column-settings`       | 確定済みの列情報と、確定に使える列                        | 組織 editor |
+| POST   | `/resources/{id}/column-settings/check` | この主キーで行を同定できるか                              | 組織 editor |
+| PUT    | `/resources/{id}/column-settings`       | 主キーを確定する                                          | 組織 editor |
+| PUT    | `/resources/{id}`                       | リソース更新（全フィールド置換、extras はシステム管理）   | 組織 editor |
+| DELETE | `/resources/{id}`                       | リソース削除                                              | 組織 editor |
 
 ### バージョン (versions)
 
@@ -292,7 +295,10 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
 ```
 
 - **`keyed` は両端が同じ主キーで読まれたときだけ `true`** になり、そのとき `changedRows` と
-  `sampleChangedAfter` が加わります。主キーが指定されていない・両端で違う場合は `false` で、
+  `sampleChangedAfter` / `sampleChangedBefore` が加わります（2 つの見本は位置で対応し、変更前の側は
+  **実際に値が変わった列だけ**を持ちます — 主キーは一致しているので両側にあり、値が動かなかった列は
+  含まれません。見本のセルは表示用に切り詰められるため、両者を比べても変わったかどうかは判定できません。
+  列が変更前の側にあるかどうかが答えです）。主キーが指定されていない・両端で違う場合は `false` で、
   **1 行の書き換えは追加 1 行 + 削除 1 行として現れます**（行を同定できないため）
 - 列構成が変わった版どうしは `{"schemaChanged": true, "schemaDiff": {"added": [], "removed": [], "retyped": []}}`
   を返し、行差分は行いません
@@ -351,6 +357,64 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
 巻き戻した後、プレビューと検索索引が古いままになることがあります。その場合は
 `POST /resources/{id}/run-pipeline` に `{"rebuildOnly": true}` を付けて再構築します
 （外部 URL からの再取得は行われません）。
+
+### 列設定
+
+そのリソースの行を同定する主キー。指定すると版差分が変更行を数えるようになります（`keyed: true`。
+指定が無ければ 1 行の書き換えは追加 1 行 + 削除 1 行として現れます）。3 つとも **editor 権限**が
+必要です — これはデータの説明ではなく、人が列について確定した決定だからです。
+
+**読み取り** — `GET /resources/{id}/column-settings`:
+
+```json
+{
+  "id": "…",
+  "primaryKey": ["注文番号"],
+  "carried": false,
+  "schema": {
+    "rowCount": 1688,
+    "columns": [{ "name": "注文番号", "type": "string", "nullCount": 0, "unique": true }]
+  }
+}
+```
+
+- `schema` は **live 版**が凍結した解釈です — `PUT` が検証に使うのと同じ列なので、この一覧から
+  選んだ主キーが「その列は無い」で断られることはありません
+- `unique` は単独で行を同定できる列を示します。その列を選ぶなら確認は不要です。**組み合わせに
+  ついては何も言いません** — 複合キーは実データを読まないと分かりません
+- `carried` は、最新の生きている版がまだ `primaryKey` で読まれていない間 `false` です。
+  主キーを確定してから再構築が着くまでの**通常の状態**であって、異常ではありません
+
+**確認** — `POST /resources/{id}/column-settings/check`、ボディ `{"primaryKey": [...]}`:
+
+```json
+{ "id": "…", "checked": true, "primaryKey": ["注文番号"], "fault": "key-not-unique" }
+```
+
+- `fault` は通る場合 `null`、断られる場合は `key-missing` / `key-null` / `key-not-unique`
+- `{"checked": false, "reason": "no-preview" | "preview-stale"}` は**確かめられなかった**という
+  意味です（読める解釈が無い）。**エラーではありません** — `PUT` は内容を一切読まないので、
+  この状態でも主キーは確定できます
+- 単一列キーは版が凍結した列ごとの数から、複合キーは解釈の Parquet を読んで答えます
+
+**確定** — `PUT /resources/{id}/column-settings`、ボディ `{"primaryKey": [...] | null}`:
+
+```json
+{ "id": "…", "primaryKey": ["注文番号"], "queued": true }
+```
+
+- `[]` と `null` はどちらも「主キーなし」です。ボディの側で 1 つの綴りに正規化されます
+- 列は**指定した順序で保持されます**。ただし**行の照合は順序によりません** — キーを使う操作は
+  いずれも列を AND で並べるためです。それでも順序は記録されるキーの一部なので、同じ列を別の順序で
+  指定すると別のキーとして扱われ、版が 1 つ作られます
+- **主キーの確定は版を作ります。** 版とは「このバイト列を、この読み方で」であり、主キーは読み方の
+  一部だからです。バイト列は動かないので、新しい版は同じ内容の複製を所有します。`queued` はその版を
+  発行する再構築が投入されたことを示し、`null` は再構築が不要だったことを示します。**`false` は
+  設定は保存できたが再構築を投入できなかったことを示します** — 書き込みと投入は別々に判断されるので、
+  **同じボディを再送すれば修復できます**。設定と最新版の食い違いを掃除する仕組みは無いため、`false` を
+  無視すると、どの版もその主キーで読まれないまま残ります
+- **既に層 2 に入っている版を新しい主キーで読み直すことはしません。** 境界は版そのものであり、
+  それをまたぐ差分は行全体の比較に縮退します
 
 ## 組織 (organizations)
 

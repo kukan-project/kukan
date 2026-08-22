@@ -1,3 +1,6 @@
+import type { ResourceColumnType } from '@kukan/shared'
+import type { FieldType } from '@/hooks/use-parquet-schema'
+
 /**
  * Format a byte count as a human-readable string (e.g. "1.2 MB").
  * Returns null for null/undefined/negative values.
@@ -33,4 +36,33 @@ export function formatCell(value: unknown): string {
     return iso.endsWith('T00:00:00.000Z') ? iso.slice(0, 10) : iso.slice(0, 19).replace('T', ' ')
   }
   return String(value)
+}
+
+/**
+ * The message key naming a column's type on screen.
+ *
+ * **One map for two vocabularies.** The Parquet footer reports its own set
+ * (`number`, `datetime`) and ADR-029's inference reports another (`float`,
+ * `timestamp`), and the same column is shown through both — the resource page
+ * reads the footer, the primary-key picker reads the version's frozen schema.
+ * Named separately they would drift, and a reader comparing the two screens
+ * would be told the column is two different things.
+ *
+ * Exhaustive on purpose: a type added to either vocabulary has to be given a
+ * name here before it compiles.
+ */
+const COLUMN_TYPE_KEY: Record<FieldType | ResourceColumnType, string> = {
+  string: 'fieldTypeString',
+  integer: 'fieldTypeInteger',
+  number: 'fieldTypeNumber',
+  float: 'fieldTypeNumber',
+  boolean: 'fieldTypeBoolean',
+  date: 'fieldTypeDate',
+  datetime: 'fieldTypeDatetime',
+  timestamp: 'fieldTypeDatetime',
+}
+
+/** @see COLUMN_TYPE_KEY */
+export function columnTypeKey(type: FieldType | ResourceColumnType): string {
+  return COLUMN_TYPE_KEY[type]
 }

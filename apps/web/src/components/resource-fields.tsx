@@ -2,20 +2,11 @@
 
 import { Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import { useParquetSchema, type FieldType } from '@/hooks/use-parquet-schema'
-import { formatBytes } from '@/lib/format-utils'
+import { useParquetSchema } from '@/hooks/use-parquet-schema'
+import { columnTypeKey, formatBytes } from '@/lib/format-utils'
 
 interface ResourceFieldsProps {
   resourceId: string
-}
-
-const FIELD_TYPE_KEY: Record<FieldType, string> = {
-  string: 'fieldTypeString',
-  integer: 'fieldTypeInteger',
-  number: 'fieldTypeNumber',
-  boolean: 'fieldTypeBoolean',
-  date: 'fieldTypeDate',
-  datetime: 'fieldTypeDatetime',
 }
 
 /**
@@ -68,7 +59,7 @@ export function ResourceFields({ resourceId }: ResourceFieldsProps) {
               <tr key={i} className="border-b last:border-b-0">
                 <td className="px-4 py-2 font-medium">{field.name}</td>
                 <td className="px-4 py-2">
-                  <Badge variant="secondary">{t(FIELD_TYPE_KEY[field.type])}</Badge>
+                  <Badge variant="secondary">{t(columnTypeKey(field.type))}</Badge>
                 </td>
                 <td className="px-4 py-2 font-mono text-xs">{field.physicalType ?? '—'}</td>
                 <td className="px-4 py-2 font-mono text-xs">{field.logicalType ?? '—'}</td>

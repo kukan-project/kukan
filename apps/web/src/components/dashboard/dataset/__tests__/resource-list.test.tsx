@@ -26,12 +26,27 @@ vi.mock('../file-upload-zone', () => ({
   },
 }))
 
+// Stands in for the badge's polling: the only thing this file needs from it is
+// the moment it reports a run settling.
 vi.mock('../pipeline-status-badge', () => ({
-  PipelineStatusBadge: () => null,
+  PipelineStatusBadge: ({
+    resourceId,
+    onSettled,
+  }: {
+    resourceId: string
+    onSettled?: () => void
+  }) => <button onClick={() => onSettled?.()}>{`settle:${resourceId}`}</button>,
 }))
 
 vi.mock('../resource-version-history', () => ({
   ResourceVersionHistory: () => null,
+}))
+
+// Renders what it was told to reload on, which is what these tests assert.
+vi.mock('../primary-key-picker', () => ({
+  PrimaryKeyPicker: ({ reloadKey }: { reloadKey?: number | string }) => (
+    <div data-testid="picker-reload-key">{String(reloadKey)}</div>
+  ),
 }))
 
 const mockClientFetch = vi.mocked(clientFetch)
@@ -479,6 +494,36 @@ describe('ResourceList drop-to-create', () => {
     // Clicking the same row again closes it (toggle).
     fireEvent.click(screen.getByText('data.csv'))
     expect(screen.queryByText('Save')).not.toBeInTheDocument()
+  })
+
+  it('reloads the editor panels when a run settles without storing a version', async () => {
+    // A rebuild re-reads bytes that are already published. Unless the reading
+    // changed the create gate makes no version (`sameVersionIdentity`), and
+    // Interpret writes the schema and preview over the standing one — so
+    // `latestVersion` never moves, and nothing else would tell the picker that
+    // what it is showing has been rewritten.
+    render(
+      <ResourceList
+        {...baseProps}
+        onUpdated={vi.fn()}
+        resources={[
+          {
+            id: 'r1',
+            name: 'data.csv',
+            urlType: 'upload',
+            format: 'CSV',
+            pipelineStatus: 'complete',
+            latestVersion: 2,
+          },
+        ]}
+      />
+    )
+
+    fireEvent.click(screen.getByText('data.csv'))
+    expect(screen.getByTestId('picker-reload-key')).toHaveTextContent(/^2:0$/)
+
+    fireEvent.click(screen.getByRole('button', { name: 'settle:r1' }))
+    expect(screen.getByTestId('picker-reload-key')).toHaveTextContent(/^2:1$/)
   })
 
   it('should close the gate before a url-resource save resolves', async () => {

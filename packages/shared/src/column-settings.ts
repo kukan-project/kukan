@@ -62,9 +62,17 @@ export function primaryKeyOf(settings: ColumnSettings | null | undefined): strin
  * Whether two versions were read under the same key, which is what lets a diff
  * match their rows (spec §7).
  *
- * Order matters: a composite key is the columns *in the order given*, and two
- * versions keyed `[a, b]` and `[b, a]` describe the same rows but not the same
- * comparison — the second stage's `FULL OUTER JOIN` is written from the list.
+ * **Order-sensitive, though the order carries no meaning.** Every operation that
+ * uses a key ands its columns together — the load's `MERGE ON`, the diff's
+ * `FULL OUTER JOIN`, the uniqueness count — so `[a, b]` and `[b, a]` are the
+ * same comparison over the same rows. What this compares is the declared key as
+ * a record, not what it does: a version froze a list, and answering that a
+ * differently-ordered list is the same one would let the stored order change
+ * with no version saying it had.
+ *
+ * The cost of the strictness is that reordering a key issues a version and
+ * degrades the diff across it, for no change in behaviour. Nothing reorders a
+ * key on its own, so this only reaches someone who retypes one.
  */
 export function sameKeyColumns(a: string[] | null, b: string[] | null): boolean {
   if (a === null || b === null) return a === b

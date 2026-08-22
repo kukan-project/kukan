@@ -72,13 +72,17 @@ const ORIGIN_LABEL = {
 interface Props {
   resourceId: string
   /** Any change reloads the table in place. The owner passes whatever tells it
-   *  the resource gained a version — a replaced file's run finishing — which a
-   *  remount would also do, at the cost of closing an open diff. */
-  reloadKey?: number
+   *  a run changed what is listed here — a version stored, or one whose
+   *  interpretation was rewritten under it — which a remount would also do, at
+   *  the cost of closing an open diff. */
+  reloadKey?: number | string
 }
 
 export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
   const t = useTranslations('resource.versions')
+  /** The picker's labels for the same three states, so a key is not called one
+   *  thing where it is chosen and another where it is listed. */
+  const tk = useTranslations('resource.columnSettings')
   const { sysadmin } = useUser()
   const [versions, setVersions] = useState<VersionView[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -196,6 +200,7 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
             <TableHead>{t('created')}</TableHead>
             <TableHead>{t('size')}</TableHead>
             <TableHead>{t('origin')}</TableHead>
+            <TableHead>{t('keyColumnsHeader')}</TableHead>
             <TableHead className="w-[160px]" />
           </TableRow>
         </TableHeader>
@@ -207,6 +212,12 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
             // nothing to diff against.
             const hasPrevious = i < versions.length - 1
             const diffOpen = openDiff === v.version
+            /** Named once so the cell and its hover text cannot drift apart. */
+            const keyLabel = v.keyColumns
+              ? `${v.keyColumns.join(' → ')} ${tk(
+                  v.keyColumns.length === 1 ? 'kindSingle' : 'kindComposite'
+                )}`
+              : null
             return (
               <Fragment key={v.version}>
                 <TableRow>
@@ -232,16 +243,30 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
                           {t(`noTable.${v.noTableReason}`)}
                         </span>
                       )}
-                      {/* What the rows were identified by — the version's own
-                          answer, since the resource's setting is about the next
-                          one (spec §6.4). Why a version was *refused* is the
-                          diff panel's to say, where it is asked for. */}
-                      {v.keyColumns && (
-                        <Badge variant="outline" className="font-normal">
-                          {t('keyColumns', { columns: v.keyColumns.join(', ') })}
-                        </Badge>
-                      )}
                     </div>
+                  </TableCell>
+                  {/* What the rows were identified by — the version's own
+                      answer, since the resource's setting is about the next one
+                      (spec §6.4). Its own column rather than a badge beside the
+                      origin: it is a different fact about the version, and one
+                      that is read down the list to see where a key changed.
+                      Why a version was *refused* is the diff panel's to say,
+                      where it is asked for. */}
+                  <TableCell className="text-muted-foreground">
+                    {keyLabel ? (
+                      // Bounded and cut, with the whole of it on hover. A column
+                      // name is a CSV header — arbitrary text, and where the
+                      // delimiter was not found, one column named after the
+                      // whole line. Left to size itself it widens this table,
+                      // then the editor row it sits in, then the page; the
+                      // picker's own `w-0 min-w-full` is about the picker and
+                      // does nothing for a sibling.
+                      <span className="block max-w-60 truncate" title={keyLabel}>
+                        {keyLabel}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-1">
@@ -287,7 +312,7 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
                 </TableRow>
                 {diffOpen && (
                   <TableRow>
-                    <TableCell colSpan={5} className="bg-muted/30">
+                    <TableCell colSpan={6} className="bg-muted/30">
                       <VersionDiffPanel resourceId={resourceId} version={v.version} />
                     </TableCell>
                   </TableRow>

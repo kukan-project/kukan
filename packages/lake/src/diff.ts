@@ -75,14 +75,28 @@ export type VersionDiff =
       changedRows: number
       sampleAdded: LakeRow[]
       sampleRemoved: LakeRow[]
-      /**
-       * The changed rows **as `to` holds them** — the name says which side,
-       * because carrying both would double a projection that is evaluated over
-       * every changed row before the sample is cut, for a before/after view the
-       * dashboard does not yet offer (spec §7.1). Adding the other side later
-       * is then a new field rather than a change of this one's shape.
-       */
+      /** The changed rows **as `to` holds them** — the name says which side. */
       sampleChangedAfter: LakeRow[]
+      /**
+       * The same rows as `from` held them, aligned by position with
+       * {@link sampleChangedAfter}: without it a changed row shows its new
+       * values and nothing to read them against, which is the one thing
+       * "changed" is supposed to say.
+       *
+       * **Only the columns that differ**, so a reader marks a cell by whether
+       * this row has it rather than by comparing the two values. Comparing is
+       * not open to it: the samples are truncated at
+       * {@link SAMPLE_CELL_CHARS}, so two long values that share their first
+       * 512 characters arrive identical, and the one cell that moved would be
+       * shown as unmoved. Which columns moved is decided in SQL, over the whole
+       * value.
+       *
+       * The key columns are never among them — a changed row matched on its
+       * key, so both sides hold it — and carrying them twice would widen what
+       * the window buffers over every changed row before the sample is cut, for
+       * values already in the other half.
+       */
+      sampleChangedBefore: LakeRow[]
     }
 
 /**
@@ -91,11 +105,12 @@ export type VersionDiff =
  */
 function sampleProjection(
   columns: LakeColumn[],
-  read: (name: string) => string = sqlIdentifier
+  read: (name: string) => string = sqlIdentifier,
+  alias: (name: string) => string = sqlIdentifier
 ): string {
   return columns
     .map(({ name, type }) => {
-      const id = sqlIdentifier(name)
+      const id = alias(name)
       const value = read(name)
       if (type !== 'VARCHAR') return `${value} AS ${id}`
       return (
@@ -124,9 +139,11 @@ function diffSchemas(from: LakeColumn[], to: LakeColumn[]): SchemaDiff {
  * that already has one is a duplicate-name error.
  */
 function markerName(columns: LakeColumn[], base: string): string {
-  const taken = new Set(columns.map((c) => c.name))
+  // `startsWith`, not equality: the same answer serves a bare marker column and
+  // a prefix for aliases derived from one, and the stronger test gives both —
+  // a string no name begins with is also one no name equals.
   let name = base
-  while (taken.has(name)) name += '_'
+  while (columns.some((c) => c.name.startsWith(name))) name += '_'
   return name
 }
 
@@ -182,6 +199,22 @@ export function buildDiffQuery(
 }
 
 /**
+ * The bookkeeping columns the keyed query rides along with the sample, named so
+ * no user column can shadow them (see {@link markerName}). Passed as a unit
+ * because the query builds them and only the split understands them.
+ */
+export interface KeyedDiffMarkers {
+  /** Which of added / removed / changed the row is. */
+  kind: string
+  /** How many rows of that kind there are, repeated on every row. */
+  total: string
+  /** Prefix of the columns holding the older side's value. */
+  before: string
+  /** Prefix of the flags saying whether that column's value moved. */
+  moved: string
+}
+
+/**
  * One statement for the keyed diff: what each key did, and a few of each.
  *
  * A `FULL OUTER JOIN` on the key puts the two versions of a row side by side —
@@ -209,10 +242,13 @@ export function buildKeyedDiffQuery(
   toRef: string,
   columns: LakeColumn[],
   key: string[]
-): { sql: string; kind: string; total: string } {
+): { sql: string; markers: KeyedDiffMarkers } {
   const kind = markerName(columns, '__kind')
   const total = markerName(columns, '__total')
-  const values = columns.filter((c) => !key.includes(c.name)).map((c) => c.name)
+  const before = markerName(columns, '__before_')
+  const moved = markerName(columns, '__moved_')
+  const priorColumns = columns.filter((c) => !key.includes(c.name))
+  const values = priorColumns.map((c) => c.name)
   // The load's own predicates, so "the same row" and "this row changed" cannot
   // drift apart: a changed row is by construction one the load's `WHEN MATCHED`
   // would have updated (spec §7).
@@ -225,15 +261,38 @@ export function buildKeyedDiffQuery(
   const read = (name: string) =>
     `CASE WHEN ${absent('t')} THEN f.${sqlIdentifier(name)} ELSE t.${sqlIdentifier(name)} END`
 
+  // The side a changed row came from, for the columns that can differ. No guard
+  // for the other kinds: on a full outer join an added row's `f` is already all
+  // null, and a removed row's prior half is dropped rather than read.
+  const prior = sampleProjection(
+    priorColumns,
+    (name) => `f.${sqlIdentifier(name)}`,
+    (name) => sqlIdentifier(`${before}${name}`)
+  )
+  // Which columns actually moved, decided here rather than by the reader. The
+  // projection beside this one truncates a wide cell, so two long values
+  // differing past the cut arrive identical — and a cell that moved would be
+  // shown as one that did not. One boolean per column, which is what the window
+  // below buffers per changed row; the truncated values it already carries are
+  // three orders of magnitude wider.
+  const movedFlags = priorColumns
+    .map(
+      ({ name }) =>
+        `f.${sqlIdentifier(name)} IS DISTINCT FROM t.${sqlIdentifier(name)} ` +
+        `AS ${sqlIdentifier(`${moved}${name}`)}`
+    )
+    .join(', ')
+
   return {
-    kind,
-    total,
+    markers: { kind, total, before, moved },
     sql: `
       WITH joined AS (
         SELECT CASE WHEN ${absent('f')} THEN 'added'
                     WHEN ${absent('t')} THEN 'removed'
                     ELSE 'changed' END AS ${kind},
-               ${sampleProjection(columns, read)}
+               ${sampleProjection(columns, read)}${
+                 priorColumns.length === 0 ? '' : `, ${prior}, ${movedFlags}`
+               }
         FROM (SELECT * FROM ${fromRef}) f FULL OUTER JOIN (SELECT * FROM ${toRef}) t ON ${on}
         WHERE ${absent('f')} OR ${absent('t')}${changed === null ? '' : ` OR (${changed})`}
       )
@@ -245,7 +304,8 @@ export function buildKeyedDiffQuery(
 }
 
 /** Fold the keyed rows into the diff, dropping the bookkeeping columns. */
-export function splitKeyedDiffRows(rows: LakeRow[], kind: string, total: string): VersionDiff {
+export function splitKeyedDiffRows(rows: LakeRow[], markers: KeyedDiffMarkers): VersionDiff {
+  const { kind, total, before, moved } = markers
   const diff = {
     schemaChanged: false as const,
     keyed: true as const,
@@ -255,19 +315,44 @@ export function splitKeyedDiffRows(rows: LakeRow[], kind: string, total: string)
     sampleAdded: [] as LakeRow[],
     sampleRemoved: [] as LakeRow[],
     sampleChangedAfter: [] as LakeRow[],
+    sampleChangedBefore: [] as LakeRow[],
+  }
+
+  /** The two sides a row arrives interleaved as, told apart by the prefix. */
+  const split = (row: LakeRow) => {
+    const after: LakeRow = {}
+    const held: LakeRow = {}
+    const movedColumns = new Set<string>()
+    for (const [column, value] of Object.entries(row)) {
+      if (column === kind || column === total) continue
+      if (column.startsWith(moved)) {
+        if (value === true) movedColumns.add(column.slice(moved.length))
+      } else if (column.startsWith(before)) held[column.slice(before.length)] = value
+      else after[column] = value
+    }
+    // The before side keeps only what moved — a column absent from it is one
+    // the reader must not mark, and it cannot decide that from the truncated
+    // values it is being sent.
+    const prior: LakeRow = {}
+    for (const column of Object.keys(held)) {
+      if (movedColumns.has(column)) prior[column] = held[column]
+    }
+    return { after, prior }
   }
 
   for (const row of rows) {
-    const { [kind]: which, [total]: count, ...content } = row
-    if (which === 'added') {
-      diff.addedRows = Number(count)
-      diff.sampleAdded.push(content)
-    } else if (which === 'removed') {
-      diff.removedRows = Number(count)
-      diff.sampleRemoved.push(content)
+    const count = Number(row[total])
+    const { after, prior } = split(row)
+    if (row[kind] === 'added') {
+      diff.addedRows = count
+      diff.sampleAdded.push(after)
+    } else if (row[kind] === 'removed') {
+      diff.removedRows = count
+      diff.sampleRemoved.push(after)
     } else {
-      diff.changedRows = Number(count)
-      diff.sampleChangedAfter.push(content)
+      diff.changedRows = count
+      diff.sampleChangedAfter.push(after)
+      diff.sampleChangedBefore.push(prior)
     }
   }
 
@@ -309,8 +394,8 @@ export async function diffVersions(
   const from = at(ref, fromSnapshot)
   const to = at(ref, toSnapshot)
   if (opts.key?.length) {
-    const { sql, kind, total } = buildKeyedDiffQuery(from, to, toCols, opts.key)
-    return splitKeyedDiffRows(await session.rows(sql), kind, total)
+    const { sql, markers } = buildKeyedDiffQuery(from, to, toCols, opts.key)
+    return splitKeyedDiffRows(await session.rows(sql), markers)
   }
 
   const { sql, net, total } = buildDiffQuery(from, to, toCols)

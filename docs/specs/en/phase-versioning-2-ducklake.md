@@ -49,7 +49,7 @@ not taken (history)" (§9.7 / §11-7) and blocks headed "evidence (measured)" ar
 | expire uses the explicit-list form. `older_than` is not used                                                                                           | §11-3   |
 | **A purge claims only "making it unfetchable"; erasing the bytes in layer 2 is not guaranteed**                                                        | §9      |
 | Deleting a prefix in the data directory outside DuckLake's management is forbidden                                                                     | §9      |
-| Do not use the words "physically deleted" or "legal deletion" in the spec, the UI or the audit log                                                     | §9.5    |
+| Do not use "physically deleted", "completely deleted" or "legal deletion" in the spec, the UI or the audit log ("delete" itself is fine)               | §9.5    |
 | Restoration is PG-only. Reconciliation **checks that the files actually exist**                                                                        | §11-5   |
 | A table that has become unreadable has its **head rewritten from the highest-recorded healthy layer-2 version** (it is not `DROP`ped)                  | §11-5   |
 | **The rollback targets for layer 1 and layer 2 are looked up separately** (layer 2 uses "the version whose recorded snapshot is highest and resolves") | §9.1    |
@@ -1045,10 +1045,17 @@ retained for another resource therefore keeps referencing the target resource's 
 §9.2). `expire` + `cleanup_old_files` is **capacity reclamation that frees what it can free**, not
 a means of erasure.
 
-**And on top of that, we do not call it "deletion".** Rows can remain in layer 2's Parquet, so both
-the UI and the audit log **avoid the phrase "physically deleted" and state explicitly that data may
-remain in layer 2** (§9.5 / §9.6). **Reporting "deleted" for something that has not disappeared is
-the one failure this section exists to prevent.**
+**And on top of that, we do not call it "completely deleted".** Rows can remain in layer 2's
+Parquet, so both the UI and the audit log **avoid the phrases "physically deleted" and "completely
+deleted", and state explicitly that data may remain in layer 2** (§9.5 / §9.6). **Reporting
+"completely gone" for something that has not disappeared is the one failure this section exists to
+prevent.**
+
+**Calling the operation "deletion" is not itself forbidden.** In Japanese 削除 does not imply
+complete erasure — the language has 論理削除 for exactly this — and in English "delete" is what
+every other destructive control in this product is called. "Purge" reads as jargon to whoever is
+about to confirm it, which is a different failure and does nothing about the guarantee-word one.
+**What is forbidden is the claim of completeness, not the name of the operation.**
 
 **Deleting a prefix in the data directory outside DuckLake's management is forbidden.** The catalog
 would never learn the files were gone, and time travel and maintenance functions for other resources
@@ -1342,12 +1349,15 @@ version purge claims is unfetchability, not erasure in layer 2**, so this proper
 is. The UI wording is "this makes this version unfetchable", not "this deletes the row data only
 this version held".
 
-**No guarantee words.** In the spec, the UI and the audit log alike, a purge is **never described as
-"physically deleted" or "completely deleted"**. Layer 1, layer 3 and the search index really do
-disappear so individually they can be called "deleted", but **the conclusion of the operation as a
-whole cannot be** — because rows can remain in layer 2. The audit log records the operation, the
+**No guarantee words.** In the spec, the UI and the audit log alike, this operation is **never
+described as "physically deleted", "completely deleted" or "legal deletion"**. Layer 1, layer 3 and
+the search index really do disappear, but **the conclusion of the operation as a whole cannot be
+"all of it is gone"** — because rows can remain in layer 2. The audit log records the operation, the
 target and the time, and states the result as "made unfetchable". **The table at the top of §9 is
 authoritative for which layers disappear and which remain.**
+
+**The operation may be named "deletion"** (§9, above). What is avoided is the claim of
+completeness, not the plain word.
 
 ### 9.6 The UI and the recovery procedure
 
