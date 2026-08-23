@@ -7,6 +7,7 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { resource, resourceVersion } from '@kukan/db'
 import { getStorageKey } from '@kukan/shared'
+import type { VersionState } from '@kukan/shared'
 import { ResourceService } from '../../services/resource-service'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 
@@ -20,7 +21,7 @@ async function addResource(name: string): Promise<string> {
   return r.id
 }
 
-async function addVersion(resourceId: string, version: number, state = 'active') {
+async function addVersion(resourceId: string, version: number, state: VersionState = 'active') {
   await db.insert(resourceVersion).values({
     resourceId,
     version,

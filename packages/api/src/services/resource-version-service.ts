@@ -30,10 +30,14 @@ import {
 } from '@kukan/shared'
 import type {
   ColumnSettings,
-  LakeIngestReason,
+  ColumnSettingsView,
+  KeyCheck,
   NoTableReason,
+  PreviewUnusable,
   VersionIdentity,
   VersionOrigin,
+  VersionState,
+  VersionView,
 } from '@kukan/shared'
 import type { LakeConfig } from '@kukan/lake'
 import {
@@ -66,16 +70,6 @@ import { copyObject, publishLiveContent, PARKED_UNTIL, ownedByVersion } from './
 import { PipelineService } from './pipeline-service'
 import { scanLake } from './query/lake-scan'
 import { markContentUnindexed } from './content-index-record'
-
-/**
- * `superseded` is legacy only: a revert publishes forward and never writes it
- * (ADR-044 §4), but rows from before that change keep it and are left alone.
- * Named here because the view carries whatever the row says — dropped from the
- * union, `toView`'s cast would assert something false, and a reader switching
- * exhaustively would miss the case the database can still hand it.
- */
-export type VersionState = 'active' | 'purging' | 'purged' | 'superseded'
-export type { VersionOrigin }
 
 /** The row creating a version adds, minus everything the table fills in. */
 export interface CreatedVersion {
@@ -322,55 +316,6 @@ export interface RevertOutcome extends LadderOutcome {
   published: number | null
 }
 
-/**
- * What a key check can say (spec §6.4).
- *
- * Three states, not two: "it will work", "this is what would stop it", and
- * "this cannot be established" — the last because the apply asks nothing of the
- * content, so a resource whose preview is missing can still be settled and a
- * screen must not read "cannot check" as "do not apply".
- */
-/** What the primary-key picker reads before it offers anything (spec §6.4). */
-export interface ColumnSettingsView {
-  /** What the resource is set to read versions under from here on (spec §6.2). */
-  primaryKey: string[] | null
-  /**
-   * Whether the newest standing version was already read under {@link primaryKey}.
-   *
-   * False means a rebuild is owed and the setting has not reached a version
-   * yet — which is a state the screen has to be able to name, because the
-   * setting and the version disagreeing is normal for as long as the run has
-   * not landed, not a fault.
-   */
-  carried: boolean
-  /**
-   * The columns a key may be chosen from — the live version's frozen
-   * interpretation. Null before anything has been interpreted.
-   *
-   * Every column, not only the ones that could stand alone: a composite key is
-   * built out of columns that individually repeat, and `unique` on each column
-   * is what marks the ones that need no checking (ADR-046).
-   */
-  schema: ResourceSchema | null
-  /**
-   * Whether the interpretation's Parquet can be shown as a sample of what the
-   * columns hold.
-   *
-   * Answered here because it is the same predicate the key check reports as
-   * `checked: false` ({@link livePreview}), and the two must not disagree about
-   * whether the preview is about the live bytes — a picker showing rows the
-   * resource does not serve is choosing a key over the wrong content.
-   */
-  preview: 'ready' | PreviewUnusable
-}
-
-/** Why the interpretation's Parquet cannot be read for this resource. */
-export type PreviewUnusable = 'no-preview' | 'preview-stale'
-
-export type KeyCheck =
-  | { checked: true; primaryKey: string[] | null; fault: LakeIngestReason | null }
-  | { checked: false; primaryKey: string[]; reason: PreviewUnusable }
-
 /** What a purge needs to reach: layer 1, the search index, the queue, layer 2. */
 interface PurgeDeps {
   storage: StorageAdapter
@@ -580,130 +525,6 @@ interface PendingLakeIngest {
 }
 
 /**
- * A version as exposed through the API. Purged versions are tombstones: their
- * content-bearing fields (storageKey/hash/size/schema) are withheld.
- *
- * **`purgeReason` is not here at all**. It is free text an
- * administrator writes about why content had to go, so for a takedown it can
- * describe — or quote — the very thing the purge was destroying, and this view is
- * readable by anyone who can read the resource. Withholding the content while
- * publishing the account of it is the wrong way round.
- *
- * Nothing is lost: the audit log records who purged what, when and why, and
- * accountability lives there. Dropped rather than gated on permission, because no
- * screen reads it — passing a viewer into {@link toView} to keep a value nobody
- * displays would be API surface for its own sake. `purgedAt` stays: version
- * numbers skip where a purge happened and that needs explaining, which a date
- * alone does without leaking anything.
- */
-export interface VersionView {
-  version: number
-  origin: VersionOrigin
-  state: VersionState
-  /**
-   * Whether this is the version the resource is serving right now.
-   *
-   * **Answered here because a client cannot answer it.** The live pointer names
-   * an object, not a version, and two shapes defeat the rules a client would
-   * reach for instead (spec §9.6, with an integration test each):
-   *
-   * - **"the highest version"** — purging the newest leaves its tombstone on top
-   *   with live below it, and a row an old-style revert set aside outranks live
-   *   for as long as it is unconverted (ADR-044 §4)
-   * - **"the highest `active` version"** — not during a purge: live stands on a
-   *   `purging` version until the worker moves the pointer, and every active
-   *   version is then something else
-   *
-   * It is what a purge acts on, so the confirmation screen needs it to say what a
-   * purge will do rather than describing every branch.
-   *
-   * **True now, not a promise about later.** Live can move between a read of this
-   * and anything done about it — another run publishing, a concurrent revert — so
-   * a screen that names the case still says it conditionally.
-   */
-  isLive: boolean
-  /**
-   * The version serving would land on if this one were purged.
-   *
-   * **Set only when {@link isLive}**, because only that purge moves serving at
-   * all: taking any other version leaves the pointer, the preview and the index
-   * where they are. Null therefore means either "not the version being served" or
-   * "nothing would be left to serve" — the difference is `isLive`, which a caller
-   * reading this has already.
-   *
-   * The other half of what the confirmation screen says, and here for the same
-   * reason as {@link isLive}: it is a rule about which versions a restore may
-   * stand on ({@link ResourceVersionService.newestActiveVersion}), and a client
-   * that re-derived it would go stale the moment that rule changed — while its
-   * own tests kept passing. It also stops depending on the client holding every
-   * version, which a paginated list would break (spec §14.1 open issue 13).
-   */
-  purgeFallsBackTo: number | null
-  /** What this version was read as (ADR-046 §6). Kept on a tombstone: it
-   *  describes how the content was interpreted, not the content itself. */
-  format: string | null
-  /**
-   * The columns this version's rows were identified by, or null for a version
-   * read without a key (spec §6.4).
-   *
-   * The other half of "these bytes, read this way". The resource's own setting
-   * says what the *next* version will be read under, which is a different
-   * question for as long as a queued run has not landed — so the history is the
-   * only place that answers this one.
-   *
-   * **Withheld on a tombstone, unlike {@link format}**, though both are the
-   * operator's decision rather than the content. A key is only settable over
-   * columns the content has ({@link ResourceVersionService.checkPrimaryKey}),
-   * so the names are a subset of the {@link schema} withheld two lines below —
-   * publisher-authored strings, where a format is a closed vocabulary. That is
-   * enough on its own, and there is a second channel: a revert copies its
-   * destination's key, so an alive `revert` version showing a key that only one
-   * tombstone carries reconstructs the {@link restoredFrom} this view nulls for
-   * exactly that pair (spec §9.4).
-   *
-   * Why the version was *refused* is not here at all: it is a statement about
-   * the content, and it belongs where someone asks for the diff it explains
-   * (`DiffUnavailableReason`), which is behind the editor permission its
-   * audience implies.
-   */
-  keyColumns: string[] | null
-  size: number | null
-  hash: string | null
-  schema: ResourceSchema | null
-  /**
-   * Why there is no table, when there is none.
-   *
-   * Beside the empty schema it explains: the schema says "interpreted, nothing
-   * to load" and stops there, and that is not what someone asking why there is
-   * no preview wants to know (ADR-046).
-   *
-   * `too-large` is derived here rather than read from the row. It is a fact
-   * about the cap, not about the version — persist it and a version settled
-   * under an old cap keeps saying so after the cap moves. The two the row does
-   * carry are facts about the bytes, and the bytes never change.
-   */
-  noTableReason: NoTableReason | null
-  /**
-   * The version this one re-published, for the ones a revert issued (ADR-044
-   * §4). Null everywhere else.
-   *
-   * On the view because the history is the only place that answers it: content
-   * and its reading repeat by design (ADR-046 §3), so a client comparing hashes
-   * would name whichever match it happened to pick.
-   *
-   * **Withheld on a tombstone**, like the hash it would otherwise reconstruct:
-   * saying a purged version re-published v5 states that its content was
-   * identical to v5, which is the check hiding the hash exists to prevent
-   * (spec §9.4). The column stays on the row — this is exposure, not erasure.
-   */
-  restoredFrom: number | null
-  created: Date
-  /** When the version was retracted — the whole of what a tombstone says about it,
-   *  since the reason is not exposed (see above). */
-  purgedAt: Date | null
-}
-
-/**
  * Why this version has no table — read off the row, or worked out from the cap.
  *
  * Nothing interprets an over-cap version, so the row has nothing to say about
@@ -736,8 +557,8 @@ function toView(
   const isLive = row.version === serving.live
   return {
     version: row.version,
-    origin: row.origin as VersionOrigin,
-    state: row.state as VersionState,
+    origin: row.origin,
+    state: row.state,
     isLive,
     // Only for the version being served: purging any other one leaves serving
     // where it is, so an answer there would name a move that does not happen.
@@ -756,9 +577,11 @@ function toView(
     // identical content — and with v5 purged and v8 alive, that hands over the
     // erased content, since v8 can still be downloaded (spec §9.4).
     restoredFrom: purged || sourcePurged ? null : row.restoredFrom,
-    created: row.created,
+    // Serialized here rather than left to `c.json` a step later, because the
+    // client shares this declaration and reads the value as a string.
+    created: row.created.toISOString(),
     // No `purgeReason`: the row carries one, this view deliberately does not.
-    purgedAt: row.purgedAt,
+    purgedAt: row.purgedAt?.toISOString() ?? null,
   }
 }
 
@@ -2736,7 +2559,7 @@ export class ResourceVersionService {
         )
         .limit(1)
       if (owner) {
-        return states.includes(owner.state as VersionState) ? owner.version : undefined
+        return states.includes(owner.state) ? owner.version : undefined
       }
     }
 

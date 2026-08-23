@@ -8,7 +8,7 @@ import { eq, and, sql } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
 import { auditLog, resource, resourcePipeline, resourceVersion } from '@kukan/db'
 import { createLogger, getStorageKey, MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
-import type { ResourceSchema } from '@kukan/shared'
+import type { ResourceSchema, VersionState } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
@@ -58,7 +58,7 @@ function mockDeps() {
 async function addVersion(
   version: number,
   hash: string,
-  state = 'active',
+  state: VersionState = 'active',
   format?: string,
   schema?: ResourceSchema
 ) {

@@ -11,6 +11,7 @@
  * tell an edit from an unrelated add plus remove, and inventing a
  * correspondence would fabricate history.
  */
+import type { SchemaDiff, VersionDiff } from '@kukan/shared'
 import type { LakeColumn } from './columns'
 import { describeColumns, sameColumns } from './columns'
 import type { LakeRow, LakeSession } from './connection'
@@ -28,76 +29,6 @@ const SAMPLE_LIMIT = 5
  * afterwards would cap the response while leaving the peak unbounded.
  */
 const SAMPLE_CELL_CHARS = 512
-
-export interface SchemaDiff {
-  added: LakeColumn[]
-  removed: LakeColumn[]
-  retyped: { name: string; from: string; to: string }[]
-}
-
-/**
- * Either the columns lined up and the rows were compared, or they did not and
- * only the schema change is reported. A union rather than one shape with nulls,
- * so neither side carries filler the other has to guard against.
- */
-export type VersionDiff =
-  | { schemaChanged: true; schemaDiff: SchemaDiff }
-  | {
-      schemaChanged: false
-      /**
-       * Whether rows were identified by a declared primary key.
-       *
-       * False here: the rows were compared whole, so an edited row is one
-       * addition and one removal and no count of edits exists. Stated rather
-       * than left to be inferred from an absent `changedRows` — absence would
-       * mean both "not measured" and "measured zero", and a reader picking the
-       * wrong one reports edits that did not happen or none where there were
-       * some.
-       */
-      keyed: false
-      /** Rows in `to` that are absent from `from`, and the converse. */
-      addedRows: number
-      removedRows: number
-      sampleAdded: LakeRow[]
-      sampleRemoved: LakeRow[]
-    }
-  | {
-      schemaChanged: false
-      /**
-       * The rows were matched by a key both ends were loaded under, so an edit
-       * is one changed row rather than an addition and a removal.
-       */
-      keyed: true
-      /** Keys in `to` that `from` did not have, and the converse. */
-      addedRows: number
-      removedRows: number
-      /** Keys both hold, whose other columns differ. */
-      changedRows: number
-      sampleAdded: LakeRow[]
-      sampleRemoved: LakeRow[]
-      /** The changed rows **as `to` holds them** — the name says which side. */
-      sampleChangedAfter: LakeRow[]
-      /**
-       * The same rows as `from` held them, aligned by position with
-       * {@link sampleChangedAfter}: without it a changed row shows its new
-       * values and nothing to read them against, which is the one thing
-       * "changed" is supposed to say.
-       *
-       * **Only the columns that differ**, so a reader marks a cell by whether
-       * this row has it rather than by comparing the two values. Comparing is
-       * not open to it: the samples are truncated at
-       * {@link SAMPLE_CELL_CHARS}, so two long values that share their first
-       * 512 characters arrive identical, and the one cell that moved would be
-       * shown as unmoved. Which columns moved is decided in SQL, over the whole
-       * value.
-       *
-       * The key columns are never among them — a changed row matched on its
-       * key, so both sides hold it — and carrying them twice would widen what
-       * the window buffers over every changed row before the sample is cut, for
-       * values already in the other half.
-       */
-      sampleChangedBefore: LakeRow[]
-    }
 
 /**
  * Projection that trims wide cells. Only VARCHAR is unbounded — ADR-029 infers

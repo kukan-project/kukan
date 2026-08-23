@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
+import type { VersionView } from '@kukan/shared'
 import { ResourceVersionHistory } from '../resource-version-history'
 
 vi.mock('@/lib/client-api', async (importOriginal) => ({
@@ -19,18 +20,9 @@ function versionsResponse(versions: unknown[]) {
   return { ok: true, json: async () => ({ versions }) } as Response
 }
 
-function version(
-  n: number,
-  overrides: {
-    hash?: string
-    state?: string
-    isLive?: boolean
-    purgeFallsBackTo?: number | null
-    origin?: string
-    restoredFrom?: number | null
-    keyColumns?: string[] | null
-  } = {}
-) {
+/** The response shape itself, so a field added server-side fails here rather
+ *  than being noticed on screen. */
+function version(n: number, overrides: Partial<VersionView> = {}): VersionView {
   return {
     version: n,
     origin: 'upload',
@@ -38,8 +30,10 @@ function version(
     state: 'active',
     isLive: false,
     purgeFallsBackTo: null,
+    format: 'csv',
     size: 10,
     hash: `sha256:v${n}`,
+    schema: null,
     noTableReason: null,
     keyColumns: null,
     created: '2026-08-08T00:00:00.000Z',

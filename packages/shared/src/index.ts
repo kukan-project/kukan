@@ -27,6 +27,9 @@ export * from './pipeline-types'
 // Version identity (ADR-046 §3): the one definition of "the same version's content"
 export * from './version-identity'
 
+// Version API response shapes (ADR-043), read by the server and the dashboard
+export * from './version-views'
+
 // Settled column layer (primary key today, settled types in ii-c)
 export * from './column-settings'
 

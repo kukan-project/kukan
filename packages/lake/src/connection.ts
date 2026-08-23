@@ -11,13 +11,14 @@
  * Validated against dev PostgreSQL + MinIO in the Phase ii spike: extension
  * load, ATTACH, ingest, time travel, and `table_changes` all work.
  */
+import type { DiffRow } from '@kukan/shared'
 import type { LakeConfig } from './config'
 import { LAKE_DATA_PREFIX, LAKE_METADATA_SCHEMA, lakeStorageUrl } from './config'
 import { sqlLiteral } from './sql'
 
-export interface LakeRow {
-  [column: string]: unknown
-}
+/** A row read back from DuckDB, by column name. The diff samples reach the
+ *  client as they are read, so it is the wire's `DiffRow` and not a copy. */
+export type LakeRow = DiffRow
 
 /** A DuckDB session with the DuckLake catalog attached as `lake`. */
 export interface LakeSession {

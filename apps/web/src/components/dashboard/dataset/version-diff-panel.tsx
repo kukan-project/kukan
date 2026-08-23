@@ -12,66 +12,8 @@ import {
   TableRow,
 } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import type { DiffUnavailableReason } from '@kukan/shared'
+import type { DiffRow, VersionDiffView } from '@kukan/shared'
 import { useFetch } from '@/hooks/use-fetch'
-
-interface DiffColumn {
-  name: string
-  type: string
-}
-
-/** Mirrors VersionDiffService's VersionDiffView; the unions keep the shapes apart. */
-type DiffView =
-  | {
-      available: false
-      reason: DiffUnavailableReason
-      from: number | null
-      to: number
-      /** Which of the two the reason is about, when it is about one of them.
-       *  From the server: a version is as often blocked on the predecessor's
-       *  side as on the opened one's, and the message names which. */
-      reasonVersion: number | null
-    }
-  | ({ available: true; from: number; to: number } & (
-      | {
-          schemaChanged: true
-          schemaDiff: {
-            added: DiffColumn[]
-            removed: DiffColumn[]
-            retyped: { name: string; from: string; to: string }[]
-          }
-        }
-      | {
-          schemaChanged: false
-          /**
-           * Whether the rows were matched by a key. False means they were
-           * compared whole, so an edit is one addition and one removal and
-           * there is no count of edits to show — the absence is the point, not
-           * a missing number (spec §7.1).
-           */
-          keyed: false
-          addedRows: number
-          removedRows: number
-          sampleAdded: Record<string, unknown>[]
-          sampleRemoved: Record<string, unknown>[]
-        }
-      | {
-          schemaChanged: false
-          keyed: true
-          addedRows: number
-          removedRows: number
-          changedRows: number
-          sampleAdded: Record<string, unknown>[]
-          sampleRemoved: Record<string, unknown>[]
-          /** The changed rows as the newer version holds them, and as the older
-           *  one did — aligned by position, the older side carrying **only the
-           *  columns whose value moved**. Which those are is the server's to
-           *  say: cells arrive trimmed for display, so two long values that
-           *  differ past the trim are equal here (spec §7.1). */
-          sampleChangedAfter: Record<string, unknown>[]
-          sampleChangedBefore: Record<string, unknown>[]
-        }
-    ))
 
 /** How a cell reads, with `null` distinguished from an empty string. */
 const cell = (value: unknown) => (value === null || value === undefined ? '—' : String(value))
@@ -89,8 +31,8 @@ function SampleRows({
   before,
   label,
 }: {
-  rows: Record<string, unknown>[]
-  before?: Record<string, unknown>[]
+  rows: DiffRow[]
+  before?: DiffRow[]
   label: string
 }) {
   if (rows.length === 0) return null
@@ -149,7 +91,7 @@ function SampleRows({
  */
 export function VersionDiffPanel({ resourceId, version }: { resourceId: string; version: number }) {
   const t = useTranslations('resource.versions')
-  const { data: diff, error } = useFetch<DiffView>(
+  const { data: diff, error } = useFetch<VersionDiffView>(
     `/api/v1/resources/${resourceId}/versions/${version}/diff`
   )
 

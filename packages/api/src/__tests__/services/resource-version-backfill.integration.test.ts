@@ -7,6 +7,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { resource, resourceVersion, resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import { getStorageKey, MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
+import type { VersionState } from '@kukan/shared'
 import { hashBuffer } from '@kukan/shared/hash-node'
 import { randomUUID } from 'node:crypto'
 import { ResourceVersionService } from '../../services/resource-version-service'
@@ -83,7 +84,7 @@ async function addTabularResource(
   versions: {
     version: number
     snapshotId?: number | null
-    state?: string
+    state?: VersionState
     size?: number
     /** Defaults to the resource's, the way a version records it (ADR-046). */
     format?: string

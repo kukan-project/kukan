@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
+import type { DiffUnavailableReason, VersionDiffView } from '@kukan/shared'
 import { VersionDiffPanel } from '../version-diff-panel'
 
 vi.mock('@/lib/client-api', () => ({
   clientFetch: vi.fn(),
 }))
 
-function mockDiff(data: unknown) {
+/** The response shape itself: the copy this fixture used to be against carried
+ *  fields no branch of it has, and nothing said so. */
+function mockDiff(data: VersionDiffView) {
   vi.mocked(clientFetch).mockResolvedValue({ ok: true, json: async () => data } as Response)
 }
 
@@ -17,7 +20,13 @@ describe('VersionDiffPanel', () => {
   })
 
   it('requests the diff for the given version on mount', async () => {
-    mockDiff({ available: false, reason: 'no-previous-version', from: null, to: 1 })
+    mockDiff({
+      available: false,
+      reason: 'no-previous-version',
+      from: null,
+      to: 1,
+      reasonVersion: null,
+    })
 
     render(<VersionDiffPanel resourceId="r1" version={1} />)
 
@@ -39,7 +48,6 @@ describe('VersionDiffPanel', () => {
       removedRows: 0,
       changedRows: 2,
       schemaChanged: false,
-      schemaDiff: { added: [], removed: [], retyped: [] },
       sampleAdded: [],
       sampleRemoved: [],
       sampleChangedAfter: [{ id: 1, name: 'A' }],
@@ -64,7 +72,6 @@ describe('VersionDiffPanel', () => {
       removedRows: 0,
       changedRows: 1,
       schemaChanged: false,
-      schemaDiff: { added: [], removed: [], retyped: [] },
       sampleAdded: [],
       sampleRemoved: [],
       sampleChangedAfter: [{ id: 109, level: '-0.14', flag: '0' }],
@@ -98,7 +105,6 @@ describe('VersionDiffPanel', () => {
       removedRows: 0,
       changedRows: 1,
       schemaChanged: false,
-      schemaDiff: { added: [], removed: [], retyped: [] },
       sampleAdded: [],
       sampleRemoved: [],
       sampleChangedAfter: [{ id: 1, note: trimmed }],
@@ -125,7 +131,6 @@ describe('VersionDiffPanel', () => {
       removedRows: 0,
       changedRows: 1,
       schemaChanged: false,
-      schemaDiff: { added: [], removed: [], retyped: [] },
       sampleAdded: [],
       sampleRemoved: [],
       sampleChangedAfter: [{ id: 1, note: 'set' }],
@@ -149,7 +154,6 @@ describe('VersionDiffPanel', () => {
       addedRows: 1,
       removedRows: 1,
       schemaChanged: false,
-      schemaDiff: { added: [], removed: [], retyped: [] },
       sampleAdded: [],
       sampleRemoved: [],
     })
@@ -171,7 +175,6 @@ describe('VersionDiffPanel', () => {
       // Stated, not left out: the panel's rule is about this field, and an
       // absent one would pass by being falsy rather than by being false.
       keyed: false,
-      schemaDiff: { added: [], removed: [], retyped: [] },
       sampleAdded: [{ id: 4, name: 'd' }],
       sampleRemoved: [],
     })
@@ -187,16 +190,12 @@ describe('VersionDiffPanel', () => {
       available: true,
       from: 1,
       to: 2,
-      addedRows: null,
-      removedRows: null,
       schemaChanged: true,
       schemaDiff: {
         added: [{ name: 'extra', type: 'VARCHAR' }],
         removed: [],
         retyped: [],
       },
-      sampleAdded: [],
-      sampleRemoved: [],
     })
 
     render(<VersionDiffPanel resourceId="r1" version={2} />)
@@ -248,7 +247,7 @@ describe('VersionDiffPanel', () => {
     )
   })
 
-  it.each([
+  it.each<[DiffUnavailableReason, string]>([
     ['purged', 'One of the versions has been deleted, so a diff is not available.'],
     ['no-previous-version', 'This is the first version, so there is nothing to compare against.'],
   ])('explains why a diff is unavailable (%s)', async (reason, message) => {

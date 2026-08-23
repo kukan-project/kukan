@@ -17,7 +17,13 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
-import type { LakeIngestReason, NoTableReason, ResourceSchema } from '@kukan/shared'
+import type {
+  LakeIngestReason,
+  NoTableReason,
+  ResourceSchema,
+  VersionOrigin,
+  VersionState,
+} from '@kukan/shared'
 import { resource } from './resource'
 import { user } from './user'
 
@@ -41,7 +47,7 @@ export const resourceVersion = pgTable(
     // 'upload' = explicit replacement, 'fetch' = observed at fetch time
     // (external URL), 'revert' = an earlier version's content issued again
     // (ADR-044 §4).
-    origin: varchar('origin', { length: 10 }).notNull(),
+    origin: varchar('origin', { length: 10 }).$type<VersionOrigin>().notNull(),
     // The version a revert named, for the versions a revert issues; null on
     // every other path. Recorded rather than derived: content and its reading
     // repeat by design (ADR-046 §3), so no comparison settles *which* version
@@ -59,7 +65,7 @@ export const resourceVersion = pgTable(
     // `superseded` on rows the scheme before ADR-044 §4 wrote: a revert now
     // publishes what it goes back to as a new version and never writes it, but
     // the old rows are still here until the migration converts them.
-    state: varchar('state', { length: 20 }).notNull().default('active'),
+    state: varchar('state', { length: 20 }).$type<VersionState>().notNull().default('active'),
     // Column schema snapshot for this version (ADR-032 shape); null for
     // non-tabular formats or when the interpretation produced none.
     schema: jsonb('schema').$type<ResourceSchema | null>(),

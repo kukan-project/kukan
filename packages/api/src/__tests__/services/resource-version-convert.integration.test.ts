@@ -11,6 +11,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm'
 import { resource, resourceVersion, resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import { Readable } from 'node:stream'
 import { getStorageKey } from '@kukan/shared'
+import type { VersionState } from '@kukan/shared'
 import { hashBuffer } from '@kukan/shared/hash-node'
 import { randomUUID } from 'node:crypto'
 import { ResourceVersionService } from '../../services/resource-version-service'
@@ -39,7 +40,7 @@ const mockStorage = (overrides: Record<string, unknown> = {}) =>
 
 interface VersionSpec {
   version: number
-  state?: string
+  state?: VersionState
   content?: string
 }
 

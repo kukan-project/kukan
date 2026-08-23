@@ -9,38 +9,16 @@
 import { and, desc, eq, lt } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resourceVersion } from '@kukan/db'
-import type { LakeConfig, VersionDiff } from '@kukan/lake'
+import type { LakeConfig } from '@kukan/lake'
 import { diffVersions, lakeTableName } from '@kukan/lake'
-import type { DiffUnavailableReason, LakeIngestReason } from '@kukan/shared'
+import type {
+  DiffUnavailableReason,
+  LakeIngestReason,
+  VersionDiff,
+  VersionDiffView,
+} from '@kukan/shared'
 import { keyColumnsOf, NotFoundError, sharedKeyColumns } from '@kukan/shared'
 import { scanLake } from './query/lake-scan'
-
-export type VersionDiffView =
-  | {
-      available: false
-      reason: DiffUnavailableReason
-      from: number | null
-      to: number
-      /**
-       * The version the `reason` is about, when it is about one of the two.
-       *
-       * A diff has two ends, and every reason but `no-previous-version` belongs
-       * to whichever end carries it — routinely **not** the one the reader
-       * opened. For a key fault the repair path makes that the common case: the
-       * key is corrected, the next version takes the correction and loads, and
-       * the reader opens *that* version's diff, whose other end is the refused
-       * one. It happens to `not-ingested` just as easily, since a resource
-       * gains snapshots from the version it was first keyed on. Unnamed, the
-       * sentence reads as a verdict on the version in front of the reader —
-       * which is the one where nothing is wrong.
-       *
-       * Null only where no single version is the subject: no predecessor to
-       * compare against, and a purge, which the answer states of the pair
-       * because either end being a tombstone stops the comparison the same way.
-       */
-      reasonVersion: number | null
-    }
-  | ({ available: true; from: number; to: number } & VersionDiff)
 
 const VERSION_COLUMNS = {
   version: resourceVersion.version,

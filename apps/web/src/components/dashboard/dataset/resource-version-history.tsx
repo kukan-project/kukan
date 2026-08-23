@@ -22,36 +22,10 @@ import {
 } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
-import type { NoTableReason } from '@kukan/shared'
+import type { VersionView } from '@kukan/shared'
 import { formatBytes } from '@/lib/format-utils'
 import { useUser } from '@/components/dashboard/user-provider'
 import { VersionDiffPanel } from './version-diff-panel'
-
-interface VersionView {
-  version: number
-  origin: 'upload' | 'fetch' | 'revert'
-  /** The version this one re-published, for `revert` origins (ADR-044 §4).
-   *  From the server: repeated content makes it underivable here. */
-  restoredFrom: number | null
-  /** `superseded` only on rows written before a revert published forward
-   *  (ADR-044 §4); they are ordinary versions and render as such. */
-  state: 'active' | 'purging' | 'purged' | 'superseded'
-  /** Whether the resource is serving this version, and where serving would land
-   *  if it were purged. Both from the server: see the dialog below. */
-  isLive: boolean
-  purgeFallsBackTo: number | null
-  size: number | null
-  /** Content hash, withheld for a tombstone — which no longer holds content. */
-  hash: string | null
-  /** Why this version produced no table, when it produced none (ADR-046). */
-  noTableReason: NoTableReason | null
-  /** What the version's rows were identified by, null for a keyless one. From
-   *  the server: the resource's current setting answers a different question
-   *  while a queued run has not landed (spec §6.4). */
-  keyColumns: string[] | null
-  created: string
-  purgedAt: string | null
-}
 
 /**
  * Flat keys, because `origin` is already the column heading.
@@ -97,7 +71,7 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
       try {
         const res = await clientFetch(`/api/v1/resources/${resourceId}/versions`, { signal })
         if (!res.ok) throw new Error(String(res.status))
-        const data = await res.json()
+        const data = (await res.json()) as { versions: VersionView[] }
         if (!signal?.aborted) setVersions(data.versions)
       } catch {
         if (!signal?.aborted) setError(t('loadError'))
@@ -144,7 +118,7 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
   // server — `isLive`, because the live pointer names an object rather than a
   // version, and `purgeFallsBackTo`, because where a restore may land is its rule
   // to change. Deriving either here is what the field exists to stop; the reasons
-  // each attempt fails are on `VersionView` in `resource-version-service.ts`.
+  // each attempt fails are on the shared `VersionView` this file renders.
   //
   // **Named, but still said conditionally.** Live can move between opening this
   // dialog and confirming it, so the case is what will happen if it does not, not

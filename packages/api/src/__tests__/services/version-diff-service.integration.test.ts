@@ -10,6 +10,7 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { resource, resourceVersion } from '@kukan/db'
 import { getStorageKey } from '@kukan/shared'
+import type { VersionState } from '@kukan/shared'
 import { VersionDiffService } from '../../services/version-diff-service'
 import { unreachableLake } from '../test-helpers/fixtures'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
@@ -23,7 +24,7 @@ let resourceId: string
 async function addVersion(
   version: number,
   opts: {
-    state?: string
+    state?: VersionState
     snapshotId?: number | null
     ingestReason?: 'key-missing' | 'key-null' | 'key-not-unique'
   } = {}

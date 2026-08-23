@@ -14,32 +14,12 @@ import {
   DialogTitle,
 } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import type { LakeIngestReason, ResourceColumn, ResourceSchema } from '@kukan/shared'
+import type { ColumnSettingsView, KeyCheck, ResourceColumn } from '@kukan/shared'
 import { sameKeyColumns } from '@kukan/shared'
 import { clientFetch, problemDetail } from '@/lib/client-api'
 import { columnTypeKey, formatCell } from '@/lib/format-utils'
 import { useParquetPreview } from '@/hooks/use-parquet-preview'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@kukan/ui'
-
-/** Mirrors the server's `ColumnSettingsView`, hand-copied like every other
- *  response shape in this directory — tracked separately as a refactor. */
-interface SettingsView {
-  primaryKey: string[] | null
-  /** Whether the newest standing version was already read under it. False is
-   *  the ordinary state between settling a key and the rebuild landing. */
-  carried: boolean
-  schema: ResourceSchema | null
-  /** Whether the interpretation can be shown as a sample. From the server: it
-   *  is the same predicate the check reports as `checked: false`. */
-  preview: 'ready' | PreviewUnusable
-}
-
-/** Mirrors KeyCheck. `checked: false` is an answer, not a refusal. */
-type KeyCheck =
-  | { checked: true; primaryKey: string[] | null; fault: LakeIngestReason | null }
-  | { checked: false; primaryKey: string[]; reason: PreviewUnusable }
-
-type PreviewUnusable = 'no-preview' | 'preview-stale'
 
 /** Rows to show. Enough to see whether a column repeats; few enough that the
  *  read is one row group and the table does not become the screen. */
@@ -75,7 +55,7 @@ export function PrimaryKeyPicker({
   /** The type names the public resource page uses, so a column is not called
    *  two things on two screens. */
   const tr = useTranslations('resource')
-  const [view, setView] = useState<SettingsView | null>(null)
+  const [view, setView] = useState<ColumnSettingsView | null>(null)
   const [selected, setSelected] = useState<string[]>([])
   const [check, setCheck] = useState<KeyCheck | null>(null)
   const [checking, setChecking] = useState(false)
@@ -90,7 +70,7 @@ export function PrimaryKeyPicker({
       try {
         const res = await clientFetch(`/api/v1/resources/${resourceId}/column-settings`, { signal })
         if (!res.ok) throw new Error(String(res.status))
-        const data: SettingsView = await res.json()
+        const data: ColumnSettingsView = await res.json()
         if (signal?.aborted) return
         setView(data)
         setSelected(data.primaryKey ?? [])

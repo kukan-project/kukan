@@ -1,10 +1,10 @@
 /** Column list of a DuckDB relation, shared by ingest's schema check and diff. */
+import type { DiffColumn } from '@kukan/shared'
 import type { LakeSession } from './connection'
 
-export interface LakeColumn {
-  name: string
-  type: string
-}
+/** A described column. The diff publishes these to the client untouched, so it
+ *  is the wire's `DiffColumn` rather than a second declaration of it. */
+export type LakeColumn = DiffColumn
 
 /**
  * @param relation - a FROM-clause expression: `read_parquet('…')`, `lake.t`, or

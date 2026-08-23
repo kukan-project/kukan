@@ -19,7 +19,9 @@ export { openLakeSession, withLakeSession, closeLakeInstances } from './connecti
 export type { LakeSession, LakeRow } from './connection'
 export { ingestParquetVersion, keyFault, restandLakeTable } from './ingest'
 export type { IngestResult } from './ingest'
+// What it returns is `VersionDiff` from `@kukan/shared`: the panel renders those
+// fields verbatim, so the shape is API surface and is declared with the view
+// that carries it, not here.
 export { diffVersions } from './diff'
-export type { VersionDiff } from './diff'
 export { deleteOrphanedFiles, reclaimUnreferencedSnapshots } from './maintenance'
 export type { ReclaimResult } from './maintenance'
