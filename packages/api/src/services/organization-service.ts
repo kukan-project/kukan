@@ -3,7 +3,19 @@
  * Business logic for organization management
  */
 
-import { eq, ilike, and, or, sql, asc, desc, count, inArray, getTableColumns } from 'drizzle-orm'
+import {
+  eq,
+  ilike,
+  and,
+  or,
+  sql,
+  asc,
+  desc,
+  count,
+  inArray,
+  getTableColumns,
+  type SQL,
+} from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { organization, userOrgMembership, user, packageTable } from '@kukan/db'
 import {
@@ -25,7 +37,7 @@ import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { LakeConfig } from '@kukan/lake'
 import { dropResourceTables } from '@kukan/lake'
-import { orgMemberCountSql, type AuthUser } from '../auth/permissions'
+import { orgMemberCountSql, packageVisibilitySql, type AuthUser } from '../auth/permissions'
 import { reclaimLakeStorage } from './lake-reclaim'
 import { listPurgeTargets, purgePackageExternals } from './package-cleanup'
 import { withResourceClaimsOrConflict } from './pipeline-claim'
@@ -36,14 +48,23 @@ import { deleteOrphanFreeTags } from './tag-service'
 const EXTERNALS_CLEANUP_CONCURRENCY = 8
 
 /**
- * An organization's packages in one state, counted per row of a list query.
+ * An organization's packages in one state, counted per row of a list query,
+ * restricted to what the viewer may see (packageVisibilitySql).
  * Exported because the dashboard lists the viewer's own organizations from a
  * second route (routes/users.ts), and the two counts must not drift apart.
  */
-export function orgPackageCount(db: Database, packageState: 'active' | 'deleted') {
+export function orgPackageCount(
+  db: Database,
+  packageState: 'active' | 'deleted',
+  visibility?: SQL
+) {
   return db.$count(
     packageTable,
-    and(eq(packageTable.ownerOrg, organization.id), eq(packageTable.state, packageState))
+    and(
+      eq(packageTable.ownerOrg, organization.id),
+      eq(packageTable.state, packageState),
+      visibility
+    )
   )
 }
 
@@ -74,7 +95,8 @@ export class OrganizationService {
 
     const where = and(...conditions)
 
-    const datasetCount = orgPackageCount(this.db, 'active').as('dataset_count')
+    const visibility = await packageVisibilitySql(this.db, viewer)
+    const datasetCount = orgPackageCount(this.db, 'active', visibility).as('dataset_count')
 
     // Ordered before LIMIT: without it PostgreSQL may return rows in any order,
     // so paging could repeat or skip an organization
@@ -83,7 +105,9 @@ export class OrganizationService {
         ...getTableColumns(organization),
         total: sql`${count()} over ()`.mapWith(Number).as('total'),
         datasetCount,
-        deletedDatasetCount: orgPackageCount(this.db, 'deleted').as('deleted_dataset_count'),
+        deletedDatasetCount: orgPackageCount(this.db, 'deleted', visibility).as(
+          'deleted_dataset_count'
+        ),
         memberCount: orgMemberCountSql(viewer).as('member_count'),
       })
       .from(organization)
@@ -124,14 +148,21 @@ export class OrganizationService {
   }
 
   /**
-   * Count active packages linked to an organization. This is the soft-delete /
-   * purge precondition (both reject while active packages remain), so the UI can
-   * proactively disable the delete action instead of relying on a failed request.
+   * Count active packages linked to an organization, restricted to what the
+   * viewer may see. This backs the soft-delete / purge precondition (both
+   * reject while active packages remain), so the UI can proactively disable
+   * the delete action instead of relying on a failed request — for the org
+   * admins and sysadmins who can delete, the visibility-restricted count
+   * equals the full count.
    */
-  async countActivePackages(orgId: string): Promise<number> {
+  async countActivePackages(orgId: string, viewer?: AuthUser): Promise<number> {
     return this.db.$count(
       packageTable,
-      and(eq(packageTable.ownerOrg, orgId), eq(packageTable.state, 'active'))
+      and(
+        eq(packageTable.ownerOrg, orgId),
+        eq(packageTable.state, 'active'),
+        await packageVisibilitySql(this.db, viewer)
+      )
     )
   }
 

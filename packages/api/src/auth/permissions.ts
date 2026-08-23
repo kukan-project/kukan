@@ -3,10 +3,16 @@
  * Helpers for authorization logic
  */
 
-import { eq, and, inArray, sql, count, exists, type SQL } from 'drizzle-orm'
+import { eq, and, or, inArray, sql, count, exists, type SQL } from 'drizzle-orm'
 import { QueryBuilder, type PgColumn } from 'drizzle-orm/pg-core'
 import type { Database } from '@kukan/db'
-import { organization, group, userOrgMembership, userGroupMembership } from '@kukan/db'
+import {
+  organization,
+  group,
+  packageTable,
+  userOrgMembership,
+  userGroupMembership,
+} from '@kukan/db'
 import { ForbiddenError } from '@kukan/shared'
 
 export type MembershipRole = 'admin' | 'editor' | 'member'
@@ -329,4 +335,27 @@ export function buildVisibilityFilters(
     excludePrivate: true,
     ...(userOrgIds?.length && { allowPrivateOrgIds: userOrgIds }),
   }
+}
+
+/**
+ * The same visibility rule as a SQL predicate over `packageTable`, for the
+ * direct-DB dataset counts on the group/organization routes. Renders
+ * buildVisibilityFilters() so the decision itself is made in one place —
+ * the detail pages count through search with those filters, and the two
+ * must not drift: sysadmin counts everything (`undefined`, no restriction),
+ * a signed-in user additionally their own orgs' private packages, everyone
+ * else only public ones.
+ */
+export async function packageVisibilitySql(
+  db: Database,
+  user: AuthUser | undefined
+): Promise<SQL | undefined> {
+  const filters = buildVisibilityFilters(user, await resolveUserOrgIds(db, user))
+  if (!filters.excludePrivate) return undefined
+  return filters.allowPrivateOrgIds
+    ? or(
+        eq(packageTable.private, false),
+        inArray(packageTable.ownerOrg, filters.allowPrivateOrgIds)
+      )
+    : eq(packageTable.private, false)
 }

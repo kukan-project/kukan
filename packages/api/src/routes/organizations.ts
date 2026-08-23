@@ -40,15 +40,16 @@ organizationsRouter.get(
     const params = c.req.valid('query')
 
     // Listing soft-deleted orgs (the trash view) is sysadmin-only and uncached.
-    // No viewer is passed: the trash view offers no member action to count for.
+    // The viewer is passed so the dataset counts stay unrestricted for sysadmin.
     if (params.state === 'deleted') {
       if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can list deleted organizations')
-      return c.json(await service.list(params))
+      return c.json(await service.list(params, user))
     }
 
     // publicCache() middleware caches this for anonymous callers only; signed-in
     // dashboard users fall through to `private, no-cache` for immediate freshness.
-    // The viewer also decides which rows carry a member count.
+    // The viewer decides which rows carry a member count and scopes the dataset
+    // counts (packageVisibilitySql).
     return c.json(await service.list({ ...params, state: 'active' }, user))
   }
 )
@@ -85,7 +86,7 @@ organizationsRouter.get(
     }
 
     const organization = await service.getByNameOrId(nameOrId)
-    const datasetCount = await service.countActivePackages(organization.id)
+    const datasetCount = await service.countActivePackages(organization.id, user)
     // publicCache() caches for anonymous only; authenticated dashboard reads stay
     // fresh so the delete gate reflects the current active dataset count.
     return c.json({ ...organization, datasetCount })

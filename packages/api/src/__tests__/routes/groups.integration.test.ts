@@ -11,6 +11,20 @@ import {
 
 const db = getTestDb()
 const app = createTestApp(db)
+const outsiderApp = createTestApp(db, {
+  user: {
+    id: OUTSIDER_USER_ID,
+    email: 'outsider@example.com',
+    name: 'outsider',
+    sysadmin: false,
+  },
+})
+
+const json = (data: Record<string, unknown>) => ({
+  method: 'POST' as const,
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(data),
+})
 
 beforeEach(async () => {
   await cleanDatabase()
@@ -35,15 +49,6 @@ describe('Groups API Routes', () => {
     // The roster behind GET /:nameOrId/members is member-only, so the count
     // that summarises it must not reach a caller who cannot open it.
     describe('member counts', () => {
-      const outsiderApp = createTestApp(db, {
-        user: {
-          id: OUTSIDER_USER_ID,
-          email: 'outsider@example.com',
-          name: 'outsider',
-          sysadmin: false,
-        },
-      })
-
       beforeEach(async () => {
         await ensureOutsiderUser()
         for (const name of ['group-joined', 'group-other']) {
@@ -83,6 +88,57 @@ describe('Groups API Routes', () => {
 
       it('should count every category for a sysadmin', async () => {
         expect(await listAs(app)).toEqual({ 'group-joined': 1, 'group-other': 0 })
+      })
+    })
+
+    // The list row's dataset count must match the total the group detail page
+    // gets through search-side visibility (buildVisibilityFilters): private
+    // packages are invisible to outsiders, visible to their org's members and
+    // to sysadmin.
+    describe('dataset counts', () => {
+      beforeEach(async () => {
+        await ensureOutsiderUser()
+        await app.request('/api/v1/groups', json({ name: 'count-group' }))
+        const mine = await (
+          await app.request('/api/v1/organizations', json({ name: 'count-org-mine' }))
+        ).json()
+        const other = await (
+          await app.request('/api/v1/organizations', json({ name: 'count-org-other' }))
+        ).json()
+        await app.request(
+          '/api/v1/organizations/count-org-mine/members',
+          json({ user_id: OUTSIDER_USER_ID, role: 'member' })
+        )
+        const groups = [{ name: 'count-group' }]
+        await app.request(
+          '/api/v1/packages',
+          json({ name: 'pkg-public', ownerOrg: other.id, groups })
+        )
+        await app.request(
+          '/api/v1/packages',
+          json({ name: 'pkg-private-mine', ownerOrg: mine.id, private: true, groups })
+        )
+        await app.request(
+          '/api/v1/packages',
+          json({ name: 'pkg-private-other', ownerOrg: other.id, private: true, groups })
+        )
+      })
+
+      async function countAs(client: typeof app) {
+        const body = await (await client.request('/api/v1/groups')).json()
+        return body.items[0].datasetCount
+      }
+
+      it('should count only public datasets for anonymous callers', async () => {
+        expect(await countAs(createTestApp(db, { user: null }))).toBe(1)
+      })
+
+      it("should add the viewer's own orgs' private datasets", async () => {
+        expect(await countAs(outsiderApp)).toBe(2)
+      })
+
+      it('should count every dataset for a sysadmin', async () => {
+        expect(await countAs(app)).toBe(3)
       })
     })
   })
@@ -358,11 +414,6 @@ describe('Groups API Routes', () => {
   describe('list ordering', () => {
     /** 'aaa-group' sorts first by name but has no datasets; 'zzz-group' has one */
     async function seedUnevenGroups() {
-      const json = (data: Record<string, unknown>) => ({
-        method: 'POST' as const,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      })
       await app.request('/api/v1/groups', json({ name: 'aaa-group', title: 'A' }))
       await app.request('/api/v1/groups', json({ name: 'zzz-group', title: 'Z' }))
       const orgRes = await app.request('/api/v1/organizations', json({ name: 'order-org' }))

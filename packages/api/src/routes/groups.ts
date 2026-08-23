@@ -35,8 +35,9 @@ groupsRouter.get(
   async (c) => {
     const params = c.req.valid('query')
     const service = new GroupService(c.get('db'))
-    // The viewer decides which rows carry a member count; publicCache() keeps
-    // only the anonymous response (no counts) in the shared cache.
+    // The viewer decides which rows carry a member count and scopes the
+    // dataset counts (packageVisibilitySql); publicCache() keeps only the
+    // anonymous response in the shared cache.
     const result = await service.list(params, c.get('user'))
     return c.json(result)
   }

@@ -23,6 +23,20 @@ function runOrgPurgeWorker(orgId: string) {
 
 const db = getTestDb()
 const app = createTestApp(db)
+const outsiderApp = createTestApp(db, {
+  user: {
+    id: OUTSIDER_USER_ID,
+    email: 'outsider@example.com',
+    name: 'outsider',
+    sysadmin: false,
+  },
+})
+
+const json = (data: Record<string, unknown>) => ({
+  method: 'POST' as const,
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(data),
+})
 
 beforeEach(async () => {
   await cleanDatabase()
@@ -127,15 +141,6 @@ describe('Organizations API Routes', () => {
     // The roster behind GET /:nameOrId/members is member-only, so the count
     // that summarises it must not reach a caller who cannot open it.
     describe('member counts', () => {
-      const outsiderApp = createTestApp(db, {
-        user: {
-          id: OUTSIDER_USER_ID,
-          email: 'outsider@example.com',
-          name: 'outsider',
-          sysadmin: false,
-        },
-      })
-
       beforeEach(async () => {
         await ensureOutsiderUser()
         for (const name of ['org-joined', 'org-other']) {
@@ -175,6 +180,76 @@ describe('Organizations API Routes', () => {
 
       it('should count every organization for a sysadmin', async () => {
         expect(await listAs(app)).toEqual({ 'org-joined': 1, 'org-other': 0 })
+      })
+    })
+
+    // The list row's dataset count must match the total the organization detail
+    // page gets through search-side visibility (buildVisibilityFilters): private
+    // packages are invisible to outsiders, visible to their org's members and
+    // to sysadmin.
+    describe('dataset counts', () => {
+      beforeEach(async () => {
+        await ensureOutsiderUser()
+        const mine = await (
+          await app.request('/api/v1/organizations', json({ name: 'count-org-mine' }))
+        ).json()
+        const other = await (
+          await app.request('/api/v1/organizations', json({ name: 'count-org-other' }))
+        ).json()
+        await app.request(
+          '/api/v1/organizations/count-org-mine/members',
+          json({ user_id: OUTSIDER_USER_ID, role: 'member' })
+        )
+        await app.request('/api/v1/packages', json({ name: 'pkg-public', ownerOrg: mine.id }))
+        await app.request(
+          '/api/v1/packages',
+          json({ name: 'pkg-private-mine', ownerOrg: mine.id, private: true })
+        )
+        await app.request(
+          '/api/v1/packages',
+          json({ name: 'pkg-private-other', ownerOrg: other.id, private: true })
+        )
+      })
+
+      async function countsAs(client: typeof app) {
+        const body = await (await client.request('/api/v1/organizations')).json()
+        return Object.fromEntries(
+          body.items.map((o: { name: string; datasetCount: number }) => [o.name, o.datasetCount])
+        )
+      }
+
+      it('should count only public datasets for anonymous callers', async () => {
+        expect(await countsAs(createTestApp(db, { user: null }))).toEqual({
+          'count-org-mine': 1,
+          'count-org-other': 0,
+        })
+      })
+
+      it("should add the viewer's own orgs' private datasets", async () => {
+        expect(await countsAs(outsiderApp)).toEqual({
+          'count-org-mine': 2,
+          'count-org-other': 0,
+        })
+      })
+
+      it('should count every dataset for a sysadmin', async () => {
+        expect(await countsAs(app)).toEqual({
+          'count-org-mine': 2,
+          'count-org-other': 1,
+        })
+      })
+
+      // The detail endpoint carries the same count for the dashboard delete
+      // gate — it must not hand anonymous callers the unrestricted number the
+      // list just hid
+      it('should apply the same visibility on the detail endpoint', async () => {
+        const anonApp = createTestApp(db, { user: null })
+        const anon = await (await anonApp.request('/api/v1/organizations/count-org-mine')).json()
+        expect(anon.datasetCount).toBe(1)
+        const member = await (
+          await outsiderApp.request('/api/v1/organizations/count-org-mine')
+        ).json()
+        expect(member.datasetCount).toBe(2)
       })
     })
   })

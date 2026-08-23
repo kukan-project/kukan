@@ -33,7 +33,7 @@ export function createMcpServer(ctx: McpContext): McpServer {
 
   registerDatasetTools(server, ctx)
   registerResourceTools(server, { db: ctx.db, user: ctx.user })
-  registerCatalogTools(server, { db: ctx.db })
+  registerCatalogTools(server, { db: ctx.db, user: ctx.user })
   registerQueryTools(server, { db: ctx.db, storage: ctx.storage, user: ctx.user })
 
   return server

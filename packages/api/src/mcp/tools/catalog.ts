@@ -8,13 +8,16 @@ import type { Database } from '@kukan/db'
 import { OrganizationService } from '../../services/organization-service'
 import { GroupService } from '../../services/group-service'
 import { TagService } from '../../services/tag-service'
+import type { AuthUser } from '../../auth/permissions'
 
 interface CatalogToolsContext {
   db: Database
+  /** Scopes the dataset counts, matching search_datasets */
+  user?: AuthUser
 }
 
 export function registerCatalogTools(server: McpServer, ctx: CatalogToolsContext) {
-  const { db } = ctx
+  const { db, user } = ctx
 
   server.registerTool(
     'list_organizations',
@@ -29,7 +32,7 @@ export function registerCatalogTools(server: McpServer, ctx: CatalogToolsContext
     },
     async ({ q, offset, limit }) => {
       const service = new OrganizationService(db)
-      const result = await service.list({ q, limit, offset })
+      const result = await service.list({ q, limit, offset }, user)
 
       const text =
         result.items.length === 0
@@ -62,7 +65,7 @@ export function registerCatalogTools(server: McpServer, ctx: CatalogToolsContext
     },
     async ({ q, offset, limit }) => {
       const service = new GroupService(db)
-      const result = await service.list({ q, limit, offset })
+      const result = await service.list({ q, limit, offset }, user)
 
       const text =
         result.items.length === 0

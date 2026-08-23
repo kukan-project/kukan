@@ -297,6 +297,20 @@ describe('MCP Server', () => {
       expect(text).toContain('test-org')
       expect(text).toContain('Total: 1 organizations')
     })
+
+    // Same visibility rule as search_datasets: an anonymous MCP session must
+    // not see private datasets in the per-org counts, a sysadmin session must
+    it('should count datasets with the caller visibility', async () => {
+      const app = mcpApp()
+      await createPackage(app, { name: 'mcp-pub' })
+      await createPackage(app, { name: 'mcp-priv', private: true })
+
+      const sysadmin = await mcpToolCall(app, 'list_organizations', { limit: 10 })
+      expect(sysadmin.result.content[0].text).toContain('Datasets: 2')
+
+      const anonymous = await mcpToolCall(mcpApp(null), 'list_organizations', { limit: 10 })
+      expect(anonymous.result.content[0].text).toContain('Datasets: 1')
+    })
   })
 
   describe('list_groups', () => {

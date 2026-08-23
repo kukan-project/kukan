@@ -28,13 +28,14 @@ exports[`emitted SQL shape > GET /api/v1/admin/users/stats > pins the sysadmin s
 
 exports[`emitted SQL shape > GET /api/v1/groups > pins the anonymous shape 1`] = `
 [
-  "select "id", "name", "title", "description", "image_url", "state", "extras", "created", "updated", count(*) over () as "total", (select count(*) from "package_group" inner join "package" on ("package"."id" = "package_group"."package_id" and "package"."state" = $1) where "package_group"."group_id" = "group"."id") as "dataset_count", NULL::int as "member_count" from "group" where "group"."state" = $2 order by "group"."name" asc limit $3",
+  "select "id", "name", "title", "description", "image_url", "state", "extras", "created", "updated", count(*) over () as "total", (select count(*) from "package_group" inner join "package" on ("package"."id" = "package_group"."package_id" and "package"."state" = $1 and "package"."private" = $2) where "package_group"."group_id" = "group"."id") as "dataset_count", NULL::int as "member_count" from "group" where "group"."state" = $3 order by "group"."name" asc limit $4",
 ]
 `;
 
 exports[`emitted SQL shape > GET /api/v1/groups > pins the member shape 1`] = `
 [
-  "select "id", "name", "title", "description", "image_url", "state", "extras", "created", "updated", count(*) over () as "total", (select count(*) from "package_group" inner join "package" on ("package"."id" = "package_group"."package_id" and "package"."state" = $1) where "package_group"."group_id" = "group"."id") as "dataset_count", CASE WHEN exists (select  from "user_group_membership" where ("user_group_membership"."group_id" = "group"."id" and "user_group_membership"."user_id" = $2 and "user_group_membership"."role" in ($3, $4, $5))) THEN (select count(*) from "user_group_membership" where "user_group_membership"."group_id" = "group"."id")::int END as "member_count" from "group" where "group"."state" = $6 order by "group"."name" asc limit $7",
+  "select "organization_id" from "user_org_membership" where "user_org_membership"."user_id" = $1",
+  "select "id", "name", "title", "description", "image_url", "state", "extras", "created", "updated", count(*) over () as "total", (select count(*) from "package_group" inner join "package" on ("package"."id" = "package_group"."package_id" and "package"."state" = $1 and ("package"."private" = $2 or "package"."owner_org" in ($3))) where "package_group"."group_id" = "group"."id") as "dataset_count", CASE WHEN exists (select  from "user_group_membership" where ("user_group_membership"."group_id" = "group"."id" and "user_group_membership"."user_id" = $4 and "user_group_membership"."role" in ($5, $6, $7))) THEN (select count(*) from "user_group_membership" where "user_group_membership"."group_id" = "group"."id")::int END as "member_count" from "group" where "group"."state" = $8 order by "group"."name" asc limit $9",
 ]
 `;
 
@@ -46,19 +47,20 @@ exports[`emitted SQL shape > GET /api/v1/groups > pins the sysadmin shape 1`] = 
 
 exports[`emitted SQL shape > GET /api/v1/organizations > pins the anonymous shape 1`] = `
 [
-  "select "id", "name", "title", "description", "image_url", "state", "extras", "created", "updated", count(*) over () as "total", (select count(*) from "package" where ("package"."owner_org" = "organization"."id" and "package"."state" = $1)) as "dataset_count", (select count(*) from "package" where ("package"."owner_org" = "organization"."id" and "package"."state" = $2)) as "deleted_dataset_count", NULL::int as "member_count" from "organization" where "organization"."state" = $3 order by "organization"."name" asc limit $4",
+  "select "id", "name", "title", "description", "image_url", "state", "extras", "created", "updated", count(*) over () as "total", (select count(*) from "package" where ("package"."owner_org" = "organization"."id" and "package"."state" = $1 and "package"."private" = $2)) as "dataset_count", (select count(*) from "package" where ("package"."owner_org" = "organization"."id" and "package"."state" = $3 and "package"."private" = $4)) as "deleted_dataset_count", NULL::int as "member_count" from "organization" where "organization"."state" = $5 order by "organization"."name" asc limit $6",
 ]
 `;
 
 exports[`emitted SQL shape > GET /api/v1/organizations > pins the dataset-count ordering shape 1`] = `
 [
-  "select "id", "name", "title", "description", "image_url", "state", "extras", "created", "updated", count(*) over () as "total", (select count(*) from "package" where ("package"."owner_org" = "organization"."id" and "package"."state" = $1)) as "dataset_count", (select count(*) from "package" where ("package"."owner_org" = "organization"."id" and "package"."state" = $2)) as "deleted_dataset_count", NULL::int as "member_count" from "organization" where "organization"."state" = $3 order by "dataset_count" desc, "organization"."name" asc limit $4",
+  "select "id", "name", "title", "description", "image_url", "state", "extras", "created", "updated", count(*) over () as "total", (select count(*) from "package" where ("package"."owner_org" = "organization"."id" and "package"."state" = $1 and "package"."private" = $2)) as "dataset_count", (select count(*) from "package" where ("package"."owner_org" = "organization"."id" and "package"."state" = $3 and "package"."private" = $4)) as "deleted_dataset_count", NULL::int as "member_count" from "organization" where "organization"."state" = $5 order by "dataset_count" desc, "organization"."name" asc limit $6",
 ]
 `;
 
 exports[`emitted SQL shape > GET /api/v1/organizations > pins the member shape 1`] = `
 [
-  "select "id", "name", "title", "description", "image_url", "state", "extras", "created", "updated", count(*) over () as "total", (select count(*) from "package" where ("package"."owner_org" = "organization"."id" and "package"."state" = $1)) as "dataset_count", (select count(*) from "package" where ("package"."owner_org" = "organization"."id" and "package"."state" = $2)) as "deleted_dataset_count", CASE WHEN exists (select  from "user_org_membership" where ("user_org_membership"."organization_id" = "organization"."id" and "user_org_membership"."user_id" = $3 and "user_org_membership"."role" in ($4, $5, $6))) THEN (select count(*) from "user_org_membership" where "user_org_membership"."organization_id" = "organization"."id")::int END as "member_count" from "organization" where "organization"."state" = $7 order by "organization"."name" asc limit $8",
+  "select "organization_id" from "user_org_membership" where "user_org_membership"."user_id" = $1",
+  "select "id", "name", "title", "description", "image_url", "state", "extras", "created", "updated", count(*) over () as "total", (select count(*) from "package" where ("package"."owner_org" = "organization"."id" and "package"."state" = $1 and ("package"."private" = $2 or "package"."owner_org" in ($3)))) as "dataset_count", (select count(*) from "package" where ("package"."owner_org" = "organization"."id" and "package"."state" = $4 and ("package"."private" = $5 or "package"."owner_org" in ($6)))) as "deleted_dataset_count", CASE WHEN exists (select  from "user_org_membership" where ("user_org_membership"."organization_id" = "organization"."id" and "user_org_membership"."user_id" = $7 and "user_org_membership"."role" in ($8, $9, $10))) THEN (select count(*) from "user_org_membership" where "user_org_membership"."organization_id" = "organization"."id")::int END as "member_count" from "organization" where "organization"."state" = $11 order by "organization"."name" asc limit $12",
 ]
 `;
 

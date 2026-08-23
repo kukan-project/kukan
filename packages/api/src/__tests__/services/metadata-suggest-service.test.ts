@@ -112,9 +112,12 @@ function liveKeys(...ids: string[]) {
   return ids.map((id) => ({ id, storageKey: `resources/pkg-1/${id}.tok` }))
 }
 
-/** Queue the tag + group candidate queries (consumed by every suggest call) */
+/** Queue the tag + group candidate queries (consumed by every suggest call).
+ *  The group side first resolves the user's org memberships for the
+ *  visibility-scoped counts (packageVisibilitySql) */
 function addCandidates(addResult: (rows: unknown[]) => void) {
   addResult(TAG_ROWS)
+  addResult([])
   addResult(GROUP_ROWS)
 }
 
@@ -834,6 +837,7 @@ describe('MetadataSuggestService', () => {
   it('refuses to resolve a title shared by multiple groups', async () => {
     const { db, addResult } = createMockDb()
     addResult(TAG_ROWS)
+    addResult([])
     addResult([
       { id: 'g1', name: 'tourism-a', title: '観光', state: 'active', total: 2, datasetCount: 1 },
       { id: 'g2', name: 'tourism-b', title: '観光', state: 'active', total: 2, datasetCount: 1 },
@@ -909,6 +913,7 @@ describe('MetadataSuggestService', () => {
   it('clamps unbounded group titles and drops candidate tails to fit the budget', async () => {
     const { db, addResult } = createMockDb()
     addResult(TAG_ROWS)
+    addResult([])
     // 200 candidates with maximal titles exceed the 32KB dataset budget
     addResult(
       Array.from({ length: 200 }, (_, i) => ({

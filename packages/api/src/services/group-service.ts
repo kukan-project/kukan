@@ -13,7 +13,7 @@ import type {
   CreateGroupInput,
   UpdateGroupInput,
 } from '@kukan/shared'
-import { groupMemberCountSql, type AuthUser } from '../auth/permissions'
+import { groupMemberCountSql, packageVisibilitySql, type AuthUser } from '../auth/permissions'
 
 export class GroupService {
   constructor(private db: Database) {}
@@ -38,13 +38,19 @@ export class GroupService {
 
     const where = and(...conditions)
 
-    // Active packages only — draft/deleted links must not inflate the count (ADR-039)
+    // Active packages the viewer may see — draft/deleted links must not
+    // inflate the count (ADR-039), private ones only per packageVisibilitySql
+    const visibility = await packageVisibilitySql(this.db, viewer)
     const datasetCount = sql`${this.db
       .select({ count: count() })
       .from(packageGroup)
       .innerJoin(
         packageTable,
-        and(eq(packageTable.id, packageGroup.packageId), eq(packageTable.state, 'active'))
+        and(
+          eq(packageTable.id, packageGroup.packageId),
+          eq(packageTable.state, 'active'),
+          visibility
+        )
       )
       .where(eq(packageGroup.groupId, group.id))}`
       .mapWith(Number)

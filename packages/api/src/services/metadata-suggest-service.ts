@@ -159,7 +159,7 @@ export class MetadataSuggestService {
       new TagService(this.db)
         .list({ limit: SUGGEST_TAG_CANDIDATES, orderBy: 'packageCount' })
         .then((r) => r.items.map((t) => t.name)),
-      this.fetchGroupCandidates(),
+      this.fetchGroupCandidates(user),
     ])
 
     // Phase 1: one completion per resource, bounded per-provider concurrency.
@@ -599,13 +599,14 @@ export class MetadataSuggestService {
 
   /** Category candidates (closed list): the SUGGEST_GROUP_CANDIDATES
    *  most-used groups, usage-ordered in SQL so the cap and the budget ladder
-   *  deterministically drop the least-used first. Titles/descriptions are
-   *  unbounded free text and get clamped */
-  private async fetchGroupCandidates() {
-    const { items } = await new GroupService(this.db).list({
-      limit: SUGGEST_GROUP_CANDIDATES,
-      orderBy: 'datasetCount',
-    })
+   *  deterministically drop the least-used first. Usage is counted with the
+   *  requesting user's visibility (packageVisibilitySql). Titles/descriptions
+   *  are unbounded free text and get clamped */
+  private async fetchGroupCandidates(user: AuthUser) {
+    const { items } = await new GroupService(this.db).list(
+      { limit: SUGGEST_GROUP_CANDIDATES, orderBy: 'datasetCount' },
+      user
+    )
     return items.map((g) => ({
       name: g.name,
       title: g.title?.slice(0, MAX_MATERIAL_NAME_CHARS) ?? null,
