@@ -114,7 +114,7 @@ describe('executeInterpret — column typing', () => {
     // source note. It is narrower than the rest, and that is enough for DuckDB's
     // sniffer to give up on the delimiter and read the whole file as a single
     // VARCHAR column named after the header line — silently, with the ingest
-    // reporting success (#449).
+    // reporting success.
     csv(wide(5, '港区の人口・世帯数（住民基本台帳に基づく） ,Ver202608\n'))
 
     await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)

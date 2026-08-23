@@ -1,7 +1,7 @@
 /**
  * Better Auth mounts its own routes, and a version bump can add one. The
  * denylist in auth-surface.ts fails open when that happens: the new route goes
- * live and nobody looks at it — which is how /update-user stayed open (#390).
+ * live and nobody looks at it — which is how /update-user stayed open.
  *
  * So the routes Better Auth actually mounts are compared against a table that
  * classifies every one of them. A path in neither fails the run, and the

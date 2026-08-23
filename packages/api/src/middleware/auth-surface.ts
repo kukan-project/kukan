@@ -20,7 +20,7 @@ import { KukanError } from '@kukan/shared'
  *    `userNameSchema` — uppercase and whitespace get through, and a collision
  *    surfaces as a 500 from the unique constraint. Renaming is sysadmin's call,
  *    through PATCH /api/v1/admin/users/:userId. If self-service profile editing
- *    is wanted later, it belongs on a KUKAN route that validates (issue #390).
+ *    is wanted later, it belongs on a KUKAN route that validates.
  *
  *  Better Auth's own `disabledPaths` option was the alternative. It matches
  *  exact paths only, so it would need all 15 admin routes named and would miss

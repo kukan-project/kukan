@@ -166,7 +166,7 @@ describe('claimPurge', () => {
     expect(row.state).toBe('purging')
     expect(row.purgedBy).toBe(userId)
     expect(row.purgeReason).toBe('contains PII')
-    // Where the reason lives instead of the view (#425): accountability is the
+    // Where the reason lives instead of the view: accountability is the
     // audit log's, which is what makes dropping it from the response lossless.
     const [logged] = await db
       .select({ changes: auditLog.changes })
@@ -433,7 +433,7 @@ describe('executePurge', () => {
     expect(res.hash).toBe('sha256:v1')
 
     // v2 is a purged tombstone; content fields withheld via the view, and the
-    // reason withheld outright — it can describe what was destroyed (#425).
+    // reason withheld outright — it can describe what was destroyed.
     const view = await service.getVersion(resourceId, 2)
     expect(view).toMatchObject({ state: 'purged', hash: null, size: null })
     expect(view.purgedAt).not.toBeNull()
@@ -849,7 +849,7 @@ describe('insertVersionIfHeld', () => {
       // The empty schema takes the version out of the pending set; the reason
       // is what answers "why is there no preview?" — and it has to sit beside
       // the fact it explains, on the version, or the answer depends on which
-      // caller happened to interpret it (#277).
+      // caller happened to interpret it.
       const claim = await heldClaim()
       await insertVersionIfHeld(db, claim, { resourceId, ...created })
 

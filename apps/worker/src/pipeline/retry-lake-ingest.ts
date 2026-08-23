@@ -65,7 +65,7 @@ export async function retryLakeIngest(
         version,
         schema: result.schema,
         // The same answer whichever caller ran, or a version interpreted through
-        // this path would carry the empty schema with nothing to say why (#277).
+        // this path would carry the empty schema with nothing to say why.
         noTableReason: result.reason,
         claim: claims[0] ?? undefined,
       })

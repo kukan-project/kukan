@@ -62,7 +62,7 @@ export default function OrganizationsManagePage() {
   const showDeleted = activeCategory === 'deleted'
   const listUrl = showDeleted ? '/api/v1/organizations?state=deleted' : '/api/v1/organizations'
   const { items, loading, error, ...pagination } = usePaginatedFetch<OrgItem>(listUrl)
-  // The list covers every organization; the actions are the viewer's own (#258)
+  // The list covers every organization; the actions are the viewer's own
   const { can } = useMyRoles('organizations')
 
   // Merge active category total from pagination with inactive stats
@@ -134,7 +134,7 @@ export default function OrganizationsManagePage() {
                   showDeleted ? '?state=deleted' : ''
                 }`
                 // Only an admin has an editor to open, so only their row opens
-                // one (#258). Activating every row would take a viewer who
+                // one. Activating every row would take a viewer who
                 // cannot edit straight into the form they are not allowed to
                 // use — the thing this list was reported for.
                 const canEdit = can(org.name, 'admin')

@@ -77,7 +77,7 @@ export class OrganizationService {
     const datasetCount = orgPackageCount(this.db, 'active').as('dataset_count')
 
     // Ordered before LIMIT: without it PostgreSQL may return rows in any order,
-    // so paging could repeat or skip an organization (#261)
+    // so paging could repeat or skip an organization
     const rows = await this.db
       .select({
         ...getTableColumns(organization),

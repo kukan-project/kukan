@@ -79,7 +79,7 @@ const REJECT_BATCH = 500
  * row of a different width — the version line Japanese open data signs a file
  * off with, or one stray comma anywhere in the file — makes every candidate
  * look wrong and it reads the whole thing as **one VARCHAR column named after
- * the header line** (#449). Every column of the resource is gone, the ingest
+ * the header line**. Every column of the resource is gone, the ingest
  * reports success, and nothing records that anything happened. Allowed to drop
  * the row that does not fit, it reads the rest as the table it is.
  *
@@ -183,7 +183,7 @@ export async function interpretCsv(
     // ZSTD rather than DuckDB's default: measured at 3.25 MB against Snappy's
     // 8.40 MB on the same input, and a preview page costs a third of the bytes
     // to fetch — the read is still two ranges, since compression is per page
-    // inside a column chunk, so nothing has to be pulled whole (#242).
+    // inside a column chunk, so nothing has to be pulled whole.
     //
     // The browser reader was taught ZSTD first (`hooks/parquet-codecs.ts`); the
     // other two readers, the DuckDB explorer (ADR-016) and the server sandbox,

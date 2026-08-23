@@ -386,7 +386,7 @@ describe('Groups API Routes', () => {
     })
 
     // The ordering existed; orderBy makes it reachable over HTTP rather than
-    // being an option only the suggest flow could pass (#261)
+    // being an option only the suggest flow could pass
     it('accepts orderBy from the query string', async () => {
       await seedUnevenGroups()
 

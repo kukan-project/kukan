@@ -241,7 +241,7 @@ describe('executeInterpret', () => {
   it('refuses a CSV too large to interpret, without transferring it whole', async () => {
     // Decided from the version row's size, before the download, and answered as
     // an interpretation that produced no table rather than as an absence — so
-    // both callers give one answer (#276). The sweep still decides eligibility
+    // both callers give one answer. The sweep still decides eligibility
     // from the size itself, because the cap is configuration; this is what puts
     // the reason on the row for whoever asks why there is no preview.
     mockStorageDownload('a,b\n1,2\n')
@@ -301,7 +301,7 @@ describe('executeInterpret', () => {
   it('reads past an ASCII head to the bytes encoding detection needs', async () => {
     // A fixed head is not enough. chardet decides from the non-ASCII bytes, so
     // a file whose first 100KB are ids and dates gives it nothing to work from
-    // and the Japanese further down comes back as mojibake (#240).
+    // and the Japanese further down comes back as mojibake.
     const asciiHead = Buffer.from('id,date,count\n'.repeat(8000)) // ~104KB, all ASCII
     ctx.storage.download.mockResolvedValue(
       Readable.from(Buffer.concat([asciiHead, shiftJisCsv(200)]))
@@ -348,7 +348,7 @@ describe('executeInterpret', () => {
   it('hands the encoding over before anything that can fail', async () => {
     // Settled from the bytes before anything heavy runs, so a later failure
     // must not take it back — losing it is silent, since all three readers fall
-    // back to UTF-8 and serve mojibake rather than erroring (#251).
+    // back to UTF-8 and serve mojibake rather than erroring.
     ctx.storage.download.mockResolvedValue(Readable.from(shiftJisCsv()))
     ctx.putObject.mockRejectedValueOnce(new Error('storage is down'))
     const onEncoding = vi.fn()
@@ -398,7 +398,7 @@ describe('executeInterpret', () => {
     // Throwing here left the version with no schema, which is how "nothing has
     // interpreted this yet" is written down — so the hourly sweep handed the
     // file back every hour, forever, and every task read up to 50MB of it to
-    // reach the same exception (#248). The width is a property of the file, so
+    // reach the same exception. The width is a property of the file, so
     // no retry can reach a different answer.
     const wide = `${Array.from({ length: MAX_CSV_COLUMNS + 1 }, (_, i) => `c${i}`).join(',')}\n`
     mockStorageDownload(wide + wide.replace(/c/g, 'v'))

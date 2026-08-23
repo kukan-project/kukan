@@ -26,7 +26,7 @@ export default function GroupsManagePage() {
   const tc = useTranslations('common')
   const router = useRouter()
   const { items, loading, error, ...pagination } = usePaginatedFetch<GroupItem>('/api/v1/groups')
-  // The list covers every category; the actions are the viewer's own (#258)
+  // The list covers every category; the actions are the viewer's own
   const { can } = useMyRoles('groups')
 
   return (
@@ -71,7 +71,7 @@ export default function GroupsManagePage() {
                 <TableRow
                   key={grp.id}
                   // Only an admin has an editor to open, so only their row opens
-                  // one (#258). Activating every row would take a viewer who
+                  // one. Activating every row would take a viewer who
                   // cannot edit straight into the form they are not allowed to
                   // use — the thing this list was reported for.
                   {...(can(grp.name, 'admin')

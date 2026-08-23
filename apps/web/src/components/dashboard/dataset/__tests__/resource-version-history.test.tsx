@@ -88,7 +88,7 @@ describe('ResourceVersionHistory', () => {
 
   it('keeps a long key name from widening the table it is listed in', async () => {
     // A column name is a CSV header — arbitrary text, and where the delimiter
-    // was not found, one column named after the whole line (#449). Rendered as
+    // was not found, one column named after the whole line. Rendered as
     // it comes it widens this table, then the editor row it sits in, then the
     // page, and the horizontal scrollbar belongs to the screen.
     const wide = 'x'.repeat(4000)

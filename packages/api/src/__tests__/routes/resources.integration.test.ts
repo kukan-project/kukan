@@ -1250,7 +1250,7 @@ describe('Resources API Routes', () => {
       // The list is gated on the resource's visibility alone, so on a public
       // dataset this is an anonymous read. A purge reason is free text about
       // content that was destroyed — for a takedown it can describe the very
-      // thing that had to go — so it is not on the view at all (#425). Asserted
+      // thing that had to go — so it is not on the view at all. Asserted
       // on the response, because that is the surface the issue was about.
       const pkg = await createPackage('versions-reason-pkg')
       const resource = await createResource(pkg.id)

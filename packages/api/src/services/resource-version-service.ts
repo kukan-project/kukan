@@ -583,7 +583,7 @@ interface PendingLakeIngest {
  * A version as exposed through the API. Purged versions are tombstones: their
  * content-bearing fields (storageKey/hash/size/schema) are withheld.
  *
- * **`purgeReason` is not here at all** (issue #425). It is free text an
+ * **`purgeReason` is not here at all**. It is free text an
  * administrator writes about why content had to go, so for a takedown it can
  * describe — or quote — the very thing the purge was destroying, and this view is
  * readable by anyone who can read the resource. Withholding the content while

@@ -299,7 +299,7 @@ export class PackageService {
    */
   async enrichFacets(facets: SearchFacets): Promise<FacetCounts> {
     // The list is rebuilt from the DB below, so the count order has to be
-    // applied here or an empty organization outranks a busy one (#261). Stable
+    // applied here or an empty organization outranks a busy one. Stable
     // sort, so equal counts keep the DB's order.
     const byCount = (a: { count: number }, b: { count: number }) => b.count - a.count
 

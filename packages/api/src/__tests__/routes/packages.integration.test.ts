@@ -1545,7 +1545,7 @@ describe('Packages API Routes', () => {
 
     it('should order facets by count, not by name', async () => {
       // Enriching with every active organization used to drop the counts'
-      // order, leaving an empty organization above a used one (#261)
+      // order, leaving an empty organization above a used one
       const usedOrg = await ensureTestOrg()
       await app.request('/api/v1/organizations', {
         method: 'POST',

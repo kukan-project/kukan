@@ -2703,7 +2703,7 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
      `purged`. Printing them one per line repeats the same information and even lets one read off
      "from when to when the removed content was published". Group them as `v10–v60 withdrawn`. The API
      does not need grouping (§9.6), but display is a different matter
-   - ✅ **[implemented] `purgeReason` is off the version view** (issue #425). The reasoning lives on
+   - ✅ **[implemented] `purgeReason` is off the version view**. The reasoning lives on
      `VersionView`'s doc. `purgedAt` stays — it explains the gap in version numbers and leaks no
      content. **It left silently, so its absence is pinned** at both levels: the service (a
      tombstone's view) and **the route** (an anonymous `GET /resources/:id/versions`, where the

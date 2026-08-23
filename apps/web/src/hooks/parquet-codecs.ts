@@ -1,5 +1,5 @@
 /**
- * The one codec hyparquet cannot decode on its own (#242).
+ * The one codec hyparquet cannot decode on its own.
  *
  * Preview Parquet is written by DuckDB (ADR-046) and ZSTD is what it uses;
  * hyparquet handles UNCOMPRESSED and SNAPPY built in, and nothing else here

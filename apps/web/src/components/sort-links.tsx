@@ -17,7 +17,7 @@ export function orderParam(order: ListOrder) {
 /**
  * Order switch for the organization and category lists. Links rather than a
  * control, since both pages are server-rendered; the search query rides along
- * so switching the order does not drop what was typed (#261).
+ * so switching the order does not drop what was typed.
  */
 export function SortLinks({
   basePath,

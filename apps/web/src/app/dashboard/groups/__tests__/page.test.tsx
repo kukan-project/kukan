@@ -132,7 +132,7 @@ describe('GroupsManagePage', () => {
 
   it('opens edit on row click, and links to members and view pages', async () => {
     // Through the helper: the row actions are gated on the viewer's membership
-    // now, so the list alone is not enough to render them (#258).
+    // now, so the list alone is not enough to render them.
     mockFetch(mockFetchResponse({ items: sampleGroups, total: 2 }))
     render(<GroupsManagePage />)
 

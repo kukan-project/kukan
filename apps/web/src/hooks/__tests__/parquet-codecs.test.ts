@@ -1,5 +1,5 @@
 /**
- * What the preview reader can actually decode (#242).
+ * What the preview reader can actually decode.
  *
  * The hook's own tests mock hyparquet, so they say nothing about codecs. This
  * reads real files — written by the same DuckDB `COPY` the Interpret step uses

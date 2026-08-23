@@ -81,7 +81,7 @@ describe('Organizations API Routes', () => {
     })
 
     // Without an ORDER BY the rows come back in whatever order PostgreSQL
-    // finds them, so paging could repeat or skip an organization (#261)
+    // finds them, so paging could repeat or skip an organization
     describe('ordering', () => {
       async function createOrgs(...names: string[]) {
         for (const name of names) {

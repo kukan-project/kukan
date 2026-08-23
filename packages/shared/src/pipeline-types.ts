@@ -102,7 +102,7 @@ export const resourceSchemaSchema = z.object({
    *
    * The refusal is what stops one such line costing the file every column it
    * has — the sniffer would otherwise abandon the delimiter and read the whole
-   * thing as one text column (#449) — and this count is what stops the refusal
+   * thing as one text column — and this count is what stops the refusal
    * being silent, which is the state it was found in.
    *
    * **Both ways a line can go.** The reader refuses one written short, and the
@@ -150,7 +150,7 @@ export type ResourceSchema = z.infer<typeof resourceSchemaSchema>
  *
  * `ragged-rows` is the last of those, and it is a refusal rather than a limit.
  * A line that does not split into the header's columns is dropped by the reader
- * — that is what stops one of them costing the file every column it has (#449).
+ * — that is what stops one of them costing the file every column it has.
  * A line taken for a sign-off is dropped and the table served without it;
  * anything else refuses the table, because a table quietly short of a row is
  * worse than no table — the missing row is invisible in every count the

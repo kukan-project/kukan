@@ -58,7 +58,7 @@ function schemaResponse(droppedRows?: number, droppedLines?: number[]) {
 describe('dropped rows note', () => {
   it('says how many lines the table does not hold, and where they are', async () => {
     // The reader refuses lines that do not split into these columns, which is
-    // what stops one of them costing the file every column (#449). Unsaid, a
+    // what stops one of them costing the file every column. Unsaid, a
     // reader comparing this against the download has nothing to explain it.
     schemaResponse(2, [3, 291])
     render(<ResourcePreview resourceId="r1" format="CSV" />)
