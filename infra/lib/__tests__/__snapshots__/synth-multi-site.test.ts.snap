@@ -2372,6 +2372,12 @@ function expandV6(addr) {
         },
         "Port": 80,
         "Protocol": "HTTP",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "web-service",
+          },
+        ],
       },
       "Type": "AWS::ElasticLoadBalancingV2::Listener",
     },
@@ -4886,6 +4892,12 @@ function expandV6(addr) {
         },
         "Port": 80,
         "Protocol": "HTTP",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "web-service",
+          },
+        ],
       },
       "Type": "AWS::ElasticLoadBalancingV2::Listener",
     },
