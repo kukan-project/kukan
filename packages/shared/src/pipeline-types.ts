@@ -105,9 +105,10 @@ export const resourceSchemaSchema = z.object({
    * thing as one text column (#449) — and this count is what stops the refusal
    * being silent, which is the state it was found in.
    *
-   * **The reader's refusals only.** A footer the table trim took is not in it:
-   * that row split correctly and was dropped for what it said. So this is not
-   * the whole of what the file holds and the table does not.
+   * **Both ways a line can go.** The reader refuses one written short, and the
+   * table trim takes the same note padded out to the width; which of them acted
+   * is this file's business, not a reader's. What is counted is what the file
+   * held and the table does not.
    *
    * Optional because schemas written before it have no such count — absent
    * means unknown, not zero.
@@ -125,8 +126,13 @@ export const resourceSchemaSchema = z.object({
    * newlines counts once rather than once per line. On a file with no such cell
    * — nearly all of them — that is the line a text editor shows.
    *
-   * Bounded — {@link droppedRows} carries the total — because a file can be
-   * wrong in this way from end to end, and a schema is a row in a database.
+   * **Only the lines the reader refused can be here.** A row the table trim took
+   * cannot be traced back to a line of the file: by then the blank lines are
+   * gone and a quoted newline has folded a record onto one. So this can be
+   * shorter than {@link droppedRows} says, or absent while it counts.
+   *
+   * Bounded for the same reason as well — a file can be wrong this way from end
+   * to end, and a schema is a row in a database.
    */
   droppedLines: z.array(z.number().int().positive()).optional(),
 })

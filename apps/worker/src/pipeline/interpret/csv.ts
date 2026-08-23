@@ -23,6 +23,8 @@ import type {
 import {
   CSV_FOOTER_SCAN_ROWS,
   DROPPED_LINE_SAMPLE,
+  SIGN_OFF_MAX_CELLS,
+  SIGN_OFF_MIN_MISSING,
   INTERPRET_MEMORY_LIMIT_MB,
   INTERPRET_THREADS,
   PARQUET_ROW_GROUP_SIZE,
@@ -177,7 +179,7 @@ export async function interpretCsv(
       }
     }
 
-    const rowCount = await trimFooter(conn, columns)
+    const { rowCount, trimmed } = await trimFooter(conn, columns)
     // ZSTD rather than DuckDB's default: measured at 3.25 MB against Snappy's
     // 8.40 MB on the same input, and a preview page costs a third of the bytes
     // to fetch — the read is still two ranges, since compression is per page
@@ -192,11 +194,18 @@ export async function interpretCsv(
         `(FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE ${PARQUET_ROW_GROUP_SIZE})`
     )
 
+    // Both paths, one number: which of them took a row is this file's business,
+    // and a reader comparing the table against the download only wants to know
+    // that something is not here. Only the reader's refusals can be located,
+    // though — a row trimmed from the table cannot be traced back to a line of
+    // the file, since blank lines and quoted newlines are gone by then.
+    const droppedRows = dropped.count + trimmed
     return {
       schema: {
         columns: await describeColumns(conn, columns, rowCount),
         rowCount,
-        ...(dropped.count > 0 && { droppedRows: dropped.count, droppedLines: dropped.lines }),
+        ...(droppedRows > 0 && { droppedRows }),
+        ...(dropped.lines.length > 0 && { droppedLines: dropped.lines }),
       },
     }
   } finally {
@@ -317,11 +326,20 @@ async function refusedMoreThanNotes(
 }
 
 /**
- * Drop the trailing run of footer rows and return the row count that remains.
+ * Drop the trailing run of footer rows and return what remains, with how many
+ * went.
  *
- * A row is a footer when it carries at most one non-empty cell — a `合計,,` or a
- * `出典: 港区,,` that the publisher padded out to the table's width. Single-column
- * data is exempt, because every one of its rows would otherwise qualify.
+ * A row is a footer on the same terms a refused line is a sign-off: it carries
+ * at most {@link SIGN_OFF_MAX_CELLS} values, and at least
+ * {@link SIGN_OFF_MIN_MISSING} fewer than the table has columns. The two paths
+ * see the same note written two ways — `出典: 港区,2026` is refused by the
+ * reader, and the same note padded out to the width arrives here as a row of
+ * mostly empty cells — so they answer with one rule, or the publisher's choice
+ * about trailing commas decides what the table holds.
+ *
+ * The distance is what makes it a rule about the table rather than about
+ * emptiness: a two-column file whose last row is `a,` is a row, and used to be
+ * dropped for being half blank.
  *
  * **What the first cell says is not evidence.** The rule used to drop a row
  * whose first cell began with 合計, 注, 出典 and six others, which deletes
@@ -339,12 +357,15 @@ async function refusedMoreThanNotes(
  * Only the last {@link CSV_FOOTER_SCAN_ROWS} rows are examined, since the run
  * has to reach the bottom of the file to be a footer at all.
  */
-async function trimFooter(conn: DuckDBConnection, columns: Column[]): Promise<number> {
+async function trimFooter(
+  conn: DuckDBConnection,
+  columns: Column[]
+): Promise<{ rowCount: number; trimmed: number }> {
   const [{ n }] = (await conn.runAndReadAll('SELECT count(*) AS n FROM t')).getRowObjectsJson() as {
     n: number
   }[]
   const total = Number(n)
-  if (total === 0) return 0
+  if (total === 0) return { rowCount: 0, trimmed: 0 }
 
   const nonEmpty = columns
     .map(
@@ -352,28 +373,34 @@ async function trimFooter(conn: DuckDBConnection, columns: Column[]): Promise<nu
         `CASE WHEN nullif(trim(CAST(${sqlIdentifier(c.name)} AS VARCHAR)), '') IS NULL THEN 0 ELSE 1 END`
     )
     .join(' + ')
+  // `isSignOffShape`, in SQL and over a row: its values are the non-blank cells,
+  // which is `countValues` — the blank ones are the width it was padded to.
+  const signOff =
+    columns.length - SIGN_OFF_MIN_MISSING >= 1
+      ? `(${nonEmpty}) <= least(${SIGN_OFF_MAX_CELLS}, ${columns.length - SIGN_OFF_MIN_MISSING})`
+      : 'false'
 
   const reader = await conn.runAndReadAll(`
-    SELECT rn, ${columns.length > 1 ? `(${nonEmpty}) <= 1` : 'false'} AS sparse
+    SELECT rn, ${signOff} AS sign_off
     FROM (SELECT *, row_number() OVER () AS rn FROM t)
     WHERE rn > ${Math.max(0, total - CSV_FOOTER_SCAN_ROWS)}
     ORDER BY rn DESC
   `)
-  const rows = reader.getRowObjectsJson() as { rn: number; sparse: boolean }[]
+  const rows = reader.getRowObjectsJson() as { rn: number; sign_off: boolean }[]
 
   let keep = total
   for (const row of rows) {
-    if (!row.sparse) break
+    if (!row.sign_off) break
     keep = Number(row.rn) - 1
   }
-  if (keep === total) return total
+  if (keep === total) return { rowCount: total, trimmed: 0 }
 
   // Rewritten rather than deleted by row number: `row_number()` has no stable
   // meaning across statements, so the cut has to happen inside the one that
   // computed it.
   await conn.run(`CREATE OR REPLACE TABLE t AS
     SELECT * EXCLUDE (rn) FROM (SELECT *, row_number() OVER () AS rn FROM t) WHERE rn <= ${keep}`)
-  return keep
+  return { rowCount: keep, trimmed: total - keep }
 }
 
 /**

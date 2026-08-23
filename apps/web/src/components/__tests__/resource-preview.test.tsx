@@ -92,7 +92,7 @@ describe('dropped rows note', () => {
     render(<ResourcePreview resourceId="r1" format="CSV" />)
 
     await waitFor(() => expect(mockClientFetch).toHaveBeenCalled())
-    expect(screen.queryByText(/split into these columns/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/not in the table/)).not.toBeInTheDocument()
   })
 
   it('still shows the preview when the schema cannot be read', async () => {
@@ -101,7 +101,7 @@ describe('dropped rows note', () => {
     render(<ResourcePreview resourceId="r1" format="CSV" />)
 
     expect(await screen.findByTestId('parquet-preview')).toBeInTheDocument()
-    expect(screen.queryByText(/split into these columns/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/not in the table/)).not.toBeInTheDocument()
   })
 
   it('says it in the analysis mode too, where the rows are counted', async () => {

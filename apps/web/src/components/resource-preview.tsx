@@ -151,8 +151,9 @@ function TablePreview({ resourceId }: { resourceId: string }) {
 }
 
 /**
- * Lines of the file the reader refused for not splitting into the table's
- * columns (ADR-046).
+ * Lines of the file that are not rows of this table (ADR-046) — one written too
+ * short for the reader to seat, or a note padded out to the width and taken from
+ * the table itself.
  *
  * Said where the table is, not inside one view of it: whichever way the rows are
  * being read they are the same rows, and the analysis mode is where it matters

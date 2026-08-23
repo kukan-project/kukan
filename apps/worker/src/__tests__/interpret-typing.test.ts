@@ -282,16 +282,62 @@ describe('executeInterpret — column typing', () => {
     expect(rows.map((r) => r.部署)).toEqual(['総務', '計画課', '注文番号'])
   })
 
-  it('drops a trailing row that is all but empty', async () => {
-    // What is left of the rule: a note the publisher padded out to the table's
-    // width. One value and the rest blank is not a row of this table, whatever
-    // the value says.
+  it('drops a note the publisher padded out to the width, and counts it', async () => {
+    // The same note the reader refuses when it is written short. Which way the
+    // publisher wrote their trailing commas must not decide what the table
+    // holds — and either way it is counted, so the row is not missing in
+    // silence.
+    csv(wide(3, '出典: 港区,2026,,,,,,,,\n'))
+
+    const result = await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+
+    expect(result?.schema?.rowCount).toBe(3)
+    expect(result?.schema?.droppedRows).toBe(1)
+    // Nowhere to point: a row trimmed from the table cannot be traced back to a
+    // line of the file, since blank lines and quoted newlines are gone by then.
+    expect(result?.schema?.droppedLines).toBeUndefined()
+  })
+
+  it('reads the same note the same way however many commas end it', async () => {
+    // Nothing about the note changes between these; only where the publisher
+    // stopped typing. Measured before this, +2 through +5 refused the table
+    // outright while +0 and the fully padded one dropped the note.
+    for (const commas of [0, 1, 2, 5, 8]) {
+      csv(wide(3, `出典: 港区,2026${','.repeat(commas)}\n`))
+
+      const result = await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+
+      expect(result?.reason, `${commas} trailing commas`).toBeUndefined()
+      expect(result?.schema?.rowCount, `${commas} trailing commas`).toBe(3)
+      expect(result?.schema?.droppedRows, `${commas} trailing commas`).toBe(1)
+    }
+  })
+
+  it('counts what each path took, in one number', async () => {
+    // One note written short — the reader refuses it — and one padded out. A
+    // reader comparing the table against the download wants to know that two
+    // rows are not here, not which of two passes took them.
+    csv(wide(3, '出典: 港区,2026\n出典: 港区,2026,,,,,,,,\n'))
+
+    const result = await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+
+    expect(result?.schema?.rowCount).toBe(3)
+    expect(result?.schema?.droppedRows).toBe(2)
+    // Only the refused one can be located.
+    expect(result?.schema?.droppedLines).toHaveLength(1)
+  })
+
+  it('keeps an all-but-empty row where the table is too narrow to tell', async () => {
+    // Three columns, and `出典: 港区,,` could as easily be a row with only its
+    // first field filled. The refused-line rule says the same of a three-column
+    // table, so both say keep — which is the direction everything else here
+    // errs in.
     csv('区分,男,女\n' + '港,10,20\n' + '芝,30,40\n' + '出典: 港区,,\n')
 
-    await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
-    const { rows } = await readPreview()
+    const result = await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
 
-    expect(rows.map((r) => r.区分)).toEqual(['港', '芝'])
+    expect(result?.schema?.rowCount).toBe(3)
+    expect(result?.schema?.droppedRows).toBeUndefined()
   })
 
   it('says nothing about dropped rows where none were', async () => {

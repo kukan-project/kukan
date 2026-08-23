@@ -66,6 +66,18 @@ describe('looksLikeSignOff', () => {
     ).toBe(false)
   })
 
+  it('does not count trailing commas as values', () => {
+    // One note written three ways. Counting the blanks made the second four
+    // values — past what a sign-off holds — and the table was refused over a
+    // keystroke.
+    expect(signOff('出典: 港区,2026', 10)).toBe(true)
+    expect(signOff('出典: 港区,2026,,', 10)).toBe(true)
+    expect(signOff('出典: 港区,2026,,,,,', 10)).toBe(true)
+    // And a row is still a row however it ends.
+    expect(signOff('20021001,88900', 3)).toBe(false)
+    expect(signOff('20021001,88900,', 3)).toBe(false)
+  })
+
   it('refuses a line the parser could not read', () => {
     // An unterminated quote parses to something, and what it parses to says
     // nothing about how many values the publisher wrote.

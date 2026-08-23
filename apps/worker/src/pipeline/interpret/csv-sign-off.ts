@@ -83,6 +83,30 @@ export function looksLikeSignOff(text: string, dialect: CsvDialect, columnCount:
   // which a single line does not.
   if (parsed.errors.length > 0 || parsed.data.length !== 1) return false
 
-  const cells = parsed.data[0].length
-  return cells <= SIGN_OFF_MAX_CELLS && columnCount - cells >= SIGN_OFF_MIN_MISSING
+  return isSignOffShape(countValues(parsed.data[0]), columnCount)
+}
+
+/**
+ * Values a line carries, which is its non-blank cells.
+ *
+ * **Trailing commas are punctuation, not content.** `出典: 港区,2026` and
+ * `出典: 港区,2026,,` are one note written twice, and counting the blanks made
+ * the second four values — past what a sign-off holds — so the table was
+ * refused over a keystroke. Counted this way the two agree, and so does the
+ * same note padded out to the width, which arrives as a row and is measured by
+ * `trimFooter` rather than here.
+ */
+export function countValues(cells: string[]): number {
+  return cells.reduce((n, cell) => (cell.trim() === '' ? n : n + 1), 0)
+}
+
+/**
+ * The rule itself, over a count of values.
+ *
+ * Exported because `trimFooter` asks it of a row rather than of a line, in SQL
+ * and over the table — the two cannot share an implementation, so they share
+ * this statement of it and the constants underneath.
+ */
+export function isSignOffShape(values: number, columnCount: number): boolean {
+  return values <= SIGN_OFF_MAX_CELLS && columnCount - values >= SIGN_OFF_MIN_MISSING
 }
