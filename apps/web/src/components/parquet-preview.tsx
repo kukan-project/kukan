@@ -1,10 +1,10 @@
 'use client'
 
-import { Button, Card, CardContent, Skeleton } from '@kukan/ui'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { Card, CardContent, Skeleton } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { useParquetPreview } from '@/hooks/use-parquet-preview'
 import { formatCell } from '@/lib/format-utils'
+import { PreviewFooter } from './preview-footer'
 
 interface ParquetPreviewProps {
   resourceId: string
@@ -93,32 +93,13 @@ export function ParquetPreview({ resourceId }: ParquetPreviewProps) {
           </tbody>
         </table>
       </div>
-      <div className="flex items-center justify-between border-t px-4 py-2 text-xs text-muted-foreground">
-        <span>{t('previewTotalRows', { count: metadata.numRows })}</span>
-        {totalPages > 1 && (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-1"
-              disabled={page === 0 || pageLoading}
-              onClick={() => goToPage(page - 1)}
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <span>{t('previewPage', { current: page + 1, total: totalPages })}</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-1"
-              disabled={page >= totalPages - 1 || pageLoading}
-              onClick={() => goToPage(page + 1)}
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
-        )}
-      </div>
+      <PreviewFooter
+        summary={t('previewTotalRows', { count: metadata.numRows })}
+        page={page}
+        totalPages={totalPages}
+        busy={pageLoading}
+        onPageChange={goToPage}
+      />
     </div>
   )
 }

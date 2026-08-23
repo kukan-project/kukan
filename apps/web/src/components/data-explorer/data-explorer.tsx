@@ -7,7 +7,7 @@ import { useDuckDB, type ColumnFilter, type SortState } from '@/hooks/use-duckdb
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { ExplorerToolbar } from './explorer-toolbar'
 import { ExplorerTable } from './explorer-table'
-import { ExplorerPagination } from './explorer-pagination'
+import { PreviewFooter } from '../preview-footer'
 
 const PAGE_SIZE = 100
 
@@ -110,6 +110,13 @@ export function DataExplorer({ resourceId }: DataExplorerProps) {
 
   if (!ready) return null
 
+  // Named, because the branch is the one thing the explorer's footer has that
+  // the Parquet preview's does not: a filter, and rows it left behind.
+  const summary =
+    filteredRows === totalRows
+      ? t('previewTotalRows', { count: totalRows })
+      : t('explorerFilteredRows', { filtered: filteredRows, total: totalRows })
+
   return (
     <div className="flex flex-col gap-3">
       <ExplorerToolbar
@@ -119,23 +126,25 @@ export function DataExplorer({ resourceId }: DataExplorerProps) {
         onFilterRemove={handleFilterRemove}
         onClearAll={handleClearAll}
       />
-      <ExplorerTable
-        columns={columns}
-        rows={rows}
-        sort={sort}
-        filters={filters}
-        onSortChange={setSort}
-        onFilterApply={handleFilterApply}
-        onFilterClear={handleFilterRemove}
-      />
-      <ExplorerPagination
-        page={page}
-        totalPages={totalPages}
-        totalRows={totalRows}
-        filteredRows={filteredRows}
-        loading={queryLoading}
-        onPageChange={setPage}
-      />
+      {/* One box around the table and its footer, as the Parquet preview has. */}
+      <div className="overflow-hidden rounded-lg border">
+        <ExplorerTable
+          columns={columns}
+          rows={rows}
+          sort={sort}
+          filters={filters}
+          onSortChange={setSort}
+          onFilterApply={handleFilterApply}
+          onFilterClear={handleFilterRemove}
+        />
+        <PreviewFooter
+          summary={summary}
+          page={page}
+          totalPages={totalPages}
+          busy={queryLoading}
+          onPageChange={setPage}
+        />
+      </div>
     </div>
   )
 }

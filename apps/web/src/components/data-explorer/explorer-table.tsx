@@ -46,7 +46,7 @@ export function ExplorerTable({
   }
 
   return (
-    <div className="max-h-[600px] overflow-auto rounded-lg border">
+    <div className="max-h-[600px] overflow-auto">
       {/* Raw <table> (not the @kukan/ui Table, which wraps in its own overflow-x-auto
           div) so a single container scrolls both axes — matching ParquetPreview. */}
       <table className="w-max text-sm">
