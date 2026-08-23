@@ -257,16 +257,41 @@ describe('executeInterpret — column typing', () => {
     expect(result?.schema?.droppedRows).toBe(1)
   })
 
-  it('leaves a footer as wide as the header to the table trim', async () => {
-    // It splits like every other row, so the reader has no reason to refuse it
-    // and the rule that reads what a row says is the one that takes it.
-    csv('name,amount\n' + 'a,1\n' + 'b,2\n' + '合計,3\n')
+  it('keeps a total row that carries values, because it is a row', async () => {
+    // It splits like every other row and every column is filled. Dropping it is
+    // a reading of the file — the publisher's own total, which somebody may
+    // have come for — rather than a cleaning of it.
+    csv('区分,男,女\n' + '港,10,20\n' + '芝,30,40\n' + '合計,40,60\n')
 
     await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
     const { types, rows } = await readPreview()
 
-    expect(Object.keys(types)).toEqual(['name', 'amount'])
-    expect(rows.map((r) => r.name)).toEqual(['a', 'b'])
+    expect(Object.keys(types)).toEqual(['区分', '男', '女'])
+    expect(rows.map((r) => r.区分)).toEqual(['港', '芝', '合計'])
+  })
+
+  it('keeps a row whose first cell merely begins like a footer word', async () => {
+    // 計画課 begins with 計 and 注文番号 with 注, and the rule used to delete
+    // both — full rows, every column filled, gone from every count the
+    // catalogue publishes with nothing recorded.
+    csv('部署,男,女\n' + '総務,10,20\n' + '計画課,30,40\n' + '注文番号,50,60\n')
+
+    await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+    const { rows } = await readPreview()
+
+    expect(rows.map((r) => r.部署)).toEqual(['総務', '計画課', '注文番号'])
+  })
+
+  it('drops a trailing row that is all but empty', async () => {
+    // What is left of the rule: a note the publisher padded out to the table's
+    // width. One value and the rest blank is not a row of this table, whatever
+    // the value says.
+    csv('区分,男,女\n' + '港,10,20\n' + '芝,30,40\n' + '出典: 港区,,\n')
+
+    await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+    const { rows } = await readPreview()
+
+    expect(rows.map((r) => r.区分)).toEqual(['港', '芝'])
   })
 
   it('says nothing about dropped rows where none were', async () => {

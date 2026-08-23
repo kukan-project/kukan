@@ -95,19 +95,6 @@ export const MAX_CSV_COLUMNS = 500
  */
 export const CSV_FOOTER_SCAN_ROWS = 100
 
-/** First-cell prefixes that mark a trailing row as a footer rather than data. */
-export const CSV_FOOTER_PREFIXES = [
-  '合計',
-  '注',
-  '※',
-  '出典',
-  '備考',
-  '計',
-  'total',
-  'note',
-  'source',
-]
-
 /**
  * Bounds on the DuckDB instance that interprets a CSV (ADR-046). Well under the
  * task's memory so the rest of the run keeps its headroom: DuckDB spills to disk

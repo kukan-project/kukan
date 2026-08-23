@@ -21,7 +21,6 @@ import type {
   ResourceSchema,
 } from '@kukan/shared'
 import {
-  CSV_FOOTER_PREFIXES,
   CSV_FOOTER_SCAN_ROWS,
   DROPPED_LINE_SAMPLE,
   INTERPRET_MEMORY_LIMIT_MB,
@@ -320,10 +319,22 @@ async function refusedMoreThanNotes(
 /**
  * Drop the trailing run of footer rows and return the row count that remains.
  *
- * The rule is the one the hand-written extractor used: a row is a footer when
- * its first cell starts with a known prefix, or — only when the data has more
- * than one column — when it carries at most one non-empty cell. Single-column
- * data is exempt because every one of its rows would otherwise qualify.
+ * A row is a footer when it carries at most one non-empty cell — a `合計,,` or a
+ * `出典: 港区,,` that the publisher padded out to the table's width. Single-column
+ * data is exempt, because every one of its rows would otherwise qualify.
+ *
+ * **What the first cell says is not evidence.** The rule used to drop a row
+ * whose first cell began with 合計, 注, 出典 and six others, which deletes
+ * 計画課, 注文番号 and any other value starting with those two characters —
+ * measured, on rows with every column filled. It bought one shape that this
+ * does not catch, a note of two or more values padded to the width, and it paid
+ * for it by silently deleting data rows. A note left in the table is a row of
+ * mostly empty cells that anyone can see; a deleted row is gone from every count
+ * the catalogue publishes.
+ *
+ * A row that says 合計 and *has* values is a row either way: it is the
+ * publisher's own total, and dropping it is a reading of the file rather than a
+ * cleaning of it.
  *
  * Only the last {@link CSV_FOOTER_SCAN_ROWS} rows are examined, since the run
  * has to reach the bottom of the file to be a footer at all.
@@ -335,29 +346,24 @@ async function trimFooter(conn: DuckDBConnection, columns: Column[]): Promise<nu
   const total = Number(n)
   if (total === 0) return 0
 
-  const first = sqlIdentifier(columns[0].name)
   const nonEmpty = columns
     .map(
       (c) =>
         `CASE WHEN nullif(trim(CAST(${sqlIdentifier(c.name)} AS VARCHAR)), '') IS NULL THEN 0 ELSE 1 END`
     )
     .join(' + ')
-  const prefixTest = CSV_FOOTER_PREFIXES.map(
-    (p) => `starts_with(lower(trim(CAST(${first} AS VARCHAR))), ${sqlLiteral(p)})`
-  ).join(' OR ')
 
   const reader = await conn.runAndReadAll(`
-    SELECT rn, coalesce(${prefixTest}, false) AS prefixed,
-      ${columns.length > 1 ? `(${nonEmpty}) <= 1` : 'false'} AS sparse
+    SELECT rn, ${columns.length > 1 ? `(${nonEmpty}) <= 1` : 'false'} AS sparse
     FROM (SELECT *, row_number() OVER () AS rn FROM t)
     WHERE rn > ${Math.max(0, total - CSV_FOOTER_SCAN_ROWS)}
     ORDER BY rn DESC
   `)
-  const rows = reader.getRowObjectsJson() as { rn: number; prefixed: boolean; sparse: boolean }[]
+  const rows = reader.getRowObjectsJson() as { rn: number; sparse: boolean }[]
 
   let keep = total
   for (const row of rows) {
-    if (!row.prefixed && !row.sparse) break
+    if (!row.sparse) break
     keep = Number(row.rn) - 1
   }
   if (keep === total) return total
