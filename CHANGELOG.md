@@ -3,6 +3,91 @@
 All notable changes to KUKAN are documented in this file (English / 日本語).
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
+本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
+
+## [0.15.0] - 2026-08-23
+
+**Highlights**
+
+- **Row-level diffs can now track changed rows.** Declare a primary key on a resource — the column, or combination of columns, that identifies a row — and diffs between versions report "N rows changed" with before → after samples, instead of showing every edit as one removal plus one addition. The key is checked before it is applied (present in the content, no empty values, unique across rows), each version records the key it was read under, and content that does not satisfy the key is left out of row-level diffs with the reason shown in the version list (#439, #440, #443, #444, #445, #446, #448).
+- **Reverting now issues a new version instead of setting history aside.** "Stop and revert" publishes the restored content forward as a new version — the history gains a "Re-published vN" row, and no version is removed or hidden. Resources that an old-style revert had left with set-aside versions are converted by a new one-time item on the site administrator's dashboard, so the latest-version label agrees with what is being served (#432, #437).
+- **CSV interpretation is steadier around ragged rows and footnotes.** A CSV with an occasional ragged row is still read as a table, and the interpretation says which lines were dropped. Data rows are no longer deleted just because their first cell begins like a footnote, padded notes are judged by the same rule in both passes, and the preview shows one footer wherever the table is read (#450, #455, #456, #457).
+- **Private datasets no longer leave traces on public surfaces.** Public list counts, tag and format lists, and deleted-dataset counts no longer reveal that a private dataset exists (#461, #466).
+- **Form fields no longer turn gray under OS dark mode.** With the operating system set to dark, inputs rendered with a gray background that made them look disabled. The dark-theme styles now stay off until KUKAN actually ships a dark theme (#467).
+
+**Features**
+
+- feat(web): let an admin choose the columns a resource's rows are identified by (#448)
+- feat(api): say what each version was read under, and why one was refused (#446)
+- feat(api): answer whether a key would work before it is applied (#445)
+- feat(lake): match rows by the key both versions were loaded under (#444)
+- feat(lake): apply a keyed version row by row, or record why it cannot be (#443)
+- feat(api): let an editor settle the key rows are identified by (#440)
+- feat(api): freeze the key a version is read under (#439)
+- feat(api): make a revert publish the version it goes back to (#432)
+
+**Changes**
+
+- The new-dataset page no longer asks for a source URL (#462)
+
+**Bug Fixes**
+
+- fix(api): hide private-dataset traces from public tag, format, and deleted-count surfaces (#466)
+- fix(api): hide private datasets from public list counts (#461)
+- fix(web): one footer under the table, whichever way it is being read (#457)
+- fix(worker): judge a padded note by the same rule, and count what both passes took (#456)
+- fix(worker): stop deleting rows because their first cell begins like a footer (#455)
+- fix(worker): read a CSV with a ragged row as a table, and say which line was dropped (#450)
+- fix(api): convert the versions an old-style revert set aside (#437)
+- fix(web): scope dark variant to explicit class so OS dark mode does not gray out inputs (#467)
+
+**Documentation**
+
+- The data admin guide documents the primary key control, the six reasons a diff can be unavailable, and the new revert behaviour; wording about deleting a version now claims exactly what a deletion guarantees (#468).
+- The open ii-b design decisions were settled in the implementation spec before the work began (#431).
+
+---
+
+**ハイライト**
+
+- **行レベル差分が「変更された行」を追跡できるようになりました。** リソースに主キー — 行を同定する列、または列の組み合わせ — を指定すると、版どうしの差分が「変更 N 行」と変更前 → 変更後の抜粋を表示します。指定が無い場合、1 行の書き換えはこれまでどおり「追加 1 行 + 削除 1 行」として現れます。キーは適用前に検査され（内容にその列があること・空の値が無いこと・行ごとに値が重複しないこと）、各版は自分が読まれたときのキーを記録し、キーを満たさない内容は理由つきで行レベル差分の対象外になります（#439、#440、#443、#444、#445、#446、#448）。
+- **巻き戻しが、履歴を脇へ避ける代わりに新しい版を発行するようになりました。** 「中止して巻き戻す」は戻す内容を新しい版として前へ発行します — 履歴には「vN を再公開」の行が増え、どの版も消えたり隠れたりしません。旧方式の巻き戻しが脇へ避けた版が残っているリソースは、サイト管理者ダッシュボードに追加された一度きりの変換で、最新バージョンの表示と配信中の内容が一致する状態になります（#432、#437）。
+- **CSV の解釈が、列数の乱れと脚注に対して安定しました。** 一部の行の列数が揃っていない CSV も表として読み、どの行を落としたかを解釈が報告します。先頭セルが脚注のように始まるだけでデータ行が消されることはなくなり、パディングされた注記は両方のパスで同じ規則で判定され、プレビューの脚注はどの読み方でも 1 つだけ表示されます（#450、#455、#456、#457）。
+- **非公開データセットが公開側に痕跡を残さなくなりました。** 公開の一覧件数、タグ・フォーマットの一覧、削除済み件数から、非公開データセットの存在が推測できなくなりました（#461、#466）。
+- **OS のダークモードで入力欄がグレーになる問題を修正しました。** OS がダークモード設定のとき、入力欄の背景がグレーになり無効状態と見分けがつきませんでした。KUKAN が実際にダークテーマを提供するまで、ダークテーマ用のスタイルは発火しなくなりました（#467）。
+
+**機能**
+
+- feat(web): リソースの行を同定する列を管理者が選べるようにする（#448）
+- feat(api): 各版が何のキーで読まれたか・なぜ拒否されたかを返す（#446）
+- feat(api): キーが機能するかを適用前に答える（#445）
+- feat(lake): 両方の版が読まれたキーで行を突き合わせる（#444）
+- feat(lake): キー付きの版を行単位で適用し、できない理由を記録する（#443）
+- feat(api): 行を同定するキーを編集者が確定できるようにする（#440）
+- feat(api): 版が読まれたキーを版に凍結する（#439）
+- feat(api): 巻き戻しを「戻り先の内容の再発行」にする（#432）
+
+**変更**
+
+- 新規データセット作成ページからソース URL 欄を削除しました（#462）
+
+**バグ修正**
+
+- fix(api): 非公開データセットの痕跡を公開のタグ・フォーマット・削除済み件数から隠す（#466）
+- fix(api): 非公開データセットを公開の一覧件数から隠す（#461）
+- fix(web): テーブルの脚注をどの読み方でも 1 つにする（#457）
+- fix(worker): パディングされた注記を同じ規則で判定し、両パスの所要を数える（#456）
+- fix(worker): 先頭セルが脚注のように始まる行を削除しない（#455）
+- fix(worker): 列数の乱れた CSV を表として読み、落とした行を報告する（#450）
+- fix(api): 旧方式の巻き戻しが脇へ避けた版を変換する（#437）
+- fix(web): dark バリアントを明示クラスに限定し OS ダークモードで入力欄がグレーになるのを防ぐ（#467）
+
+**ドキュメント**
+
+- データ管理者ガイドに主キーの指定、差分を取得できない 6 つの理由、新しい巻き戻しの挙動を記載しました。版の削除についての文言は、削除が保証する範囲だけを主張するよう改めました（#468）。
+- ii-b の未確定だった設計判断を、実装前に実装仕様書で確定しました（#431）。
+
 ## [0.14.0] - 2026-08-17
 
 **Breaking Changes**
