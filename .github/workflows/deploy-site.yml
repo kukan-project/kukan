@@ -6,6 +6,13 @@ on:
     paths:
       - 'site/**'
       - '.github/workflows/deploy-site.yml'
+      # The landing hero bakes the release version and date in at build time
+      # (site/src/pages/index.astro reads both files), so a release that
+      # touches nothing under site/ still changes the page. The paths filter
+      # does apply to mirrored pushes — a release whose push carried no site/**
+      # change was measured not to deploy.
+      - 'package.json'
+      - 'CHANGELOG.md'
   workflow_dispatch:
 
 permissions:
