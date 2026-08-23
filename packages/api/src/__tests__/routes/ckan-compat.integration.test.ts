@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { createTestApp } from '../test-helpers/test-app'
-import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
+import {
+  getTestDb,
+  cleanDatabase,
+  closeTestDb,
+  ensureTestUser,
+  ensureOutsiderUser,
+  OUTSIDER_USER_ID,
+} from '../test-helpers/test-db'
 import { PostgresSearchAdapter } from '@kukan/search-adapter'
 
 const db = getTestDb()
@@ -323,6 +330,26 @@ describe('CKAN-Compatible API (/api/3/action)', () => {
       const names = (body.result as string[]).sort()
       expect(names).toEqual(['ckan-tag-a', 'ckan-tag-b'])
     })
+
+    // Pins the c.get('user') wiring on this route: the caller's visibility
+    // decides which tags surface, same rule as GET /api/v1/tags
+    it('should scope tags to the caller visibility', async () => {
+      await ensureOutsiderUser()
+      await createPackage('ckan-vis-pub', { tags: [{ name: 'ckan-pub-tag' }] })
+      await createPackage('ckan-vis-priv', { private: true, tags: [{ name: 'ckan-priv-tag' }] })
+      await app.request('/api/v1/organizations/test-org-ckan/members', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: OUTSIDER_USER_ID, role: 'member' }),
+      })
+
+      const anon = (await (await unauthApp.request('/api/3/action/tag_list')).json()).result
+      expect(anon).toEqual(['ckan-pub-tag'])
+
+      const member = (await (await outsiderApp.request('/api/3/action/tag_list')).json())
+        .result as string[]
+      expect(member.sort()).toEqual(['ckan-priv-tag', 'ckan-pub-tag'])
+    })
   })
 
   describe('tag_show', () => {
@@ -352,6 +379,24 @@ describe('CKAN-Compatible API (/api/3/action)', () => {
         '/api/3/action/tag_show?id=00000000-0000-0000-0000-000000000000'
       )
       expect(res.status).toBe(404)
+    })
+
+    it('should hide a private-only tag from anonymous callers', async () => {
+      await ensureOutsiderUser()
+      await createPackage('ckan-show-priv', {
+        private: true,
+        tags: [{ name: 'ckan-show-priv-tag' }],
+      })
+      await app.request('/api/v1/organizations/test-org-ckan/members', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: OUTSIDER_USER_ID, role: 'member' }),
+      })
+      const { items } = await (await app.request('/api/v1/tags')).json()
+      const tagId = items[0].id
+
+      expect((await unauthApp.request(`/api/3/action/tag_show?id=${tagId}`)).status).toBe(404)
+      expect((await outsiderApp.request(`/api/3/action/tag_show?id=${tagId}`)).status).toBe(200)
     })
   })
 })

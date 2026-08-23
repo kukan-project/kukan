@@ -98,7 +98,7 @@ export function registerCatalogTools(server: McpServer, ctx: CatalogToolsContext
     },
     async ({ q, offset, limit }) => {
       const service = new TagService(db)
-      const result = await service.list({ q, limit, offset })
+      const result = await service.list({ q, limit, offset }, user)
 
       const text =
         result.items.length === 0

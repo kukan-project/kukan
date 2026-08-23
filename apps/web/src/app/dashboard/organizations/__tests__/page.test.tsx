@@ -215,6 +215,23 @@ describe('OrganizationsManagePage', () => {
     expect(screen.getAllByText('View')).toHaveLength(2)
   })
 
+  // The deleted count is editor-gated on the API; a withheld (null) count must
+  // not render a "(0 deleted)" note nor break the total
+  it('should hide the deleted note when the API withholds the count', async () => {
+    mockFetch(
+      mockFetchResponse({
+        items: sampleOrgs.map((o) => ({ ...o, deletedDatasetCount: null })),
+        total: 2,
+      })
+    )
+    render(<OrganizationsManagePage />)
+
+    await waitFor(() => expect(screen.getByText('tokyo')).toBeInTheDocument())
+    // tokyo shows only its active count, without the deleted suffix
+    expect(screen.getByText('24')).toBeInTheDocument()
+    expect(screen.queryByText(/deleted\)/)).not.toBeInTheDocument()
+  })
+
   // The count comes from the list API only for the viewer's own organizations;
   // the action itself is gated the same way, so a missing count still links out
   it('should label the member action without a count when the API withholds it', async () => {

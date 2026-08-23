@@ -252,6 +252,62 @@ describe('Organizations API Routes', () => {
         expect(member.datasetCount).toBe(2)
       })
     })
+
+    // The deleted-datasets listing this count summarises is editor-gated
+    // (my_org narrows to editor orgs), so the count is too: everyone below
+    // gets null instead of a number that tracks deletion activity.
+    describe('deleted dataset counts', () => {
+      beforeEach(async () => {
+        await ensureOutsiderUser()
+        for (const [name, role] of [
+          ['del-org-admin', 'admin'],
+          ['del-org-editor', 'editor'],
+          ['del-org-member', 'member'],
+        ] as const) {
+          const org = await (await app.request('/api/v1/organizations', json({ name }))).json()
+          await app.request(
+            `/api/v1/organizations/${name}/members`,
+            json({ user_id: OUTSIDER_USER_ID, role })
+          )
+          await app.request('/api/v1/packages', json({ name: `${name}-pkg`, ownerOrg: org.id }))
+          await app.request(`/api/v1/packages/${name}-pkg`, { method: 'DELETE' })
+        }
+      })
+
+      async function deletedCountsAs(client: typeof app) {
+        const body = await (await client.request('/api/v1/organizations')).json()
+        return Object.fromEntries(
+          body.items.map((o: { name: string; deletedDatasetCount: number | null }) => [
+            o.name,
+            o.deletedDatasetCount,
+          ])
+        )
+      }
+
+      it('should return null to anonymous callers', async () => {
+        expect(await deletedCountsAs(createTestApp(db, { user: null }))).toEqual({
+          'del-org-admin': null,
+          'del-org-editor': null,
+          'del-org-member': null,
+        })
+      })
+
+      it('should return the count only where the viewer is an editor or above', async () => {
+        expect(await deletedCountsAs(outsiderApp)).toEqual({
+          'del-org-admin': 1,
+          'del-org-editor': 1,
+          'del-org-member': null,
+        })
+      })
+
+      it('should return every count to a sysadmin', async () => {
+        expect(await deletedCountsAs(app)).toEqual({
+          'del-org-admin': 1,
+          'del-org-editor': 1,
+          'del-org-member': 1,
+        })
+      })
+    })
   })
 
   describe('POST /api/v1/organizations', () => {

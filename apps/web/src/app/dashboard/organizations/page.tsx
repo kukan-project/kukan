@@ -19,7 +19,8 @@ interface OrgItem {
   name: string
   title?: string
   datasetCount: number
-  deletedDatasetCount: number
+  /** Null unless the viewer may see the org's deleted datasets (editor+) */
+  deletedDatasetCount: number | null
   /** Absent unless the viewer may read the roster — the same gate as the action */
   memberCount?: number | null
 }
@@ -146,10 +147,12 @@ export default function OrganizationsManagePage() {
                     <TableCell className="font-medium">{org.name}</TableCell>
                     <TableCell>{org.title || '-'}</TableCell>
                     <TableCell className="text-right">
-                      {org.datasetCount + org.deletedDatasetCount}
-                      <span className="ml-1 text-xs text-muted-foreground">
-                        {t('deletedDatasetCount', { count: org.deletedDatasetCount })}
-                      </span>
+                      {org.datasetCount + (org.deletedDatasetCount ?? 0)}
+                      {typeof org.deletedDatasetCount === 'number' && (
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          {t('deletedDatasetCount', { count: org.deletedDatasetCount })}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell>
                       {/* Right-aligned so the trailing action lines up down the

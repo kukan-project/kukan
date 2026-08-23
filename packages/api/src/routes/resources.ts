@@ -49,6 +49,7 @@ import {
   makePackageAuthorize,
   resolveUserOrgIds,
   buildVisibilityFilters,
+  MANAGE_ROLE,
   type AuthUser,
 } from '../auth/permissions'
 import { syncPackageMetadata, indexResourceMetadata } from '../services/search-index'
@@ -160,7 +161,7 @@ resourcesRouter.get('/count', async (c) => {
   // Visibility counts every membership; my_org narrows to the orgs the viewer
   // may write in, matching the dashboard listing it accompanies
   const userOrgIds = await resolveUserOrgIds(db, user)
-  const manageOrgIds = myOrg ? await resolveUserOrgIds(db, user, 'editor') : undefined
+  const manageOrgIds = myOrg ? await resolveUserOrgIds(db, user, MANAGE_ROLE) : undefined
 
   // No editor membership → 0
   if (manageOrgIds?.length === 0) {
@@ -179,10 +180,11 @@ resourcesRouter.get('/count', async (c) => {
   return c.json({ count })
 })
 
-// GET /api/v1/resources/formats - Get distinct resource formats
+// GET /api/v1/resources/formats - Get distinct resource formats the viewer
+// may see; publicCache() keeps only the anonymous response in the shared cache
 resourcesRouter.get('/formats', publicCache(), async (c) => {
   const service = new ResourceService(c.get('db'))
-  const formats = await service.getDistinctFormats()
+  const formats = await service.getDistinctFormats(c.get('user'))
   return c.json(formats)
 })
 

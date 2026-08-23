@@ -37,7 +37,12 @@ import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { LakeConfig } from '@kukan/lake'
 import { dropResourceTables } from '@kukan/lake'
-import { orgMemberCountSql, packageVisibilitySql, type AuthUser } from '../auth/permissions'
+import {
+  orgDeletedDatasetCountSql,
+  orgMemberCountSql,
+  packageVisibilitySql,
+  type AuthUser,
+} from '../auth/permissions'
 import { reclaimLakeStorage } from './lake-reclaim'
 import { listPurgeTargets, purgePackageExternals } from './package-cleanup'
 import { withResourceClaimsOrConflict } from './pipeline-claim'
@@ -48,23 +53,17 @@ import { deleteOrphanFreeTags } from './tag-service'
 const EXTERNALS_CLEANUP_CONCURRENCY = 8
 
 /**
- * An organization's packages in one state, counted per row of a list query,
+ * An organization's active packages, counted per row of a list query,
  * restricted to what the viewer may see (packageVisibilitySql).
  * Exported because the dashboard lists the viewer's own organizations from a
  * second route (routes/users.ts), and the two counts must not drift apart.
+ * The deleted-state sibling lives in permissions.ts (orgDeletedDatasetCountSql)
+ * because it is membership-gated rather than visibility-restricted.
  */
-export function orgPackageCount(
-  db: Database,
-  packageState: 'active' | 'deleted',
-  visibility?: SQL
-) {
+export function orgPackageCount(db: Database, visibility?: SQL) {
   return db.$count(
     packageTable,
-    and(
-      eq(packageTable.ownerOrg, organization.id),
-      eq(packageTable.state, packageState),
-      visibility
-    )
+    and(eq(packageTable.ownerOrg, organization.id), eq(packageTable.state, 'active'), visibility)
   )
 }
 
@@ -96,7 +95,7 @@ export class OrganizationService {
     const where = and(...conditions)
 
     const visibility = await packageVisibilitySql(this.db, viewer)
-    const datasetCount = orgPackageCount(this.db, 'active', visibility).as('dataset_count')
+    const datasetCount = orgPackageCount(this.db, visibility).as('dataset_count')
 
     // Ordered before LIMIT: without it PostgreSQL may return rows in any order,
     // so paging could repeat or skip an organization
@@ -105,9 +104,7 @@ export class OrganizationService {
         ...getTableColumns(organization),
         total: sql`${count()} over ()`.mapWith(Number).as('total'),
         datasetCount,
-        deletedDatasetCount: orgPackageCount(this.db, 'deleted', visibility).as(
-          'deleted_dataset_count'
-        ),
+        deletedDatasetCount: orgDeletedDatasetCountSql(viewer).as('deleted_dataset_count'),
         memberCount: orgMemberCountSql(viewer).as('member_count'),
       })
       .from(organization)

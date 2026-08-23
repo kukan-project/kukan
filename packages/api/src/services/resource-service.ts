@@ -19,7 +19,12 @@ import type { PendingResourceMetadata } from '@kukan/db'
 import { RESOURCE_POSITION_LOCK, lockInTransaction } from './advisory-lock'
 import { cancelResourceRun } from './pipeline-claim'
 import { PARKED_UNTIL, ownedByVersion } from './storage-pointer'
-import { hasOrgMembership, hasDraftAccess, type AuthUser } from '../auth/permissions'
+import {
+  hasOrgMembership,
+  hasDraftAccess,
+  packageVisibilitySql,
+  type AuthUser,
+} from '../auth/permissions'
 
 // Package states whose resources are reachable — drafts hold resources before publish (ADR-039)
 const RESOURCE_PARENT_STATES: PackageDbState[] = ['active', 'draft']
@@ -232,10 +237,12 @@ export class ResourceService {
   }
 
   /**
-   * Get distinct non-empty formats across all active resources.
-   * Joins the parent package so draft-only formats never leak (ADR-039).
+   * Get distinct non-empty formats across active resources the viewer may see.
+   * Joins the parent package so draft-only formats never leak (ADR-039), and
+   * restricts it with packageVisibilitySql so formats used only by private
+   * datasets stay invisible too.
    */
-  async getDistinctFormats(): Promise<string[]> {
+  async getDistinctFormats(viewer?: AuthUser): Promise<string[]> {
     const rows = await this.db
       .selectDistinct({ format: resource.format })
       .from(resource)
@@ -244,6 +251,7 @@ export class ResourceService {
         and(
           eq(resource.state, 'active'),
           eq(packageTable.state, 'active'),
+          await packageVisibilitySql(this.db, viewer),
           sql`${resource.format} IS NOT NULL AND ${resource.format} != ''`
         )
       )

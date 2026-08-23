@@ -189,10 +189,12 @@ ckanCompatRouter.get('/resource_show', async (c) => {
 // Organization Actions
 // ============================================================
 
-// organization_list - List all organizations (names only)
+// organization_list - List all organizations (names only). The viewer is
+// passed for uniformity with every other count-bearing list call, even though
+// the names-only projection discards the scoped counts today.
 ckanCompatRouter.get('/organization_list', publicCache(), async (c) => {
   const service = new OrganizationService(c.get('db'))
-  const result = await service.list({ offset: 0, limit: 1000 })
+  const result = await service.list({ offset: 0, limit: 1000 }, c.get('user'))
   const names = result.items.map((org) => org.name)
   return ckanResponse(names, c)
 })
@@ -218,10 +220,10 @@ ckanCompatRouter.get('/organization_show', publicCache(), async (c) => {
 // Group Actions
 // ============================================================
 
-// group_list - List all groups (names only)
+// group_list - List all groups (names only, viewer passed as above)
 ckanCompatRouter.get('/group_list', publicCache(), async (c) => {
   const service = new GroupService(c.get('db'))
-  const result = await service.list({ offset: 0, limit: 1000 })
+  const result = await service.list({ offset: 0, limit: 1000 }, c.get('user'))
   const names = result.items.map((grp) => grp.name)
   return ckanResponse(names, c)
 })
@@ -250,7 +252,7 @@ ckanCompatRouter.get('/group_show', publicCache(), async (c) => {
 // tag_list - List all tags (names only)
 ckanCompatRouter.get('/tag_list', publicCache(), async (c) => {
   const service = new TagService(c.get('db'))
-  const result = await service.list({ offset: 0, limit: 1000 })
+  const result = await service.list({ offset: 0, limit: 1000 }, c.get('user'))
   const names = result.items.map((tag) => tag.name)
   return ckanResponse(names, c)
 })
@@ -264,7 +266,7 @@ ckanCompatRouter.get('/tag_show', publicCache(), async (c) => {
 
   const service = new TagService(c.get('db'))
   try {
-    const tag = await service.getById(id)
+    const tag = await service.getById(id, c.get('user'))
     if (!tag) {
       return ckanError('Tag not found', c, 404)
     }

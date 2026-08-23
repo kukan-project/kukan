@@ -28,6 +28,7 @@ import {
   makePackageAuthorize,
   resolveUserOrgIds,
   buildVisibilityFilters,
+  MANAGE_ROLE,
   type AuthUser,
 } from '../auth/permissions'
 import {
@@ -137,7 +138,7 @@ packagesRouter.get(
           `Filters not supported with state=draft: ${unsupported.join(', ')}`
         )
       }
-      const editorOrgIds = await resolveUserOrgIds(db, user, 'editor')
+      const editorOrgIds = await resolveUserOrgIds(db, user, MANAGE_ROLE)
       // 'purging' rows (a draft purge that crashed mid-flight) are included so
       // the dashboard can offer the DELETE retry that completes the purge
       const result = await service.list({
@@ -165,7 +166,7 @@ packagesRouter.get(
     // narrows to the orgs the viewer may write in, the same basis the drafts
     // listing above uses
     const userOrgIds = await resolveUserOrgIds(db, user)
-    const manageOrgIds = my_org ? await resolveUserOrgIds(db, user, 'editor') : undefined
+    const manageOrgIds = my_org ? await resolveUserOrgIds(db, user, MANAGE_ROLE) : undefined
 
     // No editor membership → guaranteed empty result
     if (manageOrgIds?.length === 0) {

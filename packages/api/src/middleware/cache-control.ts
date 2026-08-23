@@ -34,7 +34,10 @@ export async function cacheControl(c: Context, next: Next) {
 }
 
 /**
- * Public cache middleware for routes that return identical data regardless of auth.
+ * Public cache middleware for GET routes whose anonymous response is fully
+ * public. The response may still vary by viewer (e.g. visibility-scoped
+ * counts): only the anonymous variant is ever marked cacheable, so a shared
+ * cache never holds a signed-in user's view.
  * Use as route-level middleware: `router.get('/', publicCache(), handler)`
  */
 export function publicCache(maxAge = 60, swr = 300): MiddlewareHandler {

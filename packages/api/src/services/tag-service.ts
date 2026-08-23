@@ -3,11 +3,26 @@
  * Business logic for tag management
  */
 
-import { and, eq, ilike, isNull, notExists, sql } from 'drizzle-orm'
+import { and, eq, ilike, isNull, notExists, sql, type SQL } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { tag, packageTag, packageTable } from '@kukan/db'
 import { escapeLike } from '@kukan/shared'
 import type { PaginationParams, PaginatedResult } from '@kukan/shared'
+import { packageVisibilitySql, type AuthUser } from '../auth/permissions'
+
+/**
+ * ON condition for the package join that counts as tag usage: published
+ * (active) packages the viewer may see, so draft/deleted/invisible-private
+ * links contribute a NULL and are not counted. Shared by list() and getById()
+ * so the visibility rule cannot drift between the list and the detail.
+ */
+function visibleUsageJoin(visibility: SQL | undefined) {
+  return and(
+    eq(packageTag.packageId, packageTable.id),
+    eq(packageTable.state, 'active'),
+    visibility
+  )
+}
 
 type DbOrTx = Database | Parameters<Parameters<Database['transaction']>[0]>[0]
 
@@ -31,35 +46,35 @@ export async function deleteOrphanFreeTags(db: DbOrTx): Promise<void> {
 export class TagService {
   constructor(private db: Database) {}
 
-  async list(params: PaginationParams & { q?: string; orderBy?: 'packageCount' }) {
+  async list(
+    params: PaginationParams & { q?: string; orderBy?: 'packageCount' },
+    viewer?: AuthUser
+  ) {
     const { offset = 0, limit = 100, q, orderBy } = params
 
     const where = q ? ilike(tag.name, `%${escapeLike(q)}%`) : undefined
+    const visibility = await packageVisibilitySql(this.db, viewer)
 
     let query = this.db
       .select({
         id: tag.id,
         name: tag.name,
         vocabularyId: tag.vocabularyId,
-        // Count usage by published (active) packages only — the active-only
-        // join means draft/deleted links contribute a NULL and are not counted
         packageCount: sql<number>`COUNT(DISTINCT ${packageTable.id})::int`.as('package_count'),
         total: sql<number>`COUNT(*) OVER()::int`.as('total'),
       })
       .from(tag)
-      // Left-join so tags with no active package still appear when they are
-      // controlled vocabulary; the active-state predicate lives in the ON clause
-      // so it filters counted rows, not the tag itself.
+      // Left-join so tags with no visible package still appear when they are
+      // controlled vocabulary; the usage predicates live in the ON clause so
+      // they filter counted rows, not the tag itself.
       .leftJoin(packageTag, eq(tag.id, packageTag.tagId))
-      .leftJoin(
-        packageTable,
-        and(eq(packageTag.packageId, packageTable.id), eq(packageTable.state, 'active'))
-      )
+      .leftJoin(packageTable, visibleUsageJoin(visibility))
       .where(where)
       .groupBy(tag.id, tag.name, tag.vocabularyId)
-      // Free tags surface only when used by an active package (drafts must not
-      // leak); vocabulary tags are managed explicitly and always kept (tag_list
-      // contract, and never GC'd — see deleteOrphanFreeTags).
+      // Free tags surface only when used by a visible active package (drafts
+      // and other viewers' private datasets must not leak); vocabulary tags are
+      // managed explicitly and always kept (tag_list contract, and never GC'd —
+      // see deleteOrphanFreeTags).
       .having(sql`${tag.vocabularyId} IS NOT NULL OR COUNT(DISTINCT ${packageTable.id}) > 0`)
       .$dynamic()
 
@@ -76,7 +91,8 @@ export class TagService {
     return { items, total, offset, limit } as PaginatedResult<(typeof items)[0]>
   }
 
-  async getById(id: string) {
+  async getById(id: string, viewer?: AuthUser) {
+    const visibility = await packageVisibilitySql(this.db, viewer)
     const [result] = await this.db
       .select({
         id: tag.id,
@@ -85,13 +101,10 @@ export class TagService {
         packageCount: sql<number>`COUNT(DISTINCT ${packageTable.id})::int`.as('package_count'),
       })
       .from(tag)
-      // Same visibility rule as list(): count active usage, hide draft-only free
-      // tags, but always keep controlled-vocabulary tags
+      // Hide free tags with no visible package, but always keep
+      // controlled-vocabulary tags (same HAVING contract as list())
       .leftJoin(packageTag, eq(tag.id, packageTag.tagId))
-      .leftJoin(
-        packageTable,
-        and(eq(packageTag.packageId, packageTable.id), eq(packageTable.state, 'active'))
-      )
+      .leftJoin(packageTable, visibleUsageJoin(visibility))
       .where(eq(tag.id, id))
       .groupBy(tag.id, tag.name, tag.vocabularyId)
       .having(sql`${tag.vocabularyId} IS NOT NULL OR COUNT(DISTINCT ${packageTable.id}) > 0`)

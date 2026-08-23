@@ -29,7 +29,10 @@ tagsRouter.get(
   async (c) => {
     const params = c.req.valid('query')
     const service = new TagService(c.get('db'))
-    const result = await service.list(params)
+    // The viewer scopes which packages count as tag usage
+    // (packageVisibilitySql); publicCache() keeps only the anonymous
+    // response in the shared cache.
+    const result = await service.list(params, c.get('user'))
     return c.json(result)
   }
 )
@@ -38,7 +41,7 @@ tagsRouter.get(
 tagsRouter.get('/:id', async (c) => {
   const id = c.req.param('id')
   const service = new TagService(c.get('db'))
-  const tag = await service.getById(id)
+  const tag = await service.getById(id, c.get('user'))
 
   if (!tag) {
     return c.json({ error: 'Tag not found' }, 404)

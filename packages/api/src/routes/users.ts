@@ -75,7 +75,7 @@ usersRouter.get('/me/organizations', async (c) => {
   // Unrestricted count: every listed org is one the viewer belongs to (or the
   // viewer is sysadmin), so this equals the visibility-mirrored count the
   // public organization list applies (packageVisibilitySql)
-  const datasetCountSql = orgPackageCount(db, 'active').as('dataset_count')
+  const datasetCountSql = orgPackageCount(db).as('dataset_count')
 
   if (user.sysadmin) {
     // Sysadmin sees all active organizations

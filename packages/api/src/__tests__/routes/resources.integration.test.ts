@@ -1189,6 +1189,32 @@ describe('Resources API Routes', () => {
       const body = await res.json()
       expect(body).toEqual([])
     })
+
+    // Formats are free text, so one used only by a private dataset is itself
+    // a leak: it must stay out of the public filter candidates.
+    it('should hide formats used only by invisible private datasets', async () => {
+      const pub = await createPackage('formats-pub-pkg')
+      await createResource(pub.id, { format: 'CSV' })
+      const priv = await createPackage('formats-priv-pkg', { private: true })
+      await createResource(priv.id, { format: 'GeoJSON' })
+
+      for (const client of [unauthApp, outsiderApp]) {
+        expect(await (await client.request('/api/v1/resources/formats')).json()).toEqual(['CSV'])
+      }
+
+      // A member of the owning org and a sysadmin see the private one too
+      await app.request('/api/v1/organizations/test-org-res/members', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: OUTSIDER_USER_ID, role: 'member' }),
+      })
+      for (const client of [outsiderApp, app]) {
+        expect(await (await client.request('/api/v1/resources/formats')).json()).toEqual([
+          'CSV',
+          'GeoJSON',
+        ])
+      }
+    })
   })
 
   describe('POST /api/v1/resources/:id/run-pipeline', () => {

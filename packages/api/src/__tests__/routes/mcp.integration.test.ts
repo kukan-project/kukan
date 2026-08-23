@@ -338,6 +338,25 @@ describe('MCP Server', () => {
       expect(text).toContain('open-data')
       expect(text).toContain('csv')
     })
+
+    // Same visibility rule as search_datasets: a tag used only by a private
+    // dataset must not reach an anonymous MCP session
+    it('should hide private-only tags from the caller', async () => {
+      const app = mcpApp()
+      await createPackage(app, { name: 'mcp-tag-pub', tags: [{ name: 'pub-tag' }] })
+      await createPackage(app, {
+        name: 'mcp-tag-priv',
+        private: true,
+        tags: [{ name: 'priv-tag' }],
+      })
+
+      const sysadmin = await mcpToolCall(app, 'list_tags', { limit: 50 })
+      expect(sysadmin.result.content[0].text).toContain('priv-tag')
+
+      const anonymous = await mcpToolCall(mcpApp(null), 'list_tags', { limit: 50 })
+      expect(anonymous.result.content[0].text).toContain('pub-tag')
+      expect(anonymous.result.content[0].text).not.toContain('priv-tag')
+    })
   })
 
   describe('GET /api/mcp', () => {

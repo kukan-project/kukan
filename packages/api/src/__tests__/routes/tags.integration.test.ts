@@ -1,12 +1,33 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { tag, vocabulary } from '@kukan/db'
+import { tag, vocabulary, packageTable, packageTag } from '@kukan/db'
 import { createTestApp } from '../test-helpers/test-app'
-import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
+import {
+  getTestDb,
+  cleanDatabase,
+  closeTestDb,
+  ensureTestUser,
+  ensureOutsiderUser,
+  OUTSIDER_USER_ID,
+} from '../test-helpers/test-db'
 import { TagService } from '../../services/tag-service'
 
 const db = getTestDb()
 const app = createTestApp(db)
+const outsiderApp = createTestApp(db, {
+  user: {
+    id: OUTSIDER_USER_ID,
+    email: 'outsider@example.com',
+    name: 'outsider',
+    sysadmin: false,
+  },
+})
+
+const json = (data: Record<string, unknown>) => ({
+  method: 'POST' as const,
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(data),
+})
 
 let testOrgId: string
 
@@ -118,6 +139,126 @@ describe('Tags API Routes', () => {
 
       const detail = await app.request(`/api/v1/tags/${vTag.id}`)
       expect(detail.status).toBe(200)
+    })
+  })
+
+  // A free tag used only by datasets the viewer cannot see must not surface —
+  // the tag name itself is the leak (e.g. an internal project name), and even
+  // on a public tag the count must not include invisible usage.
+  describe('tag visibility (private datasets)', () => {
+    beforeEach(async () => {
+      await ensureOutsiderUser()
+      await createPackageWithTags('vis-public-pkg', ['shared-tag', 'public-tag'])
+      const otherOrgId = await ensureTestOrg()
+      const mine = await (
+        await app.request('/api/v1/organizations', json({ name: 'tags-org-mine' }))
+      ).json()
+      await app.request(
+        '/api/v1/organizations/tags-org-mine/members',
+        json({ user_id: OUTSIDER_USER_ID, role: 'member' })
+      )
+      await app.request(
+        '/api/v1/packages',
+        json({
+          name: 'vis-private-mine',
+          ownerOrg: mine.id,
+          private: true,
+          tags: [{ name: 'shared-tag' }, { name: 'private-mine-tag' }],
+        })
+      )
+      await app.request(
+        '/api/v1/packages',
+        json({
+          name: 'vis-private-other',
+          ownerOrg: otherOrgId,
+          private: true,
+          tags: [{ name: 'shared-tag' }, { name: 'private-other-tag' }],
+        })
+      )
+    })
+
+    async function listAs(client: typeof app) {
+      const body = await (await client.request('/api/v1/tags')).json()
+      return Object.fromEntries(
+        body.items.map((t: { name: string; packageCount: number }) => [t.name, t.packageCount])
+      )
+    }
+
+    it('should hide private-only tags and their usage from anonymous callers', async () => {
+      expect(await listAs(createTestApp(db, { user: null }))).toEqual({
+        'shared-tag': 1,
+        'public-tag': 1,
+      })
+    })
+
+    it("should add the viewer's own orgs' private usage", async () => {
+      expect(await listAs(outsiderApp)).toEqual({
+        'shared-tag': 2,
+        'public-tag': 1,
+        'private-mine-tag': 1,
+      })
+    })
+
+    it('should list everything for a sysadmin', async () => {
+      expect(await listAs(app)).toEqual({
+        'shared-tag': 3,
+        'public-tag': 1,
+        'private-mine-tag': 1,
+        'private-other-tag': 1,
+      })
+    })
+
+    it('should apply the same visibility on the detail endpoint', async () => {
+      const [privateTag] = await db.select().from(tag).where(eq(tag.name, 'private-other-tag'))
+      const anonApp = createTestApp(db, { user: null })
+      expect((await anonApp.request(`/api/v1/tags/${privateTag.id}`)).status).toBe(404)
+      expect((await outsiderApp.request(`/api/v1/tags/${privateTag.id}`)).status).toBe(404)
+      expect((await app.request(`/api/v1/tags/${privateTag.id}`)).status).toBe(200)
+
+      // Counts on a visible tag stay scoped to the viewer as well
+      const [sharedTag] = await db.select().from(tag).where(eq(tag.name, 'shared-tag'))
+      const anonDetail = await (await anonApp.request(`/api/v1/tags/${sharedTag.id}`)).json()
+      expect(anonDetail.packageCount).toBe(1)
+    })
+
+    it('should not match private-only tags via q search', async () => {
+      const anonApp = createTestApp(db, { user: null })
+      const body = await (await anonApp.request('/api/v1/tags?q=private-other')).json()
+      expect(body.items).toEqual([])
+      expect(body.total).toBe(0)
+    })
+
+    // Vocabulary tags always stay listed (tag_list contract), so for them the
+    // leak surface is the count alone
+    it('should keep vocabulary tags visible but scope their count', async () => {
+      const [vocab] = await db.insert(vocabulary).values({ name: 'vis-themes' }).returning()
+      const [vTag] = await db
+        .insert(tag)
+        .values({ name: 'vis-controlled', vocabularyId: vocab.id })
+        .returning()
+      const [privatePkg] = await db
+        .select()
+        .from(packageTable)
+        .where(eq(packageTable.name, 'vis-private-other'))
+      await db.insert(packageTag).values({ packageId: privatePkg.id, tagId: vTag.id })
+
+      const anonApp = createTestApp(db, { user: null })
+      const anon = await (await anonApp.request(`/api/v1/tags/${vTag.id}`)).json()
+      expect(anon.packageCount).toBe(0)
+      const sysadmin = await (await app.request(`/api/v1/tags/${vTag.id}`)).json()
+      expect(sysadmin.packageCount).toBe(1)
+    })
+
+    it('should scope the AI candidate list to the suggest user', async () => {
+      const anonymous = await new TagService(db).list({ limit: 10, orderBy: 'packageCount' })
+      expect(anonymous.items.map((t) => t.name)).not.toContain('private-mine-tag')
+
+      const asOutsider = await new TagService(db).list(
+        { limit: 10, orderBy: 'packageCount' },
+        { id: OUTSIDER_USER_ID, sysadmin: false }
+      )
+      expect(asOutsider.items.map((t) => t.name)).toContain('private-mine-tag')
+      expect(asOutsider.items.map((t) => t.name)).not.toContain('private-other-tag')
     })
   })
 
