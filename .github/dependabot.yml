@@ -15,6 +15,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    ignore:
+      # better-auth 1.7 is a breaking release despite the minor version: the
+      # account table gains a required issuer column with a backfill, and the
+      # generic OAuth plugin is rewritten. Upgrading is its own migration task;
+      # remove this entry once it lands.
+      - dependency-name: better-auth
+        versions: ['>= 1.7.0']
     groups:
       # One PR per week for the low-risk bumps; majors stay separate for review.
       minor-and-patch:
