@@ -6,6 +6,32 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.15.1] - 2026-08-23
+
+Dependency updates and faster CI. No change to application behaviour.
+
+**Dependencies**
+
+- 33 minor and patch bumps across the workspace (#475), including pg 8.23, hono 4.13.3, next 16.3.1, papaparse 5.6, and the AWS SDK / CDK line. better-auth stays on 1.6.x (1.6.30): 1.7 is a breaking release and is held back for a migration of its own (#472).
+- aws-cdk-lib 2.266 propagates tags to ALB listeners, so the infrastructure golden templates were updated to match. The next deploy shows tag-only additions on listeners — an in-place, non-disruptive change (#475).
+
+**CI**
+
+- Pull request CI got faster: the database-integration job skips changes that touch only docs, the doc site, or infrastructure code; the Next.js build check runs beside the database suites instead of in front of them; and a superseded push cancels the run it obsoleted (#477).
+
+---
+
+依存関係の更新と CI の高速化のみで、アプリケーションの動作に変更はありません。
+
+**依存関係**
+
+- ワークスペース全体で 33 件の minor / patch 更新（#475）。pg 8.23、hono 4.13.3、next 16.3.1、papaparse 5.6、AWS SDK / CDK 系など。better-auth は 1.6 系（1.6.30）に留めています — 1.7 は破壊的変更を含むため、専用のマイグレーションとして別途対応します（#472）。
+- aws-cdk-lib 2.266 が ALB リスナーへタグを伝播するようになったため、インフラのゴールデンテンプレートを追随させました。次回デプロイではリスナーへのタグ追加のみの差分が出ます — 置換を伴わない無停止の変更です（#475）。
+
+**CI**
+
+- PR の CI を高速化しました: DB 統合テストのジョブはドキュメント・ドキュメントサイト・インフラコードのみの変更をスキップし、Next.js のビルドチェックは DB テストの手前ではなく並列に実行され、古くなった push の実行は新しい push がキャンセルします（#477）。
+
 ## [0.15.0] - 2026-08-23
 
 **Highlights**
