@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
-import { stashPendingResources } from '@/lib/pending-resources'
+import { stashPendingDropFiles } from '@/lib/pending-drop-files'
 import { MAX_UPLOAD_SIZE } from '@kukan/shared'
 import { dropFiles } from '@/__tests__/drag-drop'
 import { ResourceList } from '../resource-list'
@@ -108,10 +108,7 @@ describe('ResourceList drop-to-create', () => {
 
   it('should start uploads for files stashed from the new-dataset page', async () => {
     mockClientFetch.mockResolvedValue(jsonResponse({ id: 'res1' }))
-    stashPendingResources('pkg1', {
-      files: [new File(['a'], 'stashed.csv', { type: 'text/csv' })],
-      url: null,
-    })
+    stashPendingDropFiles('pkg1', [new File(['a'], 'stashed.csv', { type: 'text/csv' })])
 
     render(<ResourceList {...baseProps} />)
 
@@ -120,34 +117,6 @@ describe('ResourceList drop-to-create', () => {
     })
     const body = JSON.parse(mockClientFetch.mock.calls[0][1]!.body as string)
     expect(body.name).toBe('stashed.csv')
-  })
-
-  it('should create a resource for a url stashed from the new-dataset page', async () => {
-    mockClientFetch.mockResolvedValue(jsonResponse({ id: 'res1', url: 'https://e.test/a.csv' }))
-    stashPendingResources('pkg1', { files: [], url: 'https://e.test/a.csv' })
-
-    render(<ResourceList {...baseProps} />)
-
-    await waitFor(() => expect(mockClientFetch).toHaveBeenCalled())
-    const [path, init] = mockClientFetch.mock.calls[0]
-    expect(path).toBe('/api/v1/packages/pkg1/resources')
-    const body = JSON.parse(init!.body as string)
-    expect(body.url).toBe('https://e.test/a.csv')
-    // The format the pipeline would otherwise have to guess at
-    expect(body.format).toBe('CSV')
-  })
-
-  it('should report a stashed url the server refused', async () => {
-    mockClientFetch.mockResolvedValue({
-      ok: false,
-      json: async () => ({ detail: 'That host is not allowed' }),
-    } as Response)
-    stashPendingResources('pkg1', { files: [], url: 'http://127.0.0.1/secret' })
-
-    render(<ResourceList {...baseProps} />)
-
-    // Said with the server's own words: what a resource url may be is its rule
-    expect(await screen.findByText('That host is not allowed')).toBeInTheDocument()
   })
 
   it('should create one resource per dropped file', async () => {

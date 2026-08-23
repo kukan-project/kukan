@@ -136,7 +136,6 @@
     "dangerZone": "危険な操作",
     "createDataset": "データセットを作成",
     "dropZoneHint": "ファイルをドラッグ＆ドロップ、またはクリックして選択すると、下書きを作成してリソースを追加します",
-    "resourceUrlHint": "データが外部サイトにある場合は、その URL を入力します。空欄でも作成でき、あとから追加できます",
     "visibility": "公開状態",
     "titlePlaceholder": "データセットの表示名",
     "descriptionPlaceholder": "データセットの説明",

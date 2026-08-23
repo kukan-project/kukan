@@ -24,7 +24,7 @@ import {
 } from '@kukan/ui'
 import { Upload, X, Plus, GripVertical } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import { detectFormat, isCsvFormat, MAX_UPLOAD_SIZE } from '@kukan/shared'
+import { detectFormat, isCsvFormat, MAX_UPLOAD_SIZE, MAX_UPLOAD_SIZE_MB } from '@kukan/shared'
 import {
   DndContext,
   closestCenter,
@@ -44,7 +44,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { clientFetch, problemDetail } from '@/lib/client-api'
 import { rowActivateProps } from '@/lib/row-activate'
-import { takePendingResources } from '@/lib/pending-resources'
+import { takePendingDropFiles } from '@/lib/pending-drop-files'
 import { updateResource } from '@/lib/update-resource'
 import { useFileDrop } from '@/hooks/use-file-drop'
 import { FormatBadge } from '@/components/format-badge'
@@ -246,14 +246,10 @@ export function ResourceList({
     }
   }, [])
 
-  // What was dropped or typed on the new-dataset page rides along to this
-  // draft's edit page — consume the stash once on mount (see
-  // lib/pending-resources.ts)
-  const [handoffError, setHandoffError] = useState<string | null>(null)
+  // Files dropped on the new-dataset page ride along to this draft's edit
+  // page — consume the stash once on mount (see lib/pending-drop-files.ts)
   useEffect(() => {
-    const { files, url } = takePendingResources(packageId)
-    for (const file of files) startDropUpload(file)
-    if (url) void addHandedOverUrl(url)
+    for (const file of takePendingDropFiles(packageId)) startDropUpload(file)
   }, [packageId])
 
   // Report in-flight uploads for the page-level AI-suggest gating (ADR-040);
@@ -423,29 +419,10 @@ export function ResourceList({
     },
   })
 
-  // No card of its own, unlike a dropped file: there is nothing to watch, and
-  // only a failure needs saying — in the server's words, since the rule is its
-  async function addHandedOverUrl(url: string) {
-    setPipelineOps((n) => n + 1)
-    try {
-      const body: Record<string, string> = { url }
-      const format = detectFormat(url)
-      if (format) body.format = format
-      await enqueueCreate(body)
-      scheduleRefetch()
-    } catch (err) {
-      setHandoffError(err instanceof Error ? err.message : t('failedToAdd'))
-    } finally {
-      setPipelineOps((n) => n - 1)
-    }
-  }
-
   async function startDropUpload(file: File) {
     const key = crypto.randomUUID()
     const error =
-      file.size > MAX_UPLOAD_SIZE
-        ? t('fileTooLarge', { size: MAX_UPLOAD_SIZE / 1024 / 1024 })
-        : null
+      file.size > MAX_UPLOAD_SIZE ? t('fileTooLarge', { size: MAX_UPLOAD_SIZE_MB }) : null
     setDropUploads((list) => [...list, { key, file, resourceId: null, error }])
     if (error) return
 
@@ -865,11 +842,6 @@ export function ResourceList({
 
   return (
     <div className="flex flex-col gap-4" {...dropHandlers}>
-      {handoffError && (
-        <Alert variant="destructive" className="mb-2">
-          <AlertDescription>{handoffError}</AlertDescription>
-        </Alert>
-      )}
       {reorderError && (
         <Alert variant="destructive" className="mb-2">
           <AlertDescription>{reorderError}</AlertDescription>

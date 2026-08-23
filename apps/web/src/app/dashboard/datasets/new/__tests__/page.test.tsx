@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
-import { takePendingResources } from '@/lib/pending-resources'
+import { takePendingDropFiles } from '@/lib/pending-drop-files'
 import { MAX_UPLOAD_SIZE } from '@kukan/shared'
 import { dropFiles } from '@/__tests__/drag-drop'
 
@@ -120,54 +120,15 @@ describe('NewDatasetPage', () => {
     // The files ride along for the edit page's ResourceList to upload
     form.draftCreated!('draft-1')
 
-    expect(takePendingResources('draft-1').files.map((f: File) => f.name)).toEqual(['data.csv'])
+    expect(takePendingDropFiles('draft-1').map((f) => f.name)).toEqual(['data.csv'])
   })
 
-  it('should stash nothing when the form was submitted without a drop or a url', () => {
+  it('should stash nothing when the form was submitted without a drop', () => {
     render(<NewDatasetPage />)
 
     form.draftCreated!('draft-2')
 
-    expect(takePendingResources('draft-2')).toEqual({ files: [], url: null })
-  })
-
-  it('should stash a typed url under the draft the form created', () => {
-    // Data that lives elsewhere used to mean creating an empty dataset and
-    // then editing it
-    render(<NewDatasetPage />)
-
-    fireEvent.change(screen.getByLabelText('External URL'), {
-      target: { value: ' https://example.com/data.csv ' },
-    })
-    form.draftCreated!('draft-3')
-
-    expect(takePendingResources('draft-3').url).toBe('https://example.com/data.csv')
-  })
-
-  it('should not submit the form while a url is being typed', () => {
-    render(<NewDatasetPage />)
-
-    fireEvent.change(screen.getByLabelText('External URL'), {
-      target: { value: 'https://example.com/d' },
-    })
-
-    // A drop creates the draft at once; a url is typed, and half of one is not
-    // a resource
-    expect(submitSignal()).toBe('0')
-  })
-
-  it('should carry both a drop and a url when given both', () => {
-    const { container } = render(<NewDatasetPage />)
-
-    fireEvent.change(screen.getByLabelText('External URL'), {
-      target: { value: 'https://example.com/data.csv' },
-    })
-    dropOnZone(container, [csv()])
-    form.draftCreated!('draft-4')
-
-    const handoff = takePendingResources('draft-4')
-    expect(handoff.files.map((f: File) => f.name)).toEqual(['data.csv'])
-    expect(handoff.url).toBe('https://example.com/data.csv')
+    expect(takePendingDropFiles('draft-2')).toEqual([])
   })
 
   it('should reject oversized files without submitting the form', async () => {
