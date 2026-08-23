@@ -6,6 +6,30 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.16.0] - 2026-08-23
+
+**Highlights**
+
+- The raw-text preview now has a line-number gutter. For CSV/TSV it numbers parsed records under the dialect the file was actually read with — a record spanning quoted newlines gets one number — so the "rows not in the table (at line N)" note finally points at a line you can find in the text. The worker records the sniffed dialect alongside the dropped-line numbers to make that exact.
+- Primary keys are now visible to readers, not just to editors: `GET /resources/{id}/schema` and the MCP `get_resource_schema` tool report the settled key, and the preview table, the analysis mode, and the fields list mark its columns in the same colour the key picker uses.
+- Numeric columns right-align with tabular figures and decimal columns line up on the decimal point in both preview modes, and DATE/TIMESTAMP values now render identically in the plain table and the analysis mode.
+
+**Features**
+
+- feat: line numbers, key marking, and numeric alignment in resource previews (#480)
+
+---
+
+**ハイライト**
+
+- テキストプレビューに行番号欄が付きました。CSV/TSV では、ファイルが実際に読まれた方言のもとでパース済みレコード単位に番号を振ります(引用符内改行をまたぐレコードは 1 つの番号)。これにより「ファイルにあって表に含まれていない行数(N 行目)」の注記が、テキスト上で実際に見つけられる行を指すようになりました。正確を期すため、worker は落ちた行番号の横にスニフした方言を記録します。
+- 主キーが閲覧者にも見えるようになりました。`GET /resources/{id}/schema` と MCP の `get_resource_schema` が確定済みの主キーを返し、プレビューテーブル・解析モード・項目一覧が主キー列を管理画面のピッカーと同じ色で表示します。
+- 両プレビューモードで整数・数値列が等幅数字の右揃えになり、数値列は小数点位置が揃います。日付・日時の表示もテーブル表示と解析モードで統一されました。
+
+**機能**
+
+- feat: リソースプレビューの行番号・主キー表示・数値桁揃え (#480)
+
 ## [0.15.1] - 2026-08-23
 
 Dependency updates and faster CI. No change to application behaviour.
