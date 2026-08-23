@@ -2,7 +2,7 @@
 
 # Phase Versioning-ii: Row-Level Diffs via DuckLake (layer 2) — Implementation Spec
 
-> **ii-a implementation complete (2026-07-27). ii-b onwards has not been started.**
+> **ii-a implementation complete (2026-07-27). ii-b implementation complete (2026-08-22). ii-c onwards has not been started.**
 >
 > **§1–§5, §7 (except §7.2), §10, §12 and §13 are a record.** After implementation, ADR-046
 > changed the ordering and who does the interpreting (`Fetch → Version → Interpret → Lake → Index`,

@@ -257,16 +257,16 @@ pnpm format        # Prettier フォーマット
 
 ## 現在のフェーズ
 
-**Versioning ii-a までリリース済み。** 層 1（正本バージョン保持・パージ）は v0.11.x、
-層 2（DuckLake 行レベル差分、主キーなし）は v0.12.0 で入っている。以降は巻き戻しとパージが
-層 2 へ正しく波及するかの修正が続いており（ADR-043 §5、仕様書 §9）、**§14.1 のリリース前必須
-項目は残っていない**。バージョン番号を書くのは「どこで入ったか」だけにする — 「最新リリースは」は
-リリースごとに古くなるので書かない。
+**Versioning ii-b まで実装済み。** 層 1（正本バージョン保持・パージ）は v0.11.x、
+層 2（DuckLake 行レベル差分、主キーなし）は v0.12.0 で入っている。ii-b（主キー指定による
+変更行追跡。巻き戻しの版発行化・`superseded` 廃止を含む）は 2026-08-22 に実装完了し、
+v0.14.0 の次のリリースで入る。バージョン番号を書くのは「どこで入ったか」だけにする —
+「最新リリースは」はリリースごとに古くなるので書かない。
 
-**次: Phase Versioning-ii-b — 主キー指定による変更行追跡**
-（実装仕様書: `docs/specs/jp/phase-versioning-2-ducklake.md`）。
-着手前に同 §14.0 を読むこと — **ii-a が例外的に成立していた前提が 3 つ落ちる**ので、後追いでは
-なく前提として解く必要がある。§6 も着手前の設計メモとして更新済み。
+**次: Phase Versioning-ii-c — 型の確定と降格の選択肢提示**
+（実装仕様書: `docs/specs/jp/phase-versioning-2-ducklake.md` §8・§6.3・§6.5）。
+着手前に §6.5 を読むこと — 確定型は版のゲートの 4 つ目の入力になる。主キー/型の AI 提案
+（ADR-040 拡張）も ii-c の枠（同 §14.1 項目 4）。
 
 - Phase 1: Foundation ✅ 完了
 - Phase 2: フロントエンド ✅ 完了（実装仕様書: `docs/specs/jp/phase2-frontend.md`）
@@ -277,6 +277,8 @@ pnpm format        # Prettier フォーマット
   （`docs/specs/jp/phase-versioning-1-file-retention.md`、ADR-043 層 1）
 - Phase Versioning-ii-a: DuckLake 行レベル差分（主キーなし）✅ 完了
   （`docs/specs/jp/phase-versioning-2-ducklake.md`、ADR-043 層 2）
+- Phase Versioning-ii-b: 主キー指定による変更行追跡 ✅ 完了
+  （`docs/specs/jp/phase-versioning-2-ducklake.md` §6、ADR-043 層 2 / ADR-044 改訂）
 
 実装仕様書も ADR と同様に日本語を正本とし、`docs/specs/jp/` と `docs/specs/en/` の
 両方に置く（英語版は機械翻訳・参考）。仕様書を追加・更新したら両方を更新する。

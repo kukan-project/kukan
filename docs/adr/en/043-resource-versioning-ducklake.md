@@ -2,10 +2,10 @@
 
 ## Status
 
-**Accepted** — layer 1 implemented 2026-07-25, layer 2 (ii-a) 2026-07-27.
-ii-b (changed-row tracking via a declared primary key) onwards remain open issues
+**Accepted** — layer 1 implemented 2026-07-25, layer 2 (ii-a) 2026-07-27, ii-b (changed-row
+tracking via a declared primary key) 2026-08-22. ii-c (settled types) onwards remain open issues
 
-> **The ii-b design revised §5 (purge) and §6 (operations) on 2026-08-17 (not built).** The
+> **The ii-b design revised §5 (purge) and §6 (operations) on 2026-08-17 (since built).** The
 > largest change is that **a purge no longer guarantees the erasure of layer 2's bytes**, and
 > the phrase "legal deletion" has been dropped from this ADR with it. What changed is noted at
 > the head of §5; the full list of decisions and the measurements behind them are in
@@ -294,8 +294,8 @@ made reversible, it could **report success with the version still obtainable**.
   owning the object the live pointer names**, which mid-purge can be a `purging` one — which is
   why the column above asks whether a state can be an automatic fallback, not whether it can be
   live. **The fallback is the newest `active` version**, and no state exists to narrow that
-  search. For new history it coincides with "the newest not purged" — coincides only; a retained
-  `superseded` row parts the two
+  search. For new history it coincides with "the newest not purged" — coincides only; an
+  unconverted `superseded` row parts the two
 - **`purging` snapshots are not retained.** A purge calls the expiry from inside its own run,
   before it can set the row to `purged`; retaining a row mid-purge would **leave the purged
   version's files on disk** (§6-4)
@@ -534,9 +534,11 @@ ingest. **The purge's step-down is the only path that exists solely to move the 
 > table** (spec §9.1 has the v1/v2/v3 case). Recovery keys off the same definition
 > (spec §11-5).
 >
-> **A `superseded` version is readable, but not somewhere to stand.** A reclaim's retained set
-> keeps their snapshots so their diffs still read (`lake-reclaim.ts`), but putting their rows
-> back as the contents is restoring rows the resource stepped off.
+> **An unconverted `superseded` version is readable, but not somewhere to stand.** A reclaim's
+> retained set keeps their snapshots so their diffs still read (`lake-reclaim.ts`), but putting
+> their rows back as the contents is restoring rows the resource stepped off. New history never
+> creates this state, so for new data the "newest `active`" of the table above coincides with
+> "the newest not purged". **An operator naming one explicitly is another matter** (ADR-044 §4).
 >
 > **With no `active` target left, only a purge drops the table.** A purge owes unfetchability, and
 > **a `DROP` costs the current contents only — the retained snapshots stay readable through it**
@@ -867,8 +869,8 @@ bytes: consolidate freely (§6-2).**
 6. **AI primary-key suggestion**: Add primary-key candidate suggestion to the ADR-040
    suggestion infrastructure to help resources graduate to primary-keyed diffs (the MERGE
    tier)
-7. ~~**The ii-b purge mechanism (a prerequisite for graduating)**~~: **Settled 2026-08-17 (not
-   built).** Moving to primary-keyed diffs makes §5.1's container principle lose its ii-a
+7. ~~**The ii-b purge mechanism (a prerequisite for graduating)**~~: **Settled 2026-08-17;
+   built in ii-b.** Moving to primary-keyed diffs makes §5.1's container principle lose its ii-a
    exception and apply always. **The answer was not to build a finer-grained purge but to
    change what a purge claims** (§5) — layers 1 and 3 and the search index are physically
    deleted, and layer 2 is put out of reach.

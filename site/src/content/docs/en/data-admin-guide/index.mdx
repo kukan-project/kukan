@@ -67,7 +67,7 @@ Uploaded files are automatically processed through the pipeline:
 
 Every time a resource's file is replaced, the content it replaced is kept as a **version**.
 You can download any past version, and for CSV/TSV you can see how many rows were added or
-removed between two versions.
+removed between two versions — and, with a primary key declared, how each row changed.
 
 A version is created only when the content **actually changed**. Re-fetching an external URL
 that still serves the same bytes adds no version, and the resource's processing status says
@@ -76,10 +76,29 @@ that still serves the same bytes adds no version, and the resource's processing 
 ### Viewing the version history
 
 The resource edit page has a **Version history** section. Versions are listed newest first,
-each row showing the version number, creation time, size, and origin (**Upload** or
-**Fetched**).
+each row showing the version number, creation time, size, origin (**Upload**, **Fetched**, or
+**Re-published v○**), and the **primary key** the version was loaded under.
 
 Every version can be downloaded exactly as it was. The version number is added to the filename.
+
+### Declaring a primary key
+
+The **Primary key** control on the resource edit page names the columns used to match a row to
+the same row in another version (a combination of columns works too). With a key, a diff can
+count the **rows that changed**.
+
+- The columns you choose — the combination, if more than one — have to be **present in the
+  content, hold no empty values, and not repeat across rows**. Where they are not met, the
+  reason is shown before you apply
+- Applying creates one version, and **versions from then on** are loaded under this key. Diffs
+  of past versions do not change
+- When content arrives that does not satisfy the key, that version is left out of row-level
+  diffs. The reason (a column is missing, has empty values, or does not identify a row) appears
+  in the version list and on the diff panel
+- A column that does not keep pointing at the same row — a sequence number reissued on every
+  publication, say — makes a poor key. If that is all there is, declaring no key is the safer
+  choice: editing one row then shows as one addition plus one removal, but two different things
+  are never presented as the same row
 
 ### Viewing a diff
 
@@ -87,56 +106,67 @@ The **Diff** control on a version's row fetches the diff against the preceding v
 computed when you open it, so simply listing the versions does not run anything.
 
 - Shows **N rows added / N rows removed**, with a few representative rows from each side
-- **It does not show "N rows changed".** Without a primary key to identify rows, editing one
-  row appears as one addition plus one removal. KUKAN does not guess a correspondence and
-  present it as change history
+- **With a primary key declared**, it also shows **"N rows changed"** with representative rows
+  before → after. Without one, editing one row appears as one addition plus one removal — KUKAN
+  does not guess a correspondence and present it as change history
 - When the **columns changed** (added, removed, retyped, or reordered), the rows cannot be
   lined up and the panel says so instead
 
 Diffs are available between **CSV/TSV versions of 50 MB or less**. When one is unavailable,
 the reason is shown.
 
-| Message                                                                                            | Meaning                                                      |
-| -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| This is the first version, so there is nothing to compare against.                                 | v1 has no predecessor                                        |
-| This version is not covered by diffs (not tabular, or captured before the feature was introduced). | A PDF and similar, or a version created before the migration |
-| One of the versions has been purged, so a diff is not available.                                   | Either side was purged                                       |
+| Message                                                                                         | Meaning                                                        |
+| ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| This is the first version, so there is nothing to compare against.                              | v1 has no predecessor                                          |
+| v○ has no row-level snapshot, so there is nothing to compare against.                           | A PDF and similar, or a version created before the migration   |
+| One of the versions has been deleted, so a diff is not available.                               | Either side was deleted                                        |
+| A key column is not in v○, so its rows cannot be identified and no diff is available.           | A column named in the primary key is missing from that version |
+| A key column of v○ has empty values, so its rows cannot be identified and no diff is available. | The key columns contain empty values                           |
+| The key of v○ does not identify a row, so no diff is available.                                 | Rows repeat the same key values                                |
+
+The three key-related reasons clear up **from the next version on** once the key is corrected.
+A version left out is never loaded retroactively.
 
 ### Stopping and reverting
 
 For when the wrong file was uploaded, there are three operations of increasing destructiveness.
 Each is chosen explicitly.
 
-| Operation              | Current content                                               | Versions                                  | Auth       |
-| ---------------------- | ------------------------------------------------------------- | ----------------------------------------- | ---------- |
-| **Stop**               | Left alone                                                    | Left alone                                | Org editor |
-| **Stop and revert**    | Restored to the newest saved version                          | Versions above the target stay in history | Org editor |
-| **Purge This Version** | Falls back to the preceding version, if this was the live one | Content erased, the record remains        | Sysadmin   |
+| Operation               | Current content                                              | Versions                                            | Auth       |
+| ----------------------- | ------------------------------------------------------------ | --------------------------------------------------- | ---------- |
+| **Stop**                | Left alone                                                   | Left alone                                          | Org editor |
+| **Stop and revert**     | Back on the newest saved version's content                   | The restored content is **issued as a new version** | Org editor |
+| **Delete This Version** | Falls back to the newest remaining version, if this was live | Content erased, the record remains                  | Sysadmin   |
 
-**Stop and revert** puts the live content back on the most recent saved version. If there is no
-earlier version, the resource is left with no file (its metadata remains).
+**Stop and revert** puts the live content back on the most recent saved version. The restored
+content is **issued as a new version**, so the history gains a row with origin "Re-published
+v○" and no past version is removed. If there is no earlier version, the resource is left with
+no file (its metadata remains).
 
 The preview and the search index are **discarded as part of the revert and rebuilt automatically
 from the restored content** (the rebuild runs in the background, so it takes a moment to appear).
 A warning appears only when discarding them, or starting the rebuild, did not succeed — then
 "Rebuild preview & index" finishes the job.
 
-### Purging a version
+### Deleting a version
 
-Use this when the content itself has to go — personal data that should never have been
-published, for example. **Only site administrators** can purge, **a reason is required**, and it
-is recorded in the audit log.
+Use this when the content itself has to become unobtainable — personal data that should never
+have been published, for example. **Only site administrators** can delete a version, **a reason
+is required**, and it is recorded in the audit log.
 
-- The canonical file, and **the row data no other version holds**, are deleted immediately
-- **Content another version holds is not erased.** Each version keeps its own copy, so purging
-  one leaves the others serving that content — and if purging the live version falls back onto
+- The version becomes unobtainable and its canonical file is deleted. Rows may remain in the
+  version store's internal storage, and their deletion is not guaranteed (another resource's
+  history can reference the same file)
+- **Content another version holds is not erased.** Each version keeps its own copy, so deleting
+  one leaves the others serving that content — and if deleting the live version falls back onto
   a version holding the same content, **the resource serves it again**. The confirmation dialog
-  names those versions; purge them individually if they must go too
-- Where storage versioning is in use, the superseded objects disappear once their retention
+  names those versions; delete them individually if they must go too
+- Where storage versioning is in use, the set-aside objects disappear once their retention
   period (30 days by default) elapses
-- Purging the live version puts the resource back on the preceding one. With no earlier
-  version, the resource is left with no file
-- The history keeps a "Purged" row and the date. The reason you type is **not** shown there and is
+- Deleting the **live** version puts the resource back on the newest remaining one; with none
+  left, the resource is left with no file. Deleting a version that is not live changes nothing
+  about what is served, its preview, or its search index
+- The history keeps a "Deleted" row and the date. The reason you type is **not** shown there and is
   not returned by the API — it goes to the audit log, which today is only readable in the database.
   Treat it as a note to the operators, and **do not restate in it what had to be removed**
 - **This cannot be undone**
@@ -150,8 +180,10 @@ A **Backfill versions** item appears on the site administrator's dashboard — r
   re-indexed)
 - **Layer 2**: loads the current version of each tabular resource into the diff store, so diffs
   become available from the next update onwards
+- **Revert conversion**: converts resources still holding versions an earlier revert set aside,
+  so the latest-version label agrees with what is being served
 
-The item disappears once both counts reach zero. **Replacing a file before running it loses the
+The item disappears once all counts reach zero. **Replacing a file before running it loses the
 previous content — it is never kept as a version.**
 
 ## AI metadata suggestions

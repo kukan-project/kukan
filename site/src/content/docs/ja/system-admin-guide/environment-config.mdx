@@ -35,7 +35,7 @@ CDK bootstrap のイメージ用 ECR リポジトリへ同一タグを push し�
 ビルド内容のハッシュのため、同一コミットは同一タグになります)。この競合は**一過性で、失敗した
 側を再実行すれば解消**します(既に push 済みのイメージはスキップされます)。恒久的に避けたい場合は、
 当該 ECR リポジトリのタグを MUTABLE にするか、dev と prd のデプロイをずらして実行してください。
-手順はリポジトリの `docs/specs/phase4-deploy.md` を参照してください。
+手順はリポジトリの `docs/specs/jp/phase4-deploy.md` を参照してください。
 
 ## 環境エントリのフィールド
 
@@ -115,7 +115,7 @@ RETAIN が付くため、一度のデプロイで切り替えられます):
   `backup.awsBackup` / `backup.dbBackupRetentionDays` の上書きは synth 時に
   拒否されます
 
-スケール別のデフォルト値はリポジトリの `docs/specs/phase4-deploy.md`
+スケール別のデフォルト値はリポジトリの `docs/specs/jp/phase4-deploy.md`
 「スケール別デフォルト値」を参照してください。
 
 ## 過去互換: シングルサイト形状

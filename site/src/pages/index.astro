@@ -32,7 +32,7 @@ const t = {
     },
     spotlight3: {
       title: 'バージョン管理と行レベル差分',
-      desc: 'リソースを差し替えるたびに、前の内容を版として保存。過去の版はいつでもダウンロードでき、CSV/TSV なら版と版の間で増えた行・減った行を画面で確認できます。個人情報の混入など内容そのものを消す必要があるときは、版単位の完全削除にも対応します。',
+      desc: 'リソースを差し替えるたびに、前の内容を版として保存。過去の版はダウンロードでき、CSV/TSV は増えた行・減った行を、主キーを指定すれば行ごとの書き換えまで画面で確認（v0.15.0 で強化）。個人情報の混入に備えた版単位の削除にも対応します。',
       link: '詳しく見る',
       hash: 'バージョン管理',
     },
@@ -114,7 +114,7 @@ const t = {
     },
     spotlight3: {
       title: 'Version History and Row-Level Diffs',
-      desc: 'Replacing a file keeps the content it replaced as a version. Download any past version, and for CSV/TSV see exactly which rows were added and removed between two of them. When content itself has to go — personal data that should never have been published — a single version can be purged.',
+      desc: 'Replacing a file keeps the old content as a version. Download any past version; for CSV/TSV, see added and removed rows — or, with a primary key, how each row changed (enhanced in v0.15.0). Individual versions can be deleted when content itself has to go.',
       link: 'Learn more',
       hash: 'version-history',
     },

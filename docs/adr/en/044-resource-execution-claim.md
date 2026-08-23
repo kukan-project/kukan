@@ -549,11 +549,14 @@ whose caller must have kept the answer, and not having to keep one is the whole 
 
 **The caller holds the pair it was shown.** `restoreTo` and `ifLiveRevision` are read when the
 confirmation opens, not when it is confirmed: read again at confirm time, polling can move them
-onto content the user was never shown. They are held through an unknown outcome too — a freshly
-read pair is the _next_ rung down, not this operation again.
+onto content the user was never shown. The pair's lifetime is **separate from the dialog's** (a
+revert that left cleanup behind has to keep it for the retry, and putting it on the same state
+hides the retry behind the modal). **It is discarded only on a 409** — a network exception is
+"unknown whether it happened", but a 409 is settled, and the same pair would only be refused
+again.
 
 **Known limitation: a version stepped down before it reached layer 2 can never reach it**
-(open issue 7).
+(open issue 7 — resolved by ii-b).
 
 #### Getting the kill through to the run
 

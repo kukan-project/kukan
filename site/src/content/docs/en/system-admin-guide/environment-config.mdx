@@ -39,7 +39,7 @@ of the build content, so the same commit yields the same tag). The conflict is
 **transient and self-healing — re-running the failed deploy resolves it** (the
 already-pushed image is skipped). To avoid it for good, make that ECR
 repository's tags MUTABLE, or stagger the dev and prd deploys. See
-`docs/specs/phase4-deploy.md` in the repository for the procedure.
+`docs/specs/en/phase4-deploy.md` in the repository for the procedure.
 
 ## Environment entry fields
 
@@ -124,7 +124,7 @@ per level:
   `backup.awsBackup` / `backup.dbBackupRetentionDays` is rejected at synth
 
 For the per-scale default values, see "Scale defaults" in
-`docs/specs/phase4-deploy.md` in the repository.
+`docs/specs/en/phase4-deploy.md` in the repository.
 
 ## Backward compatibility: the single-site shape
 
