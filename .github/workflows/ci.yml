@@ -21,6 +21,14 @@ on:
   push:
     branches: [develop]
 
+# A superseded push to a pull request cancels the run it obsoleted, so the
+# newest head is never queued behind a result nobody will read. develop pushes
+# are never cancelled: their job is to leave warm caches behind, and each save
+# is keyed by its own sha.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -113,12 +121,12 @@ jobs:
       # nobody reads. develop's are readable from every branch, which is the
       # same reason this workflow runs on `push` at all.
       #
-      # The two jobs cache separately. Entries are immutable, so a shared key
+      # The jobs cache separately. Entries are immutable, so a shared key
       # would collide on a develop push: whichever job saved first wins and the
-      # other's contents are dropped. Their contents are not interchangeable —
+      # others' contents are dropped. Their contents are not interchangeable —
       # `quality` never builds @kukan/web, because the `^build` behind lint and
       # typecheck builds web's dependencies rather than web itself, which is why
-      # its cache measures under 1 MB against `integration`'s ~55 MB.
+      # its cache measures under 1 MB against `web-build`'s ~55 MB.
       - name: Restore turbo cache
         if: steps.changes.outputs.code == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -191,6 +199,10 @@ jobs:
   # error does. It still runs on every code change, which is the point — the raw
   # SQL these suites cover (data-modifying CTEs, the orphan sweep's reference
   # check) is not exercised anywhere else.
+  #
+  # "Code change" excludes site/ and infra/ on top of quality's docs rule:
+  # nothing this job runs reaches either — @kukan/site is not in the vitest
+  # workspace, and infra's synth tests are unit tests that run in `quality`.
   integration:
     runs-on: ubuntu-latest
     services:
@@ -209,31 +221,60 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # need history to diff against the PR base
+
+      - name: Detect changes this job runs against
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # See the quality job: develop pushes always run to leave warm caches.
+          if [ "$EVENT_NAME" != 'pull_request' ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
+          if git diff --name-only "$base" "$HEAD_SHA" \
+            | grep -qvE '(\.mdx?$|\.astro$|^docs/|^site/|^infra/)'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "No file this job runs against changed — skipping."
+          fi
 
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        if: steps.changes.outputs.code == 'true'
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.changes.outputs.code == 'true'
         with:
           node-version: '24'
 
       # See the quality job for why the store is cached by hand rather than
-      # through `cache: 'pnpm'`. This job only reads: the two run the same
+      # through `cache: 'pnpm'`. This job only reads: every job runs the same
       # install from the same lockfile, so the store they would write is
       # identical and `quality` writing it is enough.
       - name: Locate pnpm store
         id: pnpm-store
+        if: steps.changes.outputs.code == 'true'
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
       - name: Restore pnpm store
+        if: steps.changes.outputs.code == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: pnpm-store-${{ runner.os }}-
 
-      - run: pnpm install --frozen-lockfile
+      - if: steps.changes.outputs.code == 'true'
+        run: pnpm install --frozen-lockfile
 
       - name: Restore turbo cache
+        if: steps.changes.outputs.code == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo/cache
@@ -241,23 +282,19 @@ jobs:
           restore-keys: turbo-integration-${{ runner.os }}-
 
       # The worker's suites import `@kukan/api` and `@kukan/db` by their package
-      # entry points, which resolve to `dist`.
-      #
-      # Only those two packages have integration suites, so filtering the build
-      # down to them would cut it by two thirds. Don't: this is the one place in
-      # pull request CI that runs `next build`. Nothing else does — deploy-site
-      # builds only @kukan/site, CodeQL is build-mode none, and the Dockerfile
-      # runs in the deploy pipeline. `tsc --noEmit` in `quality` does not stand
-      # in for it, since a Next build also rejects server/client boundary
-      # violations and invalid route exports. Filtering would skip web exactly
-      # when web changed, which is when the check is worth having. The turbo
-      # cache above already makes this near-free when web did not change.
-      - run: pnpm build
+      # entry points, which resolve to `dist` — so those two and their
+      # dependencies are what gets built, which is about a third of the full
+      # graph. `next build` used to run here too, as the one place pull request
+      # CI builds @kukan/web; it kept its own job (`web-build` below) so the
+      # check survives without sitting in front of the database suites.
+      - if: steps.changes.outputs.code == 'true'
+        run: pnpm build --filter=@kukan/api... --filter=@kukan/db...
 
       # POSTGRES_*, not DATABASE_URL: loadEnv assembles the one from the other
       # and never reads it directly, so setting it here said nothing. The
       # credentials have to stay in step with the service container above.
       - name: Test (integration)
+        if: steps.changes.outputs.code == 'true'
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
@@ -277,3 +314,89 @@ jobs:
         with:
           path: .turbo/cache
           key: turbo-integration-${{ runner.os }}-${{ github.sha }}
+
+  # The one place pull request CI runs `next build`. Nothing else does —
+  # deploy-site builds only @kukan/site, CodeQL is build-mode none, and the
+  # Dockerfile runs in the deploy pipeline. `tsc --noEmit` in `quality` does not
+  # stand in for it, since a Next build also rejects server/client boundary
+  # violations and invalid route exports.
+  #
+  # It used to run inside `integration`, in front of the database suites; a job
+  # of its own keeps the check and takes it off their critical path. The change
+  # filter is integration's: a docs, site, or infra change cannot alter what
+  # this builds. The turbo cache makes the build near-free when web and its
+  # dependencies did not change.
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # need history to diff against the PR base
+
+      - name: Detect changes this job runs against
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # See the quality job: develop pushes always run to leave warm caches.
+          if [ "$EVENT_NAME" != 'pull_request' ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
+          if git diff --name-only "$base" "$HEAD_SHA" \
+            | grep -qvE '(\.mdx?$|\.astro$|^docs/|^site/|^infra/)'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "No file this job runs against changed — skipping."
+          fi
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        if: steps.changes.outputs.code == 'true'
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.changes.outputs.code == 'true'
+        with:
+          node-version: '24'
+
+      - name: Locate pnpm store
+        id: pnpm-store
+        if: steps.changes.outputs.code == 'true'
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm store
+        if: steps.changes.outputs.code == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+
+      - if: steps.changes.outputs.code == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore turbo cache
+        if: steps.changes.outputs.code == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-web-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-web-${{ runner.os }}-
+
+      - if: steps.changes.outputs.code == 'true'
+        run: pnpm build --filter=@kukan/web...
+
+      # See the quality job for why saving is limited to develop.
+      - name: Prune turbo cache
+        if: github.ref == 'refs/heads/develop'
+        run: find .turbo/cache -type f -mtime +7 -delete
+
+      - name: Save turbo cache
+        if: github.ref == 'refs/heads/develop'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-web-${{ runner.os }}-${{ github.sha }}
