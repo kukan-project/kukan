@@ -13,15 +13,23 @@
 
 import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api'
 import { sqlIdentifier, sqlLiteral } from '@kukan/lake'
-import type { ColumnStats, ResourceColumn, ResourceColumnType, ResourceSchema } from '@kukan/shared'
+import type {
+  ColumnStats,
+  NoTableReason,
+  ResourceColumn,
+  ResourceColumnType,
+  ResourceSchema,
+} from '@kukan/shared'
 import {
   CSV_FOOTER_PREFIXES,
   CSV_FOOTER_SCAN_ROWS,
+  DROPPED_LINE_SAMPLE,
   INTERPRET_MEMORY_LIMIT_MB,
   INTERPRET_THREADS,
   PARQUET_ROW_GROUP_SIZE,
   STATS_COLUMNS_PER_QUERY,
 } from '@/config'
+import { looksLikeSignOff, type CsvDialect } from './csv-sign-off'
 
 /** A DuckDB type name, folded to the semantic type persisted on the schema. */
 function semanticType(duckType: string): ResourceColumnType {
@@ -50,14 +58,47 @@ function semanticType(duckType: string): ResourceColumnType {
 const OVERSIZE_INTEGER = '1e15'
 
 /**
+ * Refused lines read at a time when deciding whether they are all sign-offs.
+ *
+ * Every one of them is judged, and a file can be refused from end to end, so the
+ * read is batched rather than bounded — this caps what is held at once, not what
+ * is looked at.
+ */
+const REJECT_BATCH = 500
+
+/**
  * `sample_size = -1` reads every row before deciding a type. The default of
  * 20480 breaks two ways: a value below it that does not fit fails the read with
  * a conversion error, and one that *does* fit — a `0123` code among integers —
  * is silently rewritten to `123`. The second is the reason this is not
  * negotiable. It cost +375ms on 43.8MB in the spike (ADR-046).
+ *
+ * `ignore_errors` is about a different failure, and a worse one. The sniffer
+ * scores a delimiter by how consistently the rows split under it, so a single
+ * row of a different width — the version line Japanese open data signs a file
+ * off with, or one stray comma anywhere in the file — makes every candidate
+ * look wrong and it reads the whole thing as **one VARCHAR column named after
+ * the header line** (#449). Every column of the resource is gone, the ingest
+ * reports success, and nothing records that anything happened. Allowed to drop
+ * the row that does not fit, it reads the rest as the table it is.
+ *
+ * `store_rejects` is what makes that legitimate. On its own `ignore_errors`
+ * discards rows and says nothing — measured, on a middle row one field too wide
+ * and on one a field too narrow. With it, each refusal is a row in
+ * `reject_errors` carrying the line number and the text, which is what
+ * {@link rejectedLines} counts and the schema carries out to a reader.
+ *
+ * Neither changes a file that reads correctly today: measured over well-formed,
+ * quoted-with-commas, leading-zero and mixed-type inputs, the columns, the types
+ * and the row counts are identical and nothing is rejected.
  */
 function readOptions(path: string, skipRows: number, asText: string[]): string {
-  const parts = [sqlLiteral(path), 'sample_size = -1']
+  const parts = [
+    sqlLiteral(path),
+    'sample_size = -1',
+    'ignore_errors = true',
+    'store_rejects = true',
+  ]
   if (skipRows > 0) parts.push(`skip = ${skipRows}`)
   if (asText.length > 0) {
     parts.push(`types = {${asText.map((c) => `${sqlLiteral(c)}: 'VARCHAR'`).join(', ')}}`)
@@ -68,6 +109,17 @@ function readOptions(path: string, skipRows: number, asText: string[]): string {
 interface Column {
   name: string
   duckType: string
+}
+
+/** What one pass over a CSV produced, or why it produced nothing. */
+export interface InterpretedCsv {
+  schema: ResourceSchema
+  /**
+   * Set where the file was refused rather than read, and then **no Parquet was
+   * written** — the caller has nothing to hand on. The schema still carries
+   * which lines were refused, because that is what there is to act on.
+   */
+  reason?: NoTableReason
 }
 
 /**
@@ -81,7 +133,7 @@ export async function interpretCsv(
   csvPath: string,
   parquetPath: string,
   skipRows: number
-): Promise<ResourceSchema> {
+): Promise<InterpretedCsv> {
   const instance = await DuckDBInstance.create(':memory:', {
     memory_limit: `${INTERPRET_MEMORY_LIMIT_MB}MB`,
     threads: String(INTERPRET_THREADS),
@@ -108,6 +160,24 @@ export async function interpretCsv(
       columns = await describe(conn)
     }
 
+    // Before the trim, because this is about what the *reader* did: which lines
+    // it refused, and whether all of them read as sign-offs.
+    const dropped = await rejectedLines(conn, columns)
+    if (dropped.notAllNotes) {
+      // Refused. Something the reader would not take was not a sign-off either,
+      // and a table quietly short of a row publishes counts that are wrong with
+      // nothing to show for it.
+      return {
+        schema: {
+          columns: [],
+          rowCount: 0,
+          droppedRows: dropped.count,
+          droppedLines: dropped.lines,
+        },
+        reason: 'ragged-rows',
+      }
+    }
+
     const rowCount = await trimFooter(conn, columns)
     // ZSTD rather than DuckDB's default: measured at 3.25 MB against Snappy's
     // 8.40 MB on the same input, and a preview page costs a third of the bytes
@@ -123,7 +193,13 @@ export async function interpretCsv(
         `(FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE ${PARQUET_ROW_GROUP_SIZE})`
     )
 
-    return { columns: await describeColumns(conn, columns, rowCount), rowCount }
+    return {
+      schema: {
+        columns: await describeColumns(conn, columns, rowCount),
+        rowCount,
+        ...(dropped.count > 0 && { droppedRows: dropped.count, droppedLines: dropped.lines }),
+      },
+    }
   } finally {
     conn.disconnectSync()
     instance.closeSync()
@@ -161,6 +237,84 @@ async function oversizeIntegerColumns(
   )
   const [row] = reader.getRowObjectsJson() as Record<string, unknown>[]
   return doubles.filter((_, i) => Number(row[`c${i}`]) > 0).map((c) => c.name)
+}
+
+/**
+ * Rows `read_csv` refused, counted by line.
+ *
+ * One row that does not fit files an error per column it could not fill, so the
+ * distinct lines are the rows. Read after the last load: both loads are of the
+ * same file, so a re-read for {@link OVERSIZE_INTEGER} refuses the same lines
+ * and the count does not double.
+ *
+ * Left unbounded on purpose, and it is not free: `reject_errors` takes a row per
+ * column the line could not fill, so the cost is lines times width. 200,000
+ * refused lines measured 1.3s over three columns, 10s over ten and 36s over
+ * thirty. Capping it does not help — `rejects_limit` bounds the table but not
+ * the reader's per-error path (12.6s to 10.8s measured) — and it would turn the
+ * count into a floor for exactly the files where the size of the problem is
+ * what a publisher needs to be told.
+ */
+async function rejectedLines(
+  conn: DuckDBConnection,
+  columns: Column[]
+): Promise<{ count: number; lines: number[]; notAllNotes: boolean }> {
+  const [{ n }] = (
+    await conn.runAndReadAll('SELECT count(DISTINCT line) AS n FROM reject_errors')
+  ).getRowObjectsJson() as { n: number }[]
+  if (Number(n) === 0) return { count: 0, lines: [], notAllNotes: false }
+
+  const rows = (
+    await conn.runAndReadAll(
+      `SELECT DISTINCT line FROM reject_errors ORDER BY line LIMIT ${DROPPED_LINE_SAMPLE}`
+    )
+  ).getRowObjectsJson() as { line: number }[]
+  return {
+    count: Number(n),
+    lines: rows.map((row) => Number(row.line)),
+    notAllNotes: await refusedMoreThanNotes(conn, columns, Number(n)),
+  }
+}
+
+/**
+ * Whether the reader refused anything that does not read as a sign-off.
+ *
+ * The rule itself is `csv-sign-off.ts`; this fetches what it needs. The lines
+ * come back as text because counting their values is a parser's job — the file
+ * this exists for quotes every cell — and in batches because a file can be
+ * refused from end to end. **Every refused line is judged**, not a sample of
+ * them: how many the schema carries out to a reader is a separate question, and
+ * a file with one more note than that must not become a different file.
+ *
+ * The walk stops at the first line that is not a sign-off, which is every case
+ * but the one where they all are.
+ */
+async function refusedMoreThanNotes(
+  conn: DuckDBConnection,
+  columns: Column[],
+  count: number
+): Promise<boolean> {
+  const [dialect] = (
+    await conn.runAndReadAll('SELECT delimiter, quote, escape FROM reject_scans LIMIT 1')
+  ).getRowObjectsJson() as unknown as CsvDialect[]
+
+  for (let seen = 0; seen < count; seen += REJECT_BATCH) {
+    // One row per refused line: a line files an error per column it could not
+    // fill, and they all carry the same text.
+    const rows = (
+      await conn.runAndReadAll(`
+        SELECT line, min(csv_line) AS csv_line FROM reject_errors
+        GROUP BY line ORDER BY line LIMIT ${REJECT_BATCH} OFFSET ${seen}
+      `)
+    ).getRowObjectsJson() as { line: number; csv_line: string | null }[]
+    if (rows.length === 0) break
+
+    const notes = rows.every(
+      (row) => row.csv_line !== null && looksLikeSignOff(row.csv_line, dialect, columns.length)
+    )
+    if (!notes) return true
+  }
+  return false
 }
 
 /**

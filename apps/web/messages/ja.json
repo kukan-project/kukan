@@ -642,6 +642,9 @@
     "reprocessing": "再処理中...",
     "previewPage": "{current} / {total} ページ",
     "previewTotalRows": "全 {count} 行",
+    "previewDroppedRows": "この列構成に分割できず表に含まれていない行数: {count}",
+    "previewDroppedRowsAt": "この列構成に分割できず表に含まれていない行数: {count}（{lines} 行目）",
+    "previewDroppedRowsMore": "この列構成に分割できず表に含まれていない行数: {count}（{lines} 行目ほか）",
     "previewLoadingPage": "ページ読み込み中...",
     "status": "ステータス",
     "editResource": "リソースを編集",
@@ -736,7 +739,8 @@
       "noTable": {
         "no-columns": "列がありません",
         "too-many-columns": "列が多すぎます（プレビュー対象外）",
-        "too-large": "サイズが大きすぎます（プレビュー対象外）"
+        "too-large": "サイズが大きすぎます（プレビュー対象外）",
+        "ragged-rows": "行ごとに列数が揃っていません"
       },
       "keyColumnsHeader": "主キー"
     },

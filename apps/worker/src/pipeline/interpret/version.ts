@@ -133,11 +133,15 @@ export async function withInterpretedVersion<T>(
     }
 
     const parquetPath = `${csvPath}.parquet`
-    const schema = await interpretCsv(csvPath, parquetPath, titleRows)
+    const { schema, reason } = await interpretCsv(csvPath, parquetPath, titleRows)
     // And the source is dead once it has been interpreted. What the callback
     // does next — an upload, a wait on the catalog-wide lock — would hold it
     // for nothing.
     await rm(csvPath, { force: true })
+
+    // Refused rather than read: there is no Parquet to hand on, and the reason
+    // is what stops "no preview" reading as "not interpreted yet".
+    if (reason) return { encoding, schema, reason }
 
     return { encoding, schema, used: await use({ parquetPath, schema }) }
   } finally {

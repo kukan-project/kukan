@@ -96,6 +96,39 @@ export const resourceSchemaSchema = z.object({
   columns: z.array(resourceColumnSchema),
   /** Number of data rows (excluding the header). */
   rowCount: z.number().int().nonnegative(),
+  /**
+   * Lines of the file the reader refused, because they do not split into the
+   * header's fields (ADR-046).
+   *
+   * The refusal is what stops one such line costing the file every column it
+   * has — the sniffer would otherwise abandon the delimiter and read the whole
+   * thing as one text column (#449) — and this count is what stops the refusal
+   * being silent, which is the state it was found in.
+   *
+   * **The reader's refusals only.** A footer the table trim took is not in it:
+   * that row split correctly and was dropped for what it said. So this is not
+   * the whole of what the file holds and the table does not.
+   *
+   * Optional because schemas written before it have no such count — absent
+   * means unknown, not zero.
+   */
+  droppedRows: z.number().int().nonnegative().optional(),
+  /**
+   * Where those lines are — the first few, in order (ADR-046).
+   *
+   * A count on its own says something is missing and leaves the publisher to
+   * find it; these are what there is to act on, and the fix is usually one
+   * character on one line.
+   *
+   * Numbered as the CSV reader counts, from the start of the file including the
+   * header and any title rows: 1-based, and a record whose quoted cell holds
+   * newlines counts once rather than once per line. On a file with no such cell
+   * — nearly all of them — that is the line a text editor shows.
+   *
+   * Bounded — {@link droppedRows} carries the total — because a file can be
+   * wrong in this way from end to end, and a schema is a row in a database.
+   */
+  droppedLines: z.array(z.number().int().positive()).optional(),
 })
 export type ResourceSchema = z.infer<typeof resourceSchemaSchema>
 
@@ -104,12 +137,26 @@ export type ResourceSchema = z.infer<typeof resourceSchemaSchema>
  *
  * An empty schema records that a version has been interpreted and holds nothing
  * to load — which is what stops the hourly lake sweep handing the file out
- * every hour for good. It does not say *which* nothing, and the three are not
- * the same thing to whoever is asking why there is no preview: a file with no
- * columns at all, one wider than a preview can carry, and one too large to
- * interpret.
+ * every hour for good. It does not say *which* nothing, and they are not the
+ * same thing to whoever is asking why there is no preview: a file with no
+ * columns at all, one wider than a preview can carry, one too large to
+ * interpret, and one whose rows do not agree on how many fields they have.
+ *
+ * `ragged-rows` is the last of those, and it is a refusal rather than a limit.
+ * A line that does not split into the header's columns is dropped by the reader
+ * — that is what stops one of them costing the file every column it has (#449).
+ * A line taken for a sign-off is dropped and the table served without it;
+ * anything else refuses the table, because a table quietly short of a row is
+ * worse than no table — the missing row is invisible in every count the
+ * catalogue publishes.
+ *
+ * **Which it is, is a guess** — a short line in a table far wider than it reads
+ * as a sign-off, and a row truncated that badly reads the same way. The worker's
+ * `refusedMoreThanNotes` is where that is argued and tuned; here it is enough
+ * that {@link droppedRows} and {@link droppedLines} are how the guess reaches a
+ * reader rather than being kept.
  */
-export type NoTableReason = 'no-columns' | 'too-many-columns' | 'too-large'
+export type NoTableReason = 'no-columns' | 'too-many-columns' | 'too-large' | 'ragged-rows'
 
 /**
  * Why a version was not loaded into layer 2, when the key is what stopped it

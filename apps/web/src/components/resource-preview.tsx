@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { Card, CardContent, Skeleton, Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import dynamic from 'next/dynamic'
+import type { ResourceSchema } from '@kukan/shared'
 import {
   isCsvFormat,
   isTextFormat,
@@ -15,6 +16,7 @@ import {
   isImageFormat,
 } from '@kukan/shared'
 import { SwitchField } from '@/components/switch-field'
+import { useFetch } from '@/hooks/use-fetch'
 import { clientFetch } from '@/lib/client-api'
 import { ParquetPreview } from './parquet-preview'
 import { GeoJsonPreview } from './geojson-preview'
@@ -136,6 +138,7 @@ function TablePreview({ resourceId }: { resourceId: string }) {
           />
         )}
       </div>
+      {source === 'parquet' && <DroppedRowsNote resourceId={resourceId} />}
       {source === 'parquet' &&
         (analysisMode ? (
           <DataExplorer resourceId={resourceId} />
@@ -144,6 +147,43 @@ function TablePreview({ resourceId }: { resourceId: string }) {
         ))}
       {source === 'raw' && <RawTextPreview resourceId={resourceId} />}
     </div>
+  )
+}
+
+/**
+ * Lines of the file the reader refused for not splitting into the table's
+ * columns (ADR-046).
+ *
+ * Said where the table is, not inside one view of it: whichever way the rows are
+ * being read they are the same rows, and the analysis mode is where it matters
+ * most — a `count(*)` there returns the short number with nothing to say why.
+ * Not shown over the raw text, which is the file and does hold them.
+ */
+function DroppedRowsNote({ resourceId }: { resourceId: string }) {
+  const t = useTranslations('resource')
+  const { data } = useFetch<{ schema: ResourceSchema | null }>(
+    `/api/v1/resources/${resourceId}/schema`
+  )
+  const count = data?.schema?.droppedRows ?? 0
+  const lines = data?.schema?.droppedLines ?? []
+  if (count === 0) return null
+
+  // Three whole sentences rather than a count with a list bracketed onto it:
+  // the brackets belong to the language, and a schema can carry the count
+  // without the lines — the two are separately optional, and one written by a
+  // reader that only had the count would otherwise render "(at line  and
+  // more)". The list is bounded, so it says "and more" when it is shorter.
+  const key =
+    lines.length === 0
+      ? 'previewDroppedRows'
+      : lines.length < count
+        ? 'previewDroppedRowsMore'
+        : 'previewDroppedRowsAt'
+
+  return (
+    <p className="text-xs text-warning-tint-foreground">
+      {t(key, { count, lines: lines.join(', ') })}
+    </p>
   )
 }
 

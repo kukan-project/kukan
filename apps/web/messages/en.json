@@ -642,6 +642,9 @@
     "reprocessing": "Reprocessing...",
     "previewPage": "Page {current} / {total}",
     "previewTotalRows": "{count} total rows",
+    "previewDroppedRows": "lines that do not split into these columns, so they are not in the table: {count}",
+    "previewDroppedRowsAt": "lines that do not split into these columns, so they are not in the table: {count} (at line {lines})",
+    "previewDroppedRowsMore": "lines that do not split into these columns, so they are not in the table: {count} (at line {lines} and more)",
     "previewLoadingPage": "Loading page...",
     "status": "Status",
     "editResource": "Edit Resource",
@@ -736,7 +739,8 @@
       "noTable": {
         "no-columns": "No columns",
         "too-many-columns": "Too many columns to preview",
-        "too-large": "Too large to preview"
+        "too-large": "Too large to preview",
+        "ragged-rows": "rows do not split into the same columns"
       },
       "keyColumnsHeader": "Primary key"
     },

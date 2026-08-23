@@ -100,6 +100,185 @@ describe('executeInterpret — column typing', () => {
     expect(rows.map((r) => r.category)).toEqual(['A', null, null])
   })
 
+  /** A ten-column table: wide enough that a two-cell line is not a row of it. */
+  function wide(rows: number, tail = '') {
+    const header = Array.from({ length: 10 }, (_, i) => `c${i}`).join(',')
+    const body = Array.from({ length: rows }, (_, r) =>
+      Array.from({ length: 10 }, (_, i) => 1000 + r * 100 + i).join(',')
+    ).join('\n')
+    return `${header}\n${body}\n${tail}`
+  }
+
+  it('splits the columns of a CSV that ends in a note', async () => {
+    // Japanese open data routinely signs a file off with a version line or a
+    // source note. It is narrower than the rest, and that is enough for DuckDB's
+    // sniffer to give up on the delimiter and read the whole file as a single
+    // VARCHAR column named after the header line — silently, with the ingest
+    // reporting success (#449).
+    csv(wide(5, '港区の人口・世帯数（住民基本台帳に基づく） ,Ver202608\n'))
+
+    await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+    const { types, rows } = await readPreview()
+
+    expect(Object.keys(types)).toHaveLength(10)
+    // And the types the data implies, which is what is lost by reading the file
+    // with the note still in it.
+    expect(types.c0).toBe('BIGINT')
+    expect(rows).toHaveLength(5)
+  })
+
+  it('takes two values in a table of ten columns as a note, not a row', async () => {
+    // The whole of the evidence: a row that lost eight of its ten fields is not
+    // how rows break. Neither the position of the line nor what its values look
+    // like is consulted — and it is a guess, so what it dropped is counted.
+    csv(wide(5, '出典: 港区,2026\n'))
+
+    const result = await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+
+    expect(result?.reason).toBeUndefined()
+    expect(result?.schema?.rowCount).toBe(5)
+    expect(result?.schema?.droppedRows).toBe(1)
+    expect(result?.schema?.droppedLines).toEqual([7])
+  })
+
+  it('refuses two values in a table of three columns, where losing one is ordinary', async () => {
+    // The same two values, and now they are a row that lost its last field. The
+    // line sits at the bottom, exactly where a note sits.
+    csv('date,people,households\n' + '20020901,88793,76422\n' + '20021001,88900\n')
+
+    const result = await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+
+    expect(result?.reason).toBe('ragged-rows')
+    expect(result?.schema?.columns).toEqual([])
+    // Named, because the remedy is to go and fix that line.
+    expect(result?.schema?.droppedLines).toEqual([3])
+    // Nothing was published: a refusal that still uploads a preview is not one.
+    expect(result?.previewKey).toBeFalsy()
+  })
+
+  it('refuses a row whose values are broken, which no cast would recognise', async () => {
+    // The refused lines took no part in deciding the types, so a cast that fails
+    // is evidence of nothing: `2002/10/01` and `N/A` are a date and a count that
+    // did not survive, and they fail every cast this table would ask of them.
+    // The shape is what says this is a row.
+    csv('date,people,households\n' + '20020901,88793,76422\n' + '2002/10/01,N/A\n')
+
+    const result = await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+
+    expect(result?.reason).toBe('ragged-rows')
+    expect(result?.previewKey).toBeFalsy()
+  })
+
+  it('refuses a line in the middle on the same terms as one at the end', async () => {
+    // Position is not consulted, so this is refused for what it is rather than
+    // for where it is. The same two values at the bottom of the same table are
+    // refused too, one test up.
+    csv(
+      'date,people,households\n' +
+        '20020901,88793,76422\n' +
+        '20021001,88900\n' +
+        '20021101,89010,76610\n'
+    )
+
+    const result = await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+
+    expect(result?.reason).toBe('ragged-rows')
+    expect(result?.schema?.droppedLines).toEqual([3])
+  })
+
+  it('counts a quoted sign-off by its values, not by its quotes', async () => {
+    // The shape of the file #449 was reported on: every cell quoted, sign-off
+    // included. What is stored for a refused line is the raw text, so the quotes
+    // are still on it — and read as text rather than parsed, this is the file
+    // the whole change exists for, refused.
+    csv(wide(5, '"港区施設情報 区役所・総合支所","Ver20260804"\n'))
+
+    const result = await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+
+    expect(result?.reason).toBeUndefined()
+    expect(result?.schema?.rowCount).toBe(5)
+    expect(result?.schema?.droppedRows).toBe(1)
+  })
+
+  it('reads a file that escapes its quotes with a backslash', async () => {
+    // `escape` is its own dialect and DuckDB records which one it found. Read
+    // with the parser's default — the quote character — the sign-off is
+    // unparseable, so it counts as a row and the resource loses its table.
+    const header = 'c0,c1,c2,c3,c4,c5\n'
+    const body = Array.from({ length: 4 }, (_, r) => `${r},"a \\"x\\" b",2,3,4,5`).join('\n')
+    csv(`${header}${body}\n"出典: 港区 \\"庁舎\\"","Ver1"\n`)
+
+    const result = await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+
+    expect(result?.reason).toBeUndefined()
+    expect(result?.schema?.rowCount).toBe(4)
+    expect(result?.schema?.droppedRows).toBe(1)
+  })
+
+  it('judges every refused line, however many the schema will report', async () => {
+    // How many line numbers the schema carries out to a reader is a display
+    // bound, and it must not decide what the file is: twenty-five notes and no
+    // broken row is the same file as three notes and no broken row.
+    const notes = Array.from({ length: 25 }, (_, i) => `出典: 港区,${i}`).join('\n')
+    csv(wide(3, `${notes}\n`))
+
+    const result = await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+
+    expect(result?.reason).toBeUndefined()
+    expect(result?.schema?.rowCount).toBe(3)
+    expect(result?.schema?.droppedRows).toBe(25)
+    // Reported up to the bound, and the count says how many there were.
+    expect(result?.schema?.droppedLines).toHaveLength(20)
+  })
+
+  it('counts a quoted cell holding the delimiter as one value', async () => {
+    // Six columns, and a line of two values — one of which holds two commas.
+    // Split on the delimiter it looks like four, which is within two of the
+    // table's width and would be refused as a row.
+    const header = 'c0,c1,c2,c3,c4,c5\n'
+    const body = Array.from({ length: 4 }, (_, r) => `${r},1,2,3,4,5`).join('\n')
+    csv(`${header}${body}\n"出典: 港区, 統計課, 2026","Ver1"\n`)
+
+    const result = await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+
+    expect(result?.reason).toBeUndefined()
+    expect(result?.schema?.droppedRows).toBe(1)
+  })
+
+  it('still reads a quoted file whose note carries no quotes', async () => {
+    // The refusal is per line: quoting elsewhere says nothing about this one.
+    const header = 'c0,c1,c2,c3,c4,c5,c6,c7,c8,c9\n'
+    const body = Array.from({ length: 4 }, (_, r) => `${r},"a,b",2,3,4,5,6,7,8,9`).join('\n')
+    csv(`${header}${body}\n出典: 港区\n`)
+
+    const result = await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+
+    expect(result?.reason).toBeUndefined()
+    expect(result?.schema?.droppedRows).toBe(1)
+  })
+
+  it('leaves a footer as wide as the header to the table trim', async () => {
+    // It splits like every other row, so the reader has no reason to refuse it
+    // and the rule that reads what a row says is the one that takes it.
+    csv('name,amount\n' + 'a,1\n' + 'b,2\n' + '合計,3\n')
+
+    await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+    const { types, rows } = await readPreview()
+
+    expect(Object.keys(types)).toEqual(['name', 'amount'])
+    expect(rows.map((r) => r.name)).toEqual(['a', 'b'])
+  })
+
+  it('says nothing about dropped rows where none were', async () => {
+    csv('name,amount\n' + 'a,1\n' + 'b,2\n')
+
+    const result = await executeInterpret('r', 'p', version('resources/p/r'), 'CSV', ctx)
+
+    expect(result?.schema?.rowCount).toBe(2)
+    expect(result?.schema?.droppedRows).toBeUndefined()
+    expect(result?.schema?.droppedLines).toBeUndefined()
+  })
+
   it('returns the persisted column schema (ADR-032)', async () => {
     csv('id,price,name\n' + '1,1.5,Alice\n' + '2,,Bob\n' + '3,3.25,Carol\n')
 

@@ -185,6 +185,37 @@ Resources that cannot be queried (unsupported format, not yet processed) return
 `date` / `timestamp`; `stats` is present only for numeric columns, and integer min/max are
 decimal strings.
 
+`droppedRows` counts lines of the file the reader refused because they do not split into these
+columns — a version line at the bottom, a stray comma in the middle. Refusing them is what stops
+one such line costing the file every column it has: one row two fields wide in a file of
+seventy-nine is enough for the CSV sniffer to abandon the delimiter and read the whole file as a
+single text column. Absent means none, or a schema written before the count existed.
+
+`droppedLines` says where they are, first few first, numbered as the CSV reader counts from the
+start of the file — 1-based, including the header and any skipped title rows, and a record whose
+quoted cell holds newlines counts once rather than once per line. The list is bounded;
+`droppedRows` carries the total.
+
+**Whether a refused line is taken for a sign-off decides if there is a table at all.** One that is
+gets dropped and the table is served; any other refused line refuses the resource a table instead:
+`schema.columns` is empty, `noTableReason` is `ragged-rows`, and `droppedLines` names the lines to
+look at.
+
+Which it is, is a guess, and it rests on the shape of the line: how many values it holds against
+how many the table has. Two values in a table of thirty-one columns reads as a note rather than a
+row that lost twenty-nine fields; two in a table of three is the ordinary way a row breaks, and
+that file is refused. The values are counted by a parser, so a quoted cell holding the delimiter
+is one of them. Neither position nor type is consulted — a truncated row at the end of
+a file sits exactly where a note sits, and a row with a broken value fails every cast the table
+would ask of it just as prose does.
+
+**It is a guess and not a guarantee.** A row truncated to three of six columns reads as a note by
+this rule, and is dropped. Nothing in the file distinguishes the two, so `droppedRows` and
+`droppedLines` exist to put the guess in front of you. They count the reader's refusals only — a
+footer the table trim removed is in neither — so read them as "at least this much is missing",
+not as the difference between the file and the table. A refused file is still stored and downloadable, and re-running the pipeline after
+fixing it produces the table.
+
 **Query data** — `POST /resources/{id}/query`:
 
 ```bash

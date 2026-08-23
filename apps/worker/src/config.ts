@@ -132,6 +132,44 @@ export const INTERPRET_THREADS = 2
  */
 export const STATS_COLUMNS_PER_QUERY = 32
 
+/**
+ * Line numbers kept on the schema for rows `read_csv` refused (ADR-046).
+ *
+ * Enough to go and look: one is the ordinary case (a version line at the
+ * bottom), and a handful covers a file with a few broken rows, which is what
+ * someone would fix by hand. Beyond that the count says how big the problem is
+ * and the list stops — the schema is a row in a database, and a file can be
+ * wrong this way from end to end.
+ */
+export const DROPPED_LINE_SAMPLE = 20
+
+/**
+ * What makes a line the reader refused a sign-off rather than a row (ADR-046).
+ *
+ * A line that does not split into the table's columns is either a note the
+ * publisher signed the file off with, or a row of theirs that did not survive.
+ * Which it is cannot be known; the worker's `refusedMoreThanNotes` argues why,
+ * and settles for asking whether the line is *shaped* like a row that lost
+ * fields. These two numbers are that shape.
+ *
+ * A note carries a sentence or two whatever the table is: it holds at most
+ * {@link SIGN_OFF_MAX_CELLS} values. A truncated row usually keeps most of its
+ * fields, so the further the line is from the table's width the less it can be
+ * one — {@link SIGN_OFF_MIN_MISSING} is how many columns short it has to be
+ * before that is worth believing.
+ *
+ * Both are needed. A count alone lets a two-cell line pass in a three-column
+ * table, where losing one field is the ordinary way a row breaks; a distance
+ * alone lets ninety cells pass in a hundred-column one. Together they say: a
+ * short line in a table far wider than it.
+ *
+ * **Where they land is a trade-off, not a fact.** A row truncated to three of
+ * six columns has this shape and is read as a note; tightening them costs the
+ * files this exists for. What the guess dropped is recorded on the schema.
+ */
+export const SIGN_OFF_MAX_CELLS = 3
+export const SIGN_OFF_MIN_MISSING = 3
+
 /** Leading rows scanned for the title lines Japanese spreadsheets put above the header */
 export const CSV_TITLE_SCAN_BYTES = 64 * 1024
 
