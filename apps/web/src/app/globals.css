@@ -1,6 +1,11 @@
 @import 'tailwindcss';
 @source '../../../../packages/ui/src/**/*.{ts,tsx}';
 
+/* No dark theme is provided yet: scope dark: to an explicit .dark class so
+   shadcn/ui dark: styles never fire from the OS prefers-color-scheme alone
+   (they otherwise gray out inputs on a light page). */
+@custom-variant dark (&:is(.dark *));
+
 :root {
   /* KUKAN brand colors — aligned with landing page */
   --background: 0 0% 100%;
