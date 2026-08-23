@@ -100,16 +100,34 @@ async function getDB(): Promise<AsyncDuckDB> {
 
 // --- SQL helpers ---
 
+/** Arrow type ids for the temporal columns (apache-arrow `Type.Date` / `Type.Timestamp`). */
+const ARROW_DATE = 8
+const ARROW_TIMESTAMP = 10
+
 /**
  * Arrow rows as display strings. Shares `formatCell` with the hyparquet preview:
  * both read the same Parquet, and a column typed one way must not read two ways
  * on screen (ADR-046 gave the preview real DATE and TIMESTAMP columns).
+ *
+ * Arrow hands DATE and TIMESTAMP values back as epoch milliseconds, not `Date`,
+ * so left alone they would render as raw numbers where the hyparquet reader
+ * shows `2026-08-23 12:00:00`. Rebuilt into `Date` here so `formatCell` reads
+ * them the one way.
  */
 function arrowToStringRows(result: ArrowTable, columns: string[]): Record<string, string>[] {
+  const temporal = new Set(
+    result.schema.fields
+      .filter((f) => f.typeId === ARROW_DATE || f.typeId === ARROW_TIMESTAMP)
+      .map((f) => f.name)
+  )
   return result.toArray().map((row: Record<string, unknown>) => {
     const obj: Record<string, string> = {}
     for (const col of columns) {
-      obj[col] = formatCell(row[col])
+      const value = row[col]
+      obj[col] =
+        temporal.has(col) && typeof value === 'number'
+          ? formatCell(new Date(value))
+          : formatCell(value)
     }
     return obj
   })

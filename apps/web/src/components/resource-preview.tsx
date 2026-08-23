@@ -1,11 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Card, CardContent, Skeleton, Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import dynamic from 'next/dynamic'
-import type { ResourceSchema } from '@kukan/shared'
+import type { CsvDialect, ResourceSchema } from '@kukan/shared'
 import {
+  csvRecordLabels,
+  dialectOf,
   isCsvFormat,
   isTextFormat,
   isJsonFormat,
@@ -16,7 +18,6 @@ import {
   isImageFormat,
 } from '@kukan/shared'
 import { SwitchField } from '@/components/switch-field'
-import { useFetch } from '@/hooks/use-fetch'
 import { clientFetch } from '@/lib/client-api'
 import { ParquetPreview } from './parquet-preview'
 import { GeoJsonPreview } from './geojson-preview'
@@ -36,6 +37,10 @@ interface ResourcePreviewProps {
   url?: string | null
   /** File size in bytes (used for Office Online Viewer 10 MB limit check) */
   size?: number | null
+  /** The version's column schema, fetched once by the owner (tabular formats only) */
+  schema?: ResourceSchema | null
+  /** The resource's settled primary key, from the same read */
+  primaryKey?: string[] | null
 }
 
 type PreviewSource = 'parquet' | 'raw'
@@ -77,12 +82,27 @@ function useAnalysisMode() {
  * TXT is displayed as raw text.
  * If no preview data exists in Storage, shows "not available".
  */
-export function ResourcePreview({ resourceId, format, url, size }: ResourcePreviewProps) {
+export function ResourcePreview({
+  resourceId,
+  format,
+  url,
+  size,
+  schema,
+  primaryKey,
+}: ResourcePreviewProps) {
   const f = format ?? null
 
   if (isImageFormat(f)) return <ImagePreview resourceId={resourceId} />
   if (isPdfFormat(f)) return <PdfPreview resourceId={resourceId} />
-  if (isCsvFormat(f)) return <TablePreview key={resourceId} resourceId={resourceId} />
+  if (isCsvFormat(f))
+    return (
+      <TablePreview
+        key={resourceId}
+        resourceId={resourceId}
+        schema={schema}
+        primaryKey={primaryKey}
+      />
+    )
   if (isGeoJsonFormat(f)) return <GeoJsonPreview resourceId={resourceId} />
   if (isJsonFormat(f)) return <JsonPreview resourceId={resourceId} />
   if (isZipFormat(f)) return <ZipPreview resourceId={resourceId} />
@@ -105,7 +125,15 @@ function TextOnlyPreview({ resourceId }: { resourceId: string }) {
   )
 }
 
-function TablePreview({ resourceId }: { resourceId: string }) {
+function TablePreview({
+  resourceId,
+  schema,
+  primaryKey,
+}: {
+  resourceId: string
+  schema?: ResourceSchema | null
+  primaryKey?: string[] | null
+}) {
   const t = useTranslations('resource')
   const [source, setSource] = useState<PreviewSource>('parquet')
   const [analysisMode, setAnalysisMode] = useAnalysisMode()
@@ -138,14 +166,22 @@ function TablePreview({ resourceId }: { resourceId: string }) {
           />
         )}
       </div>
-      {source === 'parquet' && <DroppedRowsNote resourceId={resourceId} />}
+      {source === 'parquet' && <DroppedRowsNote schema={schema} />}
       {source === 'parquet' &&
         (analysisMode ? (
-          <DataExplorer resourceId={resourceId} />
+          <DataExplorer
+            resourceId={resourceId}
+            primaryKey={primaryKey}
+            schemaColumns={schema?.columns ?? null}
+          />
         ) : (
-          <ParquetPreview resourceId={resourceId} />
+          <ParquetPreview
+            resourceId={resourceId}
+            primaryKey={primaryKey}
+            columns={schema?.columns ?? null}
+          />
         ))}
-      {source === 'raw' && <RawTextPreview resourceId={resourceId} />}
+      {source === 'raw' && <RawTextPreview resourceId={resourceId} dialect={dialectOf(schema)} />}
     </div>
   )
 }
@@ -160,13 +196,10 @@ function TablePreview({ resourceId }: { resourceId: string }) {
  * most — a `count(*)` there returns the short number with nothing to say why.
  * Not shown over the raw text, which is the file and does hold them.
  */
-function DroppedRowsNote({ resourceId }: { resourceId: string }) {
+function DroppedRowsNote({ schema }: { schema?: ResourceSchema | null }) {
   const t = useTranslations('resource')
-  const { data } = useFetch<{ schema: ResourceSchema | null }>(
-    `/api/v1/resources/${resourceId}/schema`
-  )
-  const count = data?.schema?.droppedRows ?? 0
-  const lines = data?.schema?.droppedLines ?? []
+  const count = schema?.droppedRows ?? 0
+  const lines = schema?.droppedLines ?? []
   if (count === 0) return null
 
   // Three whole sentences rather than a count with a list bracketed onto it:
@@ -190,13 +223,29 @@ function DroppedRowsNote({ resourceId }: { resourceId: string }) {
 
 // --- Text Preview ---
 
-function RawTextPreview({ resourceId }: { resourceId: string }) {
+function RawTextPreview({
+  resourceId,
+  dialect,
+}: {
+  resourceId: string
+  dialect?: CsvDialect | null
+}) {
   const t = useTranslations('resource')
   const [text, setText] = useState<string | null>(null)
   const [encoding, setEncoding] = useState<string>('')
   const [truncated, setTruncated] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+
+  // Memoized because the walk is over up to 1 MB of text, repeated on every
+  // parent toggle otherwise.
+  const gutter = useMemo(() => {
+    if (!text) return ''
+    const lines = text.split('\n')
+    // A trailing newline is the end of the last line, not a line of its own
+    if (lines[lines.length - 1] === '') lines.pop()
+    return csvRecordLabels(lines, dialect).join('\n')
+  }, [text, dialect])
 
   useEffect(() => {
     let cancelled = false
@@ -234,8 +283,16 @@ function RawTextPreview({ resourceId }: { resourceId: string }) {
 
   return (
     <div className="overflow-hidden rounded-lg border">
-      <div className="max-h-[600px] overflow-auto bg-muted/20 p-4">
-        <pre className="whitespace-pre text-xs">{text}</pre>
+      <div className="max-h-[600px] overflow-auto bg-muted/20">
+        <div className="flex min-w-max">
+          <pre
+            aria-hidden="true"
+            className="sticky left-0 select-none border-r bg-muted px-3 py-4 text-right text-xs text-muted-foreground"
+          >
+            {gutter}
+          </pre>
+          <pre className="whitespace-pre p-4 text-xs">{text}</pre>
+        </div>
       </div>
       {(encoding || truncated) && (
         <div className="flex items-center gap-2 border-t px-4 py-2 text-xs text-muted-foreground">

@@ -88,4 +88,39 @@ describe('ResourceFields', () => {
     expect(screen.getByText('101 B')).toBeInTheDocument()
     expect(screen.getByText('0 B')).toBeInTheDocument()
   })
+
+  it('marks the primary-key column with a badge', () => {
+    setHook({
+      fields: [
+        {
+          name: 'id',
+          type: 'integer',
+          physicalType: 'INT64',
+          logicalType: null,
+          nullable: false,
+          compressedSize: 0,
+        },
+      ],
+    })
+
+    render(<ResourceFields resourceId="r1" primaryKey={['id']} />)
+    expect(screen.getByText('Primary key')).toBeInTheDocument()
+  })
+
+  it('numbers the columns of a composite key in their chosen order', () => {
+    const field = (name: string) => ({
+      name,
+      type: 'string' as const,
+      physicalType: 'BYTE_ARRAY',
+      logicalType: null,
+      nullable: false,
+      compressedSize: 0,
+    })
+    setHook({ fields: [field('pref'), field('city')] })
+
+    // The key's own order, not the table's: city was picked first.
+    render(<ResourceFields resourceId="r1" primaryKey={['city', 'pref']} />)
+    expect(screen.getByText('Primary key 1')).toBeInTheDocument()
+    expect(screen.getByText('Primary key 2')).toBeInTheDocument()
+  })
 })

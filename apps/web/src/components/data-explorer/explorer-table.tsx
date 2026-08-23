@@ -2,6 +2,8 @@
 
 import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { TableHeader, TableBody, TableHead, TableRow, TableCell } from '@kukan/ui'
+import type { ResourceColumn } from '@kukan/shared'
+import { KEY_HEADER_CLASS, numericLayout, dataCellClass, decimalAligned } from '@/lib/table-cells'
 import { ColumnFilter } from './column-filter'
 import type { ColumnFilter as ColumnFilterType, SortState } from '@/hooks/use-duckdb'
 
@@ -10,6 +12,9 @@ interface ExplorerTableProps {
   rows: Record<string, string>[]
   sort: SortState | null
   filters: ColumnFilterType[]
+  primaryKey?: string[] | null
+  /** The version's column schema; numeric columns are right-aligned by it. */
+  schemaColumns?: ResourceColumn[] | null
   onSortChange: (sort: SortState | null) => void
   onFilterApply: (filter: ColumnFilterType) => void
   onFilterClear: (column: string) => void
@@ -20,10 +25,19 @@ export function ExplorerTable({
   rows,
   sort,
   filters,
+  primaryKey,
+  schemaColumns,
   onSortChange,
   onFilterApply,
   onFilterClear,
 }: ExplorerTableProps) {
+  const { isNumeric, maxFractions } = numericLayout(
+    columns,
+    schemaColumns,
+    rows,
+    (row, col) => row[col]
+  )
+
   const handleSort = (column: string) => {
     if (!sort || sort.column !== column) {
       onSortChange({ column, direction: 'ASC' })
@@ -53,8 +67,13 @@ export function ExplorerTable({
         <TableHeader className="sticky top-0 z-10 bg-muted">
           <TableRow>
             {columns.map((col) => (
-              <TableHead key={col} className="whitespace-nowrap px-4 py-2">
-                <div className="flex items-center gap-1">
+              <TableHead
+                key={col}
+                className={`whitespace-nowrap px-4 py-2${
+                  primaryKey?.includes(col) ? ` ${KEY_HEADER_CLASS}` : ''
+                }`}
+              >
+                <div className={`flex items-center gap-1${isNumeric(col) ? ' justify-end' : ''}`}>
                   <button
                     className="flex items-center gap-1 hover:text-foreground"
                     onClick={() => handleSort(col)}
@@ -77,8 +96,11 @@ export function ExplorerTable({
           {rows.map((row, ri) => (
             <TableRow key={ri}>
               {columns.map((col) => (
-                <TableCell key={col} className="whitespace-nowrap px-4 py-2">
-                  {row[col]}
+                <TableCell
+                  key={col}
+                  className={dataCellClass(isNumeric(col), primaryKey?.includes(col) ?? false)}
+                >
+                  {decimalAligned(row[col], maxFractions.get(col) ?? 0)}
                 </TableCell>
               ))}
             </TableRow>

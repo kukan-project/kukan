@@ -567,6 +567,8 @@
     "fields": "Fields",
     "fieldsCount": "{count} fields",
     "fieldName": "Field name",
+    "fieldPrimaryKey": "Primary key",
+    "fieldPrimaryKeyOrdered": "Primary key {order}",
     "fieldType": "Type",
     "fieldTypeString": "String",
     "fieldTypeInteger": "Integer",

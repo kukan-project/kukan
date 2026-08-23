@@ -283,6 +283,15 @@ describe('MCP Server', () => {
       expect(text).toContain('Rows: 3')
       expect(text).toContain('id: integer, range 1..3')
       expect(text).toContain('name: string (nullable)')
+      // No key settled → the line is absent, not "Primary key: (none)".
+      expect(text).not.toContain('Primary key')
+
+      await db.execute(sql`
+        UPDATE resource SET column_settings = '{"primaryKey": ["id"]}'::jsonb
+        WHERE id = ${resource.id}
+      `)
+      const keyed = await mcpToolCall(app, 'get_resource_schema', { id: resource.id })
+      expect(keyed.result.content[0].text as string).toContain('Primary key: id')
     })
   })
 

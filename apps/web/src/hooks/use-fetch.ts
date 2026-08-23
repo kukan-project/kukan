@@ -10,22 +10,25 @@ interface UseFetchResult<T> {
 /**
  * Simple fetch hook with cancellation support.
  * Fetches JSON from the given API path on mount.
+ * A `null` path fetches nothing — for data only some callers need.
  */
-export function useFetch<T>(path: string): UseFetchResult<T> {
+export function useFetch<T>(path: string | null): UseFetchResult<T> {
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
 
   useEffect(() => {
     setData(null)
-    setLoading(true)
+    setLoading(path !== null)
     setError(false)
+    if (path === null) return
+    const url = path
 
     const controller = new AbortController()
 
     async function load() {
       try {
-        const res = await clientFetch(path, { signal: controller.signal })
+        const res = await clientFetch(url, { signal: controller.signal })
         if (!res.ok) throw new Error()
         const json = await res.json()
         if (!controller.signal.aborted) setData(json)

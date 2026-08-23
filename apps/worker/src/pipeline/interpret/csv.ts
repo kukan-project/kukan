@@ -174,6 +174,7 @@ export async function interpretCsv(
           rowCount: 0,
           droppedRows: dropped.count,
           droppedLines: dropped.lines,
+          dialect: dropped.dialect,
         },
         reason: 'ragged-rows',
       }
@@ -205,7 +206,10 @@ export async function interpretCsv(
         columns: await describeColumns(conn, columns, rowCount),
         rowCount,
         ...(droppedRows > 0 && { droppedRows }),
-        ...(dropped.lines.length > 0 && { droppedLines: dropped.lines }),
+        ...(dropped.lines.length > 0 && {
+          droppedLines: dropped.lines,
+          dialect: dropped.dialect,
+        }),
       },
     }
   } finally {
@@ -266,11 +270,18 @@ async function oversizeIntegerColumns(
 async function rejectedLines(
   conn: DuckDBConnection,
   columns: Column[]
-): Promise<{ count: number; lines: number[]; notAllNotes: boolean }> {
+): Promise<{ count: number; lines: number[]; dialect?: CsvDialect; notAllNotes: boolean }> {
   const [{ n }] = (
     await conn.runAndReadAll('SELECT count(DISTINCT line) AS n FROM reject_errors')
   ).getRowObjectsJson() as { n: number }[]
   if (Number(n) === 0) return { count: 0, lines: [], notAllNotes: false }
+
+  // Read once and carried out on the schema: the refused lines are numbered
+  // under this dialect, and a reader counting the file any other way puts
+  // those numbers on the wrong lines.
+  const [dialect] = (
+    await conn.runAndReadAll('SELECT delimiter, quote, escape FROM reject_scans LIMIT 1')
+  ).getRowObjectsJson() as unknown as CsvDialect[]
 
   const rows = (
     await conn.runAndReadAll(
@@ -280,7 +291,8 @@ async function rejectedLines(
   return {
     count: Number(n),
     lines: rows.map((row) => Number(row.line)),
-    notAllNotes: await refusedMoreThanNotes(conn, columns, Number(n)),
+    dialect,
+    notAllNotes: await refusedMoreThanNotes(conn, columns, dialect, Number(n)),
   }
 }
 
@@ -300,12 +312,9 @@ async function rejectedLines(
 async function refusedMoreThanNotes(
   conn: DuckDBConnection,
   columns: Column[],
+  dialect: CsvDialect,
   count: number
 ): Promise<boolean> {
-  const [dialect] = (
-    await conn.runAndReadAll('SELECT delimiter, quote, escape FROM reject_scans LIMIT 1')
-  ).getRowObjectsJson() as unknown as CsvDialect[]
-
   for (let seen = 0; seen < count; seen += REJECT_BATCH) {
     // One row per refused line: a line files an error per column it could not
     // fill, and they all carry the same text.

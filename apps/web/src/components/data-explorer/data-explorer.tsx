@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, Skeleton } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
+import type { ResourceColumn } from '@kukan/shared'
 import { useDuckDB, type ColumnFilter, type SortState } from '@/hooks/use-duckdb'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { ExplorerToolbar } from './explorer-toolbar'
@@ -13,9 +14,12 @@ const PAGE_SIZE = 100
 
 interface DataExplorerProps {
   resourceId: string
+  primaryKey?: string[] | null
+  /** The version's column schema, for the same marking the plain preview does. */
+  schemaColumns?: ResourceColumn[] | null
 }
 
-export function DataExplorer({ resourceId }: DataExplorerProps) {
+export function DataExplorer({ resourceId, primaryKey, schemaColumns }: DataExplorerProps) {
   const t = useTranslations('resource')
   const [sort, setSort] = useState<SortState | null>(null)
   const [filters, setFilters] = useState<ColumnFilter[]>([])
@@ -133,6 +137,8 @@ export function DataExplorer({ resourceId }: DataExplorerProps) {
           rows={rows}
           sort={sort}
           filters={filters}
+          primaryKey={primaryKey}
+          schemaColumns={schemaColumns}
           onSortChange={setSort}
           onFilterApply={handleFilterApply}
           onFilterClear={handleFilterRemove}

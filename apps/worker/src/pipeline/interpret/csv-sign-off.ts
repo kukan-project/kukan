@@ -37,22 +37,13 @@
 import Papa from 'papaparse'
 import { SIGN_OFF_MAX_CELLS, SIGN_OFF_MIN_MISSING } from '@/config'
 
-/**
- * How the file is punctuated, as the scan settled it — never guessed a second
- * time here, or the line would be measured against a column count taken with
- * another ruler.
- *
- * All three are separate dialects and all three are recorded: a file can escape
- * its quotes by doubling them or with a backslash, and reading `\"` as the
- * parser's default would end the value there. Anything but a single character
- * means the file has none of that kind, which is how the sniffer reports an
- * absence.
- */
-export interface CsvDialect {
-  delimiter: string
-  quote: string | null
-  escape: string | null
-}
+// How the file is punctuated, as the scan settled it — never guessed a second
+// time here, or the line would be measured against a column count taken with
+// another ruler. The shape itself lives in shared beside the schema field that
+// persists it.
+import type { CsvDialect } from '@kukan/shared'
+
+export type { CsvDialect }
 
 /**
  * Whether a line the reader refused reads as a sign-off rather than a row.

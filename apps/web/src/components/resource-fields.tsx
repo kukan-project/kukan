@@ -7,6 +7,8 @@ import { columnTypeKey, formatBytes } from '@/lib/format-utils'
 
 interface ResourceFieldsProps {
   resourceId: string
+  /** The resource's settled primary key, marked on its columns */
+  primaryKey?: string[] | null
 }
 
 /**
@@ -14,7 +16,7 @@ interface ResourceFieldsProps {
  * Parquet schema. Renders nothing when no Parquet preview exists (e.g. oversize
  * CSV or a resource not yet processed), so it is safe to mount for any CSV/TSV.
  */
-export function ResourceFields({ resourceId }: ResourceFieldsProps) {
+export function ResourceFields({ resourceId, primaryKey }: ResourceFieldsProps) {
   const t = useTranslations('resource')
   const { fields, loading, error } = useParquetSchema(resourceId)
 
@@ -55,24 +57,36 @@ export function ResourceFields({ resourceId }: ResourceFieldsProps) {
             </tr>
           </thead>
           <tbody>
-            {fields.map((field, i) => (
-              <tr key={i} className="border-b last:border-b-0">
-                <td className="px-4 py-2 font-medium">{field.name}</td>
-                <td className="px-4 py-2">
-                  <Badge variant="secondary">{t(columnTypeKey(field.type))}</Badge>
-                </td>
-                <td className="px-4 py-2 font-mono text-xs">{field.physicalType ?? '—'}</td>
-                <td className="px-4 py-2 font-mono text-xs">{field.logicalType ?? '—'}</td>
-                <td className="px-4 py-2">
-                  <Badge variant={field.nullable ? 'outline' : 'default'}>
-                    {field.nullable ? t('fieldNullableYes') : t('fieldNullableNo')}
-                  </Badge>
-                </td>
-                <td className="px-4 py-2 text-right tabular-nums">
-                  {formatBytes(field.compressedSize)}
-                </td>
-              </tr>
-            ))}
+            {fields.map((field, i) => {
+              const keyOrder = primaryKey?.indexOf(field.name) ?? -1
+              return (
+                <tr key={i} className="border-b last:border-b-0">
+                  <td className="px-4 py-2 font-medium">
+                    {field.name}
+                    {primaryKey && keyOrder >= 0 && (
+                      <Badge className="ml-2">
+                        {primaryKey.length > 1
+                          ? t('fieldPrimaryKeyOrdered', { order: keyOrder + 1 })
+                          : t('fieldPrimaryKey')}
+                      </Badge>
+                    )}
+                  </td>
+                  <td className="px-4 py-2">
+                    <Badge variant="secondary">{t(columnTypeKey(field.type))}</Badge>
+                  </td>
+                  <td className="px-4 py-2 font-mono text-xs">{field.physicalType ?? '—'}</td>
+                  <td className="px-4 py-2 font-mono text-xs">{field.logicalType ?? '—'}</td>
+                  <td className="px-4 py-2">
+                    <Badge variant={field.nullable ? 'outline' : 'default'}>
+                      {field.nullable ? t('fieldNullableYes') : t('fieldNullableNo')}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums">
+                    {formatBytes(field.compressedSize)}
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

@@ -4,6 +4,7 @@
 
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { primaryKeyOf } from '@kukan/shared'
 import type { Database } from '@kukan/db'
 import { ResourceService } from '../../services/resource-service'
 import { PipelineService } from '../../services/pipeline-service'
@@ -62,7 +63,7 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
     },
     async ({ id }) => {
       const service = new ResourceService(db)
-      await service.getByIdWithAccessCheck(id, user)
+      const res = await service.getByIdWithAccessCheck(id, user)
 
       const schema = await new PipelineService(db).getSchema(id)
       if (!schema) {
@@ -76,10 +77,14 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
         }
       }
 
+      // The same fact GET /:id/schema serves (the spec treats the two as one
+      // surface) — and a keyed query is exactly what an agent wants it for.
+      const primaryKey = primaryKeyOf(res.columnSettings)
       const firstCol = schema.columns[0]?.name ?? 'column'
       const text = [
         `Resource ${id} is queryable.`,
         `Rows: ${schema.rowCount}`,
+        ...(primaryKey ? [`Primary key: ${primaryKey.join(', ')}`] : []),
         `Columns (${schema.columns.length}):`,
         ...schema.columns.map((col) => {
           const range = col.stats ? `, range ${col.stats.min}..${col.stats.max}` : ''

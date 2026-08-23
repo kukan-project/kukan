@@ -99,7 +99,8 @@ curl -X POST https://your-kukan-site/api/mcp \
 
 ### get_resource_schema
 
-リソースの列スキーマ（列名・型・null 許容・行数、数値列の min/max）を取得します。CSV/TSV で
+リソースの列スキーマ（列名・型・null 許容・行数、数値列の min/max）を取得します。リソースに
+主キーが確定されていれば `Primary key:` 行として併記されます。CSV/TSV で
 プレビュー生成済みのリソースのみクエリ可能です。出力にはクエリ用テーブル名 `data` とクエリ例が
 含まれ、エージェントはこれを見てから SQL を書けます。
 

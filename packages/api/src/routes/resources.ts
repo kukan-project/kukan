@@ -36,6 +36,7 @@ import {
   isPdfFormat,
   isJsonFormat,
   MAX_UPLOAD_SIZE,
+  primaryKeyOf,
 } from '@kukan/shared'
 import {
   TEXT_PREVIEW_LIMIT,
@@ -462,9 +463,17 @@ resourcesRouter.get('/:id/schema', async (c) => {
   const db = c.get('db')
   const user = c.get('user')
   // Same visibility check as preview/download — the schema reveals the data's shape.
-  await new ResourceService(db).getByIdWithAccessCheck(id, user)
+  const res = await new ResourceService(db).getByIdWithAccessCheck(id, user)
   const schema = await new PipelineService(db).getSchema(id)
-  return c.json({ id, queryable: schema !== null, schema })
+  // The setting, not what the standing version was read under: the public pages
+  // mark the key the way the picker's own sample does, and the per-version
+  // reading is the versions endpoint's story.
+  return c.json({
+    id,
+    queryable: schema !== null,
+    primaryKey: primaryKeyOf(res.columnSettings),
+    schema,
+  })
 })
 
 // POST /api/v1/resources/:id/query - Run a read-only SQL query over the resource's

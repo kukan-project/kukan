@@ -47,12 +47,9 @@ beforeEach(() => {
   sessionStorage.clear()
 })
 
-/** What `GET /resources/:id/schema` answers, for the dropped-rows note. */
-function schemaResponse(droppedRows?: number, droppedLines?: number[]) {
-  mockClientFetch.mockResolvedValue({
-    ok: true,
-    json: async () => ({ schema: { columns: [], rowCount: 2, droppedRows, droppedLines } }),
-  } as Response)
+/** What the owner's `GET /resources/:id/schema` read carried down as a prop. */
+function schemaWith(droppedRows?: number, droppedLines?: number[]) {
+  return { columns: [], rowCount: 2, droppedRows, droppedLines }
 }
 
 describe('dropped rows note', () => {
@@ -60,8 +57,7 @@ describe('dropped rows note', () => {
     // The reader refuses lines that do not split into these columns, which is
     // what stops one of them costing the file every column. Unsaid, a
     // reader comparing this against the download has nothing to explain it.
-    schemaResponse(2, [3, 291])
-    render(<ResourcePreview resourceId="r1" format="CSV" />)
+    render(<ResourcePreview resourceId="r1" format="CSV" schema={schemaWith(2, [3, 291])} />)
 
     await waitFor(() =>
       expect(screen.getByText(/not in the table: 2 \(at line 3, 291\)/)).toBeInTheDocument()
@@ -69,8 +65,7 @@ describe('dropped rows note', () => {
   })
 
   it('says the list is partial when more lines were refused than it names', async () => {
-    schemaResponse(40, [3, 4, 5])
-    render(<ResourcePreview resourceId="r1" format="CSV" />)
+    render(<ResourcePreview resourceId="r1" format="CSV" schema={schemaWith(40, [3, 4, 5])} />)
 
     await waitFor(() =>
       expect(screen.getByText(/: 40 \(at line 3, 4, 5 and more\)/)).toBeInTheDocument()
@@ -81,24 +76,21 @@ describe('dropped rows note', () => {
     // The two fields are separately optional, so a schema with the count and no
     // sample is valid — and rendering the list message with an empty list reads
     // "(at line  and more)".
-    schemaResponse(2)
-    render(<ResourcePreview resourceId="r1" format="CSV" />)
+    render(<ResourcePreview resourceId="r1" format="CSV" schema={schemaWith(2)} />)
 
     await waitFor(() => expect(screen.getByText(/not in the table: 2$/)).toBeInTheDocument())
   })
 
   it('says nothing where the table holds every line', async () => {
-    schemaResponse(undefined)
-    render(<ResourcePreview resourceId="r1" format="CSV" />)
+    render(<ResourcePreview resourceId="r1" format="CSV" schema={schemaWith(undefined)} />)
 
-    await waitFor(() => expect(mockClientFetch).toHaveBeenCalled())
     expect(screen.queryByText(/not in the table/)).not.toBeInTheDocument()
   })
 
-  it('still shows the preview when the schema cannot be read', async () => {
-    // A note about what is missing is not worth losing the preview over.
-    mockClientFetch.mockRejectedValue(new Error('nope'))
-    render(<ResourcePreview resourceId="r1" format="CSV" />)
+  it('still shows the preview when the schema could not be read', async () => {
+    // A note about what is missing is not worth losing the preview over: the
+    // owner passes null when its read failed, and the preview stands alone.
+    render(<ResourcePreview resourceId="r1" format="CSV" schema={null} />)
 
     expect(await screen.findByTestId('parquet-preview')).toBeInTheDocument()
     expect(screen.queryByText(/not in the table/)).not.toBeInTheDocument()
@@ -108,8 +100,7 @@ describe('dropped rows note', () => {
     // The explorer queries the same Parquet, so a `count(*)` there returns the
     // short number — and that is the view where someone is doing arithmetic on
     // it. The note sits outside the switch for that reason.
-    schemaResponse(1, [291])
-    render(<ResourcePreview resourceId="r1" format="CSV" />)
+    render(<ResourcePreview resourceId="r1" format="CSV" schema={schemaWith(1, [291])} />)
 
     await screen.findByTestId('parquet-preview')
     fireEvent.click(screen.getByRole('switch'))

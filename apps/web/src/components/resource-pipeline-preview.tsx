@@ -13,7 +13,7 @@ import {
   DialogTrigger,
 } from '@kukan/ui'
 import { useTranslations, useLocale } from 'next-intl'
-import { isCsvFormat } from '@kukan/shared'
+import { isCsvFormat, type ResourceSchema } from '@kukan/shared'
 import { PipelineStatusDetail } from './pipeline-status-detail'
 import { ResourcePreview } from './resource-preview'
 import { ResourceFields } from './resource-fields'
@@ -50,6 +50,18 @@ export function ResourcePipelinePreview({
   // previewKey in path triggers re-fetch after reprocess
   const { data: pipelineData } = useFetch<PipelineStatusData>(
     `/api/v1/resources/${encodeURIComponent(resourceId)}/pipeline-status?_k=${previewKey}`
+  )
+
+  // One read for everything on this page that describes the table: the
+  // dropped-rows note, the key marking in both preview modes, and the fields
+  // list. Only tabular formats have any of that to say.
+  const { data: schemaData } = useFetch<{
+    schema: ResourceSchema | null
+    primaryKey: string[] | null
+  }>(
+    isCsvFormat(format)
+      ? `/api/v1/resources/${encodeURIComponent(resourceId)}/schema?_k=${previewKey}`
+      : null
   )
 
   const handleSettled = useCallback(() => {
@@ -101,12 +113,18 @@ export function ResourcePipelinePreview({
         format={format}
         url={url}
         size={size}
+        schema={schemaData?.schema}
+        primaryKey={schemaData?.primaryKey}
       />
       {/* Field (column) list shares the preview's remount key so it refreshes
           in lockstep when the pipeline (re)generates the Parquet preview. */}
       {isCsvFormat(format) && (
         <div className="mt-6">
-          <ResourceFields key={`fields-${resourceId}-${previewKey}`} resourceId={resourceId} />
+          <ResourceFields
+            key={`fields-${resourceId}-${previewKey}`}
+            resourceId={resourceId}
+            primaryKey={schemaData?.primaryKey}
+          />
         </div>
       )}
     </section>

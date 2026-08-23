@@ -18,6 +18,7 @@ import type { ColumnSettingsView, KeyCheck, ResourceColumn } from '@kukan/shared
 import { sameKeyColumns } from '@kukan/shared'
 import { clientFetch, problemDetail } from '@/lib/client-api'
 import { columnTypeKey, formatCell } from '@/lib/format-utils'
+import { KEY_HEADER_CLASS, KEY_CELL_CLASS } from '@/lib/table-cells'
 import { useParquetPreview } from '@/hooks/use-parquet-preview'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@kukan/ui'
 
@@ -508,11 +509,7 @@ function ColumnSample({
                   // `whitespace-nowrap`: a Japanese column name has no spaces,
                   // so a narrow cell wraps it one character per line and the
                   // header becomes taller than the sample it labels.
-                  // A tint of the brand colour, not of `muted`: the row's own
-                  // hover is `bg-muted/50`, so a muted mark on a muted wash is
-                  // the same shade twice and the key stops being visible
-                  // exactly while someone is reading a row.
-                  className={`whitespace-nowrap${chosen ? ' bg-primary/15 text-foreground' : ''}`}
+                  className={`whitespace-nowrap${chosen ? ` ${KEY_HEADER_CLASS}` : ''}`}
                   scope="col"
                 >
                   {name}
@@ -530,7 +527,7 @@ function ColumnSample({
                 <TableCell
                   key={name}
                   className={`whitespace-nowrap text-xs${
-                    selected.includes(name) ? ' bg-primary/10' : ''
+                    selected.includes(name) ? ` ${KEY_CELL_CLASS}` : ''
                   }`}
                 >
                   {formatCell(row[name])}

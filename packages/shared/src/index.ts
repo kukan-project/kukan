@@ -20,6 +20,7 @@ export * from './utils'
 
 // Format normalization
 export * from './formats'
+export * from './csv-records'
 
 // Pipeline types (shared between API and Worker)
 export * from './pipeline-types'

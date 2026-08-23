@@ -139,6 +139,11 @@ describe('executeInterpret — column typing', () => {
     expect(result?.schema?.rowCount).toBe(5)
     expect(result?.schema?.droppedRows).toBe(1)
     expect(result?.schema?.droppedLines).toEqual([7])
+    // The dialect those numbers count under, for whoever renders the file
+    // beside them (csv-records.ts). Nothing in this file is quoted, and the
+    // sniffer says so as the multi-character sentinel `(empty)` — anything but
+    // a single character means "none of that kind" (csv-sign-off.ts).
+    expect(result?.schema?.dialect?.quote).toBe('(empty)')
   })
 
   it('refuses two values in a table of three columns, where losing one is ordinary', async () => {
@@ -198,6 +203,8 @@ describe('executeInterpret — column typing', () => {
     expect(result?.reason).toBeUndefined()
     expect(result?.schema?.rowCount).toBe(5)
     expect(result?.schema?.droppedRows).toBe(1)
+    // A quoted file, and the dialect on the schema says so.
+    expect(result?.schema?.dialect?.quote).toBe('"')
   })
 
   it('reads a file that escapes its quotes with a backslash', async () => {

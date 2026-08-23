@@ -164,6 +164,7 @@ tools offer the same capability for AI agents.
 {
   "id": "…",
   "queryable": true,
+  "primaryKey": null,
   "schema": {
     "rowCount": 1688,
     "columns": [
@@ -181,7 +182,9 @@ tools offer the same capability for AI agents.
 ```
 
 Resources that cannot be queried (unsupported format, not yet processed) return
-`queryable: false`, `schema: null`. `type` is one of `integer` / `float` / `boolean` / `string` /
+`queryable: false`, `schema: null`. `primaryKey` lists the column names of the
+resource's settled primary key (composite keys in their chosen order), or is
+`null` when none is set. `type` is one of `integer` / `float` / `boolean` / `string` /
 `date` / `timestamp`; `stats` is present only for numeric columns, and integer min/max are
 decimal strings.
 

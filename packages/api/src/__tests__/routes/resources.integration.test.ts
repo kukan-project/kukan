@@ -1087,45 +1087,70 @@ describe('Resources API Routes', () => {
       ],
     }
 
+    // A pipeline row already exists (created when the resource was enqueued),
+    // so upsert the schema into its metadata.
+    async function storeSchema(resourceId: string) {
+      await db
+        .insert(resourcePipeline)
+        .values({ resourceId, status: 'complete', metadata: { schema } })
+        .onConflictDoUpdate({
+          target: resourcePipeline.resourceId,
+          set: { status: 'complete', metadata: { schema } },
+        })
+    }
+
     it('returns queryable=false when no schema is stored', async () => {
       const pkg = await createPackage('schema-none-pkg')
       const resource = await createResource(pkg.id, { name: 'no-schema.csv' })
 
       const res = await app.request(`/api/v1/resources/${resource.id}/schema`)
       expect(res.status).toBe(200)
-      expect(await res.json()).toEqual({ id: resource.id, queryable: false, schema: null })
+      expect(await res.json()).toEqual({
+        id: resource.id,
+        queryable: false,
+        primaryKey: null,
+        schema: null,
+      })
     })
 
     it('returns the stored schema with queryable=true', async () => {
       const pkg = await createPackage('schema-pkg')
       const resource = await createResource(pkg.id, { name: 'with-schema.csv' })
-      // A pipeline row already exists (created when the resource was enqueued),
-      // so upsert the schema into its metadata.
-      await db
-        .insert(resourcePipeline)
-        .values({ resourceId: resource.id, status: 'complete', metadata: { schema } })
-        .onConflictDoUpdate({
-          target: resourcePipeline.resourceId,
-          set: { status: 'complete', metadata: { schema } },
-        })
+      await storeSchema(resource.id)
 
       const res = await app.request(`/api/v1/resources/${resource.id}/schema`)
       expect(res.status).toBe(200)
-      expect(await res.json()).toEqual({ id: resource.id, queryable: true, schema })
+      expect(await res.json()).toEqual({
+        id: resource.id,
+        queryable: true,
+        primaryKey: null,
+        schema,
+      })
+    })
+
+    it('carries the resource primary-key setting beside the schema', async () => {
+      const pkg = await createPackage('schema-pk-pkg')
+      const resource = await createResource(pkg.id, { name: 'keyed.csv' })
+      await db
+        .update(resourceTable)
+        .set({ columnSettings: { primaryKey: ['id'] } })
+        .where(eq(resourceTable.id, resource.id))
+      await storeSchema(resource.id)
+
+      const res = await app.request(`/api/v1/resources/${resource.id}/schema`)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({
+        id: resource.id,
+        queryable: true,
+        primaryKey: ['id'],
+        schema,
+      })
     })
 
     it('denies access to a private resource for unauthenticated users', async () => {
       const pkg = await createPackage('schema-private-pkg', { private: true })
       const resource = await createResource(pkg.id, { name: 'secret.csv' })
-      // A pipeline row already exists (created when the resource was enqueued),
-      // so upsert the schema into its metadata.
-      await db
-        .insert(resourcePipeline)
-        .values({ resourceId: resource.id, status: 'complete', metadata: { schema } })
-        .onConflictDoUpdate({
-          target: resourcePipeline.resourceId,
-          set: { status: 'complete', metadata: { schema } },
-        })
+      await storeSchema(resource.id)
 
       const res = await unauthApp.request(`/api/v1/resources/${resource.id}/schema`)
       expect(res.status).toBe(404)

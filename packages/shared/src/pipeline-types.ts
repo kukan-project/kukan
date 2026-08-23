@@ -3,6 +3,7 @@
  */
 
 import { z } from 'zod'
+import { csvDialectSchema } from './csv-records'
 
 /**
  * `cancelled` is a run that was stopped on purpose — a replacement was started,
@@ -135,6 +136,12 @@ export const resourceSchemaSchema = z.object({
    * to end, and a schema is a row in a database.
    */
   droppedLines: z.array(z.number().int().positive()).optional(),
+  /**
+   * The dialect the reader sniffed, written beside {@link droppedLines}
+   * because it is what their numbers count under. What an absence means, and
+   * how a view numbers a file by it, is `csv-records.ts`.
+   */
+  dialect: csvDialectSchema.optional(),
 })
 export type ResourceSchema = z.infer<typeof resourceSchemaSchema>
 

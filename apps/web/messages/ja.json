@@ -567,6 +567,8 @@
     "fields": "項目一覧",
     "fieldsCount": "{count} 項目",
     "fieldName": "項目名",
+    "fieldPrimaryKey": "主キー",
+    "fieldPrimaryKeyOrdered": "主キー {order}",
     "fieldType": "型",
     "fieldTypeString": "文字列",
     "fieldTypeInteger": "整数",

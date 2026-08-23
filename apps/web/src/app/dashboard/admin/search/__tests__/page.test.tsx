@@ -59,11 +59,15 @@ describe('AdminSearchPage', () => {
   it('displays index stats cards', async () => {
     render(<AdminSearchPage />)
 
+    // Wait on a name only the stats response renders: 'packages' is also the
+    // browse card's title for the default tab, so it is on screen before the
+    // stats land and cannot stand for them.
     await waitFor(() => {
-      expect(screen.getByText('packages')).toBeInTheDocument()
+      expect(screen.getByText('resources')).toBeInTheDocument()
     })
-    expect(screen.getByText('resources')).toBeInTheDocument()
     expect(screen.getByText('contents')).toBeInTheDocument()
+    // Twice once the stats land: its stat card, and the browse card's title.
+    expect(screen.getAllByText('packages')).toHaveLength(2)
   })
 
   it('shows browse items in table', async () => {
