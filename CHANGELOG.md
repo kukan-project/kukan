@@ -6,6 +6,30 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.16.1] - 2026-08-24
+
+Fixes a deployment blocker: web container images built from v0.15.1 and v0.16.0 fail to start. Use this release for any deploy.
+
+**Bug Fixes**
+
+- fix(web): update Next.js to 16.3.2 so the standalone server boots — 16.3.1's standalone output missed `@swc/helpers`' esm files and the server crashed on start with `MODULE_NOT_FOUND` (#484)
+
+**CI**
+
+- ci: boot-smoke the Next standalone output in web-build, so a server that builds but cannot start fails the pull request instead of the deploy (#484)
+
+---
+
+デプロイを妨げる問題の修正です: v0.15.1・v0.16.0 からビルドした web コンテナイメージは起動に失敗します。デプロイにはこのリリースを使ってください。
+
+**バグ修正**
+
+- fix(web): Next.js を 16.3.2 に更新し standalone サーバーが起動するように修正 — 16.3.1 の standalone 出力は `@swc/helpers` の esm ファイルを含まず、起動時に `MODULE_NOT_FOUND` でクラッシュしていました (#484)
+
+**CI**
+
+- ci: web-build で standalone 出力を実際に起動するスモークを追加 — 「ビルドは通るが起動できない」欠陥をデプロイでなく PR の段階で検出します (#484)
+
 ## [0.16.0] - 2026-08-23
 
 **Highlights**

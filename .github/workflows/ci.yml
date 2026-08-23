@@ -389,6 +389,30 @@ jobs:
       - if: steps.changes.outputs.code == 'true'
         run: pnpm build --filter=@kukan/web...
 
+      # A build that succeeds can still produce a server that cannot start —
+      # Next 16.3.1's standalone output missed @swc/helpers' esm files and every
+      # image built from it crashed on boot. Booting the output catches that
+      # class. No env is given on purpose: reaching an HTTP response (the
+      # env-validation 500 included) proves module resolution and server init
+      # survived, which is everything `next build` alone does not check.
+      - name: Boot-smoke the standalone output
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          cd apps/web/.next/standalone
+          PORT=3999 HOSTNAME=127.0.0.1 node apps/web/server.js & pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do
+            if ! kill -0 $pid 2>/dev/null; then
+              echo 'boot smoke: server exited before responding'; exit 1
+            fi
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 1 http://127.0.0.1:3999/ || true)
+            if [ -n "$code" ] && [ "$code" != "000" ]; then
+              echo "boot smoke: HTTP $code"; exit 0
+            fi
+            sleep 1
+          done
+          echo 'boot smoke: no HTTP response within 60s'; exit 1
+
       # See the quality job for why saving is limited to develop.
       - name: Prune turbo cache
         if: github.ref == 'refs/heads/develop'
