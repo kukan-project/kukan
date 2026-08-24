@@ -6,6 +6,44 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.17.0] - 2026-08-24
+
+**Highlights**
+
+- Better Auth is upgraded from 1.6 to 1.7. Version 1.7 changes how accounts are identified: instead of the provider-configuration name, each account is now keyed by the identity that actually vouched for it — `(issuer, accountId)` — enforced by a database unique constraint. Existing password accounts are migrated automatically; no user action is needed and sessions stay valid.
+- The migration is designed for zero-downtime rolling deploys: the schema stays compatible with 1.6 processes running alongside it, so sign-in keeps working while old and new instances overlap, and an automatic rollback leaves a working system. The leftover compatibility shims will be removed in a later release.
+
+**Features**
+
+- feat(api): upgrade better-auth to 1.7 with account issuer migration (#490)
+
+**Tests / CI**
+
+- perf(test): run web unit tests in the vmThreads pool, cutting unit-test CI time roughly in half (#488)
+- test(lake): raise hookTimeout to match testTimeout (#489)
+- ci: exclude `.next/cache` from turbo build outputs to keep CI caches small (#487)
+- ci: redeploy the documentation site when the release version or date changes (#486)
+- build(deps): update the pinned CodeQL action to 4.37.8 in the analysis workflows (#492)
+
+---
+
+**ハイライト**
+
+- Better Auth を 1.6 から 1.7 に更新しました。1.7 ではアカウントの同定方法が変わり、プロバイダー設定名ではなく「そのアカウントの身元を実際に保証した発行者」を使う `(issuer, accountId)` の組がデータベースの一意制約として強制されます。既存のパスワードアカウントは自動で移行され、利用者の操作は不要です。セッションも維持されます。
+- マイグレーションは無停止のローリングデプロイを前提に設計しています。移行後のスキーマは 1.6 のプロセスとも互換なので、新旧インスタンスが併走する間もサインインは動き続け、自動ロールバックが起きても動作する状態が保たれます。互換のために残した措置は後続リリースで削除します。
+
+**機能**
+
+- feat(api): better-auth 1.7 への更新と account issuer マイグレーション (#490)
+
+**テスト / CI**
+
+- perf(test): web ユニットテストを vmThreads プールで実行し、ユニットテストの CI 時間を約半分に短縮 (#488)
+- test(lake): hookTimeout を testTimeout に合わせて引き上げ (#489)
+- ci: turbo のビルド出力から `.next/cache` を除外し、CI キャッシュの肥大を解消 (#487)
+- ci: リリースバージョン・日付の変更時にドキュメントサイトを再デプロイ (#486)
+- build(deps): 解析ワークフローの CodeQL action ピンを 4.37.8 に更新 (#492)
+
 ## [0.16.1] - 2026-08-24
 
 Fixes a deployment blocker: web container images built from v0.15.1 and v0.16.0 fail to start. Use this release for any deploy.
