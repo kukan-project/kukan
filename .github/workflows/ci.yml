@@ -126,7 +126,10 @@ jobs:
       # others' contents are dropped. Their contents are not interchangeable —
       # `quality` never builds @kukan/web, because the `^build` behind lint and
       # typecheck builds web's dependencies rather than web itself, which is why
-      # its cache measures under 1 MB against `web-build`'s ~55 MB.
+      # its cache stays in single-digit MBs while `web-build`'s carries the
+      # `.next` output (~130 MB per entry with `.next/cache` excluded — that
+      # exclusion is load-bearing: with it in, an entry was 722 MB of mostly
+      # turbopack incremental state that a fresh runner never reads).
       - name: Restore turbo cache
         if: steps.changes.outputs.code == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

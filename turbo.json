@@ -5,7 +5,7 @@
     "build": {
       "dependsOn": ["^build"],
       "env": ["KUKAN_BRAND"],
-      "outputs": ["dist/**", ".next/**", "!.next/dev/**"]
+      "outputs": ["dist/**", ".next/**", "!.next/dev/**", "!.next/cache/**"]
     },
     "dev": {
       "cache": false,
