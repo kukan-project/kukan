@@ -6,6 +6,22 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.17.1] - 2026-08-24
+
+Infrastructure-only fix for AWS pipeline deploys of v0.17.0. No change to application behaviour.
+
+**Bug Fixes**
+
+- fix(infra): use MEDIUM compute for pipeline asset publishing — the default SMALL (3 GB) CodeBuild instance ran out of memory during the web image's type check (the heavier type inference in better-auth 1.7 pushed it over the limit) and the build failed with no diagnostics (#494)
+
+---
+
+v0.17.0 の AWS パイプラインデプロイ向けのインフラ修正のみです。アプリケーションの動作に変更はありません。
+
+**バグ修正**
+
+- fix(infra): パイプラインのアセット公開ビルドを MEDIUM に引き上げ — デフォルトの SMALL(3GB)CodeBuild インスタンスでは web イメージの型チェック中にメモリが枯渇し(better-auth 1.7 の重い型推論が限界を超えた)、診断なしでビルドが失敗していました (#494)
+
 ## [0.17.0] - 2026-08-24
 
 **Highlights**
