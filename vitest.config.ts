@@ -95,8 +95,10 @@ export default defineConfig({
           // it does not, and the default turned a slow machine into a failure
           // that passed on rerun. Raised rather than skipped: what these pin is
           // someone else's implementation, so losing them to flakiness would
-          // lose the only thing holding the design's measurements.
+          // lose the only thing holding the design's measurements. hookTimeout
+          // too — the beforeEach does the same real work (instance + ATTACH).
           testTimeout: 30_000,
+          hookTimeout: 30_000,
         },
       },
       {
