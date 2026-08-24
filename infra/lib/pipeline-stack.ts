@@ -5,6 +5,7 @@
  */
 
 import * as cdk from 'aws-cdk-lib'
+import * as codebuild from 'aws-cdk-lib/aws-codebuild'
 import * as iam from 'aws-cdk-lib/aws-iam'
 import { CodePipeline, CodePipelineSource, ShellStep } from 'aws-cdk-lib/pipelines'
 import { Construct } from 'constructs'
@@ -60,6 +61,12 @@ export class KukanPipelineStack extends cdk.Stack {
           ],
           primaryOutputDirectory: 'infra/cdk.out',
         }),
+        // The default SMALL (3 GB) instance OOM-kills the Next.js type checker
+        // inside the web image build with no diagnostics ("Failed to type
+        // check."), so asset publishing gets the next size up.
+        assetPublishingCodeBuildDefaults: {
+          buildEnvironment: { computeType: codebuild.ComputeType.MEDIUM },
+        },
         synthCodeBuildDefaults: {
           rolePolicy: [
             // Allow CDK context lookups (AZs, CloudFront prefix list via
