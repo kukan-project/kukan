@@ -161,6 +161,11 @@ export default defineConfig({
         test: {
           name: 'web',
           root: './apps/web',
+          // vmThreads: the cost here is per-file jsdom boot + re-imports, not
+          // the tests. A VM context per file keeps isolation while the module
+          // cache carries over. Not for worker/lake — native addons and VM
+          // contexts do not mix.
+          pool: 'vmThreads',
           environment: 'jsdom',
           globals: true,
           setupFiles: ['./src/__tests__/setup.ts'],
