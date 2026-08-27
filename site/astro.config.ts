@@ -1,14 +1,10 @@
 import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
-import remarkGfm from 'remark-gfm'
 
 const isProd = process.env.NODE_ENV === 'production'
 
 export default defineConfig({
   site: 'https://kukan-project.github.io',
-  markdown: {
-    remarkPlugins: [remarkGfm],
-  },
   integrations: [
     starlight({
       title: 'KUKAN',

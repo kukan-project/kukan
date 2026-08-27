@@ -15,7 +15,6 @@
     "sharp": "^0.35.3"
   },
   "devDependencies": {
-    "remark-gfm": "^4.0.1",
     "vite": "^8.2.2"
   }
 }
