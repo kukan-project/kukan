@@ -1,10 +1,21 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { ResourcePipelinePreview } from '../resource-pipeline-preview'
 
+const mockUseFetch = vi.fn()
+
 vi.mock('@/hooks/use-fetch', () => ({
-  useFetch: () => ({ data: null, loading: false, error: false }),
+  useFetch: (...args: unknown[]) => mockUseFetch(...args),
 }))
+
+/** Answers the /schema fetch with the given payload; every other fetch gets null. */
+function setSchemaFetch(schemaData: unknown) {
+  mockUseFetch.mockImplementation((path: string | null) =>
+    path?.includes('/schema')
+      ? { data: schemaData, loading: false, error: false }
+      : { data: null, loading: false, error: false }
+  )
+}
 
 vi.mock('../pipeline-status-detail', () => ({
   PipelineStatusDetail: () => <div data-testid="pipeline-status-detail">Pipeline Detail</div>,
@@ -22,6 +33,31 @@ vi.mock('../date-time', () => ({
 }))
 
 describe('ResourcePipelinePreview', () => {
+  beforeEach(() => {
+    mockUseFetch.mockReset()
+    mockUseFetch.mockReturnValue({ data: null, loading: false, error: false })
+  })
+
+  it('shows the Data API button when the resource has a non-empty schema', () => {
+    setSchemaFetch({
+      schema: {
+        columns: [{ name: 'a', type: 'string', nullable: false, nullCount: 0 }],
+        rowCount: 1,
+      },
+      primaryKey: null,
+    })
+    render(<ResourcePipelinePreview resourceId="r1" format="CSV" />)
+    expect(screen.getByRole('button', { name: 'Data API' })).toBeInTheDocument()
+  })
+
+  it('hides the Data API button when the schema has no columns', () => {
+    // An interpretation that produced no table persists an empty schema —
+    // querying it can only fail, so the entry point must not appear.
+    setSchemaFetch({ schema: { columns: [], rowCount: 0 }, primaryKey: null })
+    render(<ResourcePipelinePreview resourceId="r1" format="CSV" />)
+    expect(screen.queryByRole('button', { name: 'Data API' })).not.toBeInTheDocument()
+  })
+
   it('should render preview heading', () => {
     render(<ResourcePipelinePreview resourceId="r1" />)
     expect(screen.getByText('Preview')).toBeInTheDocument()

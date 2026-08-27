@@ -36,6 +36,7 @@
     "react-hook-form": "^7.85.0",
     "react-json-view-lite": "^2.5.0",
     "server-only": "^0.0.1",
+    "shiki": "^4.4.3",
     "zod": "4.4.3"
   },
   "devDependencies": {

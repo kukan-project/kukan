@@ -17,6 +17,7 @@ import { isCsvFormat, type ResourceSchema } from '@kukan/shared'
 import { PipelineStatusDetail } from './pipeline-status-detail'
 import { ResourcePreview } from './resource-preview'
 import { ResourceFields } from './resource-fields'
+import { DataApiDialog } from './data-api-dialog'
 import { formatDateTime } from './date-time'
 import { useFetch } from '@/hooks/use-fetch'
 import type { PipelineStatusData } from '@/hooks/use-pipeline-status'
@@ -85,27 +86,34 @@ export function ResourcePipelinePreview({
             </span>
           )}
         </div>
-        {canManage && (
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                title={t('pipelineStatus')}
-                aria-label={t('pipelineStatus')}
-              >
-                <Settings2 className="size-4" />
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-lg">
-              <DialogHeader>
-                <DialogTitle>{t('pipelineStatus')}</DialogTitle>
-                <DialogDescription>{t('pipelineStatusDescription')}</DialogDescription>
-              </DialogHeader>
-              <PipelineStatusDetail resourceId={resourceId} onSettled={handleSettled} />
-            </DialogContent>
-          </Dialog>
-        )}
+        <div className="flex items-center gap-2">
+          {/* An empty schema (interpretation produced no table) is persisted too,
+              and querying it only 400s — so require at least one column. */}
+          {schemaData?.schema && schemaData.schema.columns.length > 0 && (
+            <DataApiDialog resourceId={resourceId} schema={schemaData.schema} />
+          )}
+          {canManage && (
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title={t('pipelineStatus')}
+                  aria-label={t('pipelineStatus')}
+                >
+                  <Settings2 className="size-4" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>{t('pipelineStatus')}</DialogTitle>
+                  <DialogDescription>{t('pipelineStatusDescription')}</DialogDescription>
+                </DialogHeader>
+                <PipelineStatusDetail resourceId={resourceId} onSettled={handleSettled} />
+              </DialogContent>
+            </Dialog>
+          )}
+        </div>
       </div>
       <ResourcePreview
         key={`${resourceId}-${previewKey}`}

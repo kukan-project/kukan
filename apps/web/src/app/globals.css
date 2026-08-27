@@ -78,3 +78,14 @@ body {
   background-color: var(--color-background);
   color: var(--color-foreground);
 }
+
+/* shiki code blocks (Data API dialog). The surrounding container owns the
+   background and padding; the dark colors key off the same .dark class as
+   the dark: variant above. */
+.shiki {
+  background-color: transparent !important;
+}
+.dark .shiki,
+.dark .shiki span {
+  color: var(--shiki-dark) !important;
+}

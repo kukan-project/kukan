@@ -51,6 +51,16 @@ describe('runSandboxedQuery', () => {
     expect(res.rows[0]).toEqual({ id: '0', name: 'name0' })
   })
 
+  it('deduplicates repeated output column names to match the row keys', async () => {
+    const res = await runSandboxedQuery(
+      fixture,
+      'SELECT id AS a, name AS a FROM data LIMIT 1',
+      LIMITS
+    )
+    expect(res.columns).toEqual(['a', 'a:1'])
+    expect(res.rows[0]).toEqual({ a: '0', 'a:1': 'name0' })
+  })
+
   it('truncates results beyond maxRows', async () => {
     const res = await runSandboxedQuery(fixture, 'SELECT * FROM data', LIMITS)
     expect(res.truncated).toBe(true)
