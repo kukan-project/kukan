@@ -77,6 +77,14 @@ export const uploadCompleteSchema = z.object({
 export type UploadCompleteInput = z.infer<typeof uploadCompleteSchema>
 
 /**
+ * A version number as the int4 `resource_version.version` column can hold it.
+ * `z.int32()` rather than `.int().positive()`: `Number.isInteger(1e300)` is
+ * true, and past the column's range the comparison is a PostgreSQL error
+ * instead of the 400 it is.
+ */
+export const versionNumberSchema = z.int32().min(1)
+
+/**
  * A revert states where it is putting the content, and what it saw (ADR-044 §4).
  *
  * Absolute rather than relative, because "step back one" run twice is not run
@@ -93,7 +101,7 @@ export type UploadCompleteInput = z.infer<typeof uploadCompleteSchema>
 export const revertResourceSchema = z.object({
   /** Version to put the live content on, or null to leave the resource empty —
    *  which is a destination like any other, and idempotent for the same reason. */
-  restoreTo: z.number().int().positive().nullable(),
+  restoreTo: versionNumberSchema.nullable(),
   /** `live_revision` as served with the pipeline status. A UUID, and validated
    *  as one: the takeover compares it as `::uuid`, so anything else is a
    *  PostgreSQL error rather than the 400 it is. */

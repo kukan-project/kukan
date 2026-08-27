@@ -1390,6 +1390,52 @@ describe('Resources API Routes', () => {
       // The date stays — it explains the gap in version numbers.
       expect(body.versions[0].purgedAt).not.toBeNull()
     })
+
+    it('marks only the anonymous response publicly cacheable', async () => {
+      // The public page's history section reads this route anonymously, so the
+      // anonymous variant is shared-cacheable; a signed-in user must see their
+      // own purge reflected immediately (ADR-026).
+      const pkg = await createPackage('versions-cache-pkg')
+      const resource = await createResource(pkg.id)
+      await db.insert(resourceVersion).values({
+        resourceId: resource.id,
+        version: 1,
+        storageKey: getStorageKey(pkg.id, resource.id, 'v1'),
+        hash: 'sha256:v1',
+        origin: 'upload',
+      })
+
+      const anonymous = await unauthApp.request(`/api/v1/resources/${resource.id}/versions`)
+      expect(anonymous.status).toBe(200)
+      expect(anonymous.headers.get('Cache-Control')).toContain('public')
+
+      const authed = await app.request(`/api/v1/resources/${resource.id}/versions`)
+      expect(authed.status).toBe(200)
+      expect(authed.headers.get('Cache-Control') ?? '').not.toContain('public')
+
+      const single = await unauthApp.request(`/api/v1/resources/${resource.id}/versions/1`)
+      expect(single.status).toBe(200)
+      expect(single.headers.get('Cache-Control')).toContain('public')
+    })
+
+    it('never marks an error response cacheable', async () => {
+      // The route comment leans on this: errors travel through onError, and
+      // whether publicCache() sees them at all is a Hono composition detail —
+      // so the guarantee is pinned here rather than argued from internals.
+      const priv = await createPackage('versions-cache-priv-pkg', { private: true })
+      const privResource = await createResource(priv.id)
+      const hidden = await unauthApp.request(`/api/v1/resources/${privResource.id}/versions`)
+      expect(hidden.status).toBe(404)
+      expect(hidden.headers.get('Cache-Control') ?? '').not.toContain('public')
+
+      // Number.isInteger(4294967296) is true — the int4 cap refuses it before
+      // anything touches the database, so no resource needs to exist.
+      const oversized = await unauthApp.request(
+        '/api/v1/resources/00000000-0000-0000-0000-000000000099/versions/4294967296'
+      )
+      expect(oversized.status).toBe(400)
+      expect(oversized.headers.get('Cache-Control') ?? '').not.toContain('public')
+    })
   })
 
   // ADR-043 layer 2. The diff scans both snapshots in full, so unlike the other

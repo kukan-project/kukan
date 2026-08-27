@@ -71,6 +71,13 @@ publicCache(maxAge = 60, swr = 300)
 CloudFront を介さないローカル開発・オンプレ環境ではエッジバイパスが存在しないため、
 このオリジン側の auth-aware スキップが認証ユーザーの即時反映を担保する唯一の層となる。
 
+なお `Vary: Cookie` は付けていないため、**同一 URL を匿名の CSR と認証済みの CSR の
+両方が読む場合**、匿名時に保存されたブラウザキャッシュが max-age 内の認証読みを
+満たしてしまう（例: 未ログインで公開ページの版履歴を見た直後にログインしてパージ →
+一覧の再読込がキャッシュから返る）。現状このパターンは `/resources/:id/versions` のみで、
+認証側の呼び出しに `cache: 'no-cache'` を指定して回避している。2 箇所目が現れたら
+`Vary: Cookie` の付与をミドルウェア側（`publicCache()`）へ移すこと。
+
 ### ルート分類
 
 | カテゴリ                                             | Cache-Control                                                                              | 適用方法                        |
@@ -85,17 +92,18 @@ CloudFront を介さないローカル開発・オンプレ環境ではエッジ
 
 ### publicCache() 適用ルート一覧
 
-| ルートファイル   | エンドポイント                           | 設定                       |
-| ---------------- | ---------------------------------------- | -------------------------- |
-| tags.ts          | ルーター全体（`tagsRouter.use`）         | `publicCache()`            |
-| organizations.ts | `GET /`, `GET /:nameOrId`                | `publicCache()`            |
-| groups.ts        | `GET /`, `GET /:nameOrId`                | `publicCache()`            |
-| resources.ts     | `GET /formats`                           | `publicCache()`            |
-| app.ts           | `GET /api/v1/site/settings`              | `publicCache()`            |
-| ckan-compat.ts   | `organization_list`, `organization_show` | `publicCache()`            |
-| ckan-compat.ts   | `group_list`, `group_show`               | `publicCache()`            |
-| ckan-compat.ts   | `tag_list`, `tag_show`                   | `publicCache()`            |
-| ckan-compat.ts   | `license_list`                           | `publicCache(3600, 86400)` |
+| ルートファイル   | エンドポイント                              | 設定                       |
+| ---------------- | ------------------------------------------- | -------------------------- |
+| tags.ts          | ルーター全体（`tagsRouter.use`）            | `publicCache()`            |
+| organizations.ts | `GET /`, `GET /:nameOrId`                   | `publicCache()`            |
+| groups.ts        | `GET /`, `GET /:nameOrId`                   | `publicCache()`            |
+| resources.ts     | `GET /formats`                              | `publicCache()`            |
+| resources.ts     | `GET /:id/versions`, `GET /:id/versions/:v` | `publicCache()`            |
+| app.ts           | `GET /api/v1/site/settings`                 | `publicCache()`            |
+| ckan-compat.ts   | `organization_list`, `organization_show`    | `publicCache()`            |
+| ckan-compat.ts   | `group_list`, `group_show`                  | `publicCache()`            |
+| ckan-compat.ts   | `tag_list`, `tag_show`                      | `publicCache()`            |
+| ckan-compat.ts   | `license_list`                              | `publicCache(3600, 86400)` |
 
 ## 影響
 

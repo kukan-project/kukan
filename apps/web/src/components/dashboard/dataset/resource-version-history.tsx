@@ -69,7 +69,14 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
     async (signal?: AbortSignal) => {
       setError(null)
       try {
-        const res = await clientFetch(`/api/v1/resources/${resourceId}/versions`, { signal })
+        // 'no-cache': the public page reads this URL anonymously with a
+        // publicCache() response, so an anonymous visit within max-age would
+        // otherwise satisfy this read — including the reload after a purge —
+        // from the browser's HTTP cache. Revalidate instead of trusting it.
+        const res = await clientFetch(`/api/v1/resources/${resourceId}/versions`, {
+          signal,
+          cache: 'no-cache',
+        })
         if (!res.ok) throw new Error(String(res.status))
         const data = (await res.json()) as { versions: VersionView[] }
         if (!signal?.aborted) setVersions(data.versions)
@@ -205,8 +212,10 @@ export function ResourceVersionHistory({ resourceId, reloadKey }: Props) {
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <Badge variant="outline">
+                        {/* A string, not the number: ICU groups digits, so
+                            v1000 would read "v1,000". */}
                         {v.origin === 'revert' && v.restoredFrom !== null
-                          ? t('originRevert', { version: v.restoredFrom })
+                          ? t('originRevert', { version: String(v.restoredFrom) })
                           : t(ORIGIN_LABEL[v.origin])}
                       </Badge>
                       {/* Why there is no preview, where the absence is noticed.

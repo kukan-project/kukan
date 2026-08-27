@@ -21,6 +21,7 @@ import {
   uploadCompleteSchema,
   columnSettingsBodySchema,
   revertResourceSchema,
+  versionNumberSchema,
   runPipelineSchema,
   UnauthorizedError,
   NotFoundError,
@@ -63,13 +64,14 @@ import type { Context } from 'hono'
 
 export const resourcesRouter = new Hono<{ Variables: AppContext }>()
 
-/** Parse a `:v` path param into a positive version number (rejects junk). */
+/** Parse a `:v` path param into a version number (rejects junk; the int4 cap
+ *  and its reasoning live on the shared schema). */
 function parseVersionParam(raw: string): number {
-  const n = Number(raw)
-  if (!Number.isInteger(n) || n < 1) {
+  const parsed = versionNumberSchema.safeParse(Number(raw))
+  if (!parsed.success) {
     throw new ValidationError('Invalid version number')
   }
-  return n
+  return parsed.data
 }
 
 /**
@@ -496,7 +498,11 @@ resourcesRouter.post(
 
 // GET /api/v1/resources/:id/versions - List canonical file versions (newest first).
 // Same visibility check as download/preview. Purged versions appear as tombstones.
-resourcesRouter.get('/:id/versions', async (c) => {
+// publicCache() marks only the anonymous variant cacheable — the public page's
+// history section reads this — and holds it briefly, because a purge rewrites
+// rows in place (ADR-026). Private resources 404 anonymously and stay uncached:
+// the middleware tags successful responses only (pinned by integration test).
+resourcesRouter.get('/:id/versions', publicCache(), async (c) => {
   const id = c.req.param('id')
   const db = c.get('db')
   await new ResourceService(db).getByIdWithAccessCheck(id, c.get('user'))
@@ -504,8 +510,9 @@ resourcesRouter.get('/:id/versions', async (c) => {
   return c.json({ id, versions })
 })
 
-// GET /api/v1/resources/:id/versions/:v - Single version metadata.
-resourcesRouter.get('/:id/versions/:v', async (c) => {
+// GET /api/v1/resources/:id/versions/:v - Single version metadata. Cached on
+// the same terms as the list; not longer, for the same purge reason.
+resourcesRouter.get('/:id/versions/:v', publicCache(), async (c) => {
   const id = c.req.param('id')
   const version = parseVersionParam(c.req.param('v'))
   const db = c.get('db')

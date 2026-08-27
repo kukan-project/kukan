@@ -74,6 +74,15 @@ In local development / on-premises (no CloudFront), there is no edge bypass, so 
 origin-side auth-aware skip is the only layer guaranteeing immediate freshness for
 authenticated users.
 
+Note that no `Vary: Cookie` is set, so **when the same URL is read by both an
+anonymous CSR and an authenticated CSR**, a browser cache entry stored while
+anonymous can satisfy an authenticated read within max-age (e.g. viewing a public
+page's version history while signed out, then signing in and purging — the list
+reload is served from cache). Currently the only such pattern is
+`/resources/:id/versions`, worked around by passing `cache: 'no-cache'` on the
+authenticated call. If a second site appears, move to setting `Vary: Cookie` in
+the middleware (`publicCache()`) instead.
+
 ### Route Classification
 
 | Category                                                       | Cache-Control                                                                          | Application Method                     |
@@ -88,17 +97,18 @@ authenticated users.
 
 ### publicCache() Applied Routes
 
-| Route File       | Endpoint                                 | Setting                    |
-| ---------------- | ---------------------------------------- | -------------------------- |
-| tags.ts          | Entire router (`tagsRouter.use`)         | `publicCache()`            |
-| organizations.ts | `GET /`, `GET /:nameOrId`                | `publicCache()`            |
-| groups.ts        | `GET /`, `GET /:nameOrId`                | `publicCache()`            |
-| resources.ts     | `GET /formats`                           | `publicCache()`            |
-| app.ts           | `GET /api/v1/site/settings`              | `publicCache()`            |
-| ckan-compat.ts   | `organization_list`, `organization_show` | `publicCache()`            |
-| ckan-compat.ts   | `group_list`, `group_show`               | `publicCache()`            |
-| ckan-compat.ts   | `tag_list`, `tag_show`                   | `publicCache()`            |
-| ckan-compat.ts   | `license_list`                           | `publicCache(3600, 86400)` |
+| Route File       | Endpoint                                    | Setting                    |
+| ---------------- | ------------------------------------------- | -------------------------- |
+| tags.ts          | Entire router (`tagsRouter.use`)            | `publicCache()`            |
+| organizations.ts | `GET /`, `GET /:nameOrId`                   | `publicCache()`            |
+| groups.ts        | `GET /`, `GET /:nameOrId`                   | `publicCache()`            |
+| resources.ts     | `GET /formats`                              | `publicCache()`            |
+| resources.ts     | `GET /:id/versions`, `GET /:id/versions/:v` | `publicCache()`            |
+| app.ts           | `GET /api/v1/site/settings`                 | `publicCache()`            |
+| ckan-compat.ts   | `organization_list`, `organization_show`    | `publicCache()`            |
+| ckan-compat.ts   | `group_list`, `group_show`                  | `publicCache()`            |
+| ckan-compat.ts   | `tag_list`, `tag_show`                      | `publicCache()`            |
+| ckan-compat.ts   | `license_list`                              | `publicCache(3600, 86400)` |
 
 ## Impact
 

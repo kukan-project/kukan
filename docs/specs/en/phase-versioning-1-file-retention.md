@@ -330,6 +330,13 @@ active → purging → purged
   physical-disappearance timeline + confirmation).
 - The public resource detail page (for viewers) **does not show version history** in this phase
   (presenting a diff summary is Phase ii/iii; viewer-facing exposure is designed there).
+  - **Addendum (implemented after ii-b)**: a viewer-facing version history (list +
+    per-version download) was added to the public resource detail page. It is a
+    collapsible section fetched on first open, showing the latest 10 versions by
+    default with a "show all" control. Deleted versions appear as tombstones
+    (deleted badge + created timestamp). The API keeps its visibility-only check,
+    with `publicCache()` applied to the anonymous response (ADR-026). **Public
+    diffs remain Phase iii** (diagnostics and purge stay dashboard-only).
 - i18n: add version-history and purge labels in ja/en.
 
 ## 10. Test Strategy

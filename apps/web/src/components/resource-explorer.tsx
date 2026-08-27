@@ -11,6 +11,7 @@ import { DownloadButton } from '@/components/download-button'
 import { ResourcePipelinePreview } from '@/components/resource-pipeline-preview'
 import { KeyValueTable, extrasToRows } from '@/components/key-value-table'
 import { DateTime } from '@/components/date-time'
+import { VersionHistory } from '@/components/version-history'
 
 export interface Resource {
   id: string
@@ -165,11 +166,16 @@ export function ResourceExplorer({
             </div>
           )}
 
-          {/* Keep visited previews alive to avoid iframe re-loading (Office Online etc.) */}
+          {/* Keep visited resources alive: previews avoid iframe re-loading
+              (Office Online etc.), version histories keep their fetched rows
+              and open state across switches. */}
           {resources
             .filter((r) => visitedIds.has(r.id))
             .map((r) => (
-              <div key={r.id} className={r.id !== selectedId ? 'hidden' : undefined}>
+              <div
+                key={r.id}
+                className={cn('flex flex-col gap-4', r.id !== selectedId && 'hidden')}
+              >
                 <ResourcePipelinePreview
                   resourceId={r.id}
                   format={r.format}
@@ -177,6 +183,7 @@ export function ResourceExplorer({
                   size={r.size}
                   canManage={canManage}
                 />
+                <VersionHistory resourceId={r.id} />
               </div>
             ))}
 
