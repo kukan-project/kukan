@@ -6,6 +6,42 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.18.0] - 2026-08-27
+
+**Highlights**
+
+- Version history is now visible to everyone: the public resource page lists past versions with per-version download, so visitors can see how a resource has evolved without a dashboard account.
+- Queryable resources get a "Data API" panel that teaches the query API in place — copyable endpoint URLs, curl / JavaScript examples, and an editable SQL example you can run right in the dialog.
+
+**Features**
+
+- feat(web): show version history on the public resource page (#500) — a collapsible section lists versions (latest 10 with "show all") with creation date, size and per-version download, and shows deleted versions as tombstones; the version-list endpoints now allow short anonymous CDN caching
+- feat(web): add Data API panel with runnable SQL examples (#496) — endpoint URLs and curl / JavaScript snippets carry the real resource id, and the SQL example (pre-filled with the resource's actual columns) runs against the server-side query sandbox with results in a table; syntax highlighting is lazy-loaded so the initial bundle size is unchanged
+
+**Bug Fixes**
+
+- fix(api): align queryable flag with actual query availability (#498) — `queryable` now means a query will actually work: resources whose interpretation produced no table, whose preview was removed, or whose preview describes replaced content no longer claim to be queryable (REST and MCP), and querying such a stale preview is rejected instead of silently returning old data
+- fix(lake): refresh expired S3 credentials in cached DuckDB instances (#501) — on AWS the DuckLake S3 credentials were resolved once per process and expired a few hours later, stalling row-level diff loading until a restart; the credentials now refresh automatically and an expired session is rebuilt
+
+---
+
+**ハイライト**
+
+- 版履歴がすべての閲覧者に公開されました。公開リソースページに過去の版の一覧と版指定ダウンロードが表示され、ダッシュボードのアカウントがなくてもリソースの更新経緯を確認できます。
+- クエリ可能なリソースに「Data API」パネルが付きました。エンドポイント URL のコピー、curl / JavaScript の使用例、そしてその場で編集・実行できる SQL 例で、クエリ API の使い方をページ上で学べます。
+
+**機能**
+
+- feat(web): 公開リソースページに版履歴を表示 (#500) — 折りたたみセクションに版の一覧（最新 10 件 + 「すべての版を表示」）を作成日時・サイズ・版指定ダウンロード付きで表示し、削除済みの版は墓標として表示します。版一覧 API は匿名アクセスに限り短時間の CDN キャッシュを許可するようになりました
+- feat(web): 実行可能な SQL 例付きの Data API パネルを追加 (#496) — エンドポイント URL と curl / JavaScript スニペットには実際のリソース ID が入り、実際の列名を埋め込んだ SQL 例はサーバーサイドのクエリサンドボックスでその場で実行して結果をテーブル表示できます。シンタックスハイライトは遅延ロードのため初期バンドルサイズは変わりません
+
+**バグ修正**
+
+- fix(api): queryable フラグを実際のクエリ可否と一致させる (#498) — `queryable` が「クエリが実際に動くこと」を意味するようになりました。解釈がテーブルを生まなかったリソース、プレビューが削除されたリソース、内容差し替え前のプレビューが残っているリソースはクエリ可能と申告しなくなり（REST / MCP 共通）、古いプレビューへのクエリは旧内容を黙って返す代わりに拒否されます
+- fix(lake): キャッシュ済み DuckDB インスタンスの期限切れ S3 認証情報を更新 (#501) — AWS では DuckLake の S3 認証情報がプロセスごとに一度だけ解決され、数時間後に失効すると再起動まで行レベル差分の取込が止まっていました。認証情報は自動更新され、失効したセッションは再構築されます
+
+---
+
 ## [0.17.1] - 2026-08-24
 
 Infrastructure-only fix for AWS pipeline deploys of v0.17.0. No change to application behaviour.
