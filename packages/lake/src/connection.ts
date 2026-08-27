@@ -60,14 +60,21 @@ const instances = new Map<string, Promise<DuckDBInstance>>()
 
 /**
  * Errors that mean the instance itself is finished — the catalog's libpq
- * connection went away — rather than the statement being wrong. The cached
- * instance is dropped so the next caller rebuilds; the current call still
- * fails, and its caller retries (SQS redelivery for ingest, the user for a
- * diff).
+ * connection went away, or the S3 secret's temporary credentials expired —
+ * rather than the statement being wrong. The cached instance is dropped so the
+ * next caller rebuilds; the current call still fails, and its caller retries
+ * (SQS redelivery for ingest, the user for a diff).
+ *
+ * Expired credentials are the backstop for `REFRESH auto` below: the refresh
+ * only fires on the error codes httpfs recognizes, and a task-role credential
+ * that lapsed mid-statement can still surface as a plain ExpiredToken. A
+ * rebuild resolves the chain afresh either way.
  */
 function isInstanceLost(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err)
-  return /connection|server closed|terminating|SSL|socket/i.test(message)
+  return /connection|server closed|terminating|SSL|socket|ExpiredToken|token has expired/i.test(
+    message
+  )
 }
 
 /**
@@ -132,13 +139,19 @@ async function prepareInstance(
     // Without static keys we are on AWS with only a task role, so the secret has
     // to resolve credentials itself: DuckDB's default provider is `config`, which
     // would sign with empty keys and get a 403 from a private bucket.
+    //
+    // REFRESH is what keeps that working past the first few hours: the chain is
+    // resolved once at CREATE SECRET, the instance is cached for the life of the
+    // process, and task-role credentials expire — after which every S3 request
+    // fails with ExpiredToken until the process restarts. With REFRESH auto,
+    // httpfs re-runs the chain on an auth failure and retries the request.
     const staticKeys = config.s3AccessKey && config.s3SecretKey
     const secretParts = [
       `TYPE s3`,
       `REGION ${sqlLiteral(config.region)}`,
       ...(staticKeys
         ? [`KEY_ID ${sqlLiteral(config.s3AccessKey!)}`, `SECRET ${sqlLiteral(config.s3SecretKey!)}`]
-        : [`PROVIDER credential_chain`]),
+        : [`PROVIDER credential_chain`, `REFRESH auto`]),
       ...(config.s3Endpoint
         ? [
             `ENDPOINT ${sqlLiteral(config.s3Endpoint)}`,
