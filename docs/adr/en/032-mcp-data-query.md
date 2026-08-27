@@ -89,9 +89,13 @@ preview directly** rather than loading data into dedicated tables.
 3. Exposure:
    - API: `GET /api/v1/resources/{id}/schema` — returns the stored schema after a visibility check.
      A missing schema (unsupported format / not processed) returns an explicit response with
-     `queryable: false` rather than a 404.
-   - MCP: `get_resource_schema` tool — returns columns, types, row count, and a note that the queryable
-     table is named `data`.
+     `queryable: false` rather than a 404. `queryable` matches what the query endpoint will
+     actually accept (a preview Parquet plus a non-empty schema, both describing the current
+     content via sourceHash) and is independent of schema presence — a purged preview, a
+     zero-column schema, or a preview left behind by a replaced content returns the `schema`
+     with `false`.
+   - MCP: `get_resource_schema` tool — returns columns, types, row count, and — only when the
+     resource is queryable — a note that the query table is named `data` with an example query.
 4. **Backwards compatibility**: existing resources gain a schema as they are reprocessed (`reprocess`).
    No bulk backfill (same stance as ADR-029 §7).
 

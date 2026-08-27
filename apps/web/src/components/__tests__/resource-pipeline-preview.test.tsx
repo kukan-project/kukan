@@ -38,8 +38,9 @@ describe('ResourcePipelinePreview', () => {
     mockUseFetch.mockReturnValue({ data: null, loading: false, error: false })
   })
 
-  it('shows the Data API button when the resource has a non-empty schema', () => {
+  it('shows the Data API button when the resource is queryable', () => {
     setSchemaFetch({
+      queryable: true,
       schema: {
         columns: [{ name: 'a', type: 'string', nullable: false, nullCount: 0 }],
         rowCount: 1,
@@ -50,10 +51,17 @@ describe('ResourcePipelinePreview', () => {
     expect(screen.getByRole('button', { name: 'Data API' })).toBeInTheDocument()
   })
 
-  it('hides the Data API button when the schema has no columns', () => {
-    // An interpretation that produced no table persists an empty schema —
-    // querying it can only fail, so the entry point must not appear.
-    setSchemaFetch({ schema: { columns: [], rowCount: 0 }, primaryKey: null })
+  it('hides the Data API button when the server says not queryable, even with a schema', () => {
+    // A purged preview leaves the schema behind; the entry point must follow
+    // the server's queryable verdict, not the schema's presence.
+    setSchemaFetch({
+      queryable: false,
+      schema: {
+        columns: [{ name: 'a', type: 'string', nullable: false, nullCount: 0 }],
+        rowCount: 1,
+      },
+      primaryKey: null,
+    })
     render(<ResourcePipelinePreview resourceId="r1" format="CSV" />)
     expect(screen.queryByRole('button', { name: 'Data API' })).not.toBeInTheDocument()
   })

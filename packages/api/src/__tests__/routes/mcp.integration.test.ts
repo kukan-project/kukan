@@ -267,19 +267,24 @@ describe('MCP Server', () => {
         ],
       }
       // A pipeline row already exists (created when the resource was enqueued),
-      // so upsert the schema into its metadata.
-      const metadataJson = JSON.stringify({ schema })
+      // so upsert the schema into its metadata. Queryable needs the preview to
+      // describe the current bytes: resource hash and sourceHash must match.
       await db.execute(sql`
-        INSERT INTO resource_pipeline (resource_id, status, metadata)
-        VALUES (${resource.id}, 'complete', ${metadataJson}::jsonb)
+        UPDATE resource SET hash = 'sha256:live' WHERE id = ${resource.id}
+      `)
+      const metadataJson = JSON.stringify({ schema, sourceHash: 'sha256:live' })
+      await db.execute(sql`
+        INSERT INTO resource_pipeline (resource_id, status, preview_key, metadata)
+        VALUES (${resource.id}, 'complete', 'previews/test.parquet', ${metadataJson}::jsonb)
         ON CONFLICT (resource_id)
-        DO UPDATE SET status = 'complete', metadata = ${metadataJson}::jsonb
+        DO UPDATE SET status = 'complete', preview_key = 'previews/test.parquet', metadata = ${metadataJson}::jsonb
       `)
 
       const result = await mcpToolCall(app, 'get_resource_schema', { id: resource.id })
       const text = result.result.content[0].text as string
 
-      expect(text).toContain('queryable')
+      expect(text).toContain('is queryable')
+      expect(text).toContain('query_resource')
       expect(text).toContain('Rows: 3')
       expect(text).toContain('id: integer, range 1..3')
       expect(text).toContain('name: string (nullable)')
@@ -292,6 +297,40 @@ describe('MCP Server', () => {
       `)
       const keyed = await mcpToolCall(app, 'get_resource_schema', { id: resource.id })
       expect(keyed.result.content[0].text as string).toContain('Primary key: id')
+    })
+
+    it('shows the schema but withholds query guidance when the preview is gone', async () => {
+      const app = mcpApp()
+      const pkg = await createPackage(app, { name: 'ds-purged', title: 'Purged Preview' })
+      const resource = await createResource(app, pkg.id, {
+        name: 'purged.csv',
+        format: 'CSV',
+        url: 'http://example.com/purged.csv',
+      })
+
+      const schema = {
+        rowCount: 2,
+        columns: [{ name: 'id', type: 'integer', nullable: false, nullCount: 0 }],
+      }
+      await db.execute(sql`
+        UPDATE resource SET hash = 'sha256:live' WHERE id = ${resource.id}
+      `)
+      const metadataJson = JSON.stringify({ schema, sourceHash: 'sha256:live' })
+      await db.execute(sql`
+        INSERT INTO resource_pipeline (resource_id, status, preview_key, metadata)
+        VALUES (${resource.id}, 'complete', NULL, ${metadataJson}::jsonb)
+        ON CONFLICT (resource_id)
+        DO UPDATE SET status = 'complete', preview_key = NULL, metadata = ${metadataJson}::jsonb
+      `)
+
+      const result = await mcpToolCall(app, 'get_resource_schema', { id: resource.id })
+      const text = result.result.content[0].text as string
+
+      // Same contract as GET /:id/schema: the columns stay visible, only the
+      // queryable claim and the query guidance drop.
+      expect(text).toContain('not currently queryable')
+      expect(text).toContain('id: integer')
+      expect(text).not.toContain('query_resource')
     })
   })
 

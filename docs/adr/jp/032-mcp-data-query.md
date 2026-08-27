@@ -86,8 +86,11 @@ search_datasets → get_dataset → get_resource_schema → query_resource
 3. 公開経路:
    - API: `GET /api/v1/resources/{id}/schema` — 可視性チェック後、保存済みスキーマを返す。
      スキーマ未生成（非対応フォーマット / 未処理）は 404 ではなく `queryable: false` を含む明示的レスポンス。
-   - MCP: `get_resource_schema` ツール — 列名・型・行数・「`data` という名前のテーブルをクエリする」旨を
-     テキストで返す。
+     `queryable` はクエリ実行可否（プレビュー Parquet 実体 + 非空スキーマ + 現在の内容を記述
+     〔sourceHash 一致〕）と一致し、スキーマの有無とは独立 — プレビュー削除済み・列ゼロの
+     スキーマ・内容差し替え後の残存プレビューでは `schema` を返しつつ `false` になる。
+   - MCP: `get_resource_schema` ツール — 列名・型・行数をテキストで返す。クエリ可能な場合のみ
+     「`data` という名前のテーブルをクエリする」旨とクエリ例を含める（不可の場合は列一覧のみ）。
 4. **後方互換**: 既存リソースは再処理（`reprocess`）で順次スキーマが付与される。一括バックフィルは行わない
    （ADR-029 §7 と同じ方針）。
 

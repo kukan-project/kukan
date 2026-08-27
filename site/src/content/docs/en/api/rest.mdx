@@ -182,7 +182,10 @@ tools offer the same capability for AI agents.
 ```
 
 Resources that cannot be queried (unsupported format, not yet processed) return
-`queryable: false`, `schema: null`. `primaryKey` lists the column names of the
+`queryable: false`, `schema: null`. When a schema exists but there is nothing to
+query (the preview has been purged, the schema has zero columns, or the preview
+has not been regenerated after the content was replaced), `schema` is still
+returned with `queryable: false`. `primaryKey` lists the column names of the
 resource's settled primary key (composite keys in their chosen order), or is
 `null` when none is set. `type` is one of `integer` / `float` / `boolean` / `string` /
 `date` / `timestamp`; `stats` is present only for numeric columns, and integer min/max are

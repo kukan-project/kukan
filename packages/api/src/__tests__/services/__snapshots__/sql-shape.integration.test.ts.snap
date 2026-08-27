@@ -111,13 +111,14 @@ exports[`emitted SQL shape > ResourceVersionService.convertSetAsideVersions > pi
     LEFT JOIN claimed c ON c.id = p.id
     WHERE p.resource_id = ANY($5::uuid[])",
   "commit",
-  "select "resource"."package_id", "resource"."storage_key", "resource"."hash", "resource"."size", "resource"."url_type", "resource_pipeline"."metadata" -> 'schema', (
+  "select "resource"."package_id", "resource"."storage_key", "resource"."hash", "resource"."size", "resource"."url_type", "resource_pipeline"."metadata" -> 'schema', COALESCE(
     "resource_pipeline"."metadata"->>'sourceHash' = "resource"."hash"
     OR (
       "resource_pipeline"."metadata"->>'sourceHash' IS NULL
       AND "resource_pipeline"."status" = 'complete'
       AND exists (select  from "resource_pipeline_step" where ("resource_pipeline_step"."pipeline_id" = "resource_pipeline"."id" and "resource_pipeline_step"."step_name" = $1 and "resource_pipeline_step"."status" = $2))
-    )
+    ),
+    false
   ) from "resource" left join "resource_pipeline" on "resource_pipeline"."resource_id" = "resource"."id" where "resource"."id" = $3 limit $4",
   "update "resource_version" set "state" = $1, "updated" = NOW() where ("resource_version"."resource_id" = $2 and "resource_version"."state" = $3 and EXISTS (SELECT 1 FROM resource_pipeline p WHERE p.id = $4::uuid AND p.claim_owner = $5::uuid FOR SHARE)) returning "version"",
   "UPDATE resource_pipeline
@@ -160,13 +161,14 @@ exports[`emitted SQL shape > ResourceVersionService.countUnversioned > pins the 
 
 exports[`emitted SQL shape > ResourceVersionService.createFirstVersions > pins the scan shape 1`] = `
 [
-  "select "resource"."id", "resource"."package_id", "resource"."url_type", "resource"."hash", "resource"."size", "resource"."storage_key", "resource_pipeline"."metadata" -> 'schema', (
+  "select "resource"."id", "resource"."package_id", "resource"."url_type", "resource"."hash", "resource"."size", "resource"."storage_key", "resource_pipeline"."metadata" -> 'schema', COALESCE(
     "resource_pipeline"."metadata"->>'sourceHash' = "resource"."hash"
     OR (
       "resource_pipeline"."metadata"->>'sourceHash' IS NULL
       AND "resource_pipeline"."status" = 'complete'
       AND exists (select  from "resource_pipeline_step" where ("resource_pipeline_step"."pipeline_id" = "resource_pipeline"."id" and "resource_pipeline_step"."step_name" = $1 and "resource_pipeline_step"."status" = $2))
-    )
+    ),
+    false
   ) from "resource" left join "resource_pipeline" on "resource_pipeline"."resource_id" = "resource"."id" where ("resource"."state" = $3 and "resource"."hash" IS NOT NULL and NOT EXISTS (SELECT 1 FROM "resource_version" rv WHERE rv.resource_id = "resource"."id") and NOT EXISTS (
         SELECT 1 FROM "resource_pipeline" rp
         WHERE rp.resource_id = "resource"."id" AND rp.status IN ('queued', 'processing')

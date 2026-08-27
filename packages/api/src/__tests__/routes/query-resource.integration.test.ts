@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { DuckDBInstance } from '@duckdb/node-api'
-import { resourcePipeline } from '@kukan/db'
+import { eq } from 'drizzle-orm'
+import { resource as resourceTable, resourcePipeline } from '@kukan/db'
 import type { ResourceSchema } from '@kukan/shared'
 import { createTestApp } from '../test-helpers/test-app'
 import {
@@ -101,6 +102,8 @@ async function createQueryableResource(opts?: {
   pipeline?: false
   noSchema?: boolean
   noPreviewKey?: boolean
+  /** Preview left behind by a failed re-interpretation of replaced content. */
+  stale?: boolean
 }) {
   const orgId = await ensureTestOrg()
   const pkgRes = await app.request('/api/v1/packages', {
@@ -121,11 +124,20 @@ async function createQueryableResource(opts?: {
   const resource = await resRes.json()
 
   if (opts?.pipeline !== false) {
+    // Queryable requires the preview to describe the current bytes: the
+    // resource's hash and the pipeline's sourceHash must match.
+    await db
+      .update(resourceTable)
+      .set({ hash: 'sha256:live' })
+      .where(eq(resourceTable.id, resource.id))
+    const sourceHash = opts?.stale ? 'sha256:old' : 'sha256:live'
     await db.insert(resourcePipeline).values({
       resourceId: resource.id,
       status: 'success',
       previewKey: opts?.noPreviewKey ? null : `preview/${resource.id}.parquet`,
-      metadata: opts?.noSchema ? { encoding: 'utf-8' } : { encoding: 'utf-8', schema: SCHEMA },
+      metadata: opts?.noSchema
+        ? { encoding: 'utf-8', sourceHash }
+        : { encoding: 'utf-8', schema: SCHEMA, sourceHash },
     })
   }
   return resource.id as string
@@ -175,6 +187,14 @@ describe('POST /api/v1/resources/:id/query', () => {
 
   it('returns 400 when a schema exists but no preview Parquet was produced', async () => {
     const id = await createQueryableResource({ noPreviewKey: true })
+    const res = await query(app, id, 'SELECT 1')
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 when the preview describes replaced content (stale)', async () => {
+    // A failed re-interpretation keeps the previous preview; querying it would
+    // silently serve the old bytes' data.
+    const id = await createQueryableResource({ stale: true })
     const res = await query(app, id, 'SELECT 1')
     expect(res.status).toBe(400)
   })

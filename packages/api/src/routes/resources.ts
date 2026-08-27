@@ -11,7 +11,7 @@ import { lakeConfigFromEnv } from '@kukan/lake'
 import { ResourceService, omitStoragePointers } from '../services/resource-service'
 import { ResourceVersionService } from '../services/resource-version-service'
 import { VersionDiffService } from '../services/version-diff-service'
-import { PipelineService } from '../services/pipeline-service'
+import { PipelineService, isQueryable } from '../services/pipeline-service'
 import { cancelResourceRun } from '../services/pipeline-claim'
 import { PackageService } from '../services/package-service'
 import { QueryService } from '../services/query-service'
@@ -456,23 +456,24 @@ resourcesRouter.get('/:id/pipeline-status', async (c) => {
 
 // GET /api/v1/resources/:id/schema - Column schema for a tabular resource (ADR-032)
 // Lets clients (and the MCP get_resource_schema tool) discover field names/types
-// before downloading the data. `queryable` is false when no schema exists
-// (non-tabular format, oversize CSV, or not yet processed).
+// before downloading the data. `queryable` matches what POST /:id/query will
+// actually accept: a live preview Parquet plus a non-empty schema. The schema
+// itself is still returned when only the preview is gone (purged version).
 resourcesRouter.get('/:id/schema', async (c) => {
   const id = c.req.param('id')
   const db = c.get('db')
   const user = c.get('user')
   // Same visibility check as preview/download — the schema reveals the data's shape.
   const res = await new ResourceService(db).getByIdWithAccessCheck(id, user)
-  const schema = await new PipelineService(db).getSchema(id)
+  const target = await new PipelineService(db).getQueryTarget(id)
   // The setting, not what the standing version was read under: the public pages
   // mark the key the way the picker's own sample does, and the per-version
   // reading is the versions endpoint's story.
   return c.json({
     id,
-    queryable: schema !== null,
+    queryable: isQueryable(target),
     primaryKey: primaryKeyOf(res.columnSettings),
-    schema,
+    schema: target?.schema ?? null,
   })
 })
 

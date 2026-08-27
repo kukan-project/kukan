@@ -3,7 +3,7 @@
  * Handles enqueue and status queries — Worker-side execution is separate.
  */
 
-import { eq, and, inArray, sql } from 'drizzle-orm'
+import { eq, and, exists, inArray, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { packageTable, resource, resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import { ValidationError, PIPELINE_JOB_TYPE, resourceSchemaSchema } from '@kukan/shared'
@@ -124,33 +124,91 @@ export class PipelineService {
     return { ...pipeline, steps }
   }
 
-  async getSchema(resourceId: string): Promise<ResourceSchema | null> {
-    const [row] = await this.db
-      .select({ metadata: resourcePipeline.metadata })
-      .from(resourcePipeline)
-      .where(eq(resourcePipeline.resourceId, resourceId))
-      .limit(1)
-
-    return parseResourceSchema(row?.metadata)
-  }
-
   /**
    * Resolve the inputs needed to run a server-side query (ADR-032 Part B) in a
-   * single read: the preview Parquet storage key and the validated column schema.
-   * Returns null when the resource has no pipeline row; `previewKey`/`schema` are
-   * individually null when the resource is not queryable (non-tabular, oversize,
-   * or not yet processed).
+   * single read: the preview Parquet storage key, the validated column schema,
+   * and whether they describe the resource's current bytes. Returns null when
+   * the resource has no pipeline row; each field is null when absent. Whether
+   * the whole is queryable is `isQueryable`'s call.
    */
-  async getQueryTarget(
-    resourceId: string
-  ): Promise<{ previewKey: string | null; schema: ResourceSchema | null } | null> {
+  async getQueryTarget(resourceId: string): Promise<QueryTarget | null> {
     const [row] = await this.db
-      .select({ previewKey: resourcePipeline.previewKey, metadata: resourcePipeline.metadata })
+      .select({
+        previewKey: resourcePipeline.previewKey,
+        metadata: resourcePipeline.metadata,
+        describesLiveContent: schemaDescribesLiveContent(this.db),
+      })
       .from(resourcePipeline)
+      .innerJoin(resource, eq(resource.id, resourcePipeline.resourceId))
       .where(eq(resourcePipeline.resourceId, resourceId))
       .limit(1)
 
     if (!row) return null
-    return { previewKey: row.previewKey, schema: parseResourceSchema(row.metadata) }
+    return {
+      previewKey: row.previewKey,
+      schema: parseResourceSchema(row.metadata),
+      describesLiveContent: row.describesLiveContent,
+    }
   }
+}
+
+export interface QueryTarget {
+  previewKey: string | null
+  schema: ResourceSchema | null
+  /** Whether the preview/schema were built from the bytes the resource holds now. */
+  describesLiveContent: boolean
+}
+
+/**
+ * Whether `metadata.schema` (and the preview beside it) was built from the
+ * bytes the resource holds now.
+ *
+ * **A failed interpretation keeps the previous preview and schema without
+ * failing the run**, so after a content replacement the stored pair can
+ * describe the old bytes. `sourceHash` is the proof; the fallback trusts a
+ * completed run for previews from before the source hash existed — all of
+ * which predate the rename (ADR-046), hence `'extract'`, not `'interpret'`.
+ */
+export function schemaDescribesLiveContent(db: Database) {
+  // COALESCE: a null resource hash makes the comparison NULL, not false
+  return sql<boolean>`COALESCE(
+    ${resourcePipeline.metadata}->>'sourceHash' = ${resource.hash}
+    OR (
+      ${resourcePipeline.metadata}->>'sourceHash' IS NULL
+      AND ${resourcePipeline.status} = 'complete'
+      AND ${exists(
+        db
+          .select({})
+          .from(resourcePipelineStep)
+          .where(
+            and(
+              eq(resourcePipelineStep.pipelineId, resourcePipeline.id),
+              eq(resourcePipelineStep.stepName, 'extract'),
+              eq(resourcePipelineStep.status, 'complete')
+            )
+          )
+      )}
+    ),
+    false
+  )`
+}
+
+/**
+ * Single source of truth for "can this resource be queried" (ADR-032): a
+ * preview Parquet plus a schema with at least one column, both describing the
+ * resource's current content. A persisted schema alone is not enough — an
+ * interpretation that produced no table stores an empty schema with no
+ * Parquet, purging a version can drop the preview while the schema stays
+ * behind, and a replacement whose interpretation failed keeps the previous
+ * (now stale) pair.
+ */
+export function isQueryable(
+  target: QueryTarget | null
+): target is QueryTarget & { previewKey: string; schema: ResourceSchema } {
+  return (
+    target?.previewKey != null &&
+    target.schema != null &&
+    target.schema.columns.length > 0 &&
+    target.describesLiveContent
+  )
 }

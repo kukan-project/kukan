@@ -15,7 +15,7 @@ import { ValidationError, createLogger, type Logger } from '@kukan/shared'
 import type { Database } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { ResourceService } from './resource-service'
-import { PipelineService } from './pipeline-service'
+import { PipelineService, isQueryable } from './pipeline-service'
 import type { AuthUser } from '../auth/permissions'
 import { runSandboxedQuery } from './query/duckdb-sandbox'
 import { assertReadOnlySql } from './query/sql-guard'
@@ -75,7 +75,7 @@ export class QueryService {
 
     // Resolve the preview Parquet + validated schema in one read.
     const target = await new PipelineService(this.db).getQueryTarget(resourceId)
-    if (!target?.previewKey || !target.schema) {
+    if (!isQueryable(target)) {
       throw new ValidationError(
         'Resource is not queryable: no tabular preview is available (only processed CSV/TSV resources can be queried)'
       )

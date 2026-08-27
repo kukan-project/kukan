@@ -179,6 +179,8 @@ CSV/TSV リソース（パイプラインでプレビュー Parquet を生成済
 ```
 
 クエリ不可のリソース（非対応フォーマット・未処理）は `queryable: false`, `schema: null` を返します。
+スキーマはあるがクエリの実体が無い場合（プレビューが削除済み・列ゼロのスキーマ・
+内容差し替え後にプレビューが未再生成）は、`queryable: false` のまま `schema` を返します。
 `primaryKey` はリソースに確定された主キーの列名リスト（複合キーは指定順)で、未設定なら `null` です。
 `type` は `integer` / `float` / `boolean` / `string` / `date` / `timestamp`。`stats` は数値列のみで、
 整数の min/max は十進文字列です。

@@ -948,9 +948,9 @@ describe('revertLiveContent — the middle rung (ADR-044 §4)', () => {
 
   it('points the cached interpretation at the version it restored', async () => {
     // The columns live on the version, so the restore has them: waiting for the
-    // rebuild leaves `getSchema` answering with the retracted version's columns,
-    // and the suggestion path reads it without the preview key whose absence
-    // makes the query path refuse.
+    // rebuild leaves the stored schema answering with the retracted version's
+    // columns, and the suggestion path reads it without the preview key whose
+    // absence makes the query path refuse.
     await addVersion(1, 'sha256:v1', 'active', 'csv', columns('a'))
     await db
       .insert(resourcePipeline)

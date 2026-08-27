@@ -242,7 +242,7 @@ describe('PipelineService', () => {
     })
   })
 
-  describe('getSchema (ADR-032)', () => {
+  describe('getQueryTarget (ADR-032)', () => {
     const validSchema = {
       rowCount: 2,
       columns: [
@@ -253,31 +253,58 @@ describe('PipelineService', () => {
 
     it('returns null when no pipeline exists', async () => {
       const service = new PipelineService(db)
-      expect(await service.getSchema(testResId)).toBeNull()
+      expect(await service.getQueryTarget(testResId)).toBeNull()
     })
 
-    it('returns null when metadata has no schema', async () => {
+    it('returns a null schema when metadata has none', async () => {
       const service = new PipelineService(db, createMockQueue())
       await service.enqueue(testResId)
       await db.execute(sql`
         UPDATE resource_pipeline SET metadata = '{"encoding":"UTF-8"}'::jsonb
         WHERE resource_id = ${testResId}
       `)
-      expect(await service.getSchema(testResId)).toBeNull()
+      expect(await service.getQueryTarget(testResId)).toEqual({
+        previewKey: null,
+        schema: null,
+        describesLiveContent: false,
+      })
     })
 
-    it('returns the parsed schema when present', async () => {
+    it('returns the preview key and parsed schema when present and live', async () => {
       const service = new PipelineService(db, createMockQueue())
       await service.enqueue(testResId)
+      await db.execute(sql`UPDATE resource SET hash = 'sha256:live' WHERE id = ${testResId}`)
       await db.execute(sql`
         UPDATE resource_pipeline
-        SET metadata = ${JSON.stringify({ encoding: 'UTF-8', schema: validSchema })}::jsonb
+        SET preview_key = 'previews/test.parquet',
+            metadata = ${JSON.stringify({ encoding: 'UTF-8', schema: validSchema, sourceHash: 'sha256:live' })}::jsonb
         WHERE resource_id = ${testResId}
       `)
-      expect(await service.getSchema(testResId)).toEqual(validSchema)
+      expect(await service.getQueryTarget(testResId)).toEqual({
+        previewKey: 'previews/test.parquet',
+        schema: validSchema,
+        describesLiveContent: true,
+      })
     })
 
-    it('returns null when the stored schema is malformed', async () => {
+    it('reports stale when the sourceHash no longer matches the resource hash', async () => {
+      const service = new PipelineService(db, createMockQueue())
+      await service.enqueue(testResId)
+      await db.execute(sql`UPDATE resource SET hash = 'sha256:replaced' WHERE id = ${testResId}`)
+      await db.execute(sql`
+        UPDATE resource_pipeline
+        SET preview_key = 'previews/test.parquet',
+            metadata = ${JSON.stringify({ encoding: 'UTF-8', schema: validSchema, sourceHash: 'sha256:old' })}::jsonb
+        WHERE resource_id = ${testResId}
+      `)
+      expect(await service.getQueryTarget(testResId)).toEqual({
+        previewKey: 'previews/test.parquet',
+        schema: validSchema,
+        describesLiveContent: false,
+      })
+    })
+
+    it('returns a null schema when the stored schema is malformed', async () => {
       const service = new PipelineService(db, createMockQueue())
       await service.enqueue(testResId)
       await db.execute(sql`
@@ -285,7 +312,11 @@ describe('PipelineService', () => {
         SET metadata = '{"schema":{"columns":"not-an-array"}}'::jsonb
         WHERE resource_id = ${testResId}
       `)
-      expect(await service.getSchema(testResId)).toBeNull()
+      expect(await service.getQueryTarget(testResId)).toEqual({
+        previewKey: null,
+        schema: null,
+        describesLiveContent: false,
+      })
     })
   })
 })

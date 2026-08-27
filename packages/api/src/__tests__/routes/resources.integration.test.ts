@@ -1088,14 +1088,28 @@ describe('Resources API Routes', () => {
     }
 
     // A pipeline row already exists (created when the resource was enqueued),
-    // so upsert the schema into its metadata.
-    async function storeSchema(resourceId: string) {
+    // so upsert the schema into its metadata. Queryable requires a live preview
+    // Parquet describing the current content, so the default fixture stores a
+    // preview key and a sourceHash matching the resource's hash.
+    async function storeSchema(
+      resourceId: string,
+      {
+        previewKey = 'previews/test.parquet',
+        storedSchema = schema,
+        sourceHash = 'sha256:live',
+      }: { previewKey?: string | null; storedSchema?: typeof schema; sourceHash?: string } = {}
+    ) {
+      await db
+        .update(resourceTable)
+        .set({ hash: 'sha256:live' })
+        .where(eq(resourceTable.id, resourceId))
+      const metadata = { schema: storedSchema, sourceHash }
       await db
         .insert(resourcePipeline)
-        .values({ resourceId, status: 'complete', metadata: { schema } })
+        .values({ resourceId, status: 'complete', previewKey, metadata })
         .onConflictDoUpdate({
           target: resourcePipeline.resourceId,
-          set: { status: 'complete', metadata: { schema } },
+          set: { status: 'complete', previewKey, metadata },
         })
     }
 
@@ -1123,6 +1137,55 @@ describe('Resources API Routes', () => {
       expect(await res.json()).toEqual({
         id: resource.id,
         queryable: true,
+        primaryKey: null,
+        schema,
+      })
+    })
+
+    it('returns queryable=false for an empty schema (interpretation produced no table)', async () => {
+      const pkg = await createPackage('schema-empty-pkg')
+      const resource = await createResource(pkg.id, { name: 'ragged.csv' })
+      const empty = { rowCount: 0, columns: [] }
+      await storeSchema(resource.id, { previewKey: null, storedSchema: empty })
+
+      const res = await app.request(`/api/v1/resources/${resource.id}/schema`)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({
+        id: resource.id,
+        queryable: false,
+        primaryKey: null,
+        schema: empty,
+      })
+    })
+
+    it('returns queryable=false when the preview describes replaced content (stale)', async () => {
+      const pkg = await createPackage('schema-stale-pkg')
+      const resource = await createResource(pkg.id, { name: 'replaced.csv' })
+      // A failed re-interpretation keeps the previous preview/schema; their
+      // sourceHash no longer matches the resource's current hash.
+      await storeSchema(resource.id, { sourceHash: 'sha256:old' })
+
+      const res = await app.request(`/api/v1/resources/${resource.id}/schema`)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({
+        id: resource.id,
+        queryable: false,
+        primaryKey: null,
+        schema,
+      })
+    })
+
+    it('returns queryable=false when the preview is gone but the schema remains (purged version)', async () => {
+      const pkg = await createPackage('schema-purged-pkg')
+      const resource = await createResource(pkg.id, { name: 'purged.csv' })
+      await storeSchema(resource.id, { previewKey: null })
+
+      const res = await app.request(`/api/v1/resources/${resource.id}/schema`)
+      expect(res.status).toBe(200)
+      // The schema stays readable for display; only the queryable claim drops.
+      expect(await res.json()).toEqual({
+        id: resource.id,
+        queryable: false,
         primaryKey: null,
         schema,
       })

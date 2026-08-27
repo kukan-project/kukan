@@ -7,7 +7,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { primaryKeyOf } from '@kukan/shared'
 import type { Database } from '@kukan/db'
 import { ResourceService } from '../../services/resource-service'
-import { PipelineService } from '../../services/pipeline-service'
+import { PipelineService, isQueryable } from '../../services/pipeline-service'
 import type { AuthUser } from '../../auth/permissions'
 
 interface ResourceToolsContext {
@@ -65,24 +65,33 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
       const service = new ResourceService(db)
       const res = await service.getByIdWithAccessCheck(id, user)
 
-      const schema = await new PipelineService(db).getSchema(id)
-      if (!schema) {
+      const target = await new PipelineService(db).getQueryTarget(id)
+      const schema = target?.schema
+      if (!schema || schema.columns.length === 0) {
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Resource ${id} is not queryable: no tabular schema is available (only CSV/TSV resources within the size limit have one).`,
+              text: `Resource ${id} is not queryable: no tabular schema is available (only processed CSV/TSV resources within the size limit have one).`,
             },
           ],
         }
       }
+
+      // Same predicate as POST /:id/query — never tell an agent a resource is
+      // queryable when the follow-up query_resource call would only 400. The
+      // columns are still worth showing (same contract as GET /:id/schema);
+      // only the query guidance is withheld.
+      const queryable = isQueryable(target)
 
       // The same fact GET /:id/schema serves (the spec treats the two as one
       // surface) — and a keyed query is exactly what an agent wants it for.
       const primaryKey = primaryKeyOf(res.columnSettings)
       const firstCol = schema.columns[0]?.name ?? 'column'
       const text = [
-        `Resource ${id} is queryable.`,
+        queryable
+          ? `Resource ${id} is queryable.`
+          : `Resource ${id} is not currently queryable (its preview data is unavailable or does not reflect the current content). Schema shown for reference only.`,
         `Rows: ${schema.rowCount}`,
         ...(primaryKey ? [`Primary key: ${primaryKey.join(', ')}`] : []),
         `Columns (${schema.columns.length}):`,
@@ -90,12 +99,16 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
           const range = col.stats ? `, range ${col.stats.min}..${col.stats.max}` : ''
           return `  - ${col.name}: ${col.type}${col.nullable ? ' (nullable)' : ''}${range}`
         }),
-        '',
-        'To query the data, call query_resource with DuckDB SQL over a table named `data`.',
-        'Only a single read-only SELECT/WITH statement is allowed. Double-quote column',
-        'names that contain spaces or non-ASCII characters. Use aggregations or LIMIT —',
-        'large result sets are truncated.',
-        `Example: SELECT "${firstCol}", count(*) AS n FROM data GROUP BY "${firstCol}" ORDER BY n DESC LIMIT 20`,
+        ...(queryable
+          ? [
+              '',
+              'To query the data, call query_resource with DuckDB SQL over a table named `data`.',
+              'Only a single read-only SELECT/WITH statement is allowed. Double-quote column',
+              'names that contain spaces or non-ASCII characters. Use aggregations or LIMIT —',
+              'large result sets are truncated.',
+              `Example: SELECT "${firstCol}", count(*) AS n FROM data GROUP BY "${firstCol}" ORDER BY n DESC LIMIT 20`,
+            ]
+          : []),
       ].join('\n')
 
       return { content: [{ type: 'text' as const, text }] }

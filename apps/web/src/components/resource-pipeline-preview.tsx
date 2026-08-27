@@ -57,6 +57,7 @@ export function ResourcePipelinePreview({
   // dropped-rows note, the key marking in both preview modes, and the fields
   // list. Only tabular formats have any of that to say.
   const { data: schemaData } = useFetch<{
+    queryable: boolean
     schema: ResourceSchema | null
     primaryKey: string[] | null
   }>(
@@ -87,9 +88,7 @@ export function ResourcePipelinePreview({
           )}
         </div>
         <div className="flex items-center gap-2">
-          {/* An empty schema (interpretation produced no table) is persisted too,
-              and querying it only 400s — so require at least one column. */}
-          {schemaData?.schema && schemaData.schema.columns.length > 0 && (
+          {schemaData?.queryable && schemaData.schema && (
             <DataApiDialog resourceId={resourceId} schema={schemaData.schema} />
           )}
           {canManage && (

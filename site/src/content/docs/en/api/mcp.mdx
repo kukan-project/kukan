@@ -101,9 +101,11 @@ Get resource metadata. Returns the download URL for uploaded files.
 
 Get a resource's column schema (names, types, nullability, row count, and min/max for
 numeric columns). When the resource has a settled primary key it is reported on a
-`Primary key:` line. Only CSV/TSV resources with a generated preview are queryable. The output
-names the query table `data` and includes an example query, so the agent can write SQL after
-inspecting the schema.
+`Primary key:` line. Only CSV/TSV resources with a generated preview are queryable. When the
+resource is queryable, the output names the query table `data` and includes an example query,
+so the agent can write SQL after inspecting the schema; when it is not (the preview is gone
+or does not reflect the current content), the columns are still listed for reference but the
+query guidance is withheld.
 
 | Parameter | Type   | Required | Description   |
 | --------- | ------ | -------- | ------------- |

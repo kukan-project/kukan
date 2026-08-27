@@ -8,13 +8,7 @@ import { randomUUID } from 'node:crypto'
 import { digestStream } from '@kukan/shared/hash-node'
 import { eq, and, countDistinct, desc, exists, inArray, ne, sql } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
-import {
-  resource,
-  resourceVersion,
-  resourcePipeline,
-  resourcePipelineStep,
-  auditLog,
-} from '@kukan/db'
+import { resource, resourceVersion, resourcePipeline, auditLog } from '@kukan/db'
 import {
   ConflictError,
   getStorageKey,
@@ -67,7 +61,7 @@ import {
   type ResourceClaim,
 } from './pipeline-claim'
 import { copyObject, publishLiveContent, PARKED_UNTIL, ownedByVersion } from './storage-pointer'
-import { PipelineService } from './pipeline-service'
+import { PipelineService, schemaDescribesLiveContent } from './pipeline-service'
 import { scanLake } from './query/lake-scan'
 import { markContentUnindexed } from './content-index-record'
 
@@ -376,44 +370,14 @@ function setAside() {
   return eq(resourceVersion.state, 'superseded')
 }
 
-/**
- * Whether {@link pipelineSchema} was built from the bytes the resource holds
- * now.
- *
- * **A failed interpretation keeps the previous preview and schema without
- * failing the run**, so a migration copying it unchecked pins an older
- * content's columns onto a version of different bytes. Worse where the stale
- * value is a schema with no columns: the layer-2 sweep passes over those for
- * good (`pendingLakeIngestQuery`), so the version would never be loaded and
- * nothing would say why. Unproven, a migration writes no schema and leaves it
- * to the ordinary re-interpretation, which is a path that exists.
- *
- * `'extract'` deliberately: this reads rows already written, and the fallback
- * only applies to previews from before the source hash existed — all of which
- * predate the rename (ADR-046). Matching `'interpret'` here would find none of
- * them.
- */
-function schemaDescribesLiveContent(db: Database) {
-  return sql<boolean>`(
-    ${resourcePipeline.metadata}->>'sourceHash' = ${resource.hash}
-    OR (
-      ${resourcePipeline.metadata}->>'sourceHash' IS NULL
-      AND ${resourcePipeline.status} = 'complete'
-      AND ${exists(
-        db
-          .select({})
-          .from(resourcePipelineStep)
-          .where(
-            and(
-              eq(resourcePipelineStep.pipelineId, resourcePipeline.id),
-              eq(resourcePipelineStep.stepName, 'extract'),
-              eq(resourcePipelineStep.status, 'complete')
-            )
-          )
-      )}
-    )
-  )`
-}
+// A migration copying the schema unchecked would pin an older content's
+// columns onto a version of different bytes — worse where the stale value is
+// a schema with no columns: the layer-2 sweep passes over those for good
+// (`pendingLakeIngestQuery`), so the version would never be loaded and
+// nothing would say why. Unproven, a migration writes no schema and leaves it
+// to the ordinary re-interpretation, which is a path that exists.
+// The check itself lives with the pipeline reads: `schemaDescribesLiveContent`
+// (pipeline-service), shared with the queryable predicate (ADR-032).
 
 /**
  * Versions that layer 2 has not loaded yet (ADR-043 layer 2, ADR-046).
@@ -2859,8 +2823,9 @@ export class ResourceVersionService {
    * `resource.hash`. Left alone, restoring puts back the content and leaves both
    * describing the version just retracted: the same half-restore that carrying
    * `format` across avoids, and the one the caller cannot see, because the
-   * suggestion path reads the schema on its own (`getSchema`) without the
-   * preview key whose absence makes the query path refuse.
+   * suggestion path reads the schema on its own (`parseResourceSchema` over
+   * the pipeline metadata) without the preview key whose absence makes the
+   * query path refuse.
    *
    * Taken from the version rather than derived again. A version file never
    * changes, so its interpretation cannot have — the rebuild the caller queues
