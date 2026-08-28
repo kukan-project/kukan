@@ -27,6 +27,7 @@ const t = {
     docs: 'ドキュメント',
     readDocs: 'ドキュメントを読む',
     viewOnGitHub: 'GitHub で見る',
+    liveDemo: 'デモサイトを見る',
     featuresTitle: '主な特長',
     techTitle: '技術スタック',
     ctaTitle: 'さっそく始めてみましょう',
@@ -110,6 +111,7 @@ const t = {
     docs: 'Docs',
     readDocs: 'Read the Docs',
     viewOnGitHub: 'View on GitHub',
+    liveDemo: 'View the Live Demo',
     featuresTitle: 'Key Features',
     techTitle: 'Tech Stack',
     ctaTitle: 'Get Started',
@@ -257,7 +259,10 @@ const techStack = [
         <nav class="nav">
           <a href={`${base}en/`} class="nav-link" data-i18n="docs">{t.en.docs}</a>
           <button type="button" class="nav-link lang-switch" data-i18n="switchLang" id="lang-switch">{t.en.switchLang}</button>
-          <a href="https://github.com/kukan-project/kukan" class="nav-btn">GitHub</a>
+          <a href="https://github.com/kukan-project/kukan" target="_blank" rel="noopener" class="nav-btn">
+            GitHub
+            <svg class="ext-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
+          </a>
         </nav>
       </div>
     </header>
@@ -270,12 +275,46 @@ const techStack = [
         <p class="hero-tagline" data-i18n="tagline">{t.en.tagline}</p>
         <p class="hero-desc" data-i18n-html="heroDesc">{t.en.heroDesc}</p>
         <div class="hero-actions">
-          <a href={`${base}en/`} class="btn-primary" data-i18n="readDocs" id="docs-link">{t.en.readDocs}</a>
-          <a href="https://github.com/kukan-project/kukan" class="btn-outline" data-i18n="viewOnGitHub">{t.en.viewOnGitHub}</a>
-          <a href="https://github.com/kukan-project/kukan/releases" class="btn-outline btn-stacked">
-            <span data-i18n="releaseNotes">{t.en.releaseNotes}</span>
-            <small class="btn-sub">{releasedOn ? `v${version} (${releasedOn})` : `v${version}`}</small>
-          </a>
+          <div class="hero-actions-row">
+            <a href={`${base}en/`} class="btn-primary" data-i18n="readDocs" id="docs-link">{t.en.readDocs}</a>
+            <a href="https://demo.kukan.dev/" target="_blank" rel="noopener" class="btn-outline">
+              <span data-i18n="liveDemo">{t.en.liveDemo}</span>
+              <svg class="ext-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
+            </a>
+          </div>
+          <div class="hero-actions-row">
+            <a href="https://github.com/kukan-project/kukan" target="_blank" rel="noopener" class="btn-outline">
+              <span data-i18n="viewOnGitHub">{t.en.viewOnGitHub}</span>
+              <svg class="ext-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
+            </a>
+            <a href="https://github.com/kukan-project/kukan/releases" target="_blank" rel="noopener" class="btn-outline btn-stacked">
+              <span>
+                <span data-i18n="releaseNotes">{t.en.releaseNotes}</span>
+                <svg class="ext-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
+              </span>
+              <small class="btn-sub">{releasedOn ? `v${version} (${releasedOn})` : `v${version}`}</small>
+            </a>
+          </div>
+        </div>
+        <div class="hero-visual" aria-hidden="true">
+          <div class="browser-frame bw-csv">
+            <div class="bf-bar">
+              <span class="bf-dot bf-red"></span>
+              <span class="bf-dot bf-yellow"></span>
+              <span class="bf-dot bf-green"></span>
+              <span class="bf-url">demo.kukan.dev</span>
+            </div>
+            <img src={`${base}screens/demo-table.webp`} alt="" width="2392" height="1836" />
+          </div>
+          <div class="browser-frame bw-map">
+            <div class="bf-bar">
+              <span class="bf-dot bf-red"></span>
+              <span class="bf-dot bf-yellow"></span>
+              <span class="bf-dot bf-green"></span>
+              <span class="bf-url">demo.kukan.dev</span>
+            </div>
+            <img src={`${base}screens/demo-map.webp`} alt="" width="2392" height="1576" />
+          </div>
         </div>
       </div>
     </section>
@@ -367,7 +406,10 @@ const techStack = [
         <p class="cta-desc" data-i18n="ctaDesc">{t.en.ctaDesc}</p>
         <a href={`${base}en/`} class="btn-primary btn-lg" data-i18n="ctaButton" id="cta-link">{t.en.ctaButton}</a>
         <p class="cta-note">
-          <a href="https://note.com/masagon73/n/ncfb409f3b4a9" target="_blank" rel="noopener noreferrer" data-i18n="ctaNote">{t.en.ctaNote}</a>
+          <a href="https://note.com/masagon73/n/ncfb409f3b4a9" target="_blank" rel="noopener noreferrer">
+            <span data-i18n="ctaNote">{t.en.ctaNote}</span>
+            <svg class="ext-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
+          </a>
         </p>
       </div>
     </section>
@@ -525,7 +567,7 @@ const techStack = [
 
       /* Hero */
       .hero {
-        padding: 6rem 1rem;
+        padding: 3.5rem 1rem 5rem;
         text-align: center;
         background: linear-gradient(to bottom, hsl(214 81% 97%), #fff);
       }
@@ -534,7 +576,7 @@ const techStack = [
         margin: 0 auto;
       }
       .hero-logo {
-        margin-bottom: 2rem;
+        margin-bottom: 1.25rem;
       }
       .hero-title {
         font-size: 3rem;
@@ -551,16 +593,23 @@ const techStack = [
         font-size: 1.75rem;
         font-weight: 600;
         color: var(--dark);
-        margin-bottom: 2rem;
+        margin-bottom: 1.5rem;
       }
       .hero-desc {
         font-size: 1.25rem;
         color: #64748b;
         max-width: 38rem;
-        margin: 0 auto 2.5rem;
+        margin: 0 auto 2rem;
         line-height: 1.7;
       }
       .hero-actions {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+      }
+
+      .hero-actions-row {
         display: flex;
         gap: 1rem;
         justify-content: center;
@@ -671,6 +720,89 @@ const techStack = [
       }
 
       /* Features */
+      .hero-visual {
+        position: relative;
+        max-width: 1280px;
+        margin: 3rem auto 0;
+        aspect-ratio: 1280 / 640;
+      }
+      .hero-visual::before {
+        content: '';
+        position: absolute;
+        inset: -6% -4%;
+        background: radial-gradient(ellipse at center, hsl(214 81% 70% / 0.25), transparent 65%);
+        filter: blur(24px);
+      }
+      .browser-frame {
+        position: absolute;
+        border-radius: 0.625rem;
+        border: 1px solid hsl(215 25% 85%);
+        background: #fff;
+        overflow: hidden;
+      }
+      .bw-csv {
+        width: 60%;
+        left: 0;
+        top: 0;
+        box-shadow: 0 20px 48px -20px hsl(214 50% 30% / 0.3);
+      }
+      .bw-map {
+        width: 60%;
+        right: 0;
+        top: 14%;
+        z-index: 2;
+        box-shadow: 0 32px 64px -24px hsl(214 55% 30% / 0.4);
+      }
+      .browser-frame img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .bf-bar {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.5rem 0.875rem;
+        background: #f1f5f9;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .bf-dot {
+        width: 0.6rem;
+        height: 0.6rem;
+        border-radius: 50%;
+      }
+      .bf-red {
+        background: #f87171;
+      }
+      .bf-yellow {
+        background: #fbbf24;
+      }
+      .bf-green {
+        background: #34d399;
+      }
+      .ext-icon {
+        display: inline-block;
+        vertical-align: -0.1em;
+        margin-left: 0.3rem;
+        opacity: 0.6;
+      }
+      .bf-url {
+        flex: 1;
+        max-width: 55%;
+        margin: 0 auto;
+        text-align: center;
+        font-size: 0.72rem;
+        color: #64748b;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 999px;
+        padding: 0.1rem 0.75rem;
+      }
+      @media (max-width: 640px) {
+        .hero-visual {
+          margin-top: 2.5rem;
+        }
+      }
       .features {
         padding: 4.5rem 1rem 3rem;
       }
