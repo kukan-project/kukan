@@ -6,6 +6,28 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.19.0] - 2026-08-28
+
+**Highlights**
+
+- Table preview and row-level versioning now cover every CSV/TSV the catalog accepts: the interpretation cap rose from 50 MB to 100 MB, matching the upload and URL-fetch limits, so there is no longer a size band where a file can be registered but gets no table preview, no row-level diff and no Data API.
+
+**Features**
+
+- feat(pipeline): raise the parquet interpretation cap to the upload limit (#505) — CSV/TSV files between 50 MB and 100 MB now get a table preview, DuckLake row-level versioning and diffs, and Data API queries. Measured before raising: a 100 MB CSV interprets in about 2 seconds and every DuckLake operation on it stays under half a second at the production memory limits. No migration is needed — the hourly sweep picks up already-registered files in that band by itself after the upgrade.
+- feat(web): add brand-controlled noindex robots meta tag (#504) — a brand can set `noindex: true` in its brand config to emit a site-wide `noindex, nofollow` robots meta tag, for demo or staging deployments that should stay out of search engines. Crawling itself stays allowed, so the meta tag remains visible to crawlers.
+
+---
+
+**ハイライト**
+
+- テーブルプレビューと行レベルの版管理が、カタログに登録できるすべての CSV/TSV をカバーするようになりました。解釈の上限を 50 MB から 100 MB に引き上げてアップロード・外部 URL 取得の上限と揃えたため、「登録はできるのにテーブルプレビューも行レベル差分も Data API も使えない」サイズ帯がなくなりました。
+
+**機能**
+
+- feat(pipeline): Parquet 解釈の上限をアップロード上限まで引き上げ (#505) — 50〜100 MB の CSV/TSV でもテーブルプレビュー・DuckLake の行レベル版管理と差分・Data API クエリが使えるようになりました。引き上げ前に計測済みで、100 MB の CSV の解釈は約 2 秒、DuckLake の各操作は本番のメモリ制限下で 0.5 秒未満です。マイグレーションは不要です — アップグレード後、毎時の sweep が該当サイズ帯の登録済みファイルを自動で取り込み直します
+- feat(web): ブランド設定によるサイト全体の noindex 指定 (#504) — ブランド設定で `noindex: true` を指定すると、サイト全体に `noindex, nofollow` の robots メタタグを出力します。検索エンジンに載せたくないデモ・ステージング環境向けの機能です。クロール自体は許可したままにするため、メタタグはクローラーから見える状態を保ちます
+
 ## [0.18.0] - 2026-08-27
 
 **Highlights**
