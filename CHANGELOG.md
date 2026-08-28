@@ -6,6 +6,26 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.19.1] - 2026-08-28
+
+**Highlights**
+
+- The landing page now leads straight to the live demo: a "View the Live Demo" button in the hero, and a hero visual built from real demo screens — a CSV resource page with its table preview and a GeoJSON resource page with its map preview, framed as browser windows.
+
+**Features**
+
+- feat(site): showcase the live demo on the landing page (#507) — the hero buttons regroup into two rows with a live-demo link, every external link opens in a new tab and carries an external-link icon, and two browser-framed screenshots of the demo site cascade below the hero. The screenshots are captured from the Japanese UI and shipped as lazy-loaded WebP with fixed dimensions, so the page stays light and layout-stable.
+
+---
+
+**ハイライト**
+
+- LP からデモサイトへ直接たどり着けるようになりました。ヒーローに「デモサイトを見る」ボタンを追加し、デモの実画面 — CSV リソースページのテーブルプレビューと GeoJSON リソースページの地図プレビュー — をブラウザウィンドウ風にあしらったビジュアルを掲載しています。
+
+**機能**
+
+- feat(site): LP でライブデモを紹介 (#507) — ヒーローのボタンを 2 段組に再構成してデモへのリンクを追加し、外部リンクはすべて別タブで開くようにして外部リンクアイコンを付けました。ヒーロー直下にはデモサイトの実画面 2 枚をブラウザフレーム付きで重ねて配置しています。スクリーンショットは日本語 UI で撮影し、遅延読み込みの WebP + サイズ固定で軽さとレイアウト安定性を保っています
+
 ## [0.19.0] - 2026-08-28
 
 **Highlights**
