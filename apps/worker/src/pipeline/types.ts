@@ -132,7 +132,7 @@ export interface PipelineContext {
    *
    * Asked by a run that created no version — the same content arriving again.
    * The version file it would read is immutable (ADR-046), so an interpretation
-   * of it cannot come out differently the second time, and a 50MB CSV would be
+   * of it cannot come out differently the second time, and a 100MB CSV would be
    * downloaded, run through DuckDB, written as Parquet and uploaded to arrive at
    * the file that is already there.
    *

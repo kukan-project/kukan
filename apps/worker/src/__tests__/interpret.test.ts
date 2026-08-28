@@ -397,7 +397,7 @@ describe('executeInterpret', () => {
   it('refuses a CSV too wide to preview without leaving it outstanding', async () => {
     // Throwing here left the version with no schema, which is how "nothing has
     // interpreted this yet" is written down — so the hourly sweep handed the
-    // file back every hour, forever, and every task read up to 50MB of it to
+    // file back every hour, forever, and every task read up to 100MB of it to
     // reach the same exception. The width is a property of the file, so
     // no retry can reach a different answer.
     const wide = `${Array.from({ length: MAX_CSV_COLUMNS + 1 }, (_, i) => `c${i}`).join(',')}\n`

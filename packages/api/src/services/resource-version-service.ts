@@ -467,7 +467,7 @@ function pendingLakeIngestQuery(only?: { resourceId: string; version?: number })
  * The same predicate the sweep uses, narrowed to one version — not a second
  * opinion. Asked by the handler before it reads anything: every worker task
  * runs the hourly sweep, so the same version arrives several times over, and
- * all but one of those would otherwise download and interpret up to 50MB to
+ * all but one of those would otherwise download and interpret up to 100MB to
  * find out the work was already done.
  */
 export async function pendingLakeVersionSource(

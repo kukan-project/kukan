@@ -23,7 +23,7 @@ import { ConflictError } from '@kukan/shared'
  * take it (15 min, ADR-044).
  *
  * Sized against the longest single step rather than a whole run: Fetch is
- * capped at 30 s by its abort signal, Interpret's input at 50MB of CSV, Version
+ * capped at 30 s by its abort signal, Interpret's input at 100MB of CSV, Version
  * is a server-side copy, and Index chunks and indexes — all expected in the
  * order of minutes. Several times over that, so a run that is merely slow is
  * never taken from. Derived from those caps, not measured in production.

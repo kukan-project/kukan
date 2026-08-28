@@ -103,7 +103,7 @@ no metric equivalent to "N rows changed" is shown either (§7-2).
 ## 3. Architecture Overview
 
 ```
-Layer 2 (this spec): DuckLake (tabular resources only, CSV/TSV, from ≤50MB)
+Layer 2 (this spec): DuckLake (tabular resources only, CSV/TSV, from ≤100MB)
   catalog     a dedicated schema in the existing PostgreSQL (e.g. ducklake)  ← managed by the DuckLake extension, outside Drizzle
   data        a dedicated prefix in the existing bucket (e.g. lake/)          ← Parquet bodies, immutable, append-only
   table       res_{resourceId with hyphens removed}                           ← derived mechanically from resource.id
@@ -192,7 +192,7 @@ api=read / worker=write may touch DuckLake).
 Add `apps/worker/src/pipeline/steps/lake.ts` and insert it **after the Version step** in
 `processResource` (layer 2 comes once the layer-1 version is settled).
 
-- **Targets**: tabular formats (CSV/TSV, ≤50MB — the same set that Parquet generation targets
+- **Targets**: tabular formats (CSV/TSV, ≤100MB — the same set that Parquet generation targets
   today). Everything else is skipped.
 - **Input**: it only runs when the Version step captured a new version (vN) this time round. The
   type inference result from Extract (`ResourceSchema`) is used as the column types.
@@ -2649,7 +2649,7 @@ implementation, and left as prose they would go quietly stale with DuckLake upda
    "v1's history with it" was wrong: the retained snapshots read through a `DROP`. What is permanent
    is that nobody puts the head back.
 
-1. **Widening the query targets**: currently ≤50MB CSV/TSV. Raising the limit, JSON and so on (the
+1. **Widening the query targets**: currently ≤100MB CSV/TSV. Extending to JSON and so on (the
    same root as ADR-032/043)
 2. **Put compaction in the ingest job**: the decision of §11-2.1 (a thresholded
    `merge_adjacent_files` at the end of an ingest) has neither a period nor a firing unit, so **do not

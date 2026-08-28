@@ -172,7 +172,7 @@ search_datasets → get_dataset → get_resource_schema → query_resource
 
 ## 残課題（未解決事項）
 
-1. **クエリ可能対象の拡大**: 現状 ≤50MB の CSV/TSV のみ。大容量ファイルや JSON 等への拡大
+1. **クエリ可能対象の拡大**: 現状 ≤100MB の CSV/TSV のみ。大容量ファイルや JSON 等への拡大
    （上限引き上げ、または raw ファイルへの DuckDB httpfs 直クエリ）。
 2. **クエリサービスの切り出し**: 負荷増大時に web プロセスから専用サービス / Worker へ分離（選択肢 B）。
 3. **クロスリソース JOIN**: 複数 Parquet を 1 クエリで結合する（複数テーブル登録）。需要を見て検討。

@@ -32,7 +32,7 @@ export async function retryLakeIngest(
   // narrowed to this version, so there is no second opinion about what layer 2
   // covers. Every worker task runs that sweep, so the same version arrives
   // several times over; without this, all but one of them would download and
-  // interpret up to 50MB to find out the work was already done.
+  // interpret up to 100MB to find out the work was already done.
   const source = await pendingLakeVersionSource(deps.db, job)
   if (!source) {
     log.info({ resourceId, version }, 'Lake ingest retry skipped (nothing outstanding)')

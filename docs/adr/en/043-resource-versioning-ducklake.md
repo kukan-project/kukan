@@ -858,7 +858,7 @@ bytes: consolidate freely (§6-2).**
 
 1. **Scheduled re-fetch**: Piggyback external-URL change detection on the quality
    package's link monitoring and enqueue re-fetch on change
-2. **Expanding coverage**: Raising the DuckLake ingest limit (currently ≤50MB, same as
+2. **Expanding coverage**: Raising the DuckLake ingest limit (currently ≤100MB, same as
    Parquet generation) and covering JSON etc. (same root as ADR-032 open issue 1)
 3. **Multi-site (ADR-041)**: Per-site DuckLake catalogs vs. a single catalog + table-name
    prefix. Counting catalog connections against the connection budget

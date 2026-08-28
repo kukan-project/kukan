@@ -104,7 +104,7 @@ export async function withInterpretedVersion<T>(
   try {
     // Off disk, and only as far as detection needs. Reading every byte was the
     // blunt answer to "a 64KB head is not enough" (measured, ADR-046) — it is
-    // also up to 50MB on the heap and a second of chardet per megabyte, for an
+    // also up to 100MB on the heap and a second of chardet per megabyte, for an
     // answer `readEncodingSample` reaches with a bound.
     const encoding = detectEncoding(fmt, await readEncodingSample(createReadStream(rawPath)))
     // Handed over the moment it is settled, like everything else this function
@@ -116,7 +116,7 @@ export async function withInterpretedVersion<T>(
 
     const charset = toCharset(encoding)
     const csvPath = charset === 'utf-8' ? rawPath : await transcodeToUtf8(rawPath, charset)
-    // Dead the moment it has been transcoded, and up to 50MB of it would
+    // Dead the moment it has been transcoded, and up to 100MB of it would
     // otherwise sit on disk under the whole DuckDB pass.
     if (csvPath !== rawPath) await rm(rawPath, { force: true })
 

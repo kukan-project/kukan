@@ -314,7 +314,7 @@ Interpret のみフォーマット別処理を行う。
 | ------------------------ | ------ | -------------------------------- |
 | ブラウザアップロード     | 100 MB | `packages/shared/src/formats.ts` |
 | 外部 URL 取得（Fetch）   | 100 MB | `apps/worker/src/config.ts`      |
-| CSV/TSV Parquet 生成対象 | 50 MB  | `packages/shared/src/formats.ts` |
+| CSV/TSV Parquet 生成対象 | 100 MB | `packages/shared/src/formats.ts` |
 
 **関連ファイル:**
 

@@ -173,7 +173,7 @@ preview directly** rather than loading data into dedicated tables.
 
 ## Open Issues
 
-1. **Expand queryable targets**: today only ≤50MB CSV/TSV. Extend to large files or JSON (raise the cap,
+1. **Expand queryable targets**: today only ≤100MB CSV/TSV. Extend to large files or JSON (raise the cap,
    or query the raw file directly via DuckDB httpfs).
 2. **Split out a query service**: separate from the web process under load (option B).
 3. **Cross-resource JOINs**: join multiple Parquets in one query (register multiple tables).

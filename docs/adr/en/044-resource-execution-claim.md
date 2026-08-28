@@ -147,7 +147,7 @@ update looks like no progress at all. A value that moves at each step boundary m
 threshold only has to exceed the **longest single step**.
 
 **The threshold is 15 minutes.** Fetch is capped at 30 seconds by `AbortSignal.timeout`,
-Extract's input is capped at 50MB of CSV, Version is a server-side S3 copy, and Index is
+Extract's input is capped at 100MB of CSV, Version is a server-side S3 copy, and Index is
 chunking and indexing — all expected in the order of minutes. Several times that leaves no
 risk of taking a run that is merely slow. It is **derived from the input caps, not measured
 in production**, so it goes in as a fixed value and moves to a runtime setting (ADR-036) if
@@ -727,7 +727,7 @@ leave a hole in.
 
 ## Open Issues
 
-1. **Measuring the threshold**: 15 minutes comes from the input caps (100MB fetched, 50MB
+1. **Measuring the threshold**: 15 minutes comes from the input caps (100MB fetched, 100MB
    of CSV), not from the longest step observed in production. To be tightened once measured
 2. ~~**Granularity for bulk jobs**~~: settled (§2). One statement, so no acquisition order
    and no deadlock; one resource held abandons the whole set for a retry

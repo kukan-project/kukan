@@ -136,7 +136,7 @@ describe('retryLakeIngest', () => {
     // Redelivered after another pass ingested it, or after a purge. Asked
     // before anything is interpreted, because every worker task runs the hourly
     // sweep and enqueues the same version — all but one arrive to find the work
-    // already done, and must not read a 50MB file to discover it.
+    // already done, and must not read a 100MB file to discover it.
     pending.source = null
 
     await retryLakeIngest(job, deps)
