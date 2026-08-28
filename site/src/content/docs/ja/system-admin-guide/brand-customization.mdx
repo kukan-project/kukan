@@ -167,6 +167,9 @@ export const brandConfig: BrandConfig = {
 | `footerLinks`     | フッターのリンク一覧                                |
 | `ogImage`         | OGP 画像のパス（`public/` 配下のパス）              |
 | `faviconPath`     | ファビコンのパス                                    |
+| `noindex`         | `true` で全ページに `noindex, nofollow` の robots meta タグを付与（省略時はなし） |
+
+`noindex` は、検索エンジンにインデックスさせたくない検証環境や限定公開サイト向けのスイッチです。robots.txt でのクロール拒否は行いません（拒否するとクローラーが meta タグ自体を読めなくなるためです）。アクセス自体を制限したい場合は、Basic 認証や IP 制限などのアクセス制御を併用してください。
 
 検索例チップ（検索ボックス下のクエリ例）はブランド設定ではなく、**管理画面のサイト管理**（`/dashboard/admin/site`）から設定します。
 

@@ -167,6 +167,9 @@ export const brandConfig: BrandConfig = {
 | `footerLinks`     | Footer link list                                               |
 | `ogImage`         | OGP image path (relative to `public/`)                         |
 | `faviconPath`     | Favicon path                                                   |
+| `noindex`         | When `true`, adds a `noindex, nofollow` robots meta tag to every page (omitted = none) |
+
+`noindex` is a switch for staging or private deployments that should stay out of search engines. It does not block crawling in robots.txt (a crawl block would keep crawlers from ever seeing the meta tag). To restrict access itself, combine this with access controls such as Basic auth or IP restrictions.
 
 The example-query chips under the search box are configured from the **admin Site Management page** (`/dashboard/admin/site`), not the brand config.
 

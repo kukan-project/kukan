@@ -25,6 +25,8 @@ export const brandConfig: BrandConfig = {
   faviconPath: '/favicon.ico',
 
   gaMeasurementId: null,
+
+  noindex: false,
 }
 
 export const overrides: BrandOverrides = {}

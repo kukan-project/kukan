@@ -22,6 +22,11 @@ export interface BrandConfig {
   faviconPath: string
   /** GA4 Measurement ID (e.g. 'G-XXXXXXXXXX'). null = GA4 disabled. */
   gaMeasurementId?: string | null
+  /**
+   * When true, emit a site-wide `noindex, nofollow` robots meta tag.
+   * Crawling itself stays allowed — blocking it in robots.txt would hide the meta tag.
+   */
+  noindex?: boolean
 }
 
 /** Component override slots */

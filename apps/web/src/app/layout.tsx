@@ -28,6 +28,7 @@ export const metadata: Metadata = {
   description: brandConfig.siteDescription,
   icons: { icon: brandConfig.faviconPath },
   openGraph: { images: [brandConfig.ogImage] },
+  robots: brandConfig.noindex ? { index: false, follow: false } : null,
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
