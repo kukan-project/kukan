@@ -249,6 +249,7 @@ pnpm format        # Prettier フォーマット
 - ストレージオブジェクトの先行記録（クラッシュ由来のリーク） → `docs/adr/jp/045-object-write-ahead.md`
 - 正本の確定と、その解釈の分離（Version 先行 + DuckDB の Interpret ステージ） → `docs/adr/jp/046-interpret-stage.md`
 - 取得内容が宣言と食い違うとき正本を差し替えない（サイト閉鎖時の一括転送、提案） → `docs/adr/jp/047-fetched-content-mismatch.md`
+- テーブルプレビューの一枚化（閲覧=Range 配信 / 対話=クライアント計算、解析モードトグル廃止、提案） → `docs/adr/jp/048-modeless-table-preview.md`（ADR-016 置換提案）
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、

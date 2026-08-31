@@ -4,7 +4,7 @@
 
 ## Status
 
-**Accepted**
+**Accepted** — ADR-048 proposes to supersede this ADR (pending spike measurements). The two decisions in question are the "analysis mode" toggle and full-buffer registration; the adoption of DuckDB-WASM itself is kept.
 
 ## Context
 

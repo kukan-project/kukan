@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>ADR-048 spike</title>
+  </head>
+  <body>
+    <pre id="log"></pre>
+    <script type="module">
+      import * as duckdb from '/vendor/duckdb-bundle.mjs'
+
+      const log = (m) => (document.getElementById('log').textContent += m + '\n')
+
+      // fsConfig + directIO=true is what activates range reads in this duckdb-wasm
+      // build; the default (no open config, directIO=false) buffers the whole file
+      // exactly like today's registerFileBuffer path.
+      window.spikeInit = async (fileUrl, fsConfig, directIO) => {
+        const worker = new Worker('/dist/duckdb-browser-eh.worker.js')
+        const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker)
+        await db.instantiate('/dist/duckdb-eh.wasm')
+        if (fsConfig) {
+          await db.open({ path: ':memory:', filesystem: fsConfig })
+        }
+        await db.registerFileURL(
+          'data.parquet',
+          fileUrl,
+          duckdb.DuckDBDataProtocol.HTTP,
+          directIO ?? false
+        )
+        window._conn = await db.connect()
+        log(`init done (directIO=${directIO ?? false})`)
+        return true
+      }
+
+      window.spikeQuery = async (sql) => {
+        const t0 = performance.now()
+        const result = await window._conn.query(sql)
+        const ms = Math.round(performance.now() - t0)
+        return {
+          ms,
+          rows: result.numRows,
+          heap: performance.memory ? performance.memory.usedJSHeapSize : null,
+        }
+      }
+    </script>
+  </body>
+</html>
