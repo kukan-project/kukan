@@ -1,9 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Card, CardContent, Skeleton, Badge } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import dynamic from 'next/dynamic'
 import type { CsvDialect, ResourceSchema } from '@kukan/shared'
 import {
   csvRecordLabels,
@@ -17,18 +16,12 @@ import {
   isGeoJsonFormat,
   isImageFormat,
 } from '@kukan/shared'
-import { SwitchField } from '@/components/switch-field'
 import { clientFetch } from '@/lib/client-api'
-import { ParquetPreview } from './parquet-preview'
+import { DataExplorer } from './data-explorer/data-explorer'
 import { GeoJsonPreview } from './geojson-preview'
 import { JsonPreview } from './json-preview'
 import { ZipPreview } from './zip-preview'
 import { ImagePreview } from './image-preview'
-
-const DataExplorer = dynamic(
-  () => import('./data-explorer/data-explorer').then((m) => ({ default: m.DataExplorer })),
-  { ssr: false }
-)
 
 interface ResourcePreviewProps {
   resourceId: string
@@ -44,37 +37,6 @@ interface ResourcePreviewProps {
 }
 
 type PreviewSource = 'parquet' | 'raw'
-
-const ANALYSIS_MODE_KEY = 'kukan:analysisMode'
-const ANALYSIS_MODE_EVENT = 'kukan:analysisMode:change'
-
-function subscribeAnalysisMode(callback: () => void) {
-  window.addEventListener(ANALYSIS_MODE_EVENT, callback)
-  return () => window.removeEventListener(ANALYSIS_MODE_EVENT, callback)
-}
-
-function getAnalysisModeSnapshot(): boolean {
-  return sessionStorage.getItem(ANALYSIS_MODE_KEY) === '1'
-}
-
-function getAnalysisModeServerSnapshot(): boolean {
-  return false
-}
-
-function useAnalysisMode() {
-  const mode = useSyncExternalStore(
-    subscribeAnalysisMode,
-    getAnalysisModeSnapshot,
-    getAnalysisModeServerSnapshot
-  )
-
-  const setMode = useCallback((checked: boolean) => {
-    sessionStorage.setItem(ANALYSIS_MODE_KEY, checked ? '1' : '0')
-    window.dispatchEvent(new Event(ANALYSIS_MODE_EVENT))
-  }, [])
-
-  return [mode, setMode] as const
-}
 
 /**
  * Checks for Parquet preview (pipeline output) first.
@@ -136,7 +98,6 @@ function TablePreview({
 }) {
   const t = useTranslations('resource')
   const [source, setSource] = useState<PreviewSource>('parquet')
-  const [analysisMode, setAnalysisMode] = useAnalysisMode()
 
   const sources: { key: PreviewSource; label: string }[] = [
     { key: 'parquet', label: t('previewSourceTable') },
@@ -145,42 +106,26 @@ function TablePreview({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <div className="flex gap-2">
-          {sources.map((s) => (
-            <Badge
-              key={s.key}
-              variant={source === s.key ? 'default' : 'outline'}
-              className="cursor-pointer"
-              onClick={() => setSource(s.key)}
-            >
-              {s.label}
-            </Badge>
-          ))}
-        </div>
-        {source === 'parquet' && (
-          <SwitchField
-            label={t('analysisMode')}
-            checked={analysisMode}
-            onCheckedChange={setAnalysisMode}
-          />
-        )}
+      <div className="flex gap-2">
+        {sources.map((s) => (
+          <Badge
+            key={s.key}
+            variant={source === s.key ? 'default' : 'outline'}
+            className="cursor-pointer"
+            onClick={() => setSource(s.key)}
+          >
+            {s.label}
+          </Badge>
+        ))}
       </div>
       {source === 'parquet' && <DroppedRowsNote schema={schema} />}
-      {source === 'parquet' &&
-        (analysisMode ? (
-          <DataExplorer
-            resourceId={resourceId}
-            primaryKey={primaryKey}
-            schemaColumns={schema?.columns ?? null}
-          />
-        ) : (
-          <ParquetPreview
-            resourceId={resourceId}
-            primaryKey={primaryKey}
-            columns={schema?.columns ?? null}
-          />
-        ))}
+      {source === 'parquet' && (
+        <DataExplorer
+          resourceId={resourceId}
+          primaryKey={primaryKey}
+          schemaColumns={schema?.columns ?? null}
+        />
+      )}
       {source === 'raw' && <RawTextPreview resourceId={resourceId} dialect={dialectOf(schema)} />}
     </div>
   )
@@ -191,10 +136,9 @@ function TablePreview({
  * short for the reader to seat, or a note padded out to the width and taken from
  * the table itself.
  *
- * Said where the table is, not inside one view of it: whichever way the rows are
- * being read they are the same rows, and the analysis mode is where it matters
- * most — a `count(*)` there returns the short number with nothing to say why.
- * Not shown over the raw text, which is the file and does hold them.
+ * Said where the table is, not inside it: a `count(*)` in the explorer returns
+ * the short number with nothing to say why. Not shown over the raw text, which
+ * is the file and does hold them.
  */
 function DroppedRowsNote({ schema }: { schema?: ResourceSchema | null }) {
   const t = useTranslations('resource')

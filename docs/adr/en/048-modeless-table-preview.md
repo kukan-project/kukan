@@ -4,10 +4,12 @@
 
 ## Status
 
-**Proposed** — spike measured (2026-08-31, verdict: **conditional go**; see the
-results section). On approval this ADR supersedes ADR-016 (the adoption of
-DuckDB-WASM itself is kept; the two decisions overturned are the "analysis mode"
-toggle and full-buffer registration).
+**Accepted** — supersedes ADR-016 (the adoption of DuckDB-WASM itself is kept;
+the "analysis mode" toggle is removed). In light of the spike measurements
+(2026-08-31, addendum included), decision 4 (file registration) was amended on
+approval from the proposal's "default to `registerFileURL`" to "keep full-buffer
+at the current generation cap; activate URL registration together with the cap
+raise". The single-table UI and the `/preview` Range fix are implemented.
 
 ## Context
 
@@ -116,10 +118,18 @@ interaction = client-side compute".**
 3. **Boot DuckDB-WASM implicitly on the first interaction.** While booting, the
    table stays interactive in its hyparquet form; clicked intents are queued and
    applied when the engine is ready. Never block the table with a spinner
-4. **Default file registration to `registerFileURL` (HTTP, Range Read).** Small
-   files may be faster as full buffers (fewer round trips), so a size threshold
-   (the total length is known from the initial HEAD) is decided by the spike's
-   measurements
+4. **Keep full-buffer registration at the current generation cap (100 MB).**
+   The proposal defaulted to `registerFileURL` (Range Read), but the
+   measurement addendum (second leg of the two-phase read) showed that the
+   visible rows of a sorted page scatter across the whole file, so row-group
+   granular fetching costs ~50 MB per page. A full buffer pays the whole file
+   (≤ cap) once on the first interaction and every operation after that is
+   free — strictly better within the current cap. **Activating URL
+   registration is follow-up work bundled with raising the generation cap,
+   retuning `ROW_GROUP_SIZE` (ADR-014 detail amendment), introducing the size
+   threshold, and bumping duckdb-wasm** — the server-side receiving end
+   (`/preview`'s RFC 9110 compliance) ships with this ADR, so only the
+   client's registration call needs swapping at that point
 5. **State the server side as an explicit boundary: unchanged.** `/query`, the
    sandbox, and `QUERY_MAX_CONCURRENT` are untouched. Generation and retention of
    the preview Parquet are unchanged. SQL over past versions (privileged export →
@@ -217,6 +227,19 @@ duckdb-wasm version bump and regression checks.
   full-buffer — the same ballpark, at the edge of the 1.5 GB bar; the size
   threshold gate remains a prerequisite for mobile
 
+**Addendum: the second leg of the two-phase read (fetching the visible rows).**
+The first leg (sort-column projection to fix row positions) stays within the
+bar, but measuring the second leg — fetching the visible rows by
+`file_row_number IN (...)` — showed **~49 MB per page on rg5000 (scattered
+across 93 row groups) and 343 MB on rg100k (nearly the whole file)**.
+`file_row_number` pruning itself works (100 consecutive rows cost 0.4 MB), but
+the visible rows of a sorted page scatter across the whole file, so the floor
+is the number of row groups they land in × the group size. No implementation
+strategy avoids this structure: **sorted browsing over range reads bottoms out
+at ~50 MB per operation.** Filters (predicate pushdown) and metadata stay cheap
+as measured above. This addendum is the basis for amending decision 4 (keep
+full-buffer at the current cap).
+
 **Phase 2 (faithful `/preview` emulation, Q1):** range mode **fails completely**
 (every query dies with `No magic bytes found at end of file`). The cause is
 pinned down: duckdb-wasm probes the size with `HEAD` + `Range: bytes=0-` and
@@ -227,45 +250,48 @@ misread as 1 MB and the footer is read from the wrong offset**. The suffix form
 (fixing it remains desirable for spec robustness). Full-buffer mode passes
 through unharmed.
 
-### Verdict: Conditional Go
+### Verdict, and What Was Settled on Approval
 
-"Transfer volume within the bar, re-fetching remains" — this matches the
-conditional-go criterion. Prerequisites for approval and implementation:
+The first-pass verdict was **conditional go** ("transfer volume within the bar,
+re-fetching remains"); the addendum (~50 MB per sorted page) narrowed range
+reads' applicable domain, settling as:
 
-1. **Fix `/preview`'s Range implementation (mandatory)**: answer open-ended
-   ranges with the full remaining length (at minimum for HEAD; keep the 1 MB
-   clamp for GET paging only). Add suffix-form support while there
-2. **Make the two-phase read the explorer's query convention**: never issue
-   `SELECT *` + ORDER BY directly. Fix row positions via sort-column projection,
-   then fetch the visible rows
-3. **Size threshold gate**: small files keep today's full-buffer behavior. The
-   threshold is decided at implementation time from real-network measurements
-4. **Revisit `ROW_GROUP_SIZE`** (detail amendment to ADR-014): 5,000 rows prunes
-   best but its request counts break down on real networks; balance transfer
-   volume against round trips in the tens-of-thousands range
-5. **duckdb-wasm version bump with regression checks**: range-mode activation
-   depends on dev-build implementation details
-
-**To verify on the real stack (implementation time)**: whether the real
-`/preview` returns `Content-Length` on HEAD responses (this spike emulated the
-route; the actual Hono + streamed-response behavior is unverified). Reconcile
-with the fact that hyparquet works in production today.
+- **Implemented (the scope this ADR approves)**: `/preview`'s RFC 9110
+  compliance (full-length answers to open-ended ranges, suffix form,
+  huge-numeral guard, answering 200 rather than a mislabeled 206 when the
+  backend ignored the Range, and explicit HEAD. Per §14.2 HEAD ignores Range
+  and always answers the full size — DuckDB-WASM's size probe reads
+  Content-Length without checking the status, and range mode was confirmed to
+  activate under this shape against the real engine. The real stack was also
+  confirmed to return `Content-Length` on HEAD — the proposal's real-stack
+  check is resolved), and
+  the single-table UI (toggle removed, implicit engine boot, interactions queue
+  naturally as React state, an engine failure demotes to plain reading instead
+  of killing the table). Transport stays full-buffer as today
+- **Settled as follow-up work (bundled with raising the generation cap)**:
+  switching to `registerFileURL`, the size threshold, retuning `ROW_GROUP_SIZE`
+  (ADR-014 detail amendment), and the duckdb-wasm bump with regression checks
+  (range-mode activation depends on dev-build implementation details — both the
+  filesystem flags and `directIO: true` must be set). The economics at that
+  point start from this ADR's measurements (first leg 4.5–18 MB, second leg
+  ~50 MB per page, filters 0.3–21 MB)
 
 ## Consequences
 
-- `apps/web`: remove the toggle UI and `sessionStorage` mode management. The
-  hyparquet table and the data-explorer table are separate components today, so
-  they must be unified into "the same table with a swappable data source"
-  (aligning display features — line numbers, primary-key marking, numeric
-  alignment — across both paths)
-- `packages/api`: the `/preview` Range fix is confirmed **mandatory** by
-  measurement (full-length responses to open-ended ranges, suffix-form support;
-  details in the results section)
-- `apps/worker`: revisiting `ROW_GROUP_SIZE` is confirmed **necessary** by
-  measurement (at 5,000 rows the request counts break down on real networks;
-  within the scope of a detail amendment to ADR-014)
+- `apps/web`: the toggle UI and `sessionStorage` mode management are removed.
+  `DataExplorer` is the one table: initial rendering via hyparquet (range
+  reads, no engine), and the first sort/filter/search boots DuckDB-WASM in the
+  background. The old `ParquetPreview` component is deleted (the hyparquet hook
+  itself stays in service for initial rendering and the primary-key picker).
+  Key marking and numeric alignment are carried by the explorer's table
+- `packages/api`: `/preview` fixed to RFC 9110 range semantics (confirmed
+  mandatory by measurement; details in the results section). HEAD now answers
+  from object metadata alone, which also removes the opened-and-discarded S3
+  stream per probe
+- `apps/worker`: unchanged. Retuning `ROW_GROUP_SIZE` is follow-up work bundled
+  with activating URL registration (the cap raise)
 - Raising the preview Parquet generation cap is decided separately, using this
-  spike's measurements as input
+  ADR's measurements as input
 
 ## Open Questions
 

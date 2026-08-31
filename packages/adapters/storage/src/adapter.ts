@@ -71,12 +71,16 @@ export interface StorageAdapter {
   /**
    * Download a byte range of an object from storage.
    * Used for Range request proxying (e.g., Parquet pagination via hyparquet).
+   * Omitting `end` reads to the end of the object (`bytes=start-`); the
+   * returned offsets are what the backend actually served. `partial` is false
+   * when the backend ignored the Range and sent the whole object — a caller
+   * relaying the response must then answer 200, not 206.
    */
   downloadRange(
     key: string,
     start: number,
-    end: number
-  ): Promise<{ stream: Readable; totalSize: number; start: number; end: number }>
+    end?: number
+  ): Promise<{ stream: Readable; totalSize: number; start: number; end: number; partial: boolean }>
 
   /**
    * Get a presigned URL for uploading an object

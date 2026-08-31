@@ -39,12 +39,7 @@ import {
   MAX_UPLOAD_SIZE,
   primaryKeyOf,
 } from '@kukan/shared'
-import {
-  TEXT_PREVIEW_LIMIT,
-  JSON_PREVIEW_LIMIT,
-  DEFAULT_RANGE_CHUNK,
-  QUERY_MAX_SQL_LENGTH,
-} from '../config'
+import { TEXT_PREVIEW_LIMIT, JSON_PREVIEW_LIMIT, QUERY_MAX_SQL_LENGTH } from '../config'
 import { JsonMinifyStream } from '../streams/json-minify-stream'
 import {
   canWritePackage,
@@ -117,6 +112,57 @@ async function enqueuePipeline(c: Context<{ Variables: AppContext }>, resourceId
 function liveKey(res: { id: string; storageKey: string | null }): string {
   if (!res.storageKey) throw new NotFoundError('Resource file', res.id)
   return res.storageKey
+}
+
+type ByteRange =
+  | { kind: 'bounded'; start: number; end: number }
+  | { kind: 'open'; start: number }
+  | { kind: 'suffix'; length: number }
+
+/**
+ * Parse a Range header as one RFC 9110 byte range. Open-ended and suffix forms
+ * must be honored in full: DuckDB-WASM probes the object size with
+ * `Range: bytes=0-` and trusts the response's Content-Length, so clamping an
+ * open-ended range makes the client misread the file size (ADR-048).
+ * 'ignore' = serve the full body instead — for a range unit we do not
+ * understand (a MUST in RFC 9110 §14.2) and for multi-range (a MAY).
+ * 'invalid' (416) is reserved for a malformed bytes specifier, including
+ * numerals past 2^53: unguarded, 1e21+ turns into exponent notation in the
+ * upstream Range header, which S3 ignores — a full 200 body the adapter would
+ * then mislabel as a 206.
+ */
+function parseByteRange(header: string): ByteRange | 'invalid' | 'ignore' {
+  if (!/^\s*bytes=/i.test(header) || header.includes(',')) return 'ignore'
+  const m = header.match(/^\s*bytes=(\d*)-(\d*)\s*$/i)
+  if (!m || (m[1] === '' && m[2] === '')) return 'invalid'
+  const first = m[1] === '' ? undefined : parseInt(m[1], 10)
+  const second = m[2] === '' ? undefined : parseInt(m[2], 10)
+  if (first !== undefined && !Number.isSafeInteger(first)) return 'invalid'
+  if (second !== undefined && !Number.isSafeInteger(second)) return 'invalid'
+  if (first === undefined) return { kind: 'suffix', length: second! }
+  if (second === undefined) return { kind: 'open', start: first }
+  return second < first ? 'invalid' : { kind: 'bounded', start: first, end: second }
+}
+
+/** Concrete offsets for a range against a known size; null = unsatisfiable (416). */
+function resolveRange(range: ByteRange, size: number): { start: number; end: number } | null {
+  if (range.kind === 'suffix') {
+    if (range.length === 0 || size === 0) return null
+    return { start: Math.max(0, size - range.length), end: size - 1 }
+  }
+  if (range.start >= size) return null
+  return {
+    start: range.start,
+    end: range.kind === 'bounded' ? Math.min(range.end, size - 1) : size - 1,
+  }
+}
+
+/** S3-compatible backends reject a start at/past EOF with InvalidRange. */
+function isRangeNotSatisfiable(err: unknown): boolean {
+  return (
+    (err instanceof Error && err.name === 'InvalidRange') ||
+    (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode === 416
+  )
 }
 
 /** Resolve preview storage key and content type for a resource */
@@ -346,50 +392,99 @@ resourcesRouter.get('/:id/preview', async (c) => {
   }
   const { storageKey, contentType } = target
 
-  // Security headers for user-uploaded content served inline:
-  // - nosniff: prevent MIME-sniffing (e.g. HTML disguised as .png)
-  // - CSP: block script execution in SVG opened directly in browser tab
-  //   (<img> tags ignore CSP on sub-resource loads, so preview rendering is unaffected)
-  const securityHeaders: Record<string, string> = {
+  const baseHeaders = {
+    // Security headers for user-uploaded content served inline:
+    // - nosniff: prevent MIME-sniffing (e.g. HTML disguised as .png)
+    // - CSP: block script execution in SVG opened directly in browser tab
+    //   (<img> tags ignore CSP on sub-resource loads, so preview rendering is unaffected)
     'X-Content-Type-Options': 'nosniff',
     ...(contentType === 'image/svg+xml' && {
       'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
     }),
+    'Content-Type': contentType,
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'private, max-age=300',
   }
 
-  // Handle Range request for Parquet pagination
-  const rangeHeader = c.req.header('range')
-
-  if (rangeHeader) {
-    const match = rangeHeader.match(/bytes=(\d+)-(\d*)/)
-    if (!match) {
-      return new Response('Invalid Range', { status: 416 })
+  // HEAD: range handling is defined for GET only (RFC 9110 §14.2), so Range is
+  // ignored — before it is even parsed, or a malformed header would 416 here —
+  // and the full size answered from object metadata alone. Hono routes HEAD
+  // through this GET handler and drops the body, which would otherwise open
+  // (and discard) a storage stream per probe — and a HEAD without
+  // Content-Length forces hyparquet/DuckDB-WASM onto their fallback paths.
+  if (c.req.method === 'HEAD') {
+    const meta = await storage.head(storageKey)
+    if (!meta) {
+      return c.json({ error: 'Preview not available' }, 404)
     }
+    return new Response(null, {
+      headers: { ...baseHeaders, 'Content-Length': String(meta.size) },
+    })
+  }
 
-    const start = parseInt(match[1], 10)
-    const end = match[2] ? parseInt(match[2], 10) : start + DEFAULT_RANGE_CHUNK - 1
+  // Range requests for Parquet pagination and remote-file readers (RFC 9110)
+  const rangeHeader = c.req.header('range')
+  const parsed = rangeHeader ? parseByteRange(rangeHeader) : null
+  if (parsed === 'invalid') {
+    return new Response('Invalid Range', { status: 416 })
+  }
+  const range = parsed === 'ignore' ? null : parsed
+  const notSatisfiable = (size?: number) =>
+    new Response(null, {
+      status: 416,
+      headers: size !== undefined ? { 'Content-Range': `bytes */${size}` } : undefined,
+    })
 
+  if (range) {
     let result
     try {
-      result = await storage.downloadRange(storageKey, start, end)
+      if (range.kind === 'suffix') {
+        // The (start, end?) adapter surface cannot express `bytes=-N` — kept
+        // that small on purpose for one rare request form — so the suffix is
+        // resolved against the object size first.
+        const meta = await storage.head(storageKey)
+        if (!meta) {
+          return c.json({ error: 'Preview not available' }, 404)
+        }
+        const resolved = resolveRange(range, meta.size)
+        if (!resolved) {
+          return notSatisfiable(meta.size)
+        }
+        result = await storage.downloadRange(storageKey, resolved.start, resolved.end)
+      } else {
+        result = await storage.downloadRange(
+          storageKey,
+          range.start,
+          range.kind === 'bounded' ? range.end : undefined
+        )
+      }
     } catch (err) {
+      if (isRangeNotSatisfiable(err)) {
+        const meta = await storage.head(storageKey)
+        return notSatisfiable(meta?.size)
+      }
       throwIfNotFound(err, id)
+    }
+
+    // A backend that ignored the Range sent the whole object; labeling that
+    // 206 would make range readers treat the full body as the requested slice.
+    if (!result.partial) {
+      return new Response(Readable.toWeb(result.stream) as ReadableStream, {
+        headers: { ...baseHeaders, 'Content-Length': String(result.totalSize) },
+      })
     }
 
     return new Response(Readable.toWeb(result.stream) as ReadableStream, {
       status: 206,
       headers: {
-        ...securityHeaders,
-        'Content-Type': contentType,
+        ...baseHeaders,
         'Content-Range': `bytes ${result.start}-${result.end}/${result.totalSize}`,
         'Content-Length': String(result.end - result.start + 1),
-        'Accept-Ranges': 'bytes',
-        'Cache-Control': 'private, max-age=300',
       },
     })
   }
 
-  // Full response (no Range header)
+  // Full response (no Range header, or a multi-range we choose not to serve)
   let nodeStream
   try {
     nodeStream = await storage.download(storageKey)
@@ -398,12 +493,7 @@ resourcesRouter.get('/:id/preview', async (c) => {
   }
 
   return new Response(Readable.toWeb(nodeStream) as ReadableStream, {
-    headers: {
-      ...securityHeaders,
-      'Content-Type': contentType,
-      'Accept-Ranges': 'bytes',
-      'Cache-Control': 'private, max-age=300',
-    },
+    headers: baseHeaders,
   })
 })
 

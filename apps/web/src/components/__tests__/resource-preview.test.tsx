@@ -1,16 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { ResourcePreview, PreviewSkeleton } from '../resource-preview'
 
 vi.mock('@/lib/client-api', () => ({
   clientFetch: vi.fn(),
-}))
-
-// Mock ParquetPreview to avoid hyparquet dependency in tests
-vi.mock('../parquet-preview', () => ({
-  ParquetPreview: ({ resourceId }: { resourceId: string }) => (
-    <div data-testid="parquet-preview">Parquet preview for {resourceId}</div>
-  ),
 }))
 
 // Mock GeoJsonPreview to avoid Leaflet dependency in tests
@@ -20,8 +13,7 @@ vi.mock('../geojson-preview', () => ({
   ),
 }))
 
-// The explorer pulls in DuckDB-WASM; the analysis mode is only ever asserted
-// here by which of the two is on screen.
+// The one table (ADR-048); mocked to avoid hyparquet and DuckDB-WASM in tests
 vi.mock('../data-explorer/data-explorer', () => ({
   DataExplorer: ({ resourceId }: { resourceId: string }) => (
     <div data-testid="data-explorer">Explorer for {resourceId}</div>
@@ -42,9 +34,6 @@ const mockClientFetch = vi.mocked(clientFetch)
 
 beforeEach(() => {
   mockClientFetch.mockReset()
-  // The analysis-mode switch is stored per session, so a test that turns it on
-  // leaves every test after it rendering the explorer instead of the table.
-  sessionStorage.clear()
 })
 
 /** What the owner's `GET /resources/:id/schema` read carried down as a prop. */
@@ -92,18 +81,14 @@ describe('dropped rows note', () => {
     // owner passes null when its read failed, and the preview stands alone.
     render(<ResourcePreview resourceId="r1" format="CSV" schema={null} />)
 
-    expect(await screen.findByTestId('parquet-preview')).toBeInTheDocument()
+    expect(await screen.findByTestId('data-explorer')).toBeInTheDocument()
     expect(screen.queryByText(/not in the table/)).not.toBeInTheDocument()
   })
 
-  it('says it in the analysis mode too, where the rows are counted', async () => {
+  it('sits outside the table, wherever the rows are being counted', async () => {
     // The explorer queries the same Parquet, so a `count(*)` there returns the
-    // short number — and that is the view where someone is doing arithmetic on
-    // it. The note sits outside the switch for that reason.
+    // short number — the note belongs to the table as a whole, not one view.
     render(<ResourcePreview resourceId="r1" format="CSV" schema={schemaWith(1, [291])} />)
-
-    await screen.findByTestId('parquet-preview')
-    fireEvent.click(screen.getByRole('switch'))
 
     expect(await screen.findByTestId('data-explorer')).toBeInTheDocument()
     expect(screen.getByText(/291/)).toBeInTheDocument()
@@ -119,14 +104,14 @@ describe('PreviewSkeleton', () => {
 
 describe('ResourcePreview', () => {
   describe('CSV preview', () => {
-    it('should show ParquetPreview for CSV format', () => {
+    it('should show the table explorer for CSV format', () => {
       render(<ResourcePreview resourceId="r1" format="CSV" />)
-      expect(screen.getByTestId('parquet-preview')).toBeInTheDocument()
+      expect(screen.getByTestId('data-explorer')).toBeInTheDocument()
     })
 
-    it('should show ParquetPreview for TSV format', () => {
+    it('should show the table explorer for TSV format', () => {
       render(<ResourcePreview resourceId="r1" format="TSV" />)
-      expect(screen.getByTestId('parquet-preview')).toBeInTheDocument()
+      expect(screen.getByTestId('data-explorer')).toBeInTheDocument()
     })
   })
 

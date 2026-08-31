@@ -151,7 +151,14 @@ export function useDuckDB({ resourceId, enabled }: UseDuckDBOptions): UseDuckDBR
 
   // Initialize DuckDB and load Parquet file
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled) {
+      // Disabling demotes the caller to its non-engine rendering: stale
+      // ready/error state must not survive it, and re-enabling starts over.
+      setReady(false)
+      setError(null)
+      setLoading(false)
+      return
+    }
 
     let cancelled = false
     const abortController = new AbortController()

@@ -144,25 +144,45 @@ export class S3StorageAdapter implements StorageAdapter {
   async downloadRange(
     key: string,
     start: number,
+    end?: number
+  ): Promise<{
+    stream: Readable
+    totalSize: number
+    start: number
     end: number
-  ): Promise<{ stream: Readable; totalSize: number; start: number; end: number }> {
+    partial: boolean
+  }> {
     const response = await this.client.send(
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
-        Range: `bytes=${start}-${end}`,
+        Range: `bytes=${start}-${end ?? ''}`,
       })
     )
 
-    const totalSize = response.ContentRange
-      ? parseInt(response.ContentRange.split('/')[1], 10)
-      : (response.ContentLength ?? 0)
+    // "bytes 100-199/1234" — the backend's own account of what it served,
+    // which is authoritative when the request was open-ended or clamped.
+    const served = response.ContentRange?.match(/bytes (\d+)-(\d+)\/(\d+)/)
+    if (served) {
+      return {
+        stream: response.Body as Readable,
+        totalSize: parseInt(served[3], 10),
+        start: parseInt(served[1], 10),
+        end: parseInt(served[2], 10),
+        partial: true,
+      }
+    }
 
+    // No Content-Range means the backend ignored the Range and sent the full
+    // body; report the offsets of what is actually in the stream rather than
+    // echoing the request, or the caller would label a 200 body as a 206.
+    const totalSize = response.ContentLength ?? 0
     return {
       stream: response.Body as Readable,
       totalSize,
-      start,
-      end: Math.min(end, totalSize - 1),
+      start: 0,
+      end: totalSize - 1,
+      partial: false,
     }
   }
 

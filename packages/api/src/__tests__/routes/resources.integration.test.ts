@@ -459,6 +459,159 @@ describe('Resources API Routes', () => {
     })
   })
 
+  describe('GET /api/v1/resources/:id/preview — Range semantics', () => {
+    // Larger than the old 1 MB open-ended clamp, so these pins fail if it returns.
+    const RANGE_OBJECT_SIZE = 3 * 1024 * 1024
+
+    const downloadRange = vi.fn(async (_key: string, start: number, end?: number) => {
+      if (start >= RANGE_OBJECT_SIZE) {
+        const err = new Error('The requested range is not satisfiable')
+        err.name = 'InvalidRange'
+        throw err
+      }
+      const served = Math.min(end ?? RANGE_OBJECT_SIZE - 1, RANGE_OBJECT_SIZE - 1)
+      return {
+        stream: Readable.from([Buffer.alloc(served - start + 1)]),
+        totalSize: RANGE_OBJECT_SIZE,
+        start,
+        end: served,
+        partial: true,
+      }
+    })
+    const download = vi.fn(async () => Readable.from([Buffer.from('full-body')]))
+    const head = vi.fn(async () => ({ size: RANGE_OBJECT_SIZE }))
+    const rangeStorage = { ...storageWithContent, downloadRange, download, head }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rangeApp = createTestApp(db, { storage: rangeStorage as any })
+
+    let previewUrl: string
+
+    beforeEach(async () => {
+      downloadRange.mockClear()
+      download.mockClear()
+      head.mockClear()
+      const pkg = await createPackage('range-preview-pkg')
+      const resource = await createResource(pkg.id, { format: 'PNG' })
+      previewUrl = `/api/v1/resources/${resource.id}/preview`
+    })
+
+    it('serves a bounded range as requested', async () => {
+      const res = await rangeApp.request(previewUrl, { headers: { Range: 'bytes=10-19' } })
+      expect(res.status).toBe(206)
+      expect(res.headers.get('Content-Range')).toBe(`bytes 10-19/${RANGE_OBJECT_SIZE}`)
+      expect(res.headers.get('Content-Length')).toBe('10')
+    })
+
+    it('serves an open-ended range to the end of the object', async () => {
+      const res = await rangeApp.request(previewUrl, { headers: { Range: 'bytes=1000-' } })
+      expect(res.status).toBe(206)
+      expect(res.headers.get('Content-Range')).toBe(
+        `bytes 1000-${RANGE_OBJECT_SIZE - 1}/${RANGE_OBJECT_SIZE}`
+      )
+      expect(res.headers.get('Content-Length')).toBe(String(RANGE_OBJECT_SIZE - 1000))
+      expect(downloadRange).toHaveBeenCalledWith(expect.any(String), 1000, undefined)
+    })
+
+    it('serves a suffix range (bytes=-N) from the object tail', async () => {
+      const res = await rangeApp.request(previewUrl, { headers: { Range: 'bytes=-8' } })
+      expect(res.status).toBe(206)
+      expect(res.headers.get('Content-Range')).toBe(
+        `bytes ${RANGE_OBJECT_SIZE - 8}-${RANGE_OBJECT_SIZE - 1}/${RANGE_OBJECT_SIZE}`
+      )
+      expect(res.headers.get('Content-Length')).toBe('8')
+    })
+
+    it('clamps a bounded range whose end passes the object size', async () => {
+      const res = await rangeApp.request(previewUrl, {
+        headers: { Range: `bytes=${RANGE_OBJECT_SIZE - 8}-${RANGE_OBJECT_SIZE + 100}` },
+      })
+      expect(res.status).toBe(206)
+      expect(res.headers.get('Content-Range')).toBe(
+        `bytes ${RANGE_OBJECT_SIZE - 8}-${RANGE_OBJECT_SIZE - 1}/${RANGE_OBJECT_SIZE}`
+      )
+    })
+
+    it('answers HEAD with Content-Length without opening a stream', async () => {
+      const res = await rangeApp.request(previewUrl, { method: 'HEAD' })
+      expect(res.status).toBe(200)
+      expect(res.headers.get('Content-Length')).toBe(String(RANGE_OBJECT_SIZE))
+      expect(res.headers.get('Accept-Ranges')).toBe('bytes')
+      expect(download).not.toHaveBeenCalled()
+      expect(downloadRange).not.toHaveBeenCalled()
+    })
+
+    it('ignores Range on HEAD and answers the full size (RFC 9110 §14.2)', async () => {
+      // Range handling is defined for GET only. DuckDB-WASM's size probe reads
+      // Content-Length off this response without checking the status, so the
+      // full length satisfies it (verified against the real engine). A
+      // malformed Range is ignored the same way — never parsed, never 416.
+      for (const range of ['bytes=10-19', 'bytes=-', 'bytes=20-10']) {
+        const res = await rangeApp.request(previewUrl, {
+          method: 'HEAD',
+          headers: { Range: range },
+        })
+        expect(res.status).toBe(200)
+        expect(res.headers.get('Content-Range')).toBeNull()
+        expect(res.headers.get('Content-Length')).toBe(String(RANGE_OBJECT_SIZE))
+      }
+      expect(downloadRange).not.toHaveBeenCalled()
+    })
+
+    it('rejects a range starting past the end with 416', async () => {
+      const res = await rangeApp.request(previewUrl, {
+        headers: { Range: `bytes=${RANGE_OBJECT_SIZE}-` },
+      })
+      expect(res.status).toBe(416)
+      expect(res.headers.get('Content-Range')).toBe(`bytes */${RANGE_OBJECT_SIZE}`)
+    })
+
+    it('rejects malformed byte ranges with 416', async () => {
+      // Includes numerals past 2^53: unguarded they reach the backend in
+      // exponent notation, which S3 ignores — a full 200 mislabeled as 206.
+      for (const range of ['bytes=-', 'bytes=20-10', 'bytes=100000000000000000000000-']) {
+        const res = await rangeApp.request(previewUrl, { headers: { Range: range } })
+        expect(res.status).toBe(416)
+      }
+      expect(downloadRange).not.toHaveBeenCalled()
+    })
+
+    it('ignores an unknown range unit and serves the full body (RFC 9110 MUST)', async () => {
+      const res = await rangeApp.request(previewUrl, { headers: { Range: 'items=0-1' } })
+      expect(res.status).toBe(200)
+      expect(download).toHaveBeenCalled()
+      expect(downloadRange).not.toHaveBeenCalled()
+    })
+
+    it('ignores a multi-range request and serves the full body', async () => {
+      const res = await rangeApp.request(previewUrl, { headers: { Range: 'bytes=0-1,5-6' } })
+      expect(res.status).toBe(200)
+      expect(download).toHaveBeenCalled()
+      expect(downloadRange).not.toHaveBeenCalled()
+    })
+
+    it('answers 200 when the backend ignored the Range and sent the whole object', async () => {
+      // Range readers treat a 206 body as the requested slice without checking
+      // Content-Range, so a full body must never be labeled 206.
+      const ignoringStorage = {
+        ...rangeStorage,
+        downloadRange: vi.fn(async () => ({
+          stream: Readable.from([Buffer.alloc(RANGE_OBJECT_SIZE)]),
+          totalSize: RANGE_OBJECT_SIZE,
+          start: 0,
+          end: RANGE_OBJECT_SIZE - 1,
+          partial: false,
+        })),
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ignoringApp = createTestApp(db, { storage: ignoringStorage as any })
+
+      const res = await ignoringApp.request(previewUrl, { headers: { Range: 'bytes=100-' } })
+      expect(res.status).toBe(200)
+      expect(res.headers.get('Content-Range')).toBeNull()
+      expect(res.headers.get('Content-Length')).toBe(String(RANGE_OBJECT_SIZE))
+    })
+  })
+
   describe('PUT /api/v1/resources/:id', () => {
     it('leaves the pipeline-owned columns untouched', async () => {
       // size/hash/extras are measured or produced by the worker. An edit must

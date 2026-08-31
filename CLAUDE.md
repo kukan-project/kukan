@@ -216,7 +216,7 @@ pnpm format        # Prettier フォーマット
 - API ライブラリ化・単一オリジン → `docs/adr/jp/012-api-as-library-single-origin.md`
 - 検索と DB フィルタリングの分離 → `docs/adr/jp/013-search-vs-db-filtering.md`
 - プレビュー Parquet 形式 → `docs/adr/jp/014-parquet-preview-format.md`
-- DuckDB-WASM データエクスプローラー → `docs/adr/jp/016-duckdb-wasm-data-explorer.md`
+- DuckDB-WASM データエクスプローラー → `docs/adr/jp/016-duckdb-wasm-data-explorer.md`（置換済み → ADR-048）
 - 統一 preview-url エンドポイント → `docs/adr/jp/015-unified-preview-url.md`（置換済み → ADR-017）
 - サーバー経由ダウンロード・プレビュー URL → `docs/adr/jp/017-server-proxied-download.md`
 - Web=App Runner, Worker=Fargate → `docs/adr/jp/018-app-runner-plus-fargate.md`（置換済み → ADR-020）
@@ -249,7 +249,7 @@ pnpm format        # Prettier フォーマット
 - ストレージオブジェクトの先行記録（クラッシュ由来のリーク） → `docs/adr/jp/045-object-write-ahead.md`
 - 正本の確定と、その解釈の分離（Version 先行 + DuckDB の Interpret ステージ） → `docs/adr/jp/046-interpret-stage.md`
 - 取得内容が宣言と食い違うとき正本を差し替えない（サイト閉鎖時の一括転送、提案） → `docs/adr/jp/047-fetched-content-mismatch.md`
-- テーブルプレビューの一枚化（閲覧=Range 配信 / 対話=クライアント計算、解析モードトグル廃止、提案） → `docs/adr/jp/048-modeless-table-preview.md`（ADR-016 置換提案）
+- テーブルプレビューの一枚化（閲覧=Range 配信 / 対話=クライアント計算、解析モードトグル廃止） → `docs/adr/jp/048-modeless-table-preview.md`（ADR-016 を置換）
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、

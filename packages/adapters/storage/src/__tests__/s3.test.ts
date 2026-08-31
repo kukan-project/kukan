@@ -167,20 +167,38 @@ describe('S3StorageAdapter', () => {
       expect(result.totalSize).toBe(1000)
       expect(result.start).toBe(0)
       expect(result.end).toBe(99)
+      expect(result.partial).toBe(true)
     })
 
-    it('should clamp end to totalSize - 1', async () => {
+    it('should report the clamped end the backend served for an over-long range', async () => {
+      // S3 clamps the range itself and says so in Content-Range.
       mockSend.mockResolvedValue({
         Body: Readable.from(['']),
-        ContentRange: 'bytes 0-499/200',
+        ContentRange: 'bytes 0-199/200',
       })
 
       const result = await storage.downloadRange('key', 0, 499)
 
       expect(result.end).toBe(199)
+      expect(result.totalSize).toBe(200)
     })
 
-    it('should fall back to ContentLength when ContentRange is absent', async () => {
+    it('should send an open-ended Range when end is omitted', async () => {
+      mockSend.mockResolvedValue({
+        Body: Readable.from(['']),
+        ContentRange: 'bytes 100-999/1000',
+      })
+
+      const result = await storage.downloadRange('key', 100)
+
+      const cmd = mockSend.mock.calls[0][0]
+      expect(cmd.input.Range).toBe('bytes=100-')
+      expect(result.start).toBe(100)
+      expect(result.end).toBe(999)
+      expect(result.totalSize).toBe(1000)
+    })
+
+    it('should describe the full body when ContentRange is absent (Range ignored)', async () => {
       mockSend.mockResolvedValue({
         Body: Readable.from(['']),
         ContentLength: 500,
@@ -188,7 +206,12 @@ describe('S3StorageAdapter', () => {
 
       const result = await storage.downloadRange('key', 0, 99)
 
+      // A missing Content-Range means the backend sent the whole object; the
+      // reported offsets must match the stream, not echo the request.
       expect(result.totalSize).toBe(500)
+      expect(result.start).toBe(0)
+      expect(result.end).toBe(499)
+      expect(result.partial).toBe(false)
     })
   })
 
