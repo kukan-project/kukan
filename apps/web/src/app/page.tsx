@@ -91,7 +91,7 @@ export default async function HomePage() {
       </form>
       <ExampleQueries queries={exampleQueries} className="max-w-lg justify-center" />
 
-      <div className="grid w-full max-w-4xl grid-cols-4 gap-4">
+      <div className="grid w-full max-w-4xl grid-cols-2 gap-4 sm:grid-cols-4">
         <Link href="/dataset">
           <Card className="transition-colors hover:bg-accent/50">
             <CardContent className="flex flex-col items-center py-6">

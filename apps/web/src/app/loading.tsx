@@ -5,12 +5,12 @@ export default function HomeLoading() {
     <div className="mx-auto flex max-w-[var(--kukan-container-max-width)] flex-col items-center gap-8 px-4 py-16">
       <div className="flex flex-col items-center gap-4 text-center">
         <Skeleton className="h-12 w-48" />
-        <Skeleton className="h-6 w-80" />
+        <Skeleton className="h-6 w-80 max-w-full" />
       </div>
 
       <Skeleton className="h-10 w-full max-w-lg" />
 
-      <div className="grid w-full max-w-4xl grid-cols-4 gap-4">
+      <div className="grid w-full max-w-4xl grid-cols-2 gap-4 sm:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <Card key={i}>
             <CardContent className="flex flex-col items-center gap-2 py-6">

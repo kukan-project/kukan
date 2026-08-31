@@ -40,8 +40,8 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
     <article className="relative">
       <Card className="transition-colors hover:bg-accent/50">
         <CardHeader>
-          <div className="flex items-start justify-between gap-2">
-            <CardTitle className="min-w-0 flex-1 text-lg">
+          <div className="flex flex-col items-start gap-1 sm:flex-row sm:justify-between sm:gap-2">
+            <CardTitle className="min-w-0 text-lg sm:flex-1">
               <Link
                 href={datasetHref}
                 className={`after:absolute after:inset-0 after:content-[''] ${HIGHLIGHT_MARK}`}
@@ -60,7 +60,7 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
               </Badge>
             )}
             {(pkg.updated || pkg.created) && (
-              <span className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
+              <span className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                 <Calendar className="h-3 w-3" />
                 {pkg.updated && (
                   <span>
@@ -77,7 +77,7 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
           </div>
           {(pkg.title || typeof pkg.resourceCount === 'number' || pkg.formats) && (
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-              {pkg.title && <span className="font-mono">{pkg.name}</span>}
+              {pkg.title && <span className="break-all font-mono">{pkg.name}</span>}
               {(typeof pkg.resourceCount === 'number' || pkg.formats) && (
                 <div className="ml-auto flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
                   {typeof pkg.resourceCount === 'number' && (

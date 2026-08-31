@@ -8,7 +8,7 @@ export default function DatasetDetailLoading() {
         <Skeleton className="h-4 w-48" />
 
         {/* Title */}
-        <Skeleton className="h-9 w-96" />
+        <Skeleton className="h-9 w-96 max-w-full" />
 
         {/* Organization */}
         <Skeleton className="h-4 w-32" />

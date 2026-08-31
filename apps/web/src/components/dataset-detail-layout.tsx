@@ -75,7 +75,9 @@ export async function DatasetDetailLayout({ pkg, initialResourceId }: DatasetDet
         {/* Title */}
         <div>
           <h1 className="text-3xl font-bold tracking-tight">{pkg.title || pkg.name}</h1>
-          {pkg.title && <p className="mt-1 font-mono text-sm text-muted-foreground">{pkg.name}</p>}
+          {pkg.title && (
+            <p className="mt-1 break-all font-mono text-sm text-muted-foreground">{pkg.name}</p>
+          )}
         </div>
 
         {/* Organization / Groups / Tags / License / Dates */}

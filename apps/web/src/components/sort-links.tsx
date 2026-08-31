@@ -36,7 +36,7 @@ export function SortLinks({
   ]
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex flex-wrap items-center gap-1">
       <span className="mr-1 text-sm text-muted-foreground">{t('sortLabel')}</span>
       {options.map(({ order, label }) => (
         <Button

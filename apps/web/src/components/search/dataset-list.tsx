@@ -183,9 +183,9 @@ export function DatasetList({ initialData }: Props) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <h1 className="text-2xl font-bold tracking-tight">{t('dataset.title')}</h1>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <p className="text-sm text-muted-foreground">
             {loading || error ? '\u00A0' : t('common.count', { count: data?.total ?? 0 })}
           </p>
