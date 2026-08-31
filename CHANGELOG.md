@@ -6,6 +6,36 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.20.0] - 2026-08-31
+
+**Highlights**
+
+- The table preview is now a single table — the "analysis mode" toggle is gone. Browsing stays as light as before, and the first sort, filter or search starts the analysis engine in the background: the action you took is applied automatically the moment the engine is ready.
+- Public pages now hold up on phones: at 320–390 px widths the layout no longer scrolls horizontally, dataset titles keep their width, and the home statistics cards read as a 2×2 grid — guarded by a new responsive e2e test.
+
+**Features**
+
+- feat(web): modeless table preview with range-read analysis (#511) — the DuckDB-WASM "analysis mode" toggle is removed (ADR-048, replacing ADR-016). The initial table renders from lightweight range reads with no engine loaded; sorting, filtering or searching boots DuckDB-WASM behind the scenes without blocking the page, and if the engine or a query fails the table falls back to the plain view with a visible notice and retries on the next interaction. Under the hood, the `/preview` endpoint now implements RFC 9110 Range semantics faithfully — open-ended ranges stream to end of file instead of being truncated, suffix ranges are supported, HEAD always answers with the full length, responses are never falsely labeled partial, and malformed huge ranges are rejected — groundwork for streaming even larger previews in a later release.
+
+**Bug Fixes**
+
+- fix(web): prevent horizontal overflow on mobile widths (#512) — at phone widths (320–390 px) the dataset list no longer scrolls sideways, long dataset slugs wrap instead of stretching the page, dataset card titles are no longer squeezed to one character per line by the date block, the home statistics grid switches to two columns, and list headers and sort controls wrap. A new e2e test asserts no horizontal overflow on the public pages at 320 px and 390 px.
+
+---
+
+**ハイライト**
+
+- テーブルプレビューが一枚の表になりました —「解析モード」トグルは廃止です。閲覧はこれまでどおり軽く、最初のソート・フィルター・検索の操作で解析エンジンが裏で起動し、準備が整った瞬間にその操作が自動で適用されます。
+- 公開ページがスマートフォンでも崩れなくなりました。320〜390px 幅で横スクロールが発生せず、データセット名の潰れやトップの統計カードの縦積みも解消しています。回帰を防ぐ responsive e2e テストも追加しました。
+
+**機能**
+
+- feat(web): モードレステーブルプレビュー(Range 読み + 暗黙の解析起動)(#511) — DuckDB-WASM の「解析モード」トグルを廃止しました(ADR-048、ADR-016 を置換)。初期表示はエンジンなしの軽量な Range 読みで描画し、ソート・フィルター・検索の操作で DuckDB-WASM がページを塞がずに裏で起動します。エンジンやクエリが失敗した場合は通知を残して素の表示に降格し、次の操作で再起動を試みます。あわせて `/preview` エンドポイントの Range 応答を RFC 9110 に忠実に修正しました — 終端なし Range の 1 MB 切り詰めを廃止して EOF まで応答、suffix 形式に対応、HEAD は常に全長を返し、部分応答の偽装をなくし、壊れた巨大 Range は拒否します。将来のより大きなプレビューの配信に向けた下地です
+
+**バグ修正**
+
+- fix(web): スマホ幅での横スクロールを解消 (#512) — スマートフォン幅(320〜390px)でデータセット一覧が横にスクロールする問題を修正しました。長いデータセット slug は折り返し、日時ブロックがカードタイトルを 1 文字幅まで潰す問題も解消し、トップの統計グリッドは 2 カラムに切り替わり、一覧ヘッダーとソートボタンは折り返すようになりました。公開ページで横スクロールが発生しないことを 320px / 390px で検証する e2e テストを追加しています
+
 ## [0.19.1] - 2026-08-28
 
 **Highlights**
