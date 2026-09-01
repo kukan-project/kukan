@@ -6,6 +6,34 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.20.1] - 2026-09-01
+
+**Highlights**
+
+- A follow-up sweep of the mobile layout: the metadata table on dataset and resource pages — where a long sha256 hash was simply unreachable on phones — now scrolls horizontally like the other tables, search-result snippets no longer show a half-cut line of text below their border, and badges holding long tags or column names wrap instead of stretching the page.
+
+**Bug Fixes**
+
+- fix(web): unclip wide tables and wrap user-text badges on mobile (#516) — the metadata table wrapper allowed no horizontal scrolling, so content wider than a phone screen was unreachable; it now scrolls, with row labels kept on one line. Content snippets in search results clipped mid-line because `line-clamp` clips at the padding box — the padding moved to a wrapper so exactly the clamped lines show. Size columns in the version-history and field tables no longer wrap, and the shared badge gained a `wrap` variant (with `overflow-wrap: anywhere`) applied to tags, facets, group chips, example queries and column-name badges, so even long unbroken names fold instead of forcing a horizontal scroll. The responsive e2e now also fails if any table is clipped behind an `overflow-hidden` ancestor, and measures the public resource page with a seeded version history and a 64-hex hash.
+
+**Documentation**
+
+- docs(site): update preview feature copy for modeless table preview (#514) — the landing-page feature card now describes the single-table preview (sort, filter and search in place, SQL via the Data API) instead of the retired DuckDB explorer mode.
+
+---
+
+**ハイライト**
+
+- モバイルレイアウトの追加スイープ対応です。データセット・リソースページのメタデータ一覧 — 長い sha256 ハッシュがスマートフォンでは読む手段がありませんでした — が他の表と同じく横スクロールできるようになり、検索結果のスニペットに枠線の下から途中で切れた行が覗く問題も解消、長いタグ名や列名を持つバッジはページを押し広げず折り返すようになりました。
+
+**バグ修正**
+
+- fix(web): 幅広テーブルの到達不能とバッジの潰れを解消 (#516) — メタデータ一覧のラッパーが横スクロールを禁止しており、画面より広い内容に到達できませんでした。スクロール可能にし、行ラベルは 1 行を維持します。検索結果のスニペットは `line-clamp` が padding-box でクリップするため行の途中で切断されて見えていました — padding を外側に移し、表示行だけがきれいに見えるようにしました。バージョン履歴と項目一覧のサイズ列は折り返さないようにし、共有バッジには `wrap` バリアント(`overflow-wrap: anywhere` 付き)を新設してタグ・ファセット・グループチップ・検索例・列名バッジに適用 — 区切りのない長い名前も横スクロールを起こさず折り返します。レスポンシブ e2e は「テーブルが `overflow-hidden` の先祖にクリップされていないか」も検証するようになり、版履歴と 64 桁ハッシュをシードした公開リソースページも計測対象に加わりました
+
+**ドキュメント**
+
+- docs(site): モードレステーブルプレビューに合わせて LP の機能紹介文を更新 (#514) — 「DuckDB エクスプローラーで SQL 分析」から、一枚の表(その場でソート・フィルター・検索、SQL は Data API)の説明に改めました
+
 ## [0.20.0] - 2026-08-31
 
 **Highlights**
