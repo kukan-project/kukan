@@ -641,7 +641,7 @@ export function DatasetForm({
                 aria-pressed={selected}
                 onClick={() => toggleGroup(g.name)}
                 className={cn(
-                  badgeVariants({ variant: selected ? 'default' : 'outline' }),
+                  badgeVariants({ variant: selected ? 'default' : 'outline', wrap: true }),
                   'cursor-pointer'
                 )}
               >

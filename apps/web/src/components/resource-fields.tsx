@@ -51,7 +51,7 @@ export function ResourceFields({ resourceId, primaryKey }: ResourceFieldsProps) 
               <th className="px-4 py-2 text-left font-medium text-muted-foreground">
                 {t('fieldNullable')}
               </th>
-              <th className="px-4 py-2 text-right font-medium text-muted-foreground">
+              <th className="px-4 py-2 text-right font-medium whitespace-nowrap text-muted-foreground">
                 {t('fieldSize')}
               </th>
             </tr>
@@ -81,7 +81,7 @@ export function ResourceFields({ resourceId, primaryKey }: ResourceFieldsProps) 
                       {field.nullable ? t('fieldNullableYes') : t('fieldNullableNo')}
                     </Badge>
                   </td>
-                  <td className="px-4 py-2 text-right tabular-nums">
+                  <td className="px-4 py-2 text-right whitespace-nowrap tabular-nums">
                     {formatBytes(field.compressedSize)}
                   </td>
                 </tr>

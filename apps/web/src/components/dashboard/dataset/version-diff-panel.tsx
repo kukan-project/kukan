@@ -126,17 +126,17 @@ export function VersionDiffPanel({ resourceId, version }: { resourceId: string; 
           <p className="text-sm">{t('diffSchemaChanged')}</p>
           <div className="flex flex-wrap gap-1">
             {diff.schemaDiff.added.map((c) => (
-              <Badge key={`a-${c.name}`} variant="outline">
+              <Badge key={`a-${c.name}`} variant="outline" wrap>
                 + {c.name} ({c.type})
               </Badge>
             ))}
             {diff.schemaDiff.removed.map((c) => (
-              <Badge key={`r-${c.name}`} variant="outline">
+              <Badge key={`r-${c.name}`} variant="outline" wrap>
                 − {c.name} ({c.type})
               </Badge>
             ))}
             {diff.schemaDiff.retyped.map((c) => (
-              <Badge key={`t-${c.name}`} variant="outline">
+              <Badge key={`t-${c.name}`} variant="outline" wrap>
                 {c.name}: {c.from} → {c.to}
               </Badge>
             ))}

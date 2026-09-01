@@ -18,7 +18,11 @@ export function ExampleQueries({ queries, className }: { queries: string[]; clas
       </span>
       {queries.map((query) => (
         <Link key={query} href={`/dataset?q=${encodeURIComponent(query)}`}>
-          <Badge variant="outline" className="font-normal transition-colors hover:bg-accent/50">
+          <Badge
+            variant="outline"
+            wrap
+            className="font-normal transition-colors hover:bg-accent/50"
+          >
             {query}
           </Badge>
         </Link>

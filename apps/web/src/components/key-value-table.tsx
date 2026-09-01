@@ -18,12 +18,14 @@ export function KeyValueTable({ rows }: { rows: KeyValueRow[] }) {
   if (filtered.length === 0) return null
 
   return (
-    <div className="overflow-hidden rounded-lg border">
+    <div className="overflow-x-auto rounded-lg border">
       <table className="w-full">
         <tbody>
           {filtered.map((row, i) => (
             <tr key={row.label} className={i % 2 === 0 ? 'bg-muted/50' : ''}>
-              <th className="w-1/3 px-4 py-3 text-left text-sm font-medium">{row.label}</th>
+              <th className="w-1/3 px-4 py-3 text-left text-sm font-medium whitespace-nowrap">
+                {row.label}
+              </th>
               <td className="px-4 py-3 text-sm">{row.value}</td>
             </tr>
           ))}

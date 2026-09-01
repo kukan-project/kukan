@@ -106,7 +106,7 @@ export async function DatasetDetailLayout({ pkg, initialResourceId }: DatasetDet
                 ))}
                 {pkg.tags.map((pkgTag) => (
                   <Link key={pkgTag.id} href={`/dataset?tags=${encodeURIComponent(pkgTag.name)}`}>
-                    <Badge variant="secondary" className="text-xs hover:bg-accent">
+                    <Badge variant="secondary" wrap className="text-xs hover:bg-accent">
                       <Tag className="mr-0.5 h-3 w-3" />
                       {pkgTag.name}
                     </Badge>

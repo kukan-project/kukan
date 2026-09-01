@@ -174,7 +174,7 @@ export function DatasetFilters({ baseParams, facets }: DatasetFiltersProps) {
             if (tag.count === 0 && !isSelected) {
               return (
                 <span key={tag.name} className="opacity-40">
-                  <Badge variant="secondary" className="cursor-default">
+                  <Badge variant="secondary" wrap className="cursor-default">
                     {tag.name}
                     <span className="ml-1 text-xs opacity-70">{tag.count}</span>
                   </Badge>
@@ -184,7 +184,11 @@ export function DatasetFilters({ baseParams, facets }: DatasetFiltersProps) {
             const newTags = toggleArray(currentTags, tag.name)
             return (
               <Link key={tag.name} href={buildDatasetUrl({ ...baseParams, tags: newTags })}>
-                <Badge variant={isSelected ? 'default' : 'secondary'} className="cursor-pointer">
+                <Badge
+                  variant={isSelected ? 'default' : 'secondary'}
+                  wrap
+                  className="cursor-pointer"
+                >
                   {tag.name}
                   <span className="ml-1 text-xs opacity-70">{tag.count}</span>
                 </Badge>

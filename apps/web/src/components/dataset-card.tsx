@@ -107,7 +107,7 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                 ))}
               {pkg.tags &&
                 pkg.tags.split(',').map((tagName) => (
-                  <Badge key={tagName} variant="secondary" className="text-xs">
+                  <Badge key={tagName} variant="secondary" wrap className="text-xs">
                     <Tag className="mr-0.5 h-3 w-3" />
                     {tagName}
                   </Badge>
@@ -174,14 +174,19 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                             </span>
                             {r.contentSnippets && r.contentSnippets.length > 0 ? (
                               r.contentSnippets.map((snippet, i) => (
-                                <p
+                                // line-clamp clips at the padding box, so padding lives on the wrapper
+                                <div
                                   key={i}
-                                  className={`line-clamp-4 rounded border border-primary/20 bg-primary/5 px-2 py-1.5 text-xs text-muted-foreground ${HIGHLIGHT_MARK}`}
-                                  suppressHydrationWarning
-                                  dangerouslySetInnerHTML={{
-                                    __html: snippet.replace(/\n/g, ' '),
-                                  }}
-                                />
+                                  className="rounded border border-primary/20 bg-primary/5 px-2 py-1.5"
+                                >
+                                  <p
+                                    className={`line-clamp-4 text-xs break-words text-muted-foreground ${HIGHLIGHT_MARK}`}
+                                    suppressHydrationWarning
+                                    dangerouslySetInnerHTML={{
+                                      __html: snippet.replace(/\n/g, ' '),
+                                    }}
+                                  />
+                                </div>
                               ))
                             ) : (
                               <div className="flex h-7 w-full items-center gap-2 rounded border border-primary/10 bg-primary/5 px-2">

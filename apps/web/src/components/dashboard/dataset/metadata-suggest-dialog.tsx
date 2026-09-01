@@ -346,7 +346,7 @@ export function MetadataSuggestDialog({
                         {result.suggestion.tags
                           .filter((tag) => tag.isNew)
                           .map((tag) => (
-                            <Badge key={tag.name} variant="outline" className="text-[10px]">
+                            <Badge key={tag.name} variant="outline" wrap className="text-[10px]">
                               {t('aiSuggestNewTag', { name: tag.name })}
                             </Badge>
                           ))}

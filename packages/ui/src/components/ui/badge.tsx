@@ -4,7 +4,7 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '../../lib/utils'
 
 const badgeVariants = cva(
-  'inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+  'inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
   {
     variants: {
       variant: {
@@ -12,6 +12,12 @@ const badgeVariants = cva(
         secondary: 'border-transparent bg-secondary text-secondary-foreground',
         destructive: 'border-transparent bg-destructive text-destructive-foreground',
         outline: 'text-foreground',
+      },
+      // For badges holding user-supplied text of unbounded length (tags,
+      // column names): a nowrap badge cannot break and overflows. wrap-anywhere
+      // covers unbroken ASCII runs, which whitespace-normal alone cannot break.
+      wrap: {
+        true: 'max-w-full whitespace-normal wrap-anywhere',
       },
     },
     defaultVariants: {
@@ -23,9 +29,10 @@ const badgeVariants = cva(
 function Badge({
   className,
   variant,
+  wrap,
   ...props
 }: React.ComponentProps<'div'> & VariantProps<typeof badgeVariants>) {
-  return <div className={cn(badgeVariants({ variant }), className)} {...props} />
+  return <div className={cn(badgeVariants({ variant, wrap }), className)} {...props} />
 }
 
 export { Badge, badgeVariants }

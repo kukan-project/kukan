@@ -51,7 +51,7 @@ export function ExplorerToolbar({
       {filters.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {filters.map((f) => (
-            <Badge key={f.column} variant="secondary" className="gap-1 text-xs">
+            <Badge key={f.column} variant="secondary" wrap className="gap-1 text-xs">
               <span>
                 {f.column} {OPERATOR_LABELS[f.operator]} &quot;{f.value}&quot;
               </span>

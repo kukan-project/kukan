@@ -107,7 +107,7 @@ export function VersionHistory({ resourceId }: Props) {
                 <TableRow>
                   <TableHead className="w-32">{t('version')}</TableHead>
                   <TableHead>{t('created')}</TableHead>
-                  <TableHead>{t('size')}</TableHead>
+                  <TableHead className="whitespace-nowrap">{t('size')}</TableHead>
                   <TableHead className="w-[120px]" />
                 </TableRow>
               </TableHeader>
@@ -126,7 +126,7 @@ export function VersionHistory({ resourceId }: Props) {
                       <TableCell className="text-muted-foreground">
                         <DateTime value={v.created} />
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
+                      <TableCell className="whitespace-nowrap text-muted-foreground">
                         {purged ? '—' : (formatBytes(v.size) ?? '—')}
                       </TableCell>
                       <TableCell>
