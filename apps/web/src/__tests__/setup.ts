@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { createElement } from 'react'
+import { createContext, createElement, useContext } from 'react'
 import { vi } from 'vitest'
 import messages from '../../messages/en.json'
 
@@ -95,14 +95,20 @@ function makeTranslator(namespace?: string) {
   return t
 }
 
+// Locale defaults to 'en'; tests wrap in NextIntlClientProvider to switch it
+const LocaleContext = createContext('en')
+
 vi.mock('next-intl', () => ({
   useTranslations: (ns: string) => makeTranslator(ns),
-  useLocale: () => 'en',
+  useLocale: () => useContext(LocaleContext),
+  NextIntlClientProvider: ({ locale, children }: { locale?: string; children: React.ReactNode }) =>
+    createElement(LocaleContext.Provider, { value: locale ?? 'en' }, children),
 }))
 
 // Mock next-intl/server (for async server components)
 vi.mock('next-intl/server', () => ({
   getTranslations: async (ns: string) => makeTranslator(ns),
+  getLocale: async () => 'en',
 }))
 
 // Mock server-only (no-op in test environment)

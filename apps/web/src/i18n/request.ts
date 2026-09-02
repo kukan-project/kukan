@@ -5,14 +5,7 @@ import { getRequestConfig } from 'next-intl/server'
 import { messages as BRAND_MESSAGES } from '@/brand/messages'
 
 import { deepMerge, type Messages } from './deep-merge'
-
-const SUPPORTED_LOCALES = ['ja', 'en'] as const
-type SupportedLocale = (typeof SUPPORTED_LOCALES)[number]
-const DEFAULT_LOCALE: SupportedLocale = 'en'
-
-function isSupported(value: string): value is SupportedLocale {
-  return (SUPPORTED_LOCALES as readonly string[]).includes(value)
-}
+import { DEFAULT_LOCALE, isSupportedLocale, type SupportedLocale } from './locales'
 
 function parseAcceptLanguage(header: string): SupportedLocale | undefined {
   const tags = header
@@ -24,9 +17,9 @@ function parseAcceptLanguage(header: string): SupportedLocale | undefined {
     .sort((a, b) => b.q - a.q)
 
   for (const { lang } of tags) {
-    if (isSupported(lang)) return lang
+    if (isSupportedLocale(lang)) return lang
     const prefix = lang.split('-')[0]
-    if (isSupported(prefix)) return prefix
+    if (isSupportedLocale(prefix)) return prefix
   }
   return undefined
 }
@@ -36,7 +29,7 @@ export default getRequestConfig(async () => {
   const cookieLocale = cookieStore.get('NEXT_LOCALE')?.value
 
   let locale: SupportedLocale = DEFAULT_LOCALE
-  if (cookieLocale && isSupported(cookieLocale)) {
+  if (cookieLocale && isSupportedLocale(cookieLocale)) {
     locale = cookieLocale
   } else {
     const acceptLang = (await headers()).get('accept-language')

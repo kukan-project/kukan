@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import { Globe, Menu } from 'lucide-react'
 import { Button, cn, Separator, Sheet, SheetContent, SheetHeader, SheetTitle } from '@kukan/ui'
-import { brandConfig } from '@/brand/brand-config'
+import { resolveBrandConfig } from '@/lib/resolved-brand'
 
 interface MobileNavProps {
   user: { name: string; email: string } | null
@@ -17,6 +17,7 @@ export function MobileNav({ user }: MobileNavProps) {
   const pathname = usePathname()
   const locale = useLocale()
   const t = useTranslations('common')
+  const brand = resolveBrandConfig(locale)
 
   const navItems = [
     { href: '/dataset', label: t('datasets') },
@@ -39,7 +40,7 @@ export function MobileNav({ user }: MobileNavProps) {
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="left">
           <SheetHeader>
-            <SheetTitle>{brandConfig.siteName}</SheetTitle>
+            <SheetTitle>{brand.siteName}</SheetTitle>
           </SheetHeader>
           <nav className="flex flex-col gap-2 p-4">
             {navItems.map((item) => (
@@ -55,7 +56,7 @@ export function MobileNav({ user }: MobileNavProps) {
                 {item.label}
               </Link>
             ))}
-            {brandConfig.headerNavExtra.map((item) => (
+            {brand.headerNavExtra.map((item) => (
               <a
                 key={item.href}
                 href={item.href}

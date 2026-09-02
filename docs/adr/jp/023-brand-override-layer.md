@@ -2,7 +2,7 @@
 
 ## ステータス
 
-承認済み（2026-05-16、2026-07-10 テスト戦略を追記、2026-07-16 トークン運用ポリシーを追記）
+承認済み（2026-05-16、2026-07-10 テスト戦略を追記、2026-07-16 トークン運用ポリシーを追記、2026-09-02 ロケール別ブランドテキストを追記）
 
 ## コンテキスト
 
@@ -76,7 +76,7 @@ export const brandConfig: BrandConfig = {
 
   // ナビゲーション（追加項目）
   headerNavExtra: [],
-  footerLinks: [{ label: '利用規約', href: '/terms' }],
+  footerLinks: [{ label: { ja: '利用規約', en: 'Terms of Use' }, href: '/terms' }],
 
   // メタデータ
   ogImage: '/og-default.png',
@@ -88,12 +88,13 @@ export const brandConfig: BrandConfig = {
 
 ```typescript
 import type { ComponentType } from 'react'
+import type { LocalizedText } from '@/i18n/locales'
 
 /** ブランド設定の型定義 */
 export interface BrandConfig {
-  siteName: string
-  siteDescription: string
-  copyright: string
+  siteName: LocalizedText
+  siteDescription: LocalizedText
+  copyright: LocalizedText
   copyrightUrl?: string
   logo: LogoConfig
   headerNavExtra: NavItem[]
@@ -103,13 +104,14 @@ export interface BrandConfig {
 }
 
 export interface NavItem {
-  label: string
+  label: LocalizedText
   href: string
   external?: boolean
 }
 
 export type LogoConfig =
-  { type: 'default' } | { type: 'image'; src: string; width: number; height: number; alt: string }
+  | { type: 'default' }
+  | { type: 'image'; src: string; width: number; height: number; alt: LocalizedText }
 
 /** コンポーネントオーバーライドのスロット定義 */
 export interface BrandOverrides {
@@ -175,16 +177,22 @@ export default async function HomePage() {
 
 ```typescript
 // apps/web/src/app/layout.tsx（本体側）
+import { getLocale } from 'next-intl/server'
 import { brandConfig } from '@/brand'
+import { resolveBrandConfig } from '@/lib/resolved-brand'
 import { Header } from '@/components/layout/header'
 import { Footer } from '@/components/layout/footer'
 import '@/brand/theme.css'
 
-export const metadata: Metadata = {
-  title: brandConfig.siteName,
-  description: brandConfig.siteDescription,
+// ロケール非依存の部分はモジュールスコープで一度だけ構築
+const staticMetadata: Metadata = {
   icons: { icon: brandConfig.faviconPath },
   openGraph: { images: [brandConfig.ogImage] },
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const brand = resolveBrandConfig(await getLocale())
+  return { ...staticMetadata, title: brand.siteName, description: brand.siteDescription }
 }
 ```
 
@@ -233,7 +241,37 @@ export const metadata: Metadata = {
 
 - 記述したキーのみ上書きされ、記述しなかったキーはデフォルトが維持される
 - ネストされたオブジェクトは再帰的にマージされる（兄弟キーは保持）
-- `brandConfig.siteName` 等の言語非依存設定と i18n メッセージの使い分け: メタデータ・OGP 等の言語切替が不要な値は `brandConfig` に、UI 表示テキストは i18n メッセージに配置する
+- `brandConfig` と i18n メッセージの使い分け: ブランド固有の値（サイト名・ナビ項目・著作権表示等）は `brandConfig` に、本体 UI の翻訳テキストの上書きは i18n メッセージに配置する
+
+### ロケール別ブランドテキスト（2026-09-02 追記）
+
+`brandConfig` のユーザー向けテキスト（`siteName` / `siteDescription` / `copyright` /
+`logo.alt` / `headerNavExtra[].label` / `footerLinks[].label`）は
+`LocalizedText`（`string | Partial<Record<SupportedLocale, string>>`）を受け付ける。
+文字列のままなら全ロケール共通（後方互換）、ロケールマップならロケール切替に追従する。
+欠けたロケールはデフォルトロケール → 宣言順で最初に定義されたロケールの順で
+フォールバックする。解決は本体側の `resolveBrandConfig()`（`src/lib/resolved-brand.ts`。
+全フィールドを解決済み文字列にしたブランド設定を返す）が行い、フォーク側は値を
+書くだけでよい。静的ページ（`brand/pages/`）の本文と metadata はこの機構の対象外
+（ページ自体がフォーク所有のため、多言語化はフォーク側の実装に委ねる）。
+
+この型拡張は、`brandConfig` のテキストフィールドを**直接描画している**フォークの
+カスタムコンポーネントには破壊的変更である（設定値が文字列のままでも
+`{brandConfig.siteName}` は `LocalizedText` 型のため型エラーになる）。後述の
+型変更ポリシー「破壊的変更」に該当し、移行は `resolveBrandConfig()` 経由に
+切り替える:
+
+```tsx
+// async サーバーコンポーネント: getLocale（next-intl/server）
+const brand = resolveBrandConfig(await getLocale())
+```
+
+```tsx
+// クライアント / 非 async サーバーコンポーネント: useLocale（next-intl）
+const brand = resolveBrandConfig(useLocale())
+```
+
+いずれも `brand.siteName` / `brand.footerLinks[].label` 等は解決済みの string になる。
 
 ### コンフリクト回避の仕組み
 
@@ -356,10 +394,11 @@ Tier 3（プラグインシステム）は ADR-010 の方針をそのまま維�
 
 フォークがブランドをカスタマイズすると、スロットコンポーネント（`Header` / `Footer` / `HomePage`）を render する本体のユニットテストがカスタム実装を描画してしまい、KUKAN デフォルトの文言・構造への期待が破綻する。これを防ぐため、**本体のテストはブランド非依存（KUKAN デフォルト固定）とする**。
 
-1. **本体テストは `@/brand` を実 import しない**。ブランド消費コンポーネントを render するテストは、`@/brand` をモックして KUKAN デフォルト値に固定する:
+1. **本体テストは `@/brand` を実 import しない**。ブランド消費コンポーネントを render するテストは、ブランドモジュールをモックして KUKAN デフォルト値に固定する。本体の `resolveBrandConfig()` はバレルを経由せず `@/brand/brand-config` を直接 import する（フォークの overrides をクライアントバンドルに巻き込まないため）ので、**両方**をモックする:
 
    ```typescript
    vi.mock('@/brand', () => import('@/__tests__/brand-defaults'))
+   vi.mock('@/brand/brand-config', () => import('@/__tests__/brand-defaults'))
    ```
 
 2. **`src/__tests__/brand-defaults.ts` は本体が管理する**。KUKAN デフォルト値の意図的なコピーであり、`src/brand/brand-config.ts` から import しない（フォークが書き換えるため）。`BrandConfig` に必須フィールドを追加する際は、このファイルも本体側で更新する。

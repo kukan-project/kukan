@@ -1,5 +1,7 @@
+import { useLocale } from 'next-intl'
 import { Separator } from '@kukan/ui'
-import { brandConfig, overrides } from '@/brand'
+import { overrides } from '@/brand'
+import { resolveBrandConfig } from '@/lib/resolved-brand'
 
 const START_YEAR = 2026
 
@@ -10,6 +12,7 @@ export function Footer() {
 }
 
 export function DefaultFooter() {
+  const brand = resolveBrandConfig(useLocale())
   const currentYear = new Date().getFullYear()
   const yearDisplay = currentYear > START_YEAR ? `${START_YEAR}\u2013${currentYear}` : START_YEAR
 
@@ -18,21 +21,21 @@ export function DefaultFooter() {
       <Separator />
       <div className="mx-auto flex max-w-[var(--kukan-container-max-width)] items-center justify-between px-4 py-6">
         <div className="flex items-center gap-4">
-          {brandConfig.copyrightUrl ? (
+          {brand.copyrightUrl ? (
             <a
-              href={brandConfig.copyrightUrl}
+              href={brand.copyrightUrl}
               className="font-[family-name:var(--font-display)] text-sm font-bold tracking-[1px] hover:text-foreground"
               target="_blank"
               rel="noopener noreferrer"
             >
-              {brandConfig.siteName}
+              {brand.siteName}
             </a>
           ) : (
             <span className="font-[family-name:var(--font-display)] text-sm font-bold tracking-[1px]">
-              {brandConfig.siteName}
+              {brand.siteName}
             </span>
           )}
-          {brandConfig.footerLinks.map((item) => (
+          {brand.footerLinks.map((item) => (
             <a
               key={item.href}
               href={item.href}
@@ -44,7 +47,7 @@ export function DefaultFooter() {
           ))}
         </div>
         <span className="text-xs text-muted-foreground">
-          &copy; {yearDisplay} {brandConfig.copyright}
+          &copy; {yearDisplay} {brand.copyright}
         </span>
       </div>
     </footer>

@@ -35,6 +35,16 @@ test.describe('Brand config', () => {
     const footer = page.locator('footer')
     await expect(footer).toContainText('KUKAN')
     await expect(footer).toContainText('KUKAN Contributors')
-    await expect(footer.locator('a[href="/terms"]')).toHaveText('利用規約')
+    await expect(footer.locator('a[href="/terms"]')).toHaveText('Terms of Use')
+  })
+
+  test.describe('ja locale', () => {
+    test.use({ locale: 'ja' })
+
+    test('footer link label follows the locale', async ({ page }) => {
+      await page.goto('/')
+
+      await expect(page.locator('footer a[href="/terms"]')).toHaveText('利用規約')
+    })
   })
 })

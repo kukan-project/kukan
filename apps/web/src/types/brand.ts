@@ -1,19 +1,21 @@
 import type { ComponentType } from 'react'
+import type { LocalizedText } from '@/i18n/locales'
 
 export interface NavItem {
-  label: string
+  label: LocalizedText
   href: string
   external?: boolean
 }
 
 export type LogoConfig =
-  { type: 'default' } | { type: 'image'; src: string; width: number; height: number; alt: string }
+  | { type: 'default' }
+  | { type: 'image'; src: string; width: number; height: number; alt: LocalizedText }
 
 /** Brand configuration */
 export interface BrandConfig {
-  siteName: string
-  siteDescription: string
-  copyright: string
+  siteName: LocalizedText
+  siteDescription: LocalizedText
+  copyright: LocalizedText
   copyrightUrl?: string
   logo: LogoConfig
   headerNavExtra: NavItem[]

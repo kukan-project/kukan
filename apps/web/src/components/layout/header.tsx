@@ -1,7 +1,8 @@
 import Link from 'next/link'
-import { getTranslations } from 'next-intl/server'
+import { getLocale, getTranslations } from 'next-intl/server'
 import { Button, Separator } from '@kukan/ui'
-import { brandConfig, overrides } from '@/brand'
+import { overrides } from '@/brand'
+import { resolveBrandConfig } from '@/lib/resolved-brand'
 import { getCurrentUser } from '@/lib/server-api'
 import { UserMenu } from '@/components/auth/user-menu'
 import { LanguageSwitcher } from './language-switcher'
@@ -14,7 +15,12 @@ export async function Header() {
 }
 
 export async function DefaultHeader() {
-  const [user, t] = await Promise.all([getCurrentUser(), getTranslations('common')])
+  const [user, t, locale] = await Promise.all([
+    getCurrentUser(),
+    getTranslations('common'),
+    getLocale(),
+  ])
+  const brand = resolveBrandConfig(locale)
 
   const navItems = [
     { href: '/dataset', label: t('datasets') },
@@ -27,12 +33,12 @@ export async function DefaultHeader() {
       <div className="mx-auto flex h-[var(--kukan-header-height)] max-w-[var(--kukan-container-max-width)] items-center justify-between px-4">
         <div className="flex items-center gap-6">
           <Link href="/" className="flex items-center gap-2.5">
-            {brandConfig.logo.type === 'image' ? (
+            {brand.logo.type === 'image' ? (
               <img
-                src={brandConfig.logo.src}
-                width={brandConfig.logo.width}
-                height={brandConfig.logo.height}
-                alt={brandConfig.logo.alt}
+                src={brand.logo.src}
+                width={brand.logo.width}
+                height={brand.logo.height}
+                alt={brand.logo.alt}
               />
             ) : (
               <>
@@ -40,7 +46,7 @@ export async function DefaultHeader() {
                   K
                 </span>
                 <span className="font-[family-name:var(--font-display)] text-xl font-bold tracking-[1.5px]">
-                  {brandConfig.siteName}
+                  {brand.siteName}
                 </span>
               </>
             )}
@@ -55,7 +61,7 @@ export async function DefaultHeader() {
                 {item.label}
               </Link>
             ))}
-            {brandConfig.headerNavExtra.map((item) => (
+            {brand.headerNavExtra.map((item) => (
               <a
                 key={item.href}
                 href={item.href}

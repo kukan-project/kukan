@@ -9,7 +9,7 @@ export const brandConfig: BrandConfig = {
   logo: { type: 'default' },
 
   headerNavExtra: [],
-  footerLinks: [{ label: '利用規約', href: '/terms' }],
+  footerLinks: [{ label: { ja: '利用規約', en: 'Terms of Use' }, href: '/terms' }],
 
   ogImage: '/og-default.png',
   faviconPath: '/favicon.ico',

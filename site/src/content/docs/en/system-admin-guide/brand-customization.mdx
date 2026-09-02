@@ -145,7 +145,7 @@ export const brandConfig: BrandConfig = {
     { label: 'Official Site', href: 'https://www.city.example.lg.jp', external: true },
   ],
   footerLinks: [
-    { label: 'Terms of Use', href: '/terms' },
+    { label: { ja: '利用規約', en: 'Terms of Use' }, href: '/terms' },
     { label: 'Contact', href: '/contact' },
   ],
 
@@ -156,18 +156,20 @@ export const brandConfig: BrandConfig = {
 
 ### Field Reference
 
-| Field             | Description                                                    |
-| ----------------- | -------------------------------------------------------------- |
-| `siteName`        | Site title (browser tab, header, etc.)                         |
-| `siteDescription` | meta description (for search engines)                          |
-| `copyright`       | Footer copyright text (`© 2026` is prepended automatically)    |
-| `copyrightUrl`    | Link target for the site name in the footer (omit for no link) |
-| `logo`            | Header logo configuration (see below)                          |
-| `headerNavExtra`  | Additional navigation items for the header                     |
-| `footerLinks`     | Footer link list                                               |
-| `ogImage`         | OGP image path (relative to `public/`)                         |
-| `faviconPath`     | Favicon path                                                   |
+| Field             | Description                                                                            |
+| ----------------- | -------------------------------------------------------------------------------------- |
+| `siteName`        | Site title (browser tab, header, etc.)                                                 |
+| `siteDescription` | meta description (for search engines)                                                  |
+| `copyright`       | Footer copyright text (`© 2026` is prepended automatically)                            |
+| `copyrightUrl`    | Link target for the site name in the footer (omit for no link)                         |
+| `logo`            | Header logo configuration (see below)                                                  |
+| `headerNavExtra`  | Additional navigation items for the header                                             |
+| `footerLinks`     | Footer link list                                                                       |
+| `ogImage`         | OGP image path (relative to `public/`)                                                 |
+| `faviconPath`     | Favicon path                                                                           |
 | `noindex`         | When `true`, adds a `noindex, nofollow` robots meta tag to every page (omitted = none) |
+
+Text fields (`siteName`, `siteDescription`, `copyright`, `logo.alt`, `headerNavExtra[].label`, `footerLinks[].label`) accept either a plain string or a locale map (e.g. `{ ja: '利用規約', en: 'Terms of Use' }`). A plain string applies to all locales; a map follows locale switching. Missing locales fall back to English (the default locale), then to any defined entry.
 
 `noindex` is a switch for staging or private deployments that should stay out of search engines. It does not block crawling in robots.txt (a crawl block would keep crawlers from ever seeing the meta tag). To restrict access itself, combine this with access controls such as Basic auth or IP restrictions.
 
@@ -215,10 +217,10 @@ You can override UI translation text for your organization. Specify only the key
 
 ### Choosing Between `brandConfig` and Messages
 
-| Use case                                   | Where to configure             |
-| ------------------------------------------ | ------------------------------ |
-| Metadata, OGP, etc. (language-independent) | `brand-config.ts`              |
-| UI display text (per-language)             | `brand/messages/{locale}.json` |
+| Use case                                                | Where to configure                                    |
+| ------------------------------------------------------- | ----------------------------------------------------- |
+| Brand-specific values (site name, nav items, copyright) | `brand-config.ts` (locale maps for multilingual text) |
+| Overriding the main UI's translated text                | `brand/messages/{locale}.json`                        |
 
 ## Tier 3: Component Replacement
 
@@ -284,6 +286,41 @@ Use `DefaultHeader` / `DefaultFooter` instead of `Header` / `Footer` to avoid ci
 import { DefaultHeader } from '@/components/layout/header'
 import { DefaultFooter } from '@/components/layout/footer'
 ```
+
+### Reading Brand Text
+
+When a custom component displays `brandConfig` text fields (`siteName` etc.), resolve them through `resolveBrandConfig()` first. Text fields are typed `LocalizedText` (a string or a locale map), so rendering them directly like `{brandConfig.siteName}` is a type error.
+
+In async server components, use `getLocale()`:
+
+```tsx
+import { getLocale } from 'next-intl/server'
+import { resolveBrandConfig } from '@/lib/resolved-brand'
+
+export async function CustomHeader() {
+  const brand = resolveBrandConfig(await getLocale())
+  // brand.siteName is a string resolved for the current locale
+  return <span>{brand.siteName}</span>
+}
+```
+
+In client components, use `useLocale()` (do not import from `next-intl/server` — it is server-only and breaks the build). `useLocale()` also works in non-async server components.
+
+```tsx
+'use client'
+
+import { useLocale } from 'next-intl'
+import { resolveBrandConfig } from '@/lib/resolved-brand'
+
+export function SiteName() {
+  const brand = resolveBrandConfig(useLocale())
+  return <span>{brand.siteName}</span>
+}
+```
+
+:::caution[Custom components written before locale-map support]
+Locale-map support widened the text field types from `string` to `LocalizedText`. Custom components that render these fields directly get type errors even if the config values are still plain strings. Switch to `resolveBrandConfig()` as shown above (`pnpm typecheck` lists every affected spot).
+:::
 
 ### Organizing Override Files
 

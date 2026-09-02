@@ -4,7 +4,7 @@
 
 ## Status
 
-Accepted (2026-05-16, testing strategy added 2026-07-10, token operation policy added 2026-07-16)
+Accepted (2026-05-16, testing strategy added 2026-07-10, token operation policy added 2026-07-16, locale-aware brand text added 2026-09-02)
 
 ## Context
 
@@ -78,7 +78,7 @@ export const brandConfig: BrandConfig = {
 
   // Navigation (additional items)
   headerNavExtra: [],
-  footerLinks: [{ label: 'Terms of Use', href: '/terms' }],
+  footerLinks: [{ label: { ja: '利用規約', en: 'Terms of Use' }, href: '/terms' }],
 
   // Metadata
   ogImage: '/og-default.png',
@@ -90,12 +90,13 @@ export const brandConfig: BrandConfig = {
 
 ```typescript
 import type { ComponentType } from 'react'
+import type { LocalizedText } from '@/i18n/locales'
 
 /** Brand configuration type definitions */
 export interface BrandConfig {
-  siteName: string
-  siteDescription: string
-  copyright: string
+  siteName: LocalizedText
+  siteDescription: LocalizedText
+  copyright: LocalizedText
   copyrightUrl?: string
   logo: LogoConfig
   headerNavExtra: NavItem[]
@@ -105,13 +106,14 @@ export interface BrandConfig {
 }
 
 export interface NavItem {
-  label: string
+  label: LocalizedText
   href: string
   external?: boolean
 }
 
 export type LogoConfig =
-  { type: 'default' } | { type: 'image'; src: string; width: number; height: number; alt: string }
+  | { type: 'default' }
+  | { type: 'image'; src: string; width: number; height: number; alt: LocalizedText }
 
 /** Component override slot definitions */
 export interface BrandOverrides {
@@ -177,16 +179,22 @@ export default async function HomePage() {
 
 ```typescript
 // apps/web/src/app/layout.tsx (main side)
+import { getLocale } from 'next-intl/server'
 import { brandConfig } from '@/brand'
+import { resolveBrandConfig } from '@/lib/resolved-brand'
 import { Header } from '@/components/layout/header'
 import { Footer } from '@/components/layout/footer'
 import '@/brand/theme.css'
 
-export const metadata: Metadata = {
-  title: brandConfig.siteName,
-  description: brandConfig.siteDescription,
+// Locale-independent parts are built once at module scope
+const staticMetadata: Metadata = {
   icons: { icon: brandConfig.faviconPath },
   openGraph: { images: [brandConfig.ogImage] },
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const brand = resolveBrandConfig(await getLocale())
+  return { ...staticMetadata, title: brand.siteName, description: brand.siteDescription }
 }
 ```
 
@@ -235,7 +243,38 @@ Fork-side example (`brand/messages/ja.json`):
 
 - Only specified keys are overridden; unspecified keys retain their defaults
 - Nested objects are merged recursively (sibling keys are preserved)
-- Distinction between `brandConfig` and i18n messages: use `brandConfig` for language-independent values (metadata, OGP, etc.) and i18n messages for UI display text
+- Distinction between `brandConfig` and i18n messages: use `brandConfig` for brand-specific values (site name, nav items, copyright, etc.) and i18n messages to override the main UI's translated text
+
+### Locale-Aware Brand Text (added 2026-09-02)
+
+User-facing text in `brandConfig` (`siteName` / `siteDescription` / `copyright` /
+`logo.alt` / `headerNavExtra[].label` / `footerLinks[].label`) accepts
+`LocalizedText` (`string | Partial<Record<SupportedLocale, string>>`).
+A plain string applies to all locales (backward compatible); a locale map follows
+locale switching. Missing locales fall back to the default locale, then to the
+first defined locale in declaration order. Resolution is handled by the main-side
+`resolveBrandConfig()` (`src/lib/resolved-brand.ts`, which returns the brand
+config with every field resolved to a string); forks only write the values.
+Static page (`brand/pages/`) bodies and metadata are outside this mechanism —
+the pages are fork-owned, so their localization is left to the fork.
+
+This type widening is a breaking change for fork custom components that render
+`brandConfig` text fields **directly** — even with a plain-string config value,
+`{brandConfig.siteName}` is a type error because the field is `LocalizedText`.
+It falls under the "breaking changes" case of the type change policy below;
+migrate by going through `resolveBrandConfig()`:
+
+```tsx
+// async server components: getLocale (next-intl/server)
+const brand = resolveBrandConfig(await getLocale())
+```
+
+```tsx
+// client / non-async server components: useLocale (next-intl)
+const brand = resolveBrandConfig(useLocale())
+```
+
+In both cases `brand.siteName` / `brand.footerLinks[].label` etc. are resolved strings.
 
 ### Conflict Avoidance Mechanism
 
@@ -358,10 +397,11 @@ To reduce the cost of investigating whether an override is safe:
 
 When a fork customizes the brand, main-repo unit tests that render slot components (`Header` / `Footer` / `HomePage`) end up rendering the custom implementation, breaking expectations against the KUKAN default text and structure. To prevent this, **main-repo tests are brand-independent (pinned to KUKAN defaults)**.
 
-1. **Main tests must not import the real `@/brand`**. Tests that render brand-consuming components mock it and pin it to the KUKAN defaults:
+1. **Main tests must not import the real `@/brand`**. Tests that render brand-consuming components mock the brand modules and pin them to the KUKAN defaults. The main-side `resolveBrandConfig()` imports `@/brand/brand-config` directly instead of the barrel (to keep fork overrides out of client bundles), so mock **both**:
 
    ```typescript
    vi.mock('@/brand', () => import('@/__tests__/brand-defaults'))
+   vi.mock('@/brand/brand-config', () => import('@/__tests__/brand-defaults'))
    ```
 
 2. **`src/__tests__/brand-defaults.ts` is maintained by the main repo**. It is an intentional copy of the KUKAN defaults and does not import from `src/brand/brand-config.ts` (which forks rewrite). When a required field is added to `BrandConfig`, the main side updates this file as well.

@@ -145,7 +145,7 @@ export const brandConfig: BrandConfig = {
     { label: '市公式サイト', href: 'https://www.city.example.lg.jp', external: true },
   ],
   footerLinks: [
-    { label: '利用規約', href: '/terms' },
+    { label: { ja: '利用規約', en: 'Terms of Use' }, href: '/terms' },
     { label: 'お問い合わせ', href: '/contact' },
   ],
 
@@ -156,18 +156,20 @@ export const brandConfig: BrandConfig = {
 
 ### 各フィールドの説明
 
-| フィールド        | 説明                                                |
-| ----------------- | --------------------------------------------------- |
-| `siteName`        | サイトタイトル（ブラウザタブ、ヘッダー等）          |
-| `siteDescription` | meta description（検索エンジン向け）                |
-| `copyright`       | フッターの著作権表示テキスト（`© 2026` は自動付与） |
-| `copyrightUrl`    | フッターのサイト名リンク先（省略時はリンクなし）    |
-| `logo`            | ヘッダーロゴの設定（後述）                          |
-| `headerNavExtra`  | ヘッダーナビゲーションの追加項目                    |
-| `footerLinks`     | フッターのリンク一覧                                |
-| `ogImage`         | OGP 画像のパス（`public/` 配下のパス）              |
-| `faviconPath`     | ファビコンのパス                                    |
+| フィールド        | 説明                                                                              |
+| ----------------- | --------------------------------------------------------------------------------- |
+| `siteName`        | サイトタイトル（ブラウザタブ、ヘッダー等）                                        |
+| `siteDescription` | meta description（検索エンジン向け）                                              |
+| `copyright`       | フッターの著作権表示テキスト（`© 2026` は自動付与）                               |
+| `copyrightUrl`    | フッターのサイト名リンク先（省略時はリンクなし）                                  |
+| `logo`            | ヘッダーロゴの設定（後述）                                                        |
+| `headerNavExtra`  | ヘッダーナビゲーションの追加項目                                                  |
+| `footerLinks`     | フッターのリンク一覧                                                              |
+| `ogImage`         | OGP 画像のパス（`public/` 配下のパス）                                            |
+| `faviconPath`     | ファビコンのパス                                                                  |
 | `noindex`         | `true` で全ページに `noindex, nofollow` の robots meta タグを付与（省略時はなし） |
+
+テキスト系フィールド（`siteName`・`siteDescription`・`copyright`・`logo.alt`・`headerNavExtra[].label`・`footerLinks[].label`）は、文字列のほかにロケールマップ（例: `{ ja: '利用規約', en: 'Terms of Use' }`）を指定できます。文字列は全ロケール共通、マップは言語切替に追従します。指定のないロケールは英語（デフォルトロケール）→定義済みの値の順で補われます。
 
 `noindex` は、検索エンジンにインデックスさせたくない検証環境や限定公開サイト向けのスイッチです。robots.txt でのクロール拒否は行いません（拒否するとクローラーが meta タグ自体を読めなくなるためです）。アクセス自体を制限したい場合は、Basic 認証や IP 制限などのアクセス制御を併用してください。
 
@@ -215,10 +217,10 @@ UI に表示される翻訳テキストを組織ごとに変更できます。`b
 
 ### `brandConfig` との使い分け
 
-| 用途                               | 設定場所                       |
-| ---------------------------------- | ------------------------------ |
-| メタデータ・OGP 等（言語切替不要） | `brand-config.ts`              |
-| UI 表示テキスト（言語ごとに変更）  | `brand/messages/{locale}.json` |
+| 用途                                                 | 設定場所                                          |
+| ---------------------------------------------------- | ------------------------------------------------- |
+| ブランド固有の値（サイト名・ナビ項目・著作権表示等） | `brand-config.ts`（ロケールマップで多言語化可能） |
+| 本体 UI の翻訳テキストの上書き                       | `brand/messages/{locale}.json`                    |
 
 ## Tier 3: コンポーネント差し替え
 
@@ -284,6 +286,41 @@ export const overrides: BrandOverrides = {
 import { DefaultHeader } from '@/components/layout/header'
 import { DefaultFooter } from '@/components/layout/footer'
 ```
+
+### ブランドテキストの参照
+
+カスタムコンポーネントで `brandConfig` のテキスト系フィールド（`siteName` 等）を表示する場合は、`resolveBrandConfig()` で解決してから使います。テキスト系フィールドは `LocalizedText` 型（文字列またはロケールマップ）のため、`{brandConfig.siteName}` のような直接描画は型エラーになります。
+
+async サーバーコンポーネントでは `getLocale()` を使います。
+
+```tsx
+import { getLocale } from 'next-intl/server'
+import { resolveBrandConfig } from '@/lib/resolved-brand'
+
+export async function CustomHeader() {
+  const brand = resolveBrandConfig(await getLocale())
+  // brand.siteName は現在のロケールで解決済みの string
+  return <span>{brand.siteName}</span>
+}
+```
+
+クライアントコンポーネントでは `useLocale()` を使います（`next-intl/server` は import しないでください — server-only のためビルドに失敗します）。`useLocale()` は非 async のサーバーコンポーネントでも使えます。
+
+```tsx
+'use client'
+
+import { useLocale } from 'next-intl'
+import { resolveBrandConfig } from '@/lib/resolved-brand'
+
+export function SiteName() {
+  const brand = resolveBrandConfig(useLocale())
+  return <span>{brand.siteName}</span>
+}
+```
+
+:::caution[ロケールマップ対応より前に作成したカスタムコンポーネント]
+ブランドテキストのロケールマップ対応で、テキスト系フィールドの型が `string` から `LocalizedText` に広がりました。カスタムコンポーネントがこれらを直接描画している場合、設定値が文字列のままでも型エラーになります。上記のとおり `resolveBrandConfig()` 経由に切り替えてください（`pnpm typecheck` がエラー箇所を列挙します）。
+:::
 
 ### ファイルの階層化
 

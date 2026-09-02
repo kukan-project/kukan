@@ -4,6 +4,7 @@ import { DM_Sans, Noto_Sans_JP } from 'next/font/google'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
 import { brandConfig } from '@/brand'
+import { resolveBrandConfig } from '@/lib/resolved-brand'
 import { Header } from '@/components/layout/header'
 import { Footer } from '@/components/layout/footer'
 import './globals.css'
@@ -21,14 +22,17 @@ const notoSansJP = Noto_Sans_JP({
   display: 'swap',
 })
 
-export const metadata: Metadata = {
+const staticMetadata: Metadata = {
   // TODO: Introduce a dedicated SITE_URL env var instead of reusing BETTER_AUTH_URL, and add an OG image to public/
   metadataBase: new URL(process.env.BETTER_AUTH_URL || 'http://localhost:3000'),
-  title: brandConfig.siteName,
-  description: brandConfig.siteDescription,
   icons: { icon: brandConfig.faviconPath },
   openGraph: { images: [brandConfig.ogImage] },
   robots: brandConfig.noindex ? { index: false, follow: false } : null,
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const brand = resolveBrandConfig(await getLocale())
+  return { ...staticMetadata, title: brand.siteName, description: brand.siteDescription }
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
