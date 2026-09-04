@@ -457,6 +457,20 @@ Migrations run automatically when the Worker starts:
 2. Drizzle's advisory lock makes it safe even when several tasks run at once
 3. SQS polling and the health check server start once migrations complete
 
+### A migration older images cannot run against (Better Auth contract)
+
+One migration drops the 1.6 compatibility shims from the `account` table (the `expiresAt` column and the
+default on `issuer`). Once it has been applied, **an image older than that release cannot authenticate** —
+sign-in and sign-up fail with `column "expiresAt" does not exist`.
+
+- During an ECS rolling update, sign-in and sign-up served by the old tasks fail from the moment the Worker
+  applies the migration until those tasks are replaced
+- Rolling the image back afterwards does not restore authentication; rolling forward does
+- On-premises Docker Compose is not safe either: `up -d --build` recreates the services one by one, so
+  the same thing happens if the old web container is still serving auth when the new worker applies the
+  migration. Upgrading to this version, stop the app first with
+  `docker compose --env-file .env --env-file .env.prod --profile prod down`, then bring it up
+
 ## Deployment Procedure
 
 There are two deployment modes. Building the Docker image and pushing it to ECR is done
@@ -790,6 +804,8 @@ cp .env.prod.example .env.prod
 # edit .env.prod
 
 # 2. Build and start
+#    Upgrading across a migration that earlier images cannot run against, stop the app first
+#    (see "A migration older images cannot run against")
 docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 
 # 3. Register the first user (first time only)

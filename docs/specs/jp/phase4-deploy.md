@@ -438,6 +438,20 @@ Worker 起動時にマイグレーションを自動実行:
 2. Drizzle の advisory lock により複数タスクの同時実行でも安全
 3. マイグレーション完了後に SQS ポーリングとヘルスチェックサーバーを開始
 
+### 旧バージョンへ戻せないマイグレーション（Better Auth contract）
+
+`account` テーブルから 1.6 互換のシム（`expiresAt` 列と `issuer` のデフォルト）を落とすマイグレーションが入っている。
+適用後の DB に対して**それより前のイメージは認証が動かない** — サインイン・サインアップが
+`column "expiresAt" does not exist` で 500 になる。
+
+- ECS のローリング更新では、Worker がマイグレーションを適用した時点から旧タスクが入れ替わるまでの間、
+  旧タスクが処理するサインイン・サインアップが失敗する
+- 適用後にイメージだけロールバックしても認証は戻らない。ロールフォワードで復旧する
+- オンプレの Docker Compose も安全ではない。`up -d --build` はサービスを個別に作り直すため、
+  新しい worker がマイグレーションを適用した時点で旧 web コンテナがまだ認証を処理していれば同じことが起きる。
+  このバージョンへ上げるときは、先に `docker compose --env-file .env --env-file .env.prod --profile prod down`
+  でアプリを止めてから起動する
+
 ## デプロイ手順
 
 デプロイには2つのモードがある。Docker イメージのビルド・ECR プッシュは CDK が
@@ -737,6 +751,8 @@ cp .env.prod.example .env.prod
 # .env.prod を編集
 
 # 2. ビルド＆起動
+#    更新の場合、マイグレーションが旧イメージと両立しないバージョンでは先に down する
+#    （「旧バージョンへ戻せないマイグレーション」を参照）
 docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 
 # 3. 初期ユーザー登録（初回のみ）

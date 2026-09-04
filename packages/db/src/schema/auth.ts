@@ -28,12 +28,10 @@ export const account = pgTable(
     userId: text('userId')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    // Better Auth 1.7 identity key: (issuer, accountId). Credential accounts
-    // hold the synthetic issuer 'local:credential'; providerId stays as the
-    // local provider-configuration label. The default is a transition shim so
-    // pre-1.7 processes can still insert accounts during a rolling deploy;
-    // the contract release drops it together with expiresAt.
-    issuer: text('issuer').notNull().default('local:credential'),
+    // Better Auth identity key: (issuer, accountId). Credential accounts hold
+    // the synthetic issuer 'local:credential'; providerId stays as the local
+    // provider-configuration label.
+    issuer: text('issuer').notNull(),
     accountId: text('accountId').notNull(),
     providerId: text('providerId').notNull(),
     accessToken: text('accessToken'),
@@ -42,10 +40,6 @@ export const account = pgTable(
     accessTokenExpiresAt: timestamp('accessTokenExpiresAt', { withTimezone: true }),
     refreshTokenExpiresAt: timestamp('refreshTokenExpiresAt', { withTimezone: true }),
     scope: text('scope'),
-    // Dead since Better Auth split token expiry per token type; kept so 1.6
-    // processes can keep selecting it across the rolling deploy. Dropped in
-    // the contract release.
-    expiresAt: timestamp('expiresAt', { withTimezone: true }),
     password: text('password'),
     createdAt: timestamp('createdAt', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updatedAt', { withTimezone: true }).defaultNow().notNull(),

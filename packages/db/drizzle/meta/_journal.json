@@ -274,6 +274,13 @@
       "when": 1787560038674,
       "tag": "0038_past_young_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1788505856492,
+      "tag": "0039_regular_arclight",
+      "breakpoints": true
     }
   ]
 }

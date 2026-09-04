@@ -7,10 +7,13 @@ import { parseArgs } from 'node:util'
 import { randomBytes, scrypt } from 'node:crypto'
 import { config } from 'dotenv'
 import { and, eq, or, count } from 'drizzle-orm'
+import { createLocalAccountIssuer } from 'better-auth/db'
 import { loadEnv, checkPasswordGuessability, normalizePassword } from '@kukan/shared'
 import { createUserSchema, userRoleSchema, type UserRole } from '@kukan/shared/validators/user'
 import { createDb, closePool } from '../src/client'
 import { user, account } from '../src/schema'
+
+const CREDENTIAL_PROVIDER_ID = 'credential'
 
 // Skip dotenv in production (env vars injected by container/ECS)
 if (process.env.NODE_ENV !== 'production') {
@@ -162,8 +165,11 @@ async function createUser(args: CreateUserArgs): Promise<void> {
       await tx.insert(account).values({
         id: accountId,
         userId: userId,
+        // Derived, not spelled out: a mismatch here mints an account that
+        // Better Auth's sign-in lookup never finds
+        issuer: createLocalAccountIssuer(CREDENTIAL_PROVIDER_ID),
         accountId: userId,
-        providerId: 'credential',
+        providerId: CREDENTIAL_PROVIDER_ID,
         password: hashedPassword,
       })
     })
