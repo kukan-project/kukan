@@ -6,6 +6,44 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.21.0] - 2026-09-04
+
+**Breaking Changes**
+
+- Brand text is now locale-aware, so the fields carrying it accept either a plain string or a per-locale map. Existing brand configurations keep working unchanged — a plain string still applies to every language. What breaks is a fork's own components: one that renders `brandConfig.siteName`, `copyright` or a navigation label directly no longer type-checks, because those fields are no longer plain `string`. Route them through `resolveBrandConfig(locale)` instead — `await getLocale()` in an async server component, `useLocale()` in a client component — and run `pnpm typecheck`, which lists every place that needs the change (#521).
+
+**Highlights**
+
+- Brand text now follows the language the visitor is reading in. The site name, description, copyright, logo alt text and any navigation labels a fork adds can be given per locale, and the header, footer and page metadata each pick the right one; a locale with no translation falls back to the default locale rather than rendering nothing. Until now each of these was a single fixed string, so a bilingual site showed everyone the same language's brand text (#521).
+- The deployment pipeline can now live in its own AWS account, separate from the accounts it deploys into. Mechanically this already worked — the pipeline reaches each environment through that account's bootstrap roles — but nothing pinned where the pipeline itself was created, so it silently followed whichever credentials ran the deploy. Declaring `pipelineAccount` makes that explicit and stops a mismatch at synth time (#522).
+
+**Features**
+
+- feat(infra): allow the pipeline to live in its own AWS account (#522) — an optional top-level `pipelineAccount` in the environment configuration, validated against the active credentials, as the counterpart of the per-environment `account` guard. Omitting it changes nothing. The deployment specification now spells out the separate-account setup: bootstrapping every target account with `--trust`, why one CodeConnections connection in the pipeline account is enough, which account creates the us-east-1 certificate and WebACL, and where credentials have to be switched during first-time setup.
+
+**Bug Fixes**
+
+- fix(web): make brand text follow the active locale (#521) — the header, footer, mobile navigation and page metadata resolve brand text for the current locale instead of rendering one fixed string. The default brand's "Terms of Use" footer link is now translated, and the brand customization guide documents the locale map and the migration for existing custom components.
+
+---
+
+**破壊的変更**
+
+- ブランドのテキストがロケールに追従するようになり、対象フィールドは文字列とロケールマップのどちらも受け付けます。既存のブランド設定はそのまま動きます — 文字列はこれまでどおり全言語に適用されます。壊れるのはフォーク側の独自コンポーネントです。`brandConfig.siteName` や `copyright`、ナビゲーションのラベルを直接描画している箇所は、これらが `string` 型ではなくなったため型エラーになります。`resolveBrandConfig(locale)` を経由するよう書き換えてください（async サーバーコンポーネントでは `await getLocale()`、クライアントコンポーネントでは `useLocale()`）。対象箇所は `pnpm typecheck` が列挙します（#521）。
+
+**ハイライト**
+
+- ブランドのテキストが、閲覧中の言語に追従するようになりました。サイト名・説明・著作権表示・ロゴの代替テキスト・フォークが追加したナビゲーションのラベルをロケールごとに指定でき、ヘッダー・フッター・ページのメタデータがそれぞれ適切な言語を選びます。訳が無いロケールは、何も出ないのではなく既定ロケールにフォールバックします。これまでは 1 つの固定文字列だったため、二言語で運用しているサイトでも全員に同じ言語のブランドテキストが出ていました（#521）。
+- デプロイパイプラインを、デプロイ先とは別の AWS アカウントに置けるようになりました。仕組みとしては以前から可能で（パイプラインはデプロイ先アカウントの bootstrap ロールを引き受けてデプロイします）、欠けていたのはパイプライン自身の配置先を固定する手段でした。これまでは実行時の認証情報に黙って従っていたため、`pipelineAccount` の宣言でそれを明示し、食い違いを synth 時に止められるようになりました（#522）。
+
+**機能**
+
+- feat(infra): パイプラインをデプロイ先とは別の AWS アカウントに配置可能に (#522) — 環境設定のトップレベルに任意の `pipelineAccount` を追加し、実行時の認証情報と突き合わせます。env ごとの `account` ガードの対になるもので、省略時の挙動は従来どおりです。デプロイ仕様書には別アカウント構成の手順を明記しました — 各デプロイ先アカウントを `--trust` 付きで bootstrap すること、CodeConnections の接続がパイプラインアカウントに 1 つで足りる理由、us-east-1 の証明書と WebACL をどのアカウントで作るか、初回セットアップのどこで認証情報を切り替えるか
+
+**バグ修正**
+
+- fix(web): ブランドのテキストを現在のロケールで解決 (#521) — ヘッダー・フッター・モバイルナビ・ページのメタデータが、固定文字列ではなく現在のロケールでブランドテキストを解決するようになりました。既定ブランドのフッターリンク「利用規約」にも英語を用意し、ブランドカスタマイズガイドにロケールマップの書き方と既存カスタムコンポーネントの移行手順を追記しています
+
 ## [0.20.1] - 2026-09-01
 
 **Highlights**
