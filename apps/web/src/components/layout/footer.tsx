@@ -19,7 +19,7 @@ export function DefaultFooter() {
   return (
     <footer className="mt-auto">
       <Separator />
-      <div className="mx-auto flex max-w-[var(--kukan-container-max-width)] items-center justify-between px-4 py-6">
+      <div className="mx-auto flex max-w-[var(--kukan-container-max-width)] flex-col items-start gap-3 px-4 py-6 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
           {brand.copyrightUrl ? (
             <a

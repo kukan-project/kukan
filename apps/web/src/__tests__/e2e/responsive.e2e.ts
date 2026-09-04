@@ -3,7 +3,8 @@
  *
  * Seeds a dataset whose slug and metadata are long unbroken strings, the worst
  * case for horizontal overflow, then asserts scrollWidth === clientWidth on each
- * page and that no table is clipped behind an overflow-hidden ancestor.
+ * page and that no table is clipped behind an overflow-hidden ancestor, and that
+ * no footer link is squeezed narrow enough to wrap.
  */
 
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test'
@@ -140,6 +141,32 @@ for (const width of VIEWPORT_WIDTHS) {
           await expect(page.getByRole('cell', { name: /^v1/ })).toBeVisible()
         }
       )
+    })
+
+    // Link labels are short enough to fit any phone; only a squeezed box wraps
+    // them. The copyright sentence is long enough to wrap legitimately, so it is
+    // out of scope here.
+    test('footer links stay on a single line', async ({ page }) => {
+      await page.goto('/')
+      await page.waitForLoadState('networkidle')
+      const { wrapped, checked } = await page.evaluate(async () => {
+        // Text width depends on the swapped-in webfont, so measure after it lands
+        await document.fonts.ready
+        const range = document.createRange()
+        const links = [...document.querySelectorAll('footer a')]
+        // A range over the text yields one rect per line box it wraps onto; the
+        // links' own rects would each be one box, since they are flex items.
+        const wrapped = links.filter((el) => {
+          range.selectNodeContents(el)
+          return range.getClientRects().length > 1
+        })
+        return {
+          wrapped: wrapped.map((el) => el.textContent?.trim()),
+          checked: links.length,
+        }
+      })
+      expect(checked, 'the footer must render links to measure').toBeGreaterThan(0)
+      expect(wrapped, 'footer links must not wrap').toEqual([])
     })
   })
 }

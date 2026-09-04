@@ -39,8 +39,9 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
   return (
     <article className="relative">
       <Card className="transition-colors hover:bg-accent/50">
-        <CardHeader>
-          <div className="flex flex-col items-start gap-1 sm:flex-row sm:justify-between sm:gap-2">
+        {/* Stacked rows need more air than the wrap gap inside each row (gap-y-1) */}
+        <CardHeader className="gap-3 sm:gap-2">
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between sm:gap-2">
             <CardTitle className="min-w-0 text-lg sm:flex-1">
               <Link
                 href={datasetHref}
