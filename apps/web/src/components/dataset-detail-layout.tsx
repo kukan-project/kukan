@@ -15,7 +15,7 @@ interface Organization {
   title?: string | null
 }
 
-interface Package {
+export interface Package {
   id: string
   name: string
   title?: string | null

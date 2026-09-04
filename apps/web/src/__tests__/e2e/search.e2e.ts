@@ -64,3 +64,34 @@ test.describe('Search', () => {
     await expect(page.locator('main')).toContainText('CSV')
   })
 })
+
+test.describe('Page titles', () => {
+  test('listing pages carry the section name', async ({ page }) => {
+    await page.goto('/dataset')
+    await expect(page).toHaveTitle('Datasets | KUKAN')
+
+    await page.goto('/organization')
+    await expect(page).toHaveTitle('Organizations | KUKAN')
+
+    await page.goto('/group')
+    await expect(page).toHaveTitle('Categories | KUKAN')
+  })
+
+  test('dataset detail carries the dataset title', async ({ page }) => {
+    await page.goto(`/dataset/${datasetName}`)
+
+    await expect(page).toHaveTitle('E2E Dataset | KUKAN')
+  })
+
+  test('resource detail carries resource and dataset titles', async ({ page }) => {
+    await page.goto(`/dataset/${datasetName}/resource/${resourceId}`)
+
+    await expect(page).toHaveTitle('E2E test resource | E2E Dataset | KUKAN')
+  })
+
+  test('home falls back to the site name', async ({ page }) => {
+    await page.goto('/')
+
+    await expect(page).toHaveTitle('KUKAN')
+  })
+})

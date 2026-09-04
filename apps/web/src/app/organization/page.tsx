@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server'
 import { Card, CardContent, Separator } from '@kukan/ui'
 import type { PaginatedResult } from '@kukan/shared'
 import { serverFetch } from '@/lib/server-api'
+import { titleMetadata } from '@/lib/page-metadata'
 import { SearchForm } from '@/components/search-form'
 import { PaginationNav } from '@/components/pagination-nav'
 import { SortLinks, parseListOrder, orderParam } from '@/components/sort-links'
@@ -20,6 +21,8 @@ interface Organization {
 interface Props {
   searchParams: Promise<{ q?: string; offset?: string; limit?: string; orderBy?: string }>
 }
+
+export const generateMetadata = titleMetadata('organization', 'title')
 
 export default async function OrganizationsPage({ searchParams }: Props) {
   const [params, t] = await Promise.all([searchParams, getTranslations('organization')])
