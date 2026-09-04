@@ -543,6 +543,23 @@ export function resolveEnv(env: EnvironmentConfig): { account: string; region: s
   return { account: env.account, region: env.region ?? DEFAULT_REGION }
 }
 
+/**
+ * The pipeline always lands in the active credentials' account; `pipelineAccount` only
+ * refuses a mismatch (misdeployment guard for separate-account operation, ADR-031).
+ */
+export function assertPipelineAccount(
+  pipelineAccount: string | undefined,
+  credentialsAccount: string
+): void {
+  if (pipelineAccount && pipelineAccount !== credentialsAccount) {
+    throw new Error(
+      `Pipeline account mismatch: config/environments.ts declares pipelineAccount ` +
+        `"${pipelineAccount}" but the active credentials are for "${credentialsAccount}". ` +
+        `Switch credentials, or update pipelineAccount.`
+    )
+  }
+}
+
 /** WAF default: ON unless an IP allowlist or Basic auth edge gate is set (ADR-027). */
 export function resolveEnableWaf(
   env: Pick<EnvironmentConfig, 'enableWaf' | 'allowedIpRanges' | 'basicAuth'>

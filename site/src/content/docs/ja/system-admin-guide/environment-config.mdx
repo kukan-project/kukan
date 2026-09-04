@@ -13,10 +13,12 @@ AWS デプロイの環境(dev / prd 等)は `infra/config/environments.ts` で�
 `allowedIpRanges` / `basicAuth` 等)への `-c` はマルチサイト環境では**無視されます**
 (1 つの `-c` が全サイトへ一括適用される事故の防止)。
 
-ファイルのトップレベルには CodeConnections の接続 ARN(全 env 共通)を export します:
+ファイルのトップレベルには CodeConnections の接続 ARN(全 env 共通)と、
+パイプラインを置く想定アカウント(任意)を export します:
 
 ```ts
 export const connectionArn = 'arn:aws:codeconnections:...:connection/...'
+export const pipelineAccount = '000000000000' // 任意。認証情報のアカウントとの一致を検証する
 ```
 
 環境は**マルチサイト形状(`sites` 宣言)で作成するのが標準**です。フィールドは
@@ -36,6 +38,22 @@ CDK bootstrap のイメージ用 ECR リポジトリへ同一タグを push し�
 側を再実行すれば解消**します(既に push 済みのイメージはスキップされます)。恒久的に避けたい場合は、
 当該 ECR リポジトリのタグを MUTABLE にするか、dev と prd のデプロイをずらして実行してください。
 手順はリポジトリの `docs/specs/jp/phase4-deploy.md` を参照してください。
+
+### パイプラインを別アカウントに置く
+
+CI/CD(CodePipeline)を置くアカウントは、デプロイ先アカウントとは独立に選べます。
+パイプラインはデプロイ先アカウントの bootstrap ロールを引き受けてデプロイするため、
+**パイプラインだけを CI/CD 専用アカウントに置き、dev / prd をそれぞれ別アカウントへ配る**
+構成が可能です。デプロイ先アカウントの bootstrap やコネクションの置き場所など、必要な準備は
+リポジトリの `docs/specs/jp/phase4-deploy.md` を参照してください。
+
+トップレベルの `pipelineAccount` は省略できますが、**分離運用では設定を推奨**します。
+未設定だと `cdk deploy KukanPipeline` を実行したときの認証情報のアカウントにパイプラインが
+作られるため、たとえば prd の認証情報のまま実行すると prd 側にもう 1 本パイプラインが
+できてしまいます。設定しておくと、認証情報のアカウントと一致しない場合に synth が停止します。
+
+なお別アカウント運用では、パイプラインの成果物バケットが KMS カスタマーマネージドキーで
+暗号化されます(自動判定)。キー 1 本あたり月 $1 程度の費用が加わります。
 
 ## 環境エントリのフィールド
 

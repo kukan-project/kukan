@@ -15,10 +15,11 @@ site-scoped fields (`domainName` / `allowedIpRanges` / `basicAuth`, etc.) the
 from stamping every site at once).
 
 The top level of the file exports the CodeConnections connection ARN (shared by
-all envs):
+all envs) and, optionally, the account the pipelines are expected to be built in:
 
 ```ts
 export const connectionArn = 'arn:aws:codeconnections:...:connection/...'
+export const pipelineAccount = '000000000000' // optional; validated against the active credentials
 ```
 
 **The multi-site shape (declaring `sites`) is the standard way to create an
@@ -40,6 +41,23 @@ of the build content, so the same commit yields the same tag). The conflict is
 already-pushed image is skipped). To avoid it for good, make that ECR
 repository's tags MUTABLE, or stagger the dev and prd deploys. See
 `docs/specs/en/phase4-deploy.md` in the repository for the procedure.
+
+### Holding the pipeline in its own account
+
+The account running CI/CD (CodePipeline) is chosen independently of the target
+accounts. The pipeline deploys by assuming the bootstrap roles of the target
+account, so **keeping only the pipelines in a dedicated CI/CD account and dealing
+dev / prd out to separate accounts** is supported. For the setup this needs —
+bootstrapping the target accounts, where the connection lives — see
+`docs/specs/en/phase4-deploy.md` in the repository.
+
+The top-level `pipelineAccount` is optional, but **recommended once the accounts are
+separated**. Left unset, the pipeline is created in whichever account the credentials
+running `cdk deploy KukanPipeline` belong to — run it from a prd session and a second
+pipeline grows in prd. Set, synth stops when the credentials are for another account.
+
+Note that with separate accounts the pipeline's artifact bucket is encrypted with a KMS
+customer-managed key (decided automatically), adding roughly $1 per month per key.
 
 ## Environment entry fields
 

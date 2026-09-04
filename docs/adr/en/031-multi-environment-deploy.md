@@ -66,6 +66,9 @@ export interface EnvironmentConfig {
   overrides?: DeepPartial<ScaleComputed> // override individual preset parameters (see below)
 }
 
+/** Intended account for the pipelines; the credentials decide, this only validates (optional) */
+export const pipelineAccount = '000000000000'
+
 export const environments = {
   dev: { account: '000000000000', scale: 'small', deployBranch: 'develop' },
   prd: {
@@ -85,6 +88,23 @@ export const environments = {
 | ---------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | Separate account | a distinct ID per env   | Separated by account; set via the Stage `env`                                                                                             |
 | Same account     | the same ID in each env | Stage name separates stack names, logical IDs, and auto-named resources. **Explicit physical names still need env suffixing** (see below) |
+
+The account holding the pipeline itself is chosen independently of the target accounts.
+CDK Pipelines deploys by assuming the bootstrap roles of each Stage's account, so
+**keeping only the pipelines in a dedicated CI/CD account and dealing dev / prd out to
+separate accounts** works with no code change (the steps — bootstrapping the targets with
+trust, where the connection lives, which account creates the us-east-1 cert / WAF — are in
+`docs/specs/en/phase4-deploy.md`). A CodeConnections connection is private to an account
+(and region), so one created in the pipeline account is shared by every env.
+
+CMK-encrypting the artifact bucket (`crossAccountKeys`) is derived from "pipeline account
+!= Stage account", not exposed as a setting.
+
+`pipelineAccount` in `environments.ts` (optional) is the misdeployment guard for that
+separation. Unlike an env's `account`, where the pipeline lands is otherwise decided
+silently by the active credentials (running `cdk deploy KukanPipeline` from a prd session
+grows a second pipeline in prd). Declared, synth fails immediately when the credentials
+are for another account.
 
 > [!NOTE]
 > **Separate accounts are RECOMMENDED for prd** (isolation, blast radius, billing,

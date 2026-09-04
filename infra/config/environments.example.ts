@@ -11,8 +11,9 @@
  * committed `cdk.context.json`.
  *
  * Same-account vs separate-account is chosen purely here:
- *   - omit `account`            → CDK_DEFAULT_ACCOUNT (same-account operation)
- *   - set `account` per env     → separate-account operation
+ *   - the same `account` on every env → same-account operation
+ *   - a different `account` per env    → separate-account operation
+ *   - `pipelineAccount` (below)        → asserts which account the pipelines themselves land in
  * Separate accounts are RECOMMENDED for prd (isolation, blast radius, billing,
  * IAM boundary — ADR-031). Same-account is fully supported for evaluation / small
  * / cost-conscious setups, with one caveat: deploying the same commit to two envs
@@ -61,6 +62,14 @@ import type { EnvironmentConfig } from '../lib/config.js'
  */
 export const connectionArn =
   'arn:aws:codeconnections:ap-northeast-1:000000000000:connection/REPLACE_ME'
+
+/**
+ * The account the pipelines are expected to be built in (ADR-031). Which account they
+ * actually land in is decided by the credentials running `cdk deploy KukanPipeline`;
+ * declaring it here makes a mismatch fail at synth. Setup for pipelines in their own
+ * account: docs/specs/en/phase4-deploy.md.
+ */
+// export const pipelineAccount = '000000000000'
 
 // IMPORTANT: every entry here becomes its own environment — in pipeline mode each one
 // gets its own CodePipeline and is deployed (on its `deployBranch`). Keep only the

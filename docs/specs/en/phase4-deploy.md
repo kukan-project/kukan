@@ -181,8 +181,12 @@ environment, delete the entry you do not need (e.g. `dev`)** (leaving it deploys
 environments). Note that removing an env from `environments.ts` does not automatically delete an
 already-deployed stack (`cdk destroy` is needed manually).
 At deploy time you choose the environment with `-c env=<name>`. Both same-account and
-cross-account setups are switched purely by what is written in this file (omitting `account` means
-the same account; specifying it means a different one).
+cross-account setups are switched purely by what is written in this file (the same `account` ID on
+every env means one account; a distinct ID per env means separate ones). The account the pipelines
+themselves are built in is independent of the targets and is decided by the credentials running
+`cdk deploy KukanPipeline` (`CDK_DEFAULT_ACCOUNT`); the top-level optional `pipelineAccount` does
+not _choose_ it but declares the intended account, which synth then validates against those
+credentials (ADR-031; see "Setup procedure" below).
 
 ```bash
 cp infra/config/environments.example.ts infra/config/environments.ts
@@ -462,7 +466,7 @@ automatically by CDK's `DockerImageAsset`, so no manual `docker build` / `docker
 > **ECR tag conflicts when running multiple environments (dev/prd) in one account**
 > A `DockerImageAsset` tag is derived from **a hash of the build content**, so the same commit
 > produces the same tag for dev and prd. If both environments run in the **same account and
-> region** (omitting `account` in `environments.ts`) they share the CDK bootstrap asset ECR
+> region** (the same `account` on every env in `environments.ts`) they share the CDK bootstrap asset ECR
 > repository (`cdk-hnb659fds-container-assets-<account>-<region>` by default), so **deploying the
 > same commit to dev and prd at nearly the same time** (e.g. merging to prd right after dev) can
 > make two pushes to the same tag collide. Current CDK bootstrap creates that repository with
@@ -623,28 +627,47 @@ one per account if you split the pipelines themselves across accounts).
 cp infra/config/environments.example.ts infra/config/environments.ts
 #    edit environments.ts (githubRepo / deployBranch / scale / domain etc. per env;
 #    set connectionArn to the value obtained in step 2)
+#    To hold the pipelines in an account separate from the targets, set pipelineAccount to its ID
+#    (step 6's credentials decide where it lands; pipelineAccount guards against a mismatch)
 
 # 2. Create the CodeConnections connection (see "console work" above)
 #    → set the connection ARN as connectionArn in environments.ts
 #    * approving the GitHub App is a one-off manual step in the console/browser (cannot be IaC-ed)
 
 # 3. Bootstrap (a prerequisite for cdk deploy; once per account and region)
-#    GlobalStack lives in us-east-1, so that region is required too. Bootstrap it alongside ap-northeast-1
+#    3a. With the pipeline and the targets in one account, this single call is enough.
+#        GlobalStack lives in us-east-1, so bootstrap that region alongside ap-northeast-1
 cd infra && npx cdk bootstrap aws://<account-id>/ap-northeast-1 aws://<account-id>/us-east-1
-#    For cross-account setups, bootstrap the target account trusting the pipeline account
+
+#    3b. With separate accounts, switch credentials (--profile) per account. Run (1) once for the
+#        pipeline account and repeat (2) and (3) for every target account
+#        (dev and prd in accounts of their own: 1 + 2x2 = 5 runs in total)
+#        (1) The pipeline account: only ap-northeast-1, where the pipeline itself is built
+npx cdk bootstrap --profile <pipeline-profile> aws://<pipeline-account-id>/ap-northeast-1
+#        (2) The target account, ap-northeast-1: make it trust the pipeline account
+#            (the pipeline uses that trust to assume the target's bootstrap roles)
+npx cdk bootstrap --profile <target-profile> --trust <pipeline-account-id> \
+  --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess \
+  aws://<target-account-id>/ap-northeast-1
+#        (3) The target account, us-east-1: for GlobalStack (cert/WAF). No --trust — it is
+#            deployed standalone and the pipeline never touches it
+npx cdk bootstrap --profile <target-profile> aws://<target-account-id>/us-east-1
 
 # 4. For an env using a custom domain/WAF, create the us-east-1 cert/WAF once in standalone mode
+#    (with separate accounts, run it with the target account's credentials)
 npx cdk deploy -c env=prd Prd/KukanGlobalStack
 #    Set the emitted ACM certificate ARN / WAF WebACL ARN as
 #    certificateArn / webAclArn in environments.ts
 #    (CDK Pipelines is incompatible with cross-region references, so the ARNs are passed as strings)
 
 # 5. Commit environments.ts and cdk.context.json (the fork commits them; CodeBuild's synth reads them)
+#    If you switched credentials in step 4, switch back to the pipeline account here: a synth without
+#    -c env runs in pipeline mode, so the pipelineAccount guard checks it against the credentials
 #    Run cdk synth to resolve the context lookups (AZs, the CloudFront prefix list) into cdk.context.json
 npx cdk synth >/dev/null
 git add infra/config/environments.ts infra/cdk.context.json && git commit -m "chore: env config"
 
-# 6. Deploy the pipeline stack manually the first time
+# 6. Deploy the pipeline stack manually the first time (run it with the pipeline account's credentials)
 npx cdk deploy KukanPipeline
 
 # 7. From then on, pushing to the target branch deploys automatically

@@ -6,16 +6,24 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { Match } from 'aws-cdk-lib/assertions'
+import { Match, Template } from 'aws-cdk-lib/assertions'
 import * as cdk from 'aws-cdk-lib'
 import {
+  assertPipelineAccount,
   resolveSiteConfig,
   validateSites,
   type EnvironmentConfig,
   type SiteConfig,
 } from '../config.js'
 import { KukanPipelineStack } from '../pipeline-stack.js'
-import { normalize, stackTemplate, synthStage, TEST_ACCOUNT } from './helpers/synth.js'
+import {
+  normalize,
+  stackTemplate,
+  synthStage,
+  testApp,
+  TEST_ACCOUNT,
+  TEST_REGION,
+} from './helpers/synth.js'
 
 const MULTI_SITE: Omit<EnvironmentConfig, 'account'> = {
   scale: 'medium',
@@ -216,21 +224,44 @@ describe('multi-site AWS Backup (large preset)', () => {
 })
 
 describe('pipeline mode', () => {
+  const OTHER_ACCOUNT = '210987654321'
+
+  /** One env, one site — the smallest environment a pipeline can be built from. */
+  const pipelineStack = (site: SiteConfig, targetAccount = TEST_ACCOUNT, app = testApp()) =>
+    new KukanPipelineStack(app, 'KukanPipeline', {
+      env: { account: TEST_ACCOUNT, region: TEST_REGION },
+      connectionArn: `arn:aws:codeconnections:${TEST_REGION}:${TEST_ACCOUNT}:connection/x`,
+      environments: {
+        dev: { account: targetAccount, githubRepo: 'example/kukan', sites: [site] },
+      },
+    })
+
   it('rejects multi-site environments that need the global stack', () => {
-    const app = new cdk.App()
-    expect(
-      () =>
-        new KukanPipelineStack(app, 'KukanPipeline', {
-          connectionArn: `arn:aws:codeconnections:ap-northeast-1:${TEST_ACCOUNT}:connection/x`,
-          environments: {
-            dev: {
-              account: TEST_ACCOUNT,
-              githubRepo: 'example/kukan',
-              sites: [{ name: 'main' }],
-            },
-          },
-        })
-    ).toThrow(/pipeline mode cannot create the us-east-1 ACM certificate \/ WAF/)
+    expect(() => pipelineStack({ name: 'main' })).toThrow(
+      /pipeline mode cannot create the us-east-1 ACM certificate \/ WAF/
+    )
+  })
+
+  it('rejects a pipeline account that differs from the active credentials', () => {
+    expect(() => assertPipelineAccount(OTHER_ACCOUNT, TEST_ACCOUNT)).toThrow(
+      /Pipeline account mismatch/
+    )
+    expect(() => assertPipelineAccount(undefined, TEST_ACCOUNT)).not.toThrow()
+  })
+
+  it('gives a cross-account target CMK-encrypted artifacts, and a same-account one none', () => {
+    // Building the pipeline synthesizes its stages; nothing here asserts on the
+    // Lambda bundles, and skipping them is ~400 ms of esbuild per app
+    const keys = (targetAccount: string) =>
+      Template.fromStack(
+        pipelineStack(
+          { name: 'main', enableWaf: false },
+          targetAccount,
+          testApp({ 'aws:cdk:bundling-stacks': [] })
+        )
+      )
+    keys(OTHER_ACCOUNT).resourceCountIs('AWS::KMS::Key', 1)
+    keys(TEST_ACCOUNT).resourceCountIs('AWS::KMS::Key', 0)
   })
 })
 

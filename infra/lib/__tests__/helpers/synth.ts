@@ -37,18 +37,23 @@ const LOOKUP_CONTEXT: Record<string, unknown> = {
     [{ PrefixListId: 'pl-00000000000000000' }],
 }
 
-/** Synthesize a stage named `Dev` for the given environment definition. */
-export function synthStage(config: Omit<EnvironmentConfig, 'account'>): KukanStage {
-  const app = new cdk.App({
+/** An App carrying the CLI's feature flags and the pre-seeded lookups. */
+export function testApp(extraContext: Record<string, unknown> = {}): cdk.App {
+  return new cdk.App({
     context: {
       ...cdkJson.context,
       ...LOOKUP_CONTEXT,
       // Skip copying the Docker build contexts (~80 MB × 2 images) into a temp
       // outdir per synth — asset hashes and templates are identical without it
       'aws:cdk:disable-asset-staging': true,
+      ...extraContext,
     },
   })
-  return new KukanStage(app, 'Dev', { config: { account: TEST_ACCOUNT, ...config } })
+}
+
+/** Synthesize a stage named `Dev` for the given environment definition. */
+export function synthStage(config: Omit<EnvironmentConfig, 'account'>): KukanStage {
+  return new KukanStage(testApp(), 'Dev', { config: { account: TEST_ACCOUNT, ...config } })
 }
 
 /** Template of a stack inside the stage ('KukanStack' / 'KukanGlobalStack'). */

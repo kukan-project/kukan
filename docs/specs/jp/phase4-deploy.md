@@ -170,7 +170,11 @@ infra/
 
 **各エントリ = 1 環境**。pipeline モードでは env ごとに 1 パイプラインが作られ、それぞれの `deployBranch` でデプロイされる。example は dev / prd の 2 つを定義しているため、**単一環境で運用する場合は不要なエントリ（例: `dev`）を削除する**（残すと 2 環境分デプロイされる）。なお `environments.ts` から env を削除しても、既にデプロイ済みのスタックは自動削除されない（手動で `cdk destroy` が必要）。
 デプロイ時は `-c env=<name>` でどの環境かを選ぶ。同一アカウント・別アカウントのどちらも
-このファイルの記述だけで切り替わる（`account` 省略＝同一、指定＝別アカウント）。
+このファイルの記述だけで切り替わる（`account` に全 env 同じ ID＝同一、env ごとに別 ID＝別アカウント）。
+パイプライン自身が建つアカウントはデプロイ先とは独立で、`cdk deploy KukanPipeline` を実行した
+ときの認証情報（`CDK_DEFAULT_ACCOUNT`）で決まる。トップレベルの `pipelineAccount`（省略可）は
+その配置先を*選ぶ*ものではなく、想定アカウントを宣言して認証情報との一致を synth 時に
+検証するガードである（ADR-031、後述「セットアップ手順」）。
 
 ```bash
 cp infra/config/environments.example.ts infra/config/environments.ts
@@ -443,7 +447,7 @@ Worker 起動時にマイグレーションを自動実行:
 > **同一アカウントで複数環境（dev/prd）を運用する場合の ECR タグ競合**
 > `DockerImageAsset` のイメージタグは**ビルド内容のハッシュ**で決まるため、同一コミットは
 > dev と prd で同じタグになる。両環境を**同一アカウント・リージョン**で運用すると
-> （`environments.ts` で `account` を省略）CDK bootstrap のアセット用 ECR リポジトリ
+> （`environments.ts` で全 env に同じ `account` を指定）CDK bootstrap のアセット用 ECR リポジトリ
 > （既定で `cdk-hnb659fds-container-assets-<account>-<region>`）を共有するため、**同一コミットを
 > dev と prd へほぼ同時にデプロイ**（dev マージ直後に prd マージ等）すると同じタグへの push が
 > 競合し得る。現行の CDK bootstrap はこのリポジトリを **`ImageTagMutability: IMMUTABLE`** で作るため、
@@ -585,28 +589,47 @@ GitHub App の認可も接続単位（IAM ユーザー単位ではない）。�
 cp infra/config/environments.example.ts infra/config/environments.ts
 #    environments.ts を編集（env ごとに githubRepo / deployBranch / scale / domain 等。
 #    connectionArn は手順2で取得した値を設定）
+#    パイプラインをデプロイ先と別アカウントに置くなら pipelineAccount にその ID を設定
+#    （配置先は手順6の認証情報で決まる。pipelineAccount はその一致を検証する誤デプロイ防止ガード）
 
 # 2. CodeConnections 接続を作成（上記「コンソール操作」を参照）
 #    → Connection ARN を environments.ts の connectionArn に設定
 #    ※ GitHub App 承認はコンソール/ブラウザでの一度きりの手動操作（IaC 化不可）
 
 # 3. Bootstrap（cdk deploy の前提。各アカウント・各リージョンで初回のみ）
-#    GlobalStack は us-east-1 のため us-east-1 も必須。ap-northeast-1 と併せて bootstrap する
+#    3a. パイプラインとデプロイ先が同一アカウントの場合はこれ 1 回で済む
+#        GlobalStack は us-east-1 のため us-east-1 も併せて bootstrap する
 cd infra && npx cdk bootstrap aws://<account-id>/ap-northeast-1 aws://<account-id>/us-east-1
-#    クロスアカウント運用時は、パイプラインアカウントを信頼する形でデプロイ先アカウントも bootstrap
+
+#    3b. 別アカウントにする場合は、アカウントごとに認証情報（--profile）を切り替えて実行する。
+#        (1) はパイプラインアカウントで 1 回、(2)(3) はデプロイ先アカウントごとに繰り返す
+#        （dev / prd をそれぞれ別アカウントにするなら 1 + 2×2 = 計 5 回）
+#        (1) パイプラインアカウント: パイプライン自身が建つ ap-northeast-1 のみ
+npx cdk bootstrap --profile <pipeline-profile> aws://<pipeline-account-id>/ap-northeast-1
+#        (2) デプロイ先アカウントの ap-northeast-1: パイプラインアカウントを信頼させる
+#            （パイプラインはこの信頼でデプロイ先の bootstrap ロールを assume する）
+npx cdk bootstrap --profile <target-profile> --trust <pipeline-account-id> \
+  --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess \
+  aws://<target-account-id>/ap-northeast-1
+#        (3) デプロイ先アカウントの us-east-1: GlobalStack（cert/WAF）用。standalone デプロイ専用で
+#            パイプラインは触らないため --trust は不要
+npx cdk bootstrap --profile <target-profile> aws://<target-account-id>/us-east-1
 
 # 4. カスタムドメイン/WAF を使う env は、us-east-1 の cert/WAF を一度だけ standalone で作成
+#    （別アカウント運用ならデプロイ先アカウントの認証情報で実行する）
 npx cdk deploy -c env=prd Prd/KukanGlobalStack
 #    出力された ACM 証明書 ARN / WAF WebACL ARN を
 #    environments.ts の certificateArn / webAclArn に設定
 #    （CDK Pipelines は cross-region 参照と非互換のため ARN を文字列で渡す）
 
 # 5. environments.ts と cdk.context.json をコミット（フォークがコミット。CodeBuild の synth が読む）
+#    手順4で認証情報を切り替えた場合は、ここでパイプラインアカウントに戻す（-c env なしの synth は
+#    pipeline モードで走るため、pipelineAccount ガードが認証情報と突き合わせて落ちる）
 #    cdk synth で context lookup（AZ・CloudFront プレフィックスリスト）を解決して cdk.context.json を生成
 npx cdk synth >/dev/null
 git add infra/config/environments.ts infra/cdk.context.json && git commit -m "chore: env config"
 
-# 6. パイプラインスタックを初回手動デプロイ
+# 6. パイプラインスタックを初回手動デプロイ（パイプラインアカウントの認証情報で実行する）
 npx cdk deploy KukanPipeline
 
 # 7. 以降は対象ブランチへの push で自動デプロイ（パイプライン定義の変更も自己変異で反映）

@@ -19,7 +19,12 @@
 
 import { existsSync } from 'node:fs'
 import * as cdk from 'aws-cdk-lib'
-import { DEFAULT_REGION, resolveEnv, type EnvironmentConfig } from '../lib/config.js'
+import {
+  assertPipelineAccount,
+  DEFAULT_REGION,
+  resolveEnv,
+  type EnvironmentConfig,
+} from '../lib/config.js'
 import { pascal } from '../lib/naming.js'
 import { KukanStage } from '../lib/kukan-stage.js'
 import { KukanPipelineStack } from '../lib/pipeline-stack.js'
@@ -28,6 +33,7 @@ import * as exampleEnvs from '../config/environments.example.js'
 interface EnvModule {
   environments: Record<string, EnvironmentConfig>
   connectionArn: string
+  pipelineAccount?: string
 }
 
 /** Prefer config/environments.ts (committed by forks); fall back to the example when absent. */
@@ -53,7 +59,7 @@ if (!account) {
   )
 }
 
-const { environments, connectionArn } = await loadEnvironments()
+const { environments, connectionArn, pipelineAccount } = await loadEnvironments()
 
 const standaloneEnv = app.node.tryGetContext('env') as string | undefined
 if (standaloneEnv) {
@@ -70,6 +76,7 @@ if (standaloneEnv) {
   })
 } else {
   // --- Pipeline mode (default): deploy CDK Pipelines ---
+  assertPipelineAccount(pipelineAccount, account)
   new KukanPipelineStack(app, 'KukanPipeline', {
     env: { account, region: DEFAULT_REGION },
     crossRegionReferences: true,

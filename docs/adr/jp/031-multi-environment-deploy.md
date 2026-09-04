@@ -64,6 +64,9 @@ export interface EnvironmentConfig {
   overrides?: DeepPartial<ScaleComputed> // preset の個別パラメータ上書き（後述）
 }
 
+/** パイプラインを置く想定アカウント。配置先は認証情報が決め、これは一致を検証するだけ（省略可） */
+export const pipelineAccount = '000000000000'
+
 export const environments = {
   dev: { account: '000000000000', scale: 'small', deployBranch: 'develop' },
   prd: {
@@ -83,6 +86,21 @@ export const environments = {
 | -------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------- |
 | 別アカウント   | 各 env で別の ID を指定 | アカウントで分離。Stage の `env` で指定                                                                        |
 | 同一アカウント | 各 env で同じ ID を指定 | Stage 名でスタック名・論理 ID・自動命名リソースを分離。**明示的物理名は別途 env サフィックス化が必要**（下記） |
+
+パイプライン自身を置くアカウントは、デプロイ先アカウントとは独立に選べる。CDK Pipelines は
+各 Stage のアカウントの bootstrap ロールを assume してデプロイするため、**CI/CD 専用アカウントに
+パイプラインだけを置き、dev / prd を別アカウントに配る**構成がコード変更なしで成立する
+（信頼付き bootstrap・接続の置き場所・us-east-1 cert/WAF の作成先といった手順は
+`docs/specs/jp/phase4-deploy.md`）。CodeConnections の接続はアカウント（＋リージョン）専有のため、
+パイプラインアカウント側に 1 つ作れば全 env で共有できる。
+
+artifact バケットの CMK 化（`crossAccountKeys`）は「パイプラインアカウント ≠ Stage の
+アカウント」から自動導出するため、設定項目にしていない。
+
+`environments.ts` の `pipelineAccount`（省略可）は、この分離に対する**誤デプロイ防止ガード**である。
+env 側の `account` と違い、パイプラインの配置先は認証情報が黙って決めてしまう
+（prd の認証情報で `cdk deploy KukanPipeline` すると prd にもう 1 本パイプラインが生える）。
+宣言しておけば、認証情報のアカウントと食い違ったときに synth が即座に落ちる。
 
 > [!NOTE]
 > **推奨は prd の別アカウント運用**（分離・blast radius・課金・IAM 境界）。同一アカウント運用も
