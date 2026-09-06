@@ -566,8 +566,8 @@ importers:
         specifier: ^2.2.0
         version: 2.2.0
       encoding-japanese:
-        specifier: ^2.2.0
-        version: 2.2.0
+        specifier: ^2.3.0
+        version: 2.3.0
       lru-cache:
         specifier: ~11.5.2
         version: 11.5.2
@@ -4336,9 +4336,9 @@ packages:
     resolution: {integrity: sha512-Q0n9HRi4m6JuGIV1eFlmvJB7ZEVxu93IrMyiMsGC0lrMJMWzRgx6WGquyfQgZVb31vhGgXnfmPNNXmxnOkRBrg==}
     engines: {node: '>= 0.8'}
 
-  encoding-japanese@2.2.0:
-    resolution: {integrity: sha512-EuJWwlHPZ1LbADuKTClvHtwbaFn4rOD+dRAbWysqEOXRc2Uui0hJInNJrsdH0c+OhJA4nrCBdSkW4DD5YxAo6A==}
-    engines: {node: '>=8.10.0'}
+  encoding-japanese@2.3.0:
+    resolution: {integrity: sha512-eQyh1vzHz13DUkZcJO+0IOAoKXRQwKV5IBffeuYsWZyRLGiSzfzXObCqWvqFXdX0UU8qOk+lBXbkUhMCpdJe4Q==}
+    engines: {node: '>=18.0.0'}
 
   end-of-stream@1.4.5:
     resolution: {integrity: sha512-ooEGc6HP26xXq/N+GCGOT0JKCLDGrq2bQUZrQ7gyrJiZANJ/8YDTxTpQBXGMn+WbIQXNVpyWymm7KYVICQnyOg==}
@@ -10351,7 +10351,7 @@ snapshots:
 
   encodeurl@2.0.0: {}
 
-  encoding-japanese@2.2.0: {}
+  encoding-japanese@2.3.0: {}
 
   end-of-stream@1.4.5:
     dependencies:

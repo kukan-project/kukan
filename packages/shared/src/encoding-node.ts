@@ -48,10 +48,18 @@ const JAPANESE_ENCODINGS: Record<string, string> = {
   JIS: 'ISO-2022-JP',
 }
 
-/** Two adjacent kana or kanji. Half-width katakana is left out on purpose: it
+/** Three adjacent kana or kanji. Half-width katakana is left out on purpose: it
  *  sits at 0xA1-0xDF, over KOI8-R's Cyrillic, and including it reads Russian as
- *  Japanese. */
-const JAPANESE_RUN = /[぀-ヿ㐀-䶿一-鿿]{2}/
+ *  Japanese.
+ *
+ *  Three, not two: a pair of Latin-1 accented letters is a legal Shift_JIS pair,
+ *  so Icelandic "íbúar" decodes to the kanji pair 兊俉 and a run of two lets it
+ *  through. Real Japanese text reaches three somewhere in the evidence window
+ *  even when its headers are two-character words. Until encoding-japanese 2.3.0
+ *  this was masked — 2.2.0 declined to propose SJIS for that buffer at all, so
+ *  the run test never ran and the guard rested on the detector's conservatism
+ *  rather than on its own evidence. */
+const JAPANESE_RUN = /[぀-ヿ㐀-䶿一-鿿]{3}/
 
 /**
  * The Japanese encoding hiding behind a single-byte verdict, or the verdict

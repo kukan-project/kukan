@@ -249,8 +249,8 @@ describe('detectEncoding', () => {
          47 65 6e e8 76 65 2c 32 30 33 38 35 36 0a`,
         'ISO-8859-1',
       ],
-      // Icelandic — "íbúar" is two consecutive legal Shift_JIS pairs, so the
-      // decode alone cannot reject it; encoding-japanese declines to propose it
+      // Icelandic — "íbúar" is two consecutive legal Shift_JIS pairs, so it
+      // decodes to the kanji pair 兊俉 and only the run length rejects it
       [
         `62 6f 72 67 2c ed 62 fa 61 72 0a 52 65 79 6b 6a
          61 76 ed 6b 2c 31 33 39 38 37 35 0a 41 6b 75 72

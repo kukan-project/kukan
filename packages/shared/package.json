@@ -28,7 +28,7 @@
     "@zxcvbn-ts/language-en": "^4.1.1",
     "@zxcvbn-ts/language-ja": "^4.1.1",
     "chardet": "^2.2.0",
-    "encoding-japanese": "^2.2.0",
+    "encoding-japanese": "^2.3.0",
     "lru-cache": "~11.5.2",
     "pino": "^10.3.1",
     "zod": "4.4.3"
