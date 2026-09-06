@@ -25,7 +25,7 @@ const INTEGRATION_GROUP = 1
 
 export default defineConfig({
   test: {
-    exclude: ['**/node_modules/**', '**/cdk.out/**', '**/dist/**', '**/.next/**', '**/site/**'],
+    exclude: ['**/node_modules/**', '**/cdk.out/**', '**/dist/**', '**/.next/**', 'site/**'],
     projects: [
       {
         test: {
