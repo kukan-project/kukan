@@ -346,6 +346,9 @@ Edit `docker/Caddyfile`. See the file for examples including:
 Check the [release notes](https://github.com/kukan-project/kukan/releases) for breaking changes and migration steps before upgrading.
 アップグレード前にリリースノートで破壊的変更と移行手順を確認してください。
 
+When the notes say to stop first, run `docker compose --env-file .env --env-file .env.prod --profile prod down` before the commands below: `up -d --build` recreates services one at a time, and once the new worker has migrated the database an old web container can no longer sign users in. After such a migration, older images may not run; roll forward rather than back.
+リリースノートが「先に止める」よう指示する版では、下記の前に `docker compose --env-file .env --env-file .env.prod --profile prod down` を実行してください。`up -d --build` はサービスを個別に作り直すため、新しい Worker がマイグレーションを適用した後の旧 web コンテナではサインインできなくなります。適用後は旧イメージが動かないことがあるので、戻すのではなく新しい版へ進めてください。
+
 ```bash
 git fetch --tags
 git checkout vX.Y.Z   # latest release / 最新リリース

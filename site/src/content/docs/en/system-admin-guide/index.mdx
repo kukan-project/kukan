@@ -26,13 +26,23 @@ docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 
 Check the [release notes](https://github.com/kukan-project/kukan/releases) for breaking changes and migration steps before upgrading.
 
+:::caution[Releases whose notes say to stop first]
+`up -d --build` recreates services one at a time. Once the new worker has applied a migration, an old web container that is still handling authentication fails sign-ins. For such releases, stop the application before bringing the new version up.
+
+```bash
+docker compose --env-file .env --env-file .env.prod --profile prod down
+```
+
+After the migration, images older than the release may no longer run against the database (for v0.22.0, every older image — 0.17.0 through 0.21.x included — fails authentication). Rolling the image back does not recover it; move forward to a newer release instead.
+:::
+
 ```bash
 git fetch --tags
 git checkout vX.Y.Z   # the new release
 docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 ```
 
-Database migrations are applied automatically when the worker starts.
+Database migrations are applied automatically when the worker starts. An older image cannot always be brought back against a migrated database.
 
 :::note[Upgrading to the release that introduces version history]
 After the upgrade, a **Backfill versions** item appears on the site administrator's dashboard.

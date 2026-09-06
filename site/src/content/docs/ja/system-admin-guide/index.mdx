@@ -26,13 +26,23 @@ docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 
 アップグレード前に[リリースノート](https://github.com/kukan-project/kukan/releases)で破壊的変更と移行手順を確認してください。
 
+:::caution[リリースノートが「先に止める」よう指示する版]
+`up -d --build` はサービスを個別に作り直します。新しい Worker がマイグレーションを適用した時点で、旧 web コンテナがまだ認証を処理していると、サインインが失敗します。該当する版では、先にアプリケーションを止めてから起動してください。
+
+```bash
+docker compose --env-file .env --env-file .env.prod --profile prod down
+```
+
+適用後のデータベースでは、それより前のイメージが動かないことがあります（v0.22.0 では 0.17.0〜0.21.x を含む旧イメージすべてで認証が失敗します）。イメージだけを戻しても復旧しないので、問題があれば新しい版へ進めて直してください。
+:::
+
 ```bash
 git fetch --tags
 git checkout vX.Y.Z   # 新しいリリース
 docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 ```
 
-データベースのマイグレーションは Worker の起動時に自動適用されます。
+データベースのマイグレーションは Worker の起動時に自動適用されます。適用後のデータベースに旧バージョンのイメージを戻せるとは限りません。
 
 :::note[バージョン管理を導入したリリースへ上げるとき]
 アップグレード後、サイト管理者のダッシュボードに「**バージョンの補完**」が表示されます。

@@ -6,6 +6,72 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.22.0] - 2026-09-06
+
+**Breaking Changes**
+
+- The `account` table loses the two shims that kept it readable by Better Auth 1.6 processes during the 1.7 transition: the unused `expiresAt` column and the `DEFAULT 'local:credential'` on `issuer` (migration `0039`). Once this migration has run, **every earlier image — 0.17.0 through 0.21.x included, not only pre-1.7 ones — can no longer authenticate against the database**: sign-in and sign-up fail with `column "expiresAt" does not exist` (HTTP 500), because the ORM selects every column the older schema declares. Two consequences follow. On ECS, a rolling update applies the migration from the new worker before the old web tasks are replaced, so sign-ins handled by those tasks fail until the rollout completes; and rolling the image back afterwards does not restore authentication — recover by rolling forward. On Docker Compose, `up -d --build` recreates services one at a time, so stop the application first (`docker compose --env-file .env --env-file .env.prod --profile prod down`) and then bring the new version up. The `db:create-user` script now derives the issuer through Better Auth instead of relying on the dropped database default, so bootstrap accounts keep signing in (#529).
+
+**Highlights**
+
+- Every page now carries a real title. Until now the browser tab, bookmarks and search results showed only the site name on every page; they now read `<page> | <site>`, with the dataset, resource, organization and group names where they belong, and detail pages also carry a meta description that Open Graph previews inherit (#526).
+- Concurrent worker start-up no longer races through the database migrations. With more than one worker task, a first deploy onto an empty database could crash one of them on `CREATE EXTENSION pg_trgm`; migrations are now serialized with an advisory lock, and the connection that runs them gives up after five seconds if a table lock cannot be obtained rather than queueing every other query behind it (#531).
+- A text resource in a Western single-byte encoding is no longer misread as Shift_JIS. The second opinion that rescues Japanese files from a wrong single-byte verdict was letting Latin accented-letter pairs through — they decode to legal kanji pairs — so an ISO-8859-1 CSV could be ingested as mojibake. It now requires three consecutive Japanese characters, which genuine Japanese text reaches anyway (#539).
+- Seven transitive dependency advisories (four high, three moderate) are closed; `pnpm audit` is clean again (#538).
+
+**Bug Fixes**
+
+- fix(web): give every page a real meta title (#526) — a `%s | <site name>` title template in the root layout, page-level titles resolved from the translations and brand configuration, meta descriptions on dataset, resource, organization and group detail pages, and one catalog fetch per request shared between `generateMetadata` and the page body. Brand configuration resolution is memoized per locale.
+- fix(web): stack the footer and widen card gaps on mobile (#527) — the footer stacks its links vertically below the `sm` breakpoint instead of squeezing them into one character per line at 320px, and the dataset card's header rows keep 12px between them on phones so that a wrapped line and the next row are told apart. Desktop layout is unchanged.
+- fix(db): serialize concurrent migration runs and bound the DDL lock wait (#531) — `runMigrations()` takes a database-scoped advisory lock, so several processes starting at once run the migrations one after another; the migration connection sets `lock_timeout = 5s` for DDL. The behavior is pinned by an integration test that fails on the previous code.
+- fix(shared): tighten the Japanese second opinion to a three-character run (#539) — see Highlights.
+
+**Security**
+
+- build(deps): refresh the stale security overrides (#538) — `fast-uri` (host confusion via percent-encoded scheme normalization), `qs` (denial of service through a controlled `isBuffer`, and an array-limit bypass) and `@xmldom/xmldom` (XML fragment injection during serialization) are forced to patched releases. All three arrive through dependencies whose latest releases still pull the vulnerable range, so the overrides remain the only lever.
+
+**Dependencies**
+
+- build(deps): bump the minor-and-patch group with 34 updates (#537) — among them Better Auth 1.7.2, Zod 4.5.4, Next.js 16.3.4, Hono 4.13.5, next-intl 4.14, the AWS SDK and `aws-cdk-lib` 2.267, `encoding-japanese` 2.3.0 and the OpenAI SDK 7.8. The Zod release counts string lengths in code points rather than UTF-16 units, which brings its limits in line with PostgreSQL's; no schema in KUKAN changes behavior as a result.
+- build(deps): bump the GitHub Actions group (#518).
+
+**Documentation**
+
+- The system administrator guide and the README now carry the stop-first upgrade procedure for Docker Compose, and say that an older image cannot always be brought back against a migrated database.
+
+---
+
+**破壊的変更**
+
+- `account` テーブルから、Better Auth 1.7 への移行期に 1.6 のプロセスが読めるように残していたシム 2 つ — 未使用の `expiresAt` 列と `issuer` の `DEFAULT 'local:credential'` — を落とします（マイグレーション `0039`）。このマイグレーションを適用した DB に対して、**それより前のイメージはすべて認証できなくなります。1.7 未満だけでなく 0.17.0〜0.21.x も含みます** — サインイン・サインアップが `column "expiresAt" does not exist`（HTTP 500）で失敗します。ORM が旧スキーマの宣言する全列を SELECT するためです。帰結は 2 つあります。ECS のローリング更新では、新しい Worker がマイグレーションを適用してから旧 Web タスクが入れ替わるまでの間、旧タスクが処理するサインインが失敗します。また適用後にイメージだけロールバックしても認証は戻りません — ロールフォワードで復旧してください。Docker Compose では `up -d --build` がサービスを個別に作り直すため、先に `docker compose --env-file .env --env-file .env.prod --profile prod down` でアプリケーションを止めてから新バージョンを起動してください。`db:create-user` スクリプトは、落とした DB デフォルトに頼らず Better Auth 経由で issuer を導出するようになったので、ブートストラップしたアカウントは引き続きサインインできます（#529）。
+
+**ハイライト**
+
+- すべてのページに本当のタイトルが付きました。これまでブラウザのタブ・ブックマーク・検索結果はどのページでもサイト名しか出していませんでしたが、`<ページ> | <サイト>` の形になり、データセット・リソース・組織・カテゴリーの名前がそれぞれの位置に入ります。詳細ページには meta description も付き、Open Graph のプレビューがそれを引き継ぎます（#526）。
+- Worker の同時起動が DB マイグレーションで競合しなくなりました。Worker タスクが複数あると、空の DB への初回デプロイで `CREATE EXTENSION pg_trgm` の競合により片方が落ちることがありました。マイグレーションは advisory lock で直列化され、それを流す接続はテーブルロックを 5 秒で諦めて、後続の問い合わせを自分の後ろに積み上げないようにしています（#531）。
+- 西欧の単一バイトエンコーディングのテキストリソースが Shift_JIS と誤判定されなくなりました。単一バイトの誤判定から日本語ファイルを救う第二意見が、ラテン文字のアクセント付き文字対を通してしまっていました — 合法な漢字 2 字にデコードできてしまうためです。その結果 ISO-8859-1 の CSV が文字化けした状態で取り込まれることがありました。いまは日本語 3 文字連続を要求します。本物の日本語テキストならどこかで到達する長さです（#539）。
+- 推移的依存の脆弱性 7 件（high 4・moderate 3）を閉じ、`pnpm audit` が再びクリーンになりました（#538）。
+
+**バグ修正**
+
+- fix(web): すべてのページに本当のメタタイトルを (#526) — ルートレイアウトに `%s | <サイト名>` のタイトルテンプレートを置き、各ページのタイトルは翻訳メッセージとブランド設定から解決します。データセット・リソース・組織・カテゴリーの詳細ページに meta description を付与し、`generateMetadata` とページ本体でカタログ取得を 1 リクエスト 1 回に共有。ブランド設定の解決はロケール単位でメモ化しました
+- fix(web): モバイルでフッターを縦積みにし、カード内の間隔を広げる (#527) — フッターのリンクは `sm` 未満で縦に並び、320px で 1 文字ずつ折り返すことがなくなりました。データセットカードのヘッダーは行間を 12px にし、折り返した行と次の行が見分けられるようにしています。デスクトップのレイアウトは変わりません
+- fix(db): マイグレーションの同時実行を直列化し、DDL のロック待ちに上限を設ける (#531) — `runMigrations()` が DB スコープの advisory lock を取り、同時に起動した複数プロセスが順番にマイグレーションを流します。マイグレーション用の接続は DDL に `lock_timeout = 5s` を設定。変更前のコードで落ちる統合テストで挙動を固定しています
+- fix(shared): 日本語の第二意見を 3 文字連続に厳格化 (#539) — ハイライト参照
+
+**セキュリティ**
+
+- build(deps): 古くなったセキュリティ override を更新 (#538) — `fast-uri`（パーセントエンコードされたスキーム正規化によるホスト混同）、`qs`（制御可能な `isBuffer` によるサービス拒否、および配列上限の回避）、`@xmldom/xmldom`（シリアライズ時の XML 断片注入）を修正版に押し上げます。3 つとも、最新リリースでも脆弱な範囲を引く依存経由で入ってくるため、override が引き続き唯一の手段です
+
+**依存関係**
+
+- build(deps): minor / patch グループ 34 件を更新 (#537) — Better Auth 1.7.2、Zod 4.5.4、Next.js 16.3.4、Hono 4.13.5、next-intl 4.14、AWS SDK と `aws-cdk-lib` 2.267、`encoding-japanese` 2.3.0、OpenAI SDK 7.8 など。Zod は文字列長を UTF-16 単位ではなくコードポイントで数えるようになり、PostgreSQL の数え方と揃いました。KUKAN のスキーマで挙動が変わるものはありません
+- build(deps): GitHub Actions グループを更新 (#518)
+
+**ドキュメント**
+
+- システム管理者ガイドと README に、Docker Compose で「先に止めてから上げる」手順と、マイグレーション適用後は旧イメージを戻せるとは限らないことを追記しました
+
 ## [0.21.0] - 2026-09-04
 
 **Breaking Changes**
