@@ -10,9 +10,9 @@
     "clean": "rm -rf dist .astro"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.41.7",
-    "astro": "^7.2.4",
-    "sharp": "^0.35.3"
+    "@astrojs/starlight": "^0.42.0",
+    "astro": "^7.2.10",
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
     "vite": "^8.2.2"

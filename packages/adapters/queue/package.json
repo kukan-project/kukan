@@ -22,7 +22,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@aws-sdk/client-sqs": "^3.1114.0",
+    "@aws-sdk/client-sqs": "^3.1125.0",
     "@kukan/shared": "workspace:*"
   },
   "devDependencies": {

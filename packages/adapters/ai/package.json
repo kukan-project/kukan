@@ -22,9 +22,9 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@aws-sdk/client-bedrock-runtime": "^3.1114.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1125.0",
     "@kukan/shared": "workspace:*",
-    "openai": "^7.5.0"
+    "openai": "^7.9.0"
   },
   "devDependencies": {
     "@types/node": "^24.12.2"
