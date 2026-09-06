@@ -137,6 +137,24 @@ export default defineConfig({
         },
       },
       {
+        // Migrations against a real Postgres, in a database this file creates
+        // empty — the migrated template the other suites copy cannot show what
+        // two runners do to a database that still has work to do.
+        test: {
+          name: 'db-integration',
+          root: './packages/db',
+          include: ['src/__tests__/**/*.integration.test.ts'],
+          environment: 'node',
+          globalSetup: ['src/__tests__/test-helpers/global-setup.ts'],
+          pool: 'forks',
+          maxWorkers: INTEGRATION_FORKS,
+          sequence: { groupOrder: INTEGRATION_GROUP },
+          // Creating a database and migrating it twice, against a server the
+          // rest of the run is already working
+          testTimeout: 60_000,
+        },
+      },
+      {
         test: {
           name: 'api-unit',
           root: './packages/api',

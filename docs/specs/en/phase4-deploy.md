@@ -454,8 +454,19 @@ docker build --target worker -t kukan-worker .
 Migrations run automatically when the Worker starts:
 
 1. The Worker process starts → calls `runMigrations()` (before SQS polling begins)
-2. Drizzle's advisory lock makes it safe even when several tasks run at once
-3. SQS polling and the health check server start once migrations complete
+2. An advisory lock taken by `runMigrations()` means only one task migrates when several start
+   together; the rest wait holding no table locks at all
+3. The connections running the DDL carry a 5-second `lock_timeout`, so a migration cannot sit in the
+   ACCESS EXCLUSIVE queue with every query for that table piling up behind it. A timed-out attempt is
+   retried in-process after a 5-second pause (up to 12 attempts, about two minutes). The session in the
+   way is usually a legitimate one — a Worker on the old image partway through an ingest holds ACCESS
+   SHARE on `resource_version` for tens of seconds — and a task that dies on the first timeout dies on
+   its next boots too, until three consecutive failures make the ECS circuit breaker roll the deployment
+   back. The pause lets the queries that queued behind the failed attempt drain. Once the attempts are
+   spent the task exits, and that rollback is where it ends up
+4. The health check server is up before migrations start and answers `starting` (200) until they
+   finish, so to ECS a task that is migrating or waiting for the lock is healthy. What waits for the
+   migrations is SQS polling and the scheduler
 
 ### A migration older images cannot run against (Better Auth contract)
 
