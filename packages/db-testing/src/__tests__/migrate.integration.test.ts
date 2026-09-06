@@ -11,26 +11,17 @@
 import { describe, it, expect, inject, vi, afterEach } from 'vitest'
 import { Client } from 'pg'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { runMigrations } from '../migrate'
-import { scratchUrl } from './test-helpers/global-setup'
+import { runMigrations } from '@kukan/db'
+import { createEmptyDatabase, testDatabaseName, testDatabaseUrl } from '../index'
 
-// Made here rather than taken from @kukan/db-testing — that package depends on
-// this one — and empty, which is the one database its harness cannot hand out:
-// an already-migrated one leaves two runners nothing to collide over. The
-// project's teardown drops it.
-const NAME = `${inject('migrateScratchPrefix')}_${process.pid}`
+// Empty, not a copy of the migrated template: an already-migrated database
+// leaves two runners nothing to collide over. The run's teardown drops it.
+const NAME = testDatabaseName(inject('testDbPrefix'))
 
-/** An empty database under this file's name; the second test reuses it. */
+/** An empty database under this file's name; each test starts from one. */
 async function freshDatabase(): Promise<string> {
-  const server = new Client({ connectionString: scratchUrl('postgres') })
-  await server.connect()
-  try {
-    await server.query(`DROP DATABASE IF EXISTS ${NAME} WITH (FORCE)`)
-    await server.query(`CREATE DATABASE ${NAME}`)
-  } finally {
-    await server.end()
-  }
-  return scratchUrl(NAME)
+  await createEmptyDatabase(NAME)
+  return testDatabaseUrl(NAME)
 }
 
 async function appliedMigrations(url: string): Promise<number> {

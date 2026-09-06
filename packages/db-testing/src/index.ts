@@ -418,3 +418,25 @@ export async function createTestDatabase(name: string): Promise<void> {
     await admin.end()
   }
 }
+
+/**
+ * This process's database, empty — dropped first if a previous file left it.
+ *
+ * The one database the template cannot hand out: a test of the migration run
+ * itself needs work left to do, and a copy of the migrated template leaves two
+ * runners nothing to collide over. Named the same way as the copies so that
+ * the sweep and `cleanTestDatabases` reclaim it like any other.
+ */
+export async function createEmptyDatabase(name: string): Promise<void> {
+  refuseRemoteServer()
+  if (!NAME.test(name)) {
+    throw new Error(`${name} is not a name this package made; the sweep could never reclaim it`)
+  }
+  const admin = new Pool({ connectionString: SERVER_URL })
+  try {
+    await admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`)
+    await admin.query(`CREATE DATABASE ${name}`)
+  } finally {
+    await admin.end()
+  }
+}

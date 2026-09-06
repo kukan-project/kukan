@@ -137,12 +137,14 @@ export default defineConfig({
         },
       },
       {
-        // Migrations against a real Postgres, in a database this file creates
-        // empty — the migrated template the other suites copy cannot show what
-        // two runners do to a database that still has work to do.
+        // Migrations against a real Postgres, in a database made empty — the
+        // migrated template the other suites copy cannot show what two runners
+        // do to a database that still has work to do. Under db-testing rather
+        // than db, whose migrations it exercises: db-testing owns the harness
+        // and depends on db, so the test could not import it from there.
         test: {
-          name: 'db-integration',
-          root: './packages/db',
+          name: 'migrate-integration',
+          root: './packages/db-testing',
           include: ['src/__tests__/**/*.integration.test.ts'],
           environment: 'node',
           globalSetup: ['src/__tests__/test-helpers/global-setup.ts'],
