@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { PgDialect } from 'drizzle-orm/pg-core'
 import { scrubbedExtras } from '@kukan/db'
 import { checkBatch } from '../../cron/health-check/check-batch'
 import * as headRequest from '../../cron/health-check/head-request'
@@ -34,10 +35,15 @@ function makeHeadResult(overrides: Partial<HeadCheckResult> = {}): HeadCheckResu
   }
 }
 
-function makeMockDb(rows: Record<string, unknown>[] = []) {
-  const updateSet = vi.fn().mockReturnValue({
-    where: vi.fn().mockResolvedValue(undefined),
+/**
+ * @param writes what each `UPDATE ... RETURNING` gives back. Empty stands for
+ *   the row no longer matching what was checked — the URL was edited under it.
+ */
+function makeMockDb(rows: Record<string, unknown>[] = [], writes: unknown[] = [{ id: 'written' }]) {
+  const updateWhere = vi.fn().mockReturnValue({
+    returning: vi.fn().mockResolvedValue(writes),
   })
+  const updateSet = vi.fn().mockReturnValue({ where: updateWhere })
 
   const db = {
     select: vi.fn().mockReturnValue({
@@ -54,7 +60,7 @@ function makeMockDb(rows: Record<string, unknown>[] = []) {
     }),
   }
 
-  return Object.assign(db, { updateSet })
+  return Object.assign(db, { updateSet, updateWhere })
 }
 
 function makeMockQueue() {
@@ -124,6 +130,88 @@ describe('checkBatch', () => {
     expect(summary.error).toBe(0)
     expect(summary.changed).toBe(0)
     expect(mockExecuteHeadCheck).toHaveBeenCalledOnce()
+  })
+
+  it('discards a verdict whose row was edited while the check was in flight', async () => {
+    // The URL is checked over seconds, and an edit inside them resets these
+    // columns for the new address (`ResourceService.update`). Writing the old
+    // address's verdict back would mark the new link broken for a day, and
+    // enqueueing would fetch on the strength of a changed etag that belongs to
+    // a URL this row no longer has.
+    const rows = [
+      {
+        id: 'res-1',
+        url: 'https://a.example.com/data.csv',
+        hash: null,
+        healthStatus: 'ok',
+        healthCheckedAt: new Date(),
+        healthCheckState: { etag: '"v1"' },
+      },
+    ]
+    const db = makeMockDb(rows, [])
+    const queue = makeMockQueue()
+
+    mockExecuteHeadCheck.mockResolvedValue(makeHeadResult({ changed: true, etag: '"v2"' }))
+
+    const summary = await checkBatch(db as never, queue, 24, 168, makeMockLogger() as never)
+
+    expect(summary.checked).toBe(1)
+    expect(summary.discarded).toBe(1)
+    expect(summary.ok).toBe(0)
+    expect(summary.changed).toBe(0)
+    expect(queue.enqueue).not.toHaveBeenCalled()
+  })
+
+  it('discards an unsafe-URL verdict the same way', async () => {
+    const rows = [
+      {
+        id: 'res-1',
+        url: 'ftp://example.com/data.csv',
+        hash: null,
+        healthStatus: 'unknown',
+        healthCheckedAt: null,
+        healthCheckState: {},
+      },
+    ]
+    const db = makeMockDb(rows, [])
+
+    const summary = await checkBatch(
+      db as never,
+      makeMockQueue(),
+      24,
+      168,
+      makeMockLogger() as never
+    )
+
+    expect(summary.checked).toBe(1)
+    expect(summary.discarded).toBe(1)
+    expect(summary.error).toBe(0)
+    expect(mockExecuteHeadCheck).not.toHaveBeenCalled()
+  })
+
+  it('keys the write on the URL it checked, not on the id alone', async () => {
+    const rows = [
+      {
+        id: 'res-1',
+        url: 'https://example.com/data.csv',
+        hash: null,
+        healthStatus: 'unknown',
+        healthCheckedAt: null,
+        healthCheckState: {},
+      },
+    ]
+    const db = makeMockDb(rows)
+
+    mockExecuteHeadCheck.mockResolvedValue(makeHeadResult())
+
+    await checkBatch(db as never, makeMockQueue(), 24, 168, makeMockLogger() as never)
+
+    // The mock does not evaluate SQL, so the two tests above would still pass
+    // if the guard were dropped from the WHERE. This reads the fragment itself.
+    const { sql: text, params } = new PgDialect().sqlToQuery(db.updateWhere.mock.calls[0][0])
+    expect(text).toContain('"url" = ')
+    expect(text).toContain('"url_type" is null')
+    expect(params).toContain('https://example.com/data.csv')
   })
 
   it('enqueues changed resources to pipeline', async () => {
@@ -468,10 +556,13 @@ describe('checkBatch', () => {
         }),
         update: vi.fn().mockReturnValue({
           set: vi.fn().mockReturnValue({
-            where: vi.fn().mockImplementation(async () => {
-              peak = Math.max(peak, ++inFlight)
-              await new Promise((r) => setTimeout(r, 5))
-              inFlight--
+            where: vi.fn().mockReturnValue({
+              returning: vi.fn().mockImplementation(async () => {
+                peak = Math.max(peak, ++inFlight)
+                await new Promise((r) => setTimeout(r, 5))
+                inFlight--
+                return [{ id: 'written' }]
+              }),
             }),
           }),
         }),

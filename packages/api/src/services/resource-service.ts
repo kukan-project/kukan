@@ -33,10 +33,10 @@ const RESOURCE_PARENT_STATES: PackageDbState[] = ['active', 'draft']
 // server can resolve content for a request; no response includes them
 // (ADR-043). `healthCheckState` is the health checker's own working state, read
 // by the sysadmin health screen and by nothing else. `healthStatus` and
-// `healthCheckedAt` stay in on purpose, though nothing public renders them yet:
-// they are a verdict on a URL anyone can fetch, and a broken-link badge is a
-// thing a catalog may want to show its readers. Projected here rather than
-// scrubbed per route, so an endpoint cannot leak them by forgetting.
+// `healthCheckedAt` stay in on purpose: they are a verdict on a URL anyone can
+// fetch, and the resource page marks a link its last check could not reach.
+// Projected here rather than scrubbed per route, so an endpoint cannot leak
+// them by forgetting.
 const {
   storageKey: _storageKey,
   pendingStorageKey: _pendingStorageKey,
@@ -326,11 +326,20 @@ export class ResourceService {
    * Update resource
    */
   async update(id: string, input: UpdateResourceInput) {
+    const url = input.url ?? null
+    const urlType = input.urlType ?? null
+    // The health columns describe the URL they were recorded against, so they
+    // do not survive it changing (see their declaration in `@kukan/db`).
+    const urlChanged = sql`(${resource.url} IS DISTINCT FROM ${url} OR ${resource.urlType} IS DISTINCT FROM ${urlType})`
+
     const [updated] = await this.db
       .update(resource)
       .set({
-        url: input.url ?? null,
-        urlType: input.urlType ?? null,
+        url,
+        urlType,
+        healthStatus: sql`CASE WHEN ${urlChanged} THEN 'unknown' ELSE ${resource.healthStatus} END`,
+        healthCheckedAt: sql`CASE WHEN ${urlChanged} THEN NULL ELSE ${resource.healthCheckedAt} END`,
+        healthCheckState: sql`CASE WHEN ${urlChanged} THEN '{}'::jsonb ELSE ${resource.healthCheckState} END`,
         name: input.name ?? null,
         description: input.description ?? null,
         format: input.format ? normalizeFormat(input.format) : null,
@@ -536,6 +545,11 @@ export class ResourceService {
                           ELSE b.pending_metadata ->> 'format' END,
             mimetype = COALESCE(b.pending_metadata ->> 'mimetype', r.mimetype),
             pending_metadata = NULL,
+            -- The URL the checker's verdict was about is gone: this row now
+            -- serves an upload, which it never checks.
+            health_status = 'unknown',
+            health_checked_at = NULL,
+            health_check_state = '{}'::jsonb,
             size = ${input.size}::bigint,
             hash = NULL,
             -- The live pointer's other writer, so it mints a generation too.

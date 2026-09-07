@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
-import { useTranslations } from 'next-intl'
-import { Calendar } from 'lucide-react'
+import { useLocale, useTranslations } from 'next-intl'
+import { Calendar, ExternalLink } from 'lucide-react'
 import { Card, CardContent, cn } from '@kukan/ui'
 import { FormatBadge } from './format-badge'
 import { formatBytes } from '@/lib/format-utils'
@@ -10,8 +10,10 @@ import { renderSimpleMarkdown } from '@/lib/render-markdown'
 import { DownloadButton } from '@/components/download-button'
 import { ResourcePipelinePreview } from '@/components/resource-pipeline-preview'
 import { KeyValueTable, extrasToRows } from '@/components/key-value-table'
-import { DateTime } from '@/components/date-time'
+import { DateTime, formatDateTime } from '@/components/date-time'
 import { VersionHistory } from '@/components/version-history'
+import { externalHttpUrl } from '@/lib/safe-url'
+import { LinkHealthWarning } from '@/components/link-health-warning'
 
 export interface Resource {
   id: string
@@ -27,6 +29,8 @@ export interface Resource {
   created: string
   updated: string
   lastModified?: string | null
+  healthStatus?: string | null
+  healthCheckedAt?: string | null
   extras?: Record<string, unknown> | null
 }
 
@@ -36,6 +40,25 @@ interface ResourceExplorerProps {
   sectionTitle?: string
   initialResourceId?: string
   canManage?: boolean
+}
+
+/**
+ * A resource's URL when it points at another site — an upload's names our own.
+ *
+ * Tested by exclusion because `upload` is the only value the validator admits
+ * (`createResourceBodySchema`); anything else, `null` included, is a fetch.
+ */
+function externalUrl(resource: Resource | undefined): string | null {
+  return resource && resource.urlType !== 'upload' ? (resource.url ?? null) : null
+}
+
+/**
+ * How the source URL reads on the page: the host, with a marker when the URL
+ * carries more than that. Full paths are long enough to push the dates around;
+ * the whole URL stays on the link itself and in its tooltip.
+ */
+function shortenUrl({ host, pathname, search }: URL): string {
+  return pathname === '/' && !search ? host : `${host}/…`
 }
 
 function getResourceIdFromPath(): string | null {
@@ -51,6 +74,7 @@ export function ResourceExplorer({
   canManage,
 }: ResourceExplorerProps) {
   const t = useTranslations('resource')
+  const locale = useLocale()
   const [selectedId, setSelectedId] = useState<string | null>(() => {
     if (initialResourceId && resources.some((r) => r.id === initialResourceId)) {
       return initialResourceId
@@ -58,6 +82,14 @@ export function ResourceExplorer({
     return resources[0]?.id ?? null
   })
   const selected = resources.find((r) => r.id === selectedId)
+  const source = externalHttpUrl(externalUrl(selected))
+  // Only the verdict is public — what went wrong is the sysadmin health
+  // screen's to show, so this says the link may be gone and when that was last
+  // true, not which status or error came back.
+  const linkWarning =
+    source && selected?.healthStatus === 'error' && selected.healthCheckedAt
+      ? t('linkCheckFailed', { date: formatDateTime(selected.healthCheckedAt, locale) })
+      : null
 
   // Track visited resource IDs to keep their previews alive in the DOM
   const [visitedIds, setVisitedIds] = useState<Set<string>>(() => {
@@ -132,12 +164,13 @@ export function ResourceExplorer({
       {/* Selected resource preview (right) */}
       {selected && (
         <div className="flex min-w-0 flex-1 flex-col gap-4">
-          {/* Resource header */}
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-xl leading-tight font-semibold break-all">
+          {/* Wraps rather than squeezing: below the title's basis the download
+              column drops to its own line instead of shaving the name. */}
+          <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+            <h3 className="min-w-0 flex-1 basis-64 text-xl leading-tight font-semibold break-all">
               {selected.name || t('unnamed')}
             </h3>
-            <div className="shrink-0">
+            <div className="ml-auto flex min-w-0 flex-col items-end gap-1">
               <DownloadButton
                 datasetNameOrId={packageName}
                 resourceId={selected.id}
@@ -146,6 +179,26 @@ export function ResourceExplorer({
                 label={t('download')}
                 size={selected.size}
               />
+              {source && (
+                <span className="flex max-w-full flex-wrap items-center justify-end gap-x-1 text-sm text-muted-foreground">
+                  <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span className="shrink-0">{t('externalSource')}</span>
+                  {/* URL and warning wrap as one: the icon reads as a mark on
+                      the link, not as a line of its own. */}
+                  <span className="flex min-w-0 items-center">
+                    <a
+                      href={source.href}
+                      title={source.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="min-w-0 truncate text-primary underline-offset-4 hover:underline"
+                    >
+                      {shortenUrl(source)}
+                    </a>
+                    {linkWarning && <LinkHealthWarning message={linkWarning} />}
+                  </span>
+                </span>
+              )}
             </div>
           </div>
 
@@ -179,7 +232,7 @@ export function ResourceExplorer({
                 <ResourcePipelinePreview
                   resourceId={r.id}
                   format={r.format}
-                  url={r.urlType !== 'upload' ? r.url : null}
+                  url={externalUrl(r)}
                   size={r.size}
                   canManage={canManage}
                 />

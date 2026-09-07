@@ -7,7 +7,8 @@
  * in the app origin when clicked (stored XSS).
  */
 
-const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
+const HTTP_PROTOCOLS = new Set(['http:', 'https:'])
+const ALLOWED_PROTOCOLS = new Set([...HTTP_PROTOCOLS, 'mailto:'])
 
 // Any absolute URL parses against this base; relative URLs inherit its (safe)
 // https scheme. The host is irrelevant — only the resolved protocol is used.
@@ -33,4 +34,26 @@ export function safeExternalHref(url: string | null | undefined): string | undef
   }
 
   return ALLOWED_PROTOCOLS.has(protocol) ? url : undefined
+}
+
+/**
+ * The parsed URL when it is an absolute http(s) one, otherwise `undefined`.
+ *
+ * What a link claiming to point at another site needs, and narrower than
+ * {@link safeExternalHref} on both counts: `mailto:` is not a site, and a
+ * relative URL is this one. Callers get the `URL` back because a link like that
+ * usually has something to say about its host.
+ */
+export function externalHttpUrl(url: string | null | undefined): URL | undefined {
+  if (typeof url !== 'string' || url.trim() === '') return undefined
+
+  let parsed: URL
+  try {
+    // No base: a relative URL throws here rather than inheriting a scheme.
+    parsed = new URL(url)
+  } catch {
+    return undefined
+  }
+
+  return HTTP_PROTOCOLS.has(parsed.protocol) ? parsed : undefined
 }

@@ -46,4 +46,11 @@ export interface BatchSummary {
    * it first and the batch goes on from where it stopped.
    */
   deferred: number
+  /**
+   * Checked, but the row's URL was edited before the verdict could be written,
+   * so it is about an address the row no longer has. Nothing was recorded and
+   * nothing was enqueued; the reset the edit made leaves the row due for a
+   * check against its new URL.
+   */
+  discarded: number
 }

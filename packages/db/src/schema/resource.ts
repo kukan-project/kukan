@@ -124,7 +124,11 @@ export const resource = pgTable(
     // it was created under.
     columnSettings: jsonb('column_settings').$type<ColumnSettings>().notNull().default({}),
 
-    // Quality Monitor
+    // Quality Monitor. All three describe `(url, url_type)` and nothing else:
+    // the verdict, when it was reached, and the validators it was reached from.
+    // A writer that changes either URL column resets all three — a verdict kept
+    // across that change condemns the new address for the old one's failure,
+    // and the checker only revisits a row a day later.
     healthStatus: varchar('health_status', { length: 20 }).default('unknown'),
     healthCheckedAt: timestamp('health_checked_at', { withTimezone: true }),
     healthCheckState: jsonb('health_check_state').$type<HealthCheckState>().default({}),

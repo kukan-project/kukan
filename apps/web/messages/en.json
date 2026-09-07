@@ -595,6 +595,8 @@
     "updatedShort": "Modified",
     "sourceUrl": "External URL",
     "sourceUpload": "Upload",
+    "externalSource": "Hosted on an external site:",
+    "linkCheckFailed": "The last link check ({date}) could not reach this URL. The link may no longer work.",
     "dropFileHere": "Drag and drop a file here, or click to select",
     "dropHint": "Drag and drop files here, or click to select — resources are added automatically",
     "fileTooLarge": "File exceeds the {size} MB limit",

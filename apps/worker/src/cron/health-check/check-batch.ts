@@ -259,6 +259,7 @@ export async function checkBatch(
     changed: 0,
     enqueuedForFullFetch: 0,
     deferred: 0,
+    discarded: 0,
   }
 
   // 1. SELECT stale resources using healthCheckedAt as implicit cursor
@@ -315,9 +316,12 @@ export async function checkBatch(
       // Bounded all the same, though it asks nothing of the network: two
       // hundred of these are two hundred writes at once against a pool of
       // three.
-      await overall(() => updateHealthStatus(db, row.id, 'error', { error: unsafe.message }))
+      const recorded = await overall(() =>
+        updateHealthStatus(db, { id: row.id, url: row.url! }, 'error', { error: unsafe.message })
+      )
       summary.checked++
-      summary.error++
+      if (recorded) summary.error++
+      else summary.discarded++
       return
     }
     // It parsed, or `checkUrlSafety` would have said so.
@@ -351,6 +355,23 @@ export async function checkBatch(
       if (result === null) return false
       summary.checked++
 
+      // 3. Update DB: healthStatus, healthCheckedAt, healthCheckState (jsonb merge)
+      const state: HealthCheckState = {}
+      if (result.etag !== null) state.etag = result.etag
+      if (result.lastModified !== null) state.lastModified = result.lastModified
+      state.error = result.errorMessage
+      if (result.httpStatus !== null) state.httpStatus = result.httpStatus
+
+      const hasHeaders = result.etag !== null || result.lastModified !== null
+
+      // Counted and enqueued only once it is known the verdict landed: the row
+      // it was about may have been edited while the request was in flight.
+      if (!(await updateHealthStatus(db, res, result.healthStatus, state))) {
+        summary.discarded++
+        log.info({ resourceId: res.id, url: res.url }, 'Resource URL changed mid-check, discarded')
+        return true
+      }
+
       if (result.healthStatus === 'ok') {
         summary.ok++
       } else {
@@ -362,17 +383,6 @@ export async function checkBatch(
           )
         }
       }
-
-      // 3. Update DB: healthStatus, healthCheckedAt, healthCheckState (jsonb merge)
-      const state: HealthCheckState = {}
-      if (result.etag !== null) state.etag = result.etag
-      if (result.lastModified !== null) state.lastModified = result.lastModified
-      state.error = result.errorMessage
-      if (result.httpStatus !== null) state.httpStatus = result.httpStatus
-
-      const hasHeaders = result.etag !== null || result.lastModified !== null
-
-      await updateHealthStatus(db, res.id, result.healthStatus, state)
 
       // 4a. Enqueue changed resources to pipeline for re-fetch
       if (result.changed) {
@@ -396,7 +406,7 @@ export async function checkBatch(
           log.info({ resourceId: res.id }, 'No change headers, enqueueing periodic full fetch')
           await queue.enqueue(PIPELINE_JOB_TYPE, { resourceId: res.id })
           // Record the enqueue time so we don't re-enqueue until next interval
-          await updateHealthStatus(db, res.id, null, { lastFullFetchAt: Date.now() })
+          await updateHealthStatus(db, res, null, { lastFullFetchAt: Date.now() })
         }
       }
       return true
@@ -427,23 +437,36 @@ export async function checkBatch(
 /**
  * Update resource health check state, and optionally healthStatus + healthCheckedAt.
  *
+ * Returns whether the row was still the one that was checked. A check spans
+ * seconds, and the URL can be edited inside them — the API resets these columns
+ * when it changes (see the column declarations in `@kukan/db`), so writing a
+ * verdict keyed on the id alone would put the old address's failure back on the
+ * new one, and the checker would not revisit it for a day.
+ *
  * Writing {@link scrubbedExtras} back is how a row an overlapping old worker
  * wrote this checker's old keys onto gets cleaned — see {@link
  * LEGACY_HEALTH_EXTRAS_KEYS}.
  */
 async function updateHealthStatus(
   db: Database,
-  resourceId: string,
+  checked: { id: string; url: string },
   healthStatus: 'ok' | 'error' | null,
   state: HealthCheckState
-): Promise<void> {
+): Promise<boolean> {
   const stateJson = JSON.stringify(state)
-  await db
+  const written = await db
     .update(resource)
     .set({
       ...(healthStatus !== null && { healthStatus, healthCheckedAt: sql`NOW()` }),
       healthCheckState: sql`COALESCE(${resource.healthCheckState}, '{}'::jsonb) || ${stateJson}::jsonb`,
       extras: scrubbedExtras,
     })
-    .where(eq(resource.id, resourceId))
+    // The same three the batch selected on: an upload has no URL to have
+    // checked, so a row that became one is no longer this verdict's subject.
+    .where(
+      and(eq(resource.id, checked.id), eq(resource.url, checked.url), isNull(resource.urlType))
+    )
+    .returning({ id: resource.id })
+
+  return written.length > 0
 }

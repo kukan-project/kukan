@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { safeExternalHref } from '../safe-url'
+import { safeExternalHref, externalHttpUrl } from '../safe-url'
 
 describe('safeExternalHref', () => {
   it('allows http and https URLs', () => {
@@ -45,5 +45,23 @@ describe('safeExternalHref', () => {
     expect(safeExternalHref('   ')).toBeUndefined()
     expect(safeExternalHref(null)).toBeUndefined()
     expect(safeExternalHref(undefined)).toBeUndefined()
+  })
+})
+
+describe('externalHttpUrl', () => {
+  it('parses absolute http(s) URLs', () => {
+    expect(externalHttpUrl('https://example.com/a/b?q=1')?.host).toBe('example.com')
+    expect(externalHttpUrl('http://example.com:8080')?.host).toBe('example.com:8080')
+  })
+
+  it('refuses what is not another site: mailto, relative URLs, and unsafe schemes', () => {
+    // `safeExternalHref` passes the first two — a link that names a host cannot.
+    expect(externalHttpUrl('mailto:user@example.com')).toBeUndefined()
+    expect(externalHttpUrl('/dataset/foo')).toBeUndefined()
+    expect(externalHttpUrl('//example.com')).toBeUndefined()
+    expect(externalHttpUrl('javascript:alert(1)')).toBeUndefined()
+    expect(externalHttpUrl('java\tscript:alert(1)')).toBeUndefined()
+    expect(externalHttpUrl(null)).toBeUndefined()
+    expect(externalHttpUrl('  ')).toBeUndefined()
   })
 })

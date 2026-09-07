@@ -595,6 +595,8 @@
     "updatedShort": "更新日時",
     "sourceUrl": "外部URL",
     "sourceUpload": "アップロード",
+    "externalSource": "外部サイトのデータ：",
+    "linkCheckFailed": "直近のリンクチェック（{date}）でこのURLに到達できませんでした。リンクが無効になっている可能性があります。",
     "dropFileHere": "ここにファイルをドラッグ＆ドロップ、またはクリックして選択",
     "dropHint": "ファイルをドラッグ＆ドロップ、またはクリックして選択するとリソースを追加します",
     "fileTooLarge": "ファイルサイズが上限（{size} MB）を超えています",

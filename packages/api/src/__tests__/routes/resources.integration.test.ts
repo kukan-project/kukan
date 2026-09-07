@@ -86,6 +86,23 @@ async function createPackage(name: string, options?: { private?: boolean }) {
   return res.json()
 }
 
+/** What the health checker would have left behind, without running it. */
+async function seedHealth(resourceId: string, fields: Partial<typeof resourceTable.$inferInsert>) {
+  await db.update(resourceTable).set(fields).where(eq(resourceTable.id, resourceId))
+}
+
+async function readHealth(resourceId: string) {
+  const [row] = await db
+    .select({
+      healthStatus: resourceTable.healthStatus,
+      healthCheckedAt: resourceTable.healthCheckedAt,
+      healthCheckState: resourceTable.healthCheckState,
+    })
+    .from(resourceTable)
+    .where(eq(resourceTable.id, resourceId))
+  return row
+}
+
 async function createResource(packageId: string, data: Record<string, unknown> = {}) {
   const res = await app.request(`/api/v1/packages/${packageId}/resources`, {
     method: 'POST',
@@ -647,6 +664,51 @@ describe('Resources API Routes', () => {
       })
     })
 
+    it('drops the health verdict when the URL changes', async () => {
+      // The checker revisits a row a day after it checked it, so a failure kept
+      // from the old address would mark the new one as broken for that long.
+      const pkg = await createPackage('put-health-reset-pkg')
+      const resource = await createResource(pkg.id, { url: 'https://a.example.com/old.csv' })
+      await seedHealth(resource.id, {
+        healthStatus: 'error',
+        healthCheckedAt: new Date(),
+        healthCheckState: { error: 'HTTP 404 Not Found', etag: '"old"' },
+      })
+
+      const res = await app.request(`/api/v1/resources/${resource.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: 'https://b.example.com/new.csv' }),
+      })
+      expect(res.status).toBe(200)
+
+      expect(await readHealth(resource.id)).toEqual({
+        healthStatus: 'unknown',
+        healthCheckedAt: null,
+        healthCheckState: {},
+      })
+    })
+
+    it('keeps the health verdict when the URL is untouched', async () => {
+      // Editing a description says nothing about the link, and clearing the
+      // verdict there would hide a broken one until the checker returns.
+      const pkg = await createPackage('put-health-keep-pkg')
+      const resource = await createResource(pkg.id, { url: 'https://a.example.com/old.csv' })
+      const checkedAt = new Date('2026-09-01T00:00:00Z')
+      await seedHealth(resource.id, { healthStatus: 'error', healthCheckedAt: checkedAt })
+
+      const res = await app.request(`/api/v1/resources/${resource.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: 'https://a.example.com/old.csv', description: 'edited' }),
+      })
+      expect(res.status).toBe(200)
+
+      const health = await readHealth(resource.id)
+      expect(health.healthStatus).toBe('error')
+      expect(health.healthCheckedAt).toEqual(checkedAt)
+    })
+
     it('should update resource', async () => {
       const pkg = await createPackage('update-res-pkg')
       const resource = await createResource(pkg.id)
@@ -1037,6 +1099,27 @@ describe('Resources API Routes', () => {
       const body = await res.json()
       expect(body.pipeline_status).toBe('queued')
       expect(body.job_id).toBeDefined()
+    })
+
+    it('drops the health verdict — the promoted row serves an upload, not that URL', async () => {
+      const pkg = await createPackage('complete-health-pkg')
+      const resource = await createResource(pkg.id, { url: 'https://a.example.com/old.csv' })
+      await seedHealth(resource.id, { healthStatus: 'error', healthCheckedAt: new Date() })
+
+      await app.request(`/api/v1/resources/${resource.id}/upload-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: 'data.csv', contentType: 'text/csv' }),
+      })
+      await app.request(`/api/v1/resources/${resource.id}/upload-complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ size: 1024 }),
+      })
+
+      const health = await readHealth(resource.id)
+      expect(health.healthStatus).toBe('unknown')
+      expect(health.healthCheckedAt).toBeNull()
     })
 
     it('records the stored size and leaves the hash for the worker to compute', async () => {
