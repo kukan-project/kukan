@@ -8,7 +8,8 @@ sidebar:
 When one operator runs multiple KUKAN sites (for example, data catalogs for
 several municipalities), duplicating the full stack per site makes fixed costs
 grow linearly with the site count. The multi-site layout shares the
-hourly-billed "boxes" (database cluster, OpenSearch, VPC, ECS cluster) while
+hourly-billed "boxes" (database cluster, OpenSearch, VPC, ECS cluster, load
+balancer) while
 keeping every logical resource that holds data or a namespace per site
 (database, search index, storage bucket, queue, web/worker services).
 
