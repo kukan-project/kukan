@@ -6,6 +6,46 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.25.0] - 2026-09-08
+
+**Highlights**
+
+- Multi-site environments now deploy their sites two at a time. The first site still goes alone as the canary; after it, sites roll out in waves of `deployConcurrency` (default 2, `1` restores the old serial order), each wave waiting for the previous one. Ten sites that used to take an hour or more of serial deployment now finish in about half the time, and nothing in the pipeline itself had to change (#555).
+- The shared-database connection check that guards multi-site deployments got more accurate. It used to reserve a whole site's fully scaled-out pool for the rolling update; a deploy actually resets a site to its minimum task count, so the check now reserves only those new tasks' connections — 8 instead of 16 on the small preset, 15 instead of 60 on medium. RDS instance classes are also sized by their real memory (a `db.t4g.small` allows about 225 connections, not the 112 assumed for every class before). The result: a few more sites fit the same database, and the numbers behind the warning are the ones you would see in production (#555).
+- Upgrade note for existing multi-site environments: with the new default, the check counts two sites' new tasks. An environment already at the edge of its database may now fail synth with a message that names the fix — set `deployConcurrency: 1`, or size the database up first. The new sizing table in the system administrator guide shows, for each preset and concurrency, the smallest database that passes without a warning (#555).
+
+**Features**
+
+- feat(infra): deploy sites in waves with deployConcurrency (ADR-041) (#555) — the stage wires the site stacks so that each wave depends on every stack of the previous wave; CDK Pipelines then runs the independent stacks of a wave in parallel. The connection budget adds the `minSize × pool` connections of the `deployConcurrency` most expensive sites, relies on the task definitions pinning `DesiredCount` to the minimum (documented as intended: a deploy under load dips to the minimum and autoscaling restores it within minutes), and the error text offers the serial fallback. `Stack.addDependency` is replaced by `addStackDependency`.
+
+**Bug Fixes**
+
+- fix(infra): wire db.instanceClass into the RDS instance and count waves after the canary (#556) — `overrides.db.instanceClass` used to be ignored by the database construct, which always created a `db.t4g.micro`; it now creates the configured class (defaulting to the small preset's) and rejects malformed names at synth. The connection budget no longer counts the canary twice in the concurrent-update term, and RDS memory is derived per family generation (`db.x2g.large` is 32 GiB, not 64) with unknown x-generation classes rejected rather than guessed.
+
+**Documentation**
+
+- docs(site): list the load balancer among the shared boxes (#554) — the multi-site guide's summary of what an environment shares now includes the ALB introduced in 0.24.0.
+
+---
+
+**ハイライト**
+
+- マルチサイト環境のサイトが 2 つずつデプロイされるようになりました。先頭サイトは従来どおり単独のカナリアとして先行し、以降は `deployConcurrency` サイトずつの wave（既定 2、`1` で従来の直列に戻せます）で、各 wave は前 wave の完了を待ちます。直列で 1 時間以上かかっていた 10 サイトの展開が約半分で終わり、pipeline 自体の変更は不要です（#555）。
+- マルチサイトのデプロイを守る共有データベースの接続数チェックがより正確になりました。これまでローリング更新のために「スケール上限まで広がったサイト 1 つ分のプール」を丸ごと確保していましたが、実際にはデプロイでサイトの希望タスク数は最小値に戻るため、新しいタスク分の接続だけを確保します（small preset で 16 → 8、medium で 60 → 15）。RDS のインスタンスクラスも実際のメモリで見積もります（`db.t4g.small` は約 225 接続。以前は全クラスを 112 と仮定）。同じデータベースに載せられるサイトが少し増え、警告の根拠となる数値が本番で見える値と一致します（#555）。
+- 既存マルチサイト環境向けのアップグレード注意: 新しい既定値では 2 サイト分の新タスクを計上します。データベースの上限際にある環境は synth が失敗することがあり、その場合のメッセージが対処を示します — `deployConcurrency: 1` にするか、先にデータベースを上げてください。システム管理者ガイドに追加した早見表で、preset と同時数ごとに警告なしで通る最小のデータベースを確認できます（#555）。
+
+**新機能**
+
+- feat(infra): deployConcurrency による wave 並列デプロイ（ADR-041） (#555) — ステージは各 wave が前 wave の全スタックに依存するようサイトスタックを配線し、wave 内の独立したスタックは CDK Pipelines が並列に実行します。接続数バジェットは消費上位 `deployConcurrency` サイトの `minSize × プール` を加算し、タスク定義が `DesiredCount` を最小値に固定していることを前提にします（意図した挙動として明記: 負荷中のデプロイは最小値まで下がり、オートスケールが数分で戻す）。エラー文は直列へのフォールバックを案内します。`Stack.addDependency` を `addStackDependency` に置き換えました。
+
+**バグ修正**
+
+- fix(infra): db.instanceClass を RDS インスタンスに配線し、カナリア後の wave 数を正しく数える (#556) — `overrides.db.instanceClass` はデータベース構文に無視され、常に `db.t4g.micro` が作られていました。指定したクラス（未指定時は small preset の値）で作成し、不正な名前は synth で拒否します。接続数バジェットは同時更新数にカナリアを二重に数えなくなり、RDS のメモリはファミリの世代ごとに導出します（`db.x2g.large` は 64 GiB ではなく 32 GiB）。未知の x 世代は推測せず拒否します。
+
+**ドキュメント**
+
+- docs(site): 共有する箱の一覧にロードバランサーを追加 (#554) — マルチサイトガイドの「環境が共有するもの」の要約に、0.24.0 で導入した ALB を含めました。
+
 ## [0.24.0] - 2026-09-08
 
 **Highlights**
