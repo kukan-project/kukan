@@ -6,6 +6,28 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.23.0] - 2026-09-08
+
+**Highlights**
+
+- A resource whose data lives on another site now says so. Downloads are served through KUKAN whatever their origin, which left a reader no way to tell a file uploaded here from one fetched elsewhere — the resource page now names the source host beside the download button, linked to the original, and when the last link check could not reach it a warning icon explains that the link may no longer work and when that was last true. Only the verdict and its date are public; the HTTP status and the error behind it stay on the system administrator's health screen (#543).
+- A link-check verdict now belongs to the URL it was about. Editing a resource's URL used to leave the old address's failure showing against the new one, and the checker only revisits a row a day later, so a link that was fine could be marked broken for that long. Changing a URL now clears the verdict, and a check already in flight can no longer write an old address's result onto the new one — or start a pipeline run on the strength of it (#543).
+
+**Features**
+
+- feat(web): show a resource's external source URL and its link-check verdict (#543) — the source line sits with the download button rather than with the dates, shortened to the host so a long path cannot push the layout around, with the whole URL on the link and its tooltip. The warning's explanation opens on hover, on tap and on keyboard focus, because a tooltip needs a pointer a phone does not have. Only `http`/`https` URLs are linked. On the write side, `ResourceService.update` and the upload promotion clear `health_status` / `health_checked_at` / `health_check_state` when the URL changes, and the health checker keys its write on the URL it checked, counting a discarded check rather than hiding it.
+
+---
+
+**ハイライト**
+
+- データが別のサイトにあるリソースが、そうと分かるようになりました。ダウンロードは配信元にかかわらず KUKAN 経由で提供されるため、ここにアップロードされたファイルなのか外部から取得したものなのかを読み手が区別できませんでした。リソースページはダウンロードボタンの隣に配信元のホストを示し、元の URL へリンクします。直近のリンクチェックが到達できなかった場合は、リンクが無効になっている可能性があることと、それがいつ確認されたものかを警告アイコンが説明します。公開されるのは判定と実施日時だけで、HTTP ステータスとその背後のエラーはシステム管理者のヘルス画面に留まります（#543）。
+- リンクチェックの判定が、その判定を下した URL のものになりました。これまではリソースの URL を変更しても旧アドレスの失敗が新しい URL に対して表示され続け、チェッカーが行を再訪するのは 1 日後のため、正常なリンクがその間ずっと切れていると表示されうる状態でした。URL の変更で判定はクリアされ、実行中のチェックが旧アドレスの結果を新しい URL に書き戻すことも、それを根拠にパイプラインを起動することもなくなります（#543）。
+
+**新機能**
+
+- feat(web): リソースの外部配信元 URL とリンクチェック判定を表示 (#543) — 配信元の行は日付ではなくダウンロードボタン側に置き、長いパスがレイアウトを押し広げないようホスト止まりに短縮します（URL 全体はリンク先とツールチップに保持）。警告の説明はホバー・タップ・キーボードフォーカスのいずれでも開きます。ツールチップはポインタを必要とし、スマートフォンにはそれが無いためです。リンクするのは `http`/`https` の URL のみ。書き込み側では、`ResourceService.update` とアップロードの反映が URL 変更時に `health_status` / `health_checked_at` / `health_check_state` をクリアし、ヘルスチェッカーはチェック対象の URL を条件に書き込みます。破棄されたチェックは隠さず集計します
+
 ## [0.22.0] - 2026-09-06
 
 **Breaking Changes**
