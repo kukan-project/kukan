@@ -11,6 +11,7 @@
 import * as cdk from 'aws-cdk-lib'
 import { Construct } from 'constructs'
 import {
+  deployWaves,
   needsGlobalStack,
   needsManagedWaf,
   rejectBlankEdgeArns,
@@ -71,16 +72,10 @@ export class KukanStage extends cdk.Stage {
       // one. That bounds the rolling-update connection overlap (ECS runs old and
       // new tasks together, MaximumPercent 200) to the sites the connection
       // budget accounts for (validateSites).
-      const concurrency = resolveDeployConcurrency(config)
-      const waveOf = (i: number) => (i === 0 ? 0 : 1 + Math.floor((i - 1) / concurrency))
-      siteStacks.forEach((stack, i) => {
-        if (i === 0) {
-          stack.addStackDependency(shared)
-          return
-        }
-        siteStacks
-          .filter((_, j) => waveOf(j) === waveOf(i) - 1)
-          .forEach((previous) => stack.addStackDependency(previous))
+      const waves = deployWaves(siteStacks, resolveDeployConcurrency(config))
+      waves.forEach((wave, w) => {
+        const previous = w === 0 ? [shared] : waves[w - 1]
+        wave.forEach((stack) => previous.forEach((p) => stack.addStackDependency(p)))
       })
       if (globalStack) {
         siteStacks[0].addStackDependency(globalStack)

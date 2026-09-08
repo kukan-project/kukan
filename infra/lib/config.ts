@@ -299,17 +299,86 @@ export function resolveDeployConcurrency(
   return value
 }
 
-/** RDS instance memory, for the max_connections estimate. Unknown classes fall
- *  back to 1 GiB (the smallest preset) — conservative, never optimistic. */
-const RDS_INSTANCE_MEMORY_GIB: Record<string, number> = {
-  'db.t4g.micro': 1,
-  'db.t4g.small': 2,
-  'db.t4g.medium': 4,
-  'db.t4g.large': 8,
-  'db.m6g.large': 8,
-  'db.m6g.xlarge': 16,
-  'db.r6g.large': 16,
-  'db.r6g.xlarge': 32,
+/** RDS instance class shape, `db.<family>.<size>` — the DatabaseConstruct strips
+ *  the prefix and hands the rest to EC2 InstanceType, so anything else would
+ *  synthesize into a CloudFormation error at deploy time. */
+const RDS_INSTANCE_CLASS_PATTERN = /^db\.[a-z0-9]+\.[a-z0-9]+$/
+
+/** The rds engine's class when a preset (medium/large default to Aurora) or the
+ *  operator names none. */
+export const RDS_DEFAULT_INSTANCE_CLASS = 'db.t4g.micro'
+
+/** RDS memory decomposes as size × family: sizes are GiB for the t/m families
+ *  (large = 8); r doubles that, and the x generations differ from each other
+ *  (x2g.large 32 GiB, x2iedn.xlarge 128 GiB), so they are listed by name. */
+const RDS_SIZE_GIB: Record<string, number> = {
+  micro: 1,
+  small: 2,
+  medium: 4,
+  large: 8,
+  xlarge: 16,
+  '2xlarge': 32,
+  '4xlarge': 64,
+  '8xlarge': 128,
+  '12xlarge': 192,
+  '16xlarge': 256,
+  '24xlarge': 384,
+}
+const RDS_FAMILY_MEMORY_FACTOR: Record<string, number> = {
+  t: 1,
+  m: 1,
+  r: 2,
+  x2g: 4,
+  x2idn: 4,
+  x2iedn: 8,
+  x2iezn: 8,
+}
+
+/** The rds instance class — computeScaled guarantees it for the rds engine. */
+export function rdsInstanceClass(db: ScaleComputed['db']): string {
+  if (!db.instanceClass) {
+    throw new Error(
+      'db.instanceClass is unset for the rds engine (computeScaled should have filled it)'
+    )
+  }
+  return db.instanceClass
+}
+
+/** Memory of an RDS class in GiB, or a synth error for a shape the connection
+ *  budget cannot size — better than quietly budgeting it as a micro. */
+function rdsInstanceMemoryGib(instanceClass: string): number {
+  const [, family = '', size = ''] = instanceClass.split('.')
+  const gib = RDS_SIZE_GIB[size]
+  // t/m/r keep their ratio across generations (t4g, m6g, r7g…); x is per name
+  const factor = RDS_FAMILY_MEMORY_FACTOR[family] ?? RDS_FAMILY_MEMORY_FACTOR[family.charAt(0)]
+  if (
+    gib === undefined ||
+    factor === undefined ||
+    (family.startsWith('x') && !(family in RDS_FAMILY_MEMORY_FACTOR))
+  ) {
+    throw new Error(
+      `db.instanceClass "${instanceClass}" is not a known RDS class shape (families t*/m*/r*/` +
+        `${Object.keys(RDS_FAMILY_MEMORY_FACTOR)
+          .filter((f) => f.length > 1)
+          .join('/')}, ` +
+        `sizes ${Object.keys(RDS_SIZE_GIB).join('/')}) — the connection budget cannot size it`
+    )
+  }
+  return gib * factor
+}
+
+/**
+ * Deploy order of a multi-site environment (ADR-041): the first site alone as
+ * the canary, then `concurrency` sites per wave. The stage wires each wave
+ * onto the previous one, and the connection budget counts the largest wave —
+ * one function so the two can never disagree.
+ */
+export function deployWaves<T>(sites: readonly T[], concurrency: number): T[][] {
+  const waves: T[][] = sites.length > 0 ? [[sites[0]]] : []
+  for (let i = 1; i < sites.length; i += concurrency) {
+    waves.push(sites.slice(i, i + concurrency))
+  }
+  return waves
 }
 
 /** CloudFront's "distributions associated with the same VPC origin" quota — no
@@ -505,17 +574,15 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
   const { connections: maxConnections, uncappedConnections } = estimateMaxConnections(
     envComputed.db
   )
-  const perSite = sites.map((site) => {
-    const c = deepMerge(envComputed, site.overrides ?? {})
-    return c.dbPool.webMax * c.web.maxSize + c.dbPool.workerMax * c.worker.maxTasks
-  })
-  const steady = perSite.reduce((sum, value) => sum + value, 0)
-  const perSiteRolling = sites.map((site) => {
-    const c = deepMerge(envComputed, site.overrides ?? {})
-    return c.dbPool.webMax * c.web.minSize + c.dbPool.workerMax * c.worker.minTasks
-  })
-  const rollingSites = Math.min(concurrency, sites.length)
-  const rolling = [...perSiteRolling]
+  const siteComputed = sites.map((site) => deepMerge(envComputed, site.overrides ?? {}))
+  const steady = siteComputed.reduce(
+    (sum, c) => sum + c.dbPool.webMax * c.web.maxSize + c.dbPool.workerMax * c.worker.maxTasks,
+    0
+  )
+  // As many sites as the largest wave can roll at once (the canary is a wave of one)
+  const rollingSites = Math.max(...deployWaves(sites, concurrency).map((wave) => wave.length))
+  const rolling = siteComputed
+    .map((c) => c.dbPool.webMax * c.web.minSize + c.dbPool.workerMax * c.worker.minTasks)
     .sort((a, b) => b - a)
     .slice(0, rollingSites)
     .reduce((sum, value) => sum + value, 0)
@@ -544,7 +611,7 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
       return (
         `${lowerPools}, or migrate to aurora blue/green with pg_dump/restore — ` +
         'switching dbEngine in place would create an EMPTY Aurora cluster and ' +
-        `point the app at it (${envComputed.db.instanceClass ?? 'the rds instance'} allows ` +
+        `point the app at it (${rdsInstanceClass(envComputed.db)} allows ` +
         `only ~${maxConnections} connections; a larger instance class raises it) — ` +
         'or consider RDS Proxy (ADR-041)'
       )
@@ -616,7 +683,7 @@ function estimateMaxConnections(db: ScaleComputed['db']): {
 } {
   if (db.engine !== 'aurora') {
     // RDS PostgreSQL default: LEAST({DBInstanceClassMemory/9531392}, 5000)
-    const gib = RDS_INSTANCE_MEMORY_GIB[db.instanceClass ?? ''] ?? 1
+    const gib = rdsInstanceMemoryGib(rdsInstanceClass(db))
     const connections = Math.min(Math.floor((gib * 1024 ** 3) / 9_531_392), 5000)
     return { connections, uncappedConnections: connections }
   }
@@ -770,7 +837,7 @@ const SCALE_DEFAULTS: Record<Scale, ScaleComputed> = {
   small: {
     web: { cpu: 256, memory: 512, minSize: 1, maxSize: 2 },
     worker: { cpu: 256, memory: 1024, minTasks: 1, maxTasks: 2, healthPort: 8080 },
-    db: { engine: 'rds', instanceClass: 'db.t4g.micro', multiAz: false },
+    db: { engine: 'rds', instanceClass: RDS_DEFAULT_INSTANCE_CLASS, multiAz: false },
     opensearch: {
       instanceType: 't3.small.search',
       instanceCount: 1,
@@ -943,6 +1010,16 @@ function computeScaled(
   if (db.engine === 'aurora' && db.minAcu == null) {
     db.minAcu = 0
     db.maxAcu = 2
+  }
+  if (db.engine === 'rds') {
+    // The medium/large presets carry no class (they default to Aurora)
+    db.instanceClass ??= RDS_DEFAULT_INSTANCE_CLASS
+    if (!RDS_INSTANCE_CLASS_PATTERN.test(db.instanceClass)) {
+      throw new Error(
+        `db.instanceClass "${db.instanceClass}" must look like db.<family>.<size> (e.g. db.t4g.small)`
+      )
+    }
+    rdsInstanceMemoryGib(db.instanceClass) // a shape the connection budget can size
   }
   return { ...computed, db }
 }

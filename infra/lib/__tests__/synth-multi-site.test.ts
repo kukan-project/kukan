@@ -12,12 +12,14 @@ import {
   assertPipelineAccount,
   DERIVED_ALB_PRIORITY_MAX,
   DERIVED_ALB_PRIORITY_MIN,
+  RDS_DEFAULT_INSTANCE_CLASS,
   resolveAlbPriority,
   resolveSiteConfig,
   validateSites,
   type EnvironmentConfig,
   type SiteConfig,
 } from '../config.js'
+import { pascal } from '../naming.js'
 import { KukanPipelineStack } from '../pipeline-stack.js'
 import {
   normalize,
@@ -162,6 +164,22 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
     }
   })
 
+  it('pins DesiredCount to the minimum — the budget counts only minSize new tasks', () => {
+    // medium preset: web minSize 1, worker minTasks 1. Removing the pin from the
+    // service constructs must fail here, not as an accepted snapshot diff
+    // (config validateSites relies on it)
+    for (const template of [siteA, siteB]) {
+      template.hasResourceProperties('AWS::ECS::Service', {
+        ServiceName: Match.stringLikeRegexp('-web$'),
+        DesiredCount: 1,
+      })
+      template.hasResourceProperties('AWS::ECS::Service', {
+        ServiceName: Match.stringLikeRegexp('-worker$'),
+        DesiredCount: 1,
+      })
+    }
+  })
+
   it('extends physical names with the site segment', () => {
     siteA.hasResourceProperties('AWS::SQS::Queue', { QueueName: 'kukan-dev-citya-pipeline' })
     siteA.hasResourceProperties('AWS::SQS::Queue', { QueueName: 'kukan-dev-citya-pipeline-dlq' })
@@ -220,7 +238,7 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
     const sites = ['s1', 's2', 's3', 's4', 's5'].map((name) => ({ name, enableWaf: false }))
     const depsOf = (concurrency: number | undefined) => {
       // maxAcu 4 gives the budget room for two medium sites rolling at once
-      const waves = synthStage({
+      const synthesized = synthStage({
         scale: 'medium',
         overrides: { db: { maxAcu: 4 } },
         sites,
@@ -229,11 +247,7 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
       return Object.fromEntries(
         sites.map(({ name }) => [
           name,
-          (
-            waves.node.findChild(
-              `KukanSiteStack${name[0].toUpperCase()}${name.slice(1)}`
-            ) as cdk.Stack
-          ).dependencies
+          (synthesized.node.findChild(`KukanSiteStack${pascal(name)}`) as cdk.Stack).dependencies
             .map((d) => d.node.id)
             .sort(),
         ])
@@ -388,6 +402,14 @@ describe('validateSites', () => {
     validateSites(env)
       .map((w) => w.message)
       .join('\n')
+  // Explicit priorities: with many sites the derived hash can collide, which is
+  // its own (tested) error and would mask the one under test
+  const sitesOf = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      name: `s${i + 1}`,
+      enableWaf: false,
+      albPriority: i + 1,
+    }))
 
   it('rejects an empty sites array (it would silently deploy the single-site shape)', () => {
     expect(() => validateSites({ ...base, sites: [] })).toThrow(/declared but empty/)
@@ -436,8 +458,6 @@ describe('validateSites', () => {
   })
 
   it('counts deployConcurrency sites of rolling-update doubling in the budget', () => {
-    const sitesOf = (n: number) =>
-      Array.from({ length: n }, (_, i) => ({ name: `s${i + 1}`, albPriority: i + 1 }))
     // medium: 60 per site at max scale, 15 new-task connections per rolling site
     // (minSize 1 × webMax 10 + minTasks 1 × workerMax 5), maxAcu 2 → 400.
     // 6 sites steady 360: serial (+15) warns, four at a time (+60) exceeds the
@@ -456,9 +476,23 @@ describe('validateSites', () => {
     )
   })
 
+  it('counts at most sites.length - 1 rolling sites (the canary deploys alone)', () => {
+    // small: 16 per site + 8 per rolling site on db.t4g.micro (112). 5 sites with
+    // K=8: only 4 can roll after the canary → 80 + 32 = 112, at the limit, not over
+    const wide = messages({ ...base, deployConcurrency: 8, sites: sitesOf(5) })
+    expect(wide).toMatch(/112 — steady 80 \+ 4 sites' rolling update 32/)
+    // 2 sites: the canary, then one — never two at once, whatever K says
+    expect(() =>
+      validateSites({
+        ...base,
+        deployConcurrency: 2,
+        overrides: { dbPool: { webMax: 40 } },
+        sites: sitesOf(2),
+      })
+    ).toThrow(/1 site's rolling update 43/)
+  })
+
   it('estimates RDS max_connections from the instance class memory', () => {
-    const sitesOf = (n: number) =>
-      Array.from({ length: n }, (_, i) => ({ name: `s${i + 1}`, albPriority: i + 1 }))
     // small preset: 16 per site + 8 for the rolling one; 7 sites need 120 — over
     // db.t4g.micro's 112, comfortably under db.t4g.small's 225
     expect(() => validateSites({ ...base, sites: sitesOf(7) })).toThrow(
@@ -474,8 +508,6 @@ describe('validateSites', () => {
   })
 
   it('caps sites per environment at the VPC-origin association quota (ADR-049)', () => {
-    const sitesOf = (n: number) =>
-      Array.from({ length: n }, (_, i) => ({ name: `s${i + 1}`, albPriority: i + 1 }))
     expect(() => validateSites({ ...base, sites: sitesOf(51) })).toThrow(
       /51 sites exceed the 50 distributions CloudFront allows on one VPC origin/
     )
@@ -540,12 +572,6 @@ describe('validateSites', () => {
     // medium preset: 60 worst-case connections per site (10×5 web + 5×2 worker),
     // plus one site's rolling-update doubling (+60); maxACU 2 → 400 estimated
     // max_connections (documented-anchor interpolation), 70% = 280
-    const site = (name: string) => ({ name, enableWaf: false })
-    // Explicit priorities: with this many sites the derived hash can collide,
-    // which is its own (tested) error and would mask the budget one
-    const sitesOf = (n: number) =>
-      Array.from({ length: n }, (_, i) => ({ ...site(`s${i + 1}`), albPriority: i + 1 }))
-
     expect(() => validateSites({ ...base, scale: 'medium', sites: sitesOf(8) })).toThrow(
       /480.*exceed the estimated max_connections \(400\)/
     )
@@ -721,5 +747,69 @@ describe('validateSites', () => {
       { name: 'citya', enableWaf: false }
     )
     expect(scaled.scale).toBe('medium')
+  })
+})
+
+describe('RDS instance class', () => {
+  const shared = (env: Partial<EnvironmentConfig> = {}) =>
+    stackTemplate(
+      synthStage({ scale: 'small', sites: [{ name: 'aa', enableWaf: false }], ...env }),
+      'KukanSharedStack'
+    )
+
+  it('creates the instance in the configured class, defaulting to the small preset', () => {
+    shared().hasResourceProperties('AWS::RDS::DBInstance', {
+      DBInstanceClass: RDS_DEFAULT_INSTANCE_CLASS,
+    })
+    shared({ overrides: { db: { instanceClass: 'db.t4g.small' } } }).hasResourceProperties(
+      'AWS::RDS::DBInstance',
+      { DBInstanceClass: 'db.t4g.small' }
+    )
+    // medium/large presets carry no class — the rds engine falls back to the small one
+    shared({ scale: 'medium', dbEngine: 'rds' }).hasResourceProperties('AWS::RDS::DBInstance', {
+      DBInstanceClass: RDS_DEFAULT_INSTANCE_CLASS,
+    })
+  })
+
+  it('rejects classes the connection budget cannot size', () => {
+    expect(() => shared({ overrides: { db: { instanceClass: 't4g.small' } } })).toThrow(
+      /must look like db\./
+    )
+    expect(() => shared({ overrides: { db: { instanceClass: 'db.z1d.large' } } })).toThrow(
+      /not a known RDS class shape/
+    )
+    // x generations differ in memory per size, so only the listed ones are sized
+    expect(() => shared({ overrides: { db: { instanceClass: 'db.x1e.xlarge' } } })).toThrow(
+      /not a known RDS class shape/
+    )
+  })
+
+  it('sizes memory per family generation (x2g.large is 32 GiB, not 64)', () => {
+    // large preset, 250 per site + 60 rolling: 14 sites need 3,560 of the 3,604
+    // connections 32 GiB allows — a warning, and the estimate must say 3604
+    const sites = Array.from({ length: 14 }, (_, i) => ({ name: `s${i + 1}`, albPriority: i + 1 }))
+    const warning = validateSites({
+      account: TEST_ACCOUNT,
+      scale: 'large',
+      dbEngine: 'rds',
+      enableOpenSearch: false,
+      deployConcurrency: 1,
+      overrides: { db: { instanceClass: 'db.x2g.large' } },
+      sites,
+    })
+      .map((w) => w.message)
+      .join('\n')
+    expect(warning).toMatch(/3560 — steady 3500 .* max_connections \(3604\)/)
+    // r doubles the t/m sizes: r6g.large is 16 GiB → 1,802 connections
+    expect(() =>
+      validateSites({
+        account: TEST_ACCOUNT,
+        scale: 'large',
+        dbEngine: 'rds',
+        deployConcurrency: 1,
+        overrides: { db: { instanceClass: 'db.r6g.large' } },
+        sites,
+      })
+    ).toThrow(/max_connections \(1802\)/)
   })
 })

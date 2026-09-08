@@ -10,7 +10,7 @@ import * as ecs from 'aws-cdk-lib/aws-ecs'
 import * as rds from 'aws-cdk-lib/aws-rds'
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager'
 import { Construct } from 'constructs'
-import type { KukanConfig } from '../config.js'
+import { rdsInstanceClass, type KukanConfig } from '../config.js'
 import { envPrefix } from '../naming.js'
 
 export interface DatabaseProps {
@@ -71,7 +71,8 @@ export class DatabaseConstruct extends Construct {
         engine: rds.DatabaseInstanceEngine.postgres({
           version: rds.PostgresEngineVersion.VER_16,
         }),
-        instanceType: ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.MICRO),
+        // config validates the `db.<family>.<size>` shape; CDK re-adds the `db.` prefix
+        instanceType: new ec2.InstanceType(rdsInstanceClass(config.db).replace(/^db\./, '')),
         vpc,
         vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
         securityGroups: [dbSecurityGroup],

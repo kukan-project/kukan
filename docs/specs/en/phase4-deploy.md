@@ -417,7 +417,7 @@ connections of `minSize` new tasks — raising K is cheap. Change ACUs in two st
 | Sites | K=1                | K=2                | K=4                | K=8                |
 | ----- | ------------------ | ------------------ | ------------------ | ------------------ |
 | 1     | 0.5–4 ACU          | 0.5–4 ACU          | 0.5–4 ACU          | 0.5–4 ACU          |
-| 2     | 0.5–4 ACU          | 0.5–8 ACU          | 0.5–8 ACU          | 0.5–8 ACU          |
+| 2     | 0.5–4 ACU          | 0.5–4 ACU          | 0.5–4 ACU          | 0.5–4 ACU          |
 | 3     | 0.5–8 ACU          | 0.5–8 ACU          | 0.5–8 ACU          | 0.5–8 ACU          |
 | 4     | 0.5–8 ACU          | 0.5–8 ACU          | 0.5–16 ACU         | 0.5–16 ACU         |
 | 5     | 0.5–16 ACU         | 0.5–16 ACU         | 1–16 ACU           | 1–16 ACU           |
