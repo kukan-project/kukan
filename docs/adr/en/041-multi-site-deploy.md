@@ -13,7 +13,7 @@ Decisions fixed at implementation time (deltas from the body):
 - `OPENSEARCH_INDEX_PREFIX` is `kukan-<env>-<site>` (index `kukan-<env>-<site>-search`)
 - **AWS Backup works for multi-site environments too**: the DB plan lives in the SharedStack (the shared cluster is snapshotted exactly once) and the bucket plans in each SiteStack (vault `kukan-<env>-<site>-backup`). Initially rejected because the shared cluster would have been snapshotted once per site; resolved 2026-07-20 by this split
 - The site database/role are **retained** on SiteStack deletion (the Custom Resource's Delete is a no-op, protecting data from rollback-deletes of a failed create)
-- Site stacks deploy **serially** (canary, then one site at a time). ECS rolling updates run old and new tasks together, so the connection budget counts exactly one site's doubling on the assumption that only one site updates at a time; wave parallelism is a future optimization for deployments that can budget several sites' doubling
+- Site stacks deploy **in waves** (one canary site, then `deployConcurrency` sites at a time, each wave waiting for the previous one; default 2, 1 serializes). ECS rolling updates run old and new tasks together, so the connection budget adds that many sites' new-task connections (`minSize` × pool, the most expensive ones) — the template pins `DesiredCount` to `minSize`, so a deploy resets the desired count (autoscaling restores it under load within minutes; intended) and the old tasks are already in the steady term. Dropping that pin would require the budget to go back to `maxSize`. Fails synth when it does not fit (originally fixed serial with wave parallelism as a future optimization; implemented 2026-09-08)
 - **Never raise `db.maxAcu` and add sites in the same deploy**: max_connections is a static parameter that keeps its old value until every DB instance is rebooted. Deploy the ACU change alone, reboot the instances, confirm they are in sync, then add sites (the synth error's remedy text says so too)
 
 ## Context
@@ -115,7 +115,7 @@ The application layer (index prefix, `POSTGRES_DB`, brand build) is fully shared
 - **Connection multiplication**: web pool (`WEB_DB_POOL_MAX`) × tasks + worker pools multiply by the site count. Aurora Serverless v2 max_connections tracks maxACU, so it must be reviewed as sites grow (RDS Proxy is a future option)
 - **Sizing the shared domain**: one site's reindex (bulk ingestion) affects search latency for all sites. A shared OpenSearch hosting multiple sites is recommended at medium (m6g.large.search) or larger (not enforced — synth emits a warning when two or more sites land on a burstable instance)
 - **Shared AI quotas**: Bedrock invoke quotas are account-wide. Concurrent bulk embedding jobs across sites can throttle (with Ollama the same manifests as CPU inference contention)
-- **Pipeline duration**: each push deploys "dev site count + prd site count" stacks serially. Mitigate by keeping the dev site list small (wave parallelism only becomes an option if the connection budget is changed to account for several sites updating at once)
+- **Pipeline duration**: each push deploys "dev site count + prd site count" stacks. After the canary they run `deployConcurrency` at a time in waves (default 2, 1 serializes), and the connection budget accounts for that many simultaneous updates. Keeping the dev site list small still helps
 
 ## Migration of Existing Environments
 

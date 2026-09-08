@@ -17,6 +17,7 @@ import {
   resolveEnv,
   validateSites,
   type EnvironmentConfig,
+  resolveDeployConcurrency,
 } from './config.js'
 import { pascal } from './naming.js'
 import { KukanGlobalStack } from './global-stack.js'
@@ -65,15 +66,24 @@ export class KukanStage extends cdk.Stage {
               site.webAclArn ?? (needsManagedWaf(site) ? globalStack?.webAclArn : undefined),
           })
       )
-      // Sites deploy one at a time: the first is the canary, and serializing
-      // the rest bounds the rolling-update connection overlap (ECS runs old and
-      // new tasks together, MaximumPercent 200) to a single site — exactly the
-      // one doubling the connection budget accounts for (validateSites).
+      // Sites deploy in waves: the first alone as the canary, then
+      // `deployConcurrency` at a time, each wave waiting for the whole previous
+      // one. That bounds the rolling-update connection overlap (ECS runs old and
+      // new tasks together, MaximumPercent 200) to the sites the connection
+      // budget accounts for (validateSites).
+      const concurrency = resolveDeployConcurrency(config)
+      const waveOf = (i: number) => (i === 0 ? 0 : 1 + Math.floor((i - 1) / concurrency))
       siteStacks.forEach((stack, i) => {
-        stack.addDependency(i === 0 ? shared : siteStacks[i - 1])
+        if (i === 0) {
+          stack.addStackDependency(shared)
+          return
+        }
+        siteStacks
+          .filter((_, j) => waveOf(j) === waveOf(i) - 1)
+          .forEach((previous) => stack.addStackDependency(previous))
       })
       if (globalStack) {
-        siteStacks[0].addDependency(globalStack)
+        siteStacks[0].addStackDependency(globalStack)
       }
       return
     }
@@ -92,7 +102,7 @@ export class KukanStage extends cdk.Stage {
     })
 
     if (globalStack) {
-      mainStack.addDependency(globalStack)
+      mainStack.addStackDependency(globalStack)
     }
   }
 

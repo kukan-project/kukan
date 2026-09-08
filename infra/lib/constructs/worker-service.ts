@@ -127,6 +127,8 @@ export class WorkerServiceConstruct extends Construct {
       cluster,
       serviceName: resourceName(this, 'worker'),
       taskDefinition: taskDef,
+      // Pinned on purpose — see WebServiceConstruct: deploys reset to minTasks,
+      // which the multi-site connection budget relies on.
       desiredCount: config.worker.minTasks,
       securityGroups: [workerSecurityGroup],
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },

@@ -176,6 +176,9 @@ export class WebServiceConstruct extends Construct {
       cluster,
       serviceName: resourceName(this, 'web'),
       taskDefinition: taskDef,
+      // Pinned on purpose: every deploy resets the count to minSize (autoscaling
+      // brings it back under load), and the multi-site connection budget counts
+      // only minSize new tasks per rolling update (config validateSites).
       desiredCount: config.web.minSize,
       securityGroups: [webSecurityGroup],
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },

@@ -165,6 +165,16 @@ export interface EnvironmentConfig {
   /** Fine-grained overrides of the scale preset. */
   overrides?: DeepPartial<ScaleComputed>
   /**
+   * Sites deployed at once after the canary (ADR-041 wave parallelism). The
+   * first site always deploys alone; the rest go this many at a time, each
+   * wave waiting for the previous one. The connection budget counts this many
+   * sites' rolling-update overlap (minSize new tasks each), so a value that
+   * does not fit fails synth (size the database up first — see the table in
+   * docs/specs phase4-deploy).
+   * Omit → 2; set 1 to serialize. Multi-site only.
+   */
+  deployConcurrency?: number
+  /**
    * Sites hosted by this environment (ADR-041). Presence (non-empty) opts the
    * environment into the SharedStack/SiteStack split; absence keeps the
    * all-in-one KukanStack with unchanged logical IDs. Existing single-site
@@ -274,6 +284,34 @@ const SITE_SCOPED_FIELDS = Object.keys({
   enableGa4DataApi: true,
 } satisfies Record<SiteScopedKey, true>) as SiteScopedKey[]
 
+/** Sites deployed at once after the canary when `deployConcurrency` is omitted.
+ *  Two costs only minSize new tasks' connections per extra site (see the budget). */
+export const DEFAULT_DEPLOY_CONCURRENCY = 2
+
+/** Validated `deployConcurrency` (sites per wave after the canary, ≥ 1). */
+export function resolveDeployConcurrency(
+  env: Pick<EnvironmentConfig, 'deployConcurrency'>
+): number {
+  const value = env.deployConcurrency ?? DEFAULT_DEPLOY_CONCURRENCY
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`deployConcurrency must be an integer of 1 or more (got ${String(value)})`)
+  }
+  return value
+}
+
+/** RDS instance memory, for the max_connections estimate. Unknown classes fall
+ *  back to 1 GiB (the smallest preset) — conservative, never optimistic. */
+const RDS_INSTANCE_MEMORY_GIB: Record<string, number> = {
+  'db.t4g.micro': 1,
+  'db.t4g.small': 2,
+  'db.t4g.medium': 4,
+  'db.t4g.large': 8,
+  'db.m6g.large': 8,
+  'db.m6g.xlarge': 16,
+  'db.r6g.large': 16,
+  'db.r6g.xlarge': 32,
+}
+
 /** CloudFront's "distributions associated with the same VPC origin" quota — no
  *  increase offered. Every site's distribution uses the environment's single
  *  shared VPC origin (ADR-049), so it caps the sites per environment. */
@@ -320,7 +358,13 @@ export interface SiteWarning {
  */
 export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWarning[] {
   const sites = env.sites
-  if (sites === undefined) return []
+  if (sites === undefined) {
+    if (env.deployConcurrency !== undefined) {
+      throw new Error('deployConcurrency applies to multi-site environments only (declare sites)')
+    }
+    return []
+  }
+  const concurrency = resolveDeployConcurrency(env)
   // An empty array would silently fall back to the single-site shape, and
   // adding the first site later would then be a full replacement — reject it.
   if (sites.length === 0) {
@@ -449,10 +493,15 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
 
   // Connection budget (ADR-041): pg pools open lazily up to their max, so the
   // shared cluster must be sized for the AUTOSCALED worst case, not the steady
-  // state. Site stacks deploy serially (kukan-stage), so at most ONE site runs
-  // a rolling update (old+new tasks together, ECS MaximumPercent 200) at a
-  // time — count that site's doubling explicitly. 30% headroom covers startup
-  // migrations, the site-DB bootstrap Lambda, and superuser reserves.
+  // state. Site stacks deploy `concurrency` at a time (kukan-stage waves), and a
+  // rolling update runs old and new tasks together (ECS MaximumPercent 200):
+  // the old tasks — up to maxSize, holding their pools while they drain — are
+  // already in `steady`, and the template pins DesiredCount to minSize (the
+  // service constructs), so a deploy starts only minSize new tasks per site.
+  // Count that many for the `concurrency` most expensive sites. Dropping the
+  // DesiredCount pin would invalidate this term (it would be maxSize again).
+  // 30% headroom covers startup migrations, the site-DB bootstrap Lambda, and
+  // superuser reserves.
   const { connections: maxConnections, uncappedConnections } = estimateMaxConnections(
     envComputed.db
   )
@@ -461,9 +510,19 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
     return c.dbPool.webMax * c.web.maxSize + c.dbPool.workerMax * c.worker.maxTasks
   })
   const steady = perSite.reduce((sum, value) => sum + value, 0)
-  const rolling = Math.max(...perSite)
+  const perSiteRolling = sites.map((site) => {
+    const c = deepMerge(envComputed, site.overrides ?? {})
+    return c.dbPool.webMax * c.web.minSize + c.dbPool.workerMax * c.worker.minTasks
+  })
+  const rollingSites = Math.min(concurrency, sites.length)
+  const rolling = [...perSiteRolling]
+    .sort((a, b) => b - a)
+    .slice(0, rollingSites)
+    .reduce((sum, value) => sum + value, 0)
   const worstCase = steady + rolling
-  const breakdown = `${worstCase} — steady ${steady} + one site's rolling update ${rolling}`
+  const breakdown =
+    `${worstCase} — steady ${steady} + ${rollingSites} ` +
+    `site${rollingSites === 1 ? "'s" : "s'"} rolling update ${rolling}`
   // The remedy must never invite a harmful or ineffective change: an in-place
   // dbEngine switch creates an EMPTY Aurora cluster (different logical ID — no
   // data migration), and any ACU change only takes effect after a reboot
@@ -471,7 +530,9 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
   // the REQUIRED connections: worstCase > 2,000 with a 0/0.5 minACU needs
   // minAcu (the cap ignores maxAcu), worstCase above the uncapped estimate
   // needs maxAcu, and both can be true at once.
-  const lowerPools = 'lower sites[].overrides.dbPool / web.maxSize'
+  const lowerPools =
+    (concurrency > 1 ? `set deployConcurrency: 1 (${concurrency} sites roll at once now), ` : '') +
+    'lower sites[].overrides.dbPool / web.maxSize'
   const separateDeploy =
     'in a SEPARATE deploy first (then reboot the DB instances — max_connections ' +
     'is static and keeps the old value until reboot) before adding sites'
@@ -483,8 +544,9 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
       return (
         `${lowerPools}, or migrate to aurora blue/green with pg_dump/restore — ` +
         'switching dbEngine in place would create an EMPTY Aurora cluster and ' +
-        'point the app at it (the rds preset db.t4g.micro allows only ~112 ' +
-        'connections) — or consider RDS Proxy (ADR-041)'
+        `point the app at it (${envComputed.db.instanceClass ?? 'the rds instance'} allows ` +
+        `only ~${maxConnections} connections; a larger instance class raises it) — ` +
+        'or consider RDS Proxy (ADR-041)'
       )
     }
     const absoluteMax = AURORA_MAX_CONNECTIONS[AURORA_MAX_CONNECTIONS.length - 1][1]
@@ -553,7 +615,9 @@ function estimateMaxConnections(db: ScaleComputed['db']): {
   uncappedConnections: number
 } {
   if (db.engine !== 'aurora') {
-    const connections = Math.floor(1024 ** 3 / 9_531_392)
+    // RDS PostgreSQL default: LEAST({DBInstanceClassMemory/9531392}, 5000)
+    const gib = RDS_INSTANCE_MEMORY_GIB[db.instanceClass ?? ''] ?? 1
+    const connections = Math.min(Math.floor((gib * 1024 ** 3) / 9_531_392), 5000)
     return { connections, uncappedConnections: connections }
   }
   const maxAcu = db.maxAcu ?? 2

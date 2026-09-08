@@ -355,11 +355,72 @@ prd: {
   （ネイティブ構造が env 外側なのは、共有の箱・AWS アカウント・パイプラインが
   いずれも env 単位のため）
 
+### サイト数と DB サイズの目安
+
+`validateSites` の接続数バジェット（警告なし = 推定 max_connections の 70% 以下）で
+求めた最小構成。K は `deployConcurrency`（カナリア後に同時デプロイするサイト数、
+既定 2）。デプロイ時は希望数が `minSize` に戻る（テンプレートが固定）ため、同時更新
+1 サイトあたりの追加は新タスク `minSize` 台分の接続だけで、K を上げるコストは小さい。
+ACU の変更は「先に DB だけ変えて再起動 → in-sync 確認 → サイト追加」の二段階
+（max_connections は静的パラメータ）。
+
+**small（RDS、1 サイト最大 16 接続 + 更新中 8）** — `overrides: { db: { instanceClass } }`
+
+| サイト数 | K=1           | K=2           | K=4           | K=8           |
+| -------- | ------------- | ------------- | ------------- | ------------- |
+| 1        | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
+| 2        | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
+| 3        | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
+| 4        | db.t4g.micro  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
+| 5        | db.t4g.small  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
+| 6        | db.t4g.small  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
+| 8        | db.t4g.small  | db.t4g.small  | db.t4g.medium | db.t4g.medium |
+| 10       | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.medium |
+| 15       | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.medium |
+| 20       | db.t4g.large  | db.t4g.large  | db.t4g.large  | db.t4g.large  |
+
+**medium（Aurora、1 サイト最大 60 接続 + 更新中 15）** — `overrides: { db: { minAcu, maxAcu } }`
+
+| サイト数 | K=1        | K=2        | K=4        | K=8        |
+| -------- | ---------- | ---------- | ---------- | ---------- |
+| 1        | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  |
+| 2        | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  |
+| 3        | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  |
+| 4        | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
+| 5        | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
+| 6        | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
+| 8        | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–8 ACU  |
+| 10       | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  |
+| 15       | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  |
+| 20       | 0.5–16 ACU | 0.5–16 ACU | 0.5–16 ACU | 0.5–16 ACU |
+
+**large（Aurora、1 サイト最大 250 接続 + 更新中 60）**
+
+| サイト数 | K=1        | K=2        | K=4        | K=8        |
+| -------- | ---------- | ---------- | ---------- | ---------- |
+| 1        | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
+| 2        | 0.5–4 ACU  | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  |
+| 3        | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  |
+| 4        | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–16 ACU | 0.5–16 ACU |
+| 5        | 0.5–16 ACU | 0.5–16 ACU | 1–16 ACU   | 1–16 ACU   |
+| 6        | 1–16 ACU   | 1–16 ACU   | 1–16 ACU   | 1–16 ACU   |
+| 8        | 1–16 ACU   | 1–16 ACU   | 1–16 ACU   | 1–32 ACU   |
+| 10       | 1–32 ACU   | 1–32 ACU   | 1–32 ACU   | 1–32 ACU   |
+| 15       | 環境分割   | 環境分割   | 環境分割   | 環境分割   |
+| 20       | 環境分割   | 環境分割   | 環境分割   | 環境分割   |
+
+`minAcu 1` は、minACU 0/0.5 では max_connections が 2,000 に固定される制約による
+（maxAcu を上げても効かない）。「環境分割」は Aurora の上限 5,000 に対して 70% を
+超えるため、共有クラスタ（環境）を分ける。
+
 ### デプロイ挙動
 
 - 初回もデプロイ順は自動制御される: SharedStack → 先頭サイト（カナリア）→
-  残りサイトの**直列デプロイ**（ローリング更新中は ECS が新旧タスクを併走させる
-  ため、同時に更新されるサイトを常に 1 つに抑え、接続数バジェットの前提を守る）。SharedStack が書く SSM パラメータ（`/kukan/<env>/shared/*`:
+  残りサイトを **`deployConcurrency` サイトずつの wave で並列デプロイ**（既定 2、
+  `1` で直列。各 wave は前 wave の完了を待つ）。ローリング更新中は ECS が新旧
+  タスクを併走させるため、接続数バジェットは同時に更新されうるサイト数分の倍化を
+  計上し、収まらなければ synth で止まる（`deployConcurrency: 1` に下げるか DB を
+  上げる）。SharedStack が書く SSM パラメータ（`/kukan/<env>/shared/*`:
   vpc/sg/ecs/db/search）を SiteStack がデプロイ時に解決する（CFN Export 不使用
   — 共有側の変更がサイト参照でロックされない）
 - サイト DB（`kukan_<site>` + 専用ロール）は SiteStack 内の Lambda Custom

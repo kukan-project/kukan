@@ -87,6 +87,7 @@ export const environments = {
     scale: 'small', // 'small' | 'medium' | 'large'
     // dbEngine: 'rds', // omit → scale default (small=rds, medium/large=aurora)
     // enableOpenSearch: true, // false → PostgreSQL full-text fallback
+    // deployConcurrency: 1, // sites deployed at once after the canary; omit → 2, 1 = serial (ADR-041)
 
     // --- Fine-tuning (deep-merged onto the scale preset, then under each site's overrides) ---
     // overrides: {

@@ -204,7 +204,7 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
     }
   })
 
-  it('deploys serially: shared → canary site → remaining sites', () => {
+  it('deploys shared → canary site → remaining sites', () => {
     const stacks = Object.fromEntries(
       ['KukanSharedStack', 'KukanSiteStackCitya', 'KukanSiteStackCityb'].map((id) => [
         id,
@@ -212,10 +212,49 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
       ])
     )
     const deps = (s: cdk.Stack) => s.dependencies.map((d) => d.node.id)
-    // A chain, not a fan-out — the connection budget assumes at most one site
-    // runs a rolling update at a time
     expect(deps(stacks.KukanSiteStackCitya)).toEqual(['KukanSharedStack'])
     expect(deps(stacks.KukanSiteStackCityb)).toEqual(['KukanSiteStackCitya'])
+  })
+
+  it('deploys sites after the canary in waves of deployConcurrency', () => {
+    const sites = ['s1', 's2', 's3', 's4', 's5'].map((name) => ({ name, enableWaf: false }))
+    const depsOf = (concurrency: number | undefined) => {
+      // maxAcu 4 gives the budget room for two medium sites rolling at once
+      const waves = synthStage({
+        scale: 'medium',
+        overrides: { db: { maxAcu: 4 } },
+        sites,
+        deployConcurrency: concurrency,
+      })
+      return Object.fromEntries(
+        sites.map(({ name }) => [
+          name,
+          (
+            waves.node.findChild(
+              `KukanSiteStack${name[0].toUpperCase()}${name.slice(1)}`
+            ) as cdk.Stack
+          ).dependencies
+            .map((d) => d.node.id)
+            .sort(),
+        ])
+      )
+    }
+    // Default 2: canary alone, then pairs, each waiting for the whole previous wave
+    expect(depsOf(undefined)).toEqual({
+      s1: ['KukanSharedStack'],
+      s2: ['KukanSiteStackS1'],
+      s3: ['KukanSiteStackS1'],
+      s4: ['KukanSiteStackS2', 'KukanSiteStackS3'],
+      s5: ['KukanSiteStackS2', 'KukanSiteStackS3'],
+    })
+    // 1: the serial chain
+    expect(depsOf(1)).toEqual({
+      s1: ['KukanSharedStack'],
+      s2: ['KukanSiteStackS1'],
+      s3: ['KukanSiteStackS2'],
+      s4: ['KukanSiteStackS3'],
+      s5: ['KukanSiteStackS4'],
+    })
   })
 })
 
@@ -342,7 +381,9 @@ describe('pipeline mode', () => {
 })
 
 describe('validateSites', () => {
-  const base = { account: TEST_ACCOUNT }
+  // Serial keeps the budget arithmetic below at one site's new tasks; the
+  // wave (deployConcurrency) cases are covered separately
+  const base = { account: TEST_ACCOUNT, deployConcurrency: 1 }
   const messages = (env: EnvironmentConfig) =>
     validateSites(env)
       .map((w) => w.message)
@@ -392,6 +433,44 @@ describe('validateSites', () => {
     expect(() => validateSites({ ...base, sites: [{ name: 'citya', webAclArn: '' }] })).toThrow(
       /blank webAclArn/
     )
+  })
+
+  it('counts deployConcurrency sites of rolling-update doubling in the budget', () => {
+    const sitesOf = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({ name: `s${i + 1}`, albPriority: i + 1 }))
+    // medium: 60 per site at max scale, 15 new-task connections per rolling site
+    // (minSize 1 × webMax 10 + minTasks 1 × workerMax 5), maxAcu 2 → 400.
+    // 6 sites steady 360: serial (+15) warns, four at a time (+60) exceeds the
+    // limit — and says how to serialize
+    expect(messages({ ...base, scale: 'medium', sites: sitesOf(6) })).toMatch(
+      /375 — steady 360 \+ 1 site's rolling update 15/
+    )
+    expect(() =>
+      validateSites({ ...base, deployConcurrency: 4, scale: 'medium', sites: sitesOf(6) })
+    ).toThrow(/420 — steady 360 \+ 4 sites' rolling update 60.*set deployConcurrency: 1/)
+    expect(() =>
+      validateSites({ account: TEST_ACCOUNT, deployConcurrency: 0, sites: sitesOf(1) })
+    ).toThrow(/deployConcurrency must be an integer of 1 or more/)
+    expect(() => validateSites({ account: TEST_ACCOUNT, deployConcurrency: 2 })).toThrow(
+      /multi-site environments only/
+    )
+  })
+
+  it('estimates RDS max_connections from the instance class memory', () => {
+    const sitesOf = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({ name: `s${i + 1}`, albPriority: i + 1 }))
+    // small preset: 16 per site + 8 for the rolling one; 7 sites need 120 — over
+    // db.t4g.micro's 112, comfortably under db.t4g.small's 225
+    expect(() => validateSites({ ...base, sites: sitesOf(7) })).toThrow(
+      /exceed the estimated max_connections \(112\).*db\.t4g\.micro allows only ~112/
+    )
+    expect(
+      messages({
+        ...base,
+        overrides: { db: { instanceClass: 'db.t4g.small' } },
+        sites: sitesOf(7),
+      })
+    ).not.toContain('max_connections')
   })
 
   it('caps sites per environment at the VPC-origin association quota (ADR-049)', () => {
@@ -490,7 +569,7 @@ describe('validateSites', () => {
       })
     ).toThrow(/2040.*\(2000\).*raise db\.minAcu to 1 or higher(?!.*AND db\.maxAcu)/)
 
-    // Boundary: 33 sites on maxAcu 8 need 2,040 — above the uncapped 8-ACU
+    // Boundary: 34 sites on maxAcu 8 need 2,055 — above the uncapped 8-ACU
     // estimate (1,669) AND above the 2,000 minACU cap, so raising maxAcu
     // alone would just hit the cap: both knobs must move
     expect(() =>
@@ -498,7 +577,7 @@ describe('validateSites', () => {
         ...base,
         scale: 'medium',
         overrides: { db: { maxAcu: 8 } },
-        sites: sitesOf(33),
+        sites: sitesOf(34),
       })
     ).toThrow(/raise db\.minAcu to 1 or higher.*AND db\.maxAcu/)
 
@@ -536,9 +615,9 @@ describe('validateSites', () => {
       expect((error as Error).message).not.toMatch(/raise db\.(min|max)Acu/)
     }
 
-    // 6 sites: steady 360 + rolling 60 = 420 > 400 — the rolling component tips it over
-    expect(() => validateSites({ ...base, scale: 'medium', sites: sitesOf(6) })).toThrow(
-      /420 — steady 360/
+    // 7 sites: steady 420 + rolling 15 = 435 > 400
+    expect(() => validateSites({ ...base, scale: 'medium', sites: sitesOf(7) })).toThrow(
+      /435 — steady 420 \+ 1 site's rolling update 15/
     )
 
     expect(messages({ ...base, scale: 'medium', sites: sitesOf(5) })).toContain('exceed 70%')

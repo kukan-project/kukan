@@ -57,8 +57,10 @@ prd: {
 - サイトドメインの証明書と WAF はシングルサイトと同じ規則です: standalone デプロイ
   では不足分が us-east-1 に自動作成され(ドメインには `hostedZoneId` /
   `hostedZoneName` が必要)、pipeline モードでは事前作成した ARN を貼り付けます
-- デプロイ順は自動制御されます: 共有スタック → 先頭サイト(カナリア)→ 残りサイト。
-  本体コードの変更は全サイトに順次展開され、特定サイトだけの変更は他サイトに影響しません
+- デプロイ順は自動制御されます: 共有スタック → 先頭サイト(カナリア)→ 残りサイトを
+  `deployConcurrency` サイトずつ並列(既定 2、`1` で直列)。同時に更新されるサイトの
+  ぶんだけ DB 接続数の余裕が必要で、足りなければ synth 時にエラーになります。
+  本体コードの変更は全サイトに展開され、特定サイトだけの変更は他サイトに影響しません
 - AWS Backup はマルチサイトでもそのまま使えます(データベースは共有スタックで
   1 回だけ、バケットはサイトごとにバックアップされます)
 - サイズや接続プールはサイトごとに `overrides` で調整できます
@@ -70,7 +72,65 @@ prd: {
 詳細な運用手順(サイト削除時の残存リソースとパージ、接続数の考え方)は
 リポジトリの `docs/specs/jp/phase4-deploy.md` を参照してください。
 
-### シングルサイト形状からの移行
+### サイト数と DB サイズの目安
+
+synth 時の接続数チェック（警告なし = 推定 max_connections の 70% 以下）で
+求めた最小構成。K は `deployConcurrency`（カナリア後に同時デプロイするサイト数、
+既定 2）。デプロイ時は希望数が `minSize` に戻る（テンプレートが固定）ため、同時更新
+1 サイトあたりの追加は新タスク `minSize` 台分の接続だけで、K を上げるコストは小さい。
+ACU の変更は「先に DB だけ変えて再起動 → in-sync 確認 → サイト追加」の二段階
+（max_connections は静的パラメータ）。
+
+**small（RDS、1 サイト最大 16 接続 + 更新中 8）** — `overrides: { db: { instanceClass } }`
+
+| サイト数 | K=1           | K=2           | K=4           | K=8           |
+| -------- | ------------- | ------------- | ------------- | ------------- |
+| 1        | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
+| 2        | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
+| 3        | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
+| 4        | db.t4g.micro  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
+| 5        | db.t4g.small  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
+| 6        | db.t4g.small  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
+| 8        | db.t4g.small  | db.t4g.small  | db.t4g.medium | db.t4g.medium |
+| 10       | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.medium |
+| 15       | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.medium |
+| 20       | db.t4g.large  | db.t4g.large  | db.t4g.large  | db.t4g.large  |
+
+**medium（Aurora、1 サイト最大 60 接続 + 更新中 15）** — `overrides: { db: { minAcu, maxAcu } }`
+
+| サイト数 | K=1        | K=2        | K=4        | K=8        |
+| -------- | ---------- | ---------- | ---------- | ---------- |
+| 1        | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  |
+| 2        | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  |
+| 3        | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  |
+| 4        | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
+| 5        | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
+| 6        | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
+| 8        | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–8 ACU  |
+| 10       | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  |
+| 15       | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  |
+| 20       | 0.5–16 ACU | 0.5–16 ACU | 0.5–16 ACU | 0.5–16 ACU |
+
+**large（Aurora、1 サイト最大 250 接続 + 更新中 60）**
+
+| サイト数 | K=1        | K=2        | K=4        | K=8        |
+| -------- | ---------- | ---------- | ---------- | ---------- |
+| 1        | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
+| 2        | 0.5–4 ACU  | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  |
+| 3        | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  |
+| 4        | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–16 ACU | 0.5–16 ACU |
+| 5        | 0.5–16 ACU | 0.5–16 ACU | 1–16 ACU   | 1–16 ACU   |
+| 6        | 1–16 ACU   | 1–16 ACU   | 1–16 ACU   | 1–16 ACU   |
+| 8        | 1–16 ACU   | 1–16 ACU   | 1–16 ACU   | 1–32 ACU   |
+| 10       | 1–32 ACU   | 1–32 ACU   | 1–32 ACU   | 1–32 ACU   |
+| 15       | 環境分割   | 環境分割   | 環境分割   | 環境分割   |
+| 20       | 環境分割   | 環境分割   | 環境分割   | 環境分割   |
+
+`minAcu 1` は、minACU 0/0.5 では max_connections が 2,000 に固定される制約による
+（maxAcu を上げても効かない）。「環境分割」は Aurora の上限 5,000 に対して 70% を
+超えるため、共有クラスタ（環境）を分ける。
+
+## シングルサイト形状からの移行
 
 稼働中のシングルサイト形状の環境に `sites` を後付けすることはできません。
 スタックの分割とリソースの物理名変更を伴うため、CloudFormation 上は全リソースの

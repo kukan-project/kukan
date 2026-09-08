@@ -64,18 +64,19 @@ customer-managed key (decided automatically), adding roughly $1 per month per ke
 Settings for the shared resources (database, OpenSearch, VPC, ECS cluster) and
 CI/CD.
 
-| Field              | Type                           | Default                                          | Description                                                                                     |
-| ------------------ | ------------------------------ | ------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `account`          | string                         | **required**                                     | Target AWS account ID. Misdeployment guard (CDK refuses to deploy with mismatched credentials)  |
-| `region`           | string                         | `ap-northeast-1`                                 | Target region                                                                                   |
-| `scale`            | `small` \| `medium` \| `large` | `small`                                          | Deployment size (controls resource sizing as one knob)                                          |
-| `dbEngine`         | `rds` \| `aurora`              | scale-dependent (small=rds, medium/large=aurora) | Database engine                                                                                 |
-| `enableOpenSearch` | boolean                        | `true`                                           | `false` → PostgreSQL full-text search fallback                                                  |
-| `bedrock`          | object \| `false`              | enabled (Titan v2)                               | Semantic search and AI metadata suggestions. `false` disables (`AI_TYPE=none`)                  |
-| `githubRepo`       | string                         | none                                             | CodeConnections source repository (`owner/repo`). Envs without it get no pipeline               |
-| `deployBranch`     | string                         | `main`                                           | Branch that deploys this env in pipeline mode                                                   |
-| `overrides`        | deep-partial                   | none                                             | Fine-grained overrides of the scale preset (see "overrides" below)                              |
-| `sites`            | SiteConfig[]                   | none (the legacy single-site shape)              | The sites this environment hosts. **Always declare it for new deployments** (one entry is fine) |
+| Field               | Type                           | Default                                          | Description                                                                                                                                                |
+| ------------------- | ------------------------------ | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `account`           | string                         | **required**                                     | Target AWS account ID. Misdeployment guard (CDK refuses to deploy with mismatched credentials)                                                             |
+| `region`            | string                         | `ap-northeast-1`                                 | Target region                                                                                                                                              |
+| `scale`             | `small` \| `medium` \| `large` | `small`                                          | Deployment size (controls resource sizing as one knob)                                                                                                     |
+| `dbEngine`          | `rds` \| `aurora`              | scale-dependent (small=rds, medium/large=aurora) | Database engine                                                                                                                                            |
+| `enableOpenSearch`  | boolean                        | `true`                                           | `false` → PostgreSQL full-text search fallback                                                                                                             |
+| `bedrock`           | object \| `false`              | enabled (Titan v2)                               | Semantic search and AI metadata suggestions. `false` disables (`AI_TYPE=none`)                                                                             |
+| `githubRepo`        | string                         | none                                             | CodeConnections source repository (`owner/repo`). Envs without it get no pipeline                                                                          |
+| `deployBranch`      | string                         | `main`                                           | Branch that deploys this env in pipeline mode                                                                                                              |
+| `overrides`         | deep-partial                   | none                                             | Fine-grained overrides of the scale preset (see "overrides" below)                                                                                         |
+| `sites`             | SiteConfig[]                   | none (the legacy single-site shape)              | The sites this environment hosts. **Always declare it for new deployments** (one entry is fine)                                                            |
+| `deployConcurrency` | number                         | `2`                                              | Sites deployed at once after the canary. Their simultaneous rolling updates count against the database connection budget; synth fails when it does not fit |
 
 ## Site entry fields (`sites[]`)
 

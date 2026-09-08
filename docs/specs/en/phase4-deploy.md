@@ -373,12 +373,72 @@ prd: {
   site ledger first and write a helper that transposes it into env entries (the native structure is
   env-outermost because the shared box, the AWS account and the pipeline are all per-env)
 
+### Database sizing by site count
+
+The smallest configuration that passes the `validateSites` connection budget without
+a warning (≤ 70% of the estimated max_connections). K is `deployConcurrency` (sites
+deployed at once after the canary, default 2). A deploy resets the desired count to
+`minSize` (the template pins it), so each simultaneously updating site adds only the
+connections of `minSize` new tasks — raising K is cheap. Change ACUs in two steps
+("DB first, then reboot → in-sync → add sites"; max_connections is a static parameter).
+
+**small (RDS, up to 16 connections per site + 8 while updating)** — `overrides: { db: { instanceClass } }`
+
+| Sites | K=1           | K=2           | K=4           | K=8           |
+| ----- | ------------- | ------------- | ------------- | ------------- |
+| 1     | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
+| 2     | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
+| 3     | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  | db.t4g.micro  |
+| 4     | db.t4g.micro  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
+| 5     | db.t4g.small  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
+| 6     | db.t4g.small  | db.t4g.small  | db.t4g.small  | db.t4g.small  |
+| 8     | db.t4g.small  | db.t4g.small  | db.t4g.medium | db.t4g.medium |
+| 10    | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.medium |
+| 15    | db.t4g.medium | db.t4g.medium | db.t4g.medium | db.t4g.medium |
+| 20    | db.t4g.large  | db.t4g.large  | db.t4g.large  | db.t4g.large  |
+
+**medium (Aurora, up to 60 connections per site + 15 while updating)** — `overrides: { db: { minAcu, maxAcu } }`
+
+| Sites | K=1        | K=2        | K=4        | K=8        |
+| ----- | ---------- | ---------- | ---------- | ---------- |
+| 1     | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  |
+| 2     | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  |
+| 3     | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–2 ACU  |
+| 4     | 0.5–2 ACU  | 0.5–2 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
+| 5     | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
+| 6     | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  |
+| 8     | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–4 ACU  | 0.5–8 ACU  |
+| 10    | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  |
+| 15    | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  | 0.5–8 ACU  |
+| 20    | 0.5–16 ACU | 0.5–16 ACU | 0.5–16 ACU | 0.5–16 ACU |
+
+**large (Aurora, up to 250 connections per site + 60 while updating)**
+
+| Sites | K=1                | K=2                | K=4                | K=8                |
+| ----- | ------------------ | ------------------ | ------------------ | ------------------ |
+| 1     | 0.5–4 ACU          | 0.5–4 ACU          | 0.5–4 ACU          | 0.5–4 ACU          |
+| 2     | 0.5–4 ACU          | 0.5–8 ACU          | 0.5–8 ACU          | 0.5–8 ACU          |
+| 3     | 0.5–8 ACU          | 0.5–8 ACU          | 0.5–8 ACU          | 0.5–8 ACU          |
+| 4     | 0.5–8 ACU          | 0.5–8 ACU          | 0.5–16 ACU         | 0.5–16 ACU         |
+| 5     | 0.5–16 ACU         | 0.5–16 ACU         | 1–16 ACU           | 1–16 ACU           |
+| 6     | 1–16 ACU           | 1–16 ACU           | 1–16 ACU           | 1–16 ACU           |
+| 8     | 1–16 ACU           | 1–16 ACU           | 1–16 ACU           | 1–32 ACU           |
+| 10    | 1–32 ACU           | 1–32 ACU           | 1–32 ACU           | 1–32 ACU           |
+| 15    | split environments | split environments | split environments | split environments |
+| 20    | split environments | split environments | split environments | split environments |
+
+`minAcu 1` appears because a minimum of 0/0.5 ACUs pins max_connections at 2,000
+regardless of maxAcu. "Split environments" means the worst case exceeds 70% of
+Aurora's 5,000 ceiling, so the sites need more than one shared cluster (environment).
+
 ### Deployment behavior
 
 - Even on the first run the deployment order is controlled automatically: SharedStack → the first
-  site (the canary) → **serial deployment** of the remaining sites (during a rolling update ECS
-  runs old and new tasks side by side, so keeping the number of simultaneously updating sites at
-  one preserves the assumptions of the connection budget). The SSM parameters the SharedStack
+  site (the canary) → the remaining sites **in waves of `deployConcurrency`** (default 2, `1`
+  serializes; each wave waits for the previous one). During a rolling update ECS runs old and new
+  tasks side by side, so the connection budget counts that many sites' doubling and synth stops
+  when it does not fit (lower `deployConcurrency` to 1, or size the database up). The SSM
+  parameters the SharedStack
   writes (`/kukan/<env>/shared/*`: vpc/sg/ecs/db/search) are resolved by the SiteStacks at deploy
   time (CFN Exports are not used — changes on the shared side are not locked by site references)
 - The site DB (`kukan_<site>` plus a dedicated role) is created idempotently by a Lambda custom

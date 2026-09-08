@@ -59,18 +59,19 @@ CI/CD(CodePipeline)を置くアカウントは、デプロイ先アカウント�
 
 共有リソース(データベース・OpenSearch・VPC・ECS クラスタ)と CI/CD の設定です。
 
-| フィールド         | 型                             | デフォルト                                   | 説明                                                                                |
-| ------------------ | ------------------------------ | -------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `account`          | string                         | **必須**                                     | 対象 AWS アカウント ID。誤デプロイ防止(認証情報のアカウントと不一致なら CDK が拒否) |
-| `region`           | string                         | `ap-northeast-1`                             | 対象リージョン                                                                      |
-| `scale`            | `small` \| `medium` \| `large` | `small`                                      | デプロイ規模(リソースサイズを一括制御)                                              |
-| `dbEngine`         | `rds` \| `aurora`              | スケール依存(small=rds、medium/large=aurora) | DB エンジン                                                                         |
-| `enableOpenSearch` | boolean                        | `true`                                       | `false` → PostgreSQL 全文検索フォールバック                                         |
-| `bedrock`          | object \| `false`              | 有効(Titan v2)                               | セマンティック検索と AI メタデータ提案。`false` で無効(`AI_TYPE=none`)              |
-| `githubRepo`       | string                         | なし                                         | CodeConnections ソースリポジトリ(`owner/repo`)。未設定の env はパイプライン対象外   |
-| `deployBranch`     | string                         | `main`                                       | この env を pipeline でデプロイするブランチ                                         |
-| `overrides`        | 部分指定                       | なし                                         | スケール preset の個別上書き(下記「overrides」)                                     |
-| `sites`            | SiteConfig[]                   | なし(過去互換のシングルサイト形状)           | この環境が運用するサイトの一覧。**新規構築では必ず宣言する**(1 件でも可)            |
+| フィールド          | 型                             | デフォルト                                   | 説明                                                                                                            |
+| ------------------- | ------------------------------ | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `account`           | string                         | **必須**                                     | 対象 AWS アカウント ID。誤デプロイ防止(認証情報のアカウントと不一致なら CDK が拒否)                             |
+| `region`            | string                         | `ap-northeast-1`                             | 対象リージョン                                                                                                  |
+| `scale`             | `small` \| `medium` \| `large` | `small`                                      | デプロイ規模(リソースサイズを一括制御)                                                                          |
+| `dbEngine`          | `rds` \| `aurora`              | スケール依存(small=rds、medium/large=aurora) | DB エンジン                                                                                                     |
+| `enableOpenSearch`  | boolean                        | `true`                                       | `false` → PostgreSQL 全文検索フォールバック                                                                     |
+| `bedrock`           | object \| `false`              | 有効(Titan v2)                               | セマンティック検索と AI メタデータ提案。`false` で無効(`AI_TYPE=none`)                                          |
+| `githubRepo`        | string                         | なし                                         | CodeConnections ソースリポジトリ(`owner/repo`)。未設定の env はパイプライン対象外                               |
+| `deployBranch`      | string                         | `main`                                       | この env を pipeline でデプロイするブランチ                                                                     |
+| `overrides`         | 部分指定                       | なし                                         | スケール preset の個別上書き(下記「overrides」)                                                                 |
+| `sites`             | SiteConfig[]                   | なし(過去互換のシングルサイト形状)           | この環境が運用するサイトの一覧。**新規構築では必ず宣言する**(1 件でも可)                                        |
+| `deployConcurrency` | number                         | `2`                                          | カナリア後に同時デプロイするサイト数。同時更新分の DB 接続数がバジェットに計上され、収まらなければ synth エラー |
 
 ## サイトエントリのフィールド(`sites[]`)
 
