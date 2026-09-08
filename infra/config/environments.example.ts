@@ -153,6 +153,7 @@ export const environments = {
 
         // --- Misc ---
         // brand: 'my-brand', // web image brand; unset → default brand src/brand (needs apps/web/brands/my-brand/, ADR-042)
+        // albPriority: 10, // shared-ALB rule priority (1–999); omit → derived from the site name, set only on a reported collision (ADR-049)
         // bucketName: 'my-resource-bucket', // omit → CDK auto-naming (globally unique)
         // enableGa4DataApi: false,
         // overrides: { web: { maxSize: 2 }, dbPool: { webMax: 5 } }, // site-owned sections only

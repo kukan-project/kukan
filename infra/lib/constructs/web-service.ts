@@ -1,6 +1,8 @@
 /**
  * KUKAN Web Service Construct
- * ECS Fargate service with ALB for Next.js web application.
+ * ECS Fargate service for the Next.js web application, fronted either by its
+ * own internal ALB (single-site) or by a target group + listener rule on the
+ * environment's shared ALB (multi-site, ADR-049).
  */
 
 import * as cdk from 'aws-cdk-lib'
@@ -17,11 +19,22 @@ import type { KukanConfig } from '../config.js'
 import { resourceName } from '../naming.js'
 import { configureBedrockEmbedding, configureBedrockCompletion } from './ai.js'
 import type { DbAccess } from './database.js'
+import { createInternalAlb, SITE_ROUTING_HEADER } from './shared-alb.js'
+
+/** Attachment to the environment's shared ALB listener (ADR-049). */
+export interface SharedListenerAttachment {
+  listener: elbv2.IApplicationListener
+  /** Listener rule priority — unique per environment (config resolveAlbPriority). */
+  priority: number
+  /** Value of the X-Kukan-Site origin header the rule matches (kukan-<env>-<site>). */
+  siteKey: string
+}
 
 export interface WebServiceProps {
   config: KukanConfig
   cluster: ecs.ICluster
-  albSecurityGroup: ec2.ISecurityGroup
+  /** SG of the site's own ALB. Required unless `sharedListener` is set. */
+  albSecurityGroup?: ec2.ISecurityGroup
   webSecurityGroup: ec2.ISecurityGroup
   database: DbAccess
   authSecret: secretsmanager.ISecret
@@ -32,6 +45,8 @@ export interface WebServiceProps {
   searchIndexPrefix?: string
   /** Docker build args for the web image (KUKAN_BRAND, ADR-042). */
   imageBuildArgs?: Record<string, string>
+  /** Attach to the shared ALB instead of creating one (ADR-049). */
+  sharedListener?: SharedListenerAttachment
   /** Secrets Manager secret containing GA4 property ID (numeric) */
   ga4PropertyIdSecret?: secretsmanager.ISecret
   /** Secrets Manager secret containing GA4 service account email */
@@ -41,8 +56,8 @@ export interface WebServiceProps {
 }
 
 export class WebServiceConstruct extends Construct {
-  /** Internal ALB — used as CloudFront VPC origin. */
-  readonly loadBalancer: elbv2.IApplicationLoadBalancer
+  /** Own internal ALB (CloudFront VPC origin). Undefined on the shared ALB. */
+  readonly loadBalancer?: elbv2.IApplicationLoadBalancer
   private readonly webContainer: ecs.ContainerDefinition
 
   /** Add an environment variable to the web container after construction. */
@@ -170,33 +185,46 @@ export class WebServiceConstruct extends Construct {
       circuitBreaker: { enable: true, rollback: true },
     })
 
-    // ALB (internal, private subnet — CloudFront connects via VPC origin)
-    const alb = new elbv2.ApplicationLoadBalancer(this, 'Alb', {
-      vpc: cluster.vpc,
-      internetFacing: false,
-      securityGroup: albSecurityGroup,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-    })
+    const healthCheck: elbv2.HealthCheck = {
+      path: '/api/health',
+      interval: cdk.Duration.seconds(30),
+      timeout: cdk.Duration.seconds(5),
+      healthyThresholdCount: 2,
+      unhealthyThresholdCount: 3,
+    }
 
-    // HTTP Listener (open: false — SG rules managed by NetworkConstruct)
-    const listener = alb.addListener('HttpListener', {
-      port: 80,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      open: false,
-    })
-
-    const targetGroup = listener.addTargets('WebTarget', {
-      port: 3000,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      targets: [service],
-      healthCheck: {
-        path: '/api/health',
-        interval: cdk.Duration.seconds(30),
-        timeout: cdk.Duration.seconds(5),
-        healthyThresholdCount: 2,
-        unhealthyThresholdCount: 3,
-      },
-    })
+    let targetGroup: elbv2.ApplicationTargetGroup
+    if (props.sharedListener) {
+      // Shared ALB (ADR-049): own target group, routed by the site header. The
+      // rule lives under this construct (not the imported listener) so its
+      // logical id is owned here and it inherits this construct's dependencies.
+      const { listener, priority, siteKey } = props.sharedListener
+      targetGroup = new elbv2.ApplicationTargetGroup(this, 'TargetGroup', {
+        vpc: cluster.vpc,
+        port: 3000,
+        protocol: elbv2.ApplicationProtocol.HTTP,
+        targets: [service],
+        healthCheck,
+      })
+      new elbv2.ApplicationListenerRule(this, 'SiteRule', {
+        listener,
+        priority,
+        conditions: [elbv2.ListenerCondition.httpHeader(SITE_ROUTING_HEADER, [siteKey])],
+        action: elbv2.ListenerAction.forward([targetGroup]),
+      })
+    } else {
+      if (!albSecurityGroup) {
+        throw new Error('WebServiceConstruct needs albSecurityGroup unless sharedListener is set')
+      }
+      const alb = createInternalAlb(this, { vpc: cluster.vpc, securityGroup: albSecurityGroup })
+      targetGroup = alb.listener.addTargets('WebTarget', {
+        port: 3000,
+        protocol: elbv2.ApplicationProtocol.HTTP,
+        targets: [service],
+        healthCheck,
+      })
+      this.loadBalancer = alb.loadBalancer
+    }
 
     // Auto Scaling
     if (config.web.maxSize > config.web.minSize) {
@@ -209,8 +237,6 @@ export class WebServiceConstruct extends Construct {
         targetGroup,
       })
     }
-
-    this.loadBalancer = alb
 
     cdk.Tags.of(this).add('kukan:component', 'web-service')
   }

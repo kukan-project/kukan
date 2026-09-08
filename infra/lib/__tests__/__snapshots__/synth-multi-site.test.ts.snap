@@ -823,6 +823,42 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
       },
       "Type": "AWS::EC2::SecurityGroup",
     },
+    "ParamalbdnsnameD6A6E898": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/alb/dns-name",
+        "Type": "String",
+        "Value": {
+          "Fn::GetAtt": [
+            "SharedAlb14474622",
+            "DNSName",
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "ParamalblistenerarnB3C5B561": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/alb/listener-arn",
+        "Type": "String",
+        "Value": {
+          "Ref": "SharedAlbHttpListener180BA64A",
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "Paramcloudfrontvpcoriginid5AC743F0": {
+      "Properties": {
+        "Name": "/kukan/dev/shared/cloudfront/vpc-origin-id",
+        "Type": "String",
+        "Value": {
+          "Fn::GetAtt": [
+            "SharedAlbVpcOrigin067562EB",
+            "Id",
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
     "ParamdbendpointBF29FC77": {
       "Properties": {
         "Name": "/kukan/dev/shared/db/endpoint",
@@ -1256,6 +1292,89 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
       },
       "Type": "AWS::EC2::SecurityGroup",
     },
+    "SharedAlb14474622": {
+      "Properties": {
+        "LoadBalancerAttributes": [
+          {
+            "Key": "deletion_protection.enabled",
+            "Value": "false",
+          },
+        ],
+        "Scheme": "internal",
+        "SecurityGroups": [
+          {
+            "Fn::GetAtt": [
+              "NetworkAlbSg193DDF6A",
+              "GroupId",
+            ],
+          },
+        ],
+        "Subnets": [
+          {
+            "Ref": "NetworkVpcPrivateSubnet1Subnet6DD86AE6",
+          },
+          {
+            "Ref": "NetworkVpcPrivateSubnet2Subnet1BDBE877",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "shared-alb",
+          },
+        ],
+        "Type": "application",
+      },
+      "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    },
+    "SharedAlbHttpListener180BA64A": {
+      "Properties": {
+        "DefaultActions": [
+          {
+            "FixedResponseConfig": {
+              "ContentType": "text/plain",
+              "MessageBody": "Unknown site",
+              "StatusCode": "404",
+            },
+            "Type": "fixed-response",
+          },
+        ],
+        "LoadBalancerArn": {
+          "Ref": "SharedAlb14474622",
+        },
+        "Port": 80,
+        "Protocol": "HTTP",
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "shared-alb",
+          },
+        ],
+      },
+      "Type": "AWS::ElasticLoadBalancingV2::Listener",
+    },
+    "SharedAlbVpcOrigin067562EB": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "shared-alb",
+          },
+        ],
+        "VpcOriginEndpointConfig": {
+          "Arn": {
+            "Ref": "SharedAlb14474622",
+          },
+          "HTTPPort": 80,
+          "Name": "DevKukanSharedStackSharedAlbVpcOrigin44207745",
+          "OriginProtocolPolicy": "http-only",
+          "OriginSSLProtocols": [
+            "TLSv1.2",
+          ],
+        },
+      },
+      "Type": "AWS::CloudFront::VpcOrigin",
+    },
     "SiteDbAccessSg4E188B82": {
       "Properties": {
         "GroupDescription": "Site DB bootstrap handlers (ADR-041)",
@@ -1316,15 +1435,6 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     },
   },
   "Outputs": {
-    "AlbDnsName": {
-      "Description": "ALB DNS Name (internal, behind CloudFront)",
-      "Value": {
-        "Fn::GetAtt": [
-          "WebServiceAlb128B20C0",
-          "DNSName",
-        ],
-      },
-    },
     "BucketName": {
       "Description": "S3 Bucket Name",
       "Value": {
@@ -1345,6 +1455,18 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "BootstrapVersion": {
       "Default": "/cdk-bootstrap/hnb659fds/version",
       "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedalbdnsnameC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/alb/dns-name",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedalblistenerarnC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/alb/listener-arn",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedcloudfrontvpcoriginidC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/cloudfront/vpc-origin-id",
       "Type": "AWS::SSM::Parameter::Value<String>",
     },
     "SsmParameterValuekukandevshareddbendpointC96584B6F00A464EAD1953AFF4B05118Parameter": {
@@ -1530,18 +1652,18 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           "Origins": [
             {
               "DomainName": {
-                "Fn::GetAtt": [
-                  "WebServiceAlb128B20C0",
-                  "DNSName",
-                ],
+                "Ref": "SsmParameterValuekukandevsharedalbdnsnameC96584B6F00A464EAD1953AFF4B05118Parameter",
               },
               "Id": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
+              "OriginCustomHeaders": [
+                {
+                  "HeaderName": "X-Kukan-Site",
+                  "HeaderValue": "kukan-dev-citya",
+                },
+              ],
               "VpcOriginConfig": {
                 "VpcOriginId": {
-                  "Fn::GetAtt": [
-                    "CDNDistributionOrigin1VpcOrigin72FDB15F",
-                    "Id",
-                  ],
+                  "Ref": "SsmParameterValuekukandevsharedcloudfrontvpcoriginidC96584B6F00A464EAD1953AFF4B05118Parameter",
                 },
               },
             },
@@ -1561,28 +1683,6 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
         ],
       },
       "Type": "AWS::CloudFront::Distribution",
-    },
-    "CDNDistributionOrigin1VpcOrigin72FDB15F": {
-      "Properties": {
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "cdn",
-          },
-        ],
-        "VpcOriginEndpointConfig": {
-          "Arn": {
-            "Ref": "WebServiceAlb128B20C0",
-          },
-          "HTTPPort": 80,
-          "Name": "DevKukanSiteStackCityaCDNDistributionOrigin1VpcOriginB5F7507E",
-          "OriginProtocolPolicy": "http-only",
-          "OriginSSLProtocols": [
-            "TLSv1.2",
-          ],
-        },
-      },
-      "Type": "AWS::CloudFront::VpcOrigin",
     },
     "CDNHtmlCachePolicyD4EF5254": {
       "Properties": {
@@ -2209,8 +2309,7 @@ function expandV6(addr) {
     "WebService5EA589E6": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WebServiceAlbHttpListenerE79EF022",
-        "WebServiceAlbHttpListenerWebTargetGroupD996C0DE",
+        "WebServiceSiteRule1F8DE3C0",
         "WebServiceTaskDefTaskRoleDefaultPolicy8C1B81DE",
         "WebServiceTaskDefTaskRole39B734D2",
       ],
@@ -2244,7 +2343,7 @@ function expandV6(addr) {
             "ContainerName": "Web",
             "ContainerPort": 3000,
             "TargetGroupArn": {
-              "Ref": "WebServiceAlbHttpListenerWebTargetGroupD996C0DE",
+              "Ref": "WebServiceTargetGroup21394FFE",
             },
           },
         ],
@@ -2299,79 +2398,34 @@ function expandV6(addr) {
       },
       "Type": "AWS::ECS::Service",
     },
-    "WebServiceAlb128B20C0": {
+    "WebServiceSiteRule1F8DE3C0": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
       ],
       "Properties": {
-        "LoadBalancerAttributes": [
-          {
-            "Key": "deletion_protection.enabled",
-            "Value": "false",
-          },
-        ],
-        "Scheme": "internal",
-        "SecurityGroups": [
-          {
-            "Ref": "SsmParameterValuekukandevsharedsgalbC96584B6F00A464EAD1953AFF4B05118Parameter",
-          },
-        ],
-        "Subnets": [
-          {
-            "Fn::Select": [
-              0,
-              {
-                "Fn::Split": [
-                  ",",
-                  {
-                    "Ref": "SsmParameterValuekukandevsharedvpcisolatedsubnetidsC96584B6F00A464EAD1953AFF4B05118Parameter",
-                  },
-                ],
-              },
-            ],
-          },
-          {
-            "Fn::Select": [
-              1,
-              {
-                "Fn::Split": [
-                  ",",
-                  {
-                    "Ref": "SsmParameterValuekukandevsharedvpcisolatedsubnetidsC96584B6F00A464EAD1953AFF4B05118Parameter",
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "web-service",
-          },
-        ],
-        "Type": "application",
-      },
-      "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
-    },
-    "WebServiceAlbHttpListenerE79EF022": {
-      "DependsOn": [
-        "SiteDatabase0F0CACF6",
-      ],
-      "Properties": {
-        "DefaultActions": [
+        "Actions": [
           {
             "TargetGroupArn": {
-              "Ref": "WebServiceAlbHttpListenerWebTargetGroupD996C0DE",
+              "Ref": "WebServiceTargetGroup21394FFE",
             },
             "Type": "forward",
           },
         ],
-        "LoadBalancerArn": {
-          "Ref": "WebServiceAlb128B20C0",
+        "Conditions": [
+          {
+            "Field": "http-header",
+            "HttpHeaderConfig": {
+              "HttpHeaderName": "X-Kukan-Site",
+              "Values": [
+                "kukan-dev-citya",
+              ],
+            },
+          },
+        ],
+        "ListenerArn": {
+          "Ref": "SsmParameterValuekukandevsharedalblistenerarnC96584B6F00A464EAD1953AFF4B05118Parameter",
         },
-        "Port": 80,
-        "Protocol": "HTTP",
+        "Priority": 46313,
         "Tags": [
           {
             "Key": "kukan:component",
@@ -2379,9 +2433,9 @@ function expandV6(addr) {
           },
         ],
       },
-      "Type": "AWS::ElasticLoadBalancingV2::Listener",
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
     },
-    "WebServiceAlbHttpListenerWebTargetGroupD996C0DE": {
+    "WebServiceTargetGroup21394FFE": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
       ],
@@ -2482,7 +2536,7 @@ function expandV6(addr) {
                         "Fn::Split": [
                           "/",
                           {
-                            "Ref": "WebServiceAlbHttpListenerE79EF022",
+                            "Ref": "SsmParameterValuekukandevsharedalblistenerarnC96584B6F00A464EAD1953AFF4B05118Parameter",
                           },
                         ],
                       },
@@ -2496,7 +2550,7 @@ function expandV6(addr) {
                         "Fn::Split": [
                           "/",
                           {
-                            "Ref": "WebServiceAlbHttpListenerE79EF022",
+                            "Ref": "SsmParameterValuekukandevsharedalblistenerarnC96584B6F00A464EAD1953AFF4B05118Parameter",
                           },
                         ],
                       },
@@ -2510,7 +2564,7 @@ function expandV6(addr) {
                         "Fn::Split": [
                           "/",
                           {
-                            "Ref": "WebServiceAlbHttpListenerE79EF022",
+                            "Ref": "SsmParameterValuekukandevsharedalblistenerarnC96584B6F00A464EAD1953AFF4B05118Parameter",
                           },
                         ],
                       },
@@ -2519,7 +2573,7 @@ function expandV6(addr) {
                   "/",
                   {
                     "Fn::GetAtt": [
-                      "WebServiceAlbHttpListenerWebTargetGroupD996C0DE",
+                      "WebServiceTargetGroup21394FFE",
                       "TargetGroupFullName",
                     ],
                   },
@@ -3897,15 +3951,6 @@ function expandV6(addr) {
 exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golden site templates 2`] = `
 {
   "Outputs": {
-    "AlbDnsName": {
-      "Description": "ALB DNS Name (internal, behind CloudFront)",
-      "Value": {
-        "Fn::GetAtt": [
-          "WebServiceAlb128B20C0",
-          "DNSName",
-        ],
-      },
-    },
     "BucketName": {
       "Description": "S3 Bucket Name",
       "Value": {
@@ -3926,6 +3971,18 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
     "BootstrapVersion": {
       "Default": "/cdk-bootstrap/hnb659fds/version",
       "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedalbdnsnameC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/alb/dns-name",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedalblistenerarnC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/alb/listener-arn",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValuekukandevsharedcloudfrontvpcoriginidC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/kukan/dev/shared/cloudfront/vpc-origin-id",
       "Type": "AWS::SSM::Parameter::Value<String>",
     },
     "SsmParameterValuekukandevshareddbendpointC96584B6F00A464EAD1953AFF4B05118Parameter": {
@@ -4108,18 +4165,18 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
           "Origins": [
             {
               "DomainName": {
-                "Fn::GetAtt": [
-                  "WebServiceAlb128B20C0",
-                  "DNSName",
-                ],
+                "Ref": "SsmParameterValuekukandevsharedalbdnsnameC96584B6F00A464EAD1953AFF4B05118Parameter",
               },
               "Id": "DevKukanSiteStackCitybCDNDistributionOrigin148723715",
+              "OriginCustomHeaders": [
+                {
+                  "HeaderName": "X-Kukan-Site",
+                  "HeaderValue": "kukan-dev-cityb",
+                },
+              ],
               "VpcOriginConfig": {
                 "VpcOriginId": {
-                  "Fn::GetAtt": [
-                    "CDNDistributionOrigin1VpcOrigin72FDB15F",
-                    "Id",
-                  ],
+                  "Ref": "SsmParameterValuekukandevsharedcloudfrontvpcoriginidC96584B6F00A464EAD1953AFF4B05118Parameter",
                 },
               },
             },
@@ -4133,28 +4190,6 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
         ],
       },
       "Type": "AWS::CloudFront::Distribution",
-    },
-    "CDNDistributionOrigin1VpcOrigin72FDB15F": {
-      "Properties": {
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "cdn",
-          },
-        ],
-        "VpcOriginEndpointConfig": {
-          "Arn": {
-            "Ref": "WebServiceAlb128B20C0",
-          },
-          "HTTPPort": 80,
-          "Name": "DevKukanSiteStackCitybCDNDistributionOrigin1VpcOrigin9D9CCA49",
-          "OriginProtocolPolicy": "http-only",
-          "OriginSSLProtocols": [
-            "TLSv1.2",
-          ],
-        },
-      },
-      "Type": "AWS::CloudFront::VpcOrigin",
     },
     "CDNHtmlCachePolicyD4EF5254": {
       "Properties": {
@@ -4729,8 +4764,7 @@ function expandV6(addr) {
     "WebService5EA589E6": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
-        "WebServiceAlbHttpListenerE79EF022",
-        "WebServiceAlbHttpListenerWebTargetGroupD996C0DE",
+        "WebServiceSiteRule1F8DE3C0",
         "WebServiceTaskDefTaskRoleDefaultPolicy8C1B81DE",
         "WebServiceTaskDefTaskRole39B734D2",
       ],
@@ -4764,7 +4798,7 @@ function expandV6(addr) {
             "ContainerName": "Web",
             "ContainerPort": 3000,
             "TargetGroupArn": {
-              "Ref": "WebServiceAlbHttpListenerWebTargetGroupD996C0DE",
+              "Ref": "WebServiceTargetGroup21394FFE",
             },
           },
         ],
@@ -4819,79 +4853,34 @@ function expandV6(addr) {
       },
       "Type": "AWS::ECS::Service",
     },
-    "WebServiceAlb128B20C0": {
+    "WebServiceSiteRule1F8DE3C0": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
       ],
       "Properties": {
-        "LoadBalancerAttributes": [
-          {
-            "Key": "deletion_protection.enabled",
-            "Value": "false",
-          },
-        ],
-        "Scheme": "internal",
-        "SecurityGroups": [
-          {
-            "Ref": "SsmParameterValuekukandevsharedsgalbC96584B6F00A464EAD1953AFF4B05118Parameter",
-          },
-        ],
-        "Subnets": [
-          {
-            "Fn::Select": [
-              0,
-              {
-                "Fn::Split": [
-                  ",",
-                  {
-                    "Ref": "SsmParameterValuekukandevsharedvpcisolatedsubnetidsC96584B6F00A464EAD1953AFF4B05118Parameter",
-                  },
-                ],
-              },
-            ],
-          },
-          {
-            "Fn::Select": [
-              1,
-              {
-                "Fn::Split": [
-                  ",",
-                  {
-                    "Ref": "SsmParameterValuekukandevsharedvpcisolatedsubnetidsC96584B6F00A464EAD1953AFF4B05118Parameter",
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-        "Tags": [
-          {
-            "Key": "kukan:component",
-            "Value": "web-service",
-          },
-        ],
-        "Type": "application",
-      },
-      "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
-    },
-    "WebServiceAlbHttpListenerE79EF022": {
-      "DependsOn": [
-        "SiteDatabase0F0CACF6",
-      ],
-      "Properties": {
-        "DefaultActions": [
+        "Actions": [
           {
             "TargetGroupArn": {
-              "Ref": "WebServiceAlbHttpListenerWebTargetGroupD996C0DE",
+              "Ref": "WebServiceTargetGroup21394FFE",
             },
             "Type": "forward",
           },
         ],
-        "LoadBalancerArn": {
-          "Ref": "WebServiceAlb128B20C0",
+        "Conditions": [
+          {
+            "Field": "http-header",
+            "HttpHeaderConfig": {
+              "HttpHeaderName": "X-Kukan-Site",
+              "Values": [
+                "kukan-dev-cityb",
+              ],
+            },
+          },
+        ],
+        "ListenerArn": {
+          "Ref": "SsmParameterValuekukandevsharedalblistenerarnC96584B6F00A464EAD1953AFF4B05118Parameter",
         },
-        "Port": 80,
-        "Protocol": "HTTP",
+        "Priority": 36456,
         "Tags": [
           {
             "Key": "kukan:component",
@@ -4899,9 +4888,9 @@ function expandV6(addr) {
           },
         ],
       },
-      "Type": "AWS::ElasticLoadBalancingV2::Listener",
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
     },
-    "WebServiceAlbHttpListenerWebTargetGroupD996C0DE": {
+    "WebServiceTargetGroup21394FFE": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
       ],
@@ -5002,7 +4991,7 @@ function expandV6(addr) {
                         "Fn::Split": [
                           "/",
                           {
-                            "Ref": "WebServiceAlbHttpListenerE79EF022",
+                            "Ref": "SsmParameterValuekukandevsharedalblistenerarnC96584B6F00A464EAD1953AFF4B05118Parameter",
                           },
                         ],
                       },
@@ -5016,7 +5005,7 @@ function expandV6(addr) {
                         "Fn::Split": [
                           "/",
                           {
-                            "Ref": "WebServiceAlbHttpListenerE79EF022",
+                            "Ref": "SsmParameterValuekukandevsharedalblistenerarnC96584B6F00A464EAD1953AFF4B05118Parameter",
                           },
                         ],
                       },
@@ -5030,7 +5019,7 @@ function expandV6(addr) {
                         "Fn::Split": [
                           "/",
                           {
-                            "Ref": "WebServiceAlbHttpListenerE79EF022",
+                            "Ref": "SsmParameterValuekukandevsharedalblistenerarnC96584B6F00A464EAD1953AFF4B05118Parameter",
                           },
                         ],
                       },
@@ -5039,7 +5028,7 @@ function expandV6(addr) {
                   "/",
                   {
                     "Fn::GetAtt": [
-                      "WebServiceAlbHttpListenerWebTargetGroupD996C0DE",
+                      "WebServiceTargetGroup21394FFE",
                       "TargetGroupFullName",
                     ],
                   },

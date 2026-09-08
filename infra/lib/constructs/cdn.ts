@@ -1,15 +1,14 @@
 /**
  * KUKAN CDN Construct
- * CloudFront distribution with VPC origin (internal ALB),
- * cookie-based cache bypass, optional edge gate (IP allowlist and/or Basic auth,
- * via CF Function), and WAF integration.
+ * CloudFront distribution in front of the given origin (a VPC origin to the
+ * site's own or the shared internal ALB — composeSite), cookie-based cache
+ * bypass, optional edge gate (IP allowlist and/or Basic auth, via CF Function),
+ * and WAF integration.
  */
 
 import * as cdk from 'aws-cdk-lib'
 import * as acm from 'aws-cdk-lib/aws-certificatemanager'
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront'
-import * as origins from 'aws-cdk-lib/aws-cloudfront-origins'
-import type * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2'
 import { Construct } from 'constructs'
 import { loadViewerRequestCode } from '../cf-functions/inject.js'
 import type { KukanConfig } from '../config.js'
@@ -17,8 +16,8 @@ import { resourceName } from '../naming.js'
 
 export interface CdnProps {
   config: KukanConfig
-  /** Internal ALB used as CloudFront VPC origin. */
-  alb: elbv2.IApplicationLoadBalancer
+  /** Origin of every behavior (built by composeSite). */
+  origin: cloudfront.IOrigin
   /** ACM certificate ARN in us-east-1 for custom domain (from KukanGlobalStack). */
   certificateArn?: string
   /** WAF WebACL ARN in us-east-1 (from KukanGlobalStack). */
@@ -32,7 +31,7 @@ export class CdnConstruct extends Construct {
   constructor(scope: Construct, id: string, props: CdnProps) {
     super(scope, id)
 
-    const { config, alb, certificateArn, webAclArn } = props
+    const { config, origin: albOrigin, certificateArn, webAclArn } = props
 
     // --- CloudFront Function: IP restriction + cookie-based cache bypass ---
     // Env-prefixed name for readability + multi-environment uniqueness (ADR-031).
@@ -42,12 +41,6 @@ export class CdnConstruct extends Construct {
         loadViewerRequestCode(config.allowedIpRanges, config.basicAuth)
       ),
       runtime: cloudfront.FunctionRuntime.JS_2_0,
-    })
-
-    // --- ALB VPC Origin (CloudFront connects to internal ALB via VPC) ---
-    const albOrigin = origins.VpcOrigin.withApplicationLoadBalancer(alb, {
-      protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
-      httpPort: 80,
     })
 
     // --- Cache Policy: HTML pages (TTL 60–300s, bypass via header) ---

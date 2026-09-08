@@ -211,6 +211,16 @@ export interface SiteConfig {
   bucketName?: string
   enableGa4DataApi?: boolean
   /**
+   * Listener rule priority on the environment's shared ALB (ADR-049). Omit →
+   * derived from the site name (a stable hash in 1000–49999), so removing or
+   * reordering sites never renumbers the others. Set it (1–999 — the derived
+   * band is reserved, so an explicit value can never collide with one) on the
+   * site you are adding when validateSites reports a collision, or to pin an
+   * order deliberately. Never move a deployed site's value onto another
+   * deployed site's: the live rule still holds it and the deploy fails.
+   */
+  albPriority?: number
+  /**
    * Per-site sizing on top of the environment's scale preset. Only the
    * site-owned sections — db/opensearch sizing belongs to the shared boxes.
    * Of `backup`, only the S3 (site bucket) settings are allowed: DB retention
@@ -247,10 +257,10 @@ const SITE_BACKUP_KEYS = Object.keys({
  * silently discarded, worst for the security gates allowedIpRanges/basicAuth)
  * and resolveSiteConfig (copy them from the site). The `satisfies` makes a new
  * site-scoped field fail to compile until both consumers pick it up.
- * `name`/`brand` have no env-level counterpart; `overrides` deliberately
- * deep-merges instead (shared tuning + per-site tweaks).
+ * `name`/`brand`/`albPriority` have no env-level counterpart; `overrides`
+ * deliberately deep-merges instead (shared tuning + per-site tweaks).
  */
-type SiteScopedKey = Exclude<keyof SiteConfig, 'name' | 'brand' | 'overrides'>
+type SiteScopedKey = Exclude<keyof SiteConfig, 'name' | 'brand' | 'albPriority' | 'overrides'>
 const SITE_SCOPED_FIELDS = Object.keys({
   domainName: true,
   hostedZoneId: true,
@@ -263,6 +273,34 @@ const SITE_SCOPED_FIELDS = Object.keys({
   bucketName: true,
   enableGa4DataApi: true,
 } satisfies Record<SiteScopedKey, true>) as SiteScopedKey[]
+
+/** CloudFront's "distributions associated with the same VPC origin" quota — no
+ *  increase offered. Every site's distribution uses the environment's single
+ *  shared VPC origin (ADR-049), so it caps the sites per environment. */
+export const MAX_SITES_PER_ENVIRONMENT = 50
+
+/** Range of site-name-derived listener rule priorities (ADR-049). Explicit
+ *  `albPriority` values are confined below the floor, so the two can never collide. */
+export const DERIVED_ALB_PRIORITY_MIN = 1000
+export const DERIVED_ALB_PRIORITY_MAX = 49999
+
+/**
+ * Effective listener rule priority of a site on the shared ALB (ADR-049):
+ * the explicit `albPriority`, else a stable FNV-1a hash of the site name
+ * folded into the derived range. Deliberately not the `sites[]` index — that
+ * would renumber the remaining sites when one is removed, and two stacks
+ * could then hold the same priority mid-way through the serial deploy.
+ */
+export function resolveAlbPriority(site: Pick<SiteConfig, 'name' | 'albPriority'>): number {
+  if (site.albPriority !== undefined) return site.albPriority
+  let hash = 0x811c9dc5
+  for (const ch of site.name) {
+    hash ^= ch.charCodeAt(0)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  const span = DERIVED_ALB_PRIORITY_MAX - DERIVED_ALB_PRIORITY_MIN + 1
+  return DERIVED_ALB_PRIORITY_MIN + (hash % span)
+}
 
 /** One synth-time warning from validateSites, keyed for cdk.Annotations. */
 export interface SiteWarning {
@@ -291,6 +329,13 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
         'shape), or remove `sites` entirely for the legacy single-site shape (ADR-041)'
     )
   }
+  if (sites.length > MAX_SITES_PER_ENVIRONMENT) {
+    throw new Error(
+      `${sites.length} sites exceed the ${MAX_SITES_PER_ENVIRONMENT} distributions CloudFront ` +
+        "allows on one VPC origin (not adjustable) — every site shares the environment's VPC " +
+        'origin (ADR-049). Split the sites across more than one environment'
+    )
+  }
   const siteScopedEnvFields = SITE_SCOPED_FIELDS.filter((key) => env[key] !== undefined)
   if (siteScopedEnvFields.length > 0) {
     throw new Error(
@@ -308,6 +353,7 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
   )
   const warnings: SiteWarning[] = []
   const seen = new Set<string>()
+  const priorities = new Map<number, string>()
   for (const site of sites) {
     if (!SITE_NAME_PATTERN.test(site.name)) {
       throw new Error(
@@ -322,6 +368,28 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
       throw new Error(`Duplicate site name "${site.name}"`)
     }
     seen.add(site.name)
+    if (
+      site.albPriority !== undefined &&
+      (!Number.isInteger(site.albPriority) ||
+        site.albPriority < 1 ||
+        site.albPriority >= DERIVED_ALB_PRIORITY_MIN)
+    ) {
+      throw new Error(
+        `Site "${site.name}" albPriority must be an integer in 1–${DERIVED_ALB_PRIORITY_MIN - 1} ` +
+          `(${DERIVED_ALB_PRIORITY_MIN}–${DERIVED_ALB_PRIORITY_MAX} is reserved for ` +
+          'name-derived priorities, ADR-049)'
+      )
+    }
+    const priority = resolveAlbPriority(site)
+    const holder = priorities.get(priority)
+    if (holder !== undefined) {
+      throw new Error(
+        `Sites "${holder}" and "${site.name}" resolve to the same shared-ALB listener ` +
+          `rule priority ${priority} — set albPriority (1–${DERIVED_ALB_PRIORITY_MIN - 1}) ` +
+          'on the site you are adding (changing a deployed site renumbers its live rule, ADR-049)'
+      )
+    }
+    priorities.set(priority, site.name)
     rejectBlankEdgeArns(site, `Site "${site.name}"`)
     // Missing cert/WAF ARNs auto-create in the us-east-1 global stack, but a
     // DNS-validated cert needs the hosted zone — reject that gap here.

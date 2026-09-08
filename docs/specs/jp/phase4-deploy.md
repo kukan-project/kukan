@@ -278,9 +278,11 @@ SiteStack × N（サイト別リソース）に分割される。**opt-in 専用
 ```
 Dev (Stage)
 ├─ KukanSharedStack        VPC/SG・Aurora/RDS・OpenSearch・ECS クラスタ・
+│                          共有 ALB + CloudFront VPC origin（ADR-049）・
 │                          Secrets Manager VPC endpoint・SSM パラメータ
 └─ KukanSiteStack<Site>×N  サイト DB+ロール（Custom Resource）・S3・SQS・
-                           web/worker サービス・CloudFront(+ドメイン)・Secrets
+                           web/worker サービス・共有 ALB 上のターゲットグループ +
+                           リスナールール・CloudFront(+ドメイン)・Secrets
 ```
 
 ### 設定
@@ -326,6 +328,28 @@ prd: {
   `kukan-<env>-<site>-backup`）に分かれる。クラスタ単位 PITR で「1 サイトだけ
   戻す」はできないため、サイト単位の復元には pg_dump の定期実行を補完する
   （ADR-037 / ADR-041 トレードオフ）
+- **ALB は環境で 1 本を共有する**（ADR-049）: SharedStack の internal ALB に
+  各サイトがターゲットグループ + リスナールールを追加し、そのサイトの CloudFront
+  がオリジンリクエストに付ける `X-Kukan-Site: kukan-<env>-<site>` ヘッダーで
+  振り分ける（CloudFront VPC origin も SharedStack の 1 個を全サイトで共用）。
+  ルールの優先度はサイト名の安定ハッシュ（1000–49999）で自動採番され、
+  `validateSites` が衝突を検出したときだけ、追加したサイトに `albPriority`（1–999
+  のみ。派生帯と衝突しない）を書く。CloudFront は 1 つの VPC origin に 50 個までしか
+  Distribution を関連付けられない（引き上げ不可）ため、**1 環境のサイト数は 50 が
+  上限**（synth でエラー。超える場合は環境を分ける）。サイトの追加・削除で SharedStack は変わらない。
+  共有 ALB 導入前に構築した環境は、SharedStack → サイト直列の順で更新すると
+  各サイトの ALB が共有 ALB に切り替わる（切替中に数分の 503 窓あり。公開中の
+  サイトを無停止で切り替える二段階経路は未実装 — ADR-049 残課題）。
+  切替の注意: (1) サイトスタックは新しい SSM パラメータをデプロイ時に解決するため、
+  **SharedStack を先に更新するまでサイト単体の `cdk diff` / `cdk deploy` は失敗する**
+  (2) pipeline は `sites[0]` から順に切り替えるので、順序を選びたければ pipeline に
+  流す前に手動で切り替える (3) **切替後に旧 ALB / VPC origin が削除されたことを
+  確認する** — CloudFormation はクリーンアップ段階の削除失敗をスタック失敗にしない
+  ため、残った場合は手動削除。
+  優先度は共有リスナー上のデプロイ時資源なので、**稼働中サイトの優先度を別の稼働中
+  サイトの値に付け替えない**（先に更新されるスタックが `PriorityInUse` で失敗する）。
+  サイトの削除は「スタックを `cdk destroy` → `sites[]` から除去」の順（逆だと
+  ルールが共有リスナーに残り、同じ値に解決する新サイトのデプロイを塞ぐ）
 - **サイト中心で書きたい場合**: `environments.ts` は素の TypeScript なので、
   サイト台帳を先に定義して env エントリへ転置するヘルパーを書けばよい
   （ネイティブ構造が env 外側なのは、共有の箱・AWS アカウント・パイプラインが

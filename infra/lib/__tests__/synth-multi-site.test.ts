@@ -10,6 +10,9 @@ import { Match, Template } from 'aws-cdk-lib/assertions'
 import * as cdk from 'aws-cdk-lib'
 import {
   assertPipelineAccount,
+  DERIVED_ALB_PRIORITY_MAX,
+  DERIVED_ALB_PRIORITY_MIN,
+  resolveAlbPriority,
   resolveSiteConfig,
   validateSites,
   type EnvironmentConfig,
@@ -75,6 +78,9 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
       'sg/worker',
       'sg/db-access',
       'ecs/cluster-name',
+      'alb/listener-arn',
+      'alb/dns-name',
+      'cloudfront/vpc-origin-id',
       'db/endpoint',
       'db/port',
       'db/master-secret-arn',
@@ -83,6 +89,76 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
       shared.hasResourceProperties('AWS::SSM::Parameter', {
         Name: `/kukan/dev/shared/${suffix}`,
       })
+    }
+  })
+
+  it('creates one shared ALB with a 404 default action and one VPC origin (ADR-049)', () => {
+    shared.resourceCountIs('AWS::ElasticLoadBalancingV2::LoadBalancer', 1)
+    shared.hasResourceProperties('AWS::ElasticLoadBalancingV2::LoadBalancer', {
+      Scheme: 'internal',
+      Type: 'application',
+    })
+    shared.hasResourceProperties('AWS::ElasticLoadBalancingV2::Listener', {
+      Port: 80,
+      DefaultActions: [
+        Match.objectLike({
+          Type: 'fixed-response',
+          FixedResponseConfig: Match.objectLike({ StatusCode: '404' }),
+        }),
+      ],
+    })
+    // The VPC origin must speak what the listener listens on
+    shared.hasResourceProperties('AWS::CloudFront::VpcOrigin', {
+      VpcOriginEndpointConfig: Match.objectLike({
+        HTTPPort: 80,
+        OriginProtocolPolicy: 'http-only',
+      }),
+    })
+    shared.resourceCountIs('AWS::CloudFront::VpcOrigin', 1)
+  })
+
+  it('attaches each site to the shared ALB by its X-Kukan-Site header (ADR-049)', () => {
+    for (const [template, site] of [
+      [siteA, 'citya'],
+      [siteB, 'cityb'],
+    ] as const) {
+      // No ALB / VPC origin of its own — the site rides on the shared ones
+      template.resourceCountIs('AWS::ElasticLoadBalancingV2::LoadBalancer', 0)
+      template.resourceCountIs('AWS::CloudFront::VpcOrigin', 0)
+      template.resourceCountIs('AWS::ElasticLoadBalancingV2::TargetGroup', 1)
+      template.hasResourceProperties('AWS::ElasticLoadBalancingV2::ListenerRule', {
+        Priority: resolveAlbPriority({ name: site }),
+        Conditions: [
+          {
+            Field: 'http-header',
+            HttpHeaderConfig: { HttpHeaderName: 'X-Kukan-Site', Values: [`kukan-dev-${site}`] },
+          },
+        ],
+      })
+      // The rule is owned by WebService (not the listener import) so it inherits
+      // the site-database dependency and its logical id survives import moves
+      template.hasResource('AWS::ElasticLoadBalancingV2::ListenerRule', {
+        DependsOn: Match.arrayWith([Match.stringLikeRegexp('^SiteDatabase')]),
+      })
+      expect(
+        Object.keys(template.findResources('AWS::ElasticLoadBalancingV2::ListenerRule'))
+      ).toEqual([expect.stringMatching(/^WebServiceSiteRule/)])
+      template.hasResourceProperties('AWS::CloudFront::Distribution', {
+        DistributionConfig: Match.objectLike({
+          Origins: [
+            Match.objectLike({
+              OriginCustomHeaders: [
+                { HeaderName: 'X-Kukan-Site', HeaderValue: `kukan-dev-${site}` },
+              ],
+              VpcOriginConfig: Match.objectLike({ VpcOriginId: Match.anyValue() }),
+            }),
+          ],
+        }),
+      })
+      // The shared ALB's name is the SharedStack's SSM parameter, not N site outputs
+      expect(
+        (template.toJSON() as { Outputs?: Record<string, unknown> }).Outputs
+      ).not.toHaveProperty('AlbDnsName')
     }
   })
 
@@ -318,6 +394,58 @@ describe('validateSites', () => {
     )
   })
 
+  it('caps sites per environment at the VPC-origin association quota (ADR-049)', () => {
+    const sitesOf = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({ name: `s${i + 1}`, albPriority: i + 1 }))
+    expect(() => validateSites({ ...base, sites: sitesOf(51) })).toThrow(
+      /51 sites exceed the 50 distributions CloudFront allows on one VPC origin/
+    )
+    // 50 itself passes this gate (the connection budget is a separate check)
+    expect(() => validateSites({ ...base, sites: sitesOf(50) })).not.toThrow(/VPC origin/)
+  })
+
+  it('resolves shared-ALB rule priorities stably and rejects collisions (ADR-049)', () => {
+    // Pinned vector: changing the hash renumbers every deployed derived rule
+    // (a ListenerRule priority update on all site stacks)
+    const derived = resolveAlbPriority({ name: 'citya' })
+    expect(derived).toBe(46313)
+    expect(derived).toBeGreaterThanOrEqual(DERIVED_ALB_PRIORITY_MIN)
+    expect(derived).toBeLessThanOrEqual(DERIVED_ALB_PRIORITY_MAX)
+    expect(resolveAlbPriority({ name: 'citya', albPriority: 7 })).toBe(7)
+    // Explicit values live below the derived band, so the two can never collide
+    for (const albPriority of [0, 1.5, DERIVED_ALB_PRIORITY_MIN]) {
+      expect(() => validateSites({ ...base, sites: [{ name: 'citya', albPriority }] })).toThrow(
+        /albPriority must be an integer in 1–999/
+      )
+    }
+    expect(
+      validateSites({
+        ...base,
+        enableOpenSearch: false,
+        sites: [
+          { name: 'citya', albPriority: 1 },
+          { name: 'cityb', enableWaf: false },
+        ],
+      })
+    ).toEqual([])
+    // Two names hashing alike collide; the message points at the site being added
+    let twin = ''
+    for (let i = 0; twin === ''; i++) {
+      const candidate = `x${i.toString(36)}`
+      if (resolveAlbPriority({ name: candidate }) === derived) twin = candidate
+    }
+    expect(() =>
+      validateSites({ ...base, sites: [{ name: 'citya' }, { name: twin, enableWaf: false }] })
+    ).toThrow(/same shared-ALB listener rule priority 46313 .* on the site you are adding/)
+    expect(
+      validateSites({
+        ...base,
+        enableOpenSearch: false,
+        sites: [{ name: 'citya' }, { name: twin, albPriority: 2, enableWaf: false }],
+      })
+    ).toEqual([])
+  })
+
   it('warns about a burstable shared OpenSearch from the second site on', () => {
     const sites = [
       { name: 'citya', enableWaf: false },
@@ -334,7 +462,10 @@ describe('validateSites', () => {
     // plus one site's rolling-update doubling (+60); maxACU 2 → 400 estimated
     // max_connections (documented-anchor interpolation), 70% = 280
     const site = (name: string) => ({ name, enableWaf: false })
-    const sitesOf = (n: number) => Array.from({ length: n }, (_, i) => site(`s${i + 1}`))
+    // Explicit priorities: with this many sites the derived hash can collide,
+    // which is its own (tested) error and would mask the budget one
+    const sitesOf = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({ ...site(`s${i + 1}`), albPriority: i + 1 }))
 
     expect(() => validateSites({ ...base, scale: 'medium', sites: sitesOf(8) })).toThrow(
       /480.*exceed the estimated max_connections \(400\)/
@@ -371,25 +502,30 @@ describe('validateSites', () => {
       })
     ).toThrow(/raise db\.minAcu to 1 or higher.*AND db\.maxAcu/)
 
-    // Boundary: 60 sites on maxAcu 16 need 3,660 — uncapping via minAcu is
+    // The higher bands need more than 50 sites' worth of connections at the
+    // preset pools, and 50 is the per-environment site cap (VPC origin quota) —
+    // so widen the web pool to 20 (110 worst-case per site) instead
+    const wide = { dbPool: { webMax: 20 } }
+
+    // Boundary: 33 wide sites on maxAcu 16 need 3,740 — uncapping via minAcu is
     // not enough (16 ACU tops out at 3,360), so both knobs must move
     expect(() =>
       validateSites({
         ...base,
         scale: 'medium',
-        overrides: { db: { maxAcu: 16 } },
-        sites: sitesOf(60),
+        overrides: { ...wide, db: { maxAcu: 16 } },
+        sites: sitesOf(33),
       })
     ).toThrow(/AND db\.maxAcu \(the current maxAcu tops out at 3360 connections\)/)
 
     // Beyond the Aurora PostgreSQL absolute ceiling (5,000) no ACU setting
-    // helps — the remedy must not suggest one (medium 84 sites need 5,100)
+    // helps — the remedy must not suggest one (46 wide sites need 5,170)
     const overCeiling = () =>
       validateSites({
         ...base,
         scale: 'medium',
-        overrides: { db: { minAcu: 1, maxAcu: 32 } },
-        sites: sitesOf(84),
+        overrides: { ...wide, db: { minAcu: 1, maxAcu: 32 } },
+        sites: sitesOf(46),
       })
     expect(overCeiling).toThrow(/Aurora PostgreSQL tops out at 5000/)
     expect(overCeiling).toThrow(/split the sites/)
@@ -419,13 +555,13 @@ describe('validateSites', () => {
     expect(cappedWarning).toContain('raise db.minAcu to 1 or higher')
     expect(cappedWarning).not.toMatch(/AND db\.maxAcu/)
 
-    // 74 sites need 4,500/5,000 — clearing 70% needs 6,429, beyond the Aurora
-    // absolute ceiling → no ACU advice at all
+    // 40 wide sites need 4,510/5,000 — clearing 70% needs 6,443, beyond the
+    // Aurora absolute ceiling → no ACU advice at all
     const ceilingWarning = messages({
       ...base,
       scale: 'medium',
-      overrides: { db: { minAcu: 1, maxAcu: 32 } },
-      sites: sitesOf(74),
+      overrides: { ...wide, db: { minAcu: 1, maxAcu: 32 } },
+      sites: sitesOf(40),
     })
     expect(ceilingWarning).toContain('Aurora PostgreSQL tops out at 5000')
     expect(ceilingWarning).not.toMatch(/raise db\.(min|max)Acu/)

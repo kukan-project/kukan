@@ -54,7 +54,7 @@ Share only the time-billed "boxes" (Aurora cluster, OpenSearch domain, VPC/NAT),
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Shared (SharedStack)**               | VPC / subnets / NAT / SGs, Aurora cluster, OpenSearch domain, ECS cluster, CDK Pipeline (one), worker image (brand-independent, one)                                                                                                                         |
 | **Per-site (SiteStack)**               | PostgreSQL database + dedicated role/secret, OpenSearch indices (prefix), S3 bucket, SQS queue + DLQ, ECS services (web / worker tasks), web image (ADR-042), CloudFront + domain + ACM certificate (+ WAF), environment variable set, CloudWatch log groups |
-| **Intermediate (staged optimization)** | ALB starts per-site; sharing via host-based routing is a second-stage optimization                                                                                                                                                                           |
+| **Intermediate (staged optimization)** | ALB starts per-site; sharing is a second-stage optimization (settled in ADR-049 — header routing)                                                                                                                                                            |
 
 Principle: **time-billed "boxes" are shared; "logical resources" that hold data and namespaces are per site.**
 
@@ -139,6 +139,7 @@ This ADR does not force existing single-site environments to migrate.
 
 - ADR-031 (Multi-environment deployment design): this ADR extends it by adding a site axis inside the environment axis. Not a replacement
 - ADR-042 (Multi-brand build): supplies the per-site web images
+- ADR-049 (Consolidating the ALB across sites): settles the ALB sharing this ADR left as a second stage
 - ADR-025 (OpenSearch parent-child unified index): becomes one index per site
 - ADR-036 (Runtime system settings): automatically per-site because the database is per-site
 - ADR-037 (Backup strategy): the DB backup granularity premise changes (see trade-offs)

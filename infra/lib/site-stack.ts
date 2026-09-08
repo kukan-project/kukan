@@ -1,19 +1,27 @@
 /**
  * KUKAN Site Stack (ADR-041)
  * One site's resources on the shared boxes: site database + role, S3 bucket,
- * SQS queue, ECS web/worker services, CloudFront (+ domain), secrets, logs.
+ * SQS queue, ECS web/worker services, target group + listener rule on the
+ * shared ALB (ADR-049), CloudFront (+ domain), secrets, logs.
  * Reads the shared surface from SSM parameters written by KukanSharedStack —
  * never CloudFormation exports.
  */
 
 import * as cdk from 'aws-cdk-lib'
+import * as cloudfront from 'aws-cdk-lib/aws-cloudfront'
 import * as ec2 from 'aws-cdk-lib/aws-ec2'
 import * as ecs from 'aws-cdk-lib/aws-ecs'
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2'
 import * as ssm from 'aws-cdk-lib/aws-ssm'
 import type { Construct } from 'constructs'
-import { resolveSiteConfig, type EnvironmentConfig, type SiteConfig } from './config.js'
+import {
+  resolveAlbPriority,
+  resolveSiteConfig,
+  type EnvironmentConfig,
+  type SiteConfig,
+} from './config.js'
 import { composeSite } from './composition.js'
-import { envPrefix, sharedParamName, type SiteScopedStack } from './naming.js'
+import { envPrefix, sharedParamName, type SharedParam, type SiteScopedStack } from './naming.js'
 import { BackupConstruct } from './constructs/backup.js'
 import { SiteDatabaseConstruct } from './constructs/site-database.js'
 
@@ -39,7 +47,7 @@ export class KukanSiteStack extends cdk.Stack implements SiteScopedStack {
     // Deploy-time SSM resolution (CFN parameter type AWS::SSM::Parameter::Value).
     // Not valueFromLookup — its synth-time context cache would go stale when the
     // shared boxes change (ADR-041).
-    const read = (suffix: string) =>
+    const read = (suffix: SharedParam) =>
       ssm.StringParameter.valueForStringParameter(this, sharedParamName(this, suffix))
 
     // NetworkConstruct pins maxAzs: 2, so every list has exactly 2 entries —
@@ -55,7 +63,7 @@ export class KukanSiteStack extends cdk.Stack implements SiteScopedStack {
       clusterName: read('ecs/cluster-name'),
       vpc,
     })
-    const importSg = (importId: string, suffix: string) =>
+    const importSg = (importId: string, suffix: SharedParam) =>
       ec2.SecurityGroup.fromSecurityGroupId(this, importId, read(suffix), { mutable: false })
 
     const siteDatabase = new SiteDatabaseConstruct(this, 'SiteDatabase', {
@@ -67,12 +75,26 @@ export class KukanSiteStack extends cdk.Stack implements SiteScopedStack {
       dbAccessSecurityGroup: importSg('DbAccessSg', 'sg/db-access'),
     })
 
+    const albSecurityGroup = importSg('AlbSg', 'sg/alb')
     const site = composeSite(
       this,
       config,
       {
         cluster,
-        albSecurityGroup: importSg('AlbSg', 'sg/alb'),
+        sharedAlb: {
+          listener: elbv2.ApplicationListener.fromApplicationListenerAttributes(
+            this,
+            'SharedAlbListener',
+            { listenerArn: read('alb/listener-arn'), securityGroup: albSecurityGroup }
+          ),
+          dnsName: read('alb/dns-name'),
+          vpcOrigin: cloudfront.VpcOrigin.fromVpcOriginId(
+            this,
+            'SharedVpcOrigin',
+            read('cloudfront/vpc-origin-id')
+          ),
+          priority: resolveAlbPriority(props.site),
+        },
         webSecurityGroup: importSg('WebSg', 'sg/web'),
         workerSecurityGroup: importSg('WorkerSg', 'sg/worker'),
         db: siteDatabase,

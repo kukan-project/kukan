@@ -40,11 +40,34 @@ export function resourceName(scope: Construct, suffix: string): string {
 }
 
 /**
+ * The shared-box values KukanSharedStack publishes and KukanSiteStack reads
+ * (ADR-041 / ADR-049). One list so a key mismatch between writer and reader
+ * fails to compile instead of failing at the site stack's deploy.
+ */
+export type SharedParam =
+  | 'vpc/id'
+  | 'vpc/azs'
+  | 'vpc/public-subnet-ids'
+  | 'vpc/isolated-subnet-ids'
+  | 'sg/alb'
+  | 'sg/web'
+  | 'sg/worker'
+  | 'sg/db-access'
+  | 'ecs/cluster-name'
+  | 'alb/listener-arn'
+  | 'alb/dns-name'
+  | 'cloudfront/vpc-origin-id'
+  | 'db/endpoint'
+  | 'db/port'
+  | 'db/master-secret-arn'
+  | 'search/endpoint'
+
+/**
  * SSM parameter name for a shared-box value, e.g. `/kukan/dev/shared/vpc/id`
  * (ADR-041). Derived from the Stage only — deliberately ignores the site
  * context so SiteStacks read the same names SharedStack writes.
  */
-export function sharedParamName(scope: Construct, suffix: string): string {
+export function sharedParamName(scope: Construct, suffix: SharedParam): string {
   const stageName = cdk.Stage.of(scope)?.stageName ?? 'kukan'
   return `/kukan/${stageName.toLowerCase()}/shared/${suffix}`
 }

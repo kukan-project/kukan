@@ -295,9 +295,11 @@ the start.
 ```
 Dev (Stage)
 ├─ KukanSharedStack        VPC/SG, Aurora/RDS, OpenSearch, the ECS cluster,
+│                          the shared ALB + CloudFront VPC origin (ADR-049),
 │                          the Secrets Manager VPC endpoint, SSM parameters
 └─ KukanSiteStack<Site>×N  the site DB + role (custom resource), S3, SQS,
-                           the web/worker services, CloudFront (+ domain), secrets
+                           the web/worker services, a target group + listener rule
+                           on the shared ALB, CloudFront (+ domain), secrets
 ```
 
 ### Configuration
@@ -341,6 +343,32 @@ prd: {
   the bucket plans live in each SiteStack (vault `kukan-<env>-<site>-backup`). Cluster-level PITR
   cannot "roll back just one site", so complement it with scheduled pg_dump runs for per-site
   restores (the ADR-037 / ADR-041 trade-off)
+- **One ALB is shared per environment** (ADR-049): each site adds a target
+  group + listener rule to the SharedStack's internal ALB, and the shared
+  listener routes on the `X-Kukan-Site: kukan-<env>-<site>` header that the
+  site's CloudFront adds to origin requests (the CloudFront VPC origin is the
+  SharedStack's single one too). Rule priorities are derived from a stable hash
+  of the site name (1000–49999); set `albPriority` (1–999 only — never colliding
+  with the derived band) on the site being added only when `validateSites`
+  reports a collision. CloudFront associates at most 50 distributions with one
+  VPC origin (not adjustable), so **an environment holds at most 50 sites**
+  (synth error beyond that — split into another environment).
+  Adding or removing a site leaves the SharedStack untouched. An environment
+  built before the shared ALB switches each site over when updated SharedStack
+  first, then sites serially (a window of a few minutes of 503s per site; a
+  zero-downtime two-stage path for publicly served sites is not implemented —
+  ADR-049 open item). Cutover notes: (1) site stacks resolve the new SSM
+  parameters at deploy time, so **a site's own `cdk diff` / `cdk deploy` fails
+  until the SharedStack has been updated**; (2) the pipeline cuts sites over
+  from `sites[0]` on, so cut over by hand before the pipeline runs if the order
+  matters; (3) **verify afterwards that the old ALB / VPC origin were deleted** —
+  CloudFormation does not fail the stack on cleanup-phase deletion failures, so
+  delete leftovers by hand.
+  Priorities are a deploy-time resource on the shared listener: **never reassign a
+  deployed site's priority to another deployed site's value** (the first stack
+  updated fails with `PriorityInUse`). Remove a site by `cdk destroy` of its stack
+  first, then dropping it from `sites[]` (the other way round leaves its rule on
+  the shared listener, blocking any new site that resolves to the same value)
 - **If you would rather write it site-first**: `environments.ts` is plain TypeScript, so define a
   site ledger first and write a helper that transposes it into env entries (the native structure is
   env-outermost because the shared box, the AWS account and the pipeline are all per-env)

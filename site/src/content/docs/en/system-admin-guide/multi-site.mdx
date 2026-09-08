@@ -64,6 +64,13 @@ prd: {
   once in the shared stack, buckets per site)
 - Per-site sizing uses `overrides` (only `web` / `worker` / `dbPool` /
   `backup`)
+- One ALB per environment is shared by every site. Each site adds a target
+  group and a listener rule to it, and requests are routed by the
+  `X-Kukan-Site` header the site's CloudFront adds. Rule priorities are derived
+  from the site name, so normally nothing needs to be written; set
+  `albPriority` (1–999) on the site being added only when synth reports a
+  collision. An environment holds at most 50 sites (CloudFront's limit on
+  distributions per VPC origin; beyond that, split into another environment)
 
 Configuration is validated at `cdk synth` (site names, certificate ARNs, the
 shared database connection budget, and more). See the

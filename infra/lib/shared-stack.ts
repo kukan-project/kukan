@@ -1,9 +1,10 @@
 /**
  * KUKAN Shared Stack (ADR-041)
  * The hourly-billed boxes shared by all sites of a multi-site environment:
- * VPC/SGs, database cluster, OpenSearch domain, ECS cluster — plus the
- * SSM parameters SiteStacks read (deliberately no CloudFormation exports,
- * so shared-side changes are never locked by site references).
+ * VPC/SGs, database cluster, OpenSearch domain, ECS cluster, ALB + CloudFront
+ * VPC origin (ADR-049) — plus the SSM parameters SiteStacks read (deliberately
+ * no CloudFormation exports, so shared-side changes are never locked by site
+ * references).
  */
 
 import * as cdk from 'aws-cdk-lib'
@@ -12,8 +13,9 @@ import * as ssm from 'aws-cdk-lib/aws-ssm'
 import type { Construct } from 'constructs'
 import { loadConfig, type EnvironmentConfig } from './config.js'
 import { composeShared } from './composition.js'
-import { sharedParamName } from './naming.js'
+import { sharedParamName, type SharedParam } from './naming.js'
 import { BackupConstruct } from './constructs/backup.js'
+import { SharedAlbConstruct } from './constructs/shared-alb.js'
 
 export interface KukanSharedStackProps extends cdk.StackProps {
   envConfig: EnvironmentConfig
@@ -29,6 +31,13 @@ export class KukanSharedStack extends cdk.Stack {
 
     const shared = composeShared(this, config)
     const vpc = shared.network.vpc
+
+    // One ALB + CloudFront VPC origin for every site (ADR-049). Sites add their
+    // target group and listener rule from their own stack.
+    const alb = new SharedAlbConstruct(this, 'SharedAlb', {
+      vpc,
+      albSecurityGroup: shared.network.albSecurityGroup,
+    })
 
     // DB half of AWS Backup (ADR-037): one plan here — a per-site plan would
     // snapshot the shared cluster once per site. Buckets back up per site.
@@ -57,7 +66,7 @@ export class KukanSharedStack extends cdk.Stack {
       subnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
     })
 
-    const param = (suffix: string, value: string) =>
+    const param = (suffix: SharedParam, value: string) =>
       new ssm.StringParameter(this, `Param${suffix.replaceAll(/[/-]/g, '')}`, {
         parameterName: sharedParamName(this, suffix),
         stringValue: value,
@@ -84,6 +93,9 @@ export class KukanSharedStack extends cdk.Stack {
     param('sg/worker', shared.network.workerSecurityGroup.securityGroupId)
     param('sg/db-access', dbAccessSg.securityGroupId)
     param('ecs/cluster-name', shared.cluster.clusterName)
+    param('alb/listener-arn', alb.listener.listenerArn)
+    param('alb/dns-name', alb.loadBalancer.loadBalancerDnsName)
+    param('cloudfront/vpc-origin-id', alb.vpcOrigin.vpcOriginId)
     param('db/endpoint', shared.database.endpoint)
     param('db/port', cdk.Tokenization.stringifyNumber(shared.database.port))
     param('db/master-secret-arn', shared.database.secret.secretArn)
