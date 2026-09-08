@@ -6,6 +6,28 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.24.0] - 2026-09-08
+
+**Highlights**
+
+- Multi-site environments now share one load balancer. Each site used to carry its own internal ALB — about $18 a month, roughly 40% of what adding a site costs in fixed infrastructure — even though the ALB is exactly the kind of hourly-billed box the multi-site design shares. The environment now runs a single ALB and a single CloudFront VPC origin; every site keeps its own target group, listener rule, CloudFront distribution and edge gate, and requests are routed by a header the site's distribution adds on the way to the origin. Two sites save $18 a month, five save $71, ten save $160. Single-site deployments are untouched (#552).
+- Deploying this release to an existing multi-site environment cuts each site over from its own ALB to the shared one, with a window of a few minutes of 503s per site while the CloudFront origin switches. The shared stack rolls out first and changes nothing for running sites; sites then follow one at a time. Afterwards, check that each site's old ALB and VPC origin were actually deleted — CloudFormation does not fail a stack when a cleanup-phase deletion fails, so a leftover ALB would keep billing quietly (#552).
+
+**Features**
+
+- feat(infra): share one ALB across sites with header routing (ADR-049) (#552) — the shared stack creates the internal ALB, a listener whose default answer is a plain 404, and one CloudFront VPC origin, publishing all three through SSM parameters that site stacks resolve at deploy time. A site stack adds a target group and a listener rule matching `X-Kukan-Site: kukan-<env>-<site>`, the header its distribution sends as an origin custom header; origin request policies, cache policies and the edge functions are unchanged, and the host header is not involved, so sites without a custom domain route the same way. Rule priorities are derived from a stable hash of the site name (1000–49999) so that adding, removing or reordering sites never renumbers the others; on the rare collision, synth stops and asks for an explicit `albPriority` (1–999) on the site being added. Because CloudFront associates at most 50 distributions with one VPC origin, an environment now holds at most 50 sites — synth enforces it. Cutting sites over by hand needs `cdk deploy … --exclusively`; without it CDK deploys the site's dependencies first, which is the previous site in the chain.
+
+---
+
+**ハイライト**
+
+- マルチサイト環境のロードバランサーが 1 本になりました。これまでは各サイトが専用の内部 ALB を持っており、月額約 $18、サイトを 1 つ増やしたときの固定費の約 4 割を占めていました。ALB はマルチサイト設計が共有対象とする「時間課金の箱」そのものです。環境全体で ALB と CloudFront VPC origin を 1 つずつ持ち、各サイトは自分のターゲットグループ・リスナールール・CloudFront ディストリビューション・エッジゲートを従来どおり保ちます。振り分けは、サイトのディストリビューションがオリジンへ向かう際に付けるヘッダーで行います。2 サイトで月 $18、5 サイトで $71、10 サイトで $160 の削減になります。シングルサイト構成には変更ありません（#552）。
+- 既存のマルチサイト環境にこのリリースをデプロイすると、各サイトが専用 ALB から共有 ALB へ切り替わります。CloudFront のオリジンが切り替わる間、サイトごとに数分間 503 を返す窓があります。共有スタックが先に展開され、稼働中のサイトには何も起きません。その後サイトが 1 つずつ切り替わります。切替後は、各サイトの旧 ALB と VPC origin が実際に削除されたことを確認してください。CloudFormation はクリーンアップ段階の削除失敗をスタックの失敗にしないため、残った ALB は静かに課金を続けます（#552）。
+
+**新機能**
+
+- feat(infra): 共有 ALB とヘッダールーティングによるマルチサイトの ALB 統合（ADR-049） (#552) — 共有スタックが内部 ALB、既定応答が素の 404 のリスナー、CloudFront VPC origin を 1 つずつ作り、3 つを SSM パラメータで公開します。サイトスタックはデプロイ時にそれを解決し、ターゲットグループと `X-Kukan-Site: kukan-<env>-<site>` に一致するリスナールールを追加します。このヘッダーはサイトのディストリビューションがオリジンカスタムヘッダーとして送るものです。オリジンリクエストポリシー・キャッシュポリシー・エッジ関数は変更なく、Host ヘッダーも使わないため、独自ドメインを持たないサイトも同じ経路で振り分けられます。ルールの優先度はサイト名の安定ハッシュ（1000–49999）から導くため、サイトの追加・削除・並べ替えで他のサイトの番号は変わりません。稀に衝突した場合は synth が停止し、追加したサイトに明示の `albPriority`（1–999）を求めます。CloudFront は 1 つの VPC origin に最大 50 のディストリビューションしか関連付けられないため、1 環境のサイト数は 50 が上限になり、synth がこれを強制します。手動で切り替える場合は `cdk deploy … --exclusively` が必要です。付けないと CDK は依存先、つまりチェーン上の前のサイトを先にデプロイします
+
 ## [0.23.0] - 2026-09-08
 
 **Highlights**
