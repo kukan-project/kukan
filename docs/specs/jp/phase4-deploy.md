@@ -583,6 +583,38 @@ Worker 起動時にマイグレーションを自動実行:
 >
 > - 組織 SCP が MUTABLE を許さない場合は、同一コミットの dev/prd デプロイを**直列化**する。
 
+> [!NOTE]
+> **アセット用 ECR リポジトリの保持ルール（KukanStack が適用）**
+> CDK bootstrap が作るライフサイクルポリシーは **untagged イメージ**しか期限切れにしないが、
+> `DockerImageAsset` は全イメージにビルドハッシュのタグを打つため、**何も期限切れにならず**
+> リポジトリは無限に増える（実測例: 5.5 か月で 348 イメージ / 33.8 GB）。
+>
+> リポジトリは `CDKToolkit` スタックの所有で、アプリ側の CDK コードにライフサイクルルールは
+> 書けない。そこで KukanStack（マルチサイトでは KukanSharedStack）がカスタムリソースから
+> `ecr:PutLifecyclePolicy` を呼び、既定の untagged ルールに加えて**直近 N 件を残し、それより
+> 古いものを期限切れにする**ルールを付ける（`EcrAssetRetentionConstruct`）。N は
+> `environments.ts` の `ecrImageRetention`（省略時 100 ≒ 毎日デプロイして約 2 か月分）。
+> 同一アカウント・リージョンの環境はリポジトリを共有するため、同じ値にする（違えば synth
+> エラー）。bootstrap テンプレートは変更しない。
+>
+> - **安全性の根拠**: パイプラインは毎回すべてのサービスを再デプロイするため、稼働中イメージは
+>   常に最新側に固まる（前掲の環境では、参照中 7 件がすべて最新 8 件に収まっていた）。一部の
+>   サービスだけ長期間再デプロイしない運用では、値を下げる前に ECR のプレビュー（非破壊）で
+>   稼働中イメージが削除対象に入らないことを確認する: `cdk synth` の出力にある
+>   `Custom::KukanEcrAssetRetention` の `lifecyclePolicyText` を
+>   `aws ecr start-lifecycle-policy-preview --repository-name <repo> --lifecycle-policy-text file://policy.json`
+>   に渡し、`get-lifecycle-policy-preview` で結果を見る。
+> - **再適用**: 再 bootstrap でポリシーが既定に戻るのは、bootstrap テンプレートのリポジトリ定義が
+>   変わった時だけで、その変更は必ず bootstrap バージョンを上げる。カスタムリソースの物理 ID に
+>   デプロイ時に SSM から解決される `BootstrapVersion` を含めているため、そのような bootstrap の
+>   後の最初のデプロイで再適用される（値の変更時も同様。それ以外のデプロイでは実行されない）。
+> - **ポリシー全文は KUKAN が所有**: `PutLifecyclePolicy` は全文置換なので、既定の untagged ルールも
+>   コンストラクト側に書いてある。CDK CLI 同梱の bootstrap テンプレートと一致することをテストで
+>   固定しており、上流が既定ルールを変えると CDK 更新時にテストが落ちて追従を促す。
+> - `ecrImageRetention` は `environments.ts` 専用（`-c` コンテキストでは上書きできない）。
+>   アカウント・リージョンで共有する値のため、環境間の一致を synth 時に検証する。
+> - **destroy 時**: ポリシーは残す（同一アカウントの他環境の分を消さないため）。
+
 | モード            | コマンド                                   | 用途                                         |
 | ----------------- | ------------------------------------------ | -------------------------------------------- |
 | **A. Standalone** | `npx cdk deploy -c env=<name> '<Name>/**'` | 初回セットアップ・ローカルからの手動デプロイ |

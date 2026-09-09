@@ -175,6 +175,12 @@ export interface EnvironmentConfig {
    */
   deployConcurrency?: number
   /**
+   * Images kept in the CDK bootstrap container-assets repository (newest
+   * first); older ones expire. Environments in one account/region share the
+   * repository, so give them the same value. Omit → 100.
+   */
+  ecrImageRetention?: number
+  /**
    * Sites hosted by this environment (ADR-041). Presence (non-empty) opts the
    * environment into the SharedStack/SiteStack split; absence keeps the
    * all-in-one KukanStack with unchanged logical IDs. Existing single-site
@@ -288,15 +294,50 @@ const SITE_SCOPED_FIELDS = Object.keys({
  *  Two costs only minSize new tasks' connections per extra site (see the budget). */
 export const DEFAULT_DEPLOY_CONCURRENCY = 2
 
+/** Images kept in the container-assets repository when `ecrImageRetention` is omitted:
+ *  roughly two months of daily deploys, and far beyond what running tasks reference. */
+export const DEFAULT_ECR_IMAGE_RETENTION = 100
+
+function positiveInt(field: string, value: number): number {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`${field} must be an integer of 1 or more (got ${String(value)})`)
+  }
+  return value
+}
+
+/** Validated `ecrImageRetention` (images kept, ≥ 1). */
+export function resolveEcrImageRetention(
+  env: Pick<EnvironmentConfig, 'ecrImageRetention'>
+): number {
+  return positiveInt('ecrImageRetention', env.ecrImageRetention ?? DEFAULT_ECR_IMAGE_RETENTION)
+}
+
+/**
+ * Environments in one account/region share the bootstrap repository, so their
+ * `ecrImageRetention` must agree — otherwise the last deploy silently wins.
+ */
+export function validateEcrImageRetention(environments: Record<string, EnvironmentConfig>): void {
+  const seen = new Map<string, { name: string; keep: number }>()
+  for (const [name, env] of Object.entries(environments)) {
+    const { account, region } = resolveEnv(env)
+    const key = `${account}/${region}`
+    const keep = resolveEcrImageRetention(env)
+    const prior = seen.get(key)
+    if (prior && prior.keep !== keep) {
+      throw new Error(
+        `ecrImageRetention differs between "${prior.name}" (${prior.keep}) and "${name}" (${keep}), ` +
+          `which share the bootstrap ECR repository in ${key}`
+      )
+    }
+    seen.set(key, { name, keep })
+  }
+}
+
 /** Validated `deployConcurrency` (sites per wave after the canary, ≥ 1). */
 export function resolveDeployConcurrency(
   env: Pick<EnvironmentConfig, 'deployConcurrency'>
 ): number {
-  const value = env.deployConcurrency ?? DEFAULT_DEPLOY_CONCURRENCY
-  if (!Number.isInteger(value) || value < 1) {
-    throw new Error(`deployConcurrency must be an integer of 1 or more (got ${String(value)})`)
-  }
-  return value
+  return positiveInt('deployConcurrency', env.deployConcurrency ?? DEFAULT_DEPLOY_CONCURRENCY)
 }
 
 /** RDS instance class shape, `db.<family>.<size>` — the DatabaseConstruct strips
@@ -831,6 +872,8 @@ export interface KukanConfig extends ScaleComputed {
   /** undefined → AI disabled. `embeddingModel` / `completionModels` are resolved
    *  (never undefined here). */
   bedrock?: BedrockConfig & { embeddingModel: string; completionModels: string[] }
+  /** Images kept in the bootstrap container-assets repository (account/region-wide). */
+  ecrImageRetention: number
 }
 
 const SCALE_DEFAULTS: Record<Scale, ScaleComputed> = {
@@ -940,6 +983,9 @@ export function loadConfig(
   // undefined → CDK auto-naming (globally unique). ADR-031.
   const bucketName = ctx<string>('bucketName') ?? env.bucketName
   const enableGa4DataApi = ctx<boolean>('enableGa4DataApi') ?? env.enableGa4DataApi ?? false
+  // env-only (no ctx): shared by every environment in the account/region and
+  // checked for agreement across environments.ts (validateEcrImageRetention).
+  const ecrImageRetention = resolveEcrImageRetention(env)
   // env-only (no ctx): structured value, awkward to pass via -c. Default ON —
   // hybrid search is the flagship behaviour and Titan v2 costs are usage-based.
   const bedrockEnv = env.bedrock ?? {}
@@ -991,6 +1037,7 @@ export function loadConfig(
     bucketName,
     enableGa4DataApi,
     bedrock,
+    ecrImageRetention,
     ...computed,
   }
 }

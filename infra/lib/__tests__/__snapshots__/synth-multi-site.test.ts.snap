@@ -215,6 +215,105 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
       "Type": "AWS::RDS::DBInstance",
       "UpdateReplacePolicy": "Delete",
     },
+    "EcrAssetRetentionPolicyC14B6DF7": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "EcrAssetRetentionPolicyCustomResourcePolicy19FACB35",
+      ],
+      "Properties": {
+        "Create": {
+          "Fn::Join": [
+            "",
+            [
+              "{"service":"ECR","action":"putLifecyclePolicy","parameters":{"repositoryName":"",
+              {
+                "Fn::Sub": [
+                  "cdk-\${Qualifier}-container-assets-\${AWS::AccountId}-\${AWS::Region}",
+                  {
+                    "Qualifier": "hnb659fds",
+                  },
+                ],
+              },
+              "","lifecyclePolicyText":"{\\"rules\\":[{\\"rulePriority\\":1,\\"description\\":\\"Untagged images should not exist, but expire any older than one year\\",\\"selection\\":{\\"tagStatus\\":\\"untagged\\",\\"countType\\":\\"sinceImagePushed\\",\\"countUnit\\":\\"days\\",\\"countNumber\\":365},\\"action\\":{\\"type\\":\\"expire\\"}},{\\"rulePriority\\":2,\\"description\\":\\"Keep the most recent 100 asset images\\",\\"selection\\":{\\"tagStatus\\":\\"any\\",\\"countType\\":\\"imageCountMoreThan\\",\\"countNumber\\":100},\\"action\\":{\\"type\\":\\"expire\\"}}]}"},"physicalResourceId":{"id":"ecr-asset-retention:100:bootstrap-",
+              {
+                "Ref": "BootstrapVersion",
+              },
+              ""}}",
+            ],
+          ],
+        },
+        "InstallLatestAwsSdk": false,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "AWS679f53fac002430cb0da5b7982bd22872D164C4C",
+            "Arn",
+          ],
+        },
+        "Update": {
+          "Fn::Join": [
+            "",
+            [
+              "{"service":"ECR","action":"putLifecyclePolicy","parameters":{"repositoryName":"",
+              {
+                "Fn::Sub": [
+                  "cdk-\${Qualifier}-container-assets-\${AWS::AccountId}-\${AWS::Region}",
+                  {
+                    "Qualifier": "hnb659fds",
+                  },
+                ],
+              },
+              "","lifecyclePolicyText":"{\\"rules\\":[{\\"rulePriority\\":1,\\"description\\":\\"Untagged images should not exist, but expire any older than one year\\",\\"selection\\":{\\"tagStatus\\":\\"untagged\\",\\"countType\\":\\"sinceImagePushed\\",\\"countUnit\\":\\"days\\",\\"countNumber\\":365},\\"action\\":{\\"type\\":\\"expire\\"}},{\\"rulePriority\\":2,\\"description\\":\\"Keep the most recent 100 asset images\\",\\"selection\\":{\\"tagStatus\\":\\"any\\",\\"countType\\":\\"imageCountMoreThan\\",\\"countNumber\\":100},\\"action\\":{\\"type\\":\\"expire\\"}}]}"},"physicalResourceId":{"id":"ecr-asset-retention:100:bootstrap-",
+              {
+                "Ref": "BootstrapVersion",
+              },
+              ""}}",
+            ],
+          ],
+        },
+      },
+      "Type": "Custom::KukanEcrAssetRetention",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "EcrAssetRetentionPolicyCustomResourcePolicy19FACB35": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "ecr:PutLifecyclePolicy",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":ecr:ap-northeast-1:123456789012:repository/",
+                    {
+                      "Fn::Sub": [
+                        "cdk-\${Qualifier}-container-assets-\${AWS::AccountId}-\${AWS::Region}",
+                        {
+                          "Qualifier": "hnb659fds",
+                        },
+                      ],
+                    },
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "EcrAssetRetentionPolicyCustomResourcePolicy19FACB35",
+        "Roles": [
+          {
+            "Ref": "AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
     "NetworkAlbSg193DDF6A": {
       "Properties": {
         "GroupDescription": "Internal ALB for web service (CloudFront VPC origin)",

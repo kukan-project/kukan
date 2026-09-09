@@ -24,6 +24,7 @@ import type { Construct } from 'constructs'
 import type { KukanConfig } from './config.js'
 import { envPrefix } from './naming.js'
 import { NetworkConstruct } from './constructs/network.js'
+import { EcrAssetRetentionConstruct } from './constructs/ecr-asset-retention.js'
 import { DatabaseConstruct, type DbAccess } from './constructs/database.js'
 import { StorageConstruct } from './constructs/storage.js'
 import { QueueConstruct } from './constructs/queue.js'
@@ -107,6 +108,10 @@ export function composeShared(scope: Construct, config: KukanConfig): SharedReso
     vpc: network.vpc,
     clusterName: envPrefix(scope),
   })
+
+  // Not a box: an account/region-wide side effect (lifecycle policy on the
+  // bootstrap container-assets repository), applied once per environment.
+  new EcrAssetRetentionConstruct(scope, 'EcrAssetRetention', { keep: config.ecrImageRetention })
 
   return { network, database, search, cluster }
 }

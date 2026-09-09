@@ -11,6 +11,7 @@
 import { describe, it, expect } from 'vitest'
 import { Match } from 'aws-cdk-lib/assertions'
 import { normalize, stackTemplate, synthStage } from './helpers/synth.js'
+import { validateEcrImageRetention } from '../config.js'
 
 describe('minimal dev (small / rds / no OpenSearch / no AI)', () => {
   const stage = synthStage({
@@ -32,6 +33,27 @@ describe('minimal dev (small / rds / no OpenSearch / no AI)', () => {
     template.hasResourceProperties('AWS::ECS::Service', { ServiceName: 'kukan-dev-web' })
     template.hasResourceProperties('AWS::ECS::Service', { ServiceName: 'kukan-dev-worker' })
     template.hasResourceProperties('AWS::RDS::DBInstance', { DBInstanceIdentifier: 'kukan-dev' })
+  })
+
+  it('puts the retention rule on the bootstrap container-assets repository', () => {
+    // The SDK call payload is an Fn::Join because the repository name is a token.
+    template.hasResourceProperties('Custom::KukanEcrAssetRetention', {
+      Update: {
+        'Fn::Join': [
+          '',
+          Match.arrayWith([
+            {
+              'Fn::Sub': [
+                'cdk-${Qualifier}-container-assets-${AWS::AccountId}-${AWS::Region}',
+                { Qualifier: 'hnb659fds' },
+              ],
+            },
+            Match.stringLikeRegexp('countNumber.*:100.*ecr-asset-retention:100:bootstrap-'),
+            { Ref: 'BootstrapVersion' },
+          ]),
+        ],
+      },
+    })
   })
 })
 
@@ -156,5 +178,30 @@ describe('blank edge ARNs', () => {
     expect(() => synthStage({ domainName: 'data.example.jp', certificateArn: '' })).toThrow(
       /blank certificateArn/
     )
+  })
+})
+
+describe('ecrImageRetention', () => {
+  it('rejects a non-positive count at synth', () => {
+    expect(() => synthStage({ ecrImageRetention: 0 })).toThrow(/ecrImageRetention must be/)
+  })
+
+  it('rejects environments that share a bootstrap repository but disagree on the count', () => {
+    expect(() =>
+      validateEcrImageRetention({
+        dev: { account: '123456789012', ecrImageRetention: 100 },
+        prd: { account: '123456789012', ecrImageRetention: 300 },
+      })
+    ).toThrow(/differs between "dev" \(100\) and "prd" \(300\)/)
+  })
+
+  it('allows different counts in different regions or accounts', () => {
+    expect(() =>
+      validateEcrImageRetention({
+        dev: { account: '123456789012', ecrImageRetention: 100 },
+        prd: { account: '123456789012', region: 'us-west-2', ecrImageRetention: 300 },
+        other: { account: '210987654321', ecrImageRetention: 50 },
+      })
+    ).not.toThrow()
   })
 })

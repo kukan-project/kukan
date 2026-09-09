@@ -610,6 +610,42 @@ automatically by CDK's `DockerImageAsset`, so no manual `docker build` / `docker
 > - If an organizational SCP forbids MUTABLE, **serialize** the dev/prd deployments of the same
 >   commit.
 
+> [!NOTE]
+> **Retention rule on the asset ECR repository (applied by KukanStack)**
+> The lifecycle policy created by CDK bootstrap expires only **untagged** images, but
+> `DockerImageAsset` tags every image with its build hash — so **nothing ever expires** and the
+> repository grows without bound (one measured deployment: 348 images / 33.8 GB in 5.5 months).
+>
+> The repository belongs to the `CDKToolkit` stack, so app-side CDK code cannot declare lifecycle
+> rules on it. Instead KukanStack (KukanSharedStack in multi-site) calls `ecr:PutLifecyclePolicy`
+> from a custom resource, adding to the stock untagged rule a rule that **keeps the most recent N
+> images and expires the rest** (`EcrAssetRetentionConstruct`). N is `ecrImageRetention` in
+> `environments.ts` (default 100 ≈ two months of daily deploys). Environments in the same
+> account/region share the repository, so give them the same value (synth fails otherwise). The
+> bootstrap template is not modified.
+>
+> - **Why this is safe**: the pipeline redeploys every service on each run, so the images in use
+>   are always among the most recently pushed (in that deployment, all 7 referenced images were
+>   within the newest 8). Where some services go a long time without a redeploy, confirm with the
+>   ECR preview (non-destructive) that no in-use image is in the deletion set before lowering the
+>   value: take `lifecyclePolicyText` from `Custom::KukanEcrAssetRetention` in the `cdk synth` output,
+>   pass it to
+>   `aws ecr start-lifecycle-policy-preview --repository-name <repo> --lifecycle-policy-text file://policy.json`,
+>   and read the result with `get-lifecycle-policy-preview`.
+> - **Re-application**: a re-bootstrap resets the policy only when the bootstrap template's
+>   repository definition changed, and every such change bumps the bootstrap version. The custom
+>   resource's physical id includes `BootstrapVersion`, resolved from SSM at deploy time, so the
+>   first deploy after such a bootstrap re-applies the policy (likewise when the value changes;
+>   other deploys do not run it).
+> - **KUKAN owns the full policy text**: `PutLifecyclePolicy` replaces the whole document, so the
+>   stock untagged rule is restated in the construct. A test pins it to the bootstrap template
+>   shipped with the installed CDK CLI, so an upstream change fails the test on a CDK upgrade
+>   instead of being silently reverted.
+> - `ecrImageRetention` is `environments.ts`-only (no `-c` context override): the value is shared
+>   per account/region, and agreement across environments is checked at synth.
+> - **On destroy**: the policy is left in place (so one environment's teardown never strips another
+>   environment's retention in the same account).
+
 | Mode              | Command                                    | Purpose                                             |
 | ----------------- | ------------------------------------------ | --------------------------------------------------- |
 | **A. Standalone** | `npx cdk deploy -c env=<name> '<Name>/**'` | Initial setup, manual deployment from a workstation |
