@@ -6,6 +6,28 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.26.0] - 2026-09-09
+
+**Highlights**
+
+- The container-image repository that CDK bootstrap creates for deployments no longer grows forever. Its stock lifecycle policy expires only untagged images, but every image CDK pushes is tagged with its build hash, so nothing ever expired — one deployment had accumulated 348 images (33.8 GB) in five and a half months. KukanStack now installs a retention rule on that repository that keeps the most recent 100 images and expires the rest; the count is `ecrImageRetention` in `environments.ts`. No bootstrap change or manual step is needed: the policy rolls out with the next deploy (#558).
+- The rule is safe for the pipeline's deploy pattern — every service is redeployed on each run, so the images in use are always among the newest — and the system administrator guide documents the non-destructive ECR preview to run before lowering the count. Environments that share an account and region share the repository, so synth fails if they disagree on the count, and tearing one environment down never removes the retention for the others (#558).
+
+**Features**
+
+- feat(infra): add ECR image retention for the bootstrap asset repository (#558) — an `AwsCustomResource` calls `ecr:PutLifecyclePolicy` on the bootstrap container-assets repository from `composeShared`, once per environment, restating the stock untagged rule (pinned by a test to the bootstrap template shipped with the installed CDK CLI) and adding an `imageCountMoreThan` rule. The custom resource's physical id includes the deployed bootstrap version, so a re-bootstrap that reset the policy is undone by the first deploy after it. New `ecrImageRetention` environment field (default 100, `environments.ts` only), validated at synth for agreement across environments in the same account/region.
+
+---
+
+**ハイライト**
+
+- CDK bootstrap がデプロイ用に作るコンテナイメージのリポジトリが、無限に増え続けなくなりました。既定のライフサイクルポリシーは untagged イメージしか期限切れにしませんが、CDK が push するイメージはすべてビルドハッシュのタグ付きなので、何も期限切れになっていませんでした — ある環境では 5 か月半で 348 イメージ（33.8 GB）に達していました。KukanStack がこのリポジトリに「直近 100 件を残し、それより古いものを期限切れにする」保持ルールを設定します。件数は `environments.ts` の `ecrImageRetention` です。bootstrap の変更も手作業も不要で、次のデプロイでポリシーが配られます（#558）。
+- このルールはパイプラインのデプロイ方式に対して安全です — 毎回すべてのサービスを再デプロイするため、稼働中のイメージは常に最新側に固まります。件数を下げる前に実行する ECR のプレビュー（非破壊）の手順をシステム管理者ガイドに記載しました。同一アカウント・リージョンの環境はリポジトリを共有するため、件数が食い違うと synth が失敗します。また、環境を 1 つ削除しても他の環境の保持ルールは消えません（#558）。
+
+**新機能**
+
+- feat(infra): bootstrap のアセット用リポジトリに ECR イメージ保持ルールを追加 (#558) — `composeShared` から環境ごとに一度、`AwsCustomResource` が bootstrap のコンテナアセット用リポジトリに `ecr:PutLifecyclePolicy` を呼びます。既定の untagged ルールを再掲し（インストール済み CDK CLI 同梱の bootstrap テンプレートと一致することをテストで固定）、`imageCountMoreThan` ルールを追加します。カスタムリソースの物理 ID にデプロイ時の bootstrap バージョンを含めるため、再 bootstrap でポリシーが戻っても、その後の最初のデプロイで再適用されます。新しい環境フィールド `ecrImageRetention`（既定 100、`environments.ts` 専用）は、同一アカウント・リージョンの環境間で一致することを synth 時に検証します。
+
 ## [0.25.0] - 2026-09-08
 
 **Highlights**
