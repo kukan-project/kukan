@@ -6,6 +6,30 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.27.0] - 2026-09-10
+
+**Highlights**
+
+- Resources in a dataset can now be grouped under section headings. A resource carries one optional label, `section`; on the dataset page, adjacent resources with the same label are drawn under one heading, and a `/` in the label nests headings up to three levels (`2024/Tokyo` shows "Tokyo" under "2024"). Sections are a display grouping only — the resource order stays the single CKAN-compatible `position`, and who can see a resource does not change (#560).
+- In the dashboard a heading is a divider you drag into place: "Add section" names an empty heading at the end, dropping it takes the resources below it down to the next heading, moving it down hands the resources it passes back to the section above, and a resource dragged between rows joins the section of the row above. Rename and dissolve sit on the heading. An empty heading is kept until a resource enters it, and "Save order" commits sections together with the order (#560).
+- Section names count in search. Both the OpenSearch and the PostgreSQL search match them (below name and description in weight), the dataset embedding text names each section once, and the search results card shows a matched resource as `section › name` with the match marked — resources that matched on their section alone fold into one row per section with a count, so a heading over thirty files is one line. AI clients see the same headings over MCP: `get_dataset` lists resources under indented headings and `get_resource` carries a `Section:` line (#560).
+
+**Features**
+
+- feat(resources): add sections to the resource list (#560) — new nullable `section` column and migration; `section` on `POST /packages/{id}/resources` and `PUT /resources/{id}` (normalized: split on `/`, segments trimmed, empties dropped; absent keeps the label, `null` clears it) and passed through the CKAN-compatible read; `sections` on `PUT /packages/{id}/resources/reorder` to relabel every resource in the same transaction as the order. A section name labels one contiguous run per dataset: a write that would put the same name in two separated places is refused with `400`, checked under the package's position lock. The search index maps the new field on the first write after upgrade, so no reindex is needed for the field itself; the resource documents of existing datasets carry their sections as they are next edited or reordered. Documentation for editors, visitors, and the API in both languages, and ADR-050 records the design.
+
+---
+
+**ハイライト**
+
+- データセットのリソースをセクション見出しでまとめられるようになりました。リソースは任意のラベル `section` を 1 つ持ち、データセットページでは同じラベルが連続するリソースが 1 つの見出しの下に並びます。ラベルに `/` を含めると見出しが 3 階層まで入れ子になります（`2024/東京都` は「2024」の下に「東京都」）。セクションは表示上のまとまりで、並び順は CKAN 互換の `position` 1 本のまま、公開範囲も変わりません（#560）。
+- 管理画面では見出しは「区切り線」で、ドラッグで置きます。「セクションを追加」で末尾に空の見出しができ、置いた位置から次の見出しの手前までのリソースがそのセクションに入ります。見出しを下げると通り過ぎたリソースは上のセクションに戻り、リソースを行の間にドラッグすると直上の行のセクションに入ります。名前の変更と解除は見出しの上で行えます。空の見出しはリソースが入るまで保持され、「並び順を保存」で並び順と一緒にセクションが確定します（#560）。
+- セクション名は検索に効きます。OpenSearch でも PostgreSQL 検索でも一致し（名前・説明より軽い重み）、データセットの埋め込みテキストにもセクション名が 1 回ずつ入ります。検索結果カードでは一致したリソースを `セクション › 名前` で表示し、一致箇所をハイライトします。セクション名だけで一致したリソースはセクションごとに 1 行（先頭 + 件数）に畳まれるので、30 件のファイルを抱える見出しも 1 行です。AI クライアントも MCP で同じ見出しを読めます — `get_dataset` は字下げした見出しの下にリソースを並べ、`get_resource` は `Section:` 行を持ちます（#560）。
+
+**新機能**
+
+- feat(resources): リソース一覧にセクションを追加 (#560) — nullable の `section` 列とマイグレーションを追加。`POST /packages/{id}/resources` と `PUT /resources/{id}` の `section`（正規化: `/` で分割して各セグメントの前後空白を除去、空セグメントを捨てる。省略時は保持、`null` で解除）は CKAN 互換の読み出しにもそのまま通ります。`PUT /packages/{id}/resources/reorder` の `sections` で、並び順と同じトランザクションで全リソースのラベルを付け替えられます。セクション名はデータセット内で連続した 1 区間にしか付けられず、同じ名前を離れた 2 箇所に置く書き込みはパッケージの position ロックの中で検証して `400` になります。検索インデックスには更新後の最初の書き込みで新しいフィールドが追加されるため、フィールド自体のための再構築は不要です。既存データセットのリソース文書は、次に編集・並べ替えしたときにセクションを持ちます。編集者・利用者・API の文書を日英で追加し、設計は ADR-050 に記録しました。
+
 ## [0.26.0] - 2026-09-09
 
 **Highlights**
