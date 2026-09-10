@@ -631,6 +631,64 @@ describe('executeInterpret', () => {
     expect(result?.schema?.columns.map((c) => c.name)).toEqual(['name', 'age', 'city', 'country'])
   })
 
+  it('reads a CSV that carries two byte-order marks', async () => {
+    // `read_csv` strips one BOM; the second stays on the first column's name,
+    // which `DESCRIBE` then reported without it, and the trim failed to bind
+    // the column. Excel round trips produce these.
+    mockStorageDownload('\uFEFF\uFEFF区分,金額\nA,1\nB,2\n')
+
+    const result = await executeInterpret(
+      'res-bom',
+      'pkg-1',
+      version('resources/pkg-1/res-bom'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-bom', 'parquet'))
+    expect(result?.schema?.rowCount).toBe(2)
+    // Bare, so the column matches its own name in a version with one BOM.
+    expect(result?.schema?.columns.map((c) => c.name)).toEqual(['区分', '金額'])
+  })
+
+  it('keeps the mark when the bare name is taken under DuckDB case folding', async () => {
+    // Quoted or not, DuckDB compares identifiers without ASCII case, so
+    // renaming to `foo` beside `FOO` is a catalog error that would fail the
+    // whole interpretation.
+    mockStorageDownload('\uFEFF\uFEFFfoo,FOO\n1,2\n')
+
+    const result = await executeInterpret(
+      'res-bom3',
+      'pkg-1',
+      version('resources/pkg-1/res-bom3'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.schema?.rowCount).toBe(1)
+    expect(result?.schema?.columns.map((c) => c.name)).toEqual(['\uFEFFfoo', 'FOO'])
+  })
+
+  it('re-reads an oversize integer column under its marked name', async () => {
+    // The `types` map on the re-read is keyed by the name the reader gave,
+    // mark included; stripping it first would name a column the file lacks.
+    mockStorageDownload('\uFEFF\uFEFFcode,金額\n99999999999999999999,1\n1,2\n')
+
+    const result = await executeInterpret(
+      'res-bom2',
+      'pkg-1',
+      version('resources/pkg-1/res-bom2'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.schema?.rowCount).toBe(2)
+    expect(result?.schema?.columns.map((c) => [c.name, c.type])).toEqual([
+      ['code', 'string'],
+      ['金額', 'integer'],
+    ])
+  })
+
   it('should generate ZIP manifest and upload as JSON', async () => {
     const zip = new JSZip()
     zip.file('data.csv', 'a,b\n1,2')

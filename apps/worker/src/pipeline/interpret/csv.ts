@@ -160,6 +160,9 @@ export async function interpretCsv(
       await conn.run(`CREATE OR REPLACE TABLE t AS SELECT * FROM read_csv(${opts})`)
       columns = await describe(conn)
     }
+    // After the last read: the `types` keys above have to be the names the
+    // reader gave, marks and all.
+    columns = await stripByteOrderMark(conn, columns)
 
     // Before the trim, because this is about what the *reader* did: which lines
     // it refused, and whether all of them read as sign-offs.
@@ -218,14 +221,48 @@ export async function interpretCsv(
   }
 }
 
+/**
+ * The table's columns, as the binding names them in a result rather than as
+ * `DESCRIBE` reports them.
+ *
+ * The two differ: the binding decodes VARCHAR *values* through a decoder that
+ * drops a leading U+FEFF, so a `DESCRIBE` row for a column whose name starts
+ * with one comes back without it, and every identifier built from that name
+ * binds to a column the table does not have. Result metadata comes through a
+ * different path and keeps the name whole.
+ */
 async function describe(conn: DuckDBConnection): Promise<Column[]> {
-  const reader = await conn.runAndReadAll('DESCRIBE t')
-  return (reader.getRowObjectsJson() as { column_name: string; column_type: string }[]).map(
-    (r) => ({
-      name: r.column_name,
-      duckType: r.column_type,
-    })
+  const reader = await conn.runAndReadAll('SELECT * FROM t LIMIT 0')
+  const types = reader.columnTypes()
+  return reader.columnNames().map((name, i) => ({ name, duckType: String(types[i]) }))
+}
+
+const asciiLower = (s: string) => s.replace(/[A-Z]+/g, (m) => m.toLowerCase())
+
+/**
+ * Take the byte-order marks off the first column's name.
+ *
+ * `read_csv` strips one BOM from the file. A file that carries two — a round
+ * trip through Excel produces them — keeps the second in its first column's
+ * name, where it is invisible in every listing and stops the column from
+ * matching its own name in the next version of the file (a primary key is a
+ * column name, ADR-043). Left alone when the bare name is empty or already
+ * taken; the mark is then the column's name.
+ */
+async function stripByteOrderMark(conn: DuckDBConnection, columns: Column[]): Promise<Column[]> {
+  const [first, ...rest] = columns
+  if (!first) return columns
+  const name = first.name.replace(/^\uFEFF+/, '')
+  if (name === first.name || name === '') return columns
+  // Taken on DuckDB's terms: identifiers compare case-insensitively even when
+  // quoted, and its folding covers ASCII only — `foo` and `FOO` are one name,
+  // `äbc` and `ÄBC` are two.
+  const taken = rest.some((c) => asciiLower(c.name) === asciiLower(name))
+  if (taken) return columns
+  await conn.run(
+    `ALTER TABLE t RENAME COLUMN ${sqlIdentifier(first.name)} TO ${sqlIdentifier(name)}`
   )
+  return [{ ...first, name }, ...rest]
 }
 
 /** DOUBLE columns holding whole numbers too large for a double to keep exactly. */
