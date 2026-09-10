@@ -689,6 +689,50 @@ describe('executeInterpret', () => {
     ])
   })
 
+  it('reads a file whose line endings are mixed, and says the standard was relaxed', async () => {
+    // The sniffer cannot settle on a dialect when CRLF and LF both end records
+    // in one file, and no option that keeps the standard gets it past that.
+    mockStorageDownload(
+      'id,note,c\r\n' +
+        Array.from(
+          { length: 5 },
+          (_, k) => `${k},"note ${k}\nmore",x${k % 2 ? '\r\n' : '\n'}`
+        ).join('')
+    )
+
+    const result = await executeInterpret(
+      'res-mixed',
+      'pkg-1',
+      version('resources/pkg-1/res-mixed'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.previewKey).toMatch(PREVIEW_KEY_RE('pkg-1', 'res-mixed', 'parquet'))
+    expect(result?.schema).toMatchObject({ rowCount: 5, lenient: true })
+    expect(result?.schema?.columns.map((c) => c.name)).toEqual(['id', 'note', 'c'])
+    expect(result?.schema?.droppedRows).toBeUndefined()
+  })
+
+  it('refuses a ragged row under the relaxed reading on the same terms', async () => {
+    // Relaxing the standard is about the dialect, not about rows: a row short
+    // of the width is still refused and the file still has no table, and the
+    // schema says both.
+    mockStorageDownload('id,note,c\r\n0,a,x\n1,b,x\r\n2,c\r\n3,d,x\n')
+
+    const result = await executeInterpret(
+      'res-mixed2',
+      'pkg-1',
+      version('resources/pkg-1/res-mixed2'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.previewKey).toBeNull()
+    expect(result?.reason).toBe('ragged-rows')
+    expect(result?.schema).toMatchObject({ droppedRows: 1, droppedLines: [4], lenient: true })
+  })
+
   it('should generate ZIP manifest and upload as JSON', async () => {
     const zip = new JSZip()
     zip.file('data.csv', 'a,b\n1,2')

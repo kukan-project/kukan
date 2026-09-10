@@ -142,6 +142,18 @@ export const resourceSchemaSchema = z.object({
    * how a view numbers a file by it, is `csv-records.ts`.
    */
   dialect: csvDialectSchema.optional(),
+  /**
+   * Set where the file would not read as standard CSV and was read with the
+   * standard relaxed (DuckDB `strict_mode = false`): line endings mixed within
+   * one file, a quote left bare inside a quoted cell. Absent where it read to
+   * the standard, which is nearly every file.
+   *
+   * What it costs a reader: under the relaxed reading a row with more fields
+   * than the header is cut to width **without being counted** — the standard
+   * reader refuses such a row and it reaches {@link droppedRows}. So on a
+   * schema carrying this, the counts are a floor rather than the number.
+   */
+  lenient: z.literal(true).optional(),
 })
 export type ResourceSchema = z.infer<typeof resourceSchemaSchema>
 

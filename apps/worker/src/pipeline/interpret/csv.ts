@@ -93,13 +93,14 @@ const REJECT_BATCH = 500
  * quoted-with-commas, leading-zero and mixed-type inputs, the columns, the types
  * and the row counts are identical and nothing is rejected.
  */
-function readOptions(path: string, skipRows: number, asText: string[]): string {
+function readOptions(path: string, skipRows: number, asText: string[], lenient: boolean): string {
   const parts = [
     sqlLiteral(path),
     'sample_size = -1',
     'ignore_errors = true',
     'store_rejects = true',
   ]
+  if (lenient) parts.push('strict_mode = false')
   if (skipRows > 0) parts.push(`skip = ${skipRows}`)
   if (asText.length > 0) {
     parts.push(`types = {${asText.map((c) => `${sqlLiteral(c)}: 'VARCHAR'`).join(', ')}}`)
@@ -149,14 +150,12 @@ export async function interpretCsv(
     // Described from the table, never from the `read_csv` call: with
     // `sample_size = -1` a DESCRIBE over the reader re-sniffs the whole file,
     // which on 27MB cost as much again as the load itself.
-    await conn.run(
-      `CREATE TABLE t AS SELECT * FROM read_csv(${readOptions(csvPath, skipRows, [])})`
-    )
+    const lenient = await load(conn, csvPath, skipRows)
     let columns = await describe(conn)
 
     const oversize = await oversizeIntegerColumns(conn, columns)
     if (oversize.length > 0) {
-      const opts = readOptions(csvPath, skipRows, oversize)
+      const opts = readOptions(csvPath, skipRows, oversize, lenient)
       await conn.run(`CREATE OR REPLACE TABLE t AS SELECT * FROM read_csv(${opts})`)
       columns = await describe(conn)
     }
@@ -178,6 +177,7 @@ export async function interpretCsv(
           droppedRows: dropped.count,
           droppedLines: dropped.lines,
           dialect: dropped.dialect,
+          ...(lenient && { lenient }),
         },
         reason: 'ragged-rows',
       }
@@ -213,12 +213,50 @@ export async function interpretCsv(
           droppedLines: dropped.lines,
           dialect: dropped.dialect,
         }),
+        ...(lenient && { lenient }),
       },
     }
   } finally {
     conn.disconnectSync()
     instance.closeSync()
   }
+}
+
+/** The reader could not settle on a dialect, before it read a single row. */
+const SNIFF_FAILED = /Error when sniffing file/
+
+/**
+ * Load the file into `t`, and say whether the reader had to be let off the
+ * standard to do it.
+ *
+ * Read to the standard first. Where the sniffer cannot settle on a dialect at
+ * all — measured on line endings mixed within one file, and on a quote left
+ * bare inside a quoted cell — no option that keeps the standard gets it
+ * further: `ignore_errors` is about rows, and this fails before there are any.
+ * `strict_mode = false` reads both, so it is tried second, and only then,
+ * because it also changes what a refusal is: a row with too many fields is
+ * cut to width and **not** recorded in `reject_errors`, where the standard
+ * reader refuses and counts it. A file that reads to the standard is read no
+ * differently than before; one that does not is read rather than failed, and
+ * the schema says so.
+ *
+ * The standard reader *can* isolate such a row (`UNQUOTED VALUE`) if the
+ * dialect is pinned with `auto_detect = false` — measured — but that also
+ * pins every column to a declared type, and typing is what the sniff is for.
+ */
+async function load(conn: DuckDBConnection, csvPath: string, skipRows: number): Promise<boolean> {
+  try {
+    await conn.run(
+      `CREATE TABLE t AS SELECT * FROM read_csv(${readOptions(csvPath, skipRows, [], false)})`
+    )
+    return false
+  } catch (e) {
+    if (!(e instanceof Error) || !SNIFF_FAILED.test(e.message)) throw e
+  }
+  await conn.run(
+    `CREATE TABLE t AS SELECT * FROM read_csv(${readOptions(csvPath, skipRows, [], true)})`
+  )
+  return true
 }
 
 /**
