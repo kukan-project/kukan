@@ -13,13 +13,27 @@ describe('buildEmbeddingText', () => {
       notes: '市の人口統計データ',
       tags: ['人口', '統計'],
       resources: [
-        { name: '地区別人口.csv', description: '地区ごとの人口' },
-        { name: '年齢別世帯数.csv', description: null },
+        { name: '地区別人口.csv', description: '地区ごとの人口', section: null },
+        { name: '年齢別世帯数.csv', description: null, section: null },
       ],
     })
     expect(text).toBe(
       '人口統計2024\n市の人口統計データ\n人口 統計\n地区別人口.csv 地区ごとの人口\n年齢別世帯数.csv'
     )
+  })
+
+  it('names each section once, ahead of the resources (ADR-050)', () => {
+    const text = buildEmbeddingText({
+      title: '議会資料',
+      notes: null,
+      tags: [],
+      resources: [
+        { name: '第1回.pdf', description: null, section: '議事録' },
+        { name: '第2回.pdf', description: null, section: '議事録' },
+        { name: '一覧.csv', description: null, section: null },
+      ],
+    })
+    expect(text).toBe('議会資料\n議事録\n第1回.pdf\n第2回.pdf\n一覧.csv')
   })
 
   it('skips empty parts', () => {

@@ -42,6 +42,12 @@ const t = {
       link: '詳しく見る',
       hash: 'ai-によるメタデータ提案',
     },
+    spotlight4: {
+      title: 'リソースのセクション分け',
+      desc: 'リソースの多いデータセットを、見出しで区切って読みやすく。管理画面では見出しをドラッグで置くだけ。「/」区切りで 3 階層まで入れ子にでき、セクション名は検索にも MCP にも効きます。',
+      link: '詳しく見る',
+      hash: 'セクションで分ける',
+    },
     spotlight3: {
       title: 'バージョン管理と行レベル差分',
       desc: 'リソースを差し替えるたびに、前の内容を版として保存。過去の版はダウンロードでき、CSV/TSV は増えた行・減った行を、主キーを指定すれば行ごとの書き換えまで画面で確認（v0.15.0 で強化）。個人情報の混入に備えた版単位の削除にも対応します。',
@@ -125,6 +131,12 @@ const t = {
       desc: 'AI drafts titles, descriptions, and tags from what is actually in your files — CSV columns and sample rows, even the text inside PDF and Office documents. Review and adopt field by field; nothing is overwritten automatically.',
       link: 'Learn more',
       hash: 'ai-metadata-suggestions',
+    },
+    spotlight4: {
+      title: 'Resource Sections',
+      desc: 'Group a long resource list under headings. In the dashboard a heading is a divider you drag into place. A "/" in the name nests headings up to three levels, and section names count in search and over MCP.',
+      link: 'Learn more',
+      hash: 'grouping-resources-into-sections',
     },
     spotlight3: {
       title: 'Version History and Row-Level Diffs',
@@ -324,6 +336,22 @@ const techStack = [
         <div class="spotlight-card">
           <div class="spotlight-body">
             <div class="spotlight-header">
+              <span class="spotlight-icon">📑</span>
+              <h2 class="spotlight-title" data-i18n="spotlight4.title">{t.en.spotlight4.title}</h2>
+              <span class="spotlight-badge">NEW</span>
+            </div>
+            <p class="spotlight-desc" data-i18n="spotlight4.desc">{t.en.spotlight4.desc}</p>
+          </div>
+          <a
+            href={`${base}en/data-admin-guide/#${t.en.spotlight4.hash}`}
+            class="btn-outline spotlight-link"
+            data-i18n="spotlight4.link"
+            id="spotlight4-link">{t.en.spotlight4.link}</a
+          >
+        </div>
+        <div class="spotlight-card">
+          <div class="spotlight-body">
+            <div class="spotlight-header">
               <span class="spotlight-icon">🕒</span>
               <h2 class="spotlight-title" data-i18n="spotlight3.title">{t.en.spotlight3.title}</h2>
               <span class="spotlight-badge">NEW</span>
@@ -468,6 +496,9 @@ const techStack = [
           var spotlight3Link = document.getElementById('spotlight3-link')
           if (spotlight3Link)
             spotlight3Link.href = docsBase + 'data-admin-guide/#' + tr.spotlight3.hash
+          var spotlight4Link = document.getElementById('spotlight4-link')
+          if (spotlight4Link)
+            spotlight4Link.href = docsBase + 'data-admin-guide/#' + tr.spotlight4.hash
           var spotlight2Link = document.getElementById('spotlight2-link')
           if (spotlight2Link)
             spotlight2Link.href = docsBase + 'system-admin-guide/multi-site/'

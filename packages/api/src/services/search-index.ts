@@ -5,7 +5,7 @@
  * - rebuildMetadataIndex: batch rebuild of all packages + resources
  */
 
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and, inArray, type SQL } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import {
   packageTable,
@@ -20,7 +20,7 @@ import type { SearchAdapter, DatasetDoc, ResourceDoc } from '@kukan/search-adapt
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import { EMBED_JOB_TYPE, type Logger } from '@kukan/shared'
-import { ResourceService } from './resource-service'
+import { ResourceService, resourceDocColumns } from './resource-service'
 import { PipelineService } from './pipeline-service'
 
 /** The adapters every package-metadata sync needs — a structural subset of the
@@ -191,14 +191,17 @@ export async function indexPackageMetadata(
   return true
 }
 
-/** Minimal resource fields needed to build a ResourceDoc. */
-interface ResourceRowForDoc {
-  id: string
-  packageId: string
-  name: string | null
-  description: string | null
-  format: string | null
+/** Resource rows the index may hold: active, under an active package (ADR-039). */
+function activeResourceDocRows(db: Database, where: SQL) {
+  return db
+    .select(resourceDocColumns)
+    .from(resource)
+    .innerJoin(packageTable, eq(packageTable.id, resource.packageId))
+    .where(and(eq(resource.state, 'active'), eq(packageTable.state, 'active'), where))
 }
+
+/** What a ResourceDoc is built from — the shape resourceDocColumns selects. */
+type ResourceRowForDoc = Awaited<ReturnType<typeof activeResourceDocRows>>[number]
 
 function buildResourceDoc(row: ResourceRowForDoc): ResourceDoc {
   return {
@@ -207,18 +210,29 @@ function buildResourceDoc(row: ResourceRowForDoc): ResourceDoc {
     name: row.name ?? undefined,
     description: row.description ?? undefined,
     format: row.format ?? undefined,
+    section: row.section ?? undefined,
   }
 }
 
 /**
- * Index a resource's metadata from an already-fetched row (no re-SELECT).
- * The caller guarantees the resource is active and its package indexable.
+ * Sync a package after its arrangement changed (ADR-050): the embedding text
+ * is built in the resources' order, so it is re-enqueued either way; the
+ * resource docs carry the labels and not the order, so they are rewritten
+ * only when `relabelled`. A package that is not active has nothing in the
+ * index (ADR-039), so callers can invoke unconditionally.
  */
-export async function indexResourceDocFromRow(
-  search: SearchAdapter,
-  row: ResourceRowForDoc
+export async function syncPackageResources(
+  db: Database,
+  deps: PackageSyncDeps,
+  packageId: string,
+  { relabelled }: { relabelled: boolean }
 ): Promise<void> {
-  await search.indexResource(buildResourceDoc(row))
+  const rows = await activeResourceDocRows(db, eq(resource.packageId, packageId))
+  if (rows.length === 0) return
+  await Promise.all([
+    relabelled && deps.search.bulkIndexResources(rows.map(buildResourceDoc)),
+    enqueuePackageEmbed(deps.queue, deps.ai, packageId, deps.logger),
+  ])
 }
 
 /**
@@ -230,25 +244,8 @@ export async function indexResourceMetadata(
   search: SearchAdapter,
   resourceId: string
 ): Promise<void> {
-  // Parent package must be active — draft resources are indexed at publish (ADR-039)
-  const [res] = await db
-    .select({
-      id: resource.id,
-      packageId: resource.packageId,
-      name: resource.name,
-      description: resource.description,
-      format: resource.format,
-    })
-    .from(resource)
-    .innerJoin(packageTable, eq(packageTable.id, resource.packageId))
-    .where(
-      and(
-        eq(resource.id, resourceId),
-        eq(resource.state, 'active'),
-        eq(packageTable.state, 'active')
-      )
-    )
-    .limit(1)
+  // Draft resources are indexed at publish (ADR-039)
+  const [res] = await activeResourceDocRows(db, eq(resource.id, resourceId)).limit(1)
 
   if (!res) return
 
@@ -314,13 +311,7 @@ export async function rebuildMetadataIndex(
         .from(packageTable)
         .where(inArray(packageTable.id, batchIds)),
       db
-        .select({
-          packageId: resource.packageId,
-          id: resource.id,
-          name: resource.name,
-          description: resource.description,
-          format: resource.format,
-        })
+        .select(resourceDocColumns)
         .from(resource)
         .where(and(inArray(resource.packageId, batchIds), eq(resource.state, 'active'))),
       db

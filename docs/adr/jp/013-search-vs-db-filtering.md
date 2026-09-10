@@ -98,7 +98,7 @@ SearchAdapter が一貫してフィルタリング・ファセット集計・ペ
 ### リソースメタデータ検索
 
 `q` パラメータ指定時は、パッケージ自体（name/title/notes）に加えて、
-紐づくリソースの name/description も検索対象に含める。
+紐づくリソースの name/description/section（ADR-050）も検索対象に含める。
 マッチしたリソースがある場合は `matchedResources` 配列としてレスポンスに付与する。
 
 - **OpenSearch**: nested query + inner_hits で検索

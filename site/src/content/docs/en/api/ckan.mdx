@@ -78,6 +78,10 @@ KUKAN uses camelCase fields internally, but the CKAN-compatible API converts the
 | `packageId`    | `package_id`        |
 | `resourceType` | `resource_type`     |
 
+Fields that are not renamed come back under their own name. `section` — a display grouping
+on the dataset page, see the [REST API](./rest) — is one of them, and survives harvesting
+into CKAN as a resource extra.
+
 ## Usage examples
 
 ### ckanapi (Python)

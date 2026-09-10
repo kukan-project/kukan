@@ -107,13 +107,23 @@ describe('PostgresSearchAdapter', () => {
         [{ count: 1 }],
         [{ id: 'p1', name: 'pkg-1', title: 'Data', notes: null, organization: 'org-a' }],
         [], // tags
-        [{ id: 'r1', packageId: 'p1', name: 'report.csv', description: 'Q1', format: 'CSV' }],
+        [
+          {
+            id: 'r1',
+            packageId: 'p1',
+            name: 'report.csv',
+            description: 'Q1',
+            format: 'CSV',
+            onName: true,
+          },
+        ],
       ])
 
       const result = await new PostgresSearchAdapter(db).search({ q: 'report' })
 
+      expect(result.items[0].matchedResourcesCount).toEqual({ total: 1, atLeast: false })
       expect(result.items[0].matchedResources).toEqual([
-        { id: 'r1', name: 'report.csv', description: 'Q1', format: 'CSV' },
+        { id: 'r1', name: 'report.csv', description: 'Q1', format: 'CSV', matchedOn: ['name'] },
       ])
     })
 

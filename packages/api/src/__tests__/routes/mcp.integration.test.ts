@@ -154,6 +154,9 @@ describe('MCP Server', () => {
         format: 'CSV',
         url: 'http://example.com/test.csv',
       })
+      await createResource(app, pkg.id, { name: 'readme.md', section: 'docs' })
+      await createResource(app, pkg.id, { name: 'schema.md', section: 'docs/spec' })
+      await createResource(app, pkg.id, { name: 'notes.txt' })
 
       const result = await mcpToolCall(app, 'get_dataset', { nameOrId: 'ds-detail' })
       const text = result.result.content[0].text as string
@@ -162,6 +165,11 @@ describe('MCP Server', () => {
       expect(text).toContain('Name: ds-detail')
       expect(text).toContain(`ID: ${resource.id}`)
       expect(text).toContain('[CSV]')
+      // Headings as the public page draws them: nested by `/`, members a level
+      // deeper, and a root resource after a run back at the margin
+      expect(text).toMatch(
+        /^ {2}1\. test\.csv.*\n {2}\[docs\]\n {4}2\. readme\.md.*\n {4}\[spec\]\n {6}3\. schema\.md.*\n {2}4\. notes\.txt/m
+      )
     })
   })
 
@@ -173,12 +181,14 @@ describe('MCP Server', () => {
         name: 'data.json',
         format: 'JSON',
         url: 'http://example.com/data.json',
+        section: 'raw',
       })
 
       const result = await mcpToolCall(app, 'get_resource', { id: resource.id })
       const text = result.result.content[0].text as string
 
       expect(text).toContain('Name: data.json')
+      expect(text).toContain('Section: raw')
       expect(text).toContain('Format: JSON')
       expect(text).toContain('URL: http://example.com/data.json')
     })

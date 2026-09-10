@@ -1,7 +1,8 @@
 /**
  * KUKAN Worker — Package Embedding (Phase 5a, ADR-034)
  * Generates the semantic-search embedding vector for one package from its
- * metadata (title / notes / tags) concatenated with its resources' metadata.
+ * metadata (title / notes / tags) concatenated with its resources' metadata,
+ * the sections they are drawn under included (ADR-050).
  */
 
 import { createHash } from 'node:crypto'
@@ -17,7 +18,7 @@ export interface EmbedSource {
   title: string | null
   notes: string | null
   tags: string[]
-  resources: Array<{ name: string | null; description: string | null }>
+  resources: Array<{ name: string | null; description: string | null; section: string | null }>
 }
 
 /** Build the embedding source text (truncated to MAX_EMBED_TEXT_LENGTH) */
@@ -26,6 +27,8 @@ export function buildEmbeddingText(source: EmbedSource): string {
     source.title ?? '',
     source.notes ?? '',
     source.tags.join(' '),
+    // Each section once: a label names a run of resources, not each of them
+    [...new Set(source.resources.map((r) => r.section).filter(Boolean))].join(' '),
     ...source.resources.map((r) => `${r.name ?? ''} ${r.description ?? ''}`.trim()),
   ]
   return parts.filter(Boolean).join('\n').slice(0, MAX_EMBED_TEXT_LENGTH)
@@ -74,7 +77,7 @@ export async function embedPackage(
       .where(eq(packageTag.packageId, packageId))
       .orderBy(tag.name),
     db
-      .select({ name: resource.name, description: resource.description })
+      .select({ name: resource.name, description: resource.description, section: resource.section })
       .from(resource)
       .where(and(eq(resource.packageId, packageId), eq(resource.state, 'active')))
       .orderBy(resource.position, resource.created, resource.id),

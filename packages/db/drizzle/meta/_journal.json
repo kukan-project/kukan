@@ -281,6 +281,13 @@
       "when": 1788505856492,
       "tag": "0039_regular_arclight",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1788933146673,
+      "tag": "0040_mighty_brother_voodoo",
+      "breakpoints": true
     }
   ]
 }

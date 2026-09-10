@@ -8,11 +8,32 @@ import { FormatBadge } from './format-badge'
 import { FormatBadges } from './format-badges'
 import { CompactDate } from './date-time'
 import { parseGroups } from '@/lib/parse-groups'
-import type { MatchedResource } from '@kukan/search-adapter'
+import { foldMatched } from '@/lib/matched-resources'
+import { sectionTrail } from '@/lib/resource-sections'
+import type { MatchedResource, MatchedResourcesCount } from '@kukan/search-adapter'
 
 /** Tailwind classes for search term highlighting */
 const HIGHLIGHT_MARK =
   '[&>mark]:rounded-sm [&>mark]:bg-highlight/60 [&>mark]:px-0.5 [&>mark+mark]:pl-0 [&>mark+mark]:rounded-l-none [&>mark:has(+mark)]:pr-0 [&>mark:has(+mark)]:rounded-r-none'
+
+/** A field as the search marked it, or as it is: only the marked copy is HTML. */
+function Highlighted({
+  as: Tag = 'span',
+  html,
+  text,
+  className = '',
+}: {
+  as?: 'p' | 'span'
+  html?: string
+  text?: string
+  className?: string
+}) {
+  return html ? (
+    <Tag className={`${className} ${HIGHLIGHT_MARK}`} dangerouslySetInnerHTML={{ __html: html }} />
+  ) : (
+    <Tag className={className}>{text}</Tag>
+  )
+}
 
 export interface DatasetCardItem {
   id: string
@@ -28,6 +49,8 @@ export interface DatasetCardItem {
   created?: string
   updated?: string
   matchedResources?: MatchedResource[]
+  /** How many matched in all, when the list above is capped (see the search adapter) */
+  matchedResourcesCount?: MatchedResourcesCount
   highlightedTitle?: string
   highlightedNotes?: string
   matchSource?: 'semantic'
@@ -36,6 +59,11 @@ export interface DatasetCardItem {
 export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
   const t = useTranslations('dataset')
   const datasetHref = `/dataset/${pkg.name}`
+  const { shown, hidden, atLeast } = foldMatched(
+    pkg.matchedResources ?? [],
+    pkg.matchedResourcesCount
+  )
+
   return (
     <article className="relative">
       <Card className="transition-colors hover:bg-accent/50">
@@ -120,15 +148,14 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
           pkg.highlightedNotes ||
           (pkg.matchedResources && pkg.matchedResources.length > 0)) && (
           <CardContent className="space-y-3">
-            {(pkg.notes || pkg.highlightedNotes) &&
-              (pkg.highlightedNotes ? (
-                <p
-                  className={`line-clamp-2 text-sm text-muted-foreground ${HIGHLIGHT_MARK}`}
-                  dangerouslySetInnerHTML={{ __html: pkg.highlightedNotes }}
-                />
-              ) : (
-                <p className="line-clamp-2 text-sm text-muted-foreground">{pkg.notes}</p>
-              ))}
+            {(pkg.notes || pkg.highlightedNotes) && (
+              <Highlighted
+                as="p"
+                html={pkg.highlightedNotes}
+                text={pkg.notes ?? undefined}
+                className="line-clamp-2 text-sm text-muted-foreground"
+              />
+            )}
             {pkg.matchedResources && pkg.matchedResources.length > 0 && (
               <div className="relative z-10">
                 <p className="mb-1.5 flex items-center gap-1 text-xs font-medium text-muted-foreground">
@@ -136,73 +163,92 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                   {t('matchedResources')}
                 </p>
                 <ul className="space-y-1.5 border-l-2 border-muted-foreground/20 pl-3">
-                  {pkg.matchedResources.map((r) => (
-                    <li key={r.id}>
-                      <Link
-                        href={`/dataset/${pkg.name}/resource/${r.id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="group/resource block rounded-sm hover:bg-accent/50"
-                      >
-                        <div className="flex items-center gap-2 text-sm">
-                          {r.highlightedName ? (
-                            <span
-                              className={`truncate font-medium group-hover/resource:underline ${HIGHLIGHT_MARK}`}
-                              dangerouslySetInnerHTML={{ __html: r.highlightedName }}
+                  {shown.map((row) => {
+                    const r = row.resource
+                    return (
+                      <li key={r.id}>
+                        <Link
+                          href={`/dataset/${pkg.name}/resource/${r.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="group/resource block rounded-sm hover:bg-accent/50"
+                        >
+                          <div className="flex items-center gap-2 text-sm">
+                            {r.section && (
+                              <span className="shrink-0 text-xs text-muted-foreground">
+                                <Highlighted
+                                  html={
+                                    r.highlightedSection &&
+                                    sectionTrail(r.highlightedSection, { html: true })
+                                  }
+                                  text={sectionTrail(r.section)}
+                                />
+                                {' ›'}
+                              </span>
+                            )}
+                            <Highlighted
+                              html={r.highlightedName}
+                              text={r.name || r.id}
+                              className="truncate font-medium group-hover/resource:underline"
                             />
-                          ) : (
-                            <span className="truncate font-medium group-hover/resource:underline">
-                              {r.name || r.id}
-                            </span>
-                          )}
-                          {r.format && <FormatBadge format={r.format} className="shrink-0" />}
-                        </div>
-                        {(r.description || r.highlightedDescription) &&
-                          (r.highlightedDescription ? (
-                            <p
-                              className={`line-clamp-1 text-xs text-muted-foreground ${HIGHLIGHT_MARK}`}
-                              dangerouslySetInnerHTML={{ __html: r.highlightedDescription }}
-                            />
-                          ) : (
-                            <p className="line-clamp-1 text-xs text-muted-foreground">
-                              {r.description}
-                            </p>
-                          ))}
-                        {r.matchSource === 'content' && (
-                          <div className="mt-1 space-y-1">
-                            <span className="flex items-center gap-0.5 text-[10px] font-medium text-primary">
-                              <Search className="h-2.5 w-2.5" />
-                              {t('contentMatch')}
-                            </span>
-                            {r.contentSnippets && r.contentSnippets.length > 0 ? (
-                              r.contentSnippets.map((snippet, i) => (
-                                // line-clamp clips at the padding box, so padding lives on the wrapper
-                                <div
-                                  key={i}
-                                  className="rounded border border-primary/20 bg-primary/5 px-2 py-1.5"
-                                >
-                                  <p
-                                    className={`line-clamp-4 text-xs break-words text-muted-foreground ${HIGHLIGHT_MARK}`}
-                                    suppressHydrationWarning
-                                    dangerouslySetInnerHTML={{
-                                      __html: snippet.replace(/\n/g, ' '),
-                                    }}
-                                  />
-                                </div>
-                              ))
-                            ) : (
-                              <div className="flex h-7 w-full items-center gap-2 rounded border border-primary/10 bg-primary/5 px-2">
-                                <div className="h-3 w-3 animate-spin rounded-full border-2 border-primary/20 border-t-primary/60" />
-                                <span className="text-[10px] text-muted-foreground">
-                                  {t('loadingSnippet')}
-                                </span>
-                              </div>
+                            {r.format && <FormatBadge format={r.format} className="shrink-0" />}
+                            {row.others > 0 && (
+                              <span className="shrink-0 text-xs text-muted-foreground">
+                                {t(atLeast ? 'matchedOthersAtLeast' : 'matchedOthers', {
+                                  count: row.others,
+                                })}
+                              </span>
                             )}
                           </div>
-                        )}
-                      </Link>
-                    </li>
-                  ))}
+                          {!row.folded && (r.description || r.highlightedDescription) && (
+                            <Highlighted
+                              as="p"
+                              html={r.highlightedDescription}
+                              text={r.description}
+                              className="line-clamp-1 text-xs text-muted-foreground"
+                            />
+                          )}
+                          {r.matchSource === 'content' && (
+                            <div className="mt-1 space-y-1">
+                              <span className="flex items-center gap-0.5 text-[10px] font-medium text-primary">
+                                <Search className="h-2.5 w-2.5" />
+                                {t('contentMatch')}
+                              </span>
+                              {r.contentSnippets && r.contentSnippets.length > 0 ? (
+                                r.contentSnippets.map((snippet, i) => (
+                                  // line-clamp clips at the padding box, so padding lives on the wrapper
+                                  <div
+                                    key={i}
+                                    className="rounded border border-primary/20 bg-primary/5 px-2 py-1.5"
+                                  >
+                                    <p
+                                      className={`line-clamp-4 text-xs break-words text-muted-foreground ${HIGHLIGHT_MARK}`}
+                                      suppressHydrationWarning
+                                      dangerouslySetInnerHTML={{
+                                        __html: snippet.replace(/\n/g, ' '),
+                                      }}
+                                    />
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="flex h-7 w-full items-center gap-2 rounded border border-primary/10 bg-primary/5 px-2">
+                                  <div className="h-3 w-3 animate-spin rounded-full border-2 border-primary/20 border-t-primary/60" />
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {t('loadingSnippet')}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </Link>
+                      </li>
+                    )
+                  })}
                 </ul>
+                {hidden > 0 && (
+                  <p className="mt-1.5 pl-3 text-xs text-muted-foreground">
+                    {t(atLeast ? 'matchedMoreAtLeast' : 'matchedMore', { count: hidden })}
+                  </p>
+                )}
               </div>
             )}
           </CardContent>

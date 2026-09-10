@@ -13,7 +13,7 @@ Supersedes ADR-021 (Decision 1).
 The current search consists of 3 OpenSearch indexes:
 
 - `kukan-packages` — Dataset metadata (title, name, notes, organization, tags, etc.)
-- `kukan-resources` — Resource metadata (name, description, format, packageId)
+- `kukan-resources` — Resource metadata (name, description, section, format, packageId)
 - `kukan-contents` — Resource content full-text (extractedText, resourceId, packageId)
 
 `msearch` is used to search 3 indexes in parallel, with the application layer merging results at the package level.
@@ -55,7 +55,7 @@ kukan-search (single index)
   ├── type: "package"   (parent)
   │     title, name, notes, organization, tags, formats, ...
   ├── type: "resource"  (child of package)
-  │     name, description, format
+  │     name, description, section, format
   └── type: "content"   (child of package)
         extractedText, resourceId, contentType
 ```

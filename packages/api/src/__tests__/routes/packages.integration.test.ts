@@ -99,6 +99,22 @@ describe('Packages API Routes', () => {
       expect(body.items[0].name).toBe('population-data')
     })
 
+    it('should find packages by the section a resource is drawn under', async () => {
+      const pkgRes = await createPackage({ name: 'section-search-pkg', title: 'Council' })
+      const pkg = await pkgRes.json()
+      await createResource(pkg.id, { name: 'first.pdf', section: 'archived-minutes' })
+
+      const res = await app.request('/api/v1/packages?q=archived-minutes')
+      const body = await res.json()
+
+      expect(body.total).toBe(1)
+      expect(body.items[0].name).toBe('section-search-pkg')
+      expect(body.items[0].matchedResources[0].name).toBe('first.pdf')
+      // The fallback says what it matched on and how many, like the search engine does
+      expect(body.items[0].matchedResources[0].matchedOn).toEqual(['section'])
+      expect(body.items[0].matchedResourcesCount).toEqual({ total: 1, atLeast: false })
+    })
+
     it('should find packages by resource name and include matchedResources', async () => {
       const pkgRes = await createPackage({ name: 'res-search-pkg', title: 'Some Dataset' })
       const pkg = await pkgRes.json()

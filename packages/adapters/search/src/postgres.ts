@@ -17,7 +17,7 @@ import type {
   ContentDoc,
   VectorHit,
 } from './adapter'
-import { MAX_MATCHED_RESOURCES_PER_PACKAGE, type SearchFilters } from './adapter'
+import { MAX_MATCHED_RESOURCES_PER_PACKAGE, MATCHED_FIELDS, type SearchFilters } from './adapter'
 import { escapeLike } from '@kukan/shared'
 import {
   type Database,
@@ -31,6 +31,18 @@ import {
 } from '@kukan/db'
 import { ilike, eq, and, or, sql, inArray, asc, desc } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
+
+/** The columns a query term is matched against, by the field the adapters report. */
+const MATCH_COLUMNS = {
+  name: resource.name,
+  description: resource.description,
+  section: resource.section,
+} as const
+
+/** One predicate for the package count and the matched-resource list, so the two cannot disagree. */
+function resourceMatches(pattern: string): SQL {
+  return or(...MATCHED_FIELDS.map((f) => ilike(MATCH_COLUMNS[f], pattern)))!
+}
 
 /** Last-resort similarity floor for models without a measured recommendation.
  *  Callers should prefer SEARCH_VECTOR_MIN_SIMILARITY (explicit override) and
@@ -72,7 +84,7 @@ export class PostgresSearchAdapter implements SearchAdapter {
             SELECT 1 FROM ${resource}
             WHERE ${resource.packageId} = ${packageTable.id}
             AND ${resource.state} = 'active'
-            AND (${resource.name} ILIKE ${pattern} OR ${resource.description} ILIKE ${pattern})
+            AND ${resourceMatches(pattern)}
           )`
         )!
       )
@@ -225,6 +237,7 @@ export class PostgresSearchAdapter implements SearchAdapter {
     const packageIds = rows.map((r) => r.id)
     const tagsByPackage: Record<string, string[]> = {}
     const matchedByPackage: Record<string, MatchedResource[]> = {}
+    const matchedTotal: Record<string, number> = {}
 
     if (packageIds.length > 0) {
       const [tagRows, matchedRows] = await Promise.all([
@@ -244,13 +257,18 @@ export class PostgresSearchAdapter implements SearchAdapter {
                 name: resource.name,
                 description: resource.description,
                 format: resource.format,
+                section: resource.section,
+                // Which of the fields the row came through, for the card to fold on
+                onName: sql<boolean>`${ilike(MATCH_COLUMNS.name, pattern)}`,
+                onDescription: sql<boolean>`${ilike(MATCH_COLUMNS.description, pattern)}`,
+                onSection: sql<boolean>`${ilike(MATCH_COLUMNS.section, pattern)}`,
               })
               .from(resource)
               .where(
                 and(
                   inArray(resource.packageId, packageIds),
                   eq(resource.state, 'active'),
-                  or(ilike(resource.name, pattern), ilike(resource.description, pattern))
+                  resourceMatches(pattern)
                 )
               )
           : Promise.resolve([]),
@@ -268,12 +286,16 @@ export class PostgresSearchAdapter implements SearchAdapter {
         if (!matchedByPackage[row.packageId]) {
           matchedByPackage[row.packageId] = []
         }
+        matchedTotal[row.packageId] = (matchedTotal[row.packageId] ?? 0) + 1
         if (matchedByPackage[row.packageId].length < MAX_MATCHED_RESOURCES_PER_PACKAGE) {
+          const on = { name: row.onName, description: row.onDescription, section: row.onSection }
           matchedByPackage[row.packageId].push({
             id: row.id,
             name: row.name ?? undefined,
             description: row.description ?? undefined,
             format: row.format ?? undefined,
+            section: row.section ?? undefined,
+            matchedOn: MATCHED_FIELDS.filter((f) => on[f]),
           })
         }
       }
@@ -288,6 +310,11 @@ export class PostgresSearchAdapter implements SearchAdapter {
       tags: tagsByPackage[row.id] ?? [],
       ...(matchedByPackage[row.id] && {
         matchedResources: matchedByPackage[row.id],
+        // Every match was carried up to the cap; past it, the rest is only counted
+        matchedResourcesCount: {
+          total: matchedTotal[row.id],
+          atLeast: matchedTotal[row.id] > matchedByPackage[row.id].length,
+        },
       }),
     }))
 

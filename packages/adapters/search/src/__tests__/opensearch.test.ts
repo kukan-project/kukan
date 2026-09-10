@@ -9,6 +9,7 @@ vi.mock('@opensearch-project/opensearch', async (importActual) => {
   const mockClient = {
     indices: {
       exists: vi.fn(),
+      putMapping: vi.fn(),
       create: vi.fn(),
       delete: vi.fn(),
     },
@@ -37,6 +38,7 @@ vi.mock('@opensearch-project/opensearch', async (importActual) => {
 interface MockClient {
   indices: {
     exists: ReturnType<typeof vi.fn>
+    putMapping: ReturnType<typeof vi.fn>
     create: ReturnType<typeof vi.fn>
     delete: ReturnType<typeof vi.fn>
   }
@@ -71,6 +73,7 @@ describe('OpenSearchAdapter', () => {
     // Default: indices do not exist
     mockClient.indices.exists.mockResolvedValue({ body: false })
     mockClient.indices.create.mockResolvedValue({ body: {} })
+    mockClient.indices.putMapping.mockResolvedValue({ body: {} })
     // Default: non-empty index (for empty-index detection)
     mockClient.count.mockResolvedValue({ body: { count: 10 } })
   })
@@ -128,6 +131,8 @@ describe('OpenSearchAdapter', () => {
       await adapter.ensureIndex()
 
       expect(mockClient.indices.create).not.toHaveBeenCalled()
+      // An existence check only: the mapping is a write-path concern
+      expect(mockClient.indices.putMapping).not.toHaveBeenCalled()
     })
 
     it('should skip re-check within TTL (60s)', async () => {
@@ -230,6 +235,48 @@ describe('OpenSearchAdapter', () => {
   })
 
   describe('indexResource', () => {
+    it('brings an existing index up to the current mapping once, before the first write', async () => {
+      mockClient.indices.exists.mockResolvedValue({ body: true })
+      mockClient.index.mockResolvedValue({ body: {} })
+
+      await adapter.indexResource({ id: 'res-1', packageId: 'pkg-1', section: 'docs' })
+      await adapter.indexResource({ id: 'res-2', packageId: 'pkg-1' })
+
+      expect(mockClient.indices.putMapping).toHaveBeenCalledTimes(1)
+      expect(mockClient.indices.putMapping).toHaveBeenCalledWith(
+        expect.objectContaining({
+          index: 'kukan-search',
+          body: {
+            properties: expect.objectContaining({
+              section: expect.objectContaining({ type: 'text' }),
+            }),
+          },
+        })
+      )
+      expect(mockClient.index).toHaveBeenCalledTimes(2)
+    })
+
+    it('writes even when the index refuses the mapping, and does not ask again', async () => {
+      mockClient.indices.exists.mockResolvedValue({ body: true })
+      mockClient.indices.putMapping.mockRejectedValue(new Error('cluster_block_exception'))
+      mockClient.index.mockResolvedValue({ body: {} })
+
+      await adapter.indexResource({ id: 'res-1', packageId: 'pkg-1', section: 'docs' })
+      await adapter.indexResource({ id: 'res-2', packageId: 'pkg-1' })
+
+      expect(mockClient.indices.putMapping).toHaveBeenCalledTimes(1)
+      expect(mockClient.index).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not touch the mapping of an index it just created', async () => {
+      mockClient.index.mockResolvedValue({ body: {} })
+
+      await adapter.indexResource({ id: 'res-1', packageId: 'pkg-1' })
+
+      expect(mockClient.indices.create).toHaveBeenCalledTimes(1)
+      expect(mockClient.indices.putMapping).not.toHaveBeenCalled()
+    })
+
     it('should index a resource document with join_field and routing', async () => {
       mockClient.index.mockResolvedValue({ body: {} })
 
@@ -345,6 +392,45 @@ describe('OpenSearchAdapter', () => {
         await expect(adapter.search({ q: 'x' })).rejects.toMatchObject({ status: 503 })
         expect(mockClient.search).not.toHaveBeenCalled()
       })
+    })
+
+    it('does not count a content hit twice when the metadata hits it may be among went uncarried', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: { name: 'population', join_field: 'package' },
+                _score: 5,
+                inner_hits: {
+                  // 150 metadata matches, one carried: the content hit below may be one of the rest
+                  resource: {
+                    hits: {
+                      total: { value: 150, relation: 'eq' },
+                      hits: [{ _id: 'res-1', _source: { id: 'res-1', name: 'a.csv' } }],
+                    },
+                  },
+                  content_hits: {
+                    hits: {
+                      hits: [{ _id: 'chunk-res2-0', _source: { resourceId: 'res-2' }, _score: 3 }],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      })
+      mockClient.mget.mockResolvedValueOnce({
+        body: { docs: [{ _id: 'res-2', found: true, _source: { name: 'b.csv' } }] },
+      })
+
+      const result = await adapter.search({ q: '人口', offset: 0, limit: 10 })
+
+      expect(result.items[0].matchedResources).toHaveLength(2)
+      expect(result.items[0].matchedResourcesCount).toEqual({ total: 150, atLeast: true })
     })
 
     it('should merge content matches into matchedResources via inner_hits', async () => {
@@ -663,6 +749,9 @@ describe('OpenSearchAdapter', () => {
 
       const matched = result.items[0].matchedResources![0]
       expect(matched.highlightedName).toBe('x<mark>data</mark>.csv')
+      // What the hit was on, and how many matched in all, ride along for the card
+      expect(matched.matchedOn).toEqual(['name'])
+      expect(result.items[0].matchedResourcesCount).toEqual({ total: 1, atLeast: false })
       // Content snippets are now fetched lazily via fetchContentHighlights
       expect(matched._contentDocId).toBe('chunk-res1-0')
     })

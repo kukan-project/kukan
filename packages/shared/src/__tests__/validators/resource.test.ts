@@ -4,6 +4,9 @@ import {
   updateResourceSchema,
   uploadUrlSchema,
   uploadCompleteSchema,
+  reorderResourcesSchema,
+  normalizeSection,
+  splitSection,
 } from '../../validators/resource'
 
 describe('createResourceSchema', () => {
@@ -251,5 +254,97 @@ describe('uploadCompleteSchema', () => {
   it('should reject non-integer size', () => {
     const result = uploadCompleteSchema.safeParse({ size: 1.5 })
     expect(result.success).toBe(false)
+  })
+})
+
+describe('normalizeSection', () => {
+  it('should trim each segment', () => {
+    expect(normalizeSection('  2024 / 東京都 ')).toBe('2024/東京都')
+  })
+
+  it('should drop empty segments', () => {
+    expect(normalizeSection('/docs//raw/')).toBe('docs/raw')
+  })
+
+  it('should collapse everything that means "no section" to null', () => {
+    for (const value of ['', '   ', '/', '//', ' / ', null, undefined]) {
+      expect(normalizeSection(value)).toBeNull()
+    }
+  })
+
+  it('should leave an already normalized label alone', () => {
+    expect(normalizeSection('docs')).toBe('docs')
+  })
+})
+
+describe('resource section field', () => {
+  const validUuid = '550e8400-e29b-41d4-a716-446655440000'
+
+  it('should normalize section on create', () => {
+    const result = createResourceSchema.safeParse({ packageId: validUuid, section: ' docs / raw ' })
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.section).toBe('docs/raw')
+  })
+
+  it('should leave section absent when it is not sent', () => {
+    const result = createResourceSchema.safeParse({ packageId: validUuid })
+    expect(result.success).toBe(true)
+    if (result.success) expect('section' in result.data).toBe(false)
+  })
+
+  it('should accept an explicit null as clearing the section', () => {
+    const result = updateResourceSchema.safeParse({ section: null })
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.section).toBeNull()
+  })
+})
+
+describe('reorderResourcesSchema', () => {
+  const idA = '550e8400-e29b-41d4-a716-446655440000'
+  const idB = '550e8400-e29b-41d4-a716-446655440001'
+
+  it('should accept a body that only reorders', () => {
+    const result = reorderResourcesSchema.safeParse({ resourceIds: [idA, idB] })
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.sections).toBeUndefined()
+  })
+
+  it('should normalize the sections it carries', () => {
+    const result = reorderResourcesSchema.safeParse({
+      resourceIds: [idA, idB],
+      sections: [
+        { resourceId: idA, section: ' docs ' },
+        { resourceId: idB, section: null },
+      ],
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.sections).toEqual([
+        { resourceId: idA, section: 'docs' },
+        { resourceId: idB, section: null },
+      ])
+    }
+  })
+
+  it('should reject a section entry without a section', () => {
+    const result = reorderResourcesSchema.safeParse({
+      resourceIds: [idA],
+      sections: [{ resourceId: idA }],
+    })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('splitSection', () => {
+  it('accepts one contiguous run per name, root rows between names included', () => {
+    expect(splitSection(['a', 'a', null, 'b', 'b'])).toBeNull()
+    expect(splitSection([null, null])).toBeNull()
+    expect(splitSection([])).toBeNull()
+  })
+
+  it('names the first label that comes back after another label or the root', () => {
+    expect(splitSection(['a', 'b', 'a'])).toBe('a')
+    expect(splitSection(['a', null, 'a'])).toBe('a')
+    expect(splitSection(['x', 'a', 'a', 'b', 'x'])).toBe('x')
   })
 })

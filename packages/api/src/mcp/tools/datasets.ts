@@ -2,6 +2,7 @@
  * MCP Tools — Dataset search and retrieval
  */
 
+import { sectionLayout } from '@kukan/shared'
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Database } from '@kukan/db'
@@ -97,15 +98,17 @@ export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext
       const service = new PackageService(db)
       const result = await service.getDetailByNameOrId(nameOrId, user)
 
+      // The public page's headings, one per level, with the resources a level deeper (ADR-050)
+      const rows = result.resources ?? []
       const resources =
-        result.resources
-          ?.map(
-            (r, i) =>
-              `  ${i + 1}. ${r.name || '(untitled)'}` +
-              ` (ID: ${r.id})` +
-              (r.format ? ` [${r.format}]` : '') +
-              (r.description ? ` — ${r.description.slice(0, 100)}` : '')
-          )
+        sectionLayout(rows)
+          .flatMap(({ depth, headings }, i) => [
+            ...headings.map((h) => `${'  '.repeat(h.depth)}[${h.label}]`),
+            `${'  '.repeat(depth + 1)}${i + 1}. ${rows[i].name || '(untitled)'}` +
+              ` (ID: ${rows[i].id})` +
+              (rows[i].format ? ` [${rows[i].format}]` : '') +
+              (rows[i].description ? ` — ${rows[i].description.slice(0, 100)}` : ''),
+          ])
           .join('\n') || '  (none)'
 
       const tags = result.tags?.map((t) => t.name).join(', ') || ''

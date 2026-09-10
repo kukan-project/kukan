@@ -9,21 +9,36 @@ import type { ContentType } from '@kukan/shared'
 // Search Types
 // ============================================================
 
+/** The resource metadata fields a query term can match, as the adapters report them */
+export const MATCHED_FIELDS = ['name', 'description', 'section'] as const
+export type MatchedField = (typeof MATCHED_FIELDS)[number]
+
 export interface MatchedResource {
   id: string
   name?: string
   description?: string
   format?: string
+  /** The section the resource is drawn under (ADR-050) */
+  section?: string
+  /** The metadata fields the query matched — what the hit is on account of */
+  matchedOn?: MatchedField[]
   /** Highlighted name (HTML with <mark> tags) */
   highlightedName?: string
   /** Highlighted description (HTML with <mark> tags) */
   highlightedDescription?: string
+  /** Highlighted section (HTML with <mark> tags) */
+  highlightedSection?: string
   /** Highlighted snippets from content match (up to 3 fragments) */
   contentSnippets?: string[]
   /** Whether the match came from resource metadata or extracted content */
   matchSource?: 'metadata' | 'content'
   /** Content chunk document ID for lazy highlight loading (passed to POST /highlights) */
   _contentDocId?: string
+}
+
+export interface MatchedResourcesCount {
+  total: number
+  atLeast: boolean
 }
 
 /** Document stored in the kukan-resources index (metadata only) */
@@ -35,6 +50,8 @@ export interface ResourceDoc {
   name?: string
   description?: string
   format?: string
+  /** The section the resource is drawn under (ADR-050) */
+  section?: string
 }
 
 /** Document stored in the kukan-contents index (extracted text for full-text search) */
@@ -68,6 +85,10 @@ export interface DatasetDoc {
   groups?: string[]
   formats?: string[]
   matchedResources?: MatchedResource[]
+  /** How many resources matched in all — `atLeast` when the adapter could not
+   *  settle it: it carried fewer than matched, or content hits past its cap are
+   *  chunks whose resources cannot be told */
+  matchedResourcesCount?: MatchedResourcesCount
   private?: boolean
   owner_org_id?: string
   creator_user_id?: string

@@ -251,6 +251,7 @@ pnpm format        # Prettier フォーマット
 - 取得内容が宣言と食い違うとき正本を差し替えない（サイト閉鎖時の一括転送、提案） → `docs/adr/jp/047-fetched-content-mismatch.md`
 - テーブルプレビューの一枚化（閲覧=Range 配信 / 対話=クライアント計算、解析モードトグル廃止） → `docs/adr/jp/048-modeless-table-preview.md`（ADR-016 を置換）
 - マルチサイトの ALB 統合（共有 ALB + オリジンカスタムヘッダールーティング） → `docs/adr/jp/049-shared-alb-multi-site.md`（ADR-041 拡張）
+- リソースのセクション分け（`position` は 1 本のまま、`section` は表示ラベル、公開側は `/` で入れ子表示） → `docs/adr/jp/050-resource-section.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、

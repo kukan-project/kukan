@@ -662,3 +662,231 @@ describe('ResourceList drop-to-create', () => {
     await waitFor(() => expect(onUpdated).toHaveBeenCalled())
   })
 })
+
+describe('ResourceList sections', () => {
+  beforeEach(() => {
+    mockClientFetch.mockReset()
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue(
+      'p1' as `${string}-${string}-${string}-${string}-${string}`
+    )
+  })
+
+  const baseProps = {
+    packageId: 'pkg1',
+    resources: [],
+    onUpdated: () => {},
+  }
+
+  const sectioned = [
+    { id: 'r1', name: 'addresses.csv', urlType: 'upload', format: 'CSV', section: null },
+    { id: 'r2', name: 'dictionary.pdf', urlType: 'upload', format: 'PDF', section: 'docs' },
+    { id: 'r3', name: 'codes.csv', urlType: 'upload', format: 'CSV', section: 'docs' },
+  ]
+
+  function addSection(name: string) {
+    fireEvent.click(screen.getByText('Add section'))
+    fireEvent.change(screen.getByLabelText('Section name'), { target: { value: name } })
+    fireEvent.click(screen.getByText('Save'))
+  }
+
+  it('should draw one heading for a run and none for the root', () => {
+    render(<ResourceList {...baseProps} resources={sectioned} />)
+    expect(screen.getAllByText('docs')).toHaveLength(1)
+  })
+
+  it('should draw the same name twice when a root resource splits the run', () => {
+    render(
+      <ResourceList
+        {...baseProps}
+        resources={[
+          { id: 'r1', name: 'a.csv', section: 'docs' },
+          { id: 'r2', name: 'b.csv', section: null },
+          { id: 'r3', name: 'c.csv', section: 'docs' },
+        ]}
+      />
+    )
+    expect(screen.getAllByText('docs')).toHaveLength(2)
+  })
+
+  it('should send every label with the order once any of them changed', async () => {
+    mockClientFetch.mockResolvedValue(jsonResponse([]))
+    render(<ResourceList {...baseProps} resources={sectioned} />)
+
+    fireEvent.click(screen.getByLabelText('Dissolve section'))
+    fireEvent.click(screen.getByText('Save order'))
+
+    await waitFor(() => expect(mockClientFetch).toHaveBeenCalled())
+    const [url, init] = mockClientFetch.mock.calls[0]
+    expect(url).toBe('/api/v1/packages/pkg1/resources/reorder')
+    expect(JSON.parse(init!.body as string)).toEqual({
+      resourceIds: ['r1', 'r2', 'r3'],
+      sections: [
+        { resourceId: 'r1', section: null },
+        { resourceId: 'r2', section: null },
+        { resourceId: 'r3', section: null },
+      ],
+    })
+  })
+
+  it('should send only the order when no label changed', async () => {
+    mockClientFetch.mockResolvedValue(jsonResponse([]))
+    render(<ResourceList {...baseProps} resources={sectioned} />)
+
+    // A rename to the same name changes nothing
+    fireEvent.click(screen.getByLabelText('Rename section'))
+    fireEvent.change(screen.getByLabelText('Section name'), { target: { value: 'docs' } })
+    fireEvent.click(screen.getByText('Save'))
+    expect(screen.queryByText('Save order')).not.toBeInTheDocument()
+  })
+
+  it('should rewrite only the run it renames', async () => {
+    mockClientFetch.mockResolvedValue(jsonResponse([]))
+    render(
+      <ResourceList
+        {...baseProps}
+        resources={[
+          { id: 'r1', name: 'a.csv', section: 'docs' },
+          { id: 'r2', name: 'b.csv', section: null },
+          { id: 'r3', name: 'c.csv', section: 'docs' },
+        ]}
+      />
+    )
+
+    fireEvent.click(screen.getAllByLabelText('Rename section')[0])
+    fireEvent.change(screen.getByLabelText('Section name'), { target: { value: 'papers' } })
+    fireEvent.click(screen.getByText('Save'))
+    fireEvent.click(screen.getByText('Save order'))
+
+    await waitFor(() => expect(mockClientFetch).toHaveBeenCalled())
+    const body = JSON.parse(mockClientFetch.mock.calls[0][1]!.body as string)
+    expect(body.sections).toEqual([
+      { resourceId: 'r1', section: 'papers' },
+      { resourceId: 'r2', section: null },
+      { resourceId: 'r3', section: 'docs' },
+    ])
+  })
+
+  it('should hold a section with no members without saving anything', () => {
+    render(<ResourceList {...baseProps} resources={sectioned} />)
+
+    addSection('raw data')
+    expect(screen.getByText('raw data')).toBeInTheDocument()
+    expect(screen.getByText(/This section is empty/)).toBeInTheDocument()
+    expect(screen.queryByText('Save order')).not.toBeInTheDocument()
+  })
+
+  it('should let a section be named and saved on a dataset with no resources', () => {
+    render(<ResourceList {...baseProps} />)
+
+    fireEvent.click(screen.getByText('Add section'))
+    fireEvent.change(screen.getByLabelText('Section name'), { target: { value: 'raw data' } })
+    fireEvent.click(screen.getByText('Save'))
+
+    expect(screen.getByText('raw data')).toBeInTheDocument()
+    expect(screen.getByText(/This section is empty/)).toBeInTheDocument()
+    expect(screen.getByText('Add section')).toBeEnabled()
+  })
+
+  it('should put the first resource of an empty dataset into the section added first', async () => {
+    mockClientFetch.mockResolvedValue(jsonResponse({ id: 'r1' }))
+    const { container } = render(<ResourceList {...baseProps} />)
+
+    addSection('raw data')
+    dropFiles(container.firstElementChild!, [new File(['a'], 'a.csv', { type: 'text/csv' })])
+
+    await waitFor(() => expect(mockClientFetch).toHaveBeenCalled())
+    const body = JSON.parse(mockClientFetch.mock.calls[0][1]!.body as string)
+    expect(body.section).toBe('raw data')
+  })
+
+  it('should refuse a new section named like one that already exists', () => {
+    render(<ResourceList {...baseProps} resources={sectioned} />)
+
+    fireEvent.click(screen.getByText('Add section'))
+    fireEvent.change(screen.getByLabelText('Section name'), { target: { value: ' docs ' } })
+
+    expect(screen.getByRole('alert')).toHaveTextContent('already exists')
+    expect(screen.getByText('Save').closest('button')).toBeDisabled()
+  })
+
+  it("should refuse renaming a section to a run's name it is not next to, but allow its own", () => {
+    render(
+      <ResourceList
+        {...baseProps}
+        resources={[
+          { id: 'r1', name: 'a.csv', section: 'docs' },
+          { id: 'r2', name: 'b.csv', section: null },
+          { id: 'r3', name: 'c.csv', section: 'data' },
+        ]}
+      />
+    )
+
+    fireEvent.click(screen.getAllByLabelText('Rename section')[1])
+    fireEvent.change(screen.getByLabelText('Section name'), { target: { value: 'docs' } })
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    expect(screen.getByText('Save').closest('button')).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('Section name'), { target: { value: 'data' } })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByText('Save').closest('button')).toBeEnabled()
+  })
+
+  it('should let a section take the name of the run right above it, joining the two', async () => {
+    render(
+      <ResourceList
+        {...baseProps}
+        resources={[
+          { id: 'r1', name: 'a.csv', section: 'docs' },
+          { id: 'r2', name: 'b.csv', section: 'old' },
+        ]}
+      />
+    )
+
+    fireEvent.click(screen.getAllByLabelText('Rename section')[1])
+    fireEvent.change(screen.getByLabelText('Section name'), { target: { value: 'docs' } })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('Save'))
+
+    // One run now, so one heading
+    expect(screen.getAllByLabelText('Rename section')).toHaveLength(1)
+    fireEvent.click(screen.getByText('Save order'))
+    await waitFor(() => expect(mockClientFetch).toHaveBeenCalled())
+    const body = JSON.parse(mockClientFetch.mock.calls[0][1]!.body as string)
+    expect(body.sections).toEqual([
+      { resourceId: 'r1', section: 'docs' },
+      { resourceId: 'r2', section: 'docs' },
+    ])
+  })
+
+  it('should drop a section that was never named on cancel', () => {
+    render(<ResourceList {...baseProps} resources={sectioned} />)
+
+    fireEvent.click(screen.getByText('Add section'))
+    fireEvent.click(screen.getByText('Cancel'))
+    expect(screen.queryByLabelText('Section name')).not.toBeInTheDocument()
+    expect(screen.getByText('Add section')).toBeEnabled()
+  })
+
+  it('should create the next resource inside the section just added', async () => {
+    mockClientFetch.mockResolvedValue(jsonResponse({ id: 'r4' }))
+    const { container } = render(<ResourceList {...baseProps} resources={sectioned} />)
+
+    addSection('raw data')
+    dropFiles(container.firstElementChild!, [new File(['a'], 'a.csv', { type: 'text/csv' })])
+
+    await waitFor(() => expect(mockClientFetch).toHaveBeenCalled())
+    const body = JSON.parse(mockClientFetch.mock.calls[0][1]!.body as string)
+    expect(body.section).toBe('raw data')
+  })
+
+  it('should put a resource created at the end into the section the end is in', async () => {
+    mockClientFetch.mockResolvedValue(jsonResponse({ id: 'r4' }))
+    const { container } = render(<ResourceList {...baseProps} resources={sectioned} />)
+
+    dropFiles(container.firstElementChild!, [new File(['a'], 'a.csv', { type: 'text/csv' })])
+
+    await waitFor(() => expect(mockClientFetch).toHaveBeenCalled())
+    const body = JSON.parse(mockClientFetch.mock.calls[0][1]!.body as string)
+    expect(body.section).toBe('docs')
+  })
+})

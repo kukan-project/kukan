@@ -11,10 +11,16 @@ import {
   NotFoundError,
   ValidationError,
   normalizeFormat,
+  splitSection,
   detectFormat,
   getStorageKey,
 } from '@kukan/shared'
-import type { CreateResourceInput, UpdateResourceInput, PackageDbState } from '@kukan/shared'
+import type {
+  CreateResourceInput,
+  UpdateResourceInput,
+  PackageDbState,
+  ResourceSectionAssignment,
+} from '@kukan/shared'
 import type { PendingResourceMetadata } from '@kukan/db'
 import { RESOURCE_POSITION_LOCK, lockInTransaction } from './advisory-lock'
 import { cancelResourceRun } from './pipeline-claim'
@@ -47,6 +53,17 @@ const {
 
 // `extras` last, so the scrub wins over the column of the same name.
 export const publicResourceColumns = { ...projectedResourceColumns, extras: scrubbedExtras }
+
+/** What a resource's search document is built from (see search-index.ts) — one
+ *  list, so a field added to the index reaches every select that feeds it. */
+export const resourceDocColumns = {
+  id: resource.id,
+  packageId: resource.packageId,
+  name: resource.name,
+  description: resource.description,
+  format: resource.format,
+  section: resource.section,
+}
 
 /**
  * Latest version number a resource still serves, per resource (ADR-043); absent
@@ -141,11 +158,7 @@ export class ResourceService {
   async listForSearchRebuild(packageId: string) {
     return await this.db
       .select({
-        id: resource.id,
-        packageId: resource.packageId,
-        name: resource.name,
-        description: resource.description,
-        format: resource.format,
+        ...resourceDocColumns,
         url: resource.url,
         hasStoredContent: isNotNull(resource.storageKey),
       })
@@ -269,6 +282,23 @@ export class ResourceService {
     await lockInTransaction(tx, RESOURCE_POSITION_LOCK, packageId)
   }
 
+  /** Reject an arrangement in which one section name would head two runs (ADR-050). */
+  private assertUnsplit(labels: (string | null)[]) {
+    const split = splitSection(labels)
+    if (split) {
+      throw new ValidationError(`Section "${split}" would appear in more than one place`)
+    }
+  }
+
+  /** The package's active rows in order, as far as the arrangement is concerned. */
+  private async activeSections(tx: Pick<Database, 'select'>, packageId: string) {
+    return await tx
+      .select({ id: resource.id, section: resource.section })
+      .from(resource)
+      .where(and(eq(resource.packageId, packageId), eq(resource.state, 'active')))
+      .orderBy(resource.position)
+  }
+
   /**
    * Create a new resource
    * Automatically assigns position as max(position) + 1 within the package
@@ -300,6 +330,10 @@ export class ResourceService {
         .where(eq(resource.packageId, input.packageId))
 
       const nextPosition = (maxPos?.maxPosition ?? -1) + 1
+      if (input.section) {
+        const rows = await this.activeSections(tx, input.packageId)
+        this.assertUnsplit([...rows.map((r) => r.section), input.section])
+      }
 
       // Create resource
       const [newResource] = await tx
@@ -314,6 +348,7 @@ export class ResourceService {
           mimetype: input.mimetype,
           position: nextPosition,
           resourceType: input.resourceType,
+          section: input.section,
           state: 'active',
         })
         .returning(publicResourceColumns)
@@ -332,65 +367,102 @@ export class ResourceService {
     // do not survive it changing (see their declaration in `@kukan/db`).
     const urlChanged = sql`(${resource.url} IS DISTINCT FROM ${url} OR ${resource.urlType} IS DISTINCT FROM ${urlType})`
 
-    const [updated] = await this.db
-      .update(resource)
-      .set({
-        url,
-        urlType,
-        healthStatus: sql`CASE WHEN ${urlChanged} THEN 'unknown' ELSE ${resource.healthStatus} END`,
-        healthCheckedAt: sql`CASE WHEN ${urlChanged} THEN NULL ELSE ${resource.healthCheckedAt} END`,
-        healthCheckState: sql`CASE WHEN ${urlChanged} THEN '{}'::jsonb ELSE ${resource.healthCheckState} END`,
-        name: input.name ?? null,
-        description: input.description ?? null,
-        format: input.format ? normalizeFormat(input.format) : null,
-        mimetype: input.mimetype ?? null,
-        resourceType: input.resourceType ?? null,
-        // size/hash/extras are absent on purpose: they are system-managed
-        // (measured or produced by the pipeline) and left untouched. Writing
-        // back the values read above would be a read-modify-write that reverts
-        // whatever the worker or the health check recorded in between — and an
-        // upload is not reprocessed on edit, so a stale hash would persist.
-        updated: sql`NOW()`,
-      })
-      .where(eq(resource.id, id))
-      .returning(publicResourceColumns)
+    const write = async (db: Pick<Database, 'update'>) => {
+      const [updated] = await db
+        .update(resource)
+        .set({
+          url,
+          urlType,
+          healthStatus: sql`CASE WHEN ${urlChanged} THEN 'unknown' ELSE ${resource.healthStatus} END`,
+          healthCheckedAt: sql`CASE WHEN ${urlChanged} THEN NULL ELSE ${resource.healthCheckedAt} END`,
+          healthCheckState: sql`CASE WHEN ${urlChanged} THEN '{}'::jsonb ELSE ${resource.healthCheckState} END`,
+          name: input.name ?? null,
+          description: input.description ?? null,
+          format: input.format ? normalizeFormat(input.format) : null,
+          mimetype: input.mimetype ?? null,
+          resourceType: input.resourceType ?? null,
+          // Absent keeps the label: it is arranged from the reorder side (ADR-050)
+          ...(input.section !== undefined && { section: input.section }),
+          // size/hash/extras are absent on purpose: they are system-managed
+          // (measured or produced by the pipeline) and left untouched. Writing
+          // back the values read above would be a read-modify-write that reverts
+          // whatever the worker or the health check recorded in between — and an
+          // upload is not reprocessed on edit, so a stale hash would persist.
+          updated: sql`NOW()`,
+        })
+        .where(eq(resource.id, id))
+        .returning(publicResourceColumns)
+      if (!updated) throw new NotFoundError('Resource', id)
+      return updated
+    }
 
-    if (!updated) throw new NotFoundError('Resource', id)
-    return updated
+    // A new label — or none, which can cut a run in two just as well — is
+    // checked under the package's position lock, the lock every other writer of
+    // the arrangement takes, so a concurrent reorder cannot slip a second run of
+    // the name in between the check and the write
+    const section = input.section
+    if (section === undefined) return await write(this.db)
+    return await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .select({ packageId: resource.packageId })
+        .from(resource)
+        .where(eq(resource.id, id))
+        .limit(1)
+      if (!row) throw new NotFoundError('Resource', id)
+      await this.lockResourcePositions(tx, row.packageId)
+      const rows = await this.activeSections(tx, row.packageId)
+      this.assertUnsplit(rows.map((r) => (r.id === id ? section : r.section)))
+      return await write(tx)
+    })
   }
 
   /**
-   * Reorder resources within a package.
+   * Reorder resources within a package, and relabel the sections that same
+   * arrangement changed (ADR-050).
    * Requires the complete list of active resource IDs in the desired order.
    */
-  async reorder(packageId: string, resourceIds: string[]) {
+  async reorder(packageId: string, resourceIds: string[], sections?: ResourceSectionAssignment[]) {
     return await this.db.transaction(async (tx) => {
       await this.lockResourcePositions(tx, packageId)
 
-      const existing = await tx
-        .select({ id: resource.id })
-        .from(resource)
-        .where(and(eq(resource.packageId, packageId), eq(resource.state, 'active')))
+      const existing = await this.activeSections(tx, packageId)
 
       const existingIds = new Set(existing.map((r) => r.id))
-      const inputIds = new Set(resourceIds)
-
-      if (resourceIds.length !== existingIds.size || inputIds.size !== resourceIds.length) {
-        throw new ValidationError(
-          'resource_ids must contain all active resource IDs with no duplicates'
-        )
-      }
-      for (const id of resourceIds) {
-        if (!existingIds.has(id)) {
-          throw new ValidationError(`Resource ${id} does not belong to this package`)
+      // One rule for every id-bearing field: every active resource, once, and nothing else
+      const assertCoversActive = (ids: readonly string[], what: string) => {
+        if (ids.length !== existingIds.size || new Set(ids).size !== ids.length) {
+          throw new ValidationError(
+            `${what} must contain all active resource IDs with no duplicates`
+          )
+        }
+        for (const id of ids) {
+          if (!existingIds.has(id)) {
+            throw new ValidationError(`Resource ${id} does not belong to this package`)
+          }
         }
       }
+      assertCoversActive(resourceIds, 'resource_ids')
+      // Labels come for every resource or not at all, so the later save wins whole (ADR-050)
+      if (sections)
+        assertCoversActive(
+          sections.map((s) => s.resourceId),
+          'sections'
+        )
+      const sectionOf = sections && new Map(sections.map((s) => [s.resourceId, s.section]))
+      // The order alone can cut a run in two, so the stored labels are checked in it as well
+      const labelOf = sectionOf ?? new Map(existing.map((r) => [r.id, r.section]))
+      this.assertUnsplit(resourceIds.map((id) => labelOf.get(id) ?? null))
 
       for (let i = 0; i < resourceIds.length; i++) {
+        const id = resourceIds[i]
         await tx
           .update(resource)
-          .set({ position: i, updated: sql`NOW()` })
-          .where(eq(resource.id, resourceIds[i]))
+          .set({
+            position: i,
+            ...(sectionOf && { section: sectionOf.get(id) ?? null }),
+            updated: sql`NOW()`,
+          })
+          .where(eq(resource.id, id))
       }
 
       return await tx

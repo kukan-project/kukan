@@ -163,7 +163,7 @@ export class OpenSearchAdapter implements SearchAdapter {
 
 **リソースメタデータ検索（Step 2b で実装済み）**:
 
-- PostgresSearchAdapter: EXISTS サブクエリで resource.name/description を ILIKE 検索
+- PostgresSearchAdapter: EXISTS サブクエリで resource.name/description/section を ILIKE 検索
 - PackageService.list(): `q` パラメータ指定時に同じ EXISTS サブクエリ + `matchedResources` をバッチ取得
 - pg_trgm GIN インデックスを `resource.name` と `resource.description` にも追加
 - パッケージごとのマッチリソース上限: `MAX_MATCHED_RESOURCES_PER_PACKAGE`（1000件、`@kukan/shared`で定義）

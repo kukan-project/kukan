@@ -139,6 +139,40 @@ the listing.
 | PUT    | `/resources/{id}`                       | Update resource (full replacement; extras is system-managed)              | Org editor |
 | DELETE | `/resources/{id}`                       | Delete resource                                                           | Org editor |
 
+### Sections (section)
+
+A resource carries a `section` field (a string, `null` when unset). It is a **display
+grouping** that raises headings in the resource list on the dataset page; it changes
+neither visibility nor permissions.
+
+A heading opens for each _run_ of consecutive resources sharing the same `section`. When
+another section or an unlabelled resource sits in between, a heading of the same name
+opens again. Ordering is `position` alone — `section` plays no part in it.
+
+- Accepted by `POST /packages/{id}/resources` and `PUT /resources/{id}`. Left out of a
+  `PUT` it is kept; `null` clears it
+- Values are normalized on the way in: split on `/`, each segment trimmed, empty segments
+  dropped, rejoined with `/`; an empty result becomes `null`. `/` is reserved for a later
+  nested display
+- A name labels **one contiguous run**. A request that would put the same name in two
+  separated places (`sections` on `reorder`, `section` on create / update) gets `400`, and
+  so does an order-only `reorder` or a `null` that would cut a run in two
+- `PUT /packages/{id}/resources/reorder` accepts an optional `sections` array and applies
+  the labels in the same transaction as the order. Unlike a resource update it does not
+  re-enqueue the pipeline, so use it when a reorder also changes labels. **When given, it
+  names every active resource exactly once** — the later save wins whole. Omit it and the
+  labels stay as they are
+
+```json
+{
+  "resourceIds": ["<id-1>", "<id-2>"],
+  "sections": [
+    { "resourceId": "<id-1>", "section": "Supporting documents" },
+    { "resourceId": "<id-2>", "section": null }
+  ]
+}
+```
+
 ### Versions
 
 | Method | Path                                    | Description                                                 | Auth       |

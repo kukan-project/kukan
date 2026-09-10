@@ -170,7 +170,7 @@ export class OpenSearchAdapter implements SearchAdapter {
 
 **Resource metadata search (already implemented in Step 2b)**:
 
-- PostgresSearchAdapter: ILIKE search on resource.name/description via an EXISTS subquery
+- PostgresSearchAdapter: ILIKE search on resource.name/description/section via an EXISTS subquery
 - PackageService.list(): the same EXISTS subquery plus a batched fetch of `matchedResources` when
   the `q` parameter is present
 - pg_trgm GIN indexes added to `resource.name` and `resource.description` as well

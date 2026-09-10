@@ -22,9 +22,16 @@ import {
   TabsContent,
   cn,
 } from '@kukan/ui'
-import { Upload, X, Plus, GripVertical } from 'lucide-react'
+import { Upload, X, Plus, GripVertical, Pencil } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import { detectFormat, isCsvFormat, MAX_UPLOAD_SIZE, MAX_UPLOAD_SIZE_MB } from '@kukan/shared'
+import {
+  detectFormat,
+  isCsvFormat,
+  normalizeSection,
+  splitSection,
+  MAX_UPLOAD_SIZE,
+  MAX_UPLOAD_SIZE_MB,
+} from '@kukan/shared'
 import {
   DndContext,
   closestCenter,
@@ -38,7 +45,6 @@ import {
   SortableContext,
   verticalListSortingStrategy,
   useSortable,
-  arrayMove,
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -46,6 +52,21 @@ import { clientFetch, problemDetail } from '@/lib/client-api'
 import { rowActivateProps } from '@/lib/row-activate'
 import { takePendingDropFiles } from '@/lib/pending-drop-files'
 import { updateResource } from '@/lib/update-resource'
+import {
+  opensSection,
+  sectionRunEnd,
+  placeDivider,
+  dropRow,
+  dividerLanding,
+  rowIndexById,
+  anchorIndex,
+  sectionDragId,
+  pendingDragId,
+  rowIdOfDragId,
+  pendingIdOfDragId,
+  isSectionDragId,
+  isPendingDragId,
+} from '@/lib/resource-sections'
 import { useFileDrop } from '@/hooks/use-file-drop'
 import { FormatBadge } from '@/components/format-badge'
 import { DeleteConfirmDialog } from '@/components/dashboard/delete-confirm-dialog'
@@ -67,6 +88,7 @@ interface Resource {
   description?: string | null
   pipelineStatus?: PipelineStatus | null
   latestVersion?: number | null
+  section?: string | null
 }
 
 interface FormState {
@@ -100,6 +122,153 @@ interface ResourceListProps {
   onUpdated: () => void | boolean | Promise<void | boolean>
   /** Reports whether any file upload is still in flight (ADR-040) */
   onUploadingChange?: (uploading: boolean) => void
+}
+
+/** Columns the table has, so a heading spans the row rather than sitting in one cell. */
+const COLUMN_COUNT = 7
+
+/** A heading with nothing under it yet — unsaved, held until a resource joins it (ADR-050). */
+interface PendingSection {
+  id: string
+  name: string
+  /** The row it stands above, or null for the end of the list — an anchor, like
+   *  a saved heading's, so it follows the list without bookkeeping. Headings
+   *  sharing an anchor are drawn in list order. */
+  above: string | null
+}
+
+/** The heading being typed for a new section; it has no name yet, so it is not a pending. */
+const DRAFT_ID = pendingDragId('draft')
+
+/** One section's heading: a divider, not a row (ADR-050). The draft lives here
+ *  so typing a name does not re-render the list. */
+function SectionHeadingRow({
+  sortableId,
+  label,
+  editing,
+  onCommit,
+  onCancel,
+  onRename,
+  onDissolve,
+  isTaken,
+  disabled,
+}: {
+  sortableId: string
+  label: string
+  editing: boolean
+  onCommit: (name: string) => void
+  onCancel: () => void
+  onRename: () => void
+  onDissolve: () => void
+  /** Whether the name would stand in two places — a section is one run (ADR-050). */
+  isTaken: (name: string) => boolean
+  disabled: boolean
+}) {
+  const t = useTranslations('resource')
+  const tc = useTranslations('common')
+  const [draft, setDraft] = useState(label)
+  const name = normalizeSection(draft)
+  const taken = editing && name !== null && isTaken(name)
+  const canSave = name !== null && !taken
+  useEffect(() => {
+    if (editing) setDraft(label)
+  }, [editing, label])
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: sortableId,
+    disabled,
+  })
+
+  return (
+    <TableRow
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+      }}
+      // Tinted with the brand colour rather than the neutral grey a hovered row
+      // takes, so a heading and a hovered row cannot be mistaken for each other
+      className="bg-primary/10 hover:bg-primary/10"
+    >
+      <TableCell className="w-8 p-2">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="cursor-grab touch-none p-1 text-muted-foreground hover:text-foreground disabled:cursor-default disabled:opacity-30"
+          disabled={disabled}
+          aria-label={t('reorderSection')}
+        >
+          <GripVertical className="size-4" />
+        </button>
+      </TableCell>
+      <TableCell colSpan={COLUMN_COUNT - 1} className="py-1.5">
+        {editing ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              autoFocus
+              value={draft}
+              aria-label={t('sectionName')}
+              placeholder={t('sectionNamePlaceholder')}
+              className="h-8 max-w-64"
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  if (canSave) onCommit(draft)
+                } else if (e.key === 'Escape') {
+                  onCancel()
+                }
+              }}
+            />
+            <Button size="sm" onClick={() => onCommit(draft)} disabled={!canSave}>
+              {tc('save')}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onCancel}>
+              {tc('cancel')}
+            </Button>
+            {taken && (
+              <p role="alert" className="w-full text-xs text-destructive">
+                {t('sectionNameTaken')}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-1">
+            {/* The bar is the handle, not just the grip: only the listeners go
+                here, so the grip keeps the role and the tab stop */}
+            <span
+              {...(disabled ? {} : listeners)}
+              className={cn(
+                'text-xs font-semibold text-foreground select-none',
+                !disabled && 'cursor-grab touch-none'
+              )}
+            >
+              {label}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={onRename}
+              disabled={disabled}
+              aria-label={t('renameSection')}
+            >
+              <Pencil />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={onDissolve}
+              disabled={disabled}
+              aria-label={t('dissolveSection')}
+            >
+              <X />
+            </Button>
+          </div>
+        )}
+      </TableCell>
+    </TableRow>
+  )
 }
 
 function SortableResourceRow({
@@ -162,7 +331,9 @@ function SortableResourceRow({
           <GripVertical className="size-4" />
         </button>
       </TableCell>
-      <TableCell>{r.name || '-'}</TableCell>
+      {/* Indented rather than nested: the list is one column showing two
+          levels, and the indent is what says which one a row is on. */}
+      <TableCell className={cn(r.section && 'pl-8')}>{r.name || '-'}</TableCell>
       <TableCell>{r.format ? <FormatBadge format={r.format} /> : '-'}</TableCell>
       <TableCell className="whitespace-nowrap">
         {r.latestVersion != null ? (
@@ -275,19 +446,28 @@ export function ResourceList({
   const [items, setItems] = useState<Resource[]>(resources)
   const [reorderError, setReorderError] = useState<string | null>(null)
   const [savingOrder, setSavingOrder] = useState(false)
+  const [pendings, setPendings] = useState<PendingSection[]>([])
+  /** The heading whose name is being edited, by its sortable id — DRAFT_ID
+   *  while a new section is being named at the end. */
+  const [editingHeading, setEditingHeading] = useState<string | null>(null)
+  const draftOpen = editingHeading === DRAFT_ID
+
+  const isFormOpen = editId !== null || creating
+  // One gate for every arrangement control: a rename must not watch rows move under it
+  const controlsLocked =
+    isFormOpen || savingOrder || dropUploads.length > 0 || editingHeading !== null
 
   useEffect(() => {
     setItems(resources)
+    // A name the data now carries is drawn from the data: a row created into the
+    // heading has arrived, or a refetch brought back the run it was lifted from
+    const live = new Set(resources.map((r) => r.section))
+    setPendings((list) => list.filter((p) => !live.has(p.name)))
   }, [resources])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  )
-
-  const isDirty = useMemo(
-    () => items.length === resources.length && items.some((r, i) => r.id !== resources[i]?.id),
-    [items, resources]
   )
 
   // Resources still uploading are shown as cards below the table — hide their
@@ -296,18 +476,182 @@ export function ResourceList({
     () => items.filter((r) => !dropUploads.some((u) => u.resourceId === r.id)),
     [items, dropUploads]
   )
+  // The table is where headings live, so an unsaved one needs it drawn too
+  const showTable = visibleItems.length > 0 || creating || pendings.length > 0 || draftOpen
 
-  const itemIds = useMemo(() => visibleItems.map((r) => r.id), [visibleItems])
+  /** Whether any label differs from what the server holds — the labels then go
+   *  out whole with the order, so the later save wins whole (ADR-050). */
+  const labelsChanged = useMemo(() => {
+    const stored = new Map(resources.map((r) => [r.id, r.section ?? null]))
+    return items.some((r) => stored.has(r.id) && (r.section ?? null) !== stored.get(r.id))
+  }, [items, resources])
+
+  const isDirty = useMemo(
+    () =>
+      (items.length === resources.length && items.some((r, i) => r.id !== resources[i]?.id)) ||
+      labelsChanged,
+    [items, resources, labelsChanged]
+  )
+
+  /** The list as drawn: one slot per row plus one past the end, each carrying
+   *  the empty headings standing there and whether a section opens on its row. */
+  const slots = useMemo(() => {
+    const index = rowIndexById(visibleItems)
+    const byIndex = new Map<number, PendingSection[]>()
+    for (const p of pendings) {
+      const i = anchorIndex(index, p.above, visibleItems.length)
+      const bucket = byIndex.get(i)
+      if (bucket) bucket.push(p)
+      else byIndex.set(i, [p])
+    }
+    return [...visibleItems, null].map((row, i) => ({
+      row,
+      opens: row !== null && opensSection(visibleItems, i),
+      pendingsHere: byIndex.get(i) ?? [],
+    }))
+  }, [visibleItems, pendings])
+
+  /** Sortable ids in drawn order, so dnd-kit measures headings beside their rows. */
+  const itemIds = useMemo(() => {
+    const ids: string[] = []
+    for (const slot of slots) {
+      for (const p of slot.pendingsHere) ids.push(pendingDragId(p.id))
+      if (slot.row) {
+        if (slot.opens) ids.push(sectionDragId(slot.row.id))
+        ids.push(slot.row.id)
+      }
+    }
+    return ids
+  }, [slots])
+
+  // A heading can vanish under an open editor (a refetch relabelled or removed its
+  // row); the editor must go with it, or the lock it holds has no way out
+  useEffect(() => {
+    if (editingHeading && editingHeading !== DRAFT_ID && !itemIds.includes(editingHeading)) {
+      setEditingHeading(null)
+    }
+  }, [editingHeading, itemIds])
+
+  type Dragged =
+    | { kind: 'row'; index: number; label: string | null }
+    | { kind: 'heading'; index: number; label: string }
+    | { kind: 'pending'; index: number; label: string; pendingId: string }
+
+  /** What a sortable id stands for, decoded once: its drawn index and label. */
+  function resolveDrag(dragId: string): Dragged | null {
+    if (isPendingDragId(dragId)) {
+      const pendingId = pendingIdOfDragId(dragId)
+      for (const [index, slot] of slots.entries()) {
+        const p = slot.pendingsHere.find((p) => p.id === pendingId)
+        if (p) return { kind: 'pending', index, label: p.name, pendingId }
+      }
+      return null
+    }
+    const index = visibleItems.findIndex((r) => r.id === rowIdOfDragId(dragId))
+    if (index === -1) return null
+    const label = visibleItems[index].section ?? null
+    if (isSectionDragId(dragId)) return label ? { kind: 'heading', index, label } : null
+    return { kind: 'row', index, label }
+  }
+
+  /** Whether naming a heading `name` would put that name in two places (ADR-050).
+   *  A run is judged by the arrangement it makes, so renaming it to the name of
+   *  the run next to it joins the two; an empty heading has no run to join. */
+  function nameTaken(name: string, own: { runStart?: number; pendingId?: string }): boolean {
+    if (pendings.some((p) => p.id !== own.pendingId && p.name === name)) return true
+    const start = own.runStart
+    if (start === undefined) return visibleItems.some((r) => r.section === name)
+    const end = sectionRunEnd(visibleItems, start)
+    const renamed = visibleItems.map((r, i) => (i >= start && i < end ? name : r.section))
+    return splitSection(renamed) !== null
+  }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (!over || active.id === over.id) return
+    const from = resolveDrag(String(active.id))
+    const to = resolveDrag(String(over.id))
+    if (!from || !to) return
 
-    const oldIndex = items.findIndex((r) => r.id === active.id)
-    const newIndex = items.findIndex((r) => r.id === over.id)
-    if (oldIndex === -1 || newIndex === -1) return
+    if (from.kind !== 'row') {
+      // A heading is a divider: dragging it re-slices, and no row moves
+      moveDivider(from, to)
+      return
+    }
 
-    setItems(arrayMove(items, oldIndex, newIndex))
+    // Rows only drag while nothing is uploading, so the drawn list is the whole list
+    const dropped = dropRow(visibleItems, from.index, to.index, to.kind !== 'row', to.label)
+    setItems(dropped.rows)
+    if (to.kind === 'pending') setPendings((list) => list.filter((p) => p.id !== to.pendingId))
+    setReorderError(null)
+  }
+
+  /** The ids of the run starting at `from`, which a rename or dissolve rewrites. */
+  function runIds(from: number) {
+    return new Set(visibleItems.slice(from, sectionRunEnd(visibleItems, from)).map((r) => r.id))
+  }
+
+  function relabel(ids: Set<string>, section: string | null) {
+    setItems((list) => list.map((r) => (ids.has(r.id) ? { ...r, section } : r)))
+    setReorderError(null)
+  }
+
+  /** Set a divider down over `to` (ADR-050). One left with nothing under it is
+   *  kept as an empty heading, so a name is not lost for a step too far. */
+  function moveDivider(from: Exclude<Dragged, { kind: 'row' }>, to: Dragged) {
+    const ontoHeading = to.kind !== 'row'
+    const fromPendingId = from.kind === 'pending' ? from.pendingId : null
+    const ontoPendingId = to.kind === 'pending' ? to.pendingId : null
+    const placed = placeDivider(
+      visibleItems,
+      from.label,
+      dividerLanding(from.index, to.index, ontoHeading),
+      { lift: from.kind === 'heading' ? from.index : undefined, ontoHeading }
+    )
+    // Written back by id: hidden (uploading) rows keep their place and label
+    const byId = new Map(placed.rows.map((r) => [r.id, r]))
+    setItems((list) => list.map((r) => byId.get(r.id) ?? r))
+    setPendings((list) => {
+      const rest = fromPendingId ? list.filter((p) => p.id !== fromPendingId) : list
+      if (placed.claimed > 0) return rest
+      const heading = {
+        id: fromPendingId ?? crypto.randomUUID(),
+        name: from.label,
+        above: visibleItems[placed.at]?.id ?? null,
+      }
+      // Above the heading it was dropped on, as it would stand above a saved one
+      const at = rest.findIndex((p) => p.id === ontoPendingId)
+      return at === -1 ? [...rest, heading] : rest.toSpliced(at, 0, heading)
+    })
+    setReorderError(null)
+  }
+
+  function startAddSection() {
+    setEditingHeading(DRAFT_ID)
+  }
+
+  function commitHeading(dragId: string, raw: string) {
+    const name = normalizeSection(raw)
+    if (dragId === DRAFT_ID) {
+      if (name) setPendings((list) => [...list, { id: crypto.randomUUID(), name, above: null }])
+    } else if (name && isPendingDragId(dragId)) {
+      const id = pendingIdOfDragId(dragId)
+      setPendings((list) => list.map((p) => (p.id === id ? { ...p, name } : p)))
+    } else if (name) {
+      const from = resolveDrag(dragId)
+      if (from) relabel(runIds(from.index), name)
+    }
+    setEditingHeading(null)
+  }
+
+  function cancelHeading() {
+    setEditingHeading(null)
+  }
+
+  function cancelOrder() {
+    setItems(resources)
+    setPendings([])
+    setEditingHeading(null)
     setReorderError(null)
   }
 
@@ -318,10 +662,16 @@ export function ResourceList({
       const res = await clientFetch(`/api/v1/packages/${packageId}/resources/reorder`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resourceIds: items.map((r) => r.id) }),
+        body: JSON.stringify({
+          resourceIds: items.map((r) => r.id),
+          // Labels ride with the order: a resource update would re-enqueue the pipeline (ADR-050)
+          ...(labelsChanged && {
+            sections: items.map((r) => ({ resourceId: r.id, section: r.section ?? null })),
+          }),
+        }),
       })
       if (!res.ok) {
-        setReorderError(t('reorderFailed'))
+        setReorderError((await problemDetail(res)) ?? t('reorderFailed'))
         return
       }
       onUpdated()
@@ -331,13 +681,6 @@ export function ResourceList({
       setSavingOrder(false)
     }
   }
-
-  function cancelOrder() {
-    setItems(resources)
-    setReorderError(null)
-  }
-
-  const isFormOpen = editId !== null || creating
 
   // --- Helpers ---
 
@@ -568,7 +911,14 @@ export function ResourceList({
   // Cross-client position races are handled server-side (advisory lock in
   // ResourceService.create()). Uploads themselves stay parallel.
   function enqueueCreate(body: Record<string, string>): Promise<Resource> {
-    const run = createChain.current.then(() => createResource(body))
+    // A new resource goes to the end, so it takes the level the end is on
+    // (ADR-050) — spelled here rather than at each caller, because creating from
+    // the form and dropping a file end up in the same place. The last row is
+    // read from all rows: one still uploading is hidden from the drawn list,
+    // and a heading anchored above it resolves to the drawn list's end slot.
+    const trailing = slots.at(-1)?.pendingsHere.at(-1)?.name ?? items.at(-1)?.section ?? null
+    const withSection = trailing ? { ...body, section: trailing } : body
+    const run = createChain.current.then(() => createResource(withSection))
     createChain.current = run.catch(() => undefined)
     return run
   }
@@ -652,6 +1002,52 @@ export function ResourceList({
 
   const isEditing = editId !== null
   const activeFormId = editId ?? (creating ? '__create__' : null)
+
+  /** The heading of a section with nothing under it yet, wherever it stands. */
+  function renderSectionHeading(
+    dragId: string,
+    label: string,
+    onDissolve: () => void,
+    isTaken: (name: string) => boolean
+  ) {
+    return (
+      <SectionHeadingRow
+        key={dragId}
+        sortableId={dragId}
+        label={label}
+        editing={editingHeading === dragId}
+        onCommit={(name) => commitHeading(dragId, name)}
+        onCancel={cancelHeading}
+        onRename={() => setEditingHeading(dragId)}
+        onDissolve={onDissolve}
+        isTaken={isTaken}
+        disabled={controlsLocked}
+      />
+    )
+  }
+
+  function renderPending(p: PendingSection) {
+    return (
+      <Fragment key={p.id}>
+        {renderSectionHeading(
+          pendingDragId(p.id),
+          p.name,
+          () => setPendings((list) => list.filter((x) => x.id !== p.id)),
+          (name) => nameTaken(name, { pendingId: p.id })
+        )}
+        {!creating && (
+          <TableRow className="hover:bg-transparent">
+            <TableCell
+              colSpan={COLUMN_COUNT}
+              className="py-3 text-center text-xs text-muted-foreground"
+            >
+              {t('sectionEmpty')}
+            </TableCell>
+          </TableRow>
+        )}
+      </Fragment>
+    )
+  }
 
   function renderInlineForm() {
     if (uploadingResourceId) {
@@ -860,10 +1256,10 @@ export function ResourceList({
           </div>
         </div>
       )}
-      {visibleItems.length === 0 && !creating && dropUploads.length === 0 && (
+      {!showTable && dropUploads.length === 0 && (
         <p className="py-4 text-center text-sm text-muted-foreground">{t('noResources')}</p>
       )}
-      {(visibleItems.length > 0 || creating) && (
+      {showTable && (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <Table>
             {visibleItems.length > 0 && (
@@ -881,37 +1277,50 @@ export function ResourceList({
             )}
             <TableBody>
               <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
-                {visibleItems.map((r) => (
-                  <Fragment key={r.id}>
-                    <SortableResourceRow
-                      resource={r}
-                      packageName={packageName}
-                      isDragDisabled={isFormOpen || savingOrder || dropUploads.length > 0}
-                      isActionsDisabled={isDirty || savingOrder}
-                      isActive={editId === r.id}
-                      onEdit={startEdit}
-                      onClose={resetForm}
-                      // A settle means the row's status (and maybe others)
-                      // changed — refresh through the retrying gate
-                      onPipelineSettled={() => {
-                        scheduleRefetch()
-                        if (r.id === editId) setEditedRunsSettled((n) => n + 1)
-                      }}
-                      justRan={justRan === r.id}
-                    />
-                    {activeFormId === r.id && (
+                {slots.map(({ row: r, opens, pendingsHere }, i) => (
+                  <Fragment key={r?.id ?? 'end'}>
+                    {pendingsHere.map(renderPending)}
+                    {r &&
+                      opens &&
+                      renderSectionHeading(
+                        sectionDragId(r.id),
+                        r.section as string,
+                        () => relabel(runIds(i), null),
+                        (name) => nameTaken(name, { runStart: i })
+                      )}
+                    {r && (
+                      <SortableResourceRow
+                        resource={r}
+                        packageName={packageName}
+                        isDragDisabled={controlsLocked}
+                        isActionsDisabled={isDirty || savingOrder}
+                        isActive={editId === r.id}
+                        onEdit={startEdit}
+                        onClose={resetForm}
+                        // A settle means the row's status (and maybe others)
+                        // changed — refresh through the retrying gate
+                        onPipelineSettled={() => {
+                          scheduleRefetch()
+                          if (r.id === editId) setEditedRunsSettled((n) => n + 1)
+                        }}
+                        justRan={justRan === r.id}
+                      />
+                    )}
+                    {r && activeFormId === r.id && (
                       <TableRow>
-                        <TableCell colSpan={7} className="bg-muted/30 p-4">
+                        <TableCell colSpan={COLUMN_COUNT} className="bg-muted/30 p-4">
                           {renderInlineForm()}
                         </TableCell>
                       </TableRow>
                     )}
                   </Fragment>
                 ))}
+                {draftOpen &&
+                  renderSectionHeading(DRAFT_ID, '', cancelHeading, (name) => nameTaken(name, {}))}
               </SortableContext>
               {creating && (
                 <TableRow>
-                  <TableCell colSpan={7} className="bg-muted/30 p-4">
+                  <TableCell colSpan={COLUMN_COUNT} className="bg-muted/30 p-4">
                     {renderInlineForm()}
                   </TableCell>
                 </TableRow>
@@ -960,10 +1369,22 @@ export function ResourceList({
       )}
 
       {!creating && !editId && (
-        <Button variant="outline" size="sm" onClick={startCreate} disabled={isDirty || savingOrder}>
-          <Plus className="mr-1 size-4" />
-          {t('addResource')}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={startCreate}
+            disabled={isDirty || savingOrder}
+          >
+            <Plus className="mr-1 size-4" />
+            {t('addResource')}
+          </Button>
+          <Button variant="outline" size="sm" onClick={startAddSection} disabled={controlsLocked}>
+            <Plus className="mr-1 size-4" />
+            {t('addSection')}
+          </Button>
+          <span className="text-xs text-muted-foreground">{t('sectionHint')}</span>
+        </div>
       )}
 
       <DeleteConfirmDialog

@@ -53,6 +53,31 @@ Resources are files or URLs associated with a dataset.
 - **File upload** — Upload directly from the browser (up to 100 MB)
 - **External URL** — Specify a URL to an external file
 
+### Grouping resources into sections
+
+When a dataset has many resources, **section** headings group them. "Add section" in the
+resource list names a new, empty heading at the end.
+
+- **A heading is a divider.** Drag it into place and the resources from there down to the
+  next heading belong to the section. Moving a heading never changes the order of the
+  resources
+- Moving a heading down hands the resources it passes to the section above (or to the
+  root); moving it up takes them in.
+  Set down inside another section it splits that section there; set down directly on a
+  heading it takes nothing
+- A dragged resource joins the section of the resource above it. Dropped on a heading it
+  becomes that section's first member; dropped at the top of the list it belongs to no
+  section
+- Rename and dissolve (dissolving keeps the resources) from the buttons on the heading. A
+  section name is used once per dataset
+- A heading with no members is not saved until a resource enters it. A resource added at
+  the end, or a dropped file, goes into the section the end is in
+- Like the order, "Save order" commits the change
+
+A section is a display divider on the dataset page and does not change who can see a
+resource. A `/` in the name nests the headings on the public page (`2024/Tokyo` shows
+"Tokyo" under "2024", up to three levels). Section names are searchable.
+
 ### Supported formats
 
 KUKAN supports many formats including CSV, TSV, JSON, GeoJSON, XML, PDF, and Excel.

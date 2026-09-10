@@ -60,7 +60,7 @@ Swapping models after evaluation is handled by "re-embedding everything (rebuild
   └─ enqueue embed job (QueueAdapter, only when the AIAdapter can embed)
         │
 [Worker] embed-package job
-  1. fetch package → build the text to embed (title + notes + tags + resource name/description)
+  1. fetch package → build the text to embed (title + notes + tags + section names + resource name/description)
   2. compare the content hash → skip when unchanged
   3. AIAdapter.embed(text, { type: 'document' })
   4. UPDATE package SET embedding, embedding_model, embedding_hash

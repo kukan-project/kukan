@@ -25,6 +25,9 @@ export * from './csv-records'
 // Pipeline types (shared between API and Worker)
 export * from './pipeline-types'
 
+// Resource sections (ADR-050): how a resource list reads as headings
+export * from './resource-sections'
+
 // Version identity (ADR-046 §3): the one definition of "the same version's content"
 export * from './version-identity'
 

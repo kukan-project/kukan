@@ -11,7 +11,7 @@ ADR-021（判断 1）を置換する。
 現在の検索は 3 つの OpenSearch インデックスで構成されている：
 
 - `kukan-packages` — データセットメタデータ（title, name, notes, organization, tags 等）
-- `kukan-resources` — リソースメタデータ（name, description, format, packageId）
+- `kukan-resources` — リソースメタデータ（name, description, section, format, packageId）
 - `kukan-contents` — リソースコンテンツ全文（extractedText, resourceId, packageId）
 
 `msearch` で 3 インデックスを並列検索し、アプリケーション層でパッケージ単位にマージしている。
@@ -53,7 +53,7 @@ kukan-search (単一インデックス)
   ├── type: "package"   (parent)
   │     title, name, notes, organization, tags, formats, ...
   ├── type: "resource"  (child of package)
-  │     name, description, format
+  │     name, description, section, format
   └── type: "content"   (child of package)
         extractedText, resourceId, contentType
 ```

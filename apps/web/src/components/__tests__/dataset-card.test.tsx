@@ -95,6 +95,88 @@ describe('DatasetCard', () => {
     expect(link).toHaveAttribute('href', '/dataset/test-dataset/resource/r1')
   })
 
+  it('should name the section a matched resource sits in, marked when it is the match', () => {
+    const { rerender } = render(
+      <DatasetCard
+        pkg={{
+          ...basePkg,
+          matchedResources: [{ id: 'r1', name: 'first.pdf', section: '2024/minutes' }],
+        }}
+      />
+    )
+    expect(screen.getByText('2024 › minutes')).toBeInTheDocument()
+
+    rerender(
+      <DatasetCard
+        pkg={{
+          ...basePkg,
+          matchedResources: [
+            {
+              id: 'r1',
+              name: 'first.pdf',
+              section: 'minutes',
+              highlightedSection: '<mark>minutes</mark>',
+            },
+          ],
+        }}
+      />
+    )
+    expect(screen.getByText('minutes').tagName).toBe('MARK')
+  })
+
+  it('should fold a run matched on its section alone into one row, and cap the rest', () => {
+    const inMinutes = (i: number) => ({
+      id: `m${i}`,
+      name: `meeting-${i}.pdf`,
+      section: 'minutes',
+      highlightedSection: '<mark>minutes</mark>',
+      matchedOn: ['section' as const],
+    })
+    const byName = (i: number) => ({
+      id: `n${i}`,
+      name: `notes-${i}.txt`,
+      highlightedName: `<mark>notes</mark>-${i}.txt`,
+      matchedOn: ['name' as const],
+    })
+    render(
+      <DatasetCard
+        pkg={{
+          ...basePkg,
+          matchedResources: [
+            ...Array.from({ length: 30 }, (_, i) => inMinutes(i)),
+            ...Array.from({ length: 7 }, (_, i) => byName(i)),
+          ],
+        }}
+      />
+    )
+    // The thirty files under "minutes" are one hit: the first stands for them
+    expect(screen.getByText('meeting-0.pdf')).toBeInTheDocument()
+    expect(screen.queryByText('meeting-1.pdf')).not.toBeInTheDocument()
+    expect(screen.getByText('+29 more')).toBeInTheDocument()
+    // Five rows are drawn; the other three name matches fold into a count
+    expect(screen.getAllByRole('link', { name: /pdf|txt/ })).toHaveLength(5)
+    expect(screen.getByText('and 3 more')).toBeInTheDocument()
+  })
+
+  it('should show every count as a floor when the search could only give one', () => {
+    render(
+      <DatasetCard
+        pkg={{
+          ...basePkg,
+          matchedResources: [
+            { id: 'm1', name: 'a.pdf', section: 'minutes', matchedOn: ['section'] },
+            { id: 'm2', name: 'b.pdf', section: 'minutes', matchedOn: ['section'] },
+            ...Array.from({ length: 6 }, (_, i) => ({ id: `n${i}`, name: `n${i}.txt` })),
+          ],
+          matchedResourcesCount: { total: 12, atLeast: true },
+        }}
+      />
+    )
+    // One folded row (1 more) and four named rows are drawn; two rows and four uncarried hide
+    expect(screen.getByText('1+ more')).toBeInTheDocument()
+    expect(screen.getByText('and 6+ more')).toBeInTheDocument()
+  })
+
   it('should render a semantic badge for vector-only hits', () => {
     render(<DatasetCard pkg={{ ...basePkg, matchSource: 'semantic' }} />)
     expect(screen.getByText('Semantic match')).toBeInTheDocument()

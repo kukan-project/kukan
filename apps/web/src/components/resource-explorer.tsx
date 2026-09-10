@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { Fragment, useState, useCallback, useEffect, useMemo } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import { Calendar, ExternalLink } from 'lucide-react'
 import { Card, CardContent, cn } from '@kukan/ui'
@@ -14,6 +14,8 @@ import { DateTime, formatDateTime } from '@/components/date-time'
 import { VersionHistory } from '@/components/version-history'
 import { externalHttpUrl } from '@/lib/safe-url'
 import { LinkHealthWarning } from '@/components/link-health-warning'
+import { sectionLayout } from '@kukan/shared'
+import { indentClass, headingTag } from '@/lib/resource-sections'
 
 export interface Resource {
   id: string
@@ -32,6 +34,7 @@ export interface Resource {
   healthStatus?: string | null
   healthCheckedAt?: string | null
   extras?: Record<string, unknown> | null
+  section?: string | null
 }
 
 interface ResourceExplorerProps {
@@ -82,6 +85,8 @@ export function ResourceExplorer({
     return resources[0]?.id ?? null
   })
   const selected = resources.find((r) => r.id === selectedId)
+  // Headings and depths depend only on the list, so they are settled once per list
+  const layout = useMemo(() => sectionLayout(resources), [resources])
   const source = externalHttpUrl(externalUrl(selected))
   // Only the verdict is public — what went wrong is the sysadmin health
   // screen's to show, so this says the link may be gone and when that was last
@@ -135,28 +140,62 @@ export function ResourceExplorer({
       {/* Resource list (left) */}
       <div className="flex flex-col lg:w-80 lg:shrink-0">
         {sectionTitle && <h2 className="mb-4 text-xl font-semibold">{sectionTitle}</h2>}
-        <div className="flex max-h-[calc(100svh-12rem)] flex-col gap-2 overflow-y-auto">
-          {resources.map((r) => (
-            <Card
-              key={r.id}
-              className={cn(
-                'cursor-pointer py-0 transition-shadow',
-                r.id === selectedId && 'ring-2 ring-inset ring-primary'
-              )}
-              onClick={() => selectResource(r.id)}
-            >
-              <CardContent className="flex items-center gap-3 px-3 py-2.5">
-                <FormatBadge
-                  format={r.format || '?'}
-                  className="inline-flex min-w-[48px] items-center justify-center text-xs"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium" title={r.name || undefined}>
-                    {r.name || t('unnamed')}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+        <div className="flex flex-col gap-1.5">
+          {resources.map((r, i) => (
+            <Fragment key={r.id}>
+              {layout[i].headings.map(({ depth, label }) => {
+                // One element per depth so the outline nests under the list's h2 (ADR-050)
+                const Heading = headingTag(depth)
+                return (
+                  <Heading
+                    key={`${r.id}:${depth}`}
+                    className={cn(
+                      'truncate font-semibold',
+                      indentClass(depth - 1),
+                      // Three tiers to match h3/h4/h5: rule, dark, muted — and the
+                      // same breath below each as the top level has, so a sub
+                      // heading reads as a heading rather than a caption
+                      depth === 1
+                        ? 'mt-4 border-b pb-1 text-sm text-foreground first:mt-0'
+                        : depth === 2
+                          ? 'mt-3 mb-1 text-xs text-foreground'
+                          : 'mt-3 mb-1 text-xs text-muted-foreground'
+                    )}
+                    title={label}
+                  >
+                    {label}
+                  </Heading>
+                )
+              })}
+              <Card
+                className={cn(
+                  'cursor-pointer py-0 transition-shadow',
+                  indentClass(layout[i].depth),
+                  r.id === selectedId && 'ring-2 ring-inset ring-primary'
+                )}
+                onClick={() => selectResource(r.id)}
+              >
+                <CardContent className="flex items-center gap-3 px-3 py-[3px]">
+                  <FormatBadge
+                    format={r.format || '?'}
+                    className="inline-flex min-w-[48px] items-center justify-center text-xs"
+                  />
+                  {/* Two lines' worth of height whatever the name needs — h-9 is
+                      two lines at leading-[1.125rem] — so every card is the same
+                      height and a one-line name sits centred rather than high */}
+                  <div className="flex h-9 min-w-0 flex-1 items-center">
+                    {/* Long file names break so they reach the second line
+                        rather than being clipped on the first */}
+                    <p
+                      className="line-clamp-2 text-sm leading-[1.125rem] font-medium break-words"
+                      title={r.name || undefined}
+                    >
+                      {r.name || t('unnamed')}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Fragment>
           ))}
         </div>
       </div>

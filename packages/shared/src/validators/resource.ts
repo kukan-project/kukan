@@ -31,6 +31,35 @@ function refineUrl(data: { url?: string | null; urlType?: string | null }, ctx: 
   }
 }
 
+/** A section label as stored: segments trimmed, empties dropped, `/`-joined; nothing left means null (ADR-050). */
+export function normalizeSection(value: string | null | undefined): string | null {
+  if (value == null) return null
+  const segments = value
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0)
+  return segments.length > 0 ? segments.join('/') : null
+}
+
+/**
+ * The first section name that heads more than one run, or null when every name
+ * labels one contiguous run (ADR-050). Runs, not rows: members of a section
+ * share its label, so only a *return* of a name after other labels counts.
+ */
+export function splitSection(labels: readonly (string | null | undefined)[]): string | null {
+  const seen = new Set<string>()
+  let previous: string | null = null
+  for (const raw of labels) {
+    const label = raw ?? null
+    if (label !== null && label !== previous) {
+      if (seen.has(label)) return label
+      seen.add(label)
+    }
+    previous = label
+  }
+  return null
+}
+
 const resourceFieldsSchema = z.object({
   packageId: z.uuid(),
   url: z.string().nullish(),
@@ -40,6 +69,8 @@ const resourceFieldsSchema = z.object({
   format: z.string().max(100).nullish(),
   mimetype: z.string().max(200).nullish(),
   resourceType: z.string().max(50).nullish(),
+  // Absent leaves the stored label alone; null clears it (ADR-050)
+  section: z.string().nullable().transform(normalizeSection).optional(),
 })
 
 // `size` and `hash` are deliberately absent: the pipeline measures the stored
@@ -161,6 +192,18 @@ export type ColumnSettingsInput = z.infer<typeof columnSettingsBodySchema>
 
 export const reorderResourcesSchema = z.object({
   resourceIds: z.array(z.uuid()).min(1),
+  /** Every active resource's label, or none: they ride with the order because a resource update would re-enqueue the pipeline (ADR-050). */
+  sections: z
+    .array(
+      z.object({
+        resourceId: z.uuid(),
+        section: z.string().nullable().transform(normalizeSection),
+      })
+    )
+    .optional(),
 })
 
 export type ReorderResourcesInput = z.infer<typeof reorderResourcesSchema>
+
+/** One row's section as the reorder body carries it. */
+export type ResourceSectionAssignment = NonNullable<ReorderResourcesInput['sections']>[number]

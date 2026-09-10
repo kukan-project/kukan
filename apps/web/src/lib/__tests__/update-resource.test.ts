@@ -48,6 +48,17 @@ describe('updateResource', () => {
     })
   })
 
+  it('leaves the section out, so a stale copy cannot overwrite the arrangement', async () => {
+    mockClientFetch
+      .mockResolvedValueOnce(jsonResponse({ id: 'r1', name: 'old', section: 'docs' }))
+      .mockResolvedValueOnce(jsonResponse({}))
+
+    await updateResource('r1', { name: 'new' })
+
+    const [, init] = mockClientFetch.mock.calls[1]
+    expect(JSON.parse(init!.body as string)).toEqual({ id: 'r1', name: 'new' })
+  })
+
   it('reports failure and does not PUT when the current record cannot be fetched', async () => {
     mockClientFetch.mockResolvedValueOnce(jsonResponse({}, false))
 

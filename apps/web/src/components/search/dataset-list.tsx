@@ -14,6 +14,7 @@ import { SemanticToggle } from '@/components/search/semantic-toggle'
 import { useSiteSettings } from '@/hooks/use-site-settings'
 import { PaginationNav } from '@/components/pagination-nav'
 import { SearchForm } from '@/components/search-form'
+import { foldMatched } from '@/lib/matched-resources'
 
 type DatasetData = PaginatedResult<DatasetCardItem> & { facets?: FacetCounts }
 
@@ -128,7 +129,8 @@ export function DatasetList({ initialData }: Props) {
     const chunkToResource = new Map<string, string>()
     const chunkIds: string[] = []
     for (const item of result.items) {
-      for (const mr of item.matchedResources ?? []) {
+      // Only for the rows the card draws: the rest would be fetched for nothing
+      for (const { resource: mr } of foldMatched(item.matchedResources ?? []).shown) {
         if (mr.matchSource === 'content' && mr._contentDocId) {
           chunkToResource.set(mr._contentDocId, mr.id)
           chunkIds.push(mr._contentDocId)

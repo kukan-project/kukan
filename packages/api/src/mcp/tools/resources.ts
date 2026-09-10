@@ -37,6 +37,7 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
         `Name: ${res.name || '(untitled)'}`,
         `ID: ${res.id}`,
         `Package ID: ${res.packageId}`,
+        res.section && `Section: ${res.section}`,
         res.description && `Description: ${res.description}`,
         res.format && `Format: ${res.format}`,
         url && `URL: ${url}`,

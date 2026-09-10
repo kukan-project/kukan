@@ -1,0 +1,1 @@
+ALTER TABLE "resource" ADD COLUMN "section" text;

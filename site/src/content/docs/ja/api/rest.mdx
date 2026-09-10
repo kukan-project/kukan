@@ -136,6 +136,37 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 | PUT    | `/resources/{id}`                       | リソース更新（全フィールド置換、extras はシステム管理）   | 組織 editor |
 | DELETE | `/resources/{id}`                       | リソース削除                                              | 組織 editor |
 
+### セクション (section)
+
+リソースは `section` フィールド（文字列、省略時 `null`）を持ちます。データセットページの
+リソース一覧で見出しを立てるための**表示上の区切り**で、公開範囲や権限には影響しません。
+
+見出しは「同じ `section` が連続している区間」ごとに立ちます。間に別のセクションや
+`section` なしのリソースが挟まると、同じ名前でも改めて見出しが立ちます。並び順は
+`position` が唯一の正で、`section` は並びに関与しません。
+
+- `POST /packages/{id}/resources` と `PUT /resources/{id}` で指定できます。`PUT` で省略した
+  場合は保持され、`null` を渡すと解除されます
+- 値は保存時に正規化されます（`/` で分割し、各セグメントの前後空白を除去、空セグメントを
+  捨てて `/` で再結合。結果が空なら `null`）。`/` は将来の階層表示のために予約されています
+- 同じ名前は**連続した 1 区間**にしか付けられません。離れた 2 箇所に同じ名前を置く指定
+  （`reorder` の `sections`、作成・更新の `section`）は `400` になります。並び順だけの
+  `reorder` や `null` での解除が区間を分断する場合も同様です
+- `PUT /packages/{id}/resources/reorder` は任意の `sections` を受け付け、並び順と同じ
+  トランザクションでラベルを更新します。リソース更新と違いパイプラインを再実行しないため、
+  並べ替えでラベルが変わる場合はこちらを使います。**指定する場合は全アクティブリソースを
+  1 回ずつ挙げます**（後の保存が丸ごと勝ちます）。省略すればラベルは変わりません
+
+```json
+{
+  "resourceIds": ["<id-1>", "<id-2>"],
+  "sections": [
+    { "resourceId": "<id-1>", "section": "関連資料" },
+    { "resourceId": "<id-2>", "section": null }
+  ]
+}
+```
+
 ### バージョン (versions)
 
 | Method | Path                                    | 説明                                           | 認証        |

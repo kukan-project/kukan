@@ -854,6 +854,107 @@ describe('Resources API Routes', () => {
     })
   })
 
+  describe('Section', () => {
+    it('should store a normalized section from create and clear it on update', async () => {
+      const pkg = await createPackage('section-crud-pkg')
+      const created = await createResource(pkg.id, { name: 'doc', section: ' docs / raw ' })
+      expect(created.section).toBe('docs/raw')
+
+      const res = await app.request(`/api/v1/resources/${created.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'doc', section: null }),
+      })
+      expect(res.status).toBe(200)
+      expect((await res.json()).section).toBeNull()
+    })
+
+    it('should keep the section when an update leaves it out', async () => {
+      const pkg = await createPackage('section-put-omit-pkg')
+      const created = await createResource(pkg.id, { name: 'doc', section: 'docs' })
+
+      const res = await app.request(`/api/v1/resources/${created.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'renamed' }),
+      })
+      expect(res.status).toBe(200)
+      expect((await res.json()).section).toBe('docs')
+    })
+
+    it('should let a new resource continue the last section but not restart an earlier one', async () => {
+      const pkg = await createPackage('section-create-split-pkg')
+      await createResource(pkg.id, { name: 'a', section: 'docs' })
+      await createResource(pkg.id, { name: 'b', section: 'data' })
+
+      const continued = await app.request(`/api/v1/packages/${pkg.id}/resources`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'c', section: 'data' }),
+      })
+      expect(continued.status).toBe(201)
+
+      const restarted = await app.request(`/api/v1/packages/${pkg.id}/resources`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'd', section: 'docs' }),
+      })
+      expect(restarted.status).toBe(400)
+    })
+
+    it('should reject an update that gives a resource a name already used elsewhere', async () => {
+      const pkg = await createPackage('section-update-split-pkg')
+      await createResource(pkg.id, { name: 'a', section: 'docs' })
+      const b = await createResource(pkg.id, { name: 'b' })
+      await createResource(pkg.id, { name: 'c', section: 'data' })
+      const d = await createResource(pkg.id, { name: 'd' })
+
+      // b sits right after docs, so joining it is continuing the run
+      const adjacent = await app.request(`/api/v1/resources/${b.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'b', section: 'docs' }),
+      })
+      expect(adjacent.status).toBe(200)
+
+      // d is past data; docs there would be a second docs run
+      const apart = await app.request(`/api/v1/resources/${d.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'd', section: 'docs' }),
+      })
+      expect(apart.status).toBe(400)
+    })
+
+    it('should reject clearing the section of a resource in the middle of its run', async () => {
+      const pkg = await createPackage('section-clear-split-pkg')
+      await createResource(pkg.id, { name: 'a', section: 'docs' })
+      const b = await createResource(pkg.id, { name: 'b', section: 'docs' })
+      const c = await createResource(pkg.id, { name: 'c', section: 'docs' })
+
+      const clear = (id: string) =>
+        app.request(`/api/v1/resources/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'x', section: null }),
+        })
+      // b is the middle: docs would stand on either side of it
+      expect((await clear(b.id)).status).toBe(400)
+      // c is the end: the run just gets shorter
+      expect((await clear(c.id)).status).toBe(200)
+    })
+
+    it('should carry the section through the CKAN-compatible read', async () => {
+      const pkg = await createPackage('section-ckan-pkg')
+      await createResource(pkg.id, { name: 'doc', section: 'docs' })
+
+      const res = await app.request(`/api/3/action/package_show?id=${pkg.id}`)
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.result.resources[0].section).toBe('docs')
+    })
+  })
+
   describe('PUT /api/v1/packages/:packageId/resources/reorder', () => {
     it('should reorder resources by resourceIds order', async () => {
       const pkg = await createPackage('reorder-pkg')
@@ -925,6 +1026,155 @@ describe('Resources API Routes', () => {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ resourceIds: ['not-a-uuid'] }),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    it('should apply the labels it carries for every resource alongside the order', async () => {
+      const pkg = await createPackage('reorder-sections-pkg')
+      const res1 = await createResource(pkg.id, { name: 'first', section: 'old' })
+      const res2 = await createResource(pkg.id, { name: 'second' })
+
+      const res = await app.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          resourceIds: [res2.id, res1.id],
+          sections: [
+            { resourceId: res2.id, section: '  docs / raw ' },
+            { resourceId: res1.id, section: null },
+          ],
+        }),
+      })
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body[0].section).toBe('docs/raw')
+      expect(body[1].section).toBeNull()
+    })
+
+    it('should put the relabelled resources into the search index', async () => {
+      const indexSpy = vi.spyOn(mockSearch, 'bulkIndexResources').mockResolvedValue()
+      const pkg = await createPackage('reorder-index-pkg')
+      const res1 = await createResource(pkg.id, { name: 'first' })
+      const res2 = await createResource(pkg.id, { name: 'second' })
+      indexSpy.mockClear()
+
+      const reorder = (body: object) =>
+        app.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+      // The docs carry the labels and not the order, so the order alone rewrites none
+      expect((await reorder({ resourceIds: [res2.id, res1.id] })).status).toBe(200)
+      expect(indexSpy).not.toHaveBeenCalled()
+
+      const res = await reorder({
+        resourceIds: [res2.id, res1.id],
+        sections: [
+          { resourceId: res2.id, section: 'docs' },
+          { resourceId: res1.id, section: null },
+        ],
+      })
+      expect(res.status).toBe(200)
+      expect(indexSpy).toHaveBeenCalledTimes(1)
+      expect(indexSpy.mock.calls[0][0]).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: res2.id, section: 'docs' }),
+          expect.objectContaining({ id: res1.id, section: undefined }),
+        ])
+      )
+      indexSpy.mockRestore()
+    })
+
+    it('should leave every label alone when the body carries only the order', async () => {
+      const pkg = await createPackage('reorder-order-only-pkg')
+      const res1 = await createResource(pkg.id, { name: 'first', section: 'docs' })
+      const res2 = await createResource(pkg.id, { name: 'second' })
+
+      const res = await app.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resourceIds: [res2.id, res1.id] }),
+      })
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body[1].id).toBe(res1.id)
+      expect(body[1].section).toBe('docs')
+    })
+
+    it('should reject an order that would split a run it leaves labelled', async () => {
+      const pkg = await createPackage('reorder-order-split-pkg')
+      const a = await createResource(pkg.id, { name: 'a', section: 'docs' })
+      const b = await createResource(pkg.id, { name: 'b', section: 'docs' })
+      const c = await createResource(pkg.id, { name: 'c' })
+
+      const reorder = (resourceIds: string[]) =>
+        app.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resourceIds }),
+        })
+      expect((await reorder([a.id, c.id, b.id])).status).toBe(400)
+      expect((await reorder([c.id, a.id, b.id])).status).toBe(200)
+    })
+
+    it('should reject labels that do not cover every resource, or name one twice', async () => {
+      const pkg = await createPackage('reorder-sections-partial-pkg')
+      const res1 = await createResource(pkg.id, { name: 'first' })
+      const res2 = await createResource(pkg.id, { name: 'second' })
+
+      for (const sections of [
+        [{ resourceId: res1.id, section: 'docs' }],
+        [
+          { resourceId: res1.id, section: 'docs' },
+          { resourceId: res1.id, section: 'data' },
+        ],
+      ]) {
+        const res = await app.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resourceIds: [res1.id, res2.id], sections }),
+        })
+        expect(res.status).toBe(400)
+      }
+    })
+
+    it('should reject labels that put one section name in two places', async () => {
+      const pkg = await createPackage('reorder-sections-split-pkg')
+      const a = await createResource(pkg.id, { name: 'a' })
+      const b = await createResource(pkg.id, { name: 'b' })
+      const c = await createResource(pkg.id, { name: 'c' })
+
+      const res = await app.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          resourceIds: [a.id, b.id, c.id],
+          sections: [
+            { resourceId: a.id, section: 'docs' },
+            { resourceId: b.id, section: null },
+            { resourceId: c.id, section: 'docs' },
+          ],
+        }),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    it('should reject a section for a resource outside the package', async () => {
+      const pkg = await createPackage('reorder-sections-foreign-pkg')
+      const other = await createPackage('reorder-sections-foreign-other')
+      const own = await createResource(pkg.id, { name: 'own' })
+      const foreign = await createResource(other.id, { name: 'foreign' })
+
+      const res = await app.request(`/api/v1/packages/${pkg.id}/resources/reorder`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          resourceIds: [own.id],
+          sections: [{ resourceId: foreign.id, section: 'docs' }],
+        }),
       })
       expect(res.status).toBe(400)
     })

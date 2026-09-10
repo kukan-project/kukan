@@ -83,7 +83,9 @@ semantically related datasets are included in the results (hybrid search).
 
 ### get_dataset
 
-Get detailed information about a dataset.
+Get detailed information about a dataset. Resources are listed in the order of the public
+page, with a `[section name]` heading line where a section begins. `/` nesting is indented
+to the same depth as on the public page, and the resources under a heading one level deeper.
 
 | Parameter  | Type   | Required | Description                 |
 | ---------- | ------ | -------- | --------------------------- |
@@ -91,7 +93,8 @@ Get detailed information about a dataset.
 
 ### get_resource
 
-Get resource metadata. Returns the download URL for uploaded files.
+Get resource metadata. Returns the download URL for uploaded files. A resource inside a
+section carries a `Section:` line.
 
 | Parameter | Type   | Required | Description   |
 | --------- | ------ | -------- | ------------- |

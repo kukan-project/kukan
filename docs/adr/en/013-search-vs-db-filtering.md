@@ -96,7 +96,7 @@ Filter fields (`organization`, `tags`, `formats`, etc.) are stored in the search
 
 ### Resource Metadata Search
 
-When the `q` parameter is specified, the search targets not only the package itself (name/title/notes) but also the name/description of associated resources. When matching resources are found, they are included in the response as a `matchedResources` array.
+When the `q` parameter is specified, the search targets not only the package itself (name/title/notes) but also the name/description/section (ADR-050) of associated resources. When matching resources are found, they are included in the response as a `matchedResources` array.
 
 - **OpenSearch**: Search via nested query + inner_hits
 - **PostgreSQL**: ILIKE search via EXISTS subquery

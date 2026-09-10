@@ -33,7 +33,12 @@ import type {
   PackageState,
   PackageDbState,
 } from '@kukan/shared'
-import type { SearchFacets, MatchedResource, SearchAdapter } from '@kukan/search-adapter'
+import type {
+  SearchFacets,
+  MatchedResource,
+  MatchedResourcesCount,
+  SearchAdapter,
+} from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type {
   CreatePackageInput,
@@ -110,6 +115,7 @@ export interface PackageFilterParams {
   searchTotal?: number
   /** Matched resources from SearchAdapter, keyed by package ID */
   searchMatchedResources?: Record<string, MatchedResource[]>
+  searchMatchedResourcesCount?: Record<string, MatchedResourcesCount>
   /** Highlighted fields from SearchAdapter, keyed by package ID */
   searchHighlights?: Record<string, { highlightedTitle?: string; highlightedNotes?: string }>
   /** Package IDs that matched via vector search only (ADR-034) */
@@ -273,6 +279,7 @@ export class PackageService {
           ...row,
           ...(params.searchMatchedResources?.[row.id] && {
             matchedResources: params.searchMatchedResources[row.id],
+            matchedResourcesCount: params.searchMatchedResourcesCount?.[row.id],
           }),
           ...(params.searchHighlights?.[row.id] && params.searchHighlights[row.id]),
           ...(semanticIds.has(row.id) && { matchSource: 'semantic' as const }),

@@ -109,6 +109,10 @@ export const resource = pgTable(
     // arrived. Applied to the columns above when the upload is promoted.
     pendingMetadata: jsonb('pending_metadata').$type<PendingResourceMetadata>(),
     position: integer('position').default(0).notNull(),
+    // The heading this resource sits under (ADR-050): a run of adjacent rows
+    // sharing a label, so nothing here constrains `position`. The public page
+    // nests on `/` up to a fixed depth; the dashboard shows the whole path.
+    section: text('section'),
     state: varchar('state', { length: 20 }).default('active'),
     resourceType: varchar('resource_type', { length: 50 }),
     // Caller-supplied metadata, as CKAN defines it, and rendered whole on the

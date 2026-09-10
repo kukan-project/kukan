@@ -78,6 +78,10 @@ KUKAN は内部で camelCase のフィールドを使用しますが、CKAN 互�
 | `packageId`    | `package_id`        |
 | `resourceType` | `resource_type`     |
 
+改名しないフィールドはそのままの名前で返ります。`section`（データセットページでの表示上の
+区切り。[REST API](./rest) を参照）もその一つで、ハーベスト先の CKAN では resource extras として
+残ります。
+
 ## 使用例
 
 ### ckanapi (Python)

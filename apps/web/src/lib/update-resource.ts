@@ -26,7 +26,10 @@ export async function updateResource(
 ): Promise<UpdateResourceResult> {
   const currentRes = await clientFetch(`/api/v1/resources/${id}`)
   if (!currentRes.ok) return { ok: false, detail: await problemDetail(currentRes) }
-  const current = await currentRes.json()
+  // The section is left out: it is arranged from the list, and PUT keeps an
+  // absent one (ADR-050) — echoing the copy read here would write a stale label
+  // over a save that moved the resource in between
+  const { section: _section, ...current } = await currentRes.json()
   const res = await clientFetch(`/api/v1/resources/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

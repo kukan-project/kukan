@@ -55,7 +55,7 @@
   └─ embed ジョブ投入（QueueAdapter、AIAdapter が embed 可能な場合のみ）
         │
 [Worker] embed-package ジョブ
-  1. package 取得 → 埋め込み対象テキスト生成（title + notes + tags + リソース name/description）
+  1. package 取得 → 埋め込み対象テキスト生成（title + notes + tags + セクション名 + リソース name/description）
   2. コンテンツハッシュ比較 → 変化なしならスキップ
   3. AIAdapter.embed(text, { type: 'document' })
   4. UPDATE package SET embedding, embedding_model, embedding_hash

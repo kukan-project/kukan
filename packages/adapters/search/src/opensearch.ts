@@ -27,8 +27,83 @@ import type {
   BrowseResult,
   ContentBrowseResult,
   ContentBrowseItem,
+  MatchedResourcesCount,
 } from './adapter'
-import { MAX_MATCHED_RESOURCES_PER_PACKAGE } from './adapter'
+import { MAX_MATCHED_RESOURCES_PER_PACKAGE, MATCHED_FIELDS } from './adapter'
+
+/** The one shape of the search index: the create body, and what an index
+ *  created under an older shape is brought up to (see ensureWritableIndex). */
+type MappingProperties = NonNullable<
+  Parameters<Client['indices']['putMapping']>[0]['body']
+>['properties']
+
+const SEARCH_PROPERTIES: MappingProperties = {
+  // Join field: package is parent, resource and content are children
+  join_field: {
+    type: 'join',
+    relations: { package: ['resource', 'content'] },
+  },
+  // --- Package fields ---
+  id: { type: 'keyword' },
+  name: {
+    type: 'text',
+    analyzer: 'kuromoji_analyzer',
+    search_analyzer: 'kuromoji_query_analyzer',
+    fields: { keyword: { type: 'keyword' } },
+  },
+  title: {
+    type: 'text',
+    analyzer: 'kuromoji_analyzer',
+    search_analyzer: 'kuromoji_query_analyzer',
+    fields: { keyword: { type: 'keyword' } },
+  },
+  notes: {
+    type: 'text',
+    analyzer: 'kuromoji_analyzer',
+    search_analyzer: 'kuromoji_query_analyzer',
+  },
+  tags: { type: 'keyword' },
+  organization: { type: 'keyword' },
+  license_id: { type: 'keyword' },
+  groups: { type: 'keyword' },
+  formats: { type: 'keyword' },
+  private: { type: 'boolean' },
+  owner_org_id: { type: 'keyword' },
+  creator_user_id: { type: 'keyword' },
+  created: { type: 'date' },
+  updated: { type: 'date' },
+  // --- Resource fields ---
+  packageId: { type: 'keyword' },
+  description: {
+    type: 'text',
+    analyzer: 'kuromoji_analyzer',
+    search_analyzer: 'kuromoji_query_analyzer',
+  },
+  format: { type: 'keyword' },
+  // The section a resource is drawn under (ADR-050): a search term, not a facet
+  section: {
+    type: 'text',
+    analyzer: 'kuromoji_analyzer',
+    search_analyzer: 'kuromoji_query_analyzer',
+  },
+  // --- Content fields ---
+  resourceId: { type: 'keyword' },
+  extractedText: {
+    type: 'text',
+    analyzer: 'kuromoji_analyzer',
+    index_options: 'offsets',
+  },
+  contentType: { type: 'keyword' },
+  chunkIndex: { type: 'integer' },
+  chunkSize: { type: 'integer' },
+}
+
+/** Highlight config for a short field marked whole rather than in fragments */
+const WHOLE_FIELD_HIGHLIGHT = {
+  number_of_fragments: 0,
+  pre_tags: ['<mark>'],
+  post_tags: ['</mark>'],
+}
 
 /** Highlight config for content snippets (shared between search stages) */
 const CONTENT_HIGHLIGHT = {
@@ -68,7 +143,37 @@ function isBackendUnavailable(err: unknown): boolean {
   return false
 }
 
-/** Sanitize OpenSearch highlight output: allow only bare <mark> and </mark> tags */
+/**
+ * Sanitize OpenSearch highlight output: allow only bare <mark> and </mark> tags.
+ * The output is parsed downstream on `/` with `</mark>` spared (a section label
+ * drawn as a trail), so it must stay bare `<mark>` and `</mark>` and nothing else.
+ */
+/** `hits.total` as a number, whichever shape the engine sent it in */
+function hitsTotal(total: unknown): number {
+  return typeof total === 'number' ? total : ((total as { value?: number })?.value ?? 0)
+}
+
+/**
+ * How many resources a package's hits stand for. inner_hits is capped, so the
+ * metadata count comes from its `total`; a content hit is a chunk, so one on a
+ * resource not among the carried metadata hits counts only when nothing went
+ * uncarried — otherwise it may be one of those. Content hits past the cap, or a
+ * `gte` total, leave the count a floor too.
+ */
+function matchedResourcesCount(hit: {
+  resourceTotal: { value?: number; relation?: string } | number | undefined
+  carried: number
+  contentOnly: number
+  contentCapped: boolean
+  matched: number
+}): MatchedResourcesCount {
+  const metadata = hitsTotal(hit.resourceTotal)
+  const truncated = metadata > hit.carried
+  const total = Math.max(truncated ? metadata : metadata + hit.contentOnly, hit.matched)
+  const relation = typeof hit.resourceTotal === 'object' ? hit.resourceTotal?.relation : undefined
+  return { total, atLeast: truncated || hit.contentCapped || relation === 'gte' }
+}
+
 function sanitizeHighlight(html: string): string {
   return html.replace(/<mark\b[^>]*>/gi, '<mark>').replace(/<\/?(?!mark\b)[a-z][^>]*>/gi, '')
 }
@@ -92,6 +197,8 @@ export class OpenSearchAdapter implements SearchAdapter {
   private replicas: number
   private log: Logger
   private initializedAt = 0
+  /** The mapping brought up to date, once per process (see ensureWritableIndex) */
+  private mapping: Promise<void> | null = null
 
   constructor(config: OpenSearchConfig) {
     this.client = new Client({
@@ -208,66 +315,36 @@ export class OpenSearchAdapter implements SearchAdapter {
             ...OpenSearchAdapter.KUROMOJI_ANALYSIS,
           },
           mappings: {
-            properties: {
-              // Join field: package is parent, resource and content are children
-              join_field: {
-                type: 'join',
-                relations: { package: ['resource', 'content'] },
-              },
-              // --- Package fields ---
-              id: { type: 'keyword' },
-              name: {
-                type: 'text',
-                analyzer: 'kuromoji_analyzer',
-                search_analyzer: 'kuromoji_query_analyzer',
-                fields: { keyword: { type: 'keyword' } },
-              },
-              title: {
-                type: 'text',
-                analyzer: 'kuromoji_analyzer',
-                search_analyzer: 'kuromoji_query_analyzer',
-                fields: { keyword: { type: 'keyword' } },
-              },
-              notes: {
-                type: 'text',
-                analyzer: 'kuromoji_analyzer',
-                search_analyzer: 'kuromoji_query_analyzer',
-              },
-              tags: { type: 'keyword' },
-              organization: { type: 'keyword' },
-              license_id: { type: 'keyword' },
-              groups: { type: 'keyword' },
-              formats: { type: 'keyword' },
-              private: { type: 'boolean' },
-              owner_org_id: { type: 'keyword' },
-              creator_user_id: { type: 'keyword' },
-              created: { type: 'date' },
-              updated: { type: 'date' },
-              // --- Resource fields ---
-              packageId: { type: 'keyword' },
-              description: {
-                type: 'text',
-                analyzer: 'kuromoji_analyzer',
-                search_analyzer: 'kuromoji_query_analyzer',
-              },
-              format: { type: 'keyword' },
-              // --- Content fields ---
-              resourceId: { type: 'keyword' },
-              extractedText: {
-                type: 'text',
-                analyzer: 'kuromoji_analyzer',
-                index_options: 'offsets',
-              },
-              contentType: { type: 'keyword' },
-              chunkIndex: { type: 'integer' },
-              chunkSize: { type: 'integer' },
-            },
+            properties: SEARCH_PROPERTIES,
           },
         },
       })
+      this.mapping = Promise.resolve()
       return true
     }
     return false
+  }
+
+  /**
+   * What every writer calls: the index, brought up to the current shape before
+   * the process's first write. Adding a field is additive and idempotent, so
+   * once is enough; a refusal (a write block, an analyzer or a field the index
+   * already has another way) is logged and the write goes ahead with the
+   * mapping the index has. Readers call ensureIndex and never come here.
+   */
+  private async ensureWritableIndex(): Promise<void> {
+    await this.ensureIndex()
+    this.mapping ??= this.client.indices
+      .putMapping({ index: this.searchIndex, body: { properties: SEARCH_PROPERTIES } })
+      .then(
+        () => undefined,
+        (err: unknown) =>
+          this.log.warn(
+            { err },
+            'Search index mapping not updated; fields added since the index was created keep the mapping the index gives them'
+          )
+      )
+    await this.mapping
   }
 
   /** Delete a single document, ignoring 404 */
@@ -299,7 +376,7 @@ export class OpenSearchAdapter implements SearchAdapter {
   // ------------------------------------------------------------------
 
   async indexPackage(doc: DatasetDoc): Promise<void> {
-    await this.ensureIndex()
+    await this.ensureWritableIndex()
     await this.client.index({
       index: this.searchIndex,
       id: doc.id,
@@ -341,7 +418,7 @@ export class OpenSearchAdapter implements SearchAdapter {
 
   async bulkIndexPackages(docs: DatasetDoc[]): Promise<void> {
     if (docs.length === 0) return
-    await this.ensureIndex()
+    await this.ensureWritableIndex()
 
     const body = docs.flatMap((doc) => [
       { index: { _index: this.searchIndex, _id: doc.id } },
@@ -361,7 +438,7 @@ export class OpenSearchAdapter implements SearchAdapter {
   // ------------------------------------------------------------------
 
   async indexResource(doc: ResourceDoc): Promise<void> {
-    await this.ensureIndex()
+    await this.ensureWritableIndex()
     await this.client.index({
       index: this.searchIndex,
       id: doc.id,
@@ -393,7 +470,7 @@ export class OpenSearchAdapter implements SearchAdapter {
 
   async bulkIndexResources(docs: ResourceDoc[]): Promise<void> {
     if (docs.length === 0) return
-    await this.ensureIndex()
+    await this.ensureWritableIndex()
 
     const body = docs.flatMap((doc) => [
       { index: { _index: this.searchIndex, _id: doc.id, routing: doc.packageId } },
@@ -413,7 +490,7 @@ export class OpenSearchAdapter implements SearchAdapter {
   // ------------------------------------------------------------------
 
   async indexContent(doc: ContentDoc): Promise<void> {
-    await this.ensureIndex()
+    await this.ensureWritableIndex()
     const docId = `${doc.resourceId}_chunk_${doc.chunkIndex}`
     await this.client.index({
       index: this.searchIndex,
@@ -574,7 +651,7 @@ export class OpenSearchAdapter implements SearchAdapter {
                 query: {
                   multi_match: {
                     query: query.q!,
-                    fields: ['name^3', 'description^2'],
+                    fields: ['name^3', 'description^2', 'section'],
                     type: 'cross_fields',
                     operator: 'and',
                   },
@@ -585,17 +662,14 @@ export class OpenSearchAdapter implements SearchAdapter {
                   size: MAX_MATCHED_RESOURCES_PER_PACKAGE,
                   highlight: {
                     fields: {
-                      name: {
-                        number_of_fragments: 0,
-                        pre_tags: ['<mark>'],
-                        post_tags: ['</mark>'],
-                      },
+                      name: WHOLE_FIELD_HIGHLIGHT,
                       description: {
                         fragment_size: 200,
                         number_of_fragments: 1,
                         pre_tags: ['<mark>'],
                         post_tags: ['</mark>'],
                       },
+                      section: WHOLE_FIELD_HIGHLIGHT,
                     },
                   },
                 },
@@ -637,7 +711,7 @@ export class OpenSearchAdapter implements SearchAdapter {
     const highlight = hasQuery
       ? {
           fields: {
-            title: { number_of_fragments: 0, pre_tags: ['<mark>'], post_tags: ['</mark>'] },
+            title: WHOLE_FIELD_HIGHLIGHT,
             notes: {
               fragment_size: 200,
               number_of_fragments: 1,
@@ -707,12 +781,17 @@ export class OpenSearchAdapter implements SearchAdapter {
           name: rh._source.name,
           description: rh._source.description,
           format: rh._source.format,
+          section: rh._source.section,
+          matchedOn: MATCHED_FIELDS.filter((f) => rh.highlight?.[f]?.[0]),
           matchSource: 'metadata' as const,
           ...(rh.highlight?.name?.[0] && {
             highlightedName: sanitizeHighlight(rh.highlight.name[0]),
           }),
           ...(rh.highlight?.description?.[0] && {
             highlightedDescription: sanitizeHighlight(rh.highlight.description[0]),
+          }),
+          ...(rh.highlight?.section?.[0] && {
+            highlightedSection: sanitizeHighlight(rh.highlight.section[0]),
           }),
         }))
         doc.matchedResources = [...(doc.matchedResources ?? []), ...matched]
@@ -744,11 +823,22 @@ export class OpenSearchAdapter implements SearchAdapter {
         }
       }
 
+      if (doc.matchedResources) {
+        const carried = resourceInnerHits?.length ?? 0
+        doc.matchedResourcesCount = matchedResourcesCount({
+          resourceTotal: hit.inner_hits?.resource?.hits?.total,
+          carried,
+          contentOnly: doc.matchedResources.length - carried,
+          contentCapped: (contentInnerHits?.length ?? 0) >= MAX_MATCHED_RESOURCES_PER_PACKAGE,
+          matched: doc.matchedResources.length,
+        })
+      }
+
       return doc
     })
 
     const total = hits?.total
-    const totalCount = typeof total === 'number' ? total : (total?.value ?? 0)
+    const totalCount = hitsTotal(total)
 
     let facets: SearchFacets | undefined
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1080,7 +1170,7 @@ export class OpenSearchAdapter implements SearchAdapter {
 
     const response = await this.client.search({ index: this.searchIndex, body })
     const hits = response.body.hits
-    const total = typeof hits.total === 'number' ? hits.total : (hits.total?.value ?? 0)
+    const total = hitsTotal(hits.total)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const items = (hits.hits ?? []).map((hit: any) => ({

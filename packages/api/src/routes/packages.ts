@@ -22,7 +22,7 @@ import {
   ServiceUnavailableError,
   PACKAGE_STATES,
 } from '@kukan/shared'
-import type { MatchedResource, SearchFilters } from '@kukan/search-adapter'
+import type { MatchedResource, MatchedResourcesCount, SearchFilters } from '@kukan/search-adapter'
 import {
   checkOrgRole,
   makePackageAuthorize,
@@ -34,6 +34,7 @@ import {
 import {
   syncPackageMetadata,
   indexResourceMetadata,
+  syncPackageResources,
   rebuildPackageSearch,
 } from '../services/search-index'
 import { markContentUnindexed } from '../services/content-index-record'
@@ -211,6 +212,7 @@ packagesRouter.get(
 
     // Build matchedResources + highlights lookup from search results
     const searchMatchedResources: Record<string, MatchedResource[]> = {}
+    const searchMatchedResourcesCount: Record<string, MatchedResourcesCount> = {}
     const searchHighlights: Record<
       string,
       { highlightedTitle?: string; highlightedNotes?: string }
@@ -218,6 +220,8 @@ packagesRouter.get(
     for (const item of searchResult.items) {
       if (item.matchedResources && item.matchedResources.length > 0) {
         searchMatchedResources[item.id] = item.matchedResources
+        if (item.matchedResourcesCount)
+          searchMatchedResourcesCount[item.id] = item.matchedResourcesCount
       }
       if (item.highlightedTitle || item.highlightedNotes) {
         searchHighlights[item.id] = {
@@ -232,6 +236,7 @@ packagesRouter.get(
       searchMatchIds: searchResult.items.map((i) => i.id),
       searchTotal: searchResult.total,
       searchMatchedResources,
+      searchMatchedResourcesCount,
       searchHighlights,
       searchSemanticIds: searchResult.items
         .filter((i) => i.matchSource === 'semantic')
@@ -487,9 +492,10 @@ packagesRouter.put(
     const pkg = await packageService.getByNameOrId(packageId, ['active', 'draft'])
     await makePackageAuthorize(db, user, 'editor')(pkg)
 
-    const { resourceIds } = c.req.valid('json')
+    const { resourceIds, sections } = c.req.valid('json')
     const resourceService = new ResourceService(db)
-    const resources = await resourceService.reorder(pkg.id, resourceIds)
+    const resources = await resourceService.reorder(pkg.id, resourceIds, sections)
+    await syncPackageResources(db, c.var, pkg.id, { relabelled: sections !== undefined })
 
     return c.json(resources)
   }
