@@ -6,6 +6,32 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.27.1] - 2026-09-11
+
+**Highlights**
+
+- CSV files that used to fail the whole pipeline now get a table, or a clear reason why not. A file carrying two UTF-8 byte-order marks failed with a binder error, because DuckDB strips one and the second stayed on the first column's name while the name the interpretation read back had lost it; column names now come from the result itself, and the leftover mark is renamed away so the column matches its own name across versions. A file the CSV sniffer cannot settle a dialect for — a quote left bare inside a quoted cell, or line endings mixed within one file — is now read once more with the standard relaxed, and the schema says so (`lenient`) (#567, #568).
+- The hourly DuckLake orphan sweep no longer loses the run that lands on a task-role credential rotation. The session already dropped its expired instance; the sweep now runs once more on a rebuilt one instead of logging an error and waiting an hour, and a rerun's count is logged as such (#569).
+
+**Bug Fixes**
+
+- fix(worker): read CSV column names from result metadata, not DESCRIBE (#567) — the DuckDB Node binding drops a leading U+FEFF from string values, so `DESCRIBE` reported a column named `\uFEFF区分` as `区分` and every identifier built from it failed to bind. Names now come from the result reader's column metadata, which keeps them whole. After the load, a byte-order mark left on the first column's name is removed by renaming the column (skipped when the bare name is already taken under DuckDB's ASCII-only case folding), so a version with one mark and a version with two name the column alike.
+- fix(worker): fall back to a relaxed CSV read when the sniffer cannot settle a dialect (#568) — the file is read to the standard first; only when the sniff itself fails is it read again with `strict_mode = false`. That reading is not the default because it cuts a row with too many fields to width without recording it, where the standard reader refuses and counts the row; the schema carries `lenient: true` so a reader knows the dropped-row counts are a floor. A row short of the width is still refused on the same terms as before.
+- fix(lake): rerun the orphan sweep once when its DuckDB instance was lost (#569) — `withLakeSession` takes a `rerunIfLost` option: where asked, a session that failed because its instance was lost is followed by one more run on a rebuilt instance, and a second loss is reported rather than retried again. Opt-in, because the result is the second run's alone; the orphan sweep opts in and logs a rerun's count with a warning that the first pass is uncounted. A connect refused by an instance another session had already closed is now recognised as the same loss.
+
+---
+
+**ハイライト**
+
+- これまでパイプライン全体が失敗していた CSV が、表になるか、ならない理由が残るようになりました。UTF-8 の BOM が 2 つ付いたファイルは、DuckDB が 1 つだけ剥がして 2 つ目が先頭列名に残る一方、解釈側が読み戻した列名からは消えていたため列を参照できず失敗していました。列名を結果そのものから取るようにし、残った BOM は列名を付け替えて落とすので、版をまたいでも同じ列名になります。CSV の方言を判定できないファイル（引用フィールド内にエスケープされていない `"` がある、1 ファイル内で行末コードが混在している）は、標準を緩めてもう一度読み、スキーマにその旨（`lenient`）を残します（#567, #568）。
+- 毎時の DuckLake 孤児掃除が、タスクロール認証情報のローテーションに当たった回を失わなくなりました。セッションは失効したインスタンスを破棄していたものの、掃除はエラーを記録して次の 1 時間後まで待っていました。作り直したインスタンスでもう一度実行し、再実行後の件数はその旨を付けて記録します（#569）。
+
+**バグ修正**
+
+- fix(worker): CSV の列名を DESCRIBE でなく結果メタデータから取る (#567) — DuckDB の Node バインディングは文字列値の先頭 U+FEFF を落とすため、`DESCRIBE` は `\uFEFF区分` という列を `区分` と報告し、そこから組み立てた識別子がすべて解決できませんでした。列名は結果リーダーの列メタデータから取るようにし、こちらは BOM を保ちます。読み込み後、先頭列名に残った BOM は列名の付け替えで除去します（DuckDB の ASCII のみの大文字小文字畳み込みで既存列と衝突する場合は付け替えません）。BOM が 1 つの版と 2 つの版で列名が一致します。
+- fix(worker): sniffer が方言を確定できない CSV を標準を緩めて読み直す (#568) — まず標準どおりに読み、sniff 自体が失敗したときだけ `strict_mode = false` で読み直します。この読み方は列が多すぎる行を記録なしで幅に切り詰める（標準の読み方では拒否して数える）ため既定にはせず、スキーマに `lenient: true` を残して、欠けた行の件数が下限であることを伝えます。幅に足りない行は従来どおり拒否されます。
+- fix(lake): DuckDB インスタンス喪失時に孤児掃除を 1 回だけ再実行する (#569) — `withLakeSession` に `rerunIfLost` オプションを追加。指定時、インスタンス喪失で失敗したセッションのあとに作り直したインスタンスでもう一度実行し、2 回目の喪失は再試行せず報告します。結果が 2 回目の分だけになるため opt-in で、孤児掃除が利用し、再実行後の件数は 1 回目が未集計である旨の警告付きで記録します。別セッションが閉じたインスタンスへの接続拒否も同じ喪失として扱います。
+
 ## [0.27.0] - 2026-09-10
 
 **Highlights**
