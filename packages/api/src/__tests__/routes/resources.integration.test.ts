@@ -369,7 +369,7 @@ describe('Resources API Routes', () => {
       expect(res.status).toBe(413)
 
       const body = await res.json()
-      expect(body.title).toBe('Payload Too Large')
+      expect(body.title).toBe('PAYLOAD_TOO_LARGE')
     })
 
     it('should return 413 via storage totalSize when resource.size is null', async () => {
@@ -394,7 +394,7 @@ describe('Resources API Routes', () => {
       expect(res.status).toBe(413)
 
       const body = await res.json()
-      expect(body.title).toBe('Payload Too Large')
+      expect(body.title).toBe('PAYLOAD_TOO_LARGE')
     })
 
     it('should return 415 for non-JSON format', async () => {
@@ -1298,6 +1298,40 @@ describe('Resources API Routes', () => {
       expect(body.size).toBe(content.length)
     })
 
+    it('streams a large file through without holding it, and records its size', async () => {
+      const pkg = await createPackage('upload-large-pkg')
+      const resource = await createResource(pkg.id)
+      const bytes = 8 * 1024 * 1024
+
+      const formData = new FormData()
+      formData.append('file', new File([Buffer.alloc(bytes, 'x')], 'big.csv', { type: 'text/csv' }))
+      const res = await app.request(`/api/v1/resources/${resource.id}/upload`, {
+        method: 'POST',
+        body: formData,
+      })
+      expect(res.status).toBe(200)
+
+      const body = await (await app.request(`/api/v1/resources/${resource.id}`)).json()
+      expect(body.size).toBe(bytes)
+    })
+
+    it('refuses a body declared over the upload cap with 413', async () => {
+      const pkg = await createPackage('upload-toolarge-pkg')
+      const resource = await createResource(pkg.id)
+
+      const formData = new FormData()
+      formData.append('file', new File(['tiny'], 'data.csv', { type: 'text/csv' }))
+      const res = await app.request(`/api/v1/resources/${resource.id}/upload`, {
+        method: 'POST',
+        body: formData,
+        // Clear of the request's own cap, which is the file's plus room for
+        // the boundaries and headers — a file at exactly the cap has to pass.
+        headers: { 'content-length': String(MAX_UPLOAD_SIZE + 2 * 1024 * 1024) },
+      })
+      expect(res.status).toBe(413)
+      expect(await res.json()).toMatchObject({ status: 413 })
+    })
+
     it('should reject request without file', async () => {
       const pkg = await createPackage('upload-nofile-pkg')
       const resource = await createResource(pkg.id)
@@ -1418,7 +1452,8 @@ describe('Resources API Routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ size: 10 }),
       })
-      expect(res.status).toBe(400)
+      // The same refusal as the streamed path: one cap, one status.
+      expect(res.status).toBe(413)
     })
 
     it('should reject if resource is not an upload', async () => {

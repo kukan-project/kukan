@@ -59,6 +59,12 @@ export class RequestAbandonedError extends KukanError {
   }
 }
 
+export class PayloadTooLargeError extends KukanError {
+  constructor(message = 'Payload too large') {
+    super(message, 'PAYLOAD_TOO_LARGE', 413)
+  }
+}
+
 export class TooManyRequestsError extends KukanError {
   constructor(message = 'Too many requests') {
     super(message, 'TOO_MANY_REQUESTS', 429)

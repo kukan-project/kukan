@@ -4,7 +4,7 @@
  */
 
 import { Hono } from 'hono'
-import { bodyLimit } from 'hono/body-limit'
+import { receiveMultipartFile } from '../streams/multipart-file'
 import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
 import { lakeConfigFromEnv } from '@kukan/lake'
@@ -27,6 +27,7 @@ import {
   NotFoundError,
   ValidationError,
   ForbiddenError,
+  PayloadTooLargeError,
   PURGE_VERSION_JOB_TYPE,
   getMimeType,
   detectContentType,
@@ -37,6 +38,7 @@ import {
   isPdfFormat,
   isJsonFormat,
   MAX_UPLOAD_SIZE,
+  MAX_UPLOAD_SIZE_MB,
   primaryKeyOf,
 } from '@kukan/shared'
 import { TEXT_PREVIEW_LIMIT, JSON_PREVIEW_LIMIT, QUERY_MAX_SQL_LENGTH } from '../config'
@@ -96,6 +98,9 @@ function throwIfNotFound(err: unknown, resourceId: string): never {
   }
   throw err
 }
+
+/** What either upload path says when the file is over the cap. */
+const UPLOAD_TOO_LARGE = `File exceeds the maximum upload size of ${MAX_UPLOAD_SIZE_MB}MB`
 
 /** Create pipeline record and enqueue processing job */
 async function enqueuePipeline(c: Context<{ Variables: AppContext }>, resourceId: string) {
@@ -302,19 +307,11 @@ resourcesRouter.get('/:id/json', async (c) => {
   }
 
   const jsonTooLarge = () =>
-    c.json(
-      {
-        type: 'about:blank',
-        title: 'Payload Too Large',
-        status: 413,
-        detail: `JSON file exceeds preview limit (${JSON_PREVIEW_LIMIT} bytes)`,
-      },
-      413
-    )
+    new PayloadTooLargeError(`JSON file exceeds preview limit (${JSON_PREVIEW_LIMIT} bytes)`)
 
   // Fast reject by DB size (avoids storage round-trip)
   if (resource.size != null && resource.size > JSON_PREVIEW_LIMIT) {
-    return jsonTooLarge()
+    throw jsonTooLarge()
   }
 
   const storage = c.get('storage')
@@ -328,7 +325,7 @@ resourcesRouter.get('/:id/json', async (c) => {
   }
   if (rangeResult.totalSize > JSON_PREVIEW_LIMIT) {
     rangeResult.stream.destroy()
-    return jsonTooLarge()
+    throw jsonTooLarge()
   }
 
   const contentType = getMimeType(resource.format!) || 'application/json'
@@ -734,8 +731,9 @@ resourcesRouter.post('/:id/upload-url', zValidator('json', uploadUrlSchema), asy
   return c.json({ upload_url: uploadUrl })
 })
 
-// POST /api/v1/resources/:id/upload - Server-side upload (multipart, for local storage)
-resourcesRouter.post('/:id/upload', bodyLimit({ maxSize: MAX_UPLOAD_SIZE }), async (c) => {
+// POST /api/v1/resources/:id/upload - Server-side upload (multipart, for local storage).
+// Streamed via receiveMultipartFile: never buffered, 413 over MAX_UPLOAD_SIZE.
+resourcesRouter.post('/:id/upload', async (c) => {
   const user = c.get('user')
   if (!user) throw new UnauthorizedError()
 
@@ -744,32 +742,30 @@ resourcesRouter.post('/:id/upload', bodyLimit({ maxSize: MAX_UPLOAD_SIZE }), asy
 
   const resourceService = new ResourceService(db)
   const existing = await checkResourcePermission(db, user, resourceService, id)
-
-  const body = await c.req.parseBody()
-  const file = body['file']
-
-  if (!file || !(file instanceof File)) {
-    throw new ValidationError('Missing "file" field in multipart form data')
-  }
-
-  const contentType = file.type || 'application/octet-stream'
-  const pendingKey = await resourceService.prepareForUpload(
-    id,
-    { filename: file.name, contentType },
-    existing
-  )
-
   const storage = c.get('storage')
-  const stream = Readable.fromWeb(file.stream() as Parameters<typeof Readable.fromWeb>[0])
-  await storage.upload(pendingKey, stream, {
-    contentType,
-    originalFilename: file.name,
-  })
+
+  const { result: pendingKey, size } = await receiveMultipartFile(
+    c.req.raw,
+    { field: 'file', maxFileSize: MAX_UPLOAD_SIZE, limitMessage: UPLOAD_TOO_LARGE },
+    async (file) => {
+      const contentType = file.contentType || 'application/octet-stream'
+      const pendingKey = await resourceService.prepareForUpload(
+        id,
+        { filename: file.filename, contentType },
+        existing
+      )
+      await storage.upload(pendingKey, file.stream, {
+        contentType,
+        originalFilename: file.filename,
+      })
+      return pendingKey
+    }
+  )
 
   // Promote the key we wrote to, not whatever is pending now: a concurrent
   // request may have replaced it, and promoting that one would point the
   // resource at an object nobody has uploaded yet.
-  if (!(await resourceService.promoteUpload(id, pendingKey, { size: file.size }))) {
+  if (!(await resourceService.promoteUpload(id, pendingKey, { size }))) {
     throw new ValidationError('A newer upload replaced this one before it completed')
   }
 
@@ -810,9 +806,7 @@ resourcesRouter.post(
     }
     if (head.size > MAX_UPLOAD_SIZE) {
       await storage.delete(pendingKey)
-      throw new ValidationError(
-        `Uploaded file exceeds the maximum size of ${MAX_UPLOAD_SIZE} bytes`
-      )
+      throw new PayloadTooLargeError(UPLOAD_TOO_LARGE)
     }
 
     // Size comes from storage, not the client, and the hash is left for the

@@ -8,6 +8,7 @@ import { inject } from 'vitest'
 import { testDatabaseName, testDatabaseUrl } from '@kukan/db-testing'
 import { vi } from 'vitest'
 import { Hono } from 'hono'
+import type { Readable } from 'node:stream'
 import type { Database } from '@kukan/db'
 import { NoOpAIAdapter, type AIAdapter } from '@kukan/ai-adapter'
 import { PostgresSearchAdapter, type SearchAdapter } from '@kukan/search-adapter'
@@ -55,7 +56,11 @@ export const mockSearch: SearchAdapter = {
 }
 
 const mockStorage = {
-  upload: async () => {},
+  // Drained like the real adapter would: a streamed upload's parser waits on
+  // the consumer, and one that never reads would hold the request open.
+  upload: async (_key: string, body: Buffer | Readable) => {
+    if (!Buffer.isBuffer(body)) for await (const _chunk of body) void _chunk
+  },
   download: async () => {
     const err = new Error('The specified key does not exist.')
     err.name = 'NoSuchKey'

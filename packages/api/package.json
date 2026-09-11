@@ -47,6 +47,7 @@
     "@kukan/storage-adapter": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "better-auth": "1.7.2",
+    "busboy": "^1.6.0",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.5",
@@ -56,6 +57,7 @@
   },
   "devDependencies": {
     "@kukan/db-testing": "workspace:*",
+    "@types/busboy": "^1.5.4",
     "@types/node": "^24.12.2",
     "@types/pg": "^8.23.1",
     "js-yaml": "^5.4.1",

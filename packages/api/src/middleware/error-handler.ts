@@ -20,6 +20,7 @@ const REFUSAL_CODES: Record<number, string> = {
   404: 'NOT_FOUND',
   408: 'REQUEST_TIMEOUT',
   409: 'CONFLICT',
+  413: 'PAYLOAD_TOO_LARGE',
   422: 'VALIDATION_ERROR',
   429: 'TOO_MANY_REQUESTS',
   503: 'SERVICE_UNAVAILABLE',
@@ -84,7 +85,7 @@ export const errorHandler: ErrorHandler = (err, c) => {
         detail: reported.message,
         ...(reported.details && { details: reported.details }),
       },
-      reported.status as 400 | 401 | 403 | 404 | 408 | 409 | 422 | 429 | 500 | 503
+      reported.status as 400 | 401 | 403 | 404 | 408 | 409 | 413 | 422 | 429 | 500 | 503
     )
   }
 

@@ -128,7 +128,7 @@ the listing.
 | GET    | `/resources/{id}/schema`                | Column schema (names, types, row count, numeric stats). CSV/TSV only      | Public     |
 | POST   | `/resources/{id}/query`                 | Server-side DuckDB query (SELECT only). CSV/TSV only                      | Public     |
 | POST   | `/resources/{id}/upload-url`            | Issue presigned upload URL                                                | Org editor |
-| POST   | `/resources/{id}/upload`                | Server-proxied upload                                                     | Org editor |
+| POST   | `/resources/{id}/upload`                | Server-proxied upload (multipart `file`, streamed; 413 over the cap)      | Org editor |
 | POST   | `/resources/{id}/upload-complete`       | Notify completion, enqueue pipeline                                       | Org editor |
 | POST   | `/resources/{id}/run-pipeline`          | Manually trigger pipeline                                                 | Org editor |
 | POST   | `/resources/{id}/cancel-pipeline`       | Stop the running job (content is left alone)                              | Org editor |
