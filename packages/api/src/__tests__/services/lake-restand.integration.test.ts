@@ -162,7 +162,7 @@ beforeEach(async () => {
   // A session object is never dereferenced: every call that would take one is
   // stubbed, so its only job is to be the same reference the assertions expect.
   const session = {} as LakeSession
-  vi.mocked(withLakeSession).mockImplementation((_config, fn) => fn(session))
+  vi.mocked(withLakeSession).mockImplementation((_config, fn) => fn(session, 1))
   vi.mocked(lakeTableExists).mockResolvedValue(true)
   vi.mocked(restandLakeTable).mockResolvedValue(undefined)
   vi.mocked(dropLakeTable).mockResolvedValue(undefined)

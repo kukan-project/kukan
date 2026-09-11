@@ -38,6 +38,20 @@ export interface LakeSessionLimits {
   threads: number
 }
 
+export interface LakeSessionOptions {
+  limits?: LakeSessionLimits
+  /**
+   * Run the work once more, on a rebuilt instance, when the session failed
+   * because its instance was lost ({@link isInstanceLost}). The work then has
+   * to be safe to run twice, **and its result is the second run's alone**:
+   * whatever the first run did before the loss is neither undone nor
+   * reported. The work is told which attempt it is on, so it can at least say
+   * so. Right for a sweep whose result is a count for the log; wrong for
+   * anything that acts on the value.
+   */
+  rerunIfLost?: boolean
+}
+
 /** The DuckDB instance type, without importing the module eagerly. */
 type DuckDBInstance = Awaited<
   ReturnType<(typeof import('@duckdb/node-api'))['DuckDBInstance']['create']>
@@ -59,11 +73,28 @@ type DuckDBConnection = Awaited<ReturnType<DuckDBInstance['connect']>>
 const instances = new Map<string, Promise<DuckDBInstance>>()
 
 /**
+ * Errors a session threw *because* its instance was lost — what
+ * {@link withLakeSession} reruns on. Not {@link isInstanceLost} over any error
+ * out of the work, whose own failures (a Postgres transaction dropping its
+ * connection, say) can read the same and mean nothing about the instance.
+ */
+const lostWith = new WeakSet<object>()
+const markLost = (err: unknown) => {
+  if (typeof err === 'object' && err !== null) lostWith.add(err)
+}
+const wasLost = (err: unknown) => typeof err === 'object' && err !== null && lostWith.has(err)
+
+/**
  * Errors that mean the instance itself is finished — the catalog's libpq
  * connection went away, or the S3 secret's temporary credentials expired —
  * rather than the statement being wrong. The cached instance is dropped so the
  * next caller rebuilds; the current call still fails, and its caller retries
- * (SQS redelivery for ingest, the user for a diff).
+ * (SQS redelivery for ingest, the user for a diff, or {@link withLakeSession}
+ * itself where asked).
+ *
+ * A connect refused because the instance is closed is the same thing seen
+ * from the next caller: one session's loss closed it, and another had already
+ * taken the instance out of the cache before that.
  *
  * Expired credentials are the backstop for `REFRESH auto` below: the refresh
  * only fires on the error codes httpfs recognizes, and a task-role credential
@@ -72,7 +103,7 @@ const instances = new Map<string, Promise<DuckDBInstance>>()
  */
 function isInstanceLost(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err)
-  return /connection|server closed|terminating|SSL|socket|ExpiredToken|token has expired/i.test(
+  return /connection|server closed|terminating|SSL|socket|ExpiredToken|token has expired|instance closed/i.test(
     message
   )
 }
@@ -201,15 +232,19 @@ export async function openLakeSession(
   }
 
   const instance = await pending
-  const conn = await instance.connect()
 
   const forget = (err: unknown) => {
-    if (isInstanceLost(err) && instances.get(key) === pending) {
-      instances.delete(key)
-      void pending.then((i) => i.closeSync()).catch(() => {})
+    if (isInstanceLost(err)) {
+      markLost(err)
+      if (instances.get(key) === pending) {
+        instances.delete(key)
+        void pending.then((i) => i.closeSync()).catch(() => {})
+      }
     }
     throw err
   }
+
+  const conn = await instance.connect().catch(forget)
 
   return {
     run: async (sql) => {
@@ -241,8 +276,28 @@ export async function closeLakeInstances(): Promise<void> {
  * holds a connection on the shared instance, so every caller needs this — use
  * it unless you need the session object itself (the diff races setup against a
  * deadline).
+ *
+ * With `rerunIfLost`, a session that failed because its instance was lost is
+ * followed by one more run on a rebuilt instance: a task-role credential
+ * lapsing between one call and the next is the ordinary case, and the
+ * caller's own retry would be a rerun of `fn` anyway — this saves the wait for
+ * it. A second loss in a row is reported, not retried again.
  */
 export async function withLakeSession<T>(
+  config: LakeConfig,
+  fn: (session: LakeSession, attempt: 1 | 2) => Promise<T>,
+  options: LakeSessionOptions = {}
+): Promise<T> {
+  const { limits, rerunIfLost = false } = options
+  try {
+    return await inSession(config, (session) => fn(session, 1), limits)
+  } catch (err) {
+    if (!rerunIfLost || !wasLost(err)) throw err
+    return inSession(config, (session) => fn(session, 2), limits)
+  }
+}
+
+async function inSession<T>(
   config: LakeConfig,
   fn: (session: LakeSession) => Promise<T>,
   limits?: LakeSessionLimits

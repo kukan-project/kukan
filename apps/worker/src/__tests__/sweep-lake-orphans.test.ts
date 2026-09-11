@@ -4,10 +4,17 @@ import type { Logger } from '@kukan/shared'
 import { LAKE_ORPHAN_RETENTION_MS } from '../config'
 
 const deleteOrphanedFiles = vi.fn()
+const withLakeSession = vi.fn(
+  (
+    _config: unknown,
+    fn: (session: unknown, attempt: number) => Promise<unknown>,
+    _options?: unknown
+  ) => fn({}, 1)
+)
 vi.mock('@kukan/lake', () => ({
   deleteOrphanedFiles: (...args: unknown[]) => deleteOrphanedFiles(...args),
   // The session is irrelevant here; what matters is the window passed through.
-  withLakeSession: (_config: unknown, fn: (session: unknown) => Promise<unknown>) => fn({}),
+  withLakeSession: (...args: Parameters<typeof withLakeSession>) => withLakeSession(...args),
 }))
 
 const { sweepLakeOrphans } = await import('../cron/orphan-cleanup/sweep-lake-orphans')
@@ -60,6 +67,26 @@ describe('sweepLakeOrphans', () => {
 
   it('stays quiet when there was nothing to sweep', async () => {
     expect(await sweepLakeOrphans(lake, log)).toEqual({ deleted: 0 })
+    expect(log.info).not.toHaveBeenCalled()
+  })
+
+  it('asks for the work to be rerun when the instance was lost', async () => {
+    // The tick that lands on a credential rotation used to fail whole.
+    await sweepLakeOrphans(lake, log)
+
+    expect(withLakeSession.mock.calls[0][2]).toEqual({ rerunIfLost: true })
+  })
+
+  it("says so when the count is a rerun's, even when that count is zero", async () => {
+    // The first pass may have deleted everything before the instance was lost;
+    // a silent zero would hide the one tick whose orphans went unobserved.
+    withLakeSession.mockImplementationOnce((_config, fn) => fn({}, 2))
+
+    expect(await sweepLakeOrphans(lake, log)).toEqual({ deleted: 0 })
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ deleted: 0 }),
+      expect.stringMatching(/rebuilt instance/)
+    )
     expect(log.info).not.toHaveBeenCalled()
   })
 

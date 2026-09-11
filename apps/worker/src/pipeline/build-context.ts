@@ -361,7 +361,7 @@ export function buildPipelineContext(
       return withLakeSession(
         lake,
         (session) => withLakeIngestLock(db, (tx) => ingestVersionIntoLake(tx, session, row)),
-        { memoryLimitMb: LAKE_INGEST_MEMORY_LIMIT_MB, threads: LAKE_INGEST_THREADS }
+        { limits: { memoryLimitMb: LAKE_INGEST_MEMORY_LIMIT_MB, threads: LAKE_INGEST_THREADS } }
       )
     },
   }

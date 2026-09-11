@@ -20,12 +20,29 @@ export async function sweepLakeOrphans(
 
   // Anything younger is treated as a write still in progress, not an orphan.
   const olderThan = new Date(Date.now() - LAKE_ORPHAN_RETENTION_MS)
-  const deleted = await withLakeSession(lake, (session) => deleteOrphanedFiles(session, olderThan))
+  // Rerun on a lost instance: the task-role credential rotates about every
+  // seven hours, and the tick that lands on it used to fail whole and log an
+  // error, with the sweep put off to the next one.
+  let rerun = false
+  const deleted = await withLakeSession(
+    lake,
+    (session, attempt) => {
+      rerun = attempt > 1
+      return deleteOrphanedFiles(session, olderThan)
+    },
+    { rerunIfLost: true }
+  )
 
   // Logged with the paths: an orphan means a run died mid-write, so the count
-  // going up is worth noticing rather than absorbing silently.
-  if (deleted.length > 0) {
-    log.info({ deleted: deleted.length, paths: deleted.slice(0, 10) }, 'Swept DuckLake orphans')
+  // going up is worth noticing rather than absorbing silently. After a rerun
+  // the count is only the second pass's — what the first deleted before the
+  // loss is unknowable — so that tick is logged whatever the count, as the
+  // one whose orphans went unobserved.
+  const summary = { deleted: deleted.length, paths: deleted.slice(0, 10) }
+  if (rerun) {
+    log.warn(summary, 'Swept DuckLake orphans on a rebuilt instance; the first pass is uncounted')
+  } else if (deleted.length > 0) {
+    log.info(summary, 'Swept DuckLake orphans')
   }
   return { deleted: deleted.length }
 }
