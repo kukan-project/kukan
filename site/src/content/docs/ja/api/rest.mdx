@@ -366,7 +366,8 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
 - 差分を出せない場合は
   `{"available": false, "reason": "…", "from": …, "to": …, "reasonVersion": …}` を返します。
   `reason` は `no-previous-version` / `not-ingested` / `purged` / `key-missing` / `key-null` /
-  `key-not-unique`。後ろの 3 つは**指定した主キーがその版の行を同定できず取り込まれなかった**ことを
+  `key-not-unique` / `ingest-failed`。`key-*` の 3 つは**指定した主キーがその版の行を同定できず
+  取り込まれなかった**ことを、`ingest-failed` は**取り込みを繰り返し試みて断念した**ことを
   意味します。`not-ingested` は原因ではありません — 片端に行レベルのスナップショットが
   無く、主キー由来の理由も無い、というだけで、版の作成から取り込みが走るまでの通常の待ち時間も
   含みます。**原因が版側に記録されていてもこの理由になります** — 解釈が決める 3 つは

@@ -296,7 +296,9 @@ export const ORPHAN_CLEANUP_CRON = '17 * * * *'
  * How often versions that never reached DuckLake are swept back in (ADR-043
  * layer 2). Offset from the orphan sweep so the two do not contend for the
  * catalog, and hourly because it only catches what the queue dropped — the
- * normal path enqueues a retry immediately.
+ * normal path enqueues a retry immediately. The lease each hand-out takes
+ * (`LAKE_INGEST_LEASE_MS`, in the API package) is sized against this interval:
+ * shorter than it, or a sweep skips a version still on lease.
  */
 export const LAKE_INGEST_SWEEP_CRON = '37 * * * *'
 

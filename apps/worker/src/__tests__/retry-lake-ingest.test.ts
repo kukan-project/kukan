@@ -30,6 +30,7 @@ const pending = vi.hoisted(() => ({
 
 vi.mock('@kukan/api/services/resource-version-service', () => ({
   pendingLakeVersionSource: vi.fn(async () => pending.source),
+  recordLakeIngestFailure: vi.fn(async () => ({ failures: 1, counted: true, gaveUp: false })),
   // The chain that drains a resource's backlog rather than leaving it to the
   // hourly sweep. Stubbed to answer "nothing more", so each case here ends with
   // the one version it is about.
@@ -63,6 +64,7 @@ vi.mock('../pipeline/interpret/version', () => ({
 }))
 
 import { withInterpretedVersion } from '../pipeline/interpret/version'
+import { recordLakeIngestFailure } from '@kukan/api/services/resource-version-service'
 
 const VERSION_KEY = 'resources/pkg-1/res-1.v2'
 const job = { resourceId: 'res-1', version: 2 }
@@ -80,7 +82,7 @@ beforeEach(() => {
     ctx,
     db: {} as Database,
     queue: { enqueue: vi.fn().mockResolvedValue('job-1') } as never,
-    log: { info: vi.fn(), warn: vi.fn() } as never,
+    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
   }
 })
 
@@ -175,5 +177,30 @@ describe('retryLakeIngest', () => {
 
     expect(deps.ctx.ingestLakeVersion).not.toHaveBeenCalled()
     expect(deps.queue.enqueue).not.toHaveBeenCalled()
+  })
+
+  it('counts a throw against the version, lets the message go, and hands nothing on', async () => {
+    // Why: see the catch in retryLakeIngest.
+    const error = new Error('catalog unreachable')
+    deps.ctx.ingestLakeVersion.mockRejectedValue(error)
+
+    await expect(retryLakeIngest(job, deps)).resolves.toBeUndefined()
+
+    expect(recordLakeIngestFailure).toHaveBeenCalledWith(deps.db, job)
+    expect(deps.log.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: error, ...job, failures: 1, gaveUp: false }),
+      expect.any(String)
+    )
+    expect(chained.next).not.toHaveBeenCalled()
+    expect(deps.queue.enqueue).not.toHaveBeenCalled()
+  })
+
+  it('still fails the message when the count itself cannot be written', async () => {
+    // Nothing recorded means nothing ended, and the redelivery is the only
+    // retry left.
+    deps.ctx.ingestLakeVersion.mockRejectedValue(new Error('catalog unreachable'))
+    vi.mocked(recordLakeIngestFailure).mockRejectedValueOnce(new Error('connection lost'))
+
+    await expect(retryLakeIngest(job, deps)).rejects.toThrow('connection lost')
   })
 })

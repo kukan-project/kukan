@@ -197,8 +197,15 @@ export type NoTableReason = 'no-columns' | 'too-many-columns' | 'too-large' | 'r
  * `key-missing` is separate because it is the one answered before the content is
  * read: the version's frozen schema either has the columns or it does not, and
  * issuing the `MERGE` without them is a binder error rather than a refusal.
+ *
+ * `ingest-failed` is the terminal state for an *error* rather than a refusal:
+ * loading the version failed `LAKE_INGEST_FAILURE_LIMIT` times, a sweep apart.
+ * Its own type below, because a key check can never answer it: the picker
+ * renders what a check says, and must not be handed a value it has no words
+ * for.
  */
-export type LakeIngestReason = 'key-missing' | 'key-null' | 'key-not-unique'
+export type KeyFault = 'key-missing' | 'key-null' | 'key-not-unique'
+export type LakeIngestReason = KeyFault | 'ingest-failed'
 
 /**
  * Why two versions could not be compared row by row (spec §7).
@@ -232,11 +239,11 @@ export type DiffUnavailableReason =
   /** One side's content was purged, so it can no longer be compared. */
   | 'purged'
   /**
-   * One side's key stopped it being loaded (spec §6.6) — reported as the reason
-   * itself rather than folded into `not-ingested`, because it is the only one of
-   * these an operator can act on: the key can be corrected, and the next version
-   * takes the correction. Told "not covered by diffs", they would go looking for
-   * a cause that is not there.
+   * One side was given up on (spec §6.6) — reported as the reason itself rather
+   * than folded into `not-ingested`, because these are the ones an operator can
+   * act on: a key can be corrected, and the next version takes the correction;
+   * a load that kept failing is one to go and look at. Told "not covered by
+   * diffs", they would go looking for a cause that is not there.
    */
   | LakeIngestReason
 

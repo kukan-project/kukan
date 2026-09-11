@@ -598,7 +598,8 @@ the first place.
 and excludes the version from its targets.
 
 - Column: **`lake_ingest_reason`** (`key-missing` / `key-null` / `key-not-unique`; null for versions
-  that were ingested and for unprocessed ones)
+  that were ingested and for unprocessed ones; `ingest-failed`, the terminal state for errors, is
+  §6.6.1)
 - Writer: **the Lake step**. It does not touch `no_table_reason`, which the interpretation writes
 - Sweep: add `no_table_reason IS NULL AND lake_ingest_reason IS NULL` to its condition
 - **Never cleared automatically. Written once.** Not cleared by a key-specification change either
@@ -672,6 +673,70 @@ that version as an endpoint, and the three-stage fallback of §7 absorbs it (the
 1, and downloads and listings are untouched). **If someone wants to re-ingest past versions after
 fixing the key setting, an operator does it explicitly** — it must not happen automatically, and
 whether to build an entry point for it is a §14.1 decision.
+
+#### 6.6.1 A terminal state for errors (`ingest-failed`)
+
+The three reasons above are the terminal state for a version the ingest **refused**; a version
+the ingest **broke on** had none. A version whose interpretation or load threw stayed "no snapshot
+id, no reason", the sweep picked it up every hour and the handler threw every hour. Measured in a
+40-minute window: 4,087 handler exceptions across 418 versions, 2,133 messages reaching the DLQ,
+and six separate jobs for one version redelivered 600 seconds apart. The DLQ's receive limit (3)
+does not help because it is **per message**, while the sweep issues **a fresh message every hour**
+for as long as the version is outstanding.
+
+**Dispatch and failure are recorded separately.** The sweep writes the hand-out on the version as
+a lease; the handler counts the failure on the version. Three columns.
+
+- **`lake_ingest_queued_at`** (timestamptz): when the sweep handed this version out — the lease.
+  For **`LAKE_INGEST_LEASE_MS`** = 50 minutes no other sweep hands it out again. Written by the
+  sweep (`queuePendingLakeIngests`) and the chain (`queueNextPendingLakeIngest`)
+- **`lake_ingest_failures`** (integer, default 0) and **`lake_ingest_failed_at`** (timestamptz):
+  the failures the handler counted, and when the last counted one was. Written by the retry
+  handler (`recordLakeIngestFailure`)
+- Limit: **`LAKE_INGEST_FAILURE_LIMIT`** = 3. The write that reaches it records
+  `lake_ingest_reason = 'ingest-failed'` **in the same statement**. No row reaches the limit
+  without the reason. The sweep's exclusion is unchanged: a recorded reason takes the version out
+
+**At most one failure per lease period is counted.** The main path's Lake step queues an immediate
+retry when it fails, and that retry fails the same way seconds later. Counted in full, the two
+spend two of three at once, and if that lands just before :37 the next sweep reaches three — a
+fault of a few minutes ends in a terminal state. A failure less than `LAKE_INGEST_LEASE_MS` after
+the last counted one is not counted (`counted: false`), so the limit is reached only by a fault
+that held across three sweeps — long enough for a transient fault (a credential rotation, an
+unreachable catalog) to pass. A fault lasting several hours still ends versions in the terminal
+state; environment and content faults are not told apart (classifying by exception type is
+unreliable), so after recovery they are re-entered as below.
+
+**The sweep's hand-outs are not counted.** How many times a version was handed out is not how many
+times it ran: with a worker backlog longer than the lease, the message is re-issued every hour
+without ever having been processed. Counting hand-outs would give up on versions nothing had run
+after a few hours of queue delay (measured at up to 14.9 hours).
+
+**The sweep chooses "the oldest outstanding version per resource" and then looks at the lease.** If
+the oldest is leased, the resource is passed over this time — handing out the next version instead
+would overtake it (the ordering guarantee of §6.6). The take is one `UPDATE … RETURNING`, so a task
+starting a few seconds later cannot take the same rows. Not an advisory lock, because a lock is
+only held while enqueuing and looks free to a task that starts a second later; a lease written on
+the row identifies the time slot itself. **The `UPDATE`'s own `WHERE` repeats the lease and the
+outstanding conditions (active, no snapshot, no reason)**: a statement that chose its candidates
+and then waited on a row lock re-evaluates only its own `WHERE` against the rewritten row (READ
+COMMITTED). On the join alone it would stamp a lease over the one another sweep wrote the same
+second, and over the `key-null` a handler wrote while it waited.
+
+**A failed message is not redelivered.** The retry handler records the exception on the version
+and returns normally, so the message is deleted. Thrown, it would sit in flight for the visibility
+timeout (600 s) and come back to fail the same way — and since nothing on the version had changed,
+the next hour's sweep would issue another. This follows ADR-046's division: the version is the
+record and the sweep is the retry. Only when the record itself cannot be written is the exception
+rethrown — nothing was kept, so the redelivery is the only retry left. **A failed handler does not
+hand on to the next version either** — loaded first it would overtake this one for good and leave
+the pair (§7) with no diff ever. What follows a version given up on is picked up by the next
+hour's sweep.
+
+**Re-entry.** To load an `ingest-failed` version into layer 2 again, set `lake_ingest_reason` back
+to null and `lake_ingest_failures` to 0. The same operation as the entry point of §14.1 item 12;
+it never happens automatically. A bulk re-entry after an outage belongs to the same §14.1
+decision.
 
 ## 7. Step 4 — Diff Extraction (three-stage fallback), the Diff API and the Diff UI
 

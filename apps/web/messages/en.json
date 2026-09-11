@@ -775,7 +775,8 @@
         "not-ingested": "v{version} has no row-level snapshot, so there is nothing to compare against. Where a reason was recorded, the version list shows it.",
         "key-missing": "A key column is not in v{version}, so its rows cannot be identified and no diff is available. Correcting the key applies from the next version on.",
         "key-null": "A key column of v{version} has empty values, so its rows cannot be identified and no diff is available. Correcting the key applies from the next version on.",
-        "key-not-unique": "The key of v{version} does not identify a row, so no diff is available. Correcting the key applies from the next version on."
+        "key-not-unique": "The key of v{version} does not identify a row, so no diff is available. Correcting the key applies from the next version on.",
+        "ingest-failed": "Loading v{version} for row-level diffs failed repeatedly, so no diff is available."
       },
       "noTable": {
         "no-columns": "No columns",

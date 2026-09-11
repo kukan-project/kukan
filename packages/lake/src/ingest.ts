@@ -15,7 +15,7 @@
  * make: it rests on what a version row says (spec §7.2), and the caller resolves
  * it before calling.
  */
-import type { LakeIngestReason } from '@kukan/shared'
+import type { KeyFault } from '@kukan/shared'
 import { describeColumns, sameColumns } from './columns'
 import type { LakeSession } from './connection'
 import { keyedLoadSql } from './keyed-load'
@@ -88,7 +88,7 @@ export async function ingestParquetVersion(
 export async function keyFault(
   session: LakeSession,
   opts: { parquetUrl: string; keys: string[] }
-): Promise<LakeIngestReason | null> {
+): Promise<KeyFault | null> {
   const source = `read_parquet(${sqlLiteral(opts.parquetUrl)})`
   const columns = new Set((await describeColumns(session, source)).map((column) => column.name))
   if (opts.keys.some((key) => !columns.has(key))) return 'key-missing'

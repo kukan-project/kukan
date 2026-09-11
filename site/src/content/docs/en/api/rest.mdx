@@ -383,8 +383,9 @@ not a public endpoint.
 - When no diff can be produced, the response is
   `{"available": false, "reason": "…", "from": …, "to": …, "reasonVersion": …}`, where `reason` is
   `no-previous-version` / `not-ingested` / `purged` / `key-missing` / `key-null` /
-  `key-not-unique`. The last three mean the declared primary key did not identify that version's
-  rows, so it was never loaded. `not-ingested` is not a cause: one side has no row-level snapshot
+  `key-not-unique` / `ingest-failed`. The three `key-*` values mean the declared primary key did
+  not identify that version's rows, so it was never loaded; `ingest-failed` means loading it was
+  attempted repeatedly and given up on. `not-ingested` is not a cause: one side has no row-level snapshot
   and no key fault to name, which includes the ordinary window between a version being created and
   the load running for it. A cause may still be recorded on the version and still give this reason
   — `noTableReason` settles three of them, and the version is where they are answered

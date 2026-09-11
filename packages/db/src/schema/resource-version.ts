@@ -90,6 +90,15 @@ export const resourceVersion = pgTable(
     lakeIngestReason: varchar('lake_ingest_reason', {
       length: 32,
     }).$type<LakeIngestReason | null>(),
+    // The sweep's lease (spec §6.6.1): when it last handed this version out.
+    // See `LAKE_INGEST_LEASE_MS`.
+    lakeIngestQueuedAt: timestamp('lake_ingest_queued_at', { withTimezone: true }),
+    // Failures the handler counted, and when the last counted one was — the
+    // spacing that keeps a retry seconds after its failure from counting
+    // twice. At `LAKE_INGEST_FAILURE_LIMIT` the reason above becomes
+    // `ingest-failed`.
+    lakeIngestFailures: integer('lake_ingest_failures').notNull().default(0),
+    lakeIngestFailedAt: timestamp('lake_ingest_failed_at', { withTimezone: true }),
     // Purge audit trail, retained on the tombstone row after content is destroyed.
     purgedAt: timestamp('purged_at', { withTimezone: true }),
     purgedBy: text('purged_by').references(() => user.id),

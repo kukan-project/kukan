@@ -32,6 +32,7 @@ import type {
   VersionOrigin,
   VersionState,
   VersionView,
+  LakeIngestReason,
 } from '@kukan/shared'
 import type { LakeConfig } from '@kukan/lake'
 import {
@@ -440,7 +441,7 @@ function pendingLakeIngestQuery(only?: { resourceId: string; version?: number })
   // this pins.
   return sql`
   SELECT rv.resource_id AS "resourceId", rv.version, rv.storage_key AS "storageKey", rv.size,
-         rv.format
+         rv.format, rv.lake_ingest_queued_at AS "queuedAt"
   FROM resource_version rv
   JOIN resource r ON r.id = rv.resource_id
   WHERE r.state = 'active'${forVersion}
@@ -481,6 +482,95 @@ export async function pendingLakeVersionSource(
     size: number
   }[]
   return found ?? null
+}
+
+/**
+ * How many counted failures a version's load may have before it is given up
+ * on (`lake_ingest_reason = 'ingest-failed'`, spec §6.6.1).
+ *
+ * Counted by the handler that failed, at most once per {@link
+ * LAKE_INGEST_LEASE_MS}: the pipeline's own retry lands seconds after the
+ * failure it retries, and every throw counted would spend two of these at
+ * once — three within the hour if the sweep followed — so a fault of minutes
+ * would end in a terminal state. Spaced, the count reaches this only through a
+ * fault that has held across that many sweeps. Not counted by the sweep
+ * either: a hand-out is not an attempt while a backlog holds the message,
+ * and a queue measured hours deep would give up on versions nothing had run.
+ */
+export const LAKE_INGEST_FAILURE_LIMIT = 3
+
+/**
+ * How long a version handed out by the sweep is left to whoever took it —
+ * and the shortest gap between two failures that both count.
+ *
+ * Under the hour between sweeps (`LAKE_INGEST_SWEEP_CRON` in the worker), so
+ * the next one sees an unfinished version again; long enough that a sweep on
+ * another task the same minute does not. The lease is a row, not a lock: every
+ * worker task schedules the sweep, and a lock held only while enqueuing lets a
+ * task that starts a second later hand the same rows out again.
+ */
+export const LAKE_INGEST_LEASE_MS = 50 * 60 * 1000
+
+/** The reason recorded on giving up, bound to the readers' type. */
+const INGEST_FAILED = 'ingest-failed' satisfies LakeIngestReason
+
+/** A lease period has passed since the timestamp, or it was never set. */
+const leasePassed = (column: string) =>
+  sql`(${sql.raw(column)} IS NULL OR ${sql.raw(column)} <= now() - ${`${LAKE_INGEST_LEASE_MS} milliseconds`}::interval)`
+
+/**
+ * The row-level half of "outstanding for layer 2", for an UPDATE to re-check
+ * after waiting on the row. A statement that chose its rows through
+ * `pendingLakeIngestQuery` and then blocks on one re-evaluates only its own
+ * WHERE against what the other writer left, so without this a lease lands on
+ * a version a handler has just refused, or one an ingest has just loaded.
+ */
+const stillOutstanding = (alias: string) =>
+  sql`(${sql.raw(alias)}.state = 'active' AND ${sql.raw(alias)}.ducklake_snapshot_id IS NULL AND ${sql.raw(alias)}.lake_ingest_reason IS NULL)`
+
+/** What recording a failed attempt left on the version. */
+export interface LakeIngestFailure {
+  /** Failures counted so far, this one included if it was. */
+  failures: number
+  /** Whether this one was counted, or fell inside the spacing of the last. */
+  counted: boolean
+  /** Whether the count reached the limit and the version is now out of the sweep. */
+  gaveUp: boolean
+}
+
+/**
+ * Count a load that threw against its version, and give up on it at the
+ * limit, in one statement — so no row reaches the limit without the reason
+ * that takes it out of the sweep. Only an outstanding version is counted; null
+ * says the version was loaded, refused or purged in the meantime.
+ */
+export async function recordLakeIngestFailure(
+  db: Pick<Database, 'update'>,
+  row: { resourceId: string; version: number }
+): Promise<LakeIngestFailure | null> {
+  const spaced = leasePassed('"resource_version"."lake_ingest_failed_at"')
+  const [updated] = await db
+    .update(resourceVersion)
+    .set({
+      lakeIngestFailures: sql`${resourceVersion.lakeIngestFailures} + CASE WHEN ${spaced} THEN 1 ELSE 0 END`,
+      lakeIngestFailedAt: sql`CASE WHEN ${spaced} THEN now() ELSE ${resourceVersion.lakeIngestFailedAt} END`,
+      lakeIngestReason: sql`CASE WHEN ${spaced} AND ${resourceVersion.lakeIngestFailures} + 1 >= ${LAKE_INGEST_FAILURE_LIMIT}::int THEN ${INGEST_FAILED} END`,
+      updated: new Date(),
+    })
+    .where(
+      and(
+        eq(resourceVersion.resourceId, row.resourceId),
+        eq(resourceVersion.version, row.version),
+        stillOutstanding('"resource_version"')
+      )
+    )
+    .returning({
+      failures: resourceVersion.lakeIngestFailures,
+      reason: resourceVersion.lakeIngestReason,
+      counted: sql<boolean>`${resourceVersion.lakeIngestFailedAt} = now()`,
+    })
+  if (!updated) return null
+  return { failures: updated.failures, counted: updated.counted, gaveUp: updated.reason !== null }
 }
 
 interface PendingLakeIngest {
@@ -1132,9 +1222,15 @@ export class ResourceVersionService {
    * knows is which versions are outstanding; what to do about one belongs with
    * the code that already does it for the pipeline.
    *
-   * Safe to run from every worker at once, which they do — the cron is per
-   * process, not per deployment. Duplicate messages are the cost, and the
-   * handler answers the same question again before it interprets anything.
+   * Each version is handed out on a lease (spec §6.6.1): the statement below
+   * stamps `lake_ingest_queued_at`, and a version still on lease is passed
+   * over, whichever task asks. `LAKE_INGEST_LEASE_MS` says why a lease rather
+   * than a lock. The lease is dispatch only — what became of the attempt is
+   * the handler's to record (`recordLakeIngestFailure`), since a message a
+   * backlog holds for hours is not an attempt. The handler still asks whether
+   * the version is outstanding before it interprets anything
+   * (`pendingLakeVersionSource`), for the copies the pipeline's own retry
+   * still produces.
    */
   async queuePendingLakeIngests(queue: QueueAdapter): Promise<{ queued: number; failed: number }> {
     // **One version per resource, the oldest.** A resource can have several
@@ -1143,10 +1239,28 @@ export class ResourceVersionService {
     // is not ordered. Handed out together, whichever the worker takes first
     // wins: ingest a newer one and the older ones are overtaken, which the
     // ingest refuses for good, so they keep no snapshot and drop out of this
-    // very query. Oldest first, and the next pass hands out the next.
+    // very query. Oldest first, and the next pass hands out the next. The
+    // lease is tested after the choice, so a leased oldest holds its resource
+    // back rather than letting the next version overtake it.
+    //
+    // The lease and the row's standing are tested again on the row itself: two
+    // sweeps the same second both compute `due` from their snapshots, and the
+    // one that blocks on the row lock re-checks only its own WHERE against what
+    // the other writer left (`stillOutstanding`).
     const result = await this.db.execute(sql`
-      SELECT DISTINCT ON ("resourceId") * FROM (${pendingLakeIngestQuery()}) pending
-      ORDER BY "resourceId", version
+      WITH due AS (
+        SELECT "resourceId", version FROM (
+          SELECT DISTINCT ON ("resourceId") * FROM (${pendingLakeIngestQuery()}) pending
+          ORDER BY "resourceId", version
+        ) oldest
+        WHERE ${leasePassed('"queuedAt"')}
+      )
+      UPDATE resource_version rv
+      SET lake_ingest_queued_at = now(), updated = now()
+      FROM due
+      WHERE rv.resource_id = due."resourceId" AND rv.version = due.version
+        AND ${stillOutstanding('rv')} AND ${leasePassed('rv.lake_ingest_queued_at')}
+      RETURNING rv.resource_id AS "resourceId", rv.version
     `)
     const pending = result.rows as unknown as PendingLakeIngest[]
 
@@ -1197,11 +1311,18 @@ export class ResourceVersionService {
     resourceId: string,
     handled: number
   ): Promise<boolean> {
+    // Takes the sweep's lease, so the sweep does not hand out a version this
+    // has just queued.
     const result = await this.db.execute(sql`
-      SELECT * FROM (${pendingLakeIngestQuery({ resourceId })}) pending
-      WHERE version <> ${handled} ORDER BY version LIMIT 1
+      UPDATE resource_version rv
+      SET lake_ingest_queued_at = now(), updated = now()
+      WHERE (rv.resource_id, rv.version) = (
+        SELECT "resourceId", version FROM (${pendingLakeIngestQuery({ resourceId })}) pending
+        WHERE version <> ${handled} ORDER BY version LIMIT 1
+      ) AND ${stillOutstanding('rv')} AND ${leasePassed('rv.lake_ingest_queued_at')}
+      RETURNING rv.version
     `)
-    const [next] = result.rows as unknown as PendingLakeIngest[]
+    const [next] = result.rows as unknown as { version: number }[]
     if (!next) return false
     await queue.enqueue(LAKE_INGEST_JOB_TYPE, { resourceId, version: next.version })
     return true

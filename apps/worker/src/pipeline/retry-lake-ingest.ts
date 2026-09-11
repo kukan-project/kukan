@@ -15,6 +15,7 @@ import { LAKE_INGEST_JOB_TYPE } from '@kukan/shared'
 import { withResourceClaims } from '@kukan/api/services/pipeline-claim'
 import {
   pendingLakeVersionSource,
+  recordLakeIngestFailure,
   ResourceVersionService,
 } from '@kukan/api/services/resource-version-service'
 import { withInterpretedVersion } from './interpret/version'
@@ -71,7 +72,21 @@ export async function retryLakeIngest(
       })
     }
     return result
+  }).catch(async (err: unknown) => {
+    // Counted on the version and let go, not rethrown: thrown, the message
+    // sits in flight for the visibility timeout and fails the same way, and
+    // the sweep reissues it next hour regardless. The count is what gives up
+    // (`LAKE_INGEST_FAILURE_LIMIT`); a count that cannot be written throws
+    // through, leaving the redelivery as the retry. Not handed on either — the
+    // next version loaded first would overtake this one for good.
+    const failure = await recordLakeIngestFailure(deps.db, job)
+    log.error(
+      { err, resourceId, version, ...failure },
+      failure?.gaveUp ? 'Lake ingest gave up on this version' : 'Lake ingest retry failed'
+    )
+    return null
   })
+  if (!outcome) return
 
   if (outcome.status === 'held') {
     // Comes back rather than failing: the holder releases within the staleness

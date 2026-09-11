@@ -2459,22 +2459,61 @@ function expandV6(addr) {
         ],
         "AlarmDescription": "Lower threshold scaling alarm",
         "ComparisonOperator": "LessThanOrEqualToThreshold",
-        "Dimensions": [
+        "EvaluationPeriods": 1,
+        "Metrics": [
           {
-            "Name": "QueueName",
-            "Value": {
-              "Fn::GetAtt": [
-                "QueuePipelineQueue23DE33E9",
-                "QueueName",
-              ],
+            "Expression": "visible + inFlight",
+            "Id": "expr_1",
+            "Label": "Queue depth (visible + in flight)",
+            "ReturnData": true,
+          },
+          {
+            "Id": "visible",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
             },
+            "ReturnData": false,
+          },
+          {
+            "Id": "inFlight",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesNotVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
+            },
+            "ReturnData": false,
           },
         ],
-        "EvaluationPeriods": 1,
-        "MetricName": "ApproximateNumberOfMessagesVisible",
-        "Namespace": "AWS/SQS",
-        "Period": 300,
-        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -2523,22 +2562,61 @@ function expandV6(addr) {
         ],
         "AlarmDescription": "Upper threshold scaling alarm",
         "ComparisonOperator": "GreaterThanOrEqualToThreshold",
-        "Dimensions": [
+        "EvaluationPeriods": 1,
+        "Metrics": [
           {
-            "Name": "QueueName",
-            "Value": {
-              "Fn::GetAtt": [
-                "QueuePipelineQueue23DE33E9",
-                "QueueName",
-              ],
+            "Expression": "visible + inFlight",
+            "Id": "expr_1",
+            "Label": "Queue depth (visible + in flight)",
+            "ReturnData": true,
+          },
+          {
+            "Id": "visible",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
             },
+            "ReturnData": false,
+          },
+          {
+            "Id": "inFlight",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesNotVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
+            },
+            "ReturnData": false,
           },
         ],
-        "EvaluationPeriods": 1,
-        "MetricName": "ApproximateNumberOfMessagesVisible",
-        "Namespace": "AWS/SQS",
-        "Period": 300,
-        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -5872,22 +5950,61 @@ function expandV6(addr) {
         ],
         "AlarmDescription": "Lower threshold scaling alarm",
         "ComparisonOperator": "LessThanOrEqualToThreshold",
-        "Dimensions": [
+        "EvaluationPeriods": 1,
+        "Metrics": [
           {
-            "Name": "QueueName",
-            "Value": {
-              "Fn::GetAtt": [
-                "QueuePipelineQueue23DE33E9",
-                "QueueName",
-              ],
+            "Expression": "visible + inFlight",
+            "Id": "expr_1",
+            "Label": "Queue depth (visible + in flight)",
+            "ReturnData": true,
+          },
+          {
+            "Id": "visible",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
             },
+            "ReturnData": false,
+          },
+          {
+            "Id": "inFlight",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesNotVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
+            },
+            "ReturnData": false,
           },
         ],
-        "EvaluationPeriods": 1,
-        "MetricName": "ApproximateNumberOfMessagesVisible",
-        "Namespace": "AWS/SQS",
-        "Period": 300,
-        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -5936,22 +6053,61 @@ function expandV6(addr) {
         ],
         "AlarmDescription": "Upper threshold scaling alarm",
         "ComparisonOperator": "GreaterThanOrEqualToThreshold",
-        "Dimensions": [
+        "EvaluationPeriods": 1,
+        "Metrics": [
           {
-            "Name": "QueueName",
-            "Value": {
-              "Fn::GetAtt": [
-                "QueuePipelineQueue23DE33E9",
-                "QueueName",
-              ],
+            "Expression": "visible + inFlight",
+            "Id": "expr_1",
+            "Label": "Queue depth (visible + in flight)",
+            "ReturnData": true,
+          },
+          {
+            "Id": "visible",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
             },
+            "ReturnData": false,
+          },
+          {
+            "Id": "inFlight",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesNotVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
+            },
+            "ReturnData": false,
           },
         ],
-        "EvaluationPeriods": 1,
-        "MetricName": "ApproximateNumberOfMessagesVisible",
-        "Namespace": "AWS/SQS",
-        "Period": 300,
-        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -8734,22 +8890,61 @@ function expandV6(addr) {
         ],
         "AlarmDescription": "Lower threshold scaling alarm",
         "ComparisonOperator": "LessThanOrEqualToThreshold",
-        "Dimensions": [
+        "EvaluationPeriods": 1,
+        "Metrics": [
           {
-            "Name": "QueueName",
-            "Value": {
-              "Fn::GetAtt": [
-                "QueuePipelineQueue23DE33E9",
-                "QueueName",
-              ],
+            "Expression": "visible + inFlight",
+            "Id": "expr_1",
+            "Label": "Queue depth (visible + in flight)",
+            "ReturnData": true,
+          },
+          {
+            "Id": "visible",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
             },
+            "ReturnData": false,
+          },
+          {
+            "Id": "inFlight",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesNotVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
+            },
+            "ReturnData": false,
           },
         ],
-        "EvaluationPeriods": 1,
-        "MetricName": "ApproximateNumberOfMessagesVisible",
-        "Namespace": "AWS/SQS",
-        "Period": 300,
-        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -8798,22 +8993,61 @@ function expandV6(addr) {
         ],
         "AlarmDescription": "Upper threshold scaling alarm",
         "ComparisonOperator": "GreaterThanOrEqualToThreshold",
-        "Dimensions": [
+        "EvaluationPeriods": 1,
+        "Metrics": [
           {
-            "Name": "QueueName",
-            "Value": {
-              "Fn::GetAtt": [
-                "QueuePipelineQueue23DE33E9",
-                "QueueName",
-              ],
+            "Expression": "visible + inFlight",
+            "Id": "expr_1",
+            "Label": "Queue depth (visible + in flight)",
+            "ReturnData": true,
+          },
+          {
+            "Id": "visible",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
             },
+            "ReturnData": false,
+          },
+          {
+            "Id": "inFlight",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesNotVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
+            },
+            "ReturnData": false,
           },
         ],
-        "EvaluationPeriods": 1,
-        "MetricName": "ApproximateNumberOfMessagesVisible",
-        "Namespace": "AWS/SQS",
-        "Period": 300,
-        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -12170,22 +12404,61 @@ function expandV6(addr) {
         ],
         "AlarmDescription": "Lower threshold scaling alarm",
         "ComparisonOperator": "LessThanOrEqualToThreshold",
-        "Dimensions": [
+        "EvaluationPeriods": 1,
+        "Metrics": [
           {
-            "Name": "QueueName",
-            "Value": {
-              "Fn::GetAtt": [
-                "QueuePipelineQueue23DE33E9",
-                "QueueName",
-              ],
+            "Expression": "visible + inFlight",
+            "Id": "expr_1",
+            "Label": "Queue depth (visible + in flight)",
+            "ReturnData": true,
+          },
+          {
+            "Id": "visible",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
             },
+            "ReturnData": false,
+          },
+          {
+            "Id": "inFlight",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesNotVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
+            },
+            "ReturnData": false,
           },
         ],
-        "EvaluationPeriods": 1,
-        "MetricName": "ApproximateNumberOfMessagesVisible",
-        "Namespace": "AWS/SQS",
-        "Period": 300,
-        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -12234,22 +12507,61 @@ function expandV6(addr) {
         ],
         "AlarmDescription": "Upper threshold scaling alarm",
         "ComparisonOperator": "GreaterThanOrEqualToThreshold",
-        "Dimensions": [
+        "EvaluationPeriods": 1,
+        "Metrics": [
           {
-            "Name": "QueueName",
-            "Value": {
-              "Fn::GetAtt": [
-                "QueuePipelineQueue23DE33E9",
-                "QueueName",
-              ],
+            "Expression": "visible + inFlight",
+            "Id": "expr_1",
+            "Label": "Queue depth (visible + in flight)",
+            "ReturnData": true,
+          },
+          {
+            "Id": "visible",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
             },
+            "ReturnData": false,
+          },
+          {
+            "Id": "inFlight",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesNotVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
+            },
+            "ReturnData": false,
           },
         ],
-        "EvaluationPeriods": 1,
-        "MetricName": "ApproximateNumberOfMessagesVisible",
-        "Namespace": "AWS/SQS",
-        "Period": 300,
-        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -15380,22 +15692,61 @@ function expandV6(addr) {
         ],
         "AlarmDescription": "Lower threshold scaling alarm",
         "ComparisonOperator": "LessThanOrEqualToThreshold",
-        "Dimensions": [
+        "EvaluationPeriods": 1,
+        "Metrics": [
           {
-            "Name": "QueueName",
-            "Value": {
-              "Fn::GetAtt": [
-                "QueuePipelineQueue23DE33E9",
-                "QueueName",
-              ],
+            "Expression": "visible + inFlight",
+            "Id": "expr_1",
+            "Label": "Queue depth (visible + in flight)",
+            "ReturnData": true,
+          },
+          {
+            "Id": "visible",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
             },
+            "ReturnData": false,
+          },
+          {
+            "Id": "inFlight",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesNotVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
+            },
+            "ReturnData": false,
           },
         ],
-        "EvaluationPeriods": 1,
-        "MetricName": "ApproximateNumberOfMessagesVisible",
-        "Namespace": "AWS/SQS",
-        "Period": 300,
-        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",
@@ -15444,22 +15795,61 @@ function expandV6(addr) {
         ],
         "AlarmDescription": "Upper threshold scaling alarm",
         "ComparisonOperator": "GreaterThanOrEqualToThreshold",
-        "Dimensions": [
+        "EvaluationPeriods": 1,
+        "Metrics": [
           {
-            "Name": "QueueName",
-            "Value": {
-              "Fn::GetAtt": [
-                "QueuePipelineQueue23DE33E9",
-                "QueueName",
-              ],
+            "Expression": "visible + inFlight",
+            "Id": "expr_1",
+            "Label": "Queue depth (visible + in flight)",
+            "ReturnData": true,
+          },
+          {
+            "Id": "visible",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
             },
+            "ReturnData": false,
+          },
+          {
+            "Id": "inFlight",
+            "MetricStat": {
+              "Metric": {
+                "Dimensions": [
+                  {
+                    "Name": "QueueName",
+                    "Value": {
+                      "Fn::GetAtt": [
+                        "QueuePipelineQueue23DE33E9",
+                        "QueueName",
+                      ],
+                    },
+                  },
+                ],
+                "MetricName": "ApproximateNumberOfMessagesNotVisible",
+                "Namespace": "AWS/SQS",
+              },
+              "Period": 300,
+              "Stat": "Maximum",
+            },
+            "ReturnData": false,
           },
         ],
-        "EvaluationPeriods": 1,
-        "MetricName": "ApproximateNumberOfMessagesVisible",
-        "Namespace": "AWS/SQS",
-        "Period": 300,
-        "Statistic": "Maximum",
         "Tags": [
           {
             "Key": "kukan:component",

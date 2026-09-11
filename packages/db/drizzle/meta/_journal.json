@@ -288,6 +288,13 @@
       "when": 1788933146673,
       "tag": "0040_mighty_brother_voodoo",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1789098765027,
+      "tag": "0041_brown_exodus",
+      "breakpoints": true
     }
   ]
 }

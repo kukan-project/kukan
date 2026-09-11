@@ -19,7 +19,7 @@
 import type { VersionOrigin } from './formats'
 import type {
   DiffUnavailableReason,
-  LakeIngestReason,
+  KeyFault,
   NoTableReason,
   ResourceSchema,
 } from './pipeline-types'
@@ -204,7 +204,7 @@ export type PreviewUnusable = 'no-preview' | 'preview-stale'
  * screen must not read "cannot check" as "do not apply".
  */
 export type KeyCheck =
-  | { checked: true; primaryKey: string[] | null; fault: LakeIngestReason | null }
+  | { checked: true; primaryKey: string[] | null; fault: KeyFault | null }
   | { checked: false; primaryKey: string[]; reason: PreviewUnusable }
 
 /** A column of a version's table, as the diff names it. */

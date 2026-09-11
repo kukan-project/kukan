@@ -5,6 +5,7 @@
  */
 
 import * as cdk from 'aws-cdk-lib'
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch'
 import * as ec2 from 'aws-cdk-lib/aws-ec2'
 import * as assets from 'aws-cdk-lib/aws-ecr-assets'
 import * as ecs from 'aws-cdk-lib/aws-ecs'
@@ -144,14 +145,37 @@ export class WorkerServiceConstruct extends Construct {
         minCapacity: config.worker.minTasks,
         maxCapacity: config.worker.maxTasks,
       })
+      // Visible + in flight, not visible alone. A message being processed is
+      // not visible, and neither is one whose handler failed until its
+      // visibility timeout runs out — so with only visible messages counted,
+      // a queue holding a thousand jobs reads as empty the moment every one of
+      // them has been picked up once, and the service scales in with the work
+      // still there. Measured on a live site: 0 visible against 1,300 in
+      // flight, and the task count flapping 1↔2 every few minutes.
       scaling.scaleOnMetric('QueueDepth', {
-        metric: queue.metricApproximateNumberOfMessagesVisible(),
+        metric: new cloudwatch.MathExpression({
+          expression: 'visible + inFlight',
+          usingMetrics: {
+            visible: queue.metricApproximateNumberOfMessagesVisible(),
+            inFlight: queue.metricApproximateNumberOfMessagesNotVisible(),
+          },
+          label: 'Queue depth (visible + in flight)',
+        }),
+        // Scale in only at zero. With in-flight messages counted, zero means
+        // no task received anything for five minutes, so a site with a steady
+        // trickle of jobs stays scaled out after a burst — accepted, because
+        // scaling in stops a task whatever it is doing, and stopTimeout does
+        // not cover a long interpretation. A job cut off costs a receive and
+        // comes back after the visibility timeout.
         scalingSteps: [
           { upper: 0, change: -1 },
           { lower: 5, change: +1 },
           { lower: 25, change: +2 },
         ],
         adjustmentType: cdk.aws_applicationautoscaling.AdjustmentType.CHANGE_IN_CAPACITY,
+        // Stated because CDK reads it off a plain metric and cannot off an
+        // expression; unset, Application Auto Scaling averages instead.
+        metricAggregationType: cdk.aws_applicationautoscaling.MetricAggregationType.MAXIMUM,
         cooldown: cdk.Duration.seconds(300),
       })
     }

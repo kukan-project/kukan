@@ -10,7 +10,12 @@ import { getStorageKey, MAX_PARQUET_SOURCE_SIZE } from '@kukan/shared'
 import type { VersionState } from '@kukan/shared'
 import { hashBuffer } from '@kukan/shared/hash-node'
 import { randomUUID } from 'node:crypto'
-import { ResourceVersionService } from '../../services/resource-version-service'
+import {
+  LAKE_INGEST_FAILURE_LIMIT,
+  LAKE_INGEST_LEASE_MS,
+  recordLakeIngestFailure,
+  ResourceVersionService,
+} from '../../services/resource-version-service'
 import { CLAIM_STALE_AFTER_MS, claimResources } from '../../services/pipeline-claim'
 import { getTestDb, cleanDatabase, closeTestDb } from '../test-helpers/test-db'
 import { mapStorage } from '../test-helpers/fixtures'
@@ -469,7 +474,7 @@ describe('queuePendingLakeIngests', () => {
     expect(queue.enqueue).not.toHaveBeenCalled()
   })
 
-  it('hands each outstanding version to the worker by id', async () => {
+  it('hands each outstanding version to the worker by id, on a lease', async () => {
     // Ids only: what to read is settled by the version row, so a message that
     // disagreed with it would have nothing to act on (ADR-046).
     await addTabularResource('a', [{ version: 1, snapshotId: null }])
@@ -480,5 +485,215 @@ describe('queuePendingLakeIngests', () => {
       resourceId: expect.any(String),
       version: 1,
     })
+    expect(await versionRow(1)).toMatchObject({ queuedAt: expect.any(Date), failures: 0 })
+  })
+
+  it('hands a version out once per lease, whichever task asks', async () => {
+    await addTabularResource('a', [{ version: 1, snapshotId: null }])
+    const queue = mockQueue()
+
+    await service.queuePendingLakeIngests(queue)
+    expect(await service.queuePendingLakeIngests(queue)).toEqual({ queued: 0, failed: 0 })
+    expect(queue.enqueue).toHaveBeenCalledTimes(1)
+
+    // The next hour's sweep sees an unfinished version again.
+    await passLease('lake_ingest_queued_at')
+    expect(await service.queuePendingLakeIngests(queue)).toEqual({ queued: 1, failed: 0 })
+  })
+
+  it('holds the lease against a sweep that chose the same rows a moment earlier', async () => {
+    // Two tasks' crons fire the same second. The later one computes its
+    // candidates from a snapshot the earlier has not committed, blocks on the
+    // row, and re-checks only its own WHERE against what the other wrote — the
+    // join alone would let it stamp the lease twice and queue a second copy.
+    await addTabularResource('a', [{ version: 1, snapshotId: null }])
+    const queue = mockQueue()
+
+    const later = await whileRowIsLocked(
+      sql`UPDATE resource_version SET lake_ingest_queued_at = now()`,
+      () => service.queuePendingLakeIngests(queue)
+    )
+
+    expect(later).toEqual({ queued: 0, failed: 0 })
+    expect(queue.enqueue).not.toHaveBeenCalled()
+  })
+
+  it('does not lease a version a handler has refused in the meantime', async () => {
+    // Chosen before the refusal, blocked on the row while it was written: the
+    // re-check has to look at the row's standing, not only at the lease, or
+    // the sweep queues a version that is no longer outstanding.
+    await addTabularResource('a', [{ version: 1, snapshotId: null }])
+    const queue = mockQueue()
+
+    const later = await whileRowIsLocked(
+      sql`UPDATE resource_version SET lake_ingest_reason = 'key-null'`,
+      () => service.queuePendingLakeIngests(queue)
+    )
+
+    expect(later).toEqual({ queued: 0, failed: 0 })
+    expect(await versionRow(1)).toMatchObject({ reason: 'key-null', queuedAt: null })
+  })
+
+  it('lets the chain take the lease', async () => {
+    // A version the chain just queued must not be handed out again by the
+    // sweep minutes later.
+    await addTabularResource('a', [
+      { version: 1, snapshotId: null },
+      { version: 2, snapshotId: null },
+    ])
+    const [{ id }] = await db.select({ id: resource.id }).from(resource)
+    const queue = mockQueue()
+
+    expect(await service.queueNextPendingLakeIngest(queue, id, 1)).toBe(true)
+    expect(await versionRow(2)).toMatchObject({ queuedAt: expect.any(Date) })
+    expect(await service.queueNextPendingLakeIngest(queue, id, 1)).toBe(false)
+    expect(queue.enqueue).toHaveBeenCalledTimes(1)
+  })
+
+  it('holds a resource back while its oldest version is leased', async () => {
+    // Handing out the next version instead would load it first, and the
+    // ingest then refuses the older one for good.
+    await addTabularResource('a', [
+      { version: 1, snapshotId: null },
+      { version: 2, snapshotId: null },
+    ])
+    const queue = mockQueue()
+
+    await service.queuePendingLakeIngests(queue)
+    expect(await service.queuePendingLakeIngests(queue)).toEqual({ queued: 0, failed: 0 })
+    expect(queue.enqueue).toHaveBeenCalledTimes(1)
+    expect(queue.enqueue).toHaveBeenCalledWith('lake-ingest-version', {
+      resourceId: expect.any(String),
+      version: 1,
+    })
+  })
+
+  it('keeps handing out a version a backlog has not let run', async () => {
+    // A hand-out is not an attempt: only the handler counts, so a queue
+    // hours deep does not give up on versions nothing has run.
+    await addTabularResource('a', [{ version: 1, snapshotId: null }])
+    const queue = mockQueue()
+    for (let i = 0; i <= LAKE_INGEST_FAILURE_LIMIT; i++) {
+      await passLease('lake_ingest_queued_at')
+      expect(await service.queuePendingLakeIngests(queue)).toEqual({ queued: 1, failed: 0 })
+    }
+    expect(await versionRow(1)).toMatchObject({ failures: 0, reason: null })
   })
 })
+
+describe('recordLakeIngestFailure', () => {
+  async function outstandingVersion(): Promise<string> {
+    await addTabularResource('a', [{ version: 1, snapshotId: null }])
+    const [{ id }] = await db.select({ id: resource.id }).from(resource)
+    return id
+  }
+
+  it('counts the failure and keeps the version outstanding short of the limit', async () => {
+    const id = await outstandingVersion()
+
+    expect(await recordLakeIngestFailure(db, { resourceId: id, version: 1 })).toEqual({
+      failures: 1,
+      counted: true,
+      gaveUp: false,
+    })
+    expect(await versionRow(1)).toMatchObject({ failures: 1, failedAt: expect.any(Date) })
+    expect(await service.countPendingLakeIngest()).toBe(1)
+  })
+
+  it('counts at most one failure per lease period', async () => {
+    // The pipeline's own retry fails seconds after the failure it retries;
+    // counted, the two would spend two of three at once.
+    const id = await outstandingVersion()
+    await recordLakeIngestFailure(db, { resourceId: id, version: 1 })
+
+    expect(await recordLakeIngestFailure(db, { resourceId: id, version: 1 })).toEqual({
+      failures: 1,
+      counted: false,
+      gaveUp: false,
+    })
+
+    await passLease('lake_ingest_failed_at')
+    expect(await recordLakeIngestFailure(db, { resourceId: id, version: 1 })).toMatchObject({
+      failures: 2,
+      counted: true,
+    })
+  })
+
+  it('gives up at the limit, in the same write as the count', async () => {
+    const id = await outstandingVersion()
+    for (let i = 1; i < LAKE_INGEST_FAILURE_LIMIT; i++) {
+      await recordLakeIngestFailure(db, { resourceId: id, version: 1 })
+      await passLease('lake_ingest_failed_at')
+    }
+
+    expect(await recordLakeIngestFailure(db, { resourceId: id, version: 1 })).toEqual({
+      failures: LAKE_INGEST_FAILURE_LIMIT,
+      counted: true,
+      gaveUp: true,
+    })
+    expect(await versionRow(1)).toMatchObject({
+      failures: LAKE_INGEST_FAILURE_LIMIT,
+      reason: 'ingest-failed',
+    })
+    expect(await service.countPendingLakeIngest()).toBe(0)
+    expect(await service.queuePendingLakeIngests(mockQueue())).toEqual({ queued: 0, failed: 0 })
+  })
+
+  it('counts nothing against a version that is no longer outstanding', async () => {
+    // Loaded by another pass, refused over its key, or purged: nothing to
+    // retry, and nothing to overwrite.
+    await addTabularResource('a', [{ version: 1, snapshotId: 5 }])
+    const [{ id }] = await db.select({ id: resource.id }).from(resource)
+
+    expect(await recordLakeIngestFailure(db, { resourceId: id, version: 1 })).toBeNull()
+    expect(await versionRow(1)).toMatchObject({ failures: 0, reason: null })
+  })
+
+  it('does not overwrite a key refusal', async () => {
+    const id = await outstandingVersion()
+    await db.update(resourceVersion).set({ lakeIngestReason: 'key-null' })
+
+    expect(await recordLakeIngestFailure(db, { resourceId: id, version: 1 })).toBeNull()
+    expect(await versionRow(1)).toMatchObject({ failures: 0, reason: 'key-null' })
+  })
+})
+
+async function versionRow(version: number) {
+  const [row] = await db
+    .select({
+      failures: resourceVersion.lakeIngestFailures,
+      failedAt: resourceVersion.lakeIngestFailedAt,
+      queuedAt: resourceVersion.lakeIngestQueuedAt,
+      reason: resourceVersion.lakeIngestReason,
+    })
+    .from(resourceVersion)
+    .where(eq(resourceVersion.version, version))
+  return row
+}
+
+/** Move a timestamp on every version back past a lease, as the next hour would find it. */
+async function passLease(column: 'lake_ingest_queued_at' | 'lake_ingest_failed_at') {
+  await db.execute(sql`
+    UPDATE resource_version
+    SET ${sql.raw(column)} = ${sql.raw(column)} - ${`${LAKE_INGEST_LEASE_MS + 1000} milliseconds`}::interval
+  `)
+}
+
+/**
+ * Run `fn` while another transaction has written `write` and not committed,
+ * so `fn`'s statement chooses its rows from before the write and blocks on
+ * the row until the commit — the re-check under READ COMMITTED.
+ */
+async function whileRowIsLocked<T>(
+  write: ReturnType<typeof sql>,
+  fn: () => Promise<T>
+): Promise<T> {
+  let blocked: Promise<T>
+  await db.transaction(async (tx) => {
+    await tx.execute(write)
+    blocked = fn()
+    // Long enough for the blocked one to reach the row.
+    await new Promise((r) => setTimeout(r, 200))
+  })
+  return blocked!
+}

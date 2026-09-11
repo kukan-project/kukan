@@ -125,9 +125,11 @@ exports[`emitted SQL shape > ResourceVersionService.convertSetAsideVersions > pi
     SET claim_owner = NULL, claim_owner_at = NULL, claim_kind = NULL
     WHERE id = ANY($1::uuid[]) AND claim_owner = $2::uuid
     RETURNING id",
-  "SELECT DISTINCT ON ("resourceId") * FROM (
+  "WITH due AS (
+        SELECT "resourceId", version FROM (
+          SELECT DISTINCT ON ("resourceId") * FROM (
   SELECT rv.resource_id AS "resourceId", rv.version, rv.storage_key AS "storageKey", rv.size,
-         rv.format
+         rv.format, rv.lake_ingest_queued_at AS "queuedAt"
   FROM resource_version rv
   JOIN resource r ON r.id = rv.resource_id
   WHERE r.state = 'active'
@@ -146,7 +148,16 @@ exports[`emitted SQL shape > ResourceVersionService.convertSetAsideVersions > pi
         AND newer.ducklake_snapshot_id IS NOT NULL
     )
 ) pending
-      ORDER BY "resourceId", version",
+          ORDER BY "resourceId", version
+        ) oldest
+        WHERE ("queuedAt" IS NULL OR "queuedAt" <= now() - $2::interval)
+      )
+      UPDATE resource_version rv
+      SET lake_ingest_queued_at = now(), updated = now()
+      FROM due
+      WHERE rv.resource_id = due."resourceId" AND rv.version = due.version
+        AND (rv.state = 'active' AND rv.ducklake_snapshot_id IS NULL AND rv.lake_ingest_reason IS NULL) AND (rv.lake_ingest_queued_at IS NULL OR rv.lake_ingest_queued_at <= now() - $3::interval)
+      RETURNING rv.resource_id AS "resourceId", rv.version",
 ]
 `;
 
@@ -173,9 +184,11 @@ exports[`emitted SQL shape > ResourceVersionService.createFirstVersions > pins t
         SELECT 1 FROM "resource_pipeline" rp
         WHERE rp.resource_id = "resource"."id" AND rp.status IN ('queued', 'processing')
       ))",
-  "SELECT DISTINCT ON ("resourceId") * FROM (
+  "WITH due AS (
+        SELECT "resourceId", version FROM (
+          SELECT DISTINCT ON ("resourceId") * FROM (
   SELECT rv.resource_id AS "resourceId", rv.version, rv.storage_key AS "storageKey", rv.size,
-         rv.format
+         rv.format, rv.lake_ingest_queued_at AS "queuedAt"
   FROM resource_version rv
   JOIN resource r ON r.id = rv.resource_id
   WHERE r.state = 'active'
@@ -194,14 +207,23 @@ exports[`emitted SQL shape > ResourceVersionService.createFirstVersions > pins t
         AND newer.ducklake_snapshot_id IS NOT NULL
     )
 ) pending
-      ORDER BY "resourceId", version",
+          ORDER BY "resourceId", version
+        ) oldest
+        WHERE ("queuedAt" IS NULL OR "queuedAt" <= now() - $2::interval)
+      )
+      UPDATE resource_version rv
+      SET lake_ingest_queued_at = now(), updated = now()
+      FROM due
+      WHERE rv.resource_id = due."resourceId" AND rv.version = due.version
+        AND (rv.state = 'active' AND rv.ducklake_snapshot_id IS NULL AND rv.lake_ingest_reason IS NULL) AND (rv.lake_ingest_queued_at IS NULL OR rv.lake_ingest_queued_at <= now() - $3::interval)
+      RETURNING rv.resource_id AS "resourceId", rv.version",
 ]
 `;
 
 exports[`emitted SQL shape > ResourceVersionService.setColumnSettings > pins the pending-run shape 1`] = `
 [
   "select "column_settings" from "resource" where "resource"."id" = $1 limit $2",
-  "select "id", "resource_id", "version", "storage_key", "size", "hash", "origin", "restored_from", "format", "state", "schema", "no_table_reason", "ducklake_snapshot_id", "lake_key_columns", "lake_ingest_reason", "purged_at", "purged_by", "purge_reason", "created_by", "created", "updated" from "resource_version" where ("resource_version"."resource_id" = $1 and "resource_version"."state" = $2) order by "resource_version"."version" desc limit $3",
+  "select "id", "resource_id", "version", "storage_key", "size", "hash", "origin", "restored_from", "format", "state", "schema", "no_table_reason", "ducklake_snapshot_id", "lake_key_columns", "lake_ingest_reason", "lake_ingest_queued_at", "lake_ingest_failures", "lake_ingest_failed_at", "purged_at", "purged_by", "purge_reason", "created_by", "created", "updated" from "resource_version" where ("resource_version"."resource_id" = $1 and "resource_version"."state" = $2) order by "resource_version"."version" desc limit $3",
   "select "id" from "resource_pipeline" where ("resource_pipeline"."resource_id" = $1 and CASE "resource_pipeline"."status"
                 WHEN 'queued' THEN "resource_pipeline"."updated" >
                   NOW() - $2::interval
