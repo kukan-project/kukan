@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { envSchema, loadEnv, databaseUrl } from '../env'
+import { envSchema, loadEnv, databaseUrl, timeZoneSchema } from '../env'
 
 describe('envSchema', () => {
   it('should apply defaults for optional fields', () => {
@@ -19,6 +19,20 @@ describe('envSchema', () => {
     expect(result.data.SEARCH_TYPE).toBe('opensearch')
     expect(result.data.AI_TYPE).toBe('none')
     expect(result.data.HEALTH_CHECK_ENABLED).toBe(true)
+  })
+
+  it('should default TIME_ZONE to Asia/Tokyo and reject a name Intl does not know', () => {
+    const base = {
+      SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
+      BETTER_AUTH_SECRET: 'a'.repeat(32),
+    }
+    const defaulted = envSchema.safeParse(base)
+    expect(defaulted.success && defaulted.data.TIME_ZONE).toBe('Asia/Tokyo')
+    const utc = envSchema.safeParse({ ...base, TIME_ZONE: 'UTC' })
+    expect(utc.success && utc.data.TIME_ZONE).toBe('UTC')
+    const blank = envSchema.safeParse({ ...base, TIME_ZONE: '' })
+    expect(blank.success && blank.data.TIME_ZONE).toBe('Asia/Tokyo')
+    expect(envSchema.safeParse({ ...base, TIME_ZONE: 'Tokyo' }).success).toBe(false)
   })
 
   it('should reject missing required fields', () => {
@@ -160,6 +174,17 @@ describe('envSchema', () => {
       OPENSEARCH_REPLICAS: '-1',
     })
     expect(invalid.success).toBe(false)
+  })
+})
+
+describe('timeZoneSchema', () => {
+  // The web parses TIME_ZONE through this schema alone, without the rest of
+  // envSchema, so the empty-means-default rule has to live here.
+  it('should default an unset or empty value and reject an unknown name', () => {
+    expect(timeZoneSchema.parse(undefined)).toBe('Asia/Tokyo')
+    expect(timeZoneSchema.parse('')).toBe('Asia/Tokyo')
+    expect(timeZoneSchema.parse('UTC')).toBe('UTC')
+    expect(() => timeZoneSchema.parse('Tokyo')).toThrow()
   })
 })
 

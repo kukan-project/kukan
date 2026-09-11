@@ -28,7 +28,7 @@ vi.mock('../resource-preview', () => ({
 }))
 
 vi.mock('../date-time', () => ({
-  formatDateTime: () => '2024-01-01 12:00',
+  useFormattedDateTime: (iso: string | null | undefined) => (iso ? '2024-01-01 12:00' : ''),
   CompactDate: ({ value }: { value: string }) => <span>{value}</span>,
 }))
 

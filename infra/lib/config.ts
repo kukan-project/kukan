@@ -8,6 +8,7 @@ import type { Construct } from 'constructs'
 // Resolves to dist/ — the cdk.json app command builds @kukan/shared first so
 // synth works on a clean checkout (the pipeline runs no workspace build)
 import { DEFAULT_BEDROCK_COMPLETION_MODEL } from '@kukan/shared/ai'
+import { isTimeZone } from '@kukan/shared/env'
 
 export type Scale = 'small' | 'medium' | 'large'
 export type DbEngine = 'rds' | 'aurora'
@@ -125,7 +126,7 @@ export interface EnvironmentConfig {
   scale?: Scale
   dbEngine?: DbEngine
   enableOpenSearch?: boolean
-  // --- Site-scoped fields, enableWaf through enableGa4DataApi (ADR-041) ---
+  // --- Site-scoped fields, enableWaf through timeZone (ADR-041) ---
   // Legacy single-site placement, kept for compatibility: without `sites` they
   // apply to the environment's one site; with `sites` declared they are
   // rejected at synth (validateSites) — declare them per site instead.
@@ -139,6 +140,8 @@ export interface EnvironmentConfig {
   domainName?: string
   hostedZoneId?: string
   hostedZoneName?: string
+  /** IANA zone the web prerenders times in (env `TIME_ZONE`). Omit → Asia/Tokyo. */
+  timeZone?: string
   /**
    * Pre-created us-east-1 ACM certificate ARN for CloudFront (ADR-030).
    * Supply this in pipeline mode to avoid cross-region references (which are
@@ -210,6 +213,7 @@ export interface SiteConfig {
   domainName?: string
   hostedZoneId?: string
   hostedZoneName?: string
+  timeZone?: string
   /**
    * Pre-created us-east-1 ACM certificate ARN. Omit in standalone mode to have
    * the environment's KukanGlobalStack create one per site domain; pipeline
@@ -288,6 +292,7 @@ const SITE_SCOPED_FIELDS = Object.keys({
   basicAuth: true,
   bucketName: true,
   enableGa4DataApi: true,
+  timeZone: true,
 } satisfies Record<SiteScopedKey, true>) as SiteScopedKey[]
 
 /** Sites deployed at once after the canary when `deployConcurrency` is omitted.
@@ -866,6 +871,7 @@ export interface KukanConfig extends ScaleComputed {
   domainName?: string
   hostedZoneId?: string
   hostedZoneName?: string
+  timeZone?: string
   /** undefined → CDK auto-naming (globally unique). */
   bucketName?: string
   enableGa4DataApi: boolean
@@ -1024,6 +1030,13 @@ export function loadConfig(
     throw new Error('backup.awsBackup.dailyRetentionDays must be >= 1')
   }
 
+  const timeZone = ctx<string>('timeZone') ?? env.timeZone
+  // The web validates TIME_ZONE too, but only where it renders: a typo caught
+  // here stops the deploy instead of every page after it.
+  if (timeZone !== undefined && !isTimeZone(timeZone)) {
+    throw new Error(`timeZone "${timeZone}" is not an IANA time zone name (e.g. Asia/Tokyo, UTC)`)
+  }
+
   return {
     scale,
     dbEngine: db.engine,
@@ -1032,6 +1045,7 @@ export function loadConfig(
     allowedIpRanges,
     basicAuth,
     domainName,
+    timeZone,
     hostedZoneId,
     hostedZoneName,
     bucketName,

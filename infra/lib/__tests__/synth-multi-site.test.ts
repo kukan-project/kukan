@@ -733,6 +733,23 @@ describe('validateSites', () => {
     )
   })
 
+  it('rejects a time zone Intl does not know, at synth', () => {
+    const app = new cdk.App()
+    expect(() =>
+      resolveSiteConfig(
+        app,
+        { ...base },
+        { name: 'citya', enableWaf: false, timeZone: 'Asia/Tokio' }
+      )
+    ).toThrow(/is not an IANA time zone name/)
+    const ok = resolveSiteConfig(
+      app,
+      { ...base },
+      { name: 'citya', enableWaf: false, timeZone: 'Asia/Tokyo' }
+    )
+    expect(ok.timeZone).toBe('Asia/Tokyo')
+  })
+
   it('ignores site-scoped CLI context when resolving a site (no cross-site stamping)', () => {
     const app = new cdk.App({
       context: { domainName: 'ctx.example.jp', bucketName: 'ctx-bucket', enableWaf: false },

@@ -101,6 +101,7 @@ const LocaleContext = createContext('en')
 vi.mock('next-intl', () => ({
   useTranslations: (ns: string) => makeTranslator(ns),
   useLocale: () => useContext(LocaleContext),
+  useTimeZone: () => 'Asia/Tokyo',
   NextIntlClientProvider: ({ locale, children }: { locale?: string; children: React.ReactNode }) =>
     createElement(LocaleContext.Provider, { value: locale ?? 'en' }, children),
 }))

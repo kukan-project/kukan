@@ -27,6 +27,30 @@ const postgresSchema = z.object({
   POSTGRES_SSLMODE: z.enum(['disable', 'require']).default('disable'),
 })
 
+/** True for a name Intl resolves, e.g. `Asia/Tokyo` or `UTC`. */
+export function isTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: value })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export const DEFAULT_TIME_ZONE = 'Asia/Tokyo'
+
+/**
+ * The zone the web prerenders times in. The browser reformats them in the
+ * viewer's zone once it runs; this one is what viewers see first, and what a
+ * crawler reads. Exported on its own because the web reads TIME_ZONE without
+ * the rest of the schema, and CDK validates the value at synth.
+ */
+export const timeZoneSchema = z.preprocess(
+  // Empty means unset, as with the AI vars below: `TIME_ZONE=` is the default.
+  emptyAsUndefined,
+  z.string().refine(isTimeZone, 'must be an IANA time zone name').default(DEFAULT_TIME_ZONE)
+)
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
@@ -96,6 +120,8 @@ export const envSchema = z.object({
     .default(
       process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'
     ),
+
+  TIME_ZONE: timeZoneSchema,
 
   // GA4 Analytics (optional — dashboard disabled when not set)
   GA4_PROPERTY_ID: z.string().optional(),

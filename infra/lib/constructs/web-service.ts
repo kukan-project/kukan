@@ -132,6 +132,9 @@ export class WebServiceConstruct extends Construct {
     if (config.domainName) {
       environment.BETTER_AUTH_URL = `https://${config.domainName}`
     }
+    if (config.timeZone) {
+      environment.TIME_ZONE = config.timeZone
+    }
     // Secrets injected into the container
     const containerSecrets: Record<string, ecs.Secret> = {
       ...database.buildPostgresSecrets(),

@@ -1,5 +1,6 @@
 import { cookies, headers } from 'next/headers'
 import { getRequestConfig } from 'next-intl/server'
+import { timeZoneSchema } from '@kukan/shared'
 
 // Barrel import so the @/brand alias resolves the active brand (ADR-042).
 import { messages as BRAND_MESSAGES } from '@/brand/messages'
@@ -23,6 +24,11 @@ function parseAcceptLanguage(header: string): SupportedLocale | undefined {
   }
   return undefined
 }
+
+// Parsed here rather than per request, and this one variable rather than
+// loadEnv(): the request config also runs during `next build`, where the
+// secrets the full schema demands are unset.
+const TIME_ZONE = timeZoneSchema.parse(process.env.TIME_ZONE)
 
 export default getRequestConfig(async () => {
   const cookieStore = await cookies()
@@ -48,5 +54,6 @@ export default getRequestConfig(async () => {
   return {
     locale,
     messages,
+    timeZone: TIME_ZONE,
   }
 })

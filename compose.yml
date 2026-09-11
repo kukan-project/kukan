@@ -7,6 +7,7 @@ x-minio-credentials: &minio-credentials
 # ---------- Shared app environment (prod profile) ----------
 x-app-environment: &app-environment
   NODE_ENV: production
+  TIME_ZONE: ${TIME_ZONE:-Asia/Tokyo}
   POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
   POSTGRES_DB: ${POSTGRES_DB:-kukan}
   POSTGRES_USER: ${POSTGRES_USER:-kukan}

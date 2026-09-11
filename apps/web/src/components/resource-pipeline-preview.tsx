@@ -12,13 +12,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@kukan/ui'
-import { useTranslations, useLocale } from 'next-intl'
+import { useTranslations } from 'next-intl'
 import { isCsvFormat, type ResourceSchema } from '@kukan/shared'
 import { PipelineStatusDetail } from './pipeline-status-detail'
 import { ResourcePreview } from './resource-preview'
 import { ResourceFields } from './resource-fields'
 import { DataApiDialog } from './data-api-dialog'
-import { formatDateTime } from './date-time'
+import { useFormattedDateTime } from './date-time'
 import { useFetch } from '@/hooks/use-fetch'
 import type { PipelineStatusData } from '@/hooks/use-pipeline-status'
 
@@ -43,7 +43,6 @@ export function ResourcePipelinePreview({
   canManage,
 }: ResourcePipelinePreviewProps) {
   const t = useTranslations('resource')
-  const locale = useLocale()
   const router = useRouter()
   const [previewKey, setPreviewKey] = useState(0)
   const [open, setOpen] = useState(false)
@@ -71,10 +70,9 @@ export function ResourcePipelinePreview({
     router.refresh()
   }, [router])
 
-  const generatedAt =
-    pipelineData?.pipeline_status === 'complete' && pipelineData.updated
-      ? formatDateTime(pipelineData.updated, locale)
-      : null
+  const generatedAt = useFormattedDateTime(
+    pipelineData?.pipeline_status === 'complete' ? pipelineData.updated : null
+  )
 
   return (
     <section>

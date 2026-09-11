@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, useState, useCallback, useEffect, useMemo } from 'react'
-import { useLocale, useTranslations } from 'next-intl'
+import { useTranslations } from 'next-intl'
 import { Calendar, ExternalLink } from 'lucide-react'
 import { Card, CardContent, cn } from '@kukan/ui'
 import { FormatBadge } from './format-badge'
@@ -10,7 +10,7 @@ import { renderSimpleMarkdown } from '@/lib/render-markdown'
 import { DownloadButton } from '@/components/download-button'
 import { ResourcePipelinePreview } from '@/components/resource-pipeline-preview'
 import { KeyValueTable, extrasToRows } from '@/components/key-value-table'
-import { DateTime, formatDateTime } from '@/components/date-time'
+import { DateTime, useFormattedDateTime } from '@/components/date-time'
 import { VersionHistory } from '@/components/version-history'
 import { externalHttpUrl } from '@/lib/safe-url'
 import { LinkHealthWarning } from '@/components/link-health-warning'
@@ -77,7 +77,6 @@ export function ResourceExplorer({
   canManage,
 }: ResourceExplorerProps) {
   const t = useTranslations('resource')
-  const locale = useLocale()
   const [selectedId, setSelectedId] = useState<string | null>(() => {
     if (initialResourceId && resources.some((r) => r.id === initialResourceId)) {
       return initialResourceId
@@ -91,10 +90,10 @@ export function ResourceExplorer({
   // Only the verdict is public — what went wrong is the sysadmin health
   // screen's to show, so this says the link may be gone and when that was last
   // true, not which status or error came back.
-  const linkWarning =
-    source && selected?.healthStatus === 'error' && selected.healthCheckedAt
-      ? t('linkCheckFailed', { date: formatDateTime(selected.healthCheckedAt, locale) })
-      : null
+  const checkedAt = useFormattedDateTime(
+    source && selected?.healthStatus === 'error' ? selected.healthCheckedAt : null
+  )
+  const linkWarning = checkedAt ? t('linkCheckFailed', { date: checkedAt }) : null
 
   // Track visited resource IDs to keep their previews alive in the DOM
   const [visitedIds, setVisitedIds] = useState<Set<string>>(() => {

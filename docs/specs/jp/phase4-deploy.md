@@ -188,7 +188,7 @@ cp infra/config/environments.example.ts infra/config/environments.ts
 `environments.example.ts` も全フィールドをコメント付きで列挙する（推奨の
 マルチサイト形状のみを提示）。
 
-要点: サイトスコープのフィールド（`enableWaf` 〜 `enableGa4DataApi`）を env
+要点: サイトスコープのフィールド（`enableWaf` 〜 `timeZone`）を env
 直下に書けるのはシングルサイト形状（`sites` なし）だけの**過去互換**で、`sites`
 を宣言した環境では各サイトエントリに書く（混在は synth 時に validateSites が拒否）。
 
@@ -317,7 +317,7 @@ prd: {
   手動で削除する
 - **サイトスコープのフィールドは env 側に書けない**: domainName / hostedZone\* /
   certificateArn / webAclArn / enableWaf / allowedIpRanges / basicAuth /
-  bucketName / enableGa4DataApi は `sites` 内でのみ宣言する（env 側に書くと
+  bucketName / enableGa4DataApi / timeZone は `sites` 内でのみ宣言する（env 側に書くと
   synth 時に validateSites が拒否。黙って無視されるより安全）。例外は
   `overrides` のみで、env の値の上にサイトの値が deep-merge される（全サイト
   共通のチューニング + サイト個別上書き）。全サイトに同じゲートを掛けたい

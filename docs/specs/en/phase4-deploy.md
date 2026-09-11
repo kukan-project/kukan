@@ -201,7 +201,7 @@ public documentation
 `environments.example.ts` also lists every field with comments (presenting only the recommended
 multi-site shape).
 
-The key point: writing site-scoped fields (`enableWaf` through `enableGa4DataApi`) directly under
+The key point: writing site-scoped fields (`enableWaf` through `timeZone`) directly under
 env is **backwards compatibility** available only in the single-site shape (no `sites`); in an
 environment that declares `sites` they go on each site entry (validateSites rejects a mix at synth
 time).
@@ -333,7 +333,7 @@ prd: {
   incurring charges, so delete it manually once nothing references it
 - **Site-scoped fields cannot be written at the env level**: domainName / hostedZone\* /
   certificateArn / webAclArn / enableWaf / allowedIpRanges / basicAuth / bucketName /
-  enableGa4DataApi are declared only inside `sites` (writing them at the env level is rejected by
+  enableGa4DataApi and timeZone are declared only inside `sites` (writing them at the env level is rejected by
   validateSites at synth time — safer than being silently ignored). The one exception is
   `overrides`, where the site's values are deep-merged on top of the env's (tuning shared by all
   sites plus per-site overrides). To apply the same gate to every site, define it as a TypeScript
