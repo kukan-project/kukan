@@ -6,6 +6,66 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.28.0] - 2026-09-11
+
+**Highlights**
+
+- Dataset pages no longer break their own hydration over the clock. The server formatted times in whatever zone its container ran in — UTC — while the browser formatted the same instant in the viewer's, so React found two different strings for one element, reported the mismatch and threw the subtree away on every dataset page. Times are now formatted in the site's own zone up to and through hydration, where the two renders are compared, and in the viewer's zone from the first update after. A crawler and a reader without JavaScript keep a real time in the HTML, and only viewers outside the site's zone see the text settle (#576).
+- That zone is a setting of its own: `TIME_ZONE`, an IANA name defaulting to `Asia/Tokyo`, settable per site in CDK. An unknown name is refused where it is written rather than where it is read — CDK fails the synth, and the web parses it once at startup — so a typo cannot turn every page into a 500 after a deploy (#576).
+- A DuckLake load that keeps failing now stops asking. After three counted failures a version's row-level history is given up on and the version says so (`ingest-failed`), instead of being handed back to the queue for as long as the site runs. Failures are counted by the handler that failed and at most once per lease period, so the pipeline's own immediate retry does not spend the budget in seconds (#572, #578, #579).
+- Uploads stream to storage instead of being held in memory. A 100 MB file used to be buffered whole, twice over, before the first byte reached the object store; the body is now piped through as it arrives, an over-large body is refused with `413` rather than by running the process out of memory, and a truncated multipart body no longer takes the process down with an uncaught error (#571).
+- Editing a dataset no longer queues an embedding job per keystroke-sized save. Embeds are debounced per package over a one-minute window, and rebuilding the search index no longer drags every embedding along with it — `POST /api/v1/admin/reindex-embeddings` queues embeddings on their own, and the search administration screen offers the three rebuilds separately (#573, #574).
+- The worker scales in on work, not on visibility. Scale-in read only the visible queue depth, so a queue holding a thousand jobs read as empty the moment each had been picked up once and the service scaled in with the work still there — measured on a live site as zero visible against 1,300 in flight, with the task count flapping. Depth is now visible plus in flight (#579).
+
+**Features**
+
+- feat(config): add `TIME_ZONE`, the zone the site renders times in (#576) — validated as an IANA name in `packages/shared/src/env.ts`, handed to next-intl as the request config's `timeZone` so the server and the client agree, carried in `compose.yml` with a default, and exposed as a per-site `timeZone` in CDK (rejected on the environment entry when `sites` is declared, like the other site-scoped fields). An empty value means unset, as with the other optional variables. Documented in the system administrator guide in both languages.
+- feat(api): create the resources sent with a package (#575) — `POST /api/v1/packages` now accepts `resources[]` and creates them in the same transaction as the package, up to 500 per request, instead of silently dropping them. Pipeline jobs are queued in batches after the transaction commits and a queue or index failure leaves the package and its resources in place rather than failing the create; the response carries the created resources. CKAN clients that post a dataset with its files in one call now work as they expect.
+- feat(admin): rebuild embeddings on their own (#574) — `POST /api/v1/admin/reindex-embeddings` queues an embedding for every package as its own job type, and the search administration screen presents metadata index, resource content index, and embeddings as three separate operations with the same button treatment. External URLs are not refetched by any of them, which the screen now says.
+
+**Bug Fixes**
+
+- fix(web): render times in the site's zone until hydration, then the viewer's (#576) — `formatDateTime` takes an optional `timeZone` and no longer reads the host clock through `Date` getters; `DateTime` and `CompactDate` format in the site's zone while a `useSyncExternalStore` hook reports the render as pre-hydration, and in the viewer's zone after. Times inside translated sentences took a preformatted string as an argument and could not be rendered twice, so they go through the same hook. Tests hydrate server HTML produced in a zone the test host is not in, and a control case confirms that a render depending on the host zone still reports the mismatch.
+- fix(worker): terminal state for repeatedly failing lake ingests, and in-flight-aware scale-in (#572, #578, #579) — `lake_ingest_failures`, `lake_ingest_failed_at` and `lake_ingest_queued_at` on `resource_version`; a failure counts at most once per `LAKE_INGEST_LEASE_MS` and the third sets `ingest-failed`. The hourly requeue takes its lease with an `UPDATE ... RETURNING` on the database clock and repeats its predicates inside the statement, so two workers racing on the same row cannot both hand it out under `READ COMMITTED`. Worker scale-in measures visible plus in-flight messages and scales in only at zero; the lower bound stays at zero tasks, because stopping a task cuts off whatever it is interpreting.
+- fix(api): stream multipart uploads to storage instead of buffering the body (#571) — the upload route parses the multipart body with busboy and pipes the file straight to the storage adapter. The request is metered as it arrives so a chunked body without a `Content-Length` cannot exceed the limit, a file of exactly the limit is accepted where it used to be refused, and error listeners on the file stream and on drained parts keep a truncated body from raising an uncaught error. Over-large bodies now answer `413` (`PayloadTooLargeError`).
+- fix(api): debounce embed jobs per package (#573) — a package takes a one-minute claim on the database clock before an embed is queued, so a burst of saves costs one job instead of one per save, and the job is scheduled to run after the window closes. The claim is a row, not a lock: a failure to queue releases it rather than leaving the package silent until the next edit.
+- test(infra): give the CDK synth tests room under CPU contention (#584) — the synth snapshots time out on a loaded CI runner; the infra project gets its own timeout rather than the suite-wide default.
+
+**Chores**
+
+- chore(deps): raise patch and minor versions across the workspace (#587) — hono, next-intl, undici, zod, openai, hyparquet, lucide-react, jszip, the AWS SDK clients, aws-cdk, eslint, typescript-eslint, Playwright, postcss and the Google Analytics client.
+- chore(deps): upgrade astro to 7.3.2 (#589) — documentation site only.
+
+---
+
+**ハイライト**
+
+- データセットページが日時のせいでハイドレーションに失敗しなくなりました。サーバーは自分のコンテナのゾーン（UTC）で日時を整形する一方、ブラウザは同じ時刻を閲覧者のゾーンで整形していたため、React は 1 つの要素に 2 つの文字列を見つけて不一致を報告し、データセットページのたびに部分木を捨てて描き直していました。日時は、2 つの描画が比較されるハイドレーションまではサイト自身のゾーンで、その直後の更新からは閲覧者のゾーンで整形します。クローラーや JavaScript なしの閲覧者にも日時が HTML に残り、文字が入れ替わるのはサイトのゾーン外から見ている閲覧者だけです（#576）。
+- そのゾーンは独立した設定になりました。`TIME_ZONE`（IANA 名、既定 `Asia/Tokyo`）で、CDK ではサイト単位に指定できます。知らない名前は読む場所ではなく書く場所で弾きます — CDK は synth で失敗し、Web は起動時に 1 回だけ解析するので、打ち間違いがデプロイ後の全ページ 500 になることはありません（#576）。
+- 失敗し続ける DuckLake 取り込みが、いつまでも再投入されなくなりました。数えられた失敗が 3 回に達した版は行レベル履歴を諦め、版がその旨（`ingest-failed`）を示します。失敗は失敗したハンドラが 1 リース期間に高々 1 回だけ数えるので、パイプライン自身の即時再試行が数秒で予算を使い切ることはありません（#572, #578, #579）。
+- アップロードがメモリに溜め込まれず、ストレージへ流れるようになりました。100 MB のファイルは最初の 1 バイトがオブジェクトストアに届く前に丸ごと、しかも二重に保持されていました。本体は届いたそばから流し、大きすぎる本体はプロセスをメモリ切れにするのではなく `413` で断り、途中で切れた multipart が未処理例外でプロセスを落とすこともなくなりました（#571）。
+- データセットの編集で、保存のたびに埋め込みジョブが積まれることがなくなりました。埋め込みはパッケージ単位で 1 分の窓にまとめられ、検索インデックスの再構築が埋め込み全件を巻き込むこともなくなりました。`POST /api/v1/admin/reindex-embeddings` が埋め込みだけを投入し、検索管理画面は 3 つの再構築を別々に提供します（#573, #574）。
+- ワーカーの縮小判断が、見えているメッセージ数ではなく実際の仕事量になりました。縮小は可視キュー長だけを見ていたため、1,000 件を抱えるキューでも全件が一度受信された時点で空と読まれ、仕事が残ったまま縮小していました。実サイトでは可視 0 に対し処理中 1,300、タスク数が上下する状態が観測されています。キュー長は可視 + 処理中になりました（#579）。
+
+**新機能**
+
+- feat(config): サイトが日時を描画するゾーン `TIME_ZONE` を追加 (#576) — `packages/shared/src/env.ts` で IANA 名として検証し、next-intl のリクエスト設定の `timeZone` として渡すことでサーバーとクライアントの整形を一致させます。`compose.yml` に既定値付きで持たせ、CDK ではサイト単位の `timeZone` として公開します（`sites` 宣言時に環境エントリ側に書くと、他のサイト単位項目と同様に拒否されます）。空値は他の任意変数と同じく未設定扱いです。システム管理者ガイドに日英で記載しました。
+- feat(api): パッケージと一緒に送られたリソースを作成する (#575) — `POST /api/v1/packages` が `resources[]` を受け取り、黙って捨てるのではなくパッケージと同じトランザクションで作成します（1 リクエスト 500 件まで）。パイプラインへの投入はコミット後にまとめて行い、キュー投入や索引更新が失敗してもパッケージとリソースはそのまま残り、作成自体は失敗しません。応答には作成されたリソースが含まれます。データセットとファイルを 1 回の呼び出しで登録する CKAN クライアントが期待どおり動きます。
+- feat(admin): 埋め込みだけを再生成できるようにする (#574) — `POST /api/v1/admin/reindex-embeddings` が専用のジョブ種別として全パッケージの埋め込みを投入します。検索管理画面は、メタデータ索引・リソース内容索引・埋め込みの 3 つを同じボタン表現で並べます。いずれも外部 URL を再取得しないことを画面上に明記しました。
+
+**バグ修正**
+
+- fix(web): ハイドレーションまではサイトのゾーン、以降は閲覧者のゾーンで日時を描画する (#576) — `formatDateTime` は任意の `timeZone` を取り、`Date` の getter でホストの時計を読まなくなりました。`DateTime` と `CompactDate` は、`useSyncExternalStore` のフックがハイドレーション前と報告する間はサイトのゾーンで、以降は閲覧者のゾーンで整形します。翻訳文に埋め込まれた日時は整形済み文字列を引数で受け取っていて二度描画できなかったため、同じフックを通します。テストはテスト機とは別のゾーンで生成したサーバー HTML をハイドレーションし、ホストのゾーンに依存する描画では実際に不一致が報告されることも対照として固定しています。
+- fix(worker): 失敗を繰り返す lake 取り込みの終端状態と、処理中を数える縮小判断 (#572, #578, #579) — `resource_version` に `lake_ingest_failures`・`lake_ingest_failed_at`・`lake_ingest_queued_at` を追加。失敗は `LAKE_INGEST_LEASE_MS` あたり高々 1 回数え、3 回目で `ingest-failed` になります。毎時の再投入はデータベースの時刻を使った `UPDATE ... RETURNING` でリースを取り、条件を文の中で再確認するため、`READ COMMITTED` で同じ行を奪い合う 2 つのワーカーが両方とも配ることはありません。ワーカーの縮小は可視 + 処理中で測り、0 のときだけ縮小します。下限は 0 タスクのままです（縮小はタスクが何をしていても止めてしまうため）。
+- fix(api): multipart アップロードをバッファせずストレージへ流す (#571) — アップロードルートは busboy で multipart を解析し、ファイルをストレージアダプターへ直接流します。リクエストは到着と同時に計測するため `Content-Length` のない chunked 本体も上限を超えられず、ちょうど上限サイズのファイルは（従来は拒否されていましたが）受け付けられ、ファイルストリームと読み捨てるパートに付けたエラーリスナーが、途中で切れた本体による未処理例外を防ぎます。大きすぎる本体は `413`（`PayloadTooLargeError`）で応答します。
+- fix(api): 埋め込みジョブをパッケージ単位でまとめる (#573) — 埋め込み投入の前にパッケージがデータベースの時刻で 1 分の claim を取るため、連続した保存は 1 件のジョブで済み、ジョブは窓が閉じたあとに実行されるよう予約されます。claim はロックではなく行なので、投入に失敗したときは解放され、次の編集までパッケージが沈黙することはありません。
+- test(infra): CPU 競合下の CDK synth テストに余裕を持たせる (#584) — 負荷の高い CI ランナーで synth スナップショットがタイムアウトするため、infra プロジェクトに専用のタイムアウトを設定しました。
+
+**その他**
+
+- chore(deps): ワークスペース全体のパッチ・マイナー更新 (#587) — hono、next-intl、undici、zod、openai、hyparquet、lucide-react、jszip、AWS SDK 各クライアント、aws-cdk、eslint、typescript-eslint、Playwright、postcss、Google Analytics クライアント。
+- chore(deps): astro を 7.3.2 に更新 (#589) — ドキュメントサイトのみ。
+
 ## [0.27.1] - 2026-09-11
 
 **Highlights**
