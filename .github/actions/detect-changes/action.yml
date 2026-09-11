@@ -1,0 +1,58 @@
+name: Detect changes
+description: Whether a pull request touches anything the calling job runs against.
+
+inputs:
+  ignore:
+    description: >-
+      Extended regular expression matching the paths this job does not run
+      against. A pull request that changes nothing else is skipped.
+    required: true
+
+outputs:
+  code:
+    description: '"true" when a path outside `ignore` changed, "false" otherwise.'
+    value: ${{ steps.detect.outputs.code }}
+
+runs:
+  using: composite
+  steps:
+    - id: detect
+      shell: bash
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        IGNORE: ${{ inputs.ignore }}
+      run: |
+        # A push to develop has no PR base to diff against, and its job is to
+        # leave warm caches behind — so it always runs everything.
+        if [ "$EVENT_NAME" != 'pull_request' ]; then
+          echo "code=true" >> "$GITHUB_OUTPUT"
+          echo "Push to develop — running everything."
+          exit 0
+        fi
+        # merge-base keeps the diff correct if the base branch advanced.
+        base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
+        files=$(git diff --name-only "$base" "$HEAD_SHA")
+        echo "Changed files:"
+        echo "$files"
+        rest=$(printf '%s\n' "$files" | grep -vE "$IGNORE" || true)
+        # A release carries the root package.json for its version line alone,
+        # next to a CHANGELOG the ignore list already covers. Every other edit
+        # there — a dependency, a script, a workspace entry — is a code change,
+        # so the version line is matched rather than the file name.
+        if [ "$rest" = 'package.json' ] &&
+          ! git diff -U0 "$base" "$HEAD_SHA" -- package.json |
+            grep -E '^[-+]' | grep -vE '^(\+\+\+|---)' |
+            grep -qvE '^[-+][[:space:]]*"version": "[0-9]+\.[0-9]+\.[0-9]+",?$'; then
+          rest=''
+          echo "Root package.json changes its version only — not a code change."
+        fi
+        if [ -n "$rest" ]; then
+          echo "code=true" >> "$GITHUB_OUTPUT"
+          echo "Runs against these changes:"
+          printf '%s\n' "$rest"
+        else
+          echo "code=false" >> "$GITHUB_OUTPUT"
+          echo "Nothing this job runs against changed — skipping."
+        fi

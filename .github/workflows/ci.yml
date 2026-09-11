@@ -5,7 +5,9 @@ name: CI
 # `quality` is a REQUIRED status check (see the branch ruleset), so the job must
 # always run and report a status — using `paths-ignore` would leave the required
 # check pending forever and block the PR. Instead the job always runs but skips
-# the code-only steps (lint / typecheck / unit tests) for docs-only PRs. The
+# the code-only steps (lint / typecheck / unit tests) for docs-only PRs, which
+# the shared `detect-changes` action decides — a release's version-only bump of
+# the root package.json counts as one, see the action for why. The
 # format check still runs because `prettier --check` also covers Markdown and
 # Astro. `.astro` files count as docs: @kukan/site has no lint/typecheck/test
 # scripts, so the code-only steps never look at them anyway.
@@ -40,35 +42,13 @@ jobs:
         with:
           fetch-depth: 0 # need history to diff against the PR base
 
+      # Docs still need the format check (prettier covers .md/.mdx/.astro) but
+      # not the code-only steps, which don't process .astro at all.
       - name: Detect non-docs changes
         id: changes
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          # A push to develop has no PR base to diff against, and its job is to
-          # leave warm caches behind — so it always runs everything.
-          if [ "$EVENT_NAME" != 'pull_request' ]; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-            echo "Push to develop — running full quality suite."
-            exit 0
-          fi
-          # A PR is "docs-only" when every changed file is Markdown/MDX/Astro or
-          # under docs/. Those still need the format check (prettier covers
-          # .md/.mdx/.astro) but not the code-only steps, which don't process
-          # .astro at all. merge-base keeps the diff correct if base advanced.
-          base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
-          files=$(git diff --name-only "$base" "$HEAD_SHA")
-          echo "Changed files:"
-          echo "$files"
-          if printf '%s\n' "$files" | grep -qvE '(\.mdx?$|\.astro$|^docs/)'; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-            echo "Code changes detected — running full quality suite."
-          else
-            echo "code=false" >> "$GITHUB_OUTPUT"
-            echo "Docs-only change — running format check only."
-          fi
+        uses: ./.github/actions/detect-changes
+        with:
+          ignore: '(\.mdx?$|\.astro$|^docs/)'
 
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
@@ -229,24 +209,9 @@ jobs:
 
       - name: Detect changes this job runs against
         id: changes
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          # See the quality job: develop pushes always run to leave warm caches.
-          if [ "$EVENT_NAME" != 'pull_request' ]; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
-          if git diff --name-only "$base" "$HEAD_SHA" \
-            | grep -qvE '(\.mdx?$|\.astro$|^docs/|^site/|^infra/)'; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "code=false" >> "$GITHUB_OUTPUT"
-            echo "No file this job runs against changed — skipping."
-          fi
+        uses: ./.github/actions/detect-changes
+        with:
+          ignore: '(\.mdx?$|\.astro$|^docs/|^site/|^infra/)'
 
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         if: steps.changes.outputs.code == 'true'
@@ -338,24 +303,9 @@ jobs:
 
       - name: Detect changes this job runs against
         id: changes
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          # See the quality job: develop pushes always run to leave warm caches.
-          if [ "$EVENT_NAME" != 'pull_request' ]; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
-          if git diff --name-only "$base" "$HEAD_SHA" \
-            | grep -qvE '(\.mdx?$|\.astro$|^docs/|^site/|^infra/)'; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "code=false" >> "$GITHUB_OUTPUT"
-            echo "No file this job runs against changed — skipping."
-          fi
+        uses: ./.github/actions/detect-changes
+        with:
+          ignore: '(\.mdx?$|\.astro$|^docs/|^site/|^infra/)'
 
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         if: steps.changes.outputs.code == 'true'
