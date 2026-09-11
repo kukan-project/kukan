@@ -22,20 +22,20 @@ As an exception, **PUT on a dataset in draft state is a partial update** (see "D
 
 ## Datasets (packages)
 
-| Method | Path                               | Description                                                                                 | Auth       |
-| ------ | ---------------------------------- | ------------------------------------------------------------------------------------------- | ---------- |
-| GET    | `/packages`                        | List datasets (with search and filters)                                                     | Public     |
-| POST   | `/packages`                        | Create dataset (include `resources` array to create resources simultaneously)               | Org editor |
-| POST   | `/packages/drafts`                 | Create draft dataset (every field optional)                                                 | Auth       |
-| GET    | `/packages/{nameOrId}`             | Get dataset details                                                                         | Public     |
-| PUT    | `/packages/{nameOrId}`             | Update dataset (active: full replacement / draft: partial update; `resources` not included) | Org editor |
-| DELETE | `/packages/{nameOrId}`             | Delete dataset (active: soft delete / draft: immediate permanent delete)                    | Org editor |
-| POST   | `/packages/{nameOrId}/publish`     | Publish a draft (`draft` → `active`)                                                        | Org editor |
-| POST   | `/packages/{nameOrId}/restore`     | Restore soft-deleted dataset                                                                | sysadmin   |
-| POST   | `/packages/{nameOrId}/purge`       | Permanently delete soft-deleted dataset                                                     | Org admin  |
-| GET    | `/packages/{id}/resources`         | List resources                                                                              | Public     |
-| POST   | `/packages/{id}/resources`         | Add resource                                                                                | Org editor |
-| PUT    | `/packages/{id}/resources/reorder` | Reorder resources                                                                           | Org editor |
+| Method | Path                               | Description                                                                                                                                              | Auth       |
+| ------ | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| GET    | `/packages`                        | List datasets (with search and filters)                                                                                                                  | Public     |
+| POST   | `/packages`                        | Create dataset (a `resources` array creates them with it; each item is validated as `POST /packages/{id}/resources` is, and one refusal creates nothing) | Org editor |
+| POST   | `/packages/drafts`                 | Create draft dataset (every field optional)                                                                                                              | Auth       |
+| GET    | `/packages/{nameOrId}`             | Get dataset details                                                                                                                                      | Public     |
+| PUT    | `/packages/{nameOrId}`             | Update dataset (active: full replacement / draft: partial update; `resources` not included)                                                              | Org editor |
+| DELETE | `/packages/{nameOrId}`             | Delete dataset (active: soft delete / draft: immediate permanent delete)                                                                                 | Org editor |
+| POST   | `/packages/{nameOrId}/publish`     | Publish a draft (`draft` → `active`)                                                                                                                     | Org editor |
+| POST   | `/packages/{nameOrId}/restore`     | Restore soft-deleted dataset                                                                                                                             | sysadmin   |
+| POST   | `/packages/{nameOrId}/purge`       | Permanently delete soft-deleted dataset                                                                                                                  | Org admin  |
+| GET    | `/packages/{id}/resources`         | List resources                                                                                                                                           | Public     |
+| POST   | `/packages/{id}/resources`         | Add resource                                                                                                                                             | Org editor |
+| PUT    | `/packages/{id}/resources/reorder` | Reorder resources                                                                                                                                        | Org editor |
 
 ### Key query parameters (GET /packages)
 

@@ -3,6 +3,7 @@
  */
 
 import { z } from 'zod'
+import { createResourceBodySchema } from './resource'
 
 /** package.name (URL slug) contract — single source for the schema below and
  *  for callers that generate names (e.g. AI slug suggestions) */
@@ -19,6 +20,15 @@ export function isValidPackageName(name: string): boolean {
     PACKAGE_NAME_PATTERN.test(name)
   )
 }
+
+/**
+ * How many resources one create may carry. A bound on the one transaction
+ * and the fan-out that follows it, not a limit on a dataset: more are added
+ * one at a time. Above the largest dataset seen so far by a wide margin.
+ */
+export const MAX_RESOURCES_PER_PACKAGE = 500
+
+const packageResourcesSchema = z.array(createResourceBodySchema).max(MAX_RESOURCES_PER_PACKAGE)
 
 export const createPackageSchema = z.object({
   name: z
@@ -44,17 +54,7 @@ export const createPackageSchema = z.object({
   extras: z.record(z.string(), z.unknown()).default({}),
   tags: z.array(z.object({ name: z.string() })).default([]),
   groups: z.array(z.object({ name: z.string() })).default([]),
-  resources: z
-    .array(
-      z.object({
-        url: z.url().optional(),
-        name: z.string().optional(),
-        description: z.string().optional(),
-        format: z.string().optional(),
-        mimetype: z.string().optional(),
-      })
-    )
-    .default([]),
+  resources: packageResourcesSchema.default([]),
 })
 
 /**
@@ -88,7 +88,9 @@ export const updatePackageSchema = createPackageSchema
  * Draft creation (POST /packages/drafts): every field is optional — name gets a
  * placeholder and ownerOrg stays unset until publish (ADR-039).
  */
-export const createDraftPackageSchema = updatePackageSchema
+export const createDraftPackageSchema = updatePackageSchema.extend({
+  resources: packageResourcesSchema.optional(),
+})
 
 /**
  * Restore (POST /packages/:nameOrId/restore): the body is optional. Deletion is

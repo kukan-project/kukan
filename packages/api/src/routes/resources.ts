@@ -51,7 +51,7 @@ import {
   MANAGE_ROLE,
   type AuthUser,
 } from '../auth/permissions'
-import { syncPackageMetadata, indexResourceMetadata } from '../services/search-index'
+import { syncPackageMetadata, settleResourceWrites } from '../services/search-index'
 import { Readable } from 'stream'
 import type { Database } from '@kukan/db'
 import type { SearchFilters } from '@kukan/search-adapter'
@@ -985,18 +985,9 @@ resourcesRouter.put('/:id', zValidator('json', updateResourceSchema), async (c) 
   const input = c.req.valid('json')
   const res = await resourceService.update(id, input)
 
-  // Re-enqueue pipeline + index search in parallel (best-effort enqueue)
-  // Skip upload resources — pipeline is triggered by upload-complete after file is in storage
-  const enqueuePromise =
-    res.url && res.urlType !== 'upload'
-      ? enqueuePipeline(c, id).catch((err) => {
-          c.get('logger').error({ err, resourceId: id }, 'Best-effort pipeline enqueue failed')
-        })
-      : Promise.resolve()
   await Promise.all([
-    enqueuePromise,
+    settleResourceWrites(db, c.var, [res]),
     syncPackageMetadata(db, c.var, res.packageId),
-    indexResourceMetadata(db, c.get('search'), id),
   ])
   return c.json(res)
 })

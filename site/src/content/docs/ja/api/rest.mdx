@@ -22,20 +22,20 @@ PUT エンドポイントは全フィールド置換です。リクエストに�
 
 ## データセット (packages)
 
-| Method | Path                               | 説明                                                                         | 認証        |
-| ------ | ---------------------------------- | ---------------------------------------------------------------------------- | ----------- |
-| GET    | `/packages`                        | データセット一覧（検索・絞り込み対応）                                       | 公開        |
-| POST   | `/packages`                        | データセット作成（`resources` 配列でリソース同時作成可）                     | 組織 editor |
-| POST   | `/packages/drafts`                 | 下書き作成（全フィールド任意）                                               | 認証        |
-| GET    | `/packages/{nameOrId}`             | データセット詳細                                                             | 公開        |
-| PUT    | `/packages/{nameOrId}`             | データセット更新（active は全置換 / draft は部分更新、`resources` は対象外） | 組織 editor |
-| DELETE | `/packages/{nameOrId}`             | データセット削除（active は論理削除 / draft は即時完全削除）                 | 組織 editor |
-| POST   | `/packages/{nameOrId}/publish`     | 下書きを公開（`draft` → `active`）                                           | 組織 editor |
-| POST   | `/packages/{nameOrId}/restore`     | 論理削除済みを復元                                                           | sysadmin    |
-| POST   | `/packages/{nameOrId}/purge`       | 論理削除済みを完全削除                                                       | 組織 admin  |
-| GET    | `/packages/{id}/resources`         | リソース一覧                                                                 | 公開        |
-| POST   | `/packages/{id}/resources`         | リソース追加                                                                 | 組織 editor |
-| PUT    | `/packages/{id}/resources/reorder` | リソース順序変更                                                             | 組織 editor |
+| Method | Path                               | 説明                                                                                                                                                | 認証        |
+| ------ | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| GET    | `/packages`                        | データセット一覧（検索・絞り込み対応）                                                                                                              | 公開        |
+| POST   | `/packages`                        | データセット作成（`resources` 配列でリソース同時作成可。各項目は `POST /packages/{id}/resources` と同じ検証で、1 件でも拒否されれば何も作られない） | 組織 editor |
+| POST   | `/packages/drafts`                 | 下書き作成（全フィールド任意）                                                                                                                      | 認証        |
+| GET    | `/packages/{nameOrId}`             | データセット詳細                                                                                                                                    | 公開        |
+| PUT    | `/packages/{nameOrId}`             | データセット更新（active は全置換 / draft は部分更新、`resources` は対象外）                                                                        | 組織 editor |
+| DELETE | `/packages/{nameOrId}`             | データセット削除（active は論理削除 / draft は即時完全削除）                                                                                        | 組織 editor |
+| POST   | `/packages/{nameOrId}/publish`     | 下書きを公開（`draft` → `active`）                                                                                                                  | 組織 editor |
+| POST   | `/packages/{nameOrId}/restore`     | 論理削除済みを復元                                                                                                                                  | sysadmin    |
+| POST   | `/packages/{nameOrId}/purge`       | 論理削除済みを完全削除                                                                                                                              | 組織 admin  |
+| GET    | `/packages/{id}/resources`         | リソース一覧                                                                                                                                        | 公開        |
+| POST   | `/packages/{id}/resources`         | リソース追加                                                                                                                                        | 組織 editor |
+| PUT    | `/packages/{id}/resources/reorder` | リソース順序変更                                                                                                                                    | 組織 editor |
 
 ### 主なクエリパラメータ（GET /packages）
 

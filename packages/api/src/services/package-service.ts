@@ -6,7 +6,7 @@
 import { randomBytes } from 'node:crypto'
 import { eq, and, or, sql, count, getTableColumns, inArray, asc, desc, ilike } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
-import type { Database } from '@kukan/db'
+import type { Database, Transaction } from '@kukan/db'
 import {
   packageTable,
   tag,
@@ -48,7 +48,7 @@ import type {
 } from '@kukan/shared'
 import { hasOrgMembership, hasDraftAccess, type AuthUser } from '../auth/permissions'
 import { deleteOrphanFreeTags } from './tag-service'
-import { latestLiveVersionAgg, publicResourceColumns } from './resource-service'
+import { latestLiveVersionAgg, publicResourceColumns, ResourceService } from './resource-service'
 import type { LakeConfig } from '@kukan/lake'
 import { dropResourceTables } from '@kukan/lake'
 import { reclaimLakeStorage } from './lake-reclaim'
@@ -514,11 +514,14 @@ export class PackageService {
 
   /**
    * Shared INSERT path for {@link create} and {@link createDraft}: name
-   * uniqueness check, ownerOrg validation, row insert, tag/group linking.
-   * New package columns only need to be added here.
+   * uniqueness check, ownerOrg validation, row insert, tag/group linking, and
+   * the resources sent with the package (the CKAN `package_create` shape) in
+   * the same transaction — all or nothing, so a bulk importer never has to
+   * find out which half arrived. New package columns only need to be added
+   * here.
    */
   private async insertPackage(
-    tx: Parameters<Parameters<Database['transaction']>[0]>[0],
+    tx: Transaction,
     input: CreateDraftPackageInput,
     opts: { name: string; state: 'active' | 'draft'; creatorUserId?: string }
   ) {
@@ -568,8 +571,13 @@ export class PackageService {
     if (input.groups && input.groups.length > 0) {
       await this.linkGroups(tx, pkg.id, input.groups)
     }
+    const resources = await new ResourceService(this.db).createMany(
+      tx,
+      pkg.id,
+      input.resources ?? []
+    )
 
-    return pkg
+    return { ...pkg, resources }
   }
 
   async create(input: CreatePackageInput, creatorUserId?: string) {
@@ -755,11 +763,7 @@ export class PackageService {
   }
 
   /** Find-or-create tags by name and link them to a package. */
-  private async linkTags(
-    tx: Parameters<Parameters<Database['transaction']>[0]>[0],
-    packageId: string,
-    tags: { name: string }[]
-  ) {
+  private async linkTags(tx: Transaction, packageId: string, tags: { name: string }[]) {
     for (const tagInput of tags) {
       let [existingTag] = await tx
         .select()
@@ -780,11 +784,7 @@ export class PackageService {
   }
 
   /** Look up active groups by name and link them to a package. Throws if any group is missing. */
-  private async linkGroups(
-    tx: Parameters<Parameters<Database['transaction']>[0]>[0],
-    packageId: string,
-    groups: { name: string }[]
-  ) {
+  private async linkGroups(tx: Transaction, packageId: string, groups: { name: string }[]) {
     for (const groupInput of groups) {
       const [existingGroup] = await tx
         .select({ id: group.id })

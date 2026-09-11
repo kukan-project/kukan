@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { createTestApp, mockSearch, mockQueue } from '../test-helpers/test-app'
+import { PIPELINE_JOB_TYPE } from '@kukan/shared'
 import {
   getTestDb,
   cleanDatabase,
@@ -194,6 +195,115 @@ describe('Packages API Routes', () => {
   })
 
   describe('POST /api/v1/packages', () => {
+    it('creates the resources sent with the package, in order', async () => {
+      // The CKAN package_create shape.
+      vi.mocked(mockQueue.enqueue).mockClear()
+      const res = await createPackage({
+        name: 'with-resources',
+        resources: [
+          { url: 'https://example.com/a.csv', name: 'a', format: 'CSV' },
+          { name: 'to-upload', urlType: 'upload' },
+        ],
+      })
+      expect(res.status).toBe(201)
+
+      // The detail shape: the run just queued for the link resource shows.
+      const body = await res.json()
+      expect(
+        body.resources.map(
+          (r: { name: string; position: number; pipelineStatus: string | null }) => [
+            r.name,
+            r.position,
+            r.pipelineStatus,
+          ]
+        )
+      ).toEqual([
+        ['a', 0, 'queued'],
+        ['to-upload', 1, null],
+      ])
+      // The link resource gets its pipeline run; the upload waits for its file.
+      expect(mockQueue.enqueue).toHaveBeenCalledTimes(1)
+      expect(mockQueue.enqueue).toHaveBeenCalledWith(
+        PIPELINE_JOB_TYPE,
+        expect.objectContaining({ resourceId: body.resources[0].id })
+      )
+    })
+
+    it('creates nothing when the service refuses one of the resources', async () => {
+      // A refusal the schema cannot see — a section name heading two runs
+      // (ADR-050) — reaches the transaction, and the package goes with it.
+      const res = await createPackage({
+        name: 'half-broken',
+        resources: [
+          { name: 'a', section: 'A' },
+          { name: 'b', section: 'B' },
+          { name: 'c', section: 'A' },
+        ],
+      })
+      expect(res.status).toBe(400)
+      expect((await res.json()).detail).toContain('Section "A"')
+
+      expect((await app.request('/api/v1/packages/half-broken')).status).toBe(404)
+    })
+
+    it('creates the resources sent with a draft too', async () => {
+      // Drafts are the dashboard's path, and had the same accept-and-drop.
+      const res = await app.request('/api/v1/packages/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Draft with resources',
+          resources: [{ name: 'to-upload', urlType: 'upload' }],
+        }),
+      })
+      expect(res.status).toBe(201)
+
+      const body = await res.json()
+      expect(body.resources.map((r: { name: string }) => r.name)).toEqual(['to-upload'])
+    })
+
+    it('still answers 201 when a run cannot be queued', async () => {
+      // The rows are committed by then; failing the request would report a
+      // package that exists as not created, and the retry would refuse its name.
+      vi.mocked(mockQueue.enqueue).mockRejectedValueOnce(new Error('queue down'))
+      const res = await createPackage({
+        name: 'queue-down',
+        resources: [{ url: 'https://example.com/a.csv', name: 'a' }],
+      })
+      expect(res.status).toBe(201)
+
+      const body = await res.json()
+      // The run's own record says what became of it.
+      expect(
+        body.resources.map((r: { pipelineStatus: string | null }) => r.pipelineStatus)
+      ).toEqual(['error'])
+      expect((await app.request('/api/v1/packages/queue-down')).status).toBe(200)
+    })
+
+    it('still answers 201 when the search index refuses the resource docs', async () => {
+      const indexDown = createTestApp(db, {
+        search: {
+          ...mockSearch,
+          bulkIndexResources: async () => {
+            throw new Error('index down')
+          },
+        },
+      })
+      const orgId = await ensureTestOrg()
+
+      const res = await indexDown.request('/api/v1/packages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ownerOrg: orgId,
+          name: 'index-down',
+          resources: [{ name: 'a', urlType: 'upload' }],
+        }),
+      })
+      expect(res.status).toBe(201)
+      expect((await res.json()).resources).toHaveLength(1)
+    })
+
     it('should create package and return 201', async () => {
       const res = await createPackage({
         name: 'new-dataset',

@@ -4,6 +4,7 @@ import {
   updatePackageSchema,
   createDraftPackageSchema,
   DRAFT_NAME_PLACEHOLDER_RE,
+  MAX_RESOURCES_PER_PACKAGE,
 } from '../../validators/package'
 
 const TEST_ORG_ID = '550e8400-e29b-41d4-a716-446655440000'
@@ -64,6 +65,40 @@ describe('createPackageSchema', () => {
         expect(result.data.extras).toEqual({})
         expect(result.data.tags).toEqual([])
         expect(result.data.resources).toEqual([])
+      }
+    })
+
+    it('bounds how many resources one create may carry', () => {
+      const result = createPackageSchema.safeParse({
+        name: 'test-pkg',
+        ownerOrg: TEST_ORG_ID,
+        resources: Array.from({ length: MAX_RESOURCES_PER_PACKAGE + 1 }, () => ({ name: 'r' })),
+      })
+      expect(result.success).toBe(false)
+    })
+
+    it('lets a draft carry resources as well', () => {
+      const result = createDraftPackageSchema.safeParse({
+        resources: [{ name: 'to-upload', urlType: 'upload' }],
+      })
+      expect(result.success).toBe(true)
+      if (result.success) expect(result.data.resources).toHaveLength(1)
+    })
+
+    it('validates each nested resource the way the resource endpoint does', () => {
+      // One shape for both routes, so a bulk importer that sends resources
+      // with the package gets the same answers it would one at a time.
+      const result = createPackageSchema.safeParse({
+        name: 'test-pkg',
+        ownerOrg: TEST_ORG_ID,
+        resources: [
+          { url: 'https://example.com/data.csv', name: 'data', format: 'CSV' },
+          { url: 'not a url', name: 'broken' },
+        ],
+      })
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.error.issues[0].path).toEqual(['resources', 1, 'url'])
       }
     })
 

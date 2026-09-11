@@ -21,6 +21,8 @@ export function parseResourceSchema(metadata: unknown): ResourceSchema | null {
   return parsed.success ? parsed.data : null
 }
 
+const ENQUEUE_BATCH_SIZE = 100
+
 export class PipelineService {
   constructor(
     private db: Database,
@@ -97,20 +99,31 @@ export class PipelineService {
       .innerJoin(packageTable, eq(resource.packageId, packageTable.id))
       .where(and(eq(resource.state, 'active'), inArray(packageTable.state, ['active', 'draft'])))
 
-    const BATCH_SIZE = 100
+    const { enqueued, failed } = await this.enqueueMany(
+      resources.map((r) => ({ id: r.id, rebuildOnly: opts.rebuildOnly && r.hasStoredContent }))
+    )
+    return { enqueued, failed: failed.length }
+  }
+
+  /**
+   * Enqueue many runs, a hundred at a time, and settle each on its own: one
+   * refusal costs its row, not the rest. A sequential loop would block the
+   * single-threaded process for minutes on a catalog-sized list.
+   */
+  async enqueueMany(
+    items: { id: string; rebuildOnly?: boolean }[]
+  ): Promise<{ enqueued: number; failed: { id: string; reason: unknown }[] }> {
     let enqueued = 0
-    let failed = 0
-    for (let i = 0; i < resources.length; i += BATCH_SIZE) {
-      const batch = resources.slice(i, i + BATCH_SIZE)
+    const failed: { id: string; reason: unknown }[] = []
+    for (let i = 0; i < items.length; i += ENQUEUE_BATCH_SIZE) {
+      const batch = items.slice(i, i + ENQUEUE_BATCH_SIZE)
       const results = await Promise.allSettled(
-        batch.map((r) =>
-          this.enqueue(r.id, { rebuildOnly: opts.rebuildOnly && r.hasStoredContent })
-        )
+        batch.map((item) => this.enqueue(item.id, { rebuildOnly: item.rebuildOnly }))
       )
-      for (const r of results) {
+      results.forEach((r, j) => {
         if (r.status === 'fulfilled') enqueued++
-        else failed++
-      }
+        else failed.push({ id: batch[j].id, reason: r.reason })
+      })
     }
     return { enqueued, failed }
   }

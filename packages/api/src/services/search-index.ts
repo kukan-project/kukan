@@ -331,6 +331,47 @@ export async function syncPackageResources(
 }
 
 /**
+ * What follows a resource row being written, whichever route wrote it: a
+ * pipeline run for each link resource (an upload's starts at upload-complete),
+ * and the rows' search docs in one bulk request. Drafts have nothing in the
+ * index until publish (ADR-039), which the doc query already excludes.
+ *
+ * Best-effort: the rows are the record, and a run the queue dropped or a doc
+ * the index refused is caught by the next edit, the hourly sweeps or a
+ * rebuild. Callers keep the whole post-commit tail best-effort for the same
+ * reason — a request that fails after the commit reports a package that
+ * exists as not created, and the retry then refuses its name.
+ */
+export async function settleResourceWrites(
+  db: Database,
+  deps: PackageSyncDeps,
+  resources: { id: string; url: string | null; urlType: string | null }[]
+): Promise<void> {
+  if (resources.length === 0) return
+  const runs = resources.filter((r) => r.url && r.urlType !== 'upload').map((r) => ({ id: r.id }))
+  await Promise.all([
+    new PipelineService(db, deps.queue).enqueueMany(runs).then(({ failed }) => {
+      for (const { id, reason } of failed) {
+        deps.logger.error({ err: reason, resourceId: id }, 'Best-effort pipeline enqueue failed')
+      }
+    }),
+    activeResourceDocRows(
+      db,
+      inArray(
+        resource.id,
+        resources.map((r) => r.id)
+      )
+    )
+      .then(async (rows) => {
+        if (rows.length > 0) await deps.search.bulkIndexResources(rows.map(buildResourceDoc))
+      })
+      .catch((err) => {
+        deps.logger.error({ err }, 'Best-effort resource index failed')
+      }),
+  ])
+}
+
+/**
  * Index a single resource's metadata into kukan-resources.
  * Does NOT include extractedText — that is added by the pipeline Index step.
  */

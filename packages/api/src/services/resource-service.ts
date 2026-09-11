@@ -5,7 +5,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { eq, and, sql, inArray, notInArray, isNotNull, getTableColumns } from 'drizzle-orm'
-import type { Database } from '@kukan/db'
+import type { Database, Transaction } from '@kukan/db'
 import { resource, resourceVersion, packageTable, scrubbedExtras } from '@kukan/db'
 import {
   NotFoundError,
@@ -338,23 +338,52 @@ export class ResourceService {
       // Create resource
       const [newResource] = await tx
         .insert(resource)
-        .values({
-          packageId: input.packageId,
-          url: input.url,
-          urlType: input.urlType,
-          name: input.name,
-          description: input.description,
-          format: input.format ? normalizeFormat(input.format) : undefined,
-          mimetype: input.mimetype,
-          position: nextPosition,
-          resourceType: input.resourceType,
-          section: input.section,
-          state: 'active',
-        })
+        .values(this.toRow(input.packageId, input, nextPosition))
         .returning(publicResourceColumns)
 
       return newResource
     })
+  }
+
+  /**
+   * Create a package's resources with it, in request order.
+   *
+   * One statement, on the caller's transaction: the package is new, so there
+   * is no arrangement to lock or read and nothing for a position to follow —
+   * the index is the position, and the section check runs once over the list.
+   */
+  async createMany(
+    tx: Transaction,
+    packageId: string,
+    items: Omit<CreateResourceInput, 'packageId'>[]
+  ) {
+    if (items.length === 0) return []
+    this.assertUnsplit(items.map((item) => item.section ?? null))
+    return await tx
+      .insert(resource)
+      .values(items.map((item, position) => this.toRow(packageId, item, position)))
+      .returning(publicResourceColumns)
+  }
+
+  /** The row a create writes — one place for a column to be added. */
+  private toRow(
+    packageId: string,
+    item: Omit<CreateResourceInput, 'packageId'>,
+    position: number
+  ): typeof resource.$inferInsert {
+    return {
+      packageId,
+      url: item.url,
+      urlType: item.urlType,
+      name: item.name,
+      description: item.description,
+      format: item.format ? normalizeFormat(item.format) : undefined,
+      mimetype: item.mimetype,
+      position,
+      resourceType: item.resourceType,
+      section: item.section,
+      state: 'active',
+    }
   }
 
   /**

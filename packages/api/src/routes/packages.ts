@@ -3,12 +3,11 @@
  * /api/v1/packages endpoints
  */
 
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
 import { PackageService } from '../services/package-service'
 import { ResourceService } from '../services/resource-service'
-import { PipelineService } from '../services/pipeline-service'
 import {
   createPackageSchema,
   createDraftPackageSchema,
@@ -33,9 +32,9 @@ import {
 } from '../auth/permissions'
 import {
   syncPackageMetadata,
-  indexResourceMetadata,
   syncPackageResources,
   rebuildPackageSearch,
+  settleResourceWrites,
 } from '../services/search-index'
 import { markContentUnindexed } from '../services/content-index-record'
 import { hybridSearch } from '../services/hybrid-search'
@@ -290,9 +289,31 @@ packagesRouter.post('/', zValidator('json', createPackageSchema), async (c) => {
 
   const service = new PackageService(db)
   const pkg = await service.create(input, user.id)
-  await syncPackageMetadata(db, c.var, pkg.id)
-  return c.json(pkg, 201)
+  await settleAfterCreate(c, pkg)
+  // The detail shape, as every other read returns it — with the pipeline
+  // status of the runs just queued.
+  return c.json(await service.getDetailByNameOrId(pkg.id, user), 201)
 })
+
+/**
+ * The post-commit tail of a create, best-effort as a whole: the package is
+ * committed by now, and a request that fails here reports it as not created
+ * — the retry then refuses its name. See settleResourceWrites.
+ */
+async function settleAfterCreate(
+  c: Context<{ Variables: AppContext }>,
+  pkg: { id: string; resources: { id: string; url: string | null; urlType: string | null }[] }
+): Promise<void> {
+  const db = c.get('db')
+  try {
+    await Promise.all([
+      syncPackageMetadata(db, c.var, pkg.id),
+      settleResourceWrites(db, c.var, pkg.resources),
+    ])
+  } catch (err) {
+    c.get('logger').error({ err, packageId: pkg.id }, 'Best-effort post-create sync failed')
+  }
+}
 
 // POST /api/v1/packages/drafts - Create draft package (any authenticated user, ADR-039)
 packagesRouter.post('/drafts', zValidator('json', createDraftPackageSchema), async (c) => {
@@ -309,7 +330,8 @@ packagesRouter.post('/drafts', zValidator('json', createDraftPackageSchema), asy
   const service = new PackageService(db)
   const pkg = await service.createDraft(input, user.id)
   // No search sync — drafts stay out of the index until publish
-  return c.json(pkg, 201)
+  await settleAfterCreate(c, pkg)
+  return c.json(await service.getDetailByNameOrId(pkg.id, user, 'draft'), 201)
 })
 
 // GET /api/v1/packages/:nameOrId - Get package by name or ID
@@ -539,23 +561,10 @@ packagesRouter.post(
       packageId: pkg.id,
     })
 
-    // Enqueue pipeline + index search in parallel (best-effort enqueue)
-    // Skip upload resources — pipeline is triggered by upload-complete after file is in storage
-    const enqueuePromise =
-      input.url && input.urlType !== 'upload'
-        ? new PipelineService(db, c.get('queue')).enqueue(resource.id).catch((err) => {
-            c.get('logger').error(
-              { err, resourceId: resource.id },
-              'Best-effort pipeline enqueue failed'
-            )
-          })
-        : Promise.resolve()
-
     // Both sync helpers skip drafts — metadata/resources are indexed at publish (ADR-039)
     await Promise.all([
-      enqueuePromise,
+      settleResourceWrites(db, c.var, [resource]),
       syncPackageMetadata(db, c.var, pkg.id),
-      indexResourceMetadata(db, c.get('search'), resource.id),
     ])
     return c.json(resource, 201)
   }
