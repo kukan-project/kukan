@@ -15,7 +15,7 @@
     "reconcile-orphans": "tsx src/reconcile-orphans.ts"
   },
   "dependencies": {
-    "@duckdb/node-api": "1.5.4-r.1",
+    "@duckdb/node-api": "1.5.5-r.4",
     "@hono/node-server": "^2.1.1",
     "@kukan/ai-adapter": "workspace:*",
     "@kukan/api": "workspace:*",
