@@ -35,7 +35,7 @@
   },
   "dependencies": {
     "@duckdb/node-api": "1.5.4-r.1",
-    "@google-analytics/data": "^7.0.0",
+    "@google-analytics/data": "^7.1.0",
     "@hono/node-server": "^2.1.1",
     "@hono/zod-validator": "^0.9.1",
     "@kukan/ai-adapter": "workspace:*",
@@ -50,10 +50,10 @@
     "busboy": "^1.6.0",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.13.5",
+    "hono": "^4.13.7",
     "kysely": "^0.29.5",
     "pg": "^8.23.0",
-    "zod": "4.5.4"
+    "zod": "4.6.1"
   },
   "devDependencies": {
     "@kukan/db-testing": "workspace:*",
