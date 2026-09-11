@@ -6,6 +6,58 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.29.0] - 2026-09-11
+
+**Breaking Changes**
+
+- The `account` table loses its `issuer` column and the unique index on `(issuer, accountId)` (migration `0043`). Better Auth added that column as a required field in 1.7.0 and withdrew it in 1.7.3, going back to identifying accounts by `(providerId, accountId)` as 1.6 did; it no longer writes the column, and from 1.7.3 it validates the schema at startup and refuses to insert an account while a column it never writes is `NOT NULL`. Once this migration has run, **images from 0.17.0 through 0.28.0 can no longer authenticate against the database**, because they look accounts up by the dropped column. Two consequences follow, the same ones the 1.6 shim removal had in 0.22.0. On ECS, a rolling update applies the migration from the new worker before the old web tasks are replaced, so sign-ins handled by those tasks fail until the rollout completes, and rolling the image back afterwards does not restore authentication — recover by rolling forward. On Docker Compose, `up -d --build` recreates services one at a time, so stop the application first (`docker compose --env-file .env --env-file .env.prod --profile prod down`) and then bring the new version up. No backfill or data migration is needed, and existing accounts and sessions are unaffected (#594).
+
+**Highlights**
+
+- Better Auth moves to 1.7.3, which restores the 1.6 account schema. Upstream withdrew the `issuer` identity key it had introduced in 1.7.0, on the grounds that the backfill it demanded was not something a production service could safely coordinate, and committed to leaving the core schema unchanged for the rest of v1. KUKAN follows by dropping the column outright: nothing reads it — not the core, and not the OAuth plugins, whose issuer is provider configuration rather than a column on the account (#594).
+- React moves to 19.3.0 and the DuckDB binding to 1.5.5-r.4. Both were held back from the routine dependency bump and upgraded on their own, because one decides what counts as a hydration mismatch on every dataset page and the other reads CSV column names and drives the DuckLake catalog. Each was verified against the suites that exercise it — the hydration tests on hosts in three time zones, and the lake suite against a real catalog (#592, #593).
+
+**Features**
+
+- feat(auth): upgrade better-auth to 1.7.3 and drop the account issuer (#594) — migration `0043` drops the column and its unique index, in that order, because MySQL would otherwise rebuild the index on `accountId` alone. No dedup is needed here: every account is a credential account whose `accountId` is the user id, so the 1.6 key is already unique. The deploy note is recorded alongside the 0.22.0 one in the deployment specification, in both languages.
+
+**Bug Fixes**
+
+- fix(db): stop `create-user` writing the dropped account issuer (#594) — the bootstrap script still set the column and imported the helper that derived it, which 1.7.3 no longer exports, so creating the first sysadmin would have failed. It went unnoticed because the package typechecked `src` alone; `scripts` is checked too now, as the API and lake packages already did.
+
+**Chores**
+
+- chore(deps): upgrade react to 19.3.0 (#592)
+- chore(deps): upgrade `@duckdb/node-api` to 1.5.5-r.4 (#593)
+- build(deps): bump the GitHub Actions group (#548)
+- ci: skip the code checks for a release's version-only bump (#591) — a release changes a CHANGELOG entry and the root `package.json` version line, and the whole suite ran against a diff that cannot affect it. The three jobs' detection steps move into one shared action, which treats the root manifest as a non-code change when its diff is the version line alone; any other edit there still runs everything.
+
+---
+
+**破壊的変更**
+
+- `account` テーブルから `issuer` 列と `(issuer, accountId)` の一意インデックスを削除します（マイグレーション `0043`）。この列は Better Auth が 1.7.0 で必須項目として追加し、1.7.3 で撤回したものです。1.7.3 は 1.6 と同じ `(providerId, accountId)` によるアカウント識別に戻り、この列に書き込まなくなりました。さらに起動時のスキーマ検証が入り、自身が書き込まない `NOT NULL` 列があるとアカウントの INSERT を拒否します。このマイグレーションを適用した DB に対して、**0.17.0 から 0.28.0 までのイメージは認証できなくなります** — 削除した列でアカウントを引くためです。帰結は 0.22.0 の 1.6 シム削除と同じ 2 つです。ECS のローリング更新では、新しい Worker がマイグレーションを適用してから旧 Web タスクが入れ替わるまでの間、旧タスクが処理するサインインが失敗します。また適用後にイメージだけロールバックしても認証は戻りません — ロールフォワードで復旧してください。Docker Compose では `up -d --build` がサービスを個別に作り直すため、先に `docker compose --env-file .env --env-file .env.prod --profile prod down` でアプリケーションを止めてから新バージョンを起動してください。バックフィルやデータ移行は不要で、既存のアカウントとセッションは影響を受けません（#594）。
+
+**ハイライト**
+
+- Better Auth を 1.7.3 に更新し、1.6 のアカウントスキーマに戻ります。上流は 1.7.0 で導入した `issuer` による識別キーを撤回しました。理由は、この列が要求するバックフィルを本番サービスが安全に調整できるものではなかったというものです。あわせて v1 系の期間中はコアスキーマを変更しないことを表明しています。KUKAN は列ごと削除します。この列を読むものが何もないためです — コアも読みませんし、OAuth プラグインの issuer はプロバイダ設定値であって account の列ではありません（#594）。
+- React を 19.3.0 に、DuckDB のバインディングを 1.5.5-r.4 に更新しました。どちらも定例の依存更新から外し、単独で上げています。前者はデータセットページごとにハイドレーションの不一致判定を左右し、後者は CSV の列名読み取りと DuckLake カタログの操作そのものを担うためです。それぞれ該当する検証を行いました — ハイドレーションのテストを 3 つのタイムゾーンのホストで、lake のテストを実カタログに対して実行しています（#592, #593）。
+
+**新機能**
+
+- feat(auth): better-auth を 1.7.3 に更新し account の issuer を削除 (#594) — マイグレーション `0043` は一意インデックスを列より先に落とします。逆順だと MySQL がインデックスを `accountId` 単独で作り直してしまうためです。重複解消は不要です。全アカウントが資格情報アカウントで `accountId` はユーザー ID なので、1.6 のキーは既に一意です。デプロイ時の注意は 0.22.0 のものと並べて実装仕様書に日英で記録しました。
+
+**バグ修正**
+
+- fix(db): `create-user` が削除した account の issuer を書き込まないようにする (#594) — ブートストラップ用スクリプトがまだこの列を設定し、その値を導出するヘルパーを import していました。1.7.3 はこのヘルパーを公開していないため、最初の sysadmin の作成が失敗するところでした。このパッケージが `src` だけを型検査していたため気づけませんでした。API と lake のパッケージが既にそうしているように、`scripts` も型検査するようにしました。
+
+**その他**
+
+- chore(deps): react を 19.3.0 に更新 (#592)
+- chore(deps): `@duckdb/node-api` を 1.5.5-r.4 に更新 (#593)
+- build(deps): GitHub Actions のグループ更新 (#548)
+- ci: バージョン行だけのリリースでコードチェックをスキップ (#591) — リリースが変えるのは CHANGELOG のエントリとルート `package.json` のバージョン行だけなのに、影響しようのない差分に対してテスト一式が走っていました。3 つのジョブの判定を 1 つの共有アクションにまとめ、ルートのマニフェストは差分がバージョン行だけならコード変更として扱わないようにしました。それ以外の編集が混ざれば従来どおり全て走ります。
+
 ## [0.28.0] - 2026-09-11
 
 **Highlights**
