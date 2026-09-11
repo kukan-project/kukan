@@ -49,6 +49,13 @@ export default defineConfig({
           root: './infra',
           include: ['lib/**/__tests__/**/*.test.ts'],
           environment: 'node',
+          // A CDK synth of the multi-site stage takes 1-1.5s on its own and
+          // runs over the 5s default under CPU contention: two unit runs side
+          // by side failed it four times out of four, one run passed three
+          // times out of three. Raised like `lake` below, for the same reason
+          // — these snapshots are the guard on the ADR-041 site layout, and a
+          // timeout that passes on rerun would have them ignored.
+          testTimeout: 30_000,
         },
       },
       {
