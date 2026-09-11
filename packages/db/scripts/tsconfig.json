@@ -1,0 +1,14 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    // The scripts import from ../src, so the root has to cover both. Nothing is
+    // emitted from here, so this only satisfies the file-layout check.
+    "rootDir": "..",
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["*.ts"],
+  // Gitignored local seed scripts: checking them would fail on one machine and
+  // pass in CI, which never sees them.
+  "exclude": ["seed-sample-*.ts"]
+}

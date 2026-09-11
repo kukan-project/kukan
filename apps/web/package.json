@@ -24,7 +24,7 @@
     "@kukan/search-adapter": "workspace:*",
     "@kukan/shared": "workspace:*",
     "@kukan/ui": "workspace:*",
-    "better-auth": "1.7.2",
+    "better-auth": "1.7.3",
     "fzstd": "^0.1.1",
     "hyparquet": "^1.30.0",
     "leaflet": "^1.9.4",

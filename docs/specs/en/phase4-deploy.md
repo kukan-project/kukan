@@ -558,9 +558,17 @@ Migrations run automatically when the Worker starts:
 
 ### A migration older images cannot run against (Better Auth contract)
 
-One migration drops the 1.6 compatibility shims from the `account` table (the `expiresAt` column and the
-default on `issuer`). Once it has been applied, **an image older than that release cannot authenticate** —
-sign-in and sign-up fail with `column "expiresAt" does not exist`.
+Two migrations drop compatibility columns from the `account` table. Once either has been applied, **an image
+older than that release cannot authenticate**.
+
+1. The 1.6 compatibility shims (the `expiresAt` column and the default on `issuer`), dropped in v0.22.0.
+   An older image fails sign-in and sign-up with `column "expiresAt" does not exist`
+2. The `issuer` column and its unique index on `(issuer, accountId)`, dropped after Better Auth 1.7.3
+   withdrew the requirement, went back to identifying accounts by `(providerId, accountId)`, and stopped
+   writing the column. Images from v0.17.0 through v0.28.0 look accounts up by it, so they cannot
+   authenticate either
+
+The consequences are the same for both, and so is what to do about them.
 
 - During an ECS rolling update, sign-in and sign-up served by the old tasks fail from the moment the Worker
   applies the migration until those tasks are replaced

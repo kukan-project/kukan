@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts",
     "lint": "eslint src",
     "clean": "rm -rf dist",
     "db:generate": "drizzle-kit generate",
@@ -30,7 +30,7 @@
   "devDependencies": {
     "@types/node": "^24.12.2",
     "@types/pg": "^8.23.1",
-    "better-auth": "1.7.2",
+    "better-auth": "1.7.3",
     "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.23.13"
