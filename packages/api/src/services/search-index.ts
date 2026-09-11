@@ -5,7 +5,7 @@
  * - rebuildMetadataIndex: batch rebuild of all packages + resources
  */
 
-import { eq, and, inArray, type SQL } from 'drizzle-orm'
+import { eq, and, inArray, sql, type SQL } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import {
   packageTable,
@@ -22,6 +22,7 @@ import type { AIAdapter } from '@kukan/ai-adapter'
 import { EMBED_JOB_TYPE, type Logger } from '@kukan/shared'
 import { ResourceService, resourceDocColumns } from './resource-service'
 import { PipelineService } from './pipeline-service'
+import { leasePassed } from './lease'
 
 /** The adapters every package-metadata sync needs — a structural subset of the
  *  route context vars, so routes can pass `c.var` directly. */
@@ -46,7 +47,7 @@ export async function syncPackageMetadata(
 ): Promise<void> {
   const indexed = await indexPackageMetadata(db, deps.search, packageId)
   if (indexed) {
-    await enqueuePackageEmbed(deps.queue, deps.ai, packageId, deps.logger)
+    await enqueuePackageEmbed(db, deps.queue, deps.ai, packageId, deps.logger)
   }
 }
 
@@ -98,18 +99,112 @@ export async function rebuildPackageSearch(
  * embeddings are eventually consistent (ADR-034).
  */
 export async function enqueuePackageEmbed(
+  db: Database,
   queue: QueueAdapter,
   ai: AIAdapter,
   packageId: string,
   logger: Logger
 ): Promise<void> {
-  if (!ai.getEmbeddingInfo()) return
-  try {
-    await queue.enqueue(EMBED_JOB_TYPE, { packageId })
-  } catch (err) {
-    logger.error({ err, packageId }, 'Failed to enqueue embed-package job')
-  }
+  await enqueueEmbeds(db, queue, ai, eq(packageTable.id, packageId), logger)
 }
+
+/**
+ * How long one queued embed stands for every change to a package.
+ *
+ * The embedding covers the dataset and its resources together, so adding a
+ * resource is a change to it — and a bulk import is one change per resource,
+ * measured at ~5,500 jobs for 298 datasets. The worker takes one message at a
+ * time, so those queue behind the pipeline runs the same import is producing.
+ *
+ * The job is queued to run after the window ({@link EMBED_DELAY_S}), which is
+ * what makes suppressing the rest of it safe: the one job reads the dataset as
+ * it stands once the changes it stands for are in. Long enough to collapse an
+ * import's per-resource writes, short enough that a single edit is embedded
+ * while the editor is still looking at it.
+ */
+export const EMBED_DEBOUNCE_MS = 60_000
+
+/**
+ * The delay on the job, past the window by a few seconds. The window is kept
+ * on the database clock and the delay on the queue's; a job that ran before
+ * the window closed would miss a change that landed between the two, and
+ * these seconds are the room the clocks are allowed to disagree by.
+ */
+export const EMBED_DELAY_S = EMBED_DEBOUNCE_MS / 1000 + 5
+
+/**
+ * Queue an embed for every active package matching `where` whose window is
+ * open, and hold the window for each. The single-package path and the bulk
+ * job both come through here, so a claim always has exactly one job behind it
+ * and a job never goes out without a claim.
+ *
+ * The claim is one statement on the rows, not anything in a process: two API
+ * tasks handling the same edit, or a redelivery of the bulk job, find the
+ * window already held. Enqueue failures are counted and logged, never thrown.
+ */
+export async function enqueueEmbeds(
+  db: Database,
+  queue: QueueAdapter,
+  ai: AIAdapter,
+  where: SQL,
+  logger: Logger
+): Promise<{ enqueued: number; failed: number }> {
+  if (!ai.getEmbeddingInfo()) return { enqueued: 0, failed: 0 }
+  const claimed = await db
+    .update(packageTable)
+    .set({ embeddingQueuedAt: sql`now()` })
+    .where(
+      and(
+        where,
+        eq(packageTable.state, 'active'),
+        leasePassed(packageTable.embeddingQueuedAt, EMBED_DEBOUNCE_MS)
+      )
+    )
+    .returning({ id: packageTable.id, stamp: sql<string>`${packageTable.embeddingQueuedAt}::text` })
+
+  let enqueued = 0
+  const unqueued: string[] = []
+  for (let i = 0; i < claimed.length; i += ENQUEUE_BATCH_SIZE) {
+    const batch = claimed.slice(i, i + ENQUEUE_BATCH_SIZE)
+    const results = await Promise.allSettled(
+      batch.map(({ id }) =>
+        queue.enqueue(EMBED_JOB_TYPE, { packageId: id }, { delaySeconds: EMBED_DELAY_S })
+      )
+    )
+    results.forEach((result, j) => {
+      if (result.status === 'fulfilled') enqueued++
+      else {
+        unqueued.push(batch[j].id)
+        logger.error(
+          { err: result.reason, packageId: batch[j].id },
+          'Failed to enqueue embed-package job'
+        )
+      }
+    })
+  }
+
+  // A window with no job behind it would hold until it ran out, and every
+  // change inside it — a bulk import's next resource, say — would be the
+  // change that queued nothing. Given back only where the stamp is still ours:
+  // one statement claimed every row above at one `now()`, and a row another
+  // caller has claimed since carries a later one.
+  if (unqueued.length > 0) {
+    await db
+      .update(packageTable)
+      .set({ embeddingQueuedAt: null })
+      .where(
+        and(
+          inArray(packageTable.id, unqueued),
+          // As text: a Date round-trip keeps milliseconds where the column
+          // keeps microseconds, and the stamp would never match itself.
+          sql`${packageTable.embeddingQueuedAt} = ${claimed[0].stamp}::timestamptz`
+        )
+      )
+  }
+  return { enqueued, failed: unqueued.length }
+}
+
+const ENQUEUE_BATCH_SIZE = 100
 
 /**
  * Build a DatasetDoc from DB and upsert it into the search index (kukan-packages).
@@ -231,7 +326,7 @@ export async function syncPackageResources(
   if (rows.length === 0) return
   await Promise.all([
     relabelled && deps.search.bulkIndexResources(rows.map(buildResourceDoc)),
-    enqueuePackageEmbed(deps.queue, deps.ai, packageId, deps.logger),
+    enqueuePackageEmbed(db, deps.queue, deps.ai, packageId, deps.logger),
   ])
 }
 

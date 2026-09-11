@@ -5,18 +5,7 @@ import { useTranslations } from 'next-intl'
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
 import { SwitchField } from '@/components/switch-field'
 import { clientFetch } from '@/lib/client-api'
-
-interface VectorSearchSettings {
-  enabled: boolean
-  model: string | null
-  semanticEnabled: boolean
-  baseMinSimilarity: number
-  baseSource: 'env' | 'model' | 'default'
-  notches: number
-  step: number
-  maxNotches: number
-  effectiveMinSimilarity: number
-}
+import type { VectorSearchSettings } from '@/hooks/use-vector-search-settings'
 
 /** Vector-search runtime settings: semantic on/off + similarity-floor notches
  *  (ADR-036). Renders nothing when semantic search is unavailable. */

@@ -165,7 +165,9 @@ AWS は ECS Fargate 上の Ollama / HuggingFace TEI コンテナ。埋め込み�
 4. **ベクトル検索はオプショナル機能**として設計する。SearchAdapter に capability を持たせ、
    埋め込み不可の環境でも検索機能は BM25 のみで完全動作する。
 5. **クエリと文書は同一埋め込みモデル**。ベクトルと併せて**モデル名 + 次元数を記録**し、
-   不一致を検出可能にする。モデル変更時は全件再埋め込み（rebuild フロー拡張）。
+   不一致を検出可能にする。モデル変更時は全件再埋め込み（専用ジョブ `embed-all-packages`、
+   `POST /admin/reindex-embeddings`。検索インデックスの rebuild とは独立 — 埋め込みは
+   OpenSearch を使わない）。
 6. **文書側埋め込みは非同期**（QueueAdapter 経由・結果整合）、**クエリ側埋め込みは
    lru-cache でキャッシュ**する。
 7. **AIAdapter の `embed()` を拡張**する: バッチ埋め込み、クエリ用/文書用の区別
@@ -191,7 +193,8 @@ AWS は ECS Fargate 上の Ollama / HuggingFace TEI コンテナ。埋め込み�
   （開発環境はボリューム再作成で可）。Aurora は拡張有効化のみ（`CREATE EXTENSION vector`）。
   OpenSearch のサイジング変更は不要。
 - **worker / queue**: 埋め込み生成ジョブの追加（メタデータ CUD → キュー投入 → 埋め込み →
-  ベクトル列更新）。バルク再埋め込み（rebuild）コマンドの拡張。
+  ベクトル列更新）。バルク再埋め込みの専用ジョブ。投入は package ごとに 1 分 1 回に抑える
+  （一括投入でリソース件数分のジョブが積まれるため）。
 - **compose.yml（Ollama）**: Ollama をオプショナルサービス（profiles）として追加し、
   **開発とオンプレで同一構成**にする（dev/prod パリティ。埋め込みは CPU 推論で足りるため
   GPU 設定は不要）。閉域網では `ollama pull` が使えないため、モデルは**オフライン配送**が

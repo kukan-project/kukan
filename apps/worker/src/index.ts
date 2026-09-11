@@ -17,6 +17,7 @@ import {
   CONVERT_SET_ASIDE_JOB_TYPE,
   LAKE_INGEST_JOB_TYPE,
   EMBED_JOB_TYPE,
+  EMBED_ALL_JOB_TYPE,
   pipelineJobSchema,
   reindexJobSchema,
   purgeOrgJobSchema,
@@ -25,11 +26,12 @@ import {
   convertSetAsideJobSchema,
   lakeIngestJobSchema,
   embedJobSchema,
+  embedAllJobSchema,
 } from '@kukan/shared'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { packageTable } from '@kukan/db'
 import type { Job } from '@kukan/queue-adapter'
-import { rebuildMetadataIndex } from '@kukan/api/services/search-index'
+import { enqueueEmbeds, rebuildMetadataIndex } from '@kukan/api/services/search-index'
 import { markContentUnindexed } from '@kukan/api/services/content-index-record'
 import { PipelineService } from '@kukan/api/services/pipeline-service'
 import { OrganizationService } from '@kukan/api/services/organization-service'
@@ -52,7 +54,7 @@ import {
 } from '@kukan/api/services/storage-pointer'
 import { LAKE_INGEST_SWEEP_CRON, ORPHAN_CLEANUP_CRON, PENDING_UPLOAD_TTL_MS } from '@/config'
 import { checkBatch } from './cron/health-check/check-batch'
-import { embedPackage, enqueueAllPackageEmbeds } from './embed/embed-package'
+import { embedPackage } from './embed/embed-package'
 
 // Skip dotenv in production (env vars injected by container/ECS)
 if (process.env.NODE_ENV !== 'production') {
@@ -255,8 +257,11 @@ await queue.process({
         // enqueued below are the ones that skip and the index stays empty
         await search.deleteAllContents()
         await markContentUnindexed(db, 'all')
+        // From the object each resource already holds: the content to index is
+        // in storage, and fetching a whole catalog again asks every
+        // publisher's server for what we have (ADR-044 §4).
         const pipelineService = new PipelineService(db, queue)
-        const { enqueued, failed } = await pipelineService.enqueueAll()
+        const { enqueued, failed } = await pipelineService.enqueueAll({ rebuildOnly: true })
         log.info(
           { jobId: job.id, type: job.type, enqueued, failed },
           'Content pipeline jobs enqueued'
@@ -267,12 +272,21 @@ await queue.process({
     } else {
       log.warn({ jobId: job.id, type: job.type }, 'Reindex skipped — OpenSearch not configured')
     }
-    // Re-enqueue embeddings for all packages regardless of search backend —
-    // the per-package hash check skips unchanged ones cheaply.
-    if (embeddingEnabled) {
-      const { enqueued, failed } = await enqueueAllPackageEmbeds(db, queue, log)
-      log.info({ jobId: job.id, type: job.type, enqueued, failed }, 'Embed jobs enqueued')
+    // The embeddings too, through the job that owns that fan-out (and gates
+    // it) — on its own redelivery terms, since this message is already long.
+    await queue.enqueue(EMBED_ALL_JOB_TYPE, {})
+  },
+  // Semantic search: queue an embed for every package (ADR-034).
+  [EMBED_ALL_JOB_TYPE]: async (job: Job) => {
+    if (!parseJobPayload(job, embedAllJobSchema)) return
+    if (!embeddingEnabled) {
+      log.warn({ jobId: job.id, type: job.type }, 'Embed all skipped — embedding not configured')
+      return
     }
+    const start = performance.now()
+    const { enqueued, failed } = await enqueueEmbeds(db, queue, ai, sql`true`, log)
+    const elapsed = Math.round(performance.now() - start)
+    log.info({ jobId: job.id, type: job.type, enqueued, failed, elapsed }, 'Embed jobs enqueued')
   },
   // Semantic search: (re)generate the embedding vector for one package.
   [EMBED_JOB_TYPE]: async (job: Job) => {

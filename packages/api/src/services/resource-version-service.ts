@@ -61,6 +61,7 @@ import {
   withResourceClaimsOrConflict,
   type ResourceClaim,
 } from './pipeline-claim'
+import { leasePassed as leasePassedWithin } from './lease'
 import { copyObject, publishLiveContent, PARKED_UNTIL, ownedByVersion } from './storage-pointer'
 import { PipelineService, schemaDescribesLiveContent } from './pipeline-service'
 import { scanLake } from './query/lake-scan'
@@ -514,9 +515,8 @@ export const LAKE_INGEST_LEASE_MS = 50 * 60 * 1000
 /** The reason recorded on giving up, bound to the readers' type. */
 const INGEST_FAILED = 'ingest-failed' satisfies LakeIngestReason
 
-/** A lease period has passed since the timestamp, or it was never set. */
-const leasePassed = (column: string) =>
-  sql`(${sql.raw(column)} IS NULL OR ${sql.raw(column)} <= now() - ${`${LAKE_INGEST_LEASE_MS} milliseconds`}::interval)`
+/** The lake lease has run out, or was never taken. */
+const leasePassed = (column: string) => leasePassedWithin(column, LAKE_INGEST_LEASE_MS)
 
 /**
  * The row-level half of "outstanding for layer 2", for an UPDATE to re-check

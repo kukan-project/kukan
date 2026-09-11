@@ -24,6 +24,7 @@ import {
   ForbiddenError,
   UnauthorizedError,
   REINDEX_JOB_TYPE,
+  EMBED_ALL_JOB_TYPE,
   BACKFILL_VERSIONS_JOB_TYPE,
   CONVERT_SET_ASIDE_JOB_TYPE,
   RESOURCE_PREFIX,
@@ -411,6 +412,26 @@ adminRouter.post(
     return c.json({ queued: true })
   }
 )
+
+// POST /api/v1/admin/reindex-embeddings — Queue an embed for every package.
+// Its own job, not a reindex flag — see EMBED_ALL_JOB_TYPE.
+adminRouter.post('/reindex-embeddings', async (c) => {
+  const ai = c.get('ai')
+  if (!ai.getEmbeddingInfo()) {
+    return c.json(
+      {
+        type: 'about:blank',
+        title: 'Not Available',
+        status: 400,
+        detail: 'Embedding is not configured',
+      },
+      400
+    )
+  }
+
+  await c.get('queue').enqueue(EMBED_ALL_JOB_TYPE, {})
+  return c.json({ queued: true })
+})
 
 // GET /api/v1/admin/version-backfill-status — Migration work still outstanding.
 // Drives the one-time "backfill versions" control (ADR-043): the UI shows the

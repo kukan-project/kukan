@@ -543,6 +543,7 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
 | GET    | `/admin/search/doc/{index}/{id}` | インデックスドキュメント取得（index: `packages` / `resources` / `contents`） |
 | GET    | `/admin/search/browse/{index}`   | インデックスドキュメント一覧（ページング・検索対応）                         |
 | POST   | `/admin/reindex-metadata`        | 検索インデックス再構築（SQS 経由、非同期）                                   |
+| POST   | `/admin/reindex-embeddings`      | 全データセットの埋め込みベクトル再生成（SQS 経由、非同期）                   |
 | GET    | `/admin/version-backfill-status` | 版の補完の残件数（層1: 版なし / 層2: 差分未取り込み）                        |
 | POST   | `/admin/backfill-versions`       | 一度きりの版の補完を予約（SQS 経由、非同期）                                 |
 | POST   | `/admin/jobs/enqueue-all`        | 全リソースのパイプライン一括予約                                             |

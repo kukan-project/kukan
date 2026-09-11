@@ -276,7 +276,7 @@ The former Bedrock **Model access** page has been retired. Serverless foundation
     --body '{"texts":["test"],"input_type":"search_document"}' /dev/stdout
   ```
 
-If you switch the embedding model, run a bulk re-embed (search-index rebuild) to apply it to existing data.
+If you switch the embedding model, regenerate the embeddings from the search admin page (**Regenerate embeddings**, or `POST /api/v1/admin/reindex-embeddings`) to apply it to existing data. This does not require OpenSearch and does not re-fetch any resource.
 
 ## Health checks
 

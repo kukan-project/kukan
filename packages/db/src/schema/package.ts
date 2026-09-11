@@ -65,6 +65,8 @@ export const packageTable = pgTable(
     // this so vectors from other models/dimensions are never compared.
     embeddingModel: text('embedding_model'),
     embeddingHash: text('embedding_hash'),
+    // The embed job's debounce window — see EMBED_DEBOUNCE_MS in @kukan/api.
+    embeddingQueuedAt: timestamp('embedding_queued_at', { withTimezone: true }),
 
     created: timestamp('created', { withTimezone: true }).defaultNow().notNull(),
     updated: timestamp('updated', { withTimezone: true }).defaultNow().notNull(),

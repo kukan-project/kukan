@@ -100,6 +100,35 @@ describe('Admin API Routes', () => {
     })
   })
 
+  describe('POST /api/v1/admin/reindex-embeddings', () => {
+    /** Embedding available, which is what the endpoint gates on. */
+    const embeddingAi = {
+      getEmbeddingInfo: () => ({ model: 'test-model', dimension: 4 }),
+    } as unknown as AIAdapter
+
+    it('should reject non-sysadmin requests', async () => {
+      const res = await nonAdminApp.request('/api/v1/admin/reindex-embeddings', { method: 'POST' })
+      expect(res.status).toBe(403)
+    })
+
+    it('queues the embed-all job, with or without OpenSearch', async () => {
+      const pgSearch: SearchAdapter = { ...mockSearch, getIndexStats: async () => null }
+      const embedApp = createTestApp(db, { search: pgSearch, ai: embeddingAi })
+
+      const res = await embedApp.request('/api/v1/admin/reindex-embeddings', { method: 'POST' })
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ queued: true })
+    })
+
+    it('returns 400 when embedding is not configured', async () => {
+      const res = await app.request('/api/v1/admin/reindex-embeddings', { method: 'POST' })
+
+      expect(res.status).toBe(400)
+      expect((await res.json()).detail).toBe('Embedding is not configured')
+    })
+  })
+
   describe('POST /api/v1/admin/jobs/enqueue-all', () => {
     it('should stop the rows claiming the index it just emptied', async () => {
       // The runs this enqueues rebuild the content it deletes — left claiming

@@ -222,6 +222,13 @@ ollama:
   on `SEARCH_HYBRID` — that flag is an emergency switch that only stops _reading_ vectors at
   search time; writes continue while it is paused, guaranteeing the vectors are not stale when
   it is re-enabled
+- **One job per package per minute** (`package.embedding_queued_at`, `EMBED_DEBOUNCE_MS`). The
+  embedded text includes each resource's name and description, so a bulk import is one change
+  to the parent package per resource — about 5,500 jobs for 298 datasets. The window is claimed
+  on the row with `UPDATE … RETURNING` (the API runs as several tasks, so nothing in-process
+  would do), and only a successful claim enqueues. The job carries a delay a few seconds past
+  the window (`EMBED_DELAY_S`), so the changes suppressed inside the window are part of what it
+  reads. The window is judged on the database's `now()`, out of reach of clock skew between tasks
 - No extra handling on package deletion, since the row disappears with it
 
 ### 6.2 Worker handler (`apps/worker`)
@@ -239,8 +246,13 @@ ollama:
 
 ### 6.3 Bulk re-embedding
 
-- Add the equivalent of `--embeddings` to the existing search index rebuild flow:
-  process every active package with `embedBatch` (with rate limiting)
+- **A dedicated entry point**: `POST /api/v1/admin/reindex-embeddings` → job
+  `embed-all-packages` → an `embed-package` for every active package (taking the same window
+  claim in one statement, so a redelivery or a concurrent edit does not queue the catalog
+  twice). Separate from the search-index rebuild because embedding does not use OpenSearch —
+  through the rebuild, a deployment on PostgreSQL full-text search could not generate
+  embeddings at all, and one on OpenSearch had a pipeline run for every resource queued ahead
+  of them. A rebuild with "reprocess content" delegates its embeddings to this job too
 - Procedure for swapping model/dimensions: change env
   (`AI_EMBEDDING_MODEL` / `AI_EMBEDDING_DIMENSIONS`) → run rebuild (every row whose
   `embedding_model` key no longer matches is regenerated)

@@ -200,6 +200,12 @@ ollama:
 - 投入条件は **capability（`getEmbeddingInfo() !== null`）のみ**。`SEARCH_HYBRID` では
   ゲートしない — このフラグは検索時にベクトルを「読む」ことだけを止める緊急停止スイッチで、
   一時停止中も書き込みは継続し、再有効化時にベクトルが陳腐化していないことを保証する
+- **package ごとに 1 分間に 1 ジョブ**（`package.embedding_queued_at`、`EMBED_DEBOUNCE_MS`）。
+  埋め込みテキストはリソースの名前・説明を含むので、一括投入はリソース 1 件ごとに親 package
+  への変更になり、298 データセットに約 5,500 ジョブが積まれた。窓は行に `UPDATE … RETURNING`
+  で確保し（API は複数タスクで動くためプロセス内では足りない）、取れたときだけ投入する。
+  ジョブには窓より数秒長い遅延（`EMBED_DELAY_S`）を付け、窓の間に抑止した変更もそのジョブが
+  読む状態に含める。窓は DB の `now()` で判定し、タスク間の時計差の影響を受けない
 - package 削除時は行ごと消えるため追加処理不要
 
 ### 6.2 Worker ハンドラ（`apps/worker`）
@@ -213,8 +219,12 @@ ollama:
 
 ### 6.3 バルク再埋め込み
 
-- 既存の検索インデックス rebuild フローに `--embeddings` 相当を追加:
-  全 active package を `embedBatch` で処理（レート制御付き）
+- **専用の入口** `POST /api/v1/admin/reindex-embeddings` → ジョブ `embed-all-packages` →
+  全 active package の `embed-package` を投入（同じ窓の claim を 1 文で取るので、再配信や
+  並行編集で二重に積まれない）。検索インデックスの rebuild とは別にしたのは、埋め込みが
+  OpenSearch を使わないため — rebuild 経由だと PostgreSQL 全文検索の環境で埋め込みを
+  作れず、OpenSearch 環境では全リソースのパイプライン再投入が先に走っていた。rebuild で
+  「コンテンツも再処理」を選んだ場合も埋め込みはこのジョブに委譲する
 - モデル・次元の差し替え手順: env 変更（`AI_EMBEDDING_MODEL` / `AI_EMBEDDING_DIMENSIONS`）→
   rebuild 実行（`embedding_model` のキー不一致行が全て再生成される）
 

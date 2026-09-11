@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { Database, Search } from 'lucide-react'
+import { Database, RefreshCw, Search, Sparkles } from 'lucide-react'
 import { JsonView, collapseAllNested, darkStyles, defaultStyles } from 'react-json-view-lite'
 import 'react-json-view-lite/dist/index.css'
 import {
@@ -28,6 +28,7 @@ import { PageHeader } from '@/components/dashboard/page-header'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { FormatBadge } from '@/components/format-badge'
 import { clientFetch } from '@/lib/client-api'
+import { useVectorSearchSettings } from '@/hooks/use-vector-search-settings'
 
 interface IndexStatsEntry {
   docCount: number
@@ -198,10 +199,13 @@ export default function AdminSearchPage() {
     }
   }
 
-  const [reindexing, setReindexing] = useState(false)
-  const [includeContent, setIncludeContent] = useState(false)
-  const [reindexQueued, setReindexQueued] = useState(false)
-  const [reindexIncludedContent, setReindexIncludedContent] = useState(false)
+  // The three reprocess actions, one at a time. Each names what it rebuilds
+  // and whether it fetches anything; the content one is the heavy one.
+  type ReprocessAction = 'index' | 'content' | 'embed'
+  const [busy, setBusy] = useState<ReprocessAction | null>(null)
+  const [outcome, setOutcome] = useState<{ action: ReprocessAction; ok: boolean } | null>(null)
+  const vectorSettings = useVectorSearchSettings()
+  const embedModel = vectorSettings.data?.model ?? null
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const stopPolling = useCallback(() => {
@@ -212,25 +216,29 @@ export default function AdminSearchPage() {
   // Cleanup polling on unmount
   useEffect(() => stopPolling, [stopPolling])
 
-  async function handleReindex() {
-    setReindexing(true)
-    setReindexQueued(false)
-    setReindexIncludedContent(includeContent)
-
-    const res = await clientFetch('/api/v1/admin/reindex-metadata', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ includeContent }),
-    })
-    if (!res.ok) {
-      setReindexing(false)
-      return
+  async function reprocess(action: ReprocessAction) {
+    setBusy(action)
+    setOutcome(null)
+    try {
+      const res =
+        action === 'embed'
+          ? await clientFetch('/api/v1/admin/reindex-embeddings', { method: 'POST' })
+          : await clientFetch('/api/v1/admin/reindex-metadata', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ includeContent: action === 'content' }),
+            })
+      setOutcome({ action, ok: res.ok })
+      if (res.ok && action !== 'embed') pollStats()
+    } catch {
+      setOutcome({ action, ok: false })
+    } finally {
+      setBusy(null)
     }
+  }
 
-    setReindexQueued(true)
-    setReindexing(false)
-
-    // Poll stats so the index cards update live while Worker processes
+  // Poll stats so the index cards update live while Worker processes
+  function pollStats() {
     stopPolling()
     let pollCount = 0
     pollingRef.current = setInterval(async () => {
@@ -479,35 +487,61 @@ export default function AdminSearchPage() {
         </CardContent>
       </Card>
 
-      {/* Rebuild */}
+      {/* Reprocess — what each action rebuilds, and whether it fetches */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">{t('reindexTitle')}</CardTitle>
+          <CardTitle className="text-base">{t('reprocessTitle')}</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <p className="text-sm text-muted-foreground">{t('reindexDescription')}</p>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={includeContent}
-              onChange={(e) => setIncludeContent(e.target.checked)}
-              disabled={reindexing}
-              className="rounded border-input"
-            />
-            {t('includeContent')}
-          </label>
-          <div className="flex items-center gap-4">
-            <Button onClick={handleReindex} disabled={reindexing}>
-              <Search className="mr-2 h-4 w-4" />
-              {reindexing ? t('reindexing') : t('reindex')}
-            </Button>
-            {reindexQueued && (
-              <div className="text-sm text-muted-foreground">
-                <p>{t('reindexQueued')}</p>
-                {reindexIncludedContent && <p>{t('contentPipelineNote')}</p>}
+        <CardContent className="flex flex-col divide-y">
+          {(
+            [
+              { action: 'index', icon: Search, enabled: true },
+              { action: 'content', icon: RefreshCw, enabled: true },
+              { action: 'embed', icon: Sparkles, enabled: embedModel !== null },
+            ] as const
+          ).map(({ action, icon: Icon, enabled }) => (
+            <div key={action} className="flex flex-col gap-2 py-4 first:pt-0 last:pb-0">
+              <p className="text-sm font-medium">{t(`${action}Title`)}</p>
+              <p className="text-sm text-muted-foreground">{t(`${action}Description`)}</p>
+              {action === 'embed' && embedModel && (
+                <p className="text-sm">
+                  <span className="text-muted-foreground">{t('embedModel')}: </span>
+                  <span className="font-mono text-xs">{embedModel}</span>
+                </p>
+              )}
+              {action === 'embed' && vectorSettings.error && (
+                <p role="alert" className="text-sm text-destructive">
+                  {t('settingsUnavailable')}
+                </p>
+              )}
+              {action === 'embed' &&
+                !vectorSettings.loading &&
+                !vectorSettings.error &&
+                !embedModel && (
+                  <p className="text-sm text-muted-foreground">{t('embedUnavailable')}</p>
+                )}
+              <div className="flex items-center gap-4">
+                <Button
+                  variant="outline"
+                  onClick={() => reprocess(action)}
+                  disabled={!enabled || busy !== null}
+                >
+                  <Icon className={`mr-2 h-4 w-4 ${busy === action ? 'animate-spin' : ''}`} />
+                  {busy === action ? t('queueing') : t(`${action}Button`)}
+                </Button>
+                {outcome?.action === action && outcome.ok && (
+                  <p role="status" className="text-sm text-muted-foreground">
+                    {t(`${action}Queued`)}
+                  </p>
+                )}
+                {outcome?.action === action && !outcome.ok && (
+                  <p role="alert" className="text-sm text-destructive">
+                    {t('queueFailed')}
+                  </p>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          ))}
         </CardContent>
       </Card>
 

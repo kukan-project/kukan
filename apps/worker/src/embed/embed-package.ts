@@ -10,8 +10,7 @@ import { and, eq } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { packageTable, resource, packageTag, tag } from '@kukan/db'
 import { type AIAdapter, embeddingKey } from '@kukan/ai-adapter'
-import type { QueueAdapter } from '@kukan/queue-adapter'
-import { EMBED_JOB_TYPE, type Logger } from '@kukan/shared'
+import type { Logger } from '@kukan/shared'
 import { MAX_EMBED_TEXT_LENGTH } from '../config'
 
 export interface EmbedSource {
@@ -108,44 +107,4 @@ export async function embedPackage(
     .set({ embedding, embeddingModel: key, embeddingHash: hash })
     .where(eq(packageTable.id, packageId))
   return 'embedded'
-}
-
-const ENQUEUE_BATCH_SIZE = 100
-
-/**
- * Enqueue embed jobs for every active package (used after a metadata reindex).
- * The per-package hash check makes this cheap for unchanged packages.
- * Batched-concurrent like PipelineService.enqueueAll — a sequential loop would
- * block the single-threaded worker for minutes at thousands of packages.
- */
-export async function enqueueAllPackageEmbeds(
-  db: Database,
-  queue: QueueAdapter,
-  log: Logger
-): Promise<{ enqueued: number; failed: number }> {
-  const rows = await db
-    .select({ id: packageTable.id })
-    .from(packageTable)
-    .where(eq(packageTable.state, 'active'))
-
-  let enqueued = 0
-  let failed = 0
-  for (let i = 0; i < rows.length; i += ENQUEUE_BATCH_SIZE) {
-    const batch = rows.slice(i, i + ENQUEUE_BATCH_SIZE)
-    const results = await Promise.allSettled(
-      batch.map((row) => queue.enqueue(EMBED_JOB_TYPE, { packageId: row.id }))
-    )
-    results.forEach((result, j) => {
-      if (result.status === 'fulfilled') {
-        enqueued++
-      } else {
-        failed++
-        log.error(
-          { err: result.reason, packageId: batch[j].id },
-          'Failed to enqueue embed-package job'
-        )
-      }
-    })
-  }
-  return { enqueued, failed }
 }

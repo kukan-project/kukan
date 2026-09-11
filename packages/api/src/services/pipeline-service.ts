@@ -3,7 +3,7 @@
  * Handles enqueue and status queries — Worker-side execution is separate.
  */
 
-import { eq, and, exists, inArray, sql } from 'drizzle-orm'
+import { eq, and, exists, inArray, isNotNull, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { packageTable, resource, resourcePipeline, resourcePipelineStep } from '@kukan/db'
 import { ValidationError, PIPELINE_JOB_TYPE, resourceSchemaSchema } from '@kukan/shared'
@@ -79,10 +79,20 @@ export class PipelineService {
    * Draft packages are included: their document resources carry the text-head
    * artifact a bulk reprocess must regenerate (ADR-040 addendum); the Index
    * step still keeps draft content out of the search index (ADR-039).
+   *
+   * @param opts.rebuildOnly - work from the object each resource already holds
+   *   rather than fetching its URL again (ADR-044 §4). Applied only where
+   *   there is one: a resource with no stored object has nothing to rebuild
+   *   from and would fail in Fetch, so it is fetched as before.
    */
-  async enqueueAll(): Promise<{ enqueued: number; failed: number }> {
+  async enqueueAll(
+    opts: { rebuildOnly?: boolean } = {}
+  ): Promise<{ enqueued: number; failed: number }> {
     const resources = await this.db
-      .select({ id: resource.id })
+      .select({
+        id: resource.id,
+        hasStoredContent: isNotNull(resource.storageKey).mapWith(Boolean),
+      })
       .from(resource)
       .innerJoin(packageTable, eq(resource.packageId, packageTable.id))
       .where(and(eq(resource.state, 'active'), inArray(packageTable.state, ['active', 'draft'])))
@@ -92,7 +102,11 @@ export class PipelineService {
     let failed = 0
     for (let i = 0; i < resources.length; i += BATCH_SIZE) {
       const batch = resources.slice(i, i + BATCH_SIZE)
-      const results = await Promise.allSettled(batch.map((r) => this.enqueue(r.id)))
+      const results = await Promise.allSettled(
+        batch.map((r) =>
+          this.enqueue(r.id, { rebuildOnly: opts.rebuildOnly && r.hasStoredContent })
+        )
+      )
       for (const r of results) {
         if (r.status === 'fulfilled') enqueued++
         else failed++

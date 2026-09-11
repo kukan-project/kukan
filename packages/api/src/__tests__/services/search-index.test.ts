@@ -3,6 +3,7 @@ import { createMockDb } from '../test-helpers/mock-db'
 import {
   indexPackageMetadata,
   enqueuePackageEmbed,
+  EMBED_DELAY_S,
   syncPackageMetadata,
 } from '../../services/search-index'
 import { EMBED_JOB_TYPE, type Logger } from '@kukan/shared'
@@ -216,15 +217,32 @@ describe('indexPackageMetadata', () => {
 })
 
 describe('enqueuePackageEmbed', () => {
+  /** The debounce claim's UPDATE ... RETURNING: a row means the window is ours. */
+  function dbTaking(window: boolean) {
+    const { db, addResult } = createMockDb()
+    addResult(window ? [{ id: EMBED_PACKAGE_ID }] : [])
+    return db
+  }
+
   it('enqueues an embed-package job when embedding is available', async () => {
     const queue = makeQueue()
-    await enqueuePackageEmbed(queue, makeAI(true), EMBED_PACKAGE_ID, makeLogger())
-    expect(queue.enqueue).toHaveBeenCalledWith(EMBED_JOB_TYPE, { packageId: EMBED_PACKAGE_ID })
+    await enqueuePackageEmbed(dbTaking(true), queue, makeAI(true), EMBED_PACKAGE_ID, makeLogger())
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      EMBED_JOB_TYPE,
+      { packageId: EMBED_PACKAGE_ID },
+      { delaySeconds: EMBED_DELAY_S }
+    )
+  })
+
+  it('queues nothing while a window is already held', async () => {
+    const queue = makeQueue()
+    await enqueuePackageEmbed(dbTaking(false), queue, makeAI(true), EMBED_PACKAGE_ID, makeLogger())
+    expect(queue.enqueue).not.toHaveBeenCalled()
   })
 
   it('does nothing when embedding is unavailable (NoOp)', async () => {
     const queue = makeQueue()
-    await enqueuePackageEmbed(queue, makeAI(false), EMBED_PACKAGE_ID, makeLogger())
+    await enqueuePackageEmbed(dbTaking(true), queue, makeAI(false), EMBED_PACKAGE_ID, makeLogger())
     expect(queue.enqueue).not.toHaveBeenCalled()
   })
 
@@ -233,8 +251,9 @@ describe('enqueuePackageEmbed', () => {
       enqueue: vi.fn().mockRejectedValue(new Error('queue down')),
     } as unknown as QueueAdapter
     const logger = makeLogger()
+
     await expect(
-      enqueuePackageEmbed(queue, makeAI(true), EMBED_PACKAGE_ID, logger)
+      enqueuePackageEmbed(dbTaking(true), queue, makeAI(true), EMBED_PACKAGE_ID, logger)
     ).resolves.toBeUndefined()
     expect(logger.error).toHaveBeenCalled()
   })
@@ -261,6 +280,7 @@ describe('syncPackageMetadata', () => {
     addResult([])
     addResult([])
     addResult([])
+    addResult([{ id: EMBED_PACKAGE_ID }]) // the debounce window, taken
     const { adapter } = createMockSearch()
     const queue = makeQueue()
 
@@ -271,7 +291,11 @@ describe('syncPackageMetadata', () => {
     )
 
     expect(adapter.indexPackage).toHaveBeenCalledOnce()
-    expect(queue.enqueue).toHaveBeenCalledWith(EMBED_JOB_TYPE, { packageId: EMBED_PACKAGE_ID })
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      EMBED_JOB_TYPE,
+      { packageId: EMBED_PACKAGE_ID },
+      { delaySeconds: EMBED_DELAY_S }
+    )
   })
 
   it('skips the embed job when the package is not indexed (draft/deleted, ADR-039)', async () => {

@@ -263,6 +263,17 @@ export const PURGE_ORG_JOB_TYPE = 'purge-organization' as const
 /** Semantic search: (re)generate the embedding vector for one package (ADR-034). */
 export const EMBED_JOB_TYPE = 'embed-package' as const
 
+/**
+ * Maintenance: queue an embed for every package (ADR-034).
+ *
+ * Its own job rather than a flag on the reindex above, because the two are
+ * asked for separately: turning embedding on for a catalog that was loaded
+ * without it is a question about vectors, and answering it through the search
+ * rebuild made it conditional on OpenSearch — which embedding does not use —
+ * and put a fetch of every resource ahead of it.
+ */
+export const EMBED_ALL_JOB_TYPE = 'embed-all-packages' as const
+
 /** Make one resource version unobtainable; layer 2 may keep its rows (ADR-043 §5). */
 export const PURGE_VERSION_JOB_TYPE = 'purge-resource-version' as const
 
@@ -294,6 +305,7 @@ export const pipelineJobSchema = z.object({
 export const reindexJobSchema = z.object({ includeContent: z.boolean().optional() })
 export const purgeOrgJobSchema = z.object({ organizationId: z.uuid() })
 export const embedJobSchema = z.object({ packageId: z.uuid() })
+export const embedAllJobSchema = z.object({})
 export const purgeVersionJobSchema = z.object({
   resourceId: z.uuid(),
   version: z.number().int().positive(),

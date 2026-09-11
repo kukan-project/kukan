@@ -563,6 +563,7 @@ All sysadmin only.
 | GET    | `/admin/search/doc/{index}/{id}` | Get index document (index: `packages` / `resources` / `contents`)        |
 | GET    | `/admin/search/browse/{index}`   | Browse index documents (pagination, search)                              |
 | POST   | `/admin/reindex-metadata`        | Rebuild search index (async via SQS)                                     |
+| POST   | `/admin/reindex-embeddings`      | Regenerate every dataset's embedding (async via SQS)                     |
 | GET    | `/admin/version-backfill-status` | Backfill work outstanding (layer 1: unversioned / layer 2: not ingested) |
 | POST   | `/admin/backfill-versions`       | Enqueue the one-time version backfill (via SQS, async)                   |
 | POST   | `/admin/jobs/enqueue-all`        | Enqueue pipeline for all resources                                       |

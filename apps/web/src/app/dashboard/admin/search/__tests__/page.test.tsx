@@ -106,11 +106,16 @@ describe('AdminSearchPage', () => {
     })
   })
 
-  it('renders the reindex section', () => {
+  it('renders the reprocess actions, each saying what it rebuilds', () => {
     render(<AdminSearchPage />)
 
-    expect(screen.getByText('Rebuild Search Index')).toBeInTheDocument()
-    expect(screen.getByText('Rebuild')).toBeInTheDocument()
+    expect(screen.getByText('Reprocessing')).toBeInTheDocument()
+    expect(screen.getByText('Rebuild search index')).toBeInTheDocument()
+    expect(screen.getByText('Reprocess content')).toBeInTheDocument()
+    expect(screen.getByText('Regenerate embeddings')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Rebuild' })).toBeEnabled()
+    // Embedding is off in this test's settings, so its button is not.
+    expect(screen.getByRole('button', { name: 'Regenerate' })).toBeDisabled()
   })
 
   it('has a search input and button', () => {

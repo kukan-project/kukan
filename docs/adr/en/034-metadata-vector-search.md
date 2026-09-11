@@ -189,7 +189,9 @@ deployment (Option D), run the same set against both the AWS and on-prem models.
    that in environments without embedding, search still works fully on BM25 alone.
 5. **Queries and documents use the same embedding model.** Record the **model name +
    dimensionality alongside the vectors** so mismatches are detectable. Changing models
-   means re-embedding everything (extending the rebuild flow).
+   means re-embedding everything (a dedicated job, `embed-all-packages`, behind
+   `POST /admin/reindex-embeddings` — independent of the search-index rebuild, since
+   embedding does not use OpenSearch).
 6. **Document-side embedding is asynchronous** (via QueueAdapter, eventually consistent);
    **query-side embeddings are cached with lru-cache**.
 7. **Extend AIAdapter's `embed()`**: batch embedding, query/document distinction (absorbing
@@ -217,7 +219,8 @@ deployment (Option D), run the same set against both the AWS and on-prem models.
   pg_dump/restore or REINDEX (dev environments can simply recreate the volume). Aurora only
   needs the extension enabled (`CREATE EXTENSION vector`). No change to OpenSearch sizing.
 - **worker / queue**: add an embedding-generation job (metadata CUD → enqueue → embed →
-  vector column update). Extend the bulk re-embedding (rebuild) command.
+  vector column update). A dedicated bulk re-embedding job. Enqueues are held to one per
+  package per minute, since a bulk import would otherwise queue one per resource.
 - **compose.yml (Ollama)**: add Ollama as an optional service (profiles) with the **same
   configuration for development and on-prem** (dev/prod parity; embeddings run fine on CPU
   inference, so no GPU setup is needed). Closed networks cannot use `ollama pull`, so models

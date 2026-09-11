@@ -1,0 +1,1 @@
+ALTER TABLE "package" ADD COLUMN "embedding_queued_at" timestamp with time zone;

@@ -270,7 +270,7 @@ Cohere Embed v4 のような **AWS Marketplace 提供モデル**は自動有効�
     --body '{"texts":["test"],"input_type":"search_document"}' /dev/stdout
   ```
 
-埋め込みモデルを切り替えた場合は、既存データに反映するためバルク再埋め込み（検索インデックスの rebuild）を実行してください。
+埋め込みモデルを切り替えた場合は、既存データに反映するため検索管理画面の**埋め込みベクトル再生成**（または `POST /api/v1/admin/reindex-embeddings`）を実行してください。OpenSearch は不要で、リソースの再取得も行いません。
 
 ## ヘルスチェック
 
