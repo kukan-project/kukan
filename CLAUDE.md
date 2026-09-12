@@ -253,6 +253,7 @@ pnpm format        # Prettier フォーマット
 - マルチサイトの ALB 統合（共有 ALB + オリジンカスタムヘッダールーティング） → `docs/adr/jp/049-shared-alb-multi-site.md`（ADR-041 拡張）
 - リソースのセクション分け（`position` は 1 本のまま、`section` は表示ラベル、公開側は `/` で入れ子表示） → `docs/adr/jp/050-resource-section.md`
 - 一太郎文書のテキスト抽出（自前の複合文書パーサ、Ver.8 以降の非圧縮のみ、索引のみでプレビューは作らない、提案） → `docs/adr/jp/051-ichitaro-text-extraction.md`
+- シェープファイルの地図プレビュー（ZIP 内の SHP を GeoJSON として解釈、提案・着手保留） → `docs/adr/jp/052-shapefile-map-preview.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
