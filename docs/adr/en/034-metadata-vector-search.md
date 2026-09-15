@@ -272,6 +272,31 @@ committed (see `golden-queries.example.yaml`).
 - Cohere v3 and multilingual-e5 were disqualified before the shootout by their 512-token
   input limit (the concatenated text needs ~8K); Cohere v4 (128K) removed that constraint.
 
+### Re-measured (2026-09-12)
+
+The same golden sets (39 questions each), measured again. **Local now embeds with Titan v2
+(1024 dims) rather than bge-m3** (`AI_TYPE=bedrock`), yet the overall nDCG is unchanged.
+
+| Environment                           |         2026-07-07 |               2026-09-12 |
+| ------------------------------------- | -----------------: | -----------------------: |
+| Local (166 → **168** packages)        | 38% → 82% (bge-m3) | **38% → 82%** (Titan v2) |
+| demo (181 → **184** packages, Cohere) |                75% |                  **87%** |
+
+Per type (2026-09-12, keyword-only → hybrid):
+
+| type    |  Local R@10 |  Local nDCG |  demo R@10 | demo nDCG |
+| ------- | ----------: | ----------: | ---------: | --------: |
+| synonym |    0% → 92% |    0% → 75% |   0% → 92% |  0% → 82% |
+| natural |   15% → 95% |   15% → 72% |   0% → 81% |  0% → 80% |
+| exact   | 100% → 100% | 100% → 100% | 88% → 100% | 88% → 98% |
+
+**Every relevant dataset name in both golden sets still resolves** (local 56/56, demo 41/41),
+and there is no exact-match regression.
+
+> The harness only writes to stdout. **This section is the record of record.** Run it as
+> `pnpm eval:search --base <URL> --file <YAML>` — no `--` separator, which `parseArgs` rejects
+> as a positional.
+
 ## Open Issues
 
 1. ~~**Final model selection**~~ → **Resolved** (see "Evaluation Results": on-prem =
