@@ -106,7 +106,19 @@ const full = (...ids: string[]) => ids.map((id) => ({ id, weight: 1 }))
 
 describe('fuseRrf', () => {
   it('ranks a doc found by both lists above single-list docs', () => {
-    expect(fuseRrf(['a', 'b'], full('b', 'c'))).toEqual(['b', 'a', 'c'])
+    // And a confident vector hit above a keyword-only one, which is what the
+    // leg weight buys: a paraphrase query scores 0% on the keyword leg, so a
+    // vote of equal size cannot carry its answer past documents BM25 merely
+    // happened to match.
+    expect(fuseRrf(['a', 'b'], full('b', 'c'))).toEqual(['b', 'c', 'a'])
+  })
+
+  it('keeps a keyword-only doc above a vector hit far down the window', () => {
+    // The weight reaches the top of the vector list, not all of it. Without
+    // that bound every vector hit in the window outranks the best keyword hit.
+    const far = Array.from({ length: 20 }, (_, i) => `v${i}`)
+    const fused = fuseRrf(['a'], full(...far))
+    expect(fused.indexOf('a')).toBeLessThan(fused.indexOf('v19'))
   })
 
   it('handles an empty vector list', () => {
@@ -119,6 +131,10 @@ describe('fuseRrf', () => {
     // incidental doc alone. At full weight the second signal lifts it to the
     // top of everything. Weighed by a thin margin it climbs a little — RRF's
     // ranks are close together — but not past the relevant doc.
+    //
+    // **This is what ties RRF_K to VECTOR_LEG_WEIGHT.** Weighting the leg over
+    // the flat rank curve K=60 gave would have let a 0.064 vote do it; the
+    // steeper curve raises the threshold to 0.225 instead.
     const bm25 = ['rel', 'x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8', 'inc']
     expect(fuseRrf(bm25, full('inc'))[0]).toBe('inc')
     const damped = fuseRrf(bm25, [{ id: 'inc', weight: 0.1 }])
@@ -234,9 +250,10 @@ describe('hybridSearch — fusion', () => {
 
     const result = await hybridSearch(d, { q: 'q-fusion', offset: 0, limit: 20 })
 
-    // 'b' is in both lists → first; 'a' (BM25 rank 1) before 'c' (vector rank 2)
-    expect(result.items.map((i) => i.id)).toEqual(['b', 'a', 'c'])
-    expect(result.items[2]).toMatchObject({ matchSource: 'semantic', title: 'C' })
+    // 'b' is in both lists → first; then 'c', a confident vector hit, over 'a',
+    // which only the keyword leg found (VECTOR_LEG_WEIGHT)
+    expect(result.items.map((i) => i.id)).toEqual(['b', 'c', 'a'])
+    expect(result.items[1]).toMatchObject({ matchSource: 'semantic', title: 'C' })
     expect(result.items[0].matchSource).toBeUndefined()
     expect(result.total).toBe(10)
     // BM25 leg is fetched with the full fusion window, not the requested page
@@ -268,7 +285,8 @@ describe('hybridSearch — fusion', () => {
   })
 
   it('applies offset/limit to the fused list and grows total when needed', async () => {
-    // Requested page ['a'] contains no semantic-only hit → no DB fetch queued
+    // fused = [b, c, a]; the requested page ['a'] holds no semantic-only hit,
+    // so no DB fetch is queued for it
     const d = deps({
       search: makeSearch(bm25Result(['a', 'b'], 2)),
       dbSearch: makeDbSearch([
@@ -277,10 +295,10 @@ describe('hybridSearch — fusion', () => {
       ]),
     })
 
-    const result = await hybridSearch(d, { q: 'q-paging', offset: 1, limit: 1 })
+    const result = await hybridSearch(d, { q: 'q-paging', offset: 2, limit: 1 })
 
     expect(result.items.map((i) => i.id)).toEqual(['a'])
-    expect(result.offset).toBe(1)
+    expect(result.offset).toBe(2)
     expect(result.limit).toBe(1)
     // 2 BM25 + 1 semantic-only → fused count exceeds the BM25 total
     expect(result.total).toBe(3)

@@ -533,18 +533,66 @@ the pgvector index (166 → 481 vectors, currently unindexed), and reproduction 
 > These numbers come from **a simulator that copies the shipped formula**, not from the code
 > itself. Re-measure in the code before adopting anything.
 
+### Settling the fusion parameters (2026-09-16)
+
+Open issue 3 — RRF's k and the leg weighting left at their defaults — resolved. **No embedding
+and no analyzer changed.**
+
+| Constant            |                Before |     After |
+| ------------------- | --------------------: | --------: |
+| `RRF_K`             |                    60 |    **10** |
+| `VECTOR_LEG_WEIGHT` | (none; effectively 1) |     **2** |
+| `VECTOR_VOTE_RAMP`  |                   0.2 | unchanged |
+
+`pnpm eval:search` (local, 166 packages, Cohere v4, 51 queries, floor 0.25):
+
+| Type    | Before |   After |
+| ------- | -----: | ------: |
+| synonym |    79% | **93%** |
+| natural |    81% | **95%** |
+| exact   |   100% |    100% |
+| word    |    63% |     63% |
+| overall |    81% | **88%** |
+
+**The two constants are read together.** `RRF_K` = 60 is a default for result lists far longer
+than `FUSION_WINDOW` = 50; over fifty items it puts rank 1 and rank 50 within 1.8× of each other.
+The fusion then asks little beyond "is it in both lists", and **on a query keyword search cannot
+answer** — synonym scores 0% on the keyword leg alone, natural 26% — the vector leg cannot carry
+its answer to the top.
+
+That flatness is also what makes a heavier leg dangerous:
+
+|                         | Semantic-only docs outranking the best keyword hit | Near-floor vote that displaces it |
+| ----------------------- | -------------------------------------------------- | --------------------------------: |
+| K=60, λ=1 (before)      | none                                               |                             0.129 |
+| K=60, λ=2               | **the whole 50-item window**                       |                         **0.064** |
+| **K=10, λ=2 (adopted)** | the top ten                                        |                         **0.225** |
+
+Raising λ alone lets a full-weight vector hit anywhere in the window outrank the best keyword
+hit, which breaks the protection `VECTOR_VOTE_RAMP` was measured into place for. **Lowering K
+steepens the rank curve and strengthens that protection instead** (0.129 → 0.225), and measures
+better besides (87% → 89% in the sweep).
+
+`word` does not move because a one-word query rarely clears the floor at all — one of the 51
+raises no vector hit whatever. **Weighing a vote the leg never casts changes nothing.**
+
+**The plateau was taken, not the peak.** λ is flat from 1.5 upwards, and 2 also sits inside the
+plateau the same sweep finds for per-resource vectors ("The unit of embedding"). Fifty-one
+queries cannot separate a sweep's top from its neighbours, and a value that wins only at its
+exact setting is a value fitted to this catalogue.
+
+> **Unconfirmed: reproduction on another catalogue.** demo's golden set (184 packages) holds no
+> `word` queries; those have to be added before it can measure this.
+
 ## Open Issues
 
 1. ~~**Final model selection**~~ → **Resolved** (see "Evaluation Results": on-prem =
    bge-m3; AWS = Titan v2 default / Cohere Embed v4 recommended opt-in).
 2. ~~**Golden set creation**~~ → **Resolved** (39 questions local + 39 on demo;
    established as a per-deployment, non-committed practice).
-3. **Fusion parameters**: similarity floors resolved (see Evaluation Results). RRF's k
-   (=60) and leg weighting remain at defaults. **Measured on 2026-09-16, this is where the
-   headroom is** — raising the leg weight alone takes overall from 81% to 91%, with no change
-   to any embedding or analyzer ("The unit of embedding"). Thirty-odd configurations against
-   51 queries can overfit, so **take a plateau value rather than the peak**, confirm it
-   reproduces on another catalogue, and re-measure in the code before adopting it.
+3. ~~**Fusion parameters**~~ → **Resolved** ("Settling the fusion parameters": `RRF_K` 60 → 10
+   and a new `VECTOR_LEG_WEIGHT` of 2, taking overall from 81% to 88%). **What remains is
+   reproduction on another catalogue** — demo's golden set needs `word` queries first.
 4. **UI treatment**: how to present the lack of highlighting for vector hits; extension of
    `matchSource`. **Per-resource vectors (same section) bear on this directly** — a
    semantically matched resource can be named, which is what ADR-050's `matchedResources`

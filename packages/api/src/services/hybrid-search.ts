@@ -23,6 +23,7 @@ import {
   FUSION_WINDOW,
   VECTOR_VOTE_RAMP,
   RRF_K,
+  VECTOR_LEG_WEIGHT,
   QUERY_EMBED_TIMEOUT_MS,
   QUERY_EMBED_CACHE_MAX,
   QUERY_EMBED_CACHE_TTL_MS,
@@ -181,7 +182,9 @@ export function fuseRrf(bm25Ids: string[], vectorHits: WeightedId[]): string[] {
     scores.set(id, (scores.get(id) ?? 0) + 1 / (RRF_K + index + 1))
   })
   vectorHits.forEach(({ id, weight }, index) => {
-    scores.set(id, (scores.get(id) ?? 0) + weight / (RRF_K + index + 1))
+    // Scaled by VECTOR_LEG_WEIGHT, which is what decides whether the vector
+    // leg can carry an answer keyword search never found
+    scores.set(id, (scores.get(id) ?? 0) + (VECTOR_LEG_WEIGHT * weight) / (RRF_K + index + 1))
   })
   // Stable order for equal scores: BM25 rank, then vector rank
   return [...scores.keys()].sort((a, b) => scores.get(b)! - scores.get(a)!)

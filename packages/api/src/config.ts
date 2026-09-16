@@ -55,8 +55,55 @@ export const QUERY_MAX_SQL_LENGTH = 10_000
  *  pages starting beyond it fall back to plain keyword search. */
 export const FUSION_WINDOW = 50
 
-/** RRF constant: score(doc) = Σ 1 / (RRF_K + rank). 60 is the standard value. */
-export const RRF_K = 60
+/**
+ * RRF constant: score(doc) = Σ 1 / (RRF_K + rank).
+ *
+ * 60 is the published default and was the value here, but it was chosen for
+ * result lists far longer than {@link FUSION_WINDOW}. Over 50 items it puts
+ * rank 1 and rank 50 within 1.8× of each other, which leaves the fusion asking
+ * little beyond "is it in both lists" — a leg's own ordering barely reaches the
+ * result.
+ *
+ * That flatness is also what makes {@link VECTOR_LEG_WEIGHT} dangerous at 60: a
+ * full-weight vector hit anywhere in the window would outrank the best keyword
+ * hit, and a hit just above the similarity floor would need only 0.064 of a
+ * vote to displace it. At 10 the same weight reaches the top ten vector hits
+ * and the near-floor threshold rises to 0.225 — stricter than the 0.129 the
+ * unweighted fusion had. **The two constants have to be read together.**
+ *
+ * Swept at a leg weight of 2 (Cohere v4, 51 queries): overall nDCG 89% at K=10
+ * against 87% at K=60. The sweep ran offline against the live catalogue; the
+ * shipped pair measures 88% in the code itself.
+ */
+export const RRF_K = 10
+
+/**
+ * How much a vector vote weighs against a keyword vote of the same rank.
+ *
+ * **Plain RRF asks little beyond "is it in both lists."** With RRF_K at 60 over
+ * a FUSION_WINDOW of 50, rank 1 and rank 50 are within 1.8× of each other, so a
+ * leg's own ordering barely reaches the result — and where keyword search
+ * cannot answer at all, one vote is not enough to lift the vector leg's answer
+ * over documents BM25 merely happened to match. On the golden set those are the
+ * paraphrase and question-form queries, which score 0% and 26% on the keyword
+ * leg alone.
+ *
+ * Measured with `pnpm eval:search` (Cohere v4, 51 queries, floor 0.25,
+ * {@link RRF_K} at 10): overall nDCG 81% → 88%, from synonym 79% → 93% and
+ * natural 81% → 95%, with `exact` at 100% throughout — a generated paraphrase
+ * does not displace a search by a resource's real name, which is decision 8's
+ * shipping condition. `word` does not move (63%): a one-word query rarely
+ * clears the floor, and weighing a vote the leg never casts changes nothing.
+ *
+ * Flat from 1.5 upwards in the offline sweep, and 2 is inside the plateau the
+ * same sweep finds for per-resource vectors, so a change of embedding unit
+ * would not move it.
+ *
+ * **Taken from the plateau rather than the peak**: 51 queries cannot separate
+ * the top of a sweep from its neighbours, and a value that only wins at its
+ * exact setting is a value fitted to this catalogue.
+ */
+export const VECTOR_LEG_WEIGHT = 2
 
 /**
  * How far above the similarity floor a vector hit has to sit to cast a full
