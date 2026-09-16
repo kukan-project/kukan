@@ -6,7 +6,14 @@
 import { randomUUID } from 'node:crypto'
 import { eq, and, sql, inArray, notInArray, isNotNull, getTableColumns } from 'drizzle-orm'
 import type { Database, Transaction } from '@kukan/db'
-import { resource, resourceVersion, packageTable, scrubbedExtras } from '@kukan/db'
+import {
+  resource,
+  resourceVersion,
+  packageTable,
+  scrubbedExtras,
+  publicSummary,
+  publicSummaryMeta,
+} from '@kukan/db'
 import {
   NotFoundError,
   ValidationError,
@@ -43,16 +50,29 @@ const RESOURCE_PARENT_STATES: PackageDbState[] = ['active', 'draft']
 // fetch, and the resource page marks a link its last check could not reach.
 // Projected here rather than scrubbed per route, so an endpoint cannot leak
 // them by forgetting.
+// `summary` and `summaryMeta` come off for the same reason and go back
+// scrubbed below (ADR-053 §4.1): half of the meta object is the worker talking
+// to itself, and a hidden abstract must not be served at all.
 const {
   storageKey: _storageKey,
   pendingStorageKey: _pendingStorageKey,
   pendingMetadata: _pendingMetadata,
   healthCheckState: _healthCheckState,
+  summary: _summary,
+  summaryMeta: _summaryMeta,
+  // Whether the search index has caught up is this deployment's business, not
+  // a reader's — and a column added here is public the moment it is added
+  docSyncDueAt: _docSyncDueAt,
   ...projectedResourceColumns
 } = getTableColumns(resource)
 
-// `extras` last, so the scrub wins over the column of the same name.
-export const publicResourceColumns = { ...projectedResourceColumns, extras: scrubbedExtras }
+// The scrubbed forms last, so they win over the columns of the same name.
+export const publicResourceColumns = {
+  ...projectedResourceColumns,
+  extras: scrubbedExtras,
+  summary: publicSummary,
+  summaryMeta: publicSummaryMeta,
+}
 
 /** What a resource's search document is built from (see search-index.ts) — one
  *  list, so a field added to the index reaches every select that feeds it. */
@@ -63,6 +83,9 @@ export const resourceDocColumns = {
   description: resource.description,
   format: resource.format,
   section: resource.section,
+  // Null where an editor hid it, by the same projection the page reads: hidden
+  // is one decision with three effects, and the index is the third (ADR-053)
+  summary: publicSummary,
 }
 
 /**

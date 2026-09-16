@@ -12,6 +12,7 @@ import {
   AIAdapter,
   CompleteOptions,
   CompletionInfo,
+  DocumentInfo,
   EmbedOptions,
   EmbeddingInfo,
   resolveCompletionModels,
@@ -75,6 +76,10 @@ export class OpenAIAdapter implements AIAdapter {
       },
       options?.timeoutMs ? { signal: AbortSignal.timeout(options.timeoutMs) } : {}
     )
+    options?.onUsage?.({
+      inputTokens: response.usage?.prompt_tokens,
+      outputTokens: response.usage?.completion_tokens,
+    })
     return response.choices[0]?.message?.content?.trim() ?? ''
   }
 
@@ -107,5 +112,10 @@ export class OpenAIAdapter implements AIAdapter {
 
   getEmbeddingInfo(): EmbeddingInfo {
     return { model: this.embeddingModel, dimensions: this.embeddingDimensions }
+  }
+
+  /** Originals are not sent to this provider in the MVP (ADR-053 §3.5) */
+  getDocumentInfo(): DocumentInfo | null {
+    return null
   }
 }

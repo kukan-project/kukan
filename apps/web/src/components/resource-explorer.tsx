@@ -14,7 +14,8 @@ import { DateTime, useFormattedDateTime } from '@/components/date-time'
 import { VersionHistory } from '@/components/version-history'
 import { externalHttpUrl } from '@/lib/safe-url'
 import { LinkHealthWarning } from '@/components/link-health-warning'
-import { sectionLayout } from '@kukan/shared'
+import { sectionLayout, type ResourceSummaryMeta } from '@kukan/shared'
+import { ResourceAbstract } from '@/components/resource-abstract'
 import { indentClass, headingTag } from '@/lib/resource-sections'
 
 export interface Resource {
@@ -35,6 +36,11 @@ export interface Resource {
   healthCheckedAt?: string | null
   extras?: Record<string, unknown> | null
   section?: string | null
+  /** The AI-written abstract, absent when hidden or never written (ADR-053) */
+  summary?: string | null
+  summaryMeta?: ResourceSummaryMeta | null
+  /** Highest live version (ADR-043); absent until the first create */
+  latestVersion?: number | null
 }
 
 interface ResourceExplorerProps {
@@ -256,6 +262,15 @@ export function ResourceExplorer({
               {renderSimpleMarkdown(selected.description)}
             </div>
           )}
+
+          {/* Under the description, never in place of it: where someone has
+              written about the file, the generated sentences are not the lead
+              (ADR-053 §7). */}
+          <ResourceAbstract
+            summary={selected.summary}
+            summaryMeta={selected.summaryMeta}
+            latestVersion={selected.latestVersion}
+          />
 
           {/* Keep visited resources alive: previews avoid iframe re-loading
               (Office Online etc.), version histories keep their fetched rows

@@ -25,16 +25,23 @@ import {
   UnauthorizedError,
   REINDEX_JOB_TYPE,
   EMBED_ALL_JOB_TYPE,
+  SUMMARIZE_ALL_JOB_TYPE,
   BACKFILL_VERSIONS_JOB_TYPE,
   CONVERT_SET_ASIDE_JOB_TYPE,
   RESOURCE_PREFIX,
   PREVIEW_PREFIX,
   escapeLike,
+  generationKey,
+  generateSummariesSchema,
   userNameSchema,
   userRoleSchema,
   passwordLengthSchema,
 } from '@kukan/shared'
 import { PipelineService } from '../services/pipeline-service'
+import { summaryEstimate } from '../services/summary-estimate'
+import { getSummaryModel } from '../services/suggest/availability'
+
+import { AI_SUMMARY_LOCALE_KEY } from '../services/system-setting'
 import { markContentUnindexed } from '../services/content-index-record'
 import { LAKE_DATA_PREFIX, LAKE_METADATA_SCHEMA } from '@kukan/lake'
 import { ResourceVersionService } from '../services/resource-version-service'
@@ -412,6 +419,52 @@ adminRouter.post(
     return c.json({ queued: true })
   }
 )
+
+// GET /api/v1/admin/summary-estimate — What a full generation would cover and
+// cost, shown before the button is pressed (ADR-053 §11.2).
+//
+// A range rather than a number, because the one input nobody can see from here
+// is a PDF's page count — and a PDF's tokens follow its pages, not its bytes.
+// The bounds are one page and the page limit, which is an honest span to put in
+// front of someone about to spend money.
+adminRouter.get('/summary-estimate', async (c) => {
+  const model = getSummaryModel(c.get('env'), c.get('ai'))
+  const locale = await c.get('settings').getSetting(AI_SUMMARY_LOCALE_KEY)
+  const estimate = await summaryEstimate(
+    c.get('db'),
+    c.get('ai').getDocumentInfo(),
+    // The same string the step writes, so "written some other way" means the
+    // same thing on both sides
+    generationKey(model ?? '', locale),
+    model,
+    locale
+  )
+  return c.json(estimate)
+})
+
+// POST /api/v1/admin/generate-summaries — Write every abstract the catalog is
+// missing, and rebuild the embeddings that depend on them (ADR-053 §11).
+//
+// `refresh` also rewrites the ones another model, prompt version or language
+// produced. That is the explicit way to bring a catalog up to date after a
+// prompt change, and it compares rather than ignores — so pressing it twice
+// costs nothing the second time.
+adminRouter.post('/generate-summaries', zValidator('json', generateSummariesSchema), async (c) => {
+  if (!getSummaryModel(c.get('env'), c.get('ai'))) {
+    return c.json(
+      {
+        type: 'about:blank',
+        title: 'Not Available',
+        status: 400,
+        detail: 'Resource abstracts are not enabled for this site',
+      },
+      400
+    )
+  }
+  const refresh = c.req.valid('json')?.refresh ?? false
+  await c.get('queue').enqueue(SUMMARIZE_ALL_JOB_TYPE, { refresh })
+  return c.json({ queued: true, refresh })
+})
 
 // POST /api/v1/admin/reindex-embeddings — Queue an embed for every package.
 // Its own job, not a reindex flag — see EMBED_ALL_JOB_TYPE.

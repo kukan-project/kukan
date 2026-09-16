@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import type { Database } from '@kukan/db'
 import { systemSetting } from '@kukan/db'
-import { createCache } from '@kukan/shared'
+import { createCache, type SummaryLocale } from '@kukan/shared'
 import { SYSTEM_SETTING_CACHE_TTL_MS, VECTOR_SIMILARITY_MAX_NOTCHES } from '../config'
 
 export const VECTOR_SIMILARITY_NOTCHES_KEY = 'vector-similarity-notches'
@@ -17,6 +17,7 @@ export const SEARCH_EXAMPLE_QUERIES_KEY = 'search-example-queries'
 export const REGISTRATION_ENABLED_KEY = 'registration-enabled'
 export const AI_SUGGEST_MODEL_KEY = 'ai-suggest-model'
 export const AI_SUGGEST_ENABLED_KEY = 'ai-suggest-enabled'
+export const AI_SUMMARY_LOCALE_KEY = 'ai-summary-locale'
 
 /** Registry of runtime settings — adding a setting means adding an entry here */
 const SETTING_DEFINITIONS = {
@@ -52,6 +53,16 @@ const SETTING_DEFINITIONS = {
   [AI_SUGGEST_ENABLED_KEY]: {
     schema: z.boolean(),
     default: true,
+  },
+  // Language the resource abstracts are written in (ADR-053 §6.2). Runtime,
+  // unlike the switch that turns generation on: choosing a language costs
+  // nothing, so it belongs to whoever runs the site rather than whoever pays
+  // for it. Changing it makes existing abstracts stale — nothing regenerates on
+  // its own, so the catalog reads in both languages until someone asks for a
+  // full generation.
+  [AI_SUMMARY_LOCALE_KEY]: {
+    schema: z.enum(['ja', 'en']),
+    default: 'ja' as SummaryLocale,
   },
 } as const
 

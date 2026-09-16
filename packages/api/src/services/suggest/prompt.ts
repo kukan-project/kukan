@@ -52,10 +52,10 @@ export interface ResourceMaterial {
   fileCount: number | null
 }
 
-const OUTPUT_LANGUAGE = { ja: 'Japanese', en: 'English' } as const
+export const OUTPUT_LANGUAGE = { ja: 'Japanese', en: 'English' } as const
 
-/** Rules shared verbatim by both phases — keep the two prompts in sync */
-const GROUNDING_RULES = [
+/** Rules shared verbatim by both phases and by the abstract — keep them in sync */
+export const GROUNDING_RULES = [
   '- Respect existing metadata: where a field already has content, keep its',
   '  intent and wording as much as possible and only fill in what is missing.',
   '  Generate empty fields from the material.',
@@ -97,7 +97,7 @@ export function buildResourceUserContent(material: ResourceMaterial): string {
   return JSON.stringify({ resource: serializeResource(material) }, null, 1)
 }
 
-function serializeResource(r: ResourceMaterial) {
+export function serializeResource(r: ResourceMaterial) {
   // Cap columns and project the sample rows onto the same set, so a wide
   // table's SELECT * rows don't bloat the prompt past the column cap
   const columns = r.schema?.columns.slice(0, SUGGEST_MAX_COLUMNS)

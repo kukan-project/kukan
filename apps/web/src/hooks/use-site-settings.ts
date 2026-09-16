@@ -11,6 +11,8 @@ interface SiteSettings {
   metadataSuggestLocalModel: boolean
   /** zxcvbn score this deployment requires of a new password */
   passwordMinScore: number
+  /** This deployment writes AI abstracts (ADR-053) */
+  resourceSummaryEnabled: boolean
 }
 
 export function useSiteSettings() {
@@ -25,6 +27,8 @@ export function useSiteSettings() {
     // Conservative on error: the button triggers paid LLM calls, so hide it
     metadataSuggestEnabled: error ? false : (data?.metadataSuggestEnabled ?? null),
     metadataSuggestLocalModel: data?.metadataSuggestLocalModel ?? false,
+    // Conservative on error, as above: the control behind this spends money
+    resourceSummaryEnabled: error ? false : (data?.resourceSummaryEnabled ?? null),
     // null until known: the meter judges nothing rather than judging by a
     // default the server may not share
     passwordMinScore: data?.passwordMinScore ?? null,

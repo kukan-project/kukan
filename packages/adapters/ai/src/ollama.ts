@@ -7,6 +7,7 @@ import {
   AIAdapter,
   CompleteOptions,
   CompletionInfo,
+  DocumentInfo,
   EmbedOptions,
   EmbeddingInfo,
   resolveCompletionModels,
@@ -74,7 +75,15 @@ export class OllamaAdapter implements AIAdapter {
       const detail = await response.text().catch(() => '')
       throw new Error(`Ollama chat failed: ${response.status} ${detail}`)
     }
-    const payload = (await response.json()) as { message?: { content?: string } }
+    const payload = (await response.json()) as {
+      message?: { content?: string }
+      prompt_eval_count?: number
+      eval_count?: number
+    }
+    options?.onUsage?.({
+      inputTokens: payload.prompt_eval_count,
+      outputTokens: payload.eval_count,
+    })
     return payload.message?.content?.trim() ?? ''
   }
 
@@ -120,6 +129,11 @@ export class OllamaAdapter implements AIAdapter {
       dimensions: this.embeddingDimensions,
       recommendedMinSimilarity: this.embeddingModel.startsWith('bge-m3') ? 0.45 : undefined,
     }
+  }
+
+  /** Originals are not sent to this provider in the MVP (ADR-053 §3.5) */
+  getDocumentInfo(): DocumentInfo | null {
+    return null
   }
 
   /** e5-family models require asymmetric prefixes; bge-m3 and others need none */

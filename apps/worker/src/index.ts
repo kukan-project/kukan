@@ -18,6 +18,9 @@ import {
   LAKE_INGEST_JOB_TYPE,
   EMBED_JOB_TYPE,
   EMBED_ALL_JOB_TYPE,
+  SUMMARIZE_ALL_JOB_TYPE,
+  SUMMARIZE_PACKAGE_JOB_TYPE,
+  SYNC_RESOURCE_DOC_JOB_TYPE,
   pipelineJobSchema,
   reindexJobSchema,
   purgeOrgJobSchema,
@@ -27,6 +30,9 @@ import {
   lakeIngestJobSchema,
   embedJobSchema,
   embedAllJobSchema,
+  summarizeAllJobSchema,
+  summarizePackageJobSchema,
+  syncResourceDocJobSchema,
 } from '@kukan/shared'
 import { eq, sql } from 'drizzle-orm'
 import { packageTable } from '@kukan/db'
@@ -37,6 +43,10 @@ import { PipelineService } from '@kukan/api/services/pipeline-service'
 import { OrganizationService } from '@kukan/api/services/organization-service'
 import { ResourceVersionService } from '@kukan/api/services/resource-version-service'
 import { createAIAdapter } from '@kukan/api/adapters'
+import { syncResourceDoc } from '@kukan/api/services/search-index'
+import { AI_SUMMARY_LOCALE_KEY, SystemSettingService } from '@kukan/api/services/system-setting'
+import type { SummaryDeps } from './pipeline/steps/summarize'
+import { enqueueSummarizePackages, summarizeNextInPackage } from './summary/backfill'
 import { createDb, runMigrations } from '@kukan/db'
 import { closeLakeInstances, lakeConfigFromEnv } from '@kukan/lake'
 import { SQSQueueAdapter } from '@kukan/queue-adapter'
@@ -48,11 +58,17 @@ import { retryLakeIngest } from './pipeline/retry-lake-ingest'
 import { startCronJob } from './cron/start-cron-job'
 import { sweepOrphanedObjects } from './cron/orphan-cleanup/sweep-orphans'
 import { sweepLakeOrphans } from './cron/orphan-cleanup/sweep-lake-orphans'
+import { sweepResourceDocs } from './cron/sweep-resource-docs'
 import {
   expirePendingUploads,
   markUploadsThatNeverArrived,
 } from '@kukan/api/services/storage-pointer'
-import { LAKE_INGEST_SWEEP_CRON, ORPHAN_CLEANUP_CRON, PENDING_UPLOAD_TTL_MS } from '@/config'
+import {
+  LAKE_INGEST_SWEEP_CRON,
+  ORPHAN_CLEANUP_CRON,
+  PENDING_UPLOAD_TTL_MS,
+  RESOURCE_DOC_SWEEP_CRON,
+} from '@/config'
 import { checkBatch } from './cron/health-check/check-batch'
 import { embedPackage } from './embed/embed-package'
 
@@ -196,6 +212,13 @@ const lakeIngestSweepJob = startCronJob({
   },
 })
 
+// --- Stale search documents (ADR-053 §9.3) ---
+//
+// The queue owns the retry for a sync that failed; this owns the one it never
+// heard about. Registered below the search adapter it needs, so it is started
+// there rather than here.
+const resourceDocSweepLog = log.child({ component: 'resource-doc-sweep' })
+
 // --- Search adapter (optional, for content indexing) ---
 const osLogger = log.child({ component: 'opensearch' })
 const search =
@@ -208,9 +231,55 @@ const search =
       })
     : undefined
 
+const resourceDocSweepJob = search
+  ? startCronJob({
+      name: 'Stale search documents',
+      cronExpression: RESOURCE_DOC_SWEEP_CRON,
+      log: resourceDocSweepLog,
+      run: async () => {
+        await sweepResourceDocs(db, queue, resourceDocSweepLog)
+      },
+    })
+  : undefined
+
 // --- AI adapter (embedding; NoOp when AI_TYPE=none) ---
 const ai = createAIAdapter(env)
 const embeddingEnabled = ai.getEmbeddingInfo() !== null
+
+// --- Resource abstracts (ADR-053) ---
+// The named model is the switch: unset writes nothing, so a site that sets it
+// later has nothing to clear. Null all the way down — the Summarize step is
+// then never started.
+const summaryDeps: SummaryDeps | null = resolveSummaryDeps()
+function resolveSummaryDeps(): SummaryDeps | null {
+  const model = env.AI_SUMMARY_MODEL
+  if (!model) return null
+  const completion = ai.getCompletionInfo()
+  if (!completion) {
+    log.warn({ model }, 'Resource abstracts are configured but no provider can generate them')
+    return null
+  }
+  // Refused rather than quietly replaced by the provider default. The default
+  // is whatever is first in the allow-list, and the measurements say the wrong
+  // model there does not produce worse abstracts — it produces invented ones.
+  if (!completion.allowlist.includes(model)) {
+    log.error(
+      { model, allowlist: completion.allowlist },
+      'AI_SUMMARY_MODEL is not in AI_COMPLETION_MODELS — abstracts are off'
+    )
+    return null
+  }
+  return {
+    db,
+    storage,
+    ai,
+    model,
+    log: log.child({ component: 'summarize' }),
+    // Read per call rather than captured: the setting is runtime, and the
+    // service caches it for its own short TTL.
+    locale: () => new SystemSettingService(db).getSetting(AI_SUMMARY_LOCALE_KEY),
+  }
+}
 
 // Validate a job payload against its schema; logs and returns null on mismatch so
 // the handler can bail without ever trusting an unvalidated SQS message body.
@@ -229,7 +298,7 @@ function parseJobPayload<T>(
 }
 
 // --- SQS polling ---
-const ctx = buildPipelineContext(db, storage, search, lake)
+const ctx = buildPipelineContext(db, storage, search, lake, summaryDeps)
 await queue.process({
   // Pipeline (data-plane): process one resource.
   [PIPELINE_JOB_TYPE]: async (job: Job) => {
@@ -275,6 +344,46 @@ await queue.process({
     // The embeddings too, through the job that owns that fan-out (and gates
     // it) — on its own redelivery terms, since this message is already long.
     await queue.enqueue(EMBED_ALL_JOB_TYPE, {})
+  },
+  // Abstracts (ADR-053): fan out one walk per package.
+  [SUMMARIZE_ALL_JOB_TYPE]: async (job: Job) => {
+    const data = parseJobPayload(job, summarizeAllJobSchema)
+    if (!data) return
+    if (!summaryDeps) {
+      log.warn({ jobId: job.id, type: job.type }, 'Summarize all skipped — abstracts are off')
+      return
+    }
+    const { enqueued, failed } = await enqueueSummarizePackages(db, queue, log, data.refresh)
+    log.info({ jobId: job.id, type: job.type, enqueued, failed }, 'Summarize jobs enqueued')
+  },
+  // Abstracts: one resource of one package, then hand on the rest.
+  [SUMMARIZE_PACKAGE_JOB_TYPE]: async (job: Job) => {
+    const data = parseJobPayload(job, summarizePackageJobSchema)
+    if (!data) return
+    if (!summaryDeps) return
+    const start = performance.now()
+    const result = await summarizeNextInPackage(
+      data.packageId,
+      data.after,
+      summaryDeps,
+      queue,
+      data.refresh
+    )
+    const elapsed = Math.round(performance.now() - start)
+    log.info(
+      { jobId: job.id, type: job.type, packageId: data.packageId, ...result, elapsed },
+      'Summarize step finished'
+    )
+  },
+  // The abstract reaches the keyword leg here (ADR-053 §9.3). Its own job so
+  // the queue owns the retry: the step that makes the document stale runs
+  // after Index and is best-effort, so a failure there would otherwise never
+  // be asked again.
+  [SYNC_RESOURCE_DOC_JOB_TYPE]: async (job: Job) => {
+    const data = parseJobPayload(job, syncResourceDocJobSchema)
+    if (!data) return
+    if (!search) return
+    await syncResourceDoc(db, search, data.resourceId)
   },
   // Semantic search: queue an embed for every package (ADR-034).
   [EMBED_ALL_JOB_TYPE]: async (job: Job) => {
@@ -430,6 +539,7 @@ const shutdown = async () => {
   healthCheckJob?.stop()
   orphanCleanupJob.stop()
   lakeIngestSweepJob.stop()
+  resourceDocSweepJob?.stop()
   if (indexCheckTimer) clearInterval(indexCheckTimer)
   await queue.stop()
   // Before the pool: each holds a libpq connection of its own, opened by the

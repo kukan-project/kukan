@@ -58,6 +58,25 @@ export const FUSION_WINDOW = 50
 /** RRF constant: score(doc) = Σ 1 / (RRF_K + rank). 60 is the standard value. */
 export const RRF_K = 60
 
+/**
+ * How far above the similarity floor a vector hit has to sit to cast a full
+ * vote in the fusion. Below that its vote is scaled by its margin: a hit at the
+ * floor casts nothing, one at floor + RAMP casts as much as a BM25 hit at the
+ * same rank.
+ *
+ * RRF alone cannot tell rank 1 of a one-item list from rank 1 of fifty. On a
+ * short everyday query —「お年寄り」,「車椅子」— the vector leg clears the floor
+ * on one or two documents, none of them relevant, and each of those is also
+ * somewhere in BM25's list; the tie-break on a second signal then lifts them
+ * over the relevant documents BM25 alone had found. Measured on the golden set
+ * (Cohere v4, floor 0.30): `word` nDCG 67% → 72%, every other type unchanged,
+ * `exact` still 100%. Flat between 0.15 and 0.30 of ramp; 0.20 is the middle.
+ * Weighing the whole leg by its best hit instead does nothing (67%) — it is the
+ * individual near-floor vote that misleads, not the leg. Measured on Cohere
+ * only; a Titan deployment sits on a different floor and should re-measure.
+ */
+export const VECTOR_VOTE_RAMP = 0.2
+
 /** Query-embedding timeout — kept short so an embedding-provider outage
  *  degrades every search to keyword-only instead of stalling it. */
 export const QUERY_EMBED_TIMEOUT_MS = 2_000

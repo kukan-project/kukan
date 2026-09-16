@@ -243,11 +243,16 @@ packagesRouter.get(
       state: effectiveState,
     })
 
+    // What the search actually did, not what was asked of it. A failed query
+    // embedding still answers — with keyword results, which is right — and
+    // without this nobody downstream can tell that apart from a hybrid run
+    // where the vector leg simply cleared nothing (ADR-053 §8.1).
+    const semantic = searchResult.semantic
     if (include_facets && searchResult.facets) {
       const facets = await service.enrichFacets(searchResult.facets)
-      return c.json({ ...result, facets })
+      return c.json({ ...result, facets, semantic })
     }
-    return c.json(result)
+    return c.json({ ...result, semantic })
   }
 )
 

@@ -303,6 +303,14 @@ export const ORPHAN_CLEANUP_CRON = '17 * * * *'
 export const LAKE_INGEST_SWEEP_CRON = '37 * * * *'
 
 /**
+ * Re-queue the search documents whose sync was never heard (ADR-053 §9.3).
+ *
+ * Off the hour like the others, and off *them*: three sweeps landing together
+ * would contend for the same worker on the same minute.
+ */
+export const RESOURCE_DOC_SWEEP_CRON = '47 * * * *'
+
+/**
  * How long an upload URL's object is kept before the sweep reclaims it. Bounds
  * a slow client rather than an in-flight read, so far longer than the orphan
  * retention: reclaiming an upload still in progress would break it.
@@ -336,3 +344,15 @@ export const ORPHAN_CLEANUP_BATCH_SIZE = 5000
  */
 export const LAKE_INGEST_MEMORY_LIMIT_MB = 512
 export const LAKE_INGEST_THREADS = 2
+
+// ── Resource abstracts (ADR-053) ──
+
+/** Output cap for one abstract. 3–4 sentences measured 200–430 characters;
+ *  this is the runaway ceiling, not the length control — the prompt is that,
+ *  and cutting on tokens ends a sentence mid-way. */
+export const SUMMARY_MAX_TOKENS = 700
+/** One completion measured 3–11s; the ceiling covers a slow original. */
+export const SUMMARY_TIMEOUT_MS = 120_000
+/** Bytes of the extracted-text artifact used as material. Matches the suggest
+ *  read budget: the same head, read for the same purpose. */
+export const SUMMARY_TEXT_HEAD_BYTES = 16 * 1024

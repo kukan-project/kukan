@@ -11,7 +11,6 @@
  * package update.
  */
 
-import type { Readable } from 'node:stream'
 import { inArray } from 'drizzle-orm'
 import type { z } from 'zod'
 import type { Database } from '@kukan/db'
@@ -21,10 +20,6 @@ import type { AIAdapter } from '@kukan/ai-adapter'
 import {
   ServiceUnavailableError,
   ValidationError,
-  isCsvFormat,
-  isTextFormat,
-  isDocumentFormat,
-  isZipFormat,
   createLogger,
   PACKAGE_NAME_MAX_LENGTH,
   isValidPackageName,
@@ -32,17 +27,15 @@ import {
   type SuggestMetadataResponse,
   type MetadataSuggestion,
   type SuggestedTag,
-  type ZipManifest,
 } from '@kukan/shared'
-import {
-  detectEncoding,
-  bufferToUtf8,
-  stripTrailingReplacementChar,
-} from '@kukan/shared/encoding-node'
-import { QueryService } from './query-service'
 import { TagService } from './tag-service'
 import { GroupService } from './group-service'
-import { parseResourceSchema } from './pipeline-service'
+import {
+  loadMaterial,
+  materialKind,
+  type MaterialArtifacts,
+  type MaterialDeps,
+} from './suggest/materials'
 import {
   buildResourceSystemPrompt,
   buildResourceUserContent,
@@ -57,11 +50,6 @@ import {
 } from './suggest/prompt'
 import type { AuthUser } from '../auth/permissions'
 import {
-  SUGGEST_TEXT_HEAD_BYTES,
-  SUGGEST_ZIP_MANIFEST_ENTRIES,
-  SUGGEST_ZIP_MANIFEST_MAX_BYTES,
-  SUGGEST_SAMPLE_ROWS,
-  SUGGEST_SAMPLE_CELL_CHARS,
   SUGGEST_MAX_RESOURCES,
   SUGGEST_RESOURCE_PROMPT_BYTES,
   SUGGEST_DATASET_PROMPT_BYTES,
@@ -145,6 +133,10 @@ export class MetadataSuggestService {
     logger?: Logger
   ) {
     this.log = logger ?? createLogger({ name: 'api' })
+  }
+
+  private get materialDeps(): MaterialDeps {
+    return { db: this.db, storage: this.storage, log: this.log }
   }
 
   async suggest(
@@ -352,16 +344,20 @@ export class MetadataSuggestService {
     // Documents require the Index step's text-head artifact (ADR-040 addendum)
     // and ZIPs their Interpret-step manifest; requiring the pipeline record also
     // guards against a key left over from a previous format
-    const contentKind = (r: SuggestPackageDetail['resources'][number]) => {
-      const pipeline = pipelines.get(r.id)
-      if (pipeline?.status !== 'complete') return null
-      if (isCsvFormat(r.format, r.mimetype)) return 'tabular'
-      // Text is read from the live object; the others from pipeline artifacts.
-      if (isTextFormat(r.format)) return liveKeys.get(r.id) ? 'text' : null
-      if (isDocumentFormat(r.format) && textHeadKeyOf(pipeline.metadata)) return 'document'
-      if (isZipFormat(r.format) && pipeline.previewKey) return 'zip'
-      return null
+    const artifactsOf = (id: string): MaterialArtifacts => {
+      const pipeline = pipelines.get(id)
+      return {
+        pipelineStatus: pipeline?.status ?? null,
+        previewKey: pipeline?.previewKey ?? null,
+        pipelineMetadata: pipeline?.metadata ?? null,
+        liveStorageKey: liveKeys.get(id) ?? null,
+      }
     }
+    // Suggestions are asked for from outside any run, so a row still being
+    // processed is one whose artifacts are not settled yet (the reuse of a key
+    // left over from a previous format is what this turns away).
+    const contentKind = (r: SuggestPackageDetail['resources'][number]) =>
+      pipelines.get(r.id)?.status === 'complete' ? materialKind(r, artifactsOf(r.id)) : null
     const isEligible = (r: SuggestPackageDetail['resources'][number]) => contentKind(r) !== null
 
     // Pick which resources get a slot by eligibility (content-eligible first so
@@ -394,23 +390,11 @@ export class MetadataSuggestService {
 
       const kind = contentKind(resource)
       if (kind) {
-        const pipeline = pipelines.get(resource.id)!
         try {
-          if (kind === 'tabular') {
-            material.schema = parseResourceSchema(pipeline.metadata)
-            material.sampleRows = await this.readSampleRows(resource.id, user)
-          } else if (kind === 'text') {
-            material.textHead = await this.readTextHead(liveKeys.get(resource.id)!, {
-              format: resource.format ?? '',
-              metadata: pipeline.metadata,
-            })
-          } else if (kind === 'document') {
-            material.textHead = await this.readArtifactTextHead(textHeadKeyOf(pipeline.metadata)!)
-          } else {
-            const manifest = await this.readZipFileList(pipeline.previewKey!)
-            material.fileList = manifest.fileList
-            material.fileCount = manifest.fileCount
-          }
+          Object.assign(
+            material,
+            await loadMaterial(kind, resource, artifactsOf(resource.id), this.materialDeps, user)
+          )
         } catch (error) {
           // Material is best-effort: keep the resource's metadata in the prompt
           this.log.warn(
@@ -616,64 +600,6 @@ export class MetadataSuggestService {
     }))
   }
 
-  /** First rows of the preview Parquet via the sandboxed query path (ADR-032) */
-  private async readSampleRows(resourceId: string, user: AuthUser) {
-    const result = await new QueryService(this.db, this.storage, this.log).query(
-      resourceId,
-      `SELECT * FROM data LIMIT ${SUGGEST_SAMPLE_ROWS}`,
-      user
-    )
-    // LIMIT bounds rows, not cell size — clamp huge text cells
-    return result.rows.map((row) =>
-      Object.fromEntries(
-        Object.entries(row).map(([key, value]) => [
-          key,
-          typeof value === 'string' && value.length > SUGGEST_SAMPLE_CELL_CHARS
-            ? `${value.slice(0, SUGGEST_SAMPLE_CELL_CHARS)}…`
-            : value,
-        ])
-      )
-    )
-  }
-
-  /** Head of the storage original, decoded and stripped of a cut multi-byte char */
-  private async readTextHead(storageKey: string, source: { format: string; metadata: unknown }) {
-    const { stream } = await this.storage.downloadRange(storageKey, 0, SUGGEST_TEXT_HEAD_BYTES - 1)
-    const buffer = await readAll(stream)
-    // Prefer the encoding the Interpret step detected on the full file; only
-    // re-detect when the pipeline row predates encoding persistence
-    const persisted = (source.metadata as { encoding?: unknown } | null)?.encoding
-    const encoding =
-      typeof persisted === 'string' && persisted
-        ? persisted
-        : detectEncoding(source.format.toLowerCase(), buffer)
-    return stripTrailingReplacementChar(bufferToUtf8(buffer, encoding))
-  }
-
-  /** Head of the Index step's text-head artifact (document formats) — the
-   *  worker wrote it as UTF-8, so no encoding detection (ADR-040 addendum) */
-  private async readArtifactTextHead(textHeadKey: string) {
-    const { stream } = await this.storage.downloadRange(textHeadKey, 0, SUGGEST_TEXT_HEAD_BYTES - 1)
-    const buffer = await readAll(stream)
-    return stripTrailingReplacementChar(buffer.toString('utf-8'))
-  }
-
-  /** File paths from the Extract step's ZIP manifest, capped by entry count.
-   *  The read is byte-capped: entry paths are attacker-controlled, so the
-   *  manifest can be made arbitrarily large despite the worker's entry cap */
-  private async readZipFileList(previewKey: string) {
-    const buffer = await readAll(
-      await this.storage.download(previewKey),
-      SUGGEST_ZIP_MANIFEST_MAX_BYTES
-    )
-    const manifest = JSON.parse(buffer.toString('utf-8')) as ZipManifest
-    const fileList = (manifest.entries ?? [])
-      .filter((entry) => !entry.isDirectory)
-      .slice(0, SUGGEST_ZIP_MANIFEST_ENTRIES)
-      .map((entry) => entry.path.slice(0, MAX_MATERIAL_NAME_CHARS))
-    return { fileList, fileCount: manifest.totalFiles ?? fileList.length }
-  }
-
   /** Enforce the tag contracts the LLM schema cannot: current tags always
    *  kept, additions deduped, ≤2 new, ≤5 total (caps gate additions only) */
   private selectTags(
@@ -796,24 +722,4 @@ async function mapWithConcurrency<T, R>(
     })
   )
   return results
-}
-
-/** `metadata.textHeadKey` persisted by the Index step (document formats, ADR-040) */
-function textHeadKeyOf(metadata: unknown): string | null {
-  const key = (metadata as { textHeadKey?: unknown } | null | undefined)?.textHeadKey
-  return typeof key === 'string' && key ? key : null
-}
-
-async function readAll(stream: Readable, maxBytes = Infinity): Promise<Buffer> {
-  const chunks: Buffer[] = []
-  let total = 0
-  for await (const chunk of stream) {
-    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-    total += buf.length
-    if (total > maxBytes) {
-      throw new Error(`Stream exceeds ${maxBytes} bytes`)
-    }
-    chunks.push(buf)
-  }
-  return Buffer.concat(chunks)
 }

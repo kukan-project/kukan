@@ -37,6 +37,9 @@ export * from './version-views'
 // Settled column layer (primary key today, settled types in ii-c)
 export * from './column-settings'
 
+// AI-generated resource abstracts (ADR-053)
+export * from './summary'
+
 // Licenses
 export * from './licenses'
 

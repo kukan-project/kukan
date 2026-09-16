@@ -21,6 +21,7 @@ import { type AIAdapter, embeddingKey } from '@kukan/ai-adapter'
 import { createCache, type Logger } from '@kukan/shared'
 import {
   FUSION_WINDOW,
+  VECTOR_VOTE_RAMP,
   RRF_K,
   QUERY_EMBED_TIMEOUT_MS,
   QUERY_EMBED_CACHE_MAX,
@@ -139,13 +140,49 @@ export function mergeFacets(base: SearchFacets | undefined, add: SearchFacets): 
 }
 
 /** score(doc) = Σ over result lists of 1 / (RRF_K + rank), rank starting at 1 */
-export function fuseRrf(bm25Ids: string[], vectorIds: string[]): string[] {
+/**
+ * Whether the vector leg ran, and if not, why.
+ *
+ * Reported rather than inferred. A caller comparing the two legs' results
+ * cannot tell a leg that ran and found nothing above the floor from one that
+ * never ran: a short query like "お年寄り" clears the floor on nothing at all,
+ * and a failed query embedding returns the same empty list (ADR-053 §8.1).
+ *
+ * `degraded` is the one that matters. The search still answers — keyword
+ * results beat an error — but an evaluation run reporting those numbers as
+ * hybrid is measuring something it did not do.
+ */
+export type SemanticState = 'applied' | 'off' | 'degraded'
+
+/** An adapter's result, plus what this layer did with it */
+export interface HybridSearchResult extends SearchResult {
+  semantic: SemanticState
+}
+
+/** A vector hit as the fusion sees it: its rank is its position, its weight
+ *  how much of a vote that rank is worth (0–1). BM25 votes always weigh 1. */
+export interface WeightedId {
+  id: string
+  weight: number
+}
+
+/**
+ * Vote weight for a vector hit: its margin above the floor, over the ramp.
+ * At the floor it is nothing; at floor + VECTOR_VOTE_RAMP and beyond, a full
+ * vote. See VECTOR_VOTE_RAMP for why the vote is scaled at all.
+ */
+export function vectorVoteWeight(similarity: number, floor: number): number {
+  return Math.min(1, Math.max(0, (similarity - floor) / VECTOR_VOTE_RAMP))
+}
+
+export function fuseRrf(bm25Ids: string[], vectorHits: WeightedId[]): string[] {
   const scores = new Map<string, number>()
-  for (const ids of [bm25Ids, vectorIds]) {
-    ids.forEach((id, index) => {
-      scores.set(id, (scores.get(id) ?? 0) + 1 / (RRF_K + index + 1))
-    })
-  }
+  bm25Ids.forEach((id, index) => {
+    scores.set(id, (scores.get(id) ?? 0) + 1 / (RRF_K + index + 1))
+  })
+  vectorHits.forEach(({ id, weight }, index) => {
+    scores.set(id, (scores.get(id) ?? 0) + weight / (RRF_K + index + 1))
+  })
   // Stable order for equal scores: BM25 rank, then vector rank
   return [...scores.keys()].sort((a, b) => scores.get(b)! - scores.get(a)!)
 }
@@ -161,7 +198,7 @@ export function fuseRrf(bm25Ids: string[], vectorIds: string[]): string[] {
 export async function hybridSearch(
   deps: HybridSearchDeps,
   query: HybridSearchQuery
-): Promise<SearchResult> {
+): Promise<HybridSearchResult> {
   const { db, search, dbSearch, ai, logger } = deps
   const { semantic, ...searchQuery } = query
   const q = query.q.trim()
@@ -179,7 +216,7 @@ export async function hybridSearch(
     // The fused list holds at most FUSION_WINDOW ids per leg
     offset >= FUSION_WINDOW * 2
   ) {
-    return search.search(searchQuery)
+    return { ...(await search.search(searchQuery)), semantic: 'off' }
   }
 
   // Admin runtime settings (ADR-036) — read after the cheap synchronous
@@ -191,7 +228,7 @@ export async function hybridSearch(
       deps.settings.getSetting(VECTOR_SIMILARITY_NOTCHES_KEY),
     ])
     if (!semanticEnabled) {
-      return search.search(searchQuery)
+      return { ...(await search.search(searchQuery)), semantic: 'off' }
     }
     similarityOffset = notches * VECTOR_SIMILARITY_STEP || undefined
   }
@@ -200,22 +237,37 @@ export async function hybridSearch(
   // serve vectors cached under the old dimension.
   const key = embeddingKey(info)
   const bm25Promise = search.search({ ...searchQuery, offset: 0, limit: FUSION_WINDOW })
-  const vectorPromise: Promise<VectorHit[]> = (async () => {
+  // The state travels with the hits: an empty list is what a leg that ran and
+  // cleared nothing looks like, and also what a failed one looks like.
+  const vectorPromise: Promise<{ hits: VectorHit[]; state: SemanticState }> = (async () => {
     const vector = await embedQuery(ai, key, q, logger)
-    if (!vector) return []
+    if (!vector) return { hits: [], state: 'degraded' }
     try {
-      return await searchByVector(vector, key, query.filters ?? {}, FUSION_WINDOW, similarityOffset)
+      const hits = await searchByVector(
+        vector,
+        key,
+        query.filters ?? {},
+        FUSION_WINDOW,
+        similarityOffset
+      )
+      return { hits, state: 'applied' }
     } catch (err) {
       logger.error({ err }, 'Vector search failed — degrading to keyword-only search')
-      return []
+      return { hits: [], state: 'degraded' }
     }
   })()
-  const [bm25, vectorHits] = await Promise.all([bm25Promise, vectorPromise])
+  const [bm25, vector] = await Promise.all([bm25Promise, vectorPromise])
+  const vectorHits = vector.hits
 
   const bm25ById = new Map(bm25.items.map((item) => [item.id, item]))
+  // An adapter that cannot say where its floor is gets the old full vote
+  const floor = dbSearch.vectorFloor?.(similarityOffset)
   const fusedIds = fuseRrf(
     bm25.items.map((item) => item.id),
-    vectorHits.map((hit) => hit.id)
+    vectorHits.map((hit) => ({
+      id: hit.id,
+      weight: floor === undefined ? 1 : vectorVoteWeight(hit.similarity, floor),
+    }))
   )
   const windowSemanticIds = fusedIds.filter((id) => !bm25ById.has(id))
 
@@ -223,7 +275,7 @@ export async function hybridSearch(
   // keyword order — reporting total=max(bm25, fused) on earlier pages and then
   // shrinking it here would strand the pagination on an empty page.
   if (offset >= fusedIds.length && bm25.total > offset) {
-    return search.search(searchQuery)
+    return { ...(await search.search(searchQuery)), semantic: vector.state }
   }
 
   // Enrich only the requested page — semantic docs outside it would be discarded
@@ -256,5 +308,6 @@ export async function hybridSearch(
     offset,
     limit,
     facets,
+    semantic: vector.state,
   }
 }

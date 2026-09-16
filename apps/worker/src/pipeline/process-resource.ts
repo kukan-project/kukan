@@ -1,6 +1,7 @@
 /**
  * KUKAN Pipeline — Resource Processing Orchestrator
- * Runs Fetch → Version → Interpret → Lake → Index. Every step after Fetch records
+ * Runs Fetch → Version → Interpret → Lake → Index → Summarize. Every step after
+ * Fetch records
  * its own failure and lets the pipeline continue: only the canonical file is
  * critical, and each derivative can be rebuilt on the next run.
  *
@@ -14,12 +15,19 @@ import type { Database } from '@kukan/db'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import { LAKE_INGEST_JOB_TYPE, PIPELINE_JOB_TYPE, rootCauseMessage } from '@kukan/shared'
 import { withResourceClaim } from '@kukan/api/services/pipeline-claim'
+import { enqueuePackageEmbed, enqueueResourceDocSync } from '@kukan/api/services/search-index'
 import { RunCancelledError, StepTracker } from './step-tracker'
 import { heldContext } from './held-context'
 import { executeFetch } from './steps/fetch'
 import { executeInterpret } from './steps/interpret'
 import { executeLake, type LakeStepOptions } from './steps/lake'
 import { executeIndexContent } from './steps/index-content'
+import {
+  executeSummarize,
+  recordSkip,
+  type SummaryDeps,
+  type SummaryInput,
+} from './steps/summarize'
 import type { PipelineContext } from './types'
 import { CLAIM_RETRY_DELAY_S, FETCH_RATE_LIMIT_REQUEUE_DELAY_S } from '@/config'
 
@@ -155,9 +163,14 @@ async function runPipeline(
     // `started_at`.
     let lakeRan = false
     let derivativesReused = false
+    // Held for the Summarize step, which reads the same settled bytes rather
+    // than the live object (ADR-046). Null means no version holds this run's
+    // content, and there is nothing to describe.
+    let summarySource: Awaited<ReturnType<typeof ctx.versionForContent>> = null
     const interpretStepId = await tracker.startStep('interpret')
     try {
       const version = await ctx.versionForContent(resourceId, fetchResult.hash)
+      summarySource = version
       if (version === null) {
         // Nothing holds this run's content: the creation failed, or the pointer
         // moved and another run is describing the resource now. The previous
@@ -263,6 +276,29 @@ async function runPipeline(
       await runIndexStep(resourceId, tracker, ctx, fetchResult, interpretResult)
     }
 
+    // Step 6: Summarize — write the resource's abstract (ADR-053).
+    //
+    // Deliberately outside the `derivativesReused` skip the two steps above
+    // share: an abstract can be missing from content that has not changed —
+    // every resource in a catalog that has just switched generation on is —
+    // and the step's own hash is what tells the two apart.
+    // A failed interpretation does not stop this: the step reads the record of
+    // each step to decide which artifacts describe this content, and the
+    // originals it may still send need none of them.
+    if (ctx.summary && summarySource) {
+      await runSummarizeStep(tracker, ctx.summary, queue, {
+        resourceId,
+        packageId: fetchResult.packageId,
+        version: summarySource.version,
+        storageKey: summarySource.storageKey,
+        // The version's label where it has one; a version created before the
+        // format was recorded is silent rather than formatless (ADR-046 §6).
+        format: summarySource.format ?? fetchResult.format,
+        size: summarySource.size,
+        claim: tracker.claim,
+      })
+    }
+
     await tracker.updateStatus('complete')
   } catch (err) {
     // A killed run records nothing: the resource was taken from it, and
@@ -363,5 +399,54 @@ async function runLakeStep(
     // recording, because the record belongs to whoever holds the claim now.
     if (err instanceof RunCancelledError) throw err
     await tracker.failStep(lakeStepId, (err as Error).message)
+  }
+}
+
+/**
+ * Write the resource's abstract, and record the step (ADR-053).
+ *
+ * Best-effort like the two steps before it, with one distinction it has to
+ * keep: the provider refusing the file is the resource's answer and is written
+ * to the row for the page to show, while the provider being slow or throttled
+ * is this run's and is recorded as a failed step. Writing the second as the
+ * first would put "we do not summarize this file" on a resource over a bad
+ * minute.
+ */
+async function runSummarizeStep(
+  tracker: StepTracker,
+  deps: SummaryDeps,
+  queue: QueueAdapter,
+  input: SummaryInput
+): Promise<void> {
+  const stepId = await tracker.startStep('summarize')
+  try {
+    const outcome = await executeSummarize(input, deps)
+    if (outcome.status === 'written') {
+      await tracker.completeStep(stepId)
+      // The abstract is an input to the embedding text, so writing one makes
+      // the package's vector stale (ADR-053 §9.2). Through the ordinary
+      // debounce: one resource changing is one change to the dataset.
+      await enqueuePackageEmbed(deps.db, queue, deps.ai, input.packageId, deps.log)
+      await enqueueResourceDocSync(queue, input.resourceId, deps.log)
+      return
+    }
+    // A write returned above; this is the rest. **The step runs after Index**,
+    // so the document written there describes a resource with no abstract and
+    // nothing else comes back for it — and a write whose indexing failed looks
+    // unchanged on the retry, which would step past it for ever. The document
+    // is a statement about the row, so restating it is right either way.
+    await enqueueResourceDocSync(queue, input.resourceId, deps.log)
+    if (outcome.status === 'skipped') {
+      // Everything the step calls skipped is about the file, so it goes on the
+      // resource, where the page shows it as the reason there is no abstract.
+      // A refusal of the moment throws instead, and is recorded below.
+      await recordSkip(input, deps, outcome.reason, outcome)
+    }
+    await tracker.skipStep(stepId)
+  } catch (err) {
+    // A kill is not this step failing: the orchestrator leaves without
+    // recording, because the record belongs to whoever holds the claim now.
+    if (err instanceof RunCancelledError) throw err
+    await tracker.failStep(stepId, (err as Error).message)
   }
 }

@@ -23,6 +23,7 @@ import type { PackageDbState } from '@kukan/shared'
 import { getStorageKey, primaryKeyOf, versionOrigin } from '@kukan/shared'
 import { decideVersionCreate } from './version-gate'
 import type { PipelineContext, ResourceForPipeline } from './types'
+import type { SummaryDeps } from './steps/summarize'
 import {
   FETCH_RATE_LIMIT_INTERVAL_S,
   LAKE_INGEST_MEMORY_LIMIT_MB,
@@ -37,10 +38,13 @@ export function buildPipelineContext(
   storage: StorageAdapter,
   search?: SearchAdapter,
   /** DuckLake config; omit to skip layer 2 ingest, e.g. in tests (ADR-043 Phase ii). */
-  lake?: LakeConfig
+  lake?: LakeConfig,
+  /** Omit where no abstracts are written — the step is then never started. */
+  summary?: SummaryDeps | null
 ): PipelineContext {
   return {
     storage,
+    summary: summary ?? null,
 
     async getResource(id: string): Promise<ResourceForPipeline | null> {
       const [res] = await db

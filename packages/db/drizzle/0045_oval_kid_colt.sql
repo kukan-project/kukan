@@ -1,0 +1,2 @@
+ALTER TABLE "resource" ADD COLUMN "doc_sync_due_at" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "idx_resource_doc_sync_due" ON "resource" USING btree ("doc_sync_due_at") WHERE "resource"."doc_sync_due_at" IS NOT NULL;

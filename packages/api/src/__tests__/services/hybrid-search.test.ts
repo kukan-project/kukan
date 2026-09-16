@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createMockDb } from '../test-helpers/mock-db'
-import { hybridSearch, fuseRrf, mergeFacets } from '../../services/hybrid-search'
+import { hybridSearch, fuseRrf, mergeFacets, vectorVoteWeight } from '../../services/hybrid-search'
 import {
   VECTOR_SIMILARITY_NOTCHES_KEY,
   SEMANTIC_SEARCH_ENABLED_KEY,
@@ -102,13 +102,37 @@ describe('mergeFacets', () => {
   })
 })
 
+const full = (...ids: string[]) => ids.map((id) => ({ id, weight: 1 }))
+
 describe('fuseRrf', () => {
   it('ranks a doc found by both lists above single-list docs', () => {
-    expect(fuseRrf(['a', 'b'], ['b', 'c'])).toEqual(['b', 'a', 'c'])
+    expect(fuseRrf(['a', 'b'], full('b', 'c'))).toEqual(['b', 'a', 'c'])
   })
 
   it('handles an empty vector list', () => {
     expect(fuseRrf(['a', 'b'], [])).toEqual(['a', 'b'])
+  })
+
+  it('lets a near-floor vector vote lift nothing', () => {
+    // The shape a short everyday query takes: BM25 found the relevant doc at 1
+    // and an incidental one far down; the vector leg cleared the floor on that
+    // incidental doc alone. At full weight the second signal lifts it to the
+    // top of everything. Weighed by a thin margin it climbs a little — RRF's
+    // ranks are close together — but not past the relevant doc.
+    const bm25 = ['rel', 'x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8', 'inc']
+    expect(fuseRrf(bm25, full('inc'))[0]).toBe('inc')
+    const damped = fuseRrf(bm25, [{ id: 'inc', weight: 0.1 }])
+    expect(damped[0]).toBe('rel')
+    expect(damped.indexOf('inc')).toBeGreaterThan(damped.indexOf('x1'))
+  })
+})
+
+describe('vectorVoteWeight', () => {
+  it('rises from nothing at the floor to a full vote one ramp above it', () => {
+    expect(vectorVoteWeight(0.3, 0.3)).toBe(0)
+    expect(vectorVoteWeight(0.4, 0.3)).toBeCloseTo(0.5)
+    expect(vectorVoteWeight(0.5, 0.3)).toBe(1)
+    expect(vectorVoteWeight(0.9, 0.3)).toBe(1)
   })
 })
 
@@ -120,6 +144,31 @@ describe('hybridSearch — degrade paths (BM25 passthrough)', () => {
       expect.objectContaining({ q: 'q-semantic-false', offset: 5, limit: 10 })
     )
     expect(d.dbSearch.searchByVector).not.toHaveBeenCalled()
+  })
+
+  it('reports what it did, so a caller can tell degrading from finding nothing', async () => {
+    // The two look identical from the outside: a vector leg that ran and
+    // cleared nothing returns the same empty list as one whose embedding
+    // failed. An evaluation run that cannot tell them apart reports a
+    // keyword-only run as hybrid, which happened twice in one afternoon.
+    const ok = await hybridSearch(deps(), { q: 'q-fine' })
+    expect(ok.semantic).toBe('applied')
+
+    const broken = await hybridSearch(deps({ ai: makeAI({ failEmbed: true }) }), { q: 'q-broken' })
+    expect(broken.semantic).toBe('degraded')
+
+    const off = await hybridSearch(deps(), { q: 'q-off', semantic: false })
+    expect(off.semantic).toBe('off')
+  })
+
+  it('calls a leg that cleared nothing applied, not degraded', async () => {
+    // A short query clears the similarity floor on nothing at all — "お年寄り"
+    // did, against every package in a live catalogue. That is the search
+    // working, and must not read as a failure.
+    const d = deps()
+    vi.mocked(d.dbSearch.searchByVector!).mockResolvedValue([])
+
+    expect((await hybridSearch(d, { q: 'q-nothing-clears' })).semantic).toBe('applied')
   })
 
   it('passes through when embedding is unavailable (NoOp)', async () => {

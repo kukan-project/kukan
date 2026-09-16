@@ -28,6 +28,7 @@ import {
   resource,
   group,
   packageGroup,
+  publicSummary,
 } from '@kukan/db'
 import { ilike, eq, and, or, sql, inArray, asc, desc } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
@@ -37,6 +38,10 @@ const MATCH_COLUMNS = {
   name: resource.name,
   description: resource.description,
   section: resource.section,
+  // The projection, not the column: a hidden abstract is off the page and out
+  // of the index, and matching the raw column would answer searches with text
+  // somebody took down (ADR-053 §4.1)
+  summary: publicSummary,
 } as const
 
 /** One predicate for the package count and the matched-resource list, so the two cannot disagree. */
@@ -258,10 +263,13 @@ export class PostgresSearchAdapter implements SearchAdapter {
                 description: resource.description,
                 format: resource.format,
                 section: resource.section,
+                // The projection, so a hidden abstract is not served back
+                summary: publicSummary,
                 // Which of the fields the row came through, for the card to fold on
                 onName: sql<boolean>`${ilike(MATCH_COLUMNS.name, pattern)}`,
                 onDescription: sql<boolean>`${ilike(MATCH_COLUMNS.description, pattern)}`,
                 onSection: sql<boolean>`${ilike(MATCH_COLUMNS.section, pattern)}`,
+                onSummary: sql<boolean>`${ilike(MATCH_COLUMNS.summary, pattern)}`,
               })
               .from(resource)
               .where(
@@ -288,13 +296,19 @@ export class PostgresSearchAdapter implements SearchAdapter {
         }
         matchedTotal[row.packageId] = (matchedTotal[row.packageId] ?? 0) + 1
         if (matchedByPackage[row.packageId].length < MAX_MATCHED_RESOURCES_PER_PACKAGE) {
-          const on = { name: row.onName, description: row.onDescription, section: row.onSection }
+          const on = {
+            name: row.onName,
+            description: row.onDescription,
+            section: row.onSection,
+            summary: row.onSummary,
+          }
           matchedByPackage[row.packageId].push({
             id: row.id,
             name: row.name ?? undefined,
             description: row.description ?? undefined,
             format: row.format ?? undefined,
             section: row.section ?? undefined,
+            summary: row.summary ?? undefined,
             matchedOn: MATCHED_FIELDS.filter((f) => on[f]),
           })
         }
@@ -442,6 +456,13 @@ export class PostgresSearchAdapter implements SearchAdapter {
     return {}
   }
 
+  /** A per-call offset (admin tuning, ADR-036) shifts the floor within [0, 1] */
+  vectorFloor(minSimilarityOffset?: number): number {
+    return minSimilarityOffset
+      ? Math.min(1, Math.max(0, this.vectorMinSimilarity + minSimilarityOffset))
+      : this.vectorMinSimilarity
+  }
+
   async searchByVector(
     vector: number[],
     modelKey: string,
@@ -453,10 +474,7 @@ export class PostgresSearchAdapter implements SearchAdapter {
     const conditions = this.buildConditions({ q: '', filters })
     const vectorParam = JSON.stringify(vector)
     // Cut below the similarity floor — kNN otherwise pads top-k with noise.
-    // A per-call offset (admin tuning, ADR-036) shifts the floor within [0, 1].
-    const floor = minSimilarityOffset
-      ? Math.min(1, Math.max(0, this.vectorMinSimilarity + minSimilarityOffset))
-      : this.vectorMinSimilarity
+    const floor = this.vectorFloor(minSimilarityOffset)
     const maxDistance = 1 - floor
 
     // The CASE guard makes `<=>` evaluate only on rows of the requested vector

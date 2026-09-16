@@ -164,6 +164,7 @@
     "matchedMoreAtLeast": "他 {count} 件以上のリソース",
     "contentMatch": "データ内容に一致",
     "contentMatchNote": "（最大3箇所表示）",
+    "summaryMatch": "AI による説明に一致",
     "semanticMatch": "意味的に関連",
     "loadingSnippet": "読み込み中…",
     "tabPublic": "公開",
@@ -351,7 +352,25 @@
       "embedUnavailable": "埋め込みが設定されていないため実行できません。",
       "settingsUnavailable": "埋め込みの設定を取得できませんでした。",
       "queueing": "投入中...",
-      "queueFailed": "投入に失敗しました。"
+      "queueFailed": "投入に失敗しました。",
+      "summaryTitle": "AI による説明の生成",
+      "summaryDescription": "リソースの内容から説明を生成します。外部 URL は取得しません。この操作はリソース数に比例して推論費用がかかります。完了したパッケージから順に埋め込みも作り直されます。",
+      "summarySkipped": "対象外: {count} 件（サイズ上限超過・材料が取れない・AI が読み取れない形式）",
+      "summaryFillButton": "不足分を生成",
+      "summaryRefreshButton": "すべて作り直す",
+      "summaryQueued": "説明の生成を投入しました。バックグラウンドで順次実行されます。",
+      "summaryModel": "生成モデル",
+      "summaryFillScope": "説明がまだ無いリソースだけを生成します。",
+      "summaryRefreshScope": "加えて、別のモデル・プロンプト版・生成言語で書かれた説明も作り直します。",
+      "summaryEstimate": "対象 {resources, number} 件・推定 入力 {inputLow, number}〜{inputHigh, number} / 出力 {output, number} トークン",
+      "summaryCost": "（概算 ${low} 〜 ${high}）",
+      "summaryLocale": "生成言語",
+      "summaryLocaleName": {
+        "ja": "日本語",
+        "en": "英語"
+      },
+      "summaryEstimateLoading": "対象と費用を確認しています…",
+      "summaryEstimateUnavailable": "対象と費用を取得できませんでした。確認できないため実行できません。"
     },
     "adminSite": {
       "title": "サイト管理",
@@ -667,6 +686,7 @@
     "pipelineStepVersion": "版の取得",
     "pipelineStepLake": "差分取り込み",
     "pipelineStepIndex": "インデックス",
+    "pipelineStepSummarize": "説明の生成",
     "pipelineStepExtract": "抽出",
     "pipelineStepRunning": "実行中",
     "pipelineStepComplete": "完了",
@@ -925,5 +945,30 @@
     "scheduled": "予約公開",
     "draft": "下書き",
     "confirmDelete": "このお知らせを削除しますか？"
+  },
+  "resourceAbstract": {
+    "heading": "AI による説明",
+    "disclaimer": "※ 内容の正確性・最新性を保証するものではありません。正式な内容は原本のファイルをご確認ください。",
+    "read": {
+      "schema": "列の構成と、全 {total} 行のうち先頭 {read} 行を読みました。",
+      "schemaNoTotal": "列の構成と、先頭 {read} 行を読みました。",
+      "text": "ファイル冒頭の約 {read} 文字を読みました。",
+      "text-head": "ファイルから抽出したテキストの冒頭、約 {read} 文字を読みました。",
+      "original": "ファイル全体を読みました。",
+      "originalPages": "全 {total} ページのうち、先頭 {read} ページを読みました。",
+      "image": "画像全体を読みました。",
+      "files": "収録されている {total} 件のうち、{read} 件のファイル名を読みました。",
+      "filesNoTotal": "収録されているファイルのうち、{read} 件の名前を読みました。",
+      "unknown": "ファイルの一部を読みました。"
+    },
+    "generated": "この説明は、このファイルの v{version} から AI が生成しました（{date}）",
+    "outdated": "※ このファイルは現在 v{latest} です。説明は更新されていません。",
+    "skipped": {
+      "too-large": "このファイルはサイズ上限を超えるため、説明を生成していません。",
+      "rejected": "このファイルは AI が一度に読み取れる量を超えていたため、説明を生成していません。",
+      "unsupported-format": "この形式は AI が読み取れないため、説明を生成していません。",
+      "no-material": "このファイルからは説明の材料が取れないため、説明を生成していません。",
+      "provider-unavailable": "AI を利用できない設定のため、説明を生成していません。"
+    }
   }
 }

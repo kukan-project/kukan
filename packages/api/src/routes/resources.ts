@@ -14,12 +14,15 @@ import { VersionDiffService } from '../services/version-diff-service'
 import { PipelineService, isQueryable } from '../services/pipeline-service'
 import { cancelResourceRun } from '../services/pipeline-claim'
 import { PackageService } from '../services/package-service'
+import { setResourceSummary } from '../services/resource-summary-service'
+import { enqueuePackageEmbed, enqueueResourceDocSync } from '../services/search-index'
 import { QueryService } from '../services/query-service'
 import {
   updateResourceSchema,
   uploadUrlSchema,
   uploadCompleteSchema,
   columnSettingsBodySchema,
+  resourceSummaryBodySchema,
   revertResourceSchema,
   versionNumberSchema,
   runPipelineSchema,
@@ -969,6 +972,39 @@ resourcesRouter.put(
     return c.json({ id, ...result })
   }
 )
+
+// PUT /api/v1/resources/:id/summary - Override or hide the abstract (org editor+)
+resourcesRouter.put('/:id/summary', zValidator('json', resourceSummaryBodySchema), async (c) => {
+  const user = c.get('user')
+  if (!user) throw new UnauthorizedError()
+
+  const db = c.get('db')
+  const id = c.req.param('id')
+  await checkResourcePermission(db, user, new ResourceService(db), id)
+
+  const result = await setResourceSummary(db, id, c.req.valid('json'))
+  // The abstract is part of what the package's vector is built from, and part
+  // of the resource's document in the keyword leg, so an editor's change to it
+  // makes both stale (ADR-053 §9.2). Hiding especially: the projection takes a
+  // hidden abstract off the document, and a document that keeps it is text
+  // somebody took down still answering searches.
+  // Both unconditionally, and for one reason: `embeddingChanged` answers "did
+  // this request change anything", which is false on the retry of a request
+  // whose side effects failed. Gated on it, a queue blip or a failed index
+  // write could never be repaired by sending the edit again — the only handle
+  // anyone has. Neither call is expensive to repeat: the embed enqueue is
+  // behind a debounce that drops a second claim inside its window, and the
+  // document is a statement about the row that is true to restate.
+  //
+  // Hiding is the case that matters. The projection takes a hidden abstract
+  // off both, and a document that kept it answers searches with text somebody
+  // took down.
+  await Promise.all([
+    enqueuePackageEmbed(db, c.get('queue'), c.get('ai'), result.packageId, c.get('logger')),
+    enqueueResourceDocSync(c.get('queue'), id, c.get('logger')),
+  ])
+  return c.json(result)
+})
 
 // --- CRUD endpoints ---
 

@@ -37,6 +37,57 @@ export interface AIAdapter {
    * Callers use this as the capability flag before calling embed().
    */
   getEmbeddingInfo(): EmbeddingInfo | null
+
+  /**
+   * Which originals this provider takes alongside a prompt, or null when it
+   * takes none (ADR-053 §3.5). Callers gate options.attachments on it, so a
+   * provider that cannot read a PDF is a difference in supported formats
+   * rather than a missing feature — and no caller branches on provider name.
+   */
+  getDocumentInfo(): DocumentInfo | null
+}
+
+/**
+ * An original sent with the prompt: the file itself, for content no extraction
+ * gets at (ADR-053 §3.1). Adapters map `format` onto their provider's enum and
+ * refuse what it does not list.
+ */
+export interface CompletionAttachment {
+  kind: 'document' | 'image'
+  /** Lower-case extension: 'pdf', 'xlsx', 'png' … */
+  format: string
+  /** Names the material to the model. Adapters sanitize it for the provider. */
+  name: string
+  bytes: Uint8Array
+}
+
+export interface DocumentInfo {
+  /** Formats accepted as `kind: 'document'` */
+  documentFormats: string[]
+  /** Formats accepted as `kind: 'image'` */
+  imageFormats: string[]
+  /** Hard per-image byte limit the API enforces, whatever the model */
+  maxImageBytes: number
+}
+
+/**
+ * The provider refused the input itself, and will refuse it again.
+ *
+ * Separated from every other failure because the two are recorded differently:
+ * this one is a resource's permanent answer, while a throttle or a 5xx is one
+ * attempt's (ADR-053 §3.4). Mistaking the second for the first writes "we do
+ * not summarize this file" over a bad minute.
+ */
+export class AiInputRejectedError extends Error {
+  constructor(
+    message: string,
+    readonly reason: 'too-long' | 'unsupported-format',
+    /** Tokens the request actually came to, when the refusal said so */
+    readonly actualTokens?: number
+  ) {
+    super(message)
+    this.name = 'AiInputRejectedError'
+  }
 }
 
 export interface CompleteOptions {
@@ -50,6 +101,25 @@ export interface CompleteOptions {
    *  Write schemas within OpenAI's strict subset (all properties required,
    *  additionalProperties: false) — the OpenAI adapter enables strict mode. */
   jsonSchema?: { name: string; schema: Record<string, unknown> }
+  /** Originals to send with the prompt. Gate on getDocumentInfo() first —
+   *  an adapter that lists no formats throws rather than dropping them. */
+  attachments?: CompletionAttachment[]
+  /**
+   * What the completion actually consumed, as the provider reported it.
+   *
+   * Handed back rather than logged here: the adapter knows the numbers and
+   * nothing about what they were spent on, and a bill is only answerable with
+   * both. Called once, after a successful call; a provider that reports
+   * nothing calls it with an empty object rather than not at all, so a silent
+   * provider is distinguishable from a silent caller.
+   */
+  onUsage?: (usage: CompletionUsage) => void
+}
+
+/** Tokens a completion consumed, as the provider reported them */
+export interface CompletionUsage {
+  inputTokens?: number
+  outputTokens?: number
 }
 
 export interface CompletionInfo {

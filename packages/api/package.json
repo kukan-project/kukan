@@ -21,7 +21,12 @@
     "./services/storage-pointer": "./dist/services/storage-pointer.js",
     "./services/organization-service": "./dist/services/organization-service.js",
     "./services/resource-version-service": "./dist/services/resource-version-service.js",
-    "./services/content-index-record": "./dist/services/content-index-record.js"
+    "./services/content-index-record": "./dist/services/content-index-record.js",
+    "./services/suggest/materials": "./dist/services/suggest/materials.js",
+    "./services/suggest/prompt": "./dist/services/suggest/prompt.js",
+    "./services/suggest/summary-prompt": "./dist/services/suggest/summary-prompt.js",
+    "./services/system-setting": "./dist/services/system-setting.js",
+    "./services/resource-summary-service": "./dist/services/resource-summary-service.js"
   },
   "scripts": {
     "dev:standalone": "tsx watch src/server.ts",

@@ -9,8 +9,10 @@ import type { ContentType } from '@kukan/shared'
 // Search Types
 // ============================================================
 
-/** The resource metadata fields a query term can match, as the adapters report them */
-export const MATCHED_FIELDS = ['name', 'description', 'section'] as const
+/** The resource metadata fields a query term can match, as the adapters report them.
+ *  Shared, so the two adapters cannot disagree about what is searchable — the
+ *  abstract is in the keyword leg on both (ADR-053 §8.1). */
+export const MATCHED_FIELDS = ['name', 'description', 'section', 'summary'] as const
 export type MatchedField = (typeof MATCHED_FIELDS)[number]
 
 export interface MatchedResource {
@@ -20,6 +22,9 @@ export interface MatchedResource {
   format?: string
   /** The section the resource is drawn under (ADR-050) */
   section?: string
+  /** The AI-written abstract (ADR-053). Whole — the PostgreSQL leg cannot
+   *  fragment, and the card clamps it */
+  summary?: string
   /** The metadata fields the query matched — what the hit is on account of */
   matchedOn?: MatchedField[]
   /** Highlighted name (HTML with <mark> tags) */
@@ -28,6 +33,8 @@ export interface MatchedResource {
   highlightedDescription?: string
   /** Highlighted section (HTML with <mark> tags) */
   highlightedSection?: string
+  /** The abstract around the match, marked (HTML with <mark> tags) */
+  highlightedSummary?: string
   /** Highlighted snippets from content match (up to 3 fragments) */
   contentSnippets?: string[]
   /** Whether the match came from resource metadata or extracted content */
@@ -52,6 +59,8 @@ export interface ResourceDoc {
   format?: string
   /** The section the resource is drawn under (ADR-050) */
   section?: string
+  /** The AI-written abstract, absent when hidden or never written (ADR-053) */
+  summary?: string
 }
 
 /** Document stored in the kukan-contents index (extracted text for full-text search) */
@@ -270,6 +279,18 @@ export interface SearchAdapter {
    *  backends without vector support. `minSimilarityOffset` shifts the
    *  configured similarity floor per call (admin tuning, ADR-036); the
    *  adjusted floor is clamped to [0, 1]. */
+  /**
+   * The similarity floor `searchByVector` will apply for this offset — the
+   * model's measured floor shifted by the admin's notches (ADR-036).
+   *
+   * Asked rather than recomputed by the caller, so the two cannot drift: the
+   * fusion weighs each vector vote by how far it sits above this line, and a
+   * vote weighed against a different line than the one that admitted it is
+   * exactly the kind of quiet disagreement that ends up in a bill or a bug.
+   * PostgreSQL-only, like searchByVector.
+   */
+  vectorFloor?(minSimilarityOffset?: number): number
+
   searchByVector?(
     vector: number[],
     modelKey: string,

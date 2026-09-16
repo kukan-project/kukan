@@ -2474,3 +2474,134 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
     expect(res.status).toBe(401)
   })
 })
+
+describe('PUT /api/v1/resources/:id/summary (ADR-053)', () => {
+  async function withAbstract(name: string) {
+    const pkg = await createPackage(name)
+    const resource = await createResource(pkg.id)
+    await db
+      .update(resourceTable)
+      .set({
+        summary: 'AI が書いた抄録。',
+        summaryMeta: {
+          source: 'ai',
+          genKey: 'm|1|ja',
+          model: 'm',
+          version: 1,
+          grounded: true,
+        },
+      })
+      .where(eq(resourceTable.id, resource.id))
+    return { pkg, resource }
+  }
+
+  async function storedSummary(id: string) {
+    const [row] = await db
+      .select({ summary: resourceTable.summary, meta: resourceTable.summaryMeta })
+      .from(resourceTable)
+      .where(eq(resourceTable.id, id))
+    return row
+  }
+
+  it("marks an editor's own text as a person's, so generation leaves it alone", async () => {
+    const { resource } = await withAbstract('summary-override')
+
+    const res = await app.request(`/api/v1/resources/${resource.id}/summary`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ summary: '人が書いた説明。' }),
+    })
+    expect(res.status).toBe(200)
+
+    const stored = await storedSummary(resource.id)
+    expect(stored.summary).toBe('人が書いた説明。')
+    expect(stored.meta.source).toBe('human')
+    // The generation key belonged to a run this text did not come from: left
+    // in place, the next run would read this as its own and keep it
+    expect(stored.meta.genKey).toBeUndefined()
+  })
+
+  it('hands the resource back to generation when the text is cleared', async () => {
+    const { resource } = await withAbstract('summary-clear')
+    await app.request(`/api/v1/resources/${resource.id}/summary`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ summary: '人が書いた説明。' }),
+    })
+
+    await app.request(`/api/v1/resources/${resource.id}/summary`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ summary: null }),
+    })
+
+    const stored = await storedSummary(resource.id)
+    expect(stored.summary).toBeNull()
+    expect(stored.meta.source).toBeUndefined()
+  })
+
+  it('keeps hidden as state, so the next run does not undo it', async () => {
+    const { resource } = await withAbstract('summary-hide')
+
+    await app.request(`/api/v1/resources/${resource.id}/summary`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hidden: true }),
+    })
+
+    const stored = await storedSummary(resource.id)
+    expect(stored.meta.hidden).toBe(true)
+    // The text itself is kept: unhiding must not have lost it
+    expect(stored.summary).toBe('AI が書いた抄録。')
+  })
+
+  it('serves a hidden abstract as absent, and never the private half of its record', async () => {
+    const { resource } = await withAbstract('summary-projection')
+
+    const before = await (await app.request(`/api/v1/resources/${resource.id}`)).json()
+    expect(before.summary).toBe('AI が書いた抄録。')
+    expect(before.summaryMeta.genKey).toBeUndefined()
+    expect(before.summaryMeta.model).toBeUndefined()
+    expect(before.summaryMeta.grounded).toBeUndefined()
+    expect(before.summaryMeta.source).toBe('ai')
+
+    await app.request(`/api/v1/resources/${resource.id}/summary`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hidden: true }),
+    })
+
+    const after = await (await app.request(`/api/v1/resources/${resource.id}`)).json()
+    expect(after.summary).toBeNull()
+  })
+
+  it('rejects a body that asks for nothing', async () => {
+    const { resource } = await withAbstract('summary-empty')
+    const res = await app.request(`/api/v1/resources/${resource.id}/summary`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('refuses an editor who has no rights to the package', async () => {
+    const { resource } = await withAbstract('summary-outsider')
+    await ensureOutsiderUser()
+    const outsiderApp = createTestApp(db, {
+      user: {
+        id: OUTSIDER_USER_ID,
+        email: 'outsider@example.com',
+        name: 'outsider',
+        sysadmin: false,
+      },
+    })
+
+    const res = await outsiderApp.request(`/api/v1/resources/${resource.id}/summary`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hidden: true }),
+    })
+    expect(res.status).toBe(403)
+  })
+})

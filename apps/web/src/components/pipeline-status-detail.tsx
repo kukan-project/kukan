@@ -26,6 +26,7 @@ const STEP_LABEL_KEYS: Record<PipelineStepName | LegacyPipelineStepName, string>
   interpret: 'pipelineStepInterpret',
   lake: 'pipelineStepLake',
   index: 'pipelineStepIndex',
+  summarize: 'pipelineStepSummarize',
   extract: 'pipelineStepExtract',
 }
 

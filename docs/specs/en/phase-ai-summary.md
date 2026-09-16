@@ -52,7 +52,8 @@ Parquet and re-ingests all of DuckLake (a catalog-wide lock) for every resource*
 an abstract needs is already in storage and in the database, so that cost does not have to be
 paid.
 
-And because the abstract hash includes the model, the prompt version and the locale, **a full
+And because the abstract generation key includes the model, the generation version and the
+locale, **a full
 generation is not a one-off operation** — it runs again every time the prompt is tuned. Riding on
 the existing "reprocess content" action would empty the full-text index each time.
 
@@ -223,9 +224,8 @@ export interface ResourceSummaryMeta {
   /** Why nothing was generated. Shown on the page */
   skipReason?: SummarySkipReason
   // --- below here, only the worker reads. Never in the public projection ---
-  /** SHA-256 of the material digest (§4.2). Says only whether the file changed */
-  materialHash?: string
-  /** model ‖ prompt version ‖ locale (§4.2). Says only whether the writing changed */
+
+  /** model ‖ generation version ‖ locale (§4.2). Says only whether the writing changed */
   genKey?: string
   model?: string
   /** The model's self-report ("was the material enough"). Recorded and measured only */
@@ -251,7 +251,7 @@ is this number's job (§10.3).
 **An original sent whole carries no coverage.** "All of it" is what the absence already says;
 only an original sent in part — a PDF past the page limit — carries one.
 
-**`materialHash`, `genKey`, `model`, `grounded` and `rejectedTokens` are never published.** As
+**`genKey`, `model`, `grounded` and `rejectedTokens` are never published.** As
 with `extras` and `scrubbedExtras`, the public projection lives in exactly one place
 (`packages/db/src/schema/resource.ts`, `publicSummary` / `publicSummaryMeta`), and
 `summary_meta` is never returned whole. It is spelled in the projection rather than per route
@@ -260,38 +260,36 @@ because **a response that forgets is a response that publishes text someone took
 `hidden` and `source` are not columns because **neither is ever used to filter**. Both the
 embedding assembly and the public projection decide after reading the row (§9.1).
 
-### 4.2 The hash is split in two
+### 4.2 Two keys: the version and the generation
 
 ```
-materialHash = sha256( material digest )
-genKey       = model ‖ prompt version ‖ locale
+version = the version the abstract was written from (resource_version.version)
+genKey  = model ‖ generation version ‖ locale
 ```
 
-**They must not be one value.** Combined, bumping the prompt version moves every resource's key
-and **an ordinary pipeline run becomes a regeneration nobody asked for**. Split:
+|                          | same version                  | different version |
+| ------------------------ | ----------------------------- | ----------------- |
+| **same generation**      | do nothing                    | generate          |
+| **different generation** | generate only under `refresh` | generate          |
 
-|                          | same material                 | different material |
-| ------------------------ | ----------------------------- | ------------------ |
-| **same generation**      | do nothing                    | generate           |
-| **different generation** | generate only under `refresh` | generate           |
-
-An ordinary run looks at the material alone. Only an explicit `refresh` from the admin screen
+An ordinary run looks at the version alone. Only an explicit `refresh` from the admin screen
 reacts to a change in how abstracts are written (§11.2). **It compares rather than ignores, so
 pressing it twice is free.**
 
-- **Material digest**: the version's key where an original is sent (it names that version's
-  settled bytes, ADR-046). Otherwise **every content-derived fact the model is told** — the
-  schema, sample rows, extracted text and file listing, plus the **file count, size and format**.
-  The last three come from the version, so editing a label does not move them. **Titles and
-  descriptions stay out — correcting one regenerates nothing** (ADR-053 decision 9)
+- **Version**: the abstract stands while its version does. Re-running the same version — a
+  content reprocess (`rebuildOnly`), a retry, a periodic re-enqueue — **costs nothing**
 
-  > **A fact drawn from the file has to be able to regenerate the abstract that quotes it.**
+  > **The material itself must not be the digest.** Hashing the facts the model was told lets an
+  > internal change of the pipeline — Interpret adding column statistics, a settled version
+  > re-issued to carry a format — **regenerate the whole catalogue without appearing in the
+  > estimate** (ADR-053 decision 9). What the model is shown for the same file changes only
+  > when the code does, and that is a decision, not a fact to reflect automatically.
 
-  It bites hardest where a material is a listing. A ZIP's is capped at fifty names, so a change
-  past the cap leaves the listing identical while the count moves — and that count reaches both
-  the prompt and the notice ("M of N files"), where a stale figure would stand.
-
-- **Prompt version**: the `SUMMARY_PROMPT_VERSION` constant. Bumped whenever the prompt changes
+- **Generation version**: the `SUMMARY_GENERATION_VERSION` constant. **Raised by the PR that
+  alters what the model is shown for the same file, or how it is asked** — the prompt and its
+  locale addenda, the size and page limits, how a material is chosen, an extraction improvement
+  the abstracts should reflect. Not by a refactor or a UI change; a model switch moves the other
+  half of the genKey
 - **Locale**: switching it makes every abstract stale, but **nothing regenerates automatically**.
   The admin screen states that a mixed-language period follows (§10.3)
 
@@ -441,7 +439,7 @@ package is not active                  → skipReason: 'not-public'
 summary_meta.hidden                    → skipReason: 'hidden'
 summary_meta.source === 'human'        → do nothing (never overwrite a person's text)
 plan the material (format, limits, artifacts) → skipReason where none can be had
-compare materialHash / genKey          → per the table in §4.2
+compare version / genKey               → per the table in §4.2
 a standing refusal of the same input   → do nothing (carry the version forward)
 ─────────────────────────────────────
 call the LLM → write the result
@@ -531,7 +529,7 @@ It becomes `collectResourceMaterial()` in
   of the metadata
 - **A per-locale addendum block.** The shared part is written in English, with `ja` / `en`
   addenda for the language-specific parts (how the everyday gloss is written, and so on).
-  **Changing an addendum bumps `SUMMARY_PROMPT_VERSION`**
+  **Changing an addendum bumps `SUMMARY_GENERATION_VERSION`**
 
 The output is forced JSON.
 
@@ -736,10 +734,10 @@ embedding model changed.
 
 **There are two actions, and they are different amounts of money for different reasons.**
 
-| Action          | Covers                                                           | Job                                |
-| --------------- | ---------------------------------------------------------------- | ---------------------------------- |
-| **Fill in**     | resources with no abstract                                       | `summarize-all { refresh: false }` |
-| **Rewrite all** | those, plus ones another model, prompt version or language wrote | `summarize-all { refresh: true }`  |
+| Action          | Covers                                                       | Job                                |
+| --------------- | ------------------------------------------------------------ | ---------------------------------- |
+| **Fill in**     | resources with no abstract                                   | `summarize-all { refresh: false }` |
+| **Rewrite all** | those, plus ones another model, generation or language wrote | `summarize-all { refresh: true }`  |
 
 **Changing a prompt makes every abstract in the catalogue stale at once, and nobody should find
 that out from a bill.** So each estimate is separate and sits **directly above its own button**.

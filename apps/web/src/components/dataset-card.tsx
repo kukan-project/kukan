@@ -207,6 +207,56 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                               className="line-clamp-1 text-xs text-muted-foreground"
                             />
                           )}
+                          {/* Only where the abstract is why this is a hit — a
+                              resource found by its own name is not explained by
+                              generated sentences, and shown anyway they crowd
+                              out what a person wrote.
+                              
+                              Plain, not highlighted. Marking the phrase is how
+                              a *content* match is shown, and the abstract sits
+                              in the metadata document; borrowing that styling
+                              blurs the one distinction `matchSource` exists to
+                              draw. It also draws the eye, and there is no room
+                              on a card for the heading and the disclaimer the
+                              resource page puts around these sentences — so the
+                              label carries that on its own (ADR-053 §7). */}
+                          {/* Shaped like a content match, and for the same
+                              reason: both answer "why is this a hit" where the
+                              name and the description do not, and both are an
+                              excerpt of something longer. Name and description
+                              are the resource's own metadata; these two are
+                              evidence, which is what the box marks off.
+
+                              What separates them is the label, and it has to:
+                              a content snippet is the file's own words, an
+                              abstract is a machine's about it (ADR-053 §7).
+                              Shown only where the abstract is why this matched
+                              — a resource found by its name is not explained by
+                              generated sentences. */}
+                          {!row.folded &&
+                            r.matchedOn?.includes('summary') &&
+                            (r.highlightedSummary || r.summary) && (
+                              <div className="mt-1 space-y-1">
+                                {/* The AI hue where the content match is
+                                    primary. Same shape, its own colour: one is
+                                    the file's own words and the other is a
+                                    machine's about it, and which is which
+                                    should be visible before either is read. */}
+                                <span className="flex items-center gap-0.5 text-[10px] font-medium text-ai-tint-foreground">
+                                  <Sparkles className="h-2.5 w-2.5" />
+                                  {t('summaryMatch')}
+                                </span>
+                                {/* line-clamp clips at the padding box, so padding lives on the wrapper */}
+                                <div className="rounded border border-ai/20 bg-ai/5 px-2 py-1.5">
+                                  <Highlighted
+                                    as="p"
+                                    html={r.highlightedSummary}
+                                    text={r.summary}
+                                    className="line-clamp-4 text-xs break-words text-muted-foreground"
+                                  />
+                                </div>
+                              </div>
+                            )}
                           {r.matchSource === 'content' && (
                             <div className="mt-1 space-y-1">
                               <span className="flex items-center gap-0.5 text-[10px] font-medium text-primary">

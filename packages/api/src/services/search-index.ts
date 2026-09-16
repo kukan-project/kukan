@@ -19,7 +19,7 @@ import {
 import type { SearchAdapter, DatasetDoc, ResourceDoc } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
-import { EMBED_JOB_TYPE, type Logger } from '@kukan/shared'
+import { EMBED_JOB_TYPE, SYNC_RESOURCE_DOC_JOB_TYPE, type Logger } from '@kukan/shared'
 import { ResourceService, resourceDocColumns } from './resource-service'
 import { PipelineService } from './pipeline-service'
 import { leasePassed } from './lease'
@@ -98,6 +98,65 @@ export async function rebuildPackageSearch(
  * stay fresh. Enqueue failures are logged but never fail the request —
  * embeddings are eventually consistent (ADR-034).
  */
+/**
+ * Ask for one resource's search document to be rewritten (ADR-053 §9.3).
+ *
+ * **Does not mark the row.** The mark belongs in the statement that made the
+ * document wrong — separately, a crash between the two leaves a new abstract
+ * with nothing recording that the index has not heard of it. This only asks.
+ *
+ * Queued rather than written here, because the caller cannot retry: the
+ * Summarize step records a failure and lets the run finish, and a retried edit
+ * changes nothing to re-trigger on. The enqueue is best-effort — a queue that
+ * never heard leaves the row due, and the sweep comes back for it.
+ */
+export async function enqueueResourceDocSync(
+  queue: QueueAdapter,
+  resourceId: string,
+  log: Logger
+): Promise<void> {
+  try {
+    await queue.enqueue(SYNC_RESOURCE_DOC_JOB_TYPE, { resourceId })
+  } catch (err) {
+    log.error({ err, resourceId }, 'Resource document sync enqueue failed; the sweep will retry')
+  }
+}
+
+/**
+ * Rewrite the document, and clear the mark only if it is still the one this
+ * started from.
+ *
+ * **Compare-and-set, not a plain clear.** An edit landing while the document
+ * was being written leaves a newer mark, and clearing regardless would drop it:
+ * a hide made in that window would stay out of the index's knowledge, leaving
+ * text somebody took down answering searches until something else happened to
+ * that row. Unmatched, the row stays due and the sweep comes back.
+ */
+export async function syncResourceDoc(
+  db: Database,
+  search: SearchAdapter,
+  resourceId: string
+): Promise<void> {
+  // Read before writing: this is the value the write is about to satisfy.
+  //
+  // As text, both ways. A Date round-trip keeps milliseconds where the column
+  // keeps microseconds, so the mark would never match itself and every sync
+  // would leave the row due — the same trap the embed debounce documents.
+  const [before] = await db
+    .select({ dueAt: sql<string | null>`${resource.docSyncDueAt}::text` })
+    .from(resource)
+    .where(eq(resource.id, resourceId))
+    .limit(1)
+  await indexResourceMetadata(db, search, resourceId)
+  if (!before?.dueAt) return
+  await db
+    .update(resource)
+    .set({ docSyncDueAt: null })
+    .where(
+      and(eq(resource.id, resourceId), sql`${resource.docSyncDueAt} = ${before.dueAt}::timestamptz`)
+    )
+}
+
 export async function enqueuePackageEmbed(
   db: Database,
   queue: QueueAdapter,
@@ -306,6 +365,7 @@ function buildResourceDoc(row: ResourceRowForDoc): ResourceDoc {
     description: row.description ?? undefined,
     format: row.format ?? undefined,
     section: row.section ?? undefined,
+    summary: row.summary ?? undefined,
   }
 }
 

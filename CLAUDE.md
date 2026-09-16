@@ -291,7 +291,8 @@ pnpm format        # Prettier フォーマット
 
 ## パイプライン フォーマット別処理マトリクス
 
-パイプラインは Fetch → Version → Interpret → Lake → Index の5ステップ。
+パイプラインは Fetch → Version → Interpret → Lake → Index → Summarize の6ステップ
+（Summarize は `AI_SUMMARY_ENABLED` のサイトのみ、ADR-053）。
 Index ステップでリソースコンテンツのテキスト抽出・OpenSearch 投入を行う（ADR-021）。
 メタデータの検索インデックス更新は API ルートハンドラーで CUD 操作時に実行。
 Interpret のみフォーマット別処理を行う。

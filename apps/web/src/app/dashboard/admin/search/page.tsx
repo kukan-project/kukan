@@ -28,6 +28,8 @@ import { PageHeader } from '@/components/dashboard/page-header'
 import { PaginationControls } from '@/components/dashboard/pagination-controls'
 import { FormatBadge } from '@/components/format-badge'
 import { clientFetch } from '@/lib/client-api'
+import { useSiteSettings } from '@/hooks/use-site-settings'
+import { useSummaryEstimate } from '@/hooks/use-summary-estimate'
 import { useVectorSearchSettings } from '@/hooks/use-vector-search-settings'
 
 interface IndexStatsEntry {
@@ -199,13 +201,23 @@ export default function AdminSearchPage() {
     }
   }
 
-  // The three reprocess actions, one at a time. Each names what it rebuilds
-  // and whether it fetches anything; the content one is the heavy one.
-  type ReprocessAction = 'index' | 'content' | 'embed'
+  // The reprocess actions, one at a time. Each names what it rebuilds and
+  // whether it fetches anything; the content one is the heavy one, and the two
+  // abstract ones are the only ones that cost money per resource.
+  type ReprocessAction = 'index' | 'content' | 'embed' | 'summaryFill' | 'summaryRefresh'
   const [busy, setBusy] = useState<ReprocessAction | null>(null)
   const [outcome, setOutcome] = useState<{ action: ReprocessAction; ok: boolean } | null>(null)
   const vectorSettings = useVectorSearchSettings()
   const embedModel = vectorSettings.data?.model ?? null
+  const { resourceSummaryEnabled } = useSiteSettings()
+  // Asked for only where abstracts exist, and read before either button is
+  // pressed: this is the one control that spends per resource (ADR-053 §11.2)
+  const summaryEstimate = useSummaryEstimate(resourceSummaryEnabled === true)
+  const estimate = summaryEstimate.estimate
+  const skipped = estimate?.skipped
+  const skippedCount = skipped
+    ? skipped.tooLarge + skipped.unsupportedFormat + skipped.noMaterial
+    : 0
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const stopPolling = useCallback(() => {
@@ -221,15 +233,21 @@ export default function AdminSearchPage() {
     setOutcome(null)
     try {
       const res =
-        action === 'embed'
-          ? await clientFetch('/api/v1/admin/reindex-embeddings', { method: 'POST' })
-          : await clientFetch('/api/v1/admin/reindex-metadata', {
+        action === 'summaryFill' || action === 'summaryRefresh'
+          ? await clientFetch('/api/v1/admin/generate-summaries', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ includeContent: action === 'content' }),
+              body: JSON.stringify({ refresh: action === 'summaryRefresh' }),
             })
+          : action === 'embed'
+            ? await clientFetch('/api/v1/admin/reindex-embeddings', { method: 'POST' })
+            : await clientFetch('/api/v1/admin/reindex-metadata', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ includeContent: action === 'content' }),
+              })
       setOutcome({ action, ok: res.ok })
-      if (res.ok && action !== 'embed') pollStats()
+      if (res.ok && (action === 'index' || action === 'content')) pollStats()
     } catch {
       setOutcome({ action, ok: false })
     } finally {
@@ -542,6 +560,105 @@ export default function AdminSearchPage() {
               </div>
             </div>
           ))}
+
+          {/* Abstracts. Each action carries its own count and its own price,
+              because they are different amounts of money for different reasons
+              and a reader has to be able to tell which button costs which
+              (ADR-053 §11.2). */}
+          {resourceSummaryEnabled && (
+            <div className="flex flex-col gap-3 py-4 last:pb-0">
+              <p className="text-sm font-medium">{t('summaryTitle')}</p>
+              <p className="text-sm text-muted-foreground">{t('summaryDescription')}</p>
+              {estimate?.model && (
+                <p className="flex flex-wrap gap-x-4 text-sm">
+                  <span>
+                    <span className="text-muted-foreground">{t('summaryModel')}: </span>
+                    <span className="font-mono text-xs">{estimate.model}</span>
+                  </span>
+                  <span>
+                    <span className="text-muted-foreground">{t('summaryLocale')}: </span>
+                    {t(`summaryLocaleName.${estimate.locale}`)}
+                  </span>
+                </p>
+              )}
+
+              {(['summaryFill', 'summaryRefresh'] as const).map((action) => {
+                const op = estimate && (action === 'summaryFill' ? estimate.fill : estimate.refresh)
+                return (
+                  <div key={action} className="flex flex-col gap-2 rounded-md border p-3">
+                    <p className="text-sm">{t(`${action}Scope`)}</p>
+                    {summaryEstimate.loading && (
+                      <p role="status" className="text-sm text-muted-foreground">
+                        {t('summaryEstimateLoading')}
+                      </p>
+                    )}
+                    {summaryEstimate.error && (
+                      <p role="alert" className="text-sm text-destructive">
+                        {t('summaryEstimateUnavailable')}
+                      </p>
+                    )}
+                    {op && (
+                      <p className="text-sm text-muted-foreground">
+                        {/* Both bounds, because the money beside them is a
+                            range: one number against a range reads as though
+                            the high token count cost the low price. What
+                            nobody can see from here is a PDF's page count,
+                            and that is the whole width of the span. */}
+                        {t('summaryEstimate', {
+                          resources: op.resources,
+                          inputLow: op.estimatedInputTokens.low,
+                          inputHigh: op.estimatedInputTokens.high,
+                          output: op.estimatedOutputTokens,
+                        })}
+                        {op.estimatedCostUsd &&
+                          ' ' +
+                            t('summaryCost', {
+                              low: op.estimatedCostUsd.low.toFixed(2),
+                              high: op.estimatedCostUsd.high.toFixed(2),
+                            })}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-4">
+                      <Button
+                        variant="outline"
+                        onClick={() => reprocess(action)}
+                        // No estimate, no button. The card exists so that what
+                        // this costs is read before it is spent, and "still
+                        // loading" and "the estimate failed" are both states
+                        // where that has not happened.
+                        disabled={busy !== null || !op || op.resources === 0}
+                      >
+                        <Sparkles
+                          className={`mr-2 h-4 w-4 ${busy === action ? 'animate-spin' : ''}`}
+                        />
+                        {busy === action ? t('queueing') : t(`${action}Button`)}
+                      </Button>
+                      {outcome?.action === action &&
+                        (outcome.ok ? (
+                          <p role="status" className="text-sm text-muted-foreground">
+                            {t('summaryQueued')}
+                          </p>
+                        ) : (
+                          <p role="alert" className="text-sm text-destructive">
+                            {t('queueFailed')}
+                          </p>
+                        ))}
+                    </div>
+                  </div>
+                )
+              })}
+
+              {/* Counted among the resources with no abstract, not across the
+                  whole catalogue: it sits under the buttons, so it reads as
+                  what they will not cover — and a file already described is
+                  not out of scope, whatever it weighs. */}
+              {skippedCount > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  {t('summarySkipped', { count: skippedCount })}
+                </p>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 

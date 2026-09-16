@@ -39,7 +39,19 @@ function toCkanPackage(pkg: Record<string, unknown>) {
 }
 
 function toCkanResource(res: Record<string, unknown>) {
-  const { updated, lastModified, packageId, resourceType, ...rest } = res
+  // The abstract is ours, not CKAN's, and it is not folded into `description`
+  // either: a consumer of this API asked for CKAN's fields, and a generated
+  // sentence arriving in one of them is indistinguishable from a person's
+  // (ADR-053 §10.1).
+  const {
+    updated,
+    lastModified,
+    packageId,
+    resourceType,
+    summary: _summary,
+    summaryMeta: _summaryMeta,
+    ...rest
+  } = res
   return {
     ...rest,
     metadata_modified: updated,

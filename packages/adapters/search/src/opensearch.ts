@@ -86,6 +86,14 @@ const SEARCH_PROPERTIES: MappingProperties = {
     analyzer: 'kuromoji_analyzer',
     search_analyzer: 'kuromoji_query_analyzer',
   },
+  // The AI-written abstract (ADR-053). It is told to gloss official terms with
+  // the everyday word in parentheses, which is vocabulary the keyword leg has
+  // nowhere else — a person's description rarely spells both.
+  summary: {
+    type: 'text',
+    analyzer: 'kuromoji_analyzer',
+    search_analyzer: 'kuromoji_query_analyzer',
+  },
   // --- Content fields ---
   resourceId: { type: 'keyword' },
   extractedText: {
@@ -232,6 +240,31 @@ export class OpenSearchAdapter implements SearchAdapter {
         // Listed as kuromoji_baseform output. Applied query-side only (metadata
         // fields' search_analyzer) so these terms never become required matches
         // under operator:'and', while indexed documents keep their full text.
+        // Honorific prefixes:「お」年寄り,「ご」案内. kuromoji tags them
+        // 接頭詞-名詞接続 and the default stoptags do not drop them, so they
+        // reach the index as terms of their own — and under operator:'and' they
+        // become required ones. Nobody searching for「お年寄り」means「お」.
+        //
+        // It looked handled because `ja_stop` happens to list「お」, but that is
+        // a word list, not a part of speech:「ご」survived it, on both sides,
+        // and「お」survived on the index side, which has no ja_stop — so the
+        // highlighter lit up every honorific in the document:「お問い合わせ」,
+        //「お姉さん」, the「お」inside「におい」.
+        //
+        // Applied to both analyzers, unlike ja_stop: a prefix is not a term in
+        // a document either. Words the dictionary holds whole are untouched
+        //（お茶, お金, お守り, お年玉, ご飯）; the ones it splits lose a prefix
+        // that was never the search term（ご祝儀 → 祝儀, お手洗い → 手洗い）.
+        //
+        // Measured on the golden set (Cohere v4), with and without, both
+        // `_reindex`ed from the same source: the ranking does not move — one
+        // query per leg reshuffles at ranks 7–10, every type's mean is
+        // unchanged, and so are the content match counts. It earns its place
+        // on the highlighter and on the two sides agreeing, not on the score.
+        ja_prefix: {
+          type: 'kuromoji_part_of_speech' as const,
+          stoptags: ['接頭詞-名詞接続'],
+        },
         ja_request_words: {
           type: 'stop' as const,
           stopwords: [
@@ -259,7 +292,7 @@ export class OpenSearchAdapter implements SearchAdapter {
         kuromoji_analyzer: {
           type: 'custom' as const,
           tokenizer: 'kuromoji_tokenizer',
-          filter: ['kuromoji_baseform', 'kuromoji_part_of_speech', 'lowercase'],
+          filter: ['kuromoji_baseform', 'kuromoji_part_of_speech', 'ja_prefix', 'lowercase'],
         },
         kuromoji_query_analyzer: {
           type: 'custom' as const,
@@ -267,6 +300,7 @@ export class OpenSearchAdapter implements SearchAdapter {
           filter: [
             'kuromoji_baseform',
             'kuromoji_part_of_speech',
+            'ja_prefix',
             'lowercase',
             'ja_stop',
             'ja_request_words',
@@ -651,7 +685,7 @@ export class OpenSearchAdapter implements SearchAdapter {
                 query: {
                   multi_match: {
                     query: query.q!,
-                    fields: ['name^3', 'description^2', 'section'],
+                    fields: ['name^3', 'description^2', 'section', 'summary'],
                     type: 'cross_fields',
                     operator: 'and',
                   },
@@ -670,6 +704,19 @@ export class OpenSearchAdapter implements SearchAdapter {
                         post_tags: ['</mark>'],
                       },
                       section: WHOLE_FIELD_HIGHLIGHT,
+                      // Exactly as a description is treated: the abstract is
+                      // prose on the metadata document, so it needs the same
+                      // fragment around the match and the same marking of it.
+                      // What keeps it quiet is the label and the muted styling
+                      // on the card, not withholding the mark — a fragment with
+                      // nothing marked reads as a wall of text that never says
+                      // why the resource is a hit.
+                      summary: {
+                        fragment_size: 200,
+                        number_of_fragments: 1,
+                        pre_tags: ['<mark>'],
+                        post_tags: ['</mark>'],
+                      },
                     },
                   },
                 },
@@ -782,6 +829,7 @@ export class OpenSearchAdapter implements SearchAdapter {
           description: rh._source.description,
           format: rh._source.format,
           section: rh._source.section,
+          summary: rh._source.summary,
           matchedOn: MATCHED_FIELDS.filter((f) => rh.highlight?.[f]?.[0]),
           matchSource: 'metadata' as const,
           ...(rh.highlight?.name?.[0] && {
@@ -792,6 +840,9 @@ export class OpenSearchAdapter implements SearchAdapter {
           }),
           ...(rh.highlight?.section?.[0] && {
             highlightedSection: sanitizeHighlight(rh.highlight.section[0]),
+          }),
+          ...(rh.highlight?.summary?.[0] && {
+            highlightedSummary: sanitizeHighlight(rh.highlight.summary[0]),
           }),
         }))
         doc.matchedResources = [...(doc.matchedResources ?? []), ...matched]

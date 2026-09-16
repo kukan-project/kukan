@@ -41,4 +41,8 @@ describe('NoOpAIAdapter', () => {
   it('lists no completion models', async () => {
     expect(await adapter.listCompletionModels()).toEqual([])
   })
+
+  it('takes no originals', () => {
+    expect(adapter.getDocumentInfo()).toBeNull()
+  })
 })

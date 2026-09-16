@@ -435,8 +435,9 @@ yearbook and survey reports of 165 and 135 pages were all silent.
 has a place for it (`coverage`): an original sent whole carries none, an original sent in part
 carries one.
 
-The material digest carries the page cap too, so **raising the cap rewrites what was written
-under the old one** while leaving whole originals where they are.
+**Rewriting what was written under an older cap** is the generation version's job (decision 9):
+raising a limit is a code change, so that PR raises the generation and the dashboard states
+what it covers and what it costs.
 
 #### 3.8 An encrypted PDF will not give up its pages
 
@@ -764,10 +765,11 @@ substitutes for the other.
 > 100% → 73%) — a weakly-cleared vector pushing the right answer down through RRF. That is
 > the next thing to improve.
 >
-> **A `word` figure is tied to one generation of the abstracts.** Reprocessing can regenerate
-> them (a changed version identity moves the `original:` digest; a changed Interpret output shape
-> moves the schema digest), and the everyday-word bridge goes with the wording. Do not compare
-> figures across a regeneration (ADR-034, re-measured 2026-09-16).
+> **A `word` figure is tied to one generation of the abstracts.** A new version regenerates
+> them, and the everyday-word bridge goes with the wording (「高齢者（お年寄り）」 becomes
+> 「介護サービス事業所」). Do not compare figures across a regeneration (ADR-034, re-measured
+> 2026-09-16). What confused this measurement — an implementation that judged freshness by a
+> digest of the material and rewrote abstracts whose version had not moved — decision 9 withdraws.
 
 By type (keyword only, Recall@10):
 
@@ -816,10 +818,26 @@ wrote.
 
 ### 9. Regeneration is keyed to the version; Batch is not adopted
 
-An abstract carries its own hash and regenerates **only when the material (resource content or
-schema) changes** — editing a title does not trigger it. The hash includes the model and
-prompt version (the shape `embedding_model` + `embedding_hash` already uses). A full run lives
-in the dashboard, next to `/admin/reindex-embeddings`.
+An abstract **stands while its version stands**. It regenerates when a new version arrives and
+not when someone fixes a title. How it was written — model, generation version, language — is a
+separate key that only the dashboard's "rewrite everything" acts on (the shape
+`embedding_model` + `embedding_hash` already uses). A full run lives in the dashboard, next to
+`/admin/reindex-embeddings`.
+
+**The material itself must not be the digest.** The first implementation hashed the facts the
+model was shown, and that was a path for **an internal change of the pipeline to regenerate the
+whole catalogue, unquoted**. Measured: on the night settled versions were re-issued to
+carry a format, 324 abstracts were rewritten (about $6.5), and 136 of them had **not one
+character of what the model is shown** change — Interpret had started writing column
+statistics. The estimate counts by version while the run decided by digest, and that gap is
+the difference.
+
+What the model is shown for the same file changes only when **the code** does — a limit, how a
+material is chosen, an extraction improvement. That is not a fact to reflect automatically but
+a **decision**: raise the generation version, and it appears in the dashboard with its cost for
+an operator to press. What remains in the regeneration test is then the version and the
+generation key alone, so **the estimate matches the run by definition rather than by
+approximation**.
 
 **The Batch API (50% off) is not adopted.** Incremental generation cannot use it (up to 24
 hours of latency), and the backfill saving does not justify implementing and maintaining

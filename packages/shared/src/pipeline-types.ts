@@ -14,7 +14,7 @@ import { csvDialectSchema } from './csv-records'
 export type PipelineStatus =
   'pending' | 'queued' | 'processing' | 'complete' | 'error' | 'cancelled'
 export type PipelineStepStatus = 'pending' | 'running' | 'complete' | 'error' | 'skipped'
-export type PipelineStepName = 'fetch' | 'version' | 'interpret' | 'lake' | 'index'
+export type PipelineStepName = 'fetch' | 'version' | 'interpret' | 'lake' | 'index' | 'summarize'
 
 /**
  * Step names that runs no longer write but rows still carry.
@@ -251,7 +251,7 @@ export type DiffUnavailableReason =
 // Each job carries a validated payload (schemas below) so the worker never trusts
 // an unvalidated queue message body.
 
-/** Pipeline (data-plane): process one resource through Fetch → Version → Interpret → Lake → Index. */
+/** Pipeline (data-plane): process one resource through Fetch → Version → Interpret → Lake → Index → Summarize. */
 export const PIPELINE_JOB_TYPE = 'resource-pipeline' as const
 
 /** Maintenance: rebuild the search metadata index (optionally re-enqueue content). */
@@ -288,6 +288,37 @@ export const CONVERT_SET_ASIDE_JOB_TYPE = 'convert-set-aside-versions' as const
 /** Retry a DuckLake ingest the pipeline's advisory Lake step failed (ADR-043). */
 export const LAKE_INGEST_JOB_TYPE = 'lake-ingest-version' as const
 
+/**
+ * Maintenance: write the abstracts a catalog is missing (ADR-053 §11).
+ *
+ * Its own job rather than the pipeline's `rebuildOnly`, which bypasses the
+ * reuse check and would regenerate every Parquet and re-ingest all of DuckLake
+ * to arrive at a sentence. The material is already in storage.
+ *
+ * Fanned out per package, not per resource, and each package's resources are
+ * done one at a time: the embedding debounce is leading-edge, so a per-resource
+ * fan-out would settle a package's vector on the first abstract of a hundred.
+ * The chain enqueues the embed once, when there is nothing left to write.
+ */
+export const SUMMARIZE_ALL_JOB_TYPE = 'summarize-all' as const
+export const SUMMARIZE_PACKAGE_JOB_TYPE = 'summarize-package' as const
+
+/**
+ * Rewrite one resource's document in the search index.
+ *
+ * A job rather than a call, because the write that makes it stale is not the
+ * one that can retry it. The abstract is written by the Summarize step, which
+ * runs *after* Index and is best-effort like every step that follows Fetch: a
+ * failure there is recorded and the run completes, so a search index that was
+ * briefly unreachable is never asked again and the sentences stay out of the
+ * keyword leg (ADR-053 §9.3). The editor's endpoint has the same shape — a
+ * retried request changes nothing, so nothing re-triggers.
+ *
+ * Queued, the retry belongs to the queue, which is where every other retry in
+ * this pipeline already lives.
+ */
+export const SYNC_RESOURCE_DOC_JOB_TYPE = 'sync-resource-doc' as const
+
 // ── Job payload schemas (the worker validates against these before acting) ──
 
 export const pipelineJobSchema = z.object({
@@ -305,6 +336,7 @@ export const pipelineJobSchema = z.object({
 export const reindexJobSchema = z.object({ includeContent: z.boolean().optional() })
 export const purgeOrgJobSchema = z.object({ organizationId: z.uuid() })
 export const embedJobSchema = z.object({ packageId: z.uuid() })
+export const syncResourceDocJobSchema = z.object({ resourceId: z.uuid() })
 export const embedAllJobSchema = z.object({})
 export const purgeVersionJobSchema = z.object({
   resourceId: z.uuid(),
@@ -319,6 +351,14 @@ export const convertSetAsideJobSchema = z.object({})
 export const lakeIngestJobSchema = z.object({
   resourceId: z.uuid(),
   version: z.number().int().positive(),
+})
+/** `refresh` also rewrites abstracts another model, prompt or language wrote */
+export const summarizeAllJobSchema = z.object({ refresh: z.boolean().optional() })
+export const summarizePackageJobSchema = z.object({
+  packageId: z.uuid(),
+  /** Where the walk got to. Absent starts it (ADR-053 §11.1). */
+  after: z.uuid().optional(),
+  refresh: z.boolean().optional(),
 })
 
 /** A single file/directory entry in a ZIP manifest */

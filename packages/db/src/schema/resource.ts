@@ -15,7 +15,7 @@ import {
   index,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
-import type { ColumnSettings } from '@kukan/shared'
+import type { ColumnSettings, ResourceSummaryMeta } from '@kukan/shared'
 import { packageTable } from './package'
 
 /**
@@ -128,6 +128,31 @@ export const resource = pgTable(
     // it was created under.
     columnSettings: jsonb('column_settings').$type<ColumnSettings>().notNull().default({}),
 
+    // The AI-written abstract and everything about it (ADR-053). An editor's
+    // own text lives in the same column — `summaryMeta.source` says whose it
+    // is, and generation never overwrites a person's.
+    //
+    // Two columns rather than eleven for the reason {@link HealthCheckState}
+    // gives: nothing here is filtered on. Both the embedding assembly and the
+    // public projection read the row first and decide afterwards. And as with
+    // `extras`, what a reader may see is narrower than what is stored — see
+    // `publicSummary`, the only place this becomes a response.
+    summary: text('summary'),
+    summaryMeta: jsonb('summary_meta').$type<ResourceSummaryMeta>().notNull().default({}),
+    // When this row stopped agreeing with its search document, null once they
+    // agree again (ADR-053 §9.3). Set in the *same statement* as the write that
+    // made them disagree — separately, a crash between the two leaves a new
+    // abstract with nothing recording that the index has not heard of it.
+    //
+    // It is also the token the sync clears against. A job reads this value
+    // before writing the document and clears only that value, so an edit made
+    // while it was working leaves a newer one behind and the row stays due —
+    // a plain clear would drop a hide on the floor, leaving text somebody took
+    // down answering searches until something else happened to that row.
+    //
+    // The queue owns the retry; this owns the case where the queue never heard.
+    docSyncDueAt: timestamp('doc_sync_due_at', { withTimezone: true }),
+
     // Quality Monitor. All three describe `(url, url_type)` and nothing else:
     // the verdict, when it was reached, and the validators it was reached from.
     // A writer that changes either URL column resets all three — a verdict kept
@@ -153,6 +178,12 @@ export const resource = pgTable(
     // this table once per swept key, hourly.
     index('idx_resource_storage_key').on(table.storageKey),
     index('idx_resource_pending_storage_key').on(table.pendingStorageKey),
+    // Read by the document sweep, which asks for the rows that are due.
+    // Partial: the rows that agree are the overwhelming majority, and they are
+    // exactly the ones it never wants.
+    index('idx_resource_doc_sync_due')
+      .on(table.docSyncDueAt)
+      .where(sql`${table.docSyncDueAt} IS NOT NULL`),
   ]
 )
 
@@ -164,3 +195,38 @@ export const resource = pgTable(
 export const scrubbedExtras = sql<
   Record<string, unknown>
 >`COALESCE(${resource.extras}, '{}'::jsonb) - ${sql.param(LEGACY_HEALTH_EXTRAS_KEYS)}::text[]`
+
+/**
+ * The parts of `summary_meta` a reader may see (ADR-053 §4.1).
+ *
+ * The rest is the worker talking to itself: the generation it compares against,
+ * the token count a refusal reported, and which model wrote this one. Taken off
+ * here, in the projection, for the reason {@link scrubbedExtras} is — an
+ * endpoint cannot leak them by forgetting, and the next field added to the
+ * object is private until someone decides otherwise.
+ */
+export const PRIVATE_SUMMARY_META_KEYS = [
+  'genKey',
+  'rejectedTokens',
+  'model',
+  'grounded',
+  // Written by earlier generations; unread now, and still not public
+  'hash',
+  'materialHash',
+] as const
+
+export const publicSummaryMeta = sql<
+  Record<string, unknown>
+>`COALESCE(${resource.summaryMeta}, '{}'::jsonb) - ${sql.param(PRIVATE_SUMMARY_META_KEYS)}::text[]`
+
+/**
+ * The abstract as a reader may see it: absent once an editor hides it.
+ *
+ * Hidden is one decision with three effects — off the page, out of the
+ * embedding, and not regenerated — and this is the first of them. Spelled in
+ * the projection rather than checked per route for the same reason: a response
+ * that forgets is a response that publishes text someone took down.
+ */
+export const publicSummary = sql<
+  string | null
+>`CASE WHEN ${resource.summaryMeta}->>'hidden' = 'true' THEN NULL ELSE ${resource.summary} END`

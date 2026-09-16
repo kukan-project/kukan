@@ -190,6 +190,28 @@ export const columnSettingsBodySchema = z
 
 export type ColumnSettingsInput = z.infer<typeof columnSettingsBodySchema>
 
+/**
+ * What an editor may change about an abstract (ADR-053 §10.2).
+ *
+ * Two operations, and both are decisions generation has to respect afterwards:
+ * text of one's own, which is never overwritten, and hidden, which takes the
+ * abstract off the page, out of the embedding, and out of the next run.
+ * Clearing the text (`null`) hands the resource back to generation.
+ */
+export const resourceSummaryBodySchema = z
+  .object({
+    summary: z.string().trim().max(4000).nullable().optional(),
+    hidden: z.boolean().optional(),
+  })
+  .refine((body) => body.summary !== undefined || body.hidden !== undefined, {
+    message: 'Provide summary, hidden, or both',
+  })
+
+export type ResourceSummaryInput = z.infer<typeof resourceSummaryBodySchema>
+
+/** `refresh` also rewrites abstracts another model, prompt or language wrote */
+export const generateSummariesSchema = z.object({ refresh: z.boolean().optional() }).optional()
+
 export const reorderResourcesSchema = z.object({
   resourceIds: z.array(z.uuid()).min(1),
   /** Every active resource's label, or none: they ride with the order because a resource update would re-enqueue the pipeline (ADR-050). */

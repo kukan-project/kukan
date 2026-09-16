@@ -12,6 +12,7 @@ import type { PublishedContent } from '@kukan/api/services/storage-pointer'
 import type { LakeIngestRow } from '@kukan/api/services/lake-ingest'
 import type { ResourceClaim } from '@kukan/api/services/pipeline-claim'
 import type { VersionResult } from './version-gate'
+import type { SummaryDeps } from './steps/summarize'
 
 /** Minimal resource data needed by pipeline steps */
 export interface ResourceForPipeline {
@@ -29,6 +30,15 @@ export interface ResourceForPipeline {
 }
 
 export interface PipelineContext {
+  /**
+   * What the Summarize step needs, or null where this deployment writes no
+   * abstracts — generation switched off, or no provider that can (ADR-053).
+   *
+   * Null is not a failure and records nothing: the step is not even started,
+   * so a site that switches generation on later has nothing to clear, and one
+   * that never does is not told on every resource page that it could have.
+   */
+  summary: SummaryDeps | null
   /**
    * Reading only. Creating an object goes through {@link putObject}, and not
    * offering the raw write here is what keeps that from being bypassed — a step

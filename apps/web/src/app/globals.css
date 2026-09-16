@@ -31,6 +31,14 @@
      are too dark to pair with one. */
   --success-tint-foreground: 143 64% 24%;
   --warning-tint-foreground: 26 82% 31%;
+  /* What a machine wrote, wherever it is shown beside what a person did
+     (ADR-053). A hue of its own rather than a quieter grey: the abstract turns
+     up in three places now — the resource page's badge, a search card, the
+     admin card — and one colour is what makes them the same thing. Kept away
+     from --primary (214) so the two never read as the same emphasis, and away
+     from --success / --warning, which carry a verdict this is not passing. */
+  --ai: 265 70% 58%;
+  --ai-tint-foreground: 265 55% 35%;
   --highlight: 53 98% 77%;
   --border: 214 32% 91%;
   --input: 214 32% 91%;
@@ -58,6 +66,8 @@
   --color-muted-foreground: hsl(var(--muted-foreground));
   --color-accent: hsl(var(--accent));
   --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-ai: hsl(var(--ai));
+  --color-ai-tint-foreground: hsl(var(--ai-tint-foreground));
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
   --color-success: hsl(var(--success));

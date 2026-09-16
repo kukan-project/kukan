@@ -17,9 +17,53 @@ describe('buildEmbeddingText', () => {
         { name: '年齢別世帯数.csv', description: null, section: null },
       ],
     })
+    // Names before descriptions, rather than each resource's pair together:
+    // the description is what a package too big to fit loses first (ADR-053 §8)
     expect(text).toBe(
-      '人口統計2024\n市の人口統計データ\n人口 統計\n地区別人口.csv 地区ごとの人口\n年齢別世帯数.csv'
+      '人口統計2024\n市の人口統計データ\n人口 統計\n地区別人口.csv\n年齢別世帯数.csv\n地区ごとの人口'
     )
+  })
+
+  it('puts the abstracts ahead of the names they belong to (ADR-053)', () => {
+    const text = buildEmbeddingText({
+      title: '人口統計',
+      notes: null,
+      tags: [],
+      resources: [
+        { name: 'a.csv', description: 'A の説明', section: null, summary: 'A の抄録。' },
+        { name: 'b.csv', description: null, section: null, summary: 'B の抄録。' },
+      ],
+    })
+    expect(text).toBe('人口統計\nA の抄録。\nB の抄録。\na.csv\nb.csv\nA の説明')
+  })
+
+  it('leaves out an abstract an editor hid', () => {
+    const text = buildEmbeddingText({
+      title: '人口統計',
+      notes: null,
+      tags: [],
+      resources: [{ name: 'a.csv', description: null, section: null, summary: null }],
+    })
+    expect(text).toBe('人口統計\na.csv')
+  })
+
+  it('drops the trailing sentence rather than cutting one in half', () => {
+    const sentence = 'これは抄録の一文である。'
+    const text = buildEmbeddingText({
+      title: 'x',
+      notes: null,
+      tags: [],
+      resources: [
+        {
+          name: null,
+          description: null,
+          section: null,
+          summary: sentence.repeat(Math.ceil(MAX_EMBED_TEXT_LENGTH / sentence.length) + 1),
+        },
+      ],
+    })
+    expect(text.length).toBeLessThanOrEqual(MAX_EMBED_TEXT_LENGTH)
+    expect(text.endsWith('。')).toBe(true)
   })
 
   it('names each section once, ahead of the resources (ADR-050)', () => {

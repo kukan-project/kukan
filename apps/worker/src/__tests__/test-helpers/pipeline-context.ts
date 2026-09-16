@@ -40,6 +40,9 @@ export function createPipelineContextMock(): PipelineContextMock {
     ingestLakeVersion: vi.fn().mockResolvedValue(null),
     indexContent: vi.fn(),
     deleteContent: vi.fn(),
+    // No abstracts unless a test wires them: the step is then never started,
+    // which is also what a deployment with generation off looks like.
+    summary: null,
   } satisfies PipelineContext
   return ctx as PipelineContextMock
 }

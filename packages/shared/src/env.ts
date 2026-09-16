@@ -105,6 +105,21 @@ export const envSchema = z.object({
     z.coerce.number().int().positive().optional()
   ),
   AI_COMPLETION_MODELS: z.preprocess(emptyAsUndefined, z.string().optional()), // comma-separated allow-list = picker options, first = default; omit → built-in default
+  // Automatic resource abstracts (ADR-053): the model to write them with, and
+  // by its absence the switch that turns them off.
+  //
+  // One setting rather than a flag and a model, because they are one decision —
+  // what this deployment will spend on abstracts — and it belongs to whoever
+  // pays for the inference rather than to the administrator who would flip a
+  // toggle. Choosing between models is a threefold difference in the bill and,
+  // measured, the difference between reading a scan and inventing one, so it is
+  // not a thing to leave to whatever happens to be first in the allow-list.
+  //
+  // Unset writes nothing and costs nothing; a site that sets it later builds
+  // the abstracts by reprocessing. Must name a model from AI_COMPLETION_MODELS.
+  // The generation language stays a runtime setting: language is free, the
+  // model is money.
+  AI_SUMMARY_MODEL: z.preprocess(emptyAsUndefined, z.string().optional()),
   BEDROCK_REGION: z.string().default('ap-northeast-1'),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),

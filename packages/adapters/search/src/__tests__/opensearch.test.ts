@@ -117,6 +117,17 @@ describe('OpenSearchAdapter', () => {
       expect(analysis.analyzer.kuromoji_query_analyzer.filter).toContain('ja_request_words')
       expect(analysis.filter.ja_request_words.stopwords).toContain('欲しい')
 
+      // Honorific prefixes go from both sides, unlike ja_request_words: 「お」in
+      //「お年寄り」is not a term in a document either, and left in the index it
+      // is what the highlighter marks inside「におい」and「お問い合わせ」.
+      expect(analysis.filter.ja_prefix).toEqual({
+        type: 'kuromoji_part_of_speech',
+        stoptags: ['接頭詞-名詞接続'],
+      })
+      for (const a of ['kuromoji_analyzer', 'kuromoji_query_analyzer']) {
+        expect(analysis.analyzer[a].filter).toContain('ja_prefix')
+      }
+
       const props = createCall.body.mappings.properties
       for (const field of ['name', 'title', 'notes', 'description']) {
         expect(props[field].search_analyzer).toBe('kuromoji_query_analyzer')
@@ -249,6 +260,12 @@ describe('OpenSearchAdapter', () => {
           body: {
             properties: expect.objectContaining({
               section: expect.objectContaining({ type: 'text' }),
+              // The abstract is searched on the keyword leg (ADR-053 §8.1), so
+              // it needs the Japanese analyzer like any other prose field
+              summary: expect.objectContaining({
+                type: 'text',
+                analyzer: 'kuromoji_analyzer',
+              }),
             }),
           },
         })
@@ -754,6 +771,59 @@ describe('OpenSearchAdapter', () => {
       expect(result.items[0].matchedResourcesCount).toEqual({ total: 1, atLeast: false })
       // Content snippets are now fetched lazily via fetchContentHighlights
       expect(matched._contentDocId).toBe('chunk-res1-0')
+    })
+
+    it('carries the abstract back when the query matched it', async () => {
+      // Without this the card shows a filename with nothing to say why it is a
+      // hit: `matchedOn` names the abstract and the snippet that would explain
+      // it was dropped in the response (ADR-053 §8.1).
+      mockClient.search.mockResolvedValue({
+        body: {
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _id: 'pkg-1',
+                _source: { name: 'test', join_field: 'package' },
+                inner_hits: {
+                  resource: {
+                    hits: {
+                      hits: [
+                        {
+                          _id: 'res-1',
+                          _source: {
+                            id: 'res-1',
+                            packageId: 'pkg-1',
+                            name: '13_shisetsu.csv',
+                            summary: '全文。一致語はこの先にある。高齢者（お年寄り）向けの…',
+                          },
+                          highlight: {
+                            summary: [
+                              '…高齢者（<mark>お年寄り</mark>）向けの福祉施設の一覧である。',
+                            ],
+                          },
+                        },
+                      ],
+                      total: { value: 1 },
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      })
+
+      const result = await adapter.search({ q: 'お年寄り' })
+
+      const matched = result.items[0].matchedResources![0]
+      expect(matched.matchedOn).toEqual(['summary'])
+      // The fragment, not the whole abstract: an opening sentence says nothing
+      // about a match further in, and nothing marked says nothing at all about
+      // why this is a hit. Treated exactly as a description is.
+      expect(matched.highlightedSummary).toBe(
+        '…高齢者（<mark>お年寄り</mark>）向けの福祉施設の一覧である。'
+      )
     })
   })
 

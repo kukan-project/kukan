@@ -100,6 +100,13 @@ export function mockCompletionAi(complete: AIAdapter['complete'] = async () => '
     }),
     listCompletionModels: async () => ['gemma4:e4b', 'qwen3:8b'],
     complete,
+    // What Bedrock takes, which is what the abstract paths are written against
+    // (ADR-053). PPT is deliberately absent: no provider reads it.
+    getDocumentInfo: () => ({
+      documentFormats: ['csv', 'doc', 'docx', 'html', 'md', 'pdf', 'txt', 'xls', 'xlsx'],
+      imageFormats: ['gif', 'jpeg', 'png', 'webp'],
+      maxImageBytes: 5 * 1024 * 1024,
+    }),
   } as unknown as AIAdapter
 }
 
@@ -150,6 +157,8 @@ interface TestAppOverrides {
   auth?: Auth
   /** Override the analytics service. Pass `null` to simulate unconfigured GA4. */
   analytics?: AnalyticsService | null
+  /** Environment overrides, for the flags routes gate on (e.g. AI_SUMMARY_MODEL) */
+  env?: Partial<Env>
 }
 
 export function createTestApp(db: Database, overrides?: TestAppOverrides) {
@@ -171,7 +180,7 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
     c.set('queue', mockQueue)
     c.set('ai', overrides?.ai ?? mockAi)
     c.set('auth', overrides?.auth ?? mockAuth)
-    c.set('env', testEnv)
+    c.set('env', overrides?.env ? { ...testEnv, ...overrides.env } : testEnv)
     c.set('logger', testLogger)
     c.set('analytics', overrides?.analytics ?? null)
     c.set('settings', settings)

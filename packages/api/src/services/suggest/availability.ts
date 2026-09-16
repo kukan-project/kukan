@@ -6,6 +6,7 @@
  */
 
 import type { AIAdapter, CompletionInfo } from '@kukan/ai-adapter'
+import type { Env } from '@kukan/shared'
 import {
   AI_SUGGEST_ENABLED_KEY,
   AI_SUGGEST_MODEL_KEY,
@@ -37,4 +38,25 @@ export async function getSuggestAvailability(
   if (!info || !(await settings.getSetting(AI_SUGGEST_ENABLED_KEY))) return null
   const model = resolveEffectiveModel(info, await settings.getSetting(AI_SUGGEST_MODEL_KEY))
   return { provider: info.provider, model }
+}
+
+/**
+ * The model this deployment writes abstracts with, or null where it writes none
+ * (ADR-053).
+ *
+ * The named model is the switch: there is no "on but unset" state to reconcile,
+ * and no fallback to whatever is first in the allow-list — the measurements say
+ * the wrong model there does not produce worse abstracts, it produces invented
+ * ones. A model outside the allow-list is refused for the same reason it is
+ * refused for suggestions: it is not one this deployment may invoke.
+ *
+ * Here, beside {@link getSuggestAvailability}, so the page's notice, the
+ * admin control and the worker cannot disagree about whether abstracts exist.
+ */
+export function getSummaryModel(env: Pick<Env, 'AI_SUMMARY_MODEL'>, ai: AIAdapter): string | null {
+  const model = env.AI_SUMMARY_MODEL
+  if (!model) return null
+  const info = ai.getCompletionInfo()
+  if (!info || !info.allowlist.includes(model)) return null
+  return model
 }

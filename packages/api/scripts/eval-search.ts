@@ -26,7 +26,7 @@ const DEFAULT_FILE = resolve(dirname(fileURLToPath(import.meta.url)), 'golden-qu
 
 interface GoldenQuery {
   query: string
-  type: 'synonym' | 'natural' | 'exact'
+  type: 'synonym' | 'natural' | 'exact' | 'word'
   relevant: string[]
 }
 
@@ -51,7 +51,17 @@ function evaluate(topNames: string[], relevant: string[]): Metrics {
   return { recall, ndcg }
 }
 
-async function searchTopNames(base: string, query: string, semantic: boolean): Promise<string[]> {
+interface SearchAnswer {
+  names: string[]
+  /** What the search did, as it reports it — 'applied' | 'off' | 'degraded' */
+  semantic?: string
+}
+
+async function searchTopNames(
+  base: string,
+  query: string,
+  semantic: boolean
+): Promise<SearchAnswer> {
   const params = new URLSearchParams({ q: query, limit: String(K) })
   if (!semantic) params.set('semantic', 'false')
   const url = `${base}/api/v1/packages?${params}`
@@ -60,8 +70,11 @@ async function searchTopNames(base: string, query: string, semantic: boolean): P
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(url)
     if (res.ok) {
-      const body = (await res.json()) as { items: Array<{ name: string }> }
-      return body.items.map((item) => item.name)
+      const body = (await res.json()) as {
+        items: Array<{ name: string }>
+        semantic?: string
+      }
+      return { names: body.items.map((item) => item.name), semantic: body.semantic }
     }
     const detail = await responseDetail(res)
     if (res.status >= 500 && attempt === 0) {
@@ -83,7 +96,7 @@ async function main() {
   const base = values.base!
   const golden = load(readFileSync(values.file!, 'utf8')) as { queries: GoldenQuery[] }
 
-  type Row = { q: GoldenQuery; keyword: Metrics; hybrid: Metrics }
+  type Row = { q: GoldenQuery; keyword: Metrics; hybrid: Metrics; applied: boolean; state?: string }
   const rows: Row[] = []
   for (const q of golden.queries) {
     const [keywordNames, hybridNames] = await Promise.all([
@@ -92,9 +105,40 @@ async function main() {
     ])
     rows.push({
       q,
-      keyword: evaluate(keywordNames, q.relevant),
-      hybrid: evaluate(hybridNames, q.relevant),
+      keyword: evaluate(keywordNames.names, q.relevant),
+      hybrid: evaluate(hybridNames.names, q.relevant),
+      // What the search reports it did. Comparing the two legs' results cannot
+      // answer this: they may agree on a query by agreeing, and a vector leg
+      // that ran and cleared nothing returns the same empty list as one that
+      // never ran.
+      //
+      // Anything but `applied` fails the run. `off` is a legitimate answer for
+      // a deployment with no embedding model, an administrator's kill switch,
+      // or a query the fusion declines — and none of those are hybrid search,
+      // which is what this run reports on. `undefined` is an API too old to
+      // say, which is the same thing: unmeasured.
+      applied: hybridNames.semantic === 'applied',
+      state: hybridNames.semantic,
     })
+  }
+
+  // **The instrument has to know when it measured nothing.** A failed query
+  // embedding degrades the search to keyword-only and logs it, which is right —
+  // answering with keyword results beats erroring. But the run then reports
+  // 38% → 38% as though it had measured hybrid search, and it is a believable
+  // number. That happened twice in one afternoon on an expired SSO token, with
+  // the logs sitting in the terminal the whole time (ADR-053 §8.1).
+  //
+  const notApplied = rows.filter((row) => !row.applied)
+  if (notApplied.length > 0) {
+    const states = [...new Set(notApplied.map((row) => row.state ?? '(not reported)'))]
+    console.error(
+      `\n✗ the vector leg did not run on ${notApplied.length} of ${rows.length} queries — ${states.join(', ')}.\n` +
+        '  The numbers below would be a keyword-only run reported as hybrid, so none are printed.\n' +
+        `  degraded: check ${base} for "degrading to keyword-only search" — an expired SSO token does this.\n` +
+        '  off: no embedding model, the semantic-search setting is off, or the query declines fusion.'
+    )
+    process.exit(1)
   }
 
   console.log(`\nGolden-set evaluation — ${base} (${rows.length} queries, k=${K})\n`)
@@ -107,7 +151,7 @@ async function main() {
   }
 
   console.log('\nmeans by type (keyword → hybrid):')
-  for (const type of ['synonym', 'natural', 'exact'] as const) {
+  for (const type of ['synonym', 'natural', 'exact', 'word'] as const) {
     const subset = rows.filter((row) => row.q.type === type)
     if (subset.length === 0) continue
     const kw = {

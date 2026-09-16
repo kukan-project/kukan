@@ -3,7 +3,14 @@
  * Placeholder implementation for environments without AI services
  */
 
-import { AIAdapter, CompleteOptions, CompletionInfo, EmbedOptions, EmbeddingInfo } from './adapter'
+import {
+  AIAdapter,
+  CompleteOptions,
+  CompletionInfo,
+  DocumentInfo,
+  EmbedOptions,
+  EmbeddingInfo,
+} from './adapter'
 
 export class NoOpAIAdapter implements AIAdapter {
   async complete(_prompt: string, _options?: CompleteOptions): Promise<string> {
@@ -28,6 +35,10 @@ export class NoOpAIAdapter implements AIAdapter {
   }
 
   getEmbeddingInfo(): EmbeddingInfo | null {
+    return null
+  }
+
+  getDocumentInfo(): DocumentInfo | null {
     return null
   }
 }

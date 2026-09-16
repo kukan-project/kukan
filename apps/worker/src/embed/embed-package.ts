@@ -17,10 +17,27 @@ export interface EmbedSource {
   title: string | null
   notes: string | null
   tags: string[]
-  resources: Array<{ name: string | null; description: string | null; section: string | null }>
+  resources: Array<{
+    name: string | null
+    description: string | null
+    section: string | null
+    /** The abstract, null when there is none or an editor hid it (ADR-053) */
+    summary?: string | null
+  }>
 }
 
-/** Build the embedding source text (truncated to MAX_EMBED_TEXT_LENGTH) */
+/**
+ * Build the embedding source text (truncated to MAX_EMBED_TEXT_LENGTH).
+ *
+ * The abstracts go second, ahead of the resource names and descriptions, which
+ * is what decides what is lost when a package is too big to fit: the
+ * descriptions, which are the most likely to repeat what is already above them
+ * (ADR-053 §8). Measured, the budget is not reached — 196 characters on
+ * average — so this is the safety net for a dataset with a hundred files.
+ *
+ * The abstracts are also the reason the cut moved off the character count: they
+ * are whole sentences, and a hard slice ends one mid-word.
+ */
 export function buildEmbeddingText(source: EmbedSource): string {
   const parts = [
     source.title ?? '',
@@ -28,9 +45,32 @@ export function buildEmbeddingText(source: EmbedSource): string {
     source.tags.join(' '),
     // Each section once: a label names a run of resources, not each of them
     [...new Set(source.resources.map((r) => r.section).filter(Boolean))].join(' '),
-    ...source.resources.map((r) => `${r.name ?? ''} ${r.description ?? ''}`.trim()),
+    ...source.resources.map((r) => r.summary ?? ''),
+    ...source.resources.map((r) => r.name ?? ''),
+    ...source.resources.map((r) => r.description ?? ''),
   ]
-  return parts.filter(Boolean).join('\n').slice(0, MAX_EMBED_TEXT_LENGTH)
+  return truncateAtBoundary(parts.filter(Boolean).join('\n'), MAX_EMBED_TEXT_LENGTH)
+}
+
+/**
+ * Cut back to the last sentence or line that ended before the budget.
+ *
+ * Every abstract measured ended on a full stop, so dropping the trailing
+ * sentence whole leaves text that still reads; cutting on the character count
+ * is what produces the half-sentence. Falls back to the hard cut when nothing
+ * ended in range — a single unbroken run of text has no better answer.
+ */
+function truncateAtBoundary(text: string, max: number): string {
+  if (text.length <= max) return text
+  const head = text.slice(0, max)
+  const end = Math.max(
+    head.lastIndexOf('。'),
+    head.lastIndexOf('.'),
+    head.lastIndexOf('!'),
+    head.lastIndexOf('?'),
+    head.lastIndexOf('\n')
+  )
+  return end > 0 ? head.slice(0, end + 1).trimEnd() : head
 }
 
 export type EmbedPackageResult = 'embedded' | 'skipped' | 'cleared' | 'not-found'
@@ -76,7 +116,13 @@ export async function embedPackage(
       .where(eq(packageTag.packageId, packageId))
       .orderBy(tag.name),
     db
-      .select({ name: resource.name, description: resource.description, section: resource.section })
+      .select({
+        name: resource.name,
+        description: resource.description,
+        section: resource.section,
+        summary: resource.summary,
+        summaryMeta: resource.summaryMeta,
+      })
       .from(resource)
       .where(and(eq(resource.packageId, packageId), eq(resource.state, 'active')))
       .orderBy(resource.position, resource.created, resource.id),
@@ -86,7 +132,14 @@ export async function embedPackage(
     title: pkg.title,
     notes: pkg.notes,
     tags: tags.map((t) => t.name),
-    resources,
+    resources: resources.map((r) => ({
+      ...r,
+      // An editor who hid an abstract hid it from the search too: it is off the
+      // page, and a vector still pulled toward it is the version of "hidden"
+      // nobody can see or check. Decided here rather than in SQL — the row is
+      // read either way, and the column is never filtered on (ADR-053 §4.1).
+      summary: r.summaryMeta?.hidden ? null : r.summary,
+    })),
   })
 
   if (!text) {

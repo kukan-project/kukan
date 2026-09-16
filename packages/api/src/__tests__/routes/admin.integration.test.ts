@@ -1,10 +1,17 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
-import { sql } from 'drizzle-orm'
-import { packageTable, resource, resourcePipeline } from '@kukan/db'
+import { eq, sql } from 'drizzle-orm'
+import {
+  packageTable,
+  resource,
+  resourcePipeline,
+  resourcePipelineStep,
+  resourceVersion,
+} from '@kukan/db'
 import { createTestApp, mockCompletionAi } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
+import { generationKey } from '@kukan/shared'
 
 const db = getTestDb()
 
@@ -414,6 +421,7 @@ describe('Admin API Routes', () => {
         'registration-enabled': false,
         'ai-suggest-model': '',
         'ai-suggest-enabled': true,
+        'ai-summary-locale': 'ja',
       })
     })
 
@@ -502,6 +510,531 @@ describe('Admin API Routes', () => {
       const body = await res.json()
       expect(body.db.packages).toBe(1)
       expect(body.db.resources).toBe(1)
+    })
+  })
+
+  describe('resource abstracts (ADR-053)', () => {
+    /** Generation available, which is what the endpoint gates on */
+    const summaryApp = createTestApp(db, {
+      search: mockSearch,
+      ai: mockCompletionAi(),
+      env: { AI_SUMMARY_MODEL: 'gemma4:e4b' },
+    })
+
+    it('refuses to start a generation on a site that has abstracts switched off', async () => {
+      const res = await app.request('/api/v1/admin/generate-summaries', { method: 'POST' })
+      expect(res.status).toBe(400)
+      expect((await res.json()).detail).toMatch(/not enabled/)
+    })
+
+    it('refuses a model the deployment never approved, rather than substituting one', async () => {
+      // The provider default is whatever is first in the allow-list, and the
+      // measurements say the wrong model there does not write worse abstracts
+      // — it writes invented ones (ADR-053 appendix 18)
+      const strayApp = createTestApp(db, {
+        search: mockSearch,
+        ai: mockCompletionAi(),
+        env: { AI_SUMMARY_MODEL: 'some.model-nobody-granted' },
+      })
+
+      const res = await strayApp.request('/api/v1/admin/generate-summaries', { method: 'POST' })
+      expect(res.status).toBe(400)
+    })
+
+    it('rejects non-sysadmin requests', async () => {
+      const res = await nonAdminApp.request('/api/v1/admin/generate-summaries', { method: 'POST' })
+      expect(res.status).toBe(403)
+    })
+
+    it('queues the generation where they are enabled', async () => {
+      const res = await summaryApp.request('/api/v1/admin/generate-summaries', { method: 'POST' })
+      expect(res.status).toBe(200)
+      expect((await res.json()).queued).toBe(true)
+    })
+
+    /**
+     * Resources an abstract could actually be written for: an active version
+     * holding the bytes the row points at (ADR-046), and the derivatives the
+     * material is read from.
+     *
+     * Both are what the estimate joins on, so a fixture missing either stands
+     * for a resource nothing would ever be generated for — which is what the
+     * estimate used to quote money against.
+     */
+    async function insertReachable(
+      values: (typeof resource.$inferInsert)[],
+      /** Whether Index extracted any text — the only path left where no
+       *  provider takes the original */
+      opts: { textHead?: boolean } = {}
+    ) {
+      const rows = await db
+        .insert(resource)
+        .values(values.map((v, i) => ({ hash: `h-${i}-${v.name}`, ...v })))
+        .returning({ id: resource.id, name: resource.name, hash: resource.hash })
+      await db.insert(resourceVersion).values(
+        rows.map((r) => ({
+          resourceId: r.id,
+          version: 1,
+          storageKey: `k-${r.id}`,
+          hash: r.hash!,
+          origin: 'upload' as const,
+          state: 'active' as const,
+        }))
+      )
+      await db.insert(resourcePipeline).values(
+        rows.map((r) => ({
+          resourceId: r.id,
+          status: 'complete',
+          previewKey: `previews/${r.id}.parquet`,
+          metadata: {
+            schema: { columns: [], rowCount: 0 },
+            ...(opts.textHead === false ? {} : { textHeadKey: `previews/${r.id}.txt` }),
+          },
+        }))
+      )
+      return rows
+    }
+
+    it('estimates by what each format would send, and spans what it cannot see', async () => {
+      const orgId = await ensureOrg('estimate-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'estimate-pkg', ownerOrg: orgId, state: 'active' })
+        .returning({ id: packageTable.id })
+      await insertReachable([
+        // Material formats: no original goes, so size is irrelevant
+        { packageId: pkg.id, name: 'a', format: 'CSV', size: 90_000_000, state: 'active' },
+        // A PDF inside the byte limit
+        { packageId: pkg.id, name: 'b', format: 'PDF', size: 1_000_000, state: 'active' },
+      ])
+      // Out of scope only because nothing was extracted: past the byte limit
+      // the original cannot go, and with a text layer either of these would be
+      // work rather than a refusal
+      await insertReachable(
+        [
+          { packageId: pkg.id, name: 'c', format: 'PDF', size: 90_000_000, state: 'active' },
+          // Nothing takes PPTX
+          { packageId: pkg.id, name: 'd', format: 'PPTX', size: 1000, state: 'active' },
+        ],
+        { textHead: false }
+      )
+
+      const res = await summaryApp.request('/api/v1/admin/summary-estimate')
+      expect(res.status).toBe(200)
+      const body = await res.json()
+
+      expect(body.fill.resources).toBe(2)
+      expect(body.skipped).toEqual({ tooLarge: 1, unsupportedFormat: 1, noMaterial: 0 })
+      // The 78MB CSV costs what a 6KB one costs: its material is a schema and
+      // five rows either way
+      expect(body.fill.estimatedInputTokens.low).toBe(4_000)
+      // And the PDF's span reaches the page limit, which is what nobody can
+      // see from here
+      expect(body.fill.estimatedInputTokens.high).toBe(2_000 + 50 * 2_500)
+      expect(body.fill.estimatedOutputTokens).toBe(600)
+      // Nothing is written yet, so a refresh would cover exactly the same
+      expect(body.refresh.resources).toBe(2)
+      // Priced from both token counts, at the rate recorded for this model —
+      // output is a third of the bill on a catalogue of small files
+      expect(body.model).toBe('gemma4:e4b')
+      expect(body.fill.estimatedCostUsd).toBeNull()
+    })
+
+    it("leaves out what generation always skips: an editor's text, and a hidden one", async () => {
+      const orgId = await ensureOrg('estimate-editor-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'estimate-editor-pkg', ownerOrg: orgId, state: 'active' })
+        .returning({ id: packageTable.id })
+      await insertReachable([
+        { packageId: pkg.id, name: 'a', format: 'CSV', size: 1000, state: 'active' },
+        {
+          packageId: pkg.id,
+          name: 'b',
+          format: 'CSV',
+          size: 1000,
+          state: 'active',
+          summary: '人が書いた説明。',
+          summaryMeta: { source: 'human' },
+        },
+        {
+          packageId: pkg.id,
+          name: 'c',
+          format: 'CSV',
+          size: 1000,
+          state: 'active',
+          summary: 'AI が書いた抄録。',
+          summaryMeta: { source: 'ai', hidden: true },
+        },
+      ])
+
+      const body = await (await summaryApp.request('/api/v1/admin/summary-estimate')).json()
+
+      // Neither is ever billed — one is never overwritten, the other never
+      // regenerated — so quoting for them overstates a curated catalogue
+      expect(body.fill.resources).toBe(1)
+      expect(body.fill.estimatedOutputTokens).toBe(300)
+    })
+
+    it('prices both token counts where the model has a recorded rate', async () => {
+      const orgId = await ensureOrg('estimate-cost-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'estimate-cost-pkg', ownerOrg: orgId, state: 'active' })
+        .returning({ id: packageTable.id })
+      await insertReachable([
+        { packageId: pkg.id, name: 'a', format: 'CSV', size: 1000, state: 'active' },
+      ])
+      const priced = 'jp.anthropic.claude-sonnet-4-6'
+      const pricedApp = createTestApp(db, {
+        search: mockSearch,
+        ai: {
+          ...mockCompletionAi(),
+          // The deployment has to have approved the model before it can be
+          // named, priced or invoked
+          getCompletionInfo: () => ({
+            provider: 'bedrock',
+            defaultModel: priced,
+            allowlist: [priced],
+          }),
+        } as unknown as AIAdapter,
+        env: { AI_SUMMARY_MODEL: priced },
+      })
+
+      const body = await (await pricedApp.request('/api/v1/admin/summary-estimate')).json()
+
+      // 2,000 input and 300 output tokens at $3.30 / $16.50 per million
+      expect(body.fill.estimatedCostUsd.low).toBeCloseTo(0.01, 2)
+    })
+
+    it('does not quote for a file this same model has already refused', async () => {
+      // The refusal stands until something about the generation changes, so
+      // counting it would promise work the ordinary generation will not do
+      // Derived, not spelled: raising the generation version must not quietly
+      // turn this fixture into the "moved off" case the row below it tests
+      const thisGeneration = generationKey('gemma4:e4b', 'ja')
+      const orgId = await ensureOrg('estimate-rejected-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'estimate-rejected-pkg', ownerOrg: orgId, state: 'active' })
+        .returning({ id: packageTable.id })
+      const rows = await db
+        .insert(resource)
+        .values([
+          { packageId: pkg.id, name: 'a', format: 'CSV', size: 1000, state: 'active', hash: 'ha' },
+          {
+            packageId: pkg.id,
+            name: 'b',
+            format: 'CSV',
+            size: 1000,
+            state: 'active',
+            hash: 'h',
+            summaryMeta: { skipReason: 'rejected', genKey: thisGeneration, version: 1 },
+          },
+          {
+            packageId: pkg.id,
+            name: 'c',
+            format: 'CSV',
+            size: 1000,
+            state: 'active',
+            hash: 'hc',
+            // Refused by a model this deployment has moved off — worth another try
+            summaryMeta: { skipReason: 'rejected', genKey: 'some.older-model|1|ja', version: 1 },
+          },
+          {
+            packageId: pkg.id,
+            name: 'd',
+            format: 'CSV',
+            size: 1000,
+            state: 'active',
+            hash: 'h2',
+            // Refused by this same model, but the file has moved on since —
+            // the worker retries it, so the estimate has to count it
+            summaryMeta: { skipReason: 'rejected', genKey: thisGeneration, version: 1 },
+          },
+        ])
+        .returning({ id: resource.id, name: resource.name })
+      const idOf = (name: string) => rows.find((r) => r.name === name)!.id
+      // Every one of them has material; what separates them is the refusal
+      await db.insert(resourcePipeline).values(
+        rows.map((r) => ({
+          resourceId: r.id,
+          status: 'complete',
+          previewKey: `previews/${r.id}.parquet`,
+          metadata: { schema: { columns: [], rowCount: 0 } },
+        }))
+      )
+      await db.insert(resourceVersion).values([
+        // a and c are only reachable once a version holds their content
+        {
+          resourceId: idOf('a'),
+          version: 1,
+          storageKey: 'ka',
+          hash: 'ha',
+          origin: 'upload',
+          state: 'active',
+        },
+        {
+          resourceId: idOf('c'),
+          version: 1,
+          storageKey: 'kc',
+          hash: 'hc',
+          origin: 'upload',
+          state: 'active',
+        },
+        {
+          resourceId: idOf('b'),
+          version: 1,
+          storageKey: 'k',
+          hash: 'h',
+          origin: 'upload',
+          state: 'active',
+        },
+        {
+          resourceId: idOf('d'),
+          version: 2,
+          storageKey: 'k2',
+          hash: 'h2',
+          origin: 'upload',
+          state: 'active',
+        },
+      ])
+
+      const body = await (await summaryApp.request('/api/v1/admin/summary-estimate')).json()
+
+      // a (never tried), c (another model) and d (the file changed) — not b
+      expect(body.fill.resources).toBe(3)
+    })
+
+    it('quotes for an abstract whose version has been replaced', async () => {
+      // The run writes it: an abstract stands while its version stands, and
+      // this one's has not. Counted in neither total, the fill button quotes a
+      // price and then bills past it — and where these are all a catalogue has,
+      // it reads zero and the screen disables a button the run would act on.
+      const thisGeneration = generationKey('gemma4:e4b', 'ja')
+      const orgId = await ensureOrg('estimate-stale-version-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'estimate-stale-version-pkg', ownerOrg: orgId, state: 'active' })
+        .returning({ id: packageTable.id })
+      await insertReachable([
+        {
+          packageId: pkg.id,
+          name: 'replaced',
+          format: 'CSV',
+          size: 1000,
+          state: 'active',
+          summary: '前の版の抄録。',
+          summaryMeta: { source: 'ai', genKey: thisGeneration, version: 1 },
+        },
+        {
+          packageId: pkg.id,
+          name: 'current',
+          format: 'CSV',
+          size: 1000,
+          state: 'active',
+          summary: 'いまの版の抄録。',
+          summaryMeta: { source: 'ai', genKey: thisGeneration, version: 1 },
+        },
+      ])
+      // Only the first resource's content moved on
+      const [replaced] = await db
+        .select({ id: resource.id, hash: resource.hash })
+        .from(resource)
+        .where(eq(resource.name, 'replaced'))
+      await db.insert(resourceVersion).values({
+        resourceId: replaced.id,
+        version: 2,
+        storageKey: `k-${replaced.id}-v2`,
+        hash: replaced.hash!,
+        origin: 'upload',
+        state: 'active',
+      })
+
+      const body = await (await summaryApp.request('/api/v1/admin/summary-estimate')).json()
+
+      expect(body.fill.resources).toBe(1)
+      // And not twice over: a refresh covers the same one, plus nothing else
+      expect(body.refresh.resources).toBe(1)
+    })
+
+    it('does not quote for a resource no version holds', async () => {
+      // The walk reads the abstract from a version's settled bytes, so a
+      // resource with none is one it can never visit. Quoting for it is money
+      // against work nobody will do — 27 of the 92 resources the first
+      // catalogue this ran against were in this state.
+      const orgId = await ensureOrg('estimate-versionless-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'estimate-versionless-pkg', ownerOrg: orgId, state: 'active' })
+        .returning({ id: packageTable.id })
+      await insertReachable([
+        { packageId: pkg.id, name: 'reachable', format: 'CSV', size: 1000, state: 'active' },
+      ])
+      await db.insert(resource).values([
+        // Never through the pipeline: no version, no hash
+        { packageId: pkg.id, name: 'never-run', format: 'CSV', size: 1000, state: 'active' },
+        // A hash the live versions no longer hold — the content was purged
+        {
+          packageId: pkg.id,
+          name: 'orphaned',
+          format: 'CSV',
+          size: 1000,
+          state: 'active',
+          hash: 'gone',
+        },
+      ])
+
+      const body = await (await summaryApp.request('/api/v1/admin/summary-estimate')).json()
+
+      expect(body.fill.resources).toBe(1)
+    })
+
+    it('does not quote for a table the pipeline left nothing to describe', async () => {
+      // Asked of the artifacts on every estimate, not of the reason a past run
+      // recorded: a re-interpretation that finally writes a schema does not
+      // create a version, so a refusal pinned to one would hide work that will
+      // happen — and understating a bill is the worse way to be wrong.
+      const orgId = await ensureOrg('estimate-material-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'estimate-material-pkg', ownerOrg: orgId, state: 'active' })
+        .returning({ id: packageTable.id })
+      await insertReachable([
+        { packageId: pkg.id, name: 'interpreted', format: 'CSV', size: 1000, state: 'active' },
+      ])
+      const [bare] = await db
+        .insert(resource)
+        .values({
+          packageId: pkg.id,
+          name: 'bare',
+          format: 'CSV',
+          size: 1000,
+          state: 'active',
+          hash: 'bare-hash',
+        })
+        .returning({ id: resource.id })
+      await db.insert(resourceVersion).values({
+        resourceId: bare.id,
+        version: 1,
+        storageKey: 'kb',
+        hash: 'bare-hash',
+        origin: 'upload',
+        state: 'active',
+      })
+      // The run finished and left a preview but no schema — 9 of the CSVs in
+      // the first catalogue this ran against. The schema is the table's
+      // material; the sample rows are an enhancement the query path refuses on
+      // its own, so a preview alone is nothing to describe.
+      await db.insert(resourcePipeline).values({
+        resourceId: bare.id,
+        status: 'complete',
+        previewKey: 'previews/bare.parquet',
+        metadata: {},
+      })
+
+      const body = await (await summaryApp.request('/api/v1/admin/summary-estimate')).json()
+
+      expect(body.fill.resources).toBe(1)
+      expect(body.skipped.noMaterial).toBe(1)
+    })
+
+    it("classifies on the live version's label, not the row's", async () => {
+      // The walk reads the version's format (ADR-046 §6); the row's is a label
+      // an editor can change without refetching. Classified on the row, the
+      // estimate quotes for a path the worker will not take — or quotes
+      // nothing while the worker generates.
+      const orgId = await ensureOrg('estimate-relabel-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'estimate-relabel-pkg', ownerOrg: orgId, state: 'active' })
+        .returning({ id: packageTable.id })
+      const [row] = await db
+        .insert(resource)
+        // Relabelled ZIP, but the version still holds the CSV that was fetched
+        .values({
+          packageId: pkg.id,
+          name: 'relabelled',
+          format: 'ZIP',
+          size: 1000,
+          state: 'active',
+          hash: 'relabel-hash',
+        })
+        .returning({ id: resource.id })
+      await db.insert(resourceVersion).values({
+        resourceId: row.id,
+        version: 1,
+        storageKey: 'kr',
+        hash: 'relabel-hash',
+        format: 'CSV',
+        size: 1000,
+        origin: 'upload',
+        state: 'active',
+      })
+      // A schema, which is a table's material and not an archive's
+      await db.insert(resourcePipeline).values({
+        resourceId: row.id,
+        status: 'complete',
+        metadata: { schema: { columns: [], rowCount: 0 } },
+      })
+
+      const body = await (await summaryApp.request('/api/v1/admin/summary-estimate')).json()
+
+      // Counted as the table it is. On the row's label it would have been an
+      // archive with no manifest — nothing at all.
+      expect(body.fill.resources).toBe(1)
+      expect(body.skipped.noMaterial).toBe(0)
+    })
+
+    it('does not quote for artifacts a failed step left behind', async () => {
+      // A re-interpretation that failed leaves the previous version's schema on
+      // the row. The worker refuses it — the artifacts describe content the
+      // resource no longer has — so quoting for it promises work that ends in
+      // no-material.
+      const orgId = await ensureOrg('estimate-failed-step-org')
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({ name: 'estimate-failed-step-pkg', ownerOrg: orgId, state: 'active' })
+        .returning({ id: packageTable.id })
+      const rows = await insertReachable([
+        { packageId: pkg.id, name: 'clean', format: 'CSV', size: 1000, state: 'active' },
+        { packageId: pkg.id, name: 'stale', format: 'CSV', size: 1000, state: 'active' },
+      ])
+      const staleId = rows.find((r) => r.name === 'stale')!.id
+      const [pipeline] = await db
+        .select({ id: resourcePipeline.id })
+        .from(resourcePipeline)
+        .where(eq(resourcePipeline.resourceId, staleId))
+      await db.insert(resourcePipelineStep).values({
+        pipelineId: pipeline.id,
+        stepName: 'interpret',
+        status: 'error',
+        error: 'could not read the delimiter',
+      })
+
+      const body = await (await summaryApp.request('/api/v1/admin/summary-estimate')).json()
+
+      expect(body.fill.resources).toBe(1)
+      expect(body.skipped.noMaterial).toBe(1)
+    })
+
+    it('leaves private and non-active packages out of the estimate', async () => {
+      const orgId = await ensureOrg('estimate-private-org')
+      const [priv] = await db
+        .insert(packageTable)
+        .values({ name: 'estimate-priv', ownerOrg: orgId, state: 'active', private: true })
+        .returning({ id: packageTable.id })
+      const [draft] = await db
+        .insert(packageTable)
+        .values({ name: 'estimate-draft', ownerOrg: orgId, state: 'draft' })
+        .returning({ id: packageTable.id })
+      await insertReachable([
+        { packageId: priv.id, name: 'p', format: 'CSV', size: 1000, state: 'active' },
+        { packageId: draft.id, name: 'd', format: 'CSV', size: 1000, state: 'active' },
+      ])
+
+      const body = await (await summaryApp.request('/api/v1/admin/summary-estimate')).json()
+      expect(body.fill.resources).toBe(0)
     })
   })
 
