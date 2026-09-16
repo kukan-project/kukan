@@ -57,6 +57,32 @@ even warns that a plain retry **publishes the wrong thing again**.
 
 **There is an undo; there is no detection.** That is the gap to close.
 
+### 4.1 A real one (found 2026-09-15)
+
+A resource in a live catalogue had taken exactly the path this ADR describes.
+**Proper nouns are redacted here** — the ADR refers to the origin generically elsewhere.
+
+| Field          | Value                                       |
+| -------------- | ------------------------------------------- |
+| Resource       | 〈a fire-safety premises list〉             |
+| Registered URL | `https://〈origin〉/〈path〉/〈other〉.pdf` |
+| Declared       | PDF                                         |
+| Stored size    | 44,588 bytes                                |
+| Actual content | `<!doctype html>` — the origin's front page |
+
+The origin answers a dead link with its front page rather than a 404, and that **is stored as a
+version**. The health checker sees the 200 and records the link as healthy. **The filename in the URL
+does not match the resource's subject either** — it likely pointed at something else even
+before the redirect.
+
+What found it was ADR-053's abstract generation: Bedrock answered
+`The document source bytes could not be parsed as the specified format.`, and `pdf-lib` said
+`No PDF header found`. **The abstract is an accidental detector, not a remedy** — a resource
+with no abstract keeps the same state silently.
+
+And **this one is not caught by decision 2 as first written.** Only the textual formats were
+listed; PDF was not among them. The table below closes that gap.
+
 ### 5. The tension with ADR-046
 
 ADR-046 settled the canonical copy first and interpreted it afterwards. A version is decided
@@ -68,13 +94,14 @@ canonical copy without disturbing that order.
 
 ## Signals available
 
-| Signal                                                           | Strength                      | Cost               | False positives                                                                               |
-| ---------------------------------------------------------------- | ----------------------------- | ------------------ | --------------------------------------------------------------------------------------------- |
-| **The body starts `<!DOCTYPE html` / `<html`**                   | Strongest                     | ~free              | Almost none. HTML for a resource declaring CSV / JSON / XML / GeoJSON is near-certainly wrong |
-| **The redirect target's path collapsed** (`/data/foo.csv` → `/`) | Strong                        | free               | Few. Clearly distinguishable from a move to `/opendata/2026/foo.csv`                          |
-| Content-Type disagreeing with the declared format                | Medium                        | free               | **Many.** Government servers routinely serve CSV as `text/html` or `application/octet-stream` |
-| **Many resources converging on one URL**                         | Strongest (what a human uses) | needs a batch pass | Almost none. Fifty resources landing on the same target is not fifty individual moves         |
-| Size or hash changing                                            | Useless                       | —                  | Indistinguishable from an ordinary update                                                     |
+| Signal                                                                | Strength                      | Cost               | False positives                                                                               |
+| --------------------------------------------------------------------- | ----------------------------- | ------------------ | --------------------------------------------------------------------------------------------- |
+| **The body starts `<!DOCTYPE html` / `<html`**                        | Strongest                     | ~free              | Almost none. HTML for a resource declaring CSV / JSON / XML / GeoJSON is near-certainly wrong |
+| **The leading bytes do not match the declared signature** (`%PDF-` …) | Strongest                     | ~free              | None. Signatures are fixed by the format specifications and admit no interpretation (dec. 2)  |
+| **The redirect target's path collapsed** (`/data/foo.csv` → `/`)      | Strong                        | free               | Few. Clearly distinguishable from a move to `/opendata/2026/foo.csv`                          |
+| Content-Type disagreeing with the declared format                     | Medium                        | free               | **Many.** Government servers routinely serve CSV as `text/html` or `application/octet-stream` |
+| **Many resources converging on one URL**                              | Strongest (what a human uses) | needs a batch pass | Almost none. Fifty resources landing on the same target is not fifty individual moves         |
+| Size or hash changing                                                 | Useless                       | —                  | Indistinguishable from an ordinary update                                                     |
 
 **Content-Type must not be the gate on its own.** It would stop a great many working publishers.
 
@@ -154,8 +181,20 @@ canonical one, so "it can be fetched again" does not hold.
 
 - The declared format is textual (CSV / TSV / JSON / GeoJSON / XML / MD) and the leading bytes
   are recognisably HTML
+- **The declared format is binary and the leading bytes do not match its signature**
 - The fetch followed a redirect and the final URL has lost its filename (the path collapsed to
   `/`)
+
+| Declared format          | Expected leading bytes |
+| ------------------------ | ---------------------- |
+| PDF                      | `%PDF-`                |
+| ZIP / XLSX / DOCX / PPTX | `PK\x03\x04`           |
+| PNG                      | `\x89PNG\r\n`          |
+| JPEG                     | `\xFF\xD8\xFF`         |
+| GIF                      | `GIF87a` / `GIF89a`    |
+
+**The binary test is stronger than the textual one.** For text all we can say is "this is not
+HTML"; for binary we can require the format's own signature. No PDF begins `<!DOCTYPE html`.
 
 Content-Type is **corroboration only**, never the gate by itself.
 
