@@ -2,6 +2,10 @@
 
 ## Status
 
+> **ADR-054 supersedes this one on the unit of embedding** (one vector per package →
+> one per resource). The store, the fusion, how the floor resolves and the golden-set practice
+> all stand as written here.
+
 **Accepted** — All decisions implemented (Phase 5a). Embedding model selection and
 similarity floors were settled through golden-set evaluation (see "Evaluation Results"
 below, 2026-07-07).

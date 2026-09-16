@@ -255,6 +255,7 @@ pnpm format        # Prettier フォーマット
 - 一太郎文書のテキスト抽出（自前の複合文書パーサ、Ver.8 以降の非圧縮のみ、索引のみでプレビューは作らない、提案） → `docs/adr/jp/051-ichitaro-text-extraction.md`
 - シェープファイルの地図プレビュー（ZIP 内の SHP を GeoJSON として解釈、提案・着手保留） → `docs/adr/jp/052-shapefile-map-preview.md`
 - リソースの AI 生成抄録（推論はサマリー文に限り、値は生成しない、提案） → `docs/adr/jp/053-ai-resource-summary.md`
+- 埋め込みの単位はリソース（「どの表を開けばよいか」に答える、ADR-034 の単位部分を置換、提案） → `docs/adr/jp/054-resource-embedding-unit.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
