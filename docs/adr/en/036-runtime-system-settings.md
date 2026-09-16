@@ -115,6 +115,9 @@ an infrastructure-side setting. The admin UI only displays model information
 - Sysadmins adjust the similarity floor within ±0.10 without a redeploy
   (effective within 30 s). Serious tuning still happens via `pnpm eval:search`;
   the UI's role is limited to applying an evaluated value immediately
+- Measured: locally (Cohere v4, base 0.30), −2 notches (effective 0.25) took the 12
+  everyday-word queries (ADR-034's `word` type) from nDCG 72% to 79%, every other type
+  unchanged (2026-09-15)
 
 ## Related
 

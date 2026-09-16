@@ -576,6 +576,50 @@ abstract. On the backfill side, the chain in §11 enqueues once at its terminus.
 **Enabling the feature changes every package's embedding hash.** Nothing changes on a site where
 it is off.
 
+### 9.3 It goes into the keyword index too (ADR-053 decision 8.1)
+
+The abstract goes into **the resource document as well as the vector**. Decision 3.2 has the
+model gloss official terms with the everyday word in parentheses, and that vocabulary is exactly
+what a term-matching index can use — a person's description rarely spells both, so without the
+abstract it does not exist.
+
+| Change                 | What                                                           |
+| ---------------------- | -------------------------------------------------------------- |
+| `ResourceDoc`          | add `summary?: string`                                         |
+| OpenSearch mapping     | a text field on `kuromoji_analyzer`                            |
+| Resource search fields | `['name^3', 'description^2', 'section', 'summary']`            |
+| `resourceDocColumns`   | select `publicSummary` — the projection that nulls when hidden |
+
+**Boosted below name and description.** Generated sentences should not outrank a person's.
+
+#### Having nowhere to write it is the point
+
+**Summarize runs after Index.** The document Index wrote describes a resource with no abstract,
+and nothing comes back for it — left alone, the abstract **never reaches the index at all**.
+
+Three paths enqueue a `sync-resource-doc` job.
+
+| Path                   | Where                           |
+| ---------------------- | ------------------------------- |
+| the pipeline step      | beside the embedding enqueue    |
+| the backfill walk      | per resource (the vector waits) |
+| an editor's own change | `PUT /resources/:id/summary`    |
+
+**Queued rather than written, to settle who retries.** The write that makes the document stale
+is not one that can retry it: Summarize runs after Index and is best-effort, so a search index
+briefly unreachable is recorded as a failed step, the run completes, and **nothing asks again**.
+The editor's path is the same — a retried request changes nothing to re-trigger on.
+
+Queued, the retry belongs to the queue, where every other retry in this pipeline already lives,
+and **a search-index blip does not fail a pipeline run** — which rethrowing would have done.
+
+**Enqueued whatever the outcome.** The document is a statement about the row, so restating it is
+right even when nothing moved; gated on a write, a sync that failed right after one would find
+the abstract unchanged on the retry and never be repaired.
+
+**The last matters most for hiding.** The public projection takes a hidden abstract off the
+document, so a document that keeps it is **text somebody took down still answering searches**.
+
 ## 10. Step 6: API and web
 
 ### 10.1 Public API (`/api/v1` only)

@@ -297,6 +297,44 @@ and there is no exact-match regression.
 > `pnpm eval:search --base <URL> --file <YAML>` — no `--` separator, which `parseArgs` rejects
 > as a positional.
 
+### Re-measured (2026-09-16) — prefix removal and "データ" as a stop word
+
+Local (167 packages / 482 resources, Cohere v4, `vector-similarity-notches` = −2, golden set of
+51 = synonym 13 / natural 13 / exact 13 / word 12). **Measured on a corpus whose abstracts
+(ADR-053) had been regenerated the night before — 324 of them** — so it is not comparable with
+the earlier figures (caveat 2 below). The two indexes compared were both `_reindex`ed from the
+same source (caveat 1).
+
+| Index                                                          | word R@10 | word nDCG (kw → hy) | Other types                     |
+| -------------------------------------------------------------- | --------: | ------------------: | ------------------------------- |
+| Without prefix removal (`ja_prefix` dropped, then `_reindex`)  |       76% |           57% → 63% | unchanged                       |
+| With prefix removal (as shipped)                               |       76% |           57% → 63% | synonym: one query −7 (reorder) |
+| As shipped + "データ" as a query-side stop word (keyword only) |       76% |                 57% | 0 queries move                  |
+
+Prefix removal (`kuromoji_part_of_speech` dropping `接頭詞-名詞接続` on both the index and the
+query side) has **no measurable effect** on the golden set: one query +1 on the keyword leg,
+one query −7 on hybrid, both a reshuffle at ranks 7–10. The analysis does what it is meant to
+(お年寄り → 年寄り, ご案内 → 案内, 全世帯 → 世帯; お茶 and お客 untouched), so its value is on
+the highlighter and on consistency between the two sides. **The "word nDCG 72% → 81%" first
+attributed to this change was wrong** — 79% is the two-notch floor change made at the same time
+(ADR-036), and the rest is the variance in caveat 1.
+
+Stopping "データ" moved no query. The catalogue CSVs that stay near the top for
+「子育てに関するデータ」 are the content leg's `score_mode: 'max'`, not a stop-word problem.
+
+**Caveats on the instrument:**
+
+1. **The same index content measured word nDCG 54% and 57%.** An index grown by incremental
+   writes and one fresh from `_reindex` differ in BM25 statistics (deleted documents count until
+   a merge), and near-ties reorder. With 12 word queries, anything under 3 points is noise.
+   Align the indexes being compared with `_reindex` (or `_forcemerge`) first.
+2. **Regenerating the abstracts changes the corpus.** For most word queries the everyday
+   vocabulary in an abstract is the only lexical bridge; regenerate it with different wording
+   (「高齢者（お年寄り）」 → 「介護サービス事業所」) and the query loses the keyword leg. The
+   previous day's word R@10 of 96% → 76% is this, with the relevant packages themselves intact.
+   That the vector leg does not catch it — a package-level vector that never clears the floor —
+   is a reason to measure resource-level vectors (ADR-053 §8).
+
 ## Open Issues
 
 1. ~~**Final model selection**~~ → **Resolved** (see "Evaluation Results": on-prem =

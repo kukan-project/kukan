@@ -710,6 +710,110 @@ fixes that; only granularity does.**
 staged apart because **shipping the abstracts and changing the vector granularity together would
 make a retrieval regression impossible to attribute** — not because the need is in doubt.
 
+#### 8.1 The abstract goes into the keyword leg too (added during implementation, 2026-09-15)
+
+It went only into the vector at first. **Measured, that was not enough.**
+
+Decision 3.2 has the model gloss official and administrative terms with the everyday word in
+parentheses. Those everyday words land **in the document text itself**, which is precisely what
+a term-matching index can use — and a person's description rarely spells both, so this is
+vocabulary that does not exist without the abstract.
+
+Three conditions over the golden set (39 queries). **Embeddings on Titan v2**, the Bedrock
+adapter's default.
+
+| Condition                      | Keyword only |  Hybrid |
+| ------------------------------ | -----------: | ------: |
+| A. no abstracts                |          38% |     82% |
+| B. abstract in the vector only |          38% |     83% |
+| **C. vector + keyword index**  |      **44%** | **84%** |
+
+**Matching the embedding model to production adds on top.** Same catalogue, same condition C,
+re-measured on `cohere.embed-v4` — what the AWS side runs.
+
+| Embedding under C | Keyword only |  Hybrid | synonym | natural |
+| ----------------- | -----------: | ------: | ------: | ------: |
+| Titan v2          |          44% |     84% |     81% |     71% |
+| **Cohere v4**     |      **44%** | **87%** | **82%** | **79%** |
+
+(synonym / natural are hybrid nDCG; `natural` recall@10 also goes 95% → **100%**)
+
+**The keyword figure does not move.** Putting the abstract in a term index does not depend on
+the embedding model, so the model difference lands only on the vector side. The two add; neither
+substitutes for the other.
+
+> **The development environment was measuring on the default.** The adapter defaults to Titan,
+> production runs Cohere, and A / B / C were all Titan numbers — not noticed until it was
+> pointed out. That is why `.env.example` now names the model: **an environment left on the
+> default measures something production does not do.**
+>
+> **And the numbers above were held down by one test dataset.** A childcare-support registry
+> (a 12 MB XLSX, 134 chunks of free text) had been registered twice, once under a wrong title,
+> and its prose contains nearly every everyday word there is — so the content leg answered
+> most queries with it. Making it private alone moved synonym nDCG 82% → **93%** and natural
+> 79% → **90%**. **The hygiene of the evaluation catalogue moves the numbers as much as the
+> model or the index does.**
+>
+> **Short everyday words got a type of their own.** A one-to-five-character query like
+> 「お年寄り」is too short to clear the vector floor, reaches the index only through the
+> abstract's gloss, and has incidental mentions crowd its top ten. Averaged into the
+> phrase-form synonym queries at 100% recall, that signal vanished — which was the ceiling
+> the set had been at all day. Twelve of them as `word` measure 100% recall and **67%** nDCG
+> against 90%+ for the other types: the right answers are in the top ten and ranked badly,
+> visible at last. Three rank **worse** under hybrid than under keyword alone (車椅子
+> 100% → 73%) — a weakly-cleared vector pushing the right answer down through RRF. That is
+> the next thing to improve.
+>
+> **A `word` figure is tied to one generation of the abstracts.** Reprocessing can regenerate
+> them (a changed version identity moves the `original:` digest; a changed Interpret output shape
+> moves the schema digest), and the everyday-word bridge goes with the wording. Do not compare
+> figures across a regeneration (ADR-034, re-measured 2026-09-16).
+
+By type (keyword only, Recall@10):
+
+| Type    |    A |    C |
+| ------- | ---: | ---: |
+| synonym |   0% |   8% |
+| natural |  15% |  27% |
+| exact   | 100% | 100% |
+
+**Hybrid moves only one point because recall is already at its ceiling there, not because the
+change does nothing.** Synonym nDCG rises 77% → 81% — the ranking improves — and `exact` holds
+at 100%, so the generated vocabulary does not crowd out a search by a resource's real name.
+
+**The six points on the keyword leg are real.** On a deployment with no vector leg
+(`SEARCH_TYPE=postgres`) that figure _is_ the search quality. Nor is the case hypothetical: an
+SSO token expired mid-measurement and hybrid **silently degraded to keyword**. The search looks
+successful; only the results are halved.
+
+> **What was fooled was the instrument.** The failure itself is recorded — `hybrid-search.ts`
+> logs a failed query embedding at `warn` and a failed vector search at `error`. And yet
+> `pnpm eval:search` reported 38% → 38% **as a valid measurement**. Hybrid matching keyword on
+> every query is _evidence_ of that, not proof. **The search now reports what it did** —
+> `applied`, `off` or `degraded` — and the harness stops without printing a number when any
+> query comes back degraded, on the same non-zero exit it already uses for an `exact` regression
+> (ADR-034's shipping condition).
+>
+> Inference was not enough: two legs can agree on a query by agreeing, and a valid run would
+> have been failed. **What has to be told apart is a leg that ran and cleared nothing from one
+> that never ran** — both return an empty list. In a live catalogue "お年寄り" clears the
+> similarity floor on exactly one package, which is the search working, not failing.
+>
+> The numbers are **withheld, not annotated**. Printed with a warning beside them, the numbers
+> are what gets remembered.
+>
+> **Degrading is itself correct.** A search that answers with keyword results alone beats one
+> that errors. What needs fixing is not the silence but the instrument that cannot hear it.
+
+**Having nowhere to write it was the implementation's point.** Summarize runs **after** Index,
+so the document Index wrote describes a resource with no abstract, and nothing comes back for
+it. Three paths rewrite it — the pipeline step, the backfill walk, and an editor's own change.
+The last matters most for hiding: the public projection takes a hidden abstract off the
+document, and a document that keeps it is **text somebody took down still answering searches**.
+
+**Boosted below name and description.** Generated sentences should not outrank what a person
+wrote.
+
 ### 9. Regeneration is keyed to the version; Batch is not adopted
 
 An abstract carries its own hash and regenerates **only when the material (resource content or
