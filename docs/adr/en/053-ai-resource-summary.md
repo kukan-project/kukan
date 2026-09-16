@@ -707,6 +707,13 @@ resources into one vector produces **a centroid that resembles no subject**, and
 packages the tail is truncated as well (decision 6). **Neither concatenation nor integration
 fixes that; only granularity does.**
 
+> **The A/B has been run (2026-09-16, ADR-034, "The unit of embedding").** As predicted, only
+> short everyday words moved: the vector leg's `word` nDCG went 51% → 70% with every other type
+> unchanged. The centroid dilution is real. **It does not settle adoption** — what was measured
+> is the vector leg alone, with the fused numbers and the result unit still open. That decision
+> belongs to another ADR; what this one can claim is that **holding abstracts per resource let
+> the A/B run at zero generation cost.**
+
 **The abstracts already exist per resource in the MVP, so the A/B costs no generation.** They are
 staged apart because **shipping the abstracts and changing the vector granularity together would
 make a retrieval regression impossible to attribute** — not because the need is in doubt.

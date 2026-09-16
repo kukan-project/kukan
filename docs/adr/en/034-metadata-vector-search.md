@@ -335,6 +335,204 @@ Stopping "データ" moved no query. The catalogue CSVs that stay near the top f
    That the vector leg does not catch it — a package-level vector that never clears the floor —
    is a reason to measure resource-level vectors (ADR-053 §8).
 
+### The unit of embedding (2026-09-16, measured offline)
+
+**One vector per package, or one per resource** — compared offline, before writing any code.
+Local (166 packages / 481 resources, Cohere embed-v4, 51 golden queries). The package vectors
+already in the database serve as the baseline and only the candidate side was rebuilt, so
+**the model and the corpus are identical**. No code was written.
+
+#### Vector leg only, floor 0.30 (resource hits aggregated to packages with max)
+
+| Unit and material                   | word R@10 | word nDCG | overall nDCG | Queries where nothing clears the floor |
+| ----------------------------------- | --------: | --------: | -----------: | -------------------------------------: |
+| **Package (as shipped)**            |       65% |       51% |          86% |                                      1 |
+| Package − notes                     |       76% |       56% |          88% |                                      0 |
+| Resource + title/tags/notes/section |       81% |       64% |          90% |                                      1 |
+| Resource alone                      |       89% |       69% |          90% |                                      0 |
+| **Resource + title/tags**           |       89% |   **70%** |      **92%** |                                      0 |
+
+**Two contributions, and they rank: the unit is worth +13, dropping `notes` +5 to +6.**
+`synonym` / `natural` / `exact` do not move under any of them (96–100%). Only short everyday
+words move, which is what ADR-053 decision 8 predicted — a centroid of heterogeneous resources
+resembles no subject.
+
+**The gap widens as the floor rises.** At 0.35 the package unit leaves 7 of 51 queries with no
+vector at all, and 11 at 0.40; the resource unit leaves none (4 at 0.40). **A short query
+failing to clear the floor was the unit, not the model.**
+
+> `notes` averages 57 characters per resource (16% of the text), so it is not diluting by
+> length. A municipal dataset description is largely boilerplate —「〜に関するデータです」—
+> and **draws every vector together with words that separate no subject**. Title and tags do no
+> harm because they do the opposite: they name the subject in a few words.
+
+#### Looking at resources without aggregating
+
+The aggregation exists because the golden set's ground truth is a package name, and **it puts
+the package back as the unit the moment it runs**. The floor, and what to display, belong to
+the resource-side distribution.
+
+Across 51 queries × 481 resources = 24,531 pairs: median 0.198, p90 0.294, p99 0.433, max 0.801.
+
+| Floor | Pairs kept | Per query |
+| ----: | ---------- | --------: |
+|  0.30 | 8.98%      |      43.2 |
+|  0.35 | 3.83%      |      18.4 |
+|  0.40 | 1.64%      |       7.9 |
+
+**0.30 is too loose here.** Forty-three resources per query clear it, so noise arrives before
+the fusion does. The population goes from 166 to 481, so the package unit's operating point does
+not carry over. Candidates are 0.35–0.40.
+
+Precision, counting a resource as relevant when its package is a golden answer:
+
+| Type    |  P@1 | P@5 |  MRR |
+| ------- | ---: | --: | ---: |
+| synonym | 100% | 49% | 1.00 |
+| natural |  92% | 46% | 0.95 |
+| exact   | 100% | 49% | 1.00 |
+| word    |  58% | 40% | 0.69 |
+
+Outside `word`, **the top resource is almost always one of the right package's** (P@5 falls only
+because there are 1–3 relevant packages). **Which resource matched is worth showing** — it fits
+ADR-050's `matchedResources` unchanged.
+
+What it finds, and what it does not:
+
+- **The unit did the work**:「積立金」lands on the sheet 「公金管理実績 P1 内訳 基金」(0.407),
+  which the package unit had averaged across 19 sheets.「外国人」returns four distinct resources
+  of the right package in its top four
+- **The noise is other years of the same series**.「車椅子」ranks a questionnaire from a sibling
+  package first (0.380) against the right answer at 0.366. Aggregation absorbs some of this;
+  showing resources would not
+- **Not a unit problem**:「小さい子ども」returns five school-statistics resources and never the
+  child-care registry — pre-school and primary are not separated (model granularity).
+  「お年寄り」suffers from its answer's abstract having been rewritten from 「高齢者（お年寄り）」
+  to「介護サービス事業所」, which is vocabulary
+
+#### Through the fusion, almost none of the ranking gain survives
+
+**The figures above are the vector leg alone, which is not the order anyone sees.** So only that
+leg was swapped: BM25 comes from the live API and the fusion runs the shipped formula
+(`FUSION_WINDOW` 50, `RRF_K` 60, vote `clamp((sim − floor) / 0.2)`, floor at the 0.25 in use).
+
+| Type         | Keyword only | Package unit | Resource unit |
+| ------------ | -----------: | -----------: | ------------: |
+| synonym nDCG |           0% |          79% |           80% |
+| natural nDCG |          26% |          81% |           79% |
+| exact nDCG   |         100% |         100% |          100% |
+| word nDCG    |          57% |          63% |           65% |
+| word R@10    |          76% |          85% |           89% |
+| **overall**  |          45% |      **81%** |       **81%** |
+
+**The +19 on `word` nDCG becomes +2 once fused.** Overall does not move; twelve of 51 queries
+change and they cancel, six better and six worse. The reason is plain: **BM25 has already found
+them.** Recall is at the ceiling for synonym / natural / exact, and RRF passes almost none of the
+vector leg's internal reordering through to the result.
+
+Two things survive: **robustness to the floor** (at 0.35, package 78% against resource 80%, with
+7 queries versus 0 left holding no vector at all) and **`word` recall** (76% → 89%).
+
+One new constraint appears. Taking the kNN window (50) over resources lets one package's
+resources consume it, so **the candidate list offers 19.5 packages on average** where the package
+unit offers up to 50. Aggregating before taking 50 raises that to 31.9 and measured slightly
+worse fused. **How the window is allocated is an implementation question.**
+
+#### What moved the numbers was neither the unit nor the formula, but the leg weight
+
+Sweeping the fusion side (floor 0.25, 51 queries). `rrf` is what ships; `sim` votes by similarity
+rather than rank; `simnorm` normalises the similarity within the query.
+
+| Configuration                           | overall | synonym | natural | exact | word |
+| --------------------------------------- | ------: | ------: | ------: | ----: | ---: |
+| **Shipped** (`rrf`, K=60, λ=1, package) | **81%** |     79% |     81% |  100% |  63% |
+| `simnorm`, K=10, **λ=2**, package       | **91%** |     98% |     95% |  100% |  70% |
+| `simnorm`, K=10, λ=3, resource          | **92%** |     99% |     95% |  100% |  71% |
+
+**Overall goes 81% → 91% with no change to any embedding.** The gain is in `synonym` (79 → 98)
+and `natural` (81 → 95) — **the vector leg was finding the right answer and RRF was letting BM25
+bury it.** `exact` holds at 100% throughout, so decision 8's shipping condition is met.
+
+`RRF_K` = 60 against a 50-long list puts rank 1 and rank 50 within 1.8× of each other, which
+leaves RRF asking little beyond "is it in both lists" — and on a query keyword search cannot
+answer at all (synonym scores 0% on its own) the vector leg cannot lift its answer to the top.
+This is exactly what open issue 3 flagged as "leg weighting is left at the default".
+
+#### The two units' plateaus overlap, so the tuning is done once
+
+Floor × λ for both units (`simnorm`, K=10, overall nDCG).
+
+| Floor ＼ λ             |   1 |      2 |      3 |      4 |      6 |
+| ---------------------- | --: | -----: | -----: | -----: | -----: |
+| **Package unit** 0.25  |  82 | **91** | **91** | **91** | **91** |
+| 0.30                   |  81 |     89 |     89 |     89 |     89 |
+| 0.35                   |  78 |     85 |     85 |     85 |     85 |
+| **Resource unit** 0.25 |  82 |     90 | **92** | **92** | **92** |
+| 0.30                   |  82 |     91 |     91 | **92** | **92** |
+| 0.35                   |  82 | **91** | **91** | **91** | **91** |
+| 0.40                   |  79 |     87 |     87 |     87 |     87 |
+
+**λ and K need no re-tuning when the unit changes.** Both plateau from λ ≥ 2–3, and λ = 3–4 sits
+**inside both plateaus at once** (package 91, resource 92 — each unit's own best). The only step
+is λ 1 → 2.
+
+**The floor does need re-drawing.** The package unit peaks at 0.25 and falls monotonically; the
+resource unit is flat from 0.25 to 0.35 and only drops at 0.40, because the population grows from
+166 to 481 and the distribution moves with it. That is the kind of change ADR-036's notch offset
+exists for, and it is adjustable from the dashboard.
+
+> **Take the plateau, not the peak.** Thirty-odd configurations against 51 queries can overfit,
+> and a plateau value both avoids that and survives a change of unit — **two reasons pointing at
+> one conclusion.** Choosing λ=2 by looking at the package unit alone gives 90 on the resource
+> unit where λ=3 gives 92.
+
+#### Ranking is not what this change is mainly for
+
+The golden set's ground truth is a package name, so **every figure above evaluates package
+ranking**. What per-resource vectors actually answer is a different question, and there is no
+instrument for it here.
+
+Whether the unit separates resources _within_ a package is measurable. Across relevant packages
+holding three or more, the best resource's similarity stands **0.038–0.047** above that package's
+mean (37 query-package pairs). In practice:
+
+| Query                              | Resource chosen          | Resource ranked last     |
+| ---------------------------------- | ------------------------ | ------------------------ |
+| 新しくオープンした美容室を知りたい | **新規**施設一覧 0.553   | **廃止**施設一覧 0.398   |
+| 汚水はどうやって処理されている?    | 流入水質・放流水質 0.388 | ダイオキシン類測定 0.348 |
+
+**Picking the "newly opened" list over the "closed" one is not something a centroid can do** —
+the package's five resources are averaged into one vector.
+
+This bears directly on open issue 4 (vector hits cannot be highlighted; extending `matchSource`).
+Today a package matched only semantically comes back with an empty `matchedOn` and **nothing
+explains why it is there**. ADR-050's `matchedResources` already holds the slot for "which
+resource matched", and only BM25 hits reach it. Per-resource vectors fill that gap.
+
+#### What was not measured
+
+**This corpus barely contains the situation the change is for.** Grouped by how many resources
+the relevant packages hold:
+
+| Resources in the relevant package | Queries | Package unit | Resource unit |        Δ |
+| --------------------------------- | ------: | -----------: | ------------: | -------: |
+| 1                                 |      26 |        94.5% |         94.4% |     ±0.0 |
+| 2–4                               |       5 |        88.9% |         85.8% |     −3.0 |
+| 5–9                               |      20 |        87.6% |         89.4% | **+1.8** |
+| 10 or more                        |       0 |            — |             — |        — |
+
+**Twenty-six of 51 queries answer with a single-resource package, where the two units are
+identical.** None answers with ten or more. The catalogue is the same shape: 73 of 166 packages
+hold one resource and two hold ten or more (max 19). ADR-053's stated target — datasets of around
+a hundred tables in one package — is absent. **The fused +1 is a lower bound, not a figure for the
+case this is for.**
+
+Also unmeasured: a golden set with per-resource answers (the instrument the purpose above needs),
+the pgvector index (166 → 481 vectors, currently unindexed), and reproduction on another catalogue.
+
+> These numbers come from **a simulator that copies the shipped formula**, not from the code
+> itself. Re-measure in the code before adopting anything.
+
 ## Open Issues
 
 1. ~~**Final model selection**~~ → **Resolved** (see "Evaluation Results": on-prem =
@@ -342,10 +540,15 @@ Stopping "データ" moved no query. The catalogue CSVs that stay near the top f
 2. ~~**Golden set creation**~~ → **Resolved** (39 questions local + 39 on demo;
    established as a per-deployment, non-committed practice).
 3. **Fusion parameters**: similarity floors resolved (see Evaluation Results). RRF's k
-   (=60) and leg weighting remain at defaults — weighted RRF for question-form queries
-   where the keyword leg turns noisy is a future tuning candidate.
+   (=60) and leg weighting remain at defaults. **Measured on 2026-09-16, this is where the
+   headroom is** — raising the leg weight alone takes overall from 81% to 91%, with no change
+   to any embedding or analyzer ("The unit of embedding"). Thirty-odd configurations against
+   51 queries can overfit, so **take a plateau value rather than the peak**, confirm it
+   reproduces on another catalogue, and re-measure in the code before adopting it.
 4. **UI treatment**: how to present the lack of highlighting for vector hits; extension of
-   `matchSource`.
+   `matchSource`. **Per-resource vectors (same section) bear on this directly** — a
+   semantically matched resource can be named, which is what ADR-050's `matchedResources`
+   already displays. Today `matchedOn` comes back empty and nothing explains the result.
 5. **PDF content embedding** (later phase): chunk design, scale, and cost estimation.
    Vector count grows by 2–3 orders of magnitude, so re-evaluate pgvector (adding HNSW) vs
    splitting off to OpenSearch k-NN.
