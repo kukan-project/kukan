@@ -28,11 +28,27 @@ interface GoldenQuery {
   query: string
   type: 'synonym' | 'natural' | 'exact' | 'word'
   relevant: string[]
+  /**
+   * The resources inside those datasets that answer the query, by name.
+   *
+   * Optional, and scored separately. A dataset of a hundred tables is found by
+   * ranking the dataset, but it is *read* by opening one table — and only the
+   * per-resource metrics below say whether the search pointed at the right one.
+   */
+  relevantResources?: string[]
 }
 
 interface Metrics {
   recall: number
   ndcg: number
+}
+
+/** How soon the reader is shown a resource that answers the query */
+interface ResourceMetrics {
+  /** Of the relevant resources, how many appear at all */
+  recall: number
+  /** 1 / rank of the first relevant one across every resource surfaced */
+  mrr: number
 }
 
 function evaluate(topNames: string[], relevant: string[]): Metrics {
@@ -53,8 +69,30 @@ function evaluate(topNames: string[], relevant: string[]): Metrics {
 
 interface SearchAnswer {
   names: string[]
+  /**
+   * Every resource the results named, in the order a reader meets them:
+   * package by package, and within each, as the search surfaced them.
+   */
+  resourceNames: string[]
   /** What the search did, as it reports it — 'applied' | 'off' | 'degraded' */
   semantic?: string
+}
+
+/**
+ * Score the resources against the ones the query is about.
+ *
+ * Only the names are compared. A resource id is a UUID that differs per
+ * deployment, and the golden set is written by hand against a catalogue
+ * someone can read.
+ */
+function evaluateResources(surfaced: string[], relevant: string[]): ResourceMetrics {
+  const relevantSet = new Set(relevant)
+  const hits = new Set(surfaced.filter((name) => relevantSet.has(name)))
+  const first = surfaced.findIndex((name) => relevantSet.has(name))
+  return {
+    recall: relevant.length === 0 ? 0 : hits.size / relevant.length,
+    mrr: first < 0 ? 0 : 1 / (first + 1),
+  }
 }
 
 async function searchTopNames(
@@ -71,10 +109,16 @@ async function searchTopNames(
     const res = await fetch(url)
     if (res.ok) {
       const body = (await res.json()) as {
-        items: Array<{ name: string }>
+        items: Array<{ name: string; matchedResources?: Array<{ name: string }> }>
         semantic?: string
       }
-      return { names: body.items.map((item) => item.name), semantic: body.semantic }
+      return {
+        names: body.items.map((item) => item.name),
+        resourceNames: body.items.flatMap((item) =>
+          (item.matchedResources ?? []).map((resource) => resource.name)
+        ),
+        semantic: body.semantic,
+      }
     }
     const detail = await responseDetail(res)
     if (res.status >= 500 && attempt === 0) {
@@ -96,7 +140,15 @@ async function main() {
   const base = values.base!
   const golden = load(readFileSync(values.file!, 'utf8')) as { queries: GoldenQuery[] }
 
-  type Row = { q: GoldenQuery; keyword: Metrics; hybrid: Metrics; applied: boolean; state?: string }
+  type Row = {
+    q: GoldenQuery
+    keyword: Metrics
+    hybrid: Metrics
+    keywordRes?: ResourceMetrics
+    hybridRes?: ResourceMetrics
+    applied: boolean
+    state?: string
+  }
   const rows: Row[] = []
   for (const q of golden.queries) {
     const [keywordNames, hybridNames] = await Promise.all([
@@ -107,6 +159,10 @@ async function main() {
       q,
       keyword: evaluate(keywordNames.names, q.relevant),
       hybrid: evaluate(hybridNames.names, q.relevant),
+      ...(q.relevantResources?.length && {
+        keywordRes: evaluateResources(keywordNames.resourceNames, q.relevantResources),
+        hybridRes: evaluateResources(hybridNames.resourceNames, q.relevantResources),
+      }),
       // What the search reports it did. Comparing the two legs' results cannot
       // answer this: they may agree on a query by agreeing, and a vector leg
       // that ran and cleared nothing returns the same empty list as one that
@@ -169,6 +225,32 @@ async function main() {
   const overallKw = mean(rows.map((row) => row.keyword.ndcg))
   const overallHy = mean(rows.map((row) => row.hybrid.ndcg))
   console.log(`  ${'overall'.padEnd(8)} nDCG ${pct(overallKw)}→${pct(overallHy)}`)
+
+  // **Ranking the dataset is not the whole job.** A dataset of a hundred tables
+  // is opened at one of them, and only this block says whether the search named
+  // it. Scored on the queries that declare `relevantResources`; the rest are
+  // silent here rather than counted as zero.
+  const withResources = rows.filter((row) => row.hybridRes)
+  if (withResources.length > 0) {
+    console.log(`\nresources surfaced (keyword → hybrid), ${withResources.length} queries:`)
+    for (const type of ['synonym', 'natural', 'exact', 'word'] as const) {
+      const subset = withResources.filter((row) => row.q.type === type)
+      if (subset.length === 0) continue
+      const m = (pick: (row: Row) => ResourceMetrics | undefined, key: keyof ResourceMetrics) =>
+        mean(subset.map((row) => pick(row)![key]))
+      console.log(
+        `  ${type.padEnd(8)} recall ${pct(m((r) => r.keywordRes, 'recall'))}→${pct(m((r) => r.hybridRes, 'recall'))}` +
+          `   MRR ${m((r) => r.keywordRes, 'mrr').toFixed(2)}→${m((r) => r.hybridRes, 'mrr').toFixed(2)}` +
+          `   (${subset.length} queries)`
+      )
+    }
+    const miss = withResources.filter((row) => row.hybridRes!.mrr === 0)
+    if (miss.length > 0) {
+      console.log(
+        `  no relevant resource surfaced at all: ${miss.map((r) => r.q.query).join(', ')}`
+      )
+    }
+  }
 
   // Shipping condition (ADR-034 決定8): hybrid must not degrade exact-match queries
   const regressions = rows.filter(
