@@ -36,6 +36,7 @@ import {
   userNameSchema,
   userRoleSchema,
   passwordLengthSchema,
+  REANALYSE_INDEX_JOB_TYPE,
 } from '@kukan/shared'
 import { PipelineService } from '../services/pipeline-service'
 import { summaryEstimate } from '../services/summary-estimate'
@@ -393,6 +394,46 @@ adminRouter.put(
     return c.json({ key, value: parsed.data })
   }
 )
+
+// GET /api/v1/admin/search/analysis-status — Whether the live search index was
+// created under an analysis the code no longer defines. Drives the one-time
+// re-analysis notice on the dashboard, so it stays a single cheap call.
+adminRouter.get('/search/analysis-status', async (c) => {
+  // A notice that cannot be checked says nothing. The job that acts on it does
+  // not get this leniency — there, not knowing must not pass for "current".
+  const stale = await c
+    .get('search')
+    .analysisStale()
+    .catch(() => false)
+  return c.json({ stale })
+})
+
+// POST /api/v1/admin/search/reanalyse — Rebuild the index under the analysis
+// the code now defines. Separate from the rebuild below because that one
+// re-sends documents to an index whose analysis was fixed when it was created:
+// a kuromoji change reaches a running deployment only this way.
+adminRouter.post('/search/reanalyse', async (c) => {
+  // The same predicate the metadata rebuild uses for "there is no index here".
+  // A cluster too busy to answer throws instead, and that is not a reason to
+  // refuse — the worker checks again, and refuses there.
+  const stats = await c
+    .get('search')
+    .getIndexStats()
+    .catch(() => ({}) as const)
+  if (!stats) {
+    return c.json(
+      {
+        type: 'about:blank',
+        title: 'Not Available',
+        status: 400,
+        detail: 'OpenSearch not enabled',
+      },
+      400
+    )
+  }
+  await c.get('queue').enqueue(REANALYSE_INDEX_JOB_TYPE, {})
+  return c.json({ queued: true })
+})
 
 // POST /api/v1/admin/reindex-metadata — Enqueue metadata rebuild job to Worker
 adminRouter.post(

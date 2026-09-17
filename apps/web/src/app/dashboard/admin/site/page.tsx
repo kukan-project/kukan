@@ -20,6 +20,7 @@ import { AiSuggestCard } from '@/components/dashboard/ai-suggest-card'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { RegistrationCard } from '@/components/dashboard/registration-card'
 import { SearchExamplesCard } from '@/components/dashboard/search-examples-card'
+import { SummaryGenerationCard } from '@/components/dashboard/summary-generation-card'
 import { VectorSimilarityCard } from '@/components/dashboard/vector-similarity-card'
 import { clientFetch } from '@/lib/client-api'
 
@@ -74,6 +75,9 @@ export default function AdminSitePage() {
 
       {/* AI Metadata Suggestions */}
       <AiSuggestCard />
+
+      {/* AI-written abstracts: under the models, whose price it quotes */}
+      <SummaryGenerationCard />
 
       {/* Self-Registration */}
       <RegistrationCard />

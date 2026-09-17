@@ -17,6 +17,9 @@ vi.mock('@aws-sdk/client-sqs', () => ({
   DeleteMessageCommand: vi.fn().mockImplementation(function (input: unknown) {
     return { input, _type: 'Delete' }
   }),
+  ChangeMessageVisibilityCommand: vi.fn().mockImplementation(function (input: unknown) {
+    return { input, _type: 'ChangeVisibility' }
+  }),
   GetQueueAttributesCommand: vi.fn().mockImplementation(function (input: unknown) {
     return { input, _type: 'GetQueueAttributes' }
   }),
@@ -351,6 +354,97 @@ describe('SQSQueueAdapter', () => {
       const callCount = mockSend.mock.calls.length
       await new Promise((r) => setTimeout(r, 200))
       expect(mockSend.mock.calls.length).toBe(callCount)
+    })
+  })
+
+  describe('holding a message while its handler runs', () => {
+    /** A message whose handler is still working when the queue would hand it out again */
+    function deliverOneSlowJob(release: { resolve?: () => void }) {
+      mockSend
+        .mockResolvedValueOnce({
+          Messages: [
+            {
+              MessageId: 'msg-1',
+              Body: JSON.stringify({ type: 'slow', data: {} }),
+              ReceiptHandle: 'rh-1',
+              MessageAttributes: { JobId: { StringValue: 'job-1', DataType: 'String' } },
+            },
+          ],
+        })
+        // Paced, so advancing the clock does not spin the poll loop
+        .mockImplementation(
+          () => new Promise((resolve) => setTimeout(() => resolve({ Messages: [] }), 20_000))
+        )
+      return queue.process({
+        slow: () => new Promise<void>((resolve) => (release.resolve = resolve)),
+      })
+    }
+
+    /** Let the handler finish and the paced poll wake, so `stop` can return */
+    async function shutDown(release: { resolve?: () => void }) {
+      release.resolve?.()
+      await vi.advanceTimersByTimeAsync(10)
+      const stopping = queue.stop()
+      await vi.advanceTimersByTimeAsync(30_000)
+      await stopping
+    }
+
+    it('extends the visibility rather than let a second worker take the job', async () => {
+      vi.useFakeTimers()
+      try {
+        const release: { resolve?: () => void } = {}
+        await deliverOneSlowJob(release)
+        await vi.advanceTimersByTimeAsync(10)
+        expect(release.resolve).toBeDefined()
+
+        await vi.advanceTimersByTimeAsync(250_000)
+
+        const held = mockSend.mock.calls.filter(
+          (c) => (c[0] as { _type: string })._type === 'ChangeVisibility'
+        )
+        expect(held.length).toBeGreaterThan(0)
+        expect((held[0][0] as { input: { ReceiptHandle: string } }).input.ReceiptHandle).toBe(
+          'rh-1'
+        )
+
+        release.resolve!()
+        await vi.advanceTimersByTimeAsync(10)
+        const before = mockSend.mock.calls.length
+        await vi.advanceTimersByTimeAsync(250_000)
+        // Released with the handler, so a finished job stops holding anything
+        expect(
+          mockSend.mock.calls
+            .slice(before)
+            .filter((c) => (c[0] as { _type: string })._type === 'ChangeVisibility')
+        ).toHaveLength(0)
+
+        await shutDown(release)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('stops holding a handler that never returns, so the message can come back', async () => {
+      vi.useFakeTimers()
+      try {
+        const release: { resolve?: () => void } = {}
+        await deliverOneSlowJob(release)
+        await vi.advanceTimersByTimeAsync(10)
+
+        await vi.advanceTimersByTimeAsync(95 * 60_000)
+        const before = mockSend.mock.calls.length
+        await vi.advanceTimersByTimeAsync(10 * 60_000)
+
+        expect(
+          mockSend.mock.calls
+            .slice(before)
+            .filter((c) => (c[0] as { _type: string })._type === 'ChangeVisibility')
+        ).toHaveLength(0)
+
+        await shutDown(release)
+      } finally {
+        vi.useRealTimers()
+      }
     })
   })
 

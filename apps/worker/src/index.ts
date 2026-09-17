@@ -33,6 +33,8 @@ import {
   summarizeAllJobSchema,
   summarizePackageJobSchema,
   syncResourceDocJobSchema,
+  REANALYSE_INDEX_JOB_TYPE,
+  reanalyseIndexJobSchema,
 } from '@kukan/shared'
 import { eq, sql } from 'drizzle-orm'
 import { packageTable } from '@kukan/db'
@@ -45,6 +47,7 @@ import { ResourceVersionService } from '@kukan/api/services/resource-version-ser
 import { createAIAdapter } from '@kukan/api/adapters'
 import { syncResourceDoc } from '@kukan/api/services/search-index'
 import { AI_SUMMARY_LOCALE_KEY, SystemSettingService } from '@kukan/api/services/system-setting'
+import { reanalyseSearchIndex } from './search/reanalyse-index'
 import type { SummaryDeps } from './pipeline/steps/summarize'
 import { enqueueSummarizePackages, summarizeNextInPackage } from './summary/backfill'
 import { createDb, runMigrations } from '@kukan/db'
@@ -310,6 +313,13 @@ await queue.process({
     await processResource(resourceId, ctx, db, queue, { rebuildOnly })
     const elapsed = Math.round(performance.now() - start)
     log.info({ jobId: job.id, type: job.type, resourceId, elapsed }, 'Completed job')
+  },
+  // Maintenance (control-plane): re-analyse the index in place. The documents
+  // ride along — `extractedText` is in `_source`, so nothing is fetched or
+  // extracted again — which is why this is not the rebuild below.
+  [REANALYSE_INDEX_JOB_TYPE]: async (job: Job) => {
+    if (!parseJobPayload(job, reanalyseIndexJobSchema)) return
+    await reanalyseSearchIndex(db, search, queue, log.child({ jobId: job.id, type: job.type }))
   },
   // Maintenance (control-plane): rebuild the search index.
   [REINDEX_JOB_TYPE]: async (job: Job) => {

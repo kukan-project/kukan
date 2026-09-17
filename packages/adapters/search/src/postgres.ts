@@ -435,6 +435,21 @@ export class PostgresSearchAdapter implements SearchAdapter {
   async getIndexStats() {
     return null
   }
+  /** Nothing is fixed at index creation here: every query re-reads the columns */
+  async analysisStale() {
+    return false
+  }
+  /** Content lives in the resource's own row, so it cannot outlive it */
+  async indexedContentResources() {
+    return []
+  }
+  async reanalyseIndex() {
+    return null
+  }
+  async pendingRepair() {
+    return null
+  }
+  async markRepaired() {}
   async getDocument(_index: string, _id: string) {
     return null
   }

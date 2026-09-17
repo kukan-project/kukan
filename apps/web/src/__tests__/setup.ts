@@ -81,7 +81,11 @@ function makeTranslator(namespace?: string) {
     msg = msg ?? (namespace ? `${namespace}.${key}` : key)
     if (params) {
       for (const [k, v] of Object.entries(params)) {
-        msg = msg.replace(`{${k}}`, String(v))
+        // `{n, number}` too, so a count assertion does not meet a raw placeholder
+        const name = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        msg = msg.replace(new RegExp(`\\{${name}(, *number)?\\}`, 'g'), (_m, numeric) =>
+          numeric && typeof v === 'number' ? new Intl.NumberFormat('en').format(v) : String(v)
+        )
       }
     }
     return msg

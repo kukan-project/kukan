@@ -26,6 +26,11 @@ const mockSearch: SearchAdapter = {
   deleteAllResources: async () => {},
   search: async () => ({ items: [], total: 0, offset: 0, limit: 20 }),
   sumResourceCount: async () => 0,
+  indexedContentResources: async () => [],
+  pendingRepair: async () => null,
+  markRepaired: async () => {},
+  analysisStale: async () => false,
+  reanalyseIndex: async () => null,
   getIndexStats: async () => ({
     indexName: 'kukan-test',
     totalSizeBytes: 0,
@@ -133,6 +138,71 @@ describe('Admin API Routes', () => {
 
       expect(res.status).toBe(400)
       expect((await res.json()).detail).toBe('Embedding is not configured')
+    })
+  })
+
+  describe('search re-analysis', () => {
+    /** A backend whose analysis is fixed when the index is created */
+    const analysed: SearchAdapter = {
+      ...mockSearch,
+      analysisStale: async () => true,
+      reanalyseIndex: async () => ({ from: 'a', to: 'b', documents: 1 }),
+    }
+
+    it('reports the analysis as current on a backend that fixes none', async () => {
+      const res = await app.request('/api/v1/admin/search/analysis-status')
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ stale: false })
+    })
+
+    it('reports a live index built under settings the code has moved past', async () => {
+      const res = await createTestApp(db, { search: analysed }).request(
+        '/api/v1/admin/search/analysis-status'
+      )
+
+      expect(await res.json()).toEqual({ stale: true })
+    })
+
+    it('rejects non-sysadmin requests', async () => {
+      const res = await nonAdminApp.request('/api/v1/admin/search/reanalyse', { method: 'POST' })
+      expect(res.status).toBe(403)
+    })
+
+    it('queues the re-analysis', async () => {
+      const res = await createTestApp(db, { search: analysed }).request(
+        '/api/v1/admin/search/reanalyse',
+        { method: 'POST' }
+      )
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ queued: true })
+    })
+
+    it('returns 400 where there is no index to rebuild', async () => {
+      const pgApp = createTestApp(db, {
+        search: { ...mockSearch, getIndexStats: async () => null },
+      })
+
+      const res = await pgApp.request('/api/v1/admin/search/reanalyse', { method: 'POST' })
+
+      expect(res.status).toBe(400)
+    })
+
+    it('queues anyway when the cluster is too busy to answer', async () => {
+      const busy: SearchAdapter = {
+        ...analysed,
+        getIndexStats: async () => {
+          throw new Error('service unavailable')
+        },
+      }
+
+      const res = await createTestApp(db, { search: busy }).request(
+        '/api/v1/admin/search/reanalyse',
+        { method: 'POST' }
+      )
+
+      expect(res.status).toBe(200)
     })
   })
 

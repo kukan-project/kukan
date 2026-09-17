@@ -20,6 +20,8 @@
     "saving": "Saving...",
     "cancel": "Cancel",
     "loading": "Loading...",
+    "queueing": "Queueing...",
+    "queueFailed": "Queueing failed.",
     "notFound": "Not found",
     "noResults": "No results",
     "retry": "Retry",
@@ -352,27 +354,7 @@
       "embedQueued": "Embedding jobs queued. They run in the background.",
       "embedModel": "Embedding model",
       "embedUnavailable": "Embedding is not configured, so this cannot run.",
-      "settingsUnavailable": "Could not load the embedding settings.",
-      "queueing": "Queueing...",
-      "queueFailed": "Queueing failed.",
-      "summaryTitle": "Generate AI descriptions",
-      "summaryDescription": "Writes a description from each resource’s content. External URLs are not fetched. This spends on inference in proportion to the number of resources. Embeddings are rebuilt per package as each finishes.",
-      "summarySkipped": "Out of scope: {count} (over the size limit, nothing to make one from, or a format the AI cannot read)",
-      "summaryFillButton": "Write the missing ones",
-      "summaryRefreshButton": "Rewrite all",
-      "summaryQueued": "Description generation queued. It runs in the background.",
-      "summaryModel": "Model",
-      "summaryFillScope": "Writes descriptions only where there is none yet.",
-      "summaryRefreshScope": "That, and rewrites the descriptions another model, prompt version or language produced.",
-      "summaryEstimate": "{resources, number} resources — about {inputLow, number}–{inputHigh, number} input / {output, number} output tokens",
-      "summaryCost": "(roughly ${low}–${high})",
-      "summaryLocale": "Language",
-      "summaryLocaleName": {
-        "ja": "Japanese",
-        "en": "English"
-      },
-      "summaryEstimateLoading": "Working out what this would cover…",
-      "summaryEstimateUnavailable": "Could not work out what this would cover, so it cannot be started."
+      "settingsUnavailable": "Could not load the embedding settings."
     },
     "adminSite": {
       "title": "Site Management",
@@ -429,7 +411,25 @@
       "resultOrganizations": "{count} organizations",
       "resultGroups": "{count} groups",
       "resultTags": "{count} tags",
-      "resultStorage": "{count} files"
+      "resultStorage": "{count} files",
+      "summaryTitle": "Generate AI descriptions in bulk",
+      "summaryDescription": "A resource is described automatically as it is registered. This is for the ones that predate the setting, and for rewriting what another model, prompt version or language produced. External URLs are not fetched. It spends on inference in proportion to the number of resources. Embeddings are rebuilt per package as each finishes.",
+      "summaryModel": "Model",
+      "summaryLocale": "Language",
+      "summaryLocaleName": {
+        "ja": "Japanese",
+        "en": "English"
+      },
+      "summaryFillScope": "Writes descriptions only where there is none yet.",
+      "summaryRefreshScope": "That, and rewrites the descriptions another model, prompt version or language produced.",
+      "summaryFillButton": "Write the missing ones",
+      "summaryRefreshButton": "Rewrite all",
+      "summaryEstimate": "{resources, number} resources — about {inputLow, number}–{inputHigh, number} input / {output, number} output tokens",
+      "summaryEstimateLoading": "Working out what this would cover…",
+      "summaryEstimateUnavailable": "Could not work out what this would cover, so it cannot be started.",
+      "summaryCost": "(roughly ${low}–${high})",
+      "summaryQueued": "Description generation queued. It runs in the background.",
+      "summarySkipped": "Out of scope: {count} (over the size limit, nothing to make one from, or a format the AI cannot read)"
     },
     "adminAnalytics": {
       "title": "Access Analytics",
@@ -553,6 +553,13 @@
       "backfillQueued": "Backfill queued. This section disappears once it completes.",
       "lakeIngestDescription": "{count} resources have a current version that is not yet loaded for diffing. Loading them lets you see added and removed rows from the next update onward.",
       "convertRevertsDescription": "{count} resources still hold versions an earlier revert set aside. Converting them makes the latest-version label agree with what is being served."
+    },
+    "searchAnalysis": {
+      "title": "Re-analyse the search index",
+      "description": "The Japanese analysis settings have changed. An analyzer is fixed when an index is created, so the change reaches this deployment only by rebuilding it. The stored text is re-read in place — nothing is fetched and no file is processed again. This is a one-time step after an upgrade, and it disappears once it is done.",
+      "reanalyse": "Re-analyse",
+      "reanalysing": "Running…",
+      "queued": "Re-analysis queued. This notice goes away once it finishes. Anything saved while it runs can be restored with \"Rebuild search index\" under Index Management."
     }
   },
   "profile": {

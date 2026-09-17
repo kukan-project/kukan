@@ -9,6 +9,12 @@ vi.mock('@opensearch-project/opensearch', async (importActual) => {
   const mockClient = {
     indices: {
       exists: vi.fn(),
+      existsAlias: vi.fn(),
+      getAlias: vi.fn(),
+      getMapping: vi.fn(),
+      putAlias: vi.fn(),
+      updateAliases: vi.fn(),
+      getSettings: vi.fn(),
       putMapping: vi.fn(),
       create: vi.fn(),
       delete: vi.fn(),
@@ -18,6 +24,11 @@ vi.mock('@opensearch-project/opensearch', async (importActual) => {
     msearch: vi.fn(),
     mget: vi.fn(),
     get: vi.fn(),
+    reindex: vi.fn(),
+    tasks: {
+      get: vi.fn(),
+      cancel: vi.fn(),
+    },
     count: vi.fn(),
     delete: vi.fn(),
     deleteByQuery: vi.fn(),
@@ -38,6 +49,12 @@ vi.mock('@opensearch-project/opensearch', async (importActual) => {
 interface MockClient {
   indices: {
     exists: ReturnType<typeof vi.fn>
+    existsAlias: ReturnType<typeof vi.fn>
+    getAlias: ReturnType<typeof vi.fn>
+    getMapping: ReturnType<typeof vi.fn>
+    putAlias: ReturnType<typeof vi.fn>
+    updateAliases: ReturnType<typeof vi.fn>
+    getSettings: ReturnType<typeof vi.fn>
     putMapping: ReturnType<typeof vi.fn>
     create: ReturnType<typeof vi.fn>
     delete: ReturnType<typeof vi.fn>
@@ -47,6 +64,11 @@ interface MockClient {
   msearch: ReturnType<typeof vi.fn>
   mget: ReturnType<typeof vi.fn>
   get: ReturnType<typeof vi.fn>
+  reindex: ReturnType<typeof vi.fn>
+  tasks: {
+    get: ReturnType<typeof vi.fn>
+    cancel: ReturnType<typeof vi.fn>
+  }
   count: ReturnType<typeof vi.fn>
   delete: ReturnType<typeof vi.fn>
   deleteByQuery: ReturnType<typeof vi.fn>
@@ -73,7 +95,11 @@ describe('OpenSearchAdapter', () => {
     // Default: indices do not exist
     mockClient.indices.exists.mockResolvedValue({ body: false })
     mockClient.indices.create.mockResolvedValue({ body: {} })
+    mockClient.indices.putAlias.mockResolvedValue({ body: {} })
     mockClient.indices.putMapping.mockResolvedValue({ body: {} })
+    // Default: the alias is in front of the first numbered index
+    mockClient.indices.existsAlias.mockResolvedValue({ body: true })
+    mockClient.indices.getAlias.mockResolvedValue({ body: { 'kukan-search-000001': {} } })
     // Default: non-empty index (for empty-index detection)
     mockClient.count.mockResolvedValue({ body: { count: 10 } })
   })
@@ -86,7 +112,13 @@ describe('OpenSearchAdapter', () => {
       expect(mockClient.indices.create).toHaveBeenCalledTimes(1)
 
       const createCall = mockClient.indices.create.mock.calls[0][0]
-      expect(createCall.index).toBe('kukan-search')
+      // Created numbered, reached by the alias, so re-analysis has somewhere to
+      // swap to later
+      expect(createCall.index).toBe('kukan-search-000001')
+      expect(mockClient.indices.putAlias).toHaveBeenCalledWith({
+        index: 'kukan-search-000001',
+        name: 'kukan-search',
+      })
       const props = createCall.body.mappings.properties
       expect(props.join_field).toEqual({
         type: 'join',
@@ -219,6 +251,7 @@ describe('OpenSearchAdapter', () => {
 
       const existsCalls = mockClient.indices.exists.mock.calls
       expect(existsCalls[0][0].index).toBe('test-search')
+      expect(mockClient.indices.create.mock.calls[0][0].index).toBe('test-search-000001')
     })
   })
 
@@ -1549,6 +1582,365 @@ describe('OpenSearchAdapter', () => {
         match: { extractedText: { query: 'population', operator: 'and' } },
       })
       expect(searchCall.body.query.bool.filter).toEqual([{ term: { join_field: 'content' } }])
+    })
+  })
+
+  describe('reanalyseIndex', () => {
+    /** The analysis the code defines */
+    const liveAnalysis = () =>
+      (OpenSearchAdapter as unknown as { KUROMOJI_ANALYSIS: { analysis: unknown } })
+        .KUROMOJI_ANALYSIS.analysis
+
+    /** As the cluster answers: every value a string and the keys in its own
+     *  order, both of which the comparison has to see past */
+    function settingsBody(analysis: unknown) {
+      const asCluster = (v: unknown): unknown =>
+        Array.isArray(v)
+          ? v.map(asCluster)
+          : v && typeof v === 'object'
+            ? Object.fromEntries(
+                Object.entries(v as Record<string, unknown>)
+                  .reverse()
+                  .map(([k, x]) => [k, asCluster(x)])
+              )
+            : String(v)
+      return {
+        body: { 'kukan-search-000001': { settings: { index: { analysis: asCluster(analysis) } } } },
+      }
+    }
+
+    beforeEach(() => {
+      // These all act on a deployment whose index is already there
+      mockClient.indices.exists.mockResolvedValue({ body: true })
+      mockClient.indices.delete.mockResolvedValue({ body: {} })
+      // Re-set each time: the outer `clearAllMocks` clears calls, not the
+      // implementations a previous case installed
+      mockClient.indices.getSettings.mockResolvedValue({ body: {} })
+      mockClient.indices.getMapping.mockResolvedValue({ body: {} })
+      mockClient.indices.putMapping.mockResolvedValue({ body: {} })
+      mockClient.indices.updateAliases.mockResolvedValue({ body: {} })
+      mockClient.reindex.mockResolvedValue({ body: { task: 'node:42' } })
+      mockClient.tasks.get.mockResolvedValue({
+        body: { completed: true, response: { total: 7, created: 7, failures: [] } },
+      })
+      mockClient.tasks.cancel.mockResolvedValue({ body: {} })
+      mockClient.indices.getMapping.mockResolvedValue({ body: {} })
+    })
+
+    it('reports the analysis as current when it is the one the code defines', async () => {
+      mockClient.indices.getSettings.mockResolvedValue(settingsBody(liveAnalysis()))
+
+      expect(await adapter.analysisStale()).toBe(false)
+    })
+
+    it('reports the analysis as stale when the live index was built under another', async () => {
+      const analysis = liveAnalysis() as {
+        analyzer: { kuromoji_analyzer: { filter: string[] } }
+      }
+      const older = structuredClone(analysis)
+      older.analyzer.kuromoji_analyzer.filter = older.analyzer.kuromoji_analyzer.filter.filter(
+        (f) => f !== 'ja_prefix'
+      )
+      mockClient.indices.getSettings.mockResolvedValue(settingsBody(older))
+
+      expect(await adapter.analysisStale()).toBe(true)
+    })
+
+    it('says it cannot tell, rather than answer for a cluster it cannot read', async () => {
+      mockClient.indices.getSettings.mockRejectedValue(new Error('connection refused'))
+
+      // A screen may choose to say nothing; a job must not read silence as
+      // "already current" and then acknowledge its message
+      await expect(adapter.analysisStale()).rejects.toThrow('connection refused')
+    })
+
+    /** The index a run created to copy into */
+    const destinationOf = (calls: unknown[][]) => (calls.at(-1)![0] as { index: string }).index
+
+    it('copies into the next index and swaps the alias in one step', async () => {
+      const result = await adapter.reanalyseIndex()
+      const to = destinationOf(mockClient.indices.create.mock.calls)
+
+      expect(result).toEqual({ from: 'kukan-search-000001', to, documents: 7 })
+      expect(to).toMatch(/^kukan-search-000002-[0-9a-f]{8}$/)
+      expect(mockClient.indices.create).toHaveBeenCalledWith({
+        index: to,
+        body: expect.objectContaining({
+          settings: expect.objectContaining({ analysis: expect.anything() }),
+        }),
+      })
+      // `must_exist`, or an attempt whose alias has already moved removes
+      // nothing, adds itself beside the winner, and the name stops taking writes
+      expect(mockClient.indices.updateAliases).toHaveBeenCalledWith({
+        body: {
+          actions: [
+            { remove: { index: 'kukan-search-000001', alias: 'kukan-search', must_exist: true } },
+            { add: { index: to, alias: 'kukan-search' } },
+          ],
+        },
+      })
+      // Only once the alias no longer points at it
+      expect(mockClient.indices.delete.mock.invocationCallOrder.at(-1)).toBeGreaterThan(
+        mockClient.indices.updateAliases.mock.invocationCallOrder[0]
+      )
+    })
+
+    it('waits on the copy as a task, not as one long request', async () => {
+      mockClient.tasks.get
+        .mockResolvedValueOnce({ body: { completed: false } })
+        .mockResolvedValueOnce({
+          body: { completed: true, response: { total: 7, created: 7, failures: [] } },
+        })
+      vi.useFakeTimers()
+      try {
+        const copying = adapter.reanalyseIndex()
+        await vi.advanceTimersByTimeAsync(10_000)
+        const result = await copying
+
+        // Polled, rather than asking the cluster to hold one request open: a
+        // copy still running answers that with a 500 the transport raises
+        expect(mockClient.reindex.mock.calls[0][0].wait_for_completion).toBe(false)
+        expect(mockClient.tasks.get.mock.calls[0][0].wait_for_completion).toBeUndefined()
+        expect(mockClient.tasks.get).toHaveBeenCalledTimes(2)
+        expect(result?.documents).toBe(7)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('treats a copy that was cancelled part-way as a failed copy', async () => {
+      // `completed`, no `error`, no `failures` — and 6 of 50 documents
+      mockClient.tasks.get.mockResolvedValue({
+        body: { completed: true, response: { total: 50, created: 6, failures: [] } },
+      })
+
+      await expect(adapter.reanalyseIndex()).rejects.toThrow('failures')
+
+      expect(mockClient.indices.updateAliases).not.toHaveBeenCalled()
+    })
+
+    it('follows the number of an index created before the suffix existed', async () => {
+      // Re-using that number would collide with the index still holding it
+      await adapter.reanalyseIndex()
+
+      expect(destinationOf(mockClient.indices.create.mock.calls)).toMatch(
+        /^kukan-search-000002-[0-9a-f]{8}$/
+      )
+    })
+
+    it('copies into a name no other attempt would compute', async () => {
+      await adapter.reanalyseIndex()
+      const first = destinationOf(mockClient.indices.create.mock.calls)
+      mockClient.indices.create.mockClear()
+      await adapter.reanalyseIndex()
+
+      // Two attempts that shared a destination would have to agree about who
+      // owns it, and every way of asking leaves a window in which one deletes
+      // what the other is filling
+      expect(destinationOf(mockClient.indices.create.mock.calls)).not.toBe(first)
+    })
+
+    it('records on the new index the window its copy could not see', async () => {
+      await adapter.reanalyseIndex()
+
+      const created = mockClient.indices.create.mock.calls.at(-1)
+      expect(
+        (
+          created![0] as {
+            body: { mappings: { _meta?: { reanalyse?: { copyStartedAt?: string } } } }
+          }
+        ).body.mappings._meta?.reanalyse?.copyStartedAt
+      ).toEqual(expect.any(String))
+    })
+
+    it('reports a repair still owed by the live index', async () => {
+      mockClient.indices.getMapping.mockResolvedValue({
+        body: {
+          'kukan-search-000001': {
+            mappings: { _meta: { reanalyse: { copyStartedAt: '2026-09-17T10:00:00.000Z' } } },
+          },
+        },
+      })
+
+      expect(await adapter.pendingRepair()).toEqual(new Date('2026-09-17T10:00:00.000Z'))
+    })
+
+    it('owes nothing once the repair is recorded', async () => {
+      mockClient.indices.getMapping.mockResolvedValue({
+        body: {
+          'kukan-search-000001': {
+            mappings: {
+              _meta: {
+                reanalyse: {
+                  copyStartedAt: '2026-09-17T10:00:00.000Z',
+                  repairedAt: '2026-09-17T10:05:00.000Z',
+                },
+              },
+            },
+          },
+        },
+      })
+
+      expect(await adapter.pendingRepair()).toBeNull()
+      await adapter.markRepaired()
+      expect(mockClient.indices.putMapping).not.toHaveBeenCalled()
+    })
+
+    it('deletes an index no attempt could still be filling', async () => {
+      const old = Date.now() - 2 * 60 * 60_000
+      mockClient.indices.getSettings.mockResolvedValue({
+        body: {
+          'kukan-search-000001': { settings: { index: { creation_date: String(old) } } },
+          'kukan-search-000002-dead': { settings: { index: { creation_date: String(old) } } },
+          'kukan-search-000002-live': {
+            settings: { index: { creation_date: String(Date.now() - 5_000) } },
+          },
+        },
+      })
+
+      await adapter.reanalyseIndex()
+
+      const deleted = mockClient.indices.delete.mock.calls.map(
+        (c: unknown[]) => (c[0] as { index: string }).index
+      )
+      expect(deleted).toContain('kukan-search-000002-dead')
+      // Young enough that an attempt may still be filling it
+      expect(deleted).not.toContain('kukan-search-000002-live')
+    })
+
+    /** Minimal meta for constructing an OpenSearch client error */
+    const errorMeta = (statusCode: number) =>
+      ({
+        body: {},
+        statusCode,
+        headers: {},
+        warnings: null,
+        meta: {},
+      }) as unknown as ConstructorParameters<typeof osErrors.ResponseError>[0]
+
+    it('leaves the copy alone when the swap may yet be applied', async () => {
+      // A timeout is not an answer. The cluster may still be applying the
+      // action list, and the index deleted here is the one it would swap to.
+      mockClient.indices.updateAliases.mockRejectedValue(
+        new osErrors.TimeoutError('timed out', errorMeta(0))
+      )
+
+      await expect(adapter.reanalyseIndex()).rejects.toThrow()
+
+      expect(mockClient.indices.delete).not.toHaveBeenCalled()
+    })
+
+    it('leaves the copy alone when the cluster answered with a server error', async () => {
+      mockClient.indices.updateAliases.mockRejectedValue(new osErrors.ResponseError(errorMeta(503)))
+
+      await expect(adapter.reanalyseIndex()).rejects.toThrow()
+
+      expect(mockClient.indices.delete).not.toHaveBeenCalled()
+    })
+
+    it('clears the copy when the cluster refused the swap outright', async () => {
+      // A 4xx is an answer: the action list was rejected and nothing moved
+      mockClient.indices.updateAliases.mockRejectedValue(new osErrors.ResponseError(errorMeta(404)))
+
+      await expect(adapter.reanalyseIndex()).rejects.toThrow()
+
+      expect(
+        mockClient.indices.delete.mock.calls.map(
+          (c: unknown[]) => (c[0] as { index: string }).index
+        )
+      ).toEqual([destinationOf(mockClient.indices.create.mock.calls)])
+    })
+
+    it('clears the copy when it failed before the swap was ever asked for', async () => {
+      mockClient.tasks.get.mockResolvedValue({
+        body: { completed: true, response: { total: 6, created: 5, failures: [] } },
+      })
+
+      await expect(adapter.reanalyseIndex()).rejects.toThrow('failures')
+
+      expect(
+        mockClient.indices.delete.mock.calls.map(
+          (c: unknown[]) => (c[0] as { index: string }).index
+        )
+      ).toEqual([destinationOf(mockClient.indices.create.mock.calls)])
+      expect(mockClient.indices.updateAliases).not.toHaveBeenCalled()
+    })
+
+    it('treats a failure to delete the replaced index as housekeeping', async () => {
+      // The alias is already on the new index, so this is a leftover for the
+      // next run's sweep — not a reason to fail a re-analysis that worked
+      mockClient.indices.delete.mockRejectedValue(new Error('still merging'))
+
+      await expect(adapter.reanalyseIndex()).resolves.toMatchObject({
+        from: 'kukan-search-000001',
+      })
+    })
+
+    it('raises a destination it could not create', async () => {
+      mockClient.indices.create.mockRejectedValue(
+        Object.assign(new Error('bad mapping'), {
+          meta: { body: { error: { type: 'mapper_parsing_exception' } } },
+        })
+      )
+
+      await expect(adapter.reanalyseIndex()).rejects.toThrow('bad mapping')
+    })
+
+    it('gives up on a copy that never finishes, and keeps the live index', async () => {
+      vi.useFakeTimers()
+      try {
+        mockClient.tasks.get.mockImplementation(async () => {
+          vi.setSystemTime(Date.now() + 61 * 60_000)
+          return { body: { completed: false } }
+        })
+
+        await expect(adapter.reanalyseIndex()).rejects.toThrow('did not finish in time')
+
+        expect(mockClient.tasks.cancel).toHaveBeenCalledWith({ task_id: 'node:42' })
+        expect(mockClient.indices.updateAliases).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('migrates a deployment that predates the alias in one request', async () => {
+      mockClient.indices.existsAlias.mockResolvedValue({ body: false })
+
+      const result = await adapter.reanalyseIndex()
+
+      expect(result?.from).toBe('kukan-search')
+      expect(result.to).toMatch(/^kukan-search-000001-[0-9a-f]{8}$/)
+      // An index and an alias cannot share a name, and `remove_index` drops the
+      // old one inside the same action list that adds the alias — so the name
+      // never resolves to nothing
+      expect(mockClient.indices.updateAliases).toHaveBeenCalledWith({
+        body: {
+          actions: [
+            { remove_index: { index: 'kukan-search' } },
+            { add: { index: result.to, alias: 'kukan-search' } },
+          ],
+        },
+      })
+      expect(
+        mockClient.indices.delete.mock.calls.map(
+          (c: unknown[]) => (c[0] as { index: string }).index
+        )
+      ).not.toContain('kukan-search')
+    })
+
+    it('keeps the live index when the copy loses documents', async () => {
+      mockClient.tasks.get.mockResolvedValue({
+        body: { completed: true, response: { total: 6, created: 5, failures: [{ cause: 'x' }] } },
+      })
+
+      await expect(adapter.reanalyseIndex()).rejects.toThrow('failures')
+
+      expect(mockClient.indices.updateAliases).not.toHaveBeenCalled()
+      const deleted = mockClient.indices.delete.mock.calls.map(
+        (c: unknown[]) => (c[0] as { index: string }).index
+      )
+      // Its own destination, and nothing else
+      expect(deleted).toEqual([destinationOf(mockClient.indices.create.mock.calls)])
     })
   })
 })

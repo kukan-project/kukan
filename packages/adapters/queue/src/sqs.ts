@@ -9,10 +9,28 @@ import {
   SendMessageCommand,
   ReceiveMessageCommand,
   DeleteMessageCommand,
+  ChangeMessageVisibilityCommand,
   GetQueueAttributesCommand,
 } from '@aws-sdk/client-sqs'
 import { createLogger, type Logger } from '@kukan/shared'
 import type { EnqueueOptions, Job, QueueAdapter, QueueStats } from './adapter'
+
+/**
+ * While a handler runs, the message is held by extending its visibility.
+ *
+ * The queue's own timeout is what a handler is assumed to fit in, and some do
+ * not — a search index re-analysis copies every document, which is minutes on
+ * a large catalogue. Without this the queue hands the same message to a second
+ * worker while the first is still working, and after a few of those it goes to
+ * the dead-letter queue with the work still running.
+ *
+ * Capped, because the point of a visibility timeout is that a worker which
+ * stops answering loses its claim: a handler that hangs holds its message for
+ * `MAX_HOLD_MS` and no longer.
+ */
+const HOLD_EXTENSION_S = 300
+const HOLD_INTERVAL_MS = 120_000
+const MAX_HOLD_MS = 90 * 60_000
 
 export interface SQSConfig {
   region: string
@@ -145,6 +163,7 @@ export class SQSQueueAdapter implements QueueAdapter {
           const jobId = message.MessageAttributes?.JobId?.StringValue ?? randomUUID()
           const job: Job<unknown> = { id: jobId, type: body.type, data: body.data }
 
+          const holding = this.holdMessage(message.ReceiptHandle!, jobId)
           try {
             this.processingJobSince = new Date()
             await handler(job)
@@ -156,6 +175,8 @@ export class SQSQueueAdapter implements QueueAdapter {
             // included: some handlers log nothing of their own before throwing,
             // leaving this as the only record of which job it was.
             this.log.error({ err, jobId, type: job.type, data: job.data }, 'Handler error')
+          } finally {
+            holding.release()
           }
         }
       } catch (err) {
@@ -164,6 +185,36 @@ export class SQSQueueAdapter implements QueueAdapter {
         await new Promise((r) => setTimeout(r, 5000))
       }
     }
+  }
+
+  /**
+   * Keep extending this message's visibility until the returned handle is
+   * released. Failures are logged and not raised: losing the claim is the
+   * pre-existing behaviour, not a reason to fail the job that is running.
+   */
+  private holdMessage(receiptHandle: string, jobId: string): { release: () => void } {
+    const until = Date.now() + MAX_HOLD_MS
+    const timer = setInterval(() => {
+      if (Date.now() > until) {
+        clearInterval(timer)
+        this.log.warn(
+          { jobId },
+          'Job has held its message too long; letting it return to the queue'
+        )
+        return
+      }
+      this.client
+        .send(
+          new ChangeMessageVisibilityCommand({
+            QueueUrl: this.queueUrl,
+            ReceiptHandle: receiptHandle,
+            VisibilityTimeout: HOLD_EXTENSION_S,
+          })
+        )
+        .catch((err) => this.log.warn({ err, jobId }, 'Could not extend the message visibility'))
+    }, HOLD_INTERVAL_MS)
+    timer.unref?.()
+    return { release: () => clearInterval(timer) }
   }
 
   private async deleteMessage(receiptHandle: string): Promise<void> {

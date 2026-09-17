@@ -9,6 +9,7 @@ import { useUser } from '@/components/dashboard/user-provider'
 import { StatCard } from '@/components/dashboard/stat-card'
 import { FormatBadges } from '@/components/format-badges'
 import { VersionBackfillNotice } from '@/components/dashboard/version-backfill-notice'
+import { SearchAnalysisNotice } from '@/components/dashboard/search-analysis-notice'
 
 interface PkgItem {
   id: string
@@ -55,6 +56,7 @@ export default function DashboardPage() {
       </div>
 
       <VersionBackfillNotice />
+      <SearchAnalysisNotice />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard label={t('datasetCount')} value={loading ? undefined : total} />

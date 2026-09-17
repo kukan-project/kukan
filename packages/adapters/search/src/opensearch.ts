@@ -9,6 +9,7 @@
  * Searching with `q` fires an msearch across both indices and merges results.
  */
 
+import { randomBytes } from 'node:crypto'
 import { Client, errors as osErrors } from '@opensearch-project/opensearch'
 import { createLogger, ServiceUnavailableError, type Logger } from '@kukan/shared'
 import type {
@@ -199,8 +200,101 @@ export interface OpenSearchConfig {
   logger?: Logger
 }
 
+/**
+ * An analysis definition as one comparable string: every value stringified and
+ * every key in one order, so what differs is the settings and not the shape the
+ * cluster chose to answer in.
+ */
+function normaliseAnalysis(value: unknown): string {
+  const normalise = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(normalise)
+      : v && typeof v === 'object'
+        ? Object.fromEntries(
+            Object.entries(v as Record<string, unknown>)
+              .sort(([a], [b]) => (a < b ? -1 : 1))
+              .map(([k, x]) => [k, normalise(x)])
+          )
+        : String(v)
+  return JSON.stringify(normalise(value))
+}
+
+/**
+ * Documents per `_reindex` batch when the index is re-analysed.
+ *
+ * Small because a content chunk is up to 500KB and the batch is held in heap:
+ * measured 2026-09-17, 50 a batch took a 285MB index to 80% heap and 1.6gb
+ * against the 1.8gb parent breaker, close enough that a concurrent search was
+ * rejected. Ten keeps a batch near 3MB, and `t3.small.search` — the smallest
+ * deployment size — runs on half the heap that measurement had.
+ */
+interface ReindexResponse {
+  total?: number
+  created?: number
+  updated?: number
+  deleted?: number
+  noops?: number
+  version_conflicts?: number
+  timed_out?: boolean
+  canceled?: string
+  failures?: unknown[]
+}
+
+/**
+ * What a finished `_reindex` task actually copied.
+ *
+ * `failures` empty is not the same as "all of them": a cancelled task reports
+ * `completed: true`, no `error` and no failures, having copied whatever it had
+ * reached — and the alias would then be swapped onto a truncated index while
+ * the complete one is deleted. So the documents are counted, and anything the
+ * copy left behind is reported as a failure of the copy.
+ */
+function countCopied(r: ReindexResponse): { total: number; failures: unknown[] } {
+  const total = r.total ?? 0
+  const handled = (r.created ?? 0) + (r.updated ?? 0) + (r.deleted ?? 0) + (r.noops ?? 0)
+  const shortfall: unknown[] = []
+  if (r.canceled) shortfall.push({ canceled: r.canceled })
+  if (r.timed_out) shortfall.push({ timed_out: true })
+  if (r.version_conflicts) shortfall.push({ version_conflicts: r.version_conflicts })
+  if (handled !== total) shortfall.push({ copied: handled, of: total })
+  return { total, failures: [...(r.failures ?? []), ...shortfall] }
+}
+
+/**
+ * Whether the cluster refused a request outright, so nothing it asked for was
+ * applied.
+ *
+ * A 4xx is an answer: the action list was rejected and the cluster is as it
+ * was. A timeout, a dropped connection or a 5xx is not — the request may still
+ * be working its way through, and treating that as "it did not happen" is how a
+ * caller undoes something that is about to take effect.
+ */
+function refusedOutright(err: unknown): boolean {
+  if (!(err instanceof osErrors.ResponseError)) return false
+  const status = err.statusCode ?? 0
+  return status >= 400 && status < 500
+}
+
+/** The 400 that means "someone else got here first", as opposed to a bad mapping */
+function isAlreadyExists(err: unknown): boolean {
+  const type = (err as { meta?: { body?: { error?: { type?: string } } } })?.meta?.body?.error?.type
+  return type === 'resource_already_exists_exception'
+}
+
+const REINDEX_BATCH_DOCS = 10
+/** Between polls of the copy task */
+const REINDEX_POLL_MS = 5_000
+const REINDEX_TIMEOUT_MS = 60 * 60_000
+
 export class OpenSearchAdapter implements SearchAdapter {
   private client: Client
+  /**
+   * What every read and write names. An alias in a deployment created since
+   * ADR-025's re-analysis work, the concrete index itself in one created
+   * before it — every operation here works through either (verified: search,
+   * count, index, delete_by_query, putMapping, cat.indices), so only the
+   * lifecycle below has to tell them apart.
+   */
   private searchIndex: string
   private replicas: number
   private log: Logger
@@ -337,26 +431,283 @@ export class OpenSearchAdapter implements SearchAdapter {
     }
   }
 
-  /** @returns true if the index was just created (didn't exist before) */
+  /** The body an index of ours is created with — one place, so the index a
+   *  re-analysis builds is the index a fresh deployment would have got */
+  private indexBody(meta?: Record<string, unknown>) {
+    return {
+      settings: { number_of_replicas: this.replicas, ...OpenSearchAdapter.KUROMOJI_ANALYSIS },
+      mappings: { ...(meta ? { _meta: meta } : {}), properties: SEARCH_PROPERTIES },
+    }
+  }
+
+  /** The index the alias points at, or the index itself where there is no alias
+   *  (a deployment created before this scheme) */
+  private async concreteIndex(): Promise<string> {
+    // Asked separately because `ignore: [404]` does not answer with an empty
+    // body — it hands back the 404 payload, whose first key is `error`
+    const alias = await this.client.indices.existsAlias({ name: this.searchIndex })
+    if (!alias.body) return this.searchIndex
+    const got = await this.client.indices.getAlias({ name: this.searchIndex })
+    const behind = Object.keys(got.body)
+    if (behind.length !== 1) {
+      // An alias over two indices takes no writes at all ("no write index is
+      // defined"), which otherwise shows up only as indexing having stopped
+      throw new Error(`${this.searchIndex} covers ${behind.length} indices; expected one`)
+    }
+    return behind[0]
+  }
+
+  /**
+   * @returns true if the index was just created (didn't exist before)
+   *
+   * A new deployment gets an alias in front of a numbered index, so that
+   * re-analysis later has somewhere to swap to. An existing one is left as it
+   * is: migrating it means copying every document, which is not something a
+   * process should decide to do because it started.
+   */
   private async ensureSearchIndex(): Promise<boolean> {
     const exists = await this.client.indices.exists({ index: this.searchIndex })
-    if (!exists.body) {
-      await this.client.indices.create({
-        index: this.searchIndex,
+    if (exists.body) return false
+    const concrete = `${this.searchIndex}-000001`
+    // Two requests, and a process killed between them would otherwise find the
+    // index existing and the alias missing on every boot from then on — and
+    // every read and write goes through here. So an index that is already there
+    // is not an error, it is the second half of this being finished.
+    await this.client.indices.create({ index: concrete, body: this.indexBody() }).catch((err) => {
+      if (!isAlreadyExists(err)) throw err
+    })
+    await this.client.indices.putAlias({ index: concrete, name: this.searchIndex })
+    this.mapping = Promise.resolve()
+    return true
+  }
+
+  /**
+   * Whether the live index's analysis is the one the code defines.
+   *
+   * Compared as the cluster reports it against the literal, which needs both to
+   * be normalised in two ways: OpenSearch returns every value as a string, and
+   * it returns the keys in its own order. Array order is left alone — the order
+   * of a filter chain is part of what the analyzer is.
+   */
+  async analysisStale(): Promise<boolean> {
+    // The alias by name: `getSettings` resolves it, and answers keyed by the
+    // concrete index either way — which is why the body is read by position.
+    // A deployment with no index at all throws into the catch below, where
+    // "cannot tell" is already answered as "not stale".
+    const got = await this.client.indices.getSettings({ index: this.searchIndex })
+    const live = Object.values(got.body)[0]?.settings?.index?.analysis
+    return (
+      normaliseAnalysis(live) !== normaliseAnalysis(OpenSearchAdapter.KUROMOJI_ANALYSIS.analysis)
+    )
+  }
+
+  /**
+   * A name no other attempt will compute.
+   *
+   * The sequence is for a person reading `_cat/indices`; the suffix is what
+   * makes the name a claim. Two attempts that derive the same destination have
+   * to agree about who owns it, and every way of asking — a marker, a lease,
+   * a running task — leaves a window in which one deletes what the other is
+   * filling. Different names have no such question: each attempt fills its own
+   * index, and the alias swap decides which one becomes the catalogue.
+   */
+  private nextIndexName(current: string): string {
+    // Both spellings: an index created before the suffix existed ends at its
+    // number, and re-using that number would collide with it
+    const n = Number(current.match(/-(\d{6})(?:-[0-9a-f]+)?$/)?.[1] ?? 0) + 1
+    const suffix = randomBytes(4).toString('hex')
+    return `${this.searchIndex}-${String(n).padStart(6, '0')}-${suffix}`
+  }
+
+  /**
+   * Delete indexes of ours that no attempt could still be filling.
+   *
+   * With a name per attempt, a run that died leaves its destination behind and
+   * nothing will ever reuse it. Age is the only question worth asking: the
+   * deadline is how long a copy may run, so anything older than that belongs to
+   * an attempt that is over, and anything younger may be in flight.
+   */
+  private async sweepAbandonedIndexes(live: string): Promise<void> {
+    const got = await this.client.indices.getSettings({
+      index: `${this.searchIndex}-*`,
+      name: 'index.creation_date',
+    })
+    const oldest = Date.now() - REINDEX_TIMEOUT_MS
+    const body = got.body as unknown as Record<
+      string,
+      { settings?: { index?: { creation_date?: string } } }
+    >
+    for (const [index, settings] of Object.entries(body)) {
+      if (index === live) continue
+      const created = Number(settings.settings?.index?.creation_date)
+      if (!Number.isFinite(created) || created > oldest) continue
+      this.log.warn({ index }, 'Deleting an index left by a re-analysis that did not finish')
+      await this.client.indices.delete({ index }, { ignore: [404] })
+    }
+  }
+
+  /**
+   * Copy `from` into `to` and wait for it, as a task rather than one long
+   * request: a copy takes minutes, and an HTTP client — or anything between it
+   * and the cluster — gives up long before that.
+   */
+  private async awaitReindex(
+    from: string,
+    to: string
+  ): Promise<{ total: number; failures: unknown[] }> {
+    const started = await this.client.reindex({
+      wait_for_completion: false,
+      refresh: true,
+      body: { source: { index: from, size: REINDEX_BATCH_DOCS }, dest: { index: to } },
+    })
+    const taskId = (started.body as unknown as { task?: string }).task
+    if (!taskId) throw new Error('OpenSearch accepted the copy without naming a task')
+
+    const deadline = Date.now() + REINDEX_TIMEOUT_MS
+    for (let first = true; ; first = false) {
+      // Plain polling with a wait of our own. Asking the cluster to hold the
+      // request instead (`wait_for_completion`) answers a copy still running
+      // with a 500 `timeout_exception`, which the transport raises — the loop
+      // would end on its first pass for every copy longer than one poll.
+      if (!first) await new Promise((resolve) => setTimeout(resolve, REINDEX_POLL_MS))
+      const task = await this.client.tasks.get({ task_id: taskId })
+      const body = task.body as unknown as {
+        completed?: boolean
+        response?: ReindexResponse
+        error?: unknown
+      }
+      if (body.completed) {
+        if (body.error) throw new Error(`Re-analysis copy failed: ${JSON.stringify(body.error)}`)
+        return countCopied(body.response ?? {})
+      }
+      if (Date.now() > deadline) {
+        await this.client.tasks.cancel({ task_id: taskId }).catch(() => {})
+        throw new Error(`Re-analysis copy of ${from} did not finish in time`)
+      }
+    }
+  }
+
+  /**
+   * Build the next index under the current analysis and swap the alias to it.
+   *
+   * `_reindex` rather than re-sending the documents from their sources, because
+   * `extractedText` lives in `_source`: OpenSearch re-analyses in place and
+   * nothing is fetched, extracted or embedded again (seconds, against the hour
+   * a content re-processing takes).
+   *
+   * The batch is small on purpose — see `REINDEX_BATCH_DOCS`.
+   */
+  async reanalyseIndex(): Promise<{ from: string; to: string; documents: number }> {
+    await this.ensureIndex()
+    const from = await this.concreteIndex()
+    await this.sweepAbandonedIndexes(from)
+    const to = this.nextIndexName(from)
+    const copyStartedAt = new Date().toISOString()
+
+    // The window this copy cannot see, written on the index it produces. A
+    // delivery that arrives after the swap but before the repair finished reads
+    // it back from the live index — the one artifact that survives a worker.
+    await this.client.indices.create({
+      index: to,
+      body: this.indexBody({ reanalyse: { copyStartedAt } }),
+    })
+    let total: number
+    let swapRequested = false
+    try {
+      const copied = await this.awaitReindex(from, to)
+      total = copied.total
+      if (copied.failures.length > 0) {
+        throw new Error(
+          `Re-analysis copied ${from} with ${copied.failures.length} failures; kept the old index`
+        )
+      }
+
+      // One request, and a conditional one. `must_exist` is what makes a second
+      // attempt lose rather than land beside the first: without it the removal
+      // of an alias that has already moved is a silent no-op and the `add`
+      // still runs, leaving the name over two indexes — which takes no writes
+      // at all. A deployment created before the alias holds an index under the
+      // very name the alias needs, and `remove_index` drops it inside the same
+      // action list.
+      swapRequested = true
+      await this.client.indices.updateAliases({
         body: {
-          settings: {
-            number_of_replicas: this.replicas,
-            ...OpenSearchAdapter.KUROMOJI_ANALYSIS,
-          },
-          mappings: {
-            properties: SEARCH_PROPERTIES,
-          },
+          actions: [
+            from === this.searchIndex
+              ? { remove_index: { index: from } }
+              : { remove: { index: from, alias: this.searchIndex, must_exist: true } },
+            { add: { index: to, alias: this.searchIndex } },
+          ],
         },
       })
-      this.mapping = Promise.resolve()
-      return true
+    } catch (err) {
+      // Cleaned up only where the alias certainly did not move: before the swap
+      // was ever asked for, or where the cluster refused it outright. A request
+      // that timed out or lost its connection may still be applied, and reading
+      // the alias back proves nothing — it would answer with the old index a
+      // moment before the swap lands, and the index deleted on the strength of
+      // that answer is the one the alias is about to point at. Left alone, it is
+      // a stray index the next run's sweep collects.
+      if (!swapRequested || refusedOutright(err)) {
+        await this.client.indices.delete({ index: to }, { ignore: [404] })
+      } else {
+        this.log.warn(
+          { err, index: to },
+          'Left the copy in place: the swap may yet be applied, and the sweep can collect it'
+        )
+      }
+      throw err
     }
-    return false
+
+    // Past the point of no return: the alias is on the new index, so the rest
+    // is housekeeping and a failure here is a leftover index, not an outage.
+    // The sweep at the start of the next run collects it.
+    if (from !== this.searchIndex) {
+      await this.client.indices
+        .delete({ index: from }, { ignore: [404] })
+        .catch((err) => this.log.warn({ err, index: from }, 'Could not delete the replaced index'))
+    }
+    // The new index was created with the current mapping, so the once-per-
+    // process update has nothing left to do
+    this.mapping = Promise.resolve()
+    return { from, to, documents: total }
+  }
+
+  /**
+   * When the copy that produced the live index began, while its repair is
+   * unfinished — null once the repair is recorded, or where there was none.
+   *
+   * The marker lives on the index rather than in the job, because the job is a
+   * queue message that may be delivered again to a process that knows nothing
+   * of the first attempt, and what needs repairing is the index.
+   */
+  async pendingRepair(): Promise<Date | null> {
+    const index = await this.concreteIndex()
+    const got = await this.client.indices.getMapping({ index }, { ignore: [404] })
+    const meta = (
+      got.body as unknown as Record<
+        string,
+        { mappings?: { _meta?: { reanalyse?: { copyStartedAt?: string; repairedAt?: string } } } }
+      >
+    )[index]?.mappings?._meta?.reanalyse
+    if (!meta?.copyStartedAt || meta.repairedAt) return null
+    const at = new Date(meta.copyStartedAt)
+    return Number.isNaN(at.getTime()) ? null : at
+  }
+
+  /** Record that the repair is done, so a later delivery does not redo it */
+  async markRepaired(): Promise<void> {
+    const index = await this.concreteIndex()
+    const pending = await this.pendingRepair()
+    if (!pending) return
+    await this.client.indices.putMapping({
+      index,
+      body: {
+        _meta: {
+          reanalyse: { copyStartedAt: pending.toISOString(), repairedAt: new Date().toISOString() },
+        },
+      },
+    })
   }
 
   /**
@@ -533,6 +884,37 @@ export class OpenSearchAdapter implements SearchAdapter {
       routing: doc.packageId,
       refresh: 'wait_for',
     })
+  }
+
+  /**
+   * Distinct `resourceId`s among the content documents, ascending, a page at a
+   * time. A composite aggregation because that is the one built to be paged:
+   * `after` resumes where the last page stopped, so the whole set can be walked
+   * without holding it all at once.
+   */
+  async indexedContentResources(after?: string, limit = 1_000): Promise<string[]> {
+    await this.ensureIndex()
+    const res = await this.client.search({
+      index: this.searchIndex,
+      body: {
+        size: 0,
+        query: { term: { join_field: 'content' } },
+        aggs: {
+          by_resource: {
+            composite: {
+              size: limit,
+              sources: [{ resource: { terms: { field: 'resourceId' } } }],
+              ...(after ? { after: { resource: after } } : {}),
+            },
+          },
+        },
+      },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const buckets = ((res.body.aggregations as any)?.by_resource?.buckets ?? []) as Array<{
+      key: { resource: string }
+    }>
+    return buckets.map((b) => b.key.resource)
   }
 
   async deleteContent(resourceId: string): Promise<void> {
@@ -1111,7 +1493,10 @@ export class OpenSearchAdapter implements SearchAdapter {
       'docs.count': string
       'store.size': string
     }>
-    const row = indices.find((i) => i.index === this.searchIndex)
+    // One index was asked for, so one row comes back — by position, because
+    // `cat.indices` answers an alias with the concrete index behind it and the
+    // name that comes back is not the name asked for
+    const row = indices[0]
     const sizeBytes = parseSizeToBytes(row?.['store.size'] ?? '0b')
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

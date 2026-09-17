@@ -727,10 +727,16 @@ over drops the resource out of a generation somebody asked for, silently.
 
 ### 11.2 The admin screen
 
-A fourth action, **"Generate AI abstracts"**, is added to the "Reprocessing" card on
-`/dashboard/admin/search`. The existing "Regenerate embedding vectors" **stays a free action** —
-folding abstract generation into it would bill every resource to an LLM just because the
-embedding model changed.
+A **"Generate AI descriptions"** card sits on `/dashboard/admin/site`, directly below the
+model settings that choose the model whose rate the estimate is quoted at. It is kept apart
+from the search index actions, because what it rebuilds is what the AI wrote about a dataset,
+not an index. "Regenerate embedding vectors", over on index management, **stays a free
+action** — folding abstract generation into it would bill every resource to an LLM just
+because the embedding model changed.
+
+The card is titled "in bulk". A resource is described automatically by the Summarize step as
+it is registered, so this is not the ordinary path — it exists for resources that predate the
+setting and for those that need rewriting.
 
 **There are two actions, and they are different amounts of money for different reasons.**
 

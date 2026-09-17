@@ -114,6 +114,123 @@ resource-level operations (deleteContent, getContentChunks, etc.) use term filte
 - **Re-indexing**: Migration from the existing 3 indexes is required
 - **inner_hits**: `has_child` + `inner_hits` is used to retrieve resource/content highlights
 
+### Updating the analysis (the index name is an alias)
+
+An analyzer is fixed when an index is created. Changing the kuromoji settings
+(stopwords, part-of-speech filters) leaves a running deployment analysing as it
+always did, and rebuilding — re-sending every document — does not help while the
+destination is the same index.
+
+So the search index sits **behind an alias**. The concrete index is numbered,
+`<prefix>-search-000001`, and what the application reads and writes is always
+the alias `<prefix>-search`. To update the analysis, the next numbered index is
+created, `_reindex` copies every document into it, and the alias is swapped.
+`extractedText` lives in `_source`, so OpenSearch re-analyses in place: nothing
+is fetched, extracted or embedded again, and the whole thing takes seconds
+against the hour a content re-processing takes.
+
+Decisions:
+
+- **No automatic migration.** A deployment created before the alias keeps
+  working as it is. Migrating copies every document, which is not something a
+  process should start doing because it booted, so it happens only inside the
+  explicit admin action (`POST /admin/search/reanalyse`). Being a one-time step
+  after an upgrade, it is offered as a dashboard migration notice — the same
+  shape as the version backfill — shown while the analysis is out of date and
+  gone once it is done.
+- **The swap is atomic.** A single failed document in `_reindex` discards the
+  new index and leaves the live one untouched. On success, `updateAliases`
+  removes and adds in one request, so there is no moment where a search returns
+  nothing. On a pre-alias deployment the index holding the name the alias needs
+  is dropped by `remove_index` inside that same action list, so the first
+  migration is atomic too.
+- **Only the analysis is compared.** Mapping drift — a changed type or analyzer
+  on a field that already exists — does not show up here. The repair is the
+  same rebuild, so the comparison can widen when it needs to.
+- **Writes during the copy are lost, so the job repairs the index before it
+  ends.** An update that reaches the alias after `_reindex` starts is not in the
+  new index, and two kinds of loss are more than staleness.
+
+  - A dataset made private stays public: visibility is decided by the indexed
+    `private` field, and the API does not re-check a search result against the
+    database.
+  - A deleted resource keeps its content: content is a child of the **package**,
+    not of the resource, so chunks of a resource that is gone are still reached
+    through a package that is not.
+  - Content another worker indexed during the copy is lost, and the row still
+    says it is indexed, so no ordinary run writes it again. Where that write
+    was a replacement, the text it replaced comes back with the copy. Workers
+    scale out, so this is not a corner case.
+
+  Both are repaired inside this job rather than one queued behind it. A queued
+  repair leaves the index lying for as long as the backlog lasts, and forever if
+  that message reaches the dead-letter queue. The job rebuilds the metadata from
+  the database (clearing before it writes, so deletions land) and drops content
+  indexed for resources the database no longer has, and the message is not
+  acknowledged until both are done. A redelivered message finds the analysis
+  already current, skips the copy, and repeats only the repair. **What to
+  repair is remembered by the index, not by the job**: the copy's start is
+  written into the new index's `_meta` and stamped done when the repair
+  finishes. A job is a queue message that may be delivered again to a process
+  that knows nothing of the first attempt; the index is what survives. A
+  resource whose Index step finished while the copy ran has its stale chunks
+  **deleted there and then** before its `contentIndexed` is retracted and it is
+  re-run from storage, so nothing is fetched — leaving the deletion to the
+  queued run would keep the replaced text searchable for as long as the backlog
+  lasts. Those rebuilds are separate jobs and may still be running when the
+  repair is marked done; one that fails leaves content **missing, not exposed**,
+  and says where it went: the run records `error` on the resource's pipeline
+  row, which the admin jobs screen lists with a re-run beside it, and
+  `contentIndexed` stays false until a run writes it — so the gap is in the
+  database and not only in the queue. Reading the dead-letter queue is not part
+  of this; the window is
+  the copy, so this is a handful of resources and over-selecting one costs a
+  rebuild nobody needed.
+
+  Where the judgement itself cannot be had — an unreachable cluster — the
+  screen may say nothing but the **job fails**. Reading "cannot tell" as
+  "already current" acknowledges a message whose work never happened.
+
+  Re-checking visibility against the database on the search path would also
+  close this, at a database round trip per search; that is not the trade made
+  here.
+
+- **The message is held for as long as the handler runs.** A copy takes
+  minutes on a large catalogue, which is longer than the queue's visibility
+  timeout; left alone, the same message goes to a second worker and eventually
+  to the dead-letter queue while the work is still running. The queue adapter
+  extends the visibility while a handler runs, capped, so a worker that stops
+  answering still loses its claim.
+- **Every attempt copies into a name of its own.** Two attempts that derive the
+  same destination have to agree about who owns it, and every way of asking —
+  a marker, a lease, a running task — leaves a window in which one deletes what
+  the other is filling. Different names retire the question: each attempt fills
+  its own index, and the alias swap decides which becomes the catalogue.
+- **The swap is conditional.** `remove` carries `must_exist`. Without it, a
+  second attempt removing an alias that has already moved removes **nothing**,
+  its `add` still runs, and the name ends up over two indexes — which takes no
+  writes at all ("no write index is defined"), so indexing stops silently. With
+  it the second attempt is refused and the whole action list is rejected.
+- **Once the alias has moved, nothing deletes the new index.** What remains
+  after the swap is housekeeping — deleting the index that was replaced — and
+  failing at it leaves a stray index, not an outage; the next run's sweep
+  collects it. A swap whose answer was lost may still be applied, so cleaning
+  up "our own" destination would delete the index the alias is about to point
+  at. Reading the alias back does **not** settle it either: asked a moment
+  before the swap lands it answers with the old index, and the destination
+  deleted on the strength of that answer is the one the swap moves to. The
+  destination may be deleted only where the swap was never requested, or where
+  the cluster refused it outright with a 4xx. A timeout, a dropped connection
+  or a 5xx leaves it for the sweep.
+- **An abandoned index is recognised by age alone.** With a name per attempt,
+  nothing reuses the destination of a run that died. Anything older than the
+  copy's deadline belongs to an attempt that is over; anything younger may be in
+  flight.
+- **Batches of 10.** Measured 2026-09-17: at 50 documents a batch — 15MB of
+  500KB chunks in flight — copying a 285MB index reaches 80% heap and 1.6gb
+  against the 1.8gb parent circuit breaker, and a search running alongside it is
+  rejected. `t3.small.search`, the smallest deployment size, has half that heap.
+
 ### Migration Plan
 
 1. New index mapping definition (join field + kuromoji analyzer)

@@ -242,6 +242,50 @@ export interface SearchAdapter {
   /** Get index statistics (document counts, sizes). Returns null if not supported. */
   getIndexStats(): Promise<IndexStats | null>
 
+  /**
+   * Whether the live index was created under an analysis the code no longer
+   * defines. Its own call rather than part of `getIndexStats`, because what
+   * asks is a dashboard notice that should cost one request, not a page of
+   * counts. False on a backend that fixes no analysis at index creation.
+   *
+   * Throws where the answer cannot be had. A caller that only decorates a
+   * screen should read that as "say nothing"; a job that would otherwise
+   * acknowledge its message must not read it as "already current".
+   */
+  analysisStale(): Promise<boolean>
+
+  /**
+   * The resources that have content indexed, a page at a time, so a caller can
+   * tell which of them the database no longer has. `after` continues from the
+   * last id of the previous page. Empty on a backend that indexes no content.
+   */
+  indexedContentResources(after?: string, limit?: number): Promise<string[]>
+
+  /**
+   * Rebuild the index under the analysis the code now defines, keeping the
+   * documents: create the next index, copy into it, swap the alias, drop the
+   * old one. Null on a backend whose analysis is not fixed at creation — the
+   * PostgreSQL fallback re-reads its own columns on every query — the same way
+   * `getIndexStats` answers for a backend with no index to describe.
+   *
+   * **Writes during the copy land on the index being replaced and are lost
+   * with it.** The window is the copy, seconds on a small catalogue; a document
+   * written inside it is restored by the ordinary metadata rebuild.
+   */
+  reanalyseIndex(): Promise<{ from: string; to: string; documents: number } | null>
+
+  /**
+   * When the copy that produced the live index began, while its repair is
+   * unfinished. Null where nothing is pending, or on a backend that copies no
+   * index. Recorded on the index rather than in the job, because a queue
+   * message may be delivered again to a process that knows nothing of the
+   * attempt that swapped.
+   */
+  pendingRepair(): Promise<Date | null>
+
+  /** Record that the repair of the live index is done */
+  markRepaired(): Promise<void>
+
   /** Get a single document from an index by ID. Returns null if not found or not supported. */
   getDocument(
     index: 'packages' | 'resources' | 'contents',

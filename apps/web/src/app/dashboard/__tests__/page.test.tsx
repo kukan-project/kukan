@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import { UserProvider, type DashboardUser } from '@/components/dashboard/user-provider'
 import DashboardPage from '../page'
@@ -99,6 +99,109 @@ describe('DashboardPage', () => {
     vi.mocked(clientFetch).mockReturnValue(new Promise(() => {}))
     renderPage()
     expect(screen.getByText('Welcome, Test User')).toBeInTheDocument()
+  })
+
+  describe('search re-analysis notice', () => {
+    const sysadmin: DashboardUser = { ...mockUser, sysadmin: true }
+
+    function mockRoutes(stale: boolean) {
+      vi.mocked(clientFetch).mockImplementation(async (path: string) => {
+        if (path.includes('/search/analysis-status')) return mockFetchResponse({ stale })
+        if (path.includes('/version-backfill-status')) {
+          return mockFetchResponse({
+            unversionedCount: 0,
+            pendingLakeIngestCount: 0,
+            unconvertedRevertCount: 0,
+          })
+        }
+        return mockFetchResponse({ items: [], total: 0, count: 0 })
+      })
+    }
+
+    it('stays out of the way while the live index matches the code', async () => {
+      mockRoutes(false)
+      renderPage(sysadmin)
+
+      await waitFor(() => {
+        expect(clientFetch).toHaveBeenCalledWith(
+          '/api/v1/admin/search/analysis-status',
+          expect.anything()
+        )
+      })
+      expect(screen.queryByText('Re-analyse the search index')).not.toBeInTheDocument()
+    })
+
+    it('offers the one-time rebuild when the analysis has moved on', async () => {
+      mockRoutes(true)
+      renderPage(sysadmin)
+
+      await waitFor(() => {
+        expect(screen.getByText('Re-analyse the search index')).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Re-analyse' }))
+
+      await waitFor(() => {
+        expect(clientFetch).toHaveBeenCalledWith('/api/v1/admin/search/reanalyse', {
+          method: 'POST',
+        })
+      })
+    })
+
+    it('says the work was queued, and stops offering it', async () => {
+      mockRoutes(true)
+      renderPage(sysadmin)
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Re-analyse' })).toBeEnabled()
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Re-analyse' }))
+
+      await waitFor(() => {
+        expect(screen.getByRole('status')).toHaveTextContent('Re-analysis queued')
+      })
+      expect(screen.getByRole('button', { name: 'Re-analyse' })).toBeDisabled()
+    })
+
+    it('says so when the queue would not take it, and lets them try again', async () => {
+      vi.mocked(clientFetch).mockImplementation(async (path: string) => {
+        if (path.includes('/search/analysis-status')) return mockFetchResponse({ stale: true })
+        if (path.includes('/version-backfill-status')) {
+          return mockFetchResponse({
+            unversionedCount: 0,
+            pendingLakeIngestCount: 0,
+            unconvertedRevertCount: 0,
+          })
+        }
+        if (path.includes('/search/reanalyse')) {
+          return { ok: false, json: async () => ({}) } as Response
+        }
+        return mockFetchResponse({ items: [], total: 0, count: 0 })
+      })
+      renderPage(sysadmin)
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Re-analyse' })).toBeEnabled()
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Re-analyse' }))
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toBeInTheDocument()
+      })
+      expect(screen.getByRole('button', { name: 'Re-analyse' })).toBeEnabled()
+    })
+
+    it('asks nothing of a user who could not act on the answer', async () => {
+      mockRoutes(true)
+      renderPage()
+
+      await waitFor(() => {
+        expect(clientFetch).toHaveBeenCalled()
+      })
+      expect(clientFetch).not.toHaveBeenCalledWith(
+        '/api/v1/admin/search/analysis-status',
+        expect.anything()
+      )
+    })
   })
 
   it('should link datasets to edit page', async () => {
