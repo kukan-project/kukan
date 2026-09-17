@@ -41,7 +41,7 @@
     "eslint": "^10.10.0",
     "pg": "^8.23.0",
     "prettier": "^3.9.6",
-    "prettier-plugin-astro": "^0.14.1",
+    "prettier-plugin-astro": "^1.0.0",
     "tailwindcss": "^4.3.3",
     "turbo": "^2.10.12",
     "typescript": "^6.0.3",
