@@ -51,14 +51,14 @@
     "@kukan/shared": "workspace:*",
     "@kukan/storage-adapter": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "better-auth": "1.7.3",
+    "better-auth": "1.7.4",
     "busboy": "^1.6.0",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.7",
     "kysely": "^0.29.5",
     "pg": "^8.23.0",
-    "zod": "4.6.1"
+    "zod": "4.6.2"
   },
   "devDependencies": {
     "@kukan/db-testing": "workspace:*",
