@@ -8,6 +8,7 @@
  * it. Nothing else compares them.
  */
 import { describe, it, expect } from 'vitest'
+import { PACKAGE_NAME_PATTERN } from '@kukan/shared'
 import en from '../../messages/en.json'
 import ja from '../../messages/ja.json'
 
@@ -33,6 +34,23 @@ function placeholders(message: string): string[] {
  */
 const ONE_SIDED = /^license\./
 
+/**
+ * The messages that describe the slug name rule, and the words each locale has
+ * to use to describe it.
+ *
+ * The Japanese `auth.nameError` once read 半角英数字、ハイフン、アンダースコア,
+ * which `Taro-Yamada` satisfies — so the one rule it broke, lowercase, went
+ * unsaid and the rejection read as a bug rather than a spec. Both locales had
+ * also left out the period the pattern allows. Neither shows up in a key or
+ * placeholder comparison, which is why this reads the prose.
+ */
+const SLUG_RULE_PATHS = ['common.nameHelp', 'auth.nameError']
+
+const MUST_NAME = {
+  en: [/lowercase/i, /period/i],
+  ja: [/小文字/, /ピリオド/],
+} as const
+
 function leaf(tree: Tree, path: string): string {
   return path.split('.').reduce<string | Tree>((node, key) => (node as Tree)[key], tree) as string
 }
@@ -55,5 +73,24 @@ describe('messages', () => {
         (p) => placeholders(leaf(en as Tree, p)).join() !== placeholders(leaf(ja as Tree, p)).join()
       )
     expect(mismatched).toEqual([])
+  })
+
+  it('names every constraint of the slug rule, in both locales', () => {
+    const silent = SLUG_RULE_PATHS.flatMap((path) =>
+      (['en', 'ja'] as const).flatMap((locale) => {
+        const message = leaf((locale === 'en' ? en : ja) as Tree, path)
+        return MUST_NAME[locale]
+          .filter((word) => !word.test(message))
+          .map((word) => `${locale} ${path} says nothing about ${word.source}: ${message}`)
+      })
+    )
+    expect(silent).toEqual([])
+  })
+
+  // What the words above are pinned to. Relax the pattern and this fails first,
+  // pointing at the messages that would otherwise go on describing the old rule.
+  it('describes a pattern that still rejects capitals and allows periods', () => {
+    expect(PACKAGE_NAME_PATTERN.test('taro.yamada')).toBe(true)
+    expect(PACKAGE_NAME_PATTERN.test('Taro-Yamada')).toBe(false)
   })
 })

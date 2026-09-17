@@ -38,6 +38,7 @@ type SignUpValues = z.infer<typeof signUpSchema>
 
 export default function SignUpPage() {
   const t = useTranslations('auth')
+  const tc = useTranslations('common')
   const tp = useTranslations('password')
   const [error, setError] = useState<string | null>(null)
   const { registrationEnabled } = useSiteSettings()
@@ -115,7 +116,9 @@ export default function SignUpPage() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            <Field id="name" error={errors.name && t('nameError')}>
+            {/* The same help the organization, group and dataset forms give for
+                the same slug rule — the name here is a URL identifier too. */}
+            <Field id="name" description={tc('nameHelp')} error={errors.name && t('nameError')}>
               <FieldLabel>{t('name')}</FieldLabel>
               <FieldControl>
                 <Input

@@ -56,9 +56,11 @@ describe('GroupForm', () => {
     })
   })
 
+  // What the help says is pinned in `messages.test.ts`, against the pattern it
+  // describes. What this form owes is that it reaches the field at all.
   it('should render name help text', () => {
     render(<GroupForm />)
-    expect(screen.getByText(/Used in URLs\. Alphanumeric characters/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/URL Identifier/)).toHaveAccessibleDescription(/Used in URLs/)
   })
 
   it('should show Update button in edit mode', () => {

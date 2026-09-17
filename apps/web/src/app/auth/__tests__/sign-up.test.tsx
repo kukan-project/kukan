@@ -35,6 +35,12 @@ describe('SignUpPage', () => {
     expect(screen.getByLabelText('Password')).toBeInTheDocument()
   })
 
+  // The rule used to reach the user only after a rejected submission.
+  it('should describe the name rule before anything is submitted', () => {
+    render(<SignUpPage />)
+    expect(screen.getByLabelText('Username')).toHaveAccessibleDescription(/lowercase/i)
+  })
+
   it('should show registration disabled message', () => {
     mockRegistrationEnabled = false
     render(<SignUpPage />)
