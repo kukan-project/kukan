@@ -190,11 +190,38 @@ export default defineConfig({
         test: {
           name: 'web',
           root: './apps/web',
-          // vmThreads: the cost here is per-file jsdom boot + re-imports, not
-          // the tests. A VM context per file keeps isolation while the module
-          // cache carries over. Not for worker/lake — native addons and VM
-          // contexts do not mix.
-          pool: 'vmThreads',
+          /**
+           * `threads`, not `vmThreads`, and the difference is a module registry
+           * per file rather than one carried across them.
+           *
+           * vmThreads was 44% faster on this suite and the saving was real, but
+           * it was paid for with state these files do not survive: a VM context
+           * keeps the module cache between files, so file N's unsettled work
+           * lands during file N+1 and its DOM is still mounted when N+1 queries
+           * for a button. It passed only while the node projects were
+           * interleaved between web files, holding both cores long enough for
+           * the previous file to quiesce — measured in #634: jsdom alone on two
+           * cores failed at any worker count, and passed at 24.
+           *
+           * That made green a property of the schedule rather than of the
+           * suite, and the issue named what would break it: more web test
+           * files. A single one did, and `unit` died twice with `Worker exited
+           * unexpectedly`, at the same point in the run both times, while
+           * develop stayed green.
+           *
+           * It costs back the time the VM pool saved, and the `unit` job is
+           * where that lands — enough to make it the run's ceiling instead of
+           * lint and typecheck. Buying it back means running this project in a
+           * job of its own, which needs a filter vitest does not have: two
+           * negated `--project` flags union rather than intersect, so
+           * `!*-integration !web` selects everything. Left to the issue rather
+           * than bought with a list of project names that a new project would
+           * silently fall off.
+           *
+           * Not for worker/lake either way — native addons and VM contexts do
+           * not mix.
+           */
+          pool: 'threads',
           environment: 'jsdom',
           globals: true,
           setupFiles: ['./src/__tests__/setup.ts'],
