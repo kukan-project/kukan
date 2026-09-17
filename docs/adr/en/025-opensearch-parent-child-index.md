@@ -114,6 +114,38 @@ resource-level operations (deleteContent, getContentChunks, etc.) use term filte
 - **Re-indexing**: Migration from the existing 3 indexes is required
 - **inner_hits**: `has_child` + `inner_hits` is used to retrieve resource/content highlights
 
+### Leg weights — content must not outvote what a dataset says about itself
+
+A search adds three legs under `should`: the package itself, resource metadata
+(`has_child: resource`), and resource content (`has_child: content`). Both child
+legs use `score_mode: 'max'`, so **one best chunk** speaks for the leg.
+
+Metadata and content started at the same weight, 0.4, and that breaks. A word
+appearing once in a free-text answer among a thousand takes the maximum, and
+competes on equal terms with a document whose abstract is about the subject. In
+practice the top hit for「お年寄り」was a water-supply survey whose only match
+was one respondent's aside.
+
+**The content leg is weighted down.** Measured on the golden set (dev catalogue,
+168 packages, 2026-09-17) by sweeping that weight alone:
+
+| content weight | `word` nDCG, keyword leg | fused |
+| -------------- | -----------------------: | ----: |
+| 0 (off)        |                      62% |       |
+| 0.05           |                      67% |       |
+| 0.15           |                      67% |   71% |
+| 0.25           |                      64% |       |
+| 0.4            |                      54% |   66% |
+
+**Lowered, not removed.** At zero it loses five points, so content earns its
+place; it simply must not outvote what a dataset says about itself. 0.05 and
+0.15 score the same, and 0.15 keeps more of the content signal. `exact` stays at
+100% throughout, and `synonym` and `natural` do not move.
+
+**`score_mode` is not the answer.** Measured as the other candidate: `sum` drops
+`exact` to 87%, because a long document repeating a name outscores the dataset
+that carries it. `avg` was within noise.
+
 ### Updating the analysis (the index name is an alias)
 
 An analyzer is fixed when an index is created. Changing the kuromoji settings

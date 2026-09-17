@@ -281,6 +281,36 @@ function isAlreadyExists(err: unknown): boolean {
   return type === 'resource_already_exists_exception'
 }
 
+/**
+ * How much a child match is worth against a match on the package itself.
+ *
+ * A resource's own metadata — its name, description, abstract — is a statement
+ * about what the dataset holds. Text lifted out of a file is not: a word can
+ * appear once in a free-text answer among a thousand, and `score_mode: 'max'`
+ * lets that one chunk speak for the whole dataset. Held at the same weight, a
+ * survey whose respondents happened to use the word outranked the documents
+ * whose abstracts are about it.
+ *
+ * Measured on the golden set (dev catalogue, 168 packages, 2026-09-17) by
+ * sweeping the content weight with everything else held still:
+ *
+ * | content weight | `word` nDCG, keyword leg | fused |
+ * | -------------- | ------------------------ | ----- |
+ * | 0 (off)        | 62%                      |       |
+ * | 0.05           | 67%                      |       |
+ * | 0.15           | 67%                      | 71%   |
+ * | 0.25           | 64%                      |       |
+ * | 0.4            | 54%                      | 66%   |
+ *
+ * Lowered rather than removed: at zero it loses 5 points, so content earns its
+ * place — it just must not outvote what a dataset says about itself. `exact`
+ * stays at 100% throughout. `score_mode` was the other candidate and is not the
+ * answer: `sum` drops `exact` to 87%, because a long document that repeats a
+ * name outscores the dataset that carries it.
+ */
+const RESOURCE_LEG_WEIGHT = 0.4
+const CONTENT_LEG_WEIGHT = 0.15
+
 const REINDEX_BATCH_DOCS = 10
 /** Between polls of the copy task */
 const REINDEX_POLL_MS = 5_000
@@ -1073,7 +1103,7 @@ export class OpenSearchAdapter implements SearchAdapter {
                   },
                 },
                 score_mode: 'max',
-                boost: 0.4,
+                boost: RESOURCE_LEG_WEIGHT,
                 inner_hits: {
                   size: MAX_MATCHED_RESOURCES_PER_PACKAGE,
                   highlight: {
@@ -1111,7 +1141,7 @@ export class OpenSearchAdapter implements SearchAdapter {
                   match: { extractedText: { query: query.q!, operator: 'and' } },
                 },
                 score_mode: 'max',
-                boost: 0.4,
+                boost: CONTENT_LEG_WEIGHT,
                 inner_hits: {
                   size: MAX_MATCHED_RESOURCES_PER_PACKAGE,
                   _source: ['resourceId', 'packageId'],

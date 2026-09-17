@@ -379,6 +379,11 @@ describe('OpenSearchAdapter', () => {
       expect(must).toHaveLength(3) // package multi_match, has_child resource, has_child content
       expect(must[1].has_child.type).toBe('resource')
       expect(must[2].has_child.type).toBe('content')
+      // Text lifted out of a file must not outvote what a dataset says about
+      // itself: one chunk of a free-text answer otherwise speaks for the whole
+      // dataset, because the leg scores by its best chunk
+      expect(must[2].has_child.boost).toBeLessThan(must[1].has_child.boost)
+      expect(must[2].has_child.score_mode).toBe('max')
       expect(result.items).toHaveLength(1)
     })
 
