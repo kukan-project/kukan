@@ -176,7 +176,13 @@ export async function summaryEstimate(
   // serves*: that refusal stands until the file or the generation moves, so
   // quoting for it would promise work that will not happen. A refusal against
   // an older version is not a refusal of this one, and the run asks again.
-  const standingRefusal = sql`(${resource.summaryMeta}->>'skipReason' = 'rejected'
+  // `format-mismatch` stands on the same footing: both are facts about these
+  // bytes read under this generation, settled until one of the two moves.
+  // Reasons that turn on an artifact the pipeline may yet write —
+  // `no-material`, `unsupported-format`, `too-large` — are deliberately *not*
+  // here; those are re-asked below, because understating a bill is the worse
+  // error to make.
+  const standingRefusal = sql`(${resource.summaryMeta}->>'skipReason' IN ('rejected', 'format-mismatch')
     AND ${resource.summaryMeta}->>'genKey' IS NOT DISTINCT FROM ${genKey}
     AND ${describesLive})`
   // What each count is taken over. Spelled once and combined, because the

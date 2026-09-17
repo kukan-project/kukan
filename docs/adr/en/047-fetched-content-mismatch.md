@@ -83,6 +83,19 @@ with no abstract keeps the same state silently.
 And **this one is not caught by decision 2 as first written.** Only the textual formats were
 listed; PDF was not among them. The table below closes that gap.
 
+> **The signature test alone shipped early (2026-09-17)**, because the abstract estimate went on
+> counting this one resource as work it could do: within the size limit, declared PDF, with the
+> artifacts to look generatable. It never would be, so the estimate stood permanently above what
+> a run would spend.
+>
+> The table below is now `declaredFormatMismatch()` in `@kukan/shared`, used on the paths where
+> Summarize reads an original (PDF and office formats). A declaration its bytes contradict is
+> recorded as `skipReason: 'format-mismatch'`, which the estimate excludes on the same footing as
+> `rejected` — a refusal settled for that version under that generation. **This is not an
+> implementation of this ADR**: nothing checks at fetch time, and nothing keeps the canonical copy
+> from being replaced. It stops here for the reason the note above gives — the abstract is an
+> accidental detector, not a remedy.
+
 ### 5. The tension with ADR-046
 
 ADR-046 settled the canonical copy first and interpreted it afterwards. A version is decided

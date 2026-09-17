@@ -16,6 +16,7 @@ import {
   toCharset,
   getStorageKey,
   getPreviewKey,
+  declaredFormatMismatch,
 } from '../formats'
 
 describe('normalizeFormat', () => {
@@ -391,5 +392,39 @@ describe('versionedFilename', () => {
   it('uses the last extension for multi-dot names', () => {
     expect(versionedFilename('archive.tar.gz', 3)).toBe('archive.tar.v3.gz')
     expect(versionedFilename('2026.census.csv', 2)).toBe('2026.census.v2.csv')
+  })
+})
+
+describe('declaredFormatMismatch', () => {
+  const bytes = (s: string) => new TextEncoder().encode(s)
+
+  it('catches a dead link the publisher answered with a page', () => {
+    // The shape ADR-047 describes: 44KB registered as PDF, holding a front page
+    expect(declaredFormatMismatch('PDF', bytes('<!doctype html>\n<html lang="ja">'))).toBe(true)
+    expect(declaredFormatMismatch('XLSX', bytes('<!doctype html>'))).toBe(true)
+  })
+
+  it("passes bytes that carry their format's signature", () => {
+    expect(declaredFormatMismatch('PDF', bytes('%PDF-1.4'))).toBe(false)
+    expect(
+      declaredFormatMismatch('XLSX', new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]))
+    ).toBe(false)
+    expect(declaredFormatMismatch('GIF', bytes('GIF89a__'))).toBe(false)
+    expect(declaredFormatMismatch('GIF', bytes('GIF87a__'))).toBe(false)
+    expect(
+      declaredFormatMismatch('PNG', new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0, 0]))
+    ).toBe(false)
+  })
+
+  it('answers false where it cannot know, so acting on true stays safe', () => {
+    // A format whose first bytes no specification fixes, and nothing to read
+    expect(declaredFormatMismatch('CSV', bytes('<!doctype html>'))).toBe(false)
+    expect(declaredFormatMismatch(null, bytes('<!doctype html>'))).toBe(false)
+    expect(declaredFormatMismatch('PDF', new Uint8Array())).toBe(false)
+  })
+
+  it('reads the format as the catalogue spells it', () => {
+    expect(declaredFormatMismatch('pdf', bytes('<!doctype html>'))).toBe(true)
+    expect(declaredFormatMismatch('  PDF  '.trim(), bytes('%PDF-'))).toBe(false)
   })
 })

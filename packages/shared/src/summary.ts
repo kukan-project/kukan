@@ -40,6 +40,10 @@ export type SummaryMaterial =
 export type SummarySkipReason =
   | 'provider-unavailable'
   | 'unsupported-format'
+  /** The bytes are not what the resource declares them to be (ADR-047) — a
+   *  dead link the publisher answered with a page. A fact about this version,
+   *  so it stands until the content changes */
+  | 'format-mismatch'
   | 'too-large'
   | 'rejected'
   | 'no-material'

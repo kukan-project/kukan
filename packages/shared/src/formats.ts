@@ -174,6 +174,45 @@ export function toCharset(encoding: string): string {
 }
 
 /** Maximum upload file size in MB — shared between client and server */
+/**
+ * The leading bytes a format's own specification fixes (ADR-047).
+ *
+ * Only formats whose first bytes are settled by a specification are here: the
+ * point is a test that admits no interpretation, unlike Content-Type, which
+ * government servers routinely get wrong. A format absent from this table has
+ * no verdict — {@link declaredFormatMismatch} answers `false` for it.
+ */
+const FORMAT_SIGNATURES: Record<string, readonly string[]> = {
+  PDF: ['%PDF-'],
+  ZIP: ['PK\x03\x04'],
+  XLSX: ['PK\x03\x04'],
+  DOCX: ['PK\x03\x04'],
+  PPTX: ['PK\x03\x04'],
+  PNG: ['\x89PNG\r\n'],
+  JPEG: ['\xFF\xD8\xFF'],
+  GIF: ['GIF87a', 'GIF89a'],
+}
+
+/** Longest signature above — how many bytes a caller has to hold to ask */
+export const FORMAT_SIGNATURE_BYTES = 8
+
+/**
+ * Whether these bytes cannot be what the resource says they are.
+ *
+ * **A false answer is not a promise that they can.** It means either the
+ * format's first bytes match, or the format has no signature to check — the
+ * test is one-sided on purpose, so that acting on a true answer is safe.
+ *
+ * What it catches is a publisher's dead link answered with a page instead of a
+ * 404: a resource declaring PDF whose bytes open `<!doctype html>` (ADR-047).
+ */
+export function declaredFormatMismatch(format: string | null, head: Uint8Array): boolean {
+  const signatures = FORMAT_SIGNATURES[normalizeFormat(format ?? '')]
+  if (!signatures || head.length === 0) return false
+  const start = String.fromCharCode(...head.subarray(0, FORMAT_SIGNATURE_BYTES))
+  return !signatures.some((signature) => start.startsWith(signature))
+}
+
 export const MAX_UPLOAD_SIZE_MB = 100
 
 /** Maximum upload file size in bytes */

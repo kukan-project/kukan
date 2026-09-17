@@ -50,6 +50,7 @@ import {
   type SummaryLocale,
   type SummaryMaterial,
   type SummarySkipReason,
+  declaredFormatMismatch,
 } from '@kukan/shared'
 import { stillHeld, type ResourceClaim } from '@kukan/api/services/pipeline-claim'
 import {
@@ -301,15 +302,14 @@ export async function planMaterial(
     // the only gate there is before sending, and the provider's refusal is the
     // rest of it (ADR-053 §3.4).
     if (!withinBytes(input.size, SUMMARY_MAX_OFFICE_BYTES)) return { reason: 'too-large' }
+    const bytes = await readAll(await deps.storage.download(input.storageKey))
+    // The same test as the PDF path: an office format is a ZIP container, and
+    // a publisher's error page is not one (ADR-047)
+    if (declaredFormatMismatch(input.format, bytes)) return { reason: 'format-mismatch' }
     return {
       kind: 'original',
       material: EMPTY_MATERIAL,
-      attachment: {
-        kind: 'document',
-        format,
-        name: format,
-        bytes: await readAll(await deps.storage.download(input.storageKey)),
-      },
+      attachment: { kind: 'document', format, name: format, bytes },
     }
   }
 
@@ -441,6 +441,14 @@ async function planPdf(
   const thinLayer = (text: string, pageCount: number) =>
     !textHeadWasCapped(text) && text.length / pageCount < PDF_TEXT_LAYER_MIN_CHARS_PER_PAGE
   if (asText && (pages === null || !thinLayer(textHead!, pages))) return asText
+  // Not a PDF at all — a dead link the publisher answered with a page, which
+  // is what this catalogue's 44KB「PDF」holding `<!doctype html>` turned out to
+  // be (ADR-047). Distinct from a PDF we could not parse: the signature is
+  // absent, not merely unreadable. A fact about these bytes, so it is recorded
+  // as standing rather than re-asked on every run.
+  if (pages === null && declaredFormatMismatch(input.format, bytes)) {
+    return { reason: 'format-mismatch' }
+  }
 
   if (!documentInfo?.documentFormats.includes('pdf')) {
     // No provider for the original: a thin text layer is all there is, and

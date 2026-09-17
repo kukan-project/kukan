@@ -954,6 +954,7 @@
       "too-large": "No description was generated for this file because it exceeds the size limit.",
       "rejected": "No description was generated for this file because it exceeds what the AI can read at once.",
       "unsupported-format": "No description was generated because the AI cannot read this format.",
+      "format-mismatch": "This file is registered as a PDF or similar but its contents are not in that format, so no description was generated — the publisher’s link may be broken.",
       "no-material": "No description was generated because nothing could be read from this file to base one on.",
       "provider-unavailable": "No description was generated because AI is not available on this site."
     }

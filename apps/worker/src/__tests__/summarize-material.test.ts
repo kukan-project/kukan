@@ -74,6 +74,9 @@ function deps(opts: {
   }
 }
 
+/** A ZIP container's first bytes — what every office format actually starts with */
+const XLSX_BYTES = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x06, 0x00])
+
 function input(over: Partial<SummaryInput> = {}): SummaryInput {
   return {
     resourceId: '11111111-1111-1111-1111-111111111111',
@@ -151,7 +154,22 @@ describe('choosing what to send (ADR-053 §3)', () => {
       expect(plan).toMatchObject({ kind: 'text-head' })
     })
 
+    it('refuses bytes that are not a PDF at all, and says which it is', async () => {
+      // A publisher's dead link answered with its front page, stored as a
+      // version: 44KB of「PDF」opening `<!doctype html>` (ADR-047). Nothing to
+      // re-ask on a later run, so it stands rather than being quoted for again.
+      const plan = await planMaterial(
+        input(),
+        noArtifacts,
+        USABLE,
+        deps({ bytes: Buffer.from('<!doctype html>\n<html lang="ja"><title>東京消防庁</title>') })
+      )
+
+      expect(plan).toEqual({ reason: 'format-mismatch' })
+    })
+
     it('sends the original when it will not open and nothing was extracted', async () => {
+      // The signature is there; only pdf-lib gave up, which is not a mismatch
       const plan = await planMaterial(
         input(),
         noArtifacts,
@@ -278,11 +296,23 @@ describe('choosing what to send (ADR-053 §3)', () => {
         input({ format: 'XLSX', size: 500 * 1024 }),
         noArtifacts,
         USABLE,
-        deps({ bytes: Buffer.from('xlsx') })
+        deps({ bytes: XLSX_BYTES })
       )
 
       expect(plan).toMatchObject({ kind: 'original' })
       expect(plan).toHaveProperty('attachment.format', 'xlsx')
+    })
+
+    it('refuses bytes that are not the container the format is', async () => {
+      // An office file is a ZIP; a publisher's error page is not (ADR-047)
+      const plan = await planMaterial(
+        input({ format: 'XLSX', size: 500 * 1024 }),
+        noArtifacts,
+        USABLE,
+        deps({ bytes: Buffer.from('<!doctype html>') })
+      )
+
+      expect(plan).toEqual({ reason: 'format-mismatch' })
     })
 
     it('refuses past it — the tokens inside cannot be measured from here', async () => {
@@ -338,7 +368,7 @@ describe('choosing what to send (ADR-053 §3)', () => {
         input({ format: 'XLSX', size: 500 * 1024 }),
         withTextHead,
         USABLE,
-        deps({ bytes: Buffer.from('xlsx'), textHead: 'あ'.repeat(400) })
+        deps({ bytes: XLSX_BYTES, textHead: 'あ'.repeat(400) })
       )
 
       expect(plan).toMatchObject({ kind: 'original' })
