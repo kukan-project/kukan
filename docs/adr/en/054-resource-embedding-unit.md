@@ -2,10 +2,11 @@
 
 ## Status
 
-**Proposed** — measured offline already (ADR-034, "The unit of embedding" and "Settling the
-fusion parameters"). **This supersedes only the part of ADR-034 that fixes the unit of
-embedding.** The store (pgvector alone), the fusion (RRF in the service layer), how the
-similarity floor resolves, and the golden-set practice all stand as written there.
+**Accepted** — implemented 2026-09-17. Measured offline already (ADR-034, "The unit of
+embedding" and "Settling the fusion parameters"). **This supersedes only the part of ADR-034
+that fixes the unit of embedding.** The store (pgvector alone), the fusion (RRF in the service
+layer), how the similarity floor resolves, and the golden-set practice all stand as written
+there.
 
 Move the vector from one per package to one per resource, and carry **which resource matched**
 into the result. This resolves ADR-034's open issue 4 (how to present a vector hit; extending

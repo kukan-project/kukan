@@ -254,8 +254,8 @@ pnpm format        # Prettier フォーマット
 - リソースのセクション分け（`position` は 1 本のまま、`section` は表示ラベル、公開側は `/` で入れ子表示） → `docs/adr/jp/050-resource-section.md`
 - 一太郎文書のテキスト抽出（自前の複合文書パーサ、Ver.8 以降の非圧縮のみ、索引のみでプレビューは作らない、提案） → `docs/adr/jp/051-ichitaro-text-extraction.md`
 - シェープファイルの地図プレビュー（ZIP 内の SHP を GeoJSON として解釈、提案・着手保留） → `docs/adr/jp/052-shapefile-map-preview.md`
-- リソースの AI 生成抄録（推論はサマリー文に限り、値は生成しない、提案） → `docs/adr/jp/053-ai-resource-summary.md`
-- 埋め込みの単位はリソース（「どの表を開けばよいか」に答える、ADR-034 の単位部分を置換、提案） → `docs/adr/jp/054-resource-embedding-unit.md`
+- リソースの AI 生成抄録（推論はサマリー文に限り、値は生成しない） → `docs/adr/jp/053-ai-resource-summary.md`
+- 埋め込みの単位はリソース（「どの表を開けばよいか」に答える、ADR-034 の単位部分を置換） → `docs/adr/jp/054-resource-embedding-unit.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
@@ -279,13 +279,16 @@ pnpm format        # Prettier フォーマット
 - Phase 2: フロントエンド ✅ 完了（実装仕様書: `docs/specs/jp/phase2-frontend.md`）
 - Phase 3: リソース処理 & ファイルストレージ ✅ 完了（実装仕様書: `docs/specs/jp/phase3-pipeline.md`）
 - Phase 4: AWS デプロイ & CDK 基盤 ✅ 完了（`docs/specs/jp/phase4-deploy.md`、ADR-030 / ADR-031）
-- Phase 5a: メタデータベクトル検索 ✅ 完了（`docs/specs/jp/phase5-vector-search.md`、ADR-034）
+- Phase 5a: メタデータベクトル検索 ✅ 完了（`docs/specs/jp/phase5-vector-search.md`、ADR-034。
+  埋め込みの単位はその後リソースへ移した — ADR-054）
 - Phase Versioning-i: 正本バージョン保持 & パージ ✅ 完了
   （`docs/specs/jp/phase-versioning-1-file-retention.md`、ADR-043 層 1）
 - Phase Versioning-ii-a: DuckLake 行レベル差分（主キーなし）✅ 完了
   （`docs/specs/jp/phase-versioning-2-ducklake.md`、ADR-043 層 2）
 - Phase Versioning-ii-b: 主キー指定による変更行追跡 ✅ 完了
   （`docs/specs/jp/phase-versioning-2-ducklake.md` §6、ADR-043 層 2 / ADR-044 改訂）
+- Phase AI-Summary: リソースの AI 生成抄録 ✅ 完了
+  （`docs/specs/jp/phase-ai-summary.md`、ADR-053）
 
 実装仕様書も ADR と同様に日本語を正本とし、`docs/specs/jp/` と `docs/specs/en/` の
 両方に置く（英語版は機械翻訳・参考）。仕様書を追加・更新したら両方を更新する。
@@ -293,7 +296,7 @@ pnpm format        # Prettier フォーマット
 ## パイプライン フォーマット別処理マトリクス
 
 パイプラインは Fetch → Version → Interpret → Lake → Index → Summarize の6ステップ
-（Summarize は `AI_SUMMARY_ENABLED` のサイトのみ、ADR-053）。
+（Summarize は `AI_SUMMARY_MODEL` を設定したサイトのみ、ADR-053）。
 Index ステップでリソースコンテンツのテキスト抽出・OpenSearch 投入を行う（ADR-021）。
 メタデータの検索インデックス更新は API ルートハンドラーで CUD 操作時に実行。
 Interpret のみフォーマット別処理を行う。

@@ -4,9 +4,9 @@
 
 ## Status
 
-**Proposed** — spikes Phase A and Phase B have both been run (Appendix). What remains is the
-before/after nDCG comparison (pass criterion 6), measured separately on local and on demo once
-the abstracts are implemented.
+**Accepted** — implemented 2026-09-16. Spikes Phase A and Phase B have both been run
+(Appendix). What remains is the before/after nDCG comparison (pass criterion 6), measured
+separately on local and on demo.
 
 Give each resource a short AI-generated **abstract** — in the bibliographic sense (JIS X 0813):
 a short, accurate statement of a document's content, written so a reader can judge it without

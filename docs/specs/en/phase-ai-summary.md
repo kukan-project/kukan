@@ -297,7 +297,7 @@ pressing it twice is free.**
 
 | `skipReason`           | Condition                                                                          |
 | ---------------------- | ---------------------------------------------------------------------------------- |
-| `disabled`             | `AI_SUMMARY_ENABLED` is false (**nothing is recorded**, §7.1)                      |
+| `disabled`             | `AI_SUMMARY_MODEL` is unset (**nothing is recorded**, §7.1)                        |
 | `provider-unavailable` | `getCompletionInfo()` returns null                                                 |
 | `unsupported-format`   | The provider takes no original and there is no extracted text either               |
 | `too-large`            | Over the size or page limit, or `size` is unknown                                  |
