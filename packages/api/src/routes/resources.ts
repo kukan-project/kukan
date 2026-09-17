@@ -6,7 +6,6 @@
 import { Hono } from 'hono'
 import { receiveMultipartFile } from '../streams/multipart-file'
 import { zValidator } from '../middleware/validator'
-import { retireConnection } from '../middleware/retire-connection'
 import { z } from 'zod'
 import { lakeConfigFromEnv } from '@kukan/lake'
 import { ResourceService, omitStoragePointers } from '../services/resource-service'
@@ -737,8 +736,7 @@ resourcesRouter.post('/:id/upload-url', zValidator('json', uploadUrlSchema), asy
 
 // POST /api/v1/resources/:id/upload - Server-side upload (multipart, for local storage).
 // Streamed via receiveMultipartFile: never buffered, 413 over MAX_UPLOAD_SIZE.
-// retireConnection(): refusing an upload leaves one that cannot be reused.
-resourcesRouter.post('/:id/upload', retireConnection(), async (c) => {
+resourcesRouter.post('/:id/upload', async (c) => {
   const user = c.get('user')
   if (!user) throw new UnauthorizedError()
 

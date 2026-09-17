@@ -18,6 +18,7 @@ import { authSurface } from './middleware/auth-surface'
 import { cacheControl, noCache } from './middleware/cache-control'
 import { errorHandler } from './middleware/error-handler'
 import { logger } from './middleware/logger'
+import { retireConnection } from './middleware/retire-connection'
 import type { AppContext } from './context'
 
 export async function createApp() {
@@ -83,6 +84,7 @@ export async function createApp() {
   // Middleware
   app.use('*', logger)
   app.use('*', cacheControl)
+  app.use('*', retireConnection)
   app.onError(errorHandler)
 
   // Health check

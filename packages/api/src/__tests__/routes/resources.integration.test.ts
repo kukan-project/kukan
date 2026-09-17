@@ -1330,8 +1330,6 @@ describe('Resources API Routes', () => {
       })
       expect(res.status).toBe(413)
       expect(await res.json()).toMatchObject({ status: 413 })
-      // The upload is still arriving, so the connection cannot carry another
-      // request; unsaid, the pool in front reuses it and something else 502s.
       expect(res.headers.get('connection')).toBe('close')
     })
 
@@ -1361,7 +1359,8 @@ describe('Resources API Routes', () => {
         body: formData,
       })
       expect(res.status).toBe(401)
-      // Refused before a byte of it was read, which leaves the same connection.
+      // Refused before a byte of it was read, which leaves the same connection
+      // as one refused halfway through — see `retire-connection`.
       expect(res.headers.get('connection')).toBe('close')
     })
   })

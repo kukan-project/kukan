@@ -16,6 +16,7 @@ import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { AnalyticsService } from '../../services/analytics-service'
 import { SystemSettingService } from '../../services/system-setting'
 import { errorHandler } from '../../middleware/error-handler'
+import { retireConnection } from '../../middleware/retire-connection'
 import { createLogger, type Env } from '@kukan/shared'
 import type { Auth } from '../../auth/auth'
 
@@ -195,6 +196,9 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
   })
 
   app.onError(errorHandler)
+  // Global in the real app, and route behaviour depends on it: a refused
+  // upload has to say the connection is closing.
+  app.use('*', retireConnection)
 
   // Health check
   app.get('/api/health', (c) => {
