@@ -146,6 +146,38 @@ place; it simply must not outvote what a dataset says about itself. 0.05 and
 `exact` to 87%, because a long document repeating a name outscores the dataset
 that carries it. `avg` was within noise.
 
+### The query side for content — drop the request form and nothing else
+
+Metadata is searched through `kuromoji_query_analyzer` (`ja_stop` plus
+`ja_request_words`); extracted text is not. `ja_stop` ships with kuromoji and
+drops「こと」「もの」「ため」「する」. Metadata is written to be searched, so
+losing those costs it nothing. **Content is the document's own words**, where
+「こと」may be the very thing someone is looking for.
+
+The request form does have to go. `operator: 'and'` requires every token, so the
+words in「〜を教えてください」become words the document is **required to
+contain**. Measured on the dev catalogue, 968 chunks:
+
+| query                                | now | request words dropped |
+| ------------------------------------ | --: | --------------------: |
+| 防災の取り組み                       |  23 |                    23 |
+| 防災の取り組みについて教えてください |   4 |                    23 |
+| 子育ての支援制度                     | 222 |                   222 |
+| 子育ての支援制度を教えてください     |  42 |                   222 |
+
+**Adding a polite word stops changing the count, and a bare query does not
+move.** So content gets `kuromoji_content_query_analyzer`, carrying
+`ja_request_words` alone.
+
+**Dropping the all-terms requirement was measured and rejected.**
+`minimum_should_match` lifts the keyword leg from 44% to 50%, but the fused
+result falls: overall 88% to 87%, `synonym` 94% to 88%. Where metadata matches
+nothing, the loosened content matches fill the keyword leg's top and RRF counts
+them as first-place votes against a vector leg that was already scoring 94%. It
+also costs: more matching chunks means highlighting more 500KB chunks, and the
+parent circuit breaker tripped eight times during one evaluation run (limit
+2040MB against 352MB at rest). The smallest deployment size has half that heap.
+
 ### Updating the analysis (the index name is an alias)
 
 An analyzer is fixed when an index is created. Changing the kuromoji settings

@@ -100,6 +100,10 @@ const SEARCH_PROPERTIES: MappingProperties = {
   extractedText: {
     type: 'text',
     analyzer: 'kuromoji_analyzer',
+    // Request boilerplate is dropped from the query, and nothing else is: a
+    // document's own text is where a particle or a bare「こと」is the thing
+    // someone is looking for, so `ja_stop` has no business here.
+    search_analyzer: 'kuromoji_content_query_analyzer',
     index_options: 'offsets',
   },
   contentType: { type: 'keyword' },
@@ -427,6 +431,28 @@ export class OpenSearchAdapter implements SearchAdapter {
             'ja_prefix',
             'lowercase',
             'ja_stop',
+            'ja_request_words',
+          ],
+        },
+        /**
+         * The query side for a document's own text: `ja_request_words` without
+         * `ja_stop`.
+         *
+         * Metadata is written to be searched, so the general stopword list
+         * costs it nothing. Extracted text is not: `ja_stop` drops「こと」
+         *「もの」「ため」「する」, words a document uses and a reader may be
+         * looking for. What has to go is the request form a person wraps a
+         * question in —「〜を教えてください」— because every one of those
+         * becomes a term the document is required to contain.
+         */
+        kuromoji_content_query_analyzer: {
+          type: 'custom' as const,
+          tokenizer: 'kuromoji_tokenizer',
+          filter: [
+            'kuromoji_baseform',
+            'kuromoji_part_of_speech',
+            'ja_prefix',
+            'lowercase',
             'ja_request_words',
           ],
         },

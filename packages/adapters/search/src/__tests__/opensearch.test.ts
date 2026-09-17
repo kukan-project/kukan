@@ -134,6 +134,7 @@ describe('OpenSearchAdapter', () => {
       expect(props.extractedText).toEqual({
         type: 'text',
         analyzer: 'kuromoji_analyzer',
+        search_analyzer: 'kuromoji_content_query_analyzer',
         index_options: 'offsets',
       })
       // Unified name field (text + keyword subfield)
@@ -164,8 +165,14 @@ describe('OpenSearchAdapter', () => {
       for (const field of ['name', 'title', 'notes', 'description']) {
         expect(props[field].search_analyzer).toBe('kuromoji_query_analyzer')
       }
-      // Content keeps the index-time analyzer so literal text remains searchable
-      expect(props.extractedText.search_analyzer).toBeUndefined()
+      // Content gets its own query side: the request boilerplate goes, and the
+      // general stopword list does not. `ja_stop` drops「こと」「もの」「ため」
+      // — words a document uses and a reader may be looking for — which is why
+      // metadata's analyzer is the wrong one to reuse here.
+      const content = analysis.analyzer.kuromoji_content_query_analyzer
+      expect(props.extractedText.search_analyzer).toBe('kuromoji_content_query_analyzer')
+      expect(content.filter).toContain('ja_request_words')
+      expect(content.filter).not.toContain('ja_stop')
     })
 
     it('should skip creation when index already exists', async () => {
