@@ -121,6 +121,15 @@ services:
       # Heap default 2g: an OpenSearch 3.x node idles at ~430MB heap (plugins
       # included, index data lives off-heap), so 512m sat at the 95% circuit
       # breaker and failed searches under load. Override via OPENSEARCH_JAVA_OPTS.
+      #
+      # **Do not raise it to make a local failure go away.** AWS runs the managed
+      # service, where the heap is about half the instance RAM and cannot be set
+      # at all — 2g is what t3.medium.search gets, which is what deployments
+      # override to, and scale `small` (t3.small.search) gets half of that. A
+      # bigger local heap stops reproducing the limit production actually has:
+      # measured 2026-09-17, a `_reindex` of 285MB of content alone reaches 80%
+      # heap and 1.6gb against the 1.8gb parent breaker, and a search alongside
+      # it is what turns into a 503.
       - OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS:--Xms2g -Xmx2g}
     ports:
       - '127.0.0.1:9200:9200'
