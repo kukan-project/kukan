@@ -2,15 +2,21 @@ name: CI
 
 # Lint, typecheck, format check, and unit tests run on every pull request.
 #
-# `quality` is a REQUIRED status check (see the branch ruleset), so the job must
-# always run and report a status — using `paths-ignore` would leave the required
-# check pending forever and block the PR. Instead the job always runs but skips
-# the code-only steps (lint / typecheck / unit tests) for docs-only PRs, which
-# the shared `detect-changes` action decides — a release's version-only bump of
-# the root package.json counts as one, see the action for why. The
-# format check still runs because `prettier --check` also covers Markdown and
-# Astro. `.astro` files count as docs: @kukan/site has no lint/typecheck/test
-# scripts, so the code-only steps never look at them anyway.
+# They sit in two parallel jobs behind a `quality` gate. `quality` is a REQUIRED
+# status check (see the branch ruleset) and the ruleset matches on the name, so
+# the name stays where it was even though the work moved out of it. What the
+# move bought: these steps do not depend on each other and used to run in
+# series, and the run's wall clock was whatever `quality` took — taking 90s off
+# `integration` once moved the run by five.
+#
+# Both work jobs must always run and report a status. `paths-ignore` would leave
+# the gate waiting on a job that never reports and block the PR forever;
+# instead they always run and skip the code-only steps (lint / typecheck / unit
+# tests) for docs-only PRs, which the shared `detect-changes` action decides — a
+# release's version-only bump of the root package.json counts as one, see the
+# action for why. The format check still runs because `prettier --check` also
+# covers Markdown and Astro. `.astro` files count as docs: @kukan/site has no
+# lint/typecheck/test scripts, so the code-only steps never look at them anyway.
 
 # Pushes to develop run the same suite for one reason beyond the extra signal:
 # GitHub Actions caches are branch-scoped, and a pull request can only read the
@@ -35,7 +41,28 @@ permissions:
   contents: read
 
 jobs:
+  # The name the branch ruleset requires, and nothing else: the two jobs below
+  # hold the work it used to do.
+  #
+  # `if: always()` is load-bearing. Without it a failed dependency skips this
+  # job rather than running it, and GitHub counts a skipped required check as
+  # satisfied — the protection would come off exactly when something broke.
   quality:
+    needs: [lint-typecheck, unit]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the jobs it stands for
+        run: |
+          echo "lint-typecheck: ${{ needs.lint-typecheck.result }}"
+          echo "unit: ${{ needs.unit.result }}"
+          test "${{ needs.lint-typecheck.result }}" = success
+          test "${{ needs.unit.result }}" = success
+
+  # Format check, lint, and typecheck. Lint and typecheck stay together because
+  # both sit behind turbo's `^build`: apart, each would build the dependency
+  # graph for itself.
+  lint-typecheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -69,7 +96,9 @@ jobs:
       # every branch can read the result. The key is the lockfile hash rather
       # than the commit sha, so develop writes a new entry only when a
       # dependency actually moves; a pull request that moves one restores the
-      # nearest store by prefix and downloads just the difference.
+      # nearest store by prefix and downloads just the difference. This is the
+      # only job that writes it — every job installs from the same lockfile, so
+      # the store each would save is the same one.
       - name: Locate pnpm store
         id: pnpm-store
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
@@ -97,14 +126,14 @@ jobs:
       # Only a push to develop saves. Cache entries are immutable and branch
       # scoped: one written on a PR branch is readable by that PR alone, so
       # saving per PR would spend the repository's 10 GB budget — shared with
-      # the pnpm store and the DuckDB extensions below — on entries almost
+      # the pnpm store and the DuckDB extensions in `unit` — on entries almost
       # nobody reads. develop's are readable from every branch, which is the
       # same reason this workflow runs on `push` at all.
       #
       # The jobs cache separately. Entries are immutable, so a shared key
       # would collide on a develop push: whichever job saved first wins and the
       # others' contents are dropped. Their contents are not interchangeable —
-      # `quality` never builds @kukan/web, because the `^build` behind lint and
+      # this job never builds @kukan/web, because the `^build` behind lint and
       # typecheck builds web's dependencies rather than web itself, which is why
       # its cache stays in single-digit MBs while `web-build`'s carries the
       # `.next` output (~130 MB per entry with `.next/cache` excluded — that
@@ -115,8 +144,8 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo/cache
-          key: turbo-quality-${{ runner.os }}-${{ github.sha }}
-          restore-keys: turbo-quality-${{ runner.os }}-
+          key: turbo-lint-typecheck-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-lint-typecheck-${{ runner.os }}-
 
       - name: Format check
         # No `if:` guard — prettier covers Markdown, so this runs on docs-only PRs too.
@@ -129,6 +158,82 @@ jobs:
       - name: Typecheck
         if: steps.changes.outputs.code == 'true'
         run: pnpm typecheck
+
+      # A restore hands back every entry it held and the save writes them out
+      # again alongside the new ones, so without a bound the entry grows by
+      # every merge forever. Turbo does not touch an entry's mtime when it hits,
+      # so what survives this is an entry nothing has *written* in a week:
+      # dropping it costs one rebuild, after which it is saved fresh.
+      - name: Prune turbo cache
+        if: github.ref == 'refs/heads/develop'
+        run: find .turbo/cache -type f -mtime +7 -delete
+
+      - name: Save turbo cache
+        if: github.ref == 'refs/heads/develop'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-lint-typecheck-${{ runner.os }}-${{ github.sha }}
+
+  # Every suite but the `*-integration` ones, whose globalSetup connects to
+  # Postgres; those run in `integration` below. Out of the job above because
+  # nothing here waits on lint or typecheck — the two overlap now instead of
+  # queueing.
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # need history to diff against the PR base
+
+      - name: Detect non-docs changes
+        id: changes
+        uses: ./.github/actions/detect-changes
+        with:
+          ignore: '(\.mdx?$|\.astro$|^docs/)'
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        if: steps.changes.outputs.code == 'true'
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.changes.outputs.code == 'true'
+        with:
+          node-version: '24'
+
+      # See `lint-typecheck` for why the store is cached by hand, and why that
+      # job is the only one that writes it.
+      - name: Locate pnpm store
+        id: pnpm-store
+        if: steps.changes.outputs.code == 'true'
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm store
+        if: steps.changes.outputs.code == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+
+      - if: steps.changes.outputs.code == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore turbo cache
+        if: steps.changes.outputs.code == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-unit-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-unit-${{ runner.os }}-
+
+      # The suites import `@kukan/*` by package entry point, which resolves to
+      # `dist` everywhere except the web project, which aliases two of them to
+      # source — so the packages have to be built. That used to arrive for free
+      # from the `^build` behind lint and typecheck. web and site are left out:
+      # nothing under test imports either, and `next build` has `web-build` to
+      # itself.
+      - if: steps.changes.outputs.code == 'true'
+        run: pnpm build --filter='!@kukan/web' --filter='!@kukan/site'
 
       # `maintenance.ducklake.test.ts` runs against a real DuckLake catalog, so
       # it needs the `ducklake` extension (~35 MB from extensions.duckdb.org).
@@ -156,16 +261,11 @@ jobs:
           "
 
       - name: Test (unit only)
-        # `test:unit` runs every project except the `*-integration` ones, whose
-        # globalSetup connects to Postgres. Those run in `integration` below.
         if: steps.changes.outputs.code == 'true'
         run: pnpm test:unit
 
-      # A restore hands back every entry it held and the save writes them out
-      # again alongside the new ones, so without a bound the entry grows by
-      # every merge forever. Turbo does not touch an entry's mtime when it hits,
-      # so what survives this is an entry nothing has *written* in a week:
-      # dropping it costs one rebuild, after which it is saved fresh.
+      # See `lint-typecheck` for why saving is limited to develop, and why the
+      # entry is pruned before it is written.
       - name: Prune turbo cache
         if: github.ref == 'refs/heads/develop'
         run: find .turbo/cache -type f -mtime +7 -delete
@@ -175,7 +275,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo/cache
-          key: turbo-quality-${{ runner.os }}-${{ github.sha }}
+          key: turbo-unit-${{ runner.os }}-${{ github.sha }}
 
   # Not part of `quality`, so it is not a required check: it needs a database,
   # and a service container failing should not block a PR the same way a lint
@@ -183,9 +283,9 @@ jobs:
   # SQL these suites cover (data-modifying CTEs, the orphan sweep's reference
   # check) is not exercised anywhere else.
   #
-  # "Code change" excludes site/ and infra/ on top of quality's docs rule:
+  # "Code change" excludes site/ and infra/ on top of the docs rule above:
   # nothing this job runs reaches either — @kukan/site is not in the vitest
-  # workspace, and infra's synth tests are unit tests that run in `quality`.
+  # workspace, and infra's synth tests are unit tests that run in `unit`.
   integration:
     runs-on: ubuntu-latest
     services:
@@ -227,10 +327,8 @@ jobs:
         with:
           node-version: '24'
 
-      # See the quality job for why the store is cached by hand rather than
-      # through `cache: 'pnpm'`. This job only reads: every job runs the same
-      # install from the same lockfile, so the store they would write is
-      # identical and `quality` writing it is enough.
+      # See `lint-typecheck` for why the store is cached by hand rather than
+      # through `cache: 'pnpm'`. This job only reads it.
       - name: Locate pnpm store
         id: pnpm-store
         if: steps.changes.outputs.code == 'true'
@@ -277,7 +375,7 @@ jobs:
           POSTGRES_PASSWORD: kukan
         run: pnpm test:integration
 
-      # See the quality job for why saving is limited to develop.
+      # See `lint-typecheck` for why saving is limited to develop.
       - name: Prune turbo cache
         if: github.ref == 'refs/heads/develop'
         run: find .turbo/cache -type f -mtime +7 -delete
@@ -291,9 +389,9 @@ jobs:
 
   # The one place pull request CI runs `next build`. Nothing else does —
   # deploy-site builds only @kukan/site, CodeQL is build-mode none, and the
-  # Dockerfile runs in the deploy pipeline. `tsc --noEmit` in `quality` does not
-  # stand in for it, since a Next build also rejects server/client boundary
-  # violations and invalid route exports.
+  # Dockerfile runs in the deploy pipeline. `tsc --noEmit` in `lint-typecheck`
+  # does not stand in for it, since a Next build also rejects server/client
+  # boundary violations and invalid route exports.
   #
   # It used to run inside `integration`, in front of the database suites; a job
   # of its own keeps the check and takes it off their critical path. The change
@@ -372,7 +470,7 @@ jobs:
           done
           echo 'boot smoke: no HTTP response within 60s'; exit 1
 
-      # See the quality job for why saving is limited to develop.
+      # See `lint-typecheck` for why saving is limited to develop.
       - name: Prune turbo cache
         if: github.ref == 'refs/heads/develop'
         run: find .turbo/cache -type f -mtime +7 -delete
