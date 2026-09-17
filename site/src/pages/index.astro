@@ -339,6 +339,7 @@ const techStack = [
               <span class="spotlight-icon">📑</span>
               <h2 class="spotlight-title" data-i18n="spotlight4.title">{t.en.spotlight4.title}</h2>
               <span class="spotlight-badge">NEW</span>
+              <span class="spotlight-date">v0.27.0 · 2026-09-10</span>
             </div>
             <p class="spotlight-desc" data-i18n="spotlight4.desc">{t.en.spotlight4.desc}</p>
           </div>
@@ -355,6 +356,7 @@ const techStack = [
               <span class="spotlight-icon">🕒</span>
               <h2 class="spotlight-title" data-i18n="spotlight3.title">{t.en.spotlight3.title}</h2>
               <span class="spotlight-badge">NEW</span>
+              <span class="spotlight-date">v0.12.0 · 2026-08-10</span>
             </div>
             <p class="spotlight-desc" data-i18n="spotlight3.desc">{t.en.spotlight3.desc}</p>
           </div>
@@ -368,25 +370,9 @@ const techStack = [
         <div class="spotlight-card">
           <div class="spotlight-body">
             <div class="spotlight-header">
-              <span class="spotlight-icon">✨</span>
-              <h2 class="spotlight-title" data-i18n="spotlight.title">{t.en.spotlight.title}</h2>
-              <span class="spotlight-badge">NEW</span>
-            </div>
-            <p class="spotlight-desc" data-i18n="spotlight.desc">{t.en.spotlight.desc}</p>
-          </div>
-          <a
-            href={`${base}en/data-admin-guide/#${t.en.spotlight.hash}`}
-            class="btn-outline spotlight-link"
-            data-i18n="spotlight.link"
-            id="spotlight-link">{t.en.spotlight.link}</a
-          >
-        </div>
-        <div class="spotlight-card">
-          <div class="spotlight-body">
-            <div class="spotlight-header">
               <span class="spotlight-icon">🏙</span>
               <h2 class="spotlight-title" data-i18n="spotlight2.title">{t.en.spotlight2.title}</h2>
-              <span class="spotlight-badge">NEW</span>
+              <span class="spotlight-date">v0.10.0 · 2026-07-19</span>
             </div>
             <p class="spotlight-desc" data-i18n="spotlight2.desc">{t.en.spotlight2.desc}</p>
           </div>
@@ -395,6 +381,22 @@ const techStack = [
             class="btn-outline spotlight-link"
             data-i18n="spotlight2.link"
             id="spotlight2-link">{t.en.spotlight2.link}</a
+          >
+        </div>
+        <div class="spotlight-card">
+          <div class="spotlight-body">
+            <div class="spotlight-header">
+              <span class="spotlight-icon">✨</span>
+              <h2 class="spotlight-title" data-i18n="spotlight.title">{t.en.spotlight.title}</h2>
+              <span class="spotlight-date">v0.8.0 · 2026-07-13</span>
+            </div>
+            <p class="spotlight-desc" data-i18n="spotlight.desc">{t.en.spotlight.desc}</p>
+          </div>
+          <a
+            href={`${base}en/data-admin-guide/#${t.en.spotlight.hash}`}
+            class="btn-outline spotlight-link"
+            data-i18n="spotlight.link"
+            id="spotlight-link">{t.en.spotlight.link}</a
           >
         </div>
       </div>
@@ -715,6 +717,7 @@ const techStack = [
       .spotlight-header {
         display: flex;
         align-items: center;
+        flex-wrap: wrap;
         gap: 0.5rem;
         margin-bottom: 0.5rem;
       }
@@ -734,6 +737,12 @@ const techStack = [
         background: var(--brand);
         border-radius: 9999px;
         padding: 0.125rem 0.5rem;
+      }
+      /* Version and date read the same in both locales, so no data-i18n */
+      .spotlight-date {
+        font-size: 0.75rem;
+        color: #64748b;
+        font-variant-numeric: tabular-nums;
       }
       .spotlight-desc {
         font-size: 0.9375rem;
