@@ -477,7 +477,8 @@ export class PackageService {
         .select({ id: tag.id, name: tag.name })
         .from(packageTag)
         .innerJoin(tag, eq(packageTag.tagId, tag.id))
-        .where(eq(packageTag.packageId, pkg.id)),
+        .where(eq(packageTag.packageId, pkg.id))
+        .orderBy(tag.name),
       this.db
         .select({ id: group.id, name: group.name, title: group.title })
         .from(packageGroup)

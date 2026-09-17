@@ -253,7 +253,8 @@ export class PostgresSearchAdapter implements SearchAdapter {
           })
           .from(packageTag)
           .innerJoin(tag, eq(packageTag.tagId, tag.id))
-          .where(inArray(packageTag.packageId, packageIds)),
+          .where(inArray(packageTag.packageId, packageIds))
+          .orderBy(tag.name),
         hasQuery
           ? this.db
               .select({

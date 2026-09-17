@@ -317,7 +317,8 @@ export async function indexPackageMetadata(
       .select({ name: tag.name })
       .from(packageTag)
       .innerJoin(tag, eq(packageTag.tagId, tag.id))
-      .where(eq(packageTag.packageId, packageId)),
+      .where(eq(packageTag.packageId, packageId))
+      .orderBy(tag.name),
   ])
 
   const formatSet = new Set(
@@ -519,7 +520,8 @@ export async function rebuildMetadataIndex(
         .select({ packageId: packageTag.packageId, name: tag.name })
         .from(packageTag)
         .innerJoin(tag, eq(packageTag.tagId, tag.id))
-        .where(inArray(packageTag.packageId, batchIds)),
+        .where(inArray(packageTag.packageId, batchIds))
+        .orderBy(tag.name),
     ])
 
     const orgIds = [...new Set(details.map((d) => d.ownerOrg).filter((id): id is string => !!id))]
