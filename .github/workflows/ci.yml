@@ -197,7 +197,13 @@ jobs:
           POSTGRES_DB: kukan
         ports:
           - 5432:5432
+        # PGDATA on tmpfs. What costs time here is writes no test reads back
+        # from disk: `CREATE DATABASE … TEMPLATE` copies the migrated template
+        # file by file, and every test file truncates before it runs. Both are
+        # fsync bound — 34s of a 154s run was setup. A container thrown away at
+        # the end of the job has nothing to lose by keeping it in memory.
         options: >-
+          --mount type=tmpfs,destination=/var/lib/postgresql/data
           --health-cmd "pg_isready -U kukan"
           --health-interval 10s
           --health-timeout 5s
