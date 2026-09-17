@@ -166,6 +166,42 @@ describe('executeInterpret', () => {
     expect(result?.schema?.columns.map((c) => c.name)).toEqual(['name', 'age', 'city'])
   })
 
+  it('reads a title row above a header in a file that starts with a byte-order mark', async () => {
+    // The mark shifted every cursor Papa reported, so the skip came out zero
+    // and DuckDB read the title as data — left without a header it named the
+    // columns `column00`, `column01`, ... A BOM and a title row meet in most
+    // municipal CSVs, and until this test they never met in the suite.
+    mockStorageDownload('\uFEFF測定結果,,\r\nname,age,city\r\nAlice,30,Tokyo\r\n')
+
+    const result = await executeInterpret(
+      'res-bom-title',
+      'pkg-1',
+      version('resources/pkg-1/res-bom-title'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.schema?.columns.map((c) => c.name)).toEqual(['name', 'age', 'city'])
+    expect(result?.schema?.rowCount).toBe(1)
+  })
+
+  it('reads a title row in a file that carries two byte-order marks', async () => {
+    // Papa strips one mark of its own, so dropping only one here would put the
+    // cursors back out by one. Excel round trips produce these.
+    mockStorageDownload('\uFEFF\uFEFF測定結果,,\nname,age,city\nAlice,30,Tokyo\n')
+
+    const result = await executeInterpret(
+      'res-bom2-title',
+      'pkg-1',
+      version('resources/pkg-1/res-bom2-title'),
+      'CSV',
+      ctx
+    )
+
+    expect(result?.schema?.columns.map((c) => c.name)).toEqual(['name', 'age', 'city'])
+    expect(result?.schema?.rowCount).toBe(1)
+  })
+
   it('should extract TSV data', async () => {
     mockStorageDownload('name\tage\nAlice\t30\n')
 

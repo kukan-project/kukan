@@ -40,7 +40,12 @@ function nonEmptyCount(row: string[]): number {
  */
 export async function countTitleRows(csvPath: string): Promise<TitleRowScan> {
   const buf = await readHead(csvPath, CSV_TITLE_SCAN_BYTES)
-  const head = buf.toString('utf-8')
+  // Papa drops a leading BOM before parsing but `toString` keeps it, so the
+  // cursors it reports are a character short of the text measured here and
+  // `physicalLines` loses the newline that closed the title row. Every mark
+  // goes, not just one: Papa strips a single one, so a second would skew it
+  // again. Japanese municipal CSVs carry a BOM almost without exception.
+  const head = buf.toString('utf-8').replace(/^\uFEFF+/, '')
   // Blank lines are kept: one sitting between the title and the header is a
   // line `skip` has to account for, and it satisfies the title rule anyway.
   const parsed = Papa.parse<string[]>(head, { header: false, skipEmptyLines: false })
