@@ -564,6 +564,10 @@ All sysadmin only.
 | GET    | `/admin/search/browse/{index}`   | Browse index documents (pagination, search)                              |
 | POST   | `/admin/reindex-metadata`        | Rebuild search index (async via SQS)                                     |
 | POST   | `/admin/reindex-embeddings`      | Regenerate every resource's embedding (async via SQS)                    |
+| GET    | `/admin/search/analysis-status`  | Whether the analysis has moved on and a re-analysis is due (`{ stale }`) |
+| POST   | `/admin/search/reanalyse`        | Rebuild the index under the current analysis (async via SQS)             |
+| GET    | `/admin/summary-estimate`        | Scope, token estimate, and cost estimate for bulk AI descriptions        |
+| POST   | `/admin/generate-summaries`      | Generate AI descriptions in bulk (`{ refresh }` also rewrites; async)    |
 | GET    | `/admin/version-backfill-status` | Backfill work outstanding (layer 1: unversioned / layer 2: not ingested) |
 | POST   | `/admin/backfill-versions`       | Enqueue the one-time version backfill (via SQS, async)                   |
 | POST   | `/admin/jobs/enqueue-all`        | Enqueue pipeline for all resources                                       |

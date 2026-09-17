@@ -21,6 +21,20 @@ keyword matches only.
 Note: semantic search may be disabled depending on the site's configuration
 (embedding model setup). In that case search works by keyword only.
 
+### Which resource matched
+
+When a dataset holds several files, the results say **which file matched** —
+in a dataset of many files, what you are looking for is usually in one of them.
+Each matched resource carries a label saying why it matched.
+
+| Label            | Meaning                                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------------------------------- |
+| Semantic match   | The file's meaning is close to the query. The number beside it is that closeness (0–1, higher is closer) |
+| AI summary match | The query appears in that file's [AI-written description](#ai-written-descriptions)                      |
+| Content match    | The query appears in the file's contents (the body of a CSV or text file)                                |
+
+When many files match, the list folds and shows the count.
+
 ### Filtering
 
 - **Organization** — Filter by the organization that published the data
@@ -52,6 +66,36 @@ The resource page provides format-specific previews:
 | PDF                                        | PDF viewer             |
 | Excel / Word / PowerPoint                  | Office Online Viewer   |
 | PNG / JPEG / GIF / WebP / SVG / BMP / TIFF | Image viewer           |
+
+## AI-written descriptions
+
+:::note
+**This appears only where the site has the feature enabled.** On a site without
+it, nothing described in this section appears on a resource page — nor does the
+"AI summary match" label in search results.
+:::
+
+An **AI-written description** on a resource page is a short piece of prose an AI
+wrote from the file's contents, so you can judge what is in it without opening
+it.
+
+Below the description, a line says **how much of the file it was written from**.
+A table is read as its column layout and first rows ("Read the column layout and
+the first 100 of 1,200 rows"), while a PDF or an image that fit is simply "Read
+the whole file" (a very long PDF stops partway). **Anything written from a part
+of a file always says so**, so the extent is never left to guesswork.
+
+:::caution
+An AI-written description is not a guarantee of accuracy or currency. Always
+check the original file for the authoritative content.
+:::
+
+The description also names the version it was written from. If the file has
+been replaced and the description has not caught up, the page says so: "This
+file is now v3. The description has not been updated."
+
+Some files get no description and a stated reason instead (over the size limit,
+a format the AI cannot read, and so on).
 
 ## Downloading data
 

@@ -226,6 +226,47 @@ Once you add resources and their pipeline processing completes, the **"Let AI su
 - **What suggestions are based on**: CSV/TSV use the columns and the first rows of content; PDF, Excel, and similar files use the filename and format. The generated text follows your display language.
 - Suggestions are never persisted (only adopted values are saved as ordinary updates). A per-user rate limit prevents overuse.
 
+## AI-written descriptions
+
+Where the site has it enabled, every resource you register gets a **short
+description written from the file's contents**, shown on the resource page (see
+the [System Administrator Guide](/en/system-admin-guide/#ai-written-descriptions)).
+Unlike metadata suggestions, **there is nothing to adopt** — it is written at
+the end of the pipeline and published as it is. Replace the file and it is
+rewritten from the new contents.
+
+The description also feeds search. When someone searches for "newly opened hair
+salons", it is often the description that leads them to the right file.
+
+- **The AI reads the contents and nothing more.** It does not decide column
+  types, primary keys, or where the header row is. It writes prose; your data
+  is never rewritten.
+- **How much is read depends on the format** — a table's column layout and first
+  rows, a PDF whole unless it is very long, an image whole. The resource page always
+  states the extent.
+- **A description a person wrote is never overwritten.** This sits in its own
+  block, apart from the resource's own description field.
+
+### When no description is written
+
+If nothing was written, the resource page states why.
+
+| Reason                                   | What to do                                                                                                                               |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Over the size limit                      | Out of scope. Splitting the file into smaller ones will get it a description                                                             |
+| More than the AI can read at once        | Same as above                                                                                                                            |
+| A format the AI cannot read              | Out of scope for this format                                                                                                             |
+| The contents are not the declared format | **The source link may be dead.** This appears when something registered as a PDF answers with an error page, for instance. Check the URL |
+| No material to describe                  | The pipeline extracted neither text nor a schema from this file                                                                          |
+| AI not available                         | A site-level setting. Contact your system administrator                                                                                  |
+
+### When the file has moved on
+
+Replacing a file rewrites its description from the new version, but **until
+that finishes** the previous version's description stands. While it does, the
+resource page says "This file is now v3. The description has not been updated",
+so nobody mistakes an old description for a current one.
+
 ## Organization management
 
 Organizations are the ownership unit for datasets.

@@ -36,6 +36,18 @@ const t = {
     ctaNote: '開発の背景についてはこちら',
     releaseNotes: 'リリースノート',
     switchLang: 'English',
+    spotlight5: {
+      title: 'ファイル内容の自動説明',
+      desc: 'リソースを登録すると、AI が中身を読んで短い説明を書きます。表は列の構成と先頭の行から、PDF は多くの場合ファイル全体から。文字の入っていない画像にも説明が付きます。採用の操作は要らず、検索の手掛かりにもなります。',
+      link: '詳しく見る',
+      hash: 'ai-による説明抄録',
+    },
+    spotlight6: {
+      title: 'リソース単位のハイブリッド検索',
+      desc: 'キーワードと意味の両方で探す検索を、データセットからファイル単位へ。結果は「どのファイルが該当したか」まで示し、一致の根拠（意味・AI による説明・本文）も添えます。ファイルの多いデータセットでも、求めていた 1 つに辿り着けます。',
+      link: '詳しく見る',
+      hash: 'どのリソースが一致したか',
+    },
     spotlight: {
       title: 'AI メタデータ提案',
       desc: 'アップロードしたファイルの中身を素材に、タイトル・説明・タグを AI がドラフト。CSV の列構成から PDF・Office 文書の本文まで読み取り、提案はフィールド単位で確認してから採用。記入の負担を大きく減らします。',
@@ -126,6 +138,18 @@ const t = {
     ctaNote: 'Read about the story behind this project',
     releaseNotes: 'Release Notes',
     switchLang: '日本語',
+    spotlight5: {
+      title: 'Automatic File Descriptions',
+      desc: 'Register a resource and an AI reads it and writes a short description — a table from its columns and first rows, a PDF usually from the whole file. Even an image with no text in it gets one. Nothing to adopt, and it feeds search too.',
+      link: 'Learn more',
+      hash: 'ai-written-descriptions',
+    },
+    spotlight6: {
+      title: 'Hybrid Search per Resource',
+      desc: 'Search by keyword and by meaning together, now file by file rather than dataset by dataset. Results say which file matched and why — by meaning, by its AI-written description, or by its contents — so a dataset of many files still leads you to the one you want.',
+      link: 'Learn more',
+      hash: 'which-resource-matched',
+    },
     spotlight: {
       title: 'AI Metadata Suggestions',
       desc: 'AI drafts titles, descriptions, and tags from what is actually in your files — CSV columns and sample rows, even the text inside PDF and Office documents. Review and adopt field by field; nothing is overwritten automatically.',
@@ -336,9 +360,42 @@ const techStack = [
         <div class="spotlight-card">
           <div class="spotlight-body">
             <div class="spotlight-header">
+              <span class="spotlight-icon">📝</span>
+              <h2 class="spotlight-title" data-i18n="spotlight5.title">{t.en.spotlight5.title}</h2>
+              <span class="spotlight-badge">NEW</span>
+              <span class="spotlight-date">v0.30.0 · 2026-09-18</span>
+            </div>
+            <p class="spotlight-desc" data-i18n="spotlight5.desc">{t.en.spotlight5.desc}</p>
+          </div>
+          <a
+            href={`${base}en/data-admin-guide/#${t.en.spotlight5.hash}`}
+            class="btn-outline spotlight-link"
+            data-i18n="spotlight5.link"
+            id="spotlight5-link">{t.en.spotlight5.link}</a
+          >
+        </div>
+        <div class="spotlight-card">
+          <div class="spotlight-body">
+            <div class="spotlight-header">
+              <span class="spotlight-icon">🔎</span>
+              <h2 class="spotlight-title" data-i18n="spotlight6.title">{t.en.spotlight6.title}</h2>
+              <span class="spotlight-badge">NEW</span>
+              <span class="spotlight-date">v0.30.0 · 2026-09-18</span>
+            </div>
+            <p class="spotlight-desc" data-i18n="spotlight6.desc">{t.en.spotlight6.desc}</p>
+          </div>
+          <a
+            href={`${base}en/user-guide/#${t.en.spotlight6.hash}`}
+            class="btn-outline spotlight-link"
+            data-i18n="spotlight6.link"
+            id="spotlight6-link">{t.en.spotlight6.link}</a
+          >
+        </div>
+        <div class="spotlight-card">
+          <div class="spotlight-body">
+            <div class="spotlight-header">
               <span class="spotlight-icon">📑</span>
               <h2 class="spotlight-title" data-i18n="spotlight4.title">{t.en.spotlight4.title}</h2>
-              <span class="spotlight-badge">NEW</span>
               <span class="spotlight-date">v0.27.0 · 2026-09-10</span>
             </div>
             <p class="spotlight-desc" data-i18n="spotlight4.desc">{t.en.spotlight4.desc}</p>
@@ -355,7 +412,6 @@ const techStack = [
             <div class="spotlight-header">
               <span class="spotlight-icon">🕒</span>
               <h2 class="spotlight-title" data-i18n="spotlight3.title">{t.en.spotlight3.title}</h2>
-              <span class="spotlight-badge">NEW</span>
               <span class="spotlight-date">v0.12.0 · 2026-08-10</span>
             </div>
             <p class="spotlight-desc" data-i18n="spotlight3.desc">{t.en.spotlight3.desc}</p>
@@ -492,6 +548,12 @@ const techStack = [
           if (docsLink) docsLink.href = docsBase
           if (ctaLink) ctaLink.href = docsBase
           if (docsNav) docsNav.href = docsBase
+          var spotlight5Link = document.getElementById('spotlight5-link')
+          if (spotlight5Link)
+            spotlight5Link.href = docsBase + 'data-admin-guide/#' + tr.spotlight5.hash
+          var spotlight6Link = document.getElementById('spotlight6-link')
+          if (spotlight6Link)
+            spotlight6Link.href = docsBase + 'user-guide/#' + tr.spotlight6.hash
           var spotlightLink = document.getElementById('spotlight-link')
           if (spotlightLink)
             spotlightLink.href = docsBase + 'data-admin-guide/#' + tr.spotlight.hash

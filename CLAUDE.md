@@ -344,8 +344,8 @@ pnpm dev                        # 全apps/packages の開発サーバー起動
 pnpm build                      # 全パッケージビルド
 pnpm test                       # 全テスト実行（ユニット + 統合）
 pnpm test:e2e                   # E2Eテスト実行（Playwright、要 dev サーバー）
-pnpm db:generate                # Drizzle マイグレーション生成
-pnpm db:migrate                 # マイグレーション実行
+pnpm --filter @kukan/db db:generate   # Drizzle マイグレーション生成
+pnpm --filter @kukan/db db:migrate    # マイグレーション実行
 pnpm db:create-user             # ユーザー作成（初期 sysadmin 作成等）
 pnpm eval:search                # 検索品質評価（ゴールデンセット、要稼働環境。ADR-034）
 pnpm eval:suggest               # AI提案品質評価（ゴールデンセット、要稼働環境+KUKAN_TOKEN。ADR-040）

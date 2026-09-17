@@ -8,7 +8,7 @@ sidebar:
 ## 必要環境
 
 - Node.js 24+
-- pnpm 9+
+- pnpm 10+
 - Docker / Docker Compose
 
 ## セットアップ
@@ -62,7 +62,7 @@ cp .env.example .env
 ### 5. データベースマイグレーション
 
 ```bash
-pnpm db:migrate
+pnpm --filter @kukan/db db:migrate
 ```
 
 ### 6. 開発サーバー起動

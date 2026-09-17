@@ -7,9 +7,9 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/kukan-project/kukan/badge)](https://scorecard.dev/viewer/?uri=github.com/kukan-project/kukan)
 
 > [!WARNING]
-> **Beta (July 2026)** — KUKAN is under active development. APIs, schemas, and configurations may change without notice.
+> **Beta** — KUKAN is under active development. APIs, schemas, and configurations may change without notice.
 >
-> **ベータ版（2026年7月）** — KUKAN は開発中です。API、スキーマ、設定は予告なく変更される場合があります。
+> **ベータ版** — KUKAN は開発中です。API、スキーマ、設定は予告なく変更される場合があります。
 
 > [!NOTE]
 > **Versioning** — KUKAN follows [Semantic Versioning](https://semver.org/) (`vX.Y.Z` tags; `1.0.0` is reserved
@@ -32,7 +32,7 @@ Cloud-native, yet deployable on-premises and in air-gapped networks (e.g. LGWAN)
 ## Prerequisites / 必要環境
 
 - Node.js 24+
-- pnpm 9+
+- pnpm 10+
 - Docker / Docker Compose
 
 ## Getting Started / 開発環境セットアップ
@@ -123,6 +123,8 @@ BETTER_AUTH_SECRET=$(openssl rand -base64 32)
 | `SQS_QUEUE_URL`                   | _(required)_            | SQS queue URL                                                        |
 | `SQS_REGION`                      | _(omit for local)_      | AWS region for SQS                                                   |
 | `AI_TYPE`                         | `none`                  | `none` / `bedrock` / `openai` / `ollama`                             |
+| `AI_COMPLETION_MODELS`            | _(provider default)_    | Allow-list of generation models (comma-separated); first is default  |
+| `AI_SUMMARY_MODEL`                | _(off)_                 | Model writing AI resource descriptions; unset = off, and not billed  |
 | `WEB_DB_POOL_MAX`                 | `5`                     | DB connection pool size (web)                                        |
 | `WORKER_DB_POOL_MAX`              | `3`                     | DB connection pool size (worker)                                     |
 | `LOG_LEVEL`                       | `info`                  | Pino log level (`trace`/`debug`/`info`/`warn`/`error`/`fatal`)       |
@@ -149,8 +151,8 @@ pnpm test         # Run all tests / 全テスト実行
 pnpm lint         # ESLint
 pnpm typecheck    # TypeScript type check / 型チェック
 pnpm format       # Prettier
-pnpm db:generate  # Generate Drizzle migration / マイグレーション生成
-pnpm db:migrate   # Run migrations / マイグレーション実行
+pnpm --filter @kukan/db db:generate  # Generate Drizzle migration / マイグレーション生成
+pnpm --filter @kukan/db db:migrate   # Run migrations / マイグレーション実行
 ```
 
 ## AWS Deployment / AWS デプロイ
@@ -205,24 +207,30 @@ Environments (dev / prd, etc.) are defined in `infra/config/environments.ts` (co
 `environments.example.ts`; forks commit it, upstream does not). Each entry is an `EnvironmentConfig`:
 環境は `infra/config/environments.ts`（example をコピー。フォークがコミット、upstream はコミットしない）で定義。各エントリのフィールド:
 
-| Field               | Type                           | Default            | Description                                                                                      |
-| ------------------- | ------------------------------ | ------------------ | ------------------------------------------------------------------------------------------------ |
-| `account`           | string                         | **required**       | Target account ID (misdeployment guard: CDK refuses if your credentials are for another account) |
-| `region`            | string                         | `ap-northeast-1`   | Target region                                                                                    |
-| `scale`             | `small` \| `medium` \| `large` | `small`            | Resource sizing preset                                                                           |
-| `dbEngine`          | `rds` \| `aurora`              | Scale-dependent    | DB engine                                                                                        |
-| `enableOpenSearch`  | boolean                        | `true`             | `false` → PostgreSQL full-text fallback                                                          |
-| `enableWaf`         | boolean                        | `!allowedIpRanges` | WAF on CloudFront (~$9/mo)                                                                       |
-| `allowedIpRanges`   | string[]                       | —                  | IP allowlist via CloudFront Function (CIDR, IPv4+IPv6)                                           |
-| `domainName`        | string                         | —                  | Custom domain (CloudFront default domain when unset)                                             |
-| `hostedZoneId/Name` | string                         | —                  | Route53 Hosted Zone (required with `domainName`)                                                 |
-| `certificateArn`    | string                         | —                  | Pre-created us-east-1 ACM cert ARN (for pipeline mode)                                           |
-| `webAclArn`         | string                         | —                  | Pre-created us-east-1 WAF WebACL ARN (for pipeline mode)                                         |
-| `bucketName`        | string                         | auto               | S3 bucket name (auto-generated, globally unique, when unset)                                     |
-| `enableGa4DataApi`  | boolean                        | `false`            | GA4 analytics dashboard                                                                          |
-| `githubRepo`        | string                         | —                  | CodeConnections source repo (`owner/repo`)                                                       |
-| `deployBranch`      | string                         | `main`             | Branch that deploys this env (pipeline mode)                                                     |
-| `overrides`         | deep-partial                   | —                  | Fine-grained overrides of the scale preset                                                       |
+| Field               | Type                           | Default            | Description                                                                                        |
+| ------------------- | ------------------------------ | ------------------ | -------------------------------------------------------------------------------------------------- |
+| `account`           | string                         | **required**       | Target account ID (misdeployment guard: CDK refuses if your credentials are for another account)   |
+| `region`            | string                         | `ap-northeast-1`   | Target region                                                                                      |
+| `scale`             | `small` \| `medium` \| `large` | `small`            | Resource sizing preset                                                                             |
+| `dbEngine`          | `rds` \| `aurora`              | Scale-dependent    | DB engine                                                                                          |
+| `enableOpenSearch`  | boolean                        | `true`             | `false` → PostgreSQL full-text fallback                                                            |
+| `enableWaf`         | boolean                        | `!allowedIpRanges` | WAF on CloudFront (~$9/mo)                                                                         |
+| `allowedIpRanges`   | string[]                       | —                  | IP allowlist via CloudFront Function (CIDR, IPv4+IPv6)                                             |
+| `domainName`        | string                         | —                  | Custom domain (CloudFront default domain when unset)                                               |
+| `hostedZoneId/Name` | string                         | —                  | Route53 Hosted Zone (required with `domainName`)                                                   |
+| `certificateArn`    | string                         | —                  | Pre-created us-east-1 ACM cert ARN (for pipeline mode)                                             |
+| `webAclArn`         | string                         | —                  | Pre-created us-east-1 WAF WebACL ARN (for pipeline mode)                                           |
+| `bucketName`        | string                         | auto               | S3 bucket name (auto-generated, globally unique, when unset)                                       |
+| `enableGa4DataApi`  | boolean                        | `false`            | GA4 analytics dashboard                                                                            |
+| `githubRepo`        | string                         | —                  | CodeConnections source repo (`owner/repo`)                                                         |
+| `deployBranch`      | string                         | `main`             | Branch that deploys this env (pipeline mode)                                                       |
+| `sites`             | SiteConfig[]                   | —                  | Multi-site: run several catalogs on one shared backbone (opt-in; omit for a single stack)          |
+| `bedrock`           | object \| `false`              | enabled            | Bedrock models to grant and inject as `AI_COMPLETION_MODELS`; `false` disables AI (`AI_TYPE=none`) |
+| `basicAuth`         | `{ username, password }`       | —                  | Basic authentication in front of the site                                                          |
+| `timeZone`          | string                         | `Asia/Tokyo`       | IANA zone the environment prerenders times in                                                      |
+| `deployConcurrency` | number                         | `2`                | Sites deployed per wave (`1` = serial); multi-site only                                            |
+| `ecrImageRetention` | number                         | `100`              | Container images kept per repository                                                               |
+| `overrides`         | deep-partial                   | —                  | Fine-grained overrides of the scale preset                                                         |
 
 Precedence: CLI `-c` > env entry > scale defaults. Override ad hoc:
 優先順位: `-c` > env エントリ > スケール既定。一時上書き:

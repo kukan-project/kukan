@@ -229,6 +229,7 @@ Some settings can be **changed from the admin dashboard without redeploying** (S
 | Search example chips                   | Example queries shown under the search box                                                                                                                                                                                                  |
 | Semantic search & similarity threshold | Whether to include semantically related results in search, and the minimum "closeness" required. Loosening it yields more hits but more noise; tightening favors precision (requires a configuration where an embedding model is available) |
 | AI metadata suggestions                | Feature toggle (kill switch), generation model ID (blank = provider default), and a connection test                                                                                                                                         |
+| Language of AI-written descriptions    | The language abstracts are written in (Japanese / English). Default Japanese. Changing it does not rewrite existing descriptions — that needs the bulk generation under "[AI-written descriptions](#ai-written-descriptions)" below         |
 | User self-registration                 | See "[Self-registration control](#self-registration-control)" above                                                                                                                                                                         |
 
 ### AI and embedding model selection
@@ -276,7 +277,110 @@ The former Bedrock **Model access** page has been retired. Serverless foundation
     --body '{"texts":["test"],"input_type":"search_document"}' /dev/stdout
   ```
 
-If you switch the embedding model, regenerate the embeddings from the search admin page (**Regenerate embeddings**, or `POST /api/v1/admin/reindex-embeddings`) to apply it to existing data. This does not require OpenSearch and does not re-fetch any resource.
+If you switch the embedding model, existing data needs **the embeddings regenerated** to pick it up (see "[Reprocessing the search index](#reprocessing-the-search-index)" below).
+
+### AI-written descriptions
+
+Every resource you register can have an AI write a **short description from the
+file's contents**, shown on its resource page. It lets a reader judge what is in
+a file without opening it, and it feeds search as well (it goes into the
+per-resource embedding).
+
+**One environment variable turns it on: `AI_SUMMARY_MODEL`.** Name the model
+that should write them and the feature is on; leave it unset and nothing is
+written and nothing is billed.
+
+```bash
+AI_SUMMARY_MODEL=jp.anthropic.claude-sonnet-4-6
+```
+
+:::caution[Turning this on costs inference money]
+An abstract is generated per resource, so **the bill scales with the size of
+the catalog**. That is why this is an environment variable rather than a
+dashboard toggle: it belongs to whoever pays for the inference. Choosing
+between models is a threefold difference in the bill and, measured, the
+difference between reading a scan and inventing one — so name the model
+explicitly, whatever happens to be first in `AI_COMPLETION_MODELS`. A Claude
+Sonnet 4.6 class model is recommended.
+
+Before any bulk generation runs, the dashboard **shows how many resources it
+covers and what it is estimated to cost**. Read that before pressing the button.
+:::
+
+`AI_SUMMARY_MODEL` must name a model from `AI_COMPLETION_MODELS`. The
+**language** is a runtime setting instead (Site settings) — language is free,
+the model is money.
+
+#### Bulk generation (Site settings → Generate AI descriptions)
+
+Ordinarily nothing is needed here: descriptions are written as resources are
+registered. This card exists for **resources that predate the setting** and for
+**those needing a rewrite because the model, prompt version, or language
+changed**. It never re-fetches an external URL.
+
+| Action           | Covers                                                                         |
+| ---------------- | ------------------------------------------------------------------------------ |
+| Generate missing | Only resources with no description yet                                         |
+| Regenerate all   | Those, plus descriptions written by another model, prompt version, or language |
+
+Either button states "N resources · estimated X–Y input / Z output tokens
+(about $low–$high)" before you press it. The input range has a span because a
+PDF's token count follows its page count, which cannot be seen from here (the
+bounds are one page and the page limit).
+
+Embeddings are rebuilt package by package as generation completes. Running it
+twice over the same content costs nothing the second time, because it compares
+rather than regenerates.
+
+## Reprocessing the search index
+
+The search admin page (Index management) rebuilds indexes and derived data.
+Each runs asynchronously through SQS and proceeds in the background once queued.
+
+| Action                  | Rebuilds                                                   | Fetches external URLs   | Run it when                                                                                                                                        |
+| ----------------------- | ---------------------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rebuild search index    | The metadata index                                         | No                      | Search results look inconsistent. **After an upgrade that changed a mapping or schema** (`POST /api/v1/admin/reindex-metadata`)                    |
+| Reprocess content       | Extracted text, previews, and the index, from stored files | Only ones never fetched | Full-text search or previews are missing. **Takes time in proportion to the number of resources**                                                  |
+| Regenerate embeddings   | The vectors semantic search uses                           | No                      | Semantic search was enabled after the fact, or the embedding model changed (`POST /api/v1/admin/reindex-embeddings`). Unchanged content is skipped |
+| Re-analyse search index | The index itself, under a new analysis                     | No                      | The Japanese analysis settings moved on. **Only when the page says so** (below)                                                                    |
+
+None of this is ordinarily needed: the metadata index updates as datasets are
+created, updated, and deleted, and text and previews are built when the pipeline
+processes a file.
+
+### Re-analysing the search index
+
+Upgrading to a release that changed the Japanese morphological analysis puts a
+**re-analysis** notice on the search admin page. The analysis is **fixed when an
+index is created**, so an existing index has to be rebuilt before the new
+analysis takes effect. "Rebuild" above re-sends documents to the same index and
+leaves its analysis as it was, so this is the only action that applies one.
+
+It only re-reads text already stored — **no external URL is fetched and no file
+is reprocessed**. It is a one-time action per upgrade, and the notice disappears
+once it completes (`POST /api/v1/admin/search/reanalyse`).
+
+## One-time migrations
+
+Unlike reprocessing, these run **once, at migration time**. The dashboard shows
+how much work is outstanding and the item disappears when it reaches zero.
+
+### Version backfill
+
+Resources that predate versioning have no version. Running **Version backfill**
+on the dashboard records each resource's current file as v1 and loads tabular
+ones into the row-level diff. Nothing is re-fetched or re-indexed
+(`GET /api/v1/admin/version-backfill-status` /
+`POST /api/v1/admin/backfill-versions`).
+
+:::caution
+**Replace a file before backfilling and its previous contents are lost — no
+version is kept.** Run this soon after upgrading to a release that includes
+versioning.
+:::
+
+For the per-layer breakdown and the conversion of old-style reverts, see the
+[Data Administrator Guide](/en/data-admin-guide/#one-time-migration).
 
 ## Health checks
 
@@ -329,24 +433,27 @@ pnpm --filter @kukan/worker reconcile-orphans -- --commit
 
 Key environment variables are listed below. See `.env.example` for the full list.
 
-| Variable             | Description                                                             | Default                 |
-| -------------------- | ----------------------------------------------------------------------- | ----------------------- |
-| `POSTGRES_HOST`      | PostgreSQL host                                                         | `localhost`             |
-| `POSTGRES_PORT`      | PostgreSQL port                                                         | `5432`                  |
-| `POSTGRES_DB`        | Database name                                                           | `kukan`                 |
-| `POSTGRES_USER`      | Database user                                                           | `kukan`                 |
-| `POSTGRES_PASSWORD`  | Database password                                                       | `kukan`                 |
-| `S3_BUCKET`          | S3 bucket name                                                          | `kukan-dev`             |
-| `S3_ENDPOINT`        | S3 endpoint (MinIO: `http://localhost:9000`, AWS: omit)                 | -                       |
-| `SEARCH_TYPE`        | Search engine (`opensearch` / `postgres`)                               | `opensearch`            |
-| `OPENSEARCH_URL`     | OpenSearch endpoint                                                     | `http://localhost:9200` |
-| `SQS_QUEUE_URL`      | SQS queue URL                                                           | -                       |
-| `SQS_ENDPOINT`       | SQS endpoint (ElasticMQ: `http://localhost:9324`, AWS: omit)            | -                       |
-| `BETTER_AUTH_SECRET` | Auth session secret (32+ characters)                                    | -                       |
-| `BETTER_AUTH_URL`    | Public URL                                                              | `http://localhost:3000` |
-| `PASSWORD_MIN_SCORE` | Password strength floor (zxcvbn score 0–4) — see below                  | `3`                     |
-| `LOG_LEVEL`          | Log level (`trace`–`fatal`)                                             | `info`                  |
-| `TIME_ZONE`          | IANA zone times are prerendered in; the browser then shows the viewer's | `Asia/Tokyo`            |
+| Variable               | Description                                                                                        | Default                 |
+| ---------------------- | -------------------------------------------------------------------------------------------------- | ----------------------- |
+| `POSTGRES_HOST`        | PostgreSQL host                                                                                    | `localhost`             |
+| `POSTGRES_PORT`        | PostgreSQL port                                                                                    | `5432`                  |
+| `POSTGRES_DB`          | Database name                                                                                      | `kukan`                 |
+| `POSTGRES_USER`        | Database user                                                                                      | `kukan`                 |
+| `POSTGRES_PASSWORD`    | Database password                                                                                  | `kukan`                 |
+| `S3_BUCKET`            | S3 bucket name                                                                                     | `kukan-dev`             |
+| `S3_ENDPOINT`          | S3 endpoint (MinIO: `http://localhost:9000`, AWS: omit)                                            | -                       |
+| `SEARCH_TYPE`          | Search engine (`opensearch` / `postgres`)                                                          | `opensearch`            |
+| `OPENSEARCH_URL`       | OpenSearch endpoint                                                                                | `http://localhost:9200` |
+| `SQS_QUEUE_URL`        | SQS queue URL                                                                                      | -                       |
+| `SQS_ENDPOINT`         | SQS endpoint (ElasticMQ: `http://localhost:9324`, AWS: omit)                                       | -                       |
+| `BETTER_AUTH_SECRET`   | Auth session secret (32+ characters)                                                               | -                       |
+| `BETTER_AUTH_URL`      | Public URL                                                                                         | `http://localhost:3000` |
+| `PASSWORD_MIN_SCORE`   | Password strength floor (zxcvbn score 0–4) — see below                                             | `3`                     |
+| `AI_TYPE`              | AI provider (`none` / `bedrock` / `openai` / `ollama`)                                             | `none`                  |
+| `AI_COMPLETION_MODELS` | Allow-list of generation models (comma-separated); the picker's options, first is the default      | -                       |
+| `AI_SUMMARY_MODEL`     | Model that writes AI descriptions. **Unset turns the feature off** (and costs nothing) — see above | -                       |
+| `LOG_LEVEL`            | Log level (`trace`–`fatal`)                                                                        | `info`                  |
+| `TIME_ZONE`            | IANA zone times are prerendered in; the browser then shows the viewer's                            | `Asia/Tokyo`            |
 
 ### Password strength policy
 
