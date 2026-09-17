@@ -60,10 +60,12 @@ Swapping models after evaluation is handled by "re-embedding everything (rebuild
   └─ enqueue embed job (QueueAdapter, only when the AIAdapter can embed)
         │
 [Worker] embed-package job
-  1. fetch package → build the text to embed (title + notes + tags + section names + resource name/description)
-  2. compare the content hash → skip when unchanged
-  3. AIAdapter.embed(text, { type: 'document' })
-  4. UPDATE package SET embedding, embedding_model, embedding_hash
+  1. fetch the package and its active resources (ADR-054: one vector per resource)
+  2. build each resource's text (package title + tags, then the resource's section + name +
+     description + abstract; `notes` stays out — ADR-054 decision 3)
+  3. hash per resource → skip when unchanged, clear when empty
+  4. AIAdapter.embedBatch(texts, { type: 'document' })
+  5. UPDATE resource SET embedding, embedding_model, embedding_hash
 ```
 
 ### Search flow (query side, synchronous)
@@ -145,13 +147,18 @@ export interface AIAdapter {
 ```sql
 CREATE EXTENSION IF NOT EXISTS vector;
 
-ALTER TABLE package
+ALTER TABLE resource
+  -- ADR-054: the vector lives on the resource; the package's three columns were dropped there
   ADD COLUMN embedding vector,            -- no dimension (no DDL when swapping models)
   ADD COLUMN embedding_model text,        -- vector-space key "model name@dimensions" (embeddingKey(), for mismatch detection)
   ADD COLUMN embedding_hash text;         -- SHA-256 of the source text (skips re-embedding)
 ```
 
 - HNSW / IVFFlat indexes are **not** created (v1 is exact search; ADR-034 §2)
+- The search takes each package's closest resource with `DISTINCT ON (package_id)` and orders
+  packages by that distance (ADR-054 decisions 4–5). The `VectorHit` carries that `resourceId`,
+  which reaches the result's `matchedResources` as `matchSource: 'semantic'` (decision 6), carrying the
+  cosine similarity it matched at as `similarity`; the card shows it labelled, as "(Similarity 0.41)"
 - Search only considers rows where `embedding_model = <current key>`. Because the key is
   "model name@dimensions", a Matryoshka model (Titan v2 etc.) that changes dimensions under the
   same name is treated as a different space, so a mix during migration does not make pgvector
@@ -223,6 +230,7 @@ ollama:
   search time; writes continue while it is paused, guaranteeing the vectors are not stale when
   it is re-enabled
 - **One job per package per minute** (`package.embedding_queued_at`, `EMBED_DEBOUNCE_MS`). The
+  job stays per package and embeds that package's resources (ADR-054). The
   embedded text includes each resource's name and description, so a bulk import is one change
   to the parent package per resource — about 5,500 jobs for 298 datasets. The window is claimed
   on the row with `UPDATE … RETURNING` (the API runs as several tasks, so nothing in-process
@@ -233,15 +241,26 @@ ollama:
 
 ### 6.2 Worker handler (`apps/worker`)
 
-1. Fetch the package (finish if deleted)
-2. Build the target text (concatenating the metadata of active resources, truncated at the token
-   limit):
-   `title + '\n' + notes + '\n' + tags.join(' ') + '\n' + resources.map(r => r.name + ' ' + (r.description ?? '')).join('\n')`
-3. Compare the SHA-256 against `embedding_hash` → skip when it matches and `embedding_model`
-   matches too
-4. `embed(text, { type: 'document' })` →
-   `UPDATE package SET embedding, embedding_model, embedding_hash`
-5. On failure, ride the existing retry mechanism (a missing embedding only lowers search quality,
+The job's unit stays the package; **the vector belongs to the resource** (ADR-054).
+
+1. Fetch the package (finish unless `active` — a draft is embedded at publish, a deleted one never)
+2. Fetch the tags and the active resources in a **deterministic order** (`position, created, id`;
+   an order that moves re-embeds unchanged content)
+3. Build each resource's text and compare its SHA-256 with `embedding_hash`; leave it alone when
+   that and `embedding_model` both match:
+   ```
+   [title, tags]                          … the package side, first, up to what the reserve leaves
+   [section, name, description, summary]  … the resource itself, `EMBED_RESOURCE_RESERVE_CHARS` guaranteed
+   ```
+   `notes` stays out — words every resource shares blur which one is the match, and the keyword
+   leg reads them on the package document (ADR-054 decision 3). `description` is unbounded, so
+   what overflows is cut on the resource side
+4. Clear the vector of a resource whose text came out empty (one `inArray` statement)
+5. Send the rest to `embedBatch` in batches of `EMBED_BATCH_SIZE` and write **each batch** back
+   with one `UPDATE resource … FROM (VALUES …)`. A failure part way keeps the batches already
+   written, and the next run resumes past them by hash (OpenAI and Ollama send `embedBatch`'s whole
+   array as one request, so an unbatched large package could never be embedded)
+6. On failure, ride the existing retry mechanism (a missing embedding only lowers search quality,
    it does not break functionality)
 
 ### 6.3 Bulk re-embedding

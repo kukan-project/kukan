@@ -86,9 +86,12 @@ interface SearchAnswer {
  * someone can read.
  */
 function evaluateResources(surfaced: string[], relevant: string[]): ResourceMetrics {
-  const relevantSet = new Set(relevant)
-  const hits = new Set(surfaced.filter((name) => relevantSet.has(name)))
-  const first = surfaced.findIndex((name) => relevantSet.has(name))
+  // Trimmed on both sides: a harvested resource name can end in a newline the
+  // catalogue never shows, and a golden entry typed by hand will not carry it
+  const relevantSet = new Set(relevant.map((name) => name.trim()))
+  const names = surfaced.map((name) => name.trim())
+  const hits = new Set(names.filter((name) => relevantSet.has(name)))
+  const first = names.findIndex((name) => relevantSet.has(name))
   return {
     recall: relevant.length === 0 ? 0 : hits.size / relevant.length,
     mrr: first < 0 ? 0 : 1 / (first + 1),

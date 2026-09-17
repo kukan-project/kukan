@@ -196,6 +196,26 @@ export const TEXT_HEAD_ARTIFACT_SIZE = 64 * 1024
  *  8K-token input limit of the provisional models (Titan v2 / bge-m3) */
 export const MAX_EMBED_TEXT_LENGTH = 8_000
 
+/**
+ * Resources embedded per provider call. A package holds up to 500 resources
+ * (MAX_RESOURCES_PER_PACKAGE) of up to MAX_EMBED_TEXT_LENGTH each, and the
+ * OpenAI and Ollama adapters send `embedBatch`'s whole array as one request —
+ * unbounded, a large package is a payload no retry can ever get through.
+ * Each batch is written back before the next, so a package that fails halfway
+ * keeps what it has and the next run resumes past it by hash.
+ */
+export const EMBED_BATCH_SIZE = 32
+
+/**
+ * Characters of MAX_EMBED_TEXT_LENGTH held for the resource's own text
+ * (section, name, description, abstract) before the package's title and tags
+ * take theirs. Neither title nor tags is bounded by the API, so without a
+ * reserve a long enough package head leaves every resource of the package with
+ * the same text and the same vector — the failure ADR-054 exists to remove.
+ * Two thousand holds a name, an abstract and the head of a description.
+ */
+export const EMBED_RESOURCE_RESERVE_CHARS = 2_000
+
 // ── Health Check ──
 
 /** Number of resources to check per cron tick */

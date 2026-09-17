@@ -37,8 +37,12 @@ export interface MatchedResource {
   highlightedSummary?: string
   /** Highlighted snippets from content match (up to 3 fragments) */
   contentSnippets?: string[]
-  /** Whether the match came from resource metadata or extracted content */
-  matchSource?: 'metadata' | 'content'
+  /** What the match is on account of: the resource's metadata, its extracted
+   *  content, or — with no word to point at — its meaning (ADR-054) */
+  matchSource?: 'metadata' | 'content' | 'semantic'
+  /** Cosine similarity the vector leg matched at — on a 'semantic' entry only.
+   *  What the floor is measured against, so it travels with the hit */
+  similarity?: number
   /** Content chunk document ID for lazy highlight loading (passed to POST /highlights) */
   _contentDocId?: string
 }
@@ -112,10 +116,13 @@ export interface DatasetDoc {
   [key: string]: unknown
 }
 
-/** A vector-search hit (pgvector cosine similarity, ADR-034) */
+/** A vector-search hit (pgvector cosine similarity, ADR-034 / ADR-054) */
 export interface VectorHit {
-  /** Package UUID */
+  /** Package UUID — the unit a result is returned in */
   id: string
+  /** The resource whose vector this is: the package's closest one, which is
+   *  what puts the package where it is and the table the reader is sent to */
+  resourceId: string
   /** Cosine similarity in [−1, 1] (1 = identical direction) */
   similarity: number
 }
@@ -271,9 +278,9 @@ export interface SearchAdapter {
     filters?: SearchFilters
   ): Promise<Record<string, string>>
 
-  /** Vector similarity search over package embeddings (pgvector, ADR-034).
-   *  PostgreSQL-only — vectors live in the package table regardless of the
-   *  BM25 backend, so callers use the dbSearch adapter. `modelKey` is the
+  /** Vector similarity search over resource embeddings (pgvector, ADR-034 /
+   *  ADR-054). PostgreSQL-only — vectors live in the resource table regardless
+   *  of the BM25 backend, so callers use the dbSearch adapter. `modelKey` is the
    *  vector-space key from embeddingKey() (model@dimensions), NOT the bare
    *  model name. `filters` MUST carry the caller's visibility scope. Absent on
    *  backends without vector support. `minSimilarityOffset` shifts the

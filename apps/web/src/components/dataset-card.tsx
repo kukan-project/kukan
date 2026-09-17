@@ -82,7 +82,7 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
             {pkg.matchSource === 'semantic' && (
               <Badge
                 variant="outline"
-                className="shrink-0 gap-1 border-primary/30 text-xs font-normal text-primary"
+                className="shrink-0 gap-1 border-ai/20 bg-ai/5 text-xs font-normal text-ai-tint-foreground"
               >
                 <Sparkles className="h-3 w-3" />
                 {t('semanticMatch')}
@@ -257,6 +257,26 @@ export function DatasetCard({ pkg }: { pkg: DatasetCardItem }) {
                                 </div>
                               </div>
                             )}
+                          {/* A label and nothing to mark: a semantic match
+                              answers "why this table" with a resource, not a
+                              phrase, because the query's words usually appear
+                              nowhere in it (ADR-054). The AI hue, as for the
+                              abstract: this is a machine's judgement, not the
+                              file's own words. */}
+                          {r.matchSource === 'semantic' && (
+                            <span className="mt-1 flex items-center gap-0.5 text-[10px] font-medium text-ai-tint-foreground">
+                              <Sparkles className="h-2.5 w-2.5" />
+                              {t('semanticMatch')}
+                              {r.similarity !== undefined && (
+                                <span
+                                  className="ml-1 tabular-nums opacity-70"
+                                  title={t('similarityHint')}
+                                >
+                                  {t('similarityValue', { value: r.similarity.toFixed(2) })}
+                                </span>
+                              )}
+                            </span>
+                          )}
                           {r.matchSource === 'content' && (
                             <div className="mt-1 space-y-1">
                               <span className="flex items-center gap-0.5 text-[10px] font-medium text-primary">

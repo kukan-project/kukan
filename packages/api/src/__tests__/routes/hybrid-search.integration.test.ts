@@ -48,12 +48,12 @@ beforeEach(async () => {
   // embedding_model is the vector-space key (model@dimension) — must match the
   // stub's getEmbeddingInfo() → 'test-model@3'
   await db.execute(sql`
-    UPDATE package SET embedding = '[1,0,0]', embedding_model = 'test-model@3'
-    WHERE name = 'wireless-lan'
+    INSERT INTO resource (package_id, name, state, embedding, embedding_model)
+    SELECT id, 'r', 'active', '[1,0,0]', 'test-model@3' FROM package WHERE name = 'wireless-lan'
   `)
   await db.execute(sql`
-    UPDATE package SET embedding = '[0,0,1]', embedding_model = 'test-model@3'
-    WHERE name = 'keyword-hit'
+    INSERT INTO resource (package_id, name, state, embedding, embedding_model)
+    SELECT id, 'r', 'active', '[0,0,1]', 'test-model@3' FROM package WHERE name = 'keyword-hit'
   `)
 })
 
@@ -65,7 +65,12 @@ async function search(qs: string) {
   const res = await app.request(`/api/v1/packages?${qs}`)
   expect(res.status).toBe(200)
   const body = (await res.json()) as {
-    items: Array<{ name: string; matchSource?: string }>
+    items: Array<{
+      name: string
+      matchSource?: string
+      matchedResources?: Array<{ name?: string; matchSource?: string }>
+      matchedResourcesCount?: { total: number; atLeast: boolean }
+    }>
     total: number
   }
   return body
@@ -80,8 +85,15 @@ describe('GET /api/v1/packages — hybrid search wiring', () => {
     expect(names).toContain('wireless-lan')
     expect(total).toBe(2)
 
-    expect(items.find((i) => i.name === 'wireless-lan')?.matchSource).toBe('semantic')
+    const semantic = items.find((i) => i.name === 'wireless-lan')
+    expect(semantic?.matchSource).toBe('semantic')
     expect(items.find((i) => i.name === 'keyword-hit')?.matchSource).toBeUndefined()
+    // And it says which resource put it there (ADR-054): the one whose vector
+    // matched, marked as a semantic match, with nothing to highlight
+    expect(semantic?.matchedResources).toEqual([
+      expect.objectContaining({ name: 'r', matchSource: 'semantic' }),
+    ])
+    expect(semantic?.matchedResourcesCount).toEqual({ total: 1, atLeast: false })
   })
 
   it('semantic=false disables the vector leg', async () => {
@@ -119,12 +131,26 @@ describe('GET /api/v1/packages — hybrid search wiring', () => {
     expect(detail).not.toHaveProperty('embedding')
     expect(detail).not.toHaveProperty('embeddingModel')
     expect(detail).not.toHaveProperty('embeddingHash')
+
+    // The vector moved to the resource (ADR-054), and so must the scrubbing
+    const [{ id }] = (
+      await db.execute(sql`
+        SELECT r.id FROM resource r JOIN package p ON p.id = r.package_id WHERE p.name = 'wireless-lan'
+      `)
+    ).rows as Array<{ id: string }>
+    const resourceRes = await app.request(`/api/v1/resources/${id}`)
+    expect(resourceRes.status).toBe(200)
+    const resourceDetail = (await resourceRes.json()) as Record<string, unknown>
+    expect(resourceDetail).not.toHaveProperty('embedding')
+    expect(resourceDetail).not.toHaveProperty('embeddingModel')
+    expect(resourceDetail).not.toHaveProperty('embeddingHash')
   })
 
   it('ignores vectors stored under a different model/dimension key', async () => {
     // Simulate a dimension change: the stored vector predates the current key
     await db.execute(sql`
-      UPDATE package SET embedding_model = 'test-model' WHERE name = 'wireless-lan'
+      UPDATE resource SET embedding_model = 'test-model'
+      WHERE package_id = (SELECT id FROM package WHERE name = 'wireless-lan')
     `)
     const { items } = await search('q=Wi-Fi')
     // The semantic-only hit drops out; no dimension-mismatch error

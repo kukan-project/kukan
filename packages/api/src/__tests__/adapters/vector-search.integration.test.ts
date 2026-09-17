@@ -8,6 +8,26 @@ const adapter = new PostgresSearchAdapter(db)
 
 const MODEL = 'test-model'
 
+/** A resource carrying a vector (ADR-054) — the unit the search reads */
+async function insertResource(
+  packageId: string,
+  opts: { name?: string; embedding?: number[]; model?: string; state?: string } = {}
+): Promise<string> {
+  const result = await db.execute(sql`
+    INSERT INTO resource (package_id, name, state, embedding, embedding_model)
+    VALUES (
+      ${packageId},
+      ${opts.name ?? 'r'},
+      ${opts.state ?? 'active'},
+      ${opts.embedding ? JSON.stringify(opts.embedding) : null},
+      ${opts.embedding ? (opts.model ?? MODEL) : null}
+    )
+    RETURNING id
+  `)
+  return (result.rows[0] as { id: string }).id
+}
+
+/** A package, with one embedded resource when a vector is given */
 async function insertPackage(opts: {
   name: string
   embedding?: number[]
@@ -17,18 +37,13 @@ async function insertPackage(opts: {
   state?: string
 }): Promise<string> {
   const result = await db.execute(sql`
-    INSERT INTO package (name, private, owner_org, state, embedding, embedding_model)
-    VALUES (
-      ${opts.name},
-      ${opts.isPrivate ?? false},
-      ${opts.ownerOrg ?? null},
-      ${opts.state ?? 'active'},
-      ${opts.embedding ? JSON.stringify(opts.embedding) : null},
-      ${opts.embedding ? (opts.model ?? MODEL) : null}
-    )
+    INSERT INTO package (name, private, owner_org, state)
+    VALUES (${opts.name}, ${opts.isPrivate ?? false}, ${opts.ownerOrg ?? null}, ${opts.state ?? 'active'})
     RETURNING id
   `)
-  return (result.rows[0] as { id: string }).id
+  const id = (result.rows[0] as { id: string }).id
+  if (opts.embedding) await insertResource(id, { embedding: opts.embedding, model: opts.model })
+  return id
 }
 
 async function insertOrg(name: string): Promise<string> {
@@ -58,6 +73,30 @@ describe('PostgresSearchAdapter.searchByVector', () => {
     expect(hits.map((h) => h.id)).toEqual([exact, near])
     expect(hits[0].similarity).toBeCloseTo(1, 5)
     expect(hits[1].similarity).toBeGreaterThan(0.9)
+  })
+
+  it('places a package at its closest resource, and names that resource (ADR-054)', async () => {
+    const pkg = await insertPackage({ name: 'sheets' })
+    await insertResource(pkg, { name: 'far', embedding: [0.5, 0.5, 0] })
+    const close = await insertResource(pkg, { name: 'close', embedding: [0.95, 0.05, 0] })
+    await insertResource(pkg, { name: 'gone', embedding: [1, 0, 0], state: 'deleted' })
+
+    const hits = await adapter.searchByVector([1, 0, 0], MODEL, {}, 10)
+
+    // One row for the package, carrying its best *active* resource
+    expect(hits).toHaveLength(1)
+    expect(hits[0]).toMatchObject({ id: pkg, resourceId: close })
+    expect(hits[0].similarity).toBeGreaterThan(0.99)
+  })
+
+  it("fills the window with distinct packages, not one package's resources", async () => {
+    const many = await insertPackage({ name: 'many' })
+    for (let i = 0; i < 5; i++) await insertResource(many, { embedding: [1, 0.01 * i, 0] })
+    const other = await insertPackage({ name: 'other', embedding: [0.8, 0.2, 0] })
+
+    const hits = await adapter.searchByVector([1, 0, 0], MODEL, {}, 2)
+
+    expect(hits.map((h) => h.id)).toEqual([many, other])
   })
 
   it('only matches vectors from the requested embedding model', async () => {

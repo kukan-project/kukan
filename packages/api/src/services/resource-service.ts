@@ -54,6 +54,11 @@ const RESOURCE_PARENT_STATES: PackageDbState[] = ['active', 'draft']
 // scrubbed below (ADR-053 §4.1): half of the meta object is the worker talking
 // to itself, and a hidden abstract must not be served at all.
 const {
+  // The vector is ~KB per row and the key and hash are the worker's own
+  // bookkeeping (ADR-054): no resource row this service returns carries them
+  embedding: _embedding,
+  embeddingModel: _embeddingModel,
+  embeddingHash: _embeddingHash,
   storageKey: _storageKey,
   pendingStorageKey: _pendingStorageKey,
   pendingMetadata: _pendingMetadata,

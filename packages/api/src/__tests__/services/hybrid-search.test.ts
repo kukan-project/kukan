@@ -1,6 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createMockDb } from '../test-helpers/mock-db'
-import { hybridSearch, fuseRrf, mergeFacets, vectorVoteWeight } from '../../services/hybrid-search'
+import {
+  hybridSearch,
+  fuseRrf,
+  mergeFacets,
+  vectorVoteWeight,
+  withSemanticResource,
+} from '../../services/hybrid-search'
 import {
   VECTOR_SIMILARITY_NOTCHES_KEY,
   SEMANTIC_SEARCH_ENABLED_KEY,
@@ -140,6 +146,69 @@ describe('fuseRrf', () => {
     const damped = fuseRrf(bm25, [{ id: 'inc', weight: 0.1 }])
     expect(damped[0]).toBe('rel')
     expect(damped.indexOf('inc')).toBeGreaterThan(damped.indexOf('x1'))
+  })
+})
+
+describe('withSemanticResource', () => {
+  const doc = (ids: string[]): DatasetDoc =>
+    ({
+      id: 'p',
+      name: 'p',
+      matchedResources: ids.map((id) => ({ id, matchSource: 'metadata' as const })),
+      matchedResourcesCount: { total: ids.length, atLeast: false },
+    }) as DatasetDoc
+  const named = { id: 'sem', name: 'sem', matchSource: 'semantic' as const }
+
+  it('puts a confident semantic resource first and counts it', () => {
+    const out = withSemanticResource(doc(['k1', 'k2']), named, 1)
+    expect(out.matchedResources!.map((r) => r.id)).toEqual(['sem', 'k1', 'k2'])
+    expect(out.matchedResourcesCount).toEqual({ total: 3, atLeast: false })
+  })
+
+  it('keeps the count a floor when the adapter carried fewer than it counted', () => {
+    // Two carried out of five matched: the semantic resource may be one of the
+    // three not carried, already inside `total`. Raising it would double-count;
+    // the count stays and says it is a floor.
+    const capped = { ...doc(['k1', 'k2']), matchedResourcesCount: { total: 5, atLeast: false } }
+    const out = withSemanticResource(capped, named, 1)
+    expect(out.matchedResources!.map((r) => r.id)).toEqual(['sem', 'k1', 'k2'])
+    expect(out.matchedResourcesCount).toEqual({ total: 5, atLeast: true })
+  })
+
+  it('leaves a floor a floor', () => {
+    const floor = { ...doc(['k1']), matchedResourcesCount: { total: 1, atLeast: true } }
+    expect(withSemanticResource(floor, named, 1).matchedResourcesCount).toEqual({
+      total: 1,
+      atLeast: true,
+    })
+  })
+
+  it('counts from the carried list when the adapter gave no count', () => {
+    const uncounted = { ...doc(['k1']), matchedResourcesCount: undefined }
+    expect(withSemanticResource(uncounted, named, 1).matchedResourcesCount).toEqual({
+      total: 2,
+      atLeast: false,
+    })
+  })
+
+  it('lets a near-floor semantic resource land last, not first', () => {
+    // Neither leg orders the list alone (ADR-054 decision 6): the vote is
+    // weighed by the margin above the floor, as it is for the packages
+    const out = withSemanticResource(doc(['k1', 'k2']), named, 0.05)
+    expect(out.matchedResources!.map((r) => r.id)).toEqual(['k1', 'k2', 'sem'])
+  })
+
+  it('keeps a resource both legs found, with its keyword evidence, and moves it up', () => {
+    const out = withSemanticResource(doc(['k1', 'sem', 'k3']), named, 1)
+    expect(out.matchedResources!.map((r) => r.id)).toEqual(['sem', 'k1', 'k3'])
+    expect(out.matchedResources![0].matchSource).toBe('metadata')
+    expect(out.matchedResourcesCount).toEqual({ total: 3, atLeast: false })
+  })
+
+  it('gives a semantic-only package its one resource', () => {
+    const out = withSemanticResource({ id: 'p', name: 'p' } as DatasetDoc, named, 1)
+    expect(out.matchedResources).toEqual([named])
+    expect(out.matchedResourcesCount).toEqual({ total: 1, atLeast: false })
   })
 })
 

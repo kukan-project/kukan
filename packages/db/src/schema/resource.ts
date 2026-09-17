@@ -13,10 +13,26 @@ import {
   jsonb,
   timestamp,
   index,
+  customType,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import type { ColumnSettings, ResourceSummaryMeta } from '@kukan/shared'
 import { packageTable } from './package'
+
+/** pgvector column without a fixed dimension so the embedding model or its
+ *  dimension can change without DDL — consistency is enforced via the
+ *  embedding_model key (model@dimension) at query time (ADR-034) */
+const vector = customType<{ data: number[]; driverData: string }>({
+  dataType() {
+    return 'vector'
+  },
+  toDriver(value: number[]): string {
+    return JSON.stringify(value)
+  },
+  fromDriver(value: string): number[] {
+    return JSON.parse(value) as number[]
+  },
+})
 
 /**
  * The columns a replacement upload will set, held until it is promoted
@@ -162,6 +178,15 @@ export const resource = pgTable(
     healthCheckedAt: timestamp('health_checked_at', { withTimezone: true }),
     healthCheckState: jsonb('health_check_state').$type<HealthCheckState>().default({}),
     qualityIssues: jsonb('quality_issues').$type<unknown[]>().default([]),
+
+    // Semantic search embedding (ADR-054). One vector per resource, so a hit
+    // can name the table it is about; the package ranks at its best resource's
+    // position. No HNSW/IVFFlat index — exact search at this scale.
+    embedding: vector('embedding'),
+    // Vector-space key (model@dimension, see embeddingKey) — search filters on
+    // this so vectors from other models/dimensions are never compared.
+    embeddingModel: text('embedding_model'),
+    embeddingHash: text('embedding_hash'),
 
     created: timestamp('created', { withTimezone: true }).defaultNow().notNull(),
     updated: timestamp('updated', { withTimezone: true }).defaultNow().notNull(),

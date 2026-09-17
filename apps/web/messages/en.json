@@ -166,6 +166,8 @@
     "contentMatchNote": "(up to 3 matches)",
     "summaryMatch": "Matched the AI description",
     "semanticMatch": "Semantic match",
+    "similarityValue": "(Similarity {value})",
+    "similarityHint": "How close in meaning the AI judged this table to the query (0–1)",
     "loadingSnippet": "Loading…",
     "tabPublic": "Public",
     "tabPrivate": "Private",

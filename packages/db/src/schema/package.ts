@@ -3,34 +3,9 @@
  * CKAN-compatible dataset/package table
  */
 
-import {
-  pgTable,
-  uuid,
-  varchar,
-  text,
-  boolean,
-  jsonb,
-  timestamp,
-  index,
-  customType,
-} from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, text, boolean, jsonb, timestamp, index } from 'drizzle-orm/pg-core'
 import { organization } from './organization'
 import { user } from './user'
-
-/** pgvector column without a fixed dimension so the embedding model or its
- *  dimension can change without DDL — consistency is enforced via the
- *  embedding_model key (model@dimension) at query time (ADR-034) */
-const vector = customType<{ data: number[]; driverData: string }>({
-  dataType() {
-    return 'vector'
-  },
-  toDriver(value: number[]): string {
-    return JSON.stringify(value)
-  },
-  fromDriver(value: string): number[] {
-    return JSON.parse(value) as number[]
-  },
-})
 
 export const packageTable = pgTable(
   'package',
@@ -58,14 +33,14 @@ export const packageTable = pgTable(
     aiSummary: text('ai_summary'),
     aiTags: text('ai_tags'),
 
-    // Semantic search embedding (Phase 5a, ADR-034). No HNSW/IVFFlat index —
-    // v1 uses exact search at package-metadata scale.
-    embedding: vector('embedding'),
-    // Vector-space key (model@dimension, see embeddingKey) — search filters on
-    // this so vectors from other models/dimensions are never compared.
-    embeddingModel: text('embedding_model'),
-    embeddingHash: text('embedding_hash'),
-    // The embed job's debounce window — see EMBED_DEBOUNCE_MS in @kukan/api.
+    // **The vector lives on the resource, not here (ADR-054).** A centroid of
+    // a package's resources holds no per-resource score, so it cannot answer
+    // which of nineteen sheets to open — and nothing queries a package vector
+    // once the resources have their own.
+    //
+    // What stays is the debounce: the embed job is still enqueued per package,
+    // and now embeds that package's resources. See EMBED_DEBOUNCE_MS in
+    // @kukan/api.
     embeddingQueuedAt: timestamp('embedding_queued_at', { withTimezone: true }),
 
     created: timestamp('created', { withTimezone: true }).defaultNow().notNull(),

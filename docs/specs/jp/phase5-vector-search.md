@@ -54,11 +54,14 @@
   ├─ BM25 インデックス更新（既存・同期のまま）
   └─ embed ジョブ投入（QueueAdapter、AIAdapter が embed 可能な場合のみ）
         │
-[Worker] embed-package ジョブ
-  1. package 取得 → 埋め込み対象テキスト生成（title + notes + tags + セクション名 + リソース name/description）
-  2. コンテンツハッシュ比較 → 変化なしならスキップ
-  3. AIAdapter.embed(text, { type: 'document' })
-  4. UPDATE package SET embedding, embedding_model, embedding_hash
+[Worker] embed-package ジョブ（ADR-054: ベクトルはリソースごと）
+  1. package と active なリソースを取得
+  2. リソースごとに埋め込み対象テキストを生成
+     （package の title + tags、続けてリソースの section + name + description + 抄録。
+     `notes` は入れない — ADR-054 決定 3）
+  3. リソースごとにハッシュ比較 → 変化なしならスキップ、空なら NULL に戻す
+  4. AIAdapter.embedBatch(texts, { type: 'document' })
+  5. UPDATE resource SET embedding, embedding_model, embedding_hash
 ```
 
 ### 検索フロー（クエリ側・同期）
@@ -134,13 +137,18 @@ export interface AIAdapter {
 ```sql
 CREATE EXTENSION IF NOT EXISTS vector;
 
-ALTER TABLE package
+-- ADR-054: ベクトルはリソースに置く。package 側の 3 列は同 ADR で廃止した
+ALTER TABLE resource
   ADD COLUMN embedding vector,            -- 次元指定なし（モデル差し替え時 DDL 不要）
   ADD COLUMN embedding_model text,        -- ベクトル空間キー「モデル名@次元数」（embeddingKey()、不一致検出用）
   ADD COLUMN embedding_hash text;         -- 対象テキストの SHA-256（再埋め込みスキップ）
 ```
 
 - HNSW / IVFFlat インデックスは**張らない**（v1 は exact search。ADR-034 §2）
+- 検索は `DISTINCT ON (package_id)` でパッケージごとに最も近いリソース 1 本を取り、その距離で
+  パッケージを並べる（ADR-054 決定 4・5）。`VectorHit` はその `resourceId` を運び、結果の
+  `matchedResources` に `matchSource: 'semantic'` として載る（同決定 6）。一致した cosine 類似度を
+  `similarity` として添え、カードは「（類似度 0.41）」のようにラベル付きで表示する
 - 検索時は `embedding_model = <現行キー>` の行のみ対象。キーは「モデル名@次元数」で、
   Matryoshka モデル（Titan v2 等）が同名のまま次元を変えても別空間として扱われ、
   移行中の混在で pgvector が次元不一致エラーを起こさない
@@ -201,6 +209,7 @@ ollama:
   ゲートしない — このフラグは検索時にベクトルを「読む」ことだけを止める緊急停止スイッチで、
   一時停止中も書き込みは継続し、再有効化時にベクトルが陳腐化していないことを保証する
 - **package ごとに 1 分間に 1 ジョブ**（`package.embedding_queued_at`、`EMBED_DEBOUNCE_MS`）。
+  ジョブは package 単位のまま、その package のリソースを埋め込む（ADR-054）。
   埋め込みテキストはリソースの名前・説明を含むので、一括投入はリソース 1 件ごとに親 package
   への変更になり、298 データセットに約 5,500 ジョブが積まれた。窓は行に `UPDATE … RETURNING`
   で確保し（API は複数タスクで動くためプロセス内では足りない）、取れたときだけ投入する。
@@ -210,12 +219,25 @@ ollama:
 
 ### 6.2 Worker ハンドラ（`apps/worker`）
 
-1. package 取得（deleted なら終了）
-2. 対象テキスト生成（active リソースのメタデータを連結、トークン上限で切り詰め）:
-   `title + '\n' + notes + '\n' + tags.join(' ') + '\n' + resources.map(r => r.name + ' ' + (r.description ?? '')).join('\n')`
-3. SHA-256 を `embedding_hash` と比較 → 一致かつ `embedding_model` 一致ならスキップ
-4. `embed(text, { type: 'document' })` → `UPDATE package SET embedding, embedding_model, embedding_hash`
-5. 失敗時は既存のリトライ機構に乗せる（埋め込み欠損は検索品質低下のみで機能欠損にならない）
+ジョブの単位はパッケージのまま、**ベクトルはリソースごと**に持つ（ADR-054）。
+
+1. package 取得（`active` でなければ終了 — 下書きは公開時に、削除済みは二度と埋め込まない）
+2. タグと active リソースを**決定的な順序**で取得（`position, created, id`。順序が変わると
+   同じ内容でも再埋め込みになる）
+3. リソースごとにテキストを組み立て、SHA-256 を `embedding_hash` と比較。一致かつ
+   `embedding_model` 一致なら据え置き:
+   ```
+   [title, tags]                          … パッケージ側（先頭。予約分を除いた範囲まで）
+   [section, name, description, summary]  … リソース自身（`EMBED_RESOURCE_RESERVE_CHARS` を必ず確保）
+   ```
+   `notes` は入れない — 全リソースに共通する語は取り分けを鈍らせ、キーワード脚が親文書で拾う
+   （ADR-054 決定 3）。`description` は無制限なので、はみ出す分はリソース側で切る
+4. テキストが空になったリソースはベクトルを消す（`inArray` で 1 文）
+5. 残りを `EMBED_BATCH_SIZE` 件ずつ `embedBatch` に渡し、**バッチごとに** 1 文の
+   `UPDATE resource … FROM (VALUES …)` で書き戻す。途中で失敗しても書けたバッチは残り、
+   再実行はハッシュで先へ進む（OpenAI / Ollama は配列全体を 1 リクエストにするため、
+   分割しないと大きなパッケージは永久に埋め込めない）
+6. 失敗時は既存のリトライ機構に乗せる（埋め込み欠損は検索品質低下のみで機能欠損にならない）
 
 ### 6.3 バルク再埋め込み
 

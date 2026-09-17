@@ -483,27 +483,43 @@ export class PostgresSearchAdapter implements SearchAdapter {
     // vectors of different dimensions side by side. The expression appears once
     // (ORDER BY references the output alias) so the ~KB-sized vector parameter
     // is bound and the distance computed a single time per row.
-    const distance = sql<number>`CASE WHEN ${packageTable.embeddingModel} = ${modelKey}
-      THEN ${packageTable.embedding} <=> ${vectorParam}::vector END`
+    const distance = sql<number>`CASE WHEN ${resource.embeddingModel} = ${modelKey}
+      THEN ${resource.embedding} <=> ${vectorParam}::vector END`
 
-    const rows = await this.db
-      .select({ id: packageTable.id, distance: distance.as('distance') })
-      .from(packageTable)
+    // One vector per resource, one row per package (ADR-054): a package is
+    // placed at its closest resource, and that resource is named. DISTINCT ON
+    // is what keeps the window full of *distinct* packages — taking the top k
+    // resources instead lets one package's sheets consume it.
+    const best = this.db
+      .selectDistinctOn([resource.packageId], {
+        packageId: resource.packageId,
+        resourceId: resource.id,
+        distance: distance.as('distance'),
+      })
+      .from(resource)
+      .innerJoin(packageTable, eq(resource.packageId, packageTable.id))
       .where(
         and(
           ...conditions,
-          sql`${packageTable.embedding} IS NOT NULL`,
-          eq(packageTable.embeddingModel, modelKey)
+          eq(resource.state, 'active'),
+          sql`${resource.embedding} IS NOT NULL`,
+          eq(resource.embeddingModel, modelKey)
         )
       )
-      .orderBy(sql`"distance"`)
+      .orderBy(resource.packageId, sql`"distance"`)
+      .as('best')
+
+    const rows = await this.db
+      .select({ id: best.packageId, resourceId: best.resourceId, distance: best.distance })
+      .from(best)
+      .orderBy(best.distance)
       .limit(k)
 
     // Rows are distance-ascending, so thresholding the k results here is
     // exactly equivalent to a WHERE-clause cut.
     return rows
       .filter((row) => row.distance <= maxDistance)
-      .map((row) => ({ id: row.id, similarity: 1 - row.distance }))
+      .map((row) => ({ id: row.id, resourceId: row.resourceId, similarity: 1 - row.distance }))
   }
 
   async facetsForIds(ids: string[]): Promise<SearchFacets> {

@@ -7,7 +7,7 @@
 
 import { inArray, eq } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
-import { packageTable, organization } from '@kukan/db'
+import { packageTable, organization, resource } from '@kukan/db'
 import type {
   SearchAdapter,
   SearchQuery,
@@ -16,7 +16,10 @@ import type {
   SearchFacetBucket,
   DatasetDoc,
   VectorHit,
+  MatchedResource,
 } from '@kukan/search-adapter'
+import { MAX_MATCHED_RESOURCES_PER_PACKAGE } from '@kukan/search-adapter'
+import { resourceDocColumns } from './resource-service'
 import { type AIAdapter, embeddingKey } from '@kukan/ai-adapter'
 import { createCache, type Logger } from '@kukan/shared'
 import {
@@ -119,6 +122,78 @@ async function fetchSemanticDocs(db: Database, ids: string[]): Promise<Map<strin
       } satisfies DatasetDoc,
     ])
   )
+}
+
+/** The resources the vector leg named, as the card shows a matched resource */
+async function fetchNamedResources(
+  db: Database,
+  ids: string[]
+): Promise<Map<string, MatchedResource>> {
+  // The search document's own columns, so a hidden abstract is null here by
+  // the same projection the page and the index read (ADR-053)
+  const rows = await db.select(resourceDocColumns).from(resource).where(inArray(resource.id, ids))
+
+  return new Map(
+    rows.map((row) => [
+      row.id,
+      {
+        id: row.id,
+        name: row.name ?? undefined,
+        description: row.description ?? undefined,
+        format: row.format ?? undefined,
+        section: row.section ?? undefined,
+        summary: row.summary ?? undefined,
+        matchSource: 'semantic' as const,
+      } satisfies MatchedResource,
+    ])
+  )
+}
+
+/**
+ * Put the resource the vector leg matched among the ones the keyword leg did.
+ *
+ * **Neither leg orders the list alone** (ADR-054 decision 6). Kept in
+ * `inner_hits` order the keyword leg decides; put first, the vector leg does.
+ * So the same fusion as the packages': the keyword leg's order is one ranked
+ * list, the vector's single resource the other, its vote weighed by how far it
+ * cleared the floor — a resource barely above it lands last, not first.
+ *
+ * A resource both legs found keeps its keyword evidence (the highlight says
+ * more than a label can) and only moves up.
+ */
+export function withSemanticResource(
+  doc: DatasetDoc,
+  named: MatchedResource,
+  weight: number
+): DatasetDoc {
+  const existing = doc.matchedResources ?? []
+  const already = existing.some((r) => r.id === named.id)
+  // The keyword entry wins a collision: its highlight says more than a label
+  const byId = new Map<string, MatchedResource>([
+    [named.id, named],
+    ...existing.map((r) => [r.id, r] as const),
+  ])
+  const matchedResources = fuseRrf(
+    existing.map((r) => r.id),
+    [{ id: named.id, weight }]
+  )
+    .map((id) => byId.get(id)!)
+    // The adapter's cap holds for the merged list too
+    .slice(0, MAX_MATCHED_RESOURCES_PER_PACKAGE)
+  // One more resource stands for the hits, unless it was already among them.
+  // The carried list is capped, so when the adapter counted more than it
+  // carried — or could only give a floor — the resource may be one of the
+  // uncounted-here ones already in `total`: then the count stays and becomes a
+  // floor rather than being raised on a guess.
+  const count = doc.matchedResourcesCount
+  const matchedResourcesCount = already
+    ? count
+    : !count
+      ? { total: existing.length + 1, atLeast: false }
+      : count.atLeast || count.total > existing.length
+        ? { total: count.total, atLeast: true }
+        : { total: count.total + 1, atLeast: false }
+  return { ...doc, matchedResources, matchedResourcesCount }
 }
 
 /** Sum facet buckets by name so counts cover BM25 matches + vector-only hits */
@@ -263,14 +338,14 @@ export async function hybridSearch(
   const vectorHits = vector.hits
 
   const bm25ById = new Map(bm25.items.map((item) => [item.id, item]))
+  const hitById = new Map(vectorHits.map((hit) => [hit.id, hit]))
   // An adapter that cannot say where its floor is gets the old full vote
   const floor = dbSearch.vectorFloor?.(similarityOffset)
+  const voteWeight = (similarity: number) =>
+    floor === undefined ? 1 : vectorVoteWeight(similarity, floor)
   const fusedIds = fuseRrf(
     bm25.items.map((item) => item.id),
-    vectorHits.map((hit) => ({
-      id: hit.id,
-      weight: floor === undefined ? 1 : vectorVoteWeight(hit.similarity, floor),
-    }))
+    vectorHits.map((hit) => ({ id: hit.id, weight: voteWeight(hit.similarity) }))
   )
   const windowSemanticIds = fusedIds.filter((id) => !bm25ById.has(id))
 
@@ -284,11 +359,24 @@ export async function hybridSearch(
   // Enrich only the requested page — semantic docs outside it would be discarded
   const pageIds = fusedIds.slice(offset, offset + limit)
   const pageSemanticIds = pageIds.filter((id) => !bm25ById.has(id))
+  // The resource each vector hit on this page is about (ADR-054): for a
+  // semantic-only package it is the whole explanation of why it is here, and
+  // for a keyword package it is one more resource worth naming — unless the
+  // keyword leg already carries it, in which case there is only reordering to do
+  const namedResourceIds = pageIds.flatMap((id) => {
+    const resourceId = hitById.get(id)?.resourceId
+    if (!resourceId) return []
+    const carried = bm25ById.get(id)?.matchedResources?.some((r) => r.id === resourceId)
+    return carried ? [] : [resourceId]
+  })
 
-  const [semanticDocs, vectorFacets] = await Promise.all([
+  const [semanticDocs, namedResources, vectorFacets] = await Promise.all([
     pageSemanticIds.length > 0
       ? fetchSemanticDocs(db, pageSemanticIds)
       : new Map<string, DatasetDoc>(),
+    namedResourceIds.length > 0
+      ? fetchNamedResources(db, namedResourceIds)
+      : new Map<string, MatchedResource>(),
     // Facet counts from the BM25 leg alone would contradict the visible list
     // (zero everywhere when only vector hits exist) — count the vector-only
     // window hits too. The vector leg already applied the same visibility
@@ -300,7 +388,20 @@ export async function hybridSearch(
   const facets = vectorFacets ? mergeFacets(bm25.facets, vectorFacets) : bm25.facets
 
   const items = pageIds
-    .map((id) => bm25ById.get(id) ?? semanticDocs.get(id))
+    .map((id) => {
+      const doc = bm25ById.get(id) ?? semanticDocs.get(id)
+      const hit = hitById.get(id)
+      const named = hit
+        ? (namedResources.get(hit.resourceId) ??
+          doc?.matchedResources?.find((r) => r.id === hit.resourceId))
+        : undefined
+      if (!doc || !hit || !named) return doc
+      return withSemanticResource(
+        doc,
+        { ...named, similarity: hit.similarity },
+        voteWeight(hit.similarity)
+      )
+    })
     // A package can vanish between the vector query and the doc fetch
     .filter((doc): doc is DatasetDoc => doc !== undefined)
 

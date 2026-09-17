@@ -1,55 +1,70 @@
 /**
- * KUKAN Worker — Package Embedding (Phase 5a, ADR-034)
- * Generates the semantic-search embedding vector for one package from its
- * metadata (title / notes / tags) concatenated with its resources' metadata,
- * the sections they are drawn under included (ADR-050).
+ * KUKAN Worker — Resource Embedding (ADR-034 / ADR-054)
+ *
+ * Generates one semantic-search vector per resource of a package, from the
+ * package's title and tags followed by the resource's own
+ * (section / name / description / abstract). The job is still enqueued per
+ * package — the debounce lives there (EMBED_DEBOUNCE_MS) — and now embeds that
+ * package's resources.
+ *
+ * **Why the resource and not the package (ADR-054).** A vector of a package's
+ * resources concatenated is a centroid, and a centroid holds no per-resource
+ * score: it cannot say which of nineteen sheets a query is about, and the
+ * further apart the sheets are the less it resembles any of them. One vector
+ * per resource lets a hit name the table, and puts the package at its closest
+ * resource's position.
  */
 
 import { createHash } from 'node:crypto'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { packageTable, resource, packageTag, tag } from '@kukan/db'
 import { type AIAdapter, embeddingKey } from '@kukan/ai-adapter'
 import type { Logger } from '@kukan/shared'
-import { MAX_EMBED_TEXT_LENGTH } from '../config'
+import { EMBED_BATCH_SIZE, EMBED_RESOURCE_RESERVE_CHARS, MAX_EMBED_TEXT_LENGTH } from '../config'
 
-export interface EmbedSource {
+export interface ResourceEmbedSource {
+  /**
+   * The package's — the context a resource named「13_shisetsu.csv」lacks, and
+   * the whole of a resource's meaning on a site without abstracts. Title and
+   * tags only: `notes` measured to blur which of a package's resources is the
+   * match, and the keyword leg reads it on the package document anyway
+   * (ADR-054 decision 3).
+   */
   title: string | null
-  notes: string | null
   tags: string[]
-  resources: Array<{
-    name: string | null
-    description: string | null
-    section: string | null
-    /** The abstract, null when there is none or an editor hid it (ADR-053) */
-    summary?: string | null
-  }>
+  /** The resource's own */
+  section: string | null
+  name: string | null
+  description: string | null
+  /** The abstract, null when there is none or an editor hid it (ADR-053) */
+  summary?: string | null
 }
 
 /**
- * Build the embedding source text (truncated to MAX_EMBED_TEXT_LENGTH).
+ * Build one resource's embedding text (truncated to MAX_EMBED_TEXT_LENGTH).
  *
- * The abstracts go second, ahead of the resource names and descriptions, which
- * is what decides what is lost when a package is too big to fit: the
- * descriptions, which are the most likely to repeat what is already above them
- * (ADR-053 §8). Measured, the budget is not reached — 196 characters on
- * average — so this is the safety net for a dataset with a hundred files.
- *
- * The abstracts are also the reason the cut moved off the character count: they
- * are whole sentences, and a hard slice ends one mid-word.
+ * Package context first, so that a cut lands on the resource's own tail; the
+ * abstract last because it is the longest part and whole sentences, so the cut
+ * — which backs up to a sentence end — loses the least by falling there.
  */
-export function buildEmbeddingText(source: EmbedSource): string {
-  const parts = [
-    source.title ?? '',
-    source.notes ?? '',
-    source.tags.join(' '),
-    // Each section once: a label names a run of resources, not each of them
-    [...new Set(source.resources.map((r) => r.section).filter(Boolean))].join(' '),
-    ...source.resources.map((r) => r.summary ?? ''),
-    ...source.resources.map((r) => r.name ?? ''),
-    ...source.resources.map((r) => r.description ?? ''),
-  ]
-  return truncateAtBoundary(parts.filter(Boolean).join('\n'), MAX_EMBED_TEXT_LENGTH)
+export function buildResourceEmbeddingText(source: ResourceEmbedSource): string {
+  // Title and tags first — the head of the text weighs most, and this is what
+  // lands the query on the right package. The resource's own words are what
+  // tell its vector from its siblings', so they hold a reserve the head cannot
+  // take (EMBED_RESOURCE_RESERVE_CHARS): neither title nor tags is bounded, and
+  // a head that ate the whole budget would give every resource of the package
+  // the same vector. What the resource does not need, the head may have.
+  const ownFull = [source.section, source.name, source.description, source.summary]
+    .filter(Boolean)
+    .join('\n')
+  const reserved = Math.min(ownFull.length, EMBED_RESOURCE_RESERVE_CHARS)
+  const head = truncateAtBoundary(
+    [source.title, source.tags.join(' ')].filter(Boolean).join('\n'),
+    MAX_EMBED_TEXT_LENGTH - reserved - (reserved ? 1 : 0)
+  )
+  const own = truncateAtBoundary(ownFull, MAX_EMBED_TEXT_LENGTH - head.length - (head ? 1 : 0))
+  return [head, own].filter(Boolean).join('\n')
 }
 
 /**
@@ -61,6 +76,7 @@ export function buildEmbeddingText(source: EmbedSource): string {
  * ended in range — a single unbroken run of text has no better answer.
  */
 function truncateAtBoundary(text: string, max: number): string {
+  if (max <= 0) return ''
   if (text.length <= max) return text
   const head = text.slice(0, max)
   const end = Math.max(
@@ -76,8 +92,10 @@ function truncateAtBoundary(text: string, max: number): string {
 export type EmbedPackageResult = 'embedded' | 'skipped' | 'cleared' | 'not-found'
 
 /**
- * Embed one package. Skips when the source text and model key are unchanged
- * (embedding_hash comparison); clears the vector when there is nothing to embed.
+ * Embed one package's resources. A resource whose text and model key are
+ * unchanged is left alone (embedding_hash); one with nothing to embed has its
+ * vector cleared. Reports what happened to any of them: `embedded` if one was,
+ * else `cleared` if one was, else `skipped`.
  */
 export async function embedPackage(
   packageId: string,
@@ -92,13 +110,7 @@ export async function embedPackage(
   }
 
   const [pkg] = await db
-    .select({
-      state: packageTable.state,
-      title: packageTable.title,
-      notes: packageTable.notes,
-      embeddingModel: packageTable.embeddingModel,
-      embeddingHash: packageTable.embeddingHash,
-    })
+    .select({ state: packageTable.state, title: packageTable.title })
     .from(packageTable)
     .where(eq(packageTable.id, packageId))
     .limit(1)
@@ -106,8 +118,8 @@ export async function embedPackage(
   // Drafts are embedded at publish (ADR-039); deleted packages never
   if (pkg.state !== 'active') return 'skipped'
 
-  // Stable ordering — the hash is computed over the joined text, so an
-  // unspecified row order would re-embed unchanged packages on every reindex
+  // Stable ordering — the tags join the hashed text, so an unspecified order
+  // would re-embed unchanged resources on every reindex
   const [tags, resources] = await Promise.all([
     db
       .select({ name: tag.name })
@@ -117,47 +129,75 @@ export async function embedPackage(
       .orderBy(tag.name),
     db
       .select({
+        id: resource.id,
         name: resource.name,
         description: resource.description,
         section: resource.section,
         summary: resource.summary,
         summaryMeta: resource.summaryMeta,
+        embeddingModel: resource.embeddingModel,
+        embeddingHash: resource.embeddingHash,
       })
       .from(resource)
       .where(and(eq(resource.packageId, packageId), eq(resource.state, 'active')))
       .orderBy(resource.position, resource.created, resource.id),
   ])
 
-  const text = buildEmbeddingText({
-    title: pkg.title,
-    notes: pkg.notes,
-    tags: tags.map((t) => t.name),
-    resources: resources.map((r) => ({
-      ...r,
+  const key = embeddingKey(info)
+  // The package's context is in every resource's text, so editing a title or
+  // a tag re-embeds all of the package's resources, not one — N calls where
+  // the package vector cost one. Accepted in ADR-054 decision 3: the context
+  // is what makes「13_shisetsu.csv」findable at all, and the debounce keeps a
+  // burst of edits to one run per minute.
+  const context = { title: pkg.title, tags: tags.map((t) => t.name) }
+  const pending: Array<{ id: string; text: string; hash: string }> = []
+  const toClear: string[] = []
+  for (const r of resources) {
+    const text = buildResourceEmbeddingText({
+      ...context,
+      section: r.section,
+      name: r.name,
+      description: r.description,
       // An editor who hid an abstract hid it from the search too: it is off the
       // page, and a vector still pulled toward it is the version of "hidden"
       // nobody can see or check. Decided here rather than in SQL — the row is
       // read either way, and the column is never filtered on (ADR-053 §4.1).
       summary: r.summaryMeta?.hidden ? null : r.summary,
-    })),
-  })
-
-  if (!text) {
-    await db
-      .update(packageTable)
-      .set({ embedding: null, embeddingModel: null, embeddingHash: null })
-      .where(eq(packageTable.id, packageId))
-    return 'cleared'
+    })
+    if (!text) {
+      if (r.embeddingModel !== null) toClear.push(r.id)
+      continue
+    }
+    const hash = createHash('sha256').update(text).digest('hex')
+    if (r.embeddingHash === hash && r.embeddingModel === key) continue
+    pending.push({ id: r.id, text, hash })
   }
 
-  const key = embeddingKey(info)
-  const hash = createHash('sha256').update(text).digest('hex')
-  if (pkg.embeddingHash === hash && pkg.embeddingModel === key) return 'skipped'
+  if (toClear.length > 0) {
+    await db
+      .update(resource)
+      .set({ embedding: null, embeddingModel: null, embeddingHash: null })
+      .where(inArray(resource.id, toClear))
+  }
+  if (pending.length === 0) return toClear.length > 0 ? 'cleared' : 'skipped'
 
-  const embedding = await ai.embed(text, { type: 'document' })
-  await db
-    .update(packageTable)
-    .set({ embedding, embeddingModel: key, embeddingHash: hash })
-    .where(eq(packageTable.id, packageId))
+  // Fixed-size batches, each written back before the next (EMBED_BATCH_SIZE):
+  // one statement per batch, as the embed call is one — a many-sheet package
+  // is otherwise a round trip and a commit per sheet
+  for (let i = 0; i < pending.length; i += EMBED_BATCH_SIZE) {
+    const batch = pending.slice(i, i + EMBED_BATCH_SIZE)
+    const vectors = await ai.embedBatch(
+      batch.map((p) => p.text),
+      { type: 'document' }
+    )
+    const values = sql.join(
+      batch.map((p, j) => sql`(${p.id}::uuid, ${JSON.stringify(vectors[j])}::vector, ${p.hash})`),
+      sql`, `
+    )
+    await db.execute(sql`
+      UPDATE ${resource} SET embedding = v.embedding, embedding_model = ${key}, embedding_hash = v.hash
+      FROM (VALUES ${values}) AS v(id, embedding, hash)
+      WHERE ${resource.id} = v.id`)
+  }
   return 'embedded'
 }

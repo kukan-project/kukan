@@ -81,30 +81,48 @@ doubles both the re-embedding and the `embedding_hash` comparison.
 The measured exposure was zero: of 166 local packages, **none holds zero resources.** No package
 drops out of vector search.
 
-### 3. What is embedded is the package's metadata plus the resource itself
+### 3. What is embedded is the package's title and tags, plus the resource itself
 
 ```
-package title / tags / notes
-resource section / name / description / abstract
+package title / tags                         … first, up to what the resource's reserve (2,000 chars) leaves
+resource section / name / description / abstract … the reserve for certain, and whatever is left over
 ```
 
-**Including `notes` follows from decision 2.** With the package vector gone, leaving it out would
-mean `notes` **exists in no vector at all**. It stays a first-class signal on the keyword leg, as
-the parent document's field, but a paraphrase that shares no word with it would have no path.
+**`notes` stays out.** The morning's decision had it in — with the package vector gone it
+would otherwise exist in no vector, and the fused difference was 0.4 of a query. **Measured
+against what this ADR is for, that reversed.** Fused nDCG only ever scored the package ranking,
+not which table gets opened.
 
-Measured through the fusion, the material barely matters (resource unit, λ=2 / K=10, floor 0.25):
+| Package-side material (resource unit, λ=2 / K=10 / floor 0.25) | word P@1 | separation 3–4 / 5–9 | fused word / overall |
+| -------------------------------------------------------------- | -------: | -------------------: | -------------------: |
+| title + tags + notes                                           |      67% |        0.039 / 0.027 |              69 / 90 |
+| **title + tags**                                               |      50% |    **0.047 / 0.039** |          **72 / 90** |
+| none (resource alone)                                          |      50% |        0.061 / 0.045 |              72 / 90 |
+| title + tags + notes, labelled (「データセット:」…)            |      50% |        0.034 / 0.029 |              69 / 90 |
+| title + tags + notes, resource first                           |      50% |        0.048 / 0.037 |              66 / 89 |
 
-| Material              | overall | synonym | natural | exact |    word |
-| --------------------- | ------: | ------: | ------: | ----: | ------: |
-| title + tags          |     90% | **96%** |     92% |  100% | **72%** |
-| **+ notes + section** |     90% |     94% | **93%** |  100% |     69% |
-| resource alone        |     90% |     94% |     91% |  100% | **72%** |
+"Separation" is how far the best resource of a relevant package (three or more resources) stands
+above that package's mean — the direct measure of **whether the right table is being picked**.
+The more `notes`, the more labels, the more alike a package's siblings become: **words every
+resource shares erase what tells them apart.** What `notes` buys is one word query's P@1
+(「ボーナス」, joined through the notes'「賞与」), and the keyword leg still reads that word on the
+package document.
 
-Adding `notes` costs 3 points of `word` and gains 1 of `natural` — **0.4 of a query either way,
-across twelve and thirteen.** On the vector leg alone the same choice looked like 70% → 64%;
-**the fusion absorbs it.**
+**The package side is not dropped altogether because of sites without abstracts.** Half the
+resources here (245 of 481) have under 30 characters of name and description and stand on their
+abstract. Abstracts (ADR-053) are optional per site; where they are absent, title and tags are most
+of what a resource's vector has —「事項別明細　歳出」alone reaches neither the budget statement nor
+Tokyo. Dropping everything only looks best above because 436 of 481 resources here carry an
+abstract, and keeping title and tags costs nothing fused.
 
-**Where the difference is noise, take the side that loses no information.**
+**Package side first.** The same fields in the other order dropped word P@1 from 67% to 50% and
+fused word from 69 to 66 — the embedding weighs the head of the text. The resource side placed
+last still separates at 0.048, little short of the 0.061 it gets first.
+
+> Telling the model the structure with labels (「データセット: 」,「リソース: 」) was measured
+> too, and lost separation for the shared words it adds (0.034). Package and resource cannot be
+> told apart inside one vector; the distinction lives in the unit — one vector per resource — and
+> in the budget.
 
 ### 4. Aggregate to the package with `max`; do not reward count
 
@@ -157,6 +175,10 @@ already come back in score order.
 No highlight is attached: a vector match usually corresponds to no word in the document, which is
 what open issue 4 asked about. **Instead of lighting up a word, name the resource.**
 
+The similarity is shown **with a label** ("(Similarity 0.41)"). Bare, the number says nothing; against
+the measured distribution — 0.2% precision in the 0.25–0.30 band, 70% above 0.50 (ADR-034, "The unit of
+embedding") — it tells a reader whether the table is worth opening.
+
 ### 7. Re-draw the floor; leave the fusion parameters alone
 
 The population goes from 166 to 481 and the similarity distribution moves with it. Measured, 0.30
@@ -196,7 +218,67 @@ resource, another ADR takes it.
 - Vector count 166 → 481 (2.9×). **Generation costs nothing more** — the abstracts already exist
   per resource (ADR-053 decision 8). Only the embedding calls grow
 
-## What the measurement does not cover
+## Measured after implementing (2026-09-17)
+
+`pnpm eval:search`, local (166 packages / 481 resources, every resource re-embedded per resource,
+Cohere v4, the material as decision 3 finally has it: title / tags + the resource itself),
+`RRF_K` = 10, `VECTOR_LEG_WEIGHT` = 2, 51 queries.
+
+### Package ranking
+
+| Type      | Package unit (after ADR-034's fusion tuning) | **Resource unit** |
+| --------- | -------------------------------------------: | ----------------: |
+| synonym   |                                          93% |           **94%** |
+| natural   |                                          95% |               92% |
+| exact     |                                         100% |          **100%** |
+| word nDCG |                                          63% |           **66%** |
+| word R@10 |                                          76% |           **89%** |
+| overall   |                                          88% |           **89%** |
+
+**As predicted, the ranking barely moves (+1).** What moves is `word` recall (76% → 89%): a
+short everyday word can now clear the floor. `exact` holds at 100%, ADR-034 decision 8's
+shipping condition.
+
+### "Which table do I open?" — from a baseline of zero
+
+| Type    | recall (kw → hy) |   MRR (kw → hy) |
+| ------- | ---------------: | --------------: |
+| synonym |     0% → **50%** | 0.00 → **1.00** |
+| natural |     0% → **50%** | 0.00 → **0.75** |
+
+Every one of the three queries carrying `relevantResources` now names a relevant resource. In
+the live response,「新しくオープンした美容室を知りたい」returns「美容所」as
+`matchSource: 'semantic'` carrying **「美容所　新規施設一覧」** — the newly-opened list, not the
+closed or the transferred one.
+
+The one remaining miss is the 令和 4 年度 side of「汚水はどうやって処理されている?」, where the
+vector picks「COD・全窒素・全りん汚濁負荷量」(0.388) over the「流入水質・放流水質」(0.379)
+the golden set names — a near tie, and **not a unit problem; neither is a wrong answer.**
+
+> One fix on the harness side: a harvested resource name can end in a newline (3 of 513 active
+> resources), which a hand-typed golden entry never carries. Both sides are trimmed before
+> comparison.
+
+### The floor — decision 7's prediction was wrong
+
+| Floor (notches) | overall | synonym | natural | word nDCG | word R@10 |
+| --------------- | ------: | ------: | ------: | --------: | --------: |
+| **0.25 (−2)**   | **89%** |     93% |     94% |       66% |       89% |
+| 0.30 (0)        |     88% |     90% |     95% |       65% |       81% |
+| 0.35 (+2)       |     86% |     89% |     91% |       64% |       76% |
+| 0.40 (+4)       |     79% |     84% |     68% |       64% |       76% |
+
+Decision 7 expected the floor to move to 0.35–0.40 with the larger population. **Through the
+fusion, the existing 0.25 is best.** What the vector-leg measurement showed — that the resource
+unit is robust to the floor — holds (86% at 0.35, against 78% for the package unit), but **being
+robust to a higher floor is not the same as being better at one.** The floor stays where it is
+(ADR-036's notches remain at −2).
+
+### A note on the environment
+
+During the measurement the development OpenSearch (2 GB heap) sat pinned at 97%, unmoved by
+`_cache/clear`, and dropped to 14% only on restart. That is what produced three runs that
+exhausted the harness's retries on 503; the figures above are from runs that completed.
 
 **This corpus barely contains the situation the change is for.** Twenty-six of the 51 golden
 queries answer with a single-resource package, where the two units are identical. None answers

@@ -93,21 +93,11 @@ function pickDefined<T extends object, K extends keyof T>(obj: T, keys: readonly
   return out
 }
 
-// Public column set — the embedding columns are internal (the vector is ~KB
-// per row, and the debounce timestamp is the queue's bookkeeping), so no
-// package row this service returns includes them
-const {
-  embedding: _embedding,
-  embeddingModel: _embeddingModel,
-  embeddingHash: _embeddingHash,
-  embeddingQueuedAt: _embeddingQueuedAt,
-  ...packageColumns
-} = getTableColumns(packageTable)
+// Public column set — the embed queue's debounce timestamp is its own
+// bookkeeping, so no package row this service returns includes it
+const { embeddingQueuedAt: _embeddingQueuedAt, ...packageColumns } = getTableColumns(packageTable)
 
-type PackageRow = Omit<
-  typeof packageTable.$inferSelect,
-  'embedding' | 'embeddingModel' | 'embeddingHash' | 'embeddingQueuedAt'
->
+type PackageRow = Omit<typeof packageTable.$inferSelect, 'embeddingQueuedAt'>
 export type PackageAuthorize = (pkg: PackageRow) => Promise<void>
 
 export interface PackageFilterParams {
