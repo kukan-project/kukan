@@ -6,7 +6,7 @@
 import { Hono, type Context } from 'hono'
 import { zValidator } from '../middleware/validator'
 import { z } from 'zod'
-import { eq, ne, and, count, inArray, isNull, ilike, or, sql, desc } from 'drizzle-orm'
+import { eq, ne, and, count, exists, inArray, isNull, ilike, or, sql, desc } from 'drizzle-orm'
 import {
   packageTable,
   resource,
@@ -14,11 +14,14 @@ import {
   organization,
   group,
   tag,
+  packageTag,
   vocabulary,
   user,
   auditLog,
 } from '@kukan/db'
 import { embeddingKey } from '@kukan/ai-adapter'
+import { leasePassed } from '../services/lease'
+import { EMBED_NOTICE_GRACE_MS } from '../services/search-index'
 import { DEFAULT_VECTOR_MIN_SIMILARITY } from '@kukan/search-adapter'
 import {
   ForbiddenError,
@@ -525,6 +528,73 @@ adminRouter.post('/reindex-embeddings', async (c) => {
 
   await c.get('queue').enqueue(EMBED_ALL_JOB_TYPE, {})
   return c.json({ queued: true })
+})
+
+// GET /api/v1/admin/embedding-status — Resources semantic search cannot reach.
+//
+// Drives the one-time prompt after 0.30.0, where the vector moved from the
+// package to the resource (ADR-054) and the package columns were dropped: the
+// vectors are gone, nothing rebuilds them on its own, and a search that finds
+// nothing looks exactly like a search that found nothing.
+//
+// Counts resources whose package has no embed claim outstanding, so the
+// ordinary gap between an edit and its debounced job is not reported as work
+// an administrator has to do. A model switch is counted too — that also leaves
+// the catalogue half-reachable, and the same button fixes it.
+adminRouter.get('/embedding-status', async (c) => {
+  const info = c.get('ai').getEmbeddingInfo()
+  if (!info) return c.json({ missing: 0 })
+  const db = c.get('db')
+  const missing = await db.$count(
+    resource,
+    and(
+      eq(resource.state, 'active'),
+      or(isNull(resource.embeddingModel), ne(resource.embeddingModel, embeddingKey(info))),
+      // Mirrors the emptiness test in buildResourceEmbeddingText: the worker
+      // embeds the package's title and tags together with the resource's own
+      // words, and a resource with none of either produces no text to embed.
+      // It is skipped as a matter of course rather than as a failure, so
+      // counting it would leave a prompt nobody can ever clear — pressing
+      // "regenerate" reaches the same resource and skips it again.
+      or(
+        sql`${resource.section} <> ''`,
+        sql`${resource.name} <> ''`,
+        sql`${resource.description} <> ''`,
+        // A hidden abstract is off the page and out of the vector (ADR-053 §4.1)
+        sql`(${resource.summary} <> '' AND coalesce((${resource.summaryMeta}->>'hidden')::boolean, false) IS NOT TRUE)`,
+        exists(
+          db
+            .select({})
+            .from(packageTable)
+            .where(and(eq(packageTable.id, resource.packageId), sql`${packageTable.title} <> ''`))
+        ),
+        // Joined to `tag`, not merely counted: a tag name is a plain string and
+        // the empty one is accepted, and the worker joins the names before
+        // testing what it has — a lone empty tag contributes nothing, exactly
+        // as no tag at all does.
+        exists(
+          db
+            .select({})
+            .from(packageTag)
+            .innerJoin(tag, eq(tag.id, packageTag.tagId))
+            .where(and(eq(packageTag.packageId, resource.packageId), sql`${tag.name} <> ''`))
+        )
+      ),
+      exists(
+        db
+          .select({})
+          .from(packageTable)
+          .where(
+            and(
+              eq(packageTable.id, resource.packageId),
+              eq(packageTable.state, 'active'),
+              leasePassed(packageTable.embeddingQueuedAt, EMBED_NOTICE_GRACE_MS)
+            )
+          )
+      )
+    )
+  )
+  return c.json({ missing })
 })
 
 // GET /api/v1/admin/version-backfill-status — Migration work still outstanding.

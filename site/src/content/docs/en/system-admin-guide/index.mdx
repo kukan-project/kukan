@@ -337,12 +337,12 @@ rather than regenerates.
 The search admin page (Index management) rebuilds indexes and derived data.
 Each runs asynchronously through SQS and proceeds in the background once queued.
 
-| Action                  | Rebuilds                                                   | Fetches external URLs   | Run it when                                                                                                                                        |
-| ----------------------- | ---------------------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rebuild search index    | The metadata index                                         | No                      | Search results look inconsistent. **After an upgrade that changed a mapping or schema** (`POST /api/v1/admin/reindex-metadata`)                    |
-| Reprocess content       | Extracted text, previews, and the index, from stored files | Only ones never fetched | Full-text search or previews are missing. **Takes time in proportion to the number of resources**                                                  |
-| Regenerate embeddings   | The vectors semantic search uses                           | No                      | Semantic search was enabled after the fact, or the embedding model changed (`POST /api/v1/admin/reindex-embeddings`). Unchanged content is skipped |
-| Re-analyse search index | The index itself, under a new analysis                     | No                      | The Japanese analysis settings moved on. **Only when the page says so** (below)                                                                    |
+| Action                  | Rebuilds                                                   | Fetches external URLs   | Run it when                                                                                                                                                                                                                              |
+| ----------------------- | ---------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rebuild search index    | The metadata index                                         | No                      | Search results look inconsistent. **After an upgrade that changed a mapping or schema** (`POST /api/v1/admin/reindex-metadata`)                                                                                                          |
+| Reprocess content       | Extracted text, previews, and the index, from stored files | Only ones never fetched | Full-text search or previews are missing. **Takes time in proportion to the number of resources**                                                                                                                                        |
+| Regenerate embeddings   | The vectors semantic search uses                           | No                      | Semantic search was enabled after the fact, or the embedding model changed (`POST /api/v1/admin/reindex-embeddings`). Unchanged content is skipped. **The dashboard also prompts while any resource is outside semantic search** (below) |
+| Re-analyse search index | The index itself, under a new analysis                     | No                      | The Japanese analysis settings moved on. **Only when the page says so** (below)                                                                                                                                                          |
 
 None of this is ordinarily needed: the metadata index updates as datasets are
 created, updated, and deleted, and text and previews are built when the pipeline
@@ -364,6 +364,20 @@ once it completes (`POST /api/v1/admin/search/reanalyse`).
 
 Unlike reprocessing, these run **once, at migration time**. The dashboard shows
 how much work is outstanding and the item disappears when it reaches zero.
+
+### Regenerating embeddings
+
+While any resource sits outside semantic search, the dashboard shows a prompt.
+Embeddings get one because their absence is silent: with no vector to match
+against, a search does not fail — it quietly falls back to keywords alone.
+
+Two things raise it. **Upgrading to the release that moved the unit of
+embedding to the resource**, which leaves every existing vector needing to be
+rebuilt, and **changing the embedding model**. The ordinary half-minute between
+an edit and its generated vector does not: a package with generation still
+pending is not counted.
+
+The prompt runs the same work as "Regenerate embeddings" in the table above.
 
 ### Version backfill
 

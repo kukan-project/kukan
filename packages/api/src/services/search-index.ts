@@ -192,6 +192,19 @@ export const EMBED_DEBOUNCE_MS = 60_000
 export const EMBED_DELAY_S = EMBED_DEBOUNCE_MS / 1000 + 5
 
 /**
+ * How long a package's embed claim has to have been quiet before the resources
+ * under it count as work someone has to start.
+ *
+ * Generously past {@link EMBED_DELAY_S}, because the question this answers is
+ * not "is a job pending" — it is "will one arrive on its own". An edit's job
+ * is queued with a delay and then has to be delivered and run, and a prompt
+ * that appears in that gap tells an administrator to fix something already
+ * fixing itself. After a migration that dropped the vectors, nothing is coming
+ * and the wait costs a quarter of an hour once.
+ */
+export const EMBED_NOTICE_GRACE_MS = 15 * 60_000
+
+/**
  * Queue an embed for every active package matching `where` whose window is
  * open, and hold the window for each. The single-package path and the bulk
  * job both come through here, so a claim always has exactly one job behind it

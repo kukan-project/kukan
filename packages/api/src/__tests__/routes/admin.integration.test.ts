@@ -6,6 +6,8 @@ import {
   resourcePipeline,
   resourcePipelineStep,
   resourceVersion,
+  tag,
+  packageTag,
 } from '@kukan/db'
 import { createTestApp, mockCompletionAi } from '../test-helpers/test-app'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
@@ -138,6 +140,200 @@ describe('Admin API Routes', () => {
 
       expect(res.status).toBe(400)
       expect((await res.json()).detail).toBe('Embedding is not configured')
+    })
+  })
+
+  describe('GET /api/v1/admin/embedding-status', () => {
+    /** The key the endpoint compares a resource's stored one against */
+    const embedAi = {
+      getEmbeddingInfo: () => ({ model: 'test-model', dimensions: 4 }),
+    } as unknown as AIAdapter
+    const KEY = 'test-model@4'
+    const statusApp = createTestApp(db, { search: mockSearch, ai: embedAi })
+
+    /** A package whose embed claim is old enough to count as settled */
+    async function seedPackage(name: string, queuedAt: string | null = null) {
+      const orgId = await ensureOrg(`${name}-org`)
+      const [pkg] = await db
+        .insert(packageTable)
+        .values({
+          name,
+          // Title and tags are the head of every resource's embedding text, so
+          // a package with neither is what makes a resource unembeddable
+          title: name,
+          ownerOrg: orgId,
+          state: 'active',
+          embeddingQueuedAt: queuedAt === null ? null : sql`now() - ${queuedAt}::interval`,
+        })
+        .returning({ id: packageTable.id })
+      return pkg.id
+    }
+
+    /** A package with nothing the embedding text could take a head from */
+    async function seedUntitledPackage(name: string) {
+      const packageId = await seedPackage(name)
+      await db.update(packageTable).set({ title: null }).where(eq(packageTable.id, packageId))
+      return packageId
+    }
+
+    it('reports nothing when embedding is not configured', async () => {
+      const packageId = await seedPackage('embed-status-unconfigured')
+      await db.insert(resource).values({ packageId, name: 'r', format: 'CSV', state: 'active' })
+
+      const res = await app.request('/api/v1/admin/embedding-status')
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ missing: 0 })
+    })
+
+    it('counts a resource that has never been embedded', async () => {
+      const packageId = await seedPackage('embed-status-missing')
+      await db.insert(resource).values({ packageId, name: 'r', format: 'CSV', state: 'active' })
+
+      const res = await statusApp.request('/api/v1/admin/embedding-status')
+
+      expect(await res.json()).toEqual({ missing: 1 })
+    })
+
+    it('counts a resource embedded under a different model', async () => {
+      const packageId = await seedPackage('embed-status-stale-model')
+      await db.insert(resource).values({
+        packageId,
+        name: 'r',
+        format: 'CSV',
+        state: 'active',
+        embeddingModel: 'other-model@4',
+        embeddingHash: 'h',
+      })
+
+      const res = await statusApp.request('/api/v1/admin/embedding-status')
+
+      expect(await res.json()).toEqual({ missing: 1 })
+    })
+
+    it('does not count a resource already embedded under the current model', async () => {
+      const packageId = await seedPackage('embed-status-current')
+      await db.insert(resource).values({
+        packageId,
+        name: 'r',
+        format: 'CSV',
+        state: 'active',
+        embeddingModel: KEY,
+        embeddingHash: 'h',
+      })
+
+      const res = await statusApp.request('/api/v1/admin/embedding-status')
+
+      expect(await res.json()).toEqual({ missing: 0 })
+    })
+
+    it('does not count a package whose embed claim is still outstanding', async () => {
+      // The ordinary gap between an edit and its debounced job. Reporting it
+      // would put a prompt in front of an administrator for work already on
+      // its way.
+      const packageId = await seedPackage('embed-status-pending', '1 minute')
+      await db.insert(resource).values({ packageId, name: 'r', format: 'CSV', state: 'active' })
+
+      const res = await statusApp.request('/api/v1/admin/embedding-status')
+
+      expect(await res.json()).toEqual({ missing: 0 })
+    })
+
+    it('counts a package whose claim went quiet without producing a vector', async () => {
+      const packageId = await seedPackage('embed-status-abandoned', '1 hour')
+      await db.insert(resource).values({ packageId, name: 'r', format: 'CSV', state: 'active' })
+
+      const res = await statusApp.request('/api/v1/admin/embedding-status')
+
+      expect(await res.json()).toEqual({ missing: 1 })
+    })
+
+    it('ignores deleted resources and non-active packages', async () => {
+      const packageId = await seedPackage('embed-status-deleted-resource')
+      await db.insert(resource).values({ packageId, name: 'r', format: 'CSV', state: 'deleted' })
+      const draftId = await seedPackage('embed-status-draft')
+      await db.update(packageTable).set({ state: 'draft' }).where(eq(packageTable.id, draftId))
+      await db
+        .insert(resource)
+        .values({ packageId: draftId, name: 'r', format: 'CSV', state: 'active' })
+
+      const res = await statusApp.request('/api/v1/admin/embedding-status')
+
+      expect(await res.json()).toEqual({ missing: 0 })
+    })
+
+    it('does not count a resource there is nothing to embed for', async () => {
+      // No title, no tags, and no words of its own: the worker produces empty
+      // text and skips it as a matter of course, leaving the model null. Counted
+      // here, the prompt would never clear — regenerating reaches the same
+      // resource and skips it again.
+      const packageId = await seedUntitledPackage('embed-status-no-material')
+      await db.insert(resource).values({ packageId, format: 'CSV', state: 'active' })
+
+      const res = await statusApp.request('/api/v1/admin/embedding-status')
+
+      expect(await res.json()).toEqual({ missing: 0 })
+    })
+
+    it("counts an untitled package's resource once it has words of its own", async () => {
+      const packageId = await seedUntitledPackage('embed-status-own-words')
+      await db
+        .insert(resource)
+        .values({ packageId, description: 'a description', format: 'CSV', state: 'active' })
+
+      const res = await statusApp.request('/api/v1/admin/embedding-status')
+
+      expect(await res.json()).toEqual({ missing: 1 })
+    })
+
+    it('does not count a resource whose package carries only an empty tag', async () => {
+      // A tag name is a plain string and the empty one is accepted. The worker
+      // joins the names and finds nothing, so it skips the resource — counted
+      // here, the prompt would stand forever again.
+      const packageId = await seedUntitledPackage('embed-status-empty-tag')
+      await db.insert(resource).values({ packageId, format: 'CSV', state: 'active' })
+      const [empty] = await db.insert(tag).values({ name: '' }).returning({ id: tag.id })
+      await db.insert(packageTag).values({ packageId, tagId: empty.id })
+
+      const res = await statusApp.request('/api/v1/admin/embedding-status')
+
+      expect(await res.json()).toEqual({ missing: 0 })
+    })
+
+    it("counts an untitled package's resource once the package has a tag", async () => {
+      const packageId = await seedUntitledPackage('embed-status-tag-only')
+      await db.insert(resource).values({ packageId, format: 'CSV', state: 'active' })
+      const [t] = await db
+        .insert(tag)
+        .values({ name: 'embed-status-tag' })
+        .returning({ id: tag.id })
+      await db.insert(packageTag).values({ packageId, tagId: t.id })
+
+      const res = await statusApp.request('/api/v1/admin/embedding-status')
+
+      expect(await res.json()).toEqual({ missing: 1 })
+    })
+
+    it('does not count a resource whose only words are a hidden abstract', async () => {
+      // Hiding an abstract takes it out of the vector too (ADR-053 §4.1), so
+      // the worker has nothing left to embed here either.
+      const packageId = await seedUntitledPackage('embed-status-hidden-summary')
+      await db.insert(resource).values({
+        packageId,
+        format: 'CSV',
+        state: 'active',
+        summary: 'an abstract nobody can see',
+        summaryMeta: { hidden: true },
+      })
+
+      const res = await statusApp.request('/api/v1/admin/embedding-status')
+
+      expect(await res.json()).toEqual({ missing: 0 })
+    })
+
+    it('rejects non-sysadmin requests', async () => {
+      const res = await nonAdminApp.request('/api/v1/admin/embedding-status')
+      expect(res.status).toBe(403)
     })
   })
 

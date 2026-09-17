@@ -23,6 +23,24 @@ describe('buildResourceEmbeddingText', () => {
     )
   })
 
+  it('produces nothing when the package and the resource are both wordless', () => {
+    // The emptiness this returns is what the worker reads as "no embedding to
+    // make here", and what `GET /admin/embedding-status` mirrors in SQL so its
+    // prompt does not count a resource that will be skipped forever. Pinned
+    // because the two live apart: a builder that started emitting something
+    // for this input would leave that query counting the wrong rows.
+    expect(
+      buildResourceEmbeddingText({
+        title: null,
+        tags: [],
+        section: null,
+        name: null,
+        description: null,
+        summary: null,
+      })
+    ).toBe('')
+  })
+
   it('leaves out an abstract an editor hid, and empty parts', () => {
     const text = buildResourceEmbeddingText({
       title: '人口統計',

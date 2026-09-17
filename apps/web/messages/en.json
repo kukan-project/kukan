@@ -560,6 +560,13 @@
       "reanalyse": "Re-analyse",
       "reanalysing": "Running…",
       "queued": "Re-analysis queued. This notice goes away once it finishes. Anything saved while it runs can be restored with \"Rebuild search index\" under Index Management."
+    },
+    "embeddingBackfill": {
+      "title": "Regenerate embeddings",
+      "description": "{count} resources are outside semantic search. Regenerating brings them back within reach of searches whose keywords do not match. No external URL is fetched and no file is reprocessed. This item disappears once it completes.",
+      "regenerate": "Regenerate",
+      "regenerating": "Running…",
+      "queued": "Queued the embedding regeneration. It proceeds in the background, and this item disappears once it completes."
     }
   },
   "profile": {
