@@ -283,6 +283,20 @@ Cohere Embed v4 のような **AWS Marketplace 提供モデル**は自動有効�
 AI_SUMMARY_MODEL=jp.anthropic.claude-sonnet-4-6
 ```
 
+:::caution[Bedrock では既定のままでは足りません]
+`bedrock.completionModels` を省略したときの既定は **Amazon Nova Lite 1 本**です。`AI_SUMMARY_MODEL` はこの許可リストに含まれるモデルしか受け付けないため（許可リストは IAM で `InvokeModel` を許可した範囲そのものです）、**上の例をそのまま設定しても、リストに Sonnet を加えて再デプロイするまで機能は無効のまま**です。
+
+しかも **Nova は抄録には使えません** — 実測では document ブロックは通るものの、強制 JSON が壊れ、スキャン文書では内容を捏造しました（ADR-053 の付録）。既定のモデルで妥協するのではなく、`environments.ts` の `bedrock.completionModels` に推奨モデルを追加してください。
+
+```ts
+bedrock: {
+  completionModels: ['jp.anthropic.claude-sonnet-4-6', 'jp.amazon.nova-2-lite-v1:0'],
+}
+```
+
+先頭が AI メタデータ提案の既定になります。抄録用のモデルは `AI_SUMMARY_MODEL` で別に指定するため、並び順に引きずられません。
+:::
+
 :::caution[有効化すると推論費用が発生します]
 抄録はリソース 1 件ごとに生成されるため、**カタログの規模に比例して課金されます**。これが管理画面のトグルではなく環境変数になっているのは、費用を負担する側が決めるべき設定だからです。モデルの選択は請求額で 3 倍の開きがあり、かつ実測では「資料を読んだ説明」と「作文」の差になります — 生成モデルの候補（`AI_COMPLETION_MODELS`）の先頭が何であれ、抄録用のモデルは明示してください。推奨は Claude Sonnet 4.6 相当です。
 

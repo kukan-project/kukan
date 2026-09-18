@@ -294,6 +294,29 @@ written and nothing is billed.
 AI_SUMMARY_MODEL=jp.anthropic.claude-sonnet-4-6
 ```
 
+:::caution[On Bedrock the default is not enough]
+Omitting `bedrock.completionModels` leaves a single model in it, **Amazon Nova
+Lite**. `AI_SUMMARY_MODEL` only accepts a model from that allow-list — the
+allow-list being exactly what the task role is granted `InvokeModel` on — so
+**setting the line above leaves the feature off until Sonnet is added to the
+list and the environment redeployed**.
+
+And **Nova cannot write these abstracts**: measured, the document block goes
+through but forced JSON breaks, and on a scanned document it invented the
+contents (ADR-053, appendix). Rather than settling for the default model, add
+the recommended one to `bedrock.completionModels` in `environments.ts`.
+
+```ts
+bedrock: {
+  completionModels: ['jp.anthropic.claude-sonnet-4-6', 'jp.amazon.nova-2-lite-v1:0'],
+}
+```
+
+The first entry becomes the default for AI metadata suggestions. Abstracts name
+their model separately in `AI_SUMMARY_MODEL`, so the order does not decide for
+them.
+:::
+
 :::caution[Turning this on costs inference money]
 An abstract is generated per resource, so **the bill scales with the size of
 the catalog**. That is why this is an environment variable rather than a
