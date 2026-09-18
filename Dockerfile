@@ -3,16 +3,23 @@
 #   docker build --target web -t kukan-web .
 #   docker build --target worker -t kukan-worker .
 
-# ---- Base (shared by all targets: upgraded OS + pnpm) ----
+# ---- Base (shared by all targets: upgraded OS) ----
 # Pinned by digest for a reproducible, tamper-evident base (Scorecard
 # Pinned-Dependencies). The digest below is node 24.18.0 on alpine 3.24.1;
 # Dependabot (docker ecosystem) bumps it as the node:24-alpine tag moves.
 FROM public.ecr.aws/docker/library/node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS base
-RUN apk upgrade --no-cache && corepack enable && corepack prepare pnpm@10 --activate
+RUN apk upgrade --no-cache
 WORKDIR /app
 
 # ---- Dependencies ----
+# pnpm is prepared here rather than in `base`, which every stage derives from.
+# `corepack prepare` unpacks ~21 MB that only the build stages use, and a
+# runtime stage built on `base` carried it to production — with the
+# node_modules pnpm brings (tar, brace-expansion, ip-address), which scanners
+# then report against an image that never runs pnpm. A later `rm` would not
+# have helped: the bytes stay in the layer that wrote them.
 FROM base AS deps
+RUN corepack enable && corepack prepare pnpm@10 --activate
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
@@ -46,9 +53,16 @@ COPY --from=build /app/apps/web/public ./apps/web/public
 # Next.js standalone traces the .node addon but not libduckdb.so (a dynamic dependency).
 # Copy it to a dedicated directory and point LD_LIBRARY_PATH there.
 COPY --from=deps /app/node_modules/.pnpm/@duckdb+node-bindings-linux-x64-musl@*/node_modules/@duckdb/node-bindings-linux-x64-musl/libduckdb.so /app/duckdb-lib/
-# Remove the bundled npm CLI: runtime uses pnpm via corepack, never npm, and npm's
-# bundled undici carries CVE-2026-12151. Dropping it clears the finding and trims surface.
-RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
+# The runtime starts `node` and nothing else — the entrypoints below, the ECS
+# health checks (wget), and the documented in-container tools all do — so what
+# the node image ships for installing things goes. npm's bundled undici carried
+# CVE-2026-12151; corepack and the yarn shims are commands that fetch an
+# unpinned package manager over the network before they run anything, which is
+# a gift to whoever gets a shell here. pnpm is not on this list because it is
+# not here: `deps` prepares it, and this stage comes from `base`.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+    /usr/local/bin/yarn /usr/local/bin/yarnpkg \
   && addgroup -S appgroup && adduser -S appuser -G appgroup && chown -R appuser:appgroup /app
 USER appuser
 ENV NODE_ENV=production PORT=3000 LD_LIBRARY_PATH=/app/duckdb-lib
@@ -98,9 +112,10 @@ COPY --from=worker-deps /app/worker-deploy/node_modules ./node_modules
 COPY --from=build /app/apps/worker/dist ./apps/worker/dist
 COPY --from=build /app/apps/worker/package.json ./apps/worker/
 COPY --from=build /app/packages/db/drizzle ./apps/worker/drizzle
-# Remove the bundled npm CLI: runtime uses pnpm via corepack, never npm, and npm's
-# bundled undici carries CVE-2026-12151. Dropping it clears the finding and trims surface.
-RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
+# See the web stage: the runtime starts `node` only, so nothing that installs stays.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+    /usr/local/bin/yarn /usr/local/bin/yarnpkg \
   && addgroup -S appgroup && adduser -S appuser -G appgroup && chown -R appuser:appgroup /app
 USER appuser
 # DuckDB downloads extensions from the internet on first use (ADR-043 layer 2).
