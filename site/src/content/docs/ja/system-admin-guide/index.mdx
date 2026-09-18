@@ -90,11 +90,18 @@ KUKAN は **CloudFront（WAF + キャッシュ）→ 内部 ALB → ECS Fargate*
 webhook URL は [Slack のアプリ管理画面](https://api.slack.com/apps) で **Create New App**（From scratch）→ **Incoming Webhooks**
 を有効化 → **Add New Webhook to Workspace** で投稿先チャンネルを選ぶと発行されます。
 
-貼り先の箱はスタックが作ります。`deployNotification: true` でデプロイするとシークレットの ARN が
-パイプラインスタックの出力に出るので、そこへ一度貼ります:
+貼り先の箱はスタックが作ります。`deployNotification: true` でデプロイすると、シークレットの ARN が
+パイプラインスタックの出力（`Notify<環境名>SlackWebhookSecretArn`）に出ます:
 
 ```bash
-aws secretsmanager put-secret-value --secret-id <出力の ARN> --secret-string 'https://hooks.slack.com/services/...'
+# ARN を取得（<環境名> は environments.ts のキー。Demo のように先頭大文字）
+aws cloudformation describe-stacks --stack-name KukanPipeline \
+  --query "Stacks[0].Outputs[?contains(OutputKey, 'Notify<環境名>SlackWebhookSecretArn')].OutputValue" \
+  --output text
+
+# 取得した ARN へ webhook URL を一度だけ貼る
+aws secretsmanager put-secret-value --secret-id <取得した ARN> \
+  --secret-string 'https://hooks.slack.com/services/...'
 ```
 
 貼るまでの間、通知は何もしません（デプロイは失敗しません）。通知には成否・デプロイしたコミット・

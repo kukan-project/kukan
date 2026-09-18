@@ -96,10 +96,17 @@ To get a webhook URL: in [Slack app settings](https://api.slack.com/apps), **Cre
 **Incoming Webhooks**, then **Add New Webhook to Workspace** and pick the channel.
 
 The stack creates the box it goes into. Deploying with `deployNotification: true` outputs the
-secret's ARN on the pipeline stack; paste the URL into it once:
+secret's ARN on the pipeline stack as `Notify<Environment>SlackWebhookSecretArn`:
 
 ```bash
-aws secretsmanager put-secret-value --secret-id <ARN from the output> --secret-string 'https://hooks.slack.com/services/...'
+# Read the ARN (<Environment> is the environments.ts key, capitalised — e.g. Demo)
+aws cloudformation describe-stacks --stack-name KukanPipeline \
+  --query "Stacks[0].Outputs[?contains(OutputKey, 'Notify<Environment>SlackWebhookSecretArn')].OutputValue" \
+  --output text
+
+# Paste the webhook URL into it, once
+aws secretsmanager put-secret-value --secret-id <the ARN> \
+  --secret-string 'https://hooks.slack.com/services/...'
 ```
 
 Until then notifications do nothing, and the deploy still succeeds. A message carries the outcome,
