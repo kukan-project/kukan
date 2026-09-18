@@ -6,6 +6,28 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.30.1] - 2026-09-18
+
+**Highlights**
+
+- **The AI abstracts can now be switched on from a deployment.** 0.30.0 shipped them behind `AI_SUMMARY_MODEL`, but nothing carried that setting into a running system: the AWS stacks never injected it, the worker task — where abstracts are written — had no generation model granted at all, and Docker Compose did not pass it to the containers. On AWS the model is now `bedrock.summaryModel` in the environment definition, injected into both the web and the worker task with the matching `InvokeModel` grant; on Docker Compose `AI_SUMMARY_MODEL` in `.env` reaches the containers. A model that is not in `completionModels` is refused when the environment is synthesized rather than logged at worker startup and quietly left off.
+- **Per site, on top of the environment.** A multi-site environment sets `bedrock` once and adjusts it with `sites[].bedrock`: one site can name a cheaper model, leave abstracts off with `summaryModel: undefined`, or turn AI off entirely with `bedrock: false`, while the rest keep the environment's. The per-site entry layers over the environment's the way `overrides` does. Existing environments are untouched — the synthesized templates are byte-identical until a `summaryModel` is set — and a worker on a site that writes no abstracts is granted no generation models.
+
+**Features**
+
+- feat(infra): wire the abstract model into deployments, per site on AWS (#654)
+
+---
+
+**ハイライト**
+
+- **AI による説明を、配備の設定から有効化できるようになりました。** 0.30.0 は `AI_SUMMARY_MODEL` で有効化する形で出荷しましたが、その設定を稼働中のシステムへ届ける経路がありませんでした。AWS のスタックは注入しておらず、説明を書く側の worker タスクには生成モデルの権限が一切なく、Docker Compose もコンテナへ渡していませんでした。AWS では環境定義の `bedrock.summaryModel` で指定し、web / worker 両方のタスクへ `InvokeModel` の許可とあわせて注入されます。Docker Compose では `.env` の `AI_SUMMARY_MODEL` がコンテナに届きます。`completionModels` に無いモデルは、worker の起動時ログで黙って無効になるのではなく、環境の合成（synth）時点で拒否されます。
+- **環境の設定にサイトごとの上書きを重ねられます。** マルチサイト環境では `bedrock` を環境で一度決め、`sites[].bedrock` で調整します。あるサイトだけ安いモデルにする、`summaryModel: undefined` で説明を生成しない、`bedrock: false` で AI 自体を切る — 他のサイトは環境の設定のままです。サイト側の指定は `overrides` と同じ方式で環境の設定に重ねられます。既存環境には影響しません — `summaryModel` を指定するまで合成されるテンプレートはバイト単位で同一で、説明を書かないサイトの worker には生成モデルの権限が付きません。
+
+**機能**
+
+- feat(infra): 抄録モデルを配備へ配線、AWS ではサイト単位に指定可能（#654）
+
 ## [0.30.0] - 2026-09-18
 
 **Required After Upgrading**
