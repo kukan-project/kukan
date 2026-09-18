@@ -82,6 +82,30 @@ KUKAN は **CloudFront（WAF + キャッシュ）→ 内部 ALB → ECS Fargate*
 - **OpenSearch** — 全文検索エンジン
 - **AWS Backup** — 隔離バックアップ（large スケール等で有効）
 
+#### デプロイ通知（Slack）
+
+環境に `deployNotification: true` を置くと、その環境のデプロイが終わるたびに成否が Slack に流れます。
+省略した環境には通知用のリソースが 1 つも作られません。
+
+webhook URL は [Slack のアプリ管理画面](https://api.slack.com/apps) で **Create New App**（From scratch）→ **Incoming Webhooks**
+を有効化 → **Add New Webhook to Workspace** で投稿先チャンネルを選ぶと発行されます。
+
+貼り先の箱はスタックが作ります。`deployNotification: true` でデプロイするとシークレットの ARN が
+パイプラインスタックの出力に出るので、そこへ一度貼ります:
+
+```bash
+aws secretsmanager put-secret-value --secret-id <出力の ARN> --secret-string 'https://hooks.slack.com/services/...'
+```
+
+貼るまでの間、通知は何もしません（デプロイは失敗しません）。通知には成否・デプロイしたコミット・
+更新したサイト（`domainName` があればリンク）・リリースノートへのリンク（リリース時のみ）・
+パイプライン実行へのリンクが入ります。
+
+:::caution
+一度有効にした後に `deployNotification` を外すと、**貼った webhook URL ごと削除されます**。
+もう一度有効にすると別のシークレットが作られるため、URL は貼り直しになります。
+:::
+
 #### バックアップとデータ保護
 
 データ保護の設定は `scale` プリセットに統合されています:
@@ -309,10 +333,10 @@ AI_SUMMARY_MODEL=jp.anthropic.claude-sonnet-4-6
 
 ```ts
 sites: [
-  { name: 'main' },                                                    // 環境の設定をそのまま使う
+  { name: 'main' }, // 環境の設定をそのまま使う
   { name: 'citya', bedrock: { summaryModel: 'jp.anthropic.claude-haiku-4-5-20251001-v1:0' } },
-  { name: 'cityb', bedrock: { summaryModel: undefined } },             // このサイトは抄録なし
-  { name: 'cityc', bedrock: false },                                   // このサイトは AI 自体なし
+  { name: 'cityb', bedrock: { summaryModel: undefined } }, // このサイトは抄録なし
+  { name: 'cityc', bedrock: false }, // このサイトは AI 自体なし
 ]
 ```
 

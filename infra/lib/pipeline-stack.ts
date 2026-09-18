@@ -11,7 +11,14 @@ import { CodePipeline, CodePipelineSource, ShellStep } from 'aws-cdk-lib/pipelin
 import { Construct } from 'constructs'
 import { needsGlobalStack, resolveEnv, type EnvironmentConfig } from './config.js'
 import { pascal } from './naming.js'
-import { KukanStage } from './kukan-stage.js'
+import { KukanStage, MAIN_STACK_ID, siteStackId } from './kukan-stage.js'
+import { DeployNotificationConstruct } from './constructs/deploy-notification.js'
+
+/** One row of the notification's site table. */
+const entry = (label: string, domainName?: string) => ({
+  label,
+  ...(domainName && { url: `https://${domainName}` }),
+})
 
 export interface KukanPipelineStackProps extends cdk.StackProps {
   /** All environment definitions (config/environments.ts). */
@@ -25,10 +32,20 @@ export class KukanPipelineStack extends cdk.Stack {
     super(scope, id, props)
 
     const pipelineAccount = this.account
+    const notified: { name: string; config: EnvironmentConfig; pipeline: CodePipeline }[] = []
 
     for (const [name, config] of Object.entries(props.environments)) {
       // An env without a source repo cannot have a pipeline (deploy it standalone instead).
-      if (!config.githubRepo) continue
+      if (!config.githubRepo) {
+        if (config.deployNotification) {
+          throw new Error(
+            `Environment "${name}": deployNotification reports on a pipeline's executions, but ` +
+              `this environment has no githubRepo and so gets no pipeline. Set githubRepo to ` +
+              `deploy it in pipeline mode, or drop deployNotification. See ADR-030.`
+          )
+        }
+        continue
+      }
 
       // CDK Pipelines cannot create the us-east-1 cert/WAF (cross-region is incompatible).
       // Fail early with an actionable message instead of a cryptic synthesizer error.
@@ -87,6 +104,29 @@ export class KukanPipelineStack extends cdk.Stack {
           config,
         })
       )
+
+      if (config.deployNotification) notified.push({ name, config, pipeline })
+    }
+
+    // After the loop, so nothing can add a stage to a pipeline that has already
+    // been built: the notification rule attaches to the underlying CodePipeline,
+    // which CDK Pipelines only materializes on buildPipeline().
+    for (const { name, config, pipeline } of notified) {
+      pipeline.buildPipeline()
+      new DeployNotificationConstruct(this, `Notify${pascal(name)}`, {
+        pipeline: pipeline.pipeline,
+        environmentName: name,
+        siteStacks: Object.fromEntries(
+          // An environment without `sites` still deploys one site, out of the
+          // all-in-one KukanStack — it is just not named after itself.
+          config.sites?.length
+            ? config.sites.map((site) => [
+                siteStackId(site.name),
+                entry(site.name, site.domainName),
+              ])
+            : [[MAIN_STACK_ID, entry(name, config.domainName)]]
+        ),
+      })
     }
   }
 }

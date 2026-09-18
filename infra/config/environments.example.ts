@@ -140,6 +140,9 @@ export const environments = {
     // --- CI/CD (pipeline mode) ---
     githubRepo: 'kukan-project/your-repo', // CodeConnections source repo (owner/repo)
     deployBranch: 'develop', // branch that deploys this env
+    // Post deploy outcomes (success and failure) to Slack — the stack creates the
+    // secret, the ARN is a stack output, paste the webhook URL into it once:
+    // deployNotification: true,
 
     // --- Sites (ADR-041): resources kukan-dev-<site>-*, database kukan_<site> ---
     sites: [

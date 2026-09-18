@@ -87,6 +87,30 @@ Key AWS resources:
 - **OpenSearch** — Full-text search engine
 - **AWS Backup** — Isolated backups (enabled on the large scale etc.)
 
+#### Deploy notifications (Slack)
+
+Setting `deployNotification: true` on an environment posts the outcome to Slack every time that
+environment finishes deploying. An environment that omits it gets none of the resources.
+
+To get a webhook URL: in [Slack app settings](https://api.slack.com/apps), **Create New App** (From scratch), turn on
+**Incoming Webhooks**, then **Add New Webhook to Workspace** and pick the channel.
+
+The stack creates the box it goes into. Deploying with `deployNotification: true` outputs the
+secret's ARN on the pipeline stack; paste the URL into it once:
+
+```bash
+aws secretsmanager put-secret-value --secret-id <ARN from the output> --secret-string 'https://hooks.slack.com/services/...'
+```
+
+Until then notifications do nothing, and the deploy still succeeds. A message carries the outcome,
+the deployed commit, the sites that were updated (linked when they set `domainName`), a link to the
+release notes on a release, and a link to the pipeline execution.
+
+:::caution
+Turning `deployNotification` off after it has been on **deletes the pasted webhook URL with it**.
+Turning it back on creates a different secret, so the URL has to be pasted again.
+:::
+
 #### Backups and data protection
 
 Data-protection settings are integrated into the `scale` presets:
@@ -333,10 +357,10 @@ all, while the rest keep the environment's.
 
 ```ts
 sites: [
-  { name: 'main' },                                                    // the environment's
+  { name: 'main' }, // the environment's
   { name: 'citya', bedrock: { summaryModel: 'jp.anthropic.claude-haiku-4-5-20251001-v1:0' } },
-  { name: 'cityb', bedrock: { summaryModel: undefined } },             // no abstracts here
-  { name: 'cityc', bedrock: false },                                   // no AI here at all
+  { name: 'cityb', bedrock: { summaryModel: undefined } }, // no abstracts here
+  { name: 'cityc', bedrock: false }, // no AI here at all
 ]
 ```
 

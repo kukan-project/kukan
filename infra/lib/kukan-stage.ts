@@ -26,6 +26,17 @@ import { KukanStack } from './kukan-stack.js'
 import { KukanSharedStack } from './shared-stack.js'
 import { KukanSiteStack } from './site-stack.js'
 
+/**
+ * Construct ids of the stacks a stage deploys, which CDK Pipelines also uses to
+ * name its `<id>.Deploy` actions. Exported so anything reading those action
+ * names back — the deploy notification — keys off the same names rather than
+ * restating them.
+ */
+export const MAIN_STACK_ID = 'KukanStack'
+export function siteStackId(siteName: string): string {
+  return `KukanSiteStack${pascal(siteName)}`
+}
+
 export interface KukanStageProps extends cdk.StageProps {
   /** Environment definition for this stage. */
   config: EnvironmentConfig
@@ -56,7 +67,7 @@ export class KukanStage extends cdk.Stage {
       })
       const siteStacks = config.sites.map(
         (site) =>
-          new KukanSiteStack(this, `KukanSiteStack${pascal(site.name)}`, {
+          new KukanSiteStack(this, siteStackId(site.name), {
             env: { account, region },
             crossRegionReferences: globalStack !== undefined,
             envConfig: config,
@@ -86,7 +97,7 @@ export class KukanStage extends cdk.Stage {
     rejectBlankEdgeArns(config, `Environment "${id}"`)
     const globalStack = this.createGlobalStack(config, account)
 
-    const mainStack = new KukanStack(this, 'KukanStack', {
+    const mainStack = new KukanStack(this, MAIN_STACK_ID, {
       env: { account, region },
       // Cross-region references are only needed (and only safe outside CDK Pipelines)
       // when this stage creates the global stack itself.

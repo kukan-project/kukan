@@ -202,6 +202,15 @@ export interface EnvironmentConfig {
    * (`sites[].bedrock`).
    */
   bedrock?: BedrockConfig | false
+  /**
+   * Post this environment's deploy outcomes to Slack (ADR-030). Omit → no
+   * notification resources are created at all.
+   *
+   * Pipeline mode only — it reports on the pipeline's executions. The stack
+   * creates the secret that holds the webhook; paste the URL into it once and
+   * the messages start.
+   */
+  deployNotification?: boolean
   /** CodeConnections source repository in "owner/repo" form (ADR-030). */
   githubRepo?: string
   /** Branch that deploys this environment (ADR-030). */

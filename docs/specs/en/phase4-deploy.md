@@ -860,12 +860,64 @@ the pipeline definition.
 > Approving the CodeConnections GitHub App is a one-off manual console step and cannot be fully
 > expressed as IaC (only the connection ARN is referenced from code).
 
+### Deploy notifications (Slack)
+
+Setting `deployNotification: true` on an environment posts the outcome of that
+environment's pipeline executions to Slack. An environment that omits it gets none
+of the resources — no topic, no function, no rule.
+
+The path is CodeStar Notifications → SNS → Lambda → Slack incoming webhook. AWS
+Chatbot is not used, because approving a workspace there is a manual console step.
+
+**Getting the webhook URL** (in Slack):
+
+1. At <https://api.slack.com/apps>, **Create New App** → "From scratch" → pick the workspace
+2. Turn on **Incoming Webhooks**, then **Add New Webhook to Workspace** and pick the channel
+3. Copy the issued `https://hooks.slack.com/services/...`
+
+**Where it goes**: the stack creates the box. Deploying with `deployNotification: true`
+outputs the secret's ARN (`Notify<Environment>SlackWebhookSecretArn`); paste the URL into it once:
+
+```bash
+aws secretsmanager put-secret-value --secret-id <ARN from the output> --secret-string 'https://hooks.slack.com/services/...'
+```
+
+Until then the function logs that nothing is configured and returns; the deploy does not
+fail. The secret is created with a generated value so CloudFormation stops touching it
+after creation — a literal placeholder would be written back over the real URL on the
+next deploy.
+
+**What the message carries**: the outcome, the deployed commit's subject and short SHA,
+the sites that were updated, a link to the release notes (only when the commit is
+`chore(release): vX.Y.Z` — ADR-035), and a console link to the pipeline execution.
+
+A site name links to the site itself when that site sets `domainName`; a site without one
+is named but not linked, because its CloudFront domain is decided inside the stage's own
+stack, which the pipeline stack cannot reference (CDK Pipelines deploys stages separately).
+An environment without `sites` shows its all-in-one `KukanStack` under the environment name.
+
+The site table travels in a Lambda environment variable (4 KB for all of them, not raisable),
+so long site names and domains can overflow it; synth then stops and names the size needed.
+
+> [!NOTE]
+> The site list names the stacks whose Deploy action **ran**, not the ones that actually
+> changed. CodePipeline records a deploy with an identical template as a success and does
+> not report whether anything differed.
+
+> [!WARNING]
+> **Turning `deployNotification` off after it has been on takes the pasted webhook URL with
+> it.** CloudFormation deletes what leaves the stack, and the secret goes with it (CDK's
+> `Secret` defaults to `RemovalPolicy.DESTROY`). It is recoverable within the Secrets Manager
+> recovery window (30 days by default), but turning notifications back on creates a secret
+> under a new name, so the URL has to be pasted again.
+
 ## Related Files
 
 - CDK: the whole `infra/` directory
 - Environment definitions: `infra/config/environments.ts` (committed by the fork),
   `infra/config/environments.example.ts`
 - CI/CD: `infra/lib/pipeline-stack.ts`, `infra/lib/kukan-stage.ts`
+- Deploy notifications: `infra/lib/constructs/deploy-notification.ts`, `infra/lib/lambda/deploy-notification/`
 - Dockerfile: `Dockerfile`, `.dockerignore`
 - Worker health check: `apps/worker/src/index.ts`
 - Web health check: `apps/web/src/app/api/health/route.ts`

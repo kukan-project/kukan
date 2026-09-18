@@ -359,12 +359,22 @@ describe('pipeline mode', () => {
   const OTHER_ACCOUNT = '210987654321'
 
   /** One env, one site — the smallest environment a pipeline can be built from. */
-  const pipelineStack = (site: SiteConfig, targetAccount = TEST_ACCOUNT, app = testApp()) =>
+  const pipelineStack = (
+    site: SiteConfig,
+    targetAccount = TEST_ACCOUNT,
+    app = testApp(),
+    extra: Partial<EnvironmentConfig> = {}
+  ) =>
     new KukanPipelineStack(app, 'KukanPipeline', {
       env: { account: TEST_ACCOUNT, region: TEST_REGION },
       connectionArn: `arn:aws:codeconnections:${TEST_REGION}:${TEST_ACCOUNT}:connection/x`,
       environments: {
-        dev: { account: targetAccount, githubRepo: 'example/kukan', sites: [site] },
+        dev: {
+          account: targetAccount,
+          githubRepo: 'example/kukan',
+          sites: [site],
+          ...extra,
+        },
       },
     })
 
@@ -394,6 +404,41 @@ describe('pipeline mode', () => {
       )
     keys(OTHER_ACCOUNT).resourceCountIs('AWS::KMS::Key', 1)
     keys(TEST_ACCOUNT).resourceCountIs('AWS::KMS::Key', 0)
+  })
+
+  const notifications = (extra: Partial<EnvironmentConfig> = {}) =>
+    Template.fromStack(
+      pipelineStack(
+        { name: 'main', enableWaf: false },
+        TEST_ACCOUNT,
+        testApp({ 'aws:cdk:bundling-stacks': [] }),
+        extra
+      )
+    )
+
+  it('creates no notification resources unless the environment asks for them', () => {
+    for (const template of [notifications(), notifications({ deployNotification: false })]) {
+      template.resourceCountIs('AWS::CodeStarNotifications::NotificationRule', 0)
+      template.resourceCountIs('AWS::SNS::Topic', 0)
+      template.resourceCountIs('AWS::SecretsManager::Secret', 0)
+    }
+  })
+
+  it('reports both outcomes to a secret the operator fills in afterwards', () => {
+    const template = notifications({ deployNotification: true })
+    template.hasResourceProperties('AWS::CodeStarNotifications::NotificationRule', {
+      EventTypeIds: [
+        'codepipeline-pipeline-pipeline-execution-succeeded',
+        'codepipeline-pipeline-pipeline-execution-failed',
+      ],
+      DetailType: 'FULL',
+    })
+    // Generated, not declared: a declared value would be written back over the
+    // real webhook on the next deploy
+    template.hasResourceProperties('AWS::SecretsManager::Secret', {
+      GenerateSecretString: { PasswordLength: 32 },
+    })
+    template.resourceCountIs('AWS::SNS::Topic', 1)
   })
 })
 

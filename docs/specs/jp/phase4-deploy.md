@@ -808,11 +808,58 @@ npx cdk deploy KukanPipeline
 > [!IMPORTANT]
 > CodeConnections の GitHub App 承認はコンソールでの一度きりの手動操作で、完全な IaC 化はできない（Connection ARN のみコードで参照）。
 
+### デプロイ通知（Slack）
+
+環境に `deployNotification: true` を置くと、その環境のパイプライン実行の成否が Slack に流れる。
+省略した環境には通知用のリソースがひとつも作られない（トピックも関数もルールも作らない）。
+
+仕組みは CodeStar Notifications → SNS → Lambda → Slack incoming webhook。AWS Chatbot は
+ワークスペースの OAuth 承認がコンソール手動操作になるため採らない。
+
+**Webhook URL の入手**（Slack 側の操作）:
+
+1. <https://api.slack.com/apps> で **Create New App** →「From scratch」→ 通知先ワークスペースを選ぶ
+2. **Incoming Webhooks** を On にし、**Add New Webhook to Workspace** で投稿先チャンネルを選ぶ
+3. 発行された `https://hooks.slack.com/services/...` をコピーする
+
+**格納先**: 箱はスタックが作る。`deployNotification: true` でデプロイすると、シークレットの ARN が
+パイプラインスタックの出力（`Notify<環境名>SlackWebhookSecretArn`）に出るので、そこへ一度貼る:
+
+```bash
+aws secretsmanager put-secret-value --secret-id <出力の ARN> --secret-string 'https://hooks.slack.com/services/...'
+```
+
+貼るまでの間、関数は「まだ設定されていない」とログに書いて何もしない（デプロイは失敗しない）。
+シークレットは生成値で作るため、CloudFormation は作成後に中身を書き換えない
+（リテラルの置き値にすると、次のデプロイで本物の URL を上書きしてしまう）。
+
+**通知の内容**: 成否、デプロイしたコミットの件名と短縮 SHA、更新したサイト、リリースノートへの
+リンク（コミットが `chore(release): vX.Y.Z` のときのみ。ADR-035）、パイプライン実行のコンソールリンク。
+
+サイト名は `domainName` を設定したサイトだけそのサイトへのリンクになる。設定していないサイトは
+名前だけ出る — CloudFront のドメインはステージ側のスタックが決めるため、パイプラインスタックからは
+参照できない（CDK Pipelines はステージを別のデプロイとして流す）。
+`sites` を持たない環境は、全部入りの `KukanStack` を環境名で表示する。
+
+サイトの対応表は Lambda の環境変数（合計 4 KB、引き上げ不可）に載るため、サイト名とドメインが
+長いと入りきらない。その場合は合成時に必要バイト数を添えて停止する。
+
+> [!NOTE]
+> サイト一覧は「Deploy アクションが**走った**スタック」であって、実際に変更があったスタックではない。
+> テンプレートに差がないデプロイも CodePipeline は成功として記録し、差の有無を報告しないため。
+
+> [!WARNING]
+> **一度有効にした後に `deployNotification` を外すと、貼った webhook URL ごと消える。**
+> スタックから消えたリソースは CloudFormation が削除するため、シークレットも削除される
+> （CDK の `Secret` は `RemovalPolicy.DESTROY` が既定）。Secrets Manager の復旧期間（既定 30 日）
+> 内なら復元できるが、もう一度有効にすると別名のシークレットが作られるので、URL は貼り直しになる。
+
 ## 関連ファイル
 
 - CDK: `infra/` ディレクトリ全体
 - 環境定義: `infra/config/environments.ts`（フォークがコミット）, `infra/config/environments.example.ts`
 - CI/CD: `infra/lib/pipeline-stack.ts`, `infra/lib/kukan-stage.ts`
+- デプロイ通知: `infra/lib/constructs/deploy-notification.ts`, `infra/lib/lambda/deploy-notification/`
 - Dockerfile: `Dockerfile`, `.dockerignore`
 - Worker ヘルスチェック: `apps/worker/src/index.ts`
 - Web ヘルスチェック: `apps/web/src/app/api/health/route.ts`
