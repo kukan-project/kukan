@@ -46,13 +46,11 @@ RUN pnpm build --filter='!@kukan/site'
 # ---- Web (Next.js standalone) ----
 FROM base AS web
 WORKDIR /app
-COPY --from=build /app/apps/web/.next/standalone ./
-COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=build /app/apps/web/public ./apps/web/public
-# DuckDB native bindings for server-side resource queries (ADR-032 Part B).
-# Next.js standalone traces the .node addon but not libduckdb.so (a dynamic dependency).
-# Copy it to a dedicated directory and point LD_LIBRARY_PATH there.
-COPY --from=deps /app/node_modules/.pnpm/@duckdb+node-bindings-linux-x64-musl@*/node_modules/@duckdb/node-bindings-linux-x64-musl/libduckdb.so /app/duckdb-lib/
+# The user comes before the copies so their contents land owned. `chown -R`
+# after them rewrites every file it touches into a layer of its own, which had
+# this image carrying 235 MB that duplicated what the copies had just written,
+# and the worker 369 MB.
+#
 # The runtime starts `node` and nothing else — the entrypoints below, the ECS
 # health checks (wget), and the documented in-container tools all do — so what
 # the node image ships for installing things goes. npm's bundled undici carried
@@ -63,7 +61,14 @@ COPY --from=deps /app/node_modules/.pnpm/@duckdb+node-bindings-linux-x64-musl@*/
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
     /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
     /usr/local/bin/yarn /usr/local/bin/yarnpkg \
-  && addgroup -S appgroup && adduser -S appuser -G appgroup && chown -R appuser:appgroup /app
+  && addgroup -S appgroup && adduser -S appuser -G appgroup && chown appuser:appgroup /app
+COPY --chown=appuser:appgroup --from=build /app/apps/web/.next/standalone ./
+COPY --chown=appuser:appgroup --from=build /app/apps/web/.next/static ./apps/web/.next/static
+COPY --chown=appuser:appgroup --from=build /app/apps/web/public ./apps/web/public
+# DuckDB native bindings for server-side resource queries (ADR-032 Part B).
+# Next.js standalone traces the .node addon but not libduckdb.so (a dynamic dependency).
+# Copy it to a dedicated directory and point LD_LIBRARY_PATH there.
+COPY --chown=appuser:appgroup --from=deps /app/node_modules/.pnpm/@duckdb+node-bindings-linux-x64-musl@*/node_modules/@duckdb/node-bindings-linux-x64-musl/libduckdb.so /app/duckdb-lib/
 USER appuser
 ENV NODE_ENV=production PORT=3000 LD_LIBRARY_PATH=/app/duckdb-lib
 # DuckDB downloads extensions from the internet on first use (ADR-043 layer 2).
@@ -108,15 +113,16 @@ RUN pnpm --filter @kukan/worker deploy --prod --no-optional --legacy /app/worker
 # ---- Worker (tsup bundle — workspace packages are bundled, npm deps are external) ----
 FROM base AS worker
 WORKDIR /app
-COPY --from=worker-deps /app/worker-deploy/node_modules ./node_modules
-COPY --from=build /app/apps/worker/dist ./apps/worker/dist
-COPY --from=build /app/apps/worker/package.json ./apps/worker/
-COPY --from=build /app/packages/db/drizzle ./apps/worker/drizzle
-# See the web stage: the runtime starts `node` only, so nothing that installs stays.
+# See the web stage for both halves: nothing that installs stays, and the user
+# is created before the copies rather than chowning them afterwards.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
     /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
     /usr/local/bin/yarn /usr/local/bin/yarnpkg \
-  && addgroup -S appgroup && adduser -S appuser -G appgroup && chown -R appuser:appgroup /app
+  && addgroup -S appgroup && adduser -S appuser -G appgroup && chown appuser:appgroup /app
+COPY --chown=appuser:appgroup --from=worker-deps /app/worker-deploy/node_modules ./node_modules
+COPY --chown=appuser:appgroup --from=build /app/apps/worker/dist ./apps/worker/dist
+COPY --chown=appuser:appgroup --from=build /app/apps/worker/package.json ./apps/worker/
+COPY --chown=appuser:appgroup --from=build /app/packages/db/drizzle ./apps/worker/drizzle
 USER appuser
 # DuckDB downloads extensions from the internet on first use (ADR-043 layer 2).
 # Fetch them at build time: a closed-network deployment (LGWAN and similar) has
