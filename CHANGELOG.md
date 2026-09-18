@@ -6,6 +6,30 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.30.3] - 2026-09-18
+
+**Bug Fixes**
+
+- fix(web): keep the search box in step with the query in the URL (#662) — clicking a search example on the dataset page changed the results and the URL but left the text already in the box. The form's input is uncontrolled, and React writes `defaultValue` only when it mounts: arriving from another page remounted it and hid the problem, while moving within `/dataset` did not. The organization and group search forms had the same shape and are fixed with it.
+
+- fix(docker): keep the package managers out of the runtime images (#664) — the images carried a pnpm that nothing in them runs. It is unpacked for the build stages, and every stage derived from the one that unpacked it, so it reached production along with the packages it bundles — four HIGH advisories reported against an image that never invokes it. It is now prepared where only the build stages see it, and the installers the Node image ships (npm, corepack, the yarn shims) are removed with it: on a production container each is a command that fetches an unpinned package manager over the network.
+
+**Performance**
+
+- build(docker): the images are a third smaller (#665) — both runtime stages ended by taking ownership of everything they had just copied, and that rewrites every file into a layer of its own. The copies now arrive owned instead. The worker image goes from 1,030 MB to 661 MB and the web image from 773 MB to 538 MB, which is also what a registry push and a task start no longer have to move. Nothing about running them changes.
+
+---
+
+**バグ修正**
+
+- fix(web): 検索ボックスを URL のクエリに追従させる（#662）— データセットページで検索例をクリックすると、結果と URL は変わるのに入力欄が元のままになることがありました。フォームの入力欄が非制御で、React が `defaultValue` を反映するのはマウント時だけのためです。他ページから来た場合は再マウントされるため気づかれず、`/dataset` 内の遷移でのみ起きていました。組織・グループの検索フォームも同じ構造だったため、あわせて直っています。
+
+- fix(docker): ランタイムイメージからパッケージマネージャを外す（#664）— イメージは、その中の何も実行しない pnpm を積んでいました。ビルドステージのために展開されたものが、そこから派生する全ステージに引き継がれ、同梱パッケージごと本番まで届いていたものです（**一度も起動しないイメージに対して HIGH 4 件**が報告されていました）。展開先をビルドステージだけが見る場所に移し、Node イメージ由来のインストーラ（npm・corepack・yarn のシム）も削除しています — 本番コンテナではいずれも「バージョン未固定のパッケージマネージャをネットワークから取得して実行するコマンド」だからです。
+
+**性能**
+
+- build(docker): イメージが 3 分の 1 小さくなりました（#665）— 両ランタイムステージが、直前にコピーしたもの全体の所有者を変えて終わっていました。これは全ファイルを新しいレイヤーに書き直す操作です。コピーの時点で所有者を設定するようにしました。worker イメージは 1,030MB → 661MB、web イメージは 773MB → 538MB になり、**レジストリへの push とタスク起動時の pull もその分減ります**。起動方法は何も変わりません。
+
 ## [0.30.2] - 2026-09-18
 
 **Bug Fixes**
