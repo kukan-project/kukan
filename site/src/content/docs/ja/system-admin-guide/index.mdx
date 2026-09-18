@@ -108,6 +108,13 @@ aws secretsmanager put-secret-value --secret-id <取得した ARN> \
 更新したサイト（`domainName` があればリンク）・リリースノートへのリンク（リリース時のみ）・
 パイプライン実行へのリンクが入ります。
 
+:::note
+**アカウントで最初に作る通知ルールは一度失敗することがあります。** CodeStar Notifications が使う
+サービスリンクロールが、最初の作成試行で作られるためです（完了まで最大 15 分）。その間は
+`Invalid request provided: AWS::CodeStarNotifications::NotificationRule` でデプロイが失敗します。
+設定は正しいので、15 分ほど待ってデプロイし直してください。
+:::
+
 :::caution
 一度有効にした後に `deployNotification` を外すと、**貼った webhook URL ごと削除されます**。
 もう一度有効にすると別のシークレットが作られるため、URL は貼り直しになります。

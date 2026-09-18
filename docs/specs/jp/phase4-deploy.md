@@ -848,6 +848,14 @@ aws secretsmanager put-secret-value --secret-id <出力の ARN> --secret-string 
 > サイト一覧は「Deploy アクションが**走った**スタック」であって、実際に変更があったスタックではない。
 > テンプレートに差がないデプロイも CodePipeline は成功として記録し、差の有無を報告しないため。
 
+> [!NOTE]
+> **アカウントで最初に作る通知ルールは一度失敗することがある。** CodeStar Notifications は
+> CloudWatch Events の managed rule を作るためにサービスリンクロール
+> （`AWSServiceRoleForCodeStarNotifications`）を必要とし、そのロールは最初の作成試行で作られる。
+> 完了まで最大 15 分かかり、その間の作成は `ConfigurationException` で失敗する
+> （CloudFormation には `Invalid request provided: AWS::CodeStarNotifications::NotificationRule`
+> として出る）。設定は正しいので、15 分ほど待ってデプロイし直せば通る。
+
 > [!WARNING]
 > **一度有効にした後に `deployNotification` を外すと、貼った webhook URL ごと消える。**
 > スタックから消えたリソースは CloudFormation が削除するため、シークレットも削除される

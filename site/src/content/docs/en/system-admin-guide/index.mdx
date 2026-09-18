@@ -113,6 +113,13 @@ Until then notifications do nothing, and the deploy still succeeds. A message ca
 the deployed commit, the sites that were updated (linked when they set `domainName`), a link to the
 release notes on a release, and a link to the pipeline execution.
 
+:::note
+**The first notification rule in an AWS account can fail once.** The service-linked role CodeStar
+Notifications uses is created by that first attempt, which takes up to 15 minutes; until it exists the
+deploy fails with `Invalid request provided: AWS::CodeStarNotifications::NotificationRule`. Nothing is
+misconfigured — wait and deploy again.
+:::
+
 :::caution
 Turning `deployNotification` off after it has been on **deletes the pasted webhook URL with it**.
 Turning it back on creates a different secret, so the URL has to be pasted again.

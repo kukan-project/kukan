@@ -904,6 +904,14 @@ so long site names and domains can overflow it; synth then stops and names the s
 > changed. CodePipeline records a deploy with an identical template as a success and does
 > not report whether anything differed.
 
+> [!NOTE]
+> **The first notification rule in an AWS account can fail once.** CodeStar Notifications needs the
+> service-linked role `AWSServiceRoleForCodeStarNotifications` to create its CloudWatch Events
+> managed rule, and that role is created by the first attempt. Creation takes up to 15 minutes, and
+> rule creation fails with `ConfigurationException` until it finishes — CloudFormation reports it as
+> `Invalid request provided: AWS::CodeStarNotifications::NotificationRule`. Nothing is misconfigured:
+> wait and deploy again.
+
 > [!WARNING]
 > **Turning `deployNotification` off after it has been on takes the pasted webhook URL with
 > it.** CloudFormation deletes what leaves the stack, and the secret goes with it (CDK's
