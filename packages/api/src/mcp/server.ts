@@ -8,7 +8,7 @@ import type { Database } from '@kukan/db'
 import type { SearchAdapter } from '@kukan/search-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
-import type { Logger } from '@kukan/shared'
+import type { Env, Logger } from '@kukan/shared'
 import { registerDatasetTools } from './tools/datasets'
 import { registerResourceTools } from './tools/resources'
 import { registerCatalogTools } from './tools/catalog'
@@ -21,6 +21,7 @@ interface McpContext {
   dbSearch: SearchAdapter
   storage: StorageAdapter
   ai: AIAdapter
+  env: Env
   logger: Logger
   user?: { id: string; sysadmin: boolean }
 }
@@ -32,7 +33,7 @@ export function createMcpServer(ctx: McpContext): McpServer {
   })
 
   registerDatasetTools(server, ctx)
-  registerResourceTools(server, { db: ctx.db, user: ctx.user })
+  registerResourceTools(server, { db: ctx.db, user: ctx.user, env: ctx.env, ai: ctx.ai })
   registerCatalogTools(server, { db: ctx.db, user: ctx.user })
   registerQueryTools(server, { db: ctx.db, storage: ctx.storage, user: ctx.user })
 

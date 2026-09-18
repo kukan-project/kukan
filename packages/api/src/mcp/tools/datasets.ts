@@ -6,7 +6,7 @@ import { sectionLayout } from '@kukan/shared'
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Database } from '@kukan/db'
-import type { SearchAdapter } from '@kukan/search-adapter'
+import type { MatchedResource, MatchedResourcesCount, SearchAdapter } from '@kukan/search-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
 import type { Logger } from '@kukan/shared'
 import { PackageService } from '../../services/package-service'
@@ -23,6 +23,57 @@ interface DatasetToolsContext {
   user?: AuthUser
 }
 
+/** How many matched files to name before the count speaks for the rest. */
+const MAX_NAMED_RESOURCES = 5
+
+/**
+ * Which files in a dataset the query actually matched, and on what account.
+ *
+ * A dataset is the unit of the result and the wrong unit to act on: one holding
+ * many files answers the question with one of them, and without this the
+ * caller's next move is to fetch the dataset and guess. The reason matters as
+ * much as the name — a semantic hit means the query's words appear nowhere in
+ * the file, so a caller that goes looking for them will not find them (ADR-054).
+ */
+export function matchedResourceLines(item: {
+  matchedResources?: MatchedResource[]
+  matchedResourcesCount?: MatchedResourcesCount
+}): string[] {
+  const matched = item.matchedResources ?? []
+  if (matched.length === 0) return []
+  const named = matched.slice(0, MAX_NAMED_RESOURCES).map((r) => {
+    const why =
+      r.matchSource === 'semantic'
+        ? `by meaning${r.similarity !== undefined ? ` ${r.similarity.toFixed(2)}` : ''}`
+        : r.matchSource === 'content'
+          ? 'in its contents'
+          : r.matchedOn?.includes('summary')
+            ? 'in its AI-written description'
+            : 'in its name or description'
+    return `     - ${r.name || '(untitled)'} [${r.format || 'unknown'}] (${why}, ID: ${r.id})`
+  })
+  // Against the count, not the array: the adapters carry at most
+  // MAX_MATCHED_RESOURCES_PER_PACKAGE entries and keep the real total beside
+  // them, so subtracting from what was carried under-reports a package that
+  // matched past the cap. `atLeast` says the total is itself a floor.
+  const count = item.matchedResourcesCount
+  const total = Math.max(count?.total ?? matched.length, matched.length)
+  const rest = total - named.length
+  // A floor can sit below what was carried: a semantic hit added to a capped
+  // list leaves the total where it was and marks it `atLeast` rather than
+  // raising it on a guess. Then the remainder computes to none, and saying
+  // nothing would present the named ones as the whole of it.
+  const more =
+    rest > 0
+      ? count?.atLeast
+        ? `at least ${rest} more`
+        : `${rest} more`
+      : count?.atLeast
+        ? 'possibly more'
+        : null
+  return [`   Matched files:`, ...named, ...(more ? [`     …and ${more}`] : [])]
+}
+
 export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext) {
   const { db, user } = ctx
 
@@ -30,7 +81,7 @@ export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext
     'search_datasets',
     {
       description:
-        'Search datasets in the data catalog by keyword. Returns matching datasets with title, description, organization, and available formats. Results may include semantically related datasets beyond exact keyword matches.',
+        'Search datasets in the data catalog by keyword. Returns matching datasets with title, description, organization, and available formats, and — where a dataset holds several files — which of them matched and on what account (its name, its contents, its AI-written description, or its meaning). Results may include semantically related datasets beyond exact keyword matches.',
       inputSchema: {
         q: z.string().describe('Search query keywords'),
         organization: z.string().optional().describe('Filter by organization name (slug)'),
@@ -73,6 +124,7 @@ export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext
                   org && `   Organization: ${org}`,
                   item.notes && `   Description: ${item.notes.slice(0, 200)}`,
                   formats && `   Formats: ${formats}`,
+                  ...matchedResourceLines(item),
                 ]
                   .filter(Boolean)
                   .join('\n')

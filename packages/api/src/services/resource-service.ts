@@ -225,6 +225,7 @@ export class ResourceService {
    * the fields stay out of the responses that serialize a resource directly.
    */
   async getByIdWithOwnership(id: string, viewer?: AuthUser) {
+    const versionAgg = latestLiveVersionAgg(this.db)
     const [row] = await this.db
       .select({
         // The public projection plus the pointers the content endpoints resolve
@@ -235,6 +236,9 @@ export class ResourceService {
           storageKey: resource.storageKey,
           pendingStorageKey: resource.pendingStorageKey,
           pendingMetadata: resource.pendingMetadata,
+          // The same number `listByPackage` reports, so a reader of one
+          // resource can tell a description of v2 from the file it describes
+          latestVersion: versionAgg.maxVersion,
         },
         pkgState: packageTable.state,
         pkgPrivate: packageTable.private,
@@ -243,6 +247,7 @@ export class ResourceService {
       })
       .from(resource)
       .innerJoin(packageTable, eq(packageTable.id, resource.packageId))
+      .leftJoin(versionAgg, eq(versionAgg.resourceId, resource.id))
       .where(
         and(
           eq(resource.id, id),

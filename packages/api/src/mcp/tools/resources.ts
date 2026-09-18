@@ -6,22 +6,33 @@ import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { primaryKeyOf } from '@kukan/shared'
 import type { Database } from '@kukan/db'
+import type { Env } from '@kukan/shared'
+import type { AIAdapter } from '@kukan/ai-adapter'
 import { ResourceService } from '../../services/resource-service'
 import { PipelineService, isQueryable } from '../../services/pipeline-service'
+import { summaryLines } from './summary-text'
+import { getSummaryModel } from '../../services/suggest/availability'
 import type { AuthUser } from '../../auth/permissions'
 
 interface ResourceToolsContext {
   db: Database
   user?: AuthUser
+  /** The two the abstract's switch is made of (ADR-053 §6.1): the named model
+   *  is environment, and whether the provider can be reached is the adapter's */
+  env: Env
+  ai: AIAdapter
 }
 
 export function registerResourceTools(server: McpServer, ctx: ResourceToolsContext) {
-  const { db, user } = ctx
+  const { db, user, env, ai } = ctx
+  // One question for the whole registration: the switch is deployment-wide
+  const summariesEnabled = getSummaryModel(env, ai) !== null
 
   server.registerTool(
     'get_resource',
     {
-      description: 'Get metadata about a specific resource (file) in a dataset.',
+      description:
+        'Get metadata about a specific resource (file) in a dataset. Where the site generates them, the response also carries an AI-written description of the file, how much of the file it was written from, and which version it describes.',
       inputSchema: {
         id: z.string().describe('Resource UUID'),
       },
@@ -44,6 +55,9 @@ export function registerResourceTools(server: McpServer, ctx: ResourceToolsConte
         `Size: ${res.size != null ? `${res.size} bytes` : 'unknown'}`,
         `Created: ${res.created}`,
         `Updated: ${res.updated}`,
+        // The abstract last, because it is the long field and everything above
+        // it is what a caller matches on (ADR-053)
+        ...summaryLines(res.summary, res.summaryMeta, res.latestVersion, summariesEnabled),
       ]
         .filter(Boolean)
         .join('\n')

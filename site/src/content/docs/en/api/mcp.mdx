@@ -54,16 +54,16 @@ curl -X POST https://your-kukan-site/api/mcp \
 
 All tools are read-only. Access to private datasets is controlled based on the authenticated user's permissions.
 
-| Tool                  | Description                                                                                           |
-| --------------------- | ----------------------------------------------------------------------------------------------------- |
-| `search_datasets`     | Search datasets by keyword or natural language (hybrid search). Supports organization and tag filters |
-| `get_dataset`         | Get detailed dataset information including resource list                                              |
-| `get_resource`        | Get resource (file) metadata and URL                                                                  |
-| `get_resource_schema` | Get a resource's column schema (names, types, row count, stats). CSV/TSV only                         |
-| `query_resource`      | Run a read-only SQL query (SELECT only) over a resource's data. CSV/TSV only                          |
-| `list_organizations`  | List organizations                                                                                    |
-| `list_groups`         | List groups (categories)                                                                              |
-| `list_tags`           | List tags                                                                                             |
+| Tool                  | Description                                                                                  |
+| --------------------- | -------------------------------------------------------------------------------------------- |
+| `search_datasets`     | Search datasets by keyword or natural language (hybrid search). Also says which file matched |
+| `get_dataset`         | Get detailed dataset information including resource list                                     |
+| `get_resource`        | Get resource (file) metadata, URL, and its AI-written description                            |
+| `get_resource_schema` | Get a resource's column schema (names, types, row count, stats). CSV/TSV only                |
+| `query_resource`      | Run a read-only SQL query (SELECT only) over a resource's data. CSV/TSV only                 |
+| `list_organizations`  | List organizations                                                                           |
+| `list_groups`         | List groups (categories)                                                                     |
+| `list_tags`           | List tags                                                                                    |
 
 ## Tool Details
 
@@ -71,6 +71,13 @@ All tools are read-only. Access to private datasets is controlled based on the a
 
 Search the data catalog. Besides keywords, natural-language queries work too —
 semantically related datasets are included in the results (hybrid search).
+
+When a dataset holds several files, the result says **which of them matched**, under
+`Matched files:`, each with what the match is on account of — `in its name or
+description`, `in its contents`, `in its AI-written description`, or `by meaning 0.42`
+(the number is the similarity). **A match by meaning means the query's words appear
+nowhere in that file**, so do not go looking for them there. The first five are named
+and the rest are counted.
 
 | Parameter      | Type     | Required | Description                                                      |
 | -------------- | -------- | -------- | ---------------------------------------------------------------- |
@@ -95,6 +102,13 @@ to the same depth as on the public page, and the resources under a heading one l
 
 Get resource metadata. Returns the download URL for uploaded files. A resource inside a
 section carries a `Section:` line.
+
+Where the site has [AI-written descriptions](/en/data-admin-guide/#ai-written-descriptions)
+enabled, one is appended, together with **how much of the file it was written from**
+(`read the column layout and the first 100 of 1200 rows`, for example) and **which version
+it describes**. If the file has been replaced and the description has not caught up, that
+reads `describes v1, and the file is now v2`, so an old description is never mistaken for a
+current one. Where none was written, the reason is given instead.
 
 | Parameter | Type   | Required | Description   |
 | --------- | ------ | -------- | ------------- |
