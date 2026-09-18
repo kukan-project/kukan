@@ -6,6 +6,18 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.30.4] - 2026-09-18
+
+**Features**
+
+- feat(infra): report deploy outcomes to Slack when a webhook is configured (#668) — until now the only way to know a deployment had finished was to open the CodePipeline console, and a failure is the case where noticing late costs the most. Setting `deployNotification: true` on an environment posts the outcome of every pipeline execution there, success and failure alike. The webhook URL is not configuration: the stack creates the secret that holds it, so an environment can carry the notification resources before anyone has decided where the messages go — until an operator pastes a URL in, the function says so in its log and returns, and the deploy still succeeds. A message names the outcome, the deployed commit, the sites the execution updated (linked when they set `domainName`), the release notes when the commit is a release, and the pipeline execution itself. An environment that omits the setting gets none of the resources.
+
+---
+
+**新機能**
+
+- feat(infra): webhook を設定したときだけデプロイの結果を Slack に通知する（#668）— これまでデプロイが終わったことを知る手段は CodePipeline のコンソールを開くことだけで、失敗は特に、気づくのが遅れるほど損が大きいものでした。環境に `deployNotification: true` を置くと、その環境のパイプライン実行の成否が、成功も失敗も Slack に流れます。webhook URL は設定ファイルに書きません — 格納先のシークレットはスタックが作るので、メッセージの宛先を決める前に通知の仕組みだけ用意しておけます（貼られるまでの間、関数はその旨をログに書いて何もせず、デプロイは成功します）。通知には、成否・デプロイしたコミット・更新したサイト（`domainName` があればリンクになります）・リリース時はリリースノートへのリンク・パイプライン実行へのリンクが入ります。設定を置かない環境には、通知用のリソースが 1 つも作られません。
+
 ## [0.30.3] - 2026-09-18
 
 **Bug Fixes**
