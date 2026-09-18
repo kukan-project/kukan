@@ -222,7 +222,18 @@ export default defineConfig({
            * not mix.
            */
           pool: 'threads',
-          environment: 'jsdom',
+          /**
+           * happy-dom rather than jsdom, because a registry per file is also a
+           * DOM per file: what `environment` costs went from 2.56s under the VM
+           * pool to 104s of aggregate work here, the second largest bucket in
+           * the suite. happy-dom builds one in about half the time and runs the
+           * tests themselves faster — 1008 tests pass on either.
+           *
+           * It implements less of the platform than jsdom does. Nothing under
+           * test needed the difference; something added later might, and the
+           * failure would name the missing API.
+           */
+          environment: 'happy-dom',
           globals: true,
           setupFiles: ['./src/__tests__/setup.ts'],
           include: ['src/**/__tests__/**/*.test.{ts,tsx}'],
