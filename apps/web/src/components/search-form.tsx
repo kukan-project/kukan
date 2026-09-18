@@ -1,6 +1,10 @@
 import { useTranslations } from 'next-intl'
 import { Button, Input } from '@kukan/ui'
 
+/** Keyword search box. The input is uncontrolled, so a changed `defaultValue`
+ *  alone never reaches the DOM: `key` remounts it when a client-side navigation
+ *  changes the query while this form stays mounted (an example-query chip on
+ *  /dataset), which would otherwise leave the previous query on screen. */
 export function SearchForm({
   action,
   defaultValue,
@@ -18,6 +22,7 @@ export function SearchForm({
   return (
     <form action={action} method="GET" className="flex gap-2">
       <Input
+        key={defaultValue}
         name="q"
         type="search"
         defaultValue={defaultValue}

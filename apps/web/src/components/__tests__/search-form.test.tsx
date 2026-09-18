@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { SearchForm } from '../search-form'
 
 describe('SearchForm', () => {
@@ -11,6 +11,15 @@ describe('SearchForm', () => {
   it('should set default value', () => {
     render(<SearchForm action="/dataset" defaultValue="test query" />)
     expect(screen.getByDisplayValue('test query')).toBeInTheDocument()
+  })
+
+  it('should show the new default value when the query changes under the form', () => {
+    const { rerender } = render(<SearchForm action="/dataset" defaultValue="" />)
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'typed by hand' } })
+
+    rerender(<SearchForm action="/dataset" defaultValue="example query" />)
+
+    expect(screen.getByDisplayValue('example query')).toBeInTheDocument()
   })
 
   it('should use custom placeholder', () => {
