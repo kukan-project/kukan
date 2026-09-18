@@ -6,6 +6,106 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.30.0] - 2026-09-18
+
+**Required After Upgrading**
+
+- **Regenerate the embeddings.** Migration `0046` moves the semantic-search vector from the package to the resource (ADR-054) and drops the three package columns, so every existing vector is gone and nothing rebuilds them on its own. **The dashboard prompts for it** while any resource is outside semantic search — without that prompt the failure is silent, because a catalog with no vectors does not error, it falls back to keywords and answers. Follow the prompt, or run **Regenerate embeddings** on the search admin page (`POST /api/v1/admin/reindex-embeddings`); rebuilding the metadata index queues the same work. Nothing is re-fetched and no file is reprocessed. A rolling update is safe in the meantime: images from before this release query the dropped columns, and their vector leg failing degrades the search to keyword-only rather than erroring (#625, #647).
+- **Re-analyse the search index.** The Japanese analysis on the query side changed (#636), and an index's analysis is fixed when the index is created — re-sending documents to it does not apply a new one. The dashboard shows a one-time prompt while the live index predates the current analysis, and running it re-reads stored text without fetching anything (#628).
+
+**Highlights**
+
+- **Resources now carry an AI-written abstract (ADR-053).** At the end of the pipeline, a model reads the file and writes a short description of what is in it, shown on the resource page — a table from its column layout and first rows, a PDF or an image usually whole. There is nothing to adopt, unlike metadata suggestions: it is generated as resources are registered and rewritten when a file is replaced. Each abstract states how much of the file it was written from, and names the version it came from, so a description left behind by a replaced file says so instead of passing for current. Where nothing could be written the page gives the reason — over the size limit, a format the model cannot read, or bytes that are not the format the resource declares. **An abstract can be taken down but not replaced in this release.** An editor with rights to the resource can hide one — off the page, out of the search index, and out of the embedding, with the text kept for when it goes back — through `PUT /api/v1/resources/{id}/summary`, which no screen reaches yet. Replacing it with one's own text is withheld: the override left the row describing the sentence it replaced, and that is to be settled before an editor can produce the state. The feature is off unless `AI_SUMMARY_MODEL` names a model, because abstracts are generated per resource and the bill scales with the catalog; the site settings page estimates the scope and cost of a bulk generation before it runs, and the language is a runtime setting. On Bedrock the model has to be granted as well as named: add it to `bedrock.completionModels` in the environment definition and redeploy, which is what puts it in `AI_COMPLETION_MODELS` and grants `InvokeModel`. A Claude Sonnet 4.6 class model is what these are measured against; the Bedrock default, a single Nova Lite, cannot write them — forced JSON breaks and a scanned document comes back invented — so the recommended model has to be added to that list rather than settled for. An Anthropic model also needs the account's use-case form submitted and a one-time Marketplace subscribe; Titan and Nova need neither. The system administrator guide covers all of it (#602).
+- **Semantic search now works file by file rather than dataset by dataset (ADR-054).** A dataset's vector used to be one average of everything it held, which resembled none of its subjects: a dataset of many sheets computed a centroid that answered no question about any one of them. Each resource is embedded on its own instead, and results name which file matched and why: by meaning, by its AI-written abstract, or by its contents, with the similarity shown alongside. Measured offline on the golden set against the same model and catalog, moving the unit takes the vector leg's recall of short everyday wording from 65% to 89% and overall nDCG from 86% to 92%, with no query left without a candidate above the similarity floor (#625).
+- **Agents get both of the above, not just the browser.** The MCP tools were handed the same objects the web is and dropped them while building their text, so an agent asking which table to open got a list of datasets — the question restated. `search_datasets` now names the files a dataset matched on and what each match is on account of, which is the half that cannot be guessed: a match by meaning means the query's words appear nowhere in that file. `get_resource` carries the abstract, how much of the file it was written from, and the version it describes — an agent cannot otherwise tell a summary of a hundred rows from one of the whole table, or a description of v1 beside a v5 file (#649).
+- **Text lifted out of a file no longer outvotes what a dataset says about itself.** A word can appear once in one free-text answer among a thousand, and the index let that single chunk speak for the whole dataset — a survey whose respondents happened to use a word outranked the documents whose abstracts are about it. Content matches are still counted, at a lower weight; on the golden set, removing them entirely costs 5 points, so they earn their place (#635).
+- **A politely phrased question no longer constrains what a document must contain.** The general Japanese stopword list was applied to extracted text on the query side, which dropped ordinary words a document actually uses, while the request forms a question is wrapped in became terms the document was required to contain. Document text now has its own query analyzer: the request boilerplate goes, and nothing else (#636).
+
+**Features**
+
+- feat: write AI-generated abstracts for resources (ADR-053) (#602)
+- feat(search): embed per resource and name the resource a semantic hit matched (ADR-054) (#625)
+- feat(search): rebuild the index when the Japanese analysis has moved on (#628) — the prompt appears only while the live index predates the current analysis, and clears itself once the rebuild completes.
+- feat(api): serve only the hiding half of the abstract override (#653) — the body is strict, so an override sent beside a hide is refused rather than dropped. The pipeline's guards ship regardless, declining to overwrite an editor's text and to rewrite a hidden abstract.
+- feat(mcp): give agents the abstract and the file a search matched (#649) — the tool descriptions say so too, since that is what an agent reads to decide what a call will give it.
+- feat(search): prompt to rebuild the embeddings a migration left empty (#647) — counted per resource against the current model key, and quiet while a package's generation is still pending.
+
+**Improvements**
+
+- perf(search): stop one chunk of a file from speaking for the dataset (#635)
+- perf(search): weigh the vector leg so it can carry an answer keyword search never found (#622)
+
+**Bug Fixes**
+
+- fix(search): stop a polite word from deciding what a document must contain (#636)
+- fix(worker): refuse bytes that are not the format the resource declares (#626) — a dead link answered with an error page is not a PDF, and feeding those bytes to a model produced a description of the error page. The resource now records the mismatch as its reason instead.
+- fix(worker): find the title row in a CSV that starts with a byte-order mark (#637)
+- fix(web): say what the name rule actually rejects (#640) — the message named a narrower rule than the validator applies.
+- fix(api): show a dataset's tags in the same order on every screen (#642)
+- fix(api): say the connection is closing when an upload is refused, and do it from the request rather than the route (#641, #643)
+
+**Documentation**
+
+- The documentation site covers the abstracts, the per-resource search, and the reprocessing actions — including two that predate this release and had never been written down: rebuilding the search index and reprocessing content. All four now sit in one table saying what each rebuilds, whether it fetches anything, and when to run it. The administrator guide also says what enabling abstracts takes on Bedrock, which the example alone did not: the default allow-list holds one model, Nova Lite, and the recommended one has to be added to it and the environment redeployed (#644, #645, #646, #651).
+
+**Chores**
+
+- build(deps): bump the minor-and-patch group with 16 updates (#607)
+- build(deps): bump the actions group with 3 updates (#606)
+- build(deps-dev): bump prettier-plugin-astro to 1.0.0 (#609)
+- ci: run the unit tests beside lint and typecheck instead of behind them (#633)
+- ci: hold the integration Postgres data directory in memory (#629)
+
+---
+
+**アップグレード後に必要な作業**
+
+- **埋め込みベクトルを再生成してください。** マイグレーション `0046` はセマンティック検索のベクトルをパッケージからリソースへ移し（ADR-054）、パッケージ側の 3 列を削除します。既存のベクトルはすべて失われ、自動で作り直されることはありません。意味検索の対象外になっているリソースがある間、**ダッシュボードに案内が表示されます**。案内を出しているのは、この失敗が無言だからです — ベクトルが 1 本も無いカタログでも検索はエラーにならず、キーワードのみに縮退して結果を返します。案内から実行するか、検索管理画面の**埋め込みベクトルの再生成**（`POST /api/v1/admin/reindex-embeddings`）を実行してください（検索インデックスの再構築でも同じ処理が投入されます）。再取得もファイルの再処理も行いません。その間のローリング更新は安全です。本リリース以前のイメージは削除済みの列を参照しますが、ベクトル脚の失敗は検索を失敗させずキーワードのみに縮退させるためです（#625, #647）。
+- **検索インデックスを再解析してください。** 検索側の日本語解析を変更しました（#636）。解析方法はインデックス作成時に決まるため、同じインデックスに文書を送り直しても新しい解析は適用されません。稼働中のインデックスが現在の解析より古い間、ダッシュボードに一度きりの案内が表示されます。保存済みのテキストを読み替えるだけで、外部からの取得は行いません（#628）。
+
+**ハイライト**
+
+- **リソースに AI が書いた説明が付きます（ADR-053）。** パイプラインの最後でモデルがファイルを読み、中身を短く説明した文をリソースページに表示します。表なら列の構成と先頭の行から、PDF や画像は多くの場合その全体から書かれます。メタデータ提案と違い**採用の操作はありません** — リソースの登録時に生成され、ファイルを差し替えれば書き直されます。各説明には**どこまで読んで書いたか**と、どの版から生成したかが併記されるため、差し替え後に取り残された説明が最新のものとして通ることがありません。生成できなかった場合はその理由（サイズ上限超過、モデルが読めない形式、登録された形式と中身が違う）が表示されます。**このリリースでは、抄録を取り下げることはできますが、差し替えはできません。** リソースの編集権限を持つ編集者は `PUT /api/v1/resources/{id}/summary` で非表示にできます — ページからも検索インデックスからも埋め込みからも外れ、本文は残るので戻せます。ただし**管理画面からの経路はまだ無く**、API を直接呼びます。本文を自分の文に差し替える操作は見送りました。上書きすると、置き換えられた文の来歴が行に残るためで、編集者がその状態を作れるようにする前に整理すべきと判断しました。この機能は `AI_SUMMARY_MODEL` にモデル名を設定するまで無効です — 抄録はリソース 1 件ごとに生成され、費用がカタログの規模に比例するためで、一括生成の前にはサイト管理画面が対象件数と推定費用を表示します。生成言語はランタイム設定です。**Bedrock では指定するだけでなく、そのモデルの利用を許可する必要があります** — 環境定義の `bedrock.completionModels` に追加して再デプロイしてください。これが `AI_COMPLETION_MODELS` への注入と `InvokeModel` の IAM 許可を行います。**推奨は Claude Sonnet 4.6 相当**です。Bedrock の既定は Nova Lite 1 本ですが、**Nova は抄録には使えません** — 実測で強制 JSON が壊れ、スキャン文書では内容を捏造しました。既定で妥協せず、推奨モデルをリストに追加してください。Anthropic のモデルは、あわせてアカウントでの利用ユースケースフォームの提出と、一度きりの Marketplace サブスクライブも必要です（Titan / Nova はどちらも不要）。手順はシステム管理者ガイドにあります（#602）。
+- **セマンティック検索がデータセット単位からファイル単位になりました（ADR-054）。** 従来はデータセットが持つすべてを平均した 1 本のベクトルで、どの主題にも似ていない重心になっていました — シートを多く持つデータセットの重心は、そのどの 1 枚についての問いにも答えません。リソースごとに埋め込むよう変更し、検索結果には**どのファイルが一致したか**と、その根拠（意味・AI による説明・本文）を類似度とともに表示します。同じモデル・同じ母集団でのオフライン測定では、単位の変更によりベクトル脚の生活語 Recall@10 が 65% → 89%、overall nDCG が 86% → 92% となり、類似度の下限を 1 件も超えない問いが無くなりました（#625）。
+- **上記 2 つがエージェントにも届きます。** MCP のツールは Web と同じオブジェクトを受け取りながら、テキスト整形時にそれらを捨てていました。「どの表を開けばよいか」を尋ねたエージェントに返るのがデータセットの一覧では、問いを言い換えただけです。`search_datasets` は一致したファイル名と**一致の根拠**を返すようになりました。根拠は推測できない情報です — 意味で一致した場合、検索語はそのファイルのどこにも現れません。`get_resource` は抄録に加えて、**どこまで読んで書いたか**と**どの版を説明しているか**を返します。これが無いと、100 行の要約か表全体の要約かも、v5 のファイルに付いた v1 の説明かも判別できません（#649）。
+- **ファイルから抽出した本文が、データセット自身の記述を上回らなくなりました。** ある語が 1000 件の自由記述のうち 1 件に一度現れるだけでも、その 1 チャンクがデータセット全体を代表してしまっていました — 回答者がたまたまその語を使ったアンケートが、その語について書かれた文書を上回る状態です。本文一致は引き続き数えますが、重みを下げました。ゴールデンセットでは本文を完全に外すと 5 ポイント下がるため、本文にも相応の価値があります（#635）。
+- **丁寧な言い回しの質問が、文書に含まれるべき語を決めてしまうことがなくなりました。** 抽出テキストの検索側に一般的な日本語ストップワードを適用していたため、文書が実際に使う普通の語（「こと」「もの」等）が落ち、一方で質問を包む依頼表現（「〜を教えてください」）はそのまま文書が含むべき語になっていました。文書本文には専用のクエリアナライザーを用意し、依頼表現だけを落として他は落としません（#636）。
+
+**機能**
+
+- feat: リソースの AI 生成抄録（ADR-053）（#602）
+- feat(search): リソース単位の埋め込みと、意味一致したリソース名の表示（ADR-054）（#625）
+- feat(search): 日本語解析が更新されたときのインデックス再構築（#628）— 案内は稼働中のインデックスが現在の解析より古い間だけ表示され、完了すると自動的に消えます。
+- feat(api): 抄録に対する編集者の操作のうち非表示のみを提供（#653）— ボディは `.strict()` なので、非表示に添えて上書きを送ると黙って捨てるのではなく拒否します。パイプラインのガード（編集者の文を上書きしない、非表示のものを再生成しない）は従来どおり出荷されます。
+- feat(mcp): AI による説明と、検索が一致させたファイルをエージェントへ（#649）— ツールの description も更新しました。エージェントはそれを読んで呼び出しを決めるためです。
+- feat(search): マイグレーションで空になった埋め込みの再生成を促す案内（#647）— 現在のモデルキーに対してリソース単位で数え、生成待ちのパッケージがある間は表示しません。
+
+**改善**
+
+- perf(search): 1 つのチャンクがデータセット全体を代表しないように（#635）
+- perf(search): キーワード検索が見つけられない答えをベクトル脚が運べるよう重み付け（#622）
+
+**バグ修正**
+
+- fix(search): 丁寧語が文書の必須語を決めてしまう問題を修正（#636）
+- fix(worker): 登録された形式と異なるバイト列を拒否（#626）— リンク切れでエラーページが返ってきたものは PDF ではなく、そのバイト列をモデルに渡すとエラーページの説明が生成されていました。現在は不一致を理由として記録します。
+- fix(worker): BOM で始まる CSV のタイトル行を正しく検出（#637）
+- fix(web): 名前の規則が実際に何を拒否するのかを表示（#640）— 実際のバリデーションより狭い規則を案内していました。
+- fix(api): データセットのタグの並び順をすべての画面で統一（#642）
+- fix(api): アップロード拒否時に接続を閉じる旨を伝え、ルートではなくリクエスト側で処理（#641, #643）
+
+**ドキュメント**
+
+- ドキュメントサイトに抄録・リソース単位検索・再処理の各操作を追加しました。本リリース以前から存在しながら記載が無かった 2 つ（検索インデックスの再構築、コンテンツの再処理）を含め、4 つの操作を 1 つの表にまとめ、何を作り直すか・外部から取得するか・いつ実行するかを揃えています。管理者ガイドには、Bedrock で抄録を有効にするのに何が要るかも追記しました — 既定の許可リストは Nova Lite 1 本で、推奨モデルを追加して再デプロイする必要があります（#644, #645, #646, #651）。
+
+**雑務**
+
+- build(deps): minor/patch グループ 16 件の更新（#607）
+- build(deps): actions グループ 3 件の更新（#606）
+- build(deps-dev): prettier-plugin-astro を 1.0.0 へ更新（#609）
+- ci: ユニットテストを lint・typecheck の後ろではなく並行して実行（#633）
+- ci: 統合テストの Postgres データディレクトリをメモリ上に配置（#629）
+
 ## [0.29.0] - 2026-09-11
 
 **Breaking Changes**
