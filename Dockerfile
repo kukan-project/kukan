@@ -73,17 +73,23 @@ CMD ["/bin/sh", "-c", "HOSTNAME=0.0.0.0 node apps/web/server.js"]
 # (and dozens of CVEs) into the runtime image even in prod mode. --legacy is
 # required for deploy with inject-workspace-packages disabled.
 #
-# --no-optional also drops DuckDB's platform binding, which is an optional
-# dependency of @duckdb/node-bindings — without it DuckLake (ADR-043 layer 2)
-# throws on the first ingest. The deps stage installed it for this image's own
-# platform, so copy that one back in rather than widening the flag.
+# --no-optional also drops the platform binaries that ship as optional
+# dependencies: DuckDB's binding (@duckdb/node-bindings-*), without which
+# DuckLake (ADR-043 layer 2) throws on the first ingest, and sharp's
+# (@img/sharp-* — the module plus libvips), without which the worker throws on
+# boot because summarize.ts imports sharp at the top level (ADR-053). The deps
+# stage installed them for this image's own platform, so copy those back in
+# rather than widening the flag.
 FROM build AS worker-deps
-# The glob copies whichever binding the deps stage resolved for this image's
+# The globs copy whichever binaries the deps stage resolved for this image's
 # platform, so an arm64 build needs no change here.
 RUN pnpm --filter @kukan/worker deploy --prod --no-optional --legacy /app/worker-deploy \
   && mkdir -p /app/worker-deploy/node_modules/.pnpm/node_modules/@duckdb \
   && cp -RL /app/node_modules/.pnpm/node_modules/@duckdb/node-bindings-* \
-    /app/worker-deploy/node_modules/.pnpm/node_modules/@duckdb/
+    /app/worker-deploy/node_modules/.pnpm/node_modules/@duckdb/ \
+  && mkdir -p /app/worker-deploy/node_modules/.pnpm/node_modules/@img \
+  && cp -RL /app/node_modules/.pnpm/node_modules/@img/sharp-* \
+    /app/worker-deploy/node_modules/.pnpm/node_modules/@img/
 
 # ---- Worker (tsup bundle — workspace packages are bundled, npm deps are external) ----
 FROM base AS worker
