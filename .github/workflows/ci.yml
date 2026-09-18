@@ -391,8 +391,9 @@ jobs:
 
   # The one place pull request CI runs `next build`. Nothing else does —
   # deploy-site builds only @kukan/site, CodeQL is build-mode none, and the
-  # Dockerfile runs in the deploy pipeline. `tsc --noEmit` in `lint-typecheck`
-  # does not stand in for it, since a Next build also rejects server/client
+  # Dockerfile's web target runs only in the deploy pipeline (`worker-image`
+  # below builds the worker target). `tsc --noEmit` in `lint-typecheck` does
+  # not stand in for it, since a Next build also rejects server/client
   # boundary violations and invalid route exports.
   #
   # It used to run inside `integration`, in front of the database suites; a job
@@ -483,3 +484,105 @@ jobs:
         with:
           path: .turbo/cache
           key: turbo-web-${{ runner.os }}-${{ github.sha }}
+
+  # Build the runtime images and boot them. Twice now a worker image has crashed
+  # on boot with no test having run against it: the deploy pipeline was the first
+  # thing to build the Dockerfile, and the deploy circuit breaker the first thing
+  # to run the result. Both times a native module's platform binary was missing —
+  # DuckDB's binding, then sharp's — because the worker's `pnpm deploy
+  # --no-optional` drops optional dependencies and the Dockerfile copies the ones
+  # it knows about back in. `web-build`'s boot smoke would not have caught either:
+  # it boots the standalone output on the runner, and the runner is glibc while
+  # the image is Alpine, so what resolves there can still be missing here.
+  # Building the images is the only test that runs on their own libc.
+  #
+  # Both targets, because both runtime stages carry hand-copied native libraries
+  # (the worker's two bindings, the web's libduckdb.so) and share the edits that
+  # trim the images. The targets share the `deps` and `build` stages, so the
+  # second costs its own runtime stage rather than another full build.
+  #
+  # Not part of `quality`: a registry or network failure during a build should
+  # not block a PR the way a lint error does. The change filter is `integration`'s
+  # minus the web app's sources, which the `build` stage compiles — `web-build`
+  # is the check a web change answers to.
+  #
+  # No layer cache, deliberately. Exporting this build's layers measured 1.9 GB
+  # whether or not the intermediate stages were included, against the
+  # repository's 10 GB budget that the pnpm store, the turbo caches, and the
+  # DuckDB extensions already share — one entry would evict the rest. The job
+  # runs beside the others rather than in front of anything, so a cold build
+  # costs wall clock only when it is the slowest job of the run.
+  docker-images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # need history to diff against the PR base
+
+      - name: Detect changes this job runs against
+        id: changes
+        uses: ./.github/actions/detect-changes
+        with:
+          ignore: '(\.mdx?$|\.astro$|^docs/|^site/|^infra/|^apps/web/(src|brands|public)/)'
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: steps.changes.outputs.code == 'true'
+
+      - name: Build the worker image
+        if: steps.changes.outputs.code == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: worker
+          tags: kukan-worker:ci
+          load: true
+
+      - name: Build the web image
+        if: steps.changes.outputs.code == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: web
+          tags: kukan-web:ci
+          load: true
+
+      # No env is given on purpose. The entrypoint validates its environment
+      # right after its imports resolve, so stopping there proves every module —
+      # native bindings included — loaded on the image's own libc, which is the
+      # failure both incidents shared. A missing binary throws from the import
+      # instead, and the step fails with the output attached.
+      - name: Boot-smoke the worker image
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          out=$(docker run --rm kukan-worker:ci node apps/worker/dist/index.js 2>&1 || true)
+          if printf '%s' "$out" | grep -q 'ZodError'; then
+            echo 'boot smoke: imports resolved, stopped at env validation'; exit 0
+          fi
+          echo 'boot smoke: the worker did not reach env validation'
+          printf '%s\n' "$out" | head -20
+          exit 1
+
+      # Same idea, one step later: the web image has no env either, so any HTTP
+      # response (the env-validation 500 included) means the server resolved its
+      # modules and initialised. See `web-build` for the same check against the
+      # standalone output.
+      - name: Boot-smoke the web image
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          docker run --rm -d --name kukan-web-ci -p 3999:3000 kukan-web:ci
+          trap 'docker rm -f kukan-web-ci >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 60); do
+            if [ -z "$(docker ps -q -f name=kukan-web-ci)" ]; then
+              echo 'boot smoke: the container exited before responding'
+              docker logs kukan-web-ci 2>&1 | head -20
+              exit 1
+            fi
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 1 http://127.0.0.1:3999/ || true)
+            if [ -n "$code" ] && [ "$code" != "000" ]; then
+              echo "boot smoke: HTTP $code"; exit 0
+            fi
+            sleep 1
+          done
+          echo 'boot smoke: no HTTP response within 60s'
+          docker logs kukan-web-ci 2>&1 | head -20
+          exit 1
