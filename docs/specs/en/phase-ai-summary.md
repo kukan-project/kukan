@@ -597,11 +597,11 @@ and nothing comes back for it — left alone, the abstract **never reaches the i
 
 Three paths enqueue a `sync-resource-doc` job.
 
-| Path                   | Where                           |
-| ---------------------- | ------------------------------- |
-| the pipeline step      | beside the embedding enqueue    |
-| the backfill walk      | per resource (the vector waits) |
-| an editor's own change | `PUT /resources/:id/summary`    |
+| Path                 | Where                                                     |
+| -------------------- | --------------------------------------------------------- |
+| the pipeline step    | beside the embedding enqueue                              |
+| the backfill walk    | per resource (the vector waits)                           |
+| an editor hiding one | `PUT /resources/:id/summary` (override not served, §10.2) |
 
 **Queued rather than written, to settle who retries.** The write that makes the document stale
 is not one that can retry it: Summarize runs after Index and is best-effort, so a search index
@@ -638,13 +638,25 @@ The resource representation gains the abstract. **It is not added to the CKAN-co
 
 Assembled in one place, `publicSummary()` (§4.1).
 
-### 10.2 What an editor can do
+### 10.2 What an editor can do — **hiding only**
 
-`PATCH /api/v1/resource/:id/summary`
+`PUT /api/v1/resources/:id/summary`
 
 - **Override**: replace the text and set `source: 'human'`. The AI never overwrites it again
 - **Hide**: `hidden: true`. Display, embedding and generation all stop
 - Permissions are the resource's edit permissions
+
+> **The override was withdrawn before shipping.** It sets the source but leaves `material`,
+> `coverage` and `version` behind it, so the row goes on describing the sentence it replaced —
+> every reader having to know which half of the meta to disbelieve. That is to be settled
+> before an editor can produce the state. The route takes `{ hidden: boolean }` alone.
+>
+> **The service keeps both.** The pipeline's guard ships — Summarize declines to overwrite an
+> abstract whose source is `human` — and with no way to produce that state it would ship
+> untested. The pipeline's integration tests are the override's only callers. Reinstating it
+> is filed separately.
+>
+> **Hiding has no screen yet.** An editor calls the API directly.
 
 ### 10.3 Web
 
@@ -794,15 +806,15 @@ no sense in being able to press an action that would do nothing.
 
 ## 13. Test strategy
 
-| Kind        | Target                                                                                                   |
-| ----------- | -------------------------------------------------------------------------------------------------------- |
-| Unit        | Material routing (characters per PDF page, limits, formats), hash inputs, skip-reason selection          |
-| Unit        | Embedding assembly order and **sentence-level truncation**, exclusion of hidden abstracts                |
-| Unit        | Adapter: pinned Converse input shape, error classification (permanent vs transient)                      |
-| Unit        | The public projection never returns `hash` or `rejectedTokens`                                           |
-| Integration | The Summarize step (generate / skip / a failure not affecting later steps), `source: 'human'` protection |
-| Integration | The backfill chain (requeue, the terminal embed, resuming mid-way)                                       |
-| E2E         | The abstract and its notice on the resource page, the reason when absent, editor override and hide       |
+| Kind        | Target                                                                                                                        |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Unit        | Material routing (characters per PDF page, limits, formats), hash inputs, skip-reason selection                               |
+| Unit        | Embedding assembly order and **sentence-level truncation**, exclusion of hidden abstracts                                     |
+| Unit        | Adapter: pinned Converse input shape, error classification (permanent vs transient)                                           |
+| Unit        | The public projection never returns `hash` or `rejectedTokens`                                                                |
+| Integration | The Summarize step (generate / skip / a failure not affecting later steps), `source: 'human'` protection                      |
+| Integration | The backfill chain (requeue, the terminal embed, resuming mid-way)                                                            |
+| E2E         | The abstract and its notice on the resource page, and the reason when absent (hiding is API-only, override not served, §10.2) |
 
 Every LLM call is mocked. The only real provider calls are the evaluation in §14.
 

@@ -2507,51 +2507,18 @@ describe('PUT /api/v1/resources/:id/summary (ADR-053)', () => {
     return row
   }
 
-  it("marks an editor's own text as a person's, so generation leaves it alone", async () => {
-    const { resource } = await withAbstract('summary-override')
-
-    const res = await app.request(`/api/v1/resources/${resource.id}/summary`, {
+  function hide(id: string, body: unknown, as = app) {
+    return as.request(`/api/v1/resources/${id}/summary`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ summary: '人が書いた説明。' }),
+      body: JSON.stringify(body),
     })
-    expect(res.status).toBe(200)
-
-    const stored = await storedSummary(resource.id)
-    expect(stored.summary).toBe('人が書いた説明。')
-    expect(stored.meta.source).toBe('human')
-    // The generation key belonged to a run this text did not come from: left
-    // in place, the next run would read this as its own and keep it
-    expect(stored.meta.genKey).toBeUndefined()
-  })
-
-  it('hands the resource back to generation when the text is cleared', async () => {
-    const { resource } = await withAbstract('summary-clear')
-    await app.request(`/api/v1/resources/${resource.id}/summary`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ summary: '人が書いた説明。' }),
-    })
-
-    await app.request(`/api/v1/resources/${resource.id}/summary`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ summary: null }),
-    })
-
-    const stored = await storedSummary(resource.id)
-    expect(stored.summary).toBeNull()
-    expect(stored.meta.source).toBeUndefined()
-  })
+  }
 
   it('keeps hidden as state, so the next run does not undo it', async () => {
     const { resource } = await withAbstract('summary-hide')
 
-    await app.request(`/api/v1/resources/${resource.id}/summary`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hidden: true }),
-    })
+    await hide(resource.id, { hidden: true })
 
     const stored = await storedSummary(resource.id)
     expect(stored.meta.hidden).toBe(true)
@@ -2569,43 +2536,67 @@ describe('PUT /api/v1/resources/:id/summary (ADR-053)', () => {
     expect(before.summaryMeta.grounded).toBeUndefined()
     expect(before.summaryMeta.source).toBe('ai')
 
-    await app.request(`/api/v1/resources/${resource.id}/summary`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hidden: true }),
-    })
+    await hide(resource.id, { hidden: true })
 
     const after = await (await app.request(`/api/v1/resources/${resource.id}`)).json()
     expect(after.summary).toBeNull()
   })
 
+  it('puts a hidden abstract back on the page when it is unhidden', async () => {
+    const { resource } = await withAbstract('summary-unhide')
+    await hide(resource.id, { hidden: true })
+
+    await hide(resource.id, { hidden: false })
+
+    const stored = await storedSummary(resource.id)
+    expect(stored.meta.hidden).toBeUndefined()
+    const served = await (await app.request(`/api/v1/resources/${resource.id}`)).json()
+    expect(served.summary).toBe('AI が書いた抄録。')
+  })
+
+  it('does not take an override: the route is the hiding half alone', async () => {
+    // Withheld until the provenance an override leaves behind is settled. The
+    // service still has the branch, because the pipeline's guard needs the
+    // state — but nobody can reach it through the API.
+    const { resource } = await withAbstract('summary-no-override')
+
+    const res = await hide(resource.id, { summary: '人が書いた説明。' })
+
+    expect(res.status).toBe(400)
+    const stored = await storedSummary(resource.id)
+    expect(stored.summary).toBe('AI が書いた抄録。')
+    expect(stored.meta.source).toBe('ai')
+  })
+
+  it('refuses an override smuggled in beside a hide, rather than dropping it', async () => {
+    // The schema is strict for this: Zod strips what it does not know, which
+    // would answer 200 and ignore the text — telling the caller their words
+    // were accepted when nothing of them was kept.
+    const { resource } = await withAbstract('summary-override-beside-hide')
+
+    const res = await hide(resource.id, { hidden: true, summary: '人が書いた説明。' })
+
+    expect(res.status).toBe(400)
+    const stored = await storedSummary(resource.id)
+    expect(stored.summary).toBe('AI が書いた抄録。')
+    expect(stored.meta.source).toBe('ai')
+    // And the hide did not happen either: the request was refused whole
+    expect(stored.meta.hidden).toBeUndefined()
+  })
+
   it('rejects a body that asks for nothing', async () => {
-    const { resource } = await withAbstract('summary-empty')
-    const res = await app.request(`/api/v1/resources/${resource.id}/summary`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    })
+    const { resource } = await withAbstract('summary-empty-body')
+
+    const res = await hide(resource.id, {})
+
     expect(res.status).toBe(400)
   })
 
   it('refuses an editor who has no rights to the package', async () => {
     const { resource } = await withAbstract('summary-outsider')
-    await ensureOutsiderUser()
-    const outsiderApp = createTestApp(db, {
-      user: {
-        id: OUTSIDER_USER_ID,
-        email: 'outsider@example.com',
-        name: 'outsider',
-        sysadmin: false,
-      },
-    })
 
-    const res = await outsiderApp.request(`/api/v1/resources/${resource.id}/summary`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hidden: true }),
-    })
+    const res = await hide(resource.id, { hidden: true }, outsiderApp)
+
     expect(res.status).toBe(403)
   })
 })

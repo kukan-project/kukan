@@ -651,6 +651,16 @@ That is an explanation of what an abstract is, not an evasion.
 human description. Where a human description already exists, the AI text does not take the
 lead.
 
+> **Only the hiding half is served in v0.30.0.** An override sets the source but leaves
+> `material`, `coverage` and `version` behind it, so the row goes on describing the
+> sentence it replaced — every reader having to know which half of the meta to
+> disbelieve. That is to be settled before an editor can produce the state.
+>
+> Hiding carries none of that: one flag, no claim about who wrote what, and **the only
+> answer to a generated sentence that should not be on the page** — so it is not
+> withheld alongside the other. No screen reaches it yet; an editor goes through the
+> API.
+
 ### 8. The embedding contribution is added by rearranging, not replacing
 
 **Metadata is not replaced; the assembly is rearranged.** The concatenated abstracts join

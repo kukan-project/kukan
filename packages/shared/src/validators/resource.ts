@@ -193,19 +193,28 @@ export type ColumnSettingsInput = z.infer<typeof columnSettingsBodySchema>
 /**
  * What an editor may change about an abstract (ADR-053 §10.2).
  *
- * Two operations, and both are decisions generation has to respect afterwards:
- * text of one's own, which is never overwritten, and hidden, which takes the
- * abstract off the page, out of the embedding, and out of the next run.
- * Clearing the text (`null`) hands the resource back to generation.
+ * **Hiding only, for now.** The decision the ADR records is two: text of one's
+ * own, and hidden. The override is withheld — it sets the source and leaves
+ * the material, coverage and version behind it, so the row goes on describing
+ * the sentence it replaced, and every reader has to know which half of the
+ * meta to disbelieve. That is to be settled before an editor can produce the
+ * state.
+ *
+ * Hiding carries none of that. It sets one flag, claims nothing about who
+ * wrote what, and is the only answer to a generated sentence that should not
+ * be on the page — which is why it is not withheld alongside the other.
+ * The service still takes both, because the pipeline's guard tests drive its
+ * override branch; this schema is what an editor may send.
  */
 export const resourceSummaryBodySchema = z
   .object({
-    summary: z.string().trim().max(4000).nullable().optional(),
-    hidden: z.boolean().optional(),
+    hidden: z.boolean(),
   })
-  .refine((body) => body.summary !== undefined || body.hidden !== undefined, {
-    message: 'Provide summary, hidden, or both',
-  })
+  // `.strict()`, so an override is refused rather than dropped. Zod strips what
+  // it does not know by default, which would answer `{ hidden, summary }` with
+  // 200 and silently ignore half of it — the worst reading of a withheld
+  // feature, since the caller is told their text was accepted.
+  .strict()
 
 export type ResourceSummaryInput = z.infer<typeof resourceSummaryBodySchema>
 

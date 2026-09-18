@@ -136,6 +136,7 @@ the listing.
 | GET    | `/resources/{id}/column-settings`       | What has been settled about the columns, and what there is to settle over | Org editor |
 | POST   | `/resources/{id}/column-settings/check` | Would this primary key identify the rows?                                 | Org editor |
 | PUT    | `/resources/{id}/column-settings`       | Settle the primary key                                                    | Org editor |
+| PUT    | `/resources/{id}/summary`               | Hide or unhide the AI-written description (`{ hidden }`)                  | Org editor |
 | PUT    | `/resources/{id}`                       | Update resource (full replacement; extras is system-managed)              | Org editor |
 | DELETE | `/resources/{id}`                       | Delete resource                                                           | Org editor |
 
@@ -497,6 +498,25 @@ data.
   version disagree, so a caller that ignores `false` leaves a key no version is ever read under
 - Versions already in layer 2 are not re-read under the new key. The boundary is the version
   itself, and diffs across it fall back to comparing whole rows
+
+### Hiding an AI-written description
+
+`PUT /resources/{id}/summary` with `{"hidden": true}` takes an
+[AI-written description](/en/data-admin-guide/#ai-written-descriptions) off the page.
+`{"hidden": false}` puts it back.
+
+- **The text is not deleted.** Unhiding returns the same sentences
+- Hiding takes it out of the search index and the embedding as well as the page — so text
+  somebody took down does not go on answering searches
+- The pipeline does not regenerate a hidden description
+
+:::note
+**No screen does this yet.** Hiding means calling this endpoint directly.
+
+**Replacing a description with your own is not served in this release.** An override leaves
+the replaced sentence's provenance on the row, which is unsettled. What answers a bad
+description for now is hiding it, or reprocessing the resource.
+:::
 
 ## Organizations
 

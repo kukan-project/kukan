@@ -11,7 +11,7 @@
 import { and, eq, sql } from 'drizzle-orm'
 import type { Database } from '@kukan/db'
 import { resource } from '@kukan/db'
-import { NotFoundError, type ResourceSummaryInput, type ResourceSummaryMeta } from '@kukan/shared'
+import { NotFoundError, type ResourceSummaryMeta } from '@kukan/shared'
 
 export interface SummaryUpdate {
   id: string
@@ -27,10 +27,32 @@ export interface SummaryUpdate {
   embeddingChanged: boolean
 }
 
+/**
+ * What this service can change, which is wider than what an editor may send.
+ *
+ * The route takes `hidden` alone (`resourceSummaryBodySchema`): the override is
+ * withheld until the provenance it leaves behind is settled. The branch stays
+ * here because the pipeline's guard — Summarize declines to overwrite an
+ * abstract whose source is `human` — has no other way to be put in that state,
+ * and a guard nothing can produce the state for is a guard nothing tests.
+ */
+export interface SetResourceSummaryInput {
+  summary?: string | null
+  hidden?: boolean
+}
+
+/**
+ * Apply an editor's decision about an abstract.
+ *
+ * **The route reaches only the hiding half.** Overriding the text is withheld
+ * (see {@link SetResourceSummaryInput}); what an editor can do through the API
+ * is take a generated sentence off the page, which is the answer to one that
+ * should not be there.
+ */
 export async function setResourceSummary(
   db: Database,
   id: string,
-  input: ResourceSummaryInput
+  input: SetResourceSummaryInput
 ): Promise<SummaryUpdate> {
   const [current] = await db
     .select({

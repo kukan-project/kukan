@@ -133,6 +133,7 @@ curl -X POST https://your-kukan-site/api/v1/packages/drafts \
 | GET    | `/resources/{id}/column-settings`       | 確定済みの列情報と、確定に使える列                                           | 組織 editor |
 | POST   | `/resources/{id}/column-settings/check` | この主キーで行を同定できるか                                                 | 組織 editor |
 | PUT    | `/resources/{id}/column-settings`       | 主キーを確定する                                                             | 組織 editor |
+| PUT    | `/resources/{id}/summary`               | AI による説明を非表示にする / 戻す（`{ hidden }`）                           | 組織 editor |
 | PUT    | `/resources/{id}`                       | リソース更新（全フィールド置換、extras はシステム管理）                      | 組織 editor |
 | DELETE | `/resources/{id}`                       | リソース削除                                                                 | 組織 editor |
 
@@ -477,6 +478,20 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/versions/2/purge \
   無視すると、どの版もその主キーで読まれないまま残ります
 - **既に層 2 に入っている版を新しい主キーで読み直すことはしません。** 境界は版そのものであり、
   それをまたぐ差分は行全体の比較に縮退します
+
+### AI による説明の非表示
+
+`PUT /resources/{id}/summary`、本文 `{"hidden": true}` で、[AI による説明](/ja/data-admin-guide/#ai-による説明抄録)をページから外します。`{"hidden": false}` で戻します。
+
+- **本文は消えません。** 戻したときに同じ文が出ます
+- 非表示にすると、表示だけでなく**検索インデックスと埋め込みからも外れます** — 取り下げた文が検索に答え続けることがないようにするためです
+- 非表示のものはパイプラインが再生成しません
+
+:::note
+**管理画面からの操作はまだありません。** 非表示にするにはこの API を直接呼びます。
+
+**説明の差し替え（人手による上書き）はこのリリースでは提供していません。** 上書きは、置き換えられた AI 文の来歴が行に残るという未解決の問題を伴うためです。不適切な説明への対処は、非表示にするか、リソースを再処理するかになります。
+:::
 
 ## 組織 (organizations)
 
