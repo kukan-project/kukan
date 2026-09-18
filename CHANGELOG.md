@@ -6,6 +6,18 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.30.2] - 2026-09-18
+
+**Bug Fixes**
+
+- fix(docker): keep sharp's platform binaries in the worker image (#657) — the worker image built since 0.30.0 crashed on boot with `Could not load the "sharp" module using the linuxmusl-x64 runtime`: `sharp` (used to shrink images before writing an abstract, ADR-053) ships its module and libvips as optional dependencies, which the worker's `--no-optional` install drops. The image now copies them back in the way it already does for DuckDB's binding. Nothing else changes — no migration, no code — so a deployment that rolled back on 0.30.x can move forward with this release.
+
+---
+
+**バグ修正**
+
+- fix(docker): worker イメージに sharp のプラットフォームバイナリを残す（#657）— 0.30.0 以降の worker イメージは起動時に `Could not load the "sharp" module using the linuxmusl-x64 runtime` でクラッシュしていました。`sharp`（抄録生成前の画像縮小に使用、ADR-053）はモジュール本体と libvips を optional dependency として配布しており、worker の `--no-optional` インストールで落ちていたためです。DuckDB のバインディングと同じ方法でイメージに戻します。マイグレーションもコード変更もなく、0.30.x でロールバックしたデプロイはこのリリースで前進できます。
+
 ## [0.30.1] - 2026-09-18
 
 **Highlights**
