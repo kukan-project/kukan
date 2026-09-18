@@ -40,6 +40,26 @@ concurrency:
 permissions:
   contents: read
 
+# `unit`, `integration` and `docker-images` ask for a larger runner through
+# `CI_LARGE_RUNNER`. A standard hosted runner is 2 vCPU, and on it the work in
+# them does not overlap — vitest's own breakdown summed to 236s against a 260s
+# wall in `unit`, and `INTEGRATION_FORKS` in vitest.config.ts, which is a
+# connection budget as much as a worker count, collapses to 1. Measured across
+# the move to four cores: `unit` 316s to 152s, `integration` 164s to 101s,
+# `docker-images` 316s to 218s.
+#
+# The variable rather than the label, because a larger runner belongs to the
+# organization that pays for it, and this file is published to a repository in
+# another one. A label that resolves nowhere does not fail the job — it queues
+# it, with nothing to say why — so a repository without the runner is left to
+# name nothing and get the standard one.
+#
+# `lint-typecheck` and `web-build` stay on the standard runner. Neither is on the
+# critical path (80s and 99s against the others' 218s), so paying twice the rate
+# to finish them earlier buys nothing. Larger runners bill outside the included
+# minutes at about twice the standard rate, so the arithmetic is that halving a
+# job's wall clock leaves its cost roughly where it was.
+
 jobs:
   # The name the branch ruleset requires, and nothing else: the two jobs below
   # hold the work it used to do.
@@ -180,7 +200,7 @@ jobs:
   # nothing here waits on lint or typecheck — the two overlap now instead of
   # queueing.
   unit:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LARGE_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -287,7 +307,7 @@ jobs:
   # nothing this job runs reaches either — @kukan/site is not in the vitest
   # workspace, and infra's synth tests are unit tests that run in `unit`.
   integration:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LARGE_RUNNER || 'ubuntu-latest' }}
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -502,9 +522,19 @@ jobs:
   # second costs its own runtime stage rather than another full build.
   #
   # Not part of `quality`: a registry or network failure during a build should
-  # not block a PR the way a lint error does. The change filter is `integration`'s
-  # minus the web app's sources, which the `build` stage compiles — `web-build`
-  # is the check a web change answers to.
+  # not block a PR the way a lint error does.
+  #
+  # It runs on the changes that decide what lands in the images rather than on
+  # every pull request: the Dockerfile, the lockfile and the manifests, and the
+  # bundler config that decides what stays external. Both incidents are in that
+  # list — sharp arrived as a worker dependency, DuckDB's binding the same way —
+  # and so are the weekly dependency bumps, which is where a platform binary
+  # moves without anyone meaning to. Measured over the last 50 commits on
+  # develop, 13 touched one of these. A release is in the list too, through the
+  # version line in the root package.json: it is the last moment to check what
+  # is about to be tagged. What this does not cover is a new top-level import of
+  # a dependency already declared — the manifests do not move, and the first
+  # sign would be the deploy.
   #
   # No layer cache, deliberately. Exporting this build's layers measured 1.9 GB
   # whether or not the intermediate stages were included, against the
@@ -513,7 +543,7 @@ jobs:
   # runs beside the others rather than in front of anything, so a cold build
   # costs wall clock only when it is the slowest job of the run.
   docker-images:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LARGE_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -523,7 +553,9 @@ jobs:
         id: changes
         uses: ./.github/actions/detect-changes
         with:
-          ignore: '(\.mdx?$|\.astro$|^docs/|^site/|^infra/|^apps/web/(src|brands|public)/)'
+          # The job's own definition is in the list: a change to how the images
+          # are built or checked runs the check.
+          only: '^(Dockerfile|\.dockerignore|pnpm-lock\.yaml|pnpm-workspace\.yaml|(.*/)?package\.json|apps/worker/tsup\.config\.ts|\.github/(workflows/ci\.yml|actions/detect-changes/action\.yml))$'
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         if: steps.changes.outputs.code == 'true'

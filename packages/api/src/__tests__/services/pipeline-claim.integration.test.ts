@@ -613,22 +613,15 @@ describe('stillHeld — ordering against the cancel', () => {
     // `cancelResourceRun` returns having stopped a run that goes on writing.
     const owner = await hold()
     const claim = { id: pipelineId, owner }
-    const order: string[] = []
 
     // Something else holds the row the write is aimed at — an upload promoting,
     // a purge restoring — so the write has to wait, as it would in production.
     await blocker.query('BEGIN')
     await blocker.query(`UPDATE resource SET size = 1 WHERE id = $1`, [resourceId])
 
-    const written = writeAsRun(claim).then((r) => {
-      order.push('write')
-      return r.rows.length
-    })
+    const written = writeAsRun(claim).then((r) => r.rows.length)
     await waitForBlocked(1)
-    const cancelled = cancelResourceRun(db, resourceId).then((c) => {
-      order.push('cancel')
-      return c
-    })
+    const cancelled = cancelResourceRun(db, resourceId)
     // The cancel is behind the write's `FOR SHARE` now, which is the order the
     // release below plays out.
     await waitForBlocked(2)
@@ -636,11 +629,15 @@ describe('stillHeld — ordering against the cancel', () => {
     await blocker.query('COMMIT')
     const [rows, stopped] = await Promise.all([written, cancelled])
 
-    expect(stopped).toBe(true)
-    expect(order).toEqual(['write', 'cancel'])
-    // It wrote, and that is correct: it got there first. What must not happen is
-    // the other order — a cancel that has already returned, then a write.
+    // The order is read from what the statements did, not from which promise
+    // settled first. Two pooled connections resolve in whichever order the event
+    // loop reaches their sockets, which is a fact about the schedule and not
+    // about the database — it inverts under load, and it cannot fail on its own
+    // without one of these two failing with it. `stillHeld` held when the write
+    // ran, so the cancel had not committed; the cancel then still found a claim
+    // to clear, so it waited behind the write rather than returning first.
     expect(rows).toBe(1)
+    expect(stopped).toBe(true)
   })
 
   it('refuses once the cancel has settled', async () => {

@@ -6,11 +6,21 @@ inputs:
     description: >-
       Extended regular expression matching the paths this job does not run
       against. A pull request that changes nothing else is skipped.
-    required: true
+      Give this or `only`, not both.
+    required: false
+  only:
+    description: >-
+      Extended regular expression matching the only paths this job runs
+      against — the inverse of `ignore`, for a job whose inputs are a short
+      list rather than most of the tree. A push is filtered the same way,
+      rather than running everything: a job named this way has no cache to
+      warm, so running it on every merge would only repeat what the pull
+      request already answered.
+    required: false
 
 outputs:
   code:
-    description: '"true" when a path outside `ignore` changed, "false" otherwise.'
+    description: '"true" when a path the job runs against changed, "false" otherwise.'
     value: ${{ steps.detect.outputs.code }}
 
 runs:
@@ -22,27 +32,50 @@ runs:
         EVENT_NAME: ${{ github.event_name }}
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
         HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        PUSH_BEFORE: ${{ github.event.before }}
+        PUSH_AFTER: ${{ github.sha }}
         IGNORE: ${{ inputs.ignore }}
+        ONLY: ${{ inputs.only }}
       run: |
-        # A push to develop has no PR base to diff against, and its job is to
-        # leave warm caches behind — so it always runs everything.
-        if [ "$EVENT_NAME" != 'pull_request' ]; then
+        if [ -n "$ONLY" ] && [ -n "$IGNORE" ]; then
+          echo "::error::give detect-changes `only` or `ignore`, not both"; exit 1
+        fi
+        if [ -z "$ONLY" ] && [ -z "$IGNORE" ]; then
+          echo "::error::detect-changes needs `only` or `ignore`"; exit 1
+        fi
+        if [ "$EVENT_NAME" = 'pull_request' ]; then
+          # merge-base keeps the diff correct if the base branch advanced.
+          base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
+          head="$HEAD_SHA"
+        elif [ -n "$ONLY" ] && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+          # An `only` job has no cache to warm, so a push is filtered like a pull
+          # request. A first push to a branch, or one whose range has been
+          # rewritten, leaves nothing to diff — those fall through and run.
+          base="$PUSH_BEFORE"
+          head="$PUSH_AFTER"
+        else
+          # A push to develop has no PR base to diff against, and its job is to
+          # leave warm caches behind — so it always runs everything.
           echo "code=true" >> "$GITHUB_OUTPUT"
           echo "Push to develop — running everything."
           exit 0
         fi
-        # merge-base keeps the diff correct if the base branch advanced.
-        base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
-        files=$(git diff --name-only "$base" "$HEAD_SHA")
+        files=$(git diff --name-only "$base" "$head")
         echo "Changed files:"
         echo "$files"
-        rest=$(printf '%s\n' "$files" | grep -vE "$IGNORE" || true)
+        if [ -n "$ONLY" ]; then
+          rest=$(printf '%s\n' "$files" | grep -E "$ONLY" || true)
+        else
+          rest=$(printf '%s\n' "$files" | grep -vE "$IGNORE" || true)
+        fi
         # A release carries the root package.json for its version line alone,
         # next to a CHANGELOG the ignore list already covers. Every other edit
         # there — a dependency, a script, a workspace entry — is a code change,
-        # so the version line is matched rather than the file name.
-        if [ "$rest" = 'package.json' ] &&
-          ! git diff -U0 "$base" "$HEAD_SHA" -- package.json |
+        # so the version line is matched rather than the file name. Not for an
+        # `only` job: there the file is named on purpose, and a release is the
+        # last moment to check what is about to be tagged.
+        if [ -z "$ONLY" ] && [ "$rest" = 'package.json' ] &&
+          ! git diff -U0 "$base" "$head" -- package.json |
             grep -E '^[-+]' | grep -vE '^(\+\+\+|---)' |
             grep -qvE '^[-+][[:space:]]*"version": "[0-9]+\.[0-9]+\.[0-9]+",?$'; then
           rest=''

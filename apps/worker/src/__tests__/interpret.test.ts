@@ -404,6 +404,12 @@ describe('executeInterpret', () => {
     expect(onEncoding).toHaveBeenCalledWith('Shift_JIS')
   })
 
+  // Real DuckDB statistics over MAX_CSV_COLUMNS columns, batched: the work is
+  // proportional to the declared ceiling, and it lands near 5s once the runner's
+  // cores are shared rather than held one to a worker — the default then turns a
+  // slow machine into a failure that passes on rerun. Raised for this case alone;
+  // the next slowest test in the suite is 1.5s, so the default stays a signal
+  // everywhere else.
   it('describes a CSV as wide as the limit allows', async () => {
     // Width alone used to exhaust the memory limit, so the declared ceiling was
     // never reachable — see STATS_COLUMNS_PER_QUERY for why.
@@ -428,7 +434,7 @@ describe('executeInterpret', () => {
     expect(result?.schema?.columns.map((c) => c.stats?.min)).toEqual(
       Array.from({ length: MAX_CSV_COLUMNS }, (_, i) => String(i))
     )
-  })
+  }, 30_000)
 
   it('refuses a CSV too wide to preview without leaving it outstanding', async () => {
     // Throwing here left the version with no schema, which is how "nothing has
