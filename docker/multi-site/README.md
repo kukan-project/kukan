@@ -43,6 +43,9 @@ S3_BUCKETS="kukan-citya kukan-cityb" \
   docker compose -f docker/multi-site/compose.shared.yml up -d
 ```
 
+AI による説明（ADR-053）はサイト単位の設定で、サイト env の `AI_SUMMARY_MODEL` に
+共有側で取得済みのモデルを書いたサイトだけが生成する。
+
 ### 2. サイト DB とロールの作成(サイトごとに 1 回)
 
 パスワードは URL セーフな `openssl rand -hex 24` を推奨(`DATABASE_URL` は

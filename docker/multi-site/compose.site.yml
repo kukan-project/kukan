@@ -36,6 +36,7 @@ x-app-environment: &app-environment
   AI_TYPE: ${AI_TYPE:-none}
   AI_EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-bge-m3}
   AI_COMPLETION_MODELS: ${AI_COMPLETION_MODELS:-gemma4:e4b}
+  AI_SUMMARY_MODEL: ${AI_SUMMARY_MODEL:-}
   OLLAMA_URL: http://kukan-shared-ollama:11434
   BETTER_AUTH_SECRET: ${SITE_AUTH_SECRET}
   BETTER_AUTH_URL: ${SITE_URL}

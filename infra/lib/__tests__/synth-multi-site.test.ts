@@ -30,6 +30,9 @@ import {
   TEST_REGION,
 } from './helpers/synth.js'
 
+const SONNET = 'jp.anthropic.claude-sonnet-4-6'
+const NOVA = 'jp.amazon.nova-2-lite-v1:0'
+
 const MULTI_SITE: Omit<EnvironmentConfig, 'account'> = {
   scale: 'medium',
   sites: [
@@ -394,6 +397,71 @@ describe('pipeline mode', () => {
   })
 })
 
+describe('per-site Bedrock (ADR-040 suggestions / ADR-053 abstracts)', () => {
+  const stage = synthStage({
+    scale: 'small',
+    enableOpenSearch: false,
+    deployConcurrency: 1,
+    bedrock: { completionModels: [NOVA, SONNET], summaryModel: SONNET },
+    sites: [
+      { name: 'citya', enableWaf: false },
+      // Abstracts off here only — the suggestion allow-list stays
+      { name: 'cityb', enableWaf: false, bedrock: { summaryModel: undefined } },
+      { name: 'cityc', enableWaf: false, bedrock: false },
+    ],
+  })
+  const [siteA, siteB, siteC] = ['Citya', 'Cityb', 'Cityc'].map((name) =>
+    stackTemplate(stage, `KukanSiteStack${name}`)
+  )
+
+  /** Container env of each service in the stack, keyed by container name. */
+  const containerEnvs = (template: Template): Record<string, Record<string, unknown>> =>
+    Object.fromEntries(
+      Object.values(template.findResources('AWS::ECS::TaskDefinition')).flatMap((def) => {
+        const props = def.Properties as {
+          ContainerDefinitions: { Name: string; Environment: { Name: string; Value: unknown }[] }[]
+        }
+        return props.ContainerDefinitions.map((container) => [
+          container.Name,
+          Object.fromEntries(container.Environment.map((e) => [e.Name, e.Value])),
+        ])
+      })
+    )
+
+  /** Task-role policies granting Bedrock InvokeModel, as searchable JSON. */
+  const invokePolicies = (template: Template): string[] =>
+    Object.values(template.findResources('AWS::IAM::Policy'))
+      .map((policy) => JSON.stringify(policy))
+      .filter((policy) => policy.includes('bedrock:InvokeModel'))
+
+  it('names the abstract model in both services — the worker writes them, the web bulk-generates', () => {
+    const { Web, Worker } = containerEnvs(siteA)
+    for (const env of [Web, Worker]) {
+      expect(env.AI_COMPLETION_MODELS).toBe(`${NOVA},${SONNET}`)
+      expect(env.AI_SUMMARY_MODEL).toBe(SONNET)
+    }
+    // Both task roles can invoke it — an env var the IAM policy does not cover
+    // would fail at the first abstract instead of at synth
+    const granted = invokePolicies(siteA).filter((policy) => policy.includes(SONNET))
+    expect(granted).toHaveLength(2)
+  })
+
+  it('takes the site override — abstracts off for one site, AI off for another', () => {
+    const cityb = containerEnvs(siteB)
+    expect(cityb.Web.AI_COMPLETION_MODELS).toBe(`${NOVA},${SONNET}`)
+    expect(cityb.Web).not.toHaveProperty('AI_SUMMARY_MODEL')
+    // The worker generates no text here, so it is granted no generation models
+    expect(cityb.Worker).not.toHaveProperty('AI_COMPLETION_MODELS')
+    expect(invokePolicies(siteB).filter((policy) => policy.includes(SONNET))).toHaveLength(1)
+
+    for (const env of Object.values(containerEnvs(siteC))) {
+      expect(env.AI_TYPE).toBe('none')
+      expect(env).not.toHaveProperty('AI_COMPLETION_MODELS')
+    }
+    expect(invokePolicies(siteC)).toHaveLength(0)
+  })
+})
+
 describe('validateSites', () => {
   // Serial keeps the budget arithmetic below at one site's new tasks; the
   // wave (deployConcurrency) cases are covered separately
@@ -731,6 +799,49 @@ describe('validateSites', () => {
     expect(() => validateSites(withOverrides({ opensearch: { instanceCount: 2 } }))).toThrow(
       /must not override opensearch/
     )
+  })
+
+  it('merges per-site Bedrock onto the environment, and rejects it where AI is off', () => {
+    const app = new cdk.App()
+    const env: EnvironmentConfig = {
+      ...base,
+      bedrock: { completionModels: [NOVA, SONNET], summaryModel: SONNET },
+    }
+    const site = (over: SiteConfig['bedrock'], name = 'citya') =>
+      resolveSiteConfig(app, env, { name, enableWaf: false, bedrock: over }).bedrock
+    expect(site(undefined)?.summaryModel).toBe(SONNET)
+    expect(site({ summaryModel: NOVA })?.summaryModel).toBe(NOVA)
+    // Explicitly none for this site; the allow-list it merged onto survives
+    expect(site({ summaryModel: undefined })?.summaryModel).toBeUndefined()
+    expect(site({ summaryModel: undefined })?.completionModels).toEqual([NOVA, SONNET])
+    expect(site(false)).toBeUndefined()
+    // Nothing to adjust: the environment declares no allow-list to override
+    expect(() =>
+      validateSites({
+        ...base,
+        bedrock: false,
+        sites: [{ name: 'citya', enableWaf: false, bedrock: { summaryModel: SONNET } }],
+      })
+    ).toThrow(/bedrock: false/)
+  })
+
+  it('rejects an abstract model outside the completion allow-list (that list is the IAM grant)', () => {
+    const app = new cdk.App()
+    expect(() =>
+      resolveSiteConfig(
+        app,
+        { ...base, bedrock: { completionModels: [NOVA], summaryModel: SONNET } },
+        { name: 'citya', enableWaf: false }
+      )
+    ).toThrow(/is not in bedrock\.completionModels/)
+    // Including when the site is what puts it out of range
+    expect(() =>
+      resolveSiteConfig(
+        app,
+        { ...base, bedrock: { completionModels: [NOVA, SONNET], summaryModel: SONNET } },
+        { name: 'citya', enableWaf: false, bedrock: { completionModels: [NOVA] } }
+      )
+    ).toThrow(/is not in bedrock\.completionModels/)
   })
 
   it('rejects a time zone Intl does not know, at synth', () => {

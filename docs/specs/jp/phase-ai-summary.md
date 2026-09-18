@@ -371,6 +371,12 @@ AI_SUMMARY_MODEL: z.preprocess(emptyAsUndefined, z.string().optional())
 `AI_COMPLETION_MODELS` の先頭でしかなく、そこに不適切なモデルが来たときに起きることは
 ADR-053 付録 18 が測っている — **出来の悪い抄録ではなく、捏造した抄録が出る。**
 
+**配備からの与え方。** AWS では `environments.ts` の `bedrock.summaryModel` から CDK が
+web / worker 両方のタスクに注入し、allowlist の外なら synth の時点で落とす（起動時のログで
+黙って無効になるのを避ける）。マルチサイト環境では `sites[].bedrock` でサイト単位に上書き
+できる（ADR-041）。Docker Compose では `.env` の `AI_SUMMARY_MODEL`、マルチサイトなら
+サイトごとの env ファイル。
+
 ### 6.2 ランタイム設定
 
 ```typescript

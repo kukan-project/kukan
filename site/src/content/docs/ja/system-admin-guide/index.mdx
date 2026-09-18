@@ -277,24 +277,46 @@ Cohere Embed v4 のような **AWS Marketplace 提供モデル**は自動有効�
 
 リソースを登録するたびに、**そのファイルの内容を読んだ短い説明**を AI に書かせ、リソースページに表示できます。利用者が原本を開かずに中身を判断できるようにするためのもので、同時に検索の手掛かりにもなります（リソース単位の埋め込みに入ります）。
 
-**有効化は環境変数 `AI_SUMMARY_MODEL` だけです。** 書かせるモデル名を設定すると有効になり、設定しなければ何も生成されず費用もかかりません。
+**有効化は「書かせるモデルを指定する」ことだけです。** 指定すると有効になり、指定しなければ何も生成されず費用もかかりません。AWS では `environments.ts` の `bedrock.summaryModel`、Docker Compose では環境変数 `AI_SUMMARY_MODEL` で指定します。
+
+```ts
+// AWS（infra/config/environments.ts）— CDK がここから AI_SUMMARY_MODEL を注入します
+bedrock: {
+  completionModels: [
+    'jp.anthropic.claude-sonnet-4-6',
+    'jp.anthropic.claude-haiku-4-5-20251001-v1:0',
+    'jp.amazon.nova-2-lite-v1:0',
+  ],
+  summaryModel: 'jp.anthropic.claude-sonnet-4-6',
+}
+```
 
 ```bash
+# Docker Compose（.env）
 AI_SUMMARY_MODEL=jp.anthropic.claude-sonnet-4-6
 ```
 
 :::caution[Bedrock では既定のままでは足りません]
-`bedrock.completionModels` を省略したときの既定は **Amazon Nova Lite 1 本**です。`AI_SUMMARY_MODEL` はこの許可リストに含まれるモデルしか受け付けないため（許可リストは IAM で `InvokeModel` を許可した範囲そのものです）、**上の例をそのまま設定しても、リストに Sonnet を加えて再デプロイするまで機能は無効のまま**です。
+`bedrock.completionModels` を省略したときの既定は **Amazon Nova Lite 1 本**です。`summaryModel` はこの許可リストに含まれるモデルしか受け付けないため（許可リストは IAM で `InvokeModel` を許可した範囲そのものです）、リストに無いモデルを指定すると、デプロイされる前に合成（synth）の時点で拒否されます。
 
-しかも **Nova は抄録には使えません** — 実測では document ブロックは通るものの、強制 JSON が壊れ、スキャン文書では内容を捏造しました（ADR-053 の付録）。既定のモデルで妥協するのではなく、`environments.ts` の `bedrock.completionModels` に推奨モデルを追加してください。
+しかも **Nova は抄録には使えません** — 実測では document ブロックは通るものの、強制 JSON が壊れ、スキャン文書では内容を捏造しました（ADR-053 の付録）。既定のモデルで妥協するのではなく、上の例のように `completionModels` に推奨モデルを追加してください。
+
+`completionModels` の先頭が AI メタデータ提案の既定になります。抄録用のモデルは `summaryModel` で別に指定するため、並び順に引きずられません。
+:::
+
+:::tip[サイト単位の指定]
+マルチサイト環境（ADR-041）では、環境エントリの `bedrock` が共通の設定、`sites[].bedrock` がサイト単位の上書きです。1 つのサイトだけ安いモデル（Sonnet でなく Haiku 4.5 など）にする、あるいは抄録を生成しない、といった指定ができます。
 
 ```ts
-bedrock: {
-  completionModels: ['jp.anthropic.claude-sonnet-4-6', 'jp.amazon.nova-2-lite-v1:0'],
-}
+sites: [
+  { name: 'main' },                                                    // 環境の設定をそのまま使う
+  { name: 'citya', bedrock: { summaryModel: 'jp.anthropic.claude-haiku-4-5-20251001-v1:0' } },
+  { name: 'cityb', bedrock: { summaryModel: undefined } },             // このサイトは抄録なし
+  { name: 'cityc', bedrock: false },                                   // このサイトは AI 自体なし
+]
 ```
 
-先頭が AI メタデータ提案の既定になります。抄録用のモデルは `AI_SUMMARY_MODEL` で別に指定するため、並び順に引きずられません。
+Docker Compose でも同じ分け方ができます — サイトごとの env ファイル `docker/multi-site/sites/<site>.env` に `AI_SUMMARY_MODEL` を書きます。
 :::
 
 :::caution[有効化すると推論費用が発生します]
@@ -303,7 +325,7 @@ bedrock: {
 一括生成を実行する前に、管理画面が**対象件数と推定費用を表示します**。確認してから実行してください。
 :::
 
-`AI_SUMMARY_MODEL` には `AI_COMPLETION_MODELS` に含まれるモデルを指定します。生成**言語**の方はランタイム設定（サイト管理）で切り替えられます — 言語は無料、モデルは費用、という分け方です。
+抄録用のモデルには生成モデルの許可リストに含まれるものを指定します。生成**言語**の方はランタイム設定（サイト管理）で切り替えられます — 言語は無料、モデルは費用、という分け方です。
 
 #### 一括生成（サイト管理 → AI による説明の一括生成）
 

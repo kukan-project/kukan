@@ -390,6 +390,12 @@ environment — the cost falls on whoever deploys the site, not on whoever would
 whatever comes first in `AI_COMPLETION_MODELS`, and ADR-053 appendix 18 measured what the wrong
 model there does: **not worse abstracts, invented ones.**
 
+**How a deployment supplies it.** On AWS, CDK injects it into both the web and the worker task
+from `bedrock.summaryModel` in `environments.ts`, and a model outside the allow-list fails at
+synth rather than going quietly off in a startup log. Multi-site environments override it per
+site with `sites[].bedrock` (ADR-041). On Docker Compose it is `AI_SUMMARY_MODEL` in `.env`, or
+the per-site env file in a multi-site stack.
+
 ### 6.2 Runtime setting
 
 ```typescript

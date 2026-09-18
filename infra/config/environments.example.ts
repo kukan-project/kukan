@@ -105,7 +105,8 @@ export const environments = {
     //   },
     // },
 
-    // --- AI (Bedrock: semantic search ADR-034 + metadata suggestions ADR-040) ---
+    // --- AI (Bedrock: semantic search ADR-034, metadata suggestions ADR-040,
+    //     resource abstracts ADR-053) ---
     // Presence enables it. Amazon models (Titan v2 embedding, the default Nova Lite
     // completion) work on first invocation; Anthropic models (Claude, only if you add
     // them to completionModels) need a one-time per-account step: submit the Anthropic
@@ -127,8 +128,14 @@ export const environments = {
     //   // on exactly these and they become the admin model-picker options. The first
     //   // entry is the provider default (a Nova-only list is fine). Omit → the default
     //   // jp. Nova Lite profile only. Use region-appropriate profiles (jp.* stays in Japan):
-    //   completionModels: ['jp.amazon.nova-2-lite-v1:0', 'jp.anthropic.claude-haiku-4-5-20251001-v1:0'],
+    //   completionModels: ['jp.amazon.nova-2-lite-v1:0', 'jp.anthropic.claude-haiku-4-5-20251001-v1:0', 'jp.anthropic.claude-sonnet-4-6'],
+    //   // Model that writes the AI resource abstracts (ADR-053). Omit → no abstracts
+    //   // and nothing billed for them; it must be one of completionModels above
+    //   // (that list is the IAM grant). Nova cannot write them — name a Claude
+    //   // Sonnet 4.6 class model, whatever the suggestion default is:
+    //   summaryModel: 'jp.anthropic.claude-sonnet-4-6',
     // },
+    // Sites adjust this per site — see sites[].bedrock below.
 
     // --- CI/CD (pipeline mode) ---
     githubRepo: 'kukan-project/your-repo', // CodeConnections source repo (owner/repo)
@@ -160,6 +167,12 @@ export const environments = {
         // enableGa4DataApi: false,
         // timeZone: 'Asia/Tokyo', // IANA zone times are prerendered in (env TIME_ZONE); omit → Asia/Tokyo
         // overrides: { web: { maxSize: 2 }, dbPool: { webMax: 5 } }, // site-owned sections only
+        // Per-site AI over the environment's `bedrock` above: an object deep-merges
+        // (arrays replace, so completionModels is given whole), `false` turns AI off
+        // for this site alone. Requires the environment to declare `bedrock`.
+        // bedrock: { summaryModel: 'jp.anthropic.claude-haiku-4-5-20251001-v1:0' }, // cheaper abstracts here
+        // bedrock: { summaryModel: undefined }, // no abstracts for this site
+        // bedrock: false, // no AI at all for this site
       },
     ],
   },

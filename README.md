@@ -225,7 +225,7 @@ Environments (dev / prd, etc.) are defined in `infra/config/environments.ts` (co
 | `githubRepo`        | string                         | —                  | CodeConnections source repo (`owner/repo`)                                                         |
 | `deployBranch`      | string                         | `main`             | Branch that deploys this env (pipeline mode)                                                       |
 | `sites`             | SiteConfig[]                   | —                  | Multi-site: run several catalogs on one shared backbone (opt-in; omit for a single stack)          |
-| `bedrock`           | object \| `false`              | enabled            | Bedrock models to grant and inject as `AI_COMPLETION_MODELS`; `false` disables AI (`AI_TYPE=none`) |
+| `bedrock`           | object \| `false`              | enabled            | Bedrock models to grant and inject, also per site (ADR-041); `false` turns AI off (`AI_TYPE=none`) |
 | `basicAuth`         | `{ username, password }`       | —                  | Basic authentication in front of the site                                                          |
 | `timeZone`          | string                         | `Asia/Tokyo`       | IANA zone the environment prerenders times in                                                      |
 | `deployConcurrency` | number                         | `2`                | Sites deployed per wave (`1` = serial); multi-site only                                            |

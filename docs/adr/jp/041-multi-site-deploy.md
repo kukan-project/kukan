@@ -91,6 +91,7 @@ KukanPipeline（フォーク、1 本）
 
 - 命名規約を `kukan-<env>-*`（ADR-031）から `kukan-<env>-<site>-*` に拡張する
 - `environments.ts` の各環境が `sites: []` を持ち、サイトごとにブランド名（ADR-042）・ドメイン・証明書 ARN 等を宣言する
+- サイズ調整（`overrides`）と AI（`bedrock`）は環境エントリの値にサイトの値を重ねる。配列は丸ごと置き換わるため、`completionModels` は「環境の既定をそのまま使う」か「サイトで全部指定する」のどちらかになる。`bedrock: false` はそのサイトだけ AI を切る（環境側が `false` のときサイト側の指定は拒否する — 重ねる対象が無い）
 - SharedStack → SiteStack の参照は CloudFormation Export ではなく SSM パラメータ経由の疎結合とし、共用側の変更がサイト参照でロックされる事態を避ける
 
 ### サイト分離の実体

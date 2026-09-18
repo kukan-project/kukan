@@ -286,35 +286,62 @@ file's contents**, shown on its resource page. It lets a reader judge what is in
 a file without opening it, and it feeds search as well (it goes into the
 per-resource embedding).
 
-**One environment variable turns it on: `AI_SUMMARY_MODEL`.** Name the model
-that should write them and the feature is on; leave it unset and nothing is
-written and nothing is billed.
+**One setting turns it on: the model that should write them.** Name it and the
+feature is on; leave it unset and nothing is written and nothing is billed. On
+AWS it is `bedrock.summaryModel` in `environments.ts`; on Docker Compose it is
+the `AI_SUMMARY_MODEL` environment variable.
+
+```ts
+// AWS (infra/config/environments.ts) — CDK injects AI_SUMMARY_MODEL from this
+bedrock: {
+  completionModels: [
+    'jp.anthropic.claude-sonnet-4-6',
+    'jp.anthropic.claude-haiku-4-5-20251001-v1:0',
+    'jp.amazon.nova-2-lite-v1:0',
+  ],
+  summaryModel: 'jp.anthropic.claude-sonnet-4-6',
+}
+```
 
 ```bash
+# Docker Compose (.env)
 AI_SUMMARY_MODEL=jp.anthropic.claude-sonnet-4-6
 ```
 
 :::caution[On Bedrock the default is not enough]
 Omitting `bedrock.completionModels` leaves a single model in it, **Amazon Nova
-Lite**. `AI_SUMMARY_MODEL` only accepts a model from that allow-list — the
-allow-list being exactly what the task role is granted `InvokeModel` on — so
-**setting the line above leaves the feature off until Sonnet is added to the
-list and the environment redeployed**.
+Lite**. `summaryModel` only accepts a model from that allow-list — the
+allow-list being exactly what the task role is granted `InvokeModel` on — so a
+model that is not in it is rejected when the environment is synthesized, before
+anything deploys.
 
 And **Nova cannot write these abstracts**: measured, the document block goes
 through but forced JSON breaks, and on a scanned document it invented the
 contents (ADR-053, appendix). Rather than settling for the default model, add
-the recommended one to `bedrock.completionModels` in `environments.ts`.
+the recommended one to `completionModels` as above.
+
+The first entry of `completionModels` becomes the default for AI metadata
+suggestions. Abstracts name their model separately in `summaryModel`, so the
+order does not decide for them.
+:::
+
+:::tip[Per site]
+In a multi-site environment (ADR-041), `bedrock` on the environment entry is
+the shared setting and `sites[].bedrock` adjusts it for one site — which is how
+one site gets a cheaper model — Haiku 4.5 rather than Sonnet, say — or none at
+all, while the rest keep the environment's.
 
 ```ts
-bedrock: {
-  completionModels: ['jp.anthropic.claude-sonnet-4-6', 'jp.amazon.nova-2-lite-v1:0'],
-}
+sites: [
+  { name: 'main' },                                                    // the environment's
+  { name: 'citya', bedrock: { summaryModel: 'jp.anthropic.claude-haiku-4-5-20251001-v1:0' } },
+  { name: 'cityb', bedrock: { summaryModel: undefined } },             // no abstracts here
+  { name: 'cityc', bedrock: false },                                   // no AI here at all
+]
 ```
 
-The first entry becomes the default for AI metadata suggestions. Abstracts name
-their model separately in `AI_SUMMARY_MODEL`, so the order does not decide for
-them.
+On Docker Compose the same split is per-site env files: `AI_SUMMARY_MODEL` in
+`docker/multi-site/sites/<site>.env`.
 :::
 
 :::caution[Turning this on costs inference money]
@@ -330,7 +357,7 @@ Before any bulk generation runs, the dashboard **shows how many resources it
 covers and what it is estimated to cost**. Read that before pressing the button.
 :::
 
-`AI_SUMMARY_MODEL` must name a model from `AI_COMPLETION_MODELS`. The
+The abstract model must be one from the completion allow-list. The
 **language** is a runtime setting instead (Site settings) — language is free,
 the model is money.
 

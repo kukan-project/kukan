@@ -872,7 +872,9 @@ It does not live in the runtime settings (ADR-036): a site administrator can cha
 **the cost of this feature is borne by whoever deploys and operates the site** — the party
 that sets it and the party that pays are not the same. Environment variables are already
 per-site under multi-site deployment (ADR-041's SiteStack), so they are a sufficient per-site
-switch.
+switch. On AWS the environment definition's `bedrock.summaryModel` is what CDK injects into
+both the web and the worker task, and `sites[].bedrock` overrides it per site; on Docker
+Compose it is the per-site env file.
 
 ADR-038 removed `REGISTRATION_ENABLED` in favour of the runtime side, but that was an
 operational judgement carrying no cost. This ADR chooses an environment variable because

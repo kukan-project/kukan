@@ -37,6 +37,40 @@ function resolveCompletionModels(models: string[] | undefined): string[] {
   return normalized
 }
 
+/**
+ * Validate `summaryModel` against the allow-list, normalized the same way the
+ * adapter normalizes it. Outside the list the worker refuses the model at
+ * startup and abstracts stay off (ADR-053) — a deploy that looks successful and
+ * writes nothing, so reject it at synth instead. Omit → abstracts off.
+ */
+function resolveSummaryModel(
+  model: string | undefined,
+  completionModels: string[]
+): string | undefined {
+  if (model === undefined) return undefined
+  const normalized = model.trim()
+  if (!completionModels.includes(normalized)) {
+    throw new Error(
+      `bedrock.summaryModel "${normalized}" is not in bedrock.completionModels ` +
+        `(${completionModels.join(', ')}) — that list is the IAM grant, so the worker ` +
+        'would refuse the model and leave abstracts off (ADR-053)'
+    )
+  }
+  return normalized
+}
+
+/** Model IDs and similarity floor filled in, `false` resolved to AI disabled. */
+function resolveBedrock(bedrock: BedrockConfig | false): KukanConfig['bedrock'] {
+  if (bedrock === false) return undefined
+  const completionModels = resolveCompletionModels(bedrock.completionModels)
+  return {
+    ...bedrock,
+    embeddingModel: bedrock.embeddingModel ?? DEFAULT_BEDROCK_EMBEDDING_MODEL,
+    completionModels,
+    summaryModel: resolveSummaryModel(bedrock.summaryModel, completionModels),
+  }
+}
+
 /** Bedrock embedding for semantic search (ADR-034). Presence enables it. */
 export interface BedrockConfig {
   /** Bedrock API region. Omit → the deployment region. */
@@ -51,6 +85,11 @@ export interface BedrockConfig {
   /** Completion models the task role may invoke (ADR-040); also the admin
    *  model-picker options. Omit → the default Nova Lite profile. Changing needs redeploy. */
   completionModels?: string[]
+  /** Model that writes the AI resource abstracts (ADR-053), and by its absence
+   *  the switch that leaves them off. Must be one of `completionModels` — the
+   *  allow-list is the IAM grant, so anything else is refused at synth rather
+   *  than leaving the worker to log abstracts off after the deploy. */
+  summaryModel?: string
 }
 
 /** Sections computed from `scale`. These are overridable per environment via `overrides`. */
@@ -159,6 +198,8 @@ export interface EnvironmentConfig {
    * defaults; `false` → AI disabled (AI_TYPE=none). No console setup needed —
    * serverless foundation models auto-enable on first invocation; the task-role
    * IAM policy added here is the only access gate.
+   * Multi-site environments set the shared default here and adjust it per site
+   * (`sites[].bedrock`).
    */
   bedrock?: BedrockConfig | false
   /** CodeConnections source repository in "owner/repo" form (ADR-030). */
@@ -194,8 +235,8 @@ export interface EnvironmentConfig {
 
 /**
  * One site inside a multi-site environment (ADR-041). Undeclared aspects
- * (scale, dbEngine, enableOpenSearch, bedrock, …) are shared-box territory and
- * always come from the environment entry.
+ * (scale, dbEngine, enableOpenSearch, …) are shared-box territory and always
+ * come from the environment entry.
  */
 export interface SiteConfig {
   /**
@@ -241,6 +282,16 @@ export interface SiteConfig {
    */
   albPriority?: number
   /**
+   * Per-site AI on top of the environment's `bedrock`. An object deep-merges
+   * onto it (arrays replace, so `completionModels` is given whole or not at
+   * all), which is how one site gets a different `summaryModel` — or none, with
+   * `summaryModel: undefined` — while the rest keep the environment's.
+   * `false` turns AI off for this site alone. Requires the environment to
+   * declare `bedrock` (with AI off there, a per-site entry is rejected: there
+   * is no allow-list to override, and each site would need its own).
+   */
+  bedrock?: BedrockConfig | false
+  /**
    * Per-site sizing on top of the environment's scale preset. Only the
    * site-owned sections — db/opensearch sizing belongs to the shared boxes.
    * Of `backup`, only the S3 (site bucket) settings are allowed: DB retention
@@ -277,10 +328,13 @@ const SITE_BACKUP_KEYS = Object.keys({
  * silently discarded, worst for the security gates allowedIpRanges/basicAuth)
  * and resolveSiteConfig (copy them from the site). The `satisfies` makes a new
  * site-scoped field fail to compile until both consumers pick it up.
- * `name`/`brand`/`albPriority` have no env-level counterpart; `overrides`
- * deliberately deep-merges instead (shared tuning + per-site tweaks).
+ * `name`/`brand`/`albPriority` have no env-level counterpart; `overrides` and
+ * `bedrock` deliberately deep-merge instead (shared setting + per-site tweaks).
  */
-type SiteScopedKey = Exclude<keyof SiteConfig, 'name' | 'brand' | 'albPriority' | 'overrides'>
+type SiteScopedKey = Exclude<
+  keyof SiteConfig,
+  'name' | 'brand' | 'albPriority' | 'overrides' | 'bedrock'
+>
 const SITE_SCOPED_FIELDS = Object.keys({
   domainName: true,
   hostedZoneId: true,
@@ -549,6 +603,15 @@ export function validateSites(env: EnvironmentConfig, scope?: Construct): SiteWa
       )
     }
     priorities.set(priority, site.name)
+    // Nothing to override: the environment declares no allow-list, and a
+    // per-site one would have to be complete rather than a tweak of it.
+    if (env.bedrock === false && site.bedrock !== undefined) {
+      throw new Error(
+        `Site "${site.name}" sets bedrock but the environment has bedrock: false — ` +
+          "per-site AI adjusts the environment's settings, so declare bedrock on the " +
+          'environment entry and turn it off per site with bedrock: false (ADR-041)'
+      )
+    }
     rejectBlankEdgeArns(site, `Site "${site.name}"`)
     // Missing cert/WAF ARNs auto-create in the us-east-1 global stack, but a
     // DNS-validated cert needs the hosted zone — reject that gap here.
@@ -751,6 +814,16 @@ function estimateMaxConnections(db: ScaleComputed['db']): {
   return { connections: capped ? 2000 : connections, uncappedConnections: connections }
 }
 
+/** Per-site Bedrock over the environment's (see SiteConfig.bedrock). */
+function resolveSiteBedrock(
+  envBedrock: EnvironmentConfig['bedrock'],
+  siteBedrock: SiteConfig['bedrock']
+): EnvironmentConfig['bedrock'] {
+  if (siteBedrock === undefined) return envBedrock
+  if (siteBedrock === false) return false
+  return deepMerge(envBedrock || {}, siteBedrock)
+}
+
 /**
  * Resolve one site's effective configuration: the site entry merged over its
  * environment, run through the normal loadConfig (reusing all its validation).
@@ -767,6 +840,7 @@ export function resolveSiteConfig(
       SiteConfig,
       SiteScopedKey
     >),
+    bedrock: resolveSiteBedrock(env.bedrock, site.bedrock),
     overrides: deepMerge(env.overrides ?? {}, site.overrides ?? {}),
   }
   return loadConfig(scope, merged, SITE_SCOPED_FIELDS)
@@ -946,7 +1020,9 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
 
-/** Deep-merge `override` onto `base` (arrays and primitives replace; objects merge). */
+/** Deep-merge `override` onto `base` (arrays and primitives replace; objects merge).
+ *  Key presence decides, so an explicit `undefined` unsets — SiteConfig.bedrock
+ *  documents that as how one site opts out of a model the environment names. */
 function deepMerge<T>(base: T, override: DeepPartial<T> | undefined): T {
   if (!override) return base
   const result = { ...base } as Record<string, unknown>
@@ -994,15 +1070,7 @@ export function loadConfig(
   const ecrImageRetention = resolveEcrImageRetention(env)
   // env-only (no ctx): structured value, awkward to pass via -c. Default ON —
   // hybrid search is the flagship behaviour and Titan v2 costs are usage-based.
-  const bedrockEnv = env.bedrock ?? {}
-  const bedrock =
-    bedrockEnv === false
-      ? undefined
-      : {
-          ...bedrockEnv,
-          embeddingModel: bedrockEnv.embeddingModel ?? DEFAULT_BEDROCK_EMBEDDING_MODEL,
-          completionModels: resolveCompletionModels(bedrockEnv.completionModels),
-        }
+  const bedrock = resolveBedrock(env.bedrock ?? {})
 
   const computed = computeScaled(scale, ctx<DbEngine>('dbEngine') ?? env.dbEngine, env.overrides)
   const { db } = computed

@@ -72,6 +72,7 @@ KukanPipeline (fork, one pipeline)
 
 - Extend the naming convention from `kukan-<env>-*` (ADR-031) to `kukan-<env>-<site>-*`
 - Each environment in `environments.ts` holds a `sites: []` array declaring the brand name (ADR-042), domain, certificate ARN, etc. per site
+- Sizing (`overrides`) and AI (`bedrock`) layer the site's values over the environment entry's. Arrays replace whole, so `completionModels` is either the environment's or the site's in full. `bedrock: false` turns AI off for that site alone (a site entry is rejected where the environment itself is `false` — there is nothing to layer over)
 - References from SharedStack to SiteStacks go through SSM parameters rather than CloudFormation exports, avoiding deploy lock-ups where shared-side changes are blocked by site references
 
 ### How site isolation is realized

@@ -51,9 +51,10 @@ export function configureBedrockEmbedding(
 const PROFILE_PREFIX = /^(?:us-gov|us|eu|apac|jp|au|ca|global)\./
 
 /**
- * Configure a task for Bedrock AI metadata suggestions (ADR-040): pass the
- * allowed completion models as an env var and grant InvokeModel on exactly
- * those. Only the web service generates suggestions, so the worker skips this.
+ * Configure a task for Bedrock text generation: pass the allowed completion
+ * models as an env var and grant InvokeModel on exactly those. Both services
+ * need it — the web generates metadata suggestions (ADR-040), the worker writes
+ * resource abstracts (ADR-053), and both refuse a model outside the list.
  * The env list is the single source of truth — the admin model picker offers
  * these, so every choice is guaranteed invokable.
  *
@@ -68,11 +69,15 @@ export function configureBedrockCompletion(
   environment: Record<string, string>
 ): void {
   if (!config.bedrock) return
-  const { region, completionModels } = config.bedrock
+  const { region, completionModels, summaryModel } = config.bedrock
   const bedrockRegion = region ?? cdk.Aws.REGION
   const partition = cdk.Aws.PARTITION
 
   environment.AI_COMPLETION_MODELS = completionModels.join(',')
+  // Omitted → abstracts off, and nothing is billed for them (ADR-053)
+  if (summaryModel) {
+    environment.AI_SUMMARY_MODEL = summaryModel
+  }
 
   const profileArns: string[] = [] // inference profiles, invoked directly
   const profiledModels: string[] = [] // their underlying foundation models

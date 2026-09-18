@@ -16,7 +16,7 @@ import * as sqs from 'aws-cdk-lib/aws-sqs'
 import { Construct } from 'constructs'
 import type { KukanConfig } from '../config.js'
 import { resourceName } from '../naming.js'
-import { configureBedrockEmbedding } from './ai.js'
+import { configureBedrockEmbedding, configureBedrockCompletion } from './ai.js'
 import type { DbAccess } from './database.js'
 
 export interface WorkerServiceProps {
@@ -86,6 +86,12 @@ export class WorkerServiceConstruct extends Construct {
       HEALTH_PORT: String(config.worker.healthPort),
     }
     configureBedrockEmbedding(config, taskDef, environment)
+    // Resource abstracts are written here, at the end of the pipeline (ADR-053).
+    // Without a model to write them the worker generates no text at all, so it
+    // is granted no generation models either.
+    if (config.bedrock?.summaryModel) {
+      configureBedrockCompletion(config, taskDef, environment)
+    }
     if (searchDomainEndpoint) {
       environment.OPENSEARCH_URL = `https://${searchDomainEndpoint}`
       environment.OPENSEARCH_REPLICAS = String(config.opensearch.indexReplicas)
