@@ -9,6 +9,7 @@ import {
   resourceVersion,
 } from '@kukan/db'
 import { getStorageKey, MAX_UPLOAD_SIZE } from '@kukan/shared'
+import type { ResourceColumnType } from '@kukan/shared'
 import { createTestApp, mockQueue, mockSearch } from '../test-helpers/test-app'
 import { CLAIM_STALE_AFTER_MS } from '../../services/pipeline-claim'
 import {
@@ -2042,7 +2043,13 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
   async function withColumns(
     name: string,
     columns: string[],
-    stats: { rowCount?: number; distinctCount?: number; nullCount?: number } = {}
+    stats: {
+      rowCount?: number
+      distinctCount?: number
+      nullCount?: number
+      /** Per-column inferred type, for the columns that are not strings. */
+      types?: Record<string, ResourceColumnType>
+    } = {}
   ) {
     const pkg = await createPackage(name)
     const resource = await createResource(pkg.id)
@@ -2062,7 +2069,7 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
         rowCount: stats.rowCount ?? 2,
         columns: columns.map((column) => ({
           name: column,
-          type: 'string' as const,
+          type: stats.types?.[column] ?? ('string' as const),
           nullable: false,
           nullCount: stats.nullCount ?? 0,
           ...(stats.distinctCount === undefined ? {} : { distinctCount: stats.distinctCount }),
@@ -2247,6 +2254,48 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
     expect((await res.json()).detail).toContain('nope')
   })
 
+  it('refuses a floating-point column, because it cannot identify a row', async () => {
+    // Not because layer 2 breaks on one — DuckDB matches `NaN` to `NaN` — but
+    // because the key leaves the system: `1.0` and `1` are the same double, so
+    // two spellings the file keeps apart collapse into one key, and OData
+    // leaves `Edm.Double` out of the key types it allows (ADR-055).
+    const resource = await withColumns('key-float-pkg', ['id', 'ratio'], {
+      distinctCount: 2,
+      types: { ratio: 'float' },
+    })
+
+    const res = await setKey(resource.id, ['ratio'])
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).detail).toContain('ratio')
+    expect(await storedSettings(resource.id)).toEqual({})
+    // In a composite key too: the combination rests on the same column.
+    expect((await setKey(resource.id, ['id', 'ratio'])).status).toBe(400)
+    expect((await setKey(resource.id, ['id'])).status).toBe(200)
+  })
+
+  it('leaves a key already resting on such a column alone, and still re-queues it', async () => {
+    // The setting is loading rows in layer 2 today. Stripping it would turn
+    // every later diff back into removals and additions and cost a version to
+    // do it — the publisher's call, not a migration's. So only a *change* is
+    // refused, which leaves the resend that repairs a failed enqueue working.
+    const resource = await withColumns('key-float-standing-pkg', ['id', 'ratio'], {
+      distinctCount: 2,
+      types: { ratio: 'float' },
+    })
+    await db
+      .update(resourceTable)
+      .set({ columnSettings: { primaryKey: ['ratio'] } })
+      .where(eq(resourceTable.id, resource.id))
+
+    expect(await (await setKey(resource.id, ['ratio'])).json()).toMatchObject({
+      primaryKey: ['ratio'],
+      queued: true,
+    })
+    // And the way out of it is open.
+    expect((await setKey(resource.id, ['id'])).status).toBe(200)
+  })
+
   it('reads the live version, not the cached interpretation', async () => {
     // The cached one is the worker's to rewrite, and a run whose Interpret
     // failed leaves it describing the content before this one. A key picked off
@@ -2331,6 +2380,24 @@ describe('PUT /api/v1/resources/:id/column-settings', () => {
     })
 
     expect(await res.json()).toMatchObject({ checked: true, fault: 'key-not-unique' })
+  })
+
+  it('answers that a floating-point column cannot identify a row, without reading content', async () => {
+    // Settled from the type rather than from the values, so no number the
+    // interpretation recorded can overturn it — and the unusable lake config
+    // proves no session was opened to find it out.
+    const resource = await withColumns('key-check-float-pkg', ['id', 'ratio'], {
+      distinctCount: 2,
+      types: { ratio: 'float' },
+    })
+
+    const res = await app.request(`/api/v1/resources/${resource.id}/column-settings/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ primaryKey: ['id', 'ratio'] }),
+    })
+
+    expect(await res.json()).toMatchObject({ checked: true, fault: 'key-float' })
   })
 
   it('offers the columns the apply will validate against, and where the key stands', async () => {

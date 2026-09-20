@@ -28,6 +28,7 @@ not taken (history)" (§9.7 / §11-7) and blocks headed "evidence (measured)" ar
 | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
 | **Changing the primary key creates a version** (it is part of the interpretation; ADR-046 decision 3)                                                  | §6.4    |
 | Key columns must not contain NULL. A version that breaks this is not ingested, nor demoted to keyless                                                  | §6.4    |
+| Key columns must not be floating-point (they cannot be identifiers). Only a _change_ to the setting is refused                                         | §6.4    |
 | The key columns used are **frozen when the version is created** (written by the Version step, not at Lake time)                                        | §6.4    |
 | The reason it was not ingested is recorded in **`lake_ingest_reason`** (written once)                                                                  | §6.6    |
 | There are three such reasons: **`key-missing`** / `key-null` / `key-not-unique`                                                                        | §6.6    |
@@ -529,6 +530,50 @@ it with a sentinel value.
 
 The basis for the check is `nullable` / `nullCount` in `resource_version.schema`, so **no extra
 computation is needed**.
+
+#### Key columns must not be floating-point
+
+**Not because layer 2 breaks on one.** In DuckDB both `NaN = NaN` and `-0.0 = 0.0` are true, so
+`MERGE` matches such a column the way it matches any other. What breaks is the **boundary** — where
+the key leaves the system as a value and something else uses it as an identifier.
+`'1.0'::DOUBLE = '1'::DOUBLE` is true as well, so two spellings the file keeps apart collapse into
+one key, and a value written out in decimal is not guaranteed to return to the bits it came from.
+**The uniqueness check passes**, so passing it is no evidence that the column is an identifier.
+OData's CSDL 4.01 §6.5 leaves `Edm.Double` out of the key types and keeps `Edm.Decimal` in for the
+same reason (ADR-055).
+
+The decision rests on the type alone and reads no content. `canIdentifyRows()` (`@kukan/shared`)
+answers it in one place, and the three that ask — the validation at the apply, the key-check
+endpoint (`key-float`), and the picker — use that one answer.
+
+**`key-float` is not a `lake_ingest_reason`, because it is not a decision the ingest makes**
+(§6.6). `MERGE` matches a floating-point column the way it matches any other, so the load does not
+refuse the version and has nothing to record. What does not hold is identification outside the
+system, and that is answered where the key is chosen rather than where a version is loaded.
+
+**A float-keyed version can still come about; the setting is not the only way in.** The type is
+inferred per version, so a column keyed while it read as `integer` can read as `float` in the next
+one. The version freezes whatever the setting says, type unread ("The freeze happens when the
+version is created", above), and the ingest does not look at the type either. **It is the same kind
+of drift as a key column disappearing from the content**, and it is left alone here for the reason
+above: the load is not what breaks. The screen is where it surfaces — a key resting on a column the
+picker will no longer offer.
+
+**An existing setting is not stripped; only a change is refused.** A key already set is matching
+rows in layer 2 today, and taking it off turns every later diff back into removals and additions
+and costs a version to do it — the publisher's call, not a migration's. So only two writes are
+still accepted: a resend of the same key (the repair path for a rebuild that failed to queue), and
+a key without the column.
+
+**The picker leaves the column on screen, unpressable, with the reason beside it.** Dropped from
+the list it would read as a column the resource does not have, and the publisher would go looking
+for one that is there. The reason is about the type, which is exactly what they need in order to
+pick a different column. A column already in the key stays pressable — otherwise there is no way
+out of it.
+
+**Inference has no decimal type** (ADR-029 produces only `float`), so a column of exact decimals —
+money, rates — is inferred as `float` and refused with the rest. Whether to carry a type
+corresponding to `Edm.Decimal` is a question about settled types, answered in ii-c (§6.5, §8).
 
 #### Composite keys
 
@@ -1081,6 +1126,11 @@ a **column type demotion** (integer → string) and in DuckLake it lands as a sc
 The lattice of type promotion/demotion (which type can move to which) and the function that decides
 it deterministically live in `packages/shared` and are used by both Extract's inference and the
 diff.
+
+**The set of types is itself a ii-c question.** Inference has no decimal type (ADR-029), so a column
+of exact decimals — money, rates — is inferred as `float`. A primary key refuses floating-point
+(§6.4), so such a column cannot identify a row today. Whether to add a settled type corresponding to
+`Edm.Decimal` is answered here.
 
 ## 9. Step 6 — Propagating a Purge to Layer 2
 

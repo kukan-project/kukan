@@ -208,6 +208,47 @@ export type KeyFault = 'key-missing' | 'key-null' | 'key-not-unique'
 export type LakeIngestReason = KeyFault | 'ingest-failed'
 
 /**
+ * What a key check can answer, which is the recorded reasons plus one they will
+ * never include.
+ *
+ * `key-float` is not a {@link KeyFault} because **no load ever decides it**.
+ * `lake_ingest_reason` records why the ingest refused a version, and a float
+ * key does not make it refuse one: the `MERGE` matches such a column like any
+ * other ({@link canIdentifyRows}), so the rows load and there is nothing to
+ * write down. What the key cannot do is be quoted back from outside, which is
+ * settled where the key is set rather than where a version is loaded.
+ *
+ * **Such a version can still exist**, and the setting is not the only way in:
+ * the type is inferred per version, so a column keyed while it read as
+ * `integer` can read as `float` in the next one, under a key nothing re-asks
+ * about (frozen at the Version step). That is the same drift a key column can
+ * disappear into, and it is left alone here for the reason above — the load is
+ * not what the type breaks.
+ */
+export type KeyCheckFault = KeyFault | 'key-float'
+
+/**
+ * Whether a column of this type can identify a row.
+ *
+ * Binary floating point is the one that cannot, and not because layer 2 breaks
+ * on it: DuckDB's `=` holds for `NaN = NaN` and for `-0.0 = 0.0`, so a `MERGE`
+ * matches such a column the way it matches any other. It fails at the boundary
+ * — the value written out as text and read back by something else. `1.0` and
+ * `1` are the same double, so two spellings a file keeps apart collapse into
+ * one key, and a decimal spelling is not guaranteed to return to the bits it
+ * came from. An identifier that cannot be quoted back is not one, whoever is
+ * quoting: OData leaves `Edm.Double` out of the key types CSDL 4.01 §6.5
+ * allows, and keeps `Edm.Decimal` in (ADR-055).
+ *
+ * Only inference produces types today (ADR-029), and it has no decimal to offer
+ * — a column of exact decimals reads as `float` and is refused with the rest.
+ * Settled types (ii-c, spec §6.5) are where that gets an answer.
+ */
+export function canIdentifyRows(type: ResourceColumnType): boolean {
+  return type !== 'float'
+}
+
+/**
  * Why two versions could not be compared row by row (spec §7).
  *
  * Here rather than beside the service that produces it because the screen that

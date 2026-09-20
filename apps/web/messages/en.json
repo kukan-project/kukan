@@ -857,7 +857,8 @@
       "fault": {
         "key-missing": "That column is not in the current content. As it stands, a version ingested under this key would be left out of diff ingestion.",
         "key-null": "A column of this key has empty values. As it stands, a version ingested under this key would be left out of diff ingestion.",
-        "key-not-unique": "This key does not narrow a row down to one. As it stands, a version ingested under this key would be left out of diff ingestion."
+        "key-not-unique": "This key does not narrow a row down to one. As it stands, a version ingested under this key would be left out of diff ingestion.",
+        "key-float": "A Number column holds a floating-point value, which cannot identify a row — so this key cannot be applied."
       },
       "unchecked": {
         "no-preview": "The current content could not be read, so whether this key narrows a row down to one could not be checked. Applying still works.",
@@ -882,6 +883,7 @@
       "kindComposite": "(composite)",
       "requirements": "The columns you choose — the combination, if more than one — have to be present in the content, hold no empty values, and not repeat across rows. A column marked unique meets all three on its own. Where they are not met, the reason is shown before you apply.",
       "noCounts": "This version does not record per-column duplicate and empty counts, so nothing can be marked unique — it was interpreted before those were kept. Choose and check, or rebuild the interpretation.",
+      "floatNotKeyable": "A column of type Number cannot be used in a primary key: it holds a floating-point value, and 1.0 and 1 are the same value there, so two spellings the file keeps apart become one key — and a value written out is not guaranteed to read back as itself. Choose an Integer or String column, or leave the key unset. A key set before the column was read this way keeps working, but it does not identify a row either.",
       "stability": "One more that cannot be checked in advance: choose columns where the same row always has the same value, and the same value is always the same row. A sequence reassigned on every publication makes unchanged rows show as one removed and one added; a retired code handed to something else makes two unrelated things line up as one changed row. Either way the ingest succeeds, so nothing records why. If those are the only candidates, leaving the key unset is the safer answer — without one an edit shows as a row removed and a row added, but two different things are never reported as the same row.",
       "sampleEmpty": "This content has no data rows — the columns are all there is."
     }

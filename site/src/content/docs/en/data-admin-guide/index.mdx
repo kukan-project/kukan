@@ -115,6 +115,10 @@ count the **rows that changed**.
 - The columns you choose — the combination, if more than one — have to be **present in the
   content, hold no empty values, and not repeat across rows**. Where they are not met, the
   reason is shown before you apply
+- **A column inferred as Number (floating-point) cannot be chosen.** 1.0 and 1 are the same
+  value there, so two spellings the file keeps apart collapse into one key, and a value written
+  out is not guaranteed to read back as itself. Such a column cannot identify a row — choose an
+  Integer or String column instead
 - Applying creates one version, and **versions from then on** are loaded under this key. Diffs
   of past versions do not change
 - When content arrives that does not satisfy the key, that version is left out of row-level

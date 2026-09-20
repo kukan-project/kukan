@@ -10,6 +10,7 @@ import { eq, and, countDistinct, desc, exists, inArray, ne, sql } from 'drizzle-
 import type { Database, Transaction } from '@kukan/db'
 import { resource, resourceVersion, resourcePipeline, auditLog } from '@kukan/db'
 import {
+  canIdentifyRows,
   ConflictError,
   getStorageKey,
   keyColumnsOf,
@@ -44,7 +45,7 @@ import {
   restandLakeTable,
   withLakeSession,
 } from '@kukan/lake'
-import type { Logger, ResourceSchema } from '@kukan/shared'
+import type { Logger, ResourceColumn, ResourceSchema } from '@kukan/shared'
 import { createLogger } from '@kukan/shared'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
@@ -668,6 +669,25 @@ function isOnePurgingViolation(err: unknown): boolean {
     if (code === '23505' && (constraint ?? '').includes('one_purging')) return true
   }
   return false
+}
+
+/** A schema's columns by name, for the key checks that ask about one by name. */
+function columnsByName(schema: ResourceSchema): Map<string, ResourceColumn> {
+  return new Map(schema.columns.map((column) => [column.name, column]))
+}
+
+/**
+ * The key's columns resting on a type that cannot identify a row
+ * ({@link canIdentifyRows}, spec §6.4).
+ *
+ * One function because two paths decide it — the check answers with it and the
+ * apply refuses with it — and a rule that is written out twice is one that can
+ * be extended past `float` in one place only.
+ *
+ * The columns must be known to exist: both callers answer `key-missing` first.
+ */
+function unusableKeyColumns(key: string[], columns: Map<string, ResourceColumn>): string[] {
+  return key.filter((column) => !canIdentifyRows(columns.get(column)!.type))
 }
 
 export class ResourceVersionService {
@@ -2149,9 +2169,9 @@ export class ResourceVersionService {
       .limit(1)
     if (!current) throw new NotFoundError('Resource', resourceId)
 
-    if (key) await this.assertColumnsExist(resourceId, key)
-
     const settled = sameKeyColumns(primaryKeyOf(current.settings), key)
+    if (key) await this.assertKeyUsable(resourceId, key, { changed: !settled })
+
     if (!settled) {
       await this.db
         .update(resource)
@@ -2240,6 +2260,11 @@ export class ResourceVersionService {
    * the rebuild lands) can still be settled, and refusing there would block an
    * operation the server accepts.
    *
+   * **One fault is not about the content at all.** A float column cannot
+   * identify a row whatever it holds ({@link canIdentifyRows}), and the apply
+   * refuses it outright — so `key-float` is here to say why a key will not be
+   * taken, not to warn about what an ingest would later record.
+   *
    * **A single-column key needs no scan.** The interpretation already counted
    * the column's nulls and its distinct values, and froze both on the version
    * (ADR-046, spec §6.4) — the same numbers the picker offers its candidates
@@ -2249,11 +2274,18 @@ export class ResourceVersionService {
    * That read goes through {@link keyFault}, so what it answers is what the
    * ingest will: the same two questions, of the same shape of file. It is
    * guarded on the preview describing the live bytes, for the reason
-   * {@link assertColumnsExist} gives about the cached schema — a run whose
+   * {@link assertKeyUsable} gives about the cached schema — a run whose
    * Interpret failed leaves the previous content's preview in place.
    *
    * **Not a promise about later.** The publisher can move the columns under a
    * key that answered here, which is what the recorded reason exists for.
+   *
+   * **The verdict is about the key, not about what the apply would do with it.**
+   * The two part company on one key: the one already stored on a float column,
+   * which {@link assertKeyUsable} accepts back unchanged and this still answers
+   * `key-float` for. Both are right — the apply is letting a standing key
+   * stand, and the key still does not identify a row — so a caller must not
+   * read a fault here as "the write will be refused".
    */
   async checkPrimaryKey(
     resourceId: string,
@@ -2266,9 +2298,17 @@ export class ResourceVersionService {
     if (!key) return { checked: true, primaryKey: null, fault: null }
 
     const schema = await this.liveSchema(resourceId)
-    const columns = new Map(schema.columns.map((column) => [column.name, column]))
+    const columns = columnsByName(schema)
     const missing = key.filter((column) => !columns.has(column))
     if (missing.length > 0) return { checked: true, primaryKey: key, fault: 'key-missing' }
+
+    // Before the content is read, and before the counts are: this one is about
+    // the type rather than the values, so no number the interpretation recorded
+    // can overturn it. Answered here as well as refused at the apply, through
+    // the same function, so the two cannot come out differently.
+    if (unusableKeyColumns(key, columns).length > 0) {
+      return { checked: true, primaryKey: key, fault: 'key-float' }
+    }
 
     if (key.length === 1) {
       const column = columns.get(key[0])!
@@ -2357,7 +2397,7 @@ export class ResourceVersionService {
    *
    * One read for every caller, because the rule it carries is one rule: the
    * columns are the ones the live *version* froze, never the resource's cached
-   * interpretation (see {@link assertColumnsExist}).
+   * interpretation (see {@link assertKeyUsable}).
    */
   private async liveSchemaOrNull(resourceId: string): Promise<ResourceSchema | null> {
     const version = await this.liveVersionNumber(this.db, resourceId)
@@ -2376,7 +2416,9 @@ export class ResourceVersionService {
   }
 
   /**
-   * Refuse a key naming columns the resource does not have.
+   * Refuse a key the resource cannot be read under: one naming columns it does
+   * not have, or — where the key is being changed — one resting on a column
+   * whose type cannot identify a row.
    *
    * **Against the live version's frozen schema**, not the resource's cached
    * interpretation: that one is the worker's to rewrite, and a run whose
@@ -2388,12 +2430,38 @@ export class ResourceVersionService {
    *
    * A courtesy, not a guarantee: columns move under keys that were valid when
    * they were set, and recording that is `lake_ingest_reason`'s job (spec §6.6).
+   *
+   * **The type is only refused on a change**, and that is the whole of what
+   * happens to a resource already keyed by a float column (spec §6.4). Its key
+   * is loading rows in layer 2 today; taking it off would turn every later diff
+   * back into removals and additions and cost a version to do it, which is the
+   * publisher's call rather than a migration's. So the setting stands, and the
+   * only two writes it still accepts are a resend of itself — the repair for an
+   * enqueue that failed — and a key without the column.
+   *
+   * **A standing key is not re-asked about either**, and the type it rests on
+   * can move: a column keyed while it read as `integer` can read as `float` in
+   * the next version, which freezes the key without consulting this (spec
+   * §6.4). Nothing here or at the ingest stops that — the load is not what a
+   * float type breaks — so the screen is where it surfaces, as a key resting on
+   * a column the picker will not let anyone choose again.
    */
-  private async assertColumnsExist(resourceId: string, key: string[]): Promise<void> {
-    const names = new Set((await this.liveSchema(resourceId)).columns.map((c) => c.name))
-    const missing = key.filter((column) => !names.has(column))
+  private async assertKeyUsable(
+    resourceId: string,
+    key: string[],
+    opts: { changed: boolean }
+  ): Promise<void> {
+    const columns = columnsByName(await this.liveSchema(resourceId))
+    const missing = key.filter((column) => !columns.has(column))
     if (missing.length > 0) {
       throw new ValidationError(`No such column in this resource: ${missing.join(', ')}`)
+    }
+    if (!opts.changed) return
+    const unusable = unusableKeyColumns(key, columns)
+    if (unusable.length > 0) {
+      throw new ValidationError(
+        `A floating-point column cannot identify a row, so it cannot be part of a primary key: ${unusable.join(', ')}`
+      )
     }
   }
 

@@ -184,6 +184,83 @@ describe('PrimaryKeyPicker', () => {
     expect(screen.getByRole('button', { name: /line/ })).not.toHaveTextContent('unique')
   })
 
+  it('leaves a floating-point column on screen, unpressable, with the reason beside it', async () => {
+    // Dropped from the list it would read as a column the resource does not
+    // have, and the publisher would go looking for it. The reason is about the
+    // type — 1.0 and 1 are the same value there — which is exactly what they
+    // need to pick a different column (spec §6.4).
+    route({
+      get: {
+        schema: {
+          rowCount: 2,
+          columns: [
+            { name: 'id', type: 'string', nullable: false, nullCount: 0, distinctCount: 2 },
+            { name: 'ratio', type: 'float', nullable: false, nullCount: 0, distinctCount: 2 },
+          ],
+        },
+      },
+    })
+    render(<PrimaryKeyPicker resourceId="r1" />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /ratio/ })).toBeDisabled())
+    expect(
+      screen.getByText(/A column of type Number cannot be used in a primary key/)
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /id/ })).toBeEnabled()
+  })
+
+  it('says nothing about a type the table does not hold', async () => {
+    route({})
+    render(<PrimaryKeyPicker resourceId="r1" />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /order/ })).toBeEnabled())
+    expect(screen.queryByText(/cannot be used in a primary key/)).not.toBeInTheDocument()
+  })
+
+  it('keeps a key already resting on one removable, and blocks the apply that changes it', async () => {
+    // The stored key stands (the server refuses only a change), so the chip
+    // that would take the column back out has to stay pressable — and the
+    // selection that adds to it has to be stopped here rather than at a 400.
+    route({
+      get: {
+        primaryKey: ['ratio'],
+        carried: true,
+        schema: {
+          rowCount: 2,
+          columns: [
+            { name: 'id', type: 'string', nullable: false, nullCount: 0, distinctCount: 2 },
+            { name: 'ratio', type: 'float', nullable: false, nullCount: 0, distinctCount: 2 },
+          ],
+        },
+      },
+    })
+    render(<PrimaryKeyPicker resourceId="r1" />)
+
+    const chips = await screen.findAllByRole('button', { name: /ratio/ })
+    const chip = chips[chips.length - 1]
+    expect(chip).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: /^id/ }))
+    await afterCheck()
+    expect(screen.getByText(/cannot identify a row/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled()
+    // And nothing was asked of the content to reach that: the answer is on the
+    // schema, and the scan would hold the one DuckDB slot to repeat it.
+    expect(mockClientFetch.mock.calls.some(([path]) => path.endsWith('/check'))).toBe(false)
+
+    // Taking the column out leaves a key the apply will take.
+    fireEvent.click(chip)
+    await afterCheck()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled())
+
+    // And putting it back is still possible: the stored key is one the server
+    // takes unchanged, so taking the column out must not be a one-way door.
+    expect(chip).toBeEnabled()
+    fireEvent.click(chip)
+    await afterCheck()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled())
+  })
+
   it('says the version recorded no counts, rather than showing every column as not unique', async () => {
     // A version interpreted before the per-column counts existed carries none,
     // and an absent mark then reads as "this column repeats" when it means

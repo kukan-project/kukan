@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   AlertDescription,
@@ -15,7 +15,7 @@ import {
 } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import type { ColumnSettingsView, KeyCheck, ResourceColumn } from '@kukan/shared'
-import { sameKeyColumns } from '@kukan/shared'
+import { canIdentifyRows, sameKeyColumns } from '@kukan/shared'
 import { clientFetch, problemDetail } from '@/lib/client-api'
 import { columnTypeKey, formatCell } from '@/lib/format-utils'
 import { KEY_HEADER_CLASS, KEY_CELL_CLASS } from '@/lib/table-cells'
@@ -97,6 +97,30 @@ export function PrimaryKeyPicker({
   /** A selection that is not yet what the resource is set to. */
   const pending = selected.length > 0 && !sameKeyColumns(view?.primaryKey ?? null, selected)
 
+  /**
+   * The columns no key may rest on, because their type cannot identify a row
+   * (`canIdentifyRows`, spec §6.4).
+   *
+   * Answered here rather than waited for, though the check answers it too: the
+   * type is on the schema this screen already holds, and a verdict that cannot
+   * change with the content should not cost a round trip — nor read as
+   * something the next publication might fix.
+   */
+  const columns = view?.schema?.columns
+  const unkeyable = useMemo(
+    () => new Set((columns ?? []).filter((c) => !canIdentifyRows(c.type)).map((c) => c.name)),
+    [columns]
+  )
+  /**
+   * A selection the server will not take (400), rather than one it takes and
+   * layer 2 later refuses.
+   *
+   * Only while the selection is pending, which is also the only shape the apply
+   * refuses: a resource already keyed by such a column keeps its key, and the
+   * resend that repairs a failed enqueue has to go on working.
+   */
+  const refused = pending && selected.some((name) => unkeyable.has(name))
+
   // The endpoint is built to be re-fired by a picker — it takes the request's
   // own signal — so the selection is checked as it is built rather than behind
   // a button. Debounced because a composite key is read out of the content, and
@@ -107,7 +131,9 @@ export function PrimaryKeyPicker({
   // scan the content to re-derive something already recorded: what each version
   // was actually read under is on the version, and the history below says so.
   useEffect(() => {
-    if (!pending) {
+    // Nothing to ask about a key that cannot be applied: the answer is known
+    // from the schema, and the scan would hold the one DuckDB slot to reach it.
+    if (!pending || refused) {
       setCheck(null)
       setChecking(false)
       return
@@ -137,7 +163,7 @@ export function PrimaryKeyPicker({
       clearTimeout(timer)
       controller.abort()
     }
-  }, [resourceId, pending, selected])
+  }, [resourceId, pending, refused, selected])
 
   /** Append or remove, keeping the order columns were picked in: a composite
    *  key is its columns *in that order* (spec §6.2). */
@@ -209,6 +235,9 @@ export function PrimaryKeyPicker({
   }
 
   const settled = sameKeyColumns(view.primaryKey, selected.length > 0 ? selected : null)
+  /** What the resource is set to, for the chips to exempt. Read once rather
+   *  than per column: it is the same list for all of them. */
+  const storedKey = view.primaryKey ?? []
   /** The version predates the per-column counts, so nothing can be marked. */
   const noCounts = view.schema.columns.every((column) => column.distinctCount === undefined)
 
@@ -281,6 +310,11 @@ export function PrimaryKeyPicker({
             key={column.name}
             column={column}
             chosen={selected.includes(column.name)}
+            // Not for a column the stored key already rests on: that key stands
+            // (spec §6.4), and the server takes it back unchanged — so the chip
+            // has to press both ways, or taking the column out is a one-way
+            // door and rebuilding the key needs a reload.
+            unkeyable={unkeyable.has(column.name) && !storedKey.includes(column.name)}
             uniqueLabel={t('unique')}
             typeLabel={(type) => tr(columnTypeKey(type))}
             onToggle={() => toggle(column.name)}
@@ -293,6 +327,14 @@ export function PrimaryKeyPicker({
           non-unique — the absence of the mark says "this repeats" when it means
           "nobody counted". Said once here rather than per column. */}
       {noCounts && <p className="text-warning-tint-foreground text-xs">{t('noCounts')}</p>}
+
+      {/* Why some of the chips cannot be pressed. Said once here rather than on
+          each of them, and only where the table has such a column: a screen
+          whose columns are all keyable has no reason to carry a rule about a
+          type it does not hold. */}
+      {unkeyable.size > 0 && (
+        <p className="text-muted-foreground text-xs">{t('floatNotKeyable')}</p>
+      )}
 
       {/* What the columns actually hold. A name does not say whether a column
           identifies a row, and the counts beside it do not say what a value
@@ -319,6 +361,7 @@ export function PrimaryKeyPicker({
 
       <KeyStatus
         selected={selected}
+        refused={refused}
         settled={settled}
         carried={view.carried}
         check={answered}
@@ -351,7 +394,7 @@ export function PrimaryKeyPicker({
           // Disabled on `settled` alone, a failed enqueue left the resource
           // with a key nothing would ever read it under, and no way back from
           // this screen.
-          disabled={saving || checking || (settled && view.carried)}
+          disabled={saving || checking || refused || (settled && view.carried)}
         >
           {saving
             ? t('applying')
@@ -552,12 +595,19 @@ function ColumnSample({
 function ColumnToggle({
   column,
   chosen,
+  unkeyable,
   uniqueLabel,
   typeLabel,
   onToggle,
 }: {
   column: ResourceColumn
   chosen: boolean
+  /** No key may rest on this column's type, and the apply refuses one that
+   *  does. Left on the screen rather than dropped from the list: a column that
+   *  simply is not offered reads as a column the resource does not have, and
+   *  the reason — which is about the type, and shown beside it — is exactly
+   *  what the publisher needs to pick a different one. */
+  unkeyable: boolean
   uniqueLabel: string
   typeLabel: (type: ResourceColumn['type']) => string
   onToggle: () => void
@@ -568,6 +618,7 @@ function ColumnToggle({
       variant={chosen ? 'default' : 'outline'}
       size="sm"
       aria-pressed={chosen}
+      disabled={unkeyable}
       // A column name is arbitrary text out of a CSV header, and where the
       // delimiter was not found there is one column named after the whole line.
       // All three are needed: the button base sets `shrink-0`, a flex item's
@@ -608,6 +659,7 @@ function ColumnToggle({
  */
 function KeyStatus({
   selected,
+  refused,
   settled,
   carried,
   check,
@@ -615,6 +667,9 @@ function KeyStatus({
   queued,
 }: {
   selected: string[]
+  /** The selection rests on a column whose type cannot identify a row, so the
+   *  apply is blocked rather than confirmed (spec §6.4). */
+  refused: boolean
   settled: boolean
   carried: boolean
   check: KeyCheck | null
@@ -642,6 +697,9 @@ function KeyStatus({
   // a key. Only the *pending* removal needs a sentence, because that one is
   // about what the button will do.
   if (selected.length === 0) return settled ? null : line(t('willClear'))
+  // Ahead of "checking", because nothing is being checked: this one is settled
+  // from the type on the schema, and no answer is on its way to replace it.
+  if (refused) return line(t('fault.key-float'), 'warn')
   if (checking) return line(t('checking'))
   // A fault first: it is the only thing here that says the key will not do what
   // the reader wants, and it stays true whether or not they apply it.
