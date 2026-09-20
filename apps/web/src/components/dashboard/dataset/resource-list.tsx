@@ -117,6 +117,8 @@ interface ResourceListProps {
    *  public page to open (a draft is unpublished and has a placeholder name) */
   packageName?: string
   resources: Resource[]
+  /** Row to open on arrival, named by the public page's status view */
+  initialEditId?: string | null
   /** Refetch the parent's package; return false when the refresh could not
    *  be applied — the list then keeps its busy gate up and retries */
   onUpdated: () => void | boolean | Promise<void | boolean>
@@ -126,6 +128,11 @@ interface ResourceListProps {
 
 /** Columns the table has, so a heading spans the row rather than sitting in one cell. */
 const COLUMN_COUNT = 7
+
+/** A row's element id, so a link naming a resource can scroll to it. */
+function rowDomId(resourceId: string) {
+  return `resource-row-${resourceId}`
+}
 
 /** A heading with nothing under it yet — unsaved, held until a resource joins it (ADR-050). */
 interface PendingSection {
@@ -316,6 +323,7 @@ function SortableResourceRow({
   return (
     <TableRow
       ref={setNodeRef}
+      id={rowDomId(r.id)}
       style={style}
       {...rowActivateProps(toggleEdit, { role: 'button', disabled: isActionsDisabled })}
     >
@@ -372,6 +380,7 @@ export function ResourceList({
   packageId,
   packageName,
   resources,
+  initialEditId,
   onUpdated,
   onUploadingChange,
 }: ResourceListProps) {
@@ -713,6 +722,16 @@ export function ResourceList({
     })
     clearUploadState()
   }
+
+  // The link named a row to open. On arrival only — the list mounts with the
+  // package already loaded, and the refetch on every pipeline settle would
+  // otherwise reopen the form over whatever is being typed in it.
+  useEffect(() => {
+    const target = resources.find((r) => r.id === initialEditId)
+    if (!target) return
+    startEdit(target)
+    document.getElementById(rowDomId(target.id))?.scrollIntoView({ block: 'center' })
+  }, [])
 
   function startCreate() {
     setEditId(null)

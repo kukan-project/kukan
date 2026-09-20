@@ -19,6 +19,8 @@ import { ResourcePreview } from './resource-preview'
 import { ResourceFields } from './resource-fields'
 import { DataApiDialog } from './data-api-dialog'
 import { useFormattedDateTime } from './date-time'
+import { NewTabLink } from '@/components/new-tab-link'
+import { resourceEditPath } from '@/lib/paths'
 import { useFetch } from '@/hooks/use-fetch'
 import type { PipelineStatusData } from '@/hooks/use-pipeline-status'
 
@@ -27,6 +29,8 @@ interface ResourcePipelinePreviewProps {
   format?: string | null
   url?: string | null
   size?: number | null
+  /** Dataset name, for the link into this resource's row in the dashboard */
+  packageName?: string
   canManage?: boolean
 }
 
@@ -40,6 +44,7 @@ export function ResourcePipelinePreview({
   format,
   url,
   size,
+  packageName,
   canManage,
 }: ResourcePipelinePreviewProps) {
   const t = useTranslations('resource')
@@ -107,6 +112,18 @@ export function ResourcePipelinePreview({
                   <DialogDescription>{t('pipelineStatusDescription')}</DialogDescription>
                 </DialogHeader>
                 <PipelineStatusDetail resourceId={resourceId} onSettled={handleSettled} />
+                {/* Everything the status view cannot do — renaming, replacing
+                    the file, the key, deleting — lives on the row this opens,
+                    and finding it meant walking back through the dashboard. */}
+                {packageName && (
+                  <div className="flex justify-end border-t pt-3">
+                    <NewTabLink
+                      href={resourceEditPath(packageName, resourceId)}
+                      label={t('manageResource')}
+                      variant="outline"
+                    />
+                  </div>
+                )}
               </DialogContent>
             </Dialog>
           )}

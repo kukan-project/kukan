@@ -287,6 +287,7 @@ export function ResourceExplorer({
                   format={r.format}
                   url={externalUrl(r)}
                   size={r.size}
+                  packageName={packageName}
                   canManage={canManage}
                 />
                 <VersionHistory resourceId={r.id} />

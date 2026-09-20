@@ -726,6 +726,7 @@
     "cancelledNotice": "処理が中止されました。プレビューと検索用の内容が未作成か、以前の内容のままの可能性があります。再処理するか、前の版へ巻き戻してください。",
     "cancelledNoticeUnsaved": "現在の内容が版として保存される前に処理が中止されました。このまま差し替えるとこの内容は失われます。プレビューと検索用の内容も未作成です。再処理して完了させるか、前の版へ巻き戻してください。",
     "reprocessResource": "再処理",
+    "manageResource": "このリソースを管理",
     "reprocessing": "再処理中...",
     "previewPage": "{current} / {total} ページ",
     "previewTotalRows": "全 {count, number} 行",

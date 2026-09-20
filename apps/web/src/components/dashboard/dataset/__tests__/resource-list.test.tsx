@@ -890,3 +890,36 @@ describe('ResourceList sections', () => {
     expect(body.section).toBe('docs')
   })
 })
+
+describe('ResourceList deep link', () => {
+  beforeEach(() => {
+    mockClientFetch.mockReset()
+  })
+
+  const resources = [
+    { id: 'r1', name: 'addresses.csv', urlType: 'upload', format: 'CSV' },
+    { id: 'r2', name: 'dictionary.pdf', urlType: 'upload', format: 'PDF' },
+  ]
+
+  const baseProps = { packageId: 'pkg1', resources, onUpdated: () => {} }
+
+  it('should open the editor on the row the link named', () => {
+    render(<ResourceList {...baseProps} initialEditId="r2" />)
+    expect(screen.getByDisplayValue('dictionary.pdf')).toBeInTheDocument()
+  })
+
+  it('should open nothing when the named resource is not in the list', () => {
+    render(<ResourceList {...baseProps} initialEditId="gone" />)
+    expect(screen.queryByText('Save')).not.toBeInTheDocument()
+  })
+
+  it('should not reopen the editor when the package refetches', () => {
+    const { rerender } = render(<ResourceList {...baseProps} initialEditId="r2" />)
+    fireEvent.click(screen.getByText('dictionary.pdf'))
+    expect(screen.queryByText('Save')).not.toBeInTheDocument()
+
+    // A pipeline settle hands the list a fresh array of the same rows
+    rerender(<ResourceList {...baseProps} resources={[...resources]} initialEditId="r2" />)
+    expect(screen.queryByText('Save')).not.toBeInTheDocument()
+  })
+})

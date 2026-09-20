@@ -103,6 +103,8 @@ export default function EditDatasetPage() {
   const tc = useTranslations('common')
   const nameOrId = params.nameOrId as string
   const stateParam = searchParams.get('state')
+  // Which resource to open, when arriving from the public page's status view
+  const resourceParam = searchParams.get('resource')
   const isDeleted = stateParam === 'deleted'
 
   const [pkg, setPkg] = useState<LoadedPackage | null>(null)
@@ -474,6 +476,7 @@ export default function EditDatasetPage() {
                 packageId={pkg.id}
                 packageName={publicName}
                 resources={pkg.resources}
+                initialEditId={resourceParam}
                 onUpdated={fetchData}
                 onUploadingChange={setUploading}
               />

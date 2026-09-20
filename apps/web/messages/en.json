@@ -726,6 +726,7 @@
     "cancelledNotice": "Processing was stopped. The preview and search content may be missing, or may still describe earlier content — reprocess to rebuild them, or revert to the previous version.",
     "cancelledNoticeUnsaved": "Processing was stopped before this resource's current content was saved as a version, so replacing the file would lose it. Its preview and search content are missing too. Reprocess to finish, or revert to the previous version.",
     "reprocessResource": "Reprocess",
+    "manageResource": "Manage this resource",
     "reprocessing": "Reprocessing...",
     "previewPage": "Page {current} / {total}",
     "previewTotalRows": "{count, number} total rows",
