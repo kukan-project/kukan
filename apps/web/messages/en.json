@@ -91,6 +91,7 @@
     "filterByLicense": "Filter by license",
     "clear": "Clear",
     "semanticToggle": "Include related results",
+    "semanticUnavailable": "Related results are unavailable right now (keyword matches only)",
     "exampleQueries": "Try:",
     "sort": {
       "label": "Sort by",

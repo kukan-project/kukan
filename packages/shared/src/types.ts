@@ -52,6 +52,16 @@ export interface FacetCounts {
 }
 
 /**
+ * Whether a search's vector leg ran, and if not, why (ADR-034).
+ *
+ * Reported rather than inferred: a leg that ran and cleared nothing above the
+ * floor returns the same empty list as one whose query embedding failed. So
+ * `degraded` — keyword results answering for a hybrid search that never
+ * happened — is knowable only because the search says so (ADR-053 §8.1).
+ */
+export type SemanticState = 'applied' | 'off' | 'degraded'
+
+/**
  * RFC 7807 Problem Details for HTTP APIs
  * @see https://datatracker.ietf.org/doc/html/rfc7807
  */

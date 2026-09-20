@@ -91,6 +91,7 @@
     "filterByLicense": "ライセンスで絞り込み",
     "clear": "クリア",
     "semanticToggle": "意味の近い結果を含める",
+    "semanticUnavailable": "意味の近い結果は現在利用できません（キーワード一致のみ）",
     "exampleQueries": "検索例:",
     "sort": {
       "label": "並べ替え",

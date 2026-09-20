@@ -61,6 +61,19 @@ describe('SemanticToggle', () => {
     expect(url.searchParams.has('offset')).toBe(false)
   })
 
+  it('should say the vector leg dropped out instead of offering the switch', () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('q=test'))
+    render(<SemanticToggle semanticEnabled={true} degraded />)
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(/keyword matches only/i)
+  })
+
+  it('should stay hidden site-wide even when a search degraded', () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('q=test'))
+    const { container } = render(<SemanticToggle semanticEnabled={false} degraded />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
   it('should drop the semantic param when turned back on', () => {
     mockSearchParams.mockReturnValue(new URLSearchParams('q=test&semantic=false'))
     render(<SemanticToggle semanticEnabled={true} />)

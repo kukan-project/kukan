@@ -1,10 +1,8 @@
 import { Suspense } from 'react'
-import type { PaginatedResult, FacetCounts } from '@kukan/shared'
 import { serverFetch } from '@/lib/server-api'
 import { titleMetadata } from '@/lib/page-metadata'
 import { toArray } from '@/lib/query'
-import type { DatasetCardItem } from '@/components/dataset-card'
-import { DatasetList } from '@/components/search/dataset-list'
+import { DatasetList, type DatasetData } from '@/components/search/dataset-list'
 
 interface Props {
   searchParams: Promise<{
@@ -20,8 +18,6 @@ interface Props {
     sort_order?: string
   }>
 }
-
-type DatasetData = PaginatedResult<DatasetCardItem> & { facets?: FacetCounts }
 
 export const generateMetadata = titleMetadata('dataset', 'title')
 

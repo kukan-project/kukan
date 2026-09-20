@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import type { PaginatedResult, FacetCounts } from '@kukan/shared'
+import type { PaginatedResult, FacetCounts, SemanticState } from '@kukan/shared'
 import { Button, Separator } from '@kukan/ui'
 import { clientFetch } from '@/lib/client-api'
 import { DatasetCard, type DatasetCardItem } from '@/components/dataset-card'
@@ -16,7 +16,10 @@ import { PaginationNav } from '@/components/pagination-nav'
 import { SearchForm } from '@/components/search-form'
 import { foldMatched } from '@/lib/matched-resources'
 
-type DatasetData = PaginatedResult<DatasetCardItem> & { facets?: FacetCounts }
+export type DatasetData = PaginatedResult<DatasetCardItem> & {
+  facets?: FacetCounts
+  semantic?: SemanticState
+}
 
 const emptyFacets: FacetCounts = {
   organizations: [],
@@ -180,8 +183,12 @@ export function DatasetList({ initialData }: Props) {
       })
   }
 
-  // On error the previous search's data is stale — show empty facets/count/pagination.
+  // On error the previous search's data is stale — show empty facets/pagination.
   const facets = error ? emptyFacets : (data?.facets ?? emptyFacets)
+  // What the search on screen answered. Facets and pagination hold the previous
+  // page across a refetch rather than collapsing the sidebar and footer; a
+  // statement about the results — their count, how they were found — cannot.
+  const current = loading || error ? null : data
 
   return (
     <div className="flex flex-col gap-6">
@@ -189,9 +196,12 @@ export function DatasetList({ initialData }: Props) {
         <h1 className="text-2xl font-bold tracking-tight">{t('dataset.title')}</h1>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <p className="text-sm text-muted-foreground">
-            {loading || error ? '\u00A0' : t('common.count', { count: data?.total ?? 0 })}
+            {current ? t('common.count', { count: current.total }) : '\u00A0'}
           </p>
-          <SemanticToggle semanticEnabled={semanticSearchEnabled} />
+          <SemanticToggle
+            semanticEnabled={semanticSearchEnabled}
+            degraded={current?.semantic === 'degraded'}
+          />
           <DatasetSort />
         </div>
       </div>

@@ -21,7 +21,7 @@ import type {
 import { MAX_MATCHED_RESOURCES_PER_PACKAGE } from '@kukan/search-adapter'
 import { resourceDocColumns } from './resource-service'
 import { type AIAdapter, embeddingKey } from '@kukan/ai-adapter'
-import { createCache, type Logger } from '@kukan/shared'
+import { createCache, type Logger, type SemanticState } from '@kukan/shared'
 import {
   FUSION_WINDOW,
   VECTOR_VOTE_RAMP,
@@ -215,21 +215,6 @@ export function mergeFacets(base: SearchFacets | undefined, add: SearchFacets): 
   }
 }
 
-/** score(doc) = Σ over result lists of 1 / (RRF_K + rank), rank starting at 1 */
-/**
- * Whether the vector leg ran, and if not, why.
- *
- * Reported rather than inferred. A caller comparing the two legs' results
- * cannot tell a leg that ran and found nothing above the floor from one that
- * never ran: a short query like "お年寄り" clears the floor on nothing at all,
- * and a failed query embedding returns the same empty list (ADR-053 §8.1).
- *
- * `degraded` is the one that matters. The search still answers — keyword
- * results beat an error — but an evaluation run reporting those numbers as
- * hybrid is measuring something it did not do.
- */
-export type SemanticState = 'applied' | 'off' | 'degraded'
-
 /** An adapter's result, plus what this layer did with it */
 export interface HybridSearchResult extends SearchResult {
   semantic: SemanticState
@@ -251,6 +236,7 @@ export function vectorVoteWeight(similarity: number, floor: number): number {
   return Math.min(1, Math.max(0, (similarity - floor) / VECTOR_VOTE_RAMP))
 }
 
+/** score(doc) = Σ over result lists of 1 / (RRF_K + rank), rank starting at 1 */
 export function fuseRrf(bm25Ids: string[], vectorHits: WeightedId[]): string[] {
   const scores = new Map<string, number>()
   bm25Ids.forEach((id, index) => {
