@@ -16,15 +16,15 @@
   },
   "dependencies": {
     "@kukan/shared": "workspace:*",
-    "aws-cdk-lib": "^2.269.0",
+    "aws-cdk-lib": "^2.270.0",
     "constructs": "^10.8.1"
   },
   "devDependencies": {
-    "@aws-sdk/client-codepipeline": "^3.1134.0",
-    "@aws-sdk/client-secrets-manager": "^3.1131.0",
+    "@aws-sdk/client-codepipeline": "^3.1136.0",
+    "@aws-sdk/client-secrets-manager": "^3.1136.0",
     "@types/node": "^24.12.2",
     "@types/pg": "^8.23.1",
-    "aws-cdk": "^2.1141.0",
+    "aws-cdk": "^2.1142.0",
     "esbuild": "^0.28.2",
     "pg": "^8.23.0",
     "tsx": "^4.23.13",
