@@ -7,25 +7,19 @@
  */
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { sql } from 'drizzle-orm'
-import { Pool } from 'pg'
+import type { Pool } from 'pg'
 import * as schema from '@kukan/db/schema'
 import { inject } from 'vitest'
-import { createTestDatabase, testDatabaseName, testDatabaseUrl } from '@kukan/db-testing'
+import {
+  createTestDatabase,
+  createTestPool,
+  testDatabaseName,
+  testDatabaseUrl,
+  truncateTables,
+} from '@kukan/db-testing'
 
 /** This process's own database — see `@kukan/db-testing` for the naming. */
 const name = () => testDatabaseName(inject('testDbPrefix'))
-
-/**
- * Two per process, not five.
- *
- * Parallel files multiply this by however many processes vitest opens — 23 on a
- * 24-core box — and a second run on the same machine doubles it again. At five
- * that was 115 potential connections a run against a server offering 97:
- * measured, two concurrent runs hit the ceiling and both failed with
- * `sorry, too many clients already`, reported as unrelated assertion failures.
- * A file's tests run one at a time, so two is more than the work needs.
- */
-const POOL_MAX = 2
 
 let pool: Pool | null = null
 let db: ReturnType<typeof drizzle<typeof schema>> | null = null
@@ -41,13 +35,13 @@ export async function prepareTestDatabase() {
   await createTestDatabase(name())
 }
 
+function getPool() {
+  pool ??= createTestPool(testDatabaseUrl(name()))
+  return pool
+}
+
 export function getTestDb() {
-  if (!pool) {
-    pool = new Pool({ connectionString: testDatabaseUrl(name()), max: POOL_MAX })
-  }
-  if (!db) {
-    db = drizzle(pool, { schema })
-  }
+  db ??= drizzle(getPool(), { schema })
   return db
 }
 
@@ -59,10 +53,9 @@ export function getTestDb() {
  * carry generated ids and timestamps and would not repeat between runs.
  */
 export function createQueryRecorder() {
-  // Shares the pool rather than opening one, so the ceiling above still holds
-  getTestDb()
   const queries: string[] = []
-  const recorder = drizzle(pool!, {
+  // Shares the pool rather than opening one, so its ceiling still holds
+  const recorder = drizzle(getPool(), {
     schema,
     logger: { logQuery: (query) => queries.push(query) },
   })
@@ -72,18 +65,32 @@ export function createQueryRecorder() {
 /**
  * Truncate all application tables (FK-safe with CASCADE).
  * Call in beforeEach() to ensure test isolation.
+ *
+ * Through `truncateTables` rather than the drizzle handle: a truncate cannot
+ * share the pool with a query the previous test left running, and that is where
+ * the reason lives.
  */
 export async function cleanDatabase() {
-  const db = getTestDb()
-  await db.execute(sql`
-    TRUNCATE TABLE
-      fetch_rate_limit, orphaned_object, resource_pipeline_step, resource_pipeline,
-      user_org_membership, user_group_membership,
-      package_tag, resource, package, tag, vocabulary,
-      api_token, audit_log, activity, announcement, system_setting,
-      "group", organization
-    CASCADE
-  `)
+  await truncateTables(getPool(), [
+    'fetch_rate_limit',
+    'orphaned_object',
+    'resource_pipeline_step',
+    'resource_pipeline',
+    'user_org_membership',
+    'user_group_membership',
+    'package_tag',
+    'resource',
+    'package',
+    'tag',
+    'vocabulary',
+    'api_token',
+    'audit_log',
+    'activity',
+    'announcement',
+    'system_setting',
+    'group',
+    'organization',
+  ])
 }
 
 /**

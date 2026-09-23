@@ -179,6 +179,13 @@ pnpm format        # Prettier フォーマット
   除外する必要があるため、`src/__tests__/tsconfig.json`（`noEmit`）を置き、`typecheck`
   スクリプトの追加パスとして実行する。型検査していないテストは、本番の型が変わっても
   黙って古いまま通る
+- **統合テストの TRUNCATE は `@kukan/db-testing` の `truncateTables` を通す。**
+  プールも `createTestPool` で作る（接続数の上限はそこが持つ）。TRUNCATE は対象表の
+  ACCESS EXCLUSIVE を要求するので、前のテストが残した読み取りが握る ACCESS SHARE と
+  デッドロックする。`truncateTables` はプールの接続を全部握ってから TRUNCATE し、
+  待機中のクエリがあれば接続を返して消化させ、TRUNCATE をやり直す（空にした表に
+  残りの書き込みが着地しないように）。生の `TRUNCATE` を `db.execute` で書くと、
+  テストの隔離が静かに壊れる
 
 ### 環境変数
 

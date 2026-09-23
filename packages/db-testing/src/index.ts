@@ -32,6 +32,9 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { MIGRATIONS_FOLDER as MIGRATIONS } from '@kukan/db'
 
+/** The other half of a suite's isolation: the pool, and the truncate on it. */
+export { createTestPool, truncateTables } from './test-pool'
+
 /** Setup runs before any reporter, so this is the only channel it has. */
 const report = (message: string) => process.stdout.write(`${message}\n`)
 

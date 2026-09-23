@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
-import { sql } from 'drizzle-orm'
 import { createTestApp, mockSearch, mockCompletionAi } from '../test-helpers/test-app'
-import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
+import {
+  getTestDb,
+  cleanDatabase,
+  cleanUsers,
+  closeTestDb,
+  ensureTestUser,
+} from '../test-helpers/test-db'
 import { resetBootstrapCache } from '../../services/bootstrap'
 import type { AIAdapter } from '@kukan/ai-adapter'
 
@@ -107,7 +112,10 @@ describe('GET /api/v1/site/settings', () => {
   })
 
   it('should force registration on while no users exist (bootstrap, ADR-038)', async () => {
-    await db.execute(sql`TRUNCATE TABLE "user" CASCADE`)
+    // The harness's own clear, not a TRUNCATE of our own: a truncate has to
+    // hold the pool to be safe between tests, and this one is the last table
+    // `cleanDatabase` above leaves standing.
+    await cleanUsers()
     resetBootstrapCache()
 
     const res = await createTestApp(db, { user: null }).request('/api/v1/site/settings')
