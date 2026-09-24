@@ -26,6 +26,19 @@ import {
 /** S3's per-request cap for DeleteObjects. */
 const DELETE_BATCH_SIZE = 1000
 
+/**
+ * A metadata value as an RFC 2047 encoded-word when it is not printable ASCII.
+ *
+ * User metadata travels as HTTP headers, where a non-ASCII value is either
+ * refused by Node or sent as bytes the signature did not cover. RFC 2047 is
+ * what S3 itself uses for such values: it decodes them before storing, so the
+ * console and `mc stat` show the name as written.
+ */
+function headerSafe(value: string): string {
+  if (/^[\x20-\x7e]*$/.test(value)) return value
+  return `=?UTF-8?B?${Buffer.from(value, 'utf8').toString('base64')}?=`
+}
+
 export interface S3Config {
   bucket: string
   region?: string
@@ -58,7 +71,7 @@ export class S3StorageAdapter implements StorageAdapter {
   private buildMetadata(meta?: ObjectMeta): Record<string, string> {
     const metadata: Record<string, string> = {}
     if (meta?.originalFilename) metadata['original-filename'] = meta.originalFilename
-    return metadata
+    return Object.fromEntries(Object.entries(metadata).map(([k, v]) => [k, headerSafe(v)]))
   }
 
   async upload(key: string, body: Buffer | Readable, meta?: ObjectMeta): Promise<void> {

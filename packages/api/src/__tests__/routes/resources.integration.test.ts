@@ -1286,6 +1286,22 @@ describe('Resources API Routes', () => {
       expect(body.size).toBe(content.length)
     })
 
+    it('records a filename that is not ASCII as it was sent', async () => {
+      const pkg = await createPackage('upload-jp-pkg')
+      const resource = await createResource(pkg.id)
+
+      const formData = new FormData()
+      formData.append('file', new File(['col1,col2\na,b'], '人口統計.csv', { type: 'text/csv' }))
+      const res = await app.request(`/api/v1/resources/${resource.id}/upload`, {
+        method: 'POST',
+        body: formData,
+      })
+      expect(res.status).toBe(200)
+
+      const body = await (await app.request(`/api/v1/resources/${resource.id}`)).json()
+      expect(body.url).toBe('人口統計.csv')
+    })
+
     it('streams a large file through without holding it, and records its size', async () => {
       const pkg = await createPackage('upload-large-pkg')
       const resource = await createResource(pkg.id)

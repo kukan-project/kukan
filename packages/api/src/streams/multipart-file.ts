@@ -93,8 +93,12 @@ export async function receiveMultipartFile<T>(
     // One over the file cap, because busboy raises `limit` on reaching the
     // size rather than passing it: at `fileSize` exactly, a file of precisely
     // the cap is delivered in full and still flagged as over.
+    //
+    // UTF-8 for the filename: busboy reads header parameters as latin1 unless
+    // told otherwise, and browsers and curl send the raw UTF-8 bytes.
     const parser = busboy({
       headers: { 'content-type': contentType },
+      defParamCharset: 'utf8',
       limits: { fileSize: opts.maxFileSize + 1 },
     })
     let taken: Promise<{ result: T; size: number }> | null = null

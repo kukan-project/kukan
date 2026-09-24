@@ -84,6 +84,22 @@ describe('receiveMultipartFile', () => {
     expect(size).toBe(content.length)
   })
 
+  it('reads a filename that is not ASCII as UTF-8', async () => {
+    const form = new FormData()
+    form.append('file', new File(['a,b'], '人口統計.csv', { type: 'text/csv' }))
+
+    const { result } = await receiveMultipartFile(
+      await multipartRequest(form),
+      opts,
+      async (file) => {
+        await drain(file)
+        return file.filename
+      }
+    )
+
+    expect(result).toBe('人口統計.csv')
+  })
+
   it('refuses a body the client declares over the cap before reading it', async () => {
     const form = new FormData()
     form.append('file', new File(['small'], 'a.csv'))

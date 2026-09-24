@@ -89,10 +89,21 @@ describe('S3StorageAdapter', () => {
       mockSend.mockResolvedValue({})
       const body = Buffer.from('data')
 
-      await storage.upload('key', body, { originalFilename: 'report.csv' })
+      await storage.upload('key', body, { originalFilename: 'data file (1).csv' })
 
       const cmd = mockSend.mock.calls[0][0]
-      expect(cmd.input.Metadata).toEqual({ 'original-filename': 'report.csv' })
+      expect(cmd.input.Metadata).toEqual({ 'original-filename': 'data file (1).csv' })
+    })
+
+    it('writes a filename that is not ASCII as an RFC 2047 encoded-word', async () => {
+      mockSend.mockResolvedValue({})
+
+      await storage.upload('key', Buffer.from('data'), { originalFilename: '人口統計.csv' })
+
+      const cmd = mockSend.mock.calls[0][0]
+      expect(cmd.input.Metadata).toEqual({
+        'original-filename': '=?UTF-8?B?5Lq65Y+j57Wx6KiILmNzdg==?=',
+      })
     })
 
     it('should not include Metadata field when no meta is provided', async () => {
