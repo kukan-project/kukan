@@ -44,6 +44,7 @@ import type { Job } from '@kukan/queue-adapter'
 import { enqueueEmbeds, rebuildMetadataIndex } from '@kukan/api/services/search-index'
 import { markContentUnindexed } from '@kukan/api/services/content-index-record'
 import { PipelineService } from '@kukan/api/services/pipeline-service'
+import { recordMissingRowGroups } from '@kukan/api/services/odata/row-group-backfill'
 import { OrganizationService } from '@kukan/api/services/organization-service'
 import { ResourceVersionService } from '@kukan/api/services/resource-version-service'
 import { createAIAdapter } from '@kukan/api/adapters'
@@ -332,7 +333,7 @@ await queue.process({
     if (!parseJobPayload(job, recordRowGroupsJobSchema)) return
     log.info({ jobId: job.id, type: job.type }, 'Record row groups job started')
     const start = performance.now()
-    const result = await new PipelineService(db).recordMissingRowGroups({
+    const result = await recordMissingRowGroups(db, {
       storage,
       env,
       queue,

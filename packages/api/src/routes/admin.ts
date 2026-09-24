@@ -43,6 +43,7 @@ import {
   RECORD_ROW_GROUPS_JOB_TYPE,
 } from '@kukan/shared'
 import { PipelineService } from '../services/pipeline-service'
+import { countPreviewsWithoutRowGroups } from '../services/odata/row-group-backfill'
 import { summaryEstimate } from '../services/summary-estimate'
 import { getSummaryModel } from '../services/suggest/availability'
 
@@ -641,7 +642,7 @@ adminRouter.post('/backfill-versions', async (c) => {
 // the few that a smaller group would let through are re-interpreted from stored
 // content. Whoever presses the button is owed both before they press it.
 adminRouter.get('/row-group-status', async (c) => {
-  return c.json(await new PipelineService(c.get('db')).countPreviewsWithoutRowGroups())
+  return c.json(await countPreviewsWithoutRowGroups(c.get('db')))
 })
 
 // POST /api/v1/admin/record-row-groups — Enqueue the one-time recording. Reads

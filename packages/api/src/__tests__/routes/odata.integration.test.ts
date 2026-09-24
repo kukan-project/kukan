@@ -10,7 +10,7 @@ import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-h
 import { ODATA_MAX_PAGE_BYTES, ODATA_MAX_PAGE_ROWS, ODATA_QUEUE_MAX } from '../../config'
 import { PINNED_PAGE_MAX_AGE_S } from '@kukan/shared'
 import { capacity } from '../../services/odata/capacity'
-import { PipelineService } from '../../services/pipeline-service'
+import { recordMissingRowGroups } from '../../services/odata/row-group-backfill'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import { maxRowBytes, rowsWithinByteBudget } from '../../services/odata/page-budget'
 
@@ -487,7 +487,7 @@ describe('GET /odata/v1/resources/:id/Rows', () => {
 
   it('records the figure for every preview that lacks one, once asked to', async () => {
     const id = await createResource({ size: null })
-    const result = await new PipelineService(db).recordMissingRowGroups({
+    const result = await recordMissingRowGroups(db, {
       storage: fixtureStorage,
       env: testEnv,
     })
@@ -522,7 +522,7 @@ describe('GET /odata/v1/resources/:id/Rows', () => {
       },
     } as unknown as QueueAdapter
 
-    const result = await new PipelineService(db).recordMissingRowGroups({
+    const result = await recordMissingRowGroups(db, {
       storage: fixtureStorage,
       env: testEnv,
       queue: brokenQueue,
@@ -546,7 +546,7 @@ describe('GET /odata/v1/resources/:id/Rows', () => {
       schema: { columns: WIDE_SCHEMA.columns, rowCount: FIXTURE.large.rows },
     })
     const enqueue = vi.fn(async () => {})
-    const result = await new PipelineService(db).recordMissingRowGroups({
+    const result = await recordMissingRowGroups(db, {
       storage: fixtureStorage,
       env: testEnv,
       queue: { enqueue } as unknown as QueueAdapter,
@@ -570,14 +570,13 @@ describe('GET /odata/v1/resources/:id/Rows', () => {
       .update(resourcePipeline)
       .set({ previewKey: `preview/gone/${id}.parquet` })
       .where(eq(resourcePipeline.resourceId, id))
-    const service = new PipelineService(db)
     const deps = { storage: fixtureStorage, env: testEnv }
 
-    const first = await service.recordMissingRowGroups(deps)
+    const first = await recordMissingRowGroups(db, deps)
     expect(first.unmeasured).toBe(1)
     expect(first.failed).toBe(0)
 
-    const second = await service.recordMissingRowGroups(deps)
+    const second = await recordMissingRowGroups(db, deps)
     expect(second).toEqual({ recorded: 0, unmeasured: 0, reinterpreting: 0, failed: 0 })
   }, 60_000)
 
