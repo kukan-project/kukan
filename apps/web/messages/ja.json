@@ -223,7 +223,9 @@
     "aiSuggestSkippedNote": "{count}件のリソースは内容を読み取れなかったため、名前・説明はファイル名などから提案しています。",
     "aiSuggestDatasetSection": "データセット",
     "aiSuggestResourceSection": "リソース",
-    "aiSuggestApply": "選択したフィールドを採用"
+    "aiSuggestApply": "選択したフィールドを採用",
+    "resourcesSavedImmediately": "リソースの追加・編集・削除・差し替えは、その場で保存されます。並び順の変更だけは「並び順を保存」で確定します。",
+    "resourcesPreviewLimits": "公開ページのプレビューには上限があります。Office ファイルは {officeMb} MB、JSON・GeoJSON は {jsonMb} MB を超えるとプレビューされません。テキストは先頭 {textMb} MB まで表示されます。"
   },
   "organization": {
     "title": "組織",
@@ -622,7 +624,7 @@
     "previewRowCount": "{total} 行中 {shown} 行を表示",
     "previewTruncatedNote": "省略あり",
     "previewEncoding": "文字コード: {encoding}",
-    "previewTruncated": "ファイルが大きいため先頭 1 MB のみ表示",
+    "previewTruncated": "ファイルが大きいため先頭 {mb} MB のみ表示",
     "fields": "項目一覧",
     "fieldsCount": "{count} 項目",
     "fieldName": "項目名",
@@ -789,7 +791,7 @@
     "previewLoadingSlow": "表示に時間がかかる場合があります",
     "previewOfficeOnline": "Microsoft Office Online を利用",
     "previewOfficeLocalUnavailable": "ローカル環境では Office プレビューを利用できません。ファイルをダウンロードしてご確認ください。",
-    "previewOfficeTooLarge": "このファイルは Office Online プレビューの上限（10 MB）を超えています。ファイルをダウンロードしてご確認ください。",
+    "previewOfficeTooLarge": "このファイルは Office Online プレビューの上限（{mb} MB）を超えています。ファイルをダウンロードしてご確認ください。",
     "explorerSearch": "全列を検索...",
     "explorerClearFilters": "フィルター解除",
     "explorerFilteredRows": "フィルター後: {filtered, number} / 全 {total, number} 行",

@@ -334,6 +334,10 @@ export function DatasetForm({
     org: t('publishRequiresOrg'),
     license: t('publishRequiresLicense'),
   }
+  // Shown on the field as well as in the list by the publish button, so the
+  // field that holds publishing back is the one that looks invalid
+  const blockerOn = (b: DraftPublishBlocker) =>
+    publishBlockers.includes(b) ? blockerMessages[b] : undefined
 
   // A lone organization is not a choice — preselect it. Creation
   // only: on an existing dataset the stored owner wins, blank or not. An effect,
@@ -557,6 +561,7 @@ export function DatasetForm({
         id="name"
         description={isDraftMode ? `${tc('nameHelp')} ${t('draftNameHelp')}` : tc('nameHelp')}
         error={errors.name?.message}
+        warning={blockerOn('name')}
       >
         <FieldLabel>{isDraftMode ? tc('urlIdentifier') : tc('nameRequired')}</FieldLabel>
         <FieldControl>
@@ -578,7 +583,7 @@ export function DatasetForm({
         </FieldControl>
       </Field>
 
-      <Field id="ownerOrg" error={errors.ownerOrg && tc('required')}>
+      <Field id="ownerOrg" error={errors.ownerOrg && tc('required')} warning={blockerOn('org')}>
         <FieldLabel>{isDraftMode ? tc('organization') : t('orgRequired')}</FieldLabel>
         <Controller
           name="ownerOrg"
@@ -654,7 +659,11 @@ export function DatasetForm({
         </div>
       </Field>
 
-      <Field id="licenseId" error={errors.licenseId && tc('required')}>
+      <Field
+        id="licenseId"
+        error={errors.licenseId && tc('required')}
+        warning={blockerOn('license')}
+      >
         <FieldLabel>{isDraftMode ? tc('license') : t('licenseRequired')}</FieldLabel>
         <Controller
           name="licenseId"
@@ -756,7 +765,7 @@ export function DatasetForm({
       {isDraftEdit ? (
         <div className="flex flex-col gap-3">
           {publishBlockers.length > 0 && (
-            <ul className="list-inside list-disc text-sm text-warning-tint-foreground">
+            <ul className="list-inside list-disc text-sm text-destructive">
               {publishBlockers.map((b) => (
                 <li key={b}>{blockerMessages[b]}</li>
               ))}

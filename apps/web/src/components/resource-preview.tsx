@@ -15,6 +15,9 @@ import {
   isPdfFormat,
   isGeoJsonFormat,
   isImageFormat,
+  OFFICE_PREVIEW_LIMIT,
+  OFFICE_PREVIEW_LIMIT_MB,
+  TEXT_PREVIEW_LIMIT_MB,
 } from '@kukan/shared'
 import { clientFetch } from '@/lib/client-api'
 import { DataExplorer } from './data-explorer/data-explorer'
@@ -28,7 +31,7 @@ interface ResourcePreviewProps {
   format?: string | null
   /** Original URL for external URL resources (used by Office Online Viewer) */
   url?: string | null
-  /** File size in bytes (used for Office Online Viewer 10 MB limit check) */
+  /** File size in bytes (checked against OFFICE_PREVIEW_LIMIT) */
   size?: number | null
   /** The version's column schema, fetched once by the owner (tabular formats only) */
   schema?: ResourceSchema | null
@@ -241,7 +244,7 @@ function RawTextPreview({
       {(encoding || truncated) && (
         <div className="flex items-center gap-2 border-t px-4 py-2 text-xs text-muted-foreground">
           {encoding && <span>{t('previewEncoding', { encoding })}</span>}
-          {truncated && <span>{t('previewTruncated')}</span>}
+          {truncated && <span>{t('previewTruncated', { mb: TEXT_PREVIEW_LIMIT_MB })}</span>}
         </div>
       )}
     </div>
@@ -290,9 +293,6 @@ function PdfPreview({ resourceId }: { resourceId: string }) {
 
 const OFFICE_VIEWER_BASE = 'https://view.officeapps.live.com/op/embed.aspx'
 
-/** Office Online Viewer file size limit (10 MB) */
-const OFFICE_VIEWER_MAX_SIZE = 10 * 1024 * 1024
-
 function OfficeOnlinePreview({
   resourceId,
   url,
@@ -329,11 +329,11 @@ function OfficeOnlinePreview({
     fileUrl = `${window.location.origin}/api/v1/resources/${encodeURIComponent(resourceId)}/preview`
   }
 
-  if (size && size > OFFICE_VIEWER_MAX_SIZE) {
+  if (size && size > OFFICE_PREVIEW_LIMIT) {
     return (
       <Card>
         <CardContent className="py-8 text-center text-sm text-muted-foreground">
-          {t('previewOfficeTooLarge')}
+          {t('previewOfficeTooLarge', { mb: OFFICE_PREVIEW_LIMIT_MB })}
         </CardContent>
       </Card>
     )

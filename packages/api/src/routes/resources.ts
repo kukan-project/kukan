@@ -44,8 +44,10 @@ import {
   MAX_UPLOAD_SIZE_MB,
   primaryKeyOf,
   SysadminRequiredError,
+  JSON_PREVIEW_LIMIT,
+  TEXT_PREVIEW_LIMIT,
 } from '@kukan/shared'
-import { TEXT_PREVIEW_LIMIT, JSON_PREVIEW_LIMIT, QUERY_MAX_SQL_LENGTH } from '../config'
+import { QUERY_MAX_SQL_LENGTH } from '../config'
 import { JsonMinifyStream } from '../streams/json-minify-stream'
 import {
   canWritePackage,

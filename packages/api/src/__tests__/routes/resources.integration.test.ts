@@ -8,7 +8,7 @@ import {
   resourcePipelineStep,
   resourceVersion,
 } from '@kukan/db'
-import { getStorageKey, MAX_UPLOAD_SIZE } from '@kukan/shared'
+import { getStorageKey, MAX_UPLOAD_SIZE, JSON_PREVIEW_LIMIT } from '@kukan/shared'
 import type { ResourceColumnType } from '@kukan/shared'
 import { createTestApp, mockQueue, mockSearch, mockStorage } from '../test-helpers/test-app'
 import { CLAIM_STALE_AFTER_MS } from '../../services/pipeline-claim'
@@ -349,10 +349,10 @@ describe('Resources API Routes', () => {
       const pkg = await createPackage('json-toolarge-pkg')
       const resource = await createResource(pkg.id, { format: 'JSON' })
 
-      // Set size > JSON_PREVIEW_LIMIT (10 MB) directly in DB
+      // Over the preview limit, set directly in DB
       await db
         .update(resourceTable)
-        .set({ size: 11 * 1024 * 1024 })
+        .set({ size: JSON_PREVIEW_LIMIT + 1 })
         .where(eq(resourceTable.id, resource.id))
 
       const res = await appWithJson.request(`/api/v1/resources/${resource.id}/json`)
@@ -363,7 +363,7 @@ describe('Resources API Routes', () => {
     })
 
     it('should return 413 via storage totalSize when resource.size is null', async () => {
-      const largeTotalSize = 11 * 1024 * 1024
+      const largeTotalSize = JSON_PREVIEW_LIMIT + 1
       const largeStorage = {
         ...storageWithContent,
         downloadRange: async () => ({

@@ -65,6 +65,37 @@ describe('Field', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Too short')
   })
 
+  it('wires a warning like an error, without announcing it', () => {
+    render(
+      <Field id="name" warning="Needed to publish">
+        <FieldLabel>Name</FieldLabel>
+        <FieldControl>
+          <Input />
+        </FieldControl>
+      </Field>
+    )
+    const input = screen.getByLabelText('Name')
+
+    expect(input).toHaveAttribute('aria-describedby', 'name-error')
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText('Needed to publish')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('shows the error, announced, when a warning is given too', () => {
+    render(
+      <Field id="name" error="Too short" warning="Needed to publish">
+        <FieldLabel>Name</FieldLabel>
+        <FieldControl>
+          <Input />
+        </FieldControl>
+      </Field>
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Too short')
+    expect(screen.queryByText('Needed to publish')).not.toBeInTheDocument()
+  })
+
   it('keeps ids of descriptions living outside the field ahead of its own', () => {
     render(
       <Field id="pw" describedBy="requirements" error="Too short">

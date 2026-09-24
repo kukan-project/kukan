@@ -122,6 +122,7 @@ function Field({
   title,
   description,
   error,
+  warning,
   children,
   ...props
 }: Omit<React.ComponentProps<'div'>, 'title'> &
@@ -132,24 +133,31 @@ function Field({
     title?: React.ReactNode
     description?: React.ReactNode
     error?: React.ReactNode
+    /**
+     * What the field still lacks for a later step (publishing a draft) — shown
+     * and marked like an error, but not announced: it is there from load and
+     * changes as the person types, and an alert would repeat itself each time.
+     */
+    warning?: React.ReactNode
   }) {
   const generatedId = React.useId()
   const controlId = id ?? generatedId
   const titleId = `${controlId}-title`
   const descriptionId = `${controlId}-description`
   const errorId = `${controlId}-error`
+  const message = error || warning
 
   const value = React.useMemo<FieldContextValue>(
     () => ({
       controlId,
       // A message under the field is itself the claim that it is invalid
-      invalid: !!error,
+      invalid: !!message,
       describedBy:
-        [externalDescribedBy, description && descriptionId, error && errorId]
+        [externalDescribedBy, description && descriptionId, message && errorId]
           .filter(Boolean)
           .join(' ') || undefined,
     }),
-    [controlId, descriptionId, errorId, externalDescribedBy, description, error]
+    [controlId, descriptionId, errorId, externalDescribedBy, description, message]
   )
 
   const describing = description ? (
@@ -176,7 +184,11 @@ function Field({
         {title && describing}
         {children}
         {!title && describing}
-        {error && <FieldError id={errorId}>{error}</FieldError>}
+        {message && (
+          <FieldError id={errorId} role={error ? 'alert' : undefined}>
+            {message}
+          </FieldError>
+        )}
       </div>
     </FieldContext.Provider>
   )

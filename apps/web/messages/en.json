@@ -223,7 +223,9 @@
     "aiSuggestSkippedNote": "{count} resource(s) could not be read, so their name and description were suggested from the filename and metadata.",
     "aiSuggestDatasetSection": "Dataset",
     "aiSuggestResourceSection": "Resources",
-    "aiSuggestApply": "Adopt selected fields"
+    "aiSuggestApply": "Adopt selected fields",
+    "resourcesSavedImmediately": "Adding, editing, replacing or deleting a resource is saved right away. Only a new order needs \"Save order\".",
+    "resourcesPreviewLimits": "Previews on the public page have limits: Office files over {officeMb} MB and JSON or GeoJSON over {jsonMb} MB are not previewed, and text shows only its first {textMb} MB."
   },
   "organization": {
     "title": "Organizations",
@@ -622,7 +624,7 @@
     "previewRowCount": "{shown} of {total} rows",
     "previewTruncatedNote": "truncated",
     "previewEncoding": "Encoding: {encoding}",
-    "previewTruncated": "Large file — showing first 1 MB only",
+    "previewTruncated": "Large file — showing first {mb} MB only",
     "fields": "Fields",
     "fieldsCount": "{count} fields",
     "fieldName": "Field name",
@@ -789,7 +791,7 @@
     "previewLoadingSlow": "This may take a while",
     "previewOfficeOnline": "Powered by Microsoft Office Online",
     "previewOfficeLocalUnavailable": "Office preview is not available in local environments. Download the file to view it.",
-    "previewOfficeTooLarge": "This file exceeds the 10 MB limit for Office Online preview. Download the file to view it.",
+    "previewOfficeTooLarge": "This file exceeds the {mb} MB limit for Office Online preview. Download the file to view it.",
     "explorerSearch": "Search all columns...",
     "explorerClearFilters": "Clear filters",
     "explorerFilteredRows": "Filtered: {filtered, number} / {total, number} total rows",

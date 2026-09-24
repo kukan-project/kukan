@@ -433,9 +433,15 @@ describe('DatasetForm (draft flows)', () => {
         />
       )
 
-      expect(screen.getByText('Enter a URL identifier to publish')).toBeInTheDocument()
-      expect(screen.getByText('Select an organization to publish')).toBeInTheDocument()
-      expect(screen.getByText('Select a license to publish')).toBeInTheDocument()
+      // Once by the button, once on the field that holds publishing back
+      expect(screen.getAllByText('Enter a URL identifier to publish')).toHaveLength(2)
+      expect(screen.getAllByText('Select an organization to publish')).toHaveLength(2)
+      expect(screen.getAllByText('Select a license to publish')).toHaveLength(2)
+      for (const id of ['name', 'ownerOrg', 'licenseId']) {
+        expect(document.getElementById(id)).toHaveAttribute('aria-invalid', 'true')
+      }
+      // Present from load and changing as the person types — not announced
+      expect(screen.queryAllByRole('alert')).toHaveLength(0)
       expect(screen.getByRole('button', { name: 'Save & Publish' })).toBeDisabled()
     })
 
@@ -453,7 +459,7 @@ describe('DatasetForm (draft flows)', () => {
 
       const publishButton = screen.getByRole('button', { name: 'Save & Publish' })
       expect(publishButton).toBeDisabled()
-      expect(screen.getByText('Enter a URL identifier to publish')).toBeInTheDocument()
+      expect(screen.getAllByText('Enter a URL identifier to publish')).toHaveLength(2)
 
       fireEvent.change(screen.getByPlaceholderText('my-dataset'), {
         target: { value: 'my-data' },

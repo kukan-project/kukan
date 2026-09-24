@@ -227,6 +227,20 @@ export const MAX_UPLOAD_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024
  */
 export const MAX_PARQUET_SOURCE_SIZE = 100 * 1024 * 1024
 
+/**
+ * How much of a file a preview shows. Shared so the dashboard can tell an
+ * editor about them before a reader finds out on the public page.
+ */
+export const TEXT_PREVIEW_LIMIT_MB = 1
+/** Bytes the text preview returns; longer files are cut off with a notice */
+export const TEXT_PREVIEW_LIMIT = TEXT_PREVIEW_LIMIT_MB * 1024 * 1024
+export const JSON_PREVIEW_LIMIT_MB = 10
+/** Largest JSON / GeoJSON the preview (and so the map) will load */
+export const JSON_PREVIEW_LIMIT = JSON_PREVIEW_LIMIT_MB * 1024 * 1024
+export const OFFICE_PREVIEW_LIMIT_MB = 10
+/** Largest file the Office Online Viewer accepts */
+export const OFFICE_PREVIEW_LIMIT = OFFICE_PREVIEW_LIMIT_MB * 1024 * 1024
+
 /** Storage key prefix for resource raw files */
 export const RESOURCE_PREFIX = 'resources/'
 

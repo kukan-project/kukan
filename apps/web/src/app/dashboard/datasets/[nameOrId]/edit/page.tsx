@@ -3,9 +3,24 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { Alert, AlertDescription, Badge, Card, CardContent, CardHeader, CardTitle } from '@kukan/ui'
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import { isDraftPlaceholderName, type PackageState } from '@kukan/shared'
+import {
+  isDraftPlaceholderName,
+  type PackageState,
+  JSON_PREVIEW_LIMIT_MB,
+  OFFICE_PREVIEW_LIMIT_MB,
+  TEXT_PREVIEW_LIMIT_MB,
+} from '@kukan/shared'
 import { Sparkles } from 'lucide-react'
 import { SwitchField } from '@/components/switch-field'
 import { clientFetch } from '@/lib/client-api'
@@ -470,6 +485,16 @@ export default function EditDatasetPage() {
           <Card>
             <CardHeader>
               <CardTitle>{t('resources')}</CardTitle>
+              <CardDescription className="flex flex-col gap-1">
+                <span>{t('resourcesSavedImmediately')}</span>
+                <span>
+                  {t('resourcesPreviewLimits', {
+                    officeMb: OFFICE_PREVIEW_LIMIT_MB,
+                    jsonMb: JSON_PREVIEW_LIMIT_MB,
+                    textMb: TEXT_PREVIEW_LIMIT_MB,
+                  })}
+                </span>
+              </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
               <ResourceList
