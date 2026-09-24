@@ -5,9 +5,12 @@
 
 ## Status
 
-**Proposed** — this ADR does not settle an implementation. It compares the routes by which a BI tool
-(Tableau as the originating request, and with it Power BI and Excel) can reach KUKAN's table data,
-and assembles the material for a decision.
+**Accepted** — Step 1 implemented on 2026-09-24 (see "Phases"). The feed serves public resources
+whose column names pass as EDM identifiers as they are. Step 2 (column-name normalization, open
+question 1) and Step 3 have not been started.
+
+This ADR compares the routes by which a BI tool (Tableau as the originating request, and with it Power BI
+and Excel) can reach KUKAN's table data, and takes B (OData) as the entry point.
 
 The loop ADR-032 established — catalog, schema, query — is a route **for agents**. What this ADR
 covers is a person sitting in a desktop BI tool, which asks for something different.
@@ -147,7 +150,7 @@ Present as PostgreSQL, one of Tableau's first-class connectors.
 - Against: **an IAM access key is required**, so it cannot be offered to catalog users. It remains a
   useful note for operators who run their own bucket
 
-## Decision (Proposed)
+## Decision
 
 **Take B (OData) as the front door and send whole-table reads to C (files) — two routes.**
 

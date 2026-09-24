@@ -263,7 +263,7 @@ pnpm format        # Prettier フォーマット
 - シェープファイルの地図プレビュー（ZIP 内の SHP を GeoJSON として解釈、提案・着手保留） → `docs/adr/jp/052-shapefile-map-preview.md`
 - リソースの AI 生成抄録（推論はサマリー文に限り、値は生成しない） → `docs/adr/jp/053-ai-resource-summary.md`
 - 埋め込みの単位はリソース（「どの表を開けばよいか」に答える、ADR-034 の単位部分を置換） → `docs/adr/jp/054-resource-embedding-unit.md`
-- BI ツールからの表データ接続（OData 読み取り専用、バルクはファイルへ誘導、提案） → `docs/adr/jp/055-bi-table-access-odata.md`
+- BI ツールからの表データ接続（OData 読み取り専用、バルクはファイルへ誘導、Step 1 実装済み） → `docs/adr/jp/055-bi-table-access-odata.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
