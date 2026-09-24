@@ -11,14 +11,8 @@
  * its own is in {@link OVERSIZE_INTEGER} and {@link readOptions}.
  */
 
-import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api'
-import {
-  duckdbInstanceOptions,
-  readRowGroupRows,
-  sqlIdentifier,
-  sqlLiteral,
-  useOwnTempDirectory,
-} from '@kukan/lake'
+import type { DuckDBConnection } from '@duckdb/node-api'
+import { openDuckdb, readRowGroupRows, sqlIdentifier, sqlLiteral } from '@kukan/lake'
 import { PARQUET_PREVIEW_ROW_GROUP_ROWS } from '@kukan/shared'
 import type {
   ColumnStats,
@@ -155,20 +149,15 @@ export async function interpretCsv(
   parquetPath: string,
   skipRows: number
 ): Promise<InterpretedCsv> {
-  const instance = await DuckDBInstance.create(':memory:', {
-    ...duckdbInstanceOptions(),
-    memory_limit: `${INTERPRET_MEMORY_LIMIT_MB}MB`,
-    threads: String(INTERPRET_THREADS),
+  // Somewhere of its own to spill, because the load below is meant to: a
+  // spill file shared with the lake instance this process also holds fails
+  // both (see `useOwnTempDirectory`).
+  const { conn, close } = await openDuckdb({
+    memoryLimitBytes: INTERPRET_MEMORY_LIMIT_MB * 1_000_000,
+    threads: INTERPRET_THREADS,
+    spill: 'interpret',
   })
-  const conn = await instance.connect()
-  let dropTempDir: (() => Promise<void>) | undefined
   try {
-    // Somewhere of its own to spill, because the load below is meant to: a
-    // spill file shared with the lake instance this process also holds fails
-    // both (see `useOwnTempDirectory`). Inside the try, so a failure here still
-    // closes the instance — a worker leaking one per message accumulates its
-    // buffer manager and threads for days.
-    dropTempDir = await useOwnTempDirectory(conn, 'interpret')
     // Materialized rather than streamed straight into the COPY: the schema needs
     // exact distinct counts over every row, and reading the file twice to get
     // them costs more than holding it once. DuckDB spills to disk under
@@ -250,9 +239,9 @@ export async function interpretCsv(
       },
     }
   } finally {
-    conn.disconnectSync()
-    instance.closeSync()
-    await dropTempDir?.()
+    // A worker leaking an instance per message accumulates its buffer manager
+    // and threads for days.
+    await close()
   }
 }
 

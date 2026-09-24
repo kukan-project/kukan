@@ -13,14 +13,15 @@
  * extension cannot be installed, and none of it can be set back.
  */
 
-import { ServiceUnavailableError, type Env } from '@kukan/shared'
+import type { Env } from '@kukan/shared'
 import {
-  duckdbInstanceOptions,
+  type DuckdbHandle,
   loadDuckdbExtensions,
+  openDuckdb,
   s3SecretBody,
   s3SettingsFromEnv,
+  sealDuckdb,
   sqlLiteral,
-  useOwnTempDirectory,
   usesCredentialChain,
 } from '@kukan/lake'
 
@@ -43,34 +44,21 @@ export interface SessionOptions {
 }
 
 /**
- * Open a connection that can read `location` and as little else as the reading
- * allows. The caller closes both handles.
+ * An instance that can read `location` and as little else as the reading
+ * allows, and the connection it was prepared on. Everything it is set to holds
+ * for every connection opened on it later, which is what lets the feed keep it
+ * between pages (`feed-pool.ts`).
  */
-export async function openSession(opts: SessionOptions) {
-  const duckdb = await import('@duckdb/node-api').catch(() => null)
-  if (!duckdb) {
-    throw new ServiceUnavailableError('DuckDB native library is not available in this environment')
-  }
-  const instance = await duckdb.DuckDBInstance.create(':memory:', duckdbInstanceOptions())
-  const conn = await instance.connect()
+export async function prepareFeedInstance(opts: SessionOptions): Promise<DuckdbHandle> {
   const overS3 = isS3Location(opts.location)
-  let dropTempDir: (() => Promise<void>) | undefined
-  const close = async () => {
-    conn.disconnectSync()
-    instance.closeSync()
-    await dropTempDir?.()
-  }
+  const handle = await openDuckdb({
+    memoryLimitBytes: opts.memoryLimitBytes,
+    threads: 1,
+    spill: overS3 ? null : 'odata',
+  })
+  const { conn } = handle
   try {
-    // Bytes with a `B` suffix: DuckDB's `MB` is 1000-based, and spelling the
-    // budget out leaves no room for the reader to wonder which it meant.
-    await conn.run(`SET memory_limit = '${opts.memoryLimitBytes}B'`)
-    await conn.run('SET threads = 1')
-    // Its own place to spill wherever DuckDB may write at all
-    // (`useOwnTempDirectory`). An S3 read has no local filesystem at all
-    // (below), so it needs none.
-    if (!overS3) {
-      dropTempDir = await useOwnTempDirectory(conn, 'odata')
-    } else {
+    if (overS3) {
       const s3 = s3SettingsFromEnv(opts.env)
       // `aws` only backs the credential chain, so a deployment with static
       // keys would spend ~12 ms a page loading what its secret never calls.
@@ -85,27 +73,40 @@ export async function openSession(opts: SessionOptions) {
       // against an endpoint that accepts and never replies, `interrupt()` one
       // second in left the read running for 120 s — httpfs's own 30 s × 4
       // attempts — with the page's slot held throughout; on a two-slot task that
-      // is the whole feed. These bound one request, in seconds, and the lock
+      // is the whole feed. These bound one request, in seconds, and the seal
       // below freezes them.
-      await conn.run(`SET http_timeout = ${Math.max(1, Math.floor(opts.readTimeoutMs / 3000))}`)
-      await conn.run('SET http_retries = 1')
+      //
+      // GLOBAL, because a plain SET of an httpfs option binds this connection
+      // only: the next one on the instance is back at 30 s × 4, checked.
+      await conn.run(
+        `SET GLOBAL http_timeout = ${Math.max(1, Math.floor(opts.readTimeoutMs / 3000))}`
+      )
+      await conn.run('SET GLOBAL http_retries = 1')
     }
 
-    // Everything the read does not need, refused — after the extensions are
-    // loaded, because loading one is itself a local file read.
-    await conn.run('SET autoinstall_known_extensions = false')
-    await conn.run('SET autoload_known_extensions = false')
+    // An instance kept between pages must not keep what they read: remote
+    // blocks stay in its buffer pool until pressure inside it evicts them,
+    // which is the lake's measured 206 MB (`@kukan/lake` connection.ts).
+    // Footers likewise, and those grow with every distinct file read — 200 MB
+    // of RSS over 60 wide ones. Off by default today; said here so that a
+    // DuckDB upgrade changing the default cannot turn it on. GLOBAL for the
+    // reason the http bounds above are: a plain SET of the metadata cache
+    // reaches this connection only (checked).
+    await conn.run('SET GLOBAL enable_external_file_cache = false')
+    await conn.run('SET GLOBAL parquet_metadata_cache = false')
+
     // A local read keeps the local filesystem, which is where its Parquet is;
     // an S3 read keeps neither it nor plain HTTP, which is what closes the
     // path to the instance metadata service and to anything else on the
     // network. S3FileSystem is separate from HTTPFileSystem, so the feed's own
-    // reads go on working — checked both ways.
+    // reads go on working — checked both ways. After the extensions, because
+    // loading one is itself a local file read.
     const disabled = overS3 ? 'LocalFileSystem,HTTPFileSystem' : 'HTTPFileSystem'
     await conn.run(`SET disabled_filesystems = ${sqlLiteral(disabled)}`)
-    await conn.run('SET lock_configuration = true')
-    return { conn, close }
+    await sealDuckdb(conn)
+    return handle
   } catch (err) {
-    await close()
+    await handle.close()
     throw err
   }
 }

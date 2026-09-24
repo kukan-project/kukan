@@ -18,7 +18,7 @@ import type { Env, Logger, PipelineStatus, ResourceSchema } from '@kukan/shared'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { readRowGroupRows } from '@kukan/lake'
-import { openSession } from './odata/session'
+import { prepareFeedInstance } from './odata/session'
 import { estimateRowBytes, rowsMayBeTooWide } from './odata/page-budget'
 import {
   ODATA_MAX_UNRECORDED_ROW_GROUP_ROWS,
@@ -338,7 +338,7 @@ export class PipelineService {
     const rows = await this.rowGroupBackfillCandidates()
     if (rows.length === 0) return { recorded: 0, unmeasured: 0, reinterpreting: 0, failed: 0 }
 
-    const session = await openSession({
+    const session = await prepareFeedInstance({
       location: deps.storage.readUrl(rows[0].previewKey!),
       env: deps.env,
       memoryLimitBytes: ODATA_MEMORY_LIMIT_BYTES,

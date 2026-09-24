@@ -246,6 +246,27 @@ export const ODATA_QUEUE_MAX = 8
  */
 export const ODATA_QUEUE_WAIT_MS = ODATA_WRITE_TIMEOUT_MS + 5_000
 
+/**
+ * How long a feed's DuckDB instance is kept unused before it is closed (ms).
+ *
+ * Long enough to span the gap between one page of an extract and the next —
+ * a BI tool asks for the next link as soon as the last row is in — and short
+ * enough that a process that served one extract does not hold its instances
+ * for the rest of the day.
+ */
+export const ODATA_INSTANCE_IDLE_MS = 60_000
+
+/**
+ * How long after it was prepared a feed's DuckDB instance is retired even
+ * under steady traffic, which would otherwise keep it for good (ms).
+ *
+ * A backstop for its credentials: the secret is told to refresh itself, but
+ * the lake found that a lapsed task-role credential can still surface as a
+ * plain ExpiredToken, and a feed page that hits one fails a BI tool's whole
+ * refresh. A fresh instance resolves the chain again.
+ */
+export const ODATA_INSTANCE_MAX_AGE_MS = 15 * 60_000
+
 // --- Hybrid (BM25 + vector) search (ADR-034) ---
 
 /** Top-k window fetched from each side (BM25 / vector) before RRF fusion.

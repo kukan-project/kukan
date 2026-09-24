@@ -3,7 +3,7 @@ import type { Env } from '@kukan/shared'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { isS3Location, openSession } from '../../services/odata/session'
+import { isS3Location, prepareFeedInstance } from '../../services/odata/session'
 
 const env = {
   S3_BUCKET: 'kukan-test',
@@ -13,21 +13,45 @@ const env = {
   S3_SECRET_KEY: 's',
 } as unknown as Env
 
-/** Run `sql` in a session opened for `location`, and report how it ended. */
-async function attempt(location: string, sql: string): Promise<string> {
-  const { conn, close } = await openSession({
+/**
+ * A connection on an instance prepared for `location`: the one it was prepared
+ * on, or — what every page after the first gets from the pool — a later one.
+ */
+async function connect(location: string, later: boolean) {
+  const handle = await prepareFeedInstance({
     location,
     env,
     memoryLimitBytes: 64_000_000,
     readTimeoutMs: 15_000,
   })
+  if (!later) return handle
+  const conn = await handle.instance.connect()
+  return {
+    conn,
+    close: async () => {
+      conn.disconnectSync()
+      await handle.close()
+    },
+  }
+}
+
+/** The rows of `sql` on a connection opened for `location`. */
+async function rows(location: string, sql: string, later = false) {
+  const { conn, close } = await connect(location, later)
   try {
-    await conn.runAndReadAll(sql)
+    return (await conn.runAndReadAll(sql)).getRowObjectsJson()
+  } finally {
+    await close()
+  }
+}
+
+/** Run `sql` on a connection opened for `location`, and report how it ended. */
+async function attempt(location: string, sql: string, later = false): Promise<string> {
+  try {
+    await rows(location, sql, later)
     return 'allowed'
   } catch (err) {
     return String(err).split('\n')[0]
-  } finally {
-    await close()
   }
 }
 
@@ -43,20 +67,9 @@ describe('the extension directory', () => {
     const dir = await mkdtemp(join(tmpdir(), 'kukan-ext-'))
     process.env.DUCKDB_EXTENSION_DIRECTORY = dir
     try {
-      const { conn, close } = await openSession({
-        location: '/tmp/none.parquet',
-        env,
-        memoryLimitBytes: 64_000_000,
-        readTimeoutMs: 15_000,
-      })
-      try {
-        const reader = await conn.runAndReadAll(
-          `SELECT current_setting('extension_directory') AS dir`
-        )
-        expect((reader.getRowObjectsJson()[0] as { dir: string }).dir).toBe(dir)
-      } finally {
-        await close()
-      }
+      expect(
+        await rows('/tmp/none.parquet', `SELECT current_setting('extension_directory') AS dir`)
+      ).toEqual([{ dir }])
     } finally {
       // Assigning `undefined` to a process.env entry stores the *string*
       // "undefined", which the next session would hand DuckDB as a relative
@@ -70,10 +83,15 @@ describe('the extension directory', () => {
 })
 
 // The session is what stands between an open object store and everything else
-// on the network, and a guard nothing exercises is a guard that rots.
-describe('a session opened for S3', () => {
+// on the network, and a guard nothing exercises is a guard that rots. Asked on
+// a later connection as well: the pool serves every page after the first on
+// one, and a setting bound to the connection it was made on is gone there.
+describe.each([
+  ['on the connection it was prepared on', false],
+  ['on a later connection', true],
+])('an instance prepared for S3, %s', (_, later) => {
   it('refuses to read a local file', async () => {
-    expect(await attempt(S3, `SELECT * FROM read_csv('/etc/hostname')`)).toMatch(
+    expect(await attempt(S3, `SELECT * FROM read_csv('/etc/hostname')`, later)).toMatch(
       /LocalFileSystem has been disabled/
     )
   })
@@ -82,24 +100,52 @@ describe('a session opened for S3', () => {
     // 169.254.169.254 is the instance metadata service; the refusal is what
     // stops a reachable one being reachable from here.
     expect(
-      await attempt(S3, `SELECT * FROM read_csv('http://169.254.169.254/latest/meta-data/')`)
+      await attempt(S3, `SELECT * FROM read_csv('http://169.254.169.254/latest/meta-data/')`, later)
     ).toMatch(/HTTPFileSystem has been disabled/)
   }, 30_000)
 
   it('refuses to write', async () => {
-    expect(await attempt(S3, `COPY (SELECT 1) TO '/tmp/kukan-odata-escape.csv'`)).toMatch(
+    expect(await attempt(S3, `COPY (SELECT 1) TO '/tmp/kukan-odata-escape.csv'`, later)).toMatch(
       /has been disabled/
     )
   })
 
   it('refuses to be set back', async () => {
-    expect(await attempt(S3, `SET disabled_filesystems = ''`)).toMatch(
+    expect(await attempt(S3, `SET disabled_filesystems = ''`, later)).toMatch(
       /Cannot change configuration/
     )
   })
 
   it('refuses another extension', async () => {
-    expect(await attempt(S3, `INSTALL spatial`)).toMatch(/has been disabled|Cannot change/)
+    expect(await attempt(S3, `INSTALL spatial`, later)).toMatch(/has been disabled|Cannot change/)
+  })
+
+  it('bounds a stalled request', async () => {
+    // httpfs's own 30 s × 4 is the stall the bound exists to stop.
+    expect(
+      await rows(
+        S3,
+        `SELECT current_setting('http_timeout') AS t, current_setting('http_retries') AS r`,
+        later
+      )
+    ).toEqual([{ t: '5', r: '1' }])
+  })
+
+  it('keeps nothing it read', async () => {
+    expect(
+      await rows(
+        S3,
+        `SELECT current_setting('enable_external_file_cache') AS files, ` +
+          `current_setting('parquet_metadata_cache') AS footers`,
+        later
+      )
+    ).toEqual([{ files: false, footers: false }])
+  })
+
+  it('offers its credentials to the one bucket', async () => {
+    expect(await rows(S3, `SELECT name, scope FROM duckdb_secrets()`, later)).toEqual([
+      { name: 'feed_s3', scope: ['s3://kukan-test'] },
+    ])
   })
 })
 

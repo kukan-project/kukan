@@ -31,8 +31,11 @@ import { Semaphore } from '../query/semaphore'
 import type { EdmModel, EdmRefusal } from './edm'
 import { feedModel, feedRefusal, isEdmRefusal } from './feed-eligibility'
 import { capacity } from './capacity'
-import { openSession } from './session'
+import { createFeedPool, type FeedLease } from './feed-pool'
+import { prepareFeedInstance } from './session'
 import {
+  ODATA_INSTANCE_IDLE_MS,
+  ODATA_INSTANCE_MAX_AGE_MS,
   ODATA_MEMORY_LIMIT_BYTES,
   ODATA_QUEUE_MAX,
   ODATA_QUEUE_WAIT_MS,
@@ -122,6 +125,12 @@ function timeoutError(): RequestTimeoutError {
  * is given the smaller budget.
  */
 const odataSemaphore = new Semaphore(capacity.slots, ODATA_QUEUE_MAX, ODATA_QUEUE_WAIT_MS)
+
+const feedPool = createFeedPool({
+  prepare: prepareFeedInstance,
+  idleMs: ODATA_INSTANCE_IDLE_MS,
+  maxAgeMs: ODATA_INSTANCE_MAX_AGE_MS,
+})
 
 /**
  * Row group sizes this process has read out of a footer, for previews whose own
@@ -315,14 +324,19 @@ export class OdataService {
       throw err
     }
     const startedAt = Date.now()
-    let session: Awaited<ReturnType<typeof openSession>> | undefined
+    let lease: FeedLease | undefined
     let timer: NodeJS.Timeout | undefined
     let timedOut = false
+    let drained = false
     let rowsRead = 0
 
     const close = async () => {
       clearTimeout(timer)
-      await session?.close()
+      // Kept only after a page read to its end. A result left unread — the
+      // caller walked away, or the page was cut at its byte budget — holds its
+      // buffers until the garbage collector gets to it: 5.7 MB measured,
+      // counted against the next page's memory limit.
+      await lease?.release(drained && !timedOut)
       odataSemaphore.release()
       // One line per request, with no row content: a full extract comes
       // through here once per page (ADR-055 §6).
@@ -341,13 +355,13 @@ export class OdataService {
     try {
       const location = this.storage.readUrl(previewKey)
 
-      session = await openSession({
+      lease = await feedPool.acquire({
         location,
         env: this.env,
         memoryLimitBytes: ODATA_MEMORY_LIMIT_BYTES,
         readTimeoutMs: ODATA_READ_TIMEOUT_MS,
       })
-      const conn = session.conn
+      const conn = lease.conn
       // The timeout covers the whole read, not just its start: a page that
       // stalls half way holds the slot as surely as one that never begins.
       timer = setTimeout(() => {
@@ -395,7 +409,10 @@ export class OdataService {
             // path has to answer.
             throw timedOut ? timeoutError() : err
           }
-          if (!chunk || chunk.rowCount === 0) return
+          if (!chunk || chunk.rowCount === 0) {
+            drained = true
+            return
+          }
           rowsRead += chunk.rowCount
           yield chunk.getRows()
         }

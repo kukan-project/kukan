@@ -11,16 +11,17 @@
 export {
   LAKE_METADATA_SCHEMA,
   LAKE_DATA_PREFIX,
-  duckdbInstanceOptions,
   lakeConfigFromEnv,
   lakeStorageUrl,
   loadDuckdbExtensions,
+  forgetEnvironmentCredentials,
   s3SecretBody,
   usesCredentialChain,
   s3SettingsFromEnv,
 } from './config'
 export type { LakeConfig, S3Settings } from './config'
-export { useOwnTempDirectory } from './spill'
+export { openDuckdb, sealDuckdb } from './duckdb'
+export type { DuckdbHandle } from './duckdb'
 export {
   lakeTableName,
   lakeTableExists,

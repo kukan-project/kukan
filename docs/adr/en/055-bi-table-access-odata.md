@@ -302,6 +302,35 @@ Keeping the work per request small is a design constraint.
   0.36 ms against a page's ~60, and no cheap key stands in for it — a re-interpretation of unchanged
   bytes leaves the content hash alone while the preview changes, which is the case this feed's
   validator exists to catch, so a cache keyed on that hash serves the old table for its whole TTL
+- **Do not build a DuckDB instance per page** (improved after implementation). Preparing one —
+  loading extensions, creating the secret, locking it down — cost about 18 ms per page with static
+  keys. Prepared instances are now kept per bucket, and a page starts at `connect()`. An instance
+  unused for 60 s is closed, and one in steady use is rebuilt 15 minutes after it was prepared, as a
+  backstop for a lapsed credential that the secret's `REFRESH auto` missed. No more are in use at once than there are slots. Measured locally
+  (MinIO, medians):
+
+  | Case                           | Built each time | Kept   |
+  | ------------------------------ | --------------- | ------ |
+  | One page (3-row table)         | 24.5ms          | 10.1ms |
+  | One page (3.8 MB response)     | 98.7ms          | 78.9ms |
+  | Full extract, 4 pages (narrow) | 345ms           | 255ms  |
+  | Full extract, 4 pages (wide)   | 438ms           | 347ms  |
+
+  Three conditions, all found by measurement:
+  - **Set httpfs's `http_timeout` / `http_retries` with `SET GLOBAL`.** A plain `SET` binds only
+    the connection it ran on, and the next one is back at the default 30 s × 4. The guard against
+    an unresponsive S3 would silently stop applying from the second page on
+  - **Hand an instance back only after a page read to its end.** One that timed out may still hold
+    a request that could not be stopped. A stream abandoned partway holds its buffers (5.7 MB
+    measured) until garbage collection, eating into the next page's memory limit
+  - **Turn off both the external file cache and the Parquet metadata cache.** The metadata cache
+    is another 10–25 ms faster, but grows with every distinct file read (+200 MB RSS over 60 wide
+    files), and an instance under steady traffic never closes, so it has no bound. With both off,
+    reading 180 files stayed flat
+
+  A kept instance holds about 44 MB of RSS until it is closed (no allocator or httpfs setting moved
+  it). That is inside one slot's budget (64 MB)
+
 - **Spell the special numbers the way OData does.** `nan`, `inf` and `-inf` in a CSV are read as a
   DOUBLE column, and `JSON.stringify` writes those as `null` — a value the file had arriving as a
   gap, against a `Nullable="false"` property. OData JSON 4.01 spells them `"NaN"`, `"INF"` and

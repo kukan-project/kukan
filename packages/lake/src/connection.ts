@@ -16,12 +16,12 @@ import type { LakeConfig } from './config'
 import {
   LAKE_DATA_PREFIX,
   LAKE_METADATA_SCHEMA,
-  duckdbInstanceOptions,
   lakeStorageUrl,
   loadDuckdbExtensions,
   s3SecretBody,
 } from './config'
-import { createSpillRegistry, useOwnTempDirectory } from './spill'
+import { openDuckdb } from './duckdb'
+import { createSpillRegistry } from './spill'
 import { sqlLiteral } from './sql'
 
 /** A row read back from DuckDB, by column name. The diff samples reach the
@@ -160,15 +160,19 @@ async function prepareInstance(
   config: LakeConfig,
   limits: LakeSessionLimits | undefined
 ): Promise<DuckDBInstance> {
-  const duckdb = await import('@duckdb/node-api')
-  const instance = await duckdb.DuckDBInstance.create(':memory:', duckdbInstanceOptions())
-  const conn = await instance.connect()
+  // Its own place to spill, before the ATTACH that can start writing there
+  // (see `useOwnTempDirectory`): a worker holds this instance alongside the
+  // CSV interpretation's, and that one is documented to go out of core.
+  // Removed when the last session on it closes rather than when it does
+  // (see `createSpillRegistry`).
+  const { instance, conn, dropTempDir } = await openDuckdb({
+    memoryLimitBytes: limits && limits.memoryLimitMb * 1_000_000,
+    threads: limits?.threads,
+    spill: 'lake',
+  })
+  spills.track(instance, dropTempDir)
 
   try {
-    if (limits) {
-      await conn.run(`SET memory_limit = '${Math.trunc(limits.memoryLimitMb)}MB'`)
-      await conn.run(`SET threads = ${Math.trunc(limits.threads)}`)
-    }
     // **An instance that outlives its sessions must not keep what they read.**
     // DuckDB caches the blocks of remote files in the instance's buffer pool,
     // and only memory pressure inside this same instance evicts them — closing
@@ -178,13 +182,6 @@ async function prepareInstance(
     // between operations. The cache buys nothing here anyway: operations on the
     // lake rarely read the same files twice.
     await conn.run('SET enable_external_file_cache = false')
-
-    // Its own place to spill, before the ATTACH that can start writing there
-    // (see `useOwnTempDirectory`): a worker holds this instance alongside the
-    // CSV interpretation's, and that one is documented to go out of core.
-    // Removed when the last session on it closes rather than when it does
-    // (see `createSpillRegistry`).
-    spills.track(instance, await useOwnTempDirectory(conn, 'lake'))
 
     await loadDuckdbExtensions(conn, ['httpfs', 'aws', 'postgres', 'ducklake'])
 

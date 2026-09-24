@@ -170,3 +170,40 @@ export async function loadDuckdbExtensions(
     await conn.run(`LOAD ${ext}`)
   }
 }
+
+/**
+ * What `LOAD httpfs` copies out of the process environment.
+ */
+const ENV_DERIVED_SETTINGS = [
+  's3_access_key_id',
+  's3_secret_access_key',
+  's3_session_token',
+  'http_proxy',
+  'http_proxy_username',
+  'http_proxy_password',
+] as const
+
+/**
+ * Empty the settings `httpfs` seeded from the environment when it loaded.
+ *
+ * **Loading it imports the environment, and no lockdown reaches what it
+ * imports.** `httpfs` fills `s3_*` from `AWS_ACCESS_KEY_ID` and friends and
+ * `http_proxy` from `HTTP_PROXY` — credentials included — and those are plain
+ * settings: `SELECT current_setting(…)` reads them back in full after
+ * `enable_external_access = false` and `lock_configuration = true` (measured).
+ *
+ * Required of any instance that runs SQL someone else wrote and has `httpfs`
+ * loaded. An instance that authorizes its reads another way — a signed URL, or
+ * an explicit secret — loses nothing by it.
+ *
+ * GLOBAL, because a plain SET of an `httpfs` option binds only the connection
+ * it ran on: the next connection on the instance reads the environment's key
+ * again (checked).
+ */
+export async function forgetEnvironmentCredentials(conn: {
+  run(sql: string): Promise<unknown>
+}): Promise<void> {
+  for (const setting of ENV_DERIVED_SETTINGS) {
+    await conn.run(`SET GLOBAL ${setting} = ''`)
+  }
+}

@@ -12,17 +12,13 @@
  * interrupts the connection (DuckDB has no statement_timeout).
  */
 
+import { ValidationError, RequestAbandonedError, RequestTimeoutError } from '@kukan/shared'
 import {
-  ValidationError,
-  RequestAbandonedError,
-  RequestTimeoutError,
-  ServiceUnavailableError,
-} from '@kukan/shared'
-import {
-  duckdbInstanceOptions,
+  forgetEnvironmentCredentials,
   loadDuckdbExtensions,
+  openDuckdb,
+  sealDuckdb,
   sqlLiteral,
-  useOwnTempDirectory,
 } from '@kukan/lake'
 import { assertReadOnlySql } from './sql-guard'
 
@@ -62,19 +58,6 @@ function firstLine(err: unknown): string {
 }
 
 /**
- * What `LOAD httpfs` copies out of the process environment, and hands to anyone
- * who can run a `SELECT` on the instance afterwards.
- */
-const ENV_DERIVED_SETTINGS = [
-  's3_access_key_id',
-  's3_secret_access_key',
-  's3_session_token',
-  'http_proxy',
-  'http_proxy_username',
-  'http_proxy_password',
-] as const
-
-/**
  * Materialize the preview into `data`, from wherever it is.
  *
  * **Read straight out of object storage where that is where it lives.** The
@@ -97,18 +80,11 @@ async function materialize(
 ): Promise<void> {
   if (/^https?:\/\//.test(location)) {
     await loadDuckdbExtensions(conn, ['httpfs'])
-    // **Loading it imports the environment, and the lockdown does not reach
-    // what it imports.** `httpfs` seeds `s3_*` from `AWS_ACCESS_KEY_ID` and
-    // friends, and `http_proxy` from `HTTP_PROXY` — credentials and all — and
-    // those are plain settings a later `SELECT current_setting(…)` reads back
-    // in full (measured, after `enable_external_access = false` and
-    // `lock_configuration = true`). Same shape as the `aws` finding above, by a
-    // different door. Emptied here, because the URL carries its own
-    // authorization and this read goes to the deployment's own object store,
-    // never through an egress proxy.
-    for (const setting of ENV_DERIVED_SETTINGS) {
-      await conn.run(`SET ${setting} = ''`)
-    }
+    // User SQL runs here next, and the URL carries its own authorization, so
+    // what `httpfs` took from the environment goes (the reasoning is on
+    // `forgetEnvironmentCredentials`). This read goes to the deployment's own
+    // object store, never through an egress proxy.
+    await forgetEnvironmentCredentials(conn)
     // **`conn.interrupt()` does not reach a blocked HTTP request.** Measured
     // against an endpoint that accepts and never replies, the read outlived the
     // sandbox's deadline eightfold and was ended by httpfs's own retries, with
@@ -147,17 +123,18 @@ export async function runSandboxedQuery(
   userSql: string,
   limits: SandboxLimits
 ): Promise<SandboxResult> {
-  const duckdb = await import('@duckdb/node-api').catch(() => null)
-  if (!duckdb) {
-    throw new ServiceUnavailableError('DuckDB native library is not available in this environment')
-  }
   // A signal already aborted never fires a listener, so the caller that left
   // while its slot was being waited for has to be caught here.
   if (limits.signal?.aborted) throw new RequestAbandonedError()
 
-  const instance = await duckdb.DuckDBInstance.create(':memory:', duckdbInstanceOptions())
-  const conn = await instance.connect()
-  let dropTempDir: (() => Promise<void>) | undefined
+  // Its own spill directory from the start: materializing the table is what
+  // goes out of core here, and a spill file shared with another instance
+  // fails the query outright (see `useOwnTempDirectory`).
+  const { conn, close } = await openDuckdb({
+    memoryLimitBytes: limits.memoryLimitMb * 1_000_000,
+    threads: limits.threads,
+    spill: 'query',
+  })
   let timer: NodeJS.Timeout | undefined
   let timedOut = false
   let abandoned = false
@@ -177,19 +154,11 @@ export async function runSandboxedQuery(
     }, limits.timeoutMs)
 
     try {
-      await conn.run(`SET memory_limit = '${limits.memoryLimitMb}MB'`)
-      await conn.run(`SET threads = ${limits.threads}`)
-      // Before anything can spill: materializing the table is what goes out of
-      // core here, and a spill file shared with another instance fails the
-      // query outright (see `useOwnTempDirectory`).
-      dropTempDir = await useOwnTempDirectory(conn, 'query')
       // Materialize the preview while external access is still permitted, then lock down
       // before any user SQL runs.
       await materialize(conn, location, limits.timeoutMs)
       await conn.run('SET enable_external_access = false')
-      await conn.run('SET autoinstall_known_extensions = false')
-      await conn.run('SET autoload_known_extensions = false')
-      await conn.run('SET lock_configuration = true')
+      await sealDuckdb(conn)
     } catch (err) {
       // Setup faults → 500; a timeout during setup → 408.
       if (abandoned) throw new RequestAbandonedError()
@@ -230,8 +199,6 @@ export async function runSandboxedQuery(
   } finally {
     if (timer) clearTimeout(timer)
     limits.signal?.removeEventListener('abort', onAbort)
-    conn.disconnectSync()
-    instance.closeSync()
-    await dropTempDir?.()
+    await close()
   }
 }
