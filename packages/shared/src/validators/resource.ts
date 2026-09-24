@@ -3,6 +3,7 @@
  */
 
 import { z } from 'zod'
+import { VALIDATION_MESSAGES } from './messages'
 import type { ColumnSettings } from '../column-settings'
 import { checkUrlSafety } from '../url'
 
@@ -11,7 +12,7 @@ function refineUrl(data: { url?: string | null; urlType?: string | null }, ctx: 
   if (!data.url || data.urlType === 'upload') return
 
   if (!z.url().safeParse(data.url).success) {
-    ctx.addIssue({ code: 'custom', message: 'Invalid URL', path: ['url'] })
+    ctx.addIssue({ code: 'custom', message: VALIDATION_MESSAGES.invalidUrl, path: ['url'] })
     return
   }
 
@@ -24,8 +25,8 @@ function refineUrl(data: { url?: string | null; urlType?: string | null }, ctx: 
       // shared module's to change, and this side has its own to keep.
       message:
         unsafe.reason === 'protocol'
-          ? 'Only http and https URLs are allowed'
-          : 'URL points to a private or reserved address',
+          ? VALIDATION_MESSAGES.httpOnly
+          : VALIDATION_MESSAGES.privateAddress,
       path: ['url'],
     })
   }
@@ -175,13 +176,13 @@ export type RunPipelineInput = z.infer<typeof runPipelineSchema>
 export const columnSettingsBodySchema = z
   .object({
     primaryKey: z
-      .array(z.string().min(1, 'A key column name cannot be empty'))
+      .array(z.string().min(1, VALIDATION_MESSAGES.keyColumnEmpty))
       .nullable()
       .refine((columns) => columns === null || new Set(columns).size === columns.length, {
         // Duplicates are refused rather than deduplicated: `ON t.a = s.a AND
         // t.a = s.a` is a predicate comparing one column with itself, and what
         // the person meant by naming it twice is not recoverable (spec §6.2).
-        message: 'Key columns must not repeat',
+        message: VALIDATION_MESSAGES.keyColumnRepeated,
       }),
   })
   .transform(({ primaryKey }): ColumnSettings =>

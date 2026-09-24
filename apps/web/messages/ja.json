@@ -1023,5 +1023,13 @@
       "no-material": "このファイルからは説明の材料が取れないため、説明を生成していません。",
       "provider-unavailable": "AI を利用できない設定のため、説明を生成していません。"
     }
+  },
+  "validation": {
+    "nameFormat": "英小文字・数字・ハイフン・アンダースコア・ピリオドのみ使用できます",
+    "invalidUrl": "URL の形式が正しくありません",
+    "httpOnly": "http または https の URL のみ使用できます",
+    "privateAddress": "プライベートアドレスや予約済みアドレスを指す URL は使用できません",
+    "keyColumnEmpty": "主キーの列名を空にすることはできません",
+    "keyColumnRepeated": "主キーに同じ列を重複して指定することはできません"
   }
 }

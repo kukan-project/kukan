@@ -3,7 +3,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
 import {
   createPackageSchema,
   draftPublishBlockers,
@@ -42,6 +41,7 @@ import {
   type SuggestResourceInfo,
   type SuggestSelection,
 } from './metadata-suggest-dialog'
+import { useZodResolver } from '@/hooks/use-zod-resolver'
 
 /** Form-level schema: licenseId is required in the UI */
 const datasetFormSchema = createPackageSchema.extend({
@@ -192,7 +192,7 @@ export function DatasetForm({
     formState: { errors, isSubmitting, isDirty },
   } = useForm<DatasetFormInput>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(isDraftMode ? draftFormSchema : datasetFormSchema) as any,
+    resolver: useZodResolver(isDraftMode ? draftFormSchema : datasetFormSchema) as any,
     defaultValues: {
       private: false,
       type: 'dataset',

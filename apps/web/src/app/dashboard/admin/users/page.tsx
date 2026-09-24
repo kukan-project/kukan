@@ -4,7 +4,6 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { useLocale, useTranslations } from 'next-intl'
 import { useForm, useWatch, type Control } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Trash2, RotateCcw, XCircle } from 'lucide-react'
 import {
@@ -47,6 +46,7 @@ import { PasswordStrengthMeter } from '@/components/password-strength-meter'
 import { clientFetch } from '@/lib/client-api'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
 import { formatDateTimeCompact } from '@/components/date-time'
+import { useZodResolver } from '@/hooks/use-zod-resolver'
 
 interface UserStatsResponse {
   total: number
@@ -146,7 +146,7 @@ export default function AdminUsersPage() {
     control,
     formState: { errors, isSubmitting },
   } = useForm<CreateUserValues>({
-    resolver: zodResolver(createUserSchema),
+    resolver: useZodResolver<CreateUserValues>(createUserSchema),
     defaultValues: { role: 'user' },
   })
 
@@ -176,7 +176,7 @@ export default function AdminUsersPage() {
   const [editError, setEditError] = useState<string | null>(null)
 
   const editForm = useForm<EditUserValues>({
-    resolver: zodResolver(editUserSchema),
+    resolver: useZodResolver<EditUserValues>(editUserSchema),
   })
 
   const openEditDialog = (u: UserItem) => {

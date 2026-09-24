@@ -1008,5 +1008,13 @@
       "no-material": "No description was generated because nothing could be read from this file to base one on.",
       "provider-unavailable": "No description was generated because AI is not available on this site."
     }
+  },
+  "validation": {
+    "nameFormat": "Use only lowercase letters, numbers, hyphens, underscores, and periods",
+    "invalidUrl": "Enter a valid URL",
+    "httpOnly": "Use a URL that starts with http or https",
+    "privateAddress": "URLs pointing to a private or reserved address are not allowed",
+    "keyColumnEmpty": "A primary key column name cannot be empty",
+    "keyColumnRepeated": "The same column cannot appear twice in the primary key"
   }
 }

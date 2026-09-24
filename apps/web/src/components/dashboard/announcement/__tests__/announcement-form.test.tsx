@@ -6,10 +6,11 @@ vi.mock('@/lib/client-api', () => ({
   clientFetch: vi.fn(),
 }))
 
-vi.mock('@kukan/shared', async () => {
+vi.mock('@kukan/shared', async (importOriginal) => {
   const { z } = await import('zod')
   const announcementCategories = ['info', 'maintenance', 'release', 'important'] as const
   return {
+    ...(await importOriginal<typeof import('@kukan/shared')>()),
     createAnnouncementSchema: z.object({
       title: z.string().min(1, 'Title is required').max(500),
       category: z.enum(announcementCategories).default('info'),

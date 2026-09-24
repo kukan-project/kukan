@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
 import {
   createAnnouncementSchema,
   announcementCategories,
@@ -25,6 +24,7 @@ import {
 } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
+import { useZodResolver } from '@/hooks/use-zod-resolver'
 
 type AnnouncementFormProps =
   | { mode?: 'create'; defaultValues?: Partial<CreateAnnouncementInput>; id?: undefined }
@@ -60,7 +60,7 @@ export function AnnouncementForm({ mode = 'create', defaultValues, id }: Announc
     formState: { errors, isSubmitting },
   } = useForm<CreateAnnouncementInput>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(createAnnouncementSchema) as any,
+    resolver: useZodResolver(createAnnouncementSchema) as any,
     defaultValues: {
       ...defaultValues,
       category: defaultValues?.category ?? 'info',

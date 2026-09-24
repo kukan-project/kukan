@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
 import { createOrganizationSchema, type CreateOrganizationInput } from '@kukan/shared'
 import {
   Alert,
@@ -17,6 +16,7 @@ import {
 } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
 import { clientFetch } from '@/lib/client-api'
+import { useZodResolver } from '@/hooks/use-zod-resolver'
 
 type OrganizationFormProps =
   | { mode?: 'create'; defaultValues?: Partial<CreateOrganizationInput>; nameOrId?: undefined }
@@ -38,7 +38,7 @@ export function OrganizationForm({
     formState: { errors, isSubmitting },
   } = useForm<CreateOrganizationInput>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(createOrganizationSchema) as any,
+    resolver: useZodResolver(createOrganizationSchema) as any,
     defaultValues,
   })
 

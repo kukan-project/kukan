@@ -4,21 +4,14 @@
  */
 
 import { z } from 'zod'
+import { slugNameSchema } from './package'
 import {
   passwordLengthSchema,
   PASSWORD_MIN_LENGTH,
   PASSWORD_MAX_LENGTH,
 } from '../password-strength'
 
-/** Reusable slug-style name schema (lowercase alphanumeric, hyphens, underscores, periods) */
-export const userNameSchema = z
-  .string()
-  .min(2)
-  .max(100)
-  .regex(
-    /^[a-z0-9._-]+$/,
-    'Name must contain only lowercase letters, numbers, hyphens, underscores, and periods'
-  )
+export const userNameSchema = slugNameSchema
 
 /** User roles */
 export const USER_ROLES = ['user', 'sysadmin'] as const

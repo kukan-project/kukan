@@ -4,16 +4,10 @@
  */
 
 import { z } from 'zod'
+import { slugNameSchema } from './package'
 
 export const createGroupSchema = z.object({
-  name: z
-    .string()
-    .min(2)
-    .max(100)
-    .regex(
-      /^[a-z0-9._-]+$/,
-      'Name must contain only lowercase letters, numbers, hyphens, underscores, and periods'
-    ),
+  name: slugNameSchema,
   title: z.string().nullish(),
   description: z.string().nullish(),
   imageUrl: z.union([z.url(), z.literal('')]).nullish(),

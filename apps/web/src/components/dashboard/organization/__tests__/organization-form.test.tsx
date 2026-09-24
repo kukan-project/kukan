@@ -6,9 +6,10 @@ vi.mock('@/lib/client-api', () => ({
   clientFetch: vi.fn(),
 }))
 
-vi.mock('@kukan/shared', async () => {
+vi.mock('@kukan/shared', async (importOriginal) => {
   const { z } = await import('zod')
   return {
+    ...(await importOriginal<typeof import('@kukan/shared')>()),
     createOrganizationSchema: z.object({
       name: z
         .string()

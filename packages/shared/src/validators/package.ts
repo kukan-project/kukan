@@ -3,6 +3,7 @@
  */
 
 import { z } from 'zod'
+import { VALIDATION_MESSAGES } from './messages'
 import { createResourceBodySchema } from './resource'
 
 /** package.name (URL slug) contract — single source for the schema below and
@@ -30,15 +31,15 @@ export const MAX_RESOURCES_PER_PACKAGE = 500
 
 const packageResourcesSchema = z.array(createResourceBodySchema).max(MAX_RESOURCES_PER_PACKAGE)
 
+/** The slug-style `name` that packages, organizations, groups and users share. */
+export const slugNameSchema = z
+  .string()
+  .min(PACKAGE_NAME_MIN_LENGTH)
+  .max(PACKAGE_NAME_MAX_LENGTH)
+  .regex(PACKAGE_NAME_PATTERN, VALIDATION_MESSAGES.nameFormat)
+
 export const createPackageSchema = z.object({
-  name: z
-    .string()
-    .min(PACKAGE_NAME_MIN_LENGTH)
-    .max(PACKAGE_NAME_MAX_LENGTH)
-    .regex(
-      PACKAGE_NAME_PATTERN,
-      'Name must contain only lowercase letters, numbers, hyphens, underscores, and periods'
-    ),
+  name: slugNameSchema,
   title: z.string().nullish(),
   notes: z.string().nullish(),
   url: z.union([z.url(), z.literal('')]).nullish(),

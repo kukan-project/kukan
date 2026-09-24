@@ -3,6 +3,7 @@
  */
 
 import { z } from 'zod'
+import { VALIDATION_MESSAGES } from './messages'
 
 export const announcementCategories = ['info', 'maintenance', 'release', 'important'] as const
 export type AnnouncementCategory = (typeof announcementCategories)[number]
@@ -12,7 +13,7 @@ export const createAnnouncementSchema = z.object({
   category: z.enum(announcementCategories).default('info'),
   link: z
     .union([
-      z.url().refine((url) => /^https?:\/\//i.test(url), 'Only http and https URLs are allowed'),
+      z.url().refine((url) => /^https?:\/\//i.test(url), VALIDATION_MESSAGES.httpOnly),
       z.literal(''),
     ])
     .nullish(),
