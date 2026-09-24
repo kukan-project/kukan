@@ -1,13 +1,11 @@
 import { and, eq, gte, inArray } from 'drizzle-orm'
 import { type Database, resource, resourcePipeline, resourcePipelineStep } from '@kukan/db'
-import { rebuildMetadataIndex } from '@kukan/api/services/search-index'
+import { dropIndexedWithoutRow, rebuildMetadataIndex } from '@kukan/api/services/search-index'
 import { markContentUnindexed } from '@kukan/api/services/content-index-record'
 import { PipelineService } from '@kukan/api/services/pipeline-service'
 import type { Logger } from '@kukan/shared'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { SearchAdapter } from '@kukan/search-adapter'
-
-const CONTENT_PAGE = 1_000
 
 /**
  * Rebuild the search index under the analysis the code now defines (ADR-025),
@@ -53,7 +51,7 @@ export async function reanalyseSearchIndex(
   const copyStartedAt = await search.pendingRepair()
   if (!copyStartedAt) return copied
 
-  const rebuilt = await rebuildMetadataIndex(db, search, log, true)
+  const rebuilt = await rebuildMetadataIndex(db, search, log)
   const dropped = await dropContentWithoutResource(db, search, log)
   const rewritten = await rewriteContentWrittenDuringTheCopy(db, search, queue, copyStartedAt, log)
   // Marked once the index no longer says anything untrue. The rebuilds queued
@@ -71,31 +69,19 @@ export async function reanalyseSearchIndex(
 }
 
 /** Content chunks of resources the database no longer has */
-async function dropContentWithoutResource(
+function dropContentWithoutResource(
   db: Database,
   search: SearchAdapter,
   log: Logger
 ): Promise<number> {
-  let after: string | undefined
-  let dropped = 0
-  for (;;) {
-    const indexed = await search.indexedContentResources(after, CONTENT_PAGE)
-    if (indexed.length === 0) break
-    const live = await db
-      .select({ id: resource.id })
-      .from(resource)
-      .where(inArray(resource.id, indexed))
-    const alive = new Set(live.map((r) => r.id))
-    for (const id of indexed) {
-      if (alive.has(id)) continue
+  return dropIndexedWithoutRow(
+    (after, limit) => search.indexedContentResources(after, limit),
+    (ids) => db.select({ id: resource.id }).from(resource).where(inArray(resource.id, ids)),
+    async (id) => {
       log.warn({ resourceId: id }, 'Dropping content indexed for a resource that is gone')
       await search.deleteContent(id)
-      dropped++
     }
-    if (indexed.length < CONTENT_PAGE) break
-    after = indexed[indexed.length - 1]
-  }
-  return dropped
+  )
 }
 
 /**

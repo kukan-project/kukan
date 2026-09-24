@@ -354,7 +354,7 @@ await queue.process({
     const start = performance.now()
     if (search) {
       const jobLogger = osLogger.child({ jobId: job.id, type: job.type })
-      await rebuildMetadataIndex(db, search, jobLogger, true)
+      await rebuildMetadataIndex(db, search, jobLogger)
       if (includeContent) {
         // The rows have to stop saying their content is indexed, or the runs
         // enqueued below are the ones that skip and the index stays empty

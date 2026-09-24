@@ -262,6 +262,18 @@ export interface SearchAdapter {
   indexedContentResources(after?: string, limit?: number): Promise<string[]>
 
   /**
+   * The ids of the package or resource documents in the index, ascending, a
+   * page at a time — what a rebuild compares with the database to find the
+   * documents nothing will overwrite. `after` continues from the last id of the
+   * previous page. Empty on a backend that keeps no documents of its own.
+   */
+  indexedDocumentIds(
+    type: 'package' | 'resource',
+    after?: string,
+    limit?: number
+  ): Promise<string[]>
+
+  /**
    * Rebuild the index under the analysis the code now defines, keeping the
    * documents: create the next index, copy into it, swap the alias, drop the
    * old one. Null on a backend whose analysis is not fixed at creation — the

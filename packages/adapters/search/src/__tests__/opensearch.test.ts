@@ -1118,6 +1118,29 @@ describe('OpenSearchAdapter', () => {
     })
   })
 
+  describe('indexedDocumentIds', () => {
+    it('pages the ids of one type from where the last page stopped', async () => {
+      mockClient.search.mockResolvedValue({
+        body: {
+          aggregations: {
+            values: { buckets: [{ key: { value: 'r-2' } }, { key: { value: 'r-3' } }] },
+          },
+        },
+      })
+
+      const ids = await adapter.indexedDocumentIds('resource', 'r-1', 2)
+
+      expect(ids).toEqual(['r-2', 'r-3'])
+      const { body } = mockClient.search.mock.calls[0][0]
+      expect(body.query).toEqual({ term: { join_field: 'resource' } })
+      expect(body.aggs.values.composite).toEqual({
+        size: 2,
+        sources: [{ value: { terms: { field: 'id' } } }],
+        after: { value: 'r-1' },
+      })
+    })
+  })
+
   describe('content-only match (inner_hits + mget enrichment)', () => {
     it('should fetch resource metadata for content-only matches via mget', async () => {
       mockClient.search.mockResolvedValue({

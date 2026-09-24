@@ -11,7 +11,10 @@ const rebuildMetadataIndex = vi.hoisted(() =>
 const markContentUnindexed = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const enqueueMany = vi.hoisted(() => vi.fn())
 
-vi.mock('@kukan/api/services/search-index', () => ({ rebuildMetadataIndex }))
+vi.mock('@kukan/api/services/search-index', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@kukan/api/services/search-index')>()),
+  rebuildMetadataIndex,
+}))
 vi.mock('@kukan/api/services/content-index-record', () => ({ markContentUnindexed }))
 vi.mock('@kukan/api/services/pipeline-service', () => ({
   PipelineService: class {
@@ -65,7 +68,7 @@ describe('reanalyseSearchIndex', () => {
     const result = await reanalyseSearchIndex(dbWith([]), search, queue, log)
 
     expect(result).toEqual({ from: 'a', to: 'b', documents: 12 })
-    expect(rebuildMetadataIndex).toHaveBeenCalledWith(expect.anything(), search, log, true)
+    expect(rebuildMetadataIndex).toHaveBeenCalledWith(expect.anything(), search, log)
     expect(search.markRepaired).toHaveBeenCalled()
   })
 
@@ -99,15 +102,16 @@ describe('reanalyseSearchIndex', () => {
   it('drops content indexed for a resource the database no longer has', async () => {
     // Content hangs off the package, so a deleted resource's chunks are still
     // reached through a package that is still there
+    const [gone1, alive, gone2] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()]
     const search = searchWith({
-      indexedContentResources: vi.fn().mockResolvedValue(['gone-1', 'alive', 'gone-2']),
+      indexedContentResources: vi.fn().mockResolvedValue([gone1, alive, gone2]),
     })
 
-    await reanalyseSearchIndex(dbWith(['alive']), search, queue, log)
+    await reanalyseSearchIndex(dbWith([alive]), search, queue, log)
 
-    expect(search.deleteContent).toHaveBeenCalledWith('gone-1')
-    expect(search.deleteContent).toHaveBeenCalledWith('gone-2')
-    expect(search.deleteContent).not.toHaveBeenCalledWith('alive')
+    expect(search.deleteContent).toHaveBeenCalledWith(gone1)
+    expect(search.deleteContent).toHaveBeenCalledWith(gone2)
+    expect(search.deleteContent).not.toHaveBeenCalledWith(alive)
   })
 
   it('removes the text the copy carried before queueing the rebuild', async () => {

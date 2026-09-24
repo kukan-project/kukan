@@ -944,33 +944,54 @@ export class OpenSearchAdapter implements SearchAdapter {
 
   /**
    * Distinct `resourceId`s among the content documents, ascending, a page at a
-   * time. A composite aggregation because that is the one built to be paged:
-   * `after` resumes where the last page stopped, so the whole set can be walked
-   * without holding it all at once.
+   * time.
    */
   async indexedContentResources(after?: string, limit = 1_000): Promise<string[]> {
+    return this.distinctValues('content', 'resourceId', after, limit)
+  }
+
+  async indexedDocumentIds(
+    type: 'package' | 'resource',
+    after?: string,
+    limit = 1_000
+  ): Promise<string[]> {
+    return this.distinctValues(type, 'id', after, limit)
+  }
+
+  /**
+   * Distinct values of a keyword field among one type's documents, ascending.
+   * A composite aggregation because that is the one built to be paged: `after`
+   * resumes where the last page stopped, so the whole set can be walked
+   * without holding it all at once.
+   */
+  private async distinctValues(
+    type: string,
+    field: string,
+    after: string | undefined,
+    limit: number
+  ): Promise<string[]> {
     await this.ensureIndex()
     const res = await this.client.search({
       index: this.searchIndex,
       body: {
         size: 0,
-        query: { term: { join_field: 'content' } },
+        query: { term: { join_field: type } },
         aggs: {
-          by_resource: {
+          values: {
             composite: {
               size: limit,
-              sources: [{ resource: { terms: { field: 'resourceId' } } }],
-              ...(after ? { after: { resource: after } } : {}),
+              sources: [{ value: { terms: { field } } }],
+              ...(after ? { after: { value: after } } : {}),
             },
           },
         },
       },
     })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const buckets = ((res.body.aggregations as any)?.by_resource?.buckets ?? []) as Array<{
-      key: { resource: string }
+    const buckets = ((res.body.aggregations as any)?.values?.buckets ?? []) as Array<{
+      key: { value: string }
     }>
-    return buckets.map((b) => b.key.resource)
+    return buckets.map((b) => b.key.value)
   }
 
   async deleteContent(resourceId: string): Promise<void> {

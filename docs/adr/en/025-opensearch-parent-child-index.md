@@ -229,9 +229,11 @@ Decisions:
   Both are repaired inside this job rather than one queued behind it. A queued
   repair leaves the index lying for as long as the backlog lasts, and forever if
   that message reaches the dead-letter queue. The job rebuilds the metadata from
-  the database (clearing before it writes, so deletions land) and drops content
-  indexed for resources the database no longer has, and the message is not
-  acknowledged until both are done. A redelivered message finds the analysis
+  the database (overwriting, then dropping the documents the database no
+  longer has, so deletions land) and drops content indexed for resources the
+  database no longer has, and the message is not acknowledged until both are
+  done. The rebuild does not clear first because meanwhile the index would show
+  no packages, which the worker's index check answers with a full reprocess. A redelivered message finds the analysis
   already current, skips the copy, and repeats only the repair. **What to
   repair is remembered by the index, not by the job**: the copy's start is
   written into the new index's `_meta` and stamped done when the repair

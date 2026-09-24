@@ -29,6 +29,7 @@ const mockSearch: SearchAdapter = {
   search: async () => ({ items: [], total: 0, offset: 0, limit: 20 }),
   sumResourceCount: async () => 0,
   indexedContentResources: async () => [],
+  indexedDocumentIds: async () => [],
   pendingRepair: async () => null,
   markRepaired: async () => {},
   analysisStale: async () => false,

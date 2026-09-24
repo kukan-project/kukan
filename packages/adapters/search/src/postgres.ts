@@ -444,6 +444,9 @@ export class PostgresSearchAdapter implements SearchAdapter {
   async indexedContentResources() {
     return []
   }
+  async indexedDocumentIds() {
+    return []
+  }
   async reanalyseIndex() {
     return null
   }

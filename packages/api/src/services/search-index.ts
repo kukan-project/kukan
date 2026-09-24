@@ -19,7 +19,7 @@ import {
 import type { SearchAdapter, DatasetDoc, ResourceDoc } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import type { AIAdapter } from '@kukan/ai-adapter'
-import { EMBED_JOB_TYPE, SYNC_RESOURCE_DOC_JOB_TYPE, type Logger } from '@kukan/shared'
+import { EMBED_JOB_TYPE, SYNC_RESOURCE_DOC_JOB_TYPE, isUuid, type Logger } from '@kukan/shared'
 import { ResourceService, resourceDocColumns } from './resource-service'
 import { PipelineService } from './pipeline-service'
 import { leasePassed } from './lease'
@@ -471,26 +471,26 @@ const BATCH_SIZE = 100
 export interface RebuildMetadataResult {
   packagesIndexed: number
   resourcesIndexed: number
+  packagesRemoved: number
+  resourcesRemoved: number
 }
 
 /**
  * Rebuild package and resource search indices from DB.
  * Content index is not rebuilt here (requires pipeline re-processing).
- * @param clearFirst - If true, delete all documents before re-indexing (default: true).
- *                     Set to false for auto-recovery where indices are already empty.
+ *
+ * **Overwrites, then drops what is left over — never empties first.** An index
+ * with no package documents is what the worker's health check reads as lost,
+ * and it answers by queueing a reindex of the whole catalogue, contents and
+ * embeddings included. Emptying first opened that window on every rebuild, and
+ * public search answered nothing while it was open.
  */
 export async function rebuildMetadataIndex(
   db: Database,
   search: SearchAdapter,
-  log: Logger,
-  clearFirst = true
+  log: Logger
 ): Promise<RebuildMetadataResult> {
   log.info('Starting metadata index rebuild')
-
-  if (clearFirst) {
-    await search.deleteAllPackages()
-    await search.deleteAllResources()
-  }
 
   const packages = await db
     .select({ id: packageTable.id })
@@ -610,6 +610,58 @@ export async function rebuildMetadataIndex(
     }
   }
 
-  log.info({ packagesIndexed, resourcesIndexed }, 'Metadata index rebuild complete')
-  return { packagesIndexed, resourcesIndexed }
+  // Packages first: deleting one takes its children with it, so the resource
+  // pass does not find them again.
+  const packagesRemoved = await dropIndexedWithoutRow(
+    (after, limit) => search.indexedDocumentIds('package', after, limit),
+    (ids) =>
+      db
+        .select({ id: packageTable.id })
+        .from(packageTable)
+        .where(and(inArray(packageTable.id, ids), eq(packageTable.state, 'active'))),
+    (id) => search.deletePackage(id)
+  )
+  const resourcesRemoved = await dropIndexedWithoutRow(
+    (after, limit) => search.indexedDocumentIds('resource', after, limit),
+    (ids) => activeResourceDocRows(db, inArray(resource.id, ids)),
+    (id) => search.deleteResource(id)
+  )
+
+  const result = { packagesIndexed, resourcesIndexed, packagesRemoved, resourcesRemoved }
+  log.info(result, 'Metadata index rebuild complete')
+  return result
+}
+
+const PRUNE_PAGE = 1_000
+
+/**
+ * Walk the ids the index holds, a page at a time, and remove each one the
+ * database no longer has a row for that the index may hold.
+ *
+ * The database is asked page by page, not checked against a list read
+ * earlier: a dataset published since then is in the index and not in that
+ * list. An id that is not a UUID has no row, and asking for one would fail
+ * the whole query on the uuid column.
+ */
+export async function dropIndexedWithoutRow(
+  list: (after: string | undefined, limit: number) => Promise<string[]>,
+  indexable: (ids: string[]) => Promise<{ id: string }[]>,
+  remove: (id: string) => Promise<void>
+): Promise<number> {
+  let after: string | undefined
+  let removed = 0
+  for (;;) {
+    const indexed = await list(after, PRUNE_PAGE)
+    if (indexed.length === 0) break
+    const ids = indexed.filter(isUuid)
+    const keep = new Set(ids.length > 0 ? (await indexable(ids)).map((r) => r.id) : [])
+    for (const id of indexed) {
+      if (keep.has(id)) continue
+      await remove(id)
+      removed++
+    }
+    if (indexed.length < PRUNE_PAGE) break
+    after = indexed[indexed.length - 1]
+  }
+  return removed
 }

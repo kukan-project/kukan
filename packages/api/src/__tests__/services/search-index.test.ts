@@ -46,6 +46,7 @@ function createMockSearch() {
     deleteContent: vi.fn(),
     deleteAllContents: vi.fn(),
     indexedContentResources: async () => [],
+    indexedDocumentIds: async () => [],
     pendingRepair: async () => null,
     markRepaired: async () => {},
     analysisStale: async () => false,
