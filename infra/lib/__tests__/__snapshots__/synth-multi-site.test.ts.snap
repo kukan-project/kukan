@@ -2868,6 +2868,7 @@ function expandV6(addr) {
                 "awslogs-stream-prefix": "web",
               },
             },
+            "Memory": 1024,
             "Name": "Web",
             "PortMappings": [
               {
@@ -3794,6 +3795,7 @@ function expandV6(addr) {
                 "awslogs-stream-prefix": "worker",
               },
             },
+            "Memory": 1024,
             "Name": "Worker",
             "PortMappings": [
               {
@@ -5464,6 +5466,7 @@ function expandV6(addr) {
                 "awslogs-stream-prefix": "web",
               },
             },
+            "Memory": 1024,
             "Name": "Web",
             "PortMappings": [
               {
@@ -6342,6 +6345,7 @@ function expandV6(addr) {
                 "awslogs-stream-prefix": "worker",
               },
             },
+            "Memory": 1024,
             "Name": "Worker",
             "PortMappings": [
               {

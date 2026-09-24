@@ -3,9 +3,11 @@
  *
  * `os.totalmem()` reports the host, which on a 512 MB task is an order of
  * magnitude out, so the container's own cgroup is read first — both layouts,
- * because which one a task gets is the agent's choice rather than ours. Where
- * there is no limit to read (a Compose host that sets none), the host's memory
- * is the truth about what the process may use.
+ * because which one a task gets is the agent's choice rather than ours. On
+ * Fargate the container's cgroup holds a limit only if the container itself is
+ * given one; the task's is enforced on a parent it cannot read (the infra sets
+ * both). Where there is no limit to read (a Compose host that sets none), the
+ * host's memory is the truth about what the process may use.
  *
  * Here rather than beside its first caller: the OData feed sizes its
  * concurrency from this, and the query sandbox's own budget is meant to as

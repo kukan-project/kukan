@@ -153,6 +153,10 @@ export class WebServiceConstruct extends Construct {
     // Container
     this.webContainer = taskDef.addContainer('Web', {
       image: ecs.ContainerImage.fromDockerImageAsset(imageAsset),
+      // The task's limit again: Fargate enforces it on a parent cgroup the
+      // container cannot read, so the process would size itself from the host
+      // (`process-memory.ts`).
+      memoryLimitMiB: config.web.memory,
       environment,
       secrets: containerSecrets,
       logging: ecs.LogDrivers.awsLogs({

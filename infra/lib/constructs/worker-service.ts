@@ -103,6 +103,8 @@ export class WorkerServiceConstruct extends Construct {
     // Container
     taskDef.addContainer('Worker', {
       image: ecs.ContainerImage.fromDockerImageAsset(imageAsset),
+      // The task's limit again, for the reason the web service gives.
+      memoryLimitMiB: config.worker.memory,
       environment,
       secrets: {
         ...database.buildPostgresSecrets(),

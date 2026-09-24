@@ -123,14 +123,18 @@ export async function createApp() {
   // number follows the memory this process has, so it differs between a laptop
   // and a 512 MB task and should not have to be guessed from either.
   const { capacity } = await import('./services/odata/capacity')
-  baseLogger.info(
+  // Loud where it read no limit: that is right on a host that sets none, and
+  // oversized on a container whose limit it cannot see.
+  baseLogger[capacity.source === 'host' ? 'warn' : 'info'](
     {
       component: 'odata',
       slots: capacity.slots,
       memoryMb: capacity.memoryMb,
       memorySource: capacity.source,
     },
-    'odata feed capacity'
+    capacity.source === 'host'
+      ? 'odata feed capacity from host memory; no container memory limit was found'
+      : 'odata feed capacity'
   )
 
   // Auth middleware for non-auth routes
