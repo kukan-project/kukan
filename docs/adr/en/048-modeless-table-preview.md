@@ -41,7 +41,7 @@ Facts confirmed during this deliberation that this ADR leaves unchanged:
   ii-b). It stays regardless of WASM
 - **`/query` is anonymously open independent of the toggle.** It is guarded only
   by the visibility check, the SQL length cap, and the semaphore (concurrency 1,
-  queue 8, 15 s) — and that suffices. WASM is not a rampart that shrinks the
+  queue 16, 15 s) — and that suffices. WASM is not a rampart that shrinks the
   attack surface; it is a **QoS valve that diverts well-intentioned interactive
   bursts away from the server**
 - **`QUERY_MAX_CONCURRENT = 1` holds only under the offload architecture.** The

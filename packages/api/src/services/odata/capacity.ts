@@ -12,38 +12,38 @@
  * says what the kernel actually enforces, and it is the only answer that also
  * covers a Compose host.
  *
- * What is left after the query sandbox's own ceiling (ADR-032) and the process
- * itself is what these slots may spend — a share of the whole would double-book
+ * What is left after a query slot at its measured cost (ADR-032) and the
+ * process itself is what these slots may spend — a share of the whole would double-book
  * the same megabytes, which is what it did before this.
  */
 
 import { processMemory, type ProcessMemory } from '../../process-memory'
-import { ODATA_MEMORY_LIMIT_BYTES, QUERY_MAX_CONCURRENT, QUERY_MEMORY_LIMIT_MB } from '../../config'
+import { ODATA_MEMORY_LIMIT_BYTES, QUERY_MAX_CONCURRENT, QUERY_SLOT_RSS_MB } from '../../config'
 
 /**
  * What the rest of the process is assumed to need before a feed page gets any.
  *
- * The query sandbox's ceiling is real and reservable — `QUERY_MEMORY_LIMIT_MB`
- * times its own concurrency — and Node, Next, the connection pool and DuckDB's
- * own bookkeeping outside `memory_limit` take the rest. That second figure is
- * an estimate rather than a measurement of the production image, and it is the
- * conservative direction: too high costs a slot, too low costs the container.
+ * The query path is counted at what a slot measured costing the process
+ * (`QUERY_SLOT_RSS_MB`) times its concurrency, and Node, Next and the
+ * connection pool take this. That second figure is an estimate rather than a
+ * measurement of the production image, and it is the conservative direction:
+ * too high costs a slot, too low costs the container.
  *
  * Subtracting rather than taking a share of the whole is the correction to what
  * this did first: 40% of 512 MB is three slots, which with the query path's 256
- * put 448 MB of DuckDB budget in a 512 MB task and left the process 64. The two
- * budgets still come from two places; one figure for both has not been done
- * yet.
+ * put 448 MB of DuckDB budget in a 512 MB task and left the process 64.
  */
 const PROCESS_RESERVE_MB = 128
 
 /**
  * Never fewer, so a second reader is never waiting on the first.
  *
- * It is a floor rather than a calculation, and on a container small enough it
- * would promise more than the share allows — 512 MB is the smallest this is
- * deployed on (infra `scale.small`), and there the arithmetic lands on two of
- * its own accord, so the floor only binds below that.
+ * It is a floor rather than a calculation, and it binds on the smallest scale
+ * this is deployed on: a 512 MB task (infra `scale.small`) has no room for a
+ * feed page once a query slot is counted at its measured cost (498 MB), and
+ * gets two anyway. The feed alone fits there — a page measured 55–65 MB of RSS
+ * with its kept instance, about the slot's budget — but a worst-case query does
+ * not, with pages beside it or without them.
  */
 const MIN_SLOTS = 2
 
@@ -54,6 +54,11 @@ const MIN_SLOTS = 2
  * them one after another on a 7-column table and 1.24× on a 56-column one, with
  * the curve flat from four. What does not overlap is the serialization, and a
  * web task has one or two cores to do it on.
+ *
+ * Measured again with instances kept between pages (`feed-pool.ts`): 1.64× at
+ * four, 1.63× at eight. Eight rather than four only because that was against a
+ * local object store with no round trip to overlap; S3's may still pay past
+ * four, which is worth measuring before this comes down.
  */
 const MAX_SLOTS = 8
 
@@ -75,7 +80,7 @@ export const SLOT_MB = ODATA_MEMORY_LIMIT_BYTES / 1_000_000
 
 /** Slots for `memoryMb` of process memory; exported for the test that pins the curve. */
 export function slotsForMemory(memoryMb: number): number {
-  const budgetMb = memoryMb - QUERY_MEMORY_LIMIT_MB * QUERY_MAX_CONCURRENT - PROCESS_RESERVE_MB
+  const budgetMb = memoryMb - QUERY_SLOT_RSS_MB * QUERY_MAX_CONCURRENT - PROCESS_RESERVE_MB
   return Math.max(MIN_SLOTS, Math.min(MAX_SLOTS, Math.floor(budgetMb / SLOT_MB)))
 }
 

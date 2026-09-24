@@ -9,9 +9,8 @@
  * both). Where there is no limit to read (a Compose host that sets none), the
  * host's memory is the truth about what the process may use.
  *
- * Here rather than beside its first caller: the OData feed sizes its
- * concurrency from this, and the query sandbox's own budget is meant to as
- * well — not done yet.
+ * Here rather than beside its caller, the OData feed's concurrency, because
+ * nothing about it is the feed's.
  */
 
 import { readFileSync } from 'node:fs'

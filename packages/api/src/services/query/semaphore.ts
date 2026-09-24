@@ -9,8 +9,8 @@ import { Semaphore } from '../semaphore'
  *
  * **It is no longer the container's only DuckDB budget.** The OData feed holds
  * a second one beside it (ADR-055 §2), sized from the memory the process
- * actually has, while this one is still fixed — one budget for both has not
- * been done yet. Written down because the sentence that
+ * actually has, and counts this one's slot at what it measured costing
+ * (`QUERY_SLOT_RSS_MB`) before sizing itself. Written down because the sentence that
  * used to be here ("two independent semaphores would each think they had the
  * whole container") stopped being a rule and became a thing to watch.
  */

@@ -171,6 +171,24 @@ preview directly** rather than loading data into dedicated tables.
    (`TooManyRequestsError`); they are not queued. **v1 defaults conservatively to `memory_limit = 256MB`
    × concurrency 1** (~256MB peak) to avoid OOM on the web container (small = 512MB). Scaling with the
    deployment size is an open question.
+
+   **Revised (measured): `memory_limit` stays at 256MB, and a slot is budgeted at 498MB (derived from
+   it).** "Peak ≈ `memory_limit`" did not hold. Measuring the process RSS one query adds, over tables of
+   80k–1.3M rows with a load, a DISTINCT and a full sort, the worst case lined up at or under
+   **1.3 × `memory_limit` + 165MB** (128MB → 328MB, 192MB → 408MB, 256MB → 494MB). Outside the limit are
+   DuckDB's own working allocations, the Parquet read buffers and the library itself. A table past the
+   limit is spilled to disk, and an operator that still cannot fit fails with DuckDB's out-of-memory
+   error instead of growing the RSS — a query that fails inside the limit is a refusal, not a danger to
+   the container.
+
+   The limit was not lowered. Resource queries alone would get by on 128MB for the tables the catalogue
+   holds (measured on a 55MB source CSV), but the version diff (ADR-043) shares the limit, and a keyed
+   diff of an 80k-row table with every row changed fails at 128MB and reads at 256MB up to 320k rows. The
+   OData feed (ADR-055) sizes its slots after subtracting this slot's budget, the line's value, which
+   `QUERY_SLOT_RSS_MB` derives from the limit (the diff's measured worst, 486MB, sits under it too). The
+   queue was deepened to 16; the wait cannot grow, since with the query's own timeout after it a caller
+   would reach CloudFront's 30-second origin response timeout.
+
 6. **Access control**: run through the same `getByIdWithAccessCheck` as preview (ADR-017). SQL validation
    (length + read-only) runs **before** the download/materialize, which also enforces the length limit on
    the MCP path.

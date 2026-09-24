@@ -1,23 +1,17 @@
 import { describe, it, expect } from 'vitest'
 import { capacity, slotsForMemory, SLOT_MB } from '../../services/odata/capacity'
-import { QUERY_MAX_CONCURRENT, QUERY_MEMORY_LIMIT_MB } from '../../config'
+import { QUERY_MAX_CONCURRENT, QUERY_SLOT_RSS_MB } from '../../config'
 
 describe('slotsForMemory', () => {
-  // The scales the deployment actually ships (infra/lib/config.ts).
+  // The scales the deployment actually ships (infra/lib/config.ts). 1024 MB:
+  // 498 for a query slot, 128 for the process, 398 left = six pages. 512 MB has
+  // nothing left and gets the floor's two regardless.
   it.each([
     [512, 2],
-    [1024, 8],
+    [1024, 6],
     [2048, 8],
   ])('gives a %i MB container %i pages at once', (memoryMb, slots) => {
     expect(slotsForMemory(memoryMb)).toBe(slots)
-  })
-
-  it('leaves the query sandbox its ceiling rather than spending it twice', () => {
-    // 512 MB: 256 reserved for a query, 128 for the process, 128 left = two
-    // pages. Sharing the whole instead put 448 MB of DuckDB budget in a 512 MB
-    // task.
-    const feedBudget = slotsForMemory(512) * SLOT_MB
-    expect(feedBudget + QUERY_MEMORY_LIMIT_MB * QUERY_MAX_CONCURRENT).toBeLessThanOrEqual(512 - 64)
   })
 
   it('never leaves a second reader waiting on the first', () => {
@@ -26,15 +20,16 @@ describe('slotsForMemory', () => {
   })
 
   it('stops where more concurrency stops paying', () => {
-    // Throughput against running the same pages one after another: 1.61× at
-    // eight on a 7-column table, 1.24× on a 56-column one, flat from four.
+    // Throughput against running the same pages one after another: flat from
+    // four, before instances were kept between pages and after.
     expect(slotsForMemory(64 * 1024)).toBe(8)
   })
 
-  it('never spends what the query path reserved', () => {
-    for (const mb of [512, 1024, 2048, 8192]) {
-      const together = slotsForMemory(mb) * SLOT_MB + QUERY_MEMORY_LIMIT_MB * QUERY_MAX_CONCURRENT
-      expect(together).toBeLessThan(mb)
+  it('fits the query slot, the process and the pages together, above the floor', () => {
+    // The 512 MB scale sits on the floor and overcommits; see MIN_SLOTS.
+    for (const mb of [1024, 2048, 8192]) {
+      const together = slotsForMemory(mb) * SLOT_MB + QUERY_SLOT_RSS_MB * QUERY_MAX_CONCURRENT + 128
+      expect(together).toBeLessThanOrEqual(mb)
     }
   })
 })

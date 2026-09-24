@@ -33,15 +33,41 @@ export const QUERY_TIMEOUT_MS = 15_000
  */
 export const QUERY_SOURCE_URL_EXPIRES_S = 60
 
-// NOTE: this path's peak is QUERY_MEMORY_LIMIT_MB × QUERY_MAX_CONCURRENT, ~256 MB, so a
-// query gets a full 256 MB for legitimate aggregations and concurrency is serialized to 1
-// instead. It is no longer the container's whole DuckDB peak: the OData feed holds a
-// budget of its own beside it (ODATA_MEMORY_LIMIT_BYTES × `services/odata/capacity.ts`), and
-// unlike this one, that budget follows the memory the process actually has. Deriving the
-// two from one figure has not been done yet.
-
-/** Per-query DuckDB memory limit (bounds materialization + working memory). */
+/**
+ * Per-query DuckDB memory limit — resource queries and version diffs alike.
+ *
+ * **What DuckDB holds to, not what the process spends** (that is
+ * {@link QUERY_SLOT_RSS_MB}). Past it DuckDB spills to disk, and an operator
+ * that still cannot fit fails with its own out-of-memory error rather than
+ * growing the process — so a query too heavy for this is refused, not a
+ * danger.
+ *
+ * Not lower, because the version diff shares it and needs it: a keyed diff of
+ * an 80k-row table with every row changed fails at 128 and reads at 256, up to
+ * 320k rows. A resource query alone would get by on 128.
+ */
 export const QUERY_MEMORY_LIMIT_MB = 256
+
+/**
+ * What one query slot costs the process at its worst: the budget a slot is
+ * counted at, beside the feed's (`services/odata/capacity.ts`).
+ *
+ * **Larger than the limit above, and in proportion to it.** DuckDB's own
+ * working allocations, the Parquet read buffers and the library itself sit
+ * outside `memory_limit`. Measured as the peak RSS a single query added, the
+ * worst case over tables of 80k–1.3M rows and a load, a DISTINCT and a full
+ * sort, it lies on a line — and this is that line, drawn just above every
+ * point, so it follows the limit when the limit moves:
+ *
+ * | limit  | worst peak | this line |
+ * | ------ | ---------- | --------- |
+ * | 128 MB | 328 MB     | 332 MB    |
+ * | 192 MB | 408 MB     | 415 MB    |
+ * | 256 MB | 494 MB     | 498 MB    |
+ *
+ * A version diff at 256 measured up to 486 MB, under the same line.
+ */
+export const QUERY_SLOT_RSS_MB = Math.ceil(1.3 * QUERY_MEMORY_LIMIT_MB + 165)
 
 /** Per-query DuckDB thread count. */
 export const QUERY_THREADS = 2
@@ -52,8 +78,15 @@ export const QUERY_MAX_CONCURRENT = 1
 // Both bounds are on the waiting, not the work: with a concurrency of 1,
 // refusing on contention makes a 429 out of two ordinary requests.
 
-/** Callers that may queue for a slot; beyond this, 429 immediately. */
-export const QUERY_QUEUE_MAX = 8
+/**
+ * Callers that may queue for a slot; beyond this, 429 immediately.
+ *
+ * Deep rather than long: a query typically answers in well under a second, so
+ * sixteen waiting are served inside the wait below. The wait itself cannot
+ * grow — with the query's own timeout after it, a caller would already be at
+ * CloudFront's 30-second origin timeout.
+ */
+export const QUERY_QUEUE_MAX = 16
 
 /** How long one caller waits for a slot before giving up with 429 (ms). A full
  *  query timeout, so a wait never expires while the caller ahead of it is still

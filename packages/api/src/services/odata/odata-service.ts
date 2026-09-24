@@ -118,7 +118,7 @@ function timeoutError(): RequestTimeoutError {
  * Bounded separately from the ADR-032 query semaphore, per ADR-055 §2.
  *
  * The container's DuckDB peak is the sum of both: a query materializes the
- * whole table inside 256 MB × 1, while a feed reads one page's rows inside
+ * whole table in one slot (`QUERY_SLOT_RSS_MB`), while a feed reads one page's rows inside
  * {@link ODATA_MEMORY_LIMIT_BYTES} × however many pages the process's memory
  * affords (`capacity`) — bounded by the page, not by the file, which is why it
  * is given the smaller budget.
