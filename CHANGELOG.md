@@ -6,6 +6,72 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.31.0] - 2026-09-24
+
+**Highlights**
+
+- feat: serve a public table as an OData feed for BI tools (#673) — Tableau, Power BI and Excel can now open a KUKAN table by pasting a URL. Every public resource with a table preview gets a read-only OData v4 feed (`/odata/v1/resources/{id}` with its `$metadata`, paged `Rows` and `Rows/$count`), and the resource page has an "OData" button that hands out that URL. Only public resources are served — the feed runs without a viewer, so a private table is a 404 even to its owner — and the route sits outside session authentication altogether. Rows are identified by the publisher's primary key where one is usable, otherwise by a synthetic `RowId`. The feed reads the preview straight from object storage, fetching only the byte ranges a page needs (the first page of a one-million-row table costs about 0.18 MB), and pages end at row-group boundaries. Column names are passed through as they are; a table whose headers are not valid OData identifiers is refused as a whole for now, and the button stays visible with the reason and the offending headers. When too many requests arrive at once the feed queues them and then answers 429 with `Retry-After`. On AWS, CloudFront caches `/odata/*` for up to 10 minutes, so withdrawing a page (making the dataset private, deleting the resource, purging the served version) takes at most that long to reach every reader.
+
+**Upgrade Notes**
+
+- Previews created before this release do not record how many rows each row group holds, so the feed cuts their pages conservatively and may refuse wide tables it could otherwise serve. A sysadmin sees "Prepare tables for BI tools" on the dashboard while any remain; running it reads the stored previews and records the figure, and rebuilds the few written with old settings — all from stored files, without refetching from the publisher. It is not urgent: the feed works without it.
+- On Docker Compose, consider setting `mem_limit` on the web service (a commented-out line is in `compose.yml`). The feed sizes its concurrency from the memory the container can see, and without a limit that is the whole host's — which on a box also running PostgreSQL, OpenSearch and MinIO overstates it. The AWS deployment now sets this itself (#700).
+
+**Features**
+
+- feat(web): open a resource's dashboard row from its public status view (#677) — the processing-status dialog a manager sees on a public resource now ends with "Manage this resource", which opens the dataset's edit page in a new tab with that resource's row already open. Renaming, replacing the file, setting the primary key and deleting all live there, and reaching it used to mean going back to the dashboard list and finding the dataset again.
+- feat(web): say when a search answered by keyword alone (#676) — when the query embedding or the vector search fails, search falls back to keyword matching without an error, so the results simply change. The dataset list now says so in one quiet line where the semantic search toggle sits. A site with semantic search switched off shows nothing, as before.
+
+**Bug Fixes**
+
+- fix(api): refuse a floating-point column as a primary key (#678) — binary floating point does not map one-to-one to decimal notation (`1.0` and `1` become the same key), so it cannot be an identifier shared with other systems; OData excludes it from key types for the same reason. Setting such a key is now refused, and the picker keeps the column visible but disabled with the reason. Keys already configured are left as they are — only changing the setting is refused.
+- fix(search): rebuild the metadata index by overwriting, so it never looks empty (#703) — the rebuild used to delete every dataset and resource document before writing them back. For those few seconds the index looked empty, public search returned nothing, and the worker's index monitor could take it for a lost index and requeue everything. The rebuild now overwrites in place and removes only the documents that no longer have a row behind them — which also cleans up content documents under stale datasets, which the old wipe left behind.
+- fix(infra): give each container its task's memory limit, so the process can see it (#700) — Fargate applies the task's memory limit on a cgroup the container cannot read, so the process saw the host's memory and the OData feed would have run four times the concurrency a 512 MB task affords. The web and worker containers now carry the same limit as their task. Startup logs a warning when the feed's capacity was computed from host memory.
+
+**Performance**
+
+- perf(api): keep the OData feed's DuckDB instances between pages, and open DuckDB in one place (#694) — a small page drops from about 29 ms to 10 ms and a 3.8 MB page from 112 ms to 79 ms (local median).
+- perf(api): budget each query slot at what it was measured to cost (#702) — a query adds up to about 1.3 × its DuckDB memory limit + 165 MB to the process, not just the limit, so the feed's share of memory is now computed from that (a 1 GB container runs 6 feed slots instead of 8). The query API's wait queue grows from 8 to 16.
+- refactor(api): give every DuckDB instance its own spill directory, and read the query sandbox's preview in place (#690) — two in-memory instances in one process that spilled to disk at the same time could read each other's temporary files and fail. The CSV interpretation step, which is designed to spill on large files, was the most exposed.
+
+**Dependencies**
+
+- build(deps): move document text extraction to officeparser 8 (#691) — DOCX, XLSX and PPTX text is byte-for-byte the same as before; PDF text now breaks at paragraphs rather than at every visual line.
+- build(deps): vitest 5 (#693), dotenv 18 (#688), `@duckdb/node-api` 1.5.5-r.5 (#686), OpenSearch image digest (#681), and grouped minor and patch updates (#683, #682).
+
+---
+
+**ハイライト**
+
+- feat: 公開中の表を BI ツール向けに OData で配信する（#673）— Tableau・Power BI・Excel に URL を貼るだけで、KUKAN の表を開けるようになりました。テーブルプレビューのある公開リソースごとに、読み取り専用の OData v4 フィード（`/odata/v1/resources/{id}` と `$metadata`、ページングされた `Rows`、`Rows/$count`）を用意し、リソースページの「OData」ボタンからその URL を渡せます。配信するのは公開リソースだけです — 閲覧者なしで可視性を判定するので、非公開の表は所有者にも 404 になります。この経路はセッション認証の外にあります。行は、使える主キーがあれば公開者の主キーで、無ければ合成キー `RowId` で識別します。プレビューはオブジェクトストレージから直接、そのページに要るバイト範囲だけを読みます（100 万行の表の先頭ページで約 0.18 MB）。ページは行グループの境界で区切ります。列名は加工せずに出すため、OData の識別子にならない見出しを持つ表は当面リソースごと断ります。その場合もボタンは薄く表示したまま、理由と該当する見出しを示します。同時アクセスが多いときは待ち行列に入れ、あふれた分は `Retry-After` 付きの 429 を返します。AWS では CloudFront が `/odata/*` を最大 10 分キャッシュするため、ページの取り下げ（データセットの非公開化・リソースの削除・配信中の版のパージ）がすべての利用者に届くまで最大でその時間がかかります。
+
+**アップグレード時の注意**
+
+- このリリースより前に作られたプレビューには、行グループごとの行数が記録されていません。そのため配信は安全側に倒して 1 ページを小さく切り、本来は配信できる列の多い表を断ることがあります。残件がある間、sysadmin のダッシュボードに「BI ツールへの配信を整える」が出ます。実行すると保存済みのプレビューを読んで行数を記録し、古い設定で作られた一部のプレビューは作り直します。いずれも保存済みのファイルから行い、公開元からの再取得は発生しません。急ぐ操作ではなく、実行しなくても配信は動きます。
+- Docker Compose では、web サービスに `mem_limit` を設定することを検討してください（`compose.yml` にコメントアウトした行があります）。フィードは同時実行数をコンテナから見えるメモリで決めるため、上限が無いとホスト全体のメモリで計算します。PostgreSQL・OpenSearch・MinIO が同居するホストでは実際より多く見積もることになります。AWS デプロイでは今回から自動で設定されます（#700）。
+
+**新機能**
+
+- feat(web): 公開画面の処理ステータスから、ダッシュボードのリソース行を開く（#677）— 管理権限のある人が公開画面のリソースで開く処理ステータスのダイアログの末尾に「このリソースを管理」を追加しました。データセットの編集ページを別タブで開き、そのリソースの行を展開した状態で表示します。名前の修正・ファイルの差し替え・主キーの設定・削除はすべてそこにあり、これまではダッシュボードの一覧まで戻ってデータセットを探し直す必要がありました。
+- feat(web): 検索がキーワード一致だけで答えたときに、そう表示する（#676）— クエリの埋め込みやベクトル検索に失敗すると、検索はエラーを出さずにキーワード一致だけで答えるため、結果が変わっても気づけませんでした。データセット一覧の意味検索トグルの位置に、その旨を控えめな 1 行で表示します。サイト全体で意味検索をオフにしている場合は、従来どおり何も表示しません。
+
+**バグ修正**
+
+- fix(api): 浮動小数点の列を主キーに指定できないようにする（#678）— 二進の浮動小数点数は十進表記と 1 対 1 に対応せず（`1.0` と `1` が同じキーになる）、他のシステムと共有できる識別子になりません。OData がキーの型から除外しているのも同じ理由です。こうした列を主キーに設定しようとすると断るようにし、選択画面では列を残したまま押せない状態にして理由を表示します。設定済みのキーはそのまま残し、断るのは設定を変えるときだけです。
+- fix(search): メタデータ索引の再構築を上書きで行い、空に見える瞬間をなくす（#703）— 再構築は、書き戻す前にデータセットとリソースの文書をすべて消していました。その数秒間は索引が空に見え、公開検索が 0 件を返し、ワーカーの索引監視が「索引の消失」と判断して全件を再処理に回すことがありました。今回から上書きで再構築し、DB に対応する行が無くなった文書だけを消します。古いデータセットの配下に残っていたコンテンツ文書も、あわせて消えるようになりました（以前の全消しでは残っていました）。
+- fix(infra): 各コンテナにタスクと同じメモリ上限を設定し、プロセスから見えるようにする（#700）— Fargate はタスクのメモリ上限を、コンテナからは読めない cgroup にかけています。そのためプロセスにはホストのメモリが見えており、512 MB のタスクで OData フィードが本来の 4 倍の同時実行数で動くところでした。web と worker のコンテナに、タスクと同じ上限を設定しました。フィードの容量をホストのメモリから計算したときは、起動時に警告をログに出します。
+
+**パフォーマンス**
+
+- perf(api): OData フィードの DuckDB インスタンスをページ間で使い回し、DuckDB を開く処理を 1 か所にまとめる（#694）— 小さなページで約 29 ms → 10 ms、3.8 MB のページで 112 ms → 79 ms になりました（ローカル、中央値）。
+- perf(api): クエリ 1 本分のメモリ予算を実測値で見積もる（#702）— クエリ 1 本がプロセスに上乗せするメモリは、DuckDB のメモリ上限そのものではなく最大で約「1.3 × 上限 + 165 MB」でした。フィードに回すメモリをこの値から計算するようにしました（1 GB のコンテナでフィードの枠が 8 から 6 になります）。クエリ API の待ち行列は 8 から 16 に深くしました。
+- refactor(api): DuckDB インスタンスごとに専用の一時書き出し先を与え、クエリサンドボックスはプレビューをその場で読む（#690）— 同じプロセスの 2 つのインメモリインスタンスが同時にディスクへ書き出すと、互いの一時ファイルを読んで失敗することがありました。大きなファイルで書き出すことを前提にした CSV の解釈処理が、最も影響を受けやすい箇所でした。
+
+**依存関係**
+
+- build(deps): 文書のテキスト抽出を officeparser 8 に移行（#691）— DOCX・XLSX・PPTX のテキストは従来とバイト単位で同じです。PDF のテキストは、見た目の 1 行ごとではなく段落ごとに改行されるようになりました。
+- build(deps): vitest 5（#693）、dotenv 18（#688）、`@duckdb/node-api` 1.5.5-r.5（#686）、OpenSearch イメージのダイジェスト（#681）、マイナー・パッチ更新のまとめ（#683・#682）。
+
 ## [0.30.4] - 2026-09-18
 
 **Features**
