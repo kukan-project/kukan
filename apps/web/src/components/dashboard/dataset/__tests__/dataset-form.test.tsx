@@ -3,7 +3,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import { DatasetForm } from '../dataset-form'
 
-vi.mock('@/lib/client-api', () => ({
+vi.mock('@/lib/client-api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/client-api')>()),
   clientFetch: vi.fn(),
 }))
 

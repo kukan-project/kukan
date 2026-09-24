@@ -523,7 +523,11 @@ export class PackageService {
       .limit(1)
 
     if (existing.length > 0) {
-      throw new ValidationError('Package name already exists', { name: opts.name })
+      throw new ValidationError(
+        'Package name already exists',
+        { name: opts.name },
+        'package-name-taken'
+      )
     }
 
     if (input.ownerOrg) {
@@ -624,7 +628,11 @@ export class PackageService {
           .limit(1)
 
         if (duplicate.length > 0) {
-          throw new ValidationError('Package name already exists', { name: input.name })
+          throw new ValidationError(
+            'Package name already exists',
+            { name: input.name },
+            'package-name-taken'
+          )
         }
       }
 
@@ -737,7 +745,12 @@ export class PackageService {
           .delete(packageTable)
           .where(and(eq(packageTable.id, target.id), eq(packageTable.state, 'deleted')))
           .returning(packageColumns)
-        if (!deleted) throw new ConflictError('Package is no longer deleted')
+        if (!deleted)
+          throw new ConflictError(
+            'Package is no longer deleted',
+            undefined,
+            'package-state-changed'
+          )
         await deleteOrphanFreeTags(tx)
         return deleted
       })
@@ -835,7 +848,11 @@ export class PackageService {
         await this.assertOwnerOrgActive(
           tx,
           existing.ownerOrg,
-          new ConflictError('Cannot restore a package whose organization is not active')
+          new ConflictError(
+            'Cannot restore a package whose organization is not active',
+            undefined,
+            'restore-organization-inactive'
+          )
         )
       }
 
@@ -871,15 +888,21 @@ export class PackageService {
       // UI invariant that active packages always carry a license
       const blockers = draftPublishBlockers(existing)
       if (blockers.length > 0) {
-        throw new ValidationError(blockers.map((b) => PUBLISH_BLOCKER_MESSAGES[b]).join('; '), {
-          blockers,
-        })
+        throw new ValidationError(
+          blockers.map((b) => PUBLISH_BLOCKER_MESSAGES[b]).join('; '),
+          { blockers },
+          'publish-blocked'
+        )
       }
       // Same guard as restore: never activate a package under a deleted/purging org
       await this.assertOwnerOrgActive(
         tx,
         existing.ownerOrg!,
-        new ConflictError('Cannot publish a package whose organization is not active')
+        new ConflictError(
+          'Cannot publish a package whose organization is not active',
+          undefined,
+          'publish-organization-inactive'
+        )
       )
 
       // Atomic claim (ADR-028 shape): the state predicate re-checks 'draft' so a
@@ -894,7 +917,11 @@ export class PackageService {
         .returning(packageColumns)
 
       if (!published) {
-        throw new ConflictError('Package is no longer in draft state')
+        throw new ConflictError(
+          'Package is no longer in draft state',
+          undefined,
+          'package-state-changed'
+        )
       }
 
       return published
@@ -918,7 +945,11 @@ export class PackageService {
       )
       .returning(packageColumns)
     if (!claimed) {
-      throw new ConflictError('Package is no longer in draft state')
+      throw new ConflictError(
+        'Package is no longer in draft state',
+        undefined,
+        'package-state-changed'
+      )
     }
     return claimed
   }

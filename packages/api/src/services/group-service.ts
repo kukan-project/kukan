@@ -106,9 +106,11 @@ export class GroupService {
     const existing = await this.db.select().from(group).where(eq(group.name, input.name)).limit(1)
 
     if (existing.length > 0) {
-      throw new ValidationError('Group name already exists', {
-        name: input.name,
-      })
+      throw new ValidationError(
+        'Group name already exists',
+        { name: input.name },
+        'group-name-taken'
+      )
     }
 
     const [created] = await this.db

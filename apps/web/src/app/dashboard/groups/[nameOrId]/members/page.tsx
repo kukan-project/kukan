@@ -22,9 +22,10 @@ import {
   Badge,
 } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import { clientFetch } from '@/lib/client-api'
+import { clientFetch, readProblem } from '@/lib/client-api'
 import { PageHeader } from '@/components/dashboard/page-header'
 import { useMyRoles } from '@/hooks/use-my-roles'
+import { useProblemMessage } from '@/hooks/use-problem-message'
 
 interface Member {
   id: string
@@ -49,6 +50,7 @@ export default function GroupMembersPage() {
   const t = useTranslations('members')
   const tg = useTranslations('category')
   const tc = useTranslations('common')
+  const describeProblem = useProblemMessage()
 
   const [members, setMembers] = useState<Member[]>([])
   const membersRef = useRef(members)
@@ -109,8 +111,8 @@ export default function GroupMembersPage() {
     })
 
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      setError(data.detail || t('failedToAdd'))
+      const problem = await readProblem(res)
+      setError(describeProblem(problem) ?? t('failedToAdd'))
     } else {
       setSelectedUserId(null)
       setSearchQuery('')

@@ -15,8 +15,9 @@ import {
   Textarea,
 } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import { clientFetch } from '@/lib/client-api'
+import { clientFetch, readProblem } from '@/lib/client-api'
 import { useZodResolver } from '@/hooks/use-zod-resolver'
+import { useProblemMessage } from '@/hooks/use-problem-message'
 
 type GroupFormProps =
   | { mode?: 'create'; defaultValues?: Partial<CreateGroupInput>; nameOrId?: undefined }
@@ -26,6 +27,7 @@ export function GroupForm({ mode = 'create', defaultValues, nameOrId }: GroupFor
   const router = useRouter()
   const t = useTranslations('category')
   const tc = useTranslations('common')
+  const describeProblem = useProblemMessage()
   const [error, setError] = useState<string | null>(null)
 
   const {
@@ -49,8 +51,8 @@ export function GroupForm({ mode = 'create', defaultValues, nameOrId }: GroupFor
       body: JSON.stringify(values),
     })
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      setError(data.detail || tc('failedToCreate'))
+      const problem = await readProblem(res)
+      setError(describeProblem(problem) ?? tc('failedToCreate'))
       return
     }
     router.push('/dashboard/groups')

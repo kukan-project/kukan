@@ -10,8 +10,8 @@ import { GroupService } from '../services/group-service'
 import {
   createGroupSchema,
   updateGroupSchema,
-  ForbiddenError,
   UnauthorizedError,
+  SysadminRequiredError,
 } from '@kukan/shared'
 import { checkGroupRole, ROSTER_ROLE } from '../auth/permissions'
 import { publicCache } from '../middleware/cache-control'
@@ -47,7 +47,7 @@ groupsRouter.get(
 groupsRouter.post('/', zValidator('json', createGroupSchema), async (c) => {
   const user = c.get('user')
   if (!user) throw new UnauthorizedError()
-  if (!user.sysadmin) throw new ForbiddenError('Only sysadmin can create groups')
+  if (!user.sysadmin) throw new SysadminRequiredError('Only sysadmin can create groups')
 
   const input = c.req.valid('json')
   const service = new GroupService(c.get('db'))
@@ -98,7 +98,7 @@ groupsRouter.delete('/:nameOrId', async (c) => {
 groupsRouter.post('/:nameOrId/purge', async (c) => {
   const user = c.get('user')
   if (!user) throw new UnauthorizedError()
-  if (!user.sysadmin) throw new ForbiddenError('Only sysadmin can purge groups')
+  if (!user.sysadmin) throw new SysadminRequiredError('Only sysadmin can purge groups')
 
   const db = c.get('db')
   const service = new GroupService(db)
@@ -113,7 +113,7 @@ groupsRouter.post('/:nameOrId/purge', async (c) => {
 groupsRouter.post('/:nameOrId/restore', async (c) => {
   const user = c.get('user')
   if (!user) throw new UnauthorizedError()
-  if (!user.sysadmin) throw new ForbiddenError('Only sysadmin can restore groups')
+  if (!user.sysadmin) throw new SysadminRequiredError('Only sysadmin can restore groups')
 
   const db = c.get('db')
   const service = new GroupService(db)

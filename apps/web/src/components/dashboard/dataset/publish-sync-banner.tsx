@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import { Alert, AlertDescription, Button } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import { clientFetch } from '@/lib/client-api'
+import { clientFetch, readProblem } from '@/lib/client-api'
+import { useProblemMessage } from '@/hooks/use-problem-message'
 
 interface PublishSyncBannerProps {
   nameOrId: string
@@ -18,6 +19,7 @@ interface PublishSyncBannerProps {
  */
 export function PublishSyncBanner({ nameOrId, onPublished }: PublishSyncBannerProps) {
   const t = useTranslations('dataset')
+  const describeProblem = useProblemMessage()
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -27,8 +29,8 @@ export function PublishSyncBanner({ nameOrId, onPublished }: PublishSyncBannerPr
     try {
       const res = await clientFetch(`/api/v1/packages/${nameOrId}/publish`, { method: 'POST' })
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        setError(data.detail || t('publishFailed'))
+        const problem = await readProblem(res)
+        setError(describeProblem(problem) ?? t('publishFailed'))
         return
       }
       onPublished()

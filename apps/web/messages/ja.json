@@ -1031,5 +1031,38 @@
     "privateAddress": "プライベートアドレスや予約済みアドレスを指す URL は使用できません",
     "keyColumnEmpty": "主キーの列名を空にすることはできません",
     "keyColumnRepeated": "主キーに同じ列を重複して指定することはできません"
+  },
+  "problem": {
+    "packageNameTaken": "この URL 識別子はすでに使われています",
+    "publishBlocked": "公開するには{fields}を設定してください",
+    "publishBlockerField": {
+      "name": "URL 識別子",
+      "org": "組織",
+      "license": "ライセンス"
+    },
+    "restoreOrganizationInactive": "所属する組織が有効でないため、このデータセットを復元できません",
+    "publishOrganizationInactive": "所属する組織が有効でないため、このデータセットを公開できません",
+    "packageStateChanged": "このデータセットの状態が別の操作で変わりました。ページを再読み込みしてください",
+    "organizationNameTaken": "この URL 識別子の組織はすでにあります",
+    "organizationHasActivePackages": "この組織には公開中のデータセットがあります。先に削除するか、別の組織へ移してください",
+    "groupNameTaken": "この URL 識別子のカテゴリーはすでにあります",
+    "userHasLinkedPackages": "このユーザーに紐づくデータセットがあります。先に完全削除するか、別のユーザーへ移してください",
+    "userNotDeleted": "削除済みのユーザーに対してのみ実行できます",
+    "draftAccessDenied": "この下書きを操作する権限がありません",
+    "roleRequired": "この{entity}の{role}以上の権限が必要です",
+    "sysadminRequired": "この操作はシステム管理者のみ実行できます",
+    "ownerOrSysadminRequired": "この操作は作成者またはシステム管理者のみ実行できます",
+    "uploadSuperseded": "このアップロードは、完了する前に新しいアップロードで置き換えられました",
+    "uploadNotPending": "このリソースには完了待ちのアップロードがありません",
+    "sectionDuplicated": "セクション「{section}」が離れた 2 か所に分かれてしまいます",
+    "roleName": {
+      "admin": "管理者",
+      "editor": "編集者",
+      "member": "メンバー"
+    },
+    "entityName": {
+      "organization": "組織",
+      "group": "カテゴリー"
+    }
   }
 }

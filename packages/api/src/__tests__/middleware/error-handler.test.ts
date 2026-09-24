@@ -10,6 +10,7 @@ import {
   TooManyRequestsError,
   ServiceUnavailableError,
   createLogger,
+  problemTypeUri,
 } from '@kukan/shared'
 import { errorHandler } from '../../middleware/error-handler'
 
@@ -67,6 +68,16 @@ describe('errorHandler', () => {
     const body = await res.json()
     expect(body.title).toBe('VALIDATION_ERROR')
     expect(body.details).toEqual({ name: 'bad' })
+  })
+
+  it('should name the problem type in `type` when the error carries one', async () => {
+    const app = createTestApp(() => {
+      throw new ValidationError('Package name already exists', undefined, 'package-name-taken')
+    })
+
+    const body = await (await app.request('/test')).json()
+    expect(body.type).toBe(problemTypeUri('package-name-taken'))
+    expect(body.detail).toBe('Package name already exists')
   })
 
   it('should convert RequestTimeoutError to 408 RFC 7807', async () => {

@@ -20,7 +20,8 @@ import {
 } from '@kukan/ui'
 import type { ResourceSchema } from '@kukan/shared'
 import { CodeBlock, CopyButton, CODE_BLOCK_CLASS } from './code-block'
-import { clientFetch, problemDetail } from '@/lib/client-api'
+import { clientFetch, readProblem } from '@/lib/client-api'
+import { useProblemMessage } from '@/hooks/use-problem-message'
 import { quoteColumn } from '@/hooks/duckdb-sql'
 import { highlight, useHighlighter } from '@/hooks/use-shiki'
 
@@ -107,6 +108,7 @@ function SqlExample({
   initialSql: string
 }) {
   const t = useTranslations('resource')
+  const describeProblem = useProblemMessage()
   const highlighter = useHighlighter()
   const highlightRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -139,7 +141,7 @@ function SqlExample({
       })
       if (!res.ok) {
         setResult(null)
-        setError((await problemDetail(res)) ?? t('dataApiRunFailed'))
+        setError(describeProblem(await readProblem(res)) ?? t('dataApiRunFailed'))
         return
       }
       setResult((await res.json()) as QueryResult)

@@ -13,3 +13,17 @@ export const VALIDATION_MESSAGES = {
   keyColumnEmpty: 'A key column name cannot be empty',
   keyColumnRepeated: 'Key columns must not repeat',
 } as const
+
+const KEY_BY_MESSAGE = new Map(
+  Object.entries(VALIDATION_MESSAGES).map(([key, message]) => [
+    message as string,
+    key as keyof typeof VALIDATION_MESSAGES,
+  ])
+)
+
+/** The key a message was attached under, when it is one of {@link VALIDATION_MESSAGES}. */
+export function validationMessageKey(
+  message: string
+): keyof typeof VALIDATION_MESSAGES | undefined {
+  return KEY_BY_MESSAGE.get(message)
+}

@@ -32,7 +32,7 @@ import { Sparkles } from 'lucide-react'
 import { z } from 'zod'
 import { useTranslations } from 'next-intl'
 import { SwitchField } from '@/components/switch-field'
-import { clientFetch } from '@/lib/client-api'
+import { clientFetch, readProblem } from '@/lib/client-api'
 import { draftEditPath } from '@/lib/paths'
 import { updateResource } from '@/lib/update-resource'
 import { parseTags } from '@/lib/parse-tags'
@@ -42,6 +42,7 @@ import {
   type SuggestSelection,
 } from './metadata-suggest-dialog'
 import { useZodResolver } from '@/hooks/use-zod-resolver'
+import { useProblemMessage } from '@/hooks/use-problem-message'
 
 /** Form-level schema: licenseId is required in the UI */
 const datasetFormSchema = createPackageSchema.extend({
@@ -129,6 +130,7 @@ export function DatasetForm({
   const t = useTranslations('dataset')
   const tl = useTranslations('license')
   const tc = useTranslations('common')
+  const describeProblem = useProblemMessage()
   const [error, setError] = useState<string | null>(null)
   const [extrasError, setExtrasError] = useState<string | null>(null)
   const [publishError, setPublishError] = useState<string | null>(null)
@@ -421,8 +423,8 @@ export function DatasetForm({
     })
 
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      setError(data.detail || tc('failedToCreate'))
+      const problem = await readProblem(res)
+      setError(describeProblem(problem) ?? tc('failedToCreate'))
       return
     }
 
@@ -466,8 +468,8 @@ export function DatasetForm({
           return
         }
         if (!pubRes.ok) {
-          const data = await pubRes.json().catch(() => ({}))
-          savedButNotPublished(data.detail || t('publishFailed'))
+          const problem = await readProblem(pubRes)
+          savedButNotPublished(describeProblem(problem) ?? t('publishFailed'))
           return
         }
         onPublished?.()

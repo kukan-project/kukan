@@ -3,12 +3,16 @@
  * RFC 7807 Problem Details compatible errors
  */
 
+import type { ProblemType } from './problem-types'
+
 export class KukanError extends Error {
   constructor(
     message: string,
     public readonly code: string,
     public readonly status: number = 500,
-    public readonly details?: Record<string, unknown>
+    public readonly details?: Record<string, unknown>,
+    /** Which refusal this is, for a client that has to tell it apart (`problem-types.ts`). */
+    public readonly problem?: ProblemType
   ) {
     super(message)
     this.name = 'KukanError'
@@ -22,8 +26,8 @@ export class NotFoundError extends KukanError {
 }
 
 export class ValidationError extends KukanError {
-  constructor(message: string, details?: Record<string, unknown>) {
-    super(message, 'VALIDATION_ERROR', 400, details)
+  constructor(message: string, details?: Record<string, unknown>, problem?: ProblemType) {
+    super(message, 'VALIDATION_ERROR', 400, details, problem)
   }
 }
 
@@ -34,14 +38,21 @@ export class UnauthorizedError extends KukanError {
 }
 
 export class ForbiddenError extends KukanError {
-  constructor(message = 'Forbidden') {
-    super(message, 'FORBIDDEN', 403)
+  constructor(message = 'Forbidden', details?: Record<string, unknown>, problem?: ProblemType) {
+    super(message, 'FORBIDDEN', 403, details, problem)
+  }
+}
+
+/** A refusal only a system administrator is spared — one problem type for all of them. */
+export class SysadminRequiredError extends ForbiddenError {
+  constructor(message = 'Sysadmin role required') {
+    super(message, undefined, 'sysadmin-required')
   }
 }
 
 export class ConflictError extends KukanError {
-  constructor(message = 'Conflict') {
-    super(message, 'CONFLICT', 409)
+  constructor(message = 'Conflict', details?: Record<string, unknown>, problem?: ProblemType) {
+    super(message, 'CONFLICT', 409, details, problem)
   }
 }
 

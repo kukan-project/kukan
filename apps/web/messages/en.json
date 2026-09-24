@@ -1016,5 +1016,38 @@
     "privateAddress": "URLs pointing to a private or reserved address are not allowed",
     "keyColumnEmpty": "A primary key column name cannot be empty",
     "keyColumnRepeated": "The same column cannot appear twice in the primary key"
+  },
+  "problem": {
+    "packageNameTaken": "This URL identifier is already in use",
+    "publishBlocked": "Set {fields} before publishing",
+    "publishBlockerField": {
+      "name": "the URL identifier",
+      "org": "the organization",
+      "license": "the license"
+    },
+    "restoreOrganizationInactive": "This dataset cannot be restored because its organization is not active",
+    "publishOrganizationInactive": "This dataset cannot be published because its organization is not active",
+    "packageStateChanged": "This dataset was changed by another action. Reload the page",
+    "organizationNameTaken": "An organization with this URL identifier already exists",
+    "organizationHasActivePackages": "This organization still has published datasets. Delete them or move them to another organization first",
+    "groupNameTaken": "A category with this URL identifier already exists",
+    "userHasLinkedPackages": "Datasets are still linked to this user. Purge them or reassign them first",
+    "userNotDeleted": "This can only be done to a deleted user",
+    "draftAccessDenied": "You do not have access to this draft",
+    "roleRequired": "This needs the {role} role or higher in this {entity}",
+    "sysadminRequired": "Only a system administrator can do this",
+    "ownerOrSysadminRequired": "Only the creator or a system administrator can do this",
+    "uploadSuperseded": "A newer upload replaced this one before it completed",
+    "uploadNotPending": "No upload is pending for this resource",
+    "sectionDuplicated": "The section \"{section}\" would be split into two places",
+    "roleName": {
+      "admin": "admin",
+      "editor": "editor",
+      "member": "member"
+    },
+    "entityName": {
+      "organization": "organization",
+      "group": "category"
+    }
   }
 }

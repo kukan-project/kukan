@@ -13,7 +13,7 @@ import {
   userOrgMembership,
   userGroupMembership,
 } from '@kukan/db'
-import { ForbiddenError } from '@kukan/shared'
+import { ForbiddenError, SysadminRequiredError } from '@kukan/shared'
 
 export type MembershipRole = 'admin' | 'editor' | 'member'
 
@@ -85,7 +85,9 @@ async function checkMembershipRole(
 ): Promise<void> {
   if (!(await hasMembershipRole(db, user, entityId, requiredRole, config))) {
     throw new ForbiddenError(
-      `Requires ${requiredRole} role or higher in this ${config.entityLabel}`
+      `Requires ${requiredRole} role or higher in this ${config.entityLabel}`,
+      { role: requiredRole, entity: config.entityLabel },
+      'role-required'
     )
   }
 }
@@ -260,7 +262,7 @@ interface PackageOwnership {
 }
 
 /**
- * The package write rule, as a reason string or null when allowed. Draft access
+ * The package write rule, as the refusal to throw or null when allowed. Draft access
  * is creator-based (ADR-039); org role applies otherwise. 'purging' rows are
  * drafts whose purge crashed mid-flight, so the same draft rule lets the DELETE
  * be re-run to finish the cleanup.
@@ -270,16 +272,24 @@ async function packageWriteDenial(
   user: AuthUser,
   pkg: PackageOwnership,
   role: MembershipRole
-): Promise<string | null> {
+): Promise<ForbiddenError | null> {
   if (pkg.state === 'draft' || pkg.state === 'purging') {
-    return (await hasDraftAccess(db, pkg, user)) ? null : 'No access to this draft package'
+    return (await hasDraftAccess(db, pkg, user))
+      ? null
+      : new ForbiddenError('No access to this draft package', undefined, 'draft-access-denied')
   }
   if (pkg.ownerOrg) {
     return (await hasOrgRole(db, user, pkg.ownerOrg, role))
       ? null
-      : `Requires ${role} role or higher in this organization`
+      : new ForbiddenError(
+          `Requires ${role} role or higher in this organization`,
+          { role, entity: 'organization' },
+          'role-required'
+        )
   }
-  return user.sysadmin ? null : 'Only sysadmin can modify packages without an organization'
+  return user.sysadmin
+    ? null
+    : new SysadminRequiredError('Only sysadmin can modify packages without an organization')
 }
 
 /**
@@ -302,7 +312,7 @@ export async function canWritePackage(
 export function makePackageAuthorize(db: Database, user: AuthUser, role: MembershipRole) {
   return async (existing: PackageOwnership): Promise<void> => {
     const denial = await packageWriteDenial(db, user, existing, role)
-    if (denial) throw new ForbiddenError(denial)
+    if (denial) throw denial
   }
 }
 
@@ -312,7 +322,11 @@ export function makePackageAuthorize(db: Database, user: AuthUser, role: Members
 export function checkOwnerOrSysadmin(user: AuthUser, ownerId: string | null): void {
   if (user.sysadmin) return
   if (ownerId && user.id === ownerId) return
-  throw new ForbiddenError('Only the owner or sysadmin can perform this action')
+  throw new ForbiddenError(
+    'Only the owner or sysadmin can perform this action',
+    undefined,
+    'owner-or-sysadmin-required'
+  )
 }
 
 /**

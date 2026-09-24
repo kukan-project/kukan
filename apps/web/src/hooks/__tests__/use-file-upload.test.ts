@@ -3,7 +3,8 @@ import { renderHook, act } from '@testing-library/react'
 import { clientFetch } from '@/lib/client-api'
 import { useFileUpload } from '../use-file-upload'
 
-vi.mock('@/lib/client-api', () => ({
+vi.mock('@/lib/client-api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/client-api')>()),
   clientFetch: vi.fn(),
 }))
 

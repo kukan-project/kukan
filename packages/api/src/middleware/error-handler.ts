@@ -5,7 +5,7 @@
 
 import type { ErrorHandler } from 'hono'
 import { HTTPException } from 'hono/http-exception'
-import { KukanError, createLogger } from '@kukan/shared'
+import { KukanError, createLogger, problemTypeUri } from '@kukan/shared'
 
 const fallbackLogger = createLogger({ name: 'api', level: 'error' })
 
@@ -79,7 +79,7 @@ export const errorHandler: ErrorHandler = (err, c) => {
   if (reported instanceof KukanError || isKukanShaped(reported)) {
     return c.json(
       {
-        type: 'about:blank',
+        type: reported.problem ? problemTypeUri(reported.problem) : 'about:blank',
         title: reported.code,
         status: reported.status,
         detail: reported.message,

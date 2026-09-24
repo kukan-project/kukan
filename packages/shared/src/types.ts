@@ -71,4 +71,5 @@ export interface ProblemDetail {
   status: number
   detail?: string
   instance?: string
+  details?: Record<string, unknown>
 }

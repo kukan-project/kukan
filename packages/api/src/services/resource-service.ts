@@ -320,7 +320,11 @@ export class ResourceService {
   private assertUnsplit(labels: (string | null)[]) {
     const split = splitSection(labels)
     if (split) {
-      throw new ValidationError(`Section "${split}" would appear in more than one place`)
+      throw new ValidationError(
+        `Section "${split}" would appear in more than one place`,
+        { section: split },
+        'section-duplicated'
+      )
     }
   }
 

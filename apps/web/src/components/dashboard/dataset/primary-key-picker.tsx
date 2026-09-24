@@ -16,7 +16,8 @@ import {
 import { useTranslations } from 'next-intl'
 import type { ColumnSettingsView, KeyCheck, ResourceColumn } from '@kukan/shared'
 import { canIdentifyRows, sameKeyColumns } from '@kukan/shared'
-import { clientFetch, problemDetail } from '@/lib/client-api'
+import { clientFetch, readProblem } from '@/lib/client-api'
+import { useProblemMessage } from '@/hooks/use-problem-message'
 import { columnTypeKey, formatCell } from '@/lib/format-utils'
 import { KEY_HEADER_CLASS, KEY_CELL_CLASS } from '@/lib/table-cells'
 import { useParquetPreview } from '@/hooks/use-parquet-preview'
@@ -56,6 +57,7 @@ export function PrimaryKeyPicker({
   /** The type names the public resource page uses, so a column is not called
    *  two things on two screens. */
   const tr = useTranslations('resource')
+  const describeProblem = useProblemMessage()
   const [view, setView] = useState<ColumnSettingsView | null>(null)
   const [selected, setSelected] = useState<string[]>([])
   const [check, setCheck] = useState<KeyCheck | null>(null)
@@ -201,7 +203,7 @@ export function PrimaryKeyPicker({
         body: JSON.stringify({ primaryKey: selected.length > 0 ? selected : null }),
       })
       if (!res.ok) {
-        setError((await problemDetail(res)) ?? t('applyFailed'))
+        setError(describeProblem(await readProblem(res)) ?? t('applyFailed'))
         return
       }
       const data: { queued: boolean | null } = await res.json()

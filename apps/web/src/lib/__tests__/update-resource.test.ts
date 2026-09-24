@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { clientFetch } from '@/lib/client-api'
 import { updateResource } from '../update-resource'
 
-// Only the transport is stubbed. `problemDetail` reads a Response and nothing
+// Only the transport is stubbed. `readProblem` reads a Response and nothing
 // else, so the real one is what these cases should be exercising.
 vi.mock('@/lib/client-api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/client-api')>()),
@@ -72,24 +72,17 @@ describe('updateResource', () => {
     // The point of the whole return shape: the API names the field and the
     // reason, and a boolean threw that away, so every failed edit read "could
     // not update".
-    mockClientFetch
-      .mockResolvedValueOnce(jsonResponse({ id: 'r1', name: 'old' }))
-      .mockResolvedValueOnce(jsonResponse({ detail: 'url: Invalid URL' }, false))
-
-    expect(await updateResource('r1', { name: 'new' })).toEqual({
-      ok: false,
+    const problem = {
+      type: 'about:blank',
+      title: 'VALIDATION_ERROR',
+      status: 400,
       detail: 'url: Invalid URL',
-    })
-  })
-
-  it('reports failure without a reason when the body carries none', async () => {
-    // Callers fall back to their own wording, so `detail` has to be absent
-    // rather than an empty string they would show as a blank message.
+    }
     mockClientFetch
       .mockResolvedValueOnce(jsonResponse({ id: 'r1', name: 'old' }))
-      .mockResolvedValueOnce(jsonResponse({ detail: '' }, false))
+      .mockResolvedValueOnce(jsonResponse(problem, false))
 
-    expect(await updateResource('r1', { name: 'new' })).toEqual({ ok: false, detail: undefined })
+    expect(await updateResource('r1', { name: 'new' })).toEqual({ ok: false, problem })
   })
 
   it('reports failure when the error body is not JSON', async () => {
@@ -97,6 +90,6 @@ describe('updateResource', () => {
       .mockResolvedValueOnce(jsonResponse({ id: 'r1', name: 'old' }))
       .mockResolvedValueOnce(brokenResponse())
 
-    expect(await updateResource('r1', { name: 'new' })).toEqual({ ok: false, detail: undefined })
+    expect(await updateResource('r1', { name: 'new' })).toEqual({ ok: false, problem: undefined })
   })
 })

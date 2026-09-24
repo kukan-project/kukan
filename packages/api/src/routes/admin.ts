@@ -24,7 +24,6 @@ import { leasePassed } from '../services/lease'
 import { EMBED_NOTICE_GRACE_MS } from '../services/search-index'
 import { DEFAULT_VECTOR_MIN_SIMILARITY } from '@kukan/search-adapter'
 import {
-  ForbiddenError,
   UnauthorizedError,
   REINDEX_JOB_TYPE,
   EMBED_ALL_JOB_TYPE,
@@ -41,6 +40,7 @@ import {
   passwordLengthSchema,
   REANALYSE_INDEX_JOB_TYPE,
   RECORD_ROW_GROUPS_JOB_TYPE,
+  SysadminRequiredError,
 } from '@kukan/shared'
 import { PipelineService } from '../services/pipeline-service'
 import { countPreviewsWithoutRowGroups } from '../services/odata/row-group-backfill'
@@ -76,7 +76,7 @@ export const adminRouter = new Hono<{ Variables: AppContext }>()
 adminRouter.use('*', async (c, next) => {
   const user = c.get('user')
   if (!user) throw new UnauthorizedError()
-  if (!user.sysadmin) throw new ForbiddenError('Sysadmin role required')
+  if (!user.sysadmin) throw new SysadminRequiredError('Sysadmin role required')
   await next()
 })
 

@@ -10,9 +10,9 @@ import { AnnouncementService } from '../services/announcement-service'
 import {
   createAnnouncementSchema,
   updateAnnouncementSchema,
-  ForbiddenError,
   NotFoundError,
   UnauthorizedError,
+  SysadminRequiredError,
 } from '@kukan/shared'
 import type { AppContext } from '../context'
 
@@ -65,7 +65,7 @@ announcementsRouter.get('/:id', zValidator('param', idParam), async (c) => {
 announcementsRouter.post('/', zValidator('json', createAnnouncementSchema), async (c) => {
   const user = c.get('user')
   if (!user) throw new UnauthorizedError()
-  if (!user.sysadmin) throw new ForbiddenError('Only sysadmin can create announcements')
+  if (!user.sysadmin) throw new SysadminRequiredError('Only sysadmin can create announcements')
 
   const input = c.req.valid('json')
   const service = new AnnouncementService(c.get('db'))
@@ -81,7 +81,7 @@ announcementsRouter.put(
   async (c) => {
     const user = c.get('user')
     if (!user) throw new UnauthorizedError()
-    if (!user.sysadmin) throw new ForbiddenError('Only sysadmin can update announcements')
+    if (!user.sysadmin) throw new SysadminRequiredError('Only sysadmin can update announcements')
 
     const { id } = c.req.valid('param')
     const input = c.req.valid('json')
@@ -95,7 +95,7 @@ announcementsRouter.put(
 announcementsRouter.delete('/:id', zValidator('param', idParam), async (c) => {
   const user = c.get('user')
   if (!user) throw new UnauthorizedError()
-  if (!user.sysadmin) throw new ForbiddenError('Only sysadmin can delete announcements')
+  if (!user.sysadmin) throw new SysadminRequiredError('Only sysadmin can delete announcements')
 
   const { id } = c.req.valid('param')
   const service = new AnnouncementService(c.get('db'))

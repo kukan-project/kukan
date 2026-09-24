@@ -5,6 +5,7 @@
 
 // Error classes
 export * from './errors'
+export * from './problem-types'
 
 // Cache utility
 export * from './cache'

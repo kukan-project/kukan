@@ -3,14 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslations } from 'next-intl'
 import type { FieldValues, Resolver } from 'react-hook-form'
-import { VALIDATION_MESSAGES } from '@kukan/shared'
-
-const KEY_BY_MESSAGE = new Map<string, keyof typeof VALIDATION_MESSAGES>(
-  Object.entries(VALIDATION_MESSAGES).map(([key, message]) => [
-    message,
-    key as keyof typeof VALIDATION_MESSAGES,
-  ])
-)
+import { validationMessageKey } from '@kukan/shared'
 
 /** Every `message` in a react-hook-form error tree, passed through `translate`. */
 function translateErrors<E>(node: E, translate: (message: string) => string): E {
@@ -30,7 +23,7 @@ function translateErrors<E>(node: E, translate: (message: string) => string): E 
  * `zodResolver` with the shared schemas' own messages translated.
  *
  * The schemas are the API's, so their messages are English; a message that is
- * not one of {@link VALIDATION_MESSAGES} — a key a web schema set itself — is
+ * not one of the shared `VALIDATION_MESSAGES` — a key a web schema set itself — is
  * left for the form to render as before.
  */
 export function useZodResolver<T extends FieldValues>(
@@ -38,7 +31,7 @@ export function useZodResolver<T extends FieldValues>(
 ): Resolver<T> {
   const t = useTranslations('validation')
   const translate = (message: string) => {
-    const key = KEY_BY_MESSAGE.get(message)
+    const key = validationMessageKey(message)
     return key ? t(key) : message
   }
   const base = zodResolver(schema) as unknown as Resolver<T>

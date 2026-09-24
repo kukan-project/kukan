@@ -22,6 +22,7 @@ import {
 import { clientFetch } from '@/lib/client-api'
 import { parseTags } from '@/lib/parse-tags'
 import { FormatBadge } from '@/components/format-badge'
+import { useProblemMessage } from '@/hooks/use-problem-message'
 
 export interface SuggestResourceInfo {
   id: string
@@ -162,6 +163,7 @@ export function MetadataSuggestDialog({
 }: MetadataSuggestDialogProps) {
   const t = useTranslations('dataset')
   const tc = useTranslations('common')
+  const describeProblem = useProblemMessage()
   const locale = useLocale()
 
   const [loading, setLoading] = useState(false)
@@ -198,7 +200,7 @@ export function MetadataSuggestDialog({
               ? t('aiSuggestRateLimited')
               : res.status === 503
                 ? t('aiSuggestUnavailable')
-                : body.detail || t('aiSuggestFailed')
+                : describeProblem(body) || t('aiSuggestFailed')
           )
           return
         }

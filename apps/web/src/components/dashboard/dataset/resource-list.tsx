@@ -48,7 +48,8 @@ import {
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { clientFetch, problemDetail } from '@/lib/client-api'
+import { clientFetch, readProblem } from '@/lib/client-api'
+import { useProblemMessage } from '@/hooks/use-problem-message'
 import { rowActivateProps } from '@/lib/row-activate'
 import { takePendingDropFiles } from '@/lib/pending-drop-files'
 import { updateResource } from '@/lib/update-resource'
@@ -386,6 +387,7 @@ export function ResourceList({
 }: ResourceListProps) {
   const t = useTranslations('resource')
   const tc = useTranslations('common')
+  const describeProblem = useProblemMessage()
 
   // Delete
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -680,7 +682,7 @@ export function ResourceList({
         }),
       })
       if (!res.ok) {
-        setReorderError((await problemDetail(res)) ?? t('reorderFailed'))
+        setReorderError(describeProblem(await readProblem(res)) ?? t('reorderFailed'))
         return
       }
       onUpdated()
@@ -889,7 +891,7 @@ export function ResourceList({
         // The server's reason when it gave one — the create path has always
         // shown it, and an edit failing for the same cause used to say only
         // that it failed.
-        setFormError(updated.detail ?? t('failedToUpdate'))
+        setFormError(describeProblem(updated.problem) ?? t('failedToUpdate'))
         return
       }
       if (pendingFile) {
@@ -921,7 +923,7 @@ export function ResourceList({
     } catch {
       throw new Error(t('failedToAdd'))
     }
-    if (!res.ok) throw new Error((await problemDetail(res)) ?? t('failedToAdd'))
+    if (!res.ok) throw new Error(describeProblem(await readProblem(res)) ?? t('failedToAdd'))
     return res.json()
   }
 

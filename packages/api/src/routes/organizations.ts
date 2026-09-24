@@ -9,8 +9,8 @@ import { z } from 'zod'
 import {
   createOrganizationSchema,
   updateOrganizationSchema,
-  ForbiddenError,
   UnauthorizedError,
+  SysadminRequiredError,
 } from '@kukan/shared'
 import { OrganizationService } from '../services/organization-service'
 import { checkOrgRole, ROSTER_ROLE } from '../auth/permissions'
@@ -42,7 +42,8 @@ organizationsRouter.get(
     // Listing soft-deleted orgs (the trash view) is sysadmin-only and uncached.
     // The viewer is passed so the dataset counts stay unrestricted for sysadmin.
     if (params.state === 'deleted') {
-      if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can list deleted organizations')
+      if (!user?.sysadmin)
+        throw new SysadminRequiredError('Only sysadmin can list deleted organizations')
       return c.json(await service.list(params, user))
     }
 
@@ -59,7 +60,7 @@ organizationsRouter.post('/', zValidator('json', createOrganizationSchema), asyn
   const db = c.get('db')
   const user = c.get('user')
   if (!user) throw new UnauthorizedError()
-  if (!user.sysadmin) throw new ForbiddenError('Only sysadmin can create organizations')
+  if (!user.sysadmin) throw new SysadminRequiredError('Only sysadmin can create organizations')
 
   const service = new OrganizationService(db)
   const input = c.req.valid('json')
@@ -81,7 +82,8 @@ organizationsRouter.get(
 
     // Soft-deleted orgs are sysadmin-only and must not be cached.
     if (c.req.valid('query').state === 'deleted') {
-      if (!user?.sysadmin) throw new ForbiddenError('Only sysadmin can view deleted organizations')
+      if (!user?.sysadmin)
+        throw new SysadminRequiredError('Only sysadmin can view deleted organizations')
       return c.json(await service.getByNameOrId(nameOrId, 'deleted'))
     }
 
@@ -129,7 +131,7 @@ organizationsRouter.delete('/:nameOrId', async (c) => {
 organizationsRouter.post('/:nameOrId/purge', async (c) => {
   const user = c.get('user')
   if (!user) throw new UnauthorizedError()
-  if (!user.sysadmin) throw new ForbiddenError('Only sysadmin can purge organizations')
+  if (!user.sysadmin) throw new SysadminRequiredError('Only sysadmin can purge organizations')
 
   const db = c.get('db')
   const service = new OrganizationService(db)
@@ -144,7 +146,7 @@ organizationsRouter.post('/:nameOrId/purge', async (c) => {
 organizationsRouter.post('/:nameOrId/restore', async (c) => {
   const user = c.get('user')
   if (!user) throw new UnauthorizedError()
-  if (!user.sysadmin) throw new ForbiddenError('Only sysadmin can restore organizations')
+  if (!user.sysadmin) throw new SysadminRequiredError('Only sysadmin can restore organizations')
 
   const db = c.get('db')
   const service = new OrganizationService(db)

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { createTestApp, mockSearch, mockQueue } from '../test-helpers/test-app'
-import { PIPELINE_JOB_TYPE } from '@kukan/shared'
+import { PIPELINE_JOB_TYPE, problemTypeUri } from '@kukan/shared'
 import {
   getTestDb,
   cleanDatabase,
@@ -370,6 +370,7 @@ describe('Packages API Routes', () => {
 
       const body = await res.json()
       expect(body.detail).toContain('already exists')
+      expect(body.type).toBe(problemTypeUri('package-name-taken'))
     })
   })
 

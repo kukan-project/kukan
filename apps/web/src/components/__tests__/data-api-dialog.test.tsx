@@ -5,12 +5,9 @@ import { DataApiDialog } from '../data-api-dialog'
 
 const mockClientFetch = vi.fn()
 
-vi.mock('@/lib/client-api', () => ({
+vi.mock('@/lib/client-api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/client-api')>()),
   clientFetch: (...args: unknown[]) => mockClientFetch(...args),
-  problemDetail: async (res: Response) => {
-    const body = await res.json().catch(() => null)
-    return (body as { detail?: string } | null)?.detail || undefined
-  },
 }))
 
 // Default: highlighter not loaded (plain rendering). Individual tests flip it

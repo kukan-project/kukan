@@ -1,10 +1,11 @@
-import { clientFetch, problemDetail } from '@/lib/client-api'
+import type { ProblemDetail } from '@kukan/shared'
+import { clientFetch, readProblem } from '@/lib/client-api'
 
 /** What became of the update, and what to tell the user when it failed. */
 export interface UpdateResourceResult {
   ok: boolean
   /**
-   * The server's reason, when it gave one.
+   * The server's reason, when it gave one — rendered with `useProblemMessage`.
    *
    * A boolean was all this used to return, so the API's Problem Details went
    * nowhere and every failed edit read "could not update" — including the ones
@@ -12,7 +13,7 @@ export interface UpdateResourceResult {
    * path already reads `detail`, which is why adding a resource explained
    * itself and editing the same resource did not.
    */
-  detail?: string
+  problem?: ProblemDetail
 }
 
 /**
@@ -25,7 +26,7 @@ export async function updateResource(
   patch: Record<string, unknown>
 ): Promise<UpdateResourceResult> {
   const currentRes = await clientFetch(`/api/v1/resources/${id}`)
-  if (!currentRes.ok) return { ok: false, detail: await problemDetail(currentRes) }
+  if (!currentRes.ok) return { ok: false, problem: await readProblem(currentRes) }
   // The section is left out: it is arranged from the list, and PUT keeps an
   // absent one (ADR-050) — echoing the copy read here would write a stale label
   // over a save that moved the resource in between
@@ -35,6 +36,6 @@ export async function updateResource(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...current, ...patch }),
   })
-  if (!res.ok) return { ok: false, detail: await problemDetail(res) }
+  if (!res.ok) return { ok: false, problem: await readProblem(res) }
   return { ok: true }
 }

@@ -43,10 +43,11 @@ import { userNameSchema, userRoleSchema, passwordLengthSchema, type UserRole } f
 import { PASSWORD_LENGTH_KEYS, passwordLengthArgs } from '@/lib/password-messages'
 import { PasswordField } from '@/components/password-field'
 import { PasswordStrengthMeter } from '@/components/password-strength-meter'
-import { clientFetch } from '@/lib/client-api'
+import { clientFetch, readProblem } from '@/lib/client-api'
 import { usePaginatedFetch } from '@/hooks/use-paginated-fetch'
 import { formatDateTimeCompact } from '@/components/date-time'
 import { useZodResolver } from '@/hooks/use-zod-resolver'
+import { useProblemMessage } from '@/hooks/use-problem-message'
 
 interface UserStatsResponse {
   total: number
@@ -101,6 +102,7 @@ export default function AdminUsersPage() {
   const t = useTranslations('dashboard.adminUsers')
   const tc = useTranslations('common')
   const tp = useTranslations('password')
+  const describeProblem = useProblemMessage()
 
   // Stats
   const [stats, setStats] = useState<UserStatsResponse | null>(null)
@@ -162,7 +164,7 @@ export default function AdminUsersPage() {
       setCreateError(
         data.title === 'PASSWORD_TOO_WEAK'
           ? tp('tooWeak')
-          : data.detail || data.message || t('createError')
+          : describeProblem(data) || data.message || t('createError')
       )
       return
     }
@@ -203,7 +205,7 @@ export default function AdminUsersPage() {
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      setEditError(data.detail || data.message || t('editError'))
+      setEditError(describeProblem(data) || data.message || t('editError'))
       return
     }
     setEditTarget(null)
@@ -223,7 +225,7 @@ export default function AdminUsersPage() {
     setIsDeleting(false)
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
-      setDeleteError(data.detail || data.message || t('deleteError'))
+      setDeleteError(describeProblem(data) || data.message || t('deleteError'))
       return
     }
     setDeleteTarget(null)
@@ -244,8 +246,8 @@ export default function AdminUsersPage() {
     })
     setIsRestoring(false)
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      setRestoreError(data.detail || t('restoreError'))
+      const problem = await readProblem(res)
+      setRestoreError(describeProblem(problem) ?? t('restoreError'))
       return
     }
     setRestoreTarget(null)
@@ -264,8 +266,8 @@ export default function AdminUsersPage() {
     const res = await clientFetch(`/api/v1/admin/users/${purgeTarget.id}/purge`, { method: 'POST' })
     setIsPurging(false)
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      setPurgeError(data.detail || t('purgeError'))
+      const problem = await readProblem(res)
+      setPurgeError(describeProblem(problem) ?? t('purgeError'))
       return
     }
     setPurgeTarget(null)

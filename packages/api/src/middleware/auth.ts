@@ -4,7 +4,7 @@
  */
 
 import type { Context, Next } from 'hono'
-import { UnauthorizedError, ForbiddenError, SESSION_COOKIE_NAME } from '@kukan/shared'
+import { UnauthorizedError, SESSION_COOKIE_NAME, SysadminRequiredError } from '@kukan/shared'
 import type { Auth } from '../auth/auth'
 import { ApiTokenService } from '../services/api-token-service'
 
@@ -97,7 +97,7 @@ export function requireSysadmin(auth: Auth) {
     await requireAuth(auth)(c, async () => {
       const user = c.get('user')
       if (!user?.sysadmin) {
-        throw new ForbiddenError('Sysadmin role required')
+        throw new SysadminRequiredError('Sysadmin role required')
       }
       await next()
     })

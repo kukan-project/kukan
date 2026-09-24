@@ -30,7 +30,6 @@ import {
   UnauthorizedError,
   NotFoundError,
   ValidationError,
-  ForbiddenError,
   PayloadTooLargeError,
   PURGE_VERSION_JOB_TYPE,
   getMimeType,
@@ -44,6 +43,7 @@ import {
   MAX_UPLOAD_SIZE,
   MAX_UPLOAD_SIZE_MB,
   primaryKeyOf,
+  SysadminRequiredError,
 } from '@kukan/shared'
 import { TEXT_PREVIEW_LIMIT, JSON_PREVIEW_LIMIT, QUERY_MAX_SQL_LENGTH } from '../config'
 import { JsonMinifyStream } from '../streams/json-minify-stream'
@@ -694,7 +694,7 @@ resourcesRouter.post(
   async (c) => {
     const user = c.get('user')
     if (!user) throw new UnauthorizedError()
-    if (!user.sysadmin) throw new ForbiddenError('Only sysadmin can purge resource versions')
+    if (!user.sysadmin) throw new SysadminRequiredError('Only sysadmin can purge resource versions')
 
     const id = c.req.param('id')
     const version = parseVersionParam(c.req.param('v'))
@@ -781,7 +781,11 @@ resourcesRouter.post('/:id/upload', async (c) => {
   // request may have replaced it, and promoting that one would point the
   // resource at an object nobody has uploaded yet.
   if (!(await resourceService.promoteUpload(id, pendingKey, { size }))) {
-    throw new ValidationError('A newer upload replaced this one before it completed')
+    throw new ValidationError(
+      'A newer upload replaced this one before it completed',
+      undefined,
+      'upload-superseded'
+    )
   }
 
   return c.json(await enqueuePipeline(c, id), 200)
@@ -813,7 +817,11 @@ resourcesRouter.post(
     const storage = c.get('storage')
     const pendingKey = existing.pendingStorageKey
     if (!pendingKey) {
-      throw new ValidationError('No upload is pending for this resource')
+      throw new ValidationError(
+        'No upload is pending for this resource',
+        undefined,
+        'upload-not-pending'
+      )
     }
     const head = await storage.head(pendingKey)
     if (!head) {
@@ -832,7 +840,11 @@ resourcesRouter.post(
     // in between cannot have this call promote its not-yet-uploaded key — with
     // the size measured from a different object.
     if (!(await resourceService.promoteUpload(id, pendingKey, { size: head.size }))) {
-      throw new ValidationError('No upload is pending for this resource')
+      throw new ValidationError(
+        'No upload is pending for this resource',
+        undefined,
+        'upload-not-pending'
+      )
     }
 
     return c.json(await enqueuePipeline(c, id), 200)

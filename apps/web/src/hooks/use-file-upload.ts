@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { clientFetch } from '@/lib/client-api'
+import { clientFetch, readProblem } from '@/lib/client-api'
+import { useProblemMessage } from './use-problem-message'
 import { detectFormat, detectContentType } from '@kukan/shared'
 import { MAX_UPLOAD_SIZE, MAX_UPLOAD_SIZE_MB } from '@kukan/shared'
 
@@ -37,6 +38,7 @@ export function useFileUpload({
   const [status, setStatus] = useState<UploadStatus>('idle')
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const describeProblem = useProblemMessage()
   const xhrRef = useRef<XMLHttpRequest | null>(null)
   const disposedRef = useRef(false)
 
@@ -94,8 +96,7 @@ export function useFileUpload({
         })
 
         if (!urlRes.ok) {
-          const body = await urlRes.json().catch(() => ({}))
-          throw new Error(body.detail || 'Failed to get upload URL')
+          throw new Error(describeProblem(await readProblem(urlRes)) || 'Failed to get upload URL')
         }
 
         const { upload_url } = await urlRes.json()
@@ -148,7 +149,9 @@ export function useFileUpload({
         })
 
         if (!completeRes.ok) {
-          throw new Error('Failed to complete upload')
+          throw new Error(
+            describeProblem(await readProblem(completeRes)) ?? 'Failed to complete upload'
+          )
         }
 
         if (disposedRef.current) {
@@ -171,7 +174,7 @@ export function useFileUpload({
         setError(err instanceof Error ? err.message : 'Upload failed')
       }
     },
-    [resourceId, onComplete]
+    [resourceId, onComplete, describeProblem]
   )
 
   return { status, progress, error, upload, cancel, reset }

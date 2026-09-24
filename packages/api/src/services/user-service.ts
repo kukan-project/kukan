@@ -37,7 +37,11 @@ export class UserService {
 
     if (!target) throw new NotFoundError('User', userId)
     if (target.state !== 'deleted') {
-      throw new ValidationError('Only soft-deleted users can be restored')
+      throw new ValidationError(
+        'Only soft-deleted users can be restored',
+        undefined,
+        'user-not-deleted'
+      )
     }
 
     await this.db
@@ -62,7 +66,11 @@ export class UserService {
 
       if (!target) throw new NotFoundError('User', userId)
       if (target.state !== 'deleted') {
-        throw new ValidationError('Only soft-deleted users can be purged')
+        throw new ValidationError(
+          'Only soft-deleted users can be purged',
+          undefined,
+          'user-not-deleted'
+        )
       }
 
       const [linkedPkg] = await tx
@@ -72,7 +80,11 @@ export class UserService {
         .limit(1)
 
       if (linkedPkg) {
-        throw new ConflictError('User has linked packages. Purge or reassign them first.')
+        throw new ConflictError(
+          'User has linked packages. Purge or reassign them first.',
+          undefined,
+          'user-has-linked-packages'
+        )
       }
 
       // Nullify FK references that don't cascade

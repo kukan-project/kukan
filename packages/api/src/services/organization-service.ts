@@ -172,9 +172,11 @@ export class OrganizationService {
       .limit(1)
 
     if (existing.length > 0) {
-      throw new ValidationError('Organization name already exists', {
-        name: input.name,
-      })
+      throw new ValidationError(
+        'Organization name already exists',
+        { name: input.name },
+        'organization-name-taken'
+      )
     }
 
     const [created] = await this.db
@@ -226,7 +228,7 @@ export class OrganizationService {
       .where(and(...conditions))
       .limit(1)
 
-    if (linkedPkg) throw new ConflictError(message)
+    if (linkedPkg) throw new ConflictError(message, undefined, 'organization-has-active-packages')
   }
 
   /** Soft-delete an organization. Rejects if active packages are still linked. */
