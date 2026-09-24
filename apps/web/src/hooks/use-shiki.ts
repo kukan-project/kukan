@@ -63,11 +63,17 @@ export function highlight(
   })
 }
 
-/** The shared highlighter once loaded; null until then (render plain as fallback). */
-export function useHighlighter(): HighlighterCore | null {
+/**
+ * The shared highlighter once loaded; null until then (render plain as
+ * fallback). `enabled = false` for a caller with nothing to highlight, which
+ * keeps ~300 KB of grammars and themes off the wire for a panel that only
+ * shows URLs.
+ */
+export function useHighlighter(enabled = true): HighlighterCore | null {
   const [highlighter, setHighlighter] = useState<HighlighterCore | null>(null)
 
   useEffect(() => {
+    if (!enabled) return
     let active = true
     loadHighlighter().then(
       (h) => {
@@ -79,7 +85,7 @@ export function useHighlighter(): HighlighterCore | null {
     return () => {
       active = false
     }
-  }, [])
+  }, [enabled])
 
   return highlighter
 }

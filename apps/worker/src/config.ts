@@ -77,13 +77,6 @@ export const RESOLUTION_CACHE_MAX = 256
  */
 export const MAX_ADDRESSES_PER_NAME = 16
 
-/**
- * Rows per Parquet row group. Far below DuckDB's default: the preview reads the
- * file over HTTP range requests, so a small group is what keeps the first screen
- * of rows to a short read.
- */
-export const PARQUET_ROW_GROUP_SIZE = 5_000
-
 /** Maximum number of columns allowed in CSV/TSV preview */
 export const MAX_CSV_COLUMNS = 500
 

@@ -6,7 +6,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { requestId } from 'hono/request-id'
-import { createLogger, loadEnv } from '@kukan/shared'
+import { createLogger, loadEnv, ODATA_BASE_PATH } from '@kukan/shared'
 import { createDb } from '@kukan/db'
 import { createAdapters } from './adapters'
 import { AnalyticsService } from './services/analytics-service'
@@ -113,6 +113,25 @@ export async function createApp() {
     }
     return auth.handler(c.req.raw)
   })
+
+  // OData feed for BI tools (ADR-055). Mounted ahead of the auth middleware on
+  // purpose: it serves public resources only, so there is no session to resolve
+  // and nothing per-request for it to carry.
+  const { odataRouter } = await import('./routes/odata')
+  app.route(ODATA_BASE_PATH, odataRouter)
+  // How many pages it will read at once, and what that was derived from: the
+  // number follows the memory this process has, so it differs between a laptop
+  // and a 512 MB task and should not have to be guessed from either.
+  const { capacity } = await import('./services/odata/capacity')
+  baseLogger.info(
+    {
+      component: 'odata',
+      slots: capacity.slots,
+      memoryMb: capacity.memoryMb,
+      memorySource: capacity.source,
+    },
+    'odata feed capacity'
+  )
 
   // Auth middleware for non-auth routes
   app.use('*', optionalAuth(auth))

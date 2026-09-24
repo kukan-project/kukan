@@ -13,11 +13,12 @@ import {
   DialogTrigger,
 } from '@kukan/ui'
 import { useTranslations } from 'next-intl'
-import { isCsvFormat, type ResourceSchema } from '@kukan/shared'
+import { isCsvFormat, type OdataKey, type ResourceSchema } from '@kukan/shared'
 import { PipelineStatusDetail } from './pipeline-status-detail'
 import { ResourcePreview } from './resource-preview'
 import { ResourceFields } from './resource-fields'
 import { DataApiDialog } from './data-api-dialog'
+import { OdataDialog, type ReportedRefusal } from './odata-dialog'
 import { useFormattedDateTime } from './date-time'
 import { NewTabLink } from '@/components/new-tab-link'
 import { resourceEditPath } from '@/lib/paths'
@@ -62,6 +63,9 @@ export function ResourcePipelinePreview({
   // list. Only tabular formats have any of that to say.
   const { data: schemaData } = useFetch<{
     queryable: boolean
+    odataRefusal: ReportedRefusal | null
+    odataWideRows: boolean
+    odataKey: OdataKey | null
     schema: ResourceSchema | null
     primaryKey: string[] | null
   }>(
@@ -92,7 +96,15 @@ export function ResourcePipelinePreview({
         </div>
         <div className="flex items-center gap-2">
           {schemaData?.queryable && schemaData.schema && (
-            <DataApiDialog resourceId={resourceId} schema={schemaData.schema} />
+            <>
+              <DataApiDialog resourceId={resourceId} schema={schemaData.schema} />
+              <OdataDialog
+                resourceId={resourceId}
+                odataRefusal={schemaData.odataRefusal}
+                odataWideRows={schemaData.odataWideRows}
+                odataKey={schemaData.odataKey}
+              />
+            </>
           )}
           {canManage && (
             <Dialog open={open} onOpenChange={setOpen}>

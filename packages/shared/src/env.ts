@@ -149,6 +149,40 @@ export type Env = z.infer<typeof envSchema> & {
 }
 
 /**
+ * How long a version-pinned OData page may be held (seconds), by anything that
+ * holds it — the origin says it in `Cache-Control`, CloudFront caps its
+ * behaviour at it.
+ *
+ * The bound is not staleness but withdrawal. Three things take a published page
+ * away — purging the version being served (which moves serving to an older one),
+ * making the dataset private, and deleting the resource — and in all three the
+ * origin refuses from that moment while a copy already in a cache does not.
+ * Purging an *older* version is not among them: the feed never served it.
+ *
+ * A purge is a deletion in what the catalogue promises (ADR-026, ADR-055), so
+ * the window is minutes rather than the day the bytes' immutability would
+ * justify. One number, because the TTL that matters is the longest anyone
+ * applies.
+ */
+export const PINNED_PAGE_MAX_AGE_S = 600
+
+/**
+ * The origin this deployment answers on, without a trailing slash.
+ *
+ * `BETTER_AUTH_URL` is where it is configured — CDK sets it per site to the
+ * custom domain or the distribution's own name — and it is read for more than
+ * auth: the web app's metadata base and the OData feed's context and next links
+ * are both statements about the same origin, and a link built from the request
+ * instead would carry the load balancer's name (ADR-055).
+ *
+ * TODO: a dedicated SITE_URL would say what this is for; until then, one
+ * function so the reading is in one place rather than spelled out per caller.
+ */
+export function publicOrigin(env: Pick<Env, 'BETTER_AUTH_URL'>): string {
+  return env.BETTER_AUTH_URL.replace(/\/+$/, '')
+}
+
+/**
  * Load and validate environment variables.
  * DATABASE_URL is always constructed from POSTGRES_* variables.
  * @returns Validated environment configuration

@@ -10,6 +10,7 @@ import * as cdk from 'aws-cdk-lib'
 import * as acm from 'aws-cdk-lib/aws-certificatemanager'
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront'
 import { Construct } from 'constructs'
+import { PINNED_PAGE_MAX_AGE_S } from '@kukan/shared'
 import { loadViewerRequestCode } from '../cf-functions/inject.js'
 import type { KukanConfig } from '../config.js'
 import { resourceName } from '../naming.js'
@@ -56,6 +57,30 @@ export class CdnConstruct extends Construct {
       enableAcceptEncodingBrotli: true,
     })
 
+    // --- Cache Policy: OData feed (ADR-055) ---
+    // The query string MUST be in the cache key: `$skip=0` and `$skip=1000` are
+    // different pages of the same path, and collapsing them would serve every
+    // caller the same first page with no error anywhere to show for it.
+    // Cookies are absent from this path by design (public resources only), and
+    // the origin's own `Cache-Control` decides the age — `minTtl` 0 so a refusal
+    // is not held for a minute, and `maxTtl` the same figure the origin asks
+    // for on a version-pinned page (`PINNED_PAGE_MAX_AGE_S`), so nothing is held
+    // past the point a withdrawal should have taken effect. Such a page is
+    // immutable in content and could justify far longer, but a dataset made
+    // private or a version withdrawn is someone asking for it to stop being
+    // readable, and an edge still serving it is that not happening (ADR-026).
+    const odataCachePolicy = new cloudfront.CachePolicy(this, 'OdataCachePolicy', {
+      cachePolicyName: resourceName(this, 'odata'),
+      defaultTtl: cdk.Duration.seconds(60),
+      minTtl: cdk.Duration.seconds(0),
+      maxTtl: cdk.Duration.seconds(PINNED_PAGE_MAX_AGE_S),
+      headerBehavior: cloudfront.CacheHeaderBehavior.none(),
+      queryStringBehavior: cloudfront.CacheQueryStringBehavior.all(),
+      cookieBehavior: cloudfront.CacheCookieBehavior.none(),
+      enableAcceptEncodingGzip: true,
+      enableAcceptEncodingBrotli: true,
+    })
+
     // --- Viewer certificate ---
     const viewerCertificate = certificateArn
       ? acm.Certificate.fromCertificateArn(this, 'ViewerCert', certificateArn)
@@ -95,6 +120,15 @@ export class CdnConstruct extends Construct {
       functionAssociations: fnAssociations,
     }
 
+    // OData feed: read-only, unauthenticated, and re-fetched page by page by a
+    // BI tool's extract — the one API-shaped path worth caching (ADR-055 §6).
+    // It sits outside `/api/*` precisely so `CACHING_DISABLED` does not apply.
+    const odataFeed: cloudfront.BehaviorOptions = {
+      ...passthrough,
+      cachePolicy: odataCachePolicy,
+      allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
+    }
+
     // --- Distribution ---
     this.distribution = new cloudfront.Distribution(this, 'Distribution', {
       comment: 'KUKAN CDN',
@@ -103,6 +137,7 @@ export class CdnConstruct extends Construct {
         '/_next/static/*': staticAssets,
         '/auth/*': passthrough,
         '/api/*': passthrough,
+        '/odata/*': odataFeed,
       },
       ...(viewerCertificate && config.domainName
         ? { domainNames: [config.domainName], certificate: viewerCertificate }

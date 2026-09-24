@@ -36,6 +36,12 @@ const t = {
     ctaNote: '開発の背景についてはこちら',
     releaseNotes: 'リリースノート',
     switchLang: 'English',
+    spotlight7: {
+      title: 'BI ツールから直接つなぐ',
+      desc: '表形式のリソースに OData の接続 URL が付きました。Excel・Tableau・Power BI などの OData コネクタに貼るだけで、ダウンロードなしにその表を開けます。大きな表は分割して配信し、BI ツール側が続きを取りに行きます。',
+      link: '詳しく見る',
+      hash: 'bi-ツールで開く',
+    },
     spotlight5: {
       title: 'ファイル内容の自動説明',
       desc: 'リソースを登録すると、AI が中身を読んで短い説明を書きます。表は列の構成と先頭の行から、PDF は多くの場合ファイル全体から。文字の入っていない画像にも説明が付きます。採用の操作は要らず、検索の手掛かりにもなります。',
@@ -138,6 +144,12 @@ const t = {
     ctaNote: 'Read about the story behind this project',
     releaseNotes: 'Release Notes',
     switchLang: '日本語',
+    spotlight7: {
+      title: 'Connect from a BI Tool',
+      desc: 'A tabular resource now carries an OData connection URL. Paste it into the OData connector in Excel, Tableau, Power BI and the like, and the table opens with nothing to download. Large tables are served in pages the tool follows on its own.',
+      link: 'Learn more',
+      hash: 'opening-the-table-in-a-bi-tool',
+    },
     spotlight5: {
       title: 'Automatic File Descriptions',
       desc: 'Register a resource and an AI reads it and writes a short description — a table from its columns and first rows, a PDF usually from the whole file. Even an image with no text in it gets one. Nothing to adopt, and it feeds search too.',
@@ -360,6 +372,23 @@ const techStack = [
         <div class="spotlight-card">
           <div class="spotlight-body">
             <div class="spotlight-header">
+              <span class="spotlight-icon">🔌</span>
+              <h2 class="spotlight-title" data-i18n="spotlight7.title">{t.en.spotlight7.title}</h2>
+              <span class="spotlight-badge">NEW</span>
+              <span class="spotlight-date">v0.31.0 · 2026-09-24</span>
+            </div>
+            <p class="spotlight-desc" data-i18n="spotlight7.desc">{t.en.spotlight7.desc}</p>
+          </div>
+          <a
+            href={`${base}en/user-guide/#${t.en.spotlight7.hash}`}
+            class="btn-outline spotlight-link"
+            data-i18n="spotlight7.link"
+            id="spotlight7-link">{t.en.spotlight7.link}</a
+          >
+        </div>
+        <div class="spotlight-card">
+          <div class="spotlight-body">
+            <div class="spotlight-header">
               <span class="spotlight-icon">📝</span>
               <h2 class="spotlight-title" data-i18n="spotlight5.title">{t.en.spotlight5.title}</h2>
               <span class="spotlight-badge">NEW</span>
@@ -396,6 +425,7 @@ const techStack = [
             <div class="spotlight-header">
               <span class="spotlight-icon">📑</span>
               <h2 class="spotlight-title" data-i18n="spotlight4.title">{t.en.spotlight4.title}</h2>
+              <span class="spotlight-badge">NEW</span>
               <span class="spotlight-date">v0.27.0 · 2026-09-10</span>
             </div>
             <p class="spotlight-desc" data-i18n="spotlight4.desc">{t.en.spotlight4.desc}</p>
@@ -548,6 +578,9 @@ const techStack = [
           if (docsLink) docsLink.href = docsBase
           if (ctaLink) ctaLink.href = docsBase
           if (docsNav) docsNav.href = docsBase
+          var spotlight7Link = document.getElementById('spotlight7-link')
+          if (spotlight7Link)
+            spotlight7Link.href = docsBase + 'user-guide/#' + tr.spotlight7.hash
           var spotlight5Link = document.getElementById('spotlight5-link')
           if (spotlight5Link)
             spotlight5Link.href = docsBase + 'data-admin-guide/#' + tr.spotlight5.hash

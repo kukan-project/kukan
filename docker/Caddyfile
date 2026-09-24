@@ -39,5 +39,24 @@
 #   }
 
 :80 {
+	# Compress text responses. The OData feed (ADR-055) hands a BI tool pages of
+	# JSON that are megabytes each and compress by roughly ten to one; HTML, CSS
+	# and the API's JSON gain by the same token. Matched on content type rather
+	# than left to compress everything: the bulk of what this site serves by
+	# volume is file downloads — Parquet written with ZSTD, images, archives —
+	# and running those through another codec costs CPU to no end.
+	encode {
+		zstd
+		gzip
+		match {
+			header Content-Type text/*
+			header Content-Type application/json*
+			header Content-Type application/xml*
+			header Content-Type application/javascript*
+			header Content-Type application/manifest+json*
+			header Content-Type image/svg+xml*
+		}
+	}
+
 	reverse_proxy web:3000
 }

@@ -120,6 +120,14 @@ export class S3StorageAdapter implements StorageAdapter {
     )
   }
 
+  /**
+   * `s3://bucket/key`, which DuckDB's httpfs reads with the same credentials
+   * and endpoint this adapter was configured with (ADR-055).
+   */
+  readUrl(key: string): string {
+    return `s3://${this.bucket}/${key}`
+  }
+
   async head(key: string): Promise<{ size: number } | null> {
     try {
       const response = await this.client.send(

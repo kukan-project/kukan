@@ -32,6 +32,8 @@ import { ckanCompatRouter } from '../../routes/ckan-compat'
 import { announcementsRouter } from '../../routes/announcements'
 import { siteRouter } from '../../routes/site'
 import { mcpRouter } from '../../routes/mcp'
+import { odataRouter } from '../../routes/odata'
+import { ODATA_BASE_PATH } from '@kukan/shared'
 
 // Minimal mock adapters (search/storage are no-ops for route tests)
 export const mockSearch: SearchAdapter = {
@@ -72,6 +74,8 @@ const mockStorage = {
     err.name = 'NoSuchKey'
     throw err
   },
+  // No object behind it: the suites that read one give their own adapter
+  readUrl: (key: string) => `s3://test-bucket/${key}`,
   downloadRange: async () => {
     const err = new Error('The specified key does not exist.')
     err.name = 'NoSuchKey'
@@ -124,7 +128,7 @@ const mockAuth = {
   },
 } as unknown as Auth
 
-const testEnv = {
+export const testEnv = {
   NODE_ENV: 'test',
   PORT: 3000,
   DATABASE_URL: testDatabaseUrl(testDatabaseName(inject('testDbPrefix'))),
@@ -224,6 +228,9 @@ export function createTestApp(db: Database, overrides?: TestAppOverrides) {
 
   // CKAN compat
   app.route('/api/3/action', ckanCompatRouter)
+
+  // OData feed (ADR-055)
+  app.route(ODATA_BASE_PATH, odataRouter)
 
   // 404 handler
   app.notFound((c) => {

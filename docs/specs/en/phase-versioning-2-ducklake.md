@@ -543,8 +543,10 @@ OData's CSDL 4.01 §6.5 leaves `Edm.Double` out of the key types and keeps `Edm.
 same reason (ADR-055).
 
 The decision rests on the type alone and reads no content. `canIdentifyRows()` (`@kukan/shared`)
-answers it in one place, and the three that ask — the validation at the apply, the key-check
-endpoint (`key-float`), and the picker — use that one answer.
+answers it in one place, and the four that ask — the validation at the apply, the key-check
+endpoint (`key-float`), the picker, and **the OData feed** — use that one answer. The feed is the
+one that does not refuse: where a standing key rests on a float column it falls back to the
+synthetic key (`RowId`) and reports the same `key-float` as the reason (ADR-055 open item 2).
 
 **`key-float` is not a `lake_ingest_reason`, because it is not a decision the ingest makes**
 (§6.6). `MERGE` matches a floating-point column the way it matches any other, so the load does not

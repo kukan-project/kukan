@@ -24,6 +24,7 @@ export * from './csv-records'
 
 // Pipeline types (shared between API and Worker)
 export * from './pipeline-types'
+export * from './odata'
 
 // Resource sections (ADR-050): how a resource list reads as headings
 export * from './resource-sections'

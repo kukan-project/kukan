@@ -566,14 +566,17 @@ function ColumnSample({
             // No hover: these rows are a sample, not a list of things to pick,
             // and the only reason to tell them apart is the key marking.
             <TableRow key={i} className="hover:bg-transparent">
-              {names.map((name) => (
+              {/* Over the columns rather than their names: the type is what
+                  decides whether a value shows its time of day, and a
+                  timestamp at midnight reads as a bare date without it. */}
+              {columns.map((column) => (
                 <TableCell
-                  key={name}
+                  key={column.name}
                   className={`whitespace-nowrap text-xs${
-                    selected.includes(name) ? ` ${KEY_CELL_CLASS}` : ''
+                    selected.includes(column.name) ? ` ${KEY_CELL_CLASS}` : ''
                   }`}
                 >
-                  {formatCell(row[name])}
+                  {formatCell(row[column.name], column.type)}
                 </TableCell>
               ))}
             </TableRow>

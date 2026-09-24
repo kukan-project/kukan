@@ -5,13 +5,14 @@ sidebar:
   order: 0
 ---
 
-KUKAN は用途に応じて 3 種類の API を提供します。
+KUKAN は用途に応じて 4 種類の API を提供します。
 
-| API                            | パス              | 用途                                          |
-| ------------------------------ | ----------------- | --------------------------------------------- |
-| [REST API (v1)](/ja/api/rest/) | `/api/v1/*`       | KUKAN ネイティブの API。推奨                  |
-| [CKAN 互換 API](/ja/api/ckan/) | `/api/3/action/*` | CKAN 既存ツールとの互換性                     |
-| [MCP サーバー](/ja/api/mcp/)   | `/api/mcp`        | AI エージェント連携（Model Context Protocol） |
+| API                             | パス                    | 用途                                          |
+| ------------------------------- | ----------------------- | --------------------------------------------- |
+| [REST API (v1)](/ja/api/rest/)  | `/api/v1/*`             | KUKAN ネイティブの API。推奨                  |
+| [CKAN 互換 API](/ja/api/ckan/)  | `/api/3/action/*`       | CKAN 既存ツールとの互換性                     |
+| [MCP サーバー](/ja/api/mcp/)    | `/api/mcp`              | AI エージェント連携（Model Context Protocol） |
+| [OData フィード](/ja/api/rest/) | `/odata/v1/resources/*` | BI ツールが表として開く（読み取り専用）       |
 
 ## ベース URL
 

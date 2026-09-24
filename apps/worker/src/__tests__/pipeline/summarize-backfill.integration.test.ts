@@ -27,6 +27,7 @@ const BODY =
 
 const storage = {
   download: async () => Readable.from([Buffer.from(BODY)]),
+  readUrl: (key: string) => `s3://test/${key}`,
   downloadRange: async () => ({ stream: Readable.from([Buffer.from(BODY, 'utf-8')]) }),
 } as unknown as StorageAdapter
 

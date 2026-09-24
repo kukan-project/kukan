@@ -333,3 +333,26 @@ export function isZipFormat(format: string | null): boolean {
   if (!format) return false
   return format.toLowerCase() === 'zip'
 }
+
+/**
+ * Rows per Parquet row group. Far below DuckDB's default: the preview reads the
+ * file over HTTP range requests, so a small group is what keeps the first screen
+ * of rows to a short read.
+ *
+ * **A multiple of DuckDB's 2,048-row vector, because it rounds up to one.** Ask
+ * for 5,000, as this did, and the file holds 6,144 — a number nothing in the
+ * code said and every reader had to discover. It matters to more than tidiness:
+ * a group is what a Parquet read decodes to hand out one row, so the OData feed
+ * sizes its pages by this figure and cannot serve a table whose group will not
+ * fit the read (ADR-055). At 4,096 that ceiling is ~3.9 KB a row, against
+ * ~2.6 KB at 6,144.
+ *
+ * **What the smaller group costs, since two readers pay it.** The file measures
+ * 4% larger on 20 columns and 28% on 40, where the groups have more column
+ * chunks to compress separately — paid on storage, and on every range read the
+ * browser preview makes (ADR-048), the reader this constant was originally sized
+ * for and which a smaller group otherwise suits. And a feed page of a wide table
+ * now ends at 4,096 rows rather than 6,144, so an extract of one makes about half
+ * again as many requests. Weigh both readers before moving it.
+ */
+export const PARQUET_PREVIEW_ROW_GROUP_ROWS = 4_096

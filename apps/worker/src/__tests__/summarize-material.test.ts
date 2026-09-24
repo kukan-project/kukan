@@ -49,6 +49,7 @@ function deps(opts: {
 }): SummaryDeps {
   const storage = {
     download: vi.fn(async () => Readable.from([opts.bytes ?? Buffer.from('x')])),
+    readUrl: (key: string) => `s3://test/${key}`,
     downloadRange: vi.fn(async () => ({
       stream: Readable.from([Buffer.from(opts.textHead ?? '', 'utf-8')]),
     })),

@@ -14,6 +14,7 @@ import {
   PURGE_ORG_JOB_TYPE,
   PURGE_VERSION_JOB_TYPE,
   BACKFILL_VERSIONS_JOB_TYPE,
+  RECORD_ROW_GROUPS_JOB_TYPE,
   CONVERT_SET_ASIDE_JOB_TYPE,
   LAKE_INGEST_JOB_TYPE,
   EMBED_JOB_TYPE,
@@ -26,6 +27,7 @@ import {
   purgeOrgJobSchema,
   purgeVersionJobSchema,
   backfillVersionsJobSchema,
+  recordRowGroupsJobSchema,
   convertSetAsideJobSchema,
   lakeIngestJobSchema,
   embedJobSchema,
@@ -314,6 +316,7 @@ await queue.process({
     const elapsed = Math.round(performance.now() - start)
     log.info({ jobId: job.id, type: job.type, resourceId, elapsed }, 'Completed job')
   },
+
   // Maintenance (control-plane): re-analyse the index in place. The documents
   // ride along — `extractedText` is in `_source`, so nothing is fetched or
   // extracted again — which is why this is not the rebuild below.
@@ -321,6 +324,26 @@ await queue.process({
     if (!parseJobPayload(job, reanalyseIndexJobSchema)) return
     await reanalyseSearchIndex(db, search, queue, log.child({ jobId: job.id, type: job.type }))
   },
+
+  // One-time migration: give previews written before it the figure a feed pages
+  // by (ADR-055 §6). Reads footers only; the few whose grouping is what stops
+  // them being served are handed to the pipeline from stored content.
+  [RECORD_ROW_GROUPS_JOB_TYPE]: async (job: Job) => {
+    if (!parseJobPayload(job, recordRowGroupsJobSchema)) return
+    log.info({ jobId: job.id, type: job.type }, 'Record row groups job started')
+    const start = performance.now()
+    const result = await new PipelineService(db).recordMissingRowGroups({
+      storage,
+      env,
+      queue,
+      log: log.child({ jobId: job.id, type: job.type }),
+    })
+    log.info(
+      { jobId: job.id, type: job.type, ...result, elapsed: Math.round(performance.now() - start) },
+      'Record row groups job completed'
+    )
+  },
+
   // Maintenance (control-plane): rebuild the search index.
   [REINDEX_JOB_TYPE]: async (job: Job) => {
     const data = parseJobPayload(job, reindexJobSchema)

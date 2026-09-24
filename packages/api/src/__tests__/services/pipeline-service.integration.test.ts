@@ -266,6 +266,9 @@ describe('PipelineService', () => {
       expect(await service.getQueryTarget(testResId)).toEqual({
         previewKey: null,
         schema: null,
+        encoding: 'UTF-8',
+        rowGroupRows: null,
+        primaryKey: null,
         describesLiveContent: false,
       })
     })
@@ -283,6 +286,9 @@ describe('PipelineService', () => {
       expect(await service.getQueryTarget(testResId)).toEqual({
         previewKey: 'previews/test.parquet',
         schema: validSchema,
+        encoding: 'UTF-8',
+        rowGroupRows: null,
+        primaryKey: null,
         describesLiveContent: true,
       })
     })
@@ -300,6 +306,9 @@ describe('PipelineService', () => {
       expect(await service.getQueryTarget(testResId)).toEqual({
         previewKey: 'previews/test.parquet',
         schema: validSchema,
+        encoding: 'UTF-8',
+        rowGroupRows: null,
+        primaryKey: null,
         describesLiveContent: false,
       })
     })
@@ -315,6 +324,9 @@ describe('PipelineService', () => {
       expect(await service.getQueryTarget(testResId)).toEqual({
         previewKey: null,
         schema: null,
+        encoding: null,
+        rowGroupRows: null,
+        primaryKey: null,
         describesLiveContent: false,
       })
     })

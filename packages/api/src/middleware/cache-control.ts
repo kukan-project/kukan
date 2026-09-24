@@ -40,8 +40,14 @@ export async function cacheControl(c: Context, next: Next) {
  * cache never holds a signed-in user's view.
  * Use as route-level middleware: `router.get('/', publicCache(), handler)`
  */
+/** What {@link publicCache} sets, for a route that decides its own age and
+ *  still wants the default for the rest of its answers. */
+export function publicCacheValue(maxAge = 60, swr = 300): string {
+  return `public, max-age=${maxAge}, stale-while-revalidate=${swr}`
+}
+
 export function publicCache(maxAge = 60, swr = 300): MiddlewareHandler {
-  const value = `public, max-age=${maxAge}, stale-while-revalidate=${swr}`
+  const value = publicCacheValue(maxAge, swr)
   return async (c, next) => {
     await next()
     // Skip authenticated requests: a signed-in user (e.g. the dashboard) must see

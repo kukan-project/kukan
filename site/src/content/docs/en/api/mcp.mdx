@@ -54,16 +54,16 @@ curl -X POST https://your-kukan-site/api/mcp \
 
 All tools are read-only. Access to private datasets is controlled based on the authenticated user's permissions.
 
-| Tool                  | Description                                                                                  |
-| --------------------- | -------------------------------------------------------------------------------------------- |
-| `search_datasets`     | Search datasets by keyword or natural language (hybrid search). Also says which file matched |
-| `get_dataset`         | Get detailed dataset information including resource list                                     |
-| `get_resource`        | Get resource (file) metadata, URL, and its AI-written description                            |
-| `get_resource_schema` | Get a resource's column schema (names, types, row count, stats). CSV/TSV only                |
-| `query_resource`      | Run a read-only SQL query (SELECT only) over a resource's data. CSV/TSV only                 |
-| `list_organizations`  | List organizations                                                                           |
-| `list_groups`         | List groups (categories)                                                                     |
-| `list_tags`           | List tags                                                                                    |
+| Tool                  | Description                                                                                               |
+| --------------------- | --------------------------------------------------------------------------------------------------------- |
+| `search_datasets`     | Search datasets by keyword or natural language (hybrid search). Also says which file matched              |
+| `get_dataset`         | Get detailed dataset information including resource list                                                  |
+| `get_resource`        | Get resource (file) metadata, URL, and its AI-written description                                         |
+| `get_resource_schema` | Get a resource's column schema (names, types, row count, stats) and whether OData serves it. CSV/TSV only |
+| `query_resource`      | Run a read-only SQL query (SELECT only) over a resource's data. CSV/TSV only                              |
+| `list_organizations`  | List organizations                                                                                        |
+| `list_groups`         | List groups (categories)                                                                                  |
+| `list_tags`           | List tags                                                                                                 |
 
 ## Tool Details
 
@@ -123,6 +123,14 @@ resource is queryable, the output names the query table `data` and includes an e
 so the agent can write SQL after inspecting the schema; when it is not (the preview is gone
 or does not reflect the current content), the columns are still listed for reference but the
 query guidance is withheld.
+
+**Whether the table is served over OData comes back too.** When it is, the output carries the
+feed URL (ending in `/Rows`), what identifies its rows — the primary key, or the `RowId` column
+KUKAN adds and why it had to — and, for a table whose rows are large enough that a page may
+fail to read, a caution saying so. When it is not, it carries the reason: headings that are not OData
+identifiers, two columns of one name, a private or draft dataset. **Queryable over SQL and
+readable over OData are not the same thing**, so read this line before choosing how to fetch
+the data.
 
 | Parameter | Type   | Required | Description   |
 | --------- | ------ | -------- | ------------- |

@@ -25,15 +25,25 @@ export function formatBytes(bytes: number | null | undefined): string | null {
  *
  * Shared by both readers of the preview Parquet: hyparquet renders the first
  * page, DuckDB-WASM the explorer (ADR-016). They read the same file, so a
- * column typed one way must not read two ways on screen.
+ * column typed one way must not read two ways on screen — which is also why
+ * `type` is worth passing: both readers know it, and without it a timestamp at
+ * midnight is indistinguishable from a date.
  */
-export function formatCell(value: unknown): string {
+export function formatCell(value: unknown, type?: FieldType | ResourceColumnType): string {
   if (value == null) return ''
   if (value instanceof Date) {
     const iso = value.toISOString()
-    // Midnight UTC is how a DATE (no time of day) comes back; showing 00:00:00
-    // would invent a precision the column does not have.
-    return iso.endsWith('T00:00:00.000Z') ? iso.slice(0, 10) : iso.slice(0, 19).replace('T', ' ')
+    const day = iso.slice(0, 10)
+    const moment = iso.slice(0, 19).replace('T', ' ')
+    // **The column decides, not the value.** A DATE has no time of day to show
+    // and comes back as midnight UTC; a TIMESTAMP that happens to fall on
+    // midnight still has one, and reading it off the value shortened exactly
+    // those rows — one column rendering two ways down the page.
+    if (type === 'date') return day
+    if (type === 'datetime' || type === 'timestamp') return moment
+    // Nothing to go on: midnight is the better guess at a DATE, and a caller
+    // that knows the type does not come through here.
+    return iso.endsWith('T00:00:00.000Z') ? day : moment
   }
   return String(value)
 }

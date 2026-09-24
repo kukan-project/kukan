@@ -194,6 +194,8 @@ CSV/TSV リソース（パイプラインでプレビュー Parquet を生成済
   "id": "…",
   "queryable": true,
   "primaryKey": null,
+  "odataRefusal": null,
+  "odataKey": { "names": ["RowId"], "synthetic": true, "fallback": "not-designated" },
   "schema": {
     "rowCount": 1688,
     "columns": [
@@ -209,6 +211,10 @@ CSV/TSV リソース（パイプラインでプレビュー Parquet を生成済
   }
 }
 ```
+
+`odataRefusal` と `odataKey` は OData フィード（後述）のためのものです。前者はフィードが
+出せない理由（`not-public` / `unsupported-columns` / `duplicate-columns`）と該当する見出し、
+後者はフィードが行を同定するキーです。フィードが無いリソースでは `odataKey` が `null` になります。
 
 クエリ不可のリソース（非対応フォーマット・未処理）は `queryable: false`, `schema: null` を返します。
 スキーマはあるがクエリの実体が無い場合（プレビューが削除済み・列ゼロのスキーマ・
@@ -287,6 +293,39 @@ curl -X POST https://your-kukan-site/api/v1/resources/{id}/query \
 | `404`  | リソース不存在 / 非公開で権限なし                 |
 | `408`  | 実行タイムアウト                                  |
 | `429`  | 同時クエリ上限                                    |
+
+### OData フィード（BI ツール向け）
+
+表形式リソースは **OData v4** の読み取り専用フィードとしても配信されます。URL を Tableau・
+Power BI・Excel などの OData コネクタに貼ると、そのまま表として開けます。**`/api/v1` の下では
+なく、独立した URL 空間**です。
+
+| メソッド | パス                                   | 内容                                   |
+| -------- | -------------------------------------- | -------------------------------------- |
+| GET      | `/odata/v1/resources/{id}`             | サービス文書（エンティティセット一覧） |
+| GET      | `/odata/v1/resources/{id}/$metadata`   | CSDL（列名と型、キーの宣言）           |
+| GET      | `/odata/v1/resources/{id}/Rows`        | 表本体（ページング）                   |
+| GET      | `/odata/v1/resources/{id}/Rows/$count` | 行数（プレーンテキスト）               |
+
+```bash
+curl 'https://your-kukan-site/odata/v1/resources/{id}/Rows?$top=2'
+```
+
+- **公開リソースのみ・認証不要**です。非公開リソースは所有者にも `404` を返します
+- **ページング**は `@odata.nextLink` で続きます。1 ページの大きさは一定ではなく、
+  65,536 行・8MB・プレビューの行グループ境界のいずれか先に来たところで区切られます
+  （行グループは読み出しの最小単位で、跨ぐと展開量が倍になるため）。次リンクには
+  **版の指紋**が付き、抽出の途中でファイルが差し替わると古い指紋のページは
+  `410 Gone` になります（版が混ざった表を返さないため）
+- **`$select` / `$filter` / `$orderby` / `$apply` / `$search` / `$expand` は未対応**で、
+  指定すると `501` を返します。黙って無視すると、利用者は絞り込んだつもりの全件を
+  受け取ることになるためです
+- **行の同定**は、公開者が指定した主キーが OData の条件を満たせばその列、満たさなければ
+  行の位置を持つ `RowId` 列が足されます。どちらになったかは `/schema` の `odataKey` に出ます
+- 見出しが EDM 識別子にならないリソース（括弧・空白・記号などを含む見出し）は `501` を返します。
+  理由は `/schema` の `odataRefusal` で確認できます
+- `$metadata` は**毎回再検証**されます（`public, no-cache`）。列の宣言が古いまま新しい行と
+  組み合わされるのを防ぐためです
 
 ### バージョンと差分
 

@@ -40,6 +40,7 @@ import {
   userRoleSchema,
   passwordLengthSchema,
   REANALYSE_INDEX_JOB_TYPE,
+  RECORD_ROW_GROUPS_JOB_TYPE,
 } from '@kukan/shared'
 import { PipelineService } from '../services/pipeline-service'
 import { summaryEstimate } from '../services/summary-estimate'
@@ -628,6 +629,25 @@ adminRouter.post('/backfill-versions', async (c) => {
     queue.enqueue(BACKFILL_VERSIONS_JOB_TYPE, {}),
     queue.enqueue(CONVERT_SET_ASIDE_JOB_TYPE, {}),
   ])
+  return c.json({ queued: true })
+})
+
+// GET /api/v1/admin/row-group-status — Previews that never recorded what their
+// row groups hold (ADR-055 §6). Drives the one-time control, which the UI shows
+// while the count is above zero: without the figure a feed serves such a table
+// at half the row width it could manage.
+//
+// Two numbers, because they cost differently: recording is a footer read, and
+// the few that a smaller group would let through are re-interpreted from stored
+// content. Whoever presses the button is owed both before they press it.
+adminRouter.get('/row-group-status', async (c) => {
+  return c.json(await new PipelineService(c.get('db')).countPreviewsWithoutRowGroups())
+})
+
+// POST /api/v1/admin/record-row-groups — Enqueue the one-time recording. Reads
+// each preview's footer; no re-fetch, no re-interpretation.
+adminRouter.post('/record-row-groups', async (c) => {
+  await c.get('queue').enqueue(RECORD_ROW_GROUPS_JOB_TYPE, {})
   return c.json({ queued: true })
 })
 

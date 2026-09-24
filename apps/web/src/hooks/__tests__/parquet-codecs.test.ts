@@ -12,9 +12,11 @@
  * reaches hyparquet's built-in decoder, which is the point, so a test that
  * reads a SNAPPY file is checking that the omission is correct.
  *
- * Fixtures are written at the pipeline's own `ROW_GROUP_SIZE` (5000) over 30k
- * rows, so they have five row groups. An earlier pair used 200 rows and got one
- * group, which made the mid-file case below assert nothing.
+ * Fixtures hold 30k rows in five row groups. They were written when the Interpret
+ * step asked for 5,000 rows a group, which DuckDB rounded up to 6,144 — checked
+ * against the files rather than assumed, since that rounding is why the constant
+ * is now a multiple of the 2,048-row vector. An earlier pair used 200 rows and
+ * got one group, which made the mid-file case below assert nothing.
  */
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -53,10 +55,10 @@ describe('the preview reader', () => {
     ])
   })
 
-  it('reads a page from the fourth row group, not the first', async () => {
-    // 30k rows in groups of 5000, so this needs a group the reader has not
-    // already touched — the path a page turn takes, and the one a single-group
-    // fixture cannot exercise.
+  it('reads a page from a later row group, not the first', async () => {
+    // 6,144 rows a group, so row 16,000 sits in the third — a group the reader
+    // has not already touched, which is the path a page turn takes and the one a
+    // single-group fixture cannot exercise.
     const rows = await parquetReadObjects({
       file: fixture('zstd.parquet'),
       compressors,

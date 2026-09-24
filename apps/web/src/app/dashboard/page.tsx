@@ -9,6 +9,7 @@ import { useUser } from '@/components/dashboard/user-provider'
 import { StatCard } from '@/components/dashboard/stat-card'
 import { FormatBadges } from '@/components/format-badges'
 import { VersionBackfillNotice } from '@/components/dashboard/version-backfill-notice'
+import { RowGroupBackfillNotice } from '@/components/dashboard/row-group-backfill-notice'
 import { SearchAnalysisNotice } from '@/components/dashboard/search-analysis-notice'
 import { EmbeddingBackfillNotice } from '@/components/dashboard/embedding-backfill-notice'
 
@@ -57,6 +58,7 @@ export default function DashboardPage() {
       </div>
 
       <VersionBackfillNotice />
+      <RowGroupBackfillNotice />
       <SearchAnalysisNotice />
       <EmbeddingBackfillNotice />
 

@@ -158,6 +158,60 @@ export const resourceSchemaSchema = z.object({
 export type ResourceSchema = z.infer<typeof resourceSchemaSchema>
 
 /**
+ * Why a resource is not served as an OData feed (ADR-055), or how it is not.
+ *
+ * The API decides this and the resource page explains it, so the set of
+ * reasons has one owner rather than a spelling at each end. When Step 1's
+ * heading rules change, a page that has not kept up is a type error here
+ * rather than a message lookup that quietly comes back undefined.
+ *
+ * `not-queryable` is the one the page never shows: a resource with no table at
+ * all says nothing about feeds. The narrowed parameter is how a reader of the
+ * response declares it handles only what it is given.
+ *
+ * A page that cannot be read for want of memory is not among these: only the
+ * read can answer that, and it raises its own 501 where it happens rather than
+ * having the page decide in advance (ADR-055 §6).
+ */
+export type OdataRefusalReason =
+  'not-queryable' | 'not-public' | 'unsupported-columns' | 'duplicate-columns'
+
+export interface OdataRefusal<R extends OdataRefusalReason = OdataRefusalReason> {
+  reason: R
+  /** The headings at fault, where headings are the reason; empty otherwise. */
+  columns: string[]
+}
+
+/**
+ * Why the OData feed identifies rows by a column of its own making rather than
+ * by the publisher's primary key (ADR-055 残課題 2).
+ *
+ * Each of these is a different next step for whoever published the table —
+ * designate a key, choose another column, fix the data, or wait — which is why
+ * the page is given the reason rather than a sentence about tables in general.
+ * `unverified` is the one that passes on its own: a composite key is settled by
+ * the layer-2 ingest, and until that version lands there is nothing to stand on.
+ *
+ * **Built on {@link KeyCheckFault} rather than beside it.** Four of these are
+ * the faults a key check already answers, and giving them second names would
+ * mean a second message and a hand-written arm for each one the day a fifth
+ * arrives — with no type error when one is forgotten. The three added here are
+ * the ones only a feed has: no key designated at all, digits a JSON number
+ * cannot carry, and a key nothing has checked against the rows being served.
+ */
+export type OdataKeyFallback = KeyCheckFault | 'not-designated' | 'unsafe-integers' | 'unverified'
+
+/** What the feed declares as the entity key, and whether it had to invent it. */
+export interface OdataKey {
+  /** The properties `<Key>` names. */
+  names: string[]
+  /** Whether those are a column the feed added rather than the table's own. */
+  synthetic: boolean
+  /** Why it was added, or null where the table's own key is used. */
+  fallback: OdataKeyFallback | null
+}
+
+/**
  * Why an interpretation produced no table, when it produced none (ADR-046).
  *
  * An empty schema records that a version has been interpreted and holds nothing
@@ -249,6 +303,38 @@ export function canIdentifyRows(type: ResourceColumnType): boolean {
 }
 
 /**
+ * What a version's frozen counts say about a key, or `undefined` where they
+ * cannot say (spec §6.3).
+ *
+ * The counts answer for **one column** — `nullCount` and `distinctCount`, both
+ * recorded over every row when the version was interpreted (ADR-046). A
+ * combination is outside what they hold, and a schema written before ADR-046
+ * carries no `distinctCount` at all; in either case the answer has to come from
+ * the content (`keyFault`), which is why this returns `undefined` rather than a
+ * verdict.
+ *
+ * **One arithmetic, two readers.** The key-setting check and the OData feed
+ * both ask whether a key identifies a row, and an answer they do not share is a
+ * product that contradicts itself — a key the picker accepts and the feed
+ * quietly refuses, with nothing able to explain the difference. (The lake
+ * ingest asks the content instead, through `keyFault`.)
+ */
+export function frozenKeyFault(
+  schema: ResourceSchema,
+  key: readonly string[]
+): KeyFault | null | undefined {
+  if (key.length === 0) return undefined
+  // Every column, not just the first: a combination stops at the guard below,
+  // and a caller told `undefined` goes on to read columns that are not there.
+  const named = key.map((name) => schema.columns.find((c) => c.name === name))
+  if (named.some((column) => !column)) return 'key-missing'
+  const column = named[0]!
+  if (key.length > 1 || column.distinctCount === undefined) return undefined
+  if (column.nullCount > 0) return 'key-null'
+  return column.distinctCount === schema.rowCount ? null : 'key-not-unique'
+}
+
+/**
  * Why two versions could not be compared row by row (spec §7).
  *
  * Here rather than beside the service that produces it because the screen that
@@ -325,6 +411,15 @@ export const PURGE_VERSION_JOB_TYPE = 'purge-resource-version' as const
  *  as v1 (ADR-043). No re-fetch/re-index — just copies the live key. */
 export const BACKFILL_VERSIONS_JOB_TYPE = 'backfill-resource-versions' as const
 
+/**
+ * One-time migration: record what each preview's row groups hold (ADR-055 §6).
+ *
+ * A Parquet read decodes a whole row group, so the feed pages by that number —
+ * and previews written before it was recorded do not carry it. A page can ask
+ * the file, but only the interpretation and this migration write it down.
+ */
+export const RECORD_ROW_GROUPS_JOB_TYPE = 'record-preview-row-groups' as const
+
 /** One-time migration: convert the versions the revert before ADR-044 §4 set
  *  aside, so `superseded` can leave the language. */
 export const CONVERT_SET_ASIDE_JOB_TYPE = 'convert-set-aside-versions' as const
@@ -388,6 +483,7 @@ export const purgeVersionJobSchema = z.object({
   version: z.number().int().positive(),
 })
 export const backfillVersionsJobSchema = z.object({})
+export const recordRowGroupsJobSchema = z.object({})
 export const convertSetAsideJobSchema = z.object({})
 // Ids only, like every other job. What to read is settled by the version row —
 // the handler interprets its file again (ADR-046) — so a message carrying

@@ -92,10 +92,16 @@ export class Semaphore {
 }
 
 /**
- * Shared by every in-process DuckDB user — ADR-032 resource queries and ADR-043
- * version diffs alike. They run in the same container and draw on the same
- * memory, so one budget covers both; two independent semaphores would each
- * think they had the whole container.
+ * Shared by the query paths — ADR-032 resource queries and ADR-043 version
+ * diffs alike. They run in the same container and draw on the same memory, so
+ * one budget covers both.
+ *
+ * **It is no longer the container's only DuckDB budget.** The OData feed holds
+ * a second one beside it (ADR-055 §2), sized from the memory the process
+ * actually has, while this one is fixed — which is the open question in the
+ * follow-up issue on the query sandbox. Written down because the sentence that
+ * used to be here ("two independent semaphores would each think they had the
+ * whole container") stopped being a rule and became a thing to watch.
  */
 const duckdbSemaphore = new Semaphore(QUERY_MAX_CONCURRENT, QUERY_QUEUE_MAX, QUERY_QUEUE_WAIT_MS)
 

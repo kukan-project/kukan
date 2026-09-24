@@ -484,6 +484,26 @@ versioning.
 For the per-layer breakdown and the conversion of old-style reverts, see the
 [Data Administrator Guide](/en/data-admin-guide/#one-time-migration).
 
+### Preparing tables for BI tools
+
+Previews written before the OData feed
+([User Guide](/en/user-guide/#opening-the-table-in-a-bi-tool)) never recorded
+**how many rows sit in the chunk a read has to decode at once (its row group)**.
+Without that figure the feed errs on the safe side and cuts each page small, so
+a table with many columns or long text can be refused as unservable.
+
+While any are left, the dashboard shows **Prepare tables for BI tools**. Running
+it reads the stored previews and records the figure. Nothing is fetched from the
+source again (`GET /api/v1/admin/row-group-status` /
+`POST /api/v1/admin/record-row-groups`).
+
+Some previews written under older settings need more than the figure — their
+file is **rebuilt**. That too comes from the stored copy, so nothing is fetched,
+and the dashboard says how many before you press.
+
+There is no hurry. The feed works without it; it just refuses more tables than
+it has to.
+
 ## Health checks
 
 KUKAN automatically monitors the health of external URL resources.

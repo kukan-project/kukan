@@ -12,6 +12,7 @@ import { resource, resourceVersion, resourcePipeline, auditLog } from '@kukan/db
 import {
   canIdentifyRows,
   ConflictError,
+  frozenKeyFault,
   getStorageKey,
   keyColumnsOf,
   primaryKeyOf,
@@ -1473,6 +1474,45 @@ export class ResourceVersionService {
   }
 
   /**
+   * The key columns the rows this resource is serving were taken into layer 2
+   * under, or null where they are not in it.
+   *
+   * **A verdict about this content, not a copy of the setting.** A version
+   * whose key repeats or holds a missing value is refused at ingest
+   * (`key-not-unique` / `key-null`, spec §6.6) and carries no snapshot, so a
+   * key recorded beside one has been checked against the interpreted Parquet —
+   * the same rows the OData feed serves (ADR-055 残課題 2). Matched on the
+   * content hash, so an ingest belonging to older bytes cannot answer for what
+   * is served now, and the newest such version wins: re-interpreting unchanged
+   * bytes makes another version over the same hash.
+   */
+  async liveLakeKey(resourceId: string): Promise<string[] | null> {
+    // The newest version over these bytes, **whether or not it reached layer
+    // 2** — then its own verdict. Asking only among ingested versions would
+    // answer with an older one whenever a re-interpretation of unchanged bytes
+    // is still queued (ADR-046 §3 makes that a new version under the same
+    // hash), and that answer is about rows this feed is no longer serving: the
+    // reading moved, so a key unique under the old one need not be under this.
+    const [row] = await this.db
+      .select({
+        keyColumns: resourceVersion.lakeKeyColumns,
+        snapshot: resourceVersion.ducklakeSnapshotId,
+      })
+      .from(resourceVersion)
+      .innerJoin(resource, eq(resource.id, resourceVersion.resourceId))
+      .where(
+        and(
+          eq(resourceVersion.resourceId, resourceId),
+          ne(resourceVersion.state, 'purged'),
+          eq(resourceVersion.hash, resource.hash)
+        )
+      )
+      .orderBy(desc(resourceVersion.version))
+      .limit(1)
+    return row?.snapshot == null ? null : keyColumnsOf(row.keyColumns)
+  }
+
+  /**
    * Resolve the storage key for downloading a version's content.
    * Throws NotFoundError when the version is missing or purged (content gone).
    */
@@ -2265,11 +2305,11 @@ export class ResourceVersionService {
    * refuses it outright — so `key-float` is here to say why a key will not be
    * taken, not to warn about what an ingest would later record.
    *
-   * **A single-column key needs no scan.** The interpretation already counted
-   * the column's nulls and its distinct values, and froze both on the version
-   * (ADR-046, spec §6.4) — the same numbers the picker offers its candidates
-   * from. Only a composite key has to be read out of the content, because the
-   * frozen counts say nothing about a combination's uniqueness.
+   * **A key the frozen counts can answer needs no scan.** Which those are is
+   * {@link frozenKeyFault}'s to say — a single column on a schema that carries
+   * the counts (ADR-046, spec §6.4), the same numbers the picker offers its
+   * candidates from. A combination, whose uniqueness those counts say nothing
+   * about, and a schema from before them, go to the content instead.
    *
    * That read goes through {@link keyFault}, so what it answers is what the
    * ingest will: the same two questions, of the same shape of file. It is
@@ -2310,25 +2350,8 @@ export class ResourceVersionService {
       return { checked: true, primaryKey: key, fault: 'key-float' }
     }
 
-    if (key.length === 1) {
-      const column = columns.get(key[0])!
-      // The counts the interpretation recorded, asked in `keyFault`'s order and
-      // by its arithmetic, so the two cannot answer differently — including for
-      // an empty table, which has no repeated key and so passes both.
-      // Schemas from before ADR-046 carry no counts, and read the content.
-      if (column.distinctCount !== undefined) {
-        return {
-          checked: true,
-          primaryKey: key,
-          fault:
-            column.nullCount > 0
-              ? 'key-null'
-              : column.distinctCount === schema.rowCount
-                ? null
-                : 'key-not-unique',
-        }
-      }
-    }
+    const frozen = frozenKeyFault(schema, key)
+    if (frozen !== undefined) return { checked: true, primaryKey: key, fault: frozen }
 
     return this.checkKeyAgainstPreview(resourceId, key, deps)
   }

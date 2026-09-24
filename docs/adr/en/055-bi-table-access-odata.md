@@ -46,10 +46,47 @@ Recorded because the design rests on it. **All of it is vendor behaviour and can
 | REST API Connector       | **Built by Tableau.** Reads CSV/JSON over HTTP GET (2023.3 and later, extract-only). But a **JDBC driver (.jar) has to be placed by hand in each machine's Drivers folder**, and the Exchange lists **Desktop only** (Prep Builder also works). **Not available on Cloud**, where no driver can be installed — a scheduled refresh there needs Tableau Bridge |
 | WDC (Web Data Connector) | **On its way out.** The official repository states it is removed with the Tableau 26.3 release                                                                                                                                                                                                                                                                |
 
+### What was checked against the real clients (added after Step 1)
+
+The table above comes from vendor documentation. With Step 1 implemented, **Tableau Desktop 2026.2 and
+Excel (Power Query, `Microsoft.Data.Mashup`) were pointed at the feed** and what they sent was recorded
+server-side. **Power BI connected and read the table too** — that one was checked for whether it works,
+not measured the way the table below measures the other two.
+
+| Observation           | Excel / Power Query                                        | Tableau Desktop                           | Power BI Desktop                      |
+| --------------------- | ---------------------------------------------------------- | ----------------------------------------- | ------------------------------------- |
+| `IEEE754Compatible`   | **Never sent** (`application/json;odata.metadata=minimal`) | **Never sent** (`Accept: */*`)            | **Never sent**                        |
+| Integers past 2^53    | **Rounded** (JSON read as doubles)                         | **Exact** (read as 64-bit integers)       | **Exact**                             |
+| `Accept-Encoding`     | Sent                                                       | **Not sent** — no compression             | Sent (`gzip, deflate`)                |
+| `OData-MaxVersion`    | `4.0`                                                      | Not sent                                  | `4.0`                                 |
+| Trailing slash        | Not appended                                               | Not appended                              | Not appended                          |
+| `$select` / `$filter` | Not sent                                                   | **Not sent** — filters act on the extract | **Not sent** (no query string at all) |
+| 200,000 rows          | 4 pages **plus a second fetch of page 1**, ~4 s            | 4 pages exactly, **~2.2 s**               | Fetched page 1 four times (not timed) |
+| Version fingerprint   | Carried through the next links                             | Carried through                           | Not observed (next links go direct)   |
+
+The Power BI column was recorded through a logging proxy. Its user agent is `Microsoft.Data.Mashup`, the
+same engine as Excel's, and **the HTTP conversation is much the same**. Where they part is the integers:
+an Excel worksheet holds doubles and rounds, while Power BI's model keeps 64-bit integers —
+`9007199254740993` and a 19-digit column counting up from 10^18 both came through digit for digit.
+
+Three things follow.
+
+1. **`IEEE754Compatible` (open item 3) would serve nobody.** **None of the three sends it.** Tableau and
+   Power BI are already exact and Excel does not ask. And writing an Int64's digits straight into the JSON, as the implementation does, works exactly as
+   designed: a client that parses into 64 bits gets the value back, and one that parses into a double is
+   where it was. Had this followed the spec's "serialize as strings", Tableau's numbers would have
+   degraded into text columns.
+2. **Excel fetches page 1 twice on every refresh** (a schema probe before `$metadata`) — 25% more bytes on
+   this table. Behind CloudFront that is a cache hit on the same query-less URL; against the origin it is a
+   plain duplicate.
+3. **Tableau asks for no compression**, so the "JSON is 2.7× the file" figure decision §3 rests on is what
+   actually crosses the wire there.
+
 Two facts out of that table decide the design.
 
-1. **Tableau's OData is extract-only and cannot push down a projection.** With `$select` inert, every
-   refresh pulls **the whole entity set, every column**. "Pull just the columns we need" is not available
+1. **No client pushes a projection down.** Tableau's OData is extract-only and `$select` is inert there;
+   Excel and Power BI do not send one either. Every refresh pulls **the whole entity set, every column**,
+   so "pull just the columns we need" is not available
 2. **The S3 connector demands an IAM access key.** Handing IAM credentials to the readers of a public
    catalog is not possible, so that route serves organizations that own their bucket, not KUKAN's users
 
@@ -181,7 +218,7 @@ presigned URLs for reading were removed in ADR-017.
 > **Measured during Step 1 (addendum)**: taking 92,180 rows by 9 columns through the feed, every page,
 > costs **3 round trips, 1.94 s and 19.1 MB of JSON** — 2.7 times the 7.13 MB source file. The cost per
 > page is flat (137 ms for the last against 147 ms for the first), so a million rows is about 20 round
-> trips. "Several hundred round trips" assumed a 1,000-row page; it does not describe a 50,000-row one.
+> trips. "Several hundred round trips" assumed a 1,000-row page; it does not describe a 65,536-row one.
 > Condition 1 below — never materialize — is also met **by the feed itself**, so the download route is
 > no longer the safer of the two on memory.
 >
@@ -243,7 +280,20 @@ Keeping the work per request small is a design constraint.
   **without reading any data**. Where it pays is not the reader but **CloudFront revalidating** — a BI
   tool's extract does not necessarily send a conditional request, but CloudFront comes back when the
   TTL expires, and a 304 there saves rebuilding the table. **As configured today, though, CloudFront
-  caches none of this** (below). **Note that "immutable, so it can be held" does not set the TTL**
+  caches none of this** (below). **A response that names no interpretation revalidates every time** (learned in
+  implementation) — `$metadata`, a page carrying no fingerprint, and `$count`. The first declares
+  the columns the rows are read under and a client holds it for the whole extract. Closing only one
+  of the two leaves **the same fault the other way round**: a page a minute old beside the current
+  CSDL, and a table that fits in one page never reaches a next link to have its version checked.
+  Neither response says so. The validator comes out without reading data (`notModified()` runs before
+  `openPage()`), so revalidating costs **two database reads, measured at 0.36 ms**, and an unchanged
+  version answers 304 without touching the Parquet. **Pinning the first page by redirecting into a
+  versioned URL is not the answer**: a BI tool that saves the URL it resolved would meet a 410 on its
+  next refresh after any re-interpretation — a broken refresh path traded for a narrow window. What
+  remains is one request's worth of race between `$metadata` and the first page, which only pinning
+  across versions would close (open item 11). **The service document may be held**: it names the
+  entity set and says nothing about the table, so a copy a minute old is the same bytes as a fresh
+  one. **Note that "immutable, so it can be held" does not set the TTL**
   (learned in implementation). What sets it is withdrawal — purging the version being served, making
   the dataset private, deleting the resource — where the origin refuses from that moment and a copy
   already in a cache does not. Purging an _older_ version is not among them: the feed never served it
@@ -292,6 +342,70 @@ CloudFront can cache a chunked response, with conditions.
 
 As a side effect, **CloudFront collapses simultaneous misses on one key into a single origin fetch**.
 Several people refreshing their extracts at the same hour cost one generation, not several.
+
+#### A page's size is decided by the row group (found in implementation)
+
+**Pages are not a fixed size.** Parquet decodes a whole row group to hand out even one row of it, so
+what a page reads is `groups touched × the group's decoded bytes`, and **a page that crosses a
+boundary holds two groups at once**. Bounded by rows and cells as it first was, a 20-column Japanese
+table served its first page and failed on the third — the one that straddled a boundary. **What
+arrives is not a broken table**: the page is opened before a byte is written and the read fails at
+`conn.stream()`, so the extract meets an unexplained 500 (measured). From the BI tool's side, a table
+that worked yesterday simply errors today.
+
+So a page is held to **as many groups as the budget affords, and cut at that boundary**. Where
+`$skip` lands part way into a group, the page is shorter and the next link resumes on the boundary. A
+narrow table's groups are small, the count is high, and the boundary never binds (11 groups at once
+reads); a wide table's page stays inside one.
+
+Measured one page per process, with 4,096-row groups:
+
+| slot   | group reads that serve | that fail |
+| ------ | ---------------------- | --------- |
+| 64 MB  | 28 MB                  | 38 MB     |
+| 128 MB | 38 MB                  | 70 MB     |
+| 256 MB | 140 MB                 | 210 MB    |
+
+**The ceiling tracks the slot at roughly half of it** — not the slot less a fixed overhead, which
+would have let 210 MB through at 256. The implementation budgets a quarter of the slot and spends the
+other half of that headroom on the row-size estimate being an estimate.
+
+A consequence: **`ROW_GROUP_SIZE` is kept to a multiple of 2,048**, DuckDB's vector size, because it
+rounds up to one. A file written asking for `5000` holds 6,144 rows, which nothing in the code said
+and every reader had to discover. It is now 4,096, and the value the file was actually written with
+is recorded in the preview's metadata.
+
+**A preview that recorded no figure is treated as unknown rather than guessed at.** Two
+implementations have written previews — before DuckDB took over, hyparquet-writer wrote the 5,000
+rows it was asked for exactly — and both eras are still served (a preview with no `sourceHash` is
+trusted). Nothing distinguishes them from outside, so cutting on either multiple would manufacture
+the straddled read this exists to prevent. Pages are cut at boundaries only where the boundaries are
+known; elsewhere the byte budget alone bounds them, until a re-interpretation records what the file
+holds.
+
+**Existing previews catch up through one operator-run pass.** The new group size applies to previews
+written from now on, so the rest are read once — a footer apiece — when a sysadmin presses "Prepare
+tables for BI tools" (`GET /api/v1/admin/row-group-status` /
+`POST /api/v1/admin/record-row-groups`). Only the ones recording cannot save — a group over budget
+that a 4,096-row one would bring under it — are also re-interpreted with `rebuildOnly`, which
+**does not re-fetch external URLs**. The prompt disappears once nothing is left.
+
+**The read side does not write.** Taking the footer during the first page read and writing it back
+was considered and rejected: this is an unauthenticated public surface a BI tool hits hundreds of
+times, and putting a database write on it makes a public read write, while still leaving the first
+page of every unrecorded table slow. The footer read itself is the same work either way — only who
+pays for it, and when, has moved.
+
+**A table that cannot be served is decided by the read, not predicted** (a single group over budget
+is 3.9 KB a row with 4,096-row groups; a group cannot be divided, so no smaller page reaches it). The
+original design refused such tables up front from the row-size estimate, and **the estimate refused
+tables that read** — 27 MB of group against a 25.6 MB ceiling, where reads actually begin to fail at
+38 MB. The estimate has no breakdown of the bytes, so that error does not shrink. So the refusal
+comes from the read: `conn.stream()`'s out-of-memory is caught and answered with `501` and "This
+table cannot be served as OData … download the file instead". The page is opened before a byte of
+the body is written, so this arrives as a whole RFC 7807 body rather than a truncated one (measured).
+**The estimate is kept only as a caution** — the resource page's OData dialog says the table's rows
+are large and may not read. It does not say the table is refused.
 
 ## Consequences
 
@@ -379,14 +493,63 @@ building the rest is pointless.
    necessarily have one (ADR-043 ii-b made a primary key expressible, not present). A synthetic key —
    the row number — is the fallback, but it assumes **the Parquet's row order is stable** (as does
    `$top`/`$skip` paging), and **a new version changes what a row number means**, so the same key does
-   not follow the same row across versions. Whether a declared primary key should be used when there
-   is one is undecided
+   not follow the same row across versions.
+
+   > **Decided (addendum)**: **a designated primary key becomes the key where OData allows it, and the
+   > synthetic one is the fallback.** Three conditions — a single column; that column identifies a row
+   > (`unique`, frozen per version by ADR-046: every value distinct, none missing); and its type is one
+   > CSDL 4.01 §6.5 permits for a key.
+   >
+   > **A floating-point column is not a key.** Binary floating point does not correspond one-to-one
+   > with the decimal text it travels as, so a value that round-trips through JSON is not guaranteed to
+   > come back as the same bits — which is to say it is not an identifier other systems can share
+   > (measured: `'1.0'` and `'1'` collapse to one key). CSDL 4.01 §6.5 admitting `Edm.Decimal` and not
+   > `Edm.Double` follows from that; the reason is the round trip, not the list. Inside DuckDB
+   > **`NaN = NaN` is true**, so layer 2's `MERGE` is not broken by one (an earlier claim here that it
+   > was is wrong) — the problem is at the boundary. KUKAN will stop offering a floating-point column
+   > as a primary key at all, which it now does (spec §6.4). **The condition stays in the feed
+   > regardless**: the refusal applies to changing a key, so one set earlier — or one whose column
+   > has since re-read as `float` — still stands, and the feed falls back to the synthetic key and
+   > reports the same `key-float`. Where the conditions hold, no `RowId` column is added: the
+   > key keeps its meaning across versions, and the reader's table gains no column of ours.
+   >
+   > **A composite key rides on layer 2's verdict.** The frozen counts are per column and say nothing
+   > about a combination (spec §6.3) — but the ingest asks the same question of the real data **per
+   > version** (spec §6.6): a version whose key repeats never enters layer 2, and one that does records
+   > the key it was taken under (`lake_key_columns`). What it read is the Parquet the interpretation
+   > produced, **the same rows this feed serves**, so a recorded key is a verdict about this content.
+   > So a key is used when it is either a single `unique` column or the one its version entered layer 2
+   > under, and falls back otherwise. Declaring it unchecked would hand a BI tool a key that repeats,
+   > and it folds rows together without saying so.
+   >
+   > Two costs. **The lag before a version reaches layer 2** — a new version falls back to the
+   > synthetic key until its ingest lands; the key is part of the interpretation fingerprint's seed, so the switch
+   > arrives as a 410 rather than a shape that changes silently mid-extract. And **a deployment not
+   > running layer 2 cannot use a composite key** (a single-column key is answered by the frozen counts
+   > and is unaffected).
+
 3. **Serializing integers and timestamps** (Step 1 emits Int64 as a JSON number and a zoneless
    timestamp as `Edm.DateTimeOffset` with `Z` appended — both shipped undecided)**.** `integer` is INT64, which raises exactly the problem
    `ColumnStats` already names — INT64 exceeds JavaScript's safe range, so it holds bounds as strings.
    OData JSON writes `Edm.Int64` as a number by default and as a string under
    `IEEE754Compatible=true`, and **the choice changes how a BI tool reads it**. `Edm.DateTimeOffset`
    requires an offset, so what KUKAN's timestamps actually carry has to be checked
+
+   > **What Step 1 does (addendum)**: an integer outside the safe range goes out as **its own digits,
+   > as a JSON number** (`JSON.rawJSON`, ES2024). JSON puts no limit on how many there are, so a client that parses into a
+   > 64-bit integer (Power Query, .NET, Java) gets the value back, and one that parses into a double
+   > is where it was — but **the server has stopped altering the value** (`Number(9007199254740993n)`
+   > is …92). Emitting strings instead needs `IEEE754Compatible` negotiated, and a client that did not
+   > ask for it would receive a string where the metadata promised `Edm.Int64`. Which of the two is
+   > the default is what stays open, and it is this item. **The condition on a key stays either way**:
+   > the digits arrive, but in the hands of a client that parses them into a double two keys become
+   > one — a rounded figure anywhere else, two rows merged where it is the key
+
+   > **Closing this item (addendum)**: measured against both clients, neither sends
+   > `IEEE754Compatible`, and the same response is read exactly by Tableau and rounded by Excel
+   > ("What was checked against the real clients", 1). Defaulting to strings would turn values Tableau reads today
+   > into a type mismatch. **Numbers it stays.**
+
 4. **Designing the disposable Basic credential (later).** v1 does not publish non-public resources
    (decision §5). When it does, what remains undecided is the unit it is issued for (a resource or a
    site), the default expiry, how it is revoked, and whether it rides on `api-token-service`'s existing
@@ -399,6 +562,23 @@ building the rest is pointless.
    stored file, or is the interpreted table generated instead?
 7. **How much of `$filter` to support.** Tableau will not use it, but Power BI may push one down.
    Which operators are accepted, and how an accepted expression maps safely onto SQL
+
+   > **Read before starting (addendum)**: **what protects the feed today is not the lockdown
+   > but the absence of any way to run arbitrary SQL.** The one statement this path gives
+   > DuckDB is `SELECT * FROM read_parquet(<key>) LIMIT <int> OFFSET <int>`; `$top` and
+   > `$skip` are validated as integers, and every other shaping option is refused with 501.
+   >
+   > The session does carry the `aws` extension (where the deployment uses the credential
+   > chain). The `load_aws_credentials()` it registers is **not a filesystem call**, so
+   > neither `enable_external_access = false` nor `lock_configuration = true` reaches it,
+   > and it answers with the task role's key id and session token in the clear (measured).
+   > ADR-032's query path hit exactly this and moved to a signed URL so the extension is
+   > never loaded.
+   >
+   > So an implementation that maps `$filter` onto SQL **breaks that premise**. Either the
+   > grammar has to make a function call unwritable, or the feed's session has to drop `aws`
+   > too (a signed URL, say) — decided in the same change as the push-down, not after it.
+
 8. **Publishing past versions.** Whether ADR-043's versions become entity sets, and what the URLs look like
 9. **Whether Tableau opens a local .parquet**, checked against a real install. If not, the pointer is a CSV
 10. **Rate limiting.** A full extract is not one request. Whether the OData route gets its own

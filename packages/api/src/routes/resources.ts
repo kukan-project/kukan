@@ -12,6 +12,7 @@ import { ResourceService, omitStoragePointers } from '../services/resource-servi
 import { ResourceVersionService } from '../services/resource-version-service'
 import { VersionDiffService } from '../services/version-diff-service'
 import { PipelineService, isQueryable } from '../services/pipeline-service'
+import { describeFeed } from '../services/odata/feed-eligibility'
 import { cancelResourceRun } from '../services/pipeline-claim'
 import { PackageService } from '../services/package-service'
 import { QueryService } from '../services/query-service'
@@ -556,14 +557,25 @@ resourcesRouter.get('/:id/schema', async (c) => {
   const db = c.get('db')
   const user = c.get('user')
   // Same visibility check as preview/download — the schema reveals the data's shape.
-  const res = await new ResourceService(db).getByIdWithAccessCheck(id, user)
+  const { resource: res, pkg } = await new ResourceService(db).getByIdWithOwnership(id, user)
   const target = await new PipelineService(db).getQueryTarget(id)
+  // Whether `/odata/v1/resources/:id` serves this table, why not when it does
+  // not, what identifies its rows and whether a page of it may fail to read —
+  // one answer, shared with the MCP tool that reports the same four things
+  // (ADR-055). A page that simply omitted the URL would leave a publisher
+  // comparing two resources and guessing which of them is broken: three
+  // quarters of the tabular resources in a real catalogue are refused for their
+  // headings alone.
+  const feed = await describeFeed(db, { id, size: res.size }, pkg, target)
   // The setting, not what the standing version was read under: the public pages
   // mark the key the way the picker's own sample does, and the per-version
   // reading is the versions endpoint's story.
   return c.json({
     id,
     queryable: isQueryable(target),
+    odataRefusal: feed.refusal,
+    odataWideRows: feed.wideRows,
+    odataKey: feed.key,
     primaryKey: primaryKeyOf(res.columnSettings),
     schema: target?.schema ?? null,
   })

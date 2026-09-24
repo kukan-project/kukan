@@ -1565,6 +1565,9 @@ GET /api/v1/resources/{id}/rows?limit=100&offset=0
 GET /api/v1/resources/{id}/preview
 GET /api/v1/resources/{id}/download
 GET /api/v1/resources/{id}/schema
+
+# BI ツール向け OData フィード（読み取り専用、`/api/v1` の下ではない。ADR-055）
+GET /odata/v1/resources/{id}/Rows
 ```
 
 ### 8.3 Solr → OpenSearch 移行のポイント

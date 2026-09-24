@@ -3,6 +3,7 @@ import Script from 'next/script'
 import { DM_Sans, Noto_Sans_JP } from 'next/font/google'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
+import { publicOrigin } from '@kukan/shared'
 import { brandConfig } from '@/brand'
 import { resolveBrandConfig } from '@/lib/resolved-brand'
 import { siteTitle } from '@/lib/page-metadata'
@@ -24,8 +25,11 @@ const notoSansJP = Noto_Sans_JP({
 })
 
 const staticMetadata: Metadata = {
-  // TODO: Introduce a dedicated SITE_URL env var instead of reusing BETTER_AUTH_URL, and add an OG image to public/
-  metadataBase: new URL(process.env.BETTER_AUTH_URL || 'http://localhost:3000'),
+  // Same origin the OData feed builds its links from (`publicOrigin`); the
+  // TODO for a dedicated SITE_URL lives there now. Add an OG image to public/.
+  metadataBase: new URL(
+    publicOrigin({ BETTER_AUTH_URL: process.env.BETTER_AUTH_URL || 'http://localhost:3000' })
+  ),
   icons: { icon: brandConfig.faviconPath },
   openGraph: { images: [brandConfig.ogImage] },
   robots: brandConfig.noindex ? { index: false, follow: false } : null,

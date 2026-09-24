@@ -115,19 +115,23 @@ const ARROW_TIMESTAMP = 10
  * them the one way.
  */
 function arrowToStringRows(result: ArrowTable, columns: string[]): Record<string, string>[] {
-  const temporal = new Set(
+  // Which of the two they are is carried through, not just that they are
+  // temporal: a TIMESTAMP at midnight has a time of day to show and a DATE
+  // does not, and the value alone cannot tell them apart.
+  const temporal = new Map(
     result.schema.fields
       .filter((f) => f.typeId === ARROW_DATE || f.typeId === ARROW_TIMESTAMP)
-      .map((f) => f.name)
+      .map((f) => [f.name, f.typeId === ARROW_DATE ? ('date' as const) : ('datetime' as const)])
   )
   return result.toArray().map((row: Record<string, unknown>) => {
     const obj: Record<string, string> = {}
     for (const col of columns) {
       const value = row[col]
+      const type = temporal.get(col)
       obj[col] =
-        temporal.has(col) && typeof value === 'number'
-          ? formatCell(new Date(value))
-          : formatCell(value)
+        type && typeof value === 'number'
+          ? formatCell(new Date(value), type)
+          : formatCell(value, type)
     }
     return obj
   })

@@ -1714,6 +1714,32 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+                "OPTIONS",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNOdataCachePolicy8D77BE21",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+              "PathPattern": "/odata/*",
+              "TargetOriginId": "DevKukanSiteStackCityaCDNDistributionOrigin17645F0D5",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
           ],
           "Comment": "KUKAN CDN",
           "DefaultCacheBehavior": {
@@ -1801,6 +1827,30 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               "Headers": [
                 "x-cache-bypass",
               ],
+            },
+            "QueryStringsConfig": {
+              "QueryStringBehavior": "all",
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::CachePolicy",
+    },
+    "CDNOdataCachePolicy8D77BE21": {
+      "Properties": {
+        "CachePolicyConfig": {
+          "DefaultTTL": 60,
+          "MaxTTL": 600,
+          "MinTTL": 0,
+          "Name": "kukan-dev-citya-odata",
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "CookiesConfig": {
+              "CookieBehavior": "none",
+            },
+            "EnableAcceptEncodingBrotli": true,
+            "EnableAcceptEncodingGzip": true,
+            "HeadersConfig": {
+              "HeaderBehavior": "none",
             },
             "QueryStringsConfig": {
               "QueryStringBehavior": "all",
@@ -4305,6 +4355,32 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               "TargetOriginId": "DevKukanSiteStackCitybCDNDistributionOrigin148723715",
               "ViewerProtocolPolicy": "redirect-to-https",
             },
+            {
+              "AllowedMethods": [
+                "GET",
+                "HEAD",
+                "OPTIONS",
+              ],
+              "CachePolicyId": {
+                "Ref": "CDNOdataCachePolicy8D77BE21",
+              },
+              "Compress": true,
+              "FunctionAssociations": [
+                {
+                  "EventType": "viewer-request",
+                  "FunctionARN": {
+                    "Fn::GetAtt": [
+                      "CDNViewerRequestFn5A9BA497",
+                      "FunctionARN",
+                    ],
+                  },
+                },
+              ],
+              "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+              "PathPattern": "/odata/*",
+              "TargetOriginId": "DevKukanSiteStackCitybCDNDistributionOrigin148723715",
+              "ViewerProtocolPolicy": "redirect-to-https",
+            },
           ],
           "Comment": "KUKAN CDN",
           "DefaultCacheBehavior": {
@@ -4386,6 +4462,30 @@ exports[`multi-site (medium / aurora / OpenSearch / 2 sites) > matches the golde
               "Headers": [
                 "x-cache-bypass",
               ],
+            },
+            "QueryStringsConfig": {
+              "QueryStringBehavior": "all",
+            },
+          },
+        },
+      },
+      "Type": "AWS::CloudFront::CachePolicy",
+    },
+    "CDNOdataCachePolicy8D77BE21": {
+      "Properties": {
+        "CachePolicyConfig": {
+          "DefaultTTL": 60,
+          "MaxTTL": 600,
+          "MinTTL": 0,
+          "Name": "kukan-dev-cityb-odata",
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "CookiesConfig": {
+              "CookieBehavior": "none",
+            },
+            "EnableAcceptEncodingBrotli": true,
+            "EnableAcceptEncodingGzip": true,
+            "HeadersConfig": {
+              "HeaderBehavior": "none",
             },
             "QueryStringsConfig": {
               "QueryStringBehavior": "all",

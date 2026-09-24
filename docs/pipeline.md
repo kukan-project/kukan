@@ -206,6 +206,13 @@ live のプレビュー Parquet を読む — ただし `sourceHash` が live �
 
 `stillHeld` は `pipeline-claim.ts` の 1 つの式で、3 つとも同じものを使う。
 
+**実行の外から `resource_pipeline` を書く相手が 1 つある。** 行グループ行数の記録
+（`recordRowGroupRows`、ADR-055 §6）は移行操作で、claim を取らない。載せる条件は
+`WHERE preview_key = ?` で、これが条件そのものである — その間に解釈が走ってプレビューが
+差し替われば鍵が変わり、UPDATE は 0 行に着地する。書く値はその鍵のファイルを読んで得た
+事実なので、古い鍵に当たらない限り誤りようが無い。通常の解釈が記録する経路は
+`updateInterpretResult` なので (a) に入る。
+
 **`FOR SHARE` が付いている理由。** 素の `EXISTS` だと claim 行は文のスナップショットから読まれ、
 自分が更新する行が他に押さえられて文が待たされると、**取消より前の視界のまま書き込みが成立する**。
 `cancelResourceRun` が「止めた」と返した後に、止めたはずの実行の書き込みが着地する（実測）。

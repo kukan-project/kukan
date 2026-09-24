@@ -1,14 +1,12 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { Readable } from 'node:stream'
 import { readFile, unlink } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { DuckDBInstance } from '@duckdb/node-api'
 import { eq } from 'drizzle-orm'
 import { resource as resourceTable, resourcePipeline } from '@kukan/db'
 import type { ResourceSchema } from '@kukan/shared'
 import { createTestApp } from '../test-helpers/test-app'
+import { writeParquet } from '../test-helpers/parquet'
 import {
   getTestDb,
   cleanDatabase,
@@ -51,14 +49,7 @@ const SCHEMA: ResourceSchema = {
 }
 
 async function makeFixtureParquet(): Promise<Buffer> {
-  const path = join(tmpdir(), `kukan-fixture-${randomUUID()}.parquet`)
-  const inst = await DuckDBInstance.create(':memory:')
-  const conn = await inst.connect()
-  await conn.run(
-    `COPY (SELECT i AS id, 'name' || i AS name FROM range(100) t(i)) TO '${path}' (FORMAT parquet)`
-  )
-  conn.disconnectSync()
-  inst.closeSync()
+  const path = await writeParquet(`SELECT i AS id, 'name' || i AS name FROM range(100) t(i)`)
   const buf = await readFile(path)
   await unlink(path).catch(() => {})
   return buf

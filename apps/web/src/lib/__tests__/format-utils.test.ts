@@ -44,10 +44,24 @@ describe('formatCell', () => {
   it('renders a DATE as a plain date, not a JS Date toString', () => {
     // What a DATE column comes back as: midnight UTC. Showing a time of day
     // would invent precision the column does not have.
-    expect(formatCell(new Date('2023-04-01T00:00:00.000Z'))).toBe('2023-04-01')
+    expect(formatCell(new Date('2023-04-01T00:00:00.000Z'), 'date')).toBe('2023-04-01')
   })
 
   it('renders a TIMESTAMP with its time of day', () => {
+    expect(formatCell(new Date('2023-04-01T09:30:15.000Z'), 'datetime')).toBe('2023-04-01 09:30:15')
+  })
+
+  it('keeps midnight on a TIMESTAMP, which has a time of day like any other row', () => {
+    // The bug this replaced read the type off the value, so the one row that
+    // fell on midnight lost its time and a single column rendered two ways.
+    expect(formatCell(new Date('2026-01-01T00:00:00.000Z'), 'datetime')).toBe('2026-01-01 00:00:00')
+    expect(formatCell(new Date('2026-01-01T00:00:00.000Z'), 'timestamp')).toBe(
+      '2026-01-01 00:00:00'
+    )
+  })
+
+  it('falls back to the value where the caller has no type', () => {
+    expect(formatCell(new Date('2023-04-01T00:00:00.000Z'))).toBe('2023-04-01')
     expect(formatCell(new Date('2023-04-01T09:30:15.000Z'))).toBe('2023-04-01 09:30:15')
   })
 

@@ -65,6 +65,7 @@ function createMockDb() {
 const mockStorage = {
   upload: vi.fn(),
   download: vi.fn(),
+  readUrl: (key: string) => `s3://test/${key}`,
   downloadRange: vi.fn(),
   delete: vi.fn(),
   getSignedUrl: vi.fn(),

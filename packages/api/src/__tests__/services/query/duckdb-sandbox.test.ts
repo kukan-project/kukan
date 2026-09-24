@@ -1,9 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
-import { DuckDBInstance } from '@duckdb/node-api'
+import { writeParquet } from '../../test-helpers/parquet'
 import { unlink } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { randomUUID } from 'node:crypto'
 import { runSandboxedQuery, type SandboxLimits } from '../../../services/query/duckdb-sandbox'
 import { ValidationError, RequestTimeoutError, ServiceUnavailableError } from '@kukan/shared'
 
@@ -15,18 +12,8 @@ const LIMITS: SandboxLimits = {
   threads: 2,
 }
 
-/** Write a small Parquet fixture with `n` rows using a separate (un-sandboxed) instance. */
-async function writeFixtureParquet(n: number): Promise<string> {
-  const path = join(tmpdir(), `kukan-test-${randomUUID()}.parquet`)
-  const inst = await DuckDBInstance.create(':memory:')
-  const conn = await inst.connect()
-  await conn.run(
-    `COPY (SELECT i AS id, 'name' || i AS name FROM range(${n}) t(i)) TO '${path}' (FORMAT parquet)`
-  )
-  conn.disconnectSync()
-  inst.closeSync()
-  return path
-}
+const writeFixtureParquet = (n: number) =>
+  writeParquet(`SELECT i AS id, 'name' || i AS name FROM range(${n}) t(i)`)
 
 describe('runSandboxedQuery', () => {
   let fixture: string

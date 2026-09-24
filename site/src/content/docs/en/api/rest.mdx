@@ -200,6 +200,8 @@ tools offer the same capability for AI agents.
   "id": "…",
   "queryable": true,
   "primaryKey": null,
+  "odataRefusal": null,
+  "odataKey": { "names": ["RowId"], "synthetic": true, "fallback": "not-designated" },
   "schema": {
     "rowCount": 1688,
     "columns": [
@@ -215,6 +217,11 @@ tools offer the same capability for AI agents.
   }
 }
 ```
+
+`odataRefusal` and `odataKey` belong to the OData feed (below): the first says why no feed is
+served (`not-public` / `unsupported-columns` / `duplicate-columns`) and names the headings at
+fault, the second says what the feed identifies rows by. Both are `null` where there is no table
+to serve.
 
 Resources that cannot be queried (unsupported format, not yet processed) return
 `queryable: false`, `schema: null`. When a schema exists but there is nothing to
@@ -301,6 +308,41 @@ Limits and errors:
 | `404` | Resource not found / private without access                     |
 | `408` | Execution timeout                                               |
 | `429` | Concurrent query limit                                          |
+
+### OData feed (for BI tools)
+
+A tabular resource is also served as a read-only **OData v4** feed. Pasting the URL into the OData
+connector in Tableau, Power BI, Excel and the like opens the table as it is. It lives in **its own
+URL space, not under `/api/v1`**.
+
+| Method | Path                                   | What it returns                        |
+| ------ | -------------------------------------- | -------------------------------------- |
+| GET    | `/odata/v1/resources/{id}`             | Service document (the entity sets)     |
+| GET    | `/odata/v1/resources/{id}/$metadata`   | CSDL: column names, types, and the key |
+| GET    | `/odata/v1/resources/{id}/Rows`        | The table itself, paged                |
+| GET    | `/odata/v1/resources/{id}/Rows/$count` | Row count, as plain text               |
+
+```bash
+curl 'https://your-kukan-site/odata/v1/resources/{id}/Rows?$top=2'
+```
+
+- **Public resources only, and no credentials.** A private resource answers `404` even to its owner
+- **Paging** continues through `@odata.nextLink`. Pages are not a fixed size: one ends at 65,536
+  rows, 8 MB, or the boundary of a row group in the preview, whichever comes first (a row group is
+  the smallest unit a Parquet read decodes, and crossing one doubles what has to be held). The next
+  link carries a **fingerprint of the version**, so if the file is replaced mid-extract, a page
+  bearing the old fingerprint answers `410 Gone` rather than handing back a table with two versions
+  mixed into it
+- **`$select`, `$filter`, `$orderby`, `$apply`, `$search` and `$expand` are not supported** and
+  answer `501`. Ignoring them silently would hand a reader every row under the impression they had
+  asked for some of them
+- **Rows are identified** by the publisher's primary key where OData allows that key, and otherwise
+  by an added `RowId` column holding the row's position. Which of the two it is comes back in
+  `/schema` as `odataKey`
+- A resource whose headings are not EDM identifiers (brackets, spaces, punctuation) answers `501`;
+  `/schema`'s `odataRefusal` says which headings
+- `$metadata` **revalidates on every request** (`public, no-cache`), so a stale declaration of the
+  columns is never paired with rows read under a newer one
 
 ### Versions and diffs
 

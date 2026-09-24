@@ -77,6 +77,9 @@ describe('executeInterpret', () => {
     expect(result).toEqual({
       previewKey: previewKeyMatching('pkg-1', 'res-1', 'parquet'),
       encoding: expect.stringMatching(/^(ASCII|ISO-8859-1)$/),
+      // Read back from the written file, so a fixture of two rows reports two
+      // rather than the row group size asked for (ADR-055).
+      rowGroupRows: 2,
       schema: {
         rowCount: 2,
         columns: [

@@ -13,7 +13,14 @@
  */
 import type { DiffRow } from '@kukan/shared'
 import type { LakeConfig } from './config'
-import { LAKE_DATA_PREFIX, LAKE_METADATA_SCHEMA, lakeStorageUrl } from './config'
+import {
+  LAKE_DATA_PREFIX,
+  LAKE_METADATA_SCHEMA,
+  duckdbInstanceOptions,
+  lakeStorageUrl,
+  loadDuckdbExtensions,
+  s3SecretBody,
+} from './config'
 import { sqlLiteral } from './sql'
 
 /** A row read back from DuckDB, by column name. The diff samples reach the
@@ -141,13 +148,7 @@ async function prepareInstance(
   limits: LakeSessionLimits | undefined
 ): Promise<DuckDBInstance> {
   const duckdb = await import('@duckdb/node-api')
-  // Container images pre-install the extensions here so a closed-network
-  // deployment never has to reach extensions.duckdb.org (see Dockerfile).
-  const extensionDirectory = process.env.DUCKDB_EXTENSION_DIRECTORY
-  const instance = await duckdb.DuckDBInstance.create(
-    ':memory:',
-    extensionDirectory ? { extension_directory: extensionDirectory } : undefined
-  )
+  const instance = await duckdb.DuckDBInstance.create(':memory:', duckdbInstanceOptions())
   const conn = await instance.connect()
 
   try {
@@ -155,43 +156,21 @@ async function prepareInstance(
       await conn.run(`SET memory_limit = '${Math.trunc(limits.memoryLimitMb)}MB'`)
       await conn.run(`SET threads = ${Math.trunc(limits.threads)}`)
     }
+    // **An instance that outlives its sessions must not keep what they read.**
+    // DuckDB caches the blocks of remote files in the instance's buffer pool,
+    // and only memory pressure inside this same instance evicts them — closing
+    // the session does not. Measured, a scan left 206 MB resident after its
+    // session had closed, in a process whose other DuckDB budgets (the query
+    // slot, the feed's slots) are sized as if this instance held nothing
+    // between operations. The cache buys nothing here anyway: operations on the
+    // lake rarely read the same files twice.
+    await conn.run('SET enable_external_file_cache = false')
 
-    // `aws` backs PROVIDER credential_chain below. Loaded explicitly rather
-    // than left to autoloading, which reaches for the network — fatal on a
-    // closed-network deployment even though the image ships the extension.
-    for (const ext of ['httpfs', 'aws', 'postgres', 'ducklake']) {
-      await conn.run(`INSTALL ${ext}`)
-      await conn.run(`LOAD ${ext}`)
-    }
+    await loadDuckdbExtensions(conn, ['httpfs', 'aws', 'postgres', 'ducklake'])
 
-    // S3 credentials. With an explicit endpoint (MinIO) we must force path-style
-    // addressing and the ssl flag; against AWS S3 the endpoint is omitted.
-    //
-    // Without static keys we are on AWS with only a task role, so the secret has
-    // to resolve credentials itself: DuckDB's default provider is `config`, which
-    // would sign with empty keys and get a 403 from a private bucket.
-    //
-    // REFRESH is what keeps that working past the first few hours: the chain is
-    // resolved once at CREATE SECRET, the instance is cached for the life of the
-    // process, and task-role credentials expire — after which every S3 request
-    // fails with ExpiredToken until the process restarts. With REFRESH auto,
-    // httpfs re-runs the chain on an auth failure and retries the request.
-    const staticKeys = config.s3AccessKey && config.s3SecretKey
-    const secretParts = [
-      `TYPE s3`,
-      `REGION ${sqlLiteral(config.region)}`,
-      ...(staticKeys
-        ? [`KEY_ID ${sqlLiteral(config.s3AccessKey!)}`, `SECRET ${sqlLiteral(config.s3SecretKey!)}`]
-        : [`PROVIDER credential_chain`, `REFRESH auto`]),
-      ...(config.s3Endpoint
-        ? [
-            `ENDPOINT ${sqlLiteral(config.s3Endpoint)}`,
-            `URL_STYLE 'path'`,
-            `USE_SSL ${config.s3UseSsl}`,
-          ]
-        : []),
-    ]
-    await conn.run(`CREATE OR REPLACE SECRET lake_s3 (${secretParts.join(', ')})`)
+    // S3 credentials, in the one shape both this and the OData feed use
+    // (`s3SecretBody` — where the REFRESH story is written down).
+    await conn.run(`CREATE OR REPLACE SECRET lake_s3 (${s3SecretBody(config)})`)
 
     await conn.run(
       `ATTACH ${sqlLiteral(`ducklake:postgres:${config.pgConnString}`)} AS lake ` +

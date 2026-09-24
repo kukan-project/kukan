@@ -12,7 +12,8 @@
  */
 
 import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api'
-import { sqlIdentifier, sqlLiteral } from '@kukan/lake'
+import { readRowGroupRows, sqlIdentifier, sqlLiteral } from '@kukan/lake'
+import { PARQUET_PREVIEW_ROW_GROUP_ROWS } from '@kukan/shared'
 import type {
   ColumnStats,
   NoTableReason,
@@ -27,7 +28,6 @@ import {
   SIGN_OFF_MIN_MISSING,
   INTERPRET_MEMORY_LIMIT_MB,
   INTERPRET_THREADS,
-  PARQUET_ROW_GROUP_SIZE,
   STATS_COLUMNS_PER_QUERY,
 } from '@/config'
 import { looksLikeSignOff, type CsvDialect } from './csv-sign-off'
@@ -117,6 +117,19 @@ interface Column {
 export interface InterpretedCsv {
   schema: ResourceSchema
   /**
+   * Rows in a row group of the Parquet that was written, read back from the file
+   * rather than assumed: DuckDB rounds {@link PARQUET_PREVIEW_ROW_GROUP_ROWS} up to a
+   * multiple of its vector size, and hyparquet-writer, which wrote previews
+   * before it, did not — so a reader that took the constant would size its reads
+   * against a file that is not there. Absent where no Parquet was written, and
+   * on every preview from before this was recorded, which is why the feed treats
+   * a missing figure as unknown rather than guessing.
+   *
+   * What reads it: the OData feed, which decodes a whole group to serve any row
+   * of it and so keeps a page inside as few as the memory affords (ADR-055).
+   */
+  rowGroupRows?: number
+  /**
    * Set where the file was refused rather than read, and then **no Parquet was
    * written** — the caller has nothing to hand on. The schema still carries
    * which lines were refused, because that is what there is to act on.
@@ -195,8 +208,13 @@ export async function interpretCsv(
     // never rewritten (ADR-029 §7), so the reader keeps both.
     await conn.run(
       `COPY t TO ${sqlLiteral(parquetPath)} ` +
-        `(FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE ${PARQUET_ROW_GROUP_SIZE})`
+        `(FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE ${PARQUET_PREVIEW_ROW_GROUP_ROWS})`
     )
+
+    // Read back from the footer rather than taken from the constant above: the
+    // writer rounds it up to a multiple of its vector size, so what the readers
+    // need is the number in the file (`readRowGroupRows`).
+    const rowGroupRows = await readRowGroupRows(conn, parquetPath)
 
     // Both paths, one number: which of them took a row is this file's business,
     // and a reader comparing the table against the download only wants to know
@@ -205,6 +223,7 @@ export async function interpretCsv(
     // the file, since blank lines and quoted newlines are gone by then.
     const droppedRows = dropped.count + trimmed
     return {
+      rowGroupRows: rowGroupRows ?? undefined,
       schema: {
         columns: await describeColumns(conn, columns, rowCount),
         rowCount,

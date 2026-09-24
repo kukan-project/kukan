@@ -55,6 +55,9 @@ export interface InterpretOutcome<T> {
   schema: ResourceSchema | null
   /** What the callback returned, absent when there was no table to give it. */
   used?: T
+  /** Rows in a row group of the Parquet that was written.
+   *  @see InterpretedCsv.rowGroupRows */
+  rowGroupRows?: number
   /**
    * Why no table came out, when none did.
    *
@@ -133,7 +136,7 @@ export async function withInterpretedVersion<T>(
     }
 
     const parquetPath = `${csvPath}.parquet`
-    const { schema, reason } = await interpretCsv(csvPath, parquetPath, titleRows)
+    const { schema, reason, rowGroupRows } = await interpretCsv(csvPath, parquetPath, titleRows)
     // And the source is dead once it has been interpreted. What the callback
     // does next — an upload, a wait on the catalog-wide lock — would hold it
     // for nothing.
@@ -143,7 +146,7 @@ export async function withInterpretedVersion<T>(
     // is what stops "no preview" reading as "not interpreted yet".
     if (reason) return { encoding, schema, reason }
 
-    return { encoding, schema, used: await use({ parquetPath, schema }) }
+    return { encoding, schema, rowGroupRows, used: await use({ parquetPath, schema }) }
   } finally {
     // Every file this made lives in the directory this made, so one removal
     // covers whatever a given path left behind.

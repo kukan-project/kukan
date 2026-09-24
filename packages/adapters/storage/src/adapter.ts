@@ -83,6 +83,22 @@ export interface StorageAdapter {
   ): Promise<{ stream: Readable; totalSize: number; start: number; end: number; partial: boolean }>
 
   /**
+   * Where an engine that reads object storage itself can read this object from
+   * — `s3://bucket/key` for the S3 adapter, which is the only one a deployment
+   * runs. A test double may answer with a path on the local filesystem instead,
+   * which is why the reader branches on the scheme rather than assuming S3.
+   *
+   * What it saves is the copy: DuckDB reading the URL fetches the byte ranges
+   * a query needs (ADR-055), where `download` brings the whole object through
+   * the process and onto disk first.
+   *
+   * The key goes in as it is, which is safe because every key this system
+   * writes is built from ids and a write token (`getStorageKey`,
+   * `getPreviewKey`) — no filename a person chose ever reaches one.
+   */
+  readUrl(key: string): string
+
+  /**
    * Get a presigned URL for uploading an object
    */
   getSignedUploadUrl(

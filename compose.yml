@@ -226,6 +226,12 @@ services:
     environment:
       <<: *app-environment
       PORT: '3000'
+    # A memory limit is worth setting on a host that runs anything else. The
+    # OData feed (ADR-055) reads as many pages at once as the memory it is given
+    # affords, and with no limit it reads the host's — which on a box also
+    # running PostgreSQL, OpenSearch and MinIO is not what this container has.
+    # The AWS deployment gives it 512 MB on the small scale, 2 GB on the large.
+    # mem_limit: 1g
     expose:
       - '3000'
     healthcheck:

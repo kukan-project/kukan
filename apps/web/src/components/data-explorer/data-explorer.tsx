@@ -126,12 +126,15 @@ export function DataExplorer({ resourceId, primaryKey, schemaColumns }: DataExpl
   // display strings. Formatted here so ExplorerTable reads them the one way.
   const staticRows = useMemo(() => {
     const cols = staticSource.metadata?.columns ?? []
+    // The version's schema is what says whether a column has a time of day;
+    // the value cannot, since a timestamp at midnight looks like a date.
+    const types = new Map((schemaColumns ?? []).map((c) => [c.name, c.type]))
     return staticSource.rows.map((row) => {
       const obj: Record<string, string> = {}
-      for (const col of cols) obj[col] = formatCell(row[col])
+      for (const col of cols) obj[col] = formatCell(row[col], types.get(col))
       return obj
     })
-  }, [staticSource.metadata, staticSource.rows])
+  }, [staticSource.metadata, staticSource.rows, schemaColumns])
 
   if (staticSource.loading) {
     return (

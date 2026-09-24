@@ -263,6 +263,7 @@ export class ResourceService {
 
     const pkg = {
       state: row.pkgState,
+      private: row.pkgPrivate,
       ownerOrg: row.pkgOwnerOrg,
       creatorUserId: row.pkgCreatorUserId,
     }

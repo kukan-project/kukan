@@ -30,6 +30,9 @@ export interface InterpretResult {
   encoding: string
   /** Column schema (CSV/TSV only, when a Parquet preview was generated). */
   schema?: ResourceSchema
+  /** Rows in a row group of the preview, as the written file reports them.
+   *  @see InterpretedCsv.rowGroupRows */
+  rowGroupRows?: number
   /** Why no table came out, when none did. Persisted for the operator. */
   reason?: NoTableReason
 }
@@ -136,7 +139,7 @@ export async function executeInterpret(
   // CSV/TSV: publish what the interpretation produced. The interpretation
   // itself is shared with the lake retry, which wants the table and nothing
   // else (ADR-046).
-  const { encoding, schema, used, reason } = await withInterpretedVersion(
+  const { encoding, schema, used, reason, rowGroupRows } = await withInterpretedVersion(
     source,
     fmt,
     ctx,
@@ -158,5 +161,5 @@ export async function executeInterpret(
   // a missing answer: it records that this version has been interpreted and
   // holds nothing to load, which is what stops the hourly sweep handing it out
   // again for good (ADR-046).
-  return { previewKey: null, encoding, schema: schema ?? undefined, reason, ...used }
+  return { previewKey: null, encoding, schema: schema ?? undefined, reason, rowGroupRows, ...used }
 }

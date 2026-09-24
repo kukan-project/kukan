@@ -1648,6 +1648,9 @@ describe('Resources API Routes', () => {
       expect(await res.json()).toEqual({
         id: resource.id,
         queryable: false,
+        odataKey: null,
+        odataRefusal: null,
+        odataWideRows: false,
         primaryKey: null,
         schema: null,
       })
@@ -1663,6 +1666,11 @@ describe('Resources API Routes', () => {
       expect(await res.json()).toEqual({
         id: resource.id,
         queryable: true,
+        // What the feed will key on, so the page can say it for this table
+        // rather than describing the rule (ADR-055 残課題 2)
+        odataKey: { names: ['RowId'], synthetic: true, fallback: 'not-designated' },
+        odataRefusal: null,
+        odataWideRows: false,
         primaryKey: null,
         schema,
       })
@@ -1679,6 +1687,9 @@ describe('Resources API Routes', () => {
       expect(await res.json()).toEqual({
         id: resource.id,
         queryable: false,
+        odataKey: null,
+        odataRefusal: null,
+        odataWideRows: false,
         primaryKey: null,
         schema: empty,
       })
@@ -1696,6 +1707,9 @@ describe('Resources API Routes', () => {
       expect(await res.json()).toEqual({
         id: resource.id,
         queryable: false,
+        odataKey: null,
+        odataRefusal: null,
+        odataWideRows: false,
         primaryKey: null,
         schema,
       })
@@ -1712,6 +1726,9 @@ describe('Resources API Routes', () => {
       expect(await res.json()).toEqual({
         id: resource.id,
         queryable: false,
+        odataKey: null,
+        odataRefusal: null,
+        odataWideRows: false,
         primaryKey: null,
         schema,
       })
@@ -1731,6 +1748,11 @@ describe('Resources API Routes', () => {
       expect(await res.json()).toEqual({
         id: resource.id,
         queryable: true,
+        // Designated, but the stored schema carries no bounds for the integer
+        // column, and an unknown range is not one a JSON number holds exactly
+        odataKey: { names: ['RowId'], synthetic: true, fallback: 'unsafe-integers' },
+        odataRefusal: null,
+        odataWideRows: false,
         primaryKey: ['id'],
         schema,
       })

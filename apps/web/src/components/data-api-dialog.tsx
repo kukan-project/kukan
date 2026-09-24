@@ -2,7 +2,7 @@
 
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { Check, Code2, Copy, Loader2, Play } from 'lucide-react'
+import { Code2, Loader2, Play } from 'lucide-react'
 import {
   Button,
   cn,
@@ -19,9 +19,10 @@ import {
   Textarea,
 } from '@kukan/ui'
 import type { ResourceSchema } from '@kukan/shared'
+import { CodeBlock, CopyButton, CODE_BLOCK_CLASS } from './code-block'
 import { clientFetch, problemDetail } from '@/lib/client-api'
 import { quoteColumn } from '@/hooks/duckdb-sql'
-import { highlight, useHighlighter, type HighlightLang } from '@/hooks/use-shiki'
+import { highlight, useHighlighter } from '@/hooks/use-shiki'
 
 /** Rendering cap for the result table; the full payload is summarized by rowCount. */
 const MAX_RENDERED_ROWS = 500
@@ -37,53 +38,6 @@ interface QueryResult {
   rowCount: number
   truncated: boolean
   elapsedMs: number
-}
-
-function CopyButton({ text }: { text: string }) {
-  const t = useTranslations('resource')
-  const [copied, setCopied] = useState(false)
-
-  async function copy() {
-    await navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  const label = copied ? t('dataApiCopied') : t('dataApiCopy')
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="absolute top-1 right-1 h-7 w-7"
-      onClick={copy}
-      title={label}
-      aria-label={label}
-    >
-      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-    </Button>
-  )
-}
-
-/** Shared text metrics for plain, highlighted, and mirrored code blocks. */
-const CODE_BLOCK_CLASS = 'p-3 pr-10 font-mono text-xs'
-
-function CodeBlock({ code, lang }: { code: string; lang?: HighlightLang }) {
-  const highlighter = useHighlighter()
-  return (
-    <div className="relative rounded-md border bg-muted">
-      {highlighter && lang ? (
-        // Shiki escapes the code it wraps; nothing user-controlled reaches
-        // this HTML unescaped.
-        <div
-          className={cn(CODE_BLOCK_CLASS, 'overflow-x-auto')}
-          dangerouslySetInnerHTML={{ __html: highlight(highlighter, code, lang) }}
-        />
-      ) : (
-        <pre className={cn(CODE_BLOCK_CLASS, 'overflow-x-auto')}>{code}</pre>
-      )}
-      <CopyButton text={code} />
-    </div>
-  )
 }
 
 /** Nested values (DuckDB LIST/STRUCT/MAP) arrive as arrays/objects; render as JSON. */
@@ -347,10 +301,9 @@ export function DataApiDialog({ resourceId, schema }: DataApiDialogProps) {
               label={t('dataApiSqlAggregate')}
               initialSql={aggregateSql}
             />
-          </section>
-
-          <section className="flex flex-col gap-1">
-            <h4 className="font-medium">{t('dataApiNotes')}</h4>
+            {/* Inside the SQL block rather than under a heading of their own:
+                these bind the query API and not the feed below, and the feed
+                carries its notes the same way. */}
             <ul className="list-disc pl-5 text-xs text-muted-foreground [&>li]:mt-1">
               <li>{t('dataApiNoteSelectOnly')}</li>
               <li>{t('dataApiNoteLimits')}</li>

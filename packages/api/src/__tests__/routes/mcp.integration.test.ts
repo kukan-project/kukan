@@ -88,6 +88,29 @@ async function createPackage(app: ReturnType<typeof mcpApp>, data: Record<string
   return res.json()
 }
 
+/**
+ * Put a schema on the resource's pipeline row.
+ *
+ * A pipeline row already exists (created when the resource was enqueued), so
+ * this upserts into its metadata. Queryable needs the preview to describe the
+ * current bytes, which is why the resource hash and `sourceHash` are set to
+ * match; pass `previewKey: null` for a resource whose preview is gone.
+ */
+async function storeSchema(
+  resourceId: string,
+  schema: Record<string, unknown>,
+  previewKey: string | null = 'previews/test.parquet'
+) {
+  await db.execute(sql`UPDATE resource SET hash = 'sha256:live' WHERE id = ${resourceId}`)
+  const metadataJson = JSON.stringify({ schema, sourceHash: 'sha256:live' })
+  await db.execute(sql`
+    INSERT INTO resource_pipeline (resource_id, status, preview_key, metadata)
+    VALUES (${resourceId}, 'complete', ${previewKey}, ${metadataJson}::jsonb)
+    ON CONFLICT (resource_id)
+    DO UPDATE SET status = 'complete', preview_key = ${previewKey}, metadata = ${metadataJson}::jsonb
+  `)
+}
+
 async function createResource(
   app: ReturnType<typeof mcpApp>,
   packageId: string,
@@ -401,19 +424,7 @@ describe('MCP Server', () => {
           { name: 'name', type: 'string', nullable: true, nullCount: 1 },
         ],
       }
-      // A pipeline row already exists (created when the resource was enqueued),
-      // so upsert the schema into its metadata. Queryable needs the preview to
-      // describe the current bytes: resource hash and sourceHash must match.
-      await db.execute(sql`
-        UPDATE resource SET hash = 'sha256:live' WHERE id = ${resource.id}
-      `)
-      const metadataJson = JSON.stringify({ schema, sourceHash: 'sha256:live' })
-      await db.execute(sql`
-        INSERT INTO resource_pipeline (resource_id, status, preview_key, metadata)
-        VALUES (${resource.id}, 'complete', 'previews/test.parquet', ${metadataJson}::jsonb)
-        ON CONFLICT (resource_id)
-        DO UPDATE SET status = 'complete', preview_key = 'previews/test.parquet', metadata = ${metadataJson}::jsonb
-      `)
+      await storeSchema(resource.id, schema)
 
       const result = await mcpToolCall(app, 'get_resource_schema', { id: resource.id })
       const text = result.result.content[0].text as string
@@ -434,6 +445,70 @@ describe('MCP Server', () => {
       expect(keyed.result.content[0].text as string).toContain('Primary key: id')
     })
 
+    it('hands over the feed URL and says what identifies its rows', async () => {
+      const app = mcpApp()
+      const pkg = await createPackage(app, { name: 'ds-odata', title: 'OData' })
+      const resource = await createResource(app, pkg.id, {
+        name: 'feed.csv',
+        format: 'CSV',
+        url: 'http://example.com/feed.csv',
+      })
+      await storeSchema(resource.id, {
+        rowCount: 2,
+        columns: [{ name: 'code', type: 'string', nullable: false, nullCount: 0 }],
+      })
+
+      const result = await mcpToolCall(app, 'get_resource_schema', { id: resource.id })
+      const text = result.result.content[0].text as string
+
+      expect(text).toContain(`/odata/v1/resources/${resource.id}/Rows`)
+      // No usable primary key, so the feed adds a column the SQL surface has not.
+      expect(text).toContain('RowId')
+    })
+
+    it('reports a private dataset as the reason, not as an absent feed', async () => {
+      const app = mcpApp()
+      const pkg = await createPackage(app, { name: 'ds-odata-private', title: 'Private' })
+      const resource = await createResource(app, pkg.id, {
+        name: 'private.csv',
+        format: 'CSV',
+        url: 'http://example.com/private.csv',
+      })
+      await db.execute(sql`UPDATE package SET private = true WHERE id = ${pkg.id}`)
+      await storeSchema(resource.id, {
+        rowCount: 1,
+        columns: [{ name: 'code', type: 'string', nullable: false, nullCount: 0 }],
+      })
+
+      const result = await mcpToolCall(app, 'get_resource_schema', { id: resource.id })
+      const text = result.result.content[0].text as string
+
+      expect(text).toContain('OData: not served — only resources in a public')
+      expect(text).not.toContain('/odata/v1/resources')
+    })
+
+    it('says why the feed refuses a table SQL can still query', async () => {
+      const app = mcpApp()
+      const pkg = await createPackage(app, { name: 'ds-odata-bad', title: 'OData Refused' })
+      const resource = await createResource(app, pkg.id, {
+        name: 'bad-headers.csv',
+        format: 'CSV',
+        url: 'http://example.com/bad-headers.csv',
+      })
+      await storeSchema(resource.id, {
+        rowCount: 1,
+        columns: [{ name: '人口（人）', type: 'integer', nullable: false, nullCount: 0 }],
+      })
+
+      const result = await mcpToolCall(app, 'get_resource_schema', { id: resource.id })
+      const text = result.result.content[0].text as string
+
+      // Queryable and refused at once — the pair an agent has to be told apart.
+      expect(text).toContain('is queryable')
+      expect(text).toContain('OData: not served')
+      expect(text).toContain('人口（人）')
+    })
+
     it('shows the schema but withholds query guidance when the preview is gone', async () => {
       const app = mcpApp()
       const pkg = await createPackage(app, { name: 'ds-purged', title: 'Purged Preview' })
@@ -447,16 +522,7 @@ describe('MCP Server', () => {
         rowCount: 2,
         columns: [{ name: 'id', type: 'integer', nullable: false, nullCount: 0 }],
       }
-      await db.execute(sql`
-        UPDATE resource SET hash = 'sha256:live' WHERE id = ${resource.id}
-      `)
-      const metadataJson = JSON.stringify({ schema, sourceHash: 'sha256:live' })
-      await db.execute(sql`
-        INSERT INTO resource_pipeline (resource_id, status, preview_key, metadata)
-        VALUES (${resource.id}, 'complete', NULL, ${metadataJson}::jsonb)
-        ON CONFLICT (resource_id)
-        DO UPDATE SET status = 'complete', preview_key = NULL, metadata = ${metadataJson}::jsonb
-      `)
+      await storeSchema(resource.id, schema, null)
 
       const result = await mcpToolCall(app, 'get_resource_schema', { id: resource.id })
       const text = result.result.content[0].text as string

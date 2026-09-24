@@ -67,6 +67,9 @@ The resource page provides format-specific previews:
 | Excel / Word / PowerPoint                  | Office Online Viewer   |
 | PNG / JPEG / GIF / WebP / SVG / BMP / TIFF | Image viewer           |
 
+A resource that gets a table view can also be opened straight from a BI tool such as Excel or
+Tableau ([Opening the table in a BI tool](#opening-the-table-in-a-bi-tool)).
+
 ## AI-written descriptions
 
 :::note
@@ -102,6 +105,27 @@ a format the AI cannot read, and so on).
 Click the "Download" button on the resource page to download a file.
 External URL resources also work through the same button (redirects to the original URL).
 
+## Opening the table in a BI tool
+
+A tabular resource has an **OData** button. Copy the URL it shows, paste it into the OData
+connector in Tableau, Power BI, Excel and the like, and the table opens as it is — nothing to
+download and load.
+
+- **No credentials are needed** (only public data is served). In Tableau, choose "No Authentication"
+- In Excel: **Data → Get Data → From Other Sources → From OData Feed**
+- Paste the **connection URL shown first** (the one ending in `/Rows`). The service URL below it also
+  connects, but adds a step to pick the table — and a resource only ever has the one
+- A large table is served in pages, and the BI tool follows them on its own
+- What is served is the **interpreted table**: lines that could not be read — ones whose fields do
+  not match the header, trailing notes — are not in it
+- A `RowId` column may be added to tell rows apart. The button says what this particular table got,
+  and you can drop that column in the BI tool if you do not want it
+- **Designating a primary key later changes the columns served** (`RowId` appears or disappears). A BI
+  tool already connected may keep showing the old ones through a refresh — rebuild the query there
+
+Some tables cannot be served this way — headings with brackets or punctuation, for instance. The
+button is then dimmed, and pressing it says why.
+
 ## Changing your password
 
 If you sign in with a password, you can change it yourself from the profile page — no administrator involved.
@@ -118,6 +142,10 @@ If you sign in through an external identity provider (OIDC), your password lives
 ## API access
 
 KUKAN provides a REST API for programmatic data access.
+
+The rows of a tabular resource are also readable as an OData feed
+(`/odata/v1/resources/{id}/Rows`). To use one from a BI tool, see
+[Opening the table in a BI tool](#opening-the-table-in-a-bi-tool).
 
 ```bash
 # List datasets

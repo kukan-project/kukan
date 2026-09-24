@@ -88,6 +88,25 @@ Uploaded files are automatically processed through the pipeline:
 - CSV/TSV to Parquet conversion (for table preview)
 - ZIP file manifest generation
 
+### Tables a BI tool can open
+
+A resource with a table preview is served as an OData feed as it is
+([User Guide](/en/user-guide/#opening-the-table-in-a-bi-tool)) — nothing to turn on. It is not
+served in the cases below, and the **OData** button on the resource page says which one applies.
+
+- **The dataset is private or a draft** — only resources in a public dataset are served
+- **A heading uses characters an identifier cannot** — brackets, spaces, punctuation and dots
+  among them. Fix the heading (`Population (people)` → `Population_people`) and replace the file,
+  and the table is served
+- **Two columns share a name** — there is no way to say which one is meant. Give them
+  distinct headings
+- **A single row is very large** — a table with many columns, or with long text in one cell, can
+  fail to fit in memory partway through a read. The button warns when this is a risk; point
+  those readers at the download instead
+
+With a primary key declared, that column identifies the rows and no `RowId` column is added
+([Declaring a primary key](#declaring-a-primary-key)).
+
 ## Version history
 
 Every time a resource's file is replaced, the content it replaced is kept as a **version**.
@@ -128,6 +147,9 @@ count the **rows that changed**.
   publication, say — makes a poor key. If that is all there is, declaring no key is the safer
   choice: editing one row then shows as one addition plus one removal, but two different things
   are never presented as the same row
+- The primary key is also **what the OData feed keys on**. Where it qualifies, that column
+  identifies each row and the `RowId` column KUKAN would otherwise add disappears; where it does
+  not, `RowId` is added and the resource page's OData button says why
 
 ### Viewing a diff
 

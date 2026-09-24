@@ -39,6 +39,7 @@ const manifest = () =>
 
 const storage = {
   download: async () => Readable.from([Buffer.from(manifest())]),
+  readUrl: (key: string) => `s3://test/${key}`,
   downloadRange: async () => ({
     stream: Readable.from([
       Buffer.from(
