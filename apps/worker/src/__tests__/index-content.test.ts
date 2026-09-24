@@ -9,10 +9,11 @@ import {
 import type { ContentDoc } from '@kukan/search-adapter'
 
 const mockToText = vi.fn().mockReturnValue('Extracted document text\nPage 2 content')
+const mockTo = vi.fn().mockImplementation(async () => ({ value: mockToText() }))
 
 vi.mock('officeparser', () => ({
   OfficeParser: {
-    parseOffice: vi.fn().mockImplementation(() => Promise.resolve({ toText: mockToText })),
+    parseOffice: vi.fn().mockImplementation(() => Promise.resolve({ to: mockTo })),
   },
 }))
 
@@ -293,6 +294,15 @@ describe('executeIndexContent', () => {
       expect(indexedDoc.resourceId).toBe('res-1')
       expect(indexedDoc.packageId).toBe('pkg-1')
       expect(indexedDoc.contentType).toBe('document')
+    })
+
+    it('should ask officeparser for flowing text, not the layout grid', async () => {
+      const ctx = createMockCtx()
+      vi.mocked(ctx.storage.download).mockResolvedValue(bufferToStream(Buffer.from('fake-pdf')))
+
+      await executeIndexContent('res-1', 'pkg-1', 'key', 'PDF', null, ctx)
+
+      expect(mockTo).toHaveBeenCalledWith('text', { textConfig: { preserveLayout: false } })
     })
 
     it('should handle PDF with empty text', async () => {

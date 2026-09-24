@@ -226,10 +226,16 @@ async function indexDocument(
   }
 }
 
-/** Extract text from a document file (PDF, DOCX, XLSX, PPTX) using officeparser. */
+/**
+ * Extract text from a document file (PDF, DOCX, XLSX, PPTX) using officeparser.
+ *
+ * `preserveLayout: false` keeps the flowing text v7 produced. At the v8 default a
+ * PDF page is rendered as a space-padded monospace grid, which only inflates what
+ * we index and hand to the suggest side — no reader ever sees this text.
+ */
 async function extractDocumentText(filePath: string): Promise<string> {
   const ast = await OfficeParser.parseOffice(filePath)
-  return ast.toText()
+  return (await ast.to('text', { textConfig: { preserveLayout: false } })).value
 }
 
 /** Stream text content line-by-line, chunking and indexing incrementally */
