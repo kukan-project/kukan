@@ -105,10 +105,41 @@ preview directly** rather than loading data into dedicated tables.
 2. **Exposure**:
    - API: `POST /api/v1/resources/{id}/query` (body `{ sql: string }`)
    - MCP: `query_resource(id, sql)` tool (`readOnlyHint: true`)
-3. **Loading the Parquet**: fetch the preview Parquet (`preview_key`) via the storage adapter and write
-   it to a temp file; always delete it in `finally`. (v1 does not cache the temp file — on the web
-   process memory is the scarce resource, so the bytes go to disk, not the heap. A per-`previewKey`
-   temp-file cache (a dedicated LRU that unlinks on dispose) is deferred to Open Question §4.)
+3. ~~**Loading the Parquet**: fetch the preview Parquet (`preview_key`) via the storage adapter and
+   write it to a temp file.~~
+   **DuckDB reads it straight out of object storage (changed in implementation).** The bytes come
+   from the same bucket either way; having the SDK fetch them only added a write of up to 100 MB to
+   the container's disk and a read back off it. **Open Question §4's temp-file cache now has nothing
+   to cache.**
+
+   > **The instance that runs user SQL must not have the `aws` extension loaded.** Reading `s3://`
+   > under a task role makes the secret a `PROVIDER credential_chain` one, which needs `aws`. The
+   > `load_aws_credentials()` that extension registers is **not a filesystem call**, so none of the
+   > lockdown in 4-2 reaches it (neither `enable_external_access` nor `lock_configuration`), and the
+   > SQL validation in 4-3 does not catch it either (`\bload\b` does not match
+   > `load_aws_credentials`). Measured: one statement after the lockdown returned the task role's key
+   > id and session token in the clear. This route is unauthenticated for a public dataset.
+   >
+   > **So the read is done in a way that does not ask for `aws`.** Step 1 passes a **signed URL**
+   > (`getSignedUrl`, 60 seconds) to `read_parquet` and loads `httpfs` alone. The URL carries its own
+   > authorization, so not one credential is placed in the instance.
+   >
+   > **`s3://` with temporary credentials given directly also works** (measured: a secret carrying
+   > `KEY_ID` / `SECRET` / `SESSION_TOKEN` is accepted and reads with `httpfs` alone — `aws` is only
+   > needed for `credential_chain`). It **moves the signing from Node into DuckDB**, so it does not
+   > rest on the recovery a signed URL rests on: SigV4 covers the method, so the HEAD DuckDB opens
+   > with gets a 403 and it asks for `bytes=0-1` instead.
+   >
+   > **The signed URL is still what we use, because what crosses the boundary differs in size.** A
+   > signed URL is a ticket for one object, one method, sixty seconds; temporary credentials are a
+   > key that can sign for **the whole bucket** (the task role holds `grantReadWrite`). Neither is
+   > reachable — both are closed before user SQL runs — but **the smaller grant is the one to hand an
+   > instance that runs user SQL**, which is the lesson the `aws` finding above taught.
+   >
+   > If temporary credentials are ever used, they are **only for a disposable instance**: they expire
+   > and DuckDB cannot renew them, so a process-resident instance (ADR-043's lake) needs
+   > `credential_chain` + `REFRESH auto`.
+
 4. **Sandbox (the core of this ADR)**: build a **disposable DuckDB instance per query** and isolate it
    fully, in order:
    1. With external access still enabled, **materialize the Parquet into an in-memory table `data`**
@@ -177,9 +208,9 @@ preview directly** rather than loading data into dedicated tables.
    or query the raw file directly via DuckDB httpfs).
 2. **Split out a query service**: separate from the web process under load (option B).
 3. **Cross-resource JOINs**: join multiple Parquets in one query (register multiple tables).
-4. **Cache temp files / instances**: v1 downloads then deletes per query. A per-`previewKey` temp-file
-   cache (an LRU that unlinks on dispose), and further caching the locked DuckDB connection per resource,
-   would cut consecutive-query latency (deferred due to concurrency complexity).
+4. ~~**Cache temp files / instances**~~ (half resolved): **there is no temp file to cache any more** —
+   the read goes straight to object storage (Part B-3). What is left of this item is caching the
+   locked DuckDB connection per resource, still deferred for the concurrency complexity.
 5. ~~**Result format**~~ (resolved): API = JSON, MCP = Markdown table (Part B-8). Additional formats such
    as CSV can be considered on demand.
 6. **Scale-linked limits**: inject `memory_limit` × concurrency from the deployment scale

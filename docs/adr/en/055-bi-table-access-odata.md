@@ -412,9 +412,10 @@ are large and may not read. It does not say the table is refused.
 - **A new public surface.** Authentication, rate limiting and access control
   (`getByIdWithAccessCheck`) have to follow the same rules as the existing routes
 - ~~**ADR-032's open item §4 (a temp-file cache) turns from an optimization into a precondition.**~~
-  **The implementation removed the need (Step 1).** `QueryService.query()` downloads the Parquet to a
-  temp file on every call, but the feed has **DuckDB read `s3://` directly and fetch only the byte
-  ranges a page needs**. Measured against MinIO over a million rows in 8.9 MB: **0.11–0.18 MB per
+  **The implementation removed the need (Step 1).** `QueryService.query()` downloaded the Parquet to a
+  temp file on every call at the time (**it has since moved to reading in place too** — ADR-032 Part
+  B-3), while the feed has **DuckDB read `s3://` directly and fetch only the byte ranges a page
+  needs**. Measured against MinIO over a million rows in 8.9 MB: **0.11–0.18 MB per
   page**, first page and last alike, and nothing written to disk. The web image already ships `httpfs`
   and `aws`, and the credentials are passed the way the lake passes them (`credential_chain` plus
   `REFRESH auto` on AWS). **It does mean external access stays open while a page is read**, so

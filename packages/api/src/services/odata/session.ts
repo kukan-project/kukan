@@ -13,9 +13,6 @@
  * extension cannot be installed, and none of it can be set back.
  */
 
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { ServiceUnavailableError, type Env } from '@kukan/shared'
 import {
   duckdbInstanceOptions,
@@ -23,8 +20,14 @@ import {
   s3SecretBody,
   s3SettingsFromEnv,
   sqlLiteral,
+  useOwnTempDirectory,
   usesCredentialChain,
 } from '@kukan/lake'
+
+/** Whether the location is read over S3 rather than from this filesystem. */
+export function isS3Location(location: string): boolean {
+  return location.startsWith('s3://')
+}
 
 export interface SessionOptions {
   /** Where the Parquet is: `s3://bucket/key`, or a path on this filesystem. */
@@ -39,11 +42,6 @@ export interface SessionOptions {
   readTimeoutMs: number
 }
 
-/** Whether the location is read over S3 rather than from this filesystem. */
-export function isS3Location(location: string): boolean {
-  return location.startsWith('s3://')
-}
-
 /**
  * Open a connection that can read `location` and as little else as the reading
  * allows. The caller closes both handles.
@@ -56,27 +54,22 @@ export async function openSession(opts: SessionOptions) {
   const instance = await duckdb.DuckDBInstance.create(':memory:', duckdbInstanceOptions())
   const conn = await instance.connect()
   const overS3 = isS3Location(opts.location)
-  let tempDir: string | undefined
+  let dropTempDir: (() => Promise<void>) | undefined
   const close = async () => {
     conn.disconnectSync()
     instance.closeSync()
-    if (tempDir) await rm(tempDir, { recursive: true, force: true }).catch(() => {})
+    await dropTempDir?.()
   }
   try {
     // Bytes with a `B` suffix: DuckDB's `MB` is 1000-based, and spelling the
     // budget out leaves no room for the reader to wonder which it meant.
     await conn.run(`SET memory_limit = '${opts.memoryLimitBytes}B'`)
     await conn.run('SET threads = 1')
-    // Its own temp directory wherever DuckDB may write at all, because it names
-    // spill files after the block size rather than the instance: two in-memory
-    // instances that go out of core both write
-    // `.tmp/duckdb_temp_storage_S32K-0.tmp` in the process's working directory
-    // and read each other's bytes, which fails the query outright. Reproduced
-    // at two concurrent pages, and at four. An S3 read has no local filesystem
-    // at all (below), so it needs none.
+    // Its own place to spill wherever DuckDB may write at all
+    // (`useOwnTempDirectory`). An S3 read has no local filesystem at all
+    // (below), so it needs none.
     if (!overS3) {
-      tempDir = await mkdtemp(join(tmpdir(), 'kukan-odata-tmp-'))
-      await conn.run(`SET temp_directory = ${sqlLiteral(tempDir)}`)
+      dropTempDir = await useOwnTempDirectory(conn, 'odata')
     } else {
       const s3 = s3SettingsFromEnv(opts.env)
       // `aws` only backs the credential chain, so a deployment with static

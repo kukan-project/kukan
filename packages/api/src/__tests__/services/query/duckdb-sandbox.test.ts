@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
+import { createServer, type Server } from 'node:http'
+import { createReadStream } from 'node:fs'
+import type { AddressInfo } from 'node:net'
 import { writeParquet } from '../../test-helpers/parquet'
-import { unlink } from 'node:fs/promises'
+import { stat, unlink } from 'node:fs/promises'
 import { runSandboxedQuery, type SandboxLimits } from '../../../services/query/duckdb-sandbox'
 import { ValidationError, RequestTimeoutError, ServiceUnavailableError } from '@kukan/shared'
 
@@ -30,6 +33,28 @@ describe('runSandboxedQuery', () => {
     const res = await runSandboxedQuery(fixture, 'SELECT count(*) AS c FROM data', LIMITS)
     expect(res.columns).toEqual(['c'])
     expect(res.rows[0].c).toBe('100')
+  })
+
+  it('spills somewhere of its own, and takes it away after', async () => {
+    // DuckDB names a spill file after the block size, not the instance, so two
+    // instances sharing a directory read each other's bytes and both fail. This
+    // does not reproduce the collision — it pins that the query gets a
+    // directory of its own rather than the working directory's `.tmp`, which is
+    // what the default was. The read works after `lock_configuration` because
+    // that only stops SET.
+    const read = async () => {
+      const res = await runSandboxedQuery(
+        fixture,
+        `SELECT current_setting('temp_directory') AS d`,
+        LIMITS
+      )
+      return res.rows[0].d as string
+    }
+    const first = await read()
+    expect(first).toContain('kukan-query-tmp-')
+    expect(await read()).not.toBe(first)
+    // Removed with the instance: a container would otherwise keep one per query.
+    await expect(stat(first)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('returns column names and row objects', async () => {
@@ -85,6 +110,118 @@ describe('runSandboxedQuery', () => {
         tinyTimeout
       )
     ).rejects.toThrow(RequestTimeoutError)
+  })
+
+  // --- the configuration a deployment actually runs: the preview over a URL ---
+
+  describe('reading the preview through a URL', () => {
+    let server: Server
+    let url: string
+
+    beforeAll(async () => {
+      // Stands in for the signed URL object storage hands back: ranged GETs,
+      // signature in the query string. What matters is that the read goes over
+      // httpfs, which is the branch every deployment takes and which no other
+      // test here reaches.
+      //
+      // **HEAD is refused, because that is what really happens.** SigV4 covers
+      // the method, so a URL signed for GET answers 403 to the HEAD that DuckDB
+      // opens with — measured against MinIO. It recovers by asking for
+      // `bytes=0-1` instead, and a server that answered HEAD would hide the day
+      // that stops being true.
+      const size = (await stat(fixture)).size
+      server = createServer((req, res) => {
+        const m = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range ?? '')
+        if (req.method === 'HEAD') {
+          res.writeHead(403)
+          return res.end()
+        }
+        // One path that is not there, for the failure the redaction is about.
+        if (req.url?.includes('/missing')) {
+          res.writeHead(404)
+          return res.end()
+        }
+        const start = m ? Number(m[1]) : 0
+        const end = m && m[2] ? Number(m[2]) : size - 1
+        res.writeHead(m ? 206 : 200, {
+          'content-length': String(end - start + 1),
+          ...(m && { 'content-range': `bytes ${start}-${end}/${size}` }),
+        })
+        createReadStream(fixture, { start, end }).pipe(res)
+        return
+      })
+      await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()))
+      const { port } = server.address() as AddressInfo
+      url = `http://127.0.0.1:${port}/f.parquet?X-Amz-Signature=deadbeef`
+    })
+
+    afterAll(() => {
+      server.close()
+    })
+
+    it('materializes the table', async () => {
+      const res = await runSandboxedQuery(url, 'SELECT count(*) AS c FROM data', LIMITS)
+      expect(res.rows[0].c).toBe('100')
+    })
+
+    it('cannot read the URL again once the lockdown is on', async () => {
+      // On the refusal's own words, not just on the type: `assertReadOnlySql`
+      // throws the same `ValidationError`, so a guard that rejected this first
+      // would let the test pass without the lockdown having held.
+      await expect(
+        runSandboxedQuery(url, `SELECT count(*) FROM read_parquet('${url}')`, LIMITS)
+      ).rejects.toThrow(/file system operations are disabled/)
+    })
+
+    it('empties the settings httpfs seeds from the environment', async () => {
+      // Loading `httpfs` copies `AWS_*` into `s3_*` and `HTTP_PROXY` into
+      // `http_proxy`, credentials included, and those are plain settings the
+      // lockdown does not cover — the same shape as the `aws` finding below, by
+      // a different door.
+      const env = {
+        AWS_ACCESS_KEY_ID: 'AKIAPROBE123',
+        AWS_SECRET_ACCESS_KEY: 'super-secret-probe-key',
+        AWS_SESSION_TOKEN: 'probe-session-token',
+        HTTP_PROXY: 'http://proxyuser:proxypass@proxy.internal:8080',
+      }
+      const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]))
+      Object.assign(process.env, env)
+      try {
+        const res = await runSandboxedQuery(
+          url,
+          `SELECT current_setting('s3_secret_access_key') AS s, current_setting('http_proxy') AS p`,
+          LIMITS
+        )
+        expect(res.rows[0]).toEqual({ s: '', p: '' })
+      } finally {
+        for (const [k, v] of Object.entries(saved)) {
+          if (v === undefined) delete process.env[k]
+          else process.env[k] = v
+        }
+      }
+    })
+
+    it('keeps the signed URL out of a failed read', async () => {
+      // DuckDB names the file in the error, and the MCP tool hands a thrown
+      // message straight back to its caller — which would be sixty seconds of
+      // read access to that object, to anyone who can make the read fail.
+      const missing = url.replace('/f.parquet', '/missing.parquet')
+      await expect(runSandboxedQuery(missing, 'SELECT 1', LIMITS)).rejects.toThrow(
+        /<the preview URL>/
+      )
+      await expect(runSandboxedQuery(missing, 'SELECT 1', LIMITS)).rejects.not.toThrow(
+        /X-Amz-Signature/
+      )
+    })
+
+    it('leaves no way to ask for the deployment credentials', async () => {
+      // Why this matters, and why the guard does not catch it, is on
+      // `materialize`. Here: the extension is not loaded, so the function the
+      // lockdown cannot reach is not in the catalog.
+      await expect(
+        runSandboxedQuery(url, 'SELECT * FROM load_aws_credentials()', LIMITS)
+      ).rejects.toThrow(ValidationError)
+    })
   })
 
   // --- sandbox lockdown: queries that pass the SQL guard but must be blocked at runtime ---

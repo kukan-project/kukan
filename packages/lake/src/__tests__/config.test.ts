@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
+import { stat } from 'node:fs/promises'
 import type { Env } from '@kukan/shared'
 import { lakeConfigFromEnv } from '../config'
+import { useOwnTempDirectory } from '../spill'
 import { lakeTableName } from '../table'
 
 function envWith(overrides: Partial<Env>): Env {
@@ -53,5 +55,43 @@ describe('lakeConfigFromEnv', () => {
     const c = lakeConfigFromEnv(envWith({ S3_ENDPOINT: 'https://minio.example:443' }))
     expect(c.s3Endpoint).toBe('minio.example')
     expect(c.s3UseSsl).toBe(true)
+  })
+})
+
+describe('useOwnTempDirectory', () => {
+  it('holds for the instance, not for the connection that set it', async () => {
+    // What the lake path rests on: it sets the directory on a setup connection
+    // and then disconnects, so the setting has to be the instance's. DuckDB
+    // scopes `temp_directory` GLOBAL, and nothing here would notice if that
+    // changed — the spill files would quietly go back to the shared default.
+    const { DuckDBInstance } = await import('@duckdb/node-api')
+    const instance = await DuckDBInstance.create(':memory:')
+    const setup = await instance.connect()
+    await useOwnTempDirectory(setup, 'test')
+    setup.disconnectSync()
+
+    const later = await instance.connect()
+    const reader = await later.runAndReadAll(`SELECT current_setting('temp_directory') AS d`)
+    expect((reader.getRowObjectsJson()[0] as { d: string }).d).toContain('kukan-test-tmp-')
+    later.disconnectSync()
+    instance.closeSync()
+  })
+
+  it('leaves no directory behind when the setting cannot be applied', async () => {
+    // The caller gets no cleanup for a setting it never got, so the directory
+    // would be stranded for the life of the container. A read deadline firing
+    // during setup interrupts this very statement, so it is reachable.
+    let asked = ''
+    const failing = {
+      run: async (sql: string) => {
+        asked = sql
+        throw new Error('interrupted')
+      },
+    }
+    await expect(useOwnTempDirectory(failing, 'test')).rejects.toThrow('interrupted')
+
+    const dir = asked.match(/'([^']+)'/)?.[1]
+    expect(dir).toContain('kukan-test-tmp-')
+    await expect(stat(dir!)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })

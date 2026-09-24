@@ -1,16 +1,10 @@
 /**
  * KUKAN Query Service (ADR-032 Part B)
  *
- * Runs a read-only SQL query against a resource's preview Parquet. Access, limits, and
- * temp-file cleanup live here so the route and MCP tool stay thin.
+ * Runs a read-only SQL query against a resource's preview Parquet. Access and
+ * limits live here so the route and MCP tool stay thin.
  */
 
-import { createWriteStream } from 'node:fs'
-import { unlink } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { randomUUID } from 'node:crypto'
-import { pipeline } from 'node:stream/promises'
 import { ValidationError, createLogger, type Logger } from '@kukan/shared'
 import type { Database } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
@@ -27,6 +21,7 @@ import {
   QUERY_MEMORY_LIMIT_MB,
   QUERY_THREADS,
   QUERY_MAX_SQL_LENGTH,
+  QUERY_SOURCE_URL_EXPIRES_S,
 } from '../config'
 
 export interface QueryResult {
@@ -63,7 +58,7 @@ export class QueryService {
     user?: AuthUser,
     signal?: AbortSignal
   ): Promise<QueryResult> {
-    // Validate the SQL before any expensive work (download + DuckDB materialize). The REST
+    // Validate the SQL before any expensive work (the read and the materialize). The REST
     // route bounds length via zValidator, but the MCP tool does not — enforce both here.
     if (sql.length > QUERY_MAX_SQL_LENGTH) {
       throw new ValidationError(`SQL query exceeds the maximum length of ${QUERY_MAX_SQL_LENGTH}`)
@@ -85,37 +80,35 @@ export class QueryService {
 
     // Bound concurrency to keep total DuckDB memory within the container.
     return withDuckdbSlot(async () => {
-      const tmpPath = join(tmpdir(), `kukan-query-${randomUUID()}.parquet`)
       const startedAt = Date.now()
-      try {
-        const source = await this.storage.download(previewKey)
-        await pipeline(source, createWriteStream(tmpPath))
-
-        const result = await runSandboxedQuery(tmpPath, sql, {
+      // Read where it lives, through a signed URL rather than a copy on this
+      // disk or `readUrl`'s `s3://`. The reasoning is on `materialize`.
+      const result = await runSandboxedQuery(
+        await this.storage.getSignedUrl(previewKey, { expiresIn: QUERY_SOURCE_URL_EXPIRES_S }),
+        sql,
+        {
           maxRows: QUERY_MAX_ROWS,
           maxBytes: QUERY_MAX_BYTES,
           timeoutMs: QUERY_TIMEOUT_MS,
           memoryLimitMb: QUERY_MEMORY_LIMIT_MB,
           threads: QUERY_THREADS,
           signal,
-        })
+        }
+      )
 
-        const elapsedMs = Date.now() - startedAt
-        this.log.info(
-          {
-            component: 'query',
-            resourceId,
-            sql,
-            elapsedMs,
-            rowCount: result.rowCount,
-            truncated: result.truncated,
-          },
-          'resource query'
-        )
-        return { ...result, elapsedMs }
-      } finally {
-        await unlink(tmpPath).catch(() => {})
-      }
+      const elapsedMs = Date.now() - startedAt
+      this.log.info(
+        {
+          component: 'query',
+          resourceId,
+          sql,
+          elapsedMs,
+          rowCount: result.rowCount,
+          truncated: result.truncated,
+        },
+        'resource query'
+      )
+      return { ...result, elapsedMs }
     }, signal)
   }
 }

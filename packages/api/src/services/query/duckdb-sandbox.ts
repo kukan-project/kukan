@@ -18,7 +18,12 @@ import {
   RequestTimeoutError,
   ServiceUnavailableError,
 } from '@kukan/shared'
-import { sqlLiteral } from '@kukan/lake'
+import {
+  duckdbInstanceOptions,
+  loadDuckdbExtensions,
+  sqlLiteral,
+  useOwnTempDirectory,
+} from '@kukan/lake'
 import { assertReadOnlySql } from './sql-guard'
 
 export interface SandboxLimits {
@@ -56,8 +61,89 @@ function firstLine(err: unknown): string {
   return String(err instanceof Error ? err.message : err).split('\n')[0]
 }
 
+/**
+ * What `LOAD httpfs` copies out of the process environment, and hands to anyone
+ * who can run a `SELECT` on the instance afterwards.
+ */
+const ENV_DERIVED_SETTINGS = [
+  's3_access_key_id',
+  's3_secret_access_key',
+  's3_session_token',
+  'http_proxy',
+  'http_proxy_username',
+  'http_proxy_password',
+] as const
+
+/**
+ * Materialize the preview into `data`, from wherever it is.
+ *
+ * **Read straight out of object storage where that is where it lives.** The
+ * bytes came from there either way; fetching them with the SDK only added a
+ * write of up to 100 MB to the container's disk and a read back off it. No user
+ * SQL runs in this window — it is checked and executed after the lockdown below
+ * — so what is open here is reachable by nothing but this statement.
+ *
+ * **The URL carries its own authorization, and `aws` is never loaded.** The
+ * extension that backs `PROVIDER credential_chain` also registers
+ * `load_aws_credentials()`, which is not a filesystem call: it survives
+ * `enable_external_access = false` and answers with the task role's key id and
+ * session token (measured). A signed URL needs no secret at all, so the
+ * function the lockdown cannot reach is never in the instance.
+ */
+async function materialize(
+  conn: { run(sql: string): Promise<unknown> },
+  location: string,
+  timeoutMs: number
+): Promise<void> {
+  if (/^https?:\/\//.test(location)) {
+    await loadDuckdbExtensions(conn, ['httpfs'])
+    // **Loading it imports the environment, and the lockdown does not reach
+    // what it imports.** `httpfs` seeds `s3_*` from `AWS_ACCESS_KEY_ID` and
+    // friends, and `http_proxy` from `HTTP_PROXY` — credentials and all — and
+    // those are plain settings a later `SELECT current_setting(…)` reads back
+    // in full (measured, after `enable_external_access = false` and
+    // `lock_configuration = true`). Same shape as the `aws` finding above, by a
+    // different door. Emptied here, because the URL carries its own
+    // authorization and this read goes to the deployment's own object store,
+    // never through an egress proxy.
+    for (const setting of ENV_DERIVED_SETTINGS) {
+      await conn.run(`SET ${setting} = ''`)
+    }
+    // **`conn.interrupt()` does not reach a blocked HTTP request.** Measured
+    // against an endpoint that accepts and never replies, the read outlived the
+    // sandbox's deadline eightfold and was ended by httpfs's own retries, with
+    // the one concurrency slot held throughout. These bound **one request** —
+    // in seconds, not milliseconds — so the statement is bounded by the
+    // deadline plus one request's worst case, and `lock_configuration` freezes
+    // them a few lines below.
+    await conn.run(`SET http_timeout = ${Math.max(1, Math.floor(timeoutMs / 3000))}`)
+    await conn.run('SET http_retries = 1')
+  }
+  try {
+    await conn.run(`CREATE TABLE data AS SELECT * FROM read_parquet(${sqlLiteral(location)})`)
+  } catch (err) {
+    // **The location is a bearer capability, and DuckDB puts it in the error.**
+    // A missing object or a transient 503 produces `File '<the whole signed
+    // URL>' …`, which the MCP tool hands back to its caller as the tool's text
+    // and the error handler writes to the log. Sixty seconds of read access to
+    // that object, to anyone who can make the read fail. Taken out here rather
+    // than at each sink, so a new sink cannot reintroduce it.
+    //
+    // No `cause`: the original's `stack` carries the URL too, and pino logs it.
+    // Dropping it is the point, not an oversight.
+    // eslint-disable-next-line preserve-caught-error
+    throw new Error(redacting(err, location))
+  }
+}
+
+/** The failure, with every copy of the URL replaced by what it was for. */
+function redacting(err: unknown, location: string): string {
+  const message = err instanceof Error ? err.message : String(err)
+  return message.split(location).join('<the preview URL>')
+}
+
 export async function runSandboxedQuery(
-  parquetPath: string,
+  location: string,
   userSql: string,
   limits: SandboxLimits
 ): Promise<SandboxResult> {
@@ -66,11 +152,12 @@ export async function runSandboxedQuery(
     throw new ServiceUnavailableError('DuckDB native library is not available in this environment')
   }
   // A signal already aborted never fires a listener, so the caller that left
-  // while the Parquet was being fetched has to be caught here.
+  // while its slot was being waited for has to be caught here.
   if (limits.signal?.aborted) throw new RequestAbandonedError()
 
-  const instance = await duckdb.DuckDBInstance.create(':memory:')
+  const instance = await duckdb.DuckDBInstance.create(':memory:', duckdbInstanceOptions())
   const conn = await instance.connect()
+  let dropTempDir: (() => Promise<void>) | undefined
   let timer: NodeJS.Timeout | undefined
   let timedOut = false
   let abandoned = false
@@ -92,9 +179,13 @@ export async function runSandboxedQuery(
     try {
       await conn.run(`SET memory_limit = '${limits.memoryLimitMb}MB'`)
       await conn.run(`SET threads = ${limits.threads}`)
+      // Before anything can spill: materializing the table is what goes out of
+      // core here, and a spill file shared with another instance fails the
+      // query outright (see `useOwnTempDirectory`).
+      dropTempDir = await useOwnTempDirectory(conn, 'query')
       // Materialize the preview while external access is still permitted, then lock down
       // before any user SQL runs.
-      await conn.run(`CREATE TABLE data AS SELECT * FROM read_parquet(${sqlLiteral(parquetPath)})`)
+      await materialize(conn, location, limits.timeoutMs)
       await conn.run('SET enable_external_access = false')
       await conn.run('SET autoinstall_known_extensions = false')
       await conn.run('SET autoload_known_extensions = false')
@@ -141,5 +232,6 @@ export async function runSandboxedQuery(
     limits.signal?.removeEventListener('abort', onAbort)
     conn.disconnectSync()
     instance.closeSync()
+    await dropTempDir?.()
   }
 }

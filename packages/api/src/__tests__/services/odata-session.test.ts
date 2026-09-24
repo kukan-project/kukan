@@ -69,13 +69,6 @@ describe('the extension directory', () => {
   })
 })
 
-describe('isS3Location', () => {
-  it('tells the two kinds of location apart', () => {
-    expect(isS3Location(S3)).toBe(true)
-    expect(isS3Location('/tmp/x.parquet')).toBe(false)
-  })
-})
-
 // The session is what stands between an open object store and everything else
 // on the network, and a guard nothing exercises is a guard that rots.
 describe('a session opened for S3', () => {
@@ -119,5 +112,13 @@ describe('a session opened for a local file', () => {
     expect(
       await attempt('/tmp/none.parquet', `SELECT * FROM read_csv('http://127.0.0.1:1/x')`)
     ).toMatch(/requires the extension httpfs/)
+  })
+})
+
+describe('isS3Location', () => {
+  it('tells an object in the bucket from a path on this filesystem', () => {
+    expect(isS3Location(S3)).toBe(true)
+    expect(isS3Location('/tmp/x.parquet')).toBe(false)
+    expect(isS3Location('https://example.com/x.parquet')).toBe(false)
   })
 })

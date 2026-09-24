@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
-import { Readable } from 'node:stream'
-import { readFile, unlink } from 'node:fs/promises'
+import { unlink } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { resource as resourceTable, resourcePipeline } from '@kukan/db'
@@ -18,19 +17,24 @@ import {
 
 const db = getTestDb()
 
-// A small Parquet fixture (id BIGINT, name VARCHAR; 100 rows), served by the mock storage.
-let fixture: Buffer
+// A small Parquet fixture (id BIGINT, name VARCHAR; 100 rows). The query path
+// reads it through a signed URL, so that is what the stub answers with — a
+// local path here, where a deployment would hand back an https one. `download`
+// refuses: a regression that fell back to it would otherwise pass.
+let fixturePath: string
 const fixtureStorage = {
   upload: async () => {},
-  download: async () => Readable.from(fixture),
+  getSignedUrl: async () => fixturePath,
+  download: async () => {
+    throw Object.assign(new Error('the query reads a signed URL'), { name: 'NoSuchKey' })
+  },
   downloadRange: async () => {
     throw Object.assign(new Error('not used'), { name: 'NoSuchKey' })
   },
   delete: async () => {},
   deleteByPrefix: async () => 0,
-  getSignedUrl: async () => 'file:///test',
   getSignedUploadUrl: async () => 'https://minio.test/upload?signed=true',
-  head: async () => ({ size: fixture.length }),
+  head: async () => ({ size: 0 }),
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const app = createTestApp(db, { storage: fixtureStorage as any })
@@ -48,17 +52,14 @@ const SCHEMA: ResourceSchema = {
   rowCount: 100,
 }
 
-async function makeFixtureParquet(): Promise<Buffer> {
-  const path = await writeParquet(`SELECT i AS id, 'name' || i AS name FROM range(100) t(i)`)
-  const buf = await readFile(path)
-  await unlink(path).catch(() => {})
-  return buf
+async function makeFixtureParquet(): Promise<void> {
+  fixturePath = await writeParquet(`SELECT i AS id, 'name' || i AS name FROM range(100) t(i)`)
 }
 
 let testOrgId: string
 
 beforeAll(async () => {
-  fixture = await makeFixtureParquet()
+  await makeFixtureParquet()
 })
 
 beforeEach(async () => {
@@ -69,6 +70,7 @@ beforeEach(async () => {
 })
 
 afterAll(async () => {
+  await unlink(fixturePath).catch(() => {})
   await closeTestDb()
 })
 

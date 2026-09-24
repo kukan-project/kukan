@@ -12,7 +12,13 @@
  */
 
 import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api'
-import { readRowGroupRows, sqlIdentifier, sqlLiteral } from '@kukan/lake'
+import {
+  duckdbInstanceOptions,
+  readRowGroupRows,
+  sqlIdentifier,
+  sqlLiteral,
+  useOwnTempDirectory,
+} from '@kukan/lake'
 import { PARQUET_PREVIEW_ROW_GROUP_ROWS } from '@kukan/shared'
 import type {
   ColumnStats,
@@ -150,11 +156,19 @@ export async function interpretCsv(
   skipRows: number
 ): Promise<InterpretedCsv> {
   const instance = await DuckDBInstance.create(':memory:', {
+    ...duckdbInstanceOptions(),
     memory_limit: `${INTERPRET_MEMORY_LIMIT_MB}MB`,
     threads: String(INTERPRET_THREADS),
   })
   const conn = await instance.connect()
+  let dropTempDir: (() => Promise<void>) | undefined
   try {
+    // Somewhere of its own to spill, because the load below is meant to: a
+    // spill file shared with the lake instance this process also holds fails
+    // both (see `useOwnTempDirectory`). Inside the try, so a failure here still
+    // closes the instance — a worker leaking one per message accumulates its
+    // buffer manager and threads for days.
+    dropTempDir = await useOwnTempDirectory(conn, 'interpret')
     // Materialized rather than streamed straight into the COPY: the schema needs
     // exact distinct counts over every row, and reading the file twice to get
     // them costs more than holding it once. DuckDB spills to disk under
@@ -238,6 +252,7 @@ export async function interpretCsv(
   } finally {
     conn.disconnectSync()
     instance.closeSync()
+    await dropTempDir?.()
   }
 }
 

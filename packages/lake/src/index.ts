@@ -20,6 +20,7 @@ export {
   s3SettingsFromEnv,
 } from './config'
 export type { LakeConfig, S3Settings } from './config'
+export { useOwnTempDirectory } from './spill'
 export {
   lakeTableName,
   lakeTableExists,

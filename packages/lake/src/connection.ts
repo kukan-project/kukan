@@ -21,6 +21,7 @@ import {
   loadDuckdbExtensions,
   s3SecretBody,
 } from './config'
+import { createSpillRegistry, useOwnTempDirectory } from './spill'
 import { sqlLiteral } from './sql'
 
 /** A row read back from DuckDB, by column name. The diff samples reach the
@@ -78,6 +79,18 @@ type DuckDBConnection = Awaited<ReturnType<DuckDBInstance['connect']>>
  * one setup rather than racing to build several.
  */
 const instances = new Map<string, Promise<DuckDBInstance>>()
+
+/** Each prepared instance's spill directory, freed when nothing holds it. */
+const spills = createSpillRegistry<DuckDBInstance>()
+
+/**
+ * Take an instance out of service; its directory goes with the last session.
+ * Settles when the directory is actually gone, so a shutdown can wait for it.
+ */
+function retire(instance: DuckDBInstance): Promise<void> {
+  instance.closeSync()
+  return spills.retire(instance)
+}
 
 /**
  * Errors a session threw *because* its instance was lost — what
@@ -166,6 +179,13 @@ async function prepareInstance(
     // lake rarely read the same files twice.
     await conn.run('SET enable_external_file_cache = false')
 
+    // Its own place to spill, before the ATTACH that can start writing there
+    // (see `useOwnTempDirectory`): a worker holds this instance alongside the
+    // CSV interpretation's, and that one is documented to go out of core.
+    // Removed when the last session on it closes rather than when it does
+    // (see `createSpillRegistry`).
+    spills.track(instance, await useOwnTempDirectory(conn, 'lake'))
+
     await loadDuckdbExtensions(conn, ['httpfs', 'aws', 'postgres', 'ducklake'])
 
     // S3 credentials, in the one shape both this and the OData feed use
@@ -182,8 +202,9 @@ async function prepareInstance(
   } catch (err) {
     // Setup failed partway (extension load, S3 secret, ATTACH). The instance
     // would otherwise become unreachable while holding its buffer manager,
-    // worker threads, and whatever the ATTACH opened.
-    instance.closeSync()
+    // worker threads, and whatever the ATTACH opened. No session was ever
+    // opened on it, so `retire` takes the directory with it here.
+    retire(instance)
     throw err
   } finally {
     conn.disconnectSync()
@@ -217,13 +238,26 @@ export async function openLakeSession(
       markLost(err)
       if (instances.get(key) === pending) {
         instances.delete(key)
-        void pending.then((i) => i.closeSync()).catch(() => {})
+        void pending.then(retire).catch(() => {})
       }
     }
     throw err
   }
 
-  const conn = await instance.connect().catch(forget)
+  // **Counted before the connection is opened, not after.** `connect()` is an
+  // await, and an instance can retire across it — a shutdown resolving the same
+  // setup promise, or another session losing it. Counting afterwards means this
+  // session registers on an entry that is already gone, its hold is a no-op, and
+  // it runs with `temp_directory` pointing at a path being removed (reproduced).
+  spills.open(instance)
+  let conn
+  try {
+    conn = await instance.connect()
+  } catch (err) {
+    spills.close(instance)
+    throw forget(err)
+  }
+  let closed = false
 
   return {
     run: async (sql) => {
@@ -235,7 +269,14 @@ export async function openLakeSession(
       return reader.getRowObjectsJson() as LakeRow[]
     },
     interrupt: () => conn.interrupt(),
-    close: async () => conn.disconnectSync(),
+    close: async () => {
+      // Guarded, because a caller that closes twice would otherwise let the
+      // count fall below what is open and free the directory early.
+      if (closed) return
+      closed = true
+      conn.disconnectSync()
+      await spills.close(instance)
+    },
   }
 }
 
@@ -247,7 +288,7 @@ export async function openLakeSession(
 export async function closeLakeInstances(): Promise<void> {
   const pending = [...instances.values()]
   instances.clear()
-  await Promise.all(pending.map((p) => p.then((i) => i.closeSync()).catch(() => {})))
+  await Promise.all(pending.map((p) => p.then(retire).catch(() => {})))
 }
 
 /**

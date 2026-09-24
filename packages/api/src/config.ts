@@ -19,6 +19,20 @@ export const QUERY_MAX_BYTES = 5 * 1024 * 1024
 /** Wall-clock timeout per query; the DuckDB connection is interrupted on expiry (ms). */
 export const QUERY_TIMEOUT_MS = 15_000
 
+/**
+ * How long the URL a query reads its preview through stays valid (seconds).
+ *
+ * **Must stay above {@link QUERY_TIMEOUT_MS}**, which bounds the read it has to
+ * cover — a longer budget with this unchanged would expire URLs mid-read. Short
+ * because it is a bearer capability for that one object: anyone holding it
+ * reads the preview without passing the access check.
+ *
+ * Making it longer buys nothing anyway. It is signed with the task role's
+ * temporary credentials, so its real expiry is the earlier of this and what is
+ * left of those.
+ */
+export const QUERY_SOURCE_URL_EXPIRES_S = 60
+
 // NOTE: this path's peak is QUERY_MEMORY_LIMIT_MB × QUERY_MAX_CONCURRENT, ~256 MB, so a
 // query gets a full 256 MB for legitimate aggregations and concurrency is serialized to 1
 // instead. It is no longer the container's whole DuckDB peak: the OData feed holds a
