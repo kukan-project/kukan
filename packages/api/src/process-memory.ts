@@ -8,8 +8,8 @@
  * is the truth about what the process may use.
  *
  * Here rather than beside its first caller: the OData feed sizes its
- * concurrency from this, and the query sandbox's own budget is the next to
- * (see the follow-up issue on the query path).
+ * concurrency from this, and the query sandbox's own budget is meant to as
+ * well — not done yet.
  */
 
 import { readFileSync } from 'node:fs'

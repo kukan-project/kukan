@@ -118,12 +118,10 @@ export interface InterpretedCsv {
   schema: ResourceSchema
   /**
    * Rows in a row group of the Parquet that was written, read back from the file
-   * rather than assumed: DuckDB rounds {@link PARQUET_PREVIEW_ROW_GROUP_ROWS} up to a
-   * multiple of its vector size, and hyparquet-writer, which wrote previews
-   * before it, did not — so a reader that took the constant would size its reads
-   * against a file that is not there. Absent where no Parquet was written, and
-   * on every preview from before this was recorded, which is why the feed treats
-   * a missing figure as unknown rather than guessing.
+   * rather than taken from {@link PARQUET_PREVIEW_ROW_GROUP_ROWS} (why:
+   * `readRowGroupRows`). Absent where no Parquet was written, and on every
+   * preview from before this was recorded, which is why the feed treats a
+   * missing figure as unknown rather than guessing.
    *
    * What reads it: the OData feed, which decodes a whole group to serve any row
    * of it and so keeps a page inside as few as the memory affords (ADR-055).
@@ -214,9 +212,7 @@ export async function interpretCsv(
         `(FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE ${PARQUET_PREVIEW_ROW_GROUP_ROWS})`
     )
 
-    // Read back from the footer rather than taken from the constant above: the
-    // writer rounds it up to a multiple of its vector size, so what the readers
-    // need is the number in the file (`readRowGroupRows`).
+    // The number in the file, not the constant above (`readRowGroupRows`).
     const rowGroupRows = await readRowGroupRows(conn, parquetPath)
 
     // Both paths, one number: which of them took a row is this file's business,

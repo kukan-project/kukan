@@ -32,8 +32,8 @@ import { ODATA_MEMORY_LIMIT_BYTES, QUERY_MAX_CONCURRENT, QUERY_MEMORY_LIMIT_MB }
  * Subtracting rather than taking a share of the whole is the correction to what
  * this did first: 40% of 512 MB is three slots, which with the query path's 256
  * put 448 MB of DuckDB budget in a 512 MB task and left the process 64. The two
- * budgets still come from two places — one figure for both is the follow-up
- * issue on the query sandbox.
+ * budgets still come from two places; one figure for both has not been done
+ * yet.
  */
 const PROCESS_RESERVE_MB = 128
 

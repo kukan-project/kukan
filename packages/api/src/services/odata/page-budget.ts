@@ -147,12 +147,11 @@ export function pageRowsWithin(
   const widest = maxRowBytes(rowGroupRows)
   const bytes = (rowBytes ?? 0) > 0 ? rowBytes! : widest
   const budgetRows = rowsWithinByteBudget(bytes)
-  // **Cut only where the boundaries are known.** Two writers have made previews,
-  // at 5,000 rows a group and at 6,144, and a file that recorded neither cannot
-  // be cut at either: cutting on the wrong multiple manufactures the straddled
-  // read this exists to prevent. Such a file is paged by bytes alone until a
-  // re-interpretation records what it holds — and because it may then straddle,
-  // the budget it was measured against above is the one for two groups.
+  // **Cut only where the boundaries are known** — a file that recorded no figure
+  // cannot be cut at a guessed one (`ODATA_MAX_UNRECORDED_ROW_GROUP_ROWS`).
+  // Such a file is paged by bytes alone until its figure is recorded — and
+  // because it may then straddle, the budget it was measured against above is
+  // the one for two groups.
   if (rowGroupRows === null) return budgetRows
   const groups = Math.max(1, Math.floor(widest / bytes))
   const toBoundary = groups * rowGroupRows - (skip % rowGroupRows)

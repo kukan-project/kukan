@@ -26,8 +26,7 @@ import { estimateRowBytes, rowsMayBeTooWide } from './page-budget'
  *
  * A page too wide to read is not among them. Only the read can answer that — the
  * estimate this file could ask instead was measured refusing a table that reads
- * (27 MB of group against a ceiling of 25.6, where reads actually fail at 38) —
- * so `openPage` raises it where it happens.
+ * (`ODATA_ROW_GROUP_CAUTION_BYTES`) — so `openPage` raises it where it happens.
  */
 export function isEdmRefusal(reason: OdataRefusalReason): reason is EdmRefusal {
   return reason === 'unsupported-columns' || reason === 'duplicate-columns'

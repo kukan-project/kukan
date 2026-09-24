@@ -98,8 +98,8 @@ export class Semaphore {
  *
  * **It is no longer the container's only DuckDB budget.** The OData feed holds
  * a second one beside it (ADR-055 §2), sized from the memory the process
- * actually has, while this one is fixed — which is the open question in the
- * follow-up issue on the query sandbox. Written down because the sentence that
+ * actually has, while this one is still fixed — one budget for both has not
+ * been done yet. Written down because the sentence that
  * used to be here ("two independent semaphores would each think they had the
  * whole container") stopped being a rule and became a thing to watch.
  */

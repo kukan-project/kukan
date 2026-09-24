@@ -37,8 +37,8 @@ export const QUERY_SOURCE_URL_EXPIRES_S = 60
 // query gets a full 256 MB for legitimate aggregations and concurrency is serialized to 1
 // instead. It is no longer the container's whole DuckDB peak: the OData feed holds a
 // budget of its own beside it (ODATA_MEMORY_LIMIT_BYTES × `services/odata/capacity.ts`), and
-// unlike this one, that budget follows the memory the process actually has. The two should
-// be derived from one figure — see the follow-up issue on the query sandbox.
+// unlike this one, that budget follows the memory the process actually has. Deriving the
+// two from one figure has not been done yet.
 
 /** Per-query DuckDB memory limit (bounds materialization + working memory). */
 export const QUERY_MEMORY_LIMIT_MB = 256
