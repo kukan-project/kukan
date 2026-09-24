@@ -39,7 +39,7 @@ services:
       retries: 5
 
   minio:
-    image: pgsty/minio:RELEASE.2026-04-17T00-00-00Z
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
     container_name: kukan-shared-minio
     environment:
       <<: *minio-credentials
@@ -54,7 +54,7 @@ services:
 
   minio-init:
     # One bucket per site: space-separated list in S3_BUCKETS
-    image: pgsty/minio:RELEASE.2026-04-17T00-00-00Z
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
     container_name: kukan-shared-minio-init
     depends_on:
       minio:

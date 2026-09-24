@@ -52,11 +52,11 @@ docker compose --env-file .env --env-file .env.prod --profile prod up -d --build
 
 オンプレミス構成では以下の代替サービスを使用します。
 
-| AWS サービス | オンプレミス代替    |
-| ------------ | ------------------- |
-| S3           | MinIO               |
-| SQS          | ElasticMQ           |
-| OpenSearch   | PostgreSQL 全文検索 |
+| AWS サービス | オンプレミス代替                            |
+| ------------ | ------------------------------------------- |
+| S3           | MinIO 互換（Compose の既定は `pgsty/silo`） |
+| SQS          | ElasticMQ                                   |
+| OpenSearch   | PostgreSQL 全文検索                         |
 
 ### AWS デプロイ
 
