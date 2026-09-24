@@ -16,7 +16,6 @@ import {
   NotFoundError,
   type Env,
   RequestTimeoutError,
-  TooManyRequestsError,
   createCache,
   createLogger,
   type Logger,
@@ -27,7 +26,7 @@ import type { Database } from '@kukan/db'
 import type { StorageAdapter } from '@kukan/storage-adapter'
 import { ResourceService } from '../resource-service'
 import { PipelineService, isQueryable } from '../pipeline-service'
-import { Semaphore } from '../query/semaphore'
+import { Semaphore } from '../semaphore'
 import type { EdmModel, EdmRefusal } from './edm'
 import { feedModel, feedRefusal, isEdmRefusal } from './feed-eligibility'
 import { capacity } from './capacity'
@@ -124,7 +123,9 @@ function timeoutError(): RequestTimeoutError {
  * affords (`capacity`) — bounded by the page, not by the file, which is why it
  * is given the smaller budget.
  */
-const odataSemaphore = new Semaphore(capacity.slots, ODATA_QUEUE_MAX, ODATA_QUEUE_WAIT_MS)
+const odataSemaphore = new Semaphore(capacity.slots, ODATA_QUEUE_MAX, ODATA_QUEUE_WAIT_MS, {
+  full: 'The feed is busy; please retry shortly',
+})
 
 const feedPool = createFeedPool({
   prepare: prepareFeedInstance,
@@ -313,16 +314,7 @@ export class OdataService {
     opts: { skip: number; limit: number | null; signal?: AbortSignal }
   ): Promise<PageReader> {
     const previewKey = feed.previewKey
-    try {
-      await odataSemaphore.acquire(opts.signal)
-    } catch (err) {
-      // The semaphore is shared code and talks about queries; a BI tool's user
-      // is being told about this feed.
-      if (err instanceof TooManyRequestsError) {
-        throw new TooManyRequestsError('The feed is busy; please retry shortly')
-      }
-      throw err
-    }
+    await odataSemaphore.acquire(opts.signal)
     const startedAt = Date.now()
     let lease: FeedLease | undefined
     let timer: NodeJS.Timeout | undefined

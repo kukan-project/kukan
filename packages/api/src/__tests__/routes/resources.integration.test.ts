@@ -10,7 +10,7 @@ import {
 } from '@kukan/db'
 import { getStorageKey, MAX_UPLOAD_SIZE } from '@kukan/shared'
 import type { ResourceColumnType } from '@kukan/shared'
-import { createTestApp, mockQueue, mockSearch } from '../test-helpers/test-app'
+import { createTestApp, mockQueue, mockSearch, mockStorage } from '../test-helpers/test-app'
 import { CLAIM_STALE_AFTER_MS } from '../../services/pipeline-claim'
 import {
   getTestDb,
@@ -26,21 +26,10 @@ const app = createTestApp(db)
 const unauthApp = createTestApp(db, { user: null })
 /** App with a mock storage that returns content (for preview tests) */
 const storageWithContent = {
-  upload: async () => {},
+  ...mockStorage,
   download: async () => Readable.from(Buffer.from('fake-image-content')),
-  downloadRange: async () => {
-    const err = new Error('The specified key does not exist.')
-    err.name = 'NoSuchKey'
-    throw err
-  },
-  delete: async () => {},
-  deleteByPrefix: async () => 0,
-  getSignedUrl: async () => 'file:///test',
-  getSignedUploadUrl: async () => 'https://minio.test/upload?signed=true',
-  head: async () => ({ size: 1024 }),
 }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const appWithStorage = createTestApp(db, { storage: storageWithContent as any })
+const appWithStorage = createTestApp(db, { storage: storageWithContent })
 
 /** Non-sysadmin user with no org membership */
 const outsiderApp = createTestApp(db, {
@@ -314,10 +303,10 @@ describe('Resources API Routes', () => {
         totalSize: jsonContentBuf.length,
         start: 0,
         end: jsonContentBuf.length - 1,
+        partial: false,
       }),
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const appWithJson = createTestApp(db, { storage: jsonStorage as any })
+    const appWithJson = createTestApp(db, { storage: jsonStorage })
 
     it('should return 404 for private package resource when unauthenticated', async () => {
       const pkg = await createPackage('private-json-pkg', { private: true })
@@ -382,10 +371,10 @@ describe('Resources API Routes', () => {
           totalSize: largeTotalSize,
           start: 0,
           end: 0,
+          partial: true,
         }),
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const appWithLarge = createTestApp(db, { storage: largeStorage as any })
+      const appWithLarge = createTestApp(db, { storage: largeStorage })
 
       const pkg = await createPackage('json-large-null-size-pkg')
       // resource.size is null (default from createResource)
@@ -499,8 +488,7 @@ describe('Resources API Routes', () => {
     const download = vi.fn(async () => Readable.from([Buffer.from('full-body')]))
     const head = vi.fn(async () => ({ size: RANGE_OBJECT_SIZE }))
     const rangeStorage = { ...storageWithContent, downloadRange, download, head }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rangeApp = createTestApp(db, { storage: rangeStorage as any })
+    const rangeApp = createTestApp(db, { storage: rangeStorage })
 
     let previewUrl: string
 
@@ -620,8 +608,7 @@ describe('Resources API Routes', () => {
           partial: false,
         })),
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const ignoringApp = createTestApp(db, { storage: ignoringStorage as any })
+      const ignoringApp = createTestApp(db, { storage: ignoringStorage })
 
       const res = await ignoringApp.request(previewUrl, { headers: { Range: 'bytes=100-' } })
       expect(res.status).toBe(200)
@@ -1441,8 +1428,7 @@ describe('Resources API Routes', () => {
         ...storageWithContent,
         head: async () => ({ size: MAX_UPLOAD_SIZE + 1 }),
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const oversizeApp = createTestApp(db, { storage: oversizeStorage as any })
+      const oversizeApp = createTestApp(db, { storage: oversizeStorage })
       const pkg = await createPackage('complete-oversize-pkg')
       const resource = await createResource(pkg.id)
 

@@ -7,16 +7,12 @@
  */
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { sql } from 'drizzle-orm'
-import type { StorageAdapter } from '@kukan/storage-adapter'
 import { PackageService } from '../../services/package-service'
 import { OrganizationService } from '../../services/organization-service'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
+import { mockStorage } from '../test-helpers/test-app'
 
 const db = getTestDb()
-
-const mockStorage = {
-  deleteByPrefix: async () => {},
-} as unknown as StorageAdapter
 
 let orgId: string
 

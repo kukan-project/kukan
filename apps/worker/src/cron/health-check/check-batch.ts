@@ -31,10 +31,11 @@ import type { ResourceForHealthCheck, BatchSummary } from './types'
  *
  * `p-limit` cannot express it: it owns the call, so a caller cannot hold a slot
  * across something it does not wrap — and every holder here spans a redirect
- * chain it does not own. The same shape as `Semaphore` in the API's query
- * sandbox, which this cannot import (that package does not export it, and it
- * carries a queue bound and a 429 with it); worth folding into `@kukan/shared`
- * the next time either needs changing.
+ * chain it does not own. The same shape as the API's `Semaphore`, which this
+ * cannot import (that package does not export it, and it carries a queue bound,
+ * an abort signal and a 429 with it), and different enough — a deadline per
+ * call, a boolean rather than a throw — that folding the two together would
+ * take a policy for each.
  */
 class HostSlots {
   private taken = 0

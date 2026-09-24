@@ -1,20 +1,22 @@
 import { describe, it, expect, vi } from 'vitest'
 import { RequestAbandonedError, TooManyRequestsError } from '@kukan/shared'
-import { Semaphore } from '../../../services/query/semaphore'
+import { Semaphore } from '../../services/semaphore'
+
+const BUSY = { full: 'queue full', timedOut: 'waited too long' }
 
 /** Let queued microtasks (a resolved waiter) run. */
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 describe('Semaphore', () => {
   it('grants up to max slots', async () => {
-    const sem = new Semaphore(2, 4, 1000)
+    const sem = new Semaphore(2, 4, 1000, BUSY)
     await sem.acquire()
     await sem.acquire()
     expect(sem.inUse).toBe(2)
   })
 
   it('makes the next caller wait instead of refusing', async () => {
-    const sem = new Semaphore(1, 4, 1000)
+    const sem = new Semaphore(1, 4, 1000, BUSY)
     await sem.acquire()
 
     let granted = false
@@ -32,7 +34,7 @@ describe('Semaphore', () => {
   })
 
   it('hands slots to waiters in arrival order', async () => {
-    const sem = new Semaphore(1, 4, 1000)
+    const sem = new Semaphore(1, 4, 1000, BUSY)
     await sem.acquire()
 
     const order: number[] = []
@@ -48,12 +50,15 @@ describe('Semaphore', () => {
   })
 
   it('refuses with 429 once the queue is full', async () => {
-    const sem = new Semaphore(1, 1, 1000)
+    const sem = new Semaphore(1, 1, 1000, BUSY)
     await sem.acquire()
     const queued = sem.acquire()
     await tick()
 
-    await expect(sem.acquire()).rejects.toBeInstanceOf(TooManyRequestsError)
+    const refused = await sem.acquire().catch((err: unknown) => err)
+    expect(refused).toBeInstanceOf(TooManyRequestsError)
+    // In the caller's words: the feed's user is not told about queries.
+    expect((refused as Error).message).toBe('queue full')
 
     sem.release()
     await queued
@@ -62,12 +67,13 @@ describe('Semaphore', () => {
   it('refuses with 429 when the wait runs out', async () => {
     vi.useFakeTimers()
     try {
-      const sem = new Semaphore(1, 4, 1000)
+      const sem = new Semaphore(1, 4, 1000, BUSY)
       await sem.acquire()
       const waiting = sem.acquire()
-      const assertion = expect(waiting).rejects.toBeInstanceOf(TooManyRequestsError)
+      const refused = waiting.catch((err: unknown) => err)
       await vi.advanceTimersByTimeAsync(1000)
-      await assertion
+      expect(await refused).toBeInstanceOf(TooManyRequestsError)
+      expect(((await refused) as Error).message).toBe('waited too long')
       expect(sem.queued).toBe(0)
     } finally {
       vi.useRealTimers()
@@ -75,7 +81,7 @@ describe('Semaphore', () => {
   })
 
   it('drops an abandoned waiter so the ones behind it move up', async () => {
-    const sem = new Semaphore(1, 4, 1000)
+    const sem = new Semaphore(1, 4, 1000, BUSY)
     await sem.acquire()
 
     const controller = new AbortController()
@@ -95,20 +101,20 @@ describe('Semaphore', () => {
   })
 
   it('refuses a caller that is already gone without taking a slot', async () => {
-    const sem = new Semaphore(1, 4, 1000)
+    const sem = new Semaphore(1, 4, 1000, BUSY)
     await expect(sem.acquire(AbortSignal.abort())).rejects.toBeInstanceOf(RequestAbandonedError)
     expect(sem.inUse).toBe(0)
   })
 
   it('frees a slot on release', async () => {
-    const sem = new Semaphore(1, 4, 1000)
+    const sem = new Semaphore(1, 4, 1000, BUSY)
     await sem.acquire()
     sem.release()
     expect(sem.inUse).toBe(0)
   })
 
   it('does not underflow when over-released', () => {
-    const sem = new Semaphore(1, 4, 1000)
+    const sem = new Semaphore(1, 4, 1000, BUSY)
     sem.release()
     sem.release()
     expect(sem.inUse).toBe(0)

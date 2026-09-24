@@ -1,7 +1,7 @@
 /**
  * Password strength policy through the real Better Auth endpoints.
  */
-import { describe, it, expect, beforeEach, afterEach, afterAll } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { user } from '@kukan/db'
 import { PASSWORD_MIN_SCORE } from '@kukan/shared'
@@ -32,7 +32,7 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
-  process.env.PASSWORD_MIN_SCORE = String(PASSWORD_MIN_SCORE)
+  vi.unstubAllEnvs()
 })
 
 afterAll(async () => {
@@ -147,7 +147,7 @@ describe('password strength policy', () => {
   })
 
   it('accepts a guessable password when the environment lowers the score floor', async () => {
-    process.env.PASSWORD_MIN_SCORE = '0'
+    vi.stubEnv('PASSWORD_MIN_SCORE', '0')
     const auth = createAuth(db)
 
     await expect(
@@ -158,7 +158,7 @@ describe('password strength policy', () => {
   })
 
   it('keeps the length floor even with the score floor at zero', async () => {
-    process.env.PASSWORD_MIN_SCORE = '0'
+    vi.stubEnv('PASSWORD_MIN_SCORE', '0')
     const auth = createAuth(db)
 
     await expect(

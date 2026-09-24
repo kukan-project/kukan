@@ -4,14 +4,13 @@ import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { resource as resourceTable, resourcePipeline, resourceVersion } from '@kukan/db'
 import type { ResourceSchema } from '@kukan/shared'
-import { createTestApp, testEnv } from '../test-helpers/test-app'
+import { createTestApp, mockStorage, testEnv } from '../test-helpers/test-app'
 import { writeParquet } from '../test-helpers/parquet'
 import { getTestDb, cleanDatabase, closeTestDb, ensureTestUser } from '../test-helpers/test-db'
 import { ODATA_MAX_PAGE_BYTES, ODATA_MAX_PAGE_ROWS, ODATA_QUEUE_MAX } from '../../config'
 import { PINNED_PAGE_MAX_AGE_S } from '@kukan/shared'
 import { capacity } from '../../services/odata/capacity'
 import { PipelineService } from '../../services/pipeline-service'
-import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
 import { maxRowBytes, rowsWithinByteBudget } from '../../services/odata/page-budget'
 
@@ -30,26 +29,10 @@ type Fixture = 'small' | 'large' | 'wide' | 'wide-int'
  */
 const fixturePaths = new Map<string, string>()
 const fixtureStorage = {
-  upload: async () => {},
+  ...mockStorage,
   readUrl: (key: string) => fixturePaths.get(key.split('/')[1]) ?? '/nonexistent.parquet',
-  // The feed reads the location and nothing else; the rest of the adapter is
-  // here because the interface has it, not because this suite exercises it.
-  download: async () => {
-    throw Object.assign(new Error('the feed reads readUrl'), { name: 'NoSuchKey' })
-  },
-  downloadRange: async () => {
-    throw Object.assign(new Error('not used'), { name: 'NoSuchKey' })
-  },
-  delete: async () => {},
-  deleteByPrefix: async () => 0,
-  getSignedUrl: async () => 'file:///test',
-  getSignedUploadUrl: async () => 'https://minio.test/upload?signed=true',
-  head: async () => ({ size: 0 }),
 }
-// The helper's override is typed as its own mock's shape, not as the interface,
-// so the two callers below cast differently on purpose.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const app = createTestApp(db, { storage: fixtureStorage as any })
+const app = createTestApp(db, { storage: fixtureStorage })
 
 const ROWS = 12
 const WIDE_ROWS = 60
@@ -505,7 +488,7 @@ describe('GET /odata/v1/resources/:id/Rows', () => {
   it('records the figure for every preview that lacks one, once asked to', async () => {
     const id = await createResource({ size: null })
     const result = await new PipelineService(db).recordMissingRowGroups({
-      storage: fixtureStorage as unknown as StorageAdapter,
+      storage: fixtureStorage,
       env: testEnv,
     })
     expect(result.recorded).toBeGreaterThan(0)
@@ -540,7 +523,7 @@ describe('GET /odata/v1/resources/:id/Rows', () => {
     } as unknown as QueueAdapter
 
     const result = await new PipelineService(db).recordMissingRowGroups({
-      storage: fixtureStorage as unknown as StorageAdapter,
+      storage: fixtureStorage,
       env: testEnv,
       queue: brokenQueue,
     })
@@ -564,7 +547,7 @@ describe('GET /odata/v1/resources/:id/Rows', () => {
     })
     const enqueue = vi.fn(async () => {})
     const result = await new PipelineService(db).recordMissingRowGroups({
-      storage: fixtureStorage as unknown as StorageAdapter,
+      storage: fixtureStorage,
       env: testEnv,
       queue: { enqueue } as unknown as QueueAdapter,
     })
@@ -588,7 +571,7 @@ describe('GET /odata/v1/resources/:id/Rows', () => {
       .set({ previewKey: `preview/gone/${id}.parquet` })
       .where(eq(resourcePipeline.resourceId, id))
     const service = new PipelineService(db)
-    const deps = { storage: fixtureStorage as unknown as StorageAdapter, env: testEnv }
+    const deps = { storage: fixtureStorage, env: testEnv }
 
     const first = await service.recordMissingRowGroups(deps)
     expect(first.unmeasured).toBe(1)
@@ -810,7 +793,10 @@ describe('when every slot is taken', () => {
     const overflow = await app.request(`${base(id)}/Rows`)
     expect(overflow.status).toBe(429)
     expect(overflow.headers.get('Retry-After')).toBe('5')
-    expect((await overflow.json()).error.code).toBe('TOO_MANY_REQUESTS')
+    const refused = await overflow.json()
+    expect(refused.error.code).toBe('TOO_MANY_REQUESTS')
+    // In the feed's words, not the query path's
+    expect(JSON.stringify(refused)).toContain('The feed is busy')
 
     // And the queue drains once the deadline frees the slots: as many callers
     // are served as there are slots, while the rest wait out their own budget

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import type { Env } from '@kukan/shared'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -63,20 +63,14 @@ describe('the extension directory', () => {
     // reaches for extensions.duckdb.org — which is what a closed-network
     // deployment cannot do. The image installs them at build time and points
     // this variable at them.
-    const previous = process.env.DUCKDB_EXTENSION_DIRECTORY
     const dir = await mkdtemp(join(tmpdir(), 'kukan-ext-'))
-    process.env.DUCKDB_EXTENSION_DIRECTORY = dir
+    vi.stubEnv('DUCKDB_EXTENSION_DIRECTORY', dir)
     try {
       expect(
         await rows('/tmp/none.parquet', `SELECT current_setting('extension_directory') AS dir`)
       ).toEqual([{ dir }])
     } finally {
-      // Assigning `undefined` to a process.env entry stores the *string*
-      // "undefined", which the next session would hand DuckDB as a relative
-      // path — an `undefined/` tree of downloaded extensions under the working
-      // directory, and a closed network reaching for the internet again.
-      if (previous === undefined) delete process.env.DUCKDB_EXTENSION_DIRECTORY
-      else process.env.DUCKDB_EXTENSION_DIRECTORY = previous
+      vi.unstubAllEnvs()
       await rm(dir, { recursive: true, force: true })
     }
   })

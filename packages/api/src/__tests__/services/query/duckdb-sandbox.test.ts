@@ -178,14 +178,10 @@ describe('runSandboxedQuery', () => {
       // `http_proxy`, credentials included, and those are plain settings the
       // lockdown does not cover — the same shape as the `aws` finding below, by
       // a different door.
-      const env = {
-        AWS_ACCESS_KEY_ID: 'AKIAPROBE123',
-        AWS_SECRET_ACCESS_KEY: 'super-secret-probe-key',
-        AWS_SESSION_TOKEN: 'probe-session-token',
-        HTTP_PROXY: 'http://proxyuser:proxypass@proxy.internal:8080',
-      }
-      const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]))
-      Object.assign(process.env, env)
+      vi.stubEnv('AWS_ACCESS_KEY_ID', 'AKIAPROBE123')
+      vi.stubEnv('AWS_SECRET_ACCESS_KEY', 'super-secret-probe-key')
+      vi.stubEnv('AWS_SESSION_TOKEN', 'probe-session-token')
+      vi.stubEnv('HTTP_PROXY', 'http://proxyuser:proxypass@proxy.internal:8080')
       try {
         const res = await runSandboxedQuery(
           url,
@@ -194,10 +190,7 @@ describe('runSandboxedQuery', () => {
         )
         expect(res.rows[0]).toEqual({ s: '', p: '' })
       } finally {
-        for (const [k, v] of Object.entries(saved)) {
-          if (v === undefined) delete process.env[k]
-          else process.env[k] = v
-        }
+        vi.unstubAllEnvs()
       }
     })
 

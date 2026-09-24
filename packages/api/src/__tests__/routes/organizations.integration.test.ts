@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { packageTable, organization as orgTable } from '@kukan/db'
-import { createTestApp, mockSearch } from '../test-helpers/test-app'
+import { createTestApp, mockSearch, mockStorage } from '../test-helpers/test-app'
 import {
   getTestDb,
   cleanDatabase,
@@ -13,7 +13,6 @@ import {
 import { OrganizationService } from '../../services/organization-service'
 
 // Simulates the worker draining the purge-organization job the route enqueues.
-const mockStorage = { deleteByPrefix: async () => 0 } as never
 function runOrgPurgeWorker(orgId: string) {
   return new OrganizationService(db).purgeDeletedOrg(orgId, {
     search: mockSearch,

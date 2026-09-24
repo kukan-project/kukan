@@ -13,6 +13,7 @@ import type { Database } from '@kukan/db'
 import { NoOpAIAdapter, type AIAdapter } from '@kukan/ai-adapter'
 import { PostgresSearchAdapter, type SearchAdapter } from '@kukan/search-adapter'
 import type { QueueAdapter } from '@kukan/queue-adapter'
+import type { StorageAdapter } from '@kukan/storage-adapter'
 import type { AnalyticsService } from '../../services/analytics-service'
 import { SystemSettingService } from '../../services/system-setting'
 import { errorHandler } from '../../middleware/error-handler'
@@ -63,7 +64,7 @@ export const mockSearch: SearchAdapter = {
   fetchContentHighlights: async () => ({}),
 }
 
-const mockStorage = {
+export const mockStorage: StorageAdapter = {
   // Drained like the real adapter would: a streamed upload's parser waits on
   // the consumer, and one that never reads would hold the request open.
   upload: async (_key: string, body: Buffer | Readable) => {
@@ -154,7 +155,7 @@ interface TestAppOverrides {
   /** Override the AI adapter (e.g. an embedding-capable stub for hybrid-search tests). */
   ai?: AIAdapter
   /** Override the storage adapter (e.g. to return actual file content in preview tests). */
-  storage?: typeof mockStorage
+  storage?: StorageAdapter
   /** Override the authenticated user. Pass `null` for unauthenticated. */
   user?: {
     id: string

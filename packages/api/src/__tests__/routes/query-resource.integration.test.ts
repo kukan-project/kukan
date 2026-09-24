@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { resource as resourceTable, resourcePipeline } from '@kukan/db'
 import type { ResourceSchema } from '@kukan/shared'
-import { createTestApp } from '../test-helpers/test-app'
+import { createTestApp, mockStorage } from '../test-helpers/test-app'
 import { writeParquet } from '../test-helpers/parquet'
 import {
   getTestDb,
@@ -22,25 +22,10 @@ const db = getTestDb()
 // local path here, where a deployment would hand back an https one. `download`
 // refuses: a regression that fell back to it would otherwise pass.
 let fixturePath: string
-const fixtureStorage = {
-  upload: async () => {},
-  getSignedUrl: async () => fixturePath,
-  download: async () => {
-    throw Object.assign(new Error('the query reads a signed URL'), { name: 'NoSuchKey' })
-  },
-  downloadRange: async () => {
-    throw Object.assign(new Error('not used'), { name: 'NoSuchKey' })
-  },
-  delete: async () => {},
-  deleteByPrefix: async () => 0,
-  getSignedUploadUrl: async () => 'https://minio.test/upload?signed=true',
-  head: async () => ({ size: 0 }),
-}
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const app = createTestApp(db, { storage: fixtureStorage as any })
+const fixtureStorage = { ...mockStorage, getSignedUrl: async () => fixturePath }
+const app = createTestApp(db, { storage: fixtureStorage })
 const outsiderApp = createTestApp(db, {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  storage: fixtureStorage as any,
+  storage: fixtureStorage,
   user: { id: OUTSIDER_USER_ID, email: 'outsider@example.com', name: 'outsider', sysadmin: false },
 })
 
