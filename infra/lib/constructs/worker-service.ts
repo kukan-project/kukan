@@ -34,6 +34,12 @@ export interface WorkerServiceProps {
 
 export class WorkerServiceConstruct extends Construct {
   readonly service: ecs.FargateService
+  private readonly workerContainer: ecs.ContainerDefinition
+
+  /** Add an environment variable to the worker container after construction. */
+  addEnvironment(key: string, value: string) {
+    this.workerContainer.addEnvironment(key, value)
+  }
 
   constructor(scope: Construct, id: string, props: WorkerServiceProps) {
     super(scope, id)
@@ -101,7 +107,7 @@ export class WorkerServiceConstruct extends Construct {
     }
 
     // Container
-    taskDef.addContainer('Worker', {
+    this.workerContainer = taskDef.addContainer('Worker', {
       image: ecs.ContainerImage.fromDockerImageAsset(imageAsset),
       // The task's limit again, for the reason the web service gives.
       memoryLimitMiB: config.worker.memory,

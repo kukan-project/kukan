@@ -316,6 +316,14 @@ function createSsrfSafeAgent(): Agent {
 // Module-level singleton — reuses connections across requests
 const ssrfSafeAgent = createSsrfSafeAgent()
 
+/** Sent on every request that does not name itself (see `user-agent.ts`). */
+let userAgent = 'KUKAN'
+
+/** Set once at startup, from the release and the site this worker serves. */
+export function setUserAgent(value: string): void {
+  userAgent = value
+}
+
 // ---------------------------------------------------------------------------
 // Safe fetch
 // ---------------------------------------------------------------------------
@@ -459,7 +467,9 @@ export async function safeFetch(
   }
 
   let currentUrl = url
-  let currentInit = init
+  const headers = new Headers(init?.headers)
+  if (!headers.has('user-agent')) headers.set('user-agent', userAgent)
+  let currentInit: RequestInit | undefined = { ...init, headers }
   // Seeded with the host the caller named: it acquired that one itself, and
   // asking again would refuse the chain on its own first request. Normalized,
   // because this is the Set `normalizeHostname` was written for — untouched,

@@ -170,7 +170,8 @@ export interface EnvironmentConfig {
   // apply to the environment's one site; with `sites` declared they are
   // rejected at synth (validateSites) — declare them per site instead.
   enableWaf?: boolean
-  allowedIpRanges?: string[]
+  /** Non-empty: omit it to leave the site open (checked again at synth). */
+  allowedIpRanges?: [string, ...string[]]
   /**
    * Basic auth edge gate (CF Function), OR-combined with `allowedIpRanges`. Light gate
    * only — credentials are embedded (base64) in the readable CF Function source (ADR-027).
@@ -193,6 +194,13 @@ export interface EnvironmentConfig {
   /** S3 bucket name. Omit → CDK auto-naming (globally unique). */
   bucketName?: string
   enableGa4DataApi?: boolean
+  /**
+   * Name the site's URL in the worker's User-Agent (USER_AGENT_URL), so the
+   * operators of the servers it fetches from can reach this site. Only for a
+   * site anyone may visit and search engines may index; rejected at synth on
+   * an edge-gated one.
+   */
+  nameSiteInUserAgent?: boolean
   /**
    * Bedrock embedding for semantic search (ADR-034). Omit → enabled with Titan v2
    * defaults; `false` → AI disabled (AI_TYPE=none). No console setup needed —
@@ -275,11 +283,19 @@ export interface SiteConfig {
    *  Omit in standalone mode to have KukanGlobalStack create one shared ACL. */
   webAclArn?: string
   enableWaf?: boolean
-  allowedIpRanges?: string[]
+  /** Non-empty: omit it to leave the site open (checked again at synth). */
+  allowedIpRanges?: [string, ...string[]]
   basicAuth?: { username: string; password: string }
   /** S3 bucket name. Omit → CDK auto-naming (globally unique). */
   bucketName?: string
   enableGa4DataApi?: boolean
+  /**
+   * Name the site's URL in the worker's User-Agent (USER_AGENT_URL), so the
+   * operators of the servers it fetches from can reach this site. Only for a
+   * site anyone may visit and search engines may index; rejected at synth on
+   * an edge-gated one.
+   */
+  nameSiteInUserAgent?: boolean
   /**
    * Listener rule priority on the environment's shared ALB (ADR-049). Omit →
    * derived from the site name (a stable hash in 1000–49999), so removing or
@@ -355,6 +371,7 @@ const SITE_SCOPED_FIELDS = Object.keys({
   basicAuth: true,
   bucketName: true,
   enableGa4DataApi: true,
+  nameSiteInUserAgent: true,
   timeZone: true,
 } satisfies Record<SiteScopedKey, true>) as SiteScopedKey[]
 
@@ -888,11 +905,19 @@ export function assertPipelineAccount(
   }
 }
 
-/** WAF default: ON unless an IP allowlist or Basic auth edge gate is set (ADR-027). */
+/** Whether an IP allowlist or Basic auth keeps the site from the public (ADR-027). */
+function isEdgeGated(env: {
+  allowedIpRanges?: readonly string[]
+  basicAuth?: EnvironmentConfig['basicAuth']
+}): boolean {
+  return !!(env.allowedIpRanges || env.basicAuth)
+}
+
+/** WAF default: ON unless the site is edge-gated (ADR-027). */
 export function resolveEnableWaf(
   env: Pick<EnvironmentConfig, 'enableWaf' | 'allowedIpRanges' | 'basicAuth'>
 ): boolean {
-  return env.enableWaf ?? !(env.allowedIpRanges || env.basicAuth)
+  return env.enableWaf ?? !isEdgeGated(env)
 }
 
 /**
@@ -951,6 +976,8 @@ export interface KukanConfig extends ScaleComputed {
   enableWaf: boolean
   allowedIpRanges?: string[]
   basicAuth?: { username: string; password: string }
+  /** Whether the worker's User-Agent carries the site URL (USER_AGENT_URL). */
+  nameSiteInUserAgent: boolean
   domainName?: string
   hostedZoneId?: string
   hostedZoneName?: string
@@ -1061,13 +1088,31 @@ export function loadConfig(
   const scale = ctx<Scale>('scale') ?? env.scale ?? 'small'
   const enableOpenSearch = ctx<boolean>('enableOpenSearch') ?? env.enableOpenSearch ?? true
   const allowedIpRanges = ctx<string[]>('allowedIpRanges') ?? env.allowedIpRanges
+  // Read as written, an empty allowlist admits nobody; the viewer-request
+  // function reads it as no gate at all. Neither can be what was meant.
+  if (allowedIpRanges?.length === 0) {
+    throw new Error(
+      'allowedIpRanges is empty — omit it to leave the site open, or list the ranges to admit'
+    )
+  }
   // env-only (no ctx): a credential must not live in committed cdk.json / shell history.
   const basicAuth = env.basicAuth
   // WAF provides managed rules on CloudFront scope (ADR-027). The edge gate (IP allowlist
   // and/or Basic auth) is handled by a CloudFront Function, so WAF defaults OFF when either
   // is set (saves ~$9/month).
   const enableWafExplicit = ctx<boolean>('enableWaf') ?? env.enableWaf
-  const enableWaf = enableWafExplicit ?? !(allowedIpRanges || basicAuth)
+  const edgeGated = isEdgeGated({ allowedIpRanges, basicAuth })
+  const enableWaf = enableWafExplicit ?? !edgeGated
+  // Asked for, not inferred: whether a site is meant to be found is the
+  // operator's call. Behind an edge gate it cannot be, whatever was asked.
+  const nameSiteInUserAgent =
+    ctx<boolean>('nameSiteInUserAgent') ?? env.nameSiteInUserAgent ?? false
+  if (nameSiteInUserAgent && edgeGated) {
+    throw new Error(
+      'nameSiteInUserAgent is set on an edge-gated site — the worker would hand out ' +
+        'an address the gate keeps from the public; drop one of the two'
+    )
+  }
   const domainName = ctx<string>('domainName') ?? env.domainName
   const hostedZoneId = ctx<string>('hostedZoneId') ?? env.hostedZoneId
   const hostedZoneName = ctx<string>('hostedZoneName') ?? env.hostedZoneName
@@ -1121,6 +1166,7 @@ export function loadConfig(
     enableWaf,
     allowedIpRanges,
     basicAuth,
+    nameSiteInUserAgent,
     domainName,
     timeZone,
     hostedZoneId,

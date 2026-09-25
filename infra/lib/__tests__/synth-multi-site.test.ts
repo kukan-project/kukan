@@ -44,8 +44,9 @@ const MULTI_SITE: Omit<EnvironmentConfig, 'account'> = {
       certificateArn: `arn:aws:acm:us-east-1:${TEST_ACCOUNT}:certificate/00000000-0000-0000-0000-000000000000`,
       webAclArn: `arn:aws:wafv2:us-east-1:${TEST_ACCOUNT}:global/webacl/kukan/00000000-0000-0000-0000-000000000000`,
       enableGa4DataApi: true,
+      nameSiteInUserAgent: true,
     },
-    { name: 'cityb', enableWaf: false },
+    { name: 'cityb', enableWaf: false, nameSiteInUserAgent: true },
   ],
 }
 
@@ -887,6 +888,46 @@ describe('validateSites', () => {
         { name: 'citya', enableWaf: false, bedrock: { completionModels: [NOVA] } }
       )
     ).toThrow(/is not in bedrock\.completionModels/)
+  })
+
+  it('names the site in the User-Agent only when asked', () => {
+    const app = new cdk.App()
+    const site = { name: 'citya', enableWaf: false }
+    expect(resolveSiteConfig(app, { ...base }, site).nameSiteInUserAgent).toBe(false)
+    expect(
+      resolveSiteConfig(app, { ...base }, { ...site, nameSiteInUserAgent: true })
+        .nameSiteInUserAgent
+    ).toBe(true)
+  })
+
+  it('refuses to name an edge-gated site in the User-Agent, at synth', () => {
+    const app = new cdk.App()
+    for (const gate of [
+      { allowedIpRanges: ['203.0.113.0/24'] as [string] },
+      { basicAuth: { username: 'preview', password: 'preview-pass' } },
+    ]) {
+      expect(() =>
+        resolveSiteConfig(
+          app,
+          { ...base },
+          { name: 'citya', enableWaf: false, nameSiteInUserAgent: true, ...gate }
+        )
+      ).toThrow(/nameSiteInUserAgent is set on an edge-gated site/)
+    }
+  })
+
+  it('rejects an empty IP allowlist, at synth', () => {
+    const app = new cdk.App()
+    expect(() =>
+      resolveSiteConfig(
+        app,
+        { ...base },
+        // The type refuses it as well, but the CDK app runs untyped (tsx) and the
+        // local environments.ts is outside CI's typecheck, so synth checks again
+        // @ts-expect-error — an empty allowlist is not a valid value
+        { name: 'citya', enableWaf: false, allowedIpRanges: [] }
+      )
+    ).toThrow(/allowedIpRanges is empty/)
   })
 
   it('rejects a time zone Intl does not know, at synth', () => {

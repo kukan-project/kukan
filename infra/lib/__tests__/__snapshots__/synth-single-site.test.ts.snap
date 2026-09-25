@@ -6357,6 +6357,10 @@ function expandV6(addr) {
                 "Name": "OPENSEARCH_REPLICAS",
                 "Value": "1",
               },
+              {
+                "Name": "USER_AGENT_URL",
+                "Value": "https://data.example.jp",
+              },
             ],
             "Essential": true,
             "HealthCheck": {

@@ -138,6 +138,22 @@ export const envSchema = z.object({
 
   TIME_ZONE: timeZoneSchema,
 
+  /**
+   * The site the worker names in its User-Agent, so the operator of a server it
+   * fetches from can reach whoever runs this catalog. Unset, it names only
+   * itself: whether the site is public is not something the worker can tell
+   * from its own address, so a closed site's URL is never sent unless asked.
+   */
+  // Normalized: a header carries ASCII only, so a Unicode host becomes punycode
+  // here instead of failing every request the worker makes
+  USER_AGENT_URL: z.preprocess(
+    emptyAsUndefined,
+    z
+      .url({ protocol: /^https?$/ })
+      .transform((url) => new URL(url).href)
+      .optional()
+  ),
+
   // GA4 Analytics (optional — dashboard disabled when not set)
   GA4_PROPERTY_ID: z.string().optional(),
   GA4_CLIENT_EMAIL: z.string().optional(),

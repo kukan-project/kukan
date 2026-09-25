@@ -34,7 +34,7 @@
  *   - Site entries ONLY (rejected on the environment entry):
  *       name, brand, domainName, hostedZoneId, hostedZoneName, certificateArn,
  *       webAclArn, enableWaf, allowedIpRanges, basicAuth, bucketName,
- *       enableGa4DataApi, timeZone
+ *       enableGa4DataApi, nameSiteInUserAgent, timeZone
  *       (the type still accepts these on the environment entry, but ONLY as
  *       the legacy single-site shape without `sites`. Mixing the shapes —
  *       `sites` plus env-level site fields — is invalid and rejected at synth)
@@ -168,6 +168,7 @@ export const environments = {
         // albPriority: 10, // shared-ALB rule priority (1–999); omit → derived from the site name, set only on a reported collision (ADR-049)
         // bucketName: 'my-resource-bucket', // omit → CDK auto-naming (globally unique)
         // enableGa4DataApi: false,
+        // nameSiteInUserAgent: true, // worker's User-Agent carries this site's URL; public, indexable sites only
         // timeZone: 'Asia/Tokyo', // IANA zone times are prerendered in (env TIME_ZONE); omit → Asia/Tokyo
         // overrides: { web: { maxSize: 2 }, dbPool: { webMax: 5 } }, // site-owned sections only
         // Per-site AI over the environment's `bedrock` above: an object deep-merges

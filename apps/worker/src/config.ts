@@ -252,9 +252,10 @@ export const HEALTH_CHECK_PER_HOST_CONCURRENCY = 2
  * were refused outright and written down as dead links, as they had been every
  * day before the pacing existed. The host states what it expects in
  * `robots.txt`: its server is configured at 1r/s, and the crawlers it names by
- * hand are asked for a two-second delay — the slower of the two, and the one a
- * checker that names itself nowhere has no claim to be measured against.
- * Sitting exactly on a limit also leaves nothing for the jitter either side.
+ * hand are asked for a two-second delay — the slower of the two. The checker
+ * names itself (`user-agent.ts`), so an operator can put it in that group, and
+ * it keeps to the group's delay before being asked to. Sitting exactly on a
+ * limit also leaves nothing for the jitter either side.
  *
  * Affordable because the work is nothing like the budget: a day's staleness
  * window against a five-minute tick is 288 chances to check a few hundred URLs.

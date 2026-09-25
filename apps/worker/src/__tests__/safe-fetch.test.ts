@@ -56,7 +56,7 @@ vi.mock('undici', async (importOriginal) => {
   }
 })
 
-const { safeFetch, ssrfSafeLookup, forgetResolutions, HopRefusedError } =
+const { safeFetch, ssrfSafeLookup, forgetResolutions, HopRefusedError, setUserAgent } =
   await import('../safe-fetch')
 
 describe('ssrfSafeLookup', () => {
@@ -519,6 +519,26 @@ describe('safeFetch', () => {
     const redirect = (status: number, location: string) =>
       new Response('a body nobody reads', { status, headers: { location } })
     const ok = () => new Response('ok', { status: 200 })
+
+    it('names itself on every hop, across origins too', async () => {
+      setUserAgent('KUKAN/1.2.3 (+https://catalog.example)')
+      mockUndiciFetch
+        .mockResolvedValueOnce(redirect(302, 'https://mirror.example.org/data.csv'))
+        .mockResolvedValueOnce(ok())
+
+      await safeFetch('https://example.com/data.csv')
+
+      expect(headersOf(1).get('user-agent')).toBe('KUKAN/1.2.3 (+https://catalog.example)')
+      expect(headersOf(2).get('user-agent')).toBe('KUKAN/1.2.3 (+https://catalog.example)')
+    })
+
+    it("keeps a caller's own User-Agent", async () => {
+      mockUndiciFetch.mockResolvedValueOnce(ok())
+
+      await safeFetch('https://example.com/data.csv', { headers: { 'User-Agent': 'custom/1' } })
+
+      expect(headersOf(1).get('user-agent')).toBe('custom/1')
+    })
 
     it('should reject redirect to internal URL', async () => {
       mockUndiciFetch.mockResolvedValueOnce(redirect(302, 'http://169.254.169.254/latest/'))

@@ -3770,6 +3770,10 @@ function expandV6(addr) {
                 "Name": "OPENSEARCH_INDEX_PREFIX",
                 "Value": "kukan-dev-citya",
               },
+              {
+                "Name": "USER_AGENT_URL",
+                "Value": "https://catalog.city-a.example.jp",
+              },
             ],
             "Essential": true,
             "HealthCheck": {
@@ -6319,6 +6323,23 @@ function expandV6(addr) {
               {
                 "Name": "OPENSEARCH_INDEX_PREFIX",
                 "Value": "kukan-dev-cityb",
+              },
+              {
+                "Name": "USER_AGENT_URL",
+                "Value": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "https://",
+                      {
+                        "Fn::GetAtt": [
+                          "CDNDistributionD4FAE585",
+                          "DomainName",
+                        ],
+                      },
+                    ],
+                  ],
+                },
               },
             ],
             "Essential": true,

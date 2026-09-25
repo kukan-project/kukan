@@ -222,6 +222,13 @@ export function composeSite(
     webService.addEnvironment('BETTER_AUTH_URL', `https://${cdn.distributionDomainName}`)
   }
 
+  if (config.nameSiteInUserAgent) {
+    workerService.addEnvironment(
+      'USER_AGENT_URL',
+      `https://${config.domainName ?? cdn.distributionDomainName}`
+    )
+  }
+
   // --- DNS Record (A Alias → CloudFront) ---
   if (config.domainName && config.hostedZoneId && config.hostedZoneName) {
     const hostedZone = route53.HostedZone.fromHostedZoneAttributes(scope, 'Zone', {

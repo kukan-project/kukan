@@ -122,6 +122,8 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
 COPY --chown=appuser:appgroup --from=worker-deps /app/worker-deploy/node_modules ./node_modules
 COPY --chown=appuser:appgroup --from=build /app/apps/worker/dist ./apps/worker/dist
 COPY --chown=appuser:appgroup --from=build /app/apps/worker/package.json ./apps/worker/
+# The release the worker names in its User-Agent (apps/worker/src/user-agent.ts)
+COPY --chown=appuser:appgroup --from=build /app/package.json ./
 COPY --chown=appuser:appgroup --from=build /app/packages/db/drizzle ./apps/worker/drizzle
 USER appuser
 # DuckDB downloads extensions from the internet on first use (ADR-043 layer 2).

@@ -77,6 +77,8 @@ import {
 } from '@/config'
 import { checkBatch } from './cron/health-check/check-batch'
 import { embedPackage } from './embed/embed-package'
+import { setUserAgent } from './safe-fetch'
+import { buildUserAgent } from './user-agent'
 
 // Skip dotenv in production (env vars injected by container/ECS)
 if (process.env.NODE_ENV !== 'production') {
@@ -85,6 +87,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 const env = loadEnv()
 const log = createLogger({ name: 'worker', level: env.LOG_LEVEL })
+setUserAgent(buildUserAgent(env))
 
 // Initialize database (worker processes jobs sequentially, so fewer connections needed)
 const db = createDb(env.DATABASE_URL, {

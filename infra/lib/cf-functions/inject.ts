@@ -21,7 +21,7 @@ export function loadViewerRequestCode(
   basicAuth?: { username: string; password: string }
 ): string {
   let src = readFileSync(join(here, 'viewer-request.js'), 'utf-8')
-  if (allowedIpRanges && allowedIpRanges.length > 0) {
+  if (allowedIpRanges) {
     src = src.replace('var ALLOWED = []', `var ALLOWED = ${JSON.stringify(allowedIpRanges)}`)
   }
   if (basicAuth) {

@@ -35,6 +35,22 @@ describe('envSchema', () => {
     expect(envSchema.safeParse({ ...base, TIME_ZONE: 'Tokyo' }).success).toBe(false)
   })
 
+  it('should take USER_AGENT_URL as an ASCII http(s) URL, and leave it unset when blank', () => {
+    const base = {
+      SQS_QUEUE_URL: 'http://localhost:9324/queue/test',
+      BETTER_AUTH_SECRET: 'a'.repeat(32),
+    }
+    const parse = (USER_AGENT_URL: string) => envSchema.safeParse({ ...base, USER_AGENT_URL })
+    const unicode = parse('https://データ.jp/カタログ')
+    // A header carries ASCII only; left as typed, every request the worker made would throw
+    const normalized = unicode.success ? unicode.data.USER_AGENT_URL : undefined
+    expect(normalized).toMatch(/^https:\/\/xn--[a-z0-9-]+\.jp\/%E3/)
+    expect(() => new Headers({ 'user-agent': `KUKAN (+${normalized})` })).not.toThrow()
+    const blank = parse('')
+    expect(blank.success && blank.data.USER_AGENT_URL).toBeUndefined()
+    expect(parse('javascript:alert(1)').success).toBe(false)
+  })
+
   it('should reject missing required fields', () => {
     const result = envSchema.safeParse({})
 
