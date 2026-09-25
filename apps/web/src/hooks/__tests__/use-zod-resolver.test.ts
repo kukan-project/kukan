@@ -26,6 +26,33 @@ describe('useZodResolver', () => {
     expect(errors.url?.message).toBe(en.validation.httpOnly)
   })
 
+  it("translates Zod's own wording for length, email and URL checks", async () => {
+    const schema = z.object({
+      title: z.string().min(1),
+      name: z.string().min(2),
+      email: z.email(),
+      link: z.url(),
+    })
+    const errors = await errorsFor(schema, { title: '', name: 'a', email: 'x', link: 'y' })
+    expect(errors.title?.message).toBe(en.common.required)
+    expect(errors.name?.message).toBe('Use at least 2 characters')
+    expect(errors.email?.message).toBe(en.auth.invalidEmail)
+    expect(errors.link?.message).toBe(en.validation.invalidUrl)
+  })
+
+  it("translates Zod's wording for a string over its limit", async () => {
+    const errors = await errorsFor(z.object({ name: z.string().max(4) }), { name: 'abcdef' })
+    expect(errors.name?.message).toBe('Use at most 4 characters')
+  })
+
+  it("keeps Zod's own wording for an exact length, on either side of it", async () => {
+    const schema = z.object({ code: z.string().length(3) })
+    for (const code of ['a', 'abcd']) {
+      const errors = await errorsFor(schema, { code })
+      expect(errors.code?.message).toMatch(/exactly 3/)
+    }
+  })
+
   it('leaves a message that is not a shared one as it is', async () => {
     const errors = await errorsFor(z.object({ name: z.string().min(1, 'passwordRequired') }), {
       name: '',
