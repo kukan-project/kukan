@@ -321,8 +321,10 @@ export async function checkBatch(
         updateHealthStatus(db, { id: row.id, url: row.url! }, 'error', { error: unsafe.message })
       )
       summary.checked++
-      if (recorded) summary.error++
-      else summary.discarded++
+      if (recorded) {
+        summary.error++
+        log.warn({ resourceId: row.id, url: row.url, error: unsafe.message }, 'Health check failed')
+      } else summary.discarded++
       return
     }
     // It parsed, or `checkUrlSafety` would have said so.
@@ -377,12 +379,18 @@ export async function checkBatch(
         summary.ok++
       } else {
         summary.error++
-        if (result.errorDetail) {
-          log.warn(
-            { resourceId: res.id, url: res.url, detail: result.errorDetail },
-            'Health check failed'
-          )
-        }
+        // Every failure: the row and the health screen hold the status too, but
+        // this is where it can be read without sysadmin access to the site
+        log.warn(
+          {
+            resourceId: res.id,
+            url: res.url,
+            httpStatus: result.httpStatus ?? undefined,
+            error: result.errorMessage,
+            detail: result.errorDetail ?? undefined,
+          },
+          'Health check failed'
+        )
       }
 
       // 4a. Enqueue changed resources to pipeline for re-fetch

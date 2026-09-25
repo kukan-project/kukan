@@ -132,6 +132,79 @@ describe('checkBatch', () => {
     expect(mockExecuteHeadCheck).toHaveBeenCalledOnce()
   })
 
+  it('logs an HTTP failure with its status, not only a failure with a cause underneath', async () => {
+    const rows = [
+      {
+        id: 'res-1',
+        url: 'https://example.com/gone.csv',
+        hash: null,
+        healthStatus: 'ok',
+        healthCheckedAt: null,
+        healthCheckState: {},
+      },
+    ]
+    const log = makeMockLogger()
+    mockExecuteHeadCheck.mockResolvedValue(
+      makeHeadResult({
+        httpStatus: 404,
+        healthStatus: 'error',
+        errorMessage: 'HTTP 404 Not Found',
+        errorDetail: null,
+      })
+    )
+
+    const summary = await checkBatch(
+      makeMockDb(rows) as never,
+      makeMockQueue(),
+      24,
+      168,
+      log as never
+    )
+
+    expect(summary.error).toBe(1)
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceId: 'res-1',
+        httpStatus: 404,
+        error: 'HTTP 404 Not Found',
+      }),
+      'Health check failed'
+    )
+  })
+
+  it('logs a URL refused before any request, as it does a failed request', async () => {
+    const rows = [
+      {
+        id: 'res-1',
+        url: 'ftp://example.com/data.csv',
+        hash: null,
+        healthStatus: 'unknown',
+        healthCheckedAt: null,
+        healthCheckState: {},
+      },
+    ]
+    const log = makeMockLogger()
+
+    const summary = await checkBatch(
+      makeMockDb(rows) as never,
+      makeMockQueue(),
+      24,
+      168,
+      log as never
+    )
+
+    expect(summary.error).toBe(1)
+    expect(mockExecuteHeadCheck).not.toHaveBeenCalled()
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceId: 'res-1',
+        url: 'ftp://example.com/data.csv',
+        error: expect.any(String),
+      }),
+      'Health check failed'
+    )
+  })
+
   it('discards a verdict whose row was edited while the check was in flight', async () => {
     // The URL is checked over seconds, and an edit inside them resets these
     // columns for the new address (`ResourceService.update`). Writing the old
@@ -174,19 +247,15 @@ describe('checkBatch', () => {
       },
     ]
     const db = makeMockDb(rows, [])
+    const log = makeMockLogger()
 
-    const summary = await checkBatch(
-      db as never,
-      makeMockQueue(),
-      24,
-      168,
-      makeMockLogger() as never
-    )
+    const summary = await checkBatch(db as never, makeMockQueue(), 24, 168, log as never)
 
     expect(summary.checked).toBe(1)
     expect(summary.discarded).toBe(1)
     expect(summary.error).toBe(0)
     expect(mockExecuteHeadCheck).not.toHaveBeenCalled()
+    expect(log.warn).not.toHaveBeenCalled()
   })
 
   it('keys the write on the URL it checked, not on the id alone', async () => {
