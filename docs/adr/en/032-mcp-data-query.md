@@ -225,6 +225,39 @@ preview directly** rather than loading data into dedicated tables.
 1. **Expand queryable targets**: today only ≤100MB CSV/TSV. Extend to large files or JSON (raise the cap,
    or query the raw file directly via DuckDB httpfs).
 2. **Split out a query service**: separate from the web process under load (option B).
+
+   **Under consideration (undecided, unmeasured): the point of separating is containing failure,
+   not saving memory.** DuckDB runs as a native addon inside the Node process. The instance is
+   throwaway but the process is shared, so when a query hits the container's limit the OOM killer
+   takes the whole web Node process, and public pages and the API go down with it. On small
+   (512MB) a single worst-case query can do this, because one slot's budget (498MB, Part B-5)
+   does not fit to begin with. Separating does not reduce the memory needed (a child process adds
+   a Node runtime's worth), but it shrinks the unit of failure to one query.
+
+   | Approach                                                                     | Contains failure                                    | Memory limit                                 | Any environment                        | Cost                                                      |
+   | ---------------------------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------- | -------------------------------------- | --------------------------------------------------------- |
+   | Child process                                                                | The child is chosen on OOM (raised `oom_score_adj`) | Approximate (parent watches RSS, `SIGKILL`s) | Yes                                    | A Node runtime's memory and start-up time per query       |
+   | Sidecar container (per-container hard limit on ECS / `mem_limit` in Compose) | Yes                                                 | Strict (cgroup)                              | Yes                                    | Memory held at all times; one more interface and artifact |
+   | Lambda                                                                       | Yes                                                 | Strict (function memory setting)             | No (AWS only; an exception to ADR-005) | Cold starts; a synchronous invoke cannot be cancelled     |
+   - **A child process cannot be given a strict limit.** Delegating a cgroup needs privileges inside
+     a container, `RLIMIT_AS` is impractical because V8 and DuckDB's allocator reserve virtual space
+     up front, and Linux ignores `RLIMIT_RSS`.
+   - **Separating does not add CPU.** A Fargate vCPU is a quota on the task's whole cgroup, so query
+     threads that exhaust it stall web as well (small is 0.25 vCPU with `threads = 2`). A child
+     process can be `nice`d so web goes first, but the quota itself is unchanged.
+   - **A child process is also what makes skipping materialization safe.** Part B-4's
+     materialization alone adds 150–230MB of RSS (measured on a table from a 55MB CSV). Querying
+     the Parquet directly avoids it, but leaves a path to storage open while user SQL runs. With no
+     credentials in the child's environment and only a signed URL passed in, that object is all
+     user SQL can reach.
+   - **Scope is the query path.** The OData feed (ADR-055) stays in-process: its pages are light
+     (55–65MB each) and it gets its speed from reusing instances. Version diffs (ADR-043) share the
+     slot but hold a catalog connection, so more would have to be handed to a child; whether to
+     include them is decided at implementation.
+   - **The current leaning is a child process.** If "web is not taken down in the usual case" is
+     enough, a child process; if web must be guaranteed a fixed amount of memory, a sidecar. Adopting
+     either revises the decision under "Query process placement", after implementing and measuring.
+
 3. **Cross-resource JOINs**: join multiple Parquets in one query (register multiple tables).
 4. ~~**Cache temp files / instances**~~ (half resolved): **there is no temp file to cache any more** —
    the read goes straight to object storage (Part B-3). What is left of this item is caching the
