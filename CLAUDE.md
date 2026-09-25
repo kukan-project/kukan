@@ -264,6 +264,7 @@ pnpm format        # Prettier フォーマット
 - リソースの AI 生成抄録（推論はサマリー文に限り、値は生成しない） → `docs/adr/jp/053-ai-resource-summary.md`
 - 埋め込みの単位はリソース（「どの表を開けばよいか」に答える、ADR-034 の単位部分を置換） → `docs/adr/jp/054-resource-embedding-unit.md`
 - BI ツールからの表データ接続（OData 読み取り専用、バルクはファイルへ誘導、Step 1 実装済み） → `docs/adr/jp/055-bi-table-access-odata.md`
+- 素直な表の XLSX をテーブルとして解釈（判定は規則、AI は範囲の提案に限り人が確定、提案） → `docs/adr/jp/057-xlsx-table-interpretation.md`
 
 新しい設計判断が必要になったら、同じフォーマットで `jp/` と `en/` の両方にADRを追加する。
 既存ADRの判断を覆す場合は、新ADRで「ADR-XXX を置換する」と明記し、
