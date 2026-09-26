@@ -5,9 +5,12 @@
 
 # ---- Base (shared by all targets: upgraded OS) ----
 # Pinned by digest for a reproducible, tamper-evident base (Scorecard
-# Pinned-Dependencies). The digest below is node 24.18.0 on alpine 3.24.1;
-# Dependabot (docker ecosystem) bumps it as the node:24-alpine tag moves.
-FROM public.ecr.aws/docker/library/node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS base
+# Pinned-Dependencies). The digest below is node 24.21.0 on alpine 3.24.2.
+# Dependabot (docker ecosystem) is configured to bump it as the node:24-alpine
+# tag moves, but has not once for this registry: compare `node -v` here with
+# the tag's by hand until it does. `apk upgrade` covers the OS packages
+# meanwhile; nothing covers node itself, which a scan of the image does not see.
+FROM public.ecr.aws/docker/library/node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS base
 RUN apk upgrade --no-cache
 WORKDIR /app
 
