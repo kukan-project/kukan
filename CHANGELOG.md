@@ -6,6 +6,84 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 The #nnn references are internal change-tracking numbers, not issues or pull requests on this repository.
 本文中の #nnn は開発時の内部管理番号であり、このリポジトリの issue・PR 番号ではありません。
 
+## [0.32.0] - 2026-09-27
+
+**Highlights**
+
+- feat(api): run resource queries in a child process so one query cannot take the web server down (#720) — DuckDB used to run inside the web process, so a query that hit the container's memory limit got the whole web server killed, taking public pages and the API down with it. Memory a query allocated also stayed with the process after it finished, so the first heavy query survived and the second one crashed. Queries (`POST /api/v1/resources/{id}/query` and MCP `query_resource`) now each run in their own child process: the web server stops a child before it reaches the memory limit and answers 400, a timeout answers 408, and a caller that disconnects stops its query at once. The child gets only an allow-listed environment — no database password, auth secret or cloud credentials. In a 512 MB container, two full-width sorts in a row used to kill the container on the second; both now complete, and what the process keeps afterwards dropped from about 500 MB to 120 MB.
+- feat(infra): log CloudFront requests per site and make them queryable from Athena (#731) — on AWS, every site now writes CloudFront access logs to its own bucket, kept for `cdnLogRetentionDays` (default 90). Each line records the client IP, User-Agent, URI and query string, status, time taken and whether the cache served it; cookies are not logged. The stack also creates a Glue table and an Athena workgroup for each site, so a traffic burst can be queried as soon as it is noticed, without writing a table definition first; their names are in the stack outputs `CdnLogTable` and `CdnLogWorkGroup`. The logs cost only S3 storage and writes, a few cents a month at a million requests; Athena bills per query. In opt-in regions (af-south-1, ap-east-1 …) CloudFront cannot deliver to the bucket, so those sites get no logs and synth warns.
+
+**Upgrade Notes**
+
+- Docker Compose: the object storage image changes from `pgsty/minio` to `pgsty/silo` (#705), the same project under its new name — the old name stopped receiving releases, security fixes included. Storage format and settings are compatible and existing volumes carry over; nothing to do.
+- AWS: the web service now scales on CPU utilization (target 60%) instead of requests per target (#729). The deploy replaces the scaling policy in place.
+- The worker now identifies itself as `KUKAN/<version>` when fetching resources and checking links (#713), instead of the HTTP client's default. If a publisher's server filters by User-Agent, that is what it will see.
+
+**Features**
+
+- feat(worker): name the worker in its User-Agent, with a contact URL only for a public site (#713) — the servers the worker fetches from could not tell what the requests were for or whom to contact. A contact URL is added (`KUKAN/<version> (+<URL>)`) only when asked for: `USER_AGENT_URL` on Docker Compose, `nameSiteInUserAgent: true` on an AWS site. Whether a site is public cannot be read from its address, so a closed site's URL is never sent by default; setting it on a site behind Basic auth or an IP allowlist stops synth.
+
+**Bug Fixes**
+
+- fix(web): make the dataset edit page say what is saved, what previews, and which field blocks publishing (#712) — a draft's missing fields (URL name, organization, license) are now marked on the fields themselves, not only in the list above the publish button. The resource card states the preview limits (10 MB for Office files and JSON/GeoJSON, the first 1 MB of text), and that adding, editing, deleting or replacing a resource is saved immediately while reordering needs "Save order".
+- fix(api,web): name each dashboard refusal with a problem type and translate it (#710) — the API returned every refusal as `about:blank` with an English message, so the dashboard could neither tell them apart nor show them in Japanese. Refusals reachable from the dashboard now carry an RFC 9457 `type` (sysadmin only, role required, duplicate name, what publishing is missing, and so on) and the screens translate them. The English `detail` is unchanged for API clients and logs.
+- fix(web): translate the shared schemas' validation messages in forms (#709), and Zod's default wording for length, email and URL checks (#714) — form errors such as the URL-name format or "http/https only" showed in English on a Japanese screen.
+- fix(api): accept a direct upload whose filename is not ASCII (#707) — `POST /api/v1/resources/{id}/upload` failed with 500 for a name like `人口統計.csv`. The name is now read as UTF-8, and stored in the object's metadata RFC 2047-encoded, which S3 decodes. Uploads from the web screen were not affected.
+- fix(worker): log every failed health check with its HTTP status (#715) — a 404 or 403 left nothing in the log, so a blocked link could not be told from a dead one without signing in.
+
+**Performance**
+
+- perf(infra): scale the web service on CPU utilization instead of request count (#729) — every page saturates the CPU first, and a fixed 1,000 requests per minute per task fitted no size: a small task tops out near 500 a minute, a large one near 3,000. Scale-out waits 180 seconds between steps, scale-in 300.
+
+**Dependencies**
+
+- build(docker): Node 24.21.0 on Alpine 3.24.2 as the base image (#725), up from 24.18.0.
+- chore(docker): object storage image `pgsty/silo` (#705) — see Upgrade Notes.
+
+**Documentation**
+
+- docs(adr): ADR-057 proposes reading a plain-table XLSX as a table, with rules deciding and AI only proposing the range (#716); ADR-032 records the options for isolating queries from the web process (#717); ADR-055 is marked accepted with step 1 shipped (#708).
+- docs(mcp): the catalog and dataset tools describe what they return (#727).
+
+---
+
+**ハイライト**
+
+- feat(api): リソースへのクエリを子プロセスで実行し、1 本のクエリで web サーバーが落ちないようにする（#720）— DuckDB は web のプロセスの中で動いていたため、コンテナのメモリ上限に達したクエリは web サーバーごと停止させ、公開ページと API も巻き添えになっていました。クエリが確保したメモリは終わった後もプロセスに残るので、重いクエリの 1 本目は通り、2 本目で落ちていました。今回から、クエリ（`POST /api/v1/resources/{id}/query` と MCP の `query_resource`）は 1 本ずつ専用の子プロセスで動きます。web サーバーはメモリ上限に達する前に子を止めて 400 を返し、タイムアウトは 408 を返し、呼び出し元が切断すればすぐに止めます。子に渡す環境変数は許可したものだけで、DB のパスワード・認証の secret・クラウドの資格情報は渡しません。512 MB のコンテナで全列のソートを 2 回続けると 2 回目でコンテナが落ちていましたが、2 回とも完了するようになり、実行後にプロセスに残るメモリは約 500 MB から 120 MB になりました。
+- feat(infra): CloudFront のリクエストをサイトごとに記録し、Athena から読めるようにする（#731）— AWS では、すべてのサイトが CloudFront のアクセスログを専用のバケットに書くようになりました。保持期間は `cdnLogRetentionDays`（省略時 90 日）です。1 行ごとに、アクセス元の IP・User-Agent・URI とクエリ文字列・ステータス・応答時間・キャッシュに当たったかが残ります。Cookie は残しません。スタックはサイトごとに Glue のテーブルと Athena のワークグループも作るので、アクセスの集中に気づいたらテーブル定義を書かずにすぐクエリできます。名前はスタック出力の `CdnLogTable` と `CdnLogWorkGroup` にあります。ログの費用は S3 の保存と書き込みだけで、月 100 万リクエストで数セントです。Athena はクエリごとの課金です。オプトインリージョン（af-south-1・ap-east-1 など）では CloudFront がバケットに配信できないため、そのサイトにはログを作らず、synth で警告を出します。
+
+**アップグレード時の注意**
+
+- Docker Compose: オブジェクトストレージのイメージが `pgsty/minio` から `pgsty/silo` に替わります（#705）。同じプロジェクトの改名後の名前で、旧名ではセキュリティ修正を含むリリースが止まっています。保存形式も設定も互換で、既存のボリュームはそのまま引き継がれます。作業は要りません。
+- AWS: web サービスのスケーリングの指標が、タスクあたりのリクエスト数から CPU 使用率（目標 60%）に替わります（#729）。デプロイ時にスケーリングのポリシーが差し替わります。
+- worker がリソースの取得とリンクの検査で `KUKAN/<バージョン>` と名乗るようになりました（#713）。以前は HTTP クライアントの既定値でした。公開元のサーバーが User-Agent で振り分けている場合は、この名前が見えます。
+
+**新機能**
+
+- feat(worker): worker が User-Agent で名乗り、連絡先の URL は公開サイトだけに付ける（#713）— worker が取得しに行く先のサーバーからは、何のためのアクセスで、誰に連絡すればよいのかが分かりませんでした。連絡先の URL（`KUKAN/<バージョン> (+<URL>)`）は、明示したときだけ付けます。Docker Compose では `USER_AGENT_URL`、AWS ではサイトの `nameSiteInUserAgent: true` です。公開サイトかどうかはアドレスからは判断できないため、既定では閉じたサイトの URL を送りません。Basic 認証や IP 許可リストのあるサイトで有効にすると synth が止まります。
+
+**バグ修正**
+
+- fix(web): データセット編集ページで、何が保存されるか・何がプレビューされるか・どの欄が公開を止めているかを示す（#712）— 下書きで足りない項目（URL 識別子・組織・ライセンス）を、公開ボタンの上の一覧だけでなく、その欄自体にも示すようにしました。リソースのカードには、プレビューの上限（Office ファイルと JSON・GeoJSON は 10 MB、テキストは先頭 1 MB）と、リソースの追加・編集・削除・差し替えはその場で保存され、並び順の変更だけは「並び順を保存」で確定することを表示します。
+- fix(api,web): 管理画面に返す拒否ごとに problem type を付け、翻訳して表示する（#710）— API はすべての拒否を `about:blank` と英語のメッセージで返していたため、管理画面では理由を区別できず、日本語でも表示できませんでした。管理画面から届く拒否に RFC 9457 の `type`（sysadmin のみ・ロール不足・名前の重複・公開に足りない項目など）を付け、画面で翻訳します。API を直接使う人とログのため、英語の `detail` は変わりません。
+- fix(web): フォームで、共有スキーマの検証メッセージ（#709）と、Zod 既定の文字数・メールアドレス・URL の検査の文言（#714）を翻訳する — URL 識別子の形式や「http/https のみ」などのエラーが、日本語の画面でも英語のまま出ていました。
+- fix(api): ASCII 以外の文字を含むファイル名の直接アップロードを受け付ける（#707）— `POST /api/v1/resources/{id}/upload` に `人口統計.csv` のような名前を送ると 500 になっていました。名前を UTF-8 として読み、オブジェクトのメタデータには S3 がデコードする RFC 2047 の形で保存します。Web 画面からのアップロードは影響を受けていませんでした。
+- fix(worker): ヘルスチェックの失敗は、HTTP ステータス付きで毎回ログに出す（#715）— 404 や 403 ではログに何も残らなかったため、サイトにサインインしないと、遮断なのかリンク切れなのかを見分けられませんでした。
+
+**パフォーマンス**
+
+- perf(infra): web サービスのスケーリングを、リクエスト数ではなく CPU 使用率で行う（#729）— どのページも先に CPU が上限に達し、タスクあたり 1 分 1,000 件という固定値はどのサイズにも合いませんでした（small は 1 分 500 件前後、large は 3,000 件前後で頭打ち）。スケールアウトは 180 秒、スケールインは 300 秒の間隔を空けます。
+
+**依存関係**
+
+- build(docker): ベースイメージを Node 24.21.0 / Alpine 3.24.2 に更新（#725）。以前は 24.18.0 でした。
+- chore(docker): オブジェクトストレージのイメージを `pgsty/silo` に変更（#705）— アップグレード時の注意を参照。
+
+**ドキュメント**
+
+- docs(adr): ADR-057 で、素直な表の XLSX をテーブルとして解釈する案（判定は規則、AI は範囲の提案に限る）を提案（#716）。ADR-032 に、クエリを web のプロセスから切り離す選択肢を記録（#717）。ADR-055 を採用済みとし、Step 1 の実装を記録（#708）。
+- docs(mcp): カタログとデータセットのツールが、何を返すかを説明するようにした（#727）。
+
 ## [0.31.0] - 2026-09-24
 
 **Highlights**
