@@ -45,19 +45,18 @@ function readLimitMb(path: string): number | null {
  */
 export async function containerAnonMb(source: ProcessMemory['source']): Promise<number | null> {
   if (source === 'host') return null
-  const { path, line } = ANON_STAT[source]
   try {
-    const bytes = line.exec(await readFile(path, 'utf8'))
+    // Literal paths, not picked from a table: Turbopack cannot tell which file a
+    // computed path names, and traces the whole project into the image instead
+    const bytes =
+      source === 'cgroup-v2'
+        ? /^anon (\d+)$/m.exec(await readFile('/sys/fs/cgroup/memory.stat', 'utf8'))
+        : /^total_rss (\d+)$/m.exec(await readFile('/sys/fs/cgroup/memory/memory.stat', 'utf8'))
     return bytes ? Number(bytes[1]) / 1024 / 1024 : null
   } catch {
     return null
   }
 }
-
-const ANON_STAT = {
-  'cgroup-v2': { path: '/sys/fs/cgroup/memory.stat', line: /^anon (\d+)$/m },
-  'cgroup-v1': { path: '/sys/fs/cgroup/memory/memory.stat', line: /^total_rss (\d+)$/m },
-} as const
 
 export function processMemory(): ProcessMemory {
   const v2 = readLimitMb('/sys/fs/cgroup/memory.max')
