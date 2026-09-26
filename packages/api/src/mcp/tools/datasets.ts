@@ -140,7 +140,11 @@ export function registerDatasetTools(server: McpServer, ctx: DatasetToolsContext
     'get_dataset',
     {
       description:
-        'Get detailed information about a specific dataset, including all its resources.',
+        'Get detailed information about a specific dataset, including all its resources. ' +
+        'Returns the title, name, ID, organization, full description, tags, groups, and ' +
+        'timestamps, then the resources in page order under their section headings, each with ' +
+        'its ID, format, and a description cut to 100 characters. Pass a resource ID to ' +
+        'get_resource for its full metadata, or to get_resource_schema before querying it.',
       inputSchema: {
         nameOrId: z.string().describe('Dataset name (slug) or UUID'),
       },

@@ -22,7 +22,11 @@ export function registerCatalogTools(server: McpServer, ctx: CatalogToolsContext
   server.registerTool(
     'list_organizations',
     {
-      description: 'List organizations in the data catalog. Organizations own and manage datasets.',
+      description:
+        'List organizations in the data catalog. Organizations own and manage datasets. ' +
+        'Each entry gives the title, the name (slug) that search_datasets takes as its ' +
+        '`organization` filter, a description cut to 150 characters, and its dataset count; ' +
+        'the last line is the total, for paging with offset.',
       inputSchema: {
         q: z.string().optional().describe('Search query to filter organizations by name or title'),
         offset: z.number().min(0).default(0).describe('Number of results to skip (for pagination)'),
@@ -55,7 +59,11 @@ export function registerCatalogTools(server: McpServer, ctx: CatalogToolsContext
     'list_groups',
     {
       description:
-        'List topic groups in the data catalog. Groups organize datasets by theme or category.',
+        'List topic groups in the data catalog. Groups organize datasets by theme or category. ' +
+        'Each entry gives the title, the name (slug), a description cut to 150 characters, and ' +
+        'its dataset count; the last line is the total, for paging with offset. ' +
+        'search_datasets has no group filter, so use a group to learn the themes a catalog ' +
+        'covers rather than to narrow a search.',
       inputSchema: {
         q: z.string().optional().describe('Search query to filter groups by name or title'),
         offset: z.number().min(0).default(0).describe('Number of results to skip (for pagination)'),
@@ -88,7 +96,9 @@ export function registerCatalogTools(server: McpServer, ctx: CatalogToolsContext
     'list_tags',
     {
       description:
-        'List tags used in the data catalog. Tags are keywords assigned to datasets for classification.',
+        'List tags used in the data catalog. Tags are keywords assigned to datasets for ' +
+        'classification. Returns tag names only, comma-separated, followed by the total; the ' +
+        'names are what search_datasets takes as its `tags` filter.',
       inputSchema: {
         q: z.string().optional().describe('Search query to filter tags by name'),
         offset: z.number().min(0).default(0).describe('Number of results to skip (for pagination)'),
