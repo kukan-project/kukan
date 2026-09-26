@@ -11,7 +11,7 @@ import type { StorageAdapter } from '@kukan/storage-adapter'
 import { ResourceService } from './resource-service'
 import { PipelineService, isQueryable } from './pipeline-service'
 import type { AuthUser } from '../auth/permissions'
-import { runSandboxedQuery } from './query/duckdb-sandbox'
+import { runQueryInProcess } from './query/query-process'
 import { assertReadOnlySql } from './query/sql-guard'
 import { withDuckdbSlot } from './query/semaphore'
 import {
@@ -82,8 +82,9 @@ export class QueryService {
     return withDuckdbSlot(async () => {
       const startedAt = Date.now()
       // Read where it lives, through a signed URL rather than a copy on this
-      // disk or `readUrl`'s `s3://`. The reasoning is on `materialize`.
-      const result = await runSandboxedQuery(
+      // disk or `readUrl`'s `s3://`. The reasoning is on `materialize`. In a
+      // process of its own, so a query too big for the container is what dies.
+      const result = await runQueryInProcess(
         await this.storage.getSignedUrl(previewKey, { expiresIn: QUERY_SOURCE_URL_EXPIRES_S }),
         sql,
         {
@@ -92,8 +93,8 @@ export class QueryService {
           timeoutMs: QUERY_TIMEOUT_MS,
           memoryLimitMb: QUERY_MEMORY_LIMIT_MB,
           threads: QUERY_THREADS,
-          signal,
-        }
+        },
+        { signal }
       )
 
       const elapsedMs = Date.now() - startedAt

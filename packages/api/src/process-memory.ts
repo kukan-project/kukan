@@ -14,6 +14,7 @@
  */
 
 import { readFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { totalmem } from 'node:os'
 
 export interface ProcessMemory {
@@ -33,6 +34,30 @@ function readLimitMb(path: string): number | null {
     return null
   }
 }
+
+/**
+ * Anonymous memory the container holds now (MiB), or null where there is no
+ * cgroup to read.
+ *
+ * Anonymous only: page cache — a query's spill files among it — is reclaimed
+ * before the OOM killer runs, so counting it would call a container full that
+ * is not.
+ */
+export async function containerAnonMb(source: ProcessMemory['source']): Promise<number | null> {
+  if (source === 'host') return null
+  const { path, line } = ANON_STAT[source]
+  try {
+    const bytes = line.exec(await readFile(path, 'utf8'))
+    return bytes ? Number(bytes[1]) / 1024 / 1024 : null
+  } catch {
+    return null
+  }
+}
+
+const ANON_STAT = {
+  'cgroup-v2': { path: '/sys/fs/cgroup/memory.stat', line: /^anon (\d+)$/m },
+  'cgroup-v1': { path: '/sys/fs/cgroup/memory/memory.stat', line: /^total_rss (\d+)$/m },
+} as const
 
 export function processMemory(): ProcessMemory {
   const v2 = readLimitMb('/sys/fs/cgroup/memory.max')

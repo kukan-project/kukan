@@ -63,6 +63,44 @@ export const QUERY_MEMORY_LIMIT_MB = 256
  */
 export const QUERY_SLOT_RSS_MB = Math.ceil(1.3 * QUERY_MEMORY_LIMIT_MB + 165)
 
+/**
+ * What a resource query's own process holds before it reads anything: Node, the
+ * DuckDB library and an instance with `httpfs` loaded, measured at 105–114 MB of
+ * RSS inside the web image. The slot above was measured inside a process that
+ * already had them, so it does not include them.
+ *
+ * RSS, so the library's shared pages count here although the container is
+ * charged for them once; measured as the container's peak, a query in its own
+ * process cost 6 MB more than in the web server's.
+ */
+export const QUERY_PROCESS_BASE_MB = 115
+
+/**
+ * The RSS at which the parent kills a resource query's process
+ * (`query/query-process.ts`): the slot's worst case on top of the process it
+ * runs in. The bound where the container has room for it.
+ */
+export const QUERY_PROCESS_RSS_MB = QUERY_SLOT_RSS_MB + QUERY_PROCESS_BASE_MB
+
+/**
+ * How close to its limit, in anonymous memory, the container may get while a
+ * query runs before the query's process is killed (`overBudget`). It covers the
+ * web server's own growth between two reads; 64 refused sorts a 512 MB task
+ * had run in process, 32 let them through (ADR-032).
+ */
+export const QUERY_WEB_HEADROOM_MB = 32
+
+/** How often the parent reads the query process's RSS (ms). */
+export const QUERY_RSS_POLL_MS = 100
+
+/**
+ * How long past {@link QUERY_TIMEOUT_MS} the parent waits before killing the
+ * query's process. The process interrupts its own statement at the timeout and
+ * answers 408 itself; this is for what `interrupt()` does not reach (a blocked
+ * HTTP read, `materialize`) and for the process's own start.
+ */
+export const QUERY_KILL_GRACE_MS = 2_000
+
 /** Per-query DuckDB thread count. */
 export const QUERY_THREADS = 2
 

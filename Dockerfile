@@ -69,8 +69,13 @@ COPY --chown=appuser:appgroup --from=build /app/apps/web/public ./apps/web/publi
 # Next.js standalone traces the .node addon but not libduckdb.so (a dynamic dependency).
 # Copy it to a dedicated directory and point LD_LIBRARY_PATH there.
 COPY --chown=appuser:appgroup --from=deps /app/node_modules/.pnpm/@duckdb+node-bindings-linux-x64-musl@*/node_modules/@duckdb/node-bindings-linux-x64-musl/libduckdb.so /app/duckdb-lib/
+# The process a resource query runs in (ADR-032). Next bundles @kukan/api from
+# source, so the child's own file is not in the standalone output. It sits
+# under .pnpm because that is where @duckdb/node-api, its one import, resolves.
+COPY --chown=appuser:appgroup --from=build /app/packages/api/dist/services/query/query-child.mjs /app/node_modules/.pnpm/kukan-query-child.mjs
 USER appuser
-ENV NODE_ENV=production PORT=3000 LD_LIBRARY_PATH=/app/duckdb-lib
+ENV NODE_ENV=production PORT=3000 LD_LIBRARY_PATH=/app/duckdb-lib \
+  QUERY_CHILD_ENTRY=/app/node_modules/.pnpm/kukan-query-child.mjs
 # DuckDB downloads extensions from the internet on first use (ADR-043 layer 2).
 # Fetch them at build time: a closed-network deployment (LGWAN and similar) has
 # no egress, and even with egress the first query would stall on ~99 MB.

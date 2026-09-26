@@ -5,6 +5,7 @@
 ## Status
 
 **Accepted** — Both Part A (schema persistence) and Part B (server-side DuckDB query) are implemented.
+Query process placement was revised to a child process (option C) after measurement (open issue 2).
 
 Persists the column schema derived by ADR-029 ("CSV/TSV preview Parquet column type inference")
 and extends the query capability of ADR-016 ("DuckDB-WASM data explorer") to the server side so it
@@ -63,11 +64,14 @@ preview directly** rather than loading data into dedicated tables.
 
 ### Query process placement
 
-- **A) Inside the API (web) process (chosen)** — simplest; reuses storage adapter, auth, and visibility
+- **A) Inside the API (web) process (originally chosen → revised to C)** — simplest; reuses storage adapter, auth, and visibility
   checks. Trades a native addon dependency and memory load onto web, acceptable given the ≤50MB preview
   cap (ADR-029) and bounded concurrency.
 - **B) Dedicated query service / Worker** — isolates heavy queries but adds components and a deploy path.
   Split out later when scale demands it (open issue).
+- **C) A child process in the web container (chosen, revised)** — only resource queries run, one
+  child process per query. When the container's limit is reached, what dies is that one query, not
+  web. Background and measurements are in open issue 2.
 
 ## Decision
 
@@ -213,6 +217,11 @@ preview directly** rather than loading data into dedicated tables.
   and **the alpine musl binding is resolved, so no Docker base-image change is needed** (verified on
   `node:24-alpine`). Set memory caps both in the query sandbox (`memory_limit`) and the ECS task
   definition.
+  **The resource-query child process (open issue 2) is built separately as one self-contained file**
+  (`query-child.mjs`, esbuild; its only remaining external import is `@duckdb/node-api`). Next bundles
+  `@kukan/api` from source, so the child's file is not in the standalone output, and a sibling file
+  cannot be found from `import.meta.url` (the build tries to resolve it and fails). The image puts the
+  file under `.pnpm`, where `@duckdb/node-api` resolves, and passes its location in `QUERY_CHILD_ENTRY`.
 - **Security**: this opens a raw-SQL surface to an external (AI) caller; the sandbox settings (notably
   `enable_external_access=false` + `lock_configuration=true`) are mandatory and a review focus.
 - **Observability**: log the query SQL, execution time, and truncation (rows/time) (ADR-019).
@@ -224,10 +233,72 @@ preview directly** rather than loading data into dedicated tables.
 
 1. **Expand queryable targets**: today only ≤100MB CSV/TSV. Extend to large files or JSON (raise the cap,
    or query the raw file directly via DuckDB httpfs).
-2. **Split out a query service**: separate from the web process under load (option B).
+2. ~~**Split out a query service**~~ (resolved: child process, option C): separate from the web process under load (option B).
 
-   **Under consideration (undecided, unmeasured): the point of separating is containing failure,
-   not saving memory.** DuckDB runs as a native addon inside the Node process. The instance is
+   **Resolved (child process adopted, resource-query path only).** Implemented as option C and
+   measured with worst-case queries at the small tier (512MB / 0.25 vCPU, Docker Compose). The
+   results and the deliberation that led there follow.
+
+   **Measurements (80k rows × 42 columns, from a ~55MB CSV. Before = in-process)**
+
+   | Item                                       | Before                                              | Child process                              |
+   | ------------------------------------------ | --------------------------------------------------- | ------------------------------------------ |
+   | Full-column sort, twice in a row           | **Container OOM-killed on the 2nd** (exit 137)      | Both completed, container kept running     |
+   | Anonymous memory left after the query      | 480–525MB (the process does not give it back)       | ~120MB (all returned when the child exits) |
+   | Peak (measured under a 1GB limit)          | 541–547MiB                                          | 547–553MiB                                 |
+   | Full-column sort alone                     | 5.7s                                                | 6.4–6.7s                                   |
+   | Full-column sort with concurrent pages     | 7.9s                                                | 12.1s                                      |
+   | Page latency during the query (`/dataset`) | median 0.19s, one 2.7s stall serializing the result | median 0.19s, max 0.69s                    |
+   | Child start (Node + DuckDB + httpfs)       | —                                                   | ~1.0s, RSS 105–114MB                       |
+   - **What decided it was the memory left behind.** Memory in-process DuckDB allocates stays in
+     the web process after the query ends, and the next heavy query (or page load) pushes the
+     container over its limit. The first query does not crash it, the second does, so the query that
+     caused it and the one running when it died are not the same. A child returns everything when it
+     exits. The peak barely moves (+6MB).
+   - **The effect of `nice` could not be measured.** The child runs at `nice 10`, but comparing
+     nice 0 / 5 / 10 / 19 with six SSR pages fetched in parallel, page latency during the query
+     (p50 1.10–1.20s, p95 1.81–1.90s) and the aggregate query's time (4.6–5.8s) differed within
+     noise. The task's CPU allotment (the cgroup quota) binds first, and how CPU is split inside it
+     does not show. 19 did not add timeouts either, so 10 stays as insurance in case Fargate behaves
+     differently. The sort slowing under concurrent load in the table above comes from starting the
+     child and contending for CPU, not from `nice` (11–13s at nice 0 as well).
+   - **Under heavy page load, memory binds before CPU.** While serving six SSR requests web's own
+     memory grows, so the full-column sort was stopped short of the margin whatever the nice value
+     (web did not go down).
+   - **Each query is 0.6–1.0s slower** (the child's start at 0.25 vCPU). Pre-starting one is **not
+     adopted**: small would hold ~110MB at all times, most of one query's budget. Add it per scale
+     later if needed.
+   - **The kill decision uses the container's anonymous memory.** Every 100ms the parent reads the
+     cgroup's `memory.stat` (`anon`) and `SIGKILL`s the child once less than 32MB remains below the
+     limit. Page cache (spill files included) is reclaimed before the OOM killer runs, so it is not
+     counted. **Deciding on the child's RSS was wrong**: shared-library pages were counted twice
+     (web and child), and at 512MB it refused, at ~300MB, sorts that had run in-process. A 64MB
+     margin still refused the sort; at 32MB the sort passed and the DISTINCT was refused (zero kernel
+     OOMs). Where there is no limit (Compose without one), the child is stopped only when its RSS
+     passes one query's budget (`QUERY_SLOT_RSS_MB` + the child's 115MB base).
+   - **The kernel picks the child (verified on Docker).** A child with `oom_score_adj = 1000` made to
+     allocate without end was the only process killed (`oom_kill 1`, `oom_group_kill 0`,
+     `memory.oom.group = 0`), and web kept answering. Docker marks the container `OOMKilled`, but it
+     does not stop. **Whether `memory.oom.group` is 0 on Fargate (containerd) is unverified**; if it
+     is 1, the whole container is killed. The parent's check still stops the child first, but until
+     verified, treat it as the only defense.
+   - **What the caller gets.** Whether the parent stopped the child or the kernel killed it: 400
+     ("more memory than this server can give it", suggesting `WHERE` / `LIMIT` / aggregation).
+     Timeouts are, as before, the child interrupting itself (408); where that does not reach (a
+     blocked HTTP read and the like) the parent stops it at the deadline + 2s (408). A caller hanging
+     up is an immediate `SIGKILL`.
+   - **The child's environment is an allowlist.** Only `PATH` / `HOME` / `LD_LIBRARY_PATH` /
+     `DUCKDB_EXTENSION_DIRECTORY` and the like are passed; not the DB password, the auth secret, or
+     ECS's path for fetching the task role's credentials. The read is a signed URL (Part B-3), so the
+     child needs no credentials. `TMPDIR` points at a directory the parent made, so the parent also
+     removes a killed child's spill files.
+   - **Version diffs (ADR-043) stay in-process.** Moving them would hand the child a catalog
+     connection, and they do not run user SQL (only SQL KUKAN builds), so shrinking their unit of
+     failure matters less than for resource queries. They still share the same slot (semaphore).
+
+   What follows is the deliberation before adoption (written before measuring).
+
+   **Deliberation: the point of separating is containing failure, not saving memory.** DuckDB runs as a native addon inside the Node process. The instance is
    throwaway but the process is shared, so when a query hits the container's limit the OOM killer
    takes the whole web Node process, and public pages and the API go down with it. On small
    (512MB) a single worst-case query can do this, because one slot's budget (498MB, Part B-5)
@@ -254,9 +325,10 @@ preview directly** rather than loading data into dedicated tables.
      (55–65MB each) and it gets its speed from reusing instances. Version diffs (ADR-043) share the
      slot but hold a catalog connection, so more would have to be handed to a child; whether to
      include them is decided at implementation.
-   - **The current leaning is a child process.** If "web is not taken down in the usual case" is
-     enough, a child process; if web must be guaranteed a fixed amount of memory, a sidecar. Adopting
-     either revises the decision under "Query process placement", after implementing and measuring.
+   - **The leaning at the time was a child process.** If "web is not taken down in the usual case" is
+     enough, a child process; if web must be guaranteed a fixed amount of memory, a sidecar. The
+     measurements above led to the child process. A sidecar is the next step should Fargate turn out
+     unable to kill only the child.
 
 3. **Cross-resource JOINs**: join multiple Parquets in one query (register multiple tables).
 4. ~~**Cache temp files / instances**~~ (half resolved): **there is no temp file to cache any more** —

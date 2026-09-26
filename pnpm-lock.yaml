@@ -487,6 +487,9 @@ importers:
       '@types/pg':
         specifier: ^8.23.1
         version: 8.23.1
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
       js-yaml:
         specifier: ^5.4.2
         version: 5.4.2

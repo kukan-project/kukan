@@ -12,7 +12,7 @@
  * interrupts the connection (DuckDB has no statement_timeout).
  */
 
-import { ValidationError, RequestAbandonedError, RequestTimeoutError } from '@kukan/shared'
+import { ValidationError, RequestTimeoutError } from '@kukan/shared'
 import {
   forgetEnvironmentCredentials,
   loadDuckdbExtensions,
@@ -28,9 +28,11 @@ export interface SandboxLimits {
   timeoutMs: number
   memoryLimitMb: number
   threads: number
-  /** The caller's request. Aborting it interrupts the query the same way the
-   *  timeout does — an answer nobody will read is not worth the shared slot. */
-  signal?: AbortSignal
+}
+
+/** Shared with the parent that kills a query past it, so both read the same. */
+export function timeoutMessage(timeoutMs: number): string {
+  return `Query exceeded the time limit of ${timeoutMs} ms`
 }
 
 export interface SandboxResult {
@@ -123,10 +125,6 @@ export async function runSandboxedQuery(
   userSql: string,
   limits: SandboxLimits
 ): Promise<SandboxResult> {
-  // A signal already aborted never fires a listener, so the caller that left
-  // while its slot was being waited for has to be caught here.
-  if (limits.signal?.aborted) throw new RequestAbandonedError()
-
   // Its own spill directory from the start: materializing the table is what
   // goes out of core here, and a spill file shared with another instance
   // fails the query outright (see `useOwnTempDirectory`).
@@ -137,13 +135,6 @@ export async function runSandboxedQuery(
   })
   let timer: NodeJS.Timeout | undefined
   let timedOut = false
-  let abandoned = false
-  const timeoutMessage = `Query exceeded the time limit of ${limits.timeoutMs} ms`
-  const onAbort = () => {
-    abandoned = true
-    conn.interrupt()
-  }
-  limits.signal?.addEventListener('abort', onAbort, { once: true })
 
   try {
     // The timeout also covers materialization: a huge or pathological Parquet must not
@@ -161,8 +152,7 @@ export async function runSandboxedQuery(
       await sealDuckdb(conn)
     } catch (err) {
       // Setup faults → 500; a timeout during setup → 408.
-      if (abandoned) throw new RequestAbandonedError()
-      if (timedOut) throw new RequestTimeoutError(timeoutMessage)
+      if (timedOut) throw new RequestTimeoutError(timeoutMessage(limits.timeoutMs))
       throw err
     }
 
@@ -173,10 +163,8 @@ export async function runSandboxedQuery(
       // Read one past the cap so truncation is detectable without scanning everything.
       reader = await conn.runAndReadUntil(userSql, limits.maxRows + 1)
     } catch (err) {
-      // An interrupted statement fails with a DuckDB error; which of the two
-      // interrupts it was decides whether this is a timeout or nobody's query.
-      if (abandoned) throw new RequestAbandonedError()
-      if (timedOut) throw new RequestTimeoutError(timeoutMessage)
+      // An interrupted statement fails with a DuckDB error
+      if (timedOut) throw new RequestTimeoutError(timeoutMessage(limits.timeoutMs))
       throw new ValidationError(`Query failed: ${firstLine(err)}`)
     }
     clearTimeout(timer)
@@ -198,7 +186,6 @@ export async function runSandboxedQuery(
     return { columns, rows, rowCount: rows.length, truncated }
   } finally {
     if (timer) clearTimeout(timer)
-    limits.signal?.removeEventListener('abort', onAbort)
     await close()
   }
 }
