@@ -37,13 +37,11 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   output: 'standalone',
   transpilePackages: ['@kukan/shared', '@kukan/ui'],
+  // No @kukan/* here: the workspace packages are bundled, @kukan/api from source
+  // through the tsconfig path alias. Their `dist` cannot be loaded by Node as it
+  // is (extensionless imports, `moduleResolution: bundler`), so listing them
+  // changed nothing in the output and only suggested they were loaded at runtime.
   serverExternalPackages: [
-    '@kukan/api',
-    '@kukan/db',
-    '@kukan/storage-adapter',
-    '@kukan/search-adapter',
-    '@kukan/queue-adapter',
-    '@kukan/ai-adapter',
     // Native addon for server-side DuckDB queries (ADR-032 Part B): must stay external
     // so its prebuilt .node binary is required at runtime rather than bundled.
     '@duckdb/node-api',
