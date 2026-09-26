@@ -2615,6 +2615,29 @@ function expandV6(addr) {
       },
       "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
     },
+    "WebServiceTaskCountTargetCpuFAF59872": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+        "WebServiceTaskDefTaskRoleDefaultPolicy8C1B81DE",
+        "WebServiceTaskDefTaskRole39B734D2",
+      ],
+      "Properties": {
+        "PolicyName": "DevKukanSiteStackCityaWebServiceTaskCountTargetCpuCD5198EB",
+        "PolicyType": "TargetTrackingScaling",
+        "ScalingTargetId": {
+          "Ref": "WebServiceTaskCountTargetD0215E6E",
+        },
+        "TargetTrackingScalingPolicyConfiguration": {
+          "PredefinedMetricSpecification": {
+            "PredefinedMetricType": "ECSServiceAverageCPUUtilization",
+          },
+          "ScaleInCooldown": 300,
+          "ScaleOutCooldown": 180,
+          "TargetValue": 60,
+        },
+      },
+      "Type": "AWS::ApplicationAutoScaling::ScalingPolicy",
+    },
     "WebServiceTaskCountTargetD0215E6E": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
@@ -2658,82 +2681,6 @@ function expandV6(addr) {
         "ServiceNamespace": "ecs",
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
-    },
-    "WebServiceTaskCountTargetRequestCount815C4C98": {
-      "DependsOn": [
-        "SiteDatabase0F0CACF6",
-        "WebServiceTaskDefTaskRoleDefaultPolicy8C1B81DE",
-        "WebServiceTaskDefTaskRole39B734D2",
-      ],
-      "Properties": {
-        "PolicyName": "DevKukanSiteStackCityaWebServiceTaskCountTargetRequestCount8C31C79F",
-        "PolicyType": "TargetTrackingScaling",
-        "ScalingTargetId": {
-          "Ref": "WebServiceTaskCountTargetD0215E6E",
-        },
-        "TargetTrackingScalingPolicyConfiguration": {
-          "PredefinedMetricSpecification": {
-            "PredefinedMetricType": "ALBRequestCountPerTarget",
-            "ResourceLabel": {
-              "Fn::Join": [
-                "",
-                [
-                  {
-                    "Fn::Select": [
-                      1,
-                      {
-                        "Fn::Split": [
-                          "/",
-                          {
-                            "Ref": "SsmParameterValuekukandevsharedalblistenerarnC96584B6F00A464EAD1953AFF4B05118Parameter",
-                          },
-                        ],
-                      },
-                    ],
-                  },
-                  "/",
-                  {
-                    "Fn::Select": [
-                      2,
-                      {
-                        "Fn::Split": [
-                          "/",
-                          {
-                            "Ref": "SsmParameterValuekukandevsharedalblistenerarnC96584B6F00A464EAD1953AFF4B05118Parameter",
-                          },
-                        ],
-                      },
-                    ],
-                  },
-                  "/",
-                  {
-                    "Fn::Select": [
-                      3,
-                      {
-                        "Fn::Split": [
-                          "/",
-                          {
-                            "Ref": "SsmParameterValuekukandevsharedalblistenerarnC96584B6F00A464EAD1953AFF4B05118Parameter",
-                          },
-                        ],
-                      },
-                    ],
-                  },
-                  "/",
-                  {
-                    "Fn::GetAtt": [
-                      "WebServiceTargetGroup21394FFE",
-                      "TargetGroupFullName",
-                    ],
-                  },
-                ],
-              ],
-            },
-          },
-          "TargetValue": 1000,
-        },
-      },
-      "Type": "AWS::ApplicationAutoScaling::ScalingPolicy",
     },
     "WebServiceTaskDef0DAE0F9A": {
       "DependsOn": [
@@ -5204,6 +5151,29 @@ function expandV6(addr) {
       },
       "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
     },
+    "WebServiceTaskCountTargetCpuFAF59872": {
+      "DependsOn": [
+        "SiteDatabase0F0CACF6",
+        "WebServiceTaskDefTaskRoleDefaultPolicy8C1B81DE",
+        "WebServiceTaskDefTaskRole39B734D2",
+      ],
+      "Properties": {
+        "PolicyName": "DevKukanSiteStackCitybWebServiceTaskCountTargetCpuA22DDA46",
+        "PolicyType": "TargetTrackingScaling",
+        "ScalingTargetId": {
+          "Ref": "WebServiceTaskCountTargetD0215E6E",
+        },
+        "TargetTrackingScalingPolicyConfiguration": {
+          "PredefinedMetricSpecification": {
+            "PredefinedMetricType": "ECSServiceAverageCPUUtilization",
+          },
+          "ScaleInCooldown": 300,
+          "ScaleOutCooldown": 180,
+          "TargetValue": 60,
+        },
+      },
+      "Type": "AWS::ApplicationAutoScaling::ScalingPolicy",
+    },
     "WebServiceTaskCountTargetD0215E6E": {
       "DependsOn": [
         "SiteDatabase0F0CACF6",
@@ -5247,82 +5217,6 @@ function expandV6(addr) {
         "ServiceNamespace": "ecs",
       },
       "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
-    },
-    "WebServiceTaskCountTargetRequestCount815C4C98": {
-      "DependsOn": [
-        "SiteDatabase0F0CACF6",
-        "WebServiceTaskDefTaskRoleDefaultPolicy8C1B81DE",
-        "WebServiceTaskDefTaskRole39B734D2",
-      ],
-      "Properties": {
-        "PolicyName": "DevKukanSiteStackCitybWebServiceTaskCountTargetRequestCount1F26CC7A",
-        "PolicyType": "TargetTrackingScaling",
-        "ScalingTargetId": {
-          "Ref": "WebServiceTaskCountTargetD0215E6E",
-        },
-        "TargetTrackingScalingPolicyConfiguration": {
-          "PredefinedMetricSpecification": {
-            "PredefinedMetricType": "ALBRequestCountPerTarget",
-            "ResourceLabel": {
-              "Fn::Join": [
-                "",
-                [
-                  {
-                    "Fn::Select": [
-                      1,
-                      {
-                        "Fn::Split": [
-                          "/",
-                          {
-                            "Ref": "SsmParameterValuekukandevsharedalblistenerarnC96584B6F00A464EAD1953AFF4B05118Parameter",
-                          },
-                        ],
-                      },
-                    ],
-                  },
-                  "/",
-                  {
-                    "Fn::Select": [
-                      2,
-                      {
-                        "Fn::Split": [
-                          "/",
-                          {
-                            "Ref": "SsmParameterValuekukandevsharedalblistenerarnC96584B6F00A464EAD1953AFF4B05118Parameter",
-                          },
-                        ],
-                      },
-                    ],
-                  },
-                  "/",
-                  {
-                    "Fn::Select": [
-                      3,
-                      {
-                        "Fn::Split": [
-                          "/",
-                          {
-                            "Ref": "SsmParameterValuekukandevsharedalblistenerarnC96584B6F00A464EAD1953AFF4B05118Parameter",
-                          },
-                        ],
-                      },
-                    ],
-                  },
-                  "/",
-                  {
-                    "Fn::GetAtt": [
-                      "WebServiceTargetGroup21394FFE",
-                      "TargetGroupFullName",
-                    ],
-                  },
-                ],
-              ],
-            },
-          },
-          "TargetValue": 1000,
-        },
-      },
-      "Type": "AWS::ApplicationAutoScaling::ScalingPolicy",
     },
     "WebServiceTaskDef0DAE0F9A": {
       "DependsOn": [

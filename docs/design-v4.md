@@ -549,7 +549,7 @@ Web / Worker ともに ECS Fargate で運用する。Web は ALB 経由でリク
 - CloudFront でカスタムドメイン + ACM 証明書を設定、ALB は HTTP のみ（ADR-027）
 - CloudFront Function で IP 制限を制御（WAF はオプション、ADR-027）
 - CDK L2 コンストラクトで型安全に構成可能
-- `autoScaleTaskCount` でリクエスト数ベースの Auto Scaling
+- `autoScaleTaskCount` で CPU 使用率のターゲット追跡による Auto Scaling（ADR-020 追記）
 - 元は App Runner を採用していたが、AWS のメンテナンスモード移行に伴い ECS Fargate + ALB に移行（ADR-020 参照）
 
 **Worker に ECS Fargate を選定した理由**

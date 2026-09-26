@@ -51,7 +51,7 @@ controllability, transparency, and cost.
 - Custom domain: ACM certificate + Route53 direct configuration (no workaround needed)
 - IP restriction: Direct control via ALB SG (no WAF needed)
 - WAF: Optionally enabled only when managed rules are required
-- Auto Scaling: Request-based via `autoScaleTaskCount`
+- Auto Scaling: CPU utilization target tracking via `autoScaleTaskCount` (originally request-based; see "Addendum: web scaling metric")
 
 ### Network Configuration
 
@@ -132,6 +132,76 @@ If global distribution becomes necessary in the future, CloudFront will be reint
 - VPC Connector: No longer needed (Fargate runs directly within the VPC)
 - Origin Verify Secret: Removed
 - Docker: No changes (existing `web` target used as-is)
+
+## Addendum: web scaling metric moves from request count to CPU (2026-09-27)
+
+The web service's autoscaling moves from `ALBRequestCountPerTarget` (target 1,000
+requests/min/task) to **target tracking on `ECSServiceAverageCPUUtilization`
+(target 60%)**. The request-count policy is removed, leaving CPU as the only
+metric. Cooldowns are set explicitly: 180 seconds for scale-out, 300 seconds for
+scale-in.
+
+### Measurements
+
+**Origin limits (local)**: the web image was run with limited CPU and memory,
+and uncached SSR pages (9 dataset list pages, cycling through 167 detail pages)
+were fetched for 60 seconds each at concurrency 1 to 16 (Core i9-12900; one
+core is faster than Fargate's x86, so these are upper-side values).
+
+| Configuration              | List limit | Detail limit | p95 (4 concurrent, list / detail) | CPU per request |
+| -------------------------- | ---------- | ------------ | --------------------------------- | --------------- |
+| 0.25 vCPU / 512 MB (small) | ~9 rps     | ~8 rps       | 0.78 / 1.21 s                     | 28–31 ms        |
+| 0.5 vCPU / 1 GB (medium)   | ~29 rps    | ~20 rps      | 0.29 / 0.40 s                     | 17–24 ms        |
+| 1 vCPU / 2 GB (large)      | ~60 rps    | ~46 rps      | 0.10 / 0.10 s                     | 17–21 ms        |
+
+- Every configuration reached **100% CPU at a concurrency of 1**; more
+  concurrency did not raise throughput, only latency. Memory stayed under
+  250 MB on small / medium and is not the constraint
+- small costs 1.5× the CPU per request: it used up its 25 ms share of every
+  100 ms period and was throttled each time
+
+**demo measurements (small, 3 sites, 14 days of 1-minute data)**:
+
+- On the busiest site, regressing CPU on request count gives about 14 ms per
+  request (R² 0.51). **1,000 requests/min lands exactly at 100% CPU.** The
+  busiest minute was 444 requests/min at 42% CPU
+- Another site is lighter at about 6 ms per request, yet had minutes at 100%
+  CPU with few requests (resource queries). Request cost differs by more than
+  2× between sites
+- Replaying a 60% CPU target over the same 14 days, the scale-out condition
+  (3 consecutive minutes above target) fired 0 times on all three sites.
+  Minutes above 60% ran at most 2 in a row, so a query's short burst does not
+  move the task count
+
+### Decision
+
+- **No single request count fits every configuration.** 1,000 requests/min
+  fires after saturation on small, and at about 30% of the limit on large.
+  Per-size values would still not track request cost, which varies by page
+  and by site
+- **CPU reflects request cost directly.** Every load measured was CPU-bound.
+  The query child process runs in the same task cgroup, so its CPU counts too
+- **No request-count policy alongside.** With several policies, scale-in
+  happens only when all of them agree, so keeping a hard-to-calibrate metric
+  would only hold scale-in back
+- **Target 60%**: added tasks take 4–5 minutes to help (the alarm's
+  3 minutes plus task startup and health checks, 60–70 seconds in demo's
+  deploy records). The headroom covers load growth in that window
+- **Cooldowns**: scale-out is 180 seconds. An added task takes 60–70 seconds
+  to start and pass health checks, then a minute or two to show in the
+  one-minute CPU average; until then the average still reflects the old task
+  count, and the cooldown keeps that same reading from adding a second step.
+  By Application Auto Scaling's rules, a scale-out still happens during the
+  cooldown when the metric asks for more than was already added, so a larger
+  rise in load is not held back. Scale-in is set explicitly to 300 seconds,
+  the same as the CDK default
+
+### Out of scope
+
+- Memory-based scaling: an OOM from a single query happens per task and more
+  tasks do not prevent it (handled by running queries in a child process)
+- Pinning `desiredCount` to minSize at deploy time (tied to ADR-041's
+  connection budget)
 
 ## Related
 

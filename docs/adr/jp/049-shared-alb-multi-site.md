@@ -133,7 +133,7 @@ CloudFormation Export ではなく SSM パラメータで疎結合にする。
 conditions })` で紐付ける。条件を付けるときは `priority` が必須
 - **`scaleOnRequestCount` は共有 ALB 上のターゲットグループでも成立する**。CDK は
   TG の `LoadBalancerArns` 属性を `Fn::Split` で分解してリソースラベルを組むため、
-  SSM 由来のトークン ARN でも解決できる
+  SSM 由来のトークン ARN でも解決できる（その後 web のスケーリング指標は CPU に切り替えた — ADR-020 追記）
 - **VPC origin のインポートは `cloudfront.VpcOrigin.fromVpcOriginId()` +
   `origins.VpcOrigin.withVpcOrigin(origin, { domainName, customHeaders })`**。
   インポートしたオリジンは `domainName` 属性を持たないため、ALB の DNS 名を

@@ -203,13 +203,12 @@ export class WebServiceConstruct extends Construct {
       unhealthyThresholdCount: 3,
     }
 
-    let targetGroup: elbv2.ApplicationTargetGroup
     if (props.sharedListener) {
       // Shared ALB (ADR-049): own target group, routed by the site header. The
       // rule lives under this construct (not the imported listener) so its
       // logical id is owned here and it inherits this construct's dependencies.
       const { listener, priority, siteKey } = props.sharedListener
-      targetGroup = new elbv2.ApplicationTargetGroup(this, 'TargetGroup', {
+      const targetGroup = new elbv2.ApplicationTargetGroup(this, 'TargetGroup', {
         vpc: cluster.vpc,
         port: 3000,
         protocol: elbv2.ApplicationProtocol.HTTP,
@@ -227,7 +226,7 @@ export class WebServiceConstruct extends Construct {
         throw new Error('WebServiceConstruct needs albSecurityGroup unless sharedListener is set')
       }
       const alb = createInternalAlb(this, { vpc: cluster.vpc, securityGroup: albSecurityGroup })
-      targetGroup = alb.listener.addTargets('WebTarget', {
+      alb.listener.addTargets('WebTarget', {
         port: 3000,
         protocol: elbv2.ApplicationProtocol.HTTP,
         targets: [service],
@@ -242,9 +241,20 @@ export class WebServiceConstruct extends Construct {
         minCapacity: config.web.minSize,
         maxCapacity: config.web.maxSize,
       })
-      scaling.scaleOnRequestCount('RequestCount', {
-        requestsPerTarget: 1000,
-        targetGroup,
+      // CPU, not request count: every page type measured was CPU-bound at one
+      // request in flight, and a request's cost varies too much — by page, by
+      // site, and with resource queries running in the task — for one request
+      // count to mean the same load across sizes. A query's burst lasts seconds
+      // and does not hold the three minutes that scale-out needs.
+      scaling.scaleOnCpuUtilization('Cpu', {
+        targetUtilizationPercent: 60,
+        // Out: an added task takes 60–70 s to start and pass health checks
+        // (deploy records), then a minute or two to show in the one-minute
+        // CPU average; until then the average still reads the old count. The
+        // cooldown does not stop a larger step: Application Auto Scaling still
+        // scales out when the metric asks for more than was already added.
+        scaleOutCooldown: cdk.Duration.seconds(180),
+        scaleInCooldown: cdk.Duration.seconds(300),
       })
     }
 

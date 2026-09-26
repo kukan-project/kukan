@@ -147,7 +147,8 @@ Loosely coupled through SSM parameters rather than CloudFormation exports.
   mandatory whenever conditions are present
 - **`scaleOnRequestCount` works with a target group on a shared ALB.** CDK builds
   the resource label by `Fn::Split`-ing the target group's `LoadBalancerArns`
-  attribute, so it resolves even from an SSM-derived token ARN
+  attribute, so it resolves even from an SSM-derived token ARN (the web service
+  has since moved to a CPU scaling metric — ADR-020 addendum)
 - **VPC origin import is `cloudfront.VpcOrigin.fromVpcOriginId()` plus
   `origins.VpcOrigin.withVpcOrigin(origin, { domainName, customHeaders })`.** An
   imported origin carries no `domainName` attribute, so the ALB's DNS name must be
