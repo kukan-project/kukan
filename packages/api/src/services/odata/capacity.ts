@@ -1,33 +1,37 @@
 /**
  * How many feed pages this process may read at once (ADR-055).
  *
- * **Derived from the memory the process actually has**, because that is what
+ * **Derived from the memory the container actually has**, because that is what
  * the number is a statement about: every page in flight holds a DuckDB
  * instance with {@link ODATA_MEMORY_LIMIT_BYTES} to spend, and the container is
  * 512 MB on the small scale and 2 GB on the large one. A fixed count is either
  * wasteful on the large or an overdraft on the small.
  *
- * The figure is read from the process rather than passed down from CDK, which
+ * The figure is read from the cgroup rather than passed down from CDK, which
  * also knows it (`infra` sets `memoryLimitMiB` from the same scale): a cgroup
  * says what the kernel actually enforces, and it is the only answer that also
  * covers a Compose host.
  *
- * What is left after a query slot at its measured cost (ADR-032) and the
- * process itself is what these slots may spend — a share of the whole would double-book
- * the same megabytes, which is what it did before this.
+ * What is left after a query slot at its measured cost (ADR-032) and the web
+ * server itself is what these slots may spend — a share of the whole would
+ * double-book the same megabytes, which is what it did before this.
  */
 
 import { processMemory, type ProcessMemory } from '../../process-memory'
 import { ODATA_MEMORY_LIMIT_BYTES, QUERY_MAX_CONCURRENT, QUERY_SLOT_RSS_MB } from '../../config'
 
 /**
- * What the rest of the process is assumed to need before a feed page gets any.
+ * What the rest of the container is assumed to need before a feed page gets any.
  *
- * The query path is counted at what a slot measured costing the process
+ * The query path is counted at what a slot measured costing the container
  * (`QUERY_SLOT_RSS_MB`) times its concurrency, and Node, Next and the
  * connection pool take this. That second figure is an estimate rather than a
  * measurement of the production image, and it is the conservative direction:
  * too high costs a slot, too low costs the container.
+ *
+ * A resource query runs in a process of its own, but in the same cgroup, and
+ * its peak there measured only 6 MB above the slot's (`QUERY_PROCESS_BASE_MB`),
+ * so the slot is still what it costs the container.
  *
  * Subtracting rather than taking a share of the whole is the correction to what
  * this did first: 40% of 512 MB is three slots, which with the query path's 256
@@ -71,14 +75,14 @@ export interface Capacity {
 
 /**
  * The slot's budget in decimal megabytes, which is what DuckDB's `memory_limit`
- * counts in. The process memory it is divided into is reported in MiB, so the
+ * counts in. The container memory it is divided into is reported in MiB, so the
  * slot count comes out about 5% conservative — the safe direction, and left so
  * rather than mixing a third unit in. Stated once so the test that pins the
  * curve cannot agree with a stale copy.
  */
 export const SLOT_MB = ODATA_MEMORY_LIMIT_BYTES / 1_000_000
 
-/** Slots for `memoryMb` of process memory; exported for the test that pins the curve. */
+/** Slots for `memoryMb` of container memory; exported for the test that pins the curve. */
 export function slotsForMemory(memoryMb: number): number {
   const budgetMb = memoryMb - QUERY_SLOT_RSS_MB * QUERY_MAX_CONCURRENT - PROCESS_RESERVE_MB
   return Math.max(MIN_SLOTS, Math.min(MAX_SLOTS, Math.floor(budgetMb / SLOT_MB)))

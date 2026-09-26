@@ -43,7 +43,7 @@ export const QUERY_SOURCE_URL_EXPIRES_S = 60
 export const QUERY_MEMORY_LIMIT_MB = 256
 
 /**
- * What one query slot costs the process at its worst: the budget a slot is
+ * What one query slot costs the container at its worst: the budget a slot is
  * counted at, beside the feed's (`services/odata/capacity.ts`).
  *
  * **Larger than the limit above, and in proportion to it.** DuckDB's own
