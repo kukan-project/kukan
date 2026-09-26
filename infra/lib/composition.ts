@@ -259,6 +259,20 @@ export function composeSite(
     value: storage.bucket.bucketName,
     description: 'S3 Bucket Name',
   })
+  if (cdn.accessLog) {
+    new cdk.CfnOutput(scope, 'CdnLogBucketName', {
+      value: cdn.accessLog.bucket.bucketName,
+      description: 'CloudFront access log bucket',
+    })
+    new cdk.CfnOutput(scope, 'CdnLogTable', {
+      value: cdn.accessLog.tableRef,
+      description: 'CloudFront access log table (Athena)',
+    })
+    new cdk.CfnOutput(scope, 'CdnLogWorkGroup', {
+      value: cdn.accessLog.workGroupName,
+      description: 'Athena workgroup for the access log table',
+    })
+  }
 
   return { webService, workerService, bucket: storage.bucket }
 }

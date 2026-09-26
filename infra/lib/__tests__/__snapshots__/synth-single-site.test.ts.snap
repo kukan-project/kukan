@@ -18,6 +18,20 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
         "Ref": "StorageResourceBucketD8B2FEFB",
       },
     },
+    "CdnLogBucketName": {
+      "Description": "CloudFront access log bucket",
+      "Value": {
+        "Ref": "CDNAccessLogBucketD072627D",
+      },
+    },
+    "CdnLogTable": {
+      "Description": "CloudFront access log table (Athena)",
+      "Value": "kukan_dev_logs.cloudfront",
+    },
+    "CdnLogWorkGroup": {
+      "Description": "Athena workgroup for the access log table",
+      "Value": "kukan-dev-logs",
+    },
     "CloudFrontDomainName": {
       "Description": "CloudFront Distribution Domain Name",
       "Value": {
@@ -98,6 +112,252 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
+    },
+    "CDNAccessLogBucketD072627D": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256",
+              },
+            },
+          ],
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "ExpirationInDays": 90,
+              "Id": "ExpireAccessLogs",
+              "Status": "Enabled",
+            },
+          ],
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "ObjectWriter",
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "cdn",
+          },
+        ],
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "CDNAccessLogDatabase63DF0BA5": {
+      "Properties": {
+        "CatalogId": "123456789012",
+        "DatabaseInput": {
+          "Name": "kukan_dev_logs",
+        },
+      },
+      "Type": "AWS::Glue::Database",
+    },
+    "CDNAccessLogTable6F38BC4D": {
+      "DependsOn": [
+        "CDNAccessLogDatabase63DF0BA5",
+      ],
+      "Properties": {
+        "CatalogId": "123456789012",
+        "DatabaseName": "kukan_dev_logs",
+        "TableInput": {
+          "Name": "cloudfront",
+          "Parameters": {
+            "skip.header.line.count": "2",
+          },
+          "StorageDescriptor": {
+            "Columns": [
+              {
+                "Name": "date",
+                "Type": "date",
+              },
+              {
+                "Name": "time",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_location",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_bytes",
+                "Type": "bigint",
+              },
+              {
+                "Name": "c_ip",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_method",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_host",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_uri_stem",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_status",
+                "Type": "int",
+              },
+              {
+                "Name": "cs_referrer",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_user_agent",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_uri_query",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_cookie",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_result_type",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_request_id",
+                "Type": "string",
+              },
+              {
+                "Name": "x_host_header",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_protocol",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_bytes",
+                "Type": "bigint",
+              },
+              {
+                "Name": "time_taken",
+                "Type": "float",
+              },
+              {
+                "Name": "x_forwarded_for",
+                "Type": "string",
+              },
+              {
+                "Name": "ssl_protocol",
+                "Type": "string",
+              },
+              {
+                "Name": "ssl_cipher",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_response_result_type",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_protocol_version",
+                "Type": "string",
+              },
+              {
+                "Name": "fle_status",
+                "Type": "string",
+              },
+              {
+                "Name": "fle_encrypted_fields",
+                "Type": "int",
+              },
+              {
+                "Name": "c_port",
+                "Type": "int",
+              },
+              {
+                "Name": "time_to_first_byte",
+                "Type": "float",
+              },
+              {
+                "Name": "x_edge_detailed_result_type",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_content_type",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_content_len",
+                "Type": "bigint",
+              },
+              {
+                "Name": "sc_range_start",
+                "Type": "bigint",
+              },
+              {
+                "Name": "sc_range_end",
+                "Type": "bigint",
+              },
+            ],
+            "InputFormat": "org.apache.hadoop.mapred.TextInputFormat",
+            "Location": {
+              "Fn::Join": [
+                "",
+                [
+                  "s3://",
+                  {
+                    "Ref": "CDNAccessLogBucketD072627D",
+                  },
+                  "/",
+                ],
+              ],
+            },
+            "OutputFormat": "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat",
+            "SerdeInfo": {
+              "Parameters": {
+                "field.delim": "	",
+                "serialization.format": "	",
+              },
+              "SerializationLibrary": "org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe",
+            },
+          },
+          "TableType": "EXTERNAL_TABLE",
+        },
+      },
+      "Type": "AWS::Glue::Table",
+    },
+    "CDNAccessLogWorkGroup75760BDA": {
+      "Properties": {
+        "Name": "kukan-dev-logs",
+        "RecursiveDeleteOption": true,
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "cdn",
+          },
+        ],
+        "WorkGroupConfiguration": {
+          "EnforceWorkGroupConfiguration": true,
+          "ManagedQueryResultsConfiguration": {
+            "Enabled": true,
+          },
+        },
+      },
+      "Type": "AWS::Athena::WorkGroup",
     },
     "CDNDistributionD4FAE585": {
       "Properties": {
@@ -237,6 +497,15 @@ exports[`edge-gated (basic auth + IP allowlist, WAF auto-off) > matches the gold
           "Enabled": true,
           "HttpVersion": "http2",
           "IPV6Enabled": true,
+          "Logging": {
+            "Bucket": {
+              "Fn::GetAtt": [
+                "CDNAccessLogBucketD072627D",
+                "RegionalDomainName",
+              ],
+            },
+            "IncludeCookies": false,
+          },
           "Origins": [
             {
               "DomainName": {
@@ -3181,6 +3450,20 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
         "Ref": "StorageResourceBucketD8B2FEFB",
       },
     },
+    "CdnLogBucketName": {
+      "Description": "CloudFront access log bucket",
+      "Value": {
+        "Ref": "CDNAccessLogBucketD072627D",
+      },
+    },
+    "CdnLogTable": {
+      "Description": "CloudFront access log table (Athena)",
+      "Value": "kukan_dev_logs.cloudfront",
+    },
+    "CdnLogWorkGroup": {
+      "Description": "Athena workgroup for the access log table",
+      "Value": "kukan-dev-logs",
+    },
     "CloudFrontDomainName": {
       "Description": "CloudFront Distribution Domain Name",
       "Value": {
@@ -3428,6 +3711,252 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
       "Type": "AWS::Backup::BackupVault",
       "UpdateReplacePolicy": "Retain",
     },
+    "CDNAccessLogBucketD072627D": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256",
+              },
+            },
+          ],
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "ExpirationInDays": 90,
+              "Id": "ExpireAccessLogs",
+              "Status": "Enabled",
+            },
+          ],
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "ObjectWriter",
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "cdn",
+          },
+        ],
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "CDNAccessLogDatabase63DF0BA5": {
+      "Properties": {
+        "CatalogId": "123456789012",
+        "DatabaseInput": {
+          "Name": "kukan_dev_logs",
+        },
+      },
+      "Type": "AWS::Glue::Database",
+    },
+    "CDNAccessLogTable6F38BC4D": {
+      "DependsOn": [
+        "CDNAccessLogDatabase63DF0BA5",
+      ],
+      "Properties": {
+        "CatalogId": "123456789012",
+        "DatabaseName": "kukan_dev_logs",
+        "TableInput": {
+          "Name": "cloudfront",
+          "Parameters": {
+            "skip.header.line.count": "2",
+          },
+          "StorageDescriptor": {
+            "Columns": [
+              {
+                "Name": "date",
+                "Type": "date",
+              },
+              {
+                "Name": "time",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_location",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_bytes",
+                "Type": "bigint",
+              },
+              {
+                "Name": "c_ip",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_method",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_host",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_uri_stem",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_status",
+                "Type": "int",
+              },
+              {
+                "Name": "cs_referrer",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_user_agent",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_uri_query",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_cookie",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_result_type",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_request_id",
+                "Type": "string",
+              },
+              {
+                "Name": "x_host_header",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_protocol",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_bytes",
+                "Type": "bigint",
+              },
+              {
+                "Name": "time_taken",
+                "Type": "float",
+              },
+              {
+                "Name": "x_forwarded_for",
+                "Type": "string",
+              },
+              {
+                "Name": "ssl_protocol",
+                "Type": "string",
+              },
+              {
+                "Name": "ssl_cipher",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_response_result_type",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_protocol_version",
+                "Type": "string",
+              },
+              {
+                "Name": "fle_status",
+                "Type": "string",
+              },
+              {
+                "Name": "fle_encrypted_fields",
+                "Type": "int",
+              },
+              {
+                "Name": "c_port",
+                "Type": "int",
+              },
+              {
+                "Name": "time_to_first_byte",
+                "Type": "float",
+              },
+              {
+                "Name": "x_edge_detailed_result_type",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_content_type",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_content_len",
+                "Type": "bigint",
+              },
+              {
+                "Name": "sc_range_start",
+                "Type": "bigint",
+              },
+              {
+                "Name": "sc_range_end",
+                "Type": "bigint",
+              },
+            ],
+            "InputFormat": "org.apache.hadoop.mapred.TextInputFormat",
+            "Location": {
+              "Fn::Join": [
+                "",
+                [
+                  "s3://",
+                  {
+                    "Ref": "CDNAccessLogBucketD072627D",
+                  },
+                  "/",
+                ],
+              ],
+            },
+            "OutputFormat": "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat",
+            "SerdeInfo": {
+              "Parameters": {
+                "field.delim": "	",
+                "serialization.format": "	",
+              },
+              "SerializationLibrary": "org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe",
+            },
+          },
+          "TableType": "EXTERNAL_TABLE",
+        },
+      },
+      "Type": "AWS::Glue::Table",
+    },
+    "CDNAccessLogWorkGroup75760BDA": {
+      "Properties": {
+        "Name": "kukan-dev-logs",
+        "RecursiveDeleteOption": true,
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "cdn",
+          },
+        ],
+        "WorkGroupConfiguration": {
+          "EnforceWorkGroupConfiguration": true,
+          "ManagedQueryResultsConfiguration": {
+            "Enabled": true,
+          },
+        },
+      },
+      "Type": "AWS::Athena::WorkGroup",
+    },
     "CDNDistributionD4FAE585": {
       "Properties": {
         "DistributionConfig": {
@@ -3569,6 +4098,15 @@ exports[`full (large / domain with supplied ARNs / GA4 / AWS Backup) > matches t
           "Enabled": true,
           "HttpVersion": "http2",
           "IPV6Enabled": true,
+          "Logging": {
+            "Bucket": {
+              "Fn::GetAtt": [
+                "CDNAccessLogBucketD072627D",
+                "RegionalDomainName",
+              ],
+            },
+            "IncludeCookies": false,
+          },
           "Origins": [
             {
               "DomainName": {
@@ -6665,6 +7203,20 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
         "Ref": "StorageResourceBucketD8B2FEFB",
       },
     },
+    "CdnLogBucketName": {
+      "Description": "CloudFront access log bucket",
+      "Value": {
+        "Ref": "CDNAccessLogBucketD072627D",
+      },
+    },
+    "CdnLogTable": {
+      "Description": "CloudFront access log table (Athena)",
+      "Value": "kukan_dev_logs.cloudfront",
+    },
+    "CdnLogWorkGroup": {
+      "Description": "Athena workgroup for the access log table",
+      "Value": "kukan-dev-logs",
+    },
     "CloudFrontDomainName": {
       "Description": "CloudFront Distribution Domain Name",
       "Value": {
@@ -6745,6 +7297,252 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
+    },
+    "CDNAccessLogBucketD072627D": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256",
+              },
+            },
+          ],
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "ExpirationInDays": 90,
+              "Id": "ExpireAccessLogs",
+              "Status": "Enabled",
+            },
+          ],
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "ObjectWriter",
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "cdn",
+          },
+        ],
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "CDNAccessLogDatabase63DF0BA5": {
+      "Properties": {
+        "CatalogId": "123456789012",
+        "DatabaseInput": {
+          "Name": "kukan_dev_logs",
+        },
+      },
+      "Type": "AWS::Glue::Database",
+    },
+    "CDNAccessLogTable6F38BC4D": {
+      "DependsOn": [
+        "CDNAccessLogDatabase63DF0BA5",
+      ],
+      "Properties": {
+        "CatalogId": "123456789012",
+        "DatabaseName": "kukan_dev_logs",
+        "TableInput": {
+          "Name": "cloudfront",
+          "Parameters": {
+            "skip.header.line.count": "2",
+          },
+          "StorageDescriptor": {
+            "Columns": [
+              {
+                "Name": "date",
+                "Type": "date",
+              },
+              {
+                "Name": "time",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_location",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_bytes",
+                "Type": "bigint",
+              },
+              {
+                "Name": "c_ip",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_method",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_host",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_uri_stem",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_status",
+                "Type": "int",
+              },
+              {
+                "Name": "cs_referrer",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_user_agent",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_uri_query",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_cookie",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_result_type",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_request_id",
+                "Type": "string",
+              },
+              {
+                "Name": "x_host_header",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_protocol",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_bytes",
+                "Type": "bigint",
+              },
+              {
+                "Name": "time_taken",
+                "Type": "float",
+              },
+              {
+                "Name": "x_forwarded_for",
+                "Type": "string",
+              },
+              {
+                "Name": "ssl_protocol",
+                "Type": "string",
+              },
+              {
+                "Name": "ssl_cipher",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_response_result_type",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_protocol_version",
+                "Type": "string",
+              },
+              {
+                "Name": "fle_status",
+                "Type": "string",
+              },
+              {
+                "Name": "fle_encrypted_fields",
+                "Type": "int",
+              },
+              {
+                "Name": "c_port",
+                "Type": "int",
+              },
+              {
+                "Name": "time_to_first_byte",
+                "Type": "float",
+              },
+              {
+                "Name": "x_edge_detailed_result_type",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_content_type",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_content_len",
+                "Type": "bigint",
+              },
+              {
+                "Name": "sc_range_start",
+                "Type": "bigint",
+              },
+              {
+                "Name": "sc_range_end",
+                "Type": "bigint",
+              },
+            ],
+            "InputFormat": "org.apache.hadoop.mapred.TextInputFormat",
+            "Location": {
+              "Fn::Join": [
+                "",
+                [
+                  "s3://",
+                  {
+                    "Ref": "CDNAccessLogBucketD072627D",
+                  },
+                  "/",
+                ],
+              ],
+            },
+            "OutputFormat": "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat",
+            "SerdeInfo": {
+              "Parameters": {
+                "field.delim": "	",
+                "serialization.format": "	",
+              },
+              "SerializationLibrary": "org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe",
+            },
+          },
+          "TableType": "EXTERNAL_TABLE",
+        },
+      },
+      "Type": "AWS::Glue::Table",
+    },
+    "CDNAccessLogWorkGroup75760BDA": {
+      "Properties": {
+        "Name": "kukan-dev-logs",
+        "RecursiveDeleteOption": true,
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "cdn",
+          },
+        ],
+        "WorkGroupConfiguration": {
+          "EnforceWorkGroupConfiguration": true,
+          "ManagedQueryResultsConfiguration": {
+            "Enabled": true,
+          },
+        },
+      },
+      "Type": "AWS::Athena::WorkGroup",
     },
     "CDNDistributionD4FAE585": {
       "Properties": {
@@ -6884,6 +7682,15 @@ exports[`minimal dev (small / rds / no OpenSearch / no AI) > matches the golden 
           "Enabled": true,
           "HttpVersion": "http2",
           "IPV6Enabled": true,
+          "Logging": {
+            "Bucket": {
+              "Fn::GetAtt": [
+                "CDNAccessLogBucketD072627D",
+                "RegionalDomainName",
+              ],
+            },
+            "IncludeCookies": false,
+          },
           "Origins": [
             {
               "DomainName": {
@@ -9838,6 +10645,20 @@ exports[`self-created global stack (domain without certificateArn) > matches the
         "Ref": "StorageResourceBucketD8B2FEFB",
       },
     },
+    "CdnLogBucketName": {
+      "Description": "CloudFront access log bucket",
+      "Value": {
+        "Ref": "CDNAccessLogBucketD072627D",
+      },
+    },
+    "CdnLogTable": {
+      "Description": "CloudFront access log table (Athena)",
+      "Value": "kukan_dev_logs.cloudfront",
+    },
+    "CdnLogWorkGroup": {
+      "Description": "Athena workgroup for the access log table",
+      "Value": "kukan-dev-logs",
+    },
     "CloudFrontDomainName": {
       "Description": "CloudFront Distribution Domain Name",
       "Value": {
@@ -9918,6 +10739,252 @@ exports[`self-created global stack (domain without certificateArn) > matches the
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
+    },
+    "CDNAccessLogBucketD072627D": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256",
+              },
+            },
+          ],
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "ExpirationInDays": 90,
+              "Id": "ExpireAccessLogs",
+              "Status": "Enabled",
+            },
+          ],
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "ObjectWriter",
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "cdn",
+          },
+        ],
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "CDNAccessLogDatabase63DF0BA5": {
+      "Properties": {
+        "CatalogId": "123456789012",
+        "DatabaseInput": {
+          "Name": "kukan_dev_logs",
+        },
+      },
+      "Type": "AWS::Glue::Database",
+    },
+    "CDNAccessLogTable6F38BC4D": {
+      "DependsOn": [
+        "CDNAccessLogDatabase63DF0BA5",
+      ],
+      "Properties": {
+        "CatalogId": "123456789012",
+        "DatabaseName": "kukan_dev_logs",
+        "TableInput": {
+          "Name": "cloudfront",
+          "Parameters": {
+            "skip.header.line.count": "2",
+          },
+          "StorageDescriptor": {
+            "Columns": [
+              {
+                "Name": "date",
+                "Type": "date",
+              },
+              {
+                "Name": "time",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_location",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_bytes",
+                "Type": "bigint",
+              },
+              {
+                "Name": "c_ip",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_method",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_host",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_uri_stem",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_status",
+                "Type": "int",
+              },
+              {
+                "Name": "cs_referrer",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_user_agent",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_uri_query",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_cookie",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_result_type",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_request_id",
+                "Type": "string",
+              },
+              {
+                "Name": "x_host_header",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_protocol",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_bytes",
+                "Type": "bigint",
+              },
+              {
+                "Name": "time_taken",
+                "Type": "float",
+              },
+              {
+                "Name": "x_forwarded_for",
+                "Type": "string",
+              },
+              {
+                "Name": "ssl_protocol",
+                "Type": "string",
+              },
+              {
+                "Name": "ssl_cipher",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_response_result_type",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_protocol_version",
+                "Type": "string",
+              },
+              {
+                "Name": "fle_status",
+                "Type": "string",
+              },
+              {
+                "Name": "fle_encrypted_fields",
+                "Type": "int",
+              },
+              {
+                "Name": "c_port",
+                "Type": "int",
+              },
+              {
+                "Name": "time_to_first_byte",
+                "Type": "float",
+              },
+              {
+                "Name": "x_edge_detailed_result_type",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_content_type",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_content_len",
+                "Type": "bigint",
+              },
+              {
+                "Name": "sc_range_start",
+                "Type": "bigint",
+              },
+              {
+                "Name": "sc_range_end",
+                "Type": "bigint",
+              },
+            ],
+            "InputFormat": "org.apache.hadoop.mapred.TextInputFormat",
+            "Location": {
+              "Fn::Join": [
+                "",
+                [
+                  "s3://",
+                  {
+                    "Ref": "CDNAccessLogBucketD072627D",
+                  },
+                  "/",
+                ],
+              ],
+            },
+            "OutputFormat": "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat",
+            "SerdeInfo": {
+              "Parameters": {
+                "field.delim": "	",
+                "serialization.format": "	",
+              },
+              "SerializationLibrary": "org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe",
+            },
+          },
+          "TableType": "EXTERNAL_TABLE",
+        },
+      },
+      "Type": "AWS::Glue::Table",
+    },
+    "CDNAccessLogWorkGroup75760BDA": {
+      "Properties": {
+        "Name": "kukan-dev-logs",
+        "RecursiveDeleteOption": true,
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "cdn",
+          },
+        ],
+        "WorkGroupConfiguration": {
+          "EnforceWorkGroupConfiguration": true,
+          "ManagedQueryResultsConfiguration": {
+            "Enabled": true,
+          },
+        },
+      },
+      "Type": "AWS::Athena::WorkGroup",
     },
     "CDNDistributionD4FAE585": {
       "Properties": {
@@ -10060,6 +11127,15 @@ exports[`self-created global stack (domain without certificateArn) > matches the
           "Enabled": true,
           "HttpVersion": "http2",
           "IPV6Enabled": true,
+          "Logging": {
+            "Bucket": {
+              "Fn::GetAtt": [
+                "CDNAccessLogBucketD072627D",
+                "RegionalDomainName",
+              ],
+            },
+            "IncludeCookies": false,
+          },
           "Origins": [
             {
               "DomainName": {
@@ -13117,6 +14193,20 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
         "Ref": "StorageResourceBucketD8B2FEFB",
       },
     },
+    "CdnLogBucketName": {
+      "Description": "CloudFront access log bucket",
+      "Value": {
+        "Ref": "CDNAccessLogBucketD072627D",
+      },
+    },
+    "CdnLogTable": {
+      "Description": "CloudFront access log table (Athena)",
+      "Value": "kukan_dev_logs.cloudfront",
+    },
+    "CdnLogWorkGroup": {
+      "Description": "Athena workgroup for the access log table",
+      "Value": "kukan-dev-logs",
+    },
     "CloudFrontDomainName": {
       "Description": "CloudFront Distribution Domain Name",
       "Value": {
@@ -13197,6 +14287,252 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
       },
       "Type": "AWS::SecretsManager::Secret",
       "UpdateReplacePolicy": "Delete",
+    },
+    "CDNAccessLogBucketD072627D": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256",
+              },
+            },
+          ],
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "ExpirationInDays": 90,
+              "Id": "ExpireAccessLogs",
+              "Status": "Enabled",
+            },
+          ],
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "ObjectWriter",
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "cdn",
+          },
+        ],
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "CDNAccessLogDatabase63DF0BA5": {
+      "Properties": {
+        "CatalogId": "123456789012",
+        "DatabaseInput": {
+          "Name": "kukan_dev_logs",
+        },
+      },
+      "Type": "AWS::Glue::Database",
+    },
+    "CDNAccessLogTable6F38BC4D": {
+      "DependsOn": [
+        "CDNAccessLogDatabase63DF0BA5",
+      ],
+      "Properties": {
+        "CatalogId": "123456789012",
+        "DatabaseName": "kukan_dev_logs",
+        "TableInput": {
+          "Name": "cloudfront",
+          "Parameters": {
+            "skip.header.line.count": "2",
+          },
+          "StorageDescriptor": {
+            "Columns": [
+              {
+                "Name": "date",
+                "Type": "date",
+              },
+              {
+                "Name": "time",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_location",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_bytes",
+                "Type": "bigint",
+              },
+              {
+                "Name": "c_ip",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_method",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_host",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_uri_stem",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_status",
+                "Type": "int",
+              },
+              {
+                "Name": "cs_referrer",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_user_agent",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_uri_query",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_cookie",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_result_type",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_request_id",
+                "Type": "string",
+              },
+              {
+                "Name": "x_host_header",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_protocol",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_bytes",
+                "Type": "bigint",
+              },
+              {
+                "Name": "time_taken",
+                "Type": "float",
+              },
+              {
+                "Name": "x_forwarded_for",
+                "Type": "string",
+              },
+              {
+                "Name": "ssl_protocol",
+                "Type": "string",
+              },
+              {
+                "Name": "ssl_cipher",
+                "Type": "string",
+              },
+              {
+                "Name": "x_edge_response_result_type",
+                "Type": "string",
+              },
+              {
+                "Name": "cs_protocol_version",
+                "Type": "string",
+              },
+              {
+                "Name": "fle_status",
+                "Type": "string",
+              },
+              {
+                "Name": "fle_encrypted_fields",
+                "Type": "int",
+              },
+              {
+                "Name": "c_port",
+                "Type": "int",
+              },
+              {
+                "Name": "time_to_first_byte",
+                "Type": "float",
+              },
+              {
+                "Name": "x_edge_detailed_result_type",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_content_type",
+                "Type": "string",
+              },
+              {
+                "Name": "sc_content_len",
+                "Type": "bigint",
+              },
+              {
+                "Name": "sc_range_start",
+                "Type": "bigint",
+              },
+              {
+                "Name": "sc_range_end",
+                "Type": "bigint",
+              },
+            ],
+            "InputFormat": "org.apache.hadoop.mapred.TextInputFormat",
+            "Location": {
+              "Fn::Join": [
+                "",
+                [
+                  "s3://",
+                  {
+                    "Ref": "CDNAccessLogBucketD072627D",
+                  },
+                  "/",
+                ],
+              ],
+            },
+            "OutputFormat": "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat",
+            "SerdeInfo": {
+              "Parameters": {
+                "field.delim": "	",
+                "serialization.format": "	",
+              },
+              "SerializationLibrary": "org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe",
+            },
+          },
+          "TableType": "EXTERNAL_TABLE",
+        },
+      },
+      "Type": "AWS::Glue::Table",
+    },
+    "CDNAccessLogWorkGroup75760BDA": {
+      "Properties": {
+        "Name": "kukan-dev-logs",
+        "RecursiveDeleteOption": true,
+        "Tags": [
+          {
+            "Key": "kukan:component",
+            "Value": "cdn",
+          },
+        ],
+        "WorkGroupConfiguration": {
+          "EnforceWorkGroupConfiguration": true,
+          "ManagedQueryResultsConfiguration": {
+            "Enabled": true,
+          },
+        },
+      },
+      "Type": "AWS::Athena::WorkGroup",
     },
     "CDNDistributionD4FAE585": {
       "Properties": {
@@ -13336,6 +14672,15 @@ exports[`typical (medium / aurora / OpenSearch / bedrock defaults) > matches the
           "Enabled": true,
           "HttpVersion": "http2",
           "IPV6Enabled": true,
+          "Logging": {
+            "Bucket": {
+              "Fn::GetAtt": [
+                "CDNAccessLogBucketD072627D",
+                "RegionalDomainName",
+              ],
+            },
+            "IncludeCookies": false,
+          },
           "Origins": [
             {
               "DomainName": {

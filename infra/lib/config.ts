@@ -242,6 +242,11 @@ export interface EnvironmentConfig {
    */
   ecrImageRetention?: number
   /**
+   * Days CloudFront access logs are kept in each site's log bucket before
+   * they expire. Applies to every site of the environment. Omit → 90.
+   */
+  cdnLogRetentionDays?: number
+  /**
    * Sites hosted by this environment (ADR-041). Presence (non-empty) opts the
    * environment into the SharedStack/SiteStack split; absence keeps the
    * all-in-one KukanStack with unchanged logical IDs. Existing single-site
@@ -382,6 +387,10 @@ export const DEFAULT_DEPLOY_CONCURRENCY = 2
 /** Images kept in the container-assets repository when `ecrImageRetention` is omitted:
  *  roughly two months of daily deploys, and far beyond what running tasks reference. */
 export const DEFAULT_ECR_IMAGE_RETENTION = 100
+
+/** Days CloudFront access logs are kept when `cdnLogRetentionDays` is omitted:
+ *  long enough to look back on a burst noticed weeks later. */
+export const DEFAULT_CDN_LOG_RETENTION_DAYS = 90
 
 function positiveInt(field: string, value: number): number {
   if (!Number.isInteger(value) || value < 1) {
@@ -990,6 +999,8 @@ export interface KukanConfig extends ScaleComputed {
   bedrock?: BedrockConfig & { embeddingModel: string; completionModels: string[] }
   /** Images kept in the bootstrap container-assets repository (account/region-wide). */
   ecrImageRetention: number
+  /** Days CloudFront access logs are kept (lifecycle expiration on the log bucket). */
+  cdnLogRetentionDays: number
 }
 
 const SCALE_DEFAULTS: Record<Scale, ScaleComputed> = {
@@ -1122,6 +1133,11 @@ export function loadConfig(
   // env-only (no ctx): shared by every environment in the account/region and
   // checked for agreement across environments.ts (validateEcrImageRetention).
   const ecrImageRetention = resolveEcrImageRetention(env)
+  // env-only (no ctx): applies to every site's log bucket
+  const cdnLogRetentionDays = positiveInt(
+    'cdnLogRetentionDays',
+    env.cdnLogRetentionDays ?? DEFAULT_CDN_LOG_RETENTION_DAYS
+  )
   // env-only (no ctx): structured value, awkward to pass via -c. Default ON —
   // hybrid search is the flagship behaviour and Titan v2 costs are usage-based.
   const bedrock = resolveBedrock(env.bedrock ?? {})
@@ -1175,6 +1191,7 @@ export function loadConfig(
     enableGa4DataApi,
     bedrock,
     ecrImageRetention,
+    cdnLogRetentionDays,
     ...computed,
   }
 }

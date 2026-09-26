@@ -3,7 +3,7 @@
  * CloudFront distribution in front of the given origin (a VPC origin to the
  * site's own or the shared internal ALB — composeSite), cookie-based cache
  * bypass, optional edge gate (IP allowlist and/or Basic auth, via CF Function),
- * and WAF integration.
+ * WAF integration, and access logs (AccessLogConstruct).
  */
 
 import * as cdk from 'aws-cdk-lib'
@@ -14,6 +14,7 @@ import { PINNED_PAGE_MAX_AGE_S } from '@kukan/shared'
 import { loadViewerRequestCode } from '../cf-functions/inject.js'
 import type { KukanConfig } from '../config.js'
 import { resourceName } from '../naming.js'
+import { AccessLogConstruct, supportsLegacyCdnLogging } from './access-log.js'
 
 export interface CdnProps {
   config: KukanConfig
@@ -28,6 +29,8 @@ export interface CdnProps {
 export class CdnConstruct extends Construct {
   readonly distribution: cloudfront.Distribution
   readonly distributionDomainName: string
+  /** Unset in a region legacy logging cannot deliver to (see supportsLegacyCdnLogging). */
+  readonly accessLog?: AccessLogConstruct
 
   constructor(scope: Construct, id: string, props: CdnProps) {
     super(scope, id)
@@ -129,6 +132,22 @@ export class CdnConstruct extends Construct {
       allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
     }
 
+    // --- Access logs ---
+    // Without them a burst cannot be traced to who sent it, which URLs, or why
+    // the cache missed.
+    const { region } = cdk.Stack.of(this)
+    if (supportsLegacyCdnLogging(region)) {
+      this.accessLog = new AccessLogConstruct(this, 'AccessLog', {
+        retentionDays: config.cdnLogRetentionDays,
+      })
+    } else {
+      // Failing the deploy over logs would cost more than going without them
+      cdk.Annotations.of(this).addWarningV2(
+        'kukan:cdn-logs-unsupported-region',
+        `CloudFront access logs are off: legacy standard logging cannot deliver to a bucket in ${region} (an opt-in region)`
+      )
+    }
+
     // --- Distribution ---
     this.distribution = new cloudfront.Distribution(this, 'Distribution', {
       comment: 'KUKAN CDN',
@@ -143,6 +162,13 @@ export class CdnConstruct extends Construct {
         ? { domainNames: [config.domainName], certificate: viewerCertificate }
         : {}),
       ...(webAclArn ? { webAclId: webAclArn } : {}),
+      ...(this.accessLog
+        ? {
+            logBucket: this.accessLog.bucket,
+            // Cookies carry the session token — a log reader must not be able to sign in with them
+            logIncludesCookies: false,
+          }
+        : {}),
     })
 
     this.distributionDomainName = this.distribution.distributionDomainName

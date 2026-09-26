@@ -9,9 +9,10 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { Match } from 'aws-cdk-lib/assertions'
-import { normalize, stackTemplate, synthStage } from './helpers/synth.js'
+import { Annotations, Match, type Template } from 'aws-cdk-lib/assertions'
+import { CDN_LOG_BUCKET, normalize, stackOf, stackTemplate, synthStage } from './helpers/synth.js'
 import { validateEcrImageRetention } from '../config.js'
+import { supportsLegacyCdnLogging } from '../constructs/access-log.js'
 
 describe('minimal dev (small / rds / no OpenSearch / no AI)', () => {
   const stage = synthStage({
@@ -53,6 +54,41 @@ describe('minimal dev (small / rds / no OpenSearch / no AI)', () => {
           ]),
         ],
       },
+    })
+  })
+
+  it('logs to the site log bucket without cookies, expiring after 90 days by default', () => {
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: Match.objectLike({
+        Logging: { Bucket: CDN_LOG_BUCKET, IncludeCookies: false },
+      }),
+    })
+    expectLogExpiration(template, 90)
+  })
+
+  it('makes the logs queryable from Athena without a pasted DDL', () => {
+    template.hasResourceProperties('AWS::Glue::Database', {
+      DatabaseInput: { Name: 'kukan_dev_logs' },
+    })
+    template.hasResourceProperties('AWS::Glue::Table', {
+      DatabaseName: 'kukan_dev_logs',
+      TableInput: Match.objectLike({
+        Name: 'cloudfront',
+        StorageDescriptor: Match.objectLike({
+          Location: {
+            'Fn::Join': [
+              '',
+              ['s3://', { Ref: Match.stringLikeRegexp('^CDNAccessLogBucket') }, '/'],
+            ],
+          },
+        }),
+      }),
+    })
+    template.hasResourceProperties('AWS::Athena::WorkGroup', {
+      Name: 'kukan-dev-logs',
+      WorkGroupConfiguration: Match.objectLike({
+        ManagedQueryResultsConfiguration: { Enabled: true },
+      }),
     })
   })
 })
@@ -204,5 +240,43 @@ describe('ecrImageRetention', () => {
         other: { account: '210987654321', ecrImageRetention: 50 },
       })
     ).not.toThrow()
+  })
+})
+
+/** The site's log bucket, expiring after `days`. */
+function expectLogExpiration(template: Template, days: number): void {
+  template.hasResourceProperties('AWS::S3::Bucket', {
+    OwnershipControls: { Rules: [{ ObjectOwnership: 'ObjectWriter' }] },
+    LifecycleConfiguration: {
+      Rules: [{ Id: 'ExpireAccessLogs', ExpirationInDays: days, Status: 'Enabled' }],
+    },
+  })
+}
+
+describe('CloudFront access logs', () => {
+  it('takes the retention from cdnLogRetentionDays', () => {
+    expectLogExpiration(stackTemplate(synthStage({ cdnLogRetentionDays: 30 }), 'KukanStack'), 30)
+  })
+
+  it('goes without logs in an opt-in region, where legacy logging cannot deliver', () => {
+    const stage = synthStage({ region: 'af-south-1' })
+    const template = stackTemplate(stage, 'KukanStack')
+    template.resourceCountIs('AWS::Glue::Table', 0)
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: Match.objectLike({ Logging: Match.absent() }),
+    })
+    Annotations.fromStack(stackOf(stage, 'KukanStack')).hasWarning(
+      '*',
+      Match.stringLikeRegexp('access logs are off.*af-south-1')
+    )
+  })
+
+  it('treats a region CDK does not know as opt-in', () => {
+    expect(supportsLegacyCdnLogging('ap-northeast-1')).toBe(true)
+    expect(supportsLegacyCdnLogging('xx-new-1')).toBe(false)
+  })
+
+  it('rejects a non-positive retention at synth', () => {
+    expect(() => synthStage({ cdnLogRetentionDays: 0 })).toThrow(/cdnLogRetentionDays must be/)
   })
 })

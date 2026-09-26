@@ -157,6 +157,51 @@ aws secretsmanager put-secret-value --secret-id <取得した ARN> \
 正本から作り直せる派生データですが、失われた派生をまとめて再生成する運用手順は現時点では用意されて
 いません。
 
+#### アクセスログ（CloudFront）
+
+CloudFront のアクセスログは、どのサイトでも常に有効です（オプトインリージョン — af-south-1 や ap-east-1 など — に置いた環境を除く。そこでは CloudFront がログを配信できないため作らず、synth で警告を出します）。サイトごとに専用のバケットへ書かれ、
+`cdnLogRetentionDays`（省略時 90 日）が過ぎると消えます。バケット名はスタック出力の
+`CdnLogBucketName` で確かめられます。
+
+1 行に 1 リクエストが、次のような項目とともに残ります: アクセス元の IP（`c_ip`）、User-Agent、
+URI とクエリ文字列、ステータス、応答時間（`time_taken`）、キャッシュに当たったか
+（`x_edge_result_type` が `Hit` / `Miss` / `RefreshHit` / `Error` など）。Cookie は残しません
+（セッションのトークンを含むため）。
+
+- ログが届くまで、通常は数分から 1 時間ほどかかります
+- 時刻は UTC です
+- User-Agent とクエリ文字列は URL エンコードされています（Athena では `url_decode` で戻せます）
+
+Athena のテーブルとワークグループも、サイトごとにスタックが作ります。名前はスタック出力で
+確かめられます。
+
+| スタック出力      | 例（シングルサイト）        | マルチサイト                         |
+| ----------------- | --------------------------- | ------------------------------------ |
+| `CdnLogWorkGroup` | `kukan-prd-logs`            | `kukan-prd-<サイト>-logs`            |
+| `CdnLogTable`     | `kukan_prd_logs.cloudfront` | `kukan_prd_<サイト>_logs.cloudfront` |
+
+Athena のクエリエディタでこのワークグループを選び、テーブルをクエリします。クエリ結果は Athena が
+管理する領域に置かれるため、結果用のバケットを用意する必要はありません。
+
+アクセスが集中した時間帯の、アクセス元とキャッシュの状態を数える例:
+
+```sql
+-- 時刻は UTC。JST 10:20〜10:25 なら 01:20〜01:25
+SELECT c_ip, url_decode(cs_user_agent) AS ua, x_edge_result_type, count(*) AS n
+FROM kukan_prd_logs.cloudfront
+WHERE "date" = DATE '2026-01-15' AND time BETWEEN '01:20:00' AND '01:25:00'
+GROUP BY 1, 2, 3
+ORDER BY n DESC
+LIMIT 20;
+```
+
+費用は S3 の料金（保存と書き込み）だけです（配信料はかかりません）。gzip で 1 リクエストあたり
+数十〜百バイト程度のため、月 100 万リクエストでも数セントです。Athena は読んだ量に応じた課金
+（$5 / TB）です。
+
+WAF のログと、CloudFront の追加メトリクス（キャッシュのヒット率など、有料）は有効にしていません。
+キャッシュの状態も応答時間もアクセスログにあり、ヒット率はそこから数えられます。
+
 #### セットアップ（初回のみ手動。以降は push で自動デプロイ）
 
 1. 環境定義を用意（`cp infra/config/environments.example.ts infra/config/environments.ts` → `environments.ts` を編集）。**各エントリが1環境＝1パイプライン**として作られるため、単一環境なら不要なエントリ（例: `dev`）を削除する

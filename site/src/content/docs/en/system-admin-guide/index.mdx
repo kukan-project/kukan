@@ -162,6 +162,50 @@ additional environment variables).
 that can be rebuilt from the canonical files, but there is currently no supported procedure for
 regenerating derived data that has been lost.
 
+#### Access logs (CloudFront)
+
+CloudFront access logs are always on, for every site (except in an environment placed in an opt-in region such as af-south-1 or ap-east-1: CloudFront cannot deliver logs there, so none are created and synth warns). Each site writes to its own bucket, and
+logs expire after `cdnLogRetentionDays` (default 90). The bucket name is in the stack output
+`CdnLogBucketName`.
+
+Each line is one request, with among others: the client IP (`c_ip`), User-Agent, URI and query
+string, status, time taken (`time_taken`), and whether the cache served it (`x_edge_result_type`:
+`Hit` / `Miss` / `RefreshHit` / `Error` …). Cookies are not logged (they carry the session token).
+
+- Logs usually arrive within minutes to an hour
+- Times are in UTC
+- The User-Agent and query string are URL-encoded (`url_decode` in Athena restores them)
+
+The stack also creates an Athena table and workgroup for each site. Their names are in the
+stack outputs:
+
+| Stack output      | Example (single site)       | Multiple sites                     |
+| ----------------- | --------------------------- | ---------------------------------- |
+| `CdnLogWorkGroup` | `kukan-prd-logs`            | `kukan-prd-<site>-logs`            |
+| `CdnLogTable`     | `kukan_prd_logs.cloudfront` | `kukan_prd_<site>_logs.cloudfront` |
+
+In the Athena query editor, pick that workgroup and query the table. Query results go to
+Athena-managed storage, so no results bucket is needed.
+
+Counting clients and cache results during a burst:
+
+```sql
+-- Times are UTC
+SELECT c_ip, url_decode(cs_user_agent) AS ua, x_edge_result_type, count(*) AS n
+FROM kukan_prd_logs.cloudfront
+WHERE "date" = DATE '2026-01-15' AND time BETWEEN '01:20:00' AND '01:25:00'
+GROUP BY 1, 2, 3
+ORDER BY n DESC
+LIMIT 20;
+```
+
+The only cost is S3 (storage and PUTs; delivery is free). At tens to a hundred bytes per request
+gzipped, a million requests a month comes to a few cents. Athena bills by data scanned
+($5 / TB).
+
+WAF logs and CloudFront's additional metrics (cache hit rate etc., paid) are not enabled. The
+cache result and time taken are in the access log, and the hit rate can be counted from it.
+
 #### Setup (one-time manual; after that, pushes deploy automatically)
 
 1. Prepare your environment definitions (`cp infra/config/environments.example.ts infra/config/environments.ts`, then edit `environments.ts`). **Each entry becomes one environment = one pipeline**, so delete the ones you don't need (e.g. remove `dev` for a single environment)

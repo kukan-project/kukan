@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import * as cdk from 'aws-cdk-lib'
-import { Template } from 'aws-cdk-lib/assertions'
+import { Match, Template } from 'aws-cdk-lib/assertions'
 import { KukanStage } from '../../kukan-stage.js'
 import type { EnvironmentConfig } from '../../config.js'
 
@@ -56,9 +56,19 @@ export function synthStage(config: Omit<EnvironmentConfig, 'account'>): KukanSta
   return new KukanStage(testApp(), 'Dev', { config: { account: TEST_ACCOUNT, ...config } })
 }
 
-/** Template of a stack inside the stage ('KukanStack' / 'KukanGlobalStack'). */
+/** A stack inside the stage ('KukanStack' / 'KukanGlobalStack'). */
+export function stackOf(stage: cdk.Stage, id: string): cdk.Stack {
+  return stage.node.findChild(id) as cdk.Stack
+}
+
+/** Template of a stack inside the stage. */
 export function stackTemplate(stage: cdk.Stage, id: string): Template {
-  return Template.fromStack(stage.node.findChild(id) as cdk.Stack)
+  return Template.fromStack(stackOf(stage, id))
+}
+
+/** A distribution's `Logging.Bucket` when it logs to the site's access log bucket. */
+export const CDN_LOG_BUCKET = {
+  'Fn::GetAtt': [Match.stringLikeRegexp('^CDNAccessLogBucket'), 'RegionalDomainName'],
 }
 
 /** Replace 64-hex asset hashes so app-source changes don't churn infra snapshots. */

@@ -182,6 +182,7 @@ and switch over:
    The following resources survive the destroy — review and purge them
    manually:
    - The S3 bucket — empty it, then delete
+   - The access log bucket — logs expire on their own; delete it once empty
    - The final database snapshot — storage keeps billing, delete if unneeded
    - The AWS Backup vault (if it was enabled)
    - The ACM certificate and WAF WebACL (if they were auto-created; both are

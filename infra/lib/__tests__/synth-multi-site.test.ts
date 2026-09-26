@@ -22,6 +22,7 @@ import {
 import { pascal } from '../naming.js'
 import { KukanPipelineStack } from '../pipeline-stack.js'
 import {
+  CDN_LOG_BUCKET,
   normalize,
   stackTemplate,
   synthStage,
@@ -273,6 +274,25 @@ describe('multi-site (medium / aurora / OpenSearch / 2 sites)', () => {
       s4: ['KukanSiteStackS3'],
       s5: ['KukanSiteStackS4'],
     })
+  })
+
+  it('gives each site its own CloudFront log bucket and table, none on the shared stack', () => {
+    shared.resourceCountIs('AWS::CloudFront::Distribution', 0)
+    shared.resourceCountIs('AWS::Glue::Database', 0)
+    for (const [template, site] of [
+      [siteA, 'citya'],
+      [siteB, 'cityb'],
+    ] as const) {
+      template.hasResourceProperties('AWS::Glue::Database', {
+        DatabaseInput: { Name: `kukan_dev_${site}_logs` },
+      })
+      template.hasResourceProperties('AWS::Athena::WorkGroup', { Name: `kukan-dev-${site}-logs` })
+      template.hasResourceProperties('AWS::CloudFront::Distribution', {
+        DistributionConfig: Match.objectLike({
+          Logging: Match.objectLike({ Bucket: CDN_LOG_BUCKET }),
+        }),
+      })
+    }
   })
 })
 

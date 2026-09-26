@@ -101,6 +101,7 @@ Switched with the CDK `dbEngine` parameter (`rds` | `aurora`).
 Without OpenSearch (SEARCH_TYPE=postgres): ~$77/month
 Adding WAF (enableWaf=true): +~$9/month
 IP restriction is handled by a CloudFront Function (no extra cost)
+CloudFront access logs: S3 storage and PUTs only (a few cents/month at a million requests a month)
 Consumption tax (10% in the Japan region) is added on top
 
 ### Medium (a single municipality): ~$266/month
@@ -455,6 +456,7 @@ When a SiteStack is deleted (`cdk destroy` / removed from sites):
 | --------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Site DB + role                          | **remains** (the CR does not delete)   | On master: `DROP DATABASE kukan_<site>; DROP ROLE kukan_<site>;`                                                                                                                                      |
 | S3 bucket                               | **remains** (RETAIN)                   | Empty it, then delete                                                                                                                                                                                 |
+| Access log bucket                       | **remains** (RETAIN)                   | Logs expire after `cdnLogRetentionDays`; delete it once empty                                                                                                                                         |
 | Backup vault (when awsBackup is on)     | **remains** (RETAIN)                   | Delete `kukan-<env>-<site>-backup` after the recovery points expire (or are deleted manually). **Delete it first if re-adding a site with the same name** (fixed names collide, same rule as ADR-037) |
 | OpenSearch index                        | **remains** (inside the shared domain) | `DELETE /kukan-<env>-<site>-search`                                                                                                                                                                   |
 | SQS queues / secrets / ECS / CloudFront | deleted                                | Check the DLQ contents before deletion                                                                                                                                                                |
@@ -527,6 +529,42 @@ The three managed rule groups:
 | AWSManagedRulesAmazonIpReputationList | Blocks malicious IPs using AWS threat intelligence          | $1/month |
 
 Total WAF cost: WebACL $5/month + rules $3/month + requests $0.60/million = **~$9/month**
+
+### Access logs (CloudFront)
+
+CloudFront access logs are always on, in every environment and every site outside opt-in
+regions, so that a traffic burst can be traced to its source, its URLs, and why the cache missed
+(a common base whether or not WAF is on).
+
+- **Legacy standard logging (direct delivery to S3).** Delivery is free; only S3 storage and PUTs are
+  billed. Standard logging v2 can choose the destination (CloudWatch Logs / Firehose), fields and
+  format (Parquet), but bills by volume delivered and needs its delivery resources
+  (`AWS::Logs::DeliverySource` etc.) in us-east-1. Pipeline mode cannot make cross-region
+  references (ADR-030), so like WAF they would have to be created beforehand in standalone mode
+- **One bucket per site** (`Bucket` in `AccessLogConstruct`, RETAIN, ObjectOwnership ObjectWriter
+  because delivery writes through ACLs). The bucket tells the sites apart, and removing a site
+  cleans up per site. The name is in the stack output `CdnLogBucketName`
+- **Retention is `cdnLogRetentionDays` (environment entry, default 90 days)**, expired by a
+  lifecycle rule
+- **Cookies are not logged** (they carry the session token)
+- **No logs in opt-in regions (af-south-1, ap-east-1 …).** Legacy logging cannot deliver to a
+  bucket there. Not worth failing the deploy over, so synth only warns. A region CDK does not
+  know is treated as opt-in (every region added since 2019 has been)
+- Fields kept include `x-edge-result-type`, URI and query, `c-ip`, User-Agent, status, and
+  `time-taken`
+- **WAF logs are not collected.** They lack the cache result, status and time taken; add them
+  only while tuning rules
+- **CloudFront additional metrics (paid) are not enabled.** The hit rate can be counted from
+  the access log
+
+- **Queryable from Athena straight away** (`AccessLogConstruct`). Each site gets a Glue database
+  `kukan_<env>[_<site>]_logs` with a table `cloudfront` (the 33 legacy standard-log fields, TSV,
+  first 2 lines skipped) and an Athena workgroup `kukan-<env>[-<site>]-logs`. The workgroup uses
+  Athena-managed result storage, so there is no results bucket. This removes the step of running
+  a DDL at the moment a burst is noticed. Both are deleted with the site's stack
+
+How to read them (an example query) is in the public admin guide
+(System Admin Guide → Access logs).
 
 ## Dockerfile
 

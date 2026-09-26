@@ -97,6 +97,7 @@ CDK の `dbEngine` パラメータ（`rds` | `aurora`）で切替。
 OpenSearch なし（SEARCH_TYPE=postgres）: ~$77/月
 WAF 追加（enableWaf=true）: +~$9/月
 IP 制限は CloudFront Function で対応（追加コストなし）
+CloudFront アクセスログ: S3 の保存と書き込みのみ（月 100 万リクエストで数セント）
 消費税（日本リージョン 10%）: 別途加算
 
 ### Medium（単一自治体）: ~$266/月
@@ -437,6 +438,7 @@ SiteStack を削除（`cdk destroy` / sites から除去）した場合:
 | --------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | サイト DB + ロール                      | **残る**（CR は削除しない） | master で `DROP DATABASE kukan_<site>; DROP ROLE kukan_<site>;`                                                                                                   |
 | S3 バケット                             | **残る**（RETAIN）          | 空にしてから削除                                                                                                                                                  |
+| アクセスログのバケット                  | **残る**（RETAIN）          | ログは `cdnLogRetentionDays` で消える。空になってから削除                                                                                                         |
 | Backup vault（awsBackup 有効時）        | **残る**（RETAIN）          | リカバリポイントの失効（または手動削除）後に `kukan-<env>-<site>-backup` を削除。**同名サイトを再追加する場合は先に削除**（固定名のため衝突、ADR-037 と同じ規則） |
 | OpenSearch インデックス                 | **残る**（共有ドメイン内）  | `DELETE /kukan-<env>-<site>-search`                                                                                                                               |
 | SQS キュー / Secrets / ECS / CloudFront | 削除される                  | DLQ は削除前に内容確認                                                                                                                                            |
@@ -505,6 +507,39 @@ WAF は CLOUDFRONT スコープで us-east-1（KukanGlobalStack）にデプロ�
 | AWSManagedRulesAmazonIpReputationList | AWS 脅威インテリジェンスによる悪意ある IP ブロック | $1/月 |
 
 WAF 費用合計: WebACL $5/月 + ルール $3/月 + リクエスト $0.60/百万 = **~$9/月**
+
+### アクセスログ（CloudFront）
+
+CloudFront のアクセスログは、オプトインリージョンを除き全環境・全サイトで常に有効。アクセスの
+集中を、アクセス元・URL・キャッシュに当たらなかった理由までたどれるようにするため（WAF の有無に
+よらない共通の土台）。
+
+- **方式は旧来の標準ログ（S3 へ直接配信）。** 配信料がかからず S3 の料金だけで済む。
+  標準ログ v2 は出力先（CloudWatch Logs / Firehose）・項目・形式（Parquet）を選べるが、
+  配信量に応じて課金され、配信リソース（`AWS::Logs::DeliverySource` 等）を us-east-1 に
+  置く必要がある。pipeline モードは cross-region 参照と非互換のため（ADR-030）、
+  WAF と同じく standalone での事前作成が要る
+- **バケットはサイトごと**（`AccessLogConstruct` の `Bucket`、RETAIN、ACL 書き込みのため
+  ObjectOwnership は ObjectWriter）。サイトの区別はバケットで付き、サイトを消すときの
+  後始末もサイト単位で済む。名前はスタック出力 `CdnLogBucketName`
+- **保持日数は `cdnLogRetentionDays`（環境エントリ、省略時 90 日）**。ライフサイクルで失効
+- **Cookie は残さない**（セッションのトークンを含む）
+- **オプトインリージョン（af-south-1 や ap-east-1 など）ではログを作らない。** 旧来の方式はそこにあるバケットへ
+  配信できない。デプロイを止めるほどではないため、synth の警告にとどめる。CDK が知らないリージョンも
+  オプトインとして扱う（2019 年以降に追加されたリージョンはすべてオプトイン）
+- 残る項目: `x-edge-result-type`、URI とクエリ、`c-ip`、User-Agent、ステータス、`time-taken` ほか
+- **WAF のログは取らない。** WAF のログにはキャッシュの状態・ステータス・応答時間が残らない。
+  ルールを調整するときだけ足す
+- **CloudFront の追加メトリクス（有料）は有効にしない。** ヒット率はアクセスログから数えられる
+
+- **Athena からすぐ読めるようにする**（`AccessLogConstruct`）。サイトごとに Glue データベース
+  `kukan_<env>[_<site>]_logs` とテーブル `cloudfront`（旧来の標準ログの 33 項目、TSV、先頭 2 行を
+  読み飛ばす）、Athena ワークグループ `kukan-<env>[-<site>]-logs` を作る。ワークグループは
+  Athena 管理の結果ストレージを使い、結果用のバケットを持たない。集中に気づいた時点で DDL を
+  流す手間を無くすため。どちらもサイトのスタックとともに削除される
+
+読み方（集計例）は公開の管理者ガイド（システム管理者ガイド →
+アクセスログ）に置く。
 
 ## Dockerfile
 

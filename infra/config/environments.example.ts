@@ -89,6 +89,7 @@ export const environments = {
     // enableOpenSearch: true, // false → PostgreSQL full-text fallback
     // deployConcurrency: 1, // sites deployed at once after the canary; omit → 2, 1 = serial (ADR-041)
     // ecrImageRetention: 100, // images kept in the bootstrap ECR repository; omit → 100
+    // cdnLogRetentionDays: 90, // days CloudFront access logs are kept (every site); omit → 90
 
     // --- Fine-tuning (deep-merged onto the scale preset, then under each site's overrides) ---
     // overrides: {
