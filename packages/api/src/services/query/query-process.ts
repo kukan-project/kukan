@@ -15,7 +15,6 @@
  */
 
 import { fork, type ChildProcess } from 'node:child_process'
-import { createRequire } from 'node:module'
 import { readFile, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -45,44 +44,39 @@ import {
 interface ChildCommand {
   entry: string
   execArgv: string[]
+  cwd?: string
 }
 
 let childCommand: ChildCommand | undefined
 
 /**
- * Where the child's code is. The built child is one self-contained file
- * (`query-child.mjs`, bundled by the package's build) that needs nothing
- * beside it but `@duckdb/node-api`.
+ * Where the child's code is.
  *
- * **Next bundles this module from source**, so inside the web server
- * `import.meta.url` names a `.ts` file that is not on disk and nothing can be
- * found relative to it. The image says where it put the child instead
- * (`QUERY_CHILD_ENTRY`); `next dev` finds it through the package.
+ * **In the image, a file of its own** (`query-child.mjs`, bundled by the
+ * package's build, needing nothing beside it but `@duckdb/node-api`). Next
+ * bundles this module into its chunks, where `import.meta.url` names a source
+ * file that is not on disk, so the image says where it put the child
+ * (`QUERY_CHILD_ENTRY`).
+ *
+ * **Wherever the source is on disk — vitest, tsx, `next dev` — the source,
+ * through tsx**, so a change to the sandbox is what runs. Started in this
+ * package's directory, where `--import tsx` resolves from its devDependencies:
+ * `import.meta.resolve` would say where tsx is, but Turbopack does not provide it.
  */
 function resolveChild(): ChildCommand {
   const configured = process.env.QUERY_CHILD_ENTRY
   if (configured) return { entry: configured, execArgv: [] }
-  if (import.meta.url.startsWith('file:')) {
-    // Run as itself: vitest and tsx on the source, which tsx runs (resolved
-    // from here, not from the working directory), or `node dist/…` on the
-    // build. A path rather than `new URL('./…', import.meta.url)`, which
-    // Turbopack resolves at build time against the source, where no `.mjs` is.
+  if (import.meta.url.startsWith('file:') && import.meta.url.endsWith('.ts')) {
     const here = dirname(fileURLToPath(import.meta.url))
-    return import.meta.url.endsWith('.ts')
-      ? {
-          entry: join(here, 'query-child.ts'),
-          execArgv: ['--import', import.meta.resolve('tsx')],
-        }
-      : { entry: join(here, 'query-child.mjs'), execArgv: [] }
+    return {
+      entry: join(here, 'query-child.ts'),
+      execArgv: ['--import', 'tsx'],
+      cwd: join(here, '../../..'),
+    }
   }
-  try {
-    const require = createRequire(join(process.cwd(), 'package.json'))
-    return { entry: require.resolve('@kukan/api/query-child'), execArgv: [] }
-  } catch {
-    throw new ServiceUnavailableError(
-      'The query process cannot be started: set QUERY_CHILD_ENTRY to the built query-child.mjs'
-    )
-  }
+  throw new ServiceUnavailableError(
+    'The query process cannot be started: set QUERY_CHILD_ENTRY to the built query-child.mjs'
+  )
 }
 
 /**
@@ -195,10 +189,13 @@ export async function runQueryInProcess(
     // An aborted signal never fires the listener added below
     if (signal?.aborted) throw new RequestAbandonedError()
     childCommand ??= resolveChild()
-    child = fork(childCommand.entry, [], {
+    // Turbopack follows a `fork` path it can partly evaluate and warns that it
+    // cannot resolve it; the child is never part of the bundle
+    child = fork(/* turbopackIgnore: true */ childCommand.entry, [], {
       // Next declares NODE_ENV required on ProcessEnv; nothing in the child reads it
       env: childEnvironment(process.env, tmp) as NodeJS.ProcessEnv,
       execArgv: childCommand.execArgv,
+      cwd: childCommand.cwd,
       stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
     })
     const proc = child

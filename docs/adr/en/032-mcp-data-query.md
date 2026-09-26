@@ -222,6 +222,9 @@ preview directly** rather than loading data into dedicated tables.
   `@kukan/api` from source, so the child's file is not in the standalone output, and a sibling file
   cannot be found from `import.meta.url` (the build tries to resolve it and fails). The image puts the
   file under `.pnpm`, where `@duckdb/node-api` resolves, and passes its location in `QUERY_CHILD_ENTRY`.
+  Wherever the source is on disk (vitest / tsx / `next dev`), the child runs from source through tsx,
+  which the child resolves itself by starting in `packages/api` (Turbopack provides no
+  `import.meta.resolve`, so the parent cannot look it up).
 - **Security**: this opens a raw-SQL surface to an external (AI) caller; the sandbox settings (notably
   `enable_external_access=false` + `lock_configuration=true`) are mandatory and a review focus.
 - **Observability**: log the query SQL, execution time, and truncation (rows/time) (ADR-019).

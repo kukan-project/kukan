@@ -27,8 +27,7 @@
     "./services/suggest/prompt": "./dist/services/suggest/prompt.js",
     "./services/suggest/summary-prompt": "./dist/services/suggest/summary-prompt.js",
     "./services/system-setting": "./dist/services/system-setting.js",
-    "./services/resource-summary-service": "./dist/services/resource-summary-service.js",
-    "./query-child": "./dist/services/query/query-child.mjs"
+    "./services/resource-summary-service": "./dist/services/resource-summary-service.js"
   },
   "scripts": {
     "dev:standalone": "tsx watch src/server.ts",

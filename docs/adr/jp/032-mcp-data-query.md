@@ -218,6 +218,9 @@ search_datasets → get_dataset → get_resource_schema → query_resource
   `@kukan/api` をソースから束ねるため、子のファイルは standalone 出力に入らず、`import.meta.url`
   から隣のファイルを辿ることもできない（ビルド時に解決を試みて失敗する）。イメージはこのファイルを
   `@duckdb/node-api` が解決できる `.pnpm` 配下に置き、`QUERY_CHILD_ENTRY` でその場所を渡す。
+  ソースがディスクにある環境（vitest / tsx / `next dev`）では、子もソースのまま tsx で動かす。
+  tsx は `packages/api` をカレントにして起動した子が自分で解決する（Turbopack は
+  `import.meta.resolve` を持たないため、親からは場所を求められない）。
 - **セキュリティ**: 生 SQL を外部（AI）に開く口であり、サンドボックスの各設定（特に
   `enable_external_access=false` + `lock_configuration=true`）は必須。レビュー時の重点項目。
 - **可観測性**: クエリ SQL・実行時間・打ち切り（行数/時間）をログに出す（ADR-019）。
